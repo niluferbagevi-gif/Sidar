@@ -1179,87 +1179,11 @@ v2.5.0 → v2.6.1 sürecinde projenin teknik borcu **önemli ölçüde azaltılm
 
 ## 16. Son Satır Satır İnceleme — Yeni Bulgular
 
-> **Kapsam:** Bu bölüm, Session 4 (2026-03-01) tüm dosyaların eksiksiz satır satır okunduğu son analiz oturumunda tespit edilen **yeni bulgular**ı içermektedir. Önceki oturumlarda zaten kayıt altına alınmış sorunlar burada tekrarlanmamıştır.
+> **Durum güncellemesi (2026-03-02):** Bu bölümde Session 4 sırasında listelenen N-01–N-06 bulgularının tamamı giderildiği için ayrıntılar düzeltme geçmişine taşınmıştır.
 
-### Yeni Bulgular Tablosu
-
-| # | Bulgu | Dosya:Satır | Önem | İlişkili |
-|---|-------|-------------|------|----------|
-| N-01 | `test_rag_chunking_small_text:374` ve `test_rag_chunking_large_text:386` testleri U-01 nedeniyle FAIL edecek (header prefix string karşılaştırmasını kırıyor) | `tests/test_sidar.py:374,386` | ✅ Kapalı — §3.56 | U-01 |
-| N-02 | `test_system_health_manager_cpu_only:192` private `_gpu_available` attribute'a erişiyor — U-15 önerisiyle tutarsız; test de `get_gpu_info()["available"]` kullanmalı | `tests/test_sidar.py:192` | ✅ Kapalı — §3.57 | U-15 |
-| N-03 | `GPU_MIXED_PRECISION` docker-compose'da `false` default; `.env.example` RTX 3070 Ti (Ampere) için `true` öneriyor — deployment config çelişkisi | `docker-compose.yml:69` — `.env.example:51` | ✅ Kapalı — §3.71 | — |
-| N-04 | `install_sidar.sh:98` sabit `sleep 5` bekleme; Ollama servisi yavaş başlıyorsa race condition; `/api/tags` polling loop daha güvenilir | `install_sidar.sh:96-98` | ✅ Kapalı — §3.72 | — |
-| N-05 | `web_ui/index.html:9-11` highlight.js ve marked.js CDN bağımlılıkları — çevrimdışı/intranet kullanımında arayüz düzgün çalışmaz | `web_ui/index.html:9-11` | ✅ Kapalı — §3.73 | — |
-| N-06 | `environment.yml` satır 34 yorumu `requests` kaldırıldığını teyit etmekte; §13 environment.yml girişindeki "kalan sorun: requests" notu güncellendi (hata düzeltildi) | `environment.yml:34` — `PROJE_RAPORU.md §13` | — | §3.30 |
-
-### N-01 Detay: Test Assertion Başarısızlığı (U-01 Uzantısı) ✅ GİDERİLDİ
-
-> **§3.56 kapsamında düzeltildi** — `tests/test_sidar.py` assertionları header prefix'i hesaba katacak biçimde güncellendi.
-
-```python
-# tests/test_sidar.py — test_rag_chunking_small_text (DÜZELTME SONRASI)
-ok, retrieved = docs.get_document(doc_id)
-assert ok is True
-content_part = retrieved.split("\n\n", 1)[1]   # ✅ header prefix'i atla
-assert content_part == small
-
-# tests/test_sidar.py — test_rag_chunking_large_text (DÜZELTME SONRASI)
-ok, retrieved = docs.get_document(doc_id)
-assert ok is True
-content_part = retrieved.split("\n\n", 1)[1]   # ✅ header prefix'i atla
-assert len(content_part) == len(large)
-```
-
-**Kök neden:** `core/rag.py:383` `get_document()`:
-```python
-return True, f"[{doc_id}] {meta['title']}\nKaynak: {meta.get('source', '-')}\n\n{content}"
-```
-
-**Uygulanan düzeltme:** Test assertionları `split("\n\n", 1)[1]` ile header'ı atlayarak sadece içerik kısmını karşılaştıracak şekilde güncellendi (Seçenek 2).
-
-**Etkilenmeyen test:** `test_rag_document_chunking:138` — `assert "func_49()" in retrieved` substring check kullandığından zaten etkilenmiyordu.
-
-### Önceki §13 Bulgu Uyarı Notları
-
-Aşağıdaki §13 girişlerinde **ANALIZ_RAPORU (§15 tablosu)** skorları ile **eski §13 skorları** arasında tutarsızlık mevcuttu; §13 girişleri bu analizde güncellenmiştir:
-
-| Dosya | §13 Eski Skor | ANALIZ_RAPORU Skoru | Düzeltildi? |
-|-------|--------------|---------------------|-------------|
-| `environment.yml` | 88/100 | 97/100 | ✅ Bu oturumda |
-| `core/memory.py` | 82/100 | 95/100 | — §13'te eski gelişim haritası |
-| `config.py` | 84/100 | 94/100 | — §13'te GPU validasyon sorunu vurgulanmış |
-| `web_ui/index.html` | 95/100 | 97/100 | ✅ Bu oturumda (N-05 CDN → vendor) |
-
-Not: §13 skor geçmişleri (`78 → 84 → 89` gibi) proje evrimini belgeler; ANALIZ_RAPORU bağımsız tek nokta değerlendirmesidir. İkisi birlikte okunmalıdır.
-
-### Tüm Dosyalar İçin Güncel Skor Tablosu (v2.6.1 Sonrası)
-
-| Dosya | Önce | Sonra (v2.6.1) | Düzeltilen | Açık Sorun |
-|-------|------|----------------|------------|------------|
-| `main.py` | 95/100 | **100/100** ✅ | V-01 (dead code silindi — §3.74) | — |
-| `config.py` | 84/100 | **100/100** ✅ | U-08, V-02 (docstring güncellendi — §3.75) | — |
-| `web_server.py` | 88/100 | **100/100** ✅ | U-05, U-06, U-10, U-13, V-03 (asyncio.to_thread — §3.76) | — |
-| `agent/sidar_agent.py` | 89/100 | **95/100** | U-08, U-14 | — |
-| `agent/auto_handle.py` | 90/100 | **96/100** | U-09, U-12 (zaten düzeltilmişti) | — |
-| `agent/definitions.py` | 96/100 | 96/100 | — | — |
-| `core/llm_client.py` | 90/100 | 91/100 | — | — |
-| `core/memory.py` | 82/100 | 95/100 | — | — |
-| `core/rag.py` | 90/100 | 93/100 | — | — |
-| `core/__init__.py` | —/100 | **98/100** | U-07 (DocumentStore export) | — |
-| `managers/code_manager.py` | 88/100 | 92/100 | — | — |
-| `managers/system_health.py` | 95/100 | 95/100 | — | — |
-| `managers/github_manager.py` | 93/100 | 93/100 | — | — |
-| `managers/security.py` | 90/100 | **97/100** | U-02 (SANDBOX izin eşiği) | — |
-| `managers/web_search.py` | 91/100 | 91/100 | — | — |
-| `managers/package_info.py` | 96/100 | 96/100 | — | — |
-| `web_ui/index.html` | 93/100 | **97/100** | N-05 (CDN → vendor + CDN yedek) | — |
-| `tests/test_sidar.py` | 91/100 | **97/100** | U-01, N-01, N-02 (assertion fix) | — |
-| `environment.yml` | 97/100 | **99/100** | U-04 (cu121→cu124) | — |
-| `Dockerfile` | 85/100 | **97/100** | U-11 (HTTP healthcheck) | — |
-| `docker-compose.yml` | 88/100 | **97/100** | N-03 (GPU_MIXED_PRECISION default true) | — |
-| `.env.example` | 84/100 | **97/100** | U-03 (HF_HUB_OFFLINE çift tanım) | — |
-| `install_sidar.sh` | 80/100 | **92/100** | N-04 (polling loop) + N-05 (vendor download) | — |
-| `.gitignore` | 90/100 | **92/100** | N-05 (web_ui/vendor/ eklendi) | — |
+- 📦 Taşınan kayıtlar: **N-01, N-02, N-03, N-04, N-05, N-06**
+- 📄 Detaylar: **[DUZELTME_GECMISI.md → “§16'dan Taşınan Bulgular (N-01–N-06)”](DUZELTME_GECMISI.md#16dan-taşınan-bulgular-n-01n-06--session-4-2026-03-01)**
+- ✅ Sonuç: Session 4 yeni bulgularında açık madde kalmamıştır.
 
 ---
 
