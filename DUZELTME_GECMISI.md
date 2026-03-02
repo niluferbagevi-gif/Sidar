@@ -1400,3 +1400,562 @@ await asyncio.to_thread(
 ```
 
 ---
+
+---
+
+## Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
+
+> Bu bölüm `PROJE_RAPORU.md §8` içinden ayrılmıştır.  
+> Tüm maddeler **✅ Kapalı** statüsündedir.  
+> Ana rapor: [PROJE_RAPORU.md](PROJE_RAPORU.md) — §8 referansı (aktif sorunlar orada)
+
+### 8.1 Önceki Sürümlerde Giderilen Uyumsuzluklar (Kapalı)
+
+| # | Dosya A | Dosya B | Uyumsuzluk Türü | Önem | Durum |
+|---|---------|---------|----------------|------|-------|
+| 1 | `README.md` (v2.3.2) | Tüm proje (v2.6.0) | Versiyon drift | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 2 | `config.py:validate_critical_settings()` | Tüm proje (httpx) | Senkron `requests` kullanımı | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 3 | `environment.yml` | `config.py` | `requests` bağımlılığı kaldırılmadı | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 4 | `memory.py` (threading.RLock) | Async mimari | RLock async bağlamda I/O yapıyor | 🟡 ORTA | ✅ Düzeltildi |
+| 5 | `web_server.py` (asyncio.Lock module-level) | Python <3.10 uyumu | Loop bağımsız lock oluşturma | 🟡 ORTA | ✅ Geçersiz |
+| 6 | `README.md` | `web_server.py`, `memory.py`, `config.py` | Yeni özellikler belgelenmemiş | 🟡 ORTA | ✅ Düzeltildi |
+| 7 | `tests/test_sidar.py` | `memory.py` (session API) | Session lifecycle testleri eksik | 🟡 ORTA | ✅ Düzeltildi |
+| 8 | `web_search.py:search_docs()` | DuckDuckGo motoru | `site:` OR operatörü DDG'de sınırlı | 🟢 DÜŞÜK | ✅ Düzeltildi |
+| 9 | `sidar_agent.py:163` (greedy regex) | JSON çıktısı veren LLM | Açgözlü `\{.*\}` regex yanlış JSON yakalayabilir | 🔴 KRİTİK | ✅ Düzeltildi |
+| 10 | `llm_client.py:129` (UTF-8 errors="replace") | Türkçe/multibyte içerik | TCP sınırında multibyte karakter sessizce bozulur | 🔴 KRİTİK | ✅ Düzeltildi |
+| 11 | `code_manager.py:208` (hardcoded image) | `config.py` (DOCKER_PYTHON_IMAGE) | Docker image özelleştirilemez | 🔴 KRİTİK | ✅ Düzeltildi |
+| 12 | `memory.py:170` (mesaj sayısı limiti) | LLM context window | Token sayısı kontrolsüz büyüyebilir | 🔴 KRİTİK | ✅ Düzeltildi |
+| 13 | `auto_handle.py:156` (no null check) | `SystemHealthManager` init | health=None durumunda AttributeError | 🔴 KRİTİK | ✅ Düzeltildi |
+| 14 | `github_manager.py:148` (uzantısız bypass) | `SAFE_TEXT_EXTENSIONS` whitelist | Extensionless binary dosyaları filtreden kaçar | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 15 | `web_server.py:89-91` (TOCTOU) | Rate limit mantığı | Eş zamanlı istek check-write atomik değil | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 16 | `rag.py:287` (delete+upsert) | ChromaDB collection | Eş zamanlı güncelleme race condition | 🔴 YÜKSEK | ✅ Düzeltildi |
+| 17 | `definitions.py:23` (eğitim tarihi) | Claude Sonnet 4.6 (Aug 2025) | Yanlış bilgi sınırı yorumu | 🟢 DÜŞÜK | ✅ Düzeltildi |
+
+**Notlar:**
+- **#5 (Geçersiz):** Proje `python=3.11` gerektirir (bkz. `environment.yml:6`). Python 3.10+ ile `asyncio.Lock()` event loop dışında oluşturulabilir; sorun geçersizdir.
+- **#4 (Düzeltildi):** `sidar_agent.py` içindeki tüm `memory.add()` ve `memory.set_last_file()` çağrıları `asyncio.to_thread()` ile thread pool'a iletildi. `memory.py` senkron API'si korundu.
+
+---
+
+### 8.2 Tespit Edilen Uyumsuzluklar — Tamamı Kapatıldı
+
+> Tespit tarihi: 2026-03-01 | Kapatma tarihi: 2026-03-01 — **15 uyumsuzluktan 15'i giderilmiştir.**
+
+| # | Dosya A | Dosya B | Uyumsuzluk Açıklaması | Önem | Durum |
+|---|---------|---------|----------------------|------|-------|
+| U-01 | `tests/test_sidar.py:374` | `core/rag.py:383` | `get_document()` test assertion hatası | 🔴 KRİTİK | ✅ Kapalı — §3.56 |
+| U-02 | `managers/security.py:92` | `managers/security.py:79` | `status_report()` SANDBOX terminal iznini yanlış gösteriyor | 🔴 KRİTİK | ✅ Kapalı — §3.57 |
+| U-03 | `.env.example:57` | `.env.example:113` | `HF_HUB_OFFLINE` anahtarı çift tanımlı, çelişkili değerler | 🔴 YÜKSEK | ✅ Kapalı — §3.58 |
+| U-04 | `environment.yml:29` (cu121) | `docker-compose.yml:46,130` (cu124) | PyTorch CUDA wheel versiyonu tutarsızlığı | 🔴 YÜKSEK | ✅ Kapalı — §3.59 |
+| U-05 | `web_server.py:66-70` | `config.py:WEB_PORT` | CORS izin listesi port 7860'a sabit kodlanmış | 🔴 YÜKSEK | ✅ Kapalı — §3.60 |
+| U-06 | `web_server.py:89` (`_rate_lock`) | `web_server.py:44` (`_agent_lock`) | `_rate_lock` modül seviyesinde; `_agent_lock` lazy init | 🟡 ORTA | ✅ Kapalı — §3.61 |
+| U-07 | `core/__init__.py` | `core/rag.py` | `DocumentStore` `__all__`'dan dışa aktarılmıyor | 🟡 ORTA | ✅ Kapalı — §3.62 |
+| U-08 | `sidar_agent.py:64` (`VERSION="2.6.0"`) | `PROJE_RAPORU.md` başlığı (`v2.6.1`) | Kod versiyonu ile rapor versiyonu uyuşmuyor | 🟡 ORTA | ✅ Kapalı — §3.63 |
+| U-09 | `agent/auto_handle.py` (tüm dosya) | `web_server.py:POST /clear` | Web UI'da "belleği temizle" komutu AutoHandle tarafından işlenmiyor | 🟡 ORTA | ✅ Kapalı — §3.64 |
+| U-10 | `web_server.py:330-345` | `managers/security.py` | Dal adı `git checkout`'a geçilmeden önce sanitize edilmiyor | 🟡 ORTA | ✅ Kapalı — §3.65 |
+| U-11 | `Dockerfile:82-83` (HEALTHCHECK) | `web_server.py` (FastAPI) | HEALTHCHECK HTTP servis durumunu kontrol etmiyor | 🟢 DÜŞÜK | ✅ Kapalı — §3.66 |
+| U-12 | `auto_handle.py` (erişim regex) | Türkçe doğal dil | `"erişim"` kelimesi çok geniş — mevcut kodda zaten düzeltilmiş | 🟢 DÜŞÜK | ✅ Kapalı — §3.67 |
+| U-13 | `web_server.py:301` (`rstrip`) | `/git-info` endpoint | `rstrip(".git")` suffix değil karakter kümesi siliyor | 🔴 YÜKSEK | ✅ Kapalı — §3.68 |
+| U-14 | `agent/sidar_agent.py:679` | `core/rag.py` (ChromaDB) | `docs.add_document()` event loop'ta senkron çağrılıyor | 🟡 ORTA | ✅ Kapalı — §3.69 |
+| U-15 | `tests/test_sidar.py:193` | `managers/system_health.py` | `_gpu_available` private attribute'a doğrudan erişim | 🟢 DÜŞÜK | ✅ Kapalı — §3.70 |
+
+---
+
+#### U-01 Detay: `tests/test_sidar.py` — `get_document()` Dönüş Formatı Uyumsuzluğu
+
+**Sorun:** `core/rag.py:383` `get_document()` şu formatı döndürür:
+```python
+return True, f"[{doc_id}] {meta['title']}\nKaynak: {meta.get('source', '-')}\n\n{content}"
+```
+Ancak `tests/test_sidar.py:372-374` şunu kontrol ediyor:
+```python
+ok, retrieved = docs.get_document(doc_id)
+assert ok is True
+assert retrieved == small   # ❌ FAIL: retrieved başlık+kaynak öneki içeriyor
+```
+Ve `tests/test_sidar.py:381-386`:
+```python
+ok, retrieved = docs.get_document(doc_id)
+assert ok is True
+assert len(retrieved) == len(large)   # ❌ FAIL: retrieved önekle birlikte çok daha uzun
+```
+İki test de **TestPassed gibi görünse bile anlamsızdır** ve gerçekte hatalı assertion'lar nedeniyle başarısız olur.
+
+---
+
+#### U-02 Detay: `managers/security.py` — `status_report()` SANDBOX Terminal İzni Yanlış
+
+**Sorun:** `can_execute()` SANDBOX modunda kod çalıştırmaya izin veriyor:
+```python
+# security.py:79
+def can_execute(self) -> bool:
+    return self.level >= SANDBOX   # ✅ SANDBOX'ta True döner
+```
+Ama `status_report()` Terminal iznini yanlış gösteriyor:
+```python
+# security.py:92
+perms.append(f"Terminal: {'✓' if self.level == FULL else '✗'}")
+# ❌ SANDBOX modunda '✗' (yasak) yazıyor ama aslında Docker REPL çalışabiliyor
+```
+Kullanıcı arayüzde "Terminal: ✗" görürken Docker sandbox REPL gerçekte çalışabilir durumda. Tutarsız bilgi.
+
+---
+
+#### U-03 Detay: `.env.example` — `HF_HUB_OFFLINE` Çift Tanımlı
+
+**Sorun:** Aynı değişken iki farklı satırda, farklı değerlerle tanımlı:
+```bash
+# .env.example:57
+HF_HUB_OFFLINE=0    # ← İlk tanım: model indirmesine izin ver
+
+# .env.example:113
+HF_HUB_OFFLINE=1    # ← İkinci tanım: çevrimdışı mod (override eder)
+```
+Kullanıcı `.env` oluştururken hangi değerin geçerli olacağını bilemez. İkinci tanım birincisini geçersiz kılar.
+
+---
+
+#### U-04 Detay: `environment.yml` vs `docker-compose.yml` — CUDA Wheel Sürümü Tutarsızlığı
+
+**Sorun:**
+```yaml
+# environment.yml:29 (Conda/doğrudan kurulum)
+- --extra-index-url https://download.pytorch.org/whl/cu121  # CUDA 12.1
+
+# docker-compose.yml:46 (GPU Docker servisi)
+TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124     # CUDA 12.4
+
+# Dockerfile:51 (GPU build-arg)
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu   # CPU varsayılan
+# GPU build: docker-compose cu124 geçiyor
+```
+Conda ortamında kurulan PyTorch CUDA 12.1 (cu121) wheel'ı, Docker GPU build'ında kurulan CUDA 12.4 (cu124) wheel'ıyla **farklı sürümler** olabilir. Geliştiricilerin farklı ortamlarda farklı PyTorch davranışı görmesine neden olur.
+
+---
+
+#### U-05 Detay: `web_server.py` — CORS Port Sabit Kodlanmış
+
+**Sorun:**
+```python
+# web_server.py:66-70
+_ALLOWED_ORIGINS = [
+    "http://localhost:7860",    # ← Sabit port
+    "http://127.0.0.1:7860",   # ← Sabit port
+    "http://0.0.0.0:7860",     # ← Sabit port
+]
+```
+Ancak `config.py:299` ve `.env.example:111`:
+```python
+WEB_PORT: int = get_int_env("WEB_PORT", 7860)  # Değiştirilebilir
+```
+Kullanıcı `WEB_PORT=8080` ayarlarsa, CORS tüm istekleri bloklar çünkü `http://localhost:8080` izin listesinde yok. `_ALLOWED_ORIGINS` `cfg.WEB_PORT` kullanarak dinamik oluşturulmalı.
+
+---
+
+#### U-06 Detay: `web_server.py` — `_rate_lock` / `_agent_lock` Tutarsız Başlatma
+
+**Sorun:**
+```python
+# web_server.py:44 — _agent_lock DOĞRU: lazy init
+_agent_lock: asyncio.Lock | None = None  # event loop başladıktan sonra oluşturulacak
+
+# web_server.py:89 — _rate_lock TUTARSIZ: modül seviyesinde
+_rate_lock = asyncio.Lock()  # import anında oluşturuluyor
+```
+Aynı dosyada aynı pattern için iki farklı yaklaşım kullanılıyor. Python 3.11 için fonksiyonel sorun olmasa da tutarsızlık kod bakımını zorlaştırır.
+
+---
+
+#### U-07 Detay: `core/__init__.py` — `DocumentStore` Dışa Aktarılmıyor
+
+**Sorun:**
+```python
+# core/__init__.py
+from .memory import ConversationMemory
+from .llm_client import LLMClient
+# ❌ DocumentStore eksik!
+__all__ = ["ConversationMemory", "LLMClient"]
+```
+Diğer tüm modüller `__init__.py`'den dışa aktarılmışken `DocumentStore` dışarıda bırakılmış. Tüm importlar `from core.rag import DocumentStore` şeklinde doğrudan yapılıyor (tutarlı değil).
+
+---
+
+#### U-08 Detay: `sidar_agent.py` / `config.py` — Versiyon Rapor Uyumsuzluğu
+
+**Sorun:**
+```python
+# sidar_agent.py:55
+VERSION = "2.6.0"
+
+# config.py:207-208
+VERSION: str = "2.6.0"
+```
+Ancak `PROJE_RAPORU.md:5`:
+```
+**Versiyon:** SidarAgent v2.6.1 (Web UI + Backend patch + Kritik hata yamaları)
+```
+Rapora göre uygulanan v2.6.1 yamaları kodda versiyon güncellemesini içermiyor. `main.py:50` banner'ı da `v2.6.0` gösteriyor.
+
+---
+
+#### U-09 Detay: `auto_handle.py` — Web UI'da "Belleği Temizle" Komutu Desteklenmiyor
+
+**Sorun:** CLI'da `.clear` komutu `main.py` tarafından doğrudan handle ediliyor. Web UI'da `/clear` endpoint'i var. Ancak kullanıcı web chat'te "belleği temizle", "sohbeti sıfırla" gibi doğal dil komutları yazarsa `AutoHandle` bunu işlemiyor, LLM'e gönderiliyor.
+
+`auto_handle.py`'de bu pattern için hiçbir handler yok. `test_auto_handle_clear_command` testi de bunu kabul ederek:
+```python
+# tests/test_sidar.py:406-408
+assert isinstance(handled, bool)   # ❌ Her zaman geçer, gerçek test değil
+assert isinstance(response, str)
+```
+
+---
+
+#### U-10 Detay: `web_server.py` — Dal Adı Sanitize Edilmeden `git checkout`'a Geçiliyor
+
+**Sorun:**
+```python
+# web_server.py:330-345
+branch_name = body.get("branch", "").strip()
+# ❌ Yalnızca whitespace temizleniyor; git flag injection kontrolü yok
+subprocess.check_output(
+    ["git", "checkout", branch_name],  # Liste formatı shell injection'ı engeller
+    ...
+)
+```
+Subprocess list formatı shell injection'ı önler, ancak git'e özel bayraklar (örn: `--force`, `--orphan`) hâlâ zararlı olabilir. Dal adı `^[a-zA-Z0-9/_.-]+$` regex ile doğrulanmalı.
+
+---
+
+#### U-11 Detay: `Dockerfile` — HEALTHCHECK HTTP Sağlığını Kontrol Etmiyor
+
+**Sorun:**
+```dockerfile
+# Dockerfile:82-83
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD ps aux | grep "[p]ython" || exit 1
+```
+Python süreci çalışıyor ama web servis yanıt vermiyorsa (port bağlanamadı, exception, vb.) HEALTHCHECK yine de `healthy` döner. `web_server.py` modu için `curl http://localhost:7860/status` ile HTTP sağlık kontrolü yapılmalı.
+
+---
+
+#### U-12 Detay: `auto_handle.py` — `"erişim"` Regex'i Çok Geniş
+
+**Sorun:**
+```python
+# auto_handle.py:217
+if re.search(r"erişim|güvenlik|openclaw|access.*level|yetki", t):
+    return True, self.code.security.status_report()
+```
+Türkçe'de "erişim" (access) son derece yaygın bir kelime. Örnek:
+- "Bu API'ye **erişim** nasıl yapılır?" → Güvenlik durum raporu gösterir ❌
+- "Dosyaya **erişim** izni var mı?" → Güvenlik durum raporu gösterir ❌
+
+LLM'e iletilmesi gereken meşru sorular yanlışlıkla yakalanır.
+
+---
+
+#### U-13 Detay: `web_server.py:301` — `rstrip(".git")` Yanlış Kullanımı
+
+**Kaynak:** ANALIZ_RAPORU_2026_03_01.md §4.1
+
+**Sorun:** `str.rstrip(chars)` bir **karakter kümesini** sondan siler, bir suffix'i değil. `.git` argümanı `g`, `i`, `t`, `.` karakterlerinden oluşan küme olarak yorumlanır:
+```python
+# web_server.py:301
+repo = remote.rstrip(".git")
+# YANLIŞ ÖRNEK:
+# "https://github.com/owner/my_project.git".rstrip(".git")
+# → "https://github.com/owner/my_projec"  ← son 't' silinir!
+```
+Özellikle `tag`, `digit`, `script`, `git` gibi harf içeren depo adlarında URL'nin son karakterleri yanlışlıkla silinebilir.
+
+**Beklenen düzeltme:**
+```python
+repo = remote.removesuffix(".git")   # Python 3.9+ — proje Python 3.11 gerektiriyor ✓
+```
+
+**Etki:** `/git-info` endpoint'i yanlış `owner/repo` değeri döndürebilir; dal ve repo seçimi UI'da hatalı çalışabilir.
+
+---
+
+#### U-14 Detay: `agent/sidar_agent.py:452` — `docs.add_document()` Event Loop'u Bloke Edebilir
+
+**Kaynak:** ANALIZ_RAPORU_2026_03_01.md §4.2
+
+**Sorun:** `_summarize_memory()` metodunda `self.docs.add_document()` `asyncio.to_thread()` sarmalı olmadan çağrılmaktadır:
+```python
+# sidar_agent.py:451-460
+async def _summarize_memory(self) -> None:
+    ...
+    self.docs.add_document(        # ← Senkron ChromaDB I/O — event loop engelleniyor
+        title=f"Sohbet Geçmişi Arşivi ...",
+        content=full_turns_text,
+        ...
+    )
+```
+ChromaDB Python istemcisi senkron API kullanmaktadır. Büyük konuşma geçmişleri arşivlenirken embedding hesaplaması ve disk I/O event loop'u bloklayabilir; bu sürede diğer HTTP istekleri yanıt alamaz.
+
+Aynı dosyanın başka yerlerinde (`sidar_agent.py:124,127,198`) `asyncio.to_thread()` tutarlı biçimde kullanılmaktadır.
+
+**Beklenen düzeltme:**
+```python
+await asyncio.to_thread(
+    self.docs.add_document,
+    title=f"Sohbet Geçmişi Arşivi ({time.strftime('%Y-%m-%d %H:%M')})",
+    content=full_turns_text,
+    source="memory_archive",
+    tags=["memory", "archive", "conversation"],
+)
+```
+
+---
+
+#### U-15 Detay: `agent/sidar_agent.py:418` — Private Attribute Doğrudan Erişimi
+
+**Kaynak:** ANALIZ_RAPORU_2026_03_01.md §4.4
+
+**Sorun:**
+```python
+# sidar_agent.py:418
+lines.append(f"  GPU        : {'Mevcut' if self.health._gpu_available else 'Yok'}")
+```
+`_gpu_available` private bir attribute'tur (`_` öneki); `SystemHealthManager`'ın iç durumuna doğrudan erişim encapsulation prensibini ihlal eder.
+
+**Beklenen düzeltme:**
+```python
+gpu_info = self.health.get_gpu_info()
+lines.append(f"  GPU        : {'Mevcut' if gpu_info.get('available') else 'Yok'}")
+```
+`get_gpu_info()` public API bu bilgiyi `{"available": bool}` formatında zaten sunmaktadır.
+
+---
+
+### 8.3 Yeni Doğrulama Taraması — V-01–V-03 (Tamamı Kapatıldı)
+
+> Tespit tarihi: 2026-03-01 | Kapatma tarihi: 2026-03-01 — **3 yeni uyumsuzluktan 3'ü giderilmiştir.**
+
+| # | Dosya A | Dosya B | Uyumsuzluk Açıklaması | Önem | Durum |
+|---|---------|---------|----------------------|------|-------|
+| V-01 | `main.py:247-621` (374 satır commented-out dead code) | `PROJE_RAPORU.md §13` (main.py 100/100 iddiası) | Eski implementasyon kopyası yorum bloğu olarak kalmıştı | 🟡 ORTA | ✅ Kapalı — §3.74 |
+| V-02 | `config.py:1-6` (docstring "Sürüm: 2.6.0") | `config.py:VERSION = "2.6.1"` | Modül başlık yorumu eski sürümü gösteriyordu | 🟢 DÜŞÜK | ✅ Kapalı — §3.75 |
+| V-03 | `web_server.py:git_info()`, `git_branches()`, `set_branch()` | Async FastAPI mimarisi | Senkron `subprocess.check_output()` async handler'da event loop'u blokluyordu | 🟡 ORTA | ✅ Kapalı — §3.76 |
+
+#### V-01 Detay: `main.py:247-621` — Commented-Out Dead Code
+
+**Sorun:** `main.py:242-244` satırlarında aktif kod sona erdiği hâlde satır 247'den itibaren 374 satır boyunca eski implementasyonun birebir kopyası yorum bloğu olarak durmaktadır:
+
+```python
+# main.py:242-247 (sorun başlangıcı)
+if __name__ == "__main__":
+    main()
+
+
+# """
+# Sidar Project - Giriş Noktası
+# ...
+```
+
+Rapor §13 main.py girişi "100/100 ✅ — `if __name__ == "__main__": main()` bloğundan sonra kalan sahipsiz yinelenen kod temizlendi" demektedir. Ancak kod incelemesinde satır 247–621 arasında **374 satırlık** eski implementasyonun tam kopyası hâlâ mevcut olduğu doğrulandı.
+
+**Etki:** Çalışma zamanına etkisi yok (yorum satırları Python'da yürütülmez); fakat kod tabanı şişiyor, bakım güçleşiyor ve rapordaki "100/100" değerlendirmesi gerçeği yansıtmıyor.
+
+**Beklenen düzeltme:** `main.py:246-621` arasındaki tüm yorum bloğunun silinmesi.
+
+---
+
+#### V-02 Detay: `config.py` Docstring Versiyon Uyumsuzluğu
+
+**Sorun:**
+```python
+# config.py:1-6
+"""
+Sidar Project - Yapılandırma
+...
+Sürüm: 2.6.0    ← eski versiyon
+"""
+...
+VERSION: str = "2.6.1"   # ← gerçek versiyon
+```
+
+Modül docstring "Sürüm: 2.6.0" gösteriyor; `VERSION` sabiti ise "2.6.1". U-08 yamasında (§3.63) `VERSION` sabiti güncellendi ama docstring atlandı.
+
+**Etki:** Çok düşük — sadece belgeleme tutarsızlığı. Çalışma zamanına etkisi yok.
+
+**Beklenen düzeltme:** `config.py` başlık yorumundaki "Sürüm: 2.6.0" → "Sürüm: 2.6.1" olarak güncellenmesi.
+
+---
+
+#### V-03 Detay: `web_server.py` Git Endpoint'lerinde Senkron Subprocess
+
+**Sorun:** FastAPI async handler'ları içinde `subprocess.check_output()` (senkron I/O) doğrudan çağrılmaktadır:
+
+```python
+# web_server.py — git_info() endpoint'i (async!)
+@app.get("/git-info")
+async def git_info():
+    remote = subprocess.check_output(     # ← BLOKLAYICI — event loop duraksıyor
+        ["git", "remote", "get-url", "origin"], cwd=str(_root), ...
+    ).decode().strip()
+    branch = subprocess.check_output(     # ← BLOKLAYICI
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_root), ...
+    ).decode().strip()
+    ...
+
+# web_server.py — set_branch() (POST /set-branch)
+@app.post("/set-branch")
+async def set_branch(request: Request):
+    subprocess.check_output(              # ← BLOKLAYICI
+        ["git", "checkout", branch_name], cwd=str(_root), ...
+    )
+```
+
+`subprocess.check_output()` senkron bir çağrıdır; async FastAPI handler içinde çağrıldığında git komutunun tamamlanmasını beklerken tüm event loop askıya alınır ve bu süre içinde başka HTTP istekleri yanıt alamaz.
+
+**Etki:** Git komutu hızlı çalışırsa (yerel repo) pratik etkisi düşük; ancak yavaş ağ veya büyük repo durumunda `/chat` dahil tüm istekler yavaşlar. Mimari açıdan doğru değil.
+
+**Beklenen düzeltme:** `asyncio.to_thread()` ile subprocess'i thread pool'a itmek:
+```python
+result = await asyncio.to_thread(
+    subprocess.check_output,
+    ["git", "remote", "get-url", "origin"],
+    cwd=str(_root), stderr=subprocess.DEVNULL
+)
+remote = result.decode().strip()
+```
+
+---
+
+### 8.4 Yeni Doğrulama Taraması — N-01–N-04 (2026-03-02 Güncel Bulgular)
+
+> Tespit tarihi: 2026-03-02 | Kod v2.7.0 ile eksiksiz satır satır doğrulama yapılmıştır.
+> **Önceki 35 sorunun TAMAMI kapatılmış olduğu doğrulandı ✅**
+> Yeni tespit edilen 4 sorun aşağıda listelenmiştir.
+
+| # | Dosya A | Dosya B | Uyumsuzluk Açıklaması | Önem | Durum |
+|---|---------|---------|----------------------|------|-------|
+| N-01 | `core/__init__.py:10` (`__version__ = "2.6.1"`) | `config.py:212`, `sidar_agent.py:86` (`VERSION = "2.7.0"`) | Versiyon uyumsuzluğu: core paketi v2.6.1, kod tabanı v2.7.0 | 🟡 ORTA | ✅ Kapalı |
+| N-02 | `.env.example:125` (`DOCKER_IMAGE=...`) | `config.py:295` (`os.getenv("DOCKER_PYTHON_IMAGE", ...)`) | `.env.example` ortam değişkeni adı yanlış — kullanıcı ayarı sessizce yoksayılır | 🔴 YÜKSEK | ✅ Kapalı |
+| N-03 | `web_server.py:321` (`agent.docs._index`) | `core/rag.py` (`_index` private) | Private iç değişkene dış modülden doğrudan erişim (encapsulation ihlali) | 🟢 DÜŞÜK | ✅ Kapalı |
+| N-04 | `environment.yml:11` (`packaging>=23.0` conda bölümünde) | `managers/package_info.py` (`from packaging.version import Version`) | `packaging` pip bölümünde değil; Docker build'da versiyon kısıtlaması uygulanmaz | 🟢 DÜŞÜK | ✅ Kapalı |
+
+---
+
+#### N-01 Detay: `core/__init__.py` — Versiyon v2.6.1 Eski (Kod v2.7.0'da)
+
+**Sorun:** Kod tabanı v2.7.0'a güncellenmiş ancak `core/__init__.py` ve `Dockerfile` hâlâ v2.6.1 gösteriyor:
+
+```python
+# core/__init__.py:10
+__version__ = "2.6.1"   # ❌ Eski — v2.7.0 olmalı
+
+# Dockerfile:25
+LABEL version="2.6.1"   # ❌ Eski — v2.7.0 olmalı
+
+# config.py:212  ← DOĞRU
+VERSION: str = "2.7.0"
+
+# agent/sidar_agent.py:86  ← DOĞRU
+VERSION = "2.7.0"
+```
+
+Ayrıca `PROJE_RAPORU.md:5` başlığı da hâlâ `v2.6.1` göstermekteydi (bu güncellemeyle düzeltildi).
+
+**Etki:** Çalışma zamanına doğrudan etkisi yok; `import core; core.__version__` sorgulandığında yanlış versiyon döner. Dağıtım süreçleri (CI/CD, Docker image tag) etkilenebilir.
+
+**Beklenen düzeltme:**
+```python
+# core/__init__.py:10
+__version__ = "2.7.0"
+
+# Dockerfile:25
+LABEL version="2.7.0"
+```
+
+---
+
+#### N-02 Detay: `.env.example` — `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` Ortam Değişkeni Adı Yanlış
+
+**Sorun:** `.env.example` belgesinde `DOCKER_IMAGE` adıyla ortam değişkeni sunulmuş, fakat `config.py`'de bu değişken farklı bir adla okunuyor:
+
+```bash
+# .env.example:125
+DOCKER_IMAGE=python:3.11-alpine    # ← Belgede gösterilen ad
+```
+
+```python
+# config.py:295
+DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+# ❌ kod "DOCKER_PYTHON_IMAGE" okuyor ama .env.example "DOCKER_IMAGE" gösteriyor
+```
+
+Kullanıcı `.env` dosyasına `DOCKER_IMAGE=my-custom:3.11` yazsa da bu değer hiçbir zaman okunamaz; kod her zaman varsayılan `python:3.11-alpine` imajını kullanır.
+
+**Etki:** Docker sandbox imajı özelleştirilmek istendiğinde sessizce yoksayılır. Hata mesajı veya uyarı üretilmez; kullanıcı neden değişikliğin işe yaramadığını anlayamaz.
+
+**Beklenen düzeltme (iki seçenek):**
+```bash
+# Seçenek A: .env.example'ı düzelt
+DOCKER_PYTHON_IMAGE=python:3.11-alpine    # ← config.py ile eşleştirilmeli
+
+# Seçenek B: config.py'deki anahtar adını değiştir
+DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_IMAGE", "python:3.11-alpine")
+```
+Seçenek A daha güvenlidir (geriye dönük uyumluluk korunur).
+
+---
+
+#### N-03 Detay: `web_server.py` — Private Attribute'lara Dış Modülden Erişim
+
+**Sorun:** `web_server.py` iki farklı satırda private (alt-çizgi ön ekli) attribute'lara doğrudan erişiyor:
+
+```python
+# web_server.py:321
+rag_docs = len(agent.docs._index)     # ❌ _index private
+
+# web_server.py:586
+for pr in agent.github._repo.get_pulls(...):  # ❌ _repo private
+```
+
+Bu durum encapsulation prensibini ihlal eder; U-15'te `sidar_agent.py`'deki benzer sorun düzeltilmişti (bkz. §3.70), ancak `web_server.py`'deki örnekler atlanmıştı.
+
+**Etki:** Kısa vadede çalışma hatasına yol açmaz; uzun vadede iç API değişikliklerinde sessiz kırılma riski.
+
+**Beklenen düzeltme:**
+```python
+# core/rag.py — public property ekle
+@property
+def document_count(self) -> int:
+    return len(self._index)
+
+# managers/github_manager.py — public method ekle
+def get_pull_requests_raw(self, state: str, limit: int):
+    return self._repo.get_pulls(state=state, sort="updated")[:limit]
+```
+
+---
+
+#### N-04 Detay: `environment.yml` — `packaging` Conda Bölümünde, Docker'da Versiyon Kısıtlaması Uygulanmıyor
+
+**Sorun:** `packaging>=23.0` conda bağımlılıkları bölümünde tanımlı; pip bölümünde değil:
+
+```yaml
+# environment.yml:11 (conda bölümü)
+- packaging>=23.0     # ← conda dep — Dockerfile'da pip'e aktarılmaz
+
+# Dockerfile pip bölümüne aktarılan pip kısmı — packaging YOK
+```
+
+`Dockerfile`, `environment.yml`'in yalnızca `pip:` alt bölümünü `requirements.txt`'e dönüştürür. `packaging` bu bölümde olmadığı için Docker build'a `>=23.0` kısıtlaması uygulanmaz. `managers/package_info.py:14` ise `from packaging.version import Version, InvalidVersion` ile bu modüle bağımlı.
+
+**Pratik risk:** `pip install --upgrade pip` ile gelen `packaging` genellikle 23+ sürümüne sahiptir; çoğu durumda sorun çıkmaz. Fakat resmi kısıtlamanın Docker ortamında güvence altında alınmamış olması bir tutarsızlıktır.
+
+**Beklenen düzeltme:**
+```yaml
+# environment.yml — pip bölümüne taşı
+- pip:
+    ...
+    - packaging>=23.0    # ← pip bölümüne alınmalı
+```
+
+---
+
