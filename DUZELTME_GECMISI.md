@@ -7,6 +7,23 @@
 ---
 
 
+### ✅ 2026-03-02 Ek Taşınan Çözümler (N/O serisi)
+
+Bu bölüm, `PROJE_RAPORU.md` içindeki öncelik bölümlerinden taşınan ve **çözüldü** olarak işaretlenen maddeleri merkezi geçmiş kaydı olarak listeler.
+
+- ✅ **N-02**: `.env.example:125` içindeki `DOCKER_IMAGE` adı `DOCKER_PYTHON_IMAGE` ile uyumlu hale getirildi.
+- ✅ **N-01**: `core/__init__.py:10` sürüm değeri `2.6.1` → güncel sürümle eşitlendi.
+- ✅ **O-02**: `web_server.py:325` satırındaki `len(agent.docs._index)` kullanımı public API ile düzeltildi.
+- ✅ **O-03**: `web_server.py:590` satırındaki `agent.github._repo.get_pulls(...)` erişimi `GitHubManager.get_pull_requests_detailed()` ile kapsüllenerek düzeltildi.
+- ✅ **O-05**: `web_server.py:92` tarafında RAG endpoint’leri (`/rag/docs`, `/rag/search`) rate-limit kapsamına alındı.
+- ✅ **N-03/N-04**: önceki taramalardaki düşük öncelikli kalanlar kapatıldı.
+- ✅ **O-01**: 4 modüldeki docstring sürüm bilgileri `2.6.1` → `2.7.0` güncellendi.
+- ✅ **O-04**: `sidar_agent.py:626` tarafındaki `self.github._repo.default_branch` erişimi `GitHubManager.default_branch` üzerinden düzeltildi.
+- ✅ **O-06**: `add_document_from_file()` içindeki gereksiz çift chunking kaldırıldı.
+
+---
+
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

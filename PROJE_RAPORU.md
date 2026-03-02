@@ -145,9 +145,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif yüksek öncelikli sorun kalmamıştır.
 >
-> ~~**N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış~~ → ✅ **ÇÖZÜLDÜ** (`.env.example` `DOCKER_PYTHON_IMAGE` olarak düzeltildi)
->
-> Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
+> Çözülen kalemlerin detayları rapor bütünlüğü için `DUZELTME_GECMISI.md` dosyasına taşınmıştır — bkz. “2026-03-02 Ek Taşınan Çözümler (N/O serisi)”.
 
 ---
 
@@ -155,15 +153,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif orta öncelikli sorun kalmamıştır.
 >
-> ~~**N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"`~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-02**: `web_server.py:325` `len(agent.docs._index)`~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-03**: `web_server.py:590` `agent.github._repo.get_pulls(...)`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.get_pull_requests_detailed()` eklendi)
->
-> ~~**O-05**: `web_server.py:92` RAG endpoint'leri rate limit dışı~~ → ✅ **ÇÖZÜLDÜ** (`/rag/docs` ve `/rag/search` `_RATE_GET_IO_PATHS`'e eklendi)
->
-> Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
+> Çözülen kalemlerin detayları rapor bütünlüğü için `DUZELTME_GECMISI.md` dosyasına taşınmıştır — bkz. “2026-03-02 Ek Taşınan Çözümler (N/O serisi)”.
 
 ---
 
@@ -172,22 +162,14 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif düşük öncelikli sorun kalmamıştır.
 >
-> ~~**N-03/N-04**~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-01**: 4 modül docstring `Sürüm: 2.6.1`~~ → ✅ **ÇÖZÜLDÜ** (4 dosyada `Sürüm: 2.7.0` olarak güncellendi)
->
-> ~~**O-04**: `sidar_agent.py:626` `self.github._repo.default_branch`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.default_branch` property; `self.github.default_branch` kullanılıyor)
->
-> ~~**O-06**: `add_document_from_file()` çift chunking~~ → ✅ **ÇÖZÜLDÜ** (gereksiz `_recursive_chunk_text` çağrısı kaldırıldı)
->
-> Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
+> Çözülen kalemlerin detayları rapor bütünlüğü için `DUZELTME_GECMISI.md` dosyasına taşınmıştır — bkz. “2026-03-02 Ek Taşınan Çözümler (N/O serisi)”.
 
 ---
 
 
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-02 dahil **40/40 kapatıldı**. **2026-03-02 taramasında** 4 yeni uyumsuzluk (N-01–N-04) + 6 ek bulgu (O-01–O-06) tespit edilmişti; N-01–N-04 + O-02 **2026-03-02** yamasıyla giderildi. Kalan açık: **5 sorun** (O-01, O-03, O-04, O-05, O-06).
+> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-01–O-06 dahil tüm bilinen kalemler kapatılmıştır. Çözüm kayıtları `DUZELTME_GECMISI.md` içinde tutulmaktadır.
 
 ### 8.1 Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
 
