@@ -1436,8 +1436,6 @@ let isStreaming    = false;
 let msgCounter     = 0;
 let activeController = null;
 let currentRepo    = 'niluferbagevi-gif/sidar_project';
-let currentLocalProjectPath = '';
-let currentLocalProjectName = 'sidar_project';
 let currentBranch  = 'main';
 let currentSessionId = null;
 let attachedFileContent = null;
@@ -1496,14 +1494,14 @@ async function loadGitInfo() {
     if (sbl) sbl.textContent = branch;
 
     const srl = document.getElementById('sidebar-repo-label');
-    if (srl) srl.textContent = currentLocalProjectName || 'sidar_project';
+    if (srl) srl.textContent = repo.split('/').pop() || repo || 'sidar_project';
 
     // Görev paneli seçici etiketleri
     const branchLabel = document.getElementById('branch-label');
     if (branchLabel) branchLabel.textContent = branch;
 
     const repoLabel = document.getElementById('repo-label');
-    if (repoLabel) repoLabel.textContent = currentLocalProjectName || 'sidar_project';
+    if (repoLabel && repo) repoLabel.textContent = repo;
 
     // PR Çubuğu: sadece main/master dışı dallarda göster
     const prBar = document.getElementById('pr-bar');
@@ -1530,29 +1528,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   loadGitInfo();
   loadModelInfo();
-  loadLocalProjectInfo();
 });
-
-async function loadLocalProjectInfo() {
-  try {
-    const data = await (await fetch('/local-projects')).json();
-    const activePath = data.active_project || '';
-    const activeName = activePath ? activePath.split('/').pop() : '';
-    if (activePath) {
-      currentLocalProjectPath = activePath;
-      currentLocalProjectName = activeName || 'sidar_project';
-    } else if (Array.isArray(data.projects) && data.projects.length > 0) {
-      currentLocalProjectPath = data.projects[0].path || '';
-      currentLocalProjectName = data.projects[0].name || 'sidar_project';
-    }
-    const repoLabel = document.getElementById('repo-label');
-    if (repoLabel) repoLabel.textContent = currentLocalProjectName;
-    const srl = document.getElementById('sidebar-repo-label');
-    if (srl) srl.textContent = currentLocalProjectName;
-  } catch {
-    // Sessizce geç
-  }
-}
 
 async function loadSessions() {
   try {
@@ -1717,9 +1693,6 @@ function startTask() {
 }
 
 function quickTask(text) {
-  if (text === 'Proje dizinini listele ve yapıyı açıkla' && currentLocalProjectPath) {
-    text = `Proje dizinini listele ve yapıyı açıkla. Çalışılacak yerel proje yolu: ${currentLocalProjectPath}. Lütfen bu yolu baz alarak dizin yapısını çıkar.`;
-  }
   document.getElementById('task-input').value = text;
   startTask();
 }
@@ -1996,10 +1969,11 @@ async function openRepoModal() {
 
   if (!_cachedRepos) {
     document.getElementById('repo-list').innerHTML =
-      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Yerel projeler yükleniyor…</div>';
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Depolar yükleniyor…</div>';
     try {
-      const data = await (await fetch('/local-projects')).json();
-      _cachedRepos = data.projects || [];
+      const ownerHint = (currentRepo || '').includes('/') ? currentRepo.split('/')[0] : '';
+      const data = await (await fetch(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
+      _cachedRepos = data.repos || [];
     } catch {
       _cachedRepos = [];
     }
@@ -2012,20 +1986,20 @@ async function openRepoModal() {
 function renderRepos(list) {
   if (!list || list.length === 0) {
     document.getElementById('repo-list').innerHTML =
-      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Gösterilecek yerel proje bulunamadı.</div>';
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Gösterilecek repo bulunamadı.</div>';
     return;
   }
   document.getElementById('repo-list').innerHTML = list.map(r => {
-    const name = r.name || '';
-    const path = r.path || '';
-    const selected = path === currentLocalProjectPath ? 'selected' : '';
-    const gitLabel = r.is_git ? 'git repo' : 'dizin';
+    const name = r.full_name || '';
+    const selected = name === currentRepo ? 'selected' : '';
+    const defBranch = r.default_branch || 'main';
+    const privacy = r.private === 'true' ? 'private' : 'public';
     return `
-    <div class="repo-item ${selected}" onclick="selectRepo(${JSON.stringify(path)}, ${JSON.stringify(name)})">
+    <div class="repo-item ${selected}" onclick="selectRepo('${name}')">
       <div class="repo-item-icon" style="font-size:17px">📁</div>
       <div class="repo-item-info">
         <div class="repo-item-name">${escHtml(name)}</div>
-        <div class="repo-item-meta">${escHtml(path)} · ${gitLabel}</div>
+        <div class="repo-item-meta">${escHtml(defBranch)} · ${privacy}</div>
       </div>
       <span class="repo-item-check">✓</span>
     </div>`;
@@ -2034,39 +2008,38 @@ function renderRepos(list) {
 
 function filterRepos(q) {
   const query = q.toLowerCase();
-  renderRepos((_cachedRepos || []).filter(r => {
-    const name = (r.name || '').toLowerCase();
-    const path = (r.path || '').toLowerCase();
-    return name.includes(query) || path.includes(query);
-  }));
+  renderRepos((_cachedRepos || []).filter(r => (r.full_name || '').toLowerCase().includes(query)));
 }
 
-async function selectRepo(path, name) {
+async function selectRepo(name) {
   closeModal('repo-modal');
-  if (!path || path === currentLocalProjectPath) return;
+  if (!name || name === currentRepo) return;
 
   try {
-    const res = await fetch('/set-local-project', {
+    const res = await fetch('/set-repo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ repo: name }),
     });
     const data = await res.json();
     if (!data.success) {
-      alert(`Yerel proje seçilemedi: ${data.message || data.error || 'Bilinmeyen hata'}`);
+      alert(`Repo değiştirilemedi: ${data.message || data.error || 'Bilinmeyen hata'}`);
       return;
     }
   } catch (e) {
-    console.warn('Yerel proje API hatası:', e);
-    alert('Sunucuya bağlanılamadı, yerel proje seçilemedi.');
+    console.warn('Repo API hatası:', e);
+    alert('Sunucuya bağlanılamadı, repo değiştirilemedi.');
     return;
   }
 
-  currentLocalProjectPath = path;
-  currentLocalProjectName = name || path.split('/').pop() || 'sidar_project';
-  document.getElementById('repo-label').textContent = currentLocalProjectName;
+  currentRepo = name;
+  document.getElementById('repo-label').textContent = name;
   const srl = document.getElementById('sidebar-repo-label');
-  if (srl) srl.textContent = currentLocalProjectName;
+  if (srl) srl.textContent = name.split('/').pop() || name;
+
+  const prHead = document.getElementById('pr-head')?.textContent || currentBranch || 'main';
+  const viewBtn = document.getElementById('pr-view-btn');
+  if (viewBtn) viewBtn.href = `https://github.com/${name}/compare/main...${prHead}`;
 }
 
 async function openBranchModal() {

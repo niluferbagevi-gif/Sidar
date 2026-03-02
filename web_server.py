@@ -93,8 +93,6 @@ _RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/fil
 _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
-_LOCAL_PROJECTS_ROOT = Path.home()
-_active_local_project: Path | None = None
 
 
 async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
@@ -395,71 +393,6 @@ async def delete_session(session_id: str):
             "active_session": agent.memory.active_session_id
         })
     return JSONResponse({"success": False, "error": "Silinemedi."}, status_code=500)
-
-
-def _default_local_projects_root() -> Path:
-    """Yerel proje kök klasörünü döndürür (varsayılan: /home/niluf, yoksa home)."""
-    preferred = Path("/home/niluf")
-    return preferred if preferred.exists() and preferred.is_dir() else _LOCAL_PROJECTS_ROOT
-
-
-def _safe_project_path(raw_path: str, root: Path) -> Path:
-    """İstemciden gelen yolu kök altında güvenli bir dizine çözümler."""
-    candidate = Path(raw_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = (root / candidate)
-    resolved = candidate.resolve()
-    resolved.relative_to(root.resolve())
-    if not resolved.exists() or not resolved.is_dir():
-        raise ValueError("Geçersiz proje yolu")
-    return resolved
-
-
-@app.get("/local-projects")
-async def local_projects():
-    """Yerel proje klasörlerini listeler."""
-    root = _default_local_projects_root().resolve()
-    if not root.exists() or not root.is_dir():
-        return JSONResponse({"success": False, "error": f"Kök klasör bulunamadı: {root}", "projects": []}, status_code=404)
-
-    projects = []
-    for item in sorted(root.iterdir(), key=lambda p: p.name.lower()):
-        if not item.is_dir() or item.name.startswith('.'):
-            continue
-        has_git = (item / ".git").exists()
-        projects.append({
-            "name": item.name,
-            "path": str(item),
-            "is_git": has_git,
-        })
-
-    active = str(_active_local_project) if _active_local_project else ""
-    return JSONResponse({
-        "success": True,
-        "root": str(root),
-        "active_project": active,
-        "projects": projects,
-    })
-
-
-@app.post("/set-local-project")
-async def set_local_project(request: Request):
-    """Aktif yerel proje klasörünü değiştirir."""
-    global _active_local_project
-
-    body = await request.json()
-    project_path = body.get("path", "").strip()
-    if not project_path:
-        return JSONResponse({"success": False, "error": "Proje yolu boş."}, status_code=400)
-
-    root = _default_local_projects_root().resolve()
-    try:
-        resolved = _safe_project_path(project_path, root)
-    except Exception:
-        return JSONResponse({"success": False, "error": "Geçersiz proje yolu."}, status_code=400)
-
-    _active_local_project = resolved
-    return JSONResponse({"success": True, "path": str(resolved), "name": resolved.name})
 
 @app.get("/files")
 async def list_project_files(path: str = ""):
