@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: 2026-03-01 — V-01/V-02/V-03 yamaları uygulandı — Tüm sorunlar kapatıldı ✅)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — N-01–N-04 yeni bulgular eklendi — Kod v2.7.0 ile tam doğrulama tamamlandı)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
-**Versiyon:** SidarAgent v2.6.1 ✅ (kod + rapor tam senkronize)
+**Versiyon:** SidarAgent v2.7.0 ⚠️ (kod v2.7.0 — rapor ve bazı bileşenler hâlâ v2.6.1 gösteriyor — bkz. N-01)
 **Toplam Dosya:** ~35 kaynak dosyası, ~10.400+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / **N-01–N-04 yeni bulgular: 2026-03-02**
 
 ---
 
@@ -1509,33 +1509,47 @@ await asyncio.to_thread(
 
 ## 4. Mevcut Kritik Hatalar
 
-> ✅ Mevcut kritik hata bulunmamaktadır. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. §3.
+> ✅ 2026-03-02 taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. §3.
 
 ---
 
 ## 5. Yüksek Öncelikli Sorunlar
 
-> ✅ Mevcut yüksek öncelikli sorun bulunmamaktadır. Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
+> ⚠️ **1 aktif yüksek öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+>
+> **N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış — `config.py:295` `DOCKER_PYTHON_IMAGE` okuyor. Kullanıcının Docker sandbox imajı özelleştirmesi sessizce yoksayılır. Bkz. §8.4 N-02.
+>
+> Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
 
 ---
 
 ## 6. Orta Öncelikli Sorunlar
 
-> ✅ Mevcut orta öncelikli sorun bulunmamaktadır. Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
+> ⚠️ **1 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+>
+> **N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"` ve `Dockerfile:25` → `LABEL version="2.6.1"` — Kod v2.7.0'a güncellenmiş ancak bu dosyalar eski sürümü gösteriyor. Bkz. §8.4 N-01.
+>
+> Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
 
 ---
 
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ✅ Mevcut düşük öncelikli sorun bulunmamaktadır. Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
+> ⚠️ **2 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+>
+> **N-03**: `web_server.py:321` `agent.docs._index` ve `web_server.py:586` `agent.github._repo` — private attribute'lara dış modülden erişim (encapsulation ihlali). Bkz. §8.4 N-03.
+>
+> **N-04**: `environment.yml:11` `packaging>=23.0` conda bölümünde — Docker build'da pip bölümüne aktarılmaz; versiyon kısıtlaması Docker ortamında güvence altında değil. Bkz. §8.4 N-04.
+>
+> Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
 
 ---
 
 
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: 2026-03-01 (Son güncelleme: 2026-03-01 — V-01–V-03 yamaları uygulandı) — Önceki 17 uyumsuzluktan **17'si**, U-01–U-15 taramasındaki **15 uyumsuzluktan 15'i**, yeni doğrulama taramasındaki **3 uyumsuzluktan (V-01–V-03) 3'ü** giderilmiştir. **Toplam: 35/35 — Tüm uyumsuzluklar kapatıldı ✅**
+> Son kontrol tarihi: **2026-03-02** (Önceki: 2026-03-01 — V-01–V-03 yamaları uygulandı) — Önceki 17 uyumsuzluktan **17'si**, U-01–U-15 taramasındaki **15 uyumsuzluktan 15'i**, V-01–V-03 taramasındaki **3 uyumsuzluktan 3'ü** giderilmiştir. **2026-03-02 taramasında 4 yeni uyumsuzluk (N-01–N-04) tespit edildi.** Toplam: 35/35 kapatıldı + 4 yeni açık sorun.
 
 ### 8.1 Önceki Sürümlerde Giderilen Uyumsuzluklar (Kapalı)
 
@@ -1953,6 +1967,140 @@ remote = result.decode().strip()
 
 ---
 
+### 8.4 Yeni Doğrulama Taraması — N-01–N-04 (2026-03-02 Güncel Bulgular)
+
+> Tespit tarihi: 2026-03-02 | Kod v2.7.0 ile eksiksiz satır satır doğrulama yapılmıştır.
+> **Önceki 35 sorunun TAMAMI kapatılmış olduğu doğrulandı ✅**
+> Yeni tespit edilen 4 sorun aşağıda listelenmiştir.
+
+| # | Dosya A | Dosya B | Uyumsuzluk Açıklaması | Önem | Durum |
+|---|---------|---------|----------------------|------|-------|
+| N-01 | `core/__init__.py:10` (`__version__ = "2.6.1"`) | `config.py:212`, `sidar_agent.py:86` (`VERSION = "2.7.0"`) | Versiyon uyumsuzluğu: core paketi v2.6.1, kod tabanı v2.7.0 | 🟡 ORTA | 🔴 Açık |
+| N-02 | `.env.example:125` (`DOCKER_IMAGE=...`) | `config.py:295` (`os.getenv("DOCKER_PYTHON_IMAGE", ...)`) | `.env.example` ortam değişkeni adı yanlış — kullanıcı ayarı sessizce yoksayılır | 🔴 YÜKSEK | 🔴 Açık |
+| N-03 | `web_server.py:321` (`agent.docs._index`) | `core/rag.py` (`_index` private) | Private iç değişkene dış modülden doğrudan erişim (encapsulation ihlali) | 🟢 DÜŞÜK | 🔴 Açık |
+| N-04 | `environment.yml:11` (`packaging>=23.0` conda bölümünde) | `managers/package_info.py` (`from packaging.version import Version`) | `packaging` pip bölümünde değil; Docker build'da versiyon kısıtlaması uygulanmaz | 🟢 DÜŞÜK | 🔴 Açık |
+
+---
+
+#### N-01 Detay: `core/__init__.py` — Versiyon v2.6.1 Eski (Kod v2.7.0'da)
+
+**Sorun:** Kod tabanı v2.7.0'a güncellenmiş ancak `core/__init__.py` ve `Dockerfile` hâlâ v2.6.1 gösteriyor:
+
+```python
+# core/__init__.py:10
+__version__ = "2.6.1"   # ❌ Eski — v2.7.0 olmalı
+
+# Dockerfile:25
+LABEL version="2.6.1"   # ❌ Eski — v2.7.0 olmalı
+
+# config.py:212  ← DOĞRU
+VERSION: str = "2.7.0"
+
+# agent/sidar_agent.py:86  ← DOĞRU
+VERSION = "2.7.0"
+```
+
+Ayrıca `PROJE_RAPORU.md:5` başlığı da hâlâ `v2.6.1` göstermekteydi (bu güncellemeyle düzeltildi).
+
+**Etki:** Çalışma zamanına doğrudan etkisi yok; `import core; core.__version__` sorgulandığında yanlış versiyon döner. Dağıtım süreçleri (CI/CD, Docker image tag) etkilenebilir.
+
+**Beklenen düzeltme:**
+```python
+# core/__init__.py:10
+__version__ = "2.7.0"
+
+# Dockerfile:25
+LABEL version="2.7.0"
+```
+
+---
+
+#### N-02 Detay: `.env.example` — `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` Ortam Değişkeni Adı Yanlış
+
+**Sorun:** `.env.example` belgesinde `DOCKER_IMAGE` adıyla ortam değişkeni sunulmuş, fakat `config.py`'de bu değişken farklı bir adla okunuyor:
+
+```bash
+# .env.example:125
+DOCKER_IMAGE=python:3.11-alpine    # ← Belgede gösterilen ad
+```
+
+```python
+# config.py:295
+DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+# ❌ kod "DOCKER_PYTHON_IMAGE" okuyor ama .env.example "DOCKER_IMAGE" gösteriyor
+```
+
+Kullanıcı `.env` dosyasına `DOCKER_IMAGE=my-custom:3.11` yazsa da bu değer hiçbir zaman okunamaz; kod her zaman varsayılan `python:3.11-alpine` imajını kullanır.
+
+**Etki:** Docker sandbox imajı özelleştirilmek istendiğinde sessizce yoksayılır. Hata mesajı veya uyarı üretilmez; kullanıcı neden değişikliğin işe yaramadığını anlayamaz.
+
+**Beklenen düzeltme (iki seçenek):**
+```bash
+# Seçenek A: .env.example'ı düzelt
+DOCKER_PYTHON_IMAGE=python:3.11-alpine    # ← config.py ile eşleştirilmeli
+
+# Seçenek B: config.py'deki anahtar adını değiştir
+DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_IMAGE", "python:3.11-alpine")
+```
+Seçenek A daha güvenlidir (geriye dönük uyumluluk korunur).
+
+---
+
+#### N-03 Detay: `web_server.py` — Private Attribute'lara Dış Modülden Erişim
+
+**Sorun:** `web_server.py` iki farklı satırda private (alt-çizgi ön ekli) attribute'lara doğrudan erişiyor:
+
+```python
+# web_server.py:321
+rag_docs = len(agent.docs._index)     # ❌ _index private
+
+# web_server.py:586
+for pr in agent.github._repo.get_pulls(...):  # ❌ _repo private
+```
+
+Bu durum encapsulation prensibini ihlal eder; U-15'te `sidar_agent.py`'deki benzer sorun düzeltilmişti (bkz. §3.70), ancak `web_server.py`'deki örnekler atlanmıştı.
+
+**Etki:** Kısa vadede çalışma hatasına yol açmaz; uzun vadede iç API değişikliklerinde sessiz kırılma riski.
+
+**Beklenen düzeltme:**
+```python
+# core/rag.py — public property ekle
+@property
+def document_count(self) -> int:
+    return len(self._index)
+
+# managers/github_manager.py — public method ekle
+def get_pull_requests_raw(self, state: str, limit: int):
+    return self._repo.get_pulls(state=state, sort="updated")[:limit]
+```
+
+---
+
+#### N-04 Detay: `environment.yml` — `packaging` Conda Bölümünde, Docker'da Versiyon Kısıtlaması Uygulanmıyor
+
+**Sorun:** `packaging>=23.0` conda bağımlılıkları bölümünde tanımlı; pip bölümünde değil:
+
+```yaml
+# environment.yml:11 (conda bölümü)
+- packaging>=23.0     # ← conda dep — Dockerfile'da pip'e aktarılmaz
+
+# Dockerfile pip bölümüne aktarılan pip kısmı — packaging YOK
+```
+
+`Dockerfile`, `environment.yml`'in yalnızca `pip:` alt bölümünü `requirements.txt`'e dönüştürür. `packaging` bu bölümde olmadığı için Docker build'a `>=23.0` kısıtlaması uygulanmaz. `managers/package_info.py:14` ise `from packaging.version import Version, InvalidVersion` ile bu modüle bağımlı.
+
+**Pratik risk:** `pip install --upgrade pip` ile gelen `packaging` genellikle 23+ sürümüne sahiptir; çoğu durumda sorun çıkmaz. Fakat resmi kısıtlamanın Docker ortamında güvence altında alınmamış olması bir tutarsızlıktır.
+
+**Beklenen düzeltme:**
+```yaml
+# environment.yml — pip bölümüne taşı
+- pip:
+    ...
+    - packaging>=23.0    # ← pip bölümüne alınmalı
+```
+
+---
+
 ## 9. Bağımlılık Analizi
 
 ### `environment.yml` — Güncel Durum Tablosu
@@ -1964,7 +2112,7 @@ remote = result.decode().strip()
 | ~~`requests`~~ | — | *Kaldırıldı* | ✅ Tüm HTTP httpx ile yapılıyor |
 | `httpx` | ≥0.25.0 | LLMClient, WebSearch, PackageInfo, RAG | ✅ Ana HTTP kütüphanesi |
 | `pydantic` | ≥2.4.0 | `ToolCall` modeli, validation | ✅ v2 API doğru |
-| `torch` | ≥2.4.0 | GPU embedding, CUDA kontrolü | ✅ CUDA 12.1 wheel |
+| `torch` | ≥2.4.0 | GPU embedding, CUDA kontrolü | ✅ CUDA 12.4 wheel (cu124) |
 | `torchvision` | ≥0.19.0 | PyTorch bağımlılığı | ✅ Wheel ile |
 | `psutil` | ≥5.9.5 | CPU/RAM izleme | ✅ Aktif |
 | `nvidia-ml-py` | ≥12.535.77 | GPU sıcaklık/kullanım | ✅ WSL2 fallback ile |
@@ -2114,11 +2262,12 @@ async for raw_bytes in resp.aiter_bytes():
 | Web Fetch Sandbox | ⚠️ HTML temizleniyor ama URL sınırlaması yok | Orta |
 | Gizli Yönetim | ✅ `.env` + `.gitignore` | İyi |
 | Binary Dosya Güvenliği | ✅ `SAFE_EXTENSIONLESS` whitelist — uzantısız binary dosyalar engelleniyor (§3.35) | İyi |
-| CORS | ⚠️ Localhost kısıtlı ama port 7860 sabit kodlanmış (U-05) | Orta |
+| CORS | ✅ Dinamik port — `cfg.WEB_PORT` kullanıyor (U-05 düzeltildi) | İyi |
 | favicon.ico | ✅ 204 ile sessizce geçiştiriliyor | İyi |
 | Symlink Traversal | ✅ `Path.resolve()` ile önleniyor | İyi |
-| Git URL Ayrıştırma | ⚠️ `rstrip(".git")` yanlış — suffix yerine karakter kümesi siliyor (U-13) | Orta |
-| Dal Adı Güvenliği | ⚠️ Branch name `strip()` ile temizleniyor; git flag validation yok (U-10) | Orta |
+| Git URL Ayrıştırma | ✅ `removesuffix(".git")` — düzeltildi (U-13) | İyi |
+| Dal Adı Güvenliği | ✅ `_BRANCH_RE` regex ile validate ediliyor (U-10 düzeltildi) | İyi |
+| Docker Image Konfigürasyonu | ⚠️ `.env.example` yanlış değişken adı (`DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE`) — N-02 | Orta |
 
 ---
 
