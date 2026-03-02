@@ -457,6 +457,174 @@
     .todo-text.completed   { color: var(--text-muted); text-decoration: line-through; }
     .todo-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px; }
 
+    /* ── Activity Panel (Canlı Arka Plan Aktivitesi) ─────────── */
+    #activity-panel {
+      position: fixed;
+      bottom: 90px;
+      right: 20px;
+      width: 320px;
+      max-height: 460px;
+      background: var(--bg2);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 8px 40px rgba(0,0,0,.55);
+      z-index: 400;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform: translateY(18px) scale(.97);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .22s cubic-bezier(.4,0,.2,1), opacity .22s ease;
+    }
+    #activity-panel.ap-visible {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .ap-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 8px;
+    }
+    .ap-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      flex: 1;
+      min-width: 0;
+    }
+    .ap-spinner {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      animation: apPulse 1.2s ease-in-out infinite;
+    }
+    .ap-spinner.ap-done { background: var(--green); animation: none; }
+    @keyframes apPulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.4; transform:scale(.7); }
+    }
+    .ap-timer {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    .ap-close {
+      background: none; border: none;
+      cursor: pointer; color: var(--text-muted);
+      font-size: 17px; padding: 0 2px; line-height: 1;
+      transition: color .12s; flex-shrink: 0;
+    }
+    .ap-close:hover { color: var(--text); }
+    .ap-thought {
+      display: none;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 8px 14px;
+      background: rgba(124,58,237,.07);
+      border-bottom: 1px solid rgba(124,58,237,.14);
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .ap-thought-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+    .ap-thought-text {
+      flex: 1; line-height: 1.5; word-break: break-word;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+    .ap-current {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .ap-current-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      animation: apPulse 1s ease-in-out infinite;
+    }
+    .ap-feed {
+      overflow-y: auto; flex: 1; padding: 5px 0; min-height: 0;
+    }
+    .ap-feed::-webkit-scrollbar { width: 3px; }
+    .ap-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .ap-feed-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 3px 14px;
+      font-size: 11px;
+      color: var(--text-muted);
+      animation: fadeIn .15s ease;
+    }
+    .ap-feed-item.ap-item-done { color: var(--text-dim); }
+    .ap-feed-icon { flex-shrink: 0; font-size: 11px; margin-top: 1px; }
+    .ap-feed-text  { flex: 1; line-height: 1.4; }
+    .ap-todo-section {
+      border-top: 1px solid var(--border);
+      flex-shrink: 0; max-height: 150px; overflow-y: auto;
+    }
+    .ap-todo-section::-webkit-scrollbar { width: 3px; }
+    .ap-todo-section::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .ap-todo-hdr {
+      padding: 7px 14px 3px;
+      font-size: 10px; font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .5px;
+    }
+    .ap-todo-item {
+      display: flex; align-items: flex-start;
+      gap: 6px; padding: 3px 14px;
+      font-size: 11px; color: var(--text-dim);
+    }
+    .ap-todo-icon { flex-shrink: 0; font-size: 10px; margin-top: 2px; }
+    .ap-todo-text.ap-todo-ip   { color: var(--accent); font-weight: 500; }
+    .ap-todo-text.ap-todo-done { color: var(--text-muted); text-decoration: line-through; }
+
+    /* Topbar'daki aktivite toggle butonu */
+    #ap-toggle-btn {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border: 1px solid var(--accent2);
+      border-radius: 20px;
+      background: rgba(124,58,237,.12);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    #ap-toggle-btn:hover { background: rgba(124,58,237,.2); }
+    #ap-toggle-btn.ap-btn-active { display: flex; }
+    #ap-toggle-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: apPulse 1.2s ease-in-out infinite;
+    }
+
     /* Todo topbar indikatörü */
     #todo-indicator {
       display: none;
@@ -1307,6 +1475,11 @@
         <span id="todo-indicator-dot"></span>
         <span id="todo-indicator-text">0 görev</span>
       </button>
+      <!-- Activity Panel toggle — streaming sırasında otomatik belirir -->
+      <button id="ap-toggle-btn" onclick="apToggle()" title="Arka plan aktivitesini göster/gizle">
+        <span id="ap-toggle-dot"></span>
+        <span id="ap-toggle-label">Çalışıyor</span>
+      </button>
       <button class="btn-icon" id="theme-btn" onclick="toggleTheme()" title="Tema değiştir">🌙</button>
       <button class="btn-icon" onclick="openShortcuts()" title="Klavye kısayolları">⌨</button>
       <button class="btn-ghost" onclick="openStatus()">
@@ -1905,6 +2078,8 @@ async function sendText(text) {
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.display = 'none'; }
   if (stopBtn) stopBtn.style.display = 'flex';
 
+  apShow();   // Activity Panel'i aç
+
   appendUser(text);
   const msgId = createSidarMsg();
 
@@ -1948,7 +2123,8 @@ async function sendText(text) {
         try {
           const parsed = JSON.parse(line.slice(6).trim());
           if (parsed.done) { streamDone = true; break; }
-          if (parsed.tool_call) { appendToolStep(msgId, parsed.tool_call); }
+          if (parsed.thought)    { apSetThought(parsed.thought); }
+          if (parsed.tool_call)  { appendToolStep(msgId, parsed.tool_call); }
           if (parsed.chunk !== undefined) { accumulated += parsed.chunk; updateStreaming(msgId, accumulated); }
         } catch { /* skip */ }
       }
@@ -1967,6 +2143,7 @@ async function sendText(text) {
     isStreaming = false;
     if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
     if (stopBtn) stopBtn.style.display = 'none';
+    apDone();    // Activity Panel'i tamamlandı moduna al
     loadSessions();
   }
 }
@@ -2350,6 +2527,7 @@ function appendToolStep(msgId, toolName) {
   step.textContent = label;
   container.appendChild(step);
   scrollBottom();
+  apAddTool(toolName, label);  // Activity Panel'i güncelle
 }
 
 /* ─── Oturum Dışa Aktarma ────────────────────────────────── */
@@ -2475,6 +2653,150 @@ function openShortcuts() {
   document.getElementById('shortcuts-modal').classList.add('open');
 }
 
+/* ─── Activity Panel (Canlı Arka Plan Aktivitesi) ────────── */
+let _apVisible      = false;
+let _apStartTime    = 0;
+let _apTimerInt     = null;
+let _apTodoPollInt  = null;
+let _apLastToolEl   = null;   // Feed'deki son araç satırı (tamamlandı işareti için)
+let _apDoneTimeout  = null;
+
+function apShow() {
+  const panel = document.getElementById('activity-panel');
+  if (!panel) return;
+  // Durumu sıfırla
+  document.getElementById('ap-feed').innerHTML       = '';
+  document.getElementById('ap-thought').style.display  = 'none';
+  document.getElementById('ap-current').style.display  = 'none';
+  document.getElementById('ap-todo-section').style.display = 'none';
+  document.getElementById('ap-title-text').textContent = 'Sidar Çalışıyor…';
+  document.getElementById('ap-timer').textContent      = '0s';
+  const sp = document.getElementById('ap-spinner');
+  if (sp) { sp.classList.remove('ap-done'); }
+  _apLastToolEl = null;
+  if (_apDoneTimeout) { clearTimeout(_apDoneTimeout); _apDoneTimeout = null; }
+
+  _apStartTime = Date.now();
+  _apVisible   = true;
+  panel.classList.add('ap-visible');
+
+  // Topbar toggle butonunu göster
+  const btn = document.getElementById('ap-toggle-btn');
+  if (btn) btn.classList.add('ap-btn-active');
+
+  // Saniye sayacı
+  if (_apTimerInt) clearInterval(_apTimerInt);
+  _apTimerInt = setInterval(() => {
+    const el = document.getElementById('ap-timer');
+    if (el) el.textContent = Math.floor((Date.now() - _apStartTime) / 1000) + 's';
+  }, 1000);
+
+  // Todo listesini 2 saniyede bir güncelle (ajan todo_write kullanıyorsa)
+  if (_apTodoPollInt) clearInterval(_apTodoPollInt);
+  _apTodoPollInt = setInterval(apRefreshTodos, 2000);
+}
+
+function apHide() {
+  const panel = document.getElementById('activity-panel');
+  if (panel) panel.classList.remove('ap-visible');
+  _apVisible = false;
+  const btn = document.getElementById('ap-toggle-btn');
+  if (btn) btn.classList.remove('ap-btn-active');
+  if (_apTimerInt)    { clearInterval(_apTimerInt);    _apTimerInt    = null; }
+  if (_apTodoPollInt) { clearInterval(_apTodoPollInt); _apTodoPollInt = null; }
+}
+
+function apToggle() {
+  const panel = document.getElementById('activity-panel');
+  if (!panel) return;
+  if (panel.classList.contains('ap-visible')) {
+    panel.classList.remove('ap-visible');
+  } else {
+    panel.classList.add('ap-visible');
+  }
+}
+
+function apDone() {
+  // Önceki aracı tamamlandı olarak işaretle
+  if (_apLastToolEl) {
+    const icon = _apLastToolEl.querySelector('.ap-feed-icon');
+    if (icon) icon.textContent = '✅';
+    _apLastToolEl.classList.add('ap-item-done');
+    _apLastToolEl = null;
+  }
+  // Aktif araç göstergesini gizle
+  const cur = document.getElementById('ap-current');
+  if (cur) cur.style.display = 'none';
+  // Başlığı güncelle
+  const titleEl = document.getElementById('ap-title-text');
+  if (titleEl) titleEl.textContent = '✓ Tamamlandı';
+  const sp = document.getElementById('ap-spinner');
+  if (sp) sp.classList.add('ap-done');
+  // Zamanlayıcıları durdur
+  if (_apTimerInt)    { clearInterval(_apTimerInt);    _apTimerInt    = null; }
+  if (_apTodoPollInt) { clearInterval(_apTodoPollInt); _apTodoPollInt = null; }
+  // Son todo durumunu çek
+  apRefreshTodos();
+  // 5 saniye sonra otomatik kapat
+  _apDoneTimeout = setTimeout(() => apHide(), 5000);
+}
+
+function apSetThought(text) {
+  const box  = document.getElementById('ap-thought');
+  const span = document.getElementById('ap-thought-text');
+  if (!box || !span) return;
+  span.textContent = text;
+  box.style.display = 'flex';
+}
+
+function apAddTool(toolName, label) {
+  // Önceki aracı tamamlandı işaretle
+  if (_apLastToolEl) {
+    const icon = _apLastToolEl.querySelector('.ap-feed-icon');
+    if (icon) icon.textContent = '✅';
+    _apLastToolEl.classList.add('ap-item-done');
+  }
+  // Aktif araç satırını güncelle
+  const cur      = document.getElementById('ap-current');
+  const curLabel = document.getElementById('ap-current-label');
+  if (cur && curLabel) {
+    curLabel.textContent = label;
+    cur.style.display = 'flex';
+  }
+  // Feed'e yeni satır ekle
+  const feed = document.getElementById('ap-feed');
+  if (!feed) return;
+  const item = document.createElement('div');
+  item.className = 'ap-feed-item';
+  item.innerHTML = `<span class="ap-feed-icon">⏳</span><span class="ap-feed-text">${label}</span>`;
+  feed.appendChild(item);
+  feed.scrollTop = feed.scrollHeight;
+  _apLastToolEl = item;
+}
+
+async function apRefreshTodos() {
+  try {
+    const data = await (await fetch('/todo')).json();
+    const tasks = data.tasks || [];
+    if (!tasks.length) return;
+    const section = document.getElementById('ap-todo-section');
+    const list    = document.getElementById('ap-todo-items');
+    if (!section || !list) return;
+    section.style.display = 'block';
+    const STATUS_ICON = { pending: '⬜', in_progress: '🔄', completed: '✅' };
+    const order = ['in_progress', 'pending', 'completed'];
+    const sorted = [...tasks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
+    list.innerHTML = sorted.map(t => {
+      const cls = t.status === 'in_progress' ? 'ap-todo-ip'
+                : t.status === 'completed'   ? 'ap-todo-done' : '';
+      return `<div class="ap-todo-item">
+        <span class="ap-todo-icon">${STATUS_ICON[t.status] || '⬜'}</span>
+        <span class="ap-todo-text ${cls}">${t.content}</span>
+      </div>`;
+    }).join('');
+  } catch { /* sessizce geç */ }
+}
+
 /* ─── Todo Panel (Claude Code TodoWrite uyumlu) ─────────── */
 let _todoPollTimer = null;
 
@@ -2581,6 +2903,37 @@ document.addEventListener('keydown', e => {
   }
 });
 </script>
+
+<!-- ── Activity Panel (Canlı Arka Plan Aktivitesi) ─────────── -->
+<div id="activity-panel">
+  <div class="ap-header">
+    <div class="ap-title">
+      <span class="ap-spinner" id="ap-spinner"></span>
+      <span id="ap-title-text">Sidar Çalışıyor…</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="ap-timer" id="ap-timer">0s</span>
+      <button class="ap-close" onclick="apHide()" title="Kapat">×</button>
+    </div>
+  </div>
+  <!-- Düşünce kutusu -->
+  <div class="ap-thought" id="ap-thought">
+    <span class="ap-thought-icon">💭</span>
+    <span class="ap-thought-text" id="ap-thought-text"></span>
+  </div>
+  <!-- Aktif araç -->
+  <div class="ap-current" id="ap-current">
+    <span class="ap-current-dot"></span>
+    <span id="ap-current-label">Hazırlanıyor…</span>
+  </div>
+  <!-- Tamamlanan adımlar -->
+  <div class="ap-feed" id="ap-feed"></div>
+  <!-- Görev listesi (todo_write kullanıldıysa) -->
+  <div class="ap-todo-section" id="ap-todo-section" style="display:none">
+    <div class="ap-todo-hdr">📋 Görevler</div>
+    <div id="ap-todo-items"></div>
+  </div>
+</div>
 
 <!-- ── Todo Görev Paneli ──────────────────────────────────── -->
 <div id="todo-panel">

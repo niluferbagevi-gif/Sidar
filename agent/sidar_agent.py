@@ -327,6 +327,9 @@ class SidarAgent:
                     ]
                     continue
 
+                # Düşünce sürecini UI'ya bildir (sentinel format: \x00THOUGHT:<thought>\x00)
+                _thought_safe = str(action_data.thought)[:300].replace('\x00', ' ')
+                yield f"\x00THOUGHT:{_thought_safe}\x00"
                 # Araç çağrısını UI'ya bildir (sentinel format: \x00TOOL:<name>\x00)
                 yield f"\x00TOOL:{tool_name}\x00"
 

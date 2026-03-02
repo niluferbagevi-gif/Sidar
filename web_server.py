@@ -232,7 +232,8 @@ async def chat(request: Request):
                 agent.memory.update_title(title)
 
             # Ajanın asenkron stream yanıtını bekle ve akıt
-            _TOOL_SENTINEL = re.compile(r'^\x00TOOL:(.+)\x00$')
+            _TOOL_SENTINEL    = re.compile(r'^\x00TOOL:([^\x00]+)\x00$')
+            _THOUGHT_SENTINEL = re.compile(r'^\x00THOUGHT:([^\x00]+)\x00$')
             async for chunk in agent.respond(user_message):
                 try:
                     disconnected = await request.is_disconnected()
@@ -241,9 +242,12 @@ async def chat(request: Request):
                 if disconnected:
                     logger.info("İstemci bağlantıyı kesti, stream durduruluyor.")
                     return
-                m = _TOOL_SENTINEL.match(chunk)
-                if m:
-                    yield f"data: {json.dumps({'tool_call': m.group(1)})}\n\n"
+                m_tool    = _TOOL_SENTINEL.match(chunk)
+                m_thought = _THOUGHT_SENTINEL.match(chunk)
+                if m_tool:
+                    yield f"data: {json.dumps({'tool_call': m_tool.group(1)})}\n\n"
+                elif m_thought:
+                    yield f"data: {json.dumps({'thought': m_thought.group(1)})}\n\n"
                 else:
                     yield f"data: {json.dumps({'chunk': chunk})}\n\n"
 
