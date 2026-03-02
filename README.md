@@ -110,6 +110,7 @@
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (23 araç)
 - **Talimat Dosyası Uyumu**: `SIDAR.md` ve `CLAUDE.md` dosyaları proje genelinde otomatik taranır; alt klasör talimatları üst klasörleri override edecek şekilde bağlama eklenir
+- **Hazır Şablon Dosyaları**: Proje kökünde varsayılan `SIDAR.md` ve `CLAUDE.md` dosyaları gelir; doğrudan düzenleyip kendi kurallarınızı yazabilirsiniz
 - **Mobil Uyum**: 768px altında hamburger menüsü + sidebar overlay
 - Koyu/Açık tema (localStorage tabanlı)
 - Klavye kısayolları (`Ctrl+K`, `Ctrl+L`, `Alt+T`, `Esc`)
