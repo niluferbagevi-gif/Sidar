@@ -160,8 +160,12 @@ class AutoHandle:
 
     def _try_read_file(self, t: str, raw: str) -> Tuple[bool, str]:
         # "göster" ve "içeriğ" çok geniş — execute_code, health, docs_add gibi komutları
-        # yanlışlıkla yakalar. Yalnızca açık "oku/incele/cat" bağlamında tetikle.
-        if re.search(r"(dosyayı?\s+oku|dosya\s+içeriğini\s+göster|incele\b|cat\b)", t):
+        # yanlışlıkla yakalar. Yalnızca açık dosya okuma bağlamında tetikle.
+        if re.search(
+            r"(dosyayı?\s+oku|dosya\s+içeriğini\s+göster|dosya\s+içeriğini\s+getir"
+            r"|içeriğini\s+getir|file\s+content|incele\b|cat\b)",
+            t,
+        ):
             path = self._extract_path(raw) or self.memory.get_last_file()
             if not path:
                 return True, "⚠ Hangi dosyayı okumamı istiyorsunuz? Lütfen dosya yolunu belirtin."
