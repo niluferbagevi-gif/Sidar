@@ -537,6 +537,36 @@ async def set_branch(request: Request):
         return JSONResponse({"success": False, "error": detail}, status_code=400)
 
 
+
+
+@app.get("/github-repos")
+async def github_repos(owner: str = "", q: str = ""):
+    """GitHub erişimi olan depo listesini döndürür (opsiyonel owner + arama filtresi)."""
+    agent = await get_agent()
+
+    # owner verilmezse aktif repodan owner türet
+    active_repo = (getattr(agent.github, "repo_name", "") or cfg.GITHUB_REPO or "").strip()
+    effective_owner = owner.strip()
+    if not effective_owner and "/" in active_repo:
+        effective_owner = active_repo.split("/", 1)[0]
+
+    ok, repos = agent.github.list_repos(owner=effective_owner, limit=200)
+    if not ok:
+        return JSONResponse({"success": False, "error": "Repo listesi alınamadı.", "repos": []}, status_code=400)
+
+    query = q.strip().lower()
+    if query:
+        repos = [r for r in repos if query in r.get("full_name", "").lower()]
+
+    repos = sorted(repos, key=lambda r: r.get("full_name", "").lower())
+    return JSONResponse({
+        "success": True,
+        "owner": effective_owner,
+        "repos": repos,
+        "active_repo": active_repo,
+    })
+
+
 @app.post("/set-repo")
 async def set_repo(request: Request):
     """GitHub deposunu çalışma zamanında değiştirir."""

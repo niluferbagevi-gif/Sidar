@@ -94,6 +94,51 @@ class GitHubManager:
             return True, f"Depo değiştirildi: {repo_name}"
         return False, f"Depo bulunamadı veya erişim reddedildi: {repo_name}"
 
+    def list_repos(self, owner: str = "", limit: int = 100) -> Tuple[bool, List[Dict[str, str]]]:
+        """
+        Erişilebilen depoları listeler.
+        owner verilirse yalnızca ilgili kullanıcı/organizasyon depoları döner.
+        """
+        if not self._gh:
+            return False, []
+        try:
+            repos = []
+            if owner:
+                owner_obj = self._gh.get_organization(owner)
+                source = owner_obj.get_repos(type="all")
+            else:
+                source = self._gh.get_user().get_repos(visibility="all")
+
+            for i, repo in enumerate(source):
+                if i >= limit:
+                    break
+                repos.append({
+                    "full_name": repo.full_name,
+                    "default_branch": repo.default_branch,
+                    "private": str(bool(getattr(repo, "private", False))).lower(),
+                })
+            return True, repos
+        except Exception:
+            # owner bir kullanıcı olabilir (organization değil)
+            if owner:
+                try:
+                    user_obj = self._gh.get_user(owner)
+                    repos = []
+                    for i, repo in enumerate(user_obj.get_repos(type="owner")):
+                        if i >= limit:
+                            break
+                        repos.append({
+                            "full_name": repo.full_name,
+                            "default_branch": repo.default_branch,
+                            "private": str(bool(getattr(repo, "private", False))).lower(),
+                        })
+                    return True, repos
+                except Exception as exc:
+                    logger.error("Repo listesi alınamadı (%s): %s", owner, exc)
+                    return False, []
+            logger.error("Repo listesi alınamadı")
+            return False, []
+
     def get_repo_info(self) -> Tuple[bool, str]:
         """Depo bilgilerini döndür."""
         if not self._repo:
