@@ -51,15 +51,19 @@ _FMT_SYS_ERR  = "[Sistem Hatası] {msg}"        # ayrıştırma / doğrulama hat
 # doğrudan güvenli araçlara yönlendiren hafif intent router.
 _DIRECT_ROUTE_ALLOWED_TOOLS = frozenset({
     "list_dir",
+    "ls",
     "read_file",
     "github_list_files",
     "github_read",
     "github_info",
+    "github_commits",
     "get_config",
     "health",
+    "audit",
     "docs_list",
     "glob_search",
     "grep_files",
+    "grep",
     "todo_read",
 })
 
@@ -79,7 +83,7 @@ class SidarAgent:
     Tamamen asenkron ağ istekleri, stream, yapısal veri ve sonsuz vektör hafıza uyumlu yapı.
     """
 
-    VERSION = "2.6.1"  # GPU Hızlandırma + WSL2 Desteği + Uyumsuzluk Yamaları
+    VERSION = "2.7.0"  # Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar
 
     def __init__(self, cfg: Config = None) -> None:
         self.cfg = cfg or Config()
@@ -119,6 +123,7 @@ class SidarAgent:
 
         self.todo = TodoManager()
         self._instructions_cache: Optional[str] = None
+        self._instructions_mtimes: Dict[str, float] = {}
 
         self.auto = AutoHandle(
             self.code, self.health, self.github, self.memory,
@@ -952,9 +957,11 @@ class SidarAgent:
             # Kabuk & Arama (Claude Code uyumlu)
             "run_shell":              self._tool_run_shell,
             "bash":                   self._tool_run_shell,     # alias
+            "shell":                  self._tool_run_shell,     # alias
             "glob_search":            self._tool_glob_search,
             "grep_files":             self._tool_grep_files,
             "grep":                   self._tool_grep_files,    # alias
+            "ls":                     self._tool_list_dir,      # alias
             # Görev Takibi
             "todo_write":             self._tool_todo_write,
             "todo_read":              self._tool_todo_read,
@@ -1030,10 +1037,9 @@ class SidarAgent:
         Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
         - Daha üst dizin dosyaları önce gelir.
         - Alt dizin dosyaları daha sonra gelerek öncelik alır.
+        - Dosya değişikliği (mtime) algılandığında otomatik olarak yeniden yükler.
+          Bu davranış Claude Code'un CLAUDE.md'yi her konuşmada taze okumasına eşdeğerdir.
         """
-        if self._instructions_cache is not None:
-            return self._instructions_cache
-
         root = Path(self.cfg.BASE_DIR)
         instruction_names = ("SIDAR.md", "CLAUDE.md")
         found_files = []
@@ -1043,6 +1049,22 @@ class SidarAgent:
 
         # Aynı dosya iki kez gelmesin, deterministik sırada olsun
         unique_files = sorted({p.resolve() for p in found_files if p.is_file()})
+
+        # Mevcut mtime'ları topla
+        current_mtimes: Dict[str, float] = {}
+        for path in unique_files:
+            try:
+                current_mtimes[str(path)] = path.stat().st_mtime
+            except Exception:
+                pass
+
+        # Cache geçerli mi? Hem içerik hem mtime eşleşmeli
+        if self._instructions_cache is not None and current_mtimes == self._instructions_mtimes:
+            return self._instructions_cache
+
+        # Değişiklik var veya ilk yükleme → yeniden oku
+        self._instructions_mtimes = current_mtimes
+
         if not unique_files:
             self._instructions_cache = ""
             return ""
