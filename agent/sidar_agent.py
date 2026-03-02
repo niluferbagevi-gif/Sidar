@@ -45,6 +45,19 @@ _FMT_TOOL_OK = (
 _FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"  # araç hatası (bilinmeyen araç vb.)
 _FMT_SYS_ERR  = "[Sistem Hatası] {msg}"        # ayrıştırma / doğrulama hatası
 
+# Kodex-benzeri kullanım için: basit/tek-adım istekleri ReAct döngüsüne girmeden
+# doğrudan güvenli araçlara yönlendiren hafif intent router.
+_DIRECT_ROUTE_ALLOWED_TOOLS = frozenset({
+    "list_dir",
+    "read_file",
+    "github_list_files",
+    "github_read",
+    "github_info",
+    "get_config",
+    "health",
+    "docs_list",
+})
+
 # ─────────────────────────────────────────────
 #  PYDANTIC VERİ MODELİ (YAPISAL ÇIKTI)
 # ─────────────────────────────────────────────
@@ -134,6 +147,14 @@ class SidarAgent:
         async with self._lock:
             await asyncio.to_thread(self.memory.add, "user", user_input)
             handled, quick_response = await self.auto.handle(user_input)
+
+            # AutoHandle yakalayamadıysa hafif LLM router ile tek-adım araç dene
+            if not handled:
+                routed = await self._try_direct_tool_route(user_input)
+                if routed is not None:
+                    handled = True
+                    quick_response = routed
+
             if handled:
                 await asyncio.to_thread(self.memory.add, "assistant", quick_response)
 
@@ -150,6 +171,41 @@ class SidarAgent:
         # ReAct döngüsünü akıştır
         async for chunk in self._react_loop(user_input):
             yield chunk
+
+    async def _try_direct_tool_route(self, user_input: str) -> Optional[str]:
+        """
+        Basit/tek-adım komutları LLM tabanlı hafif bir router ile doğrudan araca yönlendir.
+        Böylece her yeni ifade için AutoHandle regex ekleme ihtiyacı azalır.
+        """
+        router_system = (
+            "Kullanıcı isteğini TEK adımda çözülebilecekse uygun aracı seç. "
+            "Yalnızca şu şemada JSON döndür: "
+            '{"thought":"...","tool":"...","argument":"..."}. '
+            "Araç gerekmiyorsa tool='none' döndür. "
+            "Sadece izinli araçlar: "
+            + ", ".join(sorted(_DIRECT_ROUTE_ALLOWED_TOOLS))
+        )
+        try:
+            raw = await self.llm.chat(
+                messages=[{"role": "user", "content": user_input}],
+                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                system_prompt=router_system,
+                temperature=0.0,
+                stream=False,
+                json_mode=True,
+            )
+            if not isinstance(raw, str):
+                return None
+            parsed = ToolCall.model_validate_json(raw)
+            tool_name = parsed.tool.strip().lower()
+            if tool_name in ("", "none", "final_answer"):
+                return None
+            if tool_name not in _DIRECT_ROUTE_ALLOWED_TOOLS:
+                return None
+            result = await self._execute_tool(tool_name, parsed.argument)
+            return result
+        except Exception:
+            return None
 
     # ─────────────────────────────────────────────
     #  ReAct DÖNGÜSÜ (PYDANTIC PARSING)
