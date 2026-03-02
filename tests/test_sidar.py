@@ -993,3 +993,16 @@ def test_instruction_files_are_loaded_hierarchically(test_config):
 
     # Hiyerarşi: daha üst dosyalar önce, daha derin dosyalar sonra.
     assert context.index("ROOT SIDAR") < context.index("NESTED CLAUDE") < context.index("DEEP SIDAR")
+
+
+def test_instruction_files_load_both_names_in_same_directory(test_config):
+    """Aynı dizinde SIDAR.md ve CLAUDE.md varsa ikisi de bağlama eklenir."""
+    root = test_config.BASE_DIR
+    (root / "SIDAR.md").write_text("SIDAR ROOT RULE", encoding="utf-8")
+    (root / "CLAUDE.md").write_text("CLAUDE ROOT RULE", encoding="utf-8")
+
+    agent = SidarAgent(cfg=test_config)
+    context = agent._build_context()
+
+    assert "SIDAR ROOT RULE" in context
+    assert "CLAUDE ROOT RULE" in context
