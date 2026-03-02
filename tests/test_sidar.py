@@ -441,6 +441,25 @@ async def test_auto_handle_read_file_content_getir_command(agent, monkeypatch):
     assert "satır1" in response
 
 
+@pytest.mark.asyncio
+async def test_direct_router_handles_single_step_read(agent, monkeypatch):
+    """SidarAgent: AutoHandle yakalamasa bile LLM router tek adım aracı çalıştırır."""
+
+    async def fake_auto_handle(_: str):
+        return False, ""
+
+    async def fake_chat(**kwargs):
+        return '{"thought":"tek adım","tool":"read_file","argument":"config.py"}'
+
+    monkeypatch.setattr(agent.auto, "handle", fake_auto_handle)
+    monkeypatch.setattr(agent.llm, "chat", fake_chat)
+    monkeypatch.setattr(agent.code, "read_file", lambda path: (True, "CFG=1"))
+
+    chunks = [c async for c in agent.respond("config.py dosyasını açıp içeriğini ver")]
+    assert len(chunks) == 1
+    assert "CFG=1" in chunks[0]
+
+
 # ─────────────────────────────────────────────
 # 11. BROKEN JSON KARANTINA TESTİ
 # ─────────────────────────────────────────────
