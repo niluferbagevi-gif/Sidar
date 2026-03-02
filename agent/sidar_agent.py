@@ -22,6 +22,7 @@ from managers.github_manager import GitHubManager
 from managers.security import SecurityManager
 from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
+from managers.todo_manager import TodoManager
 from agent.auto_handle import AutoHandle
 from agent.definitions import SIDAR_SYSTEM_PROMPT
 
@@ -56,6 +57,9 @@ _DIRECT_ROUTE_ALLOWED_TOOLS = frozenset({
     "get_config",
     "health",
     "docs_list",
+    "glob_search",
+    "grep_files",
+    "todo_read",
 })
 
 # ─────────────────────────────────────────────
@@ -111,6 +115,8 @@ class SidarAgent:
             gpu_device=getattr(self.cfg, "GPU_DEVICE", 0),
             mixed_precision=getattr(self.cfg, "GPU_MIXED_PRECISION", False),
         )
+
+        self.todo = TodoManager()
 
         self.auto = AutoHandle(
             self.code, self.health, self.github, self.memory,
@@ -554,6 +560,92 @@ class SidarAgent:
     async def _tool_docs_delete(self, a: str) -> str:
         return self.docs.delete_document(a)
 
+    # ── Kabuk Komutları (Shell) ─────────────────────────────────────────
+
+    async def _tool_run_shell(self, a: str) -> str:
+        """Kabuk komutu çalıştır (git, npm, pip, ls, vb.). Yalnızca FULL modda."""
+        if not a:
+            return "⚠ Çalıştırılacak komut belirtilmedi."
+        ok, result = await asyncio.to_thread(self.code.run_shell, a)
+        return result
+
+    # ── Dosya Arama ─────────────────────────────────────────────────────
+
+    async def _tool_glob_search(self, a: str) -> str:
+        """Glob deseni ile dosya ara. Örn: '**/*.py' veya 'src/**/*.ts'."""
+        parts = a.split("|||", 1)
+        pattern = parts[0].strip()
+        base = parts[1].strip() if len(parts) > 1 else "."
+        if not pattern:
+            return "⚠ Glob deseni belirtilmedi."
+        ok, result = await asyncio.to_thread(self.code.glob_search, pattern, base)
+        return result
+
+    async def _tool_grep_files(self, a: str) -> str:
+        """
+        Regex ile dosya içeriği ara.
+        Format: 'regex[|||yol[|||dosya_filtresi[|||context_satır_sayısı]]]'
+        """
+        parts = a.split("|||")
+        pattern = parts[0].strip() if parts else ""
+        path = parts[1].strip() if len(parts) > 1 else "."
+        file_glob = parts[2].strip() if len(parts) > 2 else "*"
+        try:
+            ctx_lines = int(parts[3].strip()) if len(parts) > 3 else 0
+        except (ValueError, IndexError):
+            ctx_lines = 0
+
+        if not pattern:
+            return "⚠ Arama kalıbı belirtilmedi."
+
+        ok, result = await asyncio.to_thread(
+            self.code.grep_files, pattern, path, file_glob,
+            True, ctx_lines
+        )
+        return result
+
+    # ── Görev Yönetimi (Todo) ───────────────────────────────────────────
+
+    async def _tool_todo_write(self, a: str) -> str:
+        """
+        Görev listesini güncelle.
+        Format: 'görev1:::durum1|||görev2:::durum2|||...'
+        Durum: pending / in_progress / completed
+        """
+        if not a.strip():
+            return "⚠ Görev verisi belirtilmedi."
+
+        tasks_data = []
+        for item in a.split("|||"):
+            item = item.strip()
+            if not item:
+                continue
+            if ":::" in item:
+                parts = item.split(":::", 1)
+                tasks_data.append({"content": parts[0].strip(), "status": parts[1].strip()})
+            else:
+                tasks_data.append({"content": item, "status": "pending"})
+
+        return self.todo.set_tasks(tasks_data)
+
+    async def _tool_todo_read(self, _: str) -> str:
+        """Mevcut görev listesini göster."""
+        return self.todo.list_tasks()
+
+    async def _tool_todo_update(self, a: str) -> str:
+        """
+        Tek bir görevi güncelle.
+        Format: 'görev_id|||yeni_durum'
+        """
+        parts = a.split("|||", 1)
+        if len(parts) < 2:
+            return "⚠ Format: görev_id|||yeni_durum"
+        try:
+            task_id = int(parts[0].strip())
+        except ValueError:
+            return "⚠ Görev ID sayısal olmalı."
+        return self.todo.update_task(task_id, parts[1].strip())
+
     async def _tool_get_config(self, _: str) -> str:
         """Çalışma anındaki gerçek Config değerlerini döndürür (.env dahil).
         Dizin ağacı ve satır numaraları dahil — LLM'in zengin final_answer
@@ -669,6 +761,16 @@ class SidarAgent:
             "docs_add":               self._tool_docs_add,
             "docs_list":              self._tool_docs_list,
             "docs_delete":            self._tool_docs_delete,
+            # Kabuk & Arama (Claude Code uyumlu)
+            "run_shell":              self._tool_run_shell,
+            "bash":                   self._tool_run_shell,     # alias
+            "glob_search":            self._tool_glob_search,
+            "grep_files":             self._tool_grep_files,
+            "grep":                   self._tool_grep_files,    # alias
+            # Görev Takibi
+            "todo_write":             self._tool_todo_write,
+            "todo_read":              self._tool_todo_read,
+            "todo_update":            self._tool_todo_update,
             "get_config":             self._tool_get_config,
             "print_config_summary":   self._tool_get_config,   # alias — gereksiz LLM turu önleme
         }
@@ -684,6 +786,9 @@ class SidarAgent:
         Tüm alt sistem durumlarını özetleyen bağlam dizesi.
         Her LLM turunda system_prompt'a eklenir; model bu değerleri
         ASLA tahmin etmemelidir — gerçek runtime değerler burada verilir.
+
+        Ayrıca SIDAR.md dosyası varsa proje özel talimatları buraya eklenir
+        (Claude Code'daki CLAUDE.md desteğine eşdeğer).
         """
         lines = []
 
@@ -717,6 +822,25 @@ class SidarAgent:
         last_file = self.memory.get_last_file()
         if last_file:
             lines.append(f"  Son dosya  : {last_file}")
+
+        # ── Görev Listesi (aktif görev varsa ekle) ──────────────────────
+        if len(self.todo) > 0:
+            lines.append("")
+            lines.append("[Aktif Görev Listesi]")
+            lines.append(self.todo.list_tasks())
+
+        # ── SIDAR.md (Claude Code'daki CLAUDE.md'ye eşdeğer) ────────────
+        # Proje kökünde SIDAR.md varsa proje özel talimatları olarak yükle
+        sidar_md_path = self.cfg.BASE_DIR / "SIDAR.md"
+        if sidar_md_path.exists():
+            try:
+                sidar_md_content = sidar_md_path.read_text(encoding="utf-8", errors="replace")
+                if sidar_md_content.strip():
+                    lines.append("")
+                    lines.append("[SIDAR.md — Proje Özel Talimatlar]")
+                    lines.append(sidar_md_content.strip())
+            except Exception:
+                pass
 
         return "\n".join(lines)
 
