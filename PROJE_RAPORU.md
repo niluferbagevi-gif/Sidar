@@ -187,7 +187,7 @@ sidar_project/
 
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-02 dahil **40/40 kapatıldı**. **2026-03-02 taramasında** 4 yeni uyumsuzluk (N-01–N-04) + 6 ek bulgu (O-01–O-06) tespit edilmişti; N-01–N-04 + O-02 **2026-03-02** yamasıyla giderildi. Kalan açık: **5 sorun** (O-01, O-03, O-04, O-05, O-06).
+> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-01–O-06 dahil tüm bulgular kapatılmıştır. Bu başlık altında kapanmış detaylar düzeltme geçmişine taşınmıştır.
 
 ### 8.1 Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
 
@@ -200,154 +200,10 @@ sidar_project/
 
 ### 8.2 Yeni Doğrulama Taraması — O-01–O-06 (2026-03-02 Güncel Bulgular — İkinci Tur)
 
-> Tespit tarihi: **2026-03-02** (v2.7.0 sonrası tam yeniden inceleme — Activity Panel + Hybrid RAG eklendikten sonra)
-> **6 yeni bulgu tespit edildi** — N-01–N-04 hâlâ açık, 6 ek sorun belirlendi.
-
----
-
-#### O-01 Detay: Birden Fazla Modülde `Sürüm: 2.6.1` Docstring'i — v2.7.0 ile Uyumsuz
-
-**Önem:** 🟢 DÜŞÜK (işlevsel etki yok; bakım ve takip güçleşir)
-
-**Konum:**
-- `core/rag.py:4` → `Sürüm: 2.6.1 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)`
-- `managers/security.py:5` → `Sürüm: 2.6.1`
-- `managers/github_manager.py:4` → `Sürüm: 2.6.1`
-- `managers/system_health.py:3` → `Sürüm: 2.6.1 (GPU Genişletilmiş İzleme)`
-
-**Not:** `SidarAgent.VERSION = "2.7.0"` (`sidar_agent.py:86`) doğru güncellendi. Modül docstring'leri ise eski sürümü gösteriyor. `core/rag.py` bu taramada `add_document_from_file()` ve `get_index_info()` eklenerek değiştirildi; docstring'i özellikle güncellenmelidir.
-
-**Beklenen Düzeltme:**
-```python
-# Tüm modüllerde (core/rag.py, managers/security.py, managers/github_manager.py, managers/system_health.py)
-"""
-Sürüm: 2.7.0
-"""
-```
-
----
-
-#### O-02 Detay: `web_server.py:325` — `/metrics` Endpoint'i `agent.docs._index` Kullanıyor (N-03 Kalan Kısım)
-
-**Önem:** 🟡 ORTA (N-03 kısmen kapatıldı — bu satır atlandı)
-
-**Sorun:** `/rag/docs` endpoint'i düzeltilerek `get_index_info()` kullanmaya başladı, ancak `/metrics` endpoint'indeki aşağıdaki satır atlandı:
-
-```python
-# web_server.py:325 — MEVCUT (HATALI)
-rag_docs  = len(agent.docs._index)
-```
-
-`DocumentStore.get_index_info()` public metodu mevcut olmasına rağmen kullanılmıyor.
-
-**Beklenen Düzeltme:**
-```python
-# web_server.py:325 — DÜZELTME
-rag_docs  = len(agent.docs.get_index_info())
-```
-
----
-
-#### O-03 Detay: `web_server.py:590` — `/github-prs` Endpoint'i `agent.github._repo.get_pulls()` Kullanıyor (N-03 Kalan Kısım)
-
-**Önem:** 🟡 ORTA (encapsulation ihlali; `_repo` None olduğunda `AttributeError` fırlatır)
-
-**Sorun:** PyGithub `Repository` nesnesine dış modülden doğrudan erişim:
-```python
-# web_server.py:590 — MEVCUT (HATALI)
-for pr in agent.github._repo.get_pulls(state=state, sort="updated")[:min(limit, 50)]:
-```
-
-`_repo` `None` olduğunda (GitHub token eksik veya bağlantı başarısız) bu satır `AttributeError` fırlatır. Mevcut `is_available()` kontrolü yapılmış olmakla birlikte, `_repo`'nun None olması teorik olarak mümkün.
-
-**Beklenen Düzeltme:**
-```python
-# managers/github_manager.py — yeni public metod
-def get_pulls_raw(self, state: str = "open", limit: int = 10):
-    """Yapısal PR verilerini döndürür — None korumalı."""
-    if not self._repo:
-        return []
-    return list(self._repo.get_pulls(state=state, sort="updated")[:limit])
-
-# web_server.py:590 — DÜZELTME
-for pr in agent.github.get_pulls_raw(state=state, limit=min(limit, 50)):
-```
-
----
-
-#### O-04 Detay: `sidar_agent.py:626` — `_tool_github_smart_pr` `self.github._repo.default_branch` Kullanıyor
-
-**Önem:** 🟢 DÜŞÜK (ajan içi erişim; dış modülden değil — kabul edilebilir sınırda)
-
-**Sorun:** `GitHubManager._repo` özel özelliğine ajan kodu doğrudan erişiyor:
-```python
-# sidar_agent.py:626 — MEVCUT
-base = self.github._repo.default_branch if self.github._repo else "main"
-```
-
-**Beklenen Düzeltme:**
-```python
-# managers/github_manager.py — public property ekle
-@property
-def default_branch(self) -> str:
-    """Varsayılan branch adı — None korumalı."""
-    try:
-        return self._repo.default_branch if self._repo else "main"
-    except Exception:
-        return "main"
-
-# sidar_agent.py:626 — DÜZELTME
-base = self.github.default_branch if self.github.is_available() else "main"
-```
-
----
-
-#### O-05 Detay: `web_server.py:92` — Yeni RAG GET Endpoint'leri Rate Limit Kapsamı Dışında
-
-**Önem:** 🟡 ORTA (DoS riski — ağır RAG sorguları sınırsız tekrarlanabilir)
-
-**Sorun:** `_RATE_GET_IO_PATHS` frozenset'i yeni eklenen GET endpoint'lerini içermiyor:
-```python
-# web_server.py:92 — MEVCUT (EKSİK)
-_RATE_GET_IO_PATHS = frozenset([
-    "/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo"
-])
-# GET /rag/docs   ← EKSİK — ChromaDB listesi, ağır I/O
-# GET /rag/search ← EKSİK — embedding + ChromaDB sorgusu, ağır CPU/GPU
-```
-
-`/rag/search` endpoint'i embedding hesaplaması ve ChromaDB sorgusu içerir; rate limit olmadan saldırıya açıktır.
-
-**Beklenen Düzeltme:**
-```python
-# web_server.py:92 — DÜZELTME
-_RATE_GET_IO_PATHS = frozenset([
-    "/git-info", "/git-branches", "/files", "/file-content",
-    "/github-prs", "/todo", "/rag/docs", "/rag/search"
-])
-```
-
----
-
-#### O-06 Detay: `core/rag.py` — `add_document_from_file()` İçinde Çift Chunking
-
-**Önem:** 🟢 DÜŞÜK (performans kaybı — işlevsel sorun yok)
-
-**Sorun:** `add_document_from_file()` metodu `_recursive_chunk_text()` fonksiyonunu iki kez çağırıyor:
-```python
-# core/rag.py:399 — MEVCUT (GEREKSİZ)
-chunks = self._recursive_chunk_text(content)   # 1. çağrı — yalnızca len() için
-doc_id = self.add_document(title, content, ...)# ← add_document içinde 2. çağrı yapılıyor
-
-return True, (
-    f"✓ ... ({len(chunks)} parça)"  # chunks kullanılıyor
-)
-```
-
-Büyük dosyalarda (>20 KB) bu gereksiz chunking belirgin CPU maliyeti yaratır.
-
-**Beklenen Düzeltme:**
-`add_document()` metodunun chunk sayısını döndürecek şekilde güncellenmesi veya iç sayaç kullanılması. Alternatif: `len(chunks)` yerine `len(self._recursive_chunk_text(content))` hesaplamasını `add_document()` içine taşı.
+> **Durum güncellemesi (2026-03-02):** O-01–O-06 kapsamındaki bulguların tamamı giderildi.
+> Detaylı bulgu açıklamaları ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşındı.
+>
+> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#8218den-taşınan-bulgular-o-01o-06--session-7-2026-03-02)**
 
 ---
 
@@ -1288,23 +1144,19 @@ Bu oturumda özellikle şüpheyle incelenen ancak gerçekte sorun olmadığı do
 
 ### 18.3 Yeni Bulgular Özeti (O-01–O-06)
 
-| ID | Önem | Konum | Açıklama |
-|----|------|-------|---------|
-| O-01 | 🟢 DÜŞÜK | 4 modül | Docstring `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz |
-| O-02 | 🟡 ORTA | `web_server.py:325` | `/metrics` `agent.docs._index` — N-03 ile birlikte kapatıldı | ✅ Kapalı |
-| O-03 | 🟡 ORTA | `web_server.py:590` | `/github-prs` `agent.github._repo.get_pulls()` |
-| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_tool_github_smart_pr` `_repo.default_branch` |
-| O-05 | 🟡 ORTA | `web_server.py:92` | `/rag/docs`, `/rag/search` rate limit dışı |
-| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking |
+> **Durum güncellemesi (Session 9):** O-01–O-06 bulgularının tamamı kapatılmıştır.
+> Ayrıntılı maddeler düzeltme geçmişine taşınmıştır.
+>
+> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#8218den-taşınan-bulgular-o-01o-06--session-7-2026-03-02)**
 
 ### 18.4 Doğrulama Skoru
 
-| Kategori | §3.1–§3.73 + V + N önceki | N-01–N-04 + O-02 (bu tur) | Toplam |
-|----------|--------------------------|---------------------------|--------|
-| Onaylandı / Kapatıldı ✅ | 76/76 + 35 uyumsuzluk | 5 (N-01, N-02, N-03, N-04, O-02) | **40+** |
-| Açık sorun | — | 5 (O-01, O-03, O-04, O-05, O-06) | **5** |
+| Kategori | Durum |
+|----------|-------|
+| Onaylandı / Kapatıldı ✅ | O-01–O-06 dahil tüm bulgular kapalı |
+| Açık sorun | **0** |
 
-**Sonuç:** Proje v2.7.0 ile önemli özellikler kazandı (Activity Panel, Hybrid RAG, Todo Manager, RAG Web UI). Kritik hata bulunmuyor. Açık sorunlar teknik borç niteliğindedir; işlevselliği engellemez. Öncelik: **O-05** (rate limit güvenlik riski) → **O-03** (encapsulation / `_repo.get_pulls()`) → **O-01** (docstring versiyonları) → diğerleri.
+**Sonuç:** Session 7’de tespit edilen O-01–O-06 maddeleri Session 9’da tamamen giderilmiştir. Projede aktif açık sorun kalmamıştır.
 
 ---
 
