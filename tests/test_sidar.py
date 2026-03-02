@@ -969,3 +969,27 @@ def test_gpu_memory_optimize_gc_runs_on_error(tmp_path):
     result = health.optimize_gpu_memory()
     assert "GC" in result
     assert isinstance(result, str) 
+
+def test_instruction_files_are_loaded_hierarchically(test_config):
+    """SIDAR.md ve CLAUDE.md dosyaları bağlama hiyerarşik sırayla eklenmeli."""
+    root = test_config.BASE_DIR
+    (root / "SIDAR.md").write_text("ROOT SIDAR", encoding="utf-8")
+
+    nested = root / "app"
+    nested.mkdir()
+    (nested / "CLAUDE.md").write_text("NESTED CLAUDE", encoding="utf-8")
+
+    deep = nested / "core"
+    deep.mkdir()
+    (deep / "SIDAR.md").write_text("DEEP SIDAR", encoding="utf-8")
+
+    agent = SidarAgent(cfg=test_config)
+    context = agent._build_context()
+
+    assert "[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]" in context
+    assert "ROOT SIDAR" in context
+    assert "NESTED CLAUDE" in context
+    assert "DEEP SIDAR" in context
+
+    # Hiyerarşi: daha üst dosyalar önce, daha derin dosyalar sonra.
+    assert context.index("ROOT SIDAR") < context.index("NESTED CLAUDE") < context.index("DEEP SIDAR")
