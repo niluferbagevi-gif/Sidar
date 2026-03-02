@@ -746,6 +746,132 @@ class SidarAgent:
     async def _tool_docs_delete(self, a: str) -> str:
         return self.docs.delete_document(a)
 
+    # ── Alt Görev / Paralel Araçlar (Claude Code Agent tool eşdeğeri) ─────
+
+    async def _tool_subtask(self, task: str) -> str:
+        """
+        Bir alt görevi bağımsız mini ReAct döngüsünde çalıştırır.
+        Claude Code'daki Agent tool eşdeğeri — max 5 adım.
+        Format: 'görev açıklaması'
+        """
+        if not task.strip():
+            return "⚠ Alt görev açıklaması belirtilmedi."
+
+        MAX_STEPS = 5
+        messages: list = [{"role": "user", "content": task}]
+        mini_system = (
+            "Sen bağımsız bir alt ajansın. Verilen görevi tamamla.\n"
+            "Her adımda şu JSON formatında yanıt ver:\n"
+            '{"thought": "analiz", "tool": "araç_adı", "argument": "argüman"}\n'
+            "Görev tamamlandığında tool='final_answer' kullan.\n"
+            "Maksimum 5 adımda tamamla. Sonucu Türkçe olarak özetle."
+        )
+
+        for _ in range(MAX_STEPS):
+            try:
+                raw = await self.llm.chat(
+                    messages=messages,
+                    model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                    system_prompt=mini_system,
+                    temperature=0.2,
+                    stream=False,
+                    json_mode=True,
+                )
+                if not isinstance(raw, str):
+                    break
+
+                _dec = json.JSONDecoder()
+                idx = raw.find("{")
+                if idx == -1:
+                    break
+                action, _ = _dec.raw_decode(raw, idx)
+
+                tool_name = str(action.get("tool", "")).strip()
+                tool_arg  = str(action.get("argument", "")).strip()
+
+                if tool_name == "final_answer":
+                    return f"[Alt Görev Tamamlandı]\n{tool_arg}"
+
+                if not tool_name:
+                    break
+
+                tool_result = await self._execute_tool(tool_name, tool_arg)
+                if tool_result is None:
+                    messages += [
+                        {"role": "assistant", "content": raw},
+                        {"role": "user",      "content": f"[ARAÇ:{tool_name}:HATA] Bu araç mevcut değil."},
+                    ]
+                    continue
+
+                messages += [
+                    {"role": "assistant", "content": raw},
+                    {"role": "user",      "content": (
+                        f"[ARAÇ:{tool_name}:SONUÇ]\n===\n{str(tool_result)[:1500]}\n===\n"
+                        "Devam et veya final_answer ver."
+                    )},
+                ]
+            except Exception as exc:
+                logger.warning("Subtask adım hatası: %s", exc)
+                break
+
+        return "[Alt Görev] Maksimum adım sayısına ulaşıldı veya görev tamamlanamadı."
+
+    # Yalnızca okuma/sorgulama araçları paralel çalışabilir.
+    _PARALLEL_SAFE = frozenset({
+        "list_dir", "ls", "read_file", "glob_search", "grep_files", "grep",
+        "github_info", "github_read", "github_list_files", "github_commits",
+        "github_search_code", "health", "audit", "todo_read", "get_config",
+        "web_search", "pypi", "npm", "docs_search", "docs_list",
+        "search_stackoverflow", "fetch_url",
+    })
+
+    async def _tool_parallel(self, a: str) -> str:
+        """
+        Birden fazla okuma/sorgulama aracını eşzamanlı çalıştırır.
+        Claude Code'daki paralel araç çağrısı eşdeğeri.
+        Format: 'araç1:argüman1|||araç2:argüman2|||...'
+        Yalnızca güvenli (okuma) araçlar desteklenir.
+        """
+        if not a.strip():
+            return "⚠ Araç listesi belirtilmedi."
+
+        parts = [p.strip() for p in a.split("|||") if p.strip()]
+        if not parts:
+            return "⚠ Geçerli araç formatı bulunamadı."
+
+        tasks: list[tuple[str, str]] = []
+        for part in parts:
+            tool_name, _, tool_arg = part.partition(":")
+            tool_name = tool_name.strip()
+            if not tool_name:
+                continue
+            if tool_name not in self._PARALLEL_SAFE:
+                return (
+                    f"⚠ '{tool_name}' paralel çalıştırma için güvensiz. "
+                    f"İzinli araçlar: {', '.join(sorted(self._PARALLEL_SAFE))}"
+                )
+            tasks.append((tool_name, tool_arg.strip()))
+
+        if not tasks:
+            return "⚠ Çalıştırılacak geçerli araç bulunamadı."
+
+        results = await asyncio.gather(
+            *[self._execute_tool(name, arg) for name, arg in tasks],
+            return_exceptions=True,
+        )
+
+        lines = [f"[Paralel Çalıştırma — {len(tasks)} araç]", ""]
+        for (name, _), result in zip(tasks, results):
+            if isinstance(result, Exception):
+                lines.append(f"❌ **{name}**: {result}")
+            else:
+                snippet = str(result)[:600]
+                suffix  = "..." if result and len(str(result)) > 600 else ""
+                lines.append(f"✓ **{name}**:\n{snippet}{suffix}")
+            lines.append("")
+
+        return "\n".join(lines)
+
     # ── Kabuk Komutları (Shell) ─────────────────────────────────────────
 
     async def _tool_run_shell(self, a: str) -> str:
@@ -968,6 +1094,10 @@ class SidarAgent:
             "todo_update":            self._tool_todo_update,
             "get_config":             self._tool_get_config,
             "print_config_summary":   self._tool_get_config,   # alias — gereksiz LLM turu önleme
+            # Alt Görev & Paralel (Claude Code Agent tool eşdeğeri)
+            "subtask":                self._tool_subtask,
+            "agent":                  self._tool_subtask,      # alias — Claude Code uyumu
+            "parallel":               self._tool_parallel,
         }
         handler = dispatch.get(tool_name)
         return await handler(tool_arg) if handler else None
