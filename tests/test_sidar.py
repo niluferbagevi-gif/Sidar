@@ -878,6 +878,31 @@ def test_security_get_safe_write_path_strips_dir(tmp_path):
     assert safe.name == "file.py"
 
 
+
+def test_security_can_execute_shell_levels(tmp_path):
+    """SecurityManager: Terminal komutları yalnızca FULL seviyede izinlidir."""
+    from managers.security import SecurityManager
+
+    assert SecurityManager("restricted", tmp_path).can_execute_shell() is False
+    assert SecurityManager("sandbox", tmp_path).can_execute_shell() is False
+    assert SecurityManager("full", tmp_path).can_execute_shell() is True
+
+
+def test_code_manager_execute_shell_permission_gate(tmp_path):
+    """CodeManager.execute_shell: Yetki yoksa reddeder, FULL modda çalıştırır."""
+    from managers.security import SecurityManager
+    from managers.code_manager import CodeManager
+
+    restricted = CodeManager(SecurityManager("restricted", tmp_path), tmp_path)
+    ok, msg = restricted.execute_shell("echo test")
+    assert ok is False
+    assert "FULL" in msg
+
+    full = CodeManager(SecurityManager("full", tmp_path), tmp_path)
+    ok, out = full.execute_shell("echo sidar-shell")
+    assert ok is True
+    assert "sidar-shell" in out
+
 # ─────────────────────────────────────────────
 # 20. GITHUB MANAGER — DAL ADI DOĞRULAMASI
 # ─────────────────────────────────────────────

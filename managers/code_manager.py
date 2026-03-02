@@ -308,6 +308,47 @@ class CodeManager:
         except Exception as exc:
             return False, f"Subprocess çalıştırma hatası: {exc}"
 
+
+    def execute_shell(self, command: str, timeout: int = 20) -> Tuple[bool, str]:
+        """
+        Güvenli terminal komutu çalıştırma (Claude Code benzeri).
+
+        Kurallar:
+        - Yalnızca FULL erişim seviyesinde izin verilir.
+        - Komut proje kök dizininde çalıştırılır.
+        - Zaman aşımı varsayılan 20 saniyedir.
+        """
+        if not self.security.can_execute_shell():
+            return False, "[OpenClaw] Terminal komutu yalnızca FULL erişim seviyesinde kullanılabilir."
+
+        cmd = (command or "").strip()
+        if not cmd:
+            return False, "⚠ Çalıştırılacak terminal komutu belirtilmedi."
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=str(self.base_dir),
+                capture_output=True,
+                text=True,
+                timeout=max(1, int(timeout)),
+            )
+            output = (proc.stdout or "")
+            err = (proc.stderr or "")
+            merged = (output + err).strip()
+            if proc.returncode != 0:
+                return False, (
+                    f"Terminal komutu başarısız (exit={proc.returncode})\n"
+                    f"$ {cmd}\n"
+                    f"{merged or '(çıktı yok)'}"
+                )
+            return True, f"$ {cmd}\n{merged or '(çıktı yok)'}"
+        except subprocess.TimeoutExpired:
+            return False, f"⚠ Terminal komutu zaman aşımına uğradı ({timeout}s): {cmd}"
+        except Exception as exc:
+            return False, f"Terminal çalıştırma hatası: {exc}"
+
     # ─────────────────────────────────────────────
     #  DİZİN LİSTELEME
     # ─────────────────────────────────────────────

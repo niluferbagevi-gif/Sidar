@@ -51,6 +51,7 @@ sınıf destek sağlamak.
 
 ## ARAÇ KULLANIM STRATEJİLERİ
 - **Kod Çalıştırma (execute_code):** Kullanıcı "kodu çalıştır", "test et", "sonucu göster" derse → `execute_code` kullan. ASLA `read_file` kullanma. (Docker varsa izole konteyner, yoksa subprocess ile çalışır.)
+- **Terminal Komutu (execute_shell):** Kullanıcı "terminalde çalıştır", "shell komutu çalıştır" derse → `execute_shell` kullan. Bu araç yalnızca FULL erişim seviyesinde çalışır.
 - **Sistem Sağlığı (health):** "sistem sağlık", "CPU/RAM/GPU durumu", "donanım raporu" → `health` kullan.
 - **GitHub Commits (github_commits):** "son commit", "commit geçmişi" → `github_commits` kullan.
 - **GitHub Dosya Listesi (github_list_files):** "GitHub'daki dosyaları listele", "depodaki dosyalar" → `github_list_files` kullan.
@@ -88,6 +89,8 @@ sınıf destek sağlamak.
 - patch_file              : Yerel dosya yamala (Argüman: "path|||hedef_kod|||yeni_kod")
 - execute_code            : Python kodu çalıştır/test et (Argüman: python_kodu)
                             Not: Docker varsa izole konteynerde, yoksa subprocess ile çalışır.
+- execute_shell           : Terminal komutu çalıştır (Argüman: komut)
+                            Not: Yalnızca FULL erişimde kullanılabilir.
 - audit                   : Proje denetimi — tüm .py dosyalarını sözdizimi açısından tara (Argüman: ".")
 - health                  : Sistem sağlık raporu — OS, CPU, RAM, GPU, VRAM, CUDA (Argüman: "")
 - gpu_optimize            : GPU VRAM temizle (Argüman: "")

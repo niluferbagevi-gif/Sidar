@@ -174,6 +174,15 @@ class SecurityManager:
         """
         return self.level >= SANDBOX
 
+    def can_execute_shell(self) -> bool:
+        """
+        Kabuk/terminal komutu çalıştırma izni.
+        - RESTRICTED : yasak
+        - SANDBOX    : yasak (yalnızca izole python execute_code serbest)
+        - FULL       : izinli
+        """
+        return self.level >= FULL
+
     # ─────────────────────────────────────────────
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
@@ -191,7 +200,7 @@ class SecurityManager:
         perms.append(
             f"Yazma   : {'✓ (tam — proje kökü)' if self.level == FULL else ('✓ (yalnızca /temp)' if self.level == SANDBOX else '✗')}"
         )
-        perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
+        perms.append(f"Terminal: {'✓' if self.can_execute_shell() else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")
         return (
             f"[OpenClaw] Erişim Seviyesi: {self.level_name.upper()}\n"

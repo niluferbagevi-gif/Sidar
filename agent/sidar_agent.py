@@ -410,6 +410,12 @@ class SidarAgent:
         _, result = await asyncio.to_thread(self.code.execute_code, a)
         return result
 
+    async def _tool_execute_shell(self, a: str) -> str:
+        if not a:
+            return "⚠ Çalıştırılacak terminal komutu belirtilmedi."
+        ok, result = await asyncio.to_thread(self.code.execute_shell, a)
+        return result if ok else f"✗ {result}"
+
     async def _tool_audit(self, a: str) -> str:
         # Tüm .py dosyalarını tararken ağır disk I/O yapılır — thread'e itilir
         return await asyncio.to_thread(self.code.audit_project, a or ".")
@@ -645,6 +651,7 @@ class SidarAgent:
             "write_file":             self._tool_write_file,
             "patch_file":             self._tool_patch_file,
             "execute_code":           self._tool_execute_code,
+            "execute_shell":          self._tool_execute_shell,
             "audit":                  self._tool_audit,
             "health":                 self._tool_health,
             "gpu_optimize":           self._tool_gpu_optimize,

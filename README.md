@@ -43,6 +43,7 @@
 - Dosya yamalama (`patch_file` — sadece değişen satırlar)
 - Dizin listeleme ve proje denetimi (`audit`)
 - **Docker REPL Sandbox**: `python:3.11-alpine` içinde ağ/RAM/CPU kısıtlı izole kod çalıştırma (10 sn timeout)
+- **Terminal Komutu Çalıştırma (`execute_shell`)**: Claude Code benzeri kabuk komutu çalıştırma (yalnızca `ACCESS_LEVEL=full`)
 - Metrik takibi (okunan/yazılan/doğrulanan)
 
 ### OpenClaw Güvenlik Sistemi (SecurityManager)
