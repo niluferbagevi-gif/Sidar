@@ -1,7 +1,7 @@
 """
 Sidar Project - Web Arama Yöneticisi
 Tavily, Google Custom Search ve DuckDuckGo motorları ile asenkron web araması.
-Sürüm: 2.6.1
+Sürüm: 2.7.0
 
 Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 """

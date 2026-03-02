@@ -1,7 +1,7 @@
 """
 Sidar Project - Paket Bilgi Yöneticisi
 PyPI, npm Registry ve GitHub Releases entegrasyonu (Asenkron).
-Sürüm: 2.6.1
+Sürüm: 2.7.0
 
 Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları.
 """

@@ -1,7 +1,7 @@
 """
 Sidar Project - Kod Yöneticisi
 Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL).
-Sürüm: 2.6.1
+Sürüm: 2.7.0
 """
 
 import ast
