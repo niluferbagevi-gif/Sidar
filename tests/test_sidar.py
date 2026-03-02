@@ -7,6 +7,7 @@ pytest-asyncio modu: pyproject.toml / pytest.ini'da
 """
 
 import asyncio
+import codecs
 import os
 from pathlib import Path
 
@@ -510,33 +511,14 @@ def test_utf8_multibyte_two_byte_split():
     full_bytes = char.encode("utf-8")
     assert len(full_bytes) == 2
 
-    # llm_client._stream_ollama_response ile aynı mantık
-    _byte_buf = b""
+    # llm_client._stream_ollama_response ile aynı mantık (incremental decoder)
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     result = ""
     for packet in [full_bytes[:1], full_bytes[1:]]:
-        _byte_buf += packet
-        decoded = None
-        for trim in (1, 2, 3):
-            if trim >= len(_byte_buf):
-                continue
-            try:
-                decoded = _byte_buf[:-trim].decode("utf-8")
-                _byte_buf = _byte_buf[-trim:]
-                break
-            except UnicodeDecodeError:
-                continue
-        if decoded is None:
-            try:
-                decoded = _byte_buf.decode("utf-8")
-                _byte_buf = b""
-            except UnicodeDecodeError:
-                decoded = _byte_buf.decode("utf-8", errors="replace")
-                _byte_buf = b""
-        result += decoded
+        result += decoder.decode(packet, final=False)
 
     # Kalan buffer varsa temizle
-    if _byte_buf:
-        result += _byte_buf.decode("utf-8", errors="replace")
+    result += decoder.decode(b"", final=True)
 
     assert result == char
 
@@ -547,31 +529,12 @@ def test_utf8_three_byte_char_split():
     full_bytes = char.encode("utf-8")
     assert len(full_bytes) == 3
 
-    _byte_buf = b""
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     result = ""
     for packet in [full_bytes[:2], full_bytes[2:]]:
-        _byte_buf += packet
-        decoded = None
-        for trim in (1, 2, 3):
-            if trim >= len(_byte_buf):
-                continue
-            try:
-                decoded = _byte_buf[:-trim].decode("utf-8")
-                _byte_buf = _byte_buf[-trim:]
-                break
-            except UnicodeDecodeError:
-                continue
-        if decoded is None:
-            try:
-                decoded = _byte_buf.decode("utf-8")
-                _byte_buf = b""
-            except UnicodeDecodeError:
-                decoded = _byte_buf.decode("utf-8", errors="replace")
-                _byte_buf = b""
-        result += decoded
+        result += decoder.decode(packet, final=False)
 
-    if _byte_buf:
-        result += _byte_buf.decode("utf-8", errors="replace")
+    result += decoder.decode(b"", final=True)
 
     assert result == char
 

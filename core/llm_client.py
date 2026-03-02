@@ -5,6 +5,7 @@ Ollama ve Google Gemini API entegrasyonu (Asenkron).
 
 import json
 import logging
+import codecs
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -140,28 +141,29 @@ class LLMClient:
                 async with client.stream("POST", url, json=payload) as resp:
                     resp.raise_for_status()
                     buffer = ""
-                    _byte_buf = b""  # Tamamlanmamış UTF-8 çok baytlı karakterler için
+                    # UTF-8 incremental decoder, paketler arası bölünmüş multibyte
+                    # karakterleri güvenli şekilde birleştirir.
+                    utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
                     async for raw_bytes in resp.aiter_bytes():
-                        _byte_buf += raw_bytes
-                        # Tamamlanmamış çok baytlı karakterleri sonraki pakete bırak
-                        try:
-                            decoded = _byte_buf.decode("utf-8")
-                            _byte_buf = b""
-                        except UnicodeDecodeError:
-                            # Son 1-3 bayt tamamlanmamış UTF-8 sekansı olabilir
-                            decoded = None
-                            for trim in (1, 2, 3):
-                                try:
-                                    decoded = _byte_buf[:-trim].decode("utf-8")
-                                    _byte_buf = _byte_buf[-trim:]
-                                    break
-                                except UnicodeDecodeError:
-                                    continue
-                            if decoded is None:
-                                decoded = _byte_buf.decode("utf-8", errors="replace")
-                                _byte_buf = b""
+                        decoded = utf8_decoder.decode(raw_bytes, final=False)
                         buffer += decoded
                         # Tamamlanmış satırları işle; son (henüz bitmemiş) satır buffer'da kalır
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                body = json.loads(line)
+                                chunk = body.get("message", {}).get("content", "")
+                                if chunk:
+                                    yield chunk
+                            except json.JSONDecodeError:
+                                continue
+                    # Stream bittiğinde decoder içinde kalan parçayı boşalt
+                    trailing = utf8_decoder.decode(b"", final=True)
+                    if trailing:
+                        buffer += trailing
                         while "\n" in buffer:
                             line, buffer = buffer.split("\n", 1)
                             line = line.strip()

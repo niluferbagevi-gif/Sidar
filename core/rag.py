@@ -17,6 +17,7 @@ import logging
 import re
 import shutil
 import threading
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -266,8 +267,10 @@ class DocumentStore:
         Belge ekle veya güncelle.
         İçeriği parçalara (chunks) ayırarak ChromaDB'ye kaydeder.
         """
-        # Ana Belge ID oluştur
-        doc_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
+        # Her ekleme için benzersiz belge ID üret; aynı başlık/kaynak için
+        # vektör indeksinde tekil güncelleme yapabilmek adına ayrı bir parent_id kullanılır.
+        doc_id = uuid.uuid4().hex[:12]
+        parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
         tags = tags or []
 
         # 1. Dosya sistemine TAM metni kaydet (Okuma ve BM25 için referans)
@@ -281,6 +284,7 @@ class DocumentStore:
             "tags": tags,
             "size": len(content),
             "preview": content[:300],
+            "parent_id": parent_id,
         }
         self._save_index()
 
@@ -295,7 +299,7 @@ class DocumentStore:
                         "source": source,
                         "title": title,
                         "tags": ",".join(tags),
-                        "parent_id": doc_id,
+                        "parent_id": parent_id,
                         "chunk_index": i
                     }
                     for i in range(len(chunks))
@@ -304,8 +308,8 @@ class DocumentStore:
                 # delete + upsert atomik olmalı: aynı doc_id için eş zamanlı
                 # çağrılar çakışmasın diye _write_lock ile korunuyor.
                 with self._write_lock:
-                    # Önce eski parçaları temizle (Update senaryosu)
-                    self.collection.delete(where={"parent_id": doc_id})
+                    # Önce aynı başlık+kaynak için eski parçaları temizle (Update senaryosu)
+                    self.collection.delete(where={"parent_id": parent_id})
                     if chunks:
                         self.collection.upsert(
                             ids=ids,
@@ -313,7 +317,7 @@ class DocumentStore:
                             metadatas=metadatas
                         )
                 if chunks:
-                    logger.info("ChromaDB: %s belgesi %d parçaya ayrılarak eklendi.", doc_id, len(chunks))
+                    logger.info("ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi.", doc_id, parent_id, len(chunks))
             except Exception as exc:
                 logger.error("ChromaDB belge ekleme hatası: %s", exc)
 
@@ -360,7 +364,8 @@ class DocumentStore:
         if self._chroma_available and self.collection:
             try:
                 # Parent ID'ye göre silme (Where filtresi)
-                self.collection.delete(where={"parent_id": doc_id})
+                parent_id = self._index[doc_id].get("parent_id", doc_id)
+                self.collection.delete(where={"parent_id": parent_id})
             except Exception as exc:
                 logger.error("ChromaDB silme hatası: %s", exc)
 
