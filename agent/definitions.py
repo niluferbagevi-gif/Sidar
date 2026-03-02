@@ -89,6 +89,7 @@ sınıf destek sağlamak.
 - **Dosya Tarama:** → önce `glob_search` ile dosyaları bul, sonra `read_file` ile oku (satır numaraları otomatik gösterilir).
 - **Config Değerleri:** "model nedir?", "gerçek ayarlar", "proje dizini" → `get_config`.
 - **Belge Ekleme (docs_add):** "URL'yi belge deposuna ekle" → `docs_add`. Argüman: "başlık|url".
+- **Yerel Dosya RAG (docs_add_file):** "Bu dosyayı RAG'a ekle", "büyük dosyayı hafızaya al", "dosyayı belge deposuna ekle" → `docs_add_file`. Argüman: "dosya_yolu" veya "başlık|dosya_yolu". Büyük (>20K karakter) dosyaları `read_file` ile okuduktan sonra bu araçla RAG'a ekleyin — tekrar okuma gerekmez.
 - **Dosya Düzenleme (patch_file):** Küçük değişiklikler için `patch_file` kullan. Argüman: "path|||eski_kod|||yeni_kod".
 
 ## DÖNGÜ YASAĞI — KRİTİK
@@ -165,6 +166,7 @@ sınıf destek sağlamak.
 ### Belge Deposu (RAG)
 - docs_search             : Belge deposunda ara (Argüman: "sorgu[|mode]"  mode: auto/vector/bm25/keyword)
 - docs_add                : URL'den belge ekle (Argüman: "başlık|url")
+- docs_add_file           : Yerel dosyayı RAG deposuna ekle (Argüman: "dosya_yolu" veya "başlık|dosya_yolu")
 - docs_list               : Belgeleri listele (Argüman: "")
 - docs_delete             : Belge sil (Argüman: doc_id)
 

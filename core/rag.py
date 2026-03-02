@@ -350,6 +350,80 @@ class DocumentStore:
             logger.error("URL belge çekme hatası: %s", exc)
             return False, f"[HATA] URL belge eklenemedi: {exc}"
 
+    def add_document_from_file(
+        self,
+        path: str,
+        title: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> Tuple[bool, str]:
+        """
+        Yerel dosyadan belge ekle.
+
+        Desteklenen formatlar: .py, .txt, .md, .json, .yaml, .yml,
+        .toml, .ini, .cfg, .html, .css, .js, .ts, .sh, .sql, .csv, .xml,
+        ve uzantısız metin dosyaları.
+
+        Args:
+            path : Okunacak yerel dosya yolu.
+            title: Belge başlığı (boşsa dosya adı kullanılır).
+            tags : Etiket listesi (opsiyonel).
+
+        Returns:
+            (başarı, mesaj)
+        """
+        _TEXT_EXTS = {
+            ".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml",
+            ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh",
+            ".sql", ".csv", ".xml", ".rst", ".env", ".example",
+            ".gitignore", ".dockerignore", "",
+        }
+        try:
+            file = Path(path).resolve()
+            if not file.exists():
+                return False, f"✗ Dosya bulunamadı: {path}"
+            if not file.is_file():
+                return False, f"✗ Belirtilen yol bir dosya değil: {path}"
+            if file.suffix.lower() not in _TEXT_EXTS:
+                return False, (
+                    f"✗ Desteklenmeyen dosya türü: {file.suffix} "
+                    f"(metin tabanlı dosyalar: .py, .md, .txt, .json vb.)"
+                )
+
+            content = file.read_text(encoding="utf-8", errors="replace")
+            if not content.strip():
+                return False, f"✗ Dosya boş: {path}"
+
+            if not title:
+                title = file.name
+
+            chunks = self._recursive_chunk_text(content)
+            source = f"file://{file}"
+            doc_id = self.add_document(title, content, source=source, tags=tags or [])
+            return True, (
+                f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} "
+                f"({len(content):,} karakter, {len(chunks)} parça)"
+            )
+        except Exception as exc:
+            logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
+            return False, f"[HATA] Dosya eklenemedi: {exc}"
+
+    def get_index_info(self) -> List[Dict]:
+        """
+        Belge dizininin özet listesini döndürür (web API için).
+        Her belge için: {id, title, source, size, preview} içerir.
+        """
+        return [
+            {
+                "id":      doc_id,
+                "title":   meta.get("title", "?"),
+                "source":  meta.get("source", ""),
+                "size":    meta.get("size", 0),
+                "preview": meta.get("preview", "")[:120],
+                "tags":    meta.get("tags", []),
+            }
+            for doc_id, meta in self._index.items()
+        ]
+
     def delete_document(self, doc_id: str) -> str:
         """Belgeyi tüm depolardan sil."""
         if doc_id not in self._index:

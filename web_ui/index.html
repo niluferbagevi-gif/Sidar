@@ -1449,6 +1449,90 @@
       #task-panel { padding: 28px 16px; }
       .message { padding: 12px 16px; }
     }
+
+    /* ── RAG Belge Deposu Modalı ────────────────────────────── */
+    #rag-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:600; align-items:flex-start; justify-content:center; padding-top:60px; }
+    #rag-modal.open { display:flex; }
+    .rag-box {
+      background:var(--bg2); border:1px solid var(--border2);
+      border-radius:var(--radius-lg); width:620px; max-width:96vw;
+      max-height:80vh; display:flex; flex-direction:column; overflow:hidden;
+      box-shadow:0 16px 64px rgba(0,0,0,.6);
+    }
+    .rag-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 18px 12px; border-bottom:1px solid var(--border); flex-shrink:0;
+    }
+    .rag-header h3 { font-size:14px; font-weight:700; color:var(--text); margin:0; display:flex; align-items:center; gap:8px; }
+    .rag-close { background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:20px; padding:0 2px; line-height:1; }
+    .rag-close:hover { color:var(--text); }
+    .rag-tabs { display:flex; gap:1px; padding:10px 18px 0; border-bottom:1px solid var(--border); flex-shrink:0; }
+    .rag-tab { padding:7px 14px; font-size:12px; font-weight:600; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; background:none; border-top:none; border-left:none; border-right:none; transition:color .12s; }
+    .rag-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .rag-tab:hover { color:var(--text); }
+    .rag-pane { display:none; flex:1; overflow:hidden; flex-direction:column; min-height:0; }
+    .rag-pane.active { display:flex; }
+
+    /* Belgeler sekmesi */
+    .rag-search-row { padding:10px 18px; flex-shrink:0; display:flex; gap:8px; }
+    .rag-search-input {
+      flex:1; background:var(--bg3); border:1px solid var(--border2);
+      border-radius:8px; padding:7px 12px; color:var(--text); font-size:12px;
+      font-family:inherit; outline:none; transition:border-color .15s;
+    }
+    .rag-search-input:focus { border-color:var(--accent); }
+    .rag-search-input::placeholder { color:var(--text-muted); }
+    .rag-btn {
+      padding:7px 14px; border-radius:8px; border:1px solid var(--border2);
+      background:var(--bg3); color:var(--text-dim); font-size:12px;
+      cursor:pointer; transition:all .12s; white-space:nowrap;
+    }
+    .rag-btn:hover { border-color:var(--accent); color:var(--accent); }
+    .rag-btn.primary { background:rgba(124,58,237,.15); border-color:var(--accent2); color:var(--accent); }
+    .rag-btn.primary:hover { background:rgba(124,58,237,.25); }
+    .rag-btn.danger:hover { border-color:var(--red); color:var(--red); }
+    .rag-doc-list { flex:1; overflow-y:auto; padding:0 18px 12px; }
+    .rag-doc-list::-webkit-scrollbar { width:4px; }
+    .rag-doc-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .rag-doc-item {
+      display:flex; align-items:flex-start; gap:10px; padding:10px 0;
+      border-bottom:1px solid var(--border); transition:background .1s;
+    }
+    .rag-doc-item:last-child { border-bottom:none; }
+    .rag-doc-icon { font-size:18px; flex-shrink:0; margin-top:2px; }
+    .rag-doc-info { flex:1; min-width:0; }
+    .rag-doc-title { font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rag-doc-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
+    .rag-doc-preview { font-size:11px; color:var(--text-dim); margin-top:3px; line-height:1.4; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .rag-doc-actions { display:flex; gap:6px; flex-shrink:0; }
+    .rag-empty { padding:24px; text-align:center; color:var(--text-muted); font-size:13px; }
+
+    /* Ekle sekmesi */
+    .rag-add-pane { padding:18px; gap:18px; }
+    .rag-add-section { display:flex; flex-direction:column; gap:8px; }
+    .rag-add-label { font-size:12px; font-weight:600; color:var(--text-dim); }
+    .rag-add-row { display:flex; gap:8px; align-items:stretch; }
+    .rag-add-input {
+      flex:1; background:var(--bg3); border:1px solid var(--border2);
+      border-radius:8px; padding:8px 12px; color:var(--text); font-size:12px;
+      font-family:inherit; outline:none; transition:border-color .15s;
+    }
+    .rag-add-input:focus { border-color:var(--accent); }
+    .rag-add-input::placeholder { color:var(--text-muted); }
+    .rag-add-hint { font-size:11px; color:var(--text-muted); }
+    .rag-add-sep { display:flex; align-items:center; gap:10px; color:var(--text-muted); font-size:11px; }
+    .rag-add-sep::before,.rag-add-sep::after { content:''; flex:1; height:1px; background:var(--border); }
+    .rag-result { font-size:12px; padding:8px 12px; border-radius:8px; margin-top:4px; display:none; }
+    .rag-result.ok  { background:rgba(52,211,153,.1); color:var(--green); border:1px solid rgba(52,211,153,.25); }
+    .rag-result.err { background:rgba(248,113,113,.1); color:var(--red);   border:1px solid rgba(248,113,113,.25); }
+
+    /* Arama sekmesi */
+    .rag-search-pane { padding:18px; gap:14px; }
+    .rag-search-result {
+      flex:1; overflow-y:auto; background:var(--bg3); border:1px solid var(--border);
+      border-radius:8px; padding:12px; font-size:12px; color:var(--text-dim);
+      line-height:1.6; white-space:pre-wrap; word-break:break-word;
+    }
   </style>
 </head>
 
@@ -1586,7 +1670,7 @@
             <button class="quick-chip" onclick="quickTask('Erişim seviyesi ve güvenlik durumunu göster')">Güvenlik durumu</button>
             <button class="quick-chip" onclick="createSmartPR()" title="Mevcut branch için akıllı PR oluştur">✨ PR Oluştur</button>
             <button class="quick-chip" onclick="quickTask('Açık PR listesini göster')">PR Listesi</button>
-            <button class="quick-chip" onclick="quickTask('Belge deposunu listele')">RAG belgeler</button>
+            <button class="quick-chip" onclick="openRagModal()">📚 RAG Deposu</button>
             <button class="quick-chip" onclick="quickTask('Aktif görev listesini göster')" id="todo-chip" title="Aktif görevleri göster">📋 Görev listesi</button>
             <button class="quick-chip" onclick="quickTask('Şu iki işlemi eşzamanlı çalıştır: 1) Proje dizinini listele  2) Sistem sağlık raporu ver')" title="Paralel araç çalıştırma örneği">⚡ Paralel çalıştır</button>
           </div>
@@ -2514,6 +2598,7 @@ const TOOL_LABELS = {
   // RAG
   docs_search:          '📚 Dokümantasyon aranıyor',
   docs_add:             '📝 Belge ekleniyor',
+  docs_add_file:        '📁 Dosya RAG\'a ekleniyor',
   docs_list:            '📋 Belgeler listeleniyor',
   docs_delete:          '🗑️ Belge siliniyor',
 };
@@ -2873,11 +2958,144 @@ function stopTodoPoll() {
 // Sayfa yüklendiğinde polling başlat
 window.addEventListener('load', () => { setTimeout(startTodoPoll, 1500); });
 
+/* ─── RAG Belge Deposu Modalı ───────────────────────────── */
+function openRagModal() {
+  document.getElementById('rag-modal').classList.add('open');
+  ragTab('belgeler');
+  ragLoadDocs();
+}
+
+function closeRagModal() {
+  document.getElementById('rag-modal').classList.remove('open');
+}
+
+function ragTab(name) {
+  document.querySelectorAll('.rag-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.rag-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+}
+
+async function ragLoadDocs(filterText) {
+  const list = document.getElementById('rag-doc-list');
+  list.innerHTML = '<div class="rag-empty">Yükleniyor…</div>';
+  try {
+    const data = await (await fetch('/rag/docs')).json();
+    const docs = data.docs || [];
+    const q = (filterText || '').toLowerCase().trim();
+    const filtered = q ? docs.filter(d =>
+      (d.title || '').toLowerCase().includes(q) ||
+      (d.source || '').toLowerCase().includes(q)
+    ) : docs;
+
+    if (!filtered.length) {
+      list.innerHTML = '<div class="rag-empty">Henüz belge eklenmemiş.</div>';
+      return;
+    }
+
+    list.innerHTML = filtered.map(d => {
+      const icon = (d.source || '').startsWith('http') ? '🔗' : '📄';
+      const size = d.size ? `${(d.size / 1000).toFixed(1)}k karakter` : '';
+      const meta = [size, d.source ? escHtml(d.source.replace(/^.*\//, '').substring(0, 50)) : ''].filter(Boolean).join(' · ');
+      return `<div class="rag-doc-item">
+        <span class="rag-doc-icon">${icon}</span>
+        <div class="rag-doc-info">
+          <div class="rag-doc-title">${escHtml(d.title || d.id)}</div>
+          <div class="rag-doc-meta">${meta}</div>
+          ${d.preview ? `<div class="rag-doc-preview">${escHtml(d.preview)}</div>` : ''}
+        </div>
+        <div class="rag-doc-actions">
+          <button class="rag-btn danger" onclick="ragDeleteDoc('${escHtml(d.id)}')" title="Sil">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="rag-empty">Hata: ${escHtml(err.message)}</div>`;
+  }
+}
+
+async function ragDeleteDoc(docId) {
+  if (!confirm(`"${docId}" belgesi silinsin mi?`)) return;
+  try {
+    const res = await fetch(`/rag/docs/${encodeURIComponent(docId)}`, { method: 'DELETE' });
+    const data = await res.json();
+    ragShowResult('rag-del-result', data.success, data.message || data.detail || 'Silindi.');
+    if (data.success) ragLoadDocs(document.getElementById('rag-filter').value);
+  } catch (err) {
+    ragShowResult('rag-del-result', false, err.message);
+  }
+}
+
+async function ragAddFile() {
+  const path  = document.getElementById('rag-file-path').value.trim();
+  const title = document.getElementById('rag-file-title').value.trim();
+  if (!path) { ragShowResult('rag-add-result', false, 'Dosya yolu gerekli.'); return; }
+  const btn = document.getElementById('rag-add-file-btn');
+  btn.disabled = true; btn.textContent = 'Ekleniyor…';
+  try {
+    const res = await fetch('/rag/add-file', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ path, title: title || undefined })
+    });
+    const data = await res.json();
+    ragShowResult('rag-add-result', data.success, data.message || data.detail || 'Tamamlandı.');
+    if (data.success) { document.getElementById('rag-file-path').value = ''; document.getElementById('rag-file-title').value = ''; }
+  } catch (err) {
+    ragShowResult('rag-add-result', false, err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ekle';
+  }
+}
+
+async function ragAddUrl() {
+  const url   = document.getElementById('rag-url-input').value.trim();
+  const title = document.getElementById('rag-url-title').value.trim();
+  if (!url) { ragShowResult('rag-add-result', false, 'URL gerekli.'); return; }
+  const btn = document.getElementById('rag-add-url-btn');
+  btn.disabled = true; btn.textContent = 'Ekleniyor…';
+  try {
+    const res = await fetch('/rag/add-url', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url, title: title || undefined })
+    });
+    const data = await res.json();
+    ragShowResult('rag-add-result', data.success, data.message || data.detail || 'Tamamlandı.');
+    if (data.success) { document.getElementById('rag-url-input').value = ''; document.getElementById('rag-url-title').value = ''; }
+  } catch (err) {
+    ragShowResult('rag-add-result', false, err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ekle';
+  }
+}
+
+async function ragSearch() {
+  const q = document.getElementById('rag-search-q').value.trim();
+  if (!q) return;
+  const out = document.getElementById('rag-search-out');
+  out.textContent = 'Aranıyor…';
+  try {
+    const res = await fetch(`/rag/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    out.textContent = data.result || 'Sonuç bulunamadı.';
+  } catch (err) {
+    out.textContent = `Hata: ${err.message}`;
+  }
+}
+
+function ragShowResult(elId, ok, msg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.className = `rag-result ${ok ? 'ok' : 'err'}`;
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
 /* ─── Global klavye kısayolları ─────────────────────────── */
 document.addEventListener('keydown', e => {
   // ESC: Modal kapat veya streaming durdur
   if (e.key === 'Escape') {
-    ['repo-modal','branch-modal','status-modal','shortcuts-modal'].forEach(id => closeModal(id));
+    ['repo-modal','branch-modal','status-modal','shortcuts-modal','rag-modal'].forEach(id => closeModal(id));
     closeTodoPanel();
     if (isStreaming) stopStreaming();
     return;
@@ -2903,6 +3121,80 @@ document.addEventListener('keydown', e => {
   }
 });
 </script>
+
+<!-- ── RAG Belge Deposu Modalı ──────────────────────────────── -->
+<div id="rag-modal" onclick="if(event.target===this)closeRagModal()">
+  <div class="rag-box">
+
+    <div class="rag-header">
+      <h3>📚 RAG Belge Deposu</h3>
+      <button class="rag-close" onclick="closeRagModal()" title="Kapat">×</button>
+    </div>
+
+    <div class="rag-tabs">
+      <button class="rag-tab active" data-tab="belgeler" onclick="ragTab('belgeler')">Belgeler</button>
+      <button class="rag-tab" data-tab="ekle" onclick="ragTab('ekle')">Ekle</button>
+      <button class="rag-tab" data-tab="arama" onclick="ragTab('arama')">Arama</button>
+    </div>
+
+    <!-- Pane 1: Belgeler -->
+    <div class="rag-pane active" data-pane="belgeler">
+      <div class="rag-search-row">
+        <input class="rag-search-input" id="rag-filter" type="text"
+          placeholder="Belgeler içinde filtrele…"
+          oninput="ragLoadDocs(this.value)" />
+        <button class="rag-btn" onclick="ragLoadDocs(document.getElementById('rag-filter').value)" title="Yenile">↺ Yenile</button>
+      </div>
+      <div id="rag-del-result"></div>
+      <div class="rag-doc-list" id="rag-doc-list">
+        <div class="rag-empty">Yükleniyor…</div>
+      </div>
+    </div>
+
+    <!-- Pane 2: Ekle -->
+    <div class="rag-pane rag-add-pane" data-pane="ekle">
+      <div class="rag-add-section">
+        <div class="rag-add-label">📁 Proje Dosyasından</div>
+        <div class="rag-add-row">
+          <input class="rag-add-input" id="rag-file-title" type="text" placeholder="Başlık (isteğe bağlı)" />
+        </div>
+        <div class="rag-add-row">
+          <input class="rag-add-input" id="rag-file-path" type="text" placeholder="Dosya yolu (ör: core/rag.py)" />
+          <button class="rag-btn primary" id="rag-add-file-btn" onclick="ragAddFile()">Ekle</button>
+        </div>
+        <div class="rag-add-hint">Proje kök dizinine göre göreli veya mutlak yol girin.</div>
+      </div>
+
+      <div class="rag-add-sep">veya</div>
+
+      <div class="rag-add-section">
+        <div class="rag-add-label">🔗 URL / Web Sayfasından</div>
+        <div class="rag-add-row">
+          <input class="rag-add-input" id="rag-url-title" type="text" placeholder="Başlık (isteğe bağlı)" />
+        </div>
+        <div class="rag-add-row">
+          <input class="rag-add-input" id="rag-url-input" type="text" placeholder="https://…" />
+          <button class="rag-btn primary" id="rag-add-url-btn" onclick="ragAddUrl()">Ekle</button>
+        </div>
+        <div class="rag-add-hint">URL içeriği otomatik olarak parçalanarak indekslenir.</div>
+      </div>
+
+      <div id="rag-add-result" class="rag-result"></div>
+    </div>
+
+    <!-- Pane 3: Arama -->
+    <div class="rag-pane rag-search-pane" data-pane="arama">
+      <div class="rag-search-row" style="padding:0">
+        <input class="rag-search-input" id="rag-search-q" type="text"
+          placeholder="Sorgu girin…"
+          onkeydown="if(event.key==='Enter')ragSearch()" />
+        <button class="rag-btn primary" onclick="ragSearch()">Ara</button>
+      </div>
+      <div class="rag-search-result" id="rag-search-out">Arama sonuçları burada görünür.</div>
+    </div>
+
+  </div>
+</div>
 
 <!-- ── Activity Panel (Canlı Arka Plan Aktivitesi) ─────────── -->
 <div id="activity-panel">

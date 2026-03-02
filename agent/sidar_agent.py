@@ -402,7 +402,19 @@ class SidarAgent:
         if not a: return "Dosya yolu belirtilmedi."
         # Disk okuma event loop'u bloke eder — thread'e itilir
         ok, result = await asyncio.to_thread(self.code.read_file, a)
-        if ok: await asyncio.to_thread(self.memory.set_last_file, a)
+        if ok:
+            await asyncio.to_thread(self.memory.set_last_file, a)
+            # Büyük dosya tespiti: eşiği geçen dosyalar için RAG önerisi ekle
+            threshold = getattr(self.cfg, "RAG_FILE_THRESHOLD", 20000)
+            if len(result) > threshold:
+                fname = Path(a).name
+                result += (
+                    f"\n\n---\n💡 **[Büyük Dosya — {len(result):,} karakter]** "
+                    f"Bu dosyayı her seferinde okumak yerine RAG deposuna ekleyin:\n"
+                    f"  • Eklemek için: `docs_add_file|{a}` aracını çağırın\n"
+                    f"  • Ekledikten sonra sorgu için: `docs_search|{fname} <sorgunuz>`\n"
+                    f"  • Bu sayede Sidar yalnızca ilgili bölümü bulup çıkarır."
+                )
         return result
 
     async def _tool_write_file(self, a: str) -> str:
@@ -743,6 +755,22 @@ class SidarAgent:
         _, result = await self.docs.add_document_from_url(parts[1].strip(), title=parts[0].strip())
         return result
 
+    async def _tool_docs_add_file(self, a: str) -> str:
+        """
+        Yerel dosyayı RAG deposuna ekle.
+        Format: 'dosya_yolu'  veya  'başlık|dosya_yolu'
+        """
+        parts = a.split("|", 1)
+        if len(parts) == 2:
+            title, path = parts[0].strip(), parts[1].strip()
+        else:
+            path  = parts[0].strip()
+            title = Path(path).name if path else ""
+        if not path:
+            return "⚠ Dosya yolu belirtilmedi. Kullanım: docs_add_file|dosya_yolu"
+        ok, result = await asyncio.to_thread(self.docs.add_document_from_file, path, title)
+        return result
+
     async def _tool_docs_list(self, _: str) -> str:
         return self.docs.list_documents()
 
@@ -1081,6 +1109,7 @@ class SidarAgent:
             "gh_latest":              self._tool_gh_latest,
             "docs_search":            self._tool_docs_search,
             "docs_add":               self._tool_docs_add,
+            "docs_add_file":          self._tool_docs_add_file,
             "docs_list":              self._tool_docs_list,
             "docs_delete":            self._tool_docs_delete,
             # Kabuk & Arama (Claude Code uyumlu)
