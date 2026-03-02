@@ -8,6 +8,7 @@ import json
 import re
 import asyncio
 import time
+from pathlib import Path
 from typing import Optional, AsyncIterator, Dict
 
 from pydantic import BaseModel, Field, ValidationError
@@ -117,6 +118,7 @@ class SidarAgent:
         )
 
         self.todo = TodoManager()
+        self._instructions_cache: Optional[str] = None
 
         self.auto = AutoHandle(
             self.code, self.health, self.github, self.memory,
@@ -787,8 +789,8 @@ class SidarAgent:
         Her LLM turunda system_prompt'a eklenir; model bu değerleri
         ASLA tahmin etmemelidir — gerçek runtime değerler burada verilir.
 
-        Ayrıca SIDAR.md dosyası varsa proje özel talimatları buraya eklenir
-        (Claude Code'daki CLAUDE.md desteğine eşdeğer).
+        Ayrıca SIDAR.md / CLAUDE.md dosyaları varsa proje özel talimatları
+        hiyerarşik öncelik ile bağlama eklenir.
         """
         lines = []
 
@@ -829,20 +831,50 @@ class SidarAgent:
             lines.append("[Aktif Görev Listesi]")
             lines.append(self.todo.list_tasks())
 
-        # ── SIDAR.md (Claude Code'daki CLAUDE.md'ye eşdeğer) ────────────
-        # Proje kökünde SIDAR.md varsa proje özel talimatları olarak yükle
-        sidar_md_path = self.cfg.BASE_DIR / "SIDAR.md"
-        if sidar_md_path.exists():
-            try:
-                sidar_md_content = sidar_md_path.read_text(encoding="utf-8", errors="replace")
-                if sidar_md_content.strip():
-                    lines.append("")
-                    lines.append("[SIDAR.md — Proje Özel Talimatlar]")
-                    lines.append(sidar_md_content.strip())
-            except Exception:
-                pass
+        # ── SIDAR.md / CLAUDE.md (Claude Code uyumlu) ──────────────────
+        instruction_block = self._load_instruction_files()
+        if instruction_block:
+            lines.append("")
+            lines.append(instruction_block)
 
         return "\n".join(lines)
+
+    def _load_instruction_files(self) -> str:
+        """
+        Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
+        - Daha üst dizin dosyaları önce gelir.
+        - Alt dizin dosyaları daha sonra gelerek öncelik alır.
+        """
+        if self._instructions_cache is not None:
+            return self._instructions_cache
+
+        root = Path(self.cfg.BASE_DIR)
+        instruction_names = ("SIDAR.md", "CLAUDE.md")
+        found_files = []
+
+        for name in instruction_names:
+            found_files.extend(root.rglob(name))
+
+        # Aynı dosya iki kez gelmesin, deterministik sırada olsun
+        unique_files = sorted({p.resolve() for p in found_files if p.is_file()})
+        if not unique_files:
+            self._instructions_cache = ""
+            return ""
+
+        blocks = ["[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]"]
+        for path in unique_files:
+            try:
+                rel = path.relative_to(root)
+                content = path.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+            blocks.append(f"\n## {rel}")
+            blocks.append(content)
+
+        self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
+        return self._instructions_cache
 
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
