@@ -237,6 +237,23 @@ class TodoManager:
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
 
+    def get_tasks(self) -> list:
+        """
+        Görev listesini dict listesi olarak döndürür.
+        REST endpoint ve UI entegrasyonu için kullanılır.
+        """
+        with self._lock:
+            return [
+                {
+                    "id": t.id,
+                    "content": t.content,
+                    "status": t.status,
+                    "created_at": int(t.created_at),
+                    "updated_at": int(t.updated_at),
+                }
+                for t in self._tasks
+            ]
+
     def get_active_count(self) -> int:
         """Aktif (in_progress + pending) görev sayısını döndürür."""
         with self._lock:
