@@ -623,7 +623,7 @@ class SidarAgent:
         # 2. Base branch'i belirle
         if not base:
             try:
-                base = self.github._repo.default_branch if self.github._repo else "main"
+                base = self.github.default_branch
             except Exception:
                 base = "main"
 
