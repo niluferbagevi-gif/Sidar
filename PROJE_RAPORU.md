@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — N-01–N-04 yeni bulgular eklendi — Kod v2.7.0 ile tam doğrulama tamamlandı)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — O-01–O-06 yeni bulgular eklendi — Kod v2.7.0 ile tam doğrulama tamamlandı)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
-**Versiyon:** SidarAgent v2.7.0 ⚠️ (kod v2.7.0 — rapor ve bazı bileşenler hâlâ v2.6.1 gösteriyor — bkz. N-01)
-**Toplam Dosya:** ~35 kaynak dosyası, ~10.400+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / **N-01–N-04 yeni bulgular: 2026-03-02**
+**Versiyon:** SidarAgent v2.7.0 ⚠️ (kod v2.7.0 — bazı modül docstring'leri ve Dockerfile hâlâ v2.6.1 gösteriyor — bkz. N-01, O-01)
+**Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / N-01–N-04 yeni bulgular: 2026-03-02 / **O-01–O-06 yeni bulgular: 2026-03-02**
 
 ---
 
@@ -69,6 +69,20 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 - **YENİ:** Oturum dışa aktarma (MD + JSON indirme düğmeleri)
 - **YENİ:** ReAct araç görselleştirmesi (her tool çağrısı badge olarak gösteriliyor)
 - **YENİ:** Mobil hamburger menüsü (768px altında sidebar toggle + overlay)
+
+**v2.6.1 → v2.7.0 Büyük Özellik Güncellemeleri (2026-03-02):**
+- **YENİ:** Canlı Aktivite Paneli (`#activity-panel`) — streaming sırasında araç çağrıları ve düşünce süreçleri gerçek zamanlı gösterilir
+- **YENİ:** THOUGHT sentinel (`\x00THOUGHT:<text>\x00`) — ajan düşünce süreçleri SSE üzerinden UI'ya iletilir
+- **YENİ:** Hibrit RAG Büyük Dosya Yönetimi:
+  - `docs_add_file` aracı: yerel dosyaları RAG deposuna ekler
+  - `_tool_read_file` büyük dosya tespiti: `RAG_FILE_THRESHOLD` (20 000 karakter) aşıldığında otomatik RAG önerisi
+  - `DocumentStore.add_document_from_file()` ve `get_index_info()` public metotları eklendi
+  - `RAG_FILE_THRESHOLD: int` config ayarı eklendi
+- **YENİ:** 5 yeni RAG yönetim endpoint'i: `GET /rag/docs`, `POST /rag/add-file`, `POST /rag/add-url`, `DELETE /rag/docs/{id}`, `GET /rag/search`
+- **YENİ:** Web UI RAG Belge Deposu modalı (3 sekme: Belgeler / Ekle / Arama)
+- **YENİ:** `managers/todo_manager.py` — Claude Code TodoWrite/TodoRead uyumlu görev takip yöneticisi
+- **DÜZELTME:** CORS konfigürasyonu sadece localhost origin'lerini kabul edecek şekilde daraltıldı
+- **DÜZELTME:** Git injection koruması — `_BRANCH_RE` regex doğrulaması eklendi
 
 ---
 
@@ -1509,15 +1523,15 @@ await asyncio.to_thread(
 
 ## 4. Mevcut Kritik Hatalar
 
-> ✅ 2026-03-02 taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. §3.
+> ✅ 2026-03-02 güncel taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. §3.
 
 ---
 
 ## 5. Yüksek Öncelikli Sorunlar
 
-> ⚠️ **1 aktif yüksek öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+> ⚠️ **1 aktif yüksek öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
 >
-> **N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış — `config.py:295` `DOCKER_PYTHON_IMAGE` okuyor. Kullanıcının Docker sandbox imajı özelleştirmesi sessizce yoksayılır. Bkz. §8.4 N-02.
+> **N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış — `config.py:298` `DOCKER_PYTHON_IMAGE` okuyor. Kullanıcının Docker sandbox imajı özelleştirmesi sessizce yoksayılır. Bkz. §8.4 N-02.
 >
 > Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -1525,9 +1539,15 @@ await asyncio.to_thread(
 
 ## 6. Orta Öncelikli Sorunlar
 
-> ⚠️ **1 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+> ⚠️ **4 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
 >
 > **N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"` ve `Dockerfile:25` → `LABEL version="2.6.1"` — Kod v2.7.0'a güncellenmiş ancak bu dosyalar eski sürümü gösteriyor. Bkz. §8.4 N-01.
+>
+> **O-02**: `web_server.py:325` `/metrics` endpoint'i `len(agent.docs._index)` kullanıyor — N-03 kısmen düzeltilmişken bu satır atlanmış. Public `get_index_info()` metodu mevcut; kullanılmıyor. Bkz. §8.5 O-02.
+>
+> **O-03**: `web_server.py:590` `/github-prs` endpoint'i `agent.github._repo.get_pulls(...)` kullanıyor — PyGithub nesnesine dış modülden erişim. Bkz. §8.5 O-03.
+>
+> **O-05**: `web_server.py:92` `_RATE_GET_IO_PATHS` frozenset'inde yeni `GET /rag/docs` ve `GET /rag/search` endpoint'leri eksik — bu endpoint'lere rate limit uygulanmıyor. Bkz. §8.5 O-05.
 >
 > Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -1536,11 +1556,17 @@ await asyncio.to_thread(
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ⚠️ **2 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 taraması):
+> ⚠️ **5 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
 >
-> **N-03**: `web_server.py:321` `agent.docs._index` ve `web_server.py:586` `agent.github._repo` — private attribute'lara dış modülden erişim (encapsulation ihlali). Bkz. §8.4 N-03.
+> **N-03** (kısmen açık): `web_server.py:590` `agent.github._repo` — private attribute erişimi. `/rag/docs` endpoint'inin kullandığı `agent.docs._index` erişimi düzeltildi; ancak `/github-prs` ve `/metrics` hâlâ açık (bkz. O-02, O-03). Bkz. §8.4 N-03.
 >
 > **N-04**: `environment.yml:11` `packaging>=23.0` conda bölümünde — Docker build'da pip bölümüne aktarılmaz; versiyon kısıtlaması Docker ortamında güvence altında değil. Bkz. §8.4 N-04.
+>
+> **O-01**: `core/rag.py:4`, `managers/security.py:5`, `managers/github_manager.py:4`, `managers/system_health.py:3` — modül docstring'leri `Sürüm: 2.6.1` gösteriyor; kod v2.7.0. Bkz. §8.5 O-01.
+>
+> **O-04**: `sidar_agent.py:626` `self.github._repo.default_branch` — `_tool_github_smart_pr` içinde GitHubManager'ın özel özelliğine doğrudan erişim. Bkz. §8.5 O-04.
+>
+> **O-06**: `core/rag.py:399` `add_document_from_file()` içinde `_recursive_chunk_text(content)` gereksiz yere iki kez çağrılıyor (bir kez `len(chunks)` için, bir kez de `add_document()` içinde). Bkz. §8.5 O-06.
 >
 > Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -1549,7 +1575,7 @@ await asyncio.to_thread(
 
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** (Önceki: 2026-03-01 — V-01–V-03 yamaları uygulandı) — Önceki 17 uyumsuzluktan **17'si**, U-01–U-15 taramasındaki **15 uyumsuzluktan 15'i**, V-01–V-03 taramasındaki **3 uyumsuzluktan 3'ü** giderilmiştir. **2026-03-02 taramasında 4 yeni uyumsuzluk (N-01–N-04) tespit edildi.** Toplam: 35/35 kapatıldı + 4 yeni açık sorun.
+> Son kontrol tarihi: **2026-03-02** (Önceki: 2026-03-01 — V-01–V-03 yamaları uygulandı) — Önceki 17 uyumsuzluktan **17'si**, U-01–U-15 taramasındaki **15 uyumsuzluktan 15'i**, V-01–V-03 taramasındaki **3 uyumsuzluktan 3'ü** giderilmiştir. **2026-03-02 taramasında 4 yeni uyumsuzluk (N-01–N-04) + 6 ek bulgu (O-01–O-06) tespit edildi.** Toplam: 35/35 kapatıldı + 10 yeni açık sorun (4'ü önceki turdan, 6'sı bu turdan).
 
 ### 8.1 Önceki Sürümlerde Giderilen Uyumsuzluklar (Kapalı)
 
@@ -2098,6 +2124,178 @@ def get_pull_requests_raw(self, state: str, limit: int):
     ...
     - packaging>=23.0    # ← pip bölümüne alınmalı
 ```
+
+---
+
+### 8.5 Yeni Doğrulama Taraması — O-01–O-06 (2026-03-02 Güncel Bulgular — İkinci Tur)
+
+> Tespit tarihi: **2026-03-02** (v2.7.0 sonrası tam yeniden inceleme — Activity Panel + Hybrid RAG eklendikten sonra)
+> **6 yeni bulgu tespit edildi** — N-01–N-04 hâlâ açık, 6 ek sorun belirlendi.
+
+---
+
+#### O-01 Detay: Birden Fazla Modülde `Sürüm: 2.6.1` Docstring'i — v2.7.0 ile Uyumsuz
+
+**Önem:** 🟢 DÜŞÜK (işlevsel etki yok; bakım ve takip güçleşir)
+
+**Konum:**
+- `core/rag.py:4` → `Sürüm: 2.6.1 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)`
+- `managers/security.py:5` → `Sürüm: 2.6.1`
+- `managers/github_manager.py:4` → `Sürüm: 2.6.1`
+- `managers/system_health.py:3` → `Sürüm: 2.6.1 (GPU Genişletilmiş İzleme)`
+
+**Not:** `SidarAgent.VERSION = "2.7.0"` (`sidar_agent.py:86`) doğru güncellendi. Modül docstring'leri ise eski sürümü gösteriyor. `core/rag.py` bu taramada `add_document_from_file()` ve `get_index_info()` eklenerek değiştirildi; docstring'i özellikle güncellenmelidir.
+
+**Beklenen Düzeltme:**
+```python
+# Tüm modüllerde (core/rag.py, managers/security.py, managers/github_manager.py, managers/system_health.py)
+"""
+Sürüm: 2.7.0
+"""
+```
+
+---
+
+#### O-02 Detay: `web_server.py:325` — `/metrics` Endpoint'i `agent.docs._index` Kullanıyor (N-03 Kalan Kısım)
+
+**Önem:** 🟡 ORTA (N-03 kısmen kapatıldı — bu satır atlandı)
+
+**Sorun:** `/rag/docs` endpoint'i düzeltilerek `get_index_info()` kullanmaya başladı, ancak `/metrics` endpoint'indeki aşağıdaki satır atlandı:
+
+```python
+# web_server.py:325 — MEVCUT (HATALI)
+rag_docs  = len(agent.docs._index)
+```
+
+`DocumentStore.get_index_info()` public metodu mevcut olmasına rağmen kullanılmıyor.
+
+**Beklenen Düzeltme:**
+```python
+# web_server.py:325 — DÜZELTME
+rag_docs  = len(agent.docs.get_index_info())
+```
+
+---
+
+#### O-03 Detay: `web_server.py:590` — `/github-prs` Endpoint'i `agent.github._repo.get_pulls()` Kullanıyor (N-03 Kalan Kısım)
+
+**Önem:** 🟡 ORTA (encapsulation ihlali; `_repo` None olduğunda `AttributeError` fırlatır)
+
+**Sorun:** PyGithub `Repository` nesnesine dış modülden doğrudan erişim:
+```python
+# web_server.py:590 — MEVCUT (HATALI)
+for pr in agent.github._repo.get_pulls(state=state, sort="updated")[:min(limit, 50)]:
+```
+
+`_repo` `None` olduğunda (GitHub token eksik veya bağlantı başarısız) bu satır `AttributeError` fırlatır. Mevcut `is_available()` kontrolü yapılmış olmakla birlikte, `_repo`'nun None olması teorik olarak mümkün.
+
+**Beklenen Düzeltme:**
+```python
+# managers/github_manager.py — yeni public metod
+def get_pulls_raw(self, state: str = "open", limit: int = 10):
+    """Yapısal PR verilerini döndürür — None korumalı."""
+    if not self._repo:
+        return []
+    return list(self._repo.get_pulls(state=state, sort="updated")[:limit])
+
+# web_server.py:590 — DÜZELTME
+for pr in agent.github.get_pulls_raw(state=state, limit=min(limit, 50)):
+```
+
+---
+
+#### O-04 Detay: `sidar_agent.py:626` — `_tool_github_smart_pr` `self.github._repo.default_branch` Kullanıyor
+
+**Önem:** 🟢 DÜŞÜK (ajan içi erişim; dış modülden değil — kabul edilebilir sınırda)
+
+**Sorun:** `GitHubManager._repo` özel özelliğine ajan kodu doğrudan erişiyor:
+```python
+# sidar_agent.py:626 — MEVCUT
+base = self.github._repo.default_branch if self.github._repo else "main"
+```
+
+**Beklenen Düzeltme:**
+```python
+# managers/github_manager.py — public property ekle
+@property
+def default_branch(self) -> str:
+    """Varsayılan branch adı — None korumalı."""
+    try:
+        return self._repo.default_branch if self._repo else "main"
+    except Exception:
+        return "main"
+
+# sidar_agent.py:626 — DÜZELTME
+base = self.github.default_branch if self.github.is_available() else "main"
+```
+
+---
+
+#### O-05 Detay: `web_server.py:92` — Yeni RAG GET Endpoint'leri Rate Limit Kapsamı Dışında
+
+**Önem:** 🟡 ORTA (DoS riski — ağır RAG sorguları sınırsız tekrarlanabilir)
+
+**Sorun:** `_RATE_GET_IO_PATHS` frozenset'i yeni eklenen GET endpoint'lerini içermiyor:
+```python
+# web_server.py:92 — MEVCUT (EKSİK)
+_RATE_GET_IO_PATHS = frozenset([
+    "/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo"
+])
+# GET /rag/docs   ← EKSİK — ChromaDB listesi, ağır I/O
+# GET /rag/search ← EKSİK — embedding + ChromaDB sorgusu, ağır CPU/GPU
+```
+
+`/rag/search` endpoint'i embedding hesaplaması ve ChromaDB sorgusu içerir; rate limit olmadan saldırıya açıktır.
+
+**Beklenen Düzeltme:**
+```python
+# web_server.py:92 — DÜZELTME
+_RATE_GET_IO_PATHS = frozenset([
+    "/git-info", "/git-branches", "/files", "/file-content",
+    "/github-prs", "/todo", "/rag/docs", "/rag/search"
+])
+```
+
+---
+
+#### O-06 Detay: `core/rag.py` — `add_document_from_file()` İçinde Çift Chunking
+
+**Önem:** 🟢 DÜŞÜK (performans kaybı — işlevsel sorun yok)
+
+**Sorun:** `add_document_from_file()` metodu `_recursive_chunk_text()` fonksiyonunu iki kez çağırıyor:
+```python
+# core/rag.py:399 — MEVCUT (GEREKSİZ)
+chunks = self._recursive_chunk_text(content)   # 1. çağrı — yalnızca len() için
+doc_id = self.add_document(title, content, ...)# ← add_document içinde 2. çağrı yapılıyor
+
+return True, (
+    f"✓ ... ({len(chunks)} parça)"  # chunks kullanılıyor
+)
+```
+
+Büyük dosyalarda (>20 KB) bu gereksiz chunking belirgin CPU maliyeti yaratır.
+
+**Beklenen Düzeltme:**
+`add_document()` metodunun chunk sayısını döndürecek şekilde güncellenmesi veya iç sayaç kullanılması. Alternatif: `len(chunks)` yerine `len(self._recursive_chunk_text(content))` hesaplamasını `add_document()` içine taşı.
+
+---
+
+### 8.6 Özet Tablo — Tüm Açık Sorunlar (2026-03-02 Güncel)
+
+| ID | Önem | Konum | Açıklama | Durum |
+|----|------|-------|----------|-------|
+| N-01 | 🟡 ORTA | `core/__init__.py:10`, `Dockerfile:25` | `__version__ = "2.6.1"` — kod v2.7.0 | 🔴 Açık |
+| N-02 | 🔴 YÜKSEK | `.env.example:125`, `config.py:298` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | 🔴 Açık |
+| N-03 | 🟢 DÜŞÜK | `web_server.py:590` | `_repo` private erişim (kısmi) | 🟡 Kısmi |
+| N-04 | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | 🔴 Açık |
+| O-01 | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | 🔴 Açık |
+| O-02 | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | 🔴 Açık |
+| O-03 | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | 🔴 Açık |
+| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | 🔴 Açık |
+| O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | 🔴 Açık |
+| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | 🔴 Açık |
+
+**Toplam Açık:** 10 sorun (1 YÜKSEK, 4 ORTA, 5 DÜŞÜK) | **Toplam Kapalı:** 35
 
 ---
 
@@ -3059,7 +3257,63 @@ Bu oturumda özellikle şüpheyle incelenen ancak gerçekte sorun olmadığı do
 
 ---
 
+## 18. Eksiksiz Satır Satır Doğrulama — O-01–O-06 Yeni Bulgular (Session 7 — 2026-03-02)
+
+> **Tarih:** 2026-03-02 | **Kapsam:** ~35 kaynak dosya, ~11.500+ satır | **Metodoloji:** v2.7.0 (Activity Panel + Hybrid RAG eklenmiş hâl) tüm dosyalar baştan sona incelendi; N-01–N-04 durumu doğrulandı, 6 yeni bulgu (O-01–O-06) tespit edildi.
+
+### 18.1 v2.7.0 ile Eklenen Özellikler — Doğrulama
+
+| Özellik | Dosyalar | Durum |
+|---------|---------|-------|
+| Canlı Aktivite Paneli | `sidar_agent.py`, `web_server.py`, `web_ui/index.html` | ✅ Uygulandı |
+| THOUGHT sentinel | `sidar_agent.py:332`, `web_server.py:250` | ✅ Uygulandı |
+| TOOL sentinel | `sidar_agent.py:334`, `web_server.py:248` | ✅ Uygulandı |
+| `docs_add_file` aracı | `sidar_agent.py:758`, `agent/definitions.py:169` | ✅ Uygulandı |
+| `DocumentStore.add_document_from_file()` | `core/rag.py` | ✅ Uygulandı |
+| `DocumentStore.get_index_info()` | `core/rag.py` | ✅ Uygulandı |
+| `RAG_FILE_THRESHOLD` config | `config.py` | ✅ Uygulandı |
+| Büyük dosya RAG hint | `sidar_agent.py:401–418` | ✅ Uygulandı |
+| `/rag/docs` endpoint | `web_server.py:642` | ✅ Uygulandı |
+| `/rag/add-file` endpoint | `web_server.py:650` | ✅ Uygulandı |
+| `/rag/add-url` endpoint | `web_server.py:674` | ✅ Uygulandı |
+| `/rag/docs/{id}` DELETE | `web_server.py:688` | ✅ Uygulandı |
+| `/rag/search` endpoint | `web_server.py:697` | ✅ Uygulandı |
+| RAG modal (CSS + HTML + JS) | `web_ui/index.html` | ✅ Uygulandı |
+| `managers/todo_manager.py` | `managers/todo_manager.py` | ✅ Uygulandı |
+| `GET /todo` endpoint | `web_server.py:707` | ✅ Uygulandı |
+
+### 18.2 N-01–N-04 Durum Doğrulaması
+
+| ID | Önceki Durum | Güncel Durum | Not |
+|----|-------------|-------------|-----|
+| N-01 | 🔴 Açık | 🔴 Açık | `core/__init__.py:10` ve `Dockerfile:25` hâlâ "2.6.1" |
+| N-02 | 🔴 Açık | 🔴 Açık | `.env.example:125` `DOCKER_IMAGE` ≠ `config.py:298` `DOCKER_PYTHON_IMAGE` |
+| N-03 | 🔴 Açık | 🟡 Kısmi | `/rag/docs` düzeltildi; `/metrics`(O-02) ve `/github-prs`(O-03) hâlâ açık |
+| N-04 | 🔴 Açık | 🔴 Açık | `environment.yml:11` `packaging>=23.0` conda bölümünde |
+
+### 18.3 Yeni Bulgular Özeti (O-01–O-06)
+
+| ID | Önem | Konum | Açıklama |
+|----|------|-------|---------|
+| O-01 | 🟢 DÜŞÜK | 4 modül | Docstring `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz |
+| O-02 | 🟡 ORTA | `web_server.py:325` | `/metrics` `agent.docs._index` — N-03 kalan kısım |
+| O-03 | 🟡 ORTA | `web_server.py:590` | `/github-prs` `agent.github._repo.get_pulls()` |
+| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_tool_github_smart_pr` `_repo.default_branch` |
+| O-05 | 🟡 ORTA | `web_server.py:92` | `/rag/docs`, `/rag/search` rate limit dışı |
+| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking |
+
+### 18.4 Doğrulama Skoru
+
+| Kategori | §3.1–§3.73 + V + N önceki | Yeni (O-01–O-06) | Toplam |
+|----------|--------------------------|------------------|--------|
+| Onaylandı / Kapatıldı ✅ | 76/76 + N-03 kısmen | N-03 kısmen | 76+ |
+| Açık sorun | 4 (N-01, N-02, N-03k, N-04) | 6 | **10** |
+
+**Sonuç:** Proje v2.7.0 ile önemli özellikler kazandı (Activity Panel, Hybrid RAG, Todo Manager, RAG Web UI). Kritik hata bulunmuyor. Açık sorunlar teknik borç niteliğindedir; işlevselliği engellemez. Öncelik: **O-05** (rate limit güvenlik riski) → **N-02** (Docker config uyumsuzluğu) → **O-02/O-03** (encapsulation) → diğerleri.
+
+---
+
 *Rapor satır satır manuel kod analizi ile oluşturulmuştur — 2026-03-01*
-*Son güncelleme: V-01–V-03 doğrulama (2026-03-01) — tüm ~35 kaynak dosyanın eksiksiz satır satır incelemesi (Session 6)*
-*Analiz kapsamı: ~35 kaynak dosya, ~10.400+ satır kod*
-*Toplam doğrulanan + uygulanan düzeltme: **76** (§3.1–§3.73 tümü onaylandı + V-01/V-02/V-03 yamalandı) | Açık sorunlar: **0 — Proje tamamlandı ✅*** 
+*Son güncelleme: O-01–O-06 yeni bulgular (2026-03-02) — tüm ~35 kaynak dosyanın eksiksiz satır satır incelemesi (Session 7)*
+*Analiz kapsamı: ~35 kaynak dosya, ~11.500+ satır kod*
+*Toplam doğrulanan + uygulanan düzeltme: **76** (§3.1–§3.73 tümü onaylandı + V-01/V-02/V-03 yamalandı) | Açık sorunlar: **10** (1 YÜKSEK, 4 ORTA, 5 DÜŞÜK)*
