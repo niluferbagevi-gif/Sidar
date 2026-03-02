@@ -154,15 +154,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif orta öncelikli sorun kalmamıştır.
 >
-> ~~**N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"`~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-02**: `web_server.py:325` `len(agent.docs._index)`~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-03**: `web_server.py:590` `agent.github._repo.get_pulls(...)`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.get_pull_requests_detailed()` eklendi)
->
-> ~~**O-05**: `web_server.py:92` RAG endpoint'leri rate limit dışı~~ → ✅ **ÇÖZÜLDÜ** (`/rag/docs` ve `/rag/search` `_RATE_GET_IO_PATHS`'e eklendi)
->
-> Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
+> Geçmişte tespit edilen (N-01, O-02, O-03, O-05 dahil) tüm orta öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
 
 ---
 
