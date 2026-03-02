@@ -424,6 +424,11 @@ class DocumentStore:
             for doc_id, meta in self._index.items()
         ]
 
+    @property
+    def doc_count(self) -> int:
+        """Dizindeki belge sayısını döndürür."""
+        return len(self._index)
+
     def delete_document(self, doc_id: str) -> str:
         """Belgeyi tüm depolardan sil."""
         if doc_id not in self._index:

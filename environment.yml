@@ -8,7 +8,6 @@ dependencies:
   - git
   - setuptools
   - wheel
-  - packaging>=23.0
   # ─── PyTorch ───────────────────────────────────────────────────────────────
   # WSL2 / Ubuntu / Conda ortamı için NOT:
   #   Conda'nın pytorch-cuda paketi, WSL2'nin Windows sürücüsünden gelen
@@ -28,6 +27,7 @@ dependencies:
       - --extra-index-url https://download.pytorch.org/whl/cu124
 
       # ── Temel ─────────────────────────────────────────────────────────────
+      - packaging>=23.0
       - python-dotenv>=1.0.0
       - pyyaml>=6.0.1
       # requests kaldırıldı — tüm HTTP istekleri httpx ile yapılmaktadır
