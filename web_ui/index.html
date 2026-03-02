@@ -1820,6 +1820,7 @@ let msgCounter     = 0;
 let activeController = null;
 let currentRepo    = 'niluferbagevi-gif/sidar_project';
 let currentBranch  = 'main';
+let defaultBranch  = 'main';   // Repo'nun varsayılan hedef branch'i (PR base)
 let currentSessionId = null;
 let attachedFileContent = null;
 let attachedFileName    = null;
@@ -1870,6 +1871,7 @@ async function loadGitInfo() {
 
     // Global değişkenleri gerçek git bilgisiyle doldur
     currentBranch = branch;
+    defaultBranch = data.default_branch || 'main';
     if (repo) currentRepo = repo;
 
     // Sidebar etiketleri
@@ -1886,14 +1888,14 @@ async function loadGitInfo() {
     const repoLabel = document.getElementById('repo-label');
     if (repoLabel && repo) repoLabel.textContent = repo;
 
-    // PR Çubuğu: sadece main/master dışı dallarda göster
+    // PR Çubuğu: varsayılan dışındaki dallarda göster
     const prBar = document.getElementById('pr-bar');
-    if (prBar && branch && branch !== 'main' && branch !== 'master') {
-      document.getElementById('pr-base').textContent = 'main';
+    if (prBar && branch && branch !== defaultBranch) {
+      document.getElementById('pr-base').textContent = defaultBranch;
       document.getElementById('pr-head').textContent = branch;
       const viewBtn = document.getElementById('pr-view-btn');
       if (viewBtn && repo) {
-        viewBtn.href = `https://github.com/${repo}/compare/main...${branch}`;
+        viewBtn.href = `https://github.com/${repo}/compare/${defaultBranch}...${branch}`;
         viewBtn.style.display = 'inline-flex';
       }
       prBar.style.display = 'flex';
@@ -2421,14 +2423,15 @@ async function selectRepo(name) {
   }
 
   currentRepo = name;
+  _cachedBranches = null; // Repo değişince dal listesi önbelleğini sıfırla
   document.getElementById('repo-label').textContent = name;
   const srl = document.getElementById('sidebar-repo-label');
   if (srl) srl.textContent = name.split('/').pop() || name;
 
-  const prHead = document.getElementById('pr-head')?.textContent || currentBranch || 'main';
+  const prHead = document.getElementById('pr-head')?.textContent || currentBranch || defaultBranch;
   const viewBtn = document.getElementById('pr-view-btn');
   if (viewBtn && name) {
-    viewBtn.href = `https://github.com/${name}/compare/main...${prHead}`;
+    viewBtn.href = `https://github.com/${name}/compare/${defaultBranch}...${prHead}`;
     viewBtn.style.display = 'inline-flex';
   }
 }
@@ -2454,18 +2457,24 @@ async function openBranchModal() {
 }
 
 function renderBranches(list) {
-  document.getElementById('branch-list').innerHTML = list.map(b => `
-    <div class="repo-item ${b === currentBranch ? 'selected' : ''}" onclick="selectBranch('${b}')">
+  const container = document.getElementById('branch-list');
+  container.innerHTML = list.map(b => `
+    <div class="repo-item ${b === currentBranch ? 'selected' : ''}" data-branch="${escHtml(b)}">
       <div class="repo-item-icon" style="font-size:18px">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="var(--text-dim)">
           <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z"/>
         </svg>
       </div>
       <div class="repo-item-info">
-        <div class="repo-item-name">${b}</div>
+        <div class="repo-item-name">${escHtml(b)}</div>
       </div>
       <span class="repo-item-check">✓</span>
     </div>`).join('');
+  // inline onclick yerine event delegation — özel karakterli dal adlarını güvenle iletir
+  container.onclick = e => {
+    const item = e.target.closest('[data-branch]');
+    if (item) selectBranch(item.dataset.branch);
+  };
 }
 
 function filterBranches(q) {
@@ -2507,11 +2516,12 @@ async function selectBranch(name) {
   // PR çubuğunu güncelle
   const prBar = document.getElementById('pr-bar');
   if (prBar) {
-    if (name && name !== 'main' && name !== 'master') {
+    if (name && name !== defaultBranch) {
+      document.getElementById('pr-base').textContent = defaultBranch;
       document.getElementById('pr-head').textContent = name;
       const viewBtn = document.getElementById('pr-view-btn');
       if (viewBtn && currentRepo) {
-        viewBtn.href = `https://github.com/${currentRepo}/compare/main...${name}`;
+        viewBtn.href = `https://github.com/${currentRepo}/compare/${defaultBranch}...${name}`;
       }
       prBar.style.display = 'flex';
     } else {
@@ -2622,7 +2632,7 @@ async function exportSession(format) {
     const data = await (await fetch(`/sessions/${currentSessionId}`)).json();
     if (!data.success) { alert('Oturum verisi alınamadı.'); return; }
     const history = data.history || [];
-    const title = (document.querySelector('.session-item.active .session-title')
+    const title = (document.querySelector('.session-item.active .session-item-title')
                     || {textContent: 'sidar-oturum'}).textContent.trim().replace(/\s+/g, '-');
 
     let content, mime, ext;
@@ -2709,7 +2719,7 @@ async function openStatus() {
     grid.innerHTML = [
       row('Sürüm',           `v${data.version}`),
       row('AI Sağlayıcı',   `${data.provider} / ${data.model}`),
-      row('Erişim Seviyesi', data.access_level.toUpperCase(), lvlClass),
+      row('Erişim Seviyesi', (data.access_level || '').toUpperCase(), lvlClass),
       row('Bellek',          `${data.memory_count} mesaj`),
       row('GitHub',    data.github     ? '✓ Bağlı'         : '✗ Bağlı değil', data.github     ? 'ok' : 'warn'),
       row('Web Arama', data.web_search ? '✓ Aktif'         : '✗ Kurulu değil', data.web_search ? 'ok' : 'warn'),

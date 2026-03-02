@@ -487,6 +487,12 @@ async def git_info():
         _git_run, ["git", "remote", "get-url", "origin"], _root
     ) or ""
 
+    # Varsayılan branch (örn. main veya master): refs/remotes/origin/HEAD → "origin/main"
+    default_branch_raw = await asyncio.to_thread(
+        _git_run, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], _root
+    ) or ""
+    default_branch = default_branch_raw.replace("origin/", "").strip() or "main"
+
     # GitHub URL'sini "owner/repo" biçimine çevir
     repo = ""
     if remote:
@@ -495,7 +501,7 @@ async def git_info():
         repo = remote.removesuffix(".git")
         repo = repo.split("github.com/")[-1].split("github.com:")[-1]
 
-    return JSONResponse({"branch": branch, "repo": repo or "sidar_project"})
+    return JSONResponse({"branch": branch, "repo": repo or "sidar_project", "default_branch": default_branch})
 
 
 @app.get("/git-branches")
