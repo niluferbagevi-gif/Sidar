@@ -174,6 +174,15 @@ class SecurityManager:
         """
         return self.level >= SANDBOX
 
+    def can_run_shell(self) -> bool:
+        """
+        Terminal/Shell komut çalıştırma izni.
+        - RESTRICTED : yasak
+        - SANDBOX    : yasak (yalnızca Docker izole Python REPL izinli)
+        - FULL       : izinli (git, npm, pip vb. tüm kabuk komutları)
+        """
+        return self.level == FULL
+
     # ─────────────────────────────────────────────
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
@@ -192,6 +201,7 @@ class SecurityManager:
             f"Yazma   : {'✓ (tam — proje kökü)' if self.level == FULL else ('✓ (yalnızca /temp)' if self.level == SANDBOX else '✗')}"
         )
         perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
+        perms.append(f"Shell   : {'✓ (git, npm, pip vb.)' if self.level == FULL else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")
         return (
             f"[OpenClaw] Erişim Seviyesi: {self.level_name.upper()}\n"

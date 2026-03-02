@@ -5,9 +5,12 @@ Sürüm: 2.6.1
 """
 
 import ast
+import fnmatch
+import glob as _glob
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -88,12 +91,16 @@ class CodeManager:
     #  DOSYA OKUMA
     # ─────────────────────────────────────────────
 
-    def read_file(self, path: str) -> Tuple[bool, str]:
+    def read_file(self, path: str, line_numbers: bool = True) -> Tuple[bool, str]:
         """
-        Dosya içeriğini oku.
+        Dosya içeriğini oku. Claude Code gibi satır numaralarıyla gösterir.
 
         Güvenlik: path traversal (../), tehlikeli kalıplar ve sembolik bağlantı
         geçişleri security.can_read() ve base_dir doğrulaması ile engellenir.
+
+        Args:
+            path: Okunacak dosya yolu
+            line_numbers: True ise her satır başına satır numarası eklenir (cat -n formatı)
 
         Returns:
             (başarı, içerik_veya_hata_mesajı)
@@ -113,6 +120,16 @@ class CodeManager:
                 self._files_read += 1
 
             logger.debug("Dosya okundu: %s (%d karakter)", path, len(content))
+
+            if line_numbers:
+                lines = content.splitlines()
+                width = len(str(len(lines)))
+                numbered = "\n".join(
+                    f"{str(i + 1).rjust(width)}\t{line}"
+                    for i, line in enumerate(lines)
+                )
+                return True, numbered
+
             return True, content
 
         except PermissionError:
@@ -168,7 +185,7 @@ class CodeManager:
         """
         Dosyadaki belirli bir kod bloğunu yenisiyle değiştirir.
         """
-        ok, content = self.read_file(path)
+        ok, content = self.read_file(path, line_numbers=False)
         if not ok:
             return False, content
 
@@ -307,6 +324,233 @@ class CodeManager:
             return False, "⚠ Zaman aşımı! Kod 10 saniyeden uzun sürdü (sonsuz döngü koruması)."
         except Exception as exc:
             return False, f"Subprocess çalıştırma hatası: {exc}"
+
+    # ─────────────────────────────────────────────
+    #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
+    # ─────────────────────────────────────────────
+
+    def run_shell(self, command: str, cwd: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Kabuk komutunu güvenli subprocess ile çalıştırır.
+        Claude Code'daki Bash aracına eşdeğer.
+
+        Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
+        - git, npm, pip, ls, grep, find gibi tüm kabuk komutlarını destekler.
+        - 60 saniyelik zaman aşımı koruması vardır.
+
+        Args:
+            command: Çalıştırılacak kabuk komutu (shell=True ile işlenir)
+            cwd: Çalışma dizini (None ise base_dir kullanılır)
+
+        Returns:
+            (başarı, çıktı_veya_hata)
+        """
+        if not self.security.can_run_shell():
+            return False, (
+                "[OpenClaw] Kabuk komutu çalıştırma yetkisi yok.\n"
+                "Shell erişimi yalnızca ACCESS_LEVEL=full modunda aktiftir.\n"
+                "Değiştirmek için: .env → ACCESS_LEVEL=full"
+            )
+
+        if not command or not command.strip():
+            return False, "⚠ Çalıştırılacak komut belirtilmedi."
+
+        work_dir = cwd or str(self.base_dir)
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=work_dir,
+                env={**os.environ},
+            )
+            output_parts = []
+            if result.stdout.strip():
+                output_parts.append(result.stdout.strip())
+            if result.stderr.strip():
+                output_parts.append(f"[stderr]\n{result.stderr.strip()}")
+
+            combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
+
+            if result.returncode != 0:
+                return False, (
+                    f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}"
+                )
+            return True, combined
+
+        except subprocess.TimeoutExpired:
+            return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
+        except Exception as exc:
+            return False, f"Kabuk hatası: {exc}"
+
+    # ─────────────────────────────────────────────
+    #  GLOB DOSYA ARAMA
+    # ─────────────────────────────────────────────
+
+    def glob_search(self, pattern: str, base_path: str = ".") -> Tuple[bool, str]:
+        """
+        Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
+
+        Örnek desenler:
+          **/*.py          → tüm .py dosyaları
+          src/**/*.ts      → src/ altındaki .ts dosyaları
+          *.{json,yml}     → json veya yml dosyaları
+          agent/*.py       → agent/ altındaki .py dosyaları
+
+        Args:
+            pattern: Glob deseni
+            base_path: Arama başlangıç dizini
+
+        Returns:
+            (başarı, eşleşen_dosyalar_listesi)
+        """
+        if not pattern:
+            return False, "⚠ Glob deseni belirtilmedi."
+
+        try:
+            base = Path(base_path).resolve()
+            if not base.exists():
+                return False, f"Dizin bulunamadı: {base_path}"
+
+            # pathlib.rglob ile desenin ** kısmını işle
+            if "**" in pattern:
+                parts = pattern.split("**", 1)
+                sub = parts[1].lstrip("/\\")
+                matches = list(base.rglob(sub))
+            else:
+                matches = list(base.glob(pattern))
+
+            # Güvenlik: base_dir dışına çıkma (sadece okuma ama yine de kısıtla)
+            safe_matches = []
+            for m in matches:
+                try:
+                    m.resolve().relative_to(base)
+                    safe_matches.append(m)
+                except ValueError:
+                    pass
+
+            # Dizin/dosya ayırt ederek listele, değişiklik zamanına göre sırala
+            safe_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            if not safe_matches:
+                return True, f"Eşleşen dosya bulunamadı: `{pattern}` ({base_path})"
+
+            lines = [f"Glob sonuçları — `{pattern}` ({len(safe_matches)} eşleşme):"]
+            for m in safe_matches:
+                rel = m.relative_to(base)
+                tag = "📂" if m.is_dir() else "📄"
+                lines.append(f"  {tag} {rel}")
+
+            return True, "\n".join(lines)
+
+        except Exception as exc:
+            return False, f"Glob arama hatası: {exc}"
+
+    # ─────────────────────────────────────────────
+    #  İÇERİK ARAMA (GREP)
+    # ─────────────────────────────────────────────
+
+    def grep_files(
+        self,
+        pattern: str,
+        path: str = ".",
+        file_glob: str = "*",
+        case_sensitive: bool = True,
+        context_lines: int = 0,
+        max_results: int = 100,
+    ) -> Tuple[bool, str]:
+        """
+        Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
+
+        Args:
+            pattern: Aranacak regex kalıbı
+            path: Arama dizini veya dosya yolu
+            file_glob: Dosya filtresi (örn: "*.py", "*.{ts,tsx}")
+            case_sensitive: Büyük/küçük harf duyarlılığı
+            context_lines: Her eşleşme etrafında gösterilecek satır sayısı
+            max_results: Maksimum eşleşme sayısı
+
+        Returns:
+            (başarı, eşleşmeler_raporu)
+        """
+        if not pattern:
+            return False, "⚠ Arama kalıbı belirtilmedi."
+
+        try:
+            flags = 0 if case_sensitive else re.IGNORECASE
+            compiled = re.compile(pattern, flags)
+        except re.error as exc:
+            return False, f"Geçersiz regex kalıbı: {exc}"
+
+        try:
+            target = Path(path).resolve()
+            files_to_search: List[Path] = []
+
+            if target.is_file():
+                files_to_search = [target]
+            elif target.is_dir():
+                # Glob filtresi uygula
+                if "**" in file_glob or "/" in file_glob:
+                    files_to_search = [f for f in target.rglob(file_glob) if f.is_file()]
+                else:
+                    files_to_search = [f for f in target.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, file_glob)]
+            else:
+                return False, f"Yol bulunamadı: {path}"
+
+            results: List[str] = []
+            match_count = 0
+            files_with_matches = 0
+
+            for fp in sorted(files_to_search):
+                try:
+                    lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+                except Exception:
+                    continue
+
+                file_matches: List[str] = []
+                for i, line in enumerate(lines):
+                    if compiled.search(line):
+                        if match_count >= max_results:
+                            break
+                        match_count += 1
+
+                        # Bağlam satırları
+                        start = max(0, i - context_lines)
+                        end = min(len(lines), i + context_lines + 1)
+                        ctx_lines = []
+                        for j in range(start, end):
+                            prefix = ">" if j == i else " "
+                            ctx_lines.append(f"  {prefix} {j + 1:4d}: {lines[j]}")
+                        file_matches.append("\n".join(ctx_lines))
+
+                if file_matches:
+                    files_with_matches += 1
+                    try:
+                        rel = fp.relative_to(target if target.is_dir() else target.parent)
+                    except ValueError:
+                        rel = fp
+                    results.append(f"📄 {rel}")
+                    results.extend(file_matches)
+                    results.append("")
+
+                if match_count >= max_results:
+                    results.append(f"⚠ Maksimum eşleşme sayısına ulaşıldı ({max_results}). Desen daraltılabilir.")
+                    break
+
+            if not results:
+                return True, f"Eşleşme bulunamadı: `{pattern}` ({path}, filtre: {file_glob})"
+
+            header = (
+                f"Grep sonuçları — `{pattern}`\n"
+                f"  {files_with_matches} dosyada {match_count} eşleşme"
+            )
+            return True, header + "\n\n" + "\n".join(results)
+
+        except Exception as exc:
+            return False, f"Grep arama hatası: {exc}"
 
     # ─────────────────────────────────────────────
     #  DİZİN LİSTELEME
