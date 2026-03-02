@@ -96,6 +96,9 @@ class AutoHandle:
         result = self._try_github_info(t)
         if result[0]: return result
 
+        result = self._try_github_list_files(t)
+        if result[0]: return result
+
         result = self._try_github_read(t, text)
         if result[0]: return result
 
@@ -239,6 +242,19 @@ class AutoHandle:
             if not self.github.is_available():
                 return True, "⚠ GitHub token ayarlanmamış."
             _, result = self.github.get_repo_info()
+            return True, result
+        return False, ""
+
+    def _try_github_list_files(self, t: str) -> Tuple[bool, str]:
+        """Repo dosyalarını listele: 'repodaki dosyaları listele' vb."""
+        if re.search(
+            r"(github|repo|depo).*(dosya|içerik).*(listele|göster|getir)"
+            r"|(dosya|içerik).*(listele|göster|getir).*(github|repo|depo)",
+            t,
+        ):
+            if not self.github.is_available():
+                return True, "⚠ GitHub token ayarlanmamış."
+            _, result = self.github.list_files("")
             return True, result
         return False, ""
 
