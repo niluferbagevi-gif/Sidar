@@ -456,4 +456,4 @@ Config.initialize_directories()
 logger.info("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)
 
 if Config.DEBUG_MODE:
-    Config.print_config_summary()
+    Config.print_config_summary() 

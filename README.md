@@ -449,4 +449,4 @@ mypy . --ignore-missing-imports
 
 ## Lisans
 
-Bu proje LotusAI ekosisteminin bir parçasıdır.
+Bu proje LotusAI ekosisteminin bir parçasıdır. 

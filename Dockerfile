@@ -89,4 +89,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Varsayılan başlatma (CLI)
 # Web için: docker run ... python web_server.py
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["python", "main.py"] 

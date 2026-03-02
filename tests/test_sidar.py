@@ -960,4 +960,4 @@ def test_gpu_memory_optimize_gc_runs_on_error(tmp_path):
     # GPU devre dışı — hata verme, yalnızca GC çalışmalı
     result = health.optimize_gpu_memory()
     assert "GC" in result
-    assert isinstance(result, str)
+    assert isinstance(result, str) 

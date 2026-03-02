@@ -185,4 +185,4 @@ setup_conda_env
 pull_models
 setup_env_file
 download_vendor_libs
-print_footer
+print_footer 

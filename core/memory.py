@@ -307,4 +307,4 @@ class ConversationMemory:
             return len(self._turns)
 
     def __repr__(self) -> str:
-        return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>"
+        return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>" 

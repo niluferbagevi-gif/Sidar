@@ -637,4 +637,4 @@ class DocumentStore:
         if not engines:
             engines.append("Anahtar Kelime")
 
-        return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+        return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}" 

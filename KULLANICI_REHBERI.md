@@ -777,4 +777,4 @@ LOG_LEVEL=DEBUG
 
 *Bu rehber `data/sessions/`, `core/`, `agent/`, `managers/`, `web_server.py`, `main.py`, `config.py`, `Dockerfile`, `docker-compose.yml`, `environment.yml`, `.env.example` ve `install_sidar.sh` dosyaları satır satır incelenerek oluşturulmuştur.*
 
-*Son güncelleme: 2026-03-01 — SİDAR v2.6.0*
+*Son güncelleme: 2026-03-01 — SİDAR v2.6.0* 

@@ -469,4 +469,4 @@ class AutoHandle:
     def _extract_url(self, text: str) -> Optional[str]:
         """Metinden URL çıkar."""
         m = re.search(r'https?://[^\s"\'<>]+', text)
-        return m.group(0) if m else None
+        return m.group(0) if m else None 

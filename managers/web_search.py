@@ -308,4 +308,4 @@ class WebSearchManager:
         return (
             f"<WebSearchManager engine={self.engine} "
             f"available={[e for e in engines]}>"
-        )
+        ) 

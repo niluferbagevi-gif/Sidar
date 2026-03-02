@@ -160,4 +160,4 @@ Asla düz metin veya markdown bloğu kullanma.
    → ASLA ham veri objesi döndürme. Yanıtını MUTLAKA final_answer argümanında ver.
    YANLIŞ: {"project": "Sid", "version": "v1.0.0"}
    DOĞRU : {"thought": "...", "tool": "final_answer", "argument": "**Proje:** Sid\\n**Sürüm:** v1.0.0"}
-"""
+""" 

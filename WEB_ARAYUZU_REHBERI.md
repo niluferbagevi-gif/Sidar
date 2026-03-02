@@ -515,4 +515,4 @@ Kontrol: http://localhost:7860 doğru mu?
 ---
 
 *Bu rehber, `web_ui/index.html` arayüzü ve `web_server.py` backend'ine dayanılarak hazırlanmıştır.*
-*SİDAR v2.6.1 · localhost:7860*
+*SİDAR v2.6.1 · localhost:7860* 

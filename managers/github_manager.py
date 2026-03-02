@@ -357,4 +357,4 @@ class GitHubManager:
         return (
             f"<GitHubManager available={self._available} "
             f"repo={self.repo_name or 'None'}>"
-        )
+        ) 
