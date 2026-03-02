@@ -1958,3 +1958,19 @@ def get_pull_requests_raw(self, state: str, limit: int):
 ```
 
 ---
+
+## §16'dan Taşınan Bulgular (N-01–N-06) — Session 4 (2026-03-01)
+
+> `PROJE_RAPORU.md` içindeki **“16. Son Satır Satır İnceleme — Yeni Bulgular”** bölümü sadeleştirilmiş; kapanmış maddelerin ayrıntıları bu bölüme taşınmıştır.
+
+| Bulgu | Kısa Açıklama | Durum | Kayıt |
+|---|---|---|---|
+| N-01 | RAG chunking testlerinde header prefix nedeniyle assertion kırılması | ✅ Kapalı | §3.56 |
+| N-02 | `test_system_health_manager_cpu_only` testinde private `_gpu_available` erişimi | ✅ Kapalı | §3.57 |
+| N-03 | `docker-compose.yml` ile `.env.example` arasında `GPU_MIXED_PRECISION` varsayılan çelişkisi | ✅ Kapalı | §3.71 |
+| N-04 | `install_sidar.sh` içinde sabit `sleep 5` nedeniyle Ollama başlangıç race condition riski | ✅ Kapalı | §3.72 |
+| N-05 | `web_ui/index.html` içinde CDN bağımlılığı (çevrimdışı kırılma) | ✅ Kapalı | §3.73 |
+| N-06 | `environment.yml` ile rapor notları arasında kalan “requests” tutarsızlığının rapor tarafında güncellenmesi | ✅ Kapalı | §3.30 not güncellemesi |
+
+**Özet:** Session 4 kapsamında rapora eklenen yeni bulguların tamamı uygulanmış ve kapanmıştır; aktif sorun bulunmamaktadır.
+
