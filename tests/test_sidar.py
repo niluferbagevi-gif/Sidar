@@ -415,6 +415,21 @@ async def test_auto_handle_clear_command(agent):
     assert "temizlendi" in response.lower()
 
 
+@pytest.mark.asyncio
+async def test_auto_handle_repo_files_list_command(agent, monkeypatch):
+    """AutoHandle: 'repodaki dosyaları listele' komutunu GitHub listesine yönlendirir."""
+    monkeypatch.setattr(agent.auto.github, "is_available", lambda: True)
+    monkeypatch.setattr(
+        agent.auto.github,
+        "list_files",
+        lambda path="", branch=None: (True, "[GitHub Dosya Listesi: /]\n  📄 README.md"),
+    )
+
+    handled, response = await agent.auto.handle("repomuzdaki dosyaları listele")
+    assert handled is True
+    assert "GitHub Dosya Listesi" in response
+
+
 # ─────────────────────────────────────────────
 # 11. BROKEN JSON KARANTINA TESTİ
 # ─────────────────────────────────────────────
