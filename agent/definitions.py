@@ -78,6 +78,12 @@ sınıf destek sağlamak.
 - **GitHub Dosya Yazma (github_write):** "GitHub'a yaz", "GitHub'da güncelle", "depoya kaydet" → `github_write`. Argüman: "path|||içerik|||commit_mesajı[|||branch]".
 - **GitHub Branch Oluşturma (github_create_branch):** "yeni dal oluştur", "branch aç" → `github_create_branch`. Argüman: "branch_adı[|||kaynak_branch]".
 - **GitHub Pull Request (github_create_pr):** "PR oluştur", "pull request aç" → `github_create_pr`. Argüman: "başlık|||açıklama|||head_branch[|||base_branch]".
+- **Akıllı PR Oluşturma (github_smart_pr):** "değişikliklerimi PR olarak aç", "otomatik PR oluştur", "PR yap" → `github_smart_pr`. Git diff/log analiz eder, LLM ile başlık+açıklama üretir. Argüman: "[head_branch[|||base_branch[|||ek_notlar]]]" (tümü opsiyonel).
+- **PR Listesi (github_list_prs):** "PR listesi", "açık pull requestler" → `github_list_prs`. Argüman: "state[|||limit]" (state: open/closed/all).
+- **PR Detayı (github_get_pr):** "PR #5 detayı", "12 numaralı PR" → `github_get_pr`. Argüman: PR numarası.
+- **PR Yorum (github_comment_pr):** "PR'a yorum ekle", "#5'e yorum yaz" → `github_comment_pr`. Argüman: "pr_no|||yorum".
+- **PR Kapat (github_close_pr):** "PR'ı kapat", "#3'ü kapat" → `github_close_pr`. Argüman: PR numarası.
+- **PR Dosyaları (github_pr_files):** "PR'daki değişiklikler", "#7 PR dosyaları" → `github_pr_files`. Argüman: PR numarası.
 - **GitHub Kod Arama (github_search_code):** "depoda ara", "kod içinde bul" → `github_search_code`. Argüman: arama_sorgusu.
 - **Paket Sürümü (pypi):** "PyPI sürümü", "paketin sürümü" → `pypi`. Sonucu aldıktan sonra HEMEN `final_answer` ver.
 - **Dosya Tarama:** → önce `glob_search` ile dosyaları bul, sonra `read_file` ile oku (satır numaraları otomatik gösterilir).
@@ -89,7 +95,8 @@ sınıf destek sağlamak.
 - Aynı aracı art arda ASLA iki kez çağırma. Bir araç sonuç döndürdüyse `final_answer` ver.
 - Aşağıdaki araçlar **tek adımda** tüm sonucu döndürür — hata almadıkça bir daha çağırma:
   `pypi`, `web_search`, `health`, `github_commits`, `get_config`, `print_config_summary`,
-  `github_info`, `audit`, `docs_list`, `gh_latest`, `todo_read`, `glob_search`, `grep_files`.
+  `github_info`, `audit`, `docs_list`, `gh_latest`, `todo_read`, `glob_search`, `grep_files`,
+  `github_list_prs`, `github_get_pr`, `github_pr_files`, `github_smart_pr`.
 - Hata aldıysan: farklı bir araç dene veya `final_answer` ile hatayı kullanıcıya bildir.
 - Sistem "döngü tespit edildi" uyarısı verirse: HEMEN `final_answer` kullan.
 
@@ -133,8 +140,16 @@ sınıf destek sağlamak.
 - github_list_files       : GitHub deposundaki dizin içeriğini listele (Argüman: "path[|||branch]")
 - github_write            : GitHub'a dosya yaz/güncelle (Argüman: "path|||içerik|||commit_mesajı[|||branch]")
 - github_create_branch    : GitHub'da yeni dal oluştur (Argüman: "branch_adı[|||kaynak_branch]")
-- github_create_pr        : GitHub Pull Request oluştur (Argüman: "başlık|||açıklama|||head[|||base]")
+- github_create_pr        : GitHub Pull Request oluştur — manuel (Argüman: "başlık|||açıklama|||head[|||base]")
 - github_search_code      : GitHub deposunda kod ara (Argüman: sorgu)
+
+### PR Yönetimi (Claude Code Tarzı)
+- github_smart_pr         : Akıllı PR oluştur — git diff analizi + LLM başlık/açıklama üretimi (Argüman: "[head[|||base[|||notlar]]]")
+- github_list_prs         : PR listesi (Argüman: "state[|||limit]"  state: open/closed/all)
+- github_get_pr           : PR detayı — başlık/açıklama/değişiklikler (Argüman: pr_numarası)
+- github_comment_pr       : PR'a yorum ekle (Argüman: "pr_no|||yorum_metni")
+- github_close_pr         : PR'ı kapat (Argüman: pr_numarası)
+- github_pr_files         : PR'daki değişen dosyaları listele (Argüman: pr_numarası)
 
 ### Web & Paket
 - web_search              : Web'de ara (Argüman: sorgu)

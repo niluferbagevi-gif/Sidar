@@ -102,6 +102,12 @@ class AutoHandle:
         result = self._try_github_read(t, text)
         if result[0]: return result
 
+        result = self._try_github_list_prs(t, text)
+        if result[0]: return result
+
+        result = await self._try_github_get_pr(t, text)
+        if result[0]: return result
+
         result = self._try_security_status(t)
         if result[0]: return result
 
@@ -271,6 +277,52 @@ class AutoHandle:
                 return True, "⚠ Okunacak GitHub dosya yolunu belirtin."
             ok, content = self.github.read_remote_file(path)
             return True, content if ok else f"✗ {content}"
+        return False, ""
+
+    def _try_github_list_prs(self, t: str, raw: str) -> Tuple[bool, str]:
+        """PR listesi — 'PR listele', 'açık pull requestler', 'kapalı PR'lar' vb."""
+        if re.search(
+            r"(pr|pull.?request).*(listele|listesi|göster|getir|var\s+m[ıi])"
+            r"|(açık|kapalı|tüm).*(pr|pull.?request)"
+            r"|pull.?request.*listele",
+            t,
+        ):
+            if not self.github.is_available():
+                return True, "⚠ GitHub token ayarlanmamış."
+            # Durum tespiti: açık / kapalı / tüm
+            if re.search(r"kapalı|closed|kapanmış", t):
+                state = "closed"
+            elif re.search(r"tüm|hepsi|all", t):
+                state = "all"
+            else:
+                state = "open"
+            m = re.search(r"(\d+)\s*(?:pr|pull)", t)
+            limit = int(m.group(1)) if m else 10
+            _, result = self.github.list_pull_requests(state=state, limit=limit)
+            return True, result
+        return False, ""
+
+    async def _try_github_get_pr(self, t: str, raw: str) -> Tuple[bool, str]:
+        """PR detay sorgulama — 'PR #5 detayı', '#12 pull request' vb."""
+        m = re.search(
+            r"(?:pr|pull.?request)\s*#?(\d+)"
+            r"|#(\d+)\s*(?:pr|pull.?request)"
+            r"|(\d+)(?:\.?\s*numaral[ıi]|\.?\s*no.?lu)\s*(?:pr|pull.?request)",
+            t,
+        )
+        if m:
+            number = int(next(g for g in m.groups() if g is not None))
+            # "dosyaları" veya "yorum" alt komutu var mı?
+            if re.search(r"dosya|file|değişiklik", t):
+                if not self.github.is_available():
+                    return True, "⚠ GitHub token ayarlanmamış."
+                _, result = self.github.get_pr_files(number)
+                return True, result
+            # Varsayılan: detay
+            if not self.github.is_available():
+                return True, "⚠ GitHub token ayarlanmamış."
+            _, result = self.github.get_pull_request(number)
+            return True, result
         return False, ""
 
     def _try_security_status(self, t: str) -> Tuple[bool, str]:

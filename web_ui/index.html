@@ -936,6 +936,20 @@
     }
     .pr-view-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(124,58,237,.08); }
 
+    .pr-create-btn {
+      padding: 3px 10px;
+      background: var(--accent2);
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      color: #fff;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    .pr-create-btn:hover { background: var(--accent); }
+    .pr-create-btn:disabled { opacity: .45; cursor: default; }
+
     /* ── Input footer (model chip + hint) ────── */
     .input-footer {
       display: flex;
@@ -1290,6 +1304,8 @@
             <button class="quick-chip" onclick="quickTask('web\'de ara: Python async best practices 2025')">Web araması</button>
             <button class="quick-chip" onclick="quickTask('pypi: fastapi')">PyPI bilgisi</button>
             <button class="quick-chip" onclick="quickTask('Erişim seviyesi ve güvenlik durumunu göster')">Güvenlik durumu</button>
+            <button class="quick-chip" onclick="createSmartPR()" title="Mevcut branch için akıllı PR oluştur">✨ PR Oluştur</button>
+            <button class="quick-chip" onclick="quickTask('Açık PR listesini göster')">PR Listesi</button>
             <button class="quick-chip" onclick="quickTask('Belge deposunu listele')">RAG belgeler</button>
           </div>
         </div>
@@ -1310,7 +1326,8 @@
                 <span class="pr-arrow">←</span>
                 <span class="pr-head-branch" id="pr-head">claude/branch</span>
               </div>
-              <a class="pr-view-btn" id="pr-view-btn" href="#" target="_blank">View PR</a>
+              <button class="pr-create-btn" id="pr-create-btn" onclick="createSmartPR()" title="Git diff analiz edip otomatik PR oluştur">✨ PR Oluştur</button>
+              <a class="pr-view-btn" id="pr-view-btn" href="#" target="_blank" style="display:none">View PR</a>
             </div>
 
             <div id="attached-file-preview"></div>
@@ -1511,6 +1528,7 @@ async function loadGitInfo() {
       const viewBtn = document.getElementById('pr-view-btn');
       if (viewBtn && repo) {
         viewBtn.href = `https://github.com/${repo}/compare/main...${branch}`;
+        viewBtn.style.display = 'inline-flex';
       }
       prBar.style.display = 'flex';
     }
@@ -2039,7 +2057,10 @@ async function selectRepo(name) {
 
   const prHead = document.getElementById('pr-head')?.textContent || currentBranch || 'main';
   const viewBtn = document.getElementById('pr-view-btn');
-  if (viewBtn) viewBtn.href = `https://github.com/${name}/compare/main...${prHead}`;
+  if (viewBtn && name) {
+    viewBtn.href = `https://github.com/${name}/compare/main...${prHead}`;
+    viewBtn.style.display = 'inline-flex';
+  }
 }
 
 async function openBranchModal() {
@@ -2129,32 +2150,80 @@ async function selectBranch(name) {
   }
 }
 
+/* ─── Akıllı PR Oluşturma ────────────────────────────────── */
+function createSmartPR() {
+  const branch = currentBranch || document.getElementById('pr-head')?.textContent || '';
+  if (!branch || branch === 'main' || branch === 'master') {
+    quickTask('Mevcut branch için git diff analiz edip akıllı PR oluştur');
+    return;
+  }
+  const btn = document.getElementById('pr-create-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Oluşturuluyor…'; }
+  const msg = `"${branch}" branch'i için git diff ve commit geçmişini analiz ederek otomatik PR oluştur`;
+  const taskInput = document.getElementById('task-input');
+  if (taskInput) taskInput.value = msg;
+  // startTask() butonu geri aktif edecek (yanıt tamamlandıktan sonra)
+  startTask();
+  setTimeout(() => {
+    if (btn) { btn.disabled = false; btn.textContent = '✨ PR Oluştur'; }
+  }, 15000);
+}
+
 /* ─── Tool Activity (ReAct adım göstergesi) ─────────────── */
 const TOOL_LABELS = {
-  list_dir:           '📂 Dizin listeleniyor',
-  read_file:          '📄 Dosya okunuyor',
-  write_file:         '✏️ Dosya yazılıyor',
-  patch_file:         '🔧 Dosya güncelleniyor',
-  execute_code:       '⚡ Kod çalıştırılıyor',
-  audit:              '🔍 Proje denetleniyor',
-  health:             '💻 Sistem kontrol ediliyor',
-  gpu_optimize:       '🎮 GPU optimize ediliyor',
-  github_commits:     '📋 GitHub commit\'leri okunuyor',
-  github_info:        'ℹ️ GitHub bilgisi alınıyor',
-  github_read:        '📖 GitHub dosyası okunuyor',
-  web_search:         '🌐 Web\'de aranıyor',
-  fetch_url:          '🔗 URL getiriliyor',
-  search_docs:        '📚 Belgeler aranıyor',
-  search_stackoverflow:'🤔 Stack Overflow aranıyor',
-  pypi:               '📦 PyPI sorgulanıyor',
-  pypi_compare:       '📦 PyPI paketleri karşılaştırılıyor',
-  npm:                '📦 npm sorgulanıyor',
-  gh_releases:        '🚀 GitHub sürümleri alınıyor',
-  gh_latest:          '🚀 Son sürüm sorgulanıyor',
-  docs_search:        '📚 Dokümantasyon aranıyor',
-  docs_add:           '📝 Belge ekleniyor',
-  docs_list:          '📋 Belgeler listeleniyor',
-  docs_delete:        '🗑️ Belge siliniyor',
+  // Dosya işlemleri
+  list_dir:             '📂 Dizin listeleniyor',
+  read_file:            '📄 Dosya okunuyor',
+  write_file:           '✏️ Dosya yazılıyor',
+  patch_file:           '🔧 Dosya güncelleniyor',
+  glob_search:          '🔍 Dosyalar aranıyor',
+  grep_files:           '🔍 Dosya içeriği taranıyor',
+  grep:                 '🔍 Dosya içeriği taranıyor',
+  // Kod çalıştırma
+  execute_code:         '⚡ Kod çalıştırılıyor',
+  run_shell:            '💻 Kabuk komutu çalıştırılıyor',
+  bash:                 '💻 Kabuk komutu çalıştırılıyor',
+  // Sistem
+  audit:                '🔍 Proje denetleniyor',
+  health:               '💻 Sistem kontrol ediliyor',
+  gpu_optimize:         '🎮 GPU optimize ediliyor',
+  get_config:           '⚙️ Yapılandırma okunuyor',
+  print_config_summary: '⚙️ Yapılandırma okunuyor',
+  // Görev takibi
+  todo_write:           '📝 Görev listesi güncelleniyor',
+  todo_read:            '📋 Görev listesi okunuyor',
+  todo_update:          '✅ Görev güncelleniyor',
+  // GitHub — depo
+  github_commits:       '📋 GitHub commit\'leri okunuyor',
+  github_info:          'ℹ️ GitHub bilgisi alınıyor',
+  github_read:          '📖 GitHub dosyası okunuyor',
+  github_list_files:    '📂 GitHub dosyaları listeleniyor',
+  github_write:         '✏️ GitHub\'a dosya yazılıyor',
+  github_create_branch: '🌿 Yeni dal oluşturuluyor',
+  github_search_code:   '🔍 GitHub\'da kod aranıyor',
+  // GitHub — PR yönetimi
+  github_create_pr:     '🔀 Pull Request oluşturuluyor',
+  github_smart_pr:      '✨ Akıllı PR oluşturuluyor',
+  github_list_prs:      '🔀 PR listesi alınıyor',
+  github_get_pr:        '🔀 PR detayı okunuyor',
+  github_comment_pr:    '💬 PR\'a yorum ekleniyor',
+  github_close_pr:      '🚪 PR kapatılıyor',
+  github_pr_files:      '📁 PR dosyaları listeleniyor',
+  // Web & Paket
+  web_search:           '🌐 Web\'de aranıyor',
+  fetch_url:            '🔗 URL getiriliyor',
+  search_docs:          '📚 Belgeler aranıyor',
+  search_stackoverflow: '🤔 Stack Overflow aranıyor',
+  pypi:                 '📦 PyPI sorgulanıyor',
+  pypi_compare:         '📦 PyPI paketleri karşılaştırılıyor',
+  npm:                  '📦 npm sorgulanıyor',
+  gh_releases:          '🚀 GitHub sürümleri alınıyor',
+  gh_latest:            '🚀 Son sürüm sorgulanıyor',
+  // RAG
+  docs_search:          '📚 Dokümantasyon aranıyor',
+  docs_add:             '📝 Belge ekleniyor',
+  docs_list:            '📋 Belgeler listeleniyor',
+  docs_delete:          '🗑️ Belge siliniyor',
 };
 
 function appendToolStep(msgId, toolName) {

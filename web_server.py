@@ -89,7 +89,7 @@ _RATE_LIMIT           = 20   # /chat — LLM çağrısı başına limit
 _RATE_LIMIT_MUTATIONS = 60   # Diğer POST/DELETE — mutasyon endpoint'leri
 _RATE_LIMIT_GET_IO    = 30   # GET I/O endpoint'leri (git, dosya, vb.)
 _RATE_WINDOW          = 60   # saniye cinsinden pencere (tüm limitler için)
-_RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content"])
+_RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content", "/github-prs"])
 _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
@@ -565,6 +565,55 @@ async def github_repos(owner: str = "", q: str = ""):
         "repos": repos,
         "active_repo": active_repo,
     })
+
+
+@app.get("/github-prs")
+async def github_prs(state: str = "open", limit: int = 10):
+    """
+    Aktif GitHub deposundaki PR listesini döndürür.
+    state: open / closed / all
+    limit: maksimum PR sayısı (max 50)
+    """
+    agent = await get_agent()
+    if not agent.github.is_available():
+        return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış.", "prs": []}, status_code=503)
+    ok, result = agent.github.list_pull_requests(state=state, limit=min(limit, 50))
+    if not ok:
+        return JSONResponse({"success": False, "error": result, "prs": []}, status_code=500)
+    # Yapısal veri için doğrudan PyGithub nesnelerini parse et
+    try:
+        prs = []
+        for pr in agent.github._repo.get_pulls(state=state, sort="updated")[:min(limit, 50)]:
+            prs.append({
+                "number": pr.number,
+                "title": pr.title,
+                "state": pr.state,
+                "author": pr.user.login,
+                "head": pr.head.ref,
+                "base": pr.base.ref,
+                "url": pr.html_url,
+                "created_at": pr.created_at.strftime("%Y-%m-%d %H:%M"),
+                "updated_at": pr.updated_at.strftime("%Y-%m-%d %H:%M"),
+                "additions": pr.additions,
+                "deletions": pr.deletions,
+                "changed_files": pr.changed_files,
+                "comments": pr.comments,
+            })
+        return JSONResponse({"success": True, "prs": prs, "repo": agent.github.repo_name})
+    except Exception as exc:
+        return JSONResponse({"success": False, "error": str(exc), "prs": []}, status_code=500)
+
+
+@app.get("/github-prs/{number}")
+async def github_pr_detail(number: int):
+    """Belirli bir PR'ın detaylarını döndürür."""
+    agent = await get_agent()
+    if not agent.github.is_available():
+        return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış."}, status_code=503)
+    ok, result = agent.github.get_pull_request(number)
+    if not ok:
+        return JSONResponse({"success": False, "error": result}, status_code=404)
+    return JSONResponse({"success": True, "detail": result})
 
 
 @app.post("/set-repo")

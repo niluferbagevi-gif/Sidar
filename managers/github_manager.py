@@ -360,6 +360,100 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Pull Request oluşturma hatası: {exc}"
 
+    def list_pull_requests(
+        self,
+        state: str = "open",
+        limit: int = 10,
+    ) -> Tuple[bool, str]:
+        """Pull Request listesi döndür. state: open / closed / all"""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            valid_states = {"open", "closed", "all"}
+            state = state.lower() if state.lower() in valid_states else "open"
+            pulls = list(self._repo.get_pulls(state=state, sort="updated")[:limit])
+            if not pulls:
+                return True, f"[PR Listesi — {self._repo.full_name}]\n  (Hiç {state} PR bulunamadı)"
+            lines = [f"[PR Listesi ({state.upper()}) — {self._repo.full_name}]"]
+            for pr in pulls:
+                date = pr.updated_at.strftime("%Y-%m-%d")
+                lines.append(
+                    f"  #{pr.number:4d}  {date}  {pr.user.login:<16}  {pr.title[:60]}"
+                )
+            return True, "\n".join(lines)
+        except Exception as exc:
+            return False, f"PR listesi alınamadı: {exc}"
+
+    def get_pull_request(self, number: int) -> Tuple[bool, str]:
+        """Belirli bir PR'ın detaylarını döndür."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            pr = self._repo.get_pull(number)
+            files = list(pr.get_files())
+            file_list = "\n".join(
+                f"    {f.status:8}  +{f.additions:<4} -{f.deletions:<4}  {f.filename}"
+                for f in files[:20]
+            )
+            suffix = f"\n    ... (+{len(files) - 20} dosya daha)" if len(files) > 20 else ""
+            return True, (
+                f"[PR #{pr.number} — {self._repo.full_name}]\n"
+                f"  Başlık   : {pr.title}\n"
+                f"  Durum    : {pr.state.upper()}\n"
+                f"  Yazar    : {pr.user.login}\n"
+                f"  Branch   : {pr.head.ref} → {pr.base.ref}\n"
+                f"  Oluşturma: {pr.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"  Güncelleme:{pr.updated_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"  Değişiklik: +{pr.additions} / -{pr.deletions} ({pr.changed_files} dosya)\n"
+                f"  Yorumlar : {pr.comments}\n"
+                f"  URL      : {pr.html_url}\n\n"
+                f"  Açıklama :\n{pr.body or '(boş)'}\n\n"
+                f"  Değişen Dosyalar:\n{file_list}{suffix}"
+            )
+        except Exception as exc:
+            return False, f"PR detayı alınamadı: {exc}"
+
+    def add_pr_comment(self, number: int, comment: str) -> Tuple[bool, str]:
+        """Bir PR'a yorum ekle."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            issue = self._repo.get_issue(number)
+            created = issue.create_comment(comment)
+            return True, (
+                f"✓ Yorum eklendi (PR #{number}):\n"
+                f"  URL: {created.html_url}"
+            )
+        except Exception as exc:
+            return False, f"PR yorumu eklenemedi: {exc}"
+
+    def close_pull_request(self, number: int) -> Tuple[bool, str]:
+        """Bir PR'ı kapat (merged olmadan)."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            pr = self._repo.get_pull(number)
+            pr.edit(state="closed")
+            return True, f"✓ PR #{number} kapatıldı: {pr.html_url}"
+        except Exception as exc:
+            return False, f"PR kapatma hatası: {exc}"
+
+    def get_pr_files(self, number: int) -> Tuple[bool, str]:
+        """PR'da değişen dosyaların listesini döndür."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            pr = self._repo.get_pull(number)
+            files = list(pr.get_files())
+            lines = [f"[PR #{number} Değişen Dosyalar — {self._repo.full_name}]"]
+            for f in files:
+                lines.append(
+                    f"  {f.status:8}  +{f.additions:<4} -{f.deletions:<4}  {f.filename}"
+                )
+            return True, "\n".join(lines)
+        except Exception as exc:
+            return False, f"PR dosya listesi alınamadı: {exc}"
+
     def search_code(self, query: str) -> Tuple[bool, str]:
         """Depoda kod araması yap."""
         if not self._gh or not self._repo:

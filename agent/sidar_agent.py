@@ -500,6 +500,185 @@ class SidarAgent:
         _, result = self.github.search_code(a)
         return result
 
+    async def _tool_github_list_prs(self, a: str) -> str:
+        """Pull Request listesi. Argüman: 'state[|||limit]' (state: open/closed/all)"""
+        parts = a.split("|||")
+        state = parts[0].strip() if parts[0].strip() else "open"
+        try:
+            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
+        except ValueError:
+            limit = 10
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = self.github.list_pull_requests(state=state, limit=limit)
+        return result
+
+    async def _tool_github_get_pr(self, a: str) -> str:
+        """Belirli bir PR'ın detaylarını getir. Argüman: PR numarası"""
+        if not a:
+            return "⚠ PR numarası belirtilmedi."
+        try:
+            number = int(a.strip())
+        except ValueError:
+            return "⚠ Geçerli bir PR numarası girin."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = self.github.get_pull_request(number)
+        return result
+
+    async def _tool_github_comment_pr(self, a: str) -> str:
+        """PR'a yorum ekle. Argüman: 'pr_numarası|||yorum_metni'"""
+        parts = a.split("|||", 1)
+        if len(parts) < 2:
+            return "⚠ Format: pr_numarası|||yorum_metni"
+        try:
+            number = int(parts[0].strip())
+        except ValueError:
+            return "⚠ Geçerli bir PR numarası girin."
+        comment = parts[1].strip()
+        if not comment:
+            return "⚠ Yorum metni boş olamaz."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = self.github.add_pr_comment(number, comment)
+        return result
+
+    async def _tool_github_close_pr(self, a: str) -> str:
+        """PR'ı kapat. Argüman: PR numarası"""
+        if not a:
+            return "⚠ PR numarası belirtilmedi."
+        try:
+            number = int(a.strip())
+        except ValueError:
+            return "⚠ Geçerli bir PR numarası girin."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = self.github.close_pull_request(number)
+        return result
+
+    async def _tool_github_pr_files(self, a: str) -> str:
+        """PR'daki değişen dosyaları listele. Argüman: PR numarası"""
+        if not a:
+            return "⚠ PR numarası belirtilmedi."
+        try:
+            number = int(a.strip())
+        except ValueError:
+            return "⚠ Geçerli bir PR numarası girin."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = self.github.get_pr_files(number)
+        return result
+
+    async def _tool_github_smart_pr(self, a: str) -> str:
+        """
+        Akıllı PR oluşturma — Claude Code tarzı.
+
+        Git diff/log analiz eder, LLM ile anlamlı başlık+açıklama üretir,
+        ardından GitHub API üzerinden PR oluşturur.
+
+        Argüman: 'head_branch[|||base_branch[|||ek_notlar]]'
+        head_branch boş bırakılırsa mevcut git branch kullanılır.
+        """
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış. .env dosyasına GITHUB_TOKEN ekleyin."
+
+        parts = a.split("|||")
+        head = parts[0].strip() if parts and parts[0].strip() else ""
+        base = parts[1].strip() if len(parts) > 1 and parts[1].strip() else ""
+        notes = parts[2].strip() if len(parts) > 2 else ""
+
+        # 1. Mevcut branch'i belirle
+        if not head:
+            ok, branch_out = await asyncio.to_thread(
+                self.code.run_shell, "git branch --show-current"
+            )
+            head = branch_out.strip() if ok and branch_out.strip() else ""
+            if not head:
+                return (
+                    "⚠ Mevcut git branch'i belirlenemedi.\n"
+                    "Lütfen branch adını açıkça belirtin: 'github_smart_pr' aracına "
+                    "'feature/my-branch' veya 'branch_adı|||main' formatında argüman geçin."
+                )
+
+        # 2. Base branch'i belirle
+        if not base:
+            try:
+                base = self.github._repo.default_branch if self.github._repo else "main"
+            except Exception:
+                base = "main"
+
+        # 3. Git durumu ve diff analizi
+        _, git_status = await asyncio.to_thread(
+            self.code.run_shell, "git status --short"
+        )
+        _, diff_stat = await asyncio.to_thread(
+            self.code.run_shell, "git diff --stat HEAD"
+        )
+        _, commit_log = await asyncio.to_thread(
+            self.code.run_shell, f"git log {base}..HEAD --oneline 2>/dev/null || git log --oneline -10"
+        )
+
+        # Değişiklik yoksa uyar
+        if not git_status.strip() and not diff_stat.strip() and not commit_log.strip():
+            return (
+                f"⚠ '{head}' branch'inde '{base}'e göre commit edilmiş değişiklik bulunamadı.\n"
+                "Önce değişikliklerinizi commit edin, ardından PR oluşturun."
+            )
+
+        # 4. LLM ile PR başlığı + açıklaması üret
+        context_block = (
+            f"Branch: {head} → {base}\n\n"
+            f"Git Durumu (git status --short):\n{git_status or '(temiz)'}\n\n"
+            f"Değişiklik Özeti (git diff --stat):\n{diff_stat or '(yok)'}\n\n"
+            f"Commit Geçmişi:\n{commit_log or '(yok)'}\n"
+        )
+        if notes:
+            context_block += f"\nEk Notlar: {notes}\n"
+
+        pr_prompt = (
+            "Aşağıdaki git değişikliklerine bakarak bir GitHub Pull Request başlığı ve açıklaması oluştur.\n"
+            "Başlık kısa (max 70 karakter) ve açıklayıcı olmalı.\n"
+            "Açıklama Türkçe olabilir; '## Özet' ve '## Test Planı' bölümleri içermeli.\n"
+            "SADECE şu JSON formatında yanıt ver (başka hiçbir şey ekleme):\n"
+            '{"title": "...", "body": "## Özet\\n- madde\\n\\n## Test Planı\\n- [ ] adım"}\n\n'
+            + context_block
+        )
+
+        title = f"feat: {head} branch değişiklikleri"
+        body = (
+            f"## Özet\n- `{head}` branch'inden yapılan değişiklikler\n\n"
+            f"## Test Planı\n- [ ] Manuel test edildi\n- [ ] Birim testler geçiyor"
+        )
+
+        try:
+            raw = await self.llm.chat(
+                messages=[{"role": "user", "content": pr_prompt}],
+                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                temperature=0.2,
+                stream=False,
+                json_mode=True,
+            )
+            if isinstance(raw, str):
+                _dec = json.JSONDecoder()
+                idx = raw.find("{")
+                if idx != -1:
+                    pr_data, _ = _dec.raw_decode(raw, idx)
+                    title = str(pr_data.get("title", title)).strip()[:70] or title
+                    body = str(pr_data.get("body", body)).strip() or body
+        except Exception as llm_exc:
+            logger.warning("Smart PR: LLM başlık üretimi başarısız, varsayılan kullanılıyor: %s", llm_exc)
+
+        # 5. GitHub PR oluştur
+        ok, result = self.github.create_pull_request(title, body, head, base)
+        if ok:
+            return (
+                f"✓ Akıllı PR oluşturuldu!\n{result}\n\n"
+                f"**Başlık :** {title}\n"
+                f"**Branch :** `{head}` → `{base}`\n\n"
+                f"**Açıklama Önizlemesi:**\n{body[:500]}{'...' if len(body) > 500 else ''}"
+            )
+        return result
+
     async def _tool_web_search(self, a: str) -> str:
         if not a: return "⚠ Arama sorgusu belirtilmedi."
         _, result = await self.web.search(a)
@@ -750,6 +929,13 @@ class SidarAgent:
             "github_create_branch":   self._tool_github_create_branch,
             "github_create_pr":       self._tool_github_create_pr,
             "github_search_code":     self._tool_github_search_code,
+            # PR Yönetimi
+            "github_list_prs":        self._tool_github_list_prs,
+            "github_get_pr":          self._tool_github_get_pr,
+            "github_comment_pr":      self._tool_github_comment_pr,
+            "github_close_pr":        self._tool_github_close_pr,
+            "github_pr_files":        self._tool_github_pr_files,
+            "github_smart_pr":        self._tool_github_smart_pr,
             "web_search":             self._tool_web_search,
             "fetch_url":              self._tool_fetch_url,
             "search_docs":            self._tool_search_docs,
