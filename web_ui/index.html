@@ -1223,6 +1223,9 @@
           <div class="context-chip" onclick="openRepoModal()" title="Depo seç">
             📁 <span id="sidebar-repo-label">sidar_project</span>
           </div>
+          <div class="context-chip" onclick="openLocalProjectModal()" title="Yerel proje seç">
+            🖥️ <span id="sidebar-local-label">local</span>
+          </div>
           <div class="context-chip" onclick="openBranchModal()" title="Dal seç">
             ⎇ <span id="sidebar-branch-label">main</span>
           </div>
@@ -1270,6 +1273,12 @@
                 </svg>
                 <span class="chip-label" id="branch-label">main</span>
                 <span class="chip-caret">▾</span>
+              </div>
+              <div class="selector-chip" onclick="openLocalProjectModal()" title="Yerel proje seç">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M1.5 2.75A1.75 1.75 0 0 1 3.25 1h2.879c.464 0 .909.184 1.237.513l.97.97a.25.25 0 0 0 .177.073h4.237A1.75 1.75 0 0 1 14.5 4.306v6.944A1.75 1.75 0 0 1 12.75 13H3.25A1.75 1.75 0 0 1 1.5 11.25Z"/>
+                </svg>
+                <span class="chip-label" id="local-project-label">local</span>
               </div>
             </div>
 
@@ -1374,6 +1383,17 @@
   </div>
 </div>
 
+<div class="modal-bg" id="local-project-modal" onclick="modalBgClose(event,'local-project-modal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="var(--text-dim)"><path d="M1.5 2.75A1.75 1.75 0 0 1 3.25 1h2.879c.464 0 .909.184 1.237.513l.97.97a.25.25 0 0 0 .177.073h4.237A1.75 1.75 0 0 1 14.5 4.306v6.944A1.75 1.75 0 0 1 12.75 13H3.25A1.75 1.75 0 0 1 1.5 11.25Z"/></svg>
+      <input class="modal-search" id="local-project-search" type="text" placeholder="Yerel proje ara..." oninput="filterLocalProjects(this.value)" />
+      <button class="modal-close-btn" onclick="closeModal('local-project-modal')">✕</button>
+    </div>
+    <div class="repo-list" id="local-project-list"></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="status-modal" onclick="modalBgClose(event,'status-modal')">
   <div class="stat-modal-box" onclick="event.stopPropagation()">
     <h3>Sistem Durumu</h3>
@@ -1444,6 +1464,7 @@ let attachedFileContent = null;
 let attachedFileName    = null;
 let allSessions = [];
 let _cachedRepos = null;
+let _cachedLocalProjects = null;
 
 /* ─── Tema ───────────────────────────────────────────────── */
 function toggleTheme() {
@@ -1496,14 +1517,14 @@ async function loadGitInfo() {
     if (sbl) sbl.textContent = branch;
 
     const srl = document.getElementById('sidebar-repo-label');
-    if (srl) srl.textContent = currentLocalProjectName || 'sidar_project';
+    if (srl) srl.textContent = repo.split('/').pop() || repo || 'sidar_project';
 
     // Görev paneli seçici etiketleri
     const branchLabel = document.getElementById('branch-label');
     if (branchLabel) branchLabel.textContent = branch;
 
     const repoLabel = document.getElementById('repo-label');
-    if (repoLabel) repoLabel.textContent = currentLocalProjectName || 'sidar_project';
+    if (repoLabel) repoLabel.textContent = repo || 'sidar_project';
 
     // PR Çubuğu: sadece main/master dışı dallarda göster
     const prBar = document.getElementById('pr-bar');
@@ -1545,10 +1566,10 @@ async function loadLocalProjectInfo() {
       currentLocalProjectPath = data.projects[0].path || '';
       currentLocalProjectName = data.projects[0].name || 'sidar_project';
     }
-    const repoLabel = document.getElementById('repo-label');
-    if (repoLabel) repoLabel.textContent = currentLocalProjectName;
-    const srl = document.getElementById('sidebar-repo-label');
-    if (srl) srl.textContent = currentLocalProjectName;
+    const localLabel = document.getElementById('local-project-label');
+    if (localLabel) localLabel.textContent = currentLocalProjectName;
+    const sll = document.getElementById('sidebar-local-label');
+    if (sll) sll.textContent = currentLocalProjectName;
   } catch {
     // Sessizce geç
   }
@@ -1996,10 +2017,11 @@ async function openRepoModal() {
 
   if (!_cachedRepos) {
     document.getElementById('repo-list').innerHTML =
-      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Yerel projeler yükleniyor…</div>';
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">GitHub depoları yükleniyor…</div>';
     try {
-      const data = await (await fetch('/local-projects')).json();
-      _cachedRepos = data.projects || [];
+      const ownerHint = (currentRepo || '').includes('/') ? currentRepo.split('/')[0] : '';
+      const data = await (await fetch(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
+      _cachedRepos = data.repos || [];
     } catch {
       _cachedRepos = [];
     }
@@ -2012,17 +2034,95 @@ async function openRepoModal() {
 function renderRepos(list) {
   if (!list || list.length === 0) {
     document.getElementById('repo-list').innerHTML =
-      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Gösterilecek yerel proje bulunamadı.</div>';
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Gösterilecek repo bulunamadı.</div>';
     return;
   }
   document.getElementById('repo-list').innerHTML = list.map(r => {
+    const name = r.full_name || '';
+    const selected = name === currentRepo ? 'selected' : '';
+    const defBranch = r.default_branch || 'main';
+    const privacy = r.private === 'true' ? 'private' : 'public';
+    return `
+    <div class="repo-item ${selected}" onclick="selectRepo('${name}')">
+      <div class="repo-item-icon" style="font-size:17px">📁</div>
+      <div class="repo-item-info">
+        <div class="repo-item-name">${escHtml(name)}</div>
+        <div class="repo-item-meta">${escHtml(defBranch)} · ${privacy}</div>
+      </div>
+      <span class="repo-item-check">✓</span>
+    </div>`;
+  }).join('');
+}
+
+function filterRepos(q) {
+  const query = q.toLowerCase();
+  renderRepos((_cachedRepos || []).filter(r => (r.full_name || '').toLowerCase().includes(query)));
+}
+
+async function selectRepo(name) {
+  closeModal('repo-modal');
+  if (!name || name === currentRepo) return;
+
+  try {
+    const res = await fetch('/set-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: name }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(`Repo değiştirilemedi: ${data.message || data.error || 'Bilinmeyen hata'}`);
+      return;
+    }
+  } catch (e) {
+    console.warn('Repo API hatası:', e);
+    alert('Sunucuya bağlanılamadı, repo değiştirilemedi.');
+    return;
+  }
+
+  currentRepo = name;
+  document.getElementById('repo-label').textContent = name;
+  const srl = document.getElementById('sidebar-repo-label');
+  if (srl) srl.textContent = name.split('/').pop() || name;
+
+  const prHead = document.getElementById('pr-head')?.textContent || currentBranch || 'main';
+  const viewBtn = document.getElementById('pr-view-btn');
+  if (viewBtn) viewBtn.href = `https://github.com/${name}/compare/main...${prHead}`;
+}
+
+async function openLocalProjectModal() {
+  document.getElementById('local-project-search').value = '';
+  document.getElementById('local-project-modal').classList.add('open');
+
+  if (!_cachedLocalProjects) {
+    document.getElementById('local-project-list').innerHTML =
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Yerel projeler yükleniyor…</div>';
+    try {
+      const data = await (await fetch('/local-projects')).json();
+      _cachedLocalProjects = data.projects || [];
+    } catch {
+      _cachedLocalProjects = [];
+    }
+  }
+
+  renderLocalProjects(_cachedLocalProjects);
+  setTimeout(() => document.getElementById('local-project-search').focus(), 50);
+}
+
+function renderLocalProjects(list) {
+  if (!list || list.length === 0) {
+    document.getElementById('local-project-list').innerHTML =
+      '<div style="padding:14px;color:var(--text-dim);font-size:12px">Gösterilecek yerel proje bulunamadı.</div>';
+    return;
+  }
+  document.getElementById('local-project-list').innerHTML = list.map(r => {
     const name = r.name || '';
     const path = r.path || '';
     const selected = path === currentLocalProjectPath ? 'selected' : '';
     const gitLabel = r.is_git ? 'git repo' : 'dizin';
     return `
-    <div class="repo-item ${selected}" onclick="selectRepo(${JSON.stringify(path)}, ${JSON.stringify(name)})">
-      <div class="repo-item-icon" style="font-size:17px">📁</div>
+    <div class="repo-item ${selected}" onclick="selectLocalProject(${JSON.stringify(path)}, ${JSON.stringify(name)})">
+      <div class="repo-item-icon" style="font-size:17px">🖥️</div>
       <div class="repo-item-info">
         <div class="repo-item-name">${escHtml(name)}</div>
         <div class="repo-item-meta">${escHtml(path)} · ${gitLabel}</div>
@@ -2032,17 +2132,17 @@ function renderRepos(list) {
   }).join('');
 }
 
-function filterRepos(q) {
+function filterLocalProjects(q) {
   const query = q.toLowerCase();
-  renderRepos((_cachedRepos || []).filter(r => {
+  renderLocalProjects((_cachedLocalProjects || []).filter(r => {
     const name = (r.name || '').toLowerCase();
     const path = (r.path || '').toLowerCase();
     return name.includes(query) || path.includes(query);
   }));
 }
 
-async function selectRepo(path, name) {
-  closeModal('repo-modal');
+async function selectLocalProject(path, name) {
+  closeModal('local-project-modal');
   if (!path || path === currentLocalProjectPath) return;
 
   try {
@@ -2064,9 +2164,10 @@ async function selectRepo(path, name) {
 
   currentLocalProjectPath = path;
   currentLocalProjectName = name || path.split('/').pop() || 'sidar_project';
-  document.getElementById('repo-label').textContent = currentLocalProjectName;
-  const srl = document.getElementById('sidebar-repo-label');
-  if (srl) srl.textContent = currentLocalProjectName;
+  const localLabel = document.getElementById('local-project-label');
+  if (localLabel) localLabel.textContent = currentLocalProjectName;
+  const sll = document.getElementById('sidebar-local-label');
+  if (sll) sll.textContent = currentLocalProjectName;
 }
 
 async function openBranchModal() {
@@ -2322,7 +2423,7 @@ function openShortcuts() {
 document.addEventListener('keydown', e => {
   // ESC: Modal kapat veya streaming durdur
   if (e.key === 'Escape') {
-    ['repo-modal','branch-modal','status-modal','shortcuts-modal'].forEach(id => closeModal(id));
+    ['repo-modal','local-project-modal','branch-modal','status-modal','shortcuts-modal'].forEach(id => closeModal(id));
     if (isStreaming) stopStreaming();
     return;
   }
