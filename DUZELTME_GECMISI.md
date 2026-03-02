@@ -1973,3 +1973,18 @@ def get_pull_requests_raw(self, state: str, limit: int):
 | N-06 | `environment.yml` ile rapor notları arasında kalan “requests” tutarsızlığının rapor tarafında güncellenmesi | ✅ Kapalı | §3.30 not güncellemesi |
 
 **Özet:** Session 4 kapsamında rapora eklenen yeni bulguların tamamı uygulanmış ve kapanmıştır; aktif sorun bulunmamaktadır.
+
+## §8.2/§18’den Taşınan Bulgular (O-01–O-06) — Session 7 (2026-03-02)
+
+> `PROJE_RAPORU.md` içindeki §8.2 ve §18.3 bölümlerinde yer alan ve artık kapalı olan O-01–O-06 detayları bu bölüme taşınmıştır.
+
+| Bulgu | Kısa Açıklama | Durum | Kayıt |
+|---|---|---|---|
+| O-01 | 4 modülde docstring sürümü `2.6.1` olarak kalmıştı | ✅ Kapalı | §3 (O-01 düzeltmesi) |
+| O-02 | `/metrics` içinde `agent.docs._index` private erişimi vardı | ✅ Kapalı | §3 (O-02 düzeltmesi) |
+| O-03 | `/github-prs` içinde `agent.github._repo.get_pulls()` private erişimi vardı | ✅ Kapalı | §3 (O-03 düzeltmesi) |
+| O-04 | `_tool_github_smart_pr` içinde `_repo.default_branch` private erişimi vardı | ✅ Kapalı | §3 (O-04 düzeltmesi) |
+| O-05 | `/rag/docs` ve `/rag/search` GET endpoint’leri rate-limit kapsamı dışındaydı | ✅ Kapalı | §3 (O-05 düzeltmesi) |
+| O-06 | `add_document_from_file()` içinde gereksiz çift chunking yapılıyordu | ✅ Kapalı | §3 (O-06 düzeltmesi) |
+
+**Özet:** O-01–O-06 kapsamındaki teknik borç maddelerinin tamamı giderilmiş olup ana rapordaki ilgili başlıklar özet forma indirilmiştir.
