@@ -1283,7 +1283,7 @@
         <div class="quick-section">
           <div class="quick-label">Hızlı görevler</div>
           <div class="quick-grid">
-            <button class="quick-chip" onclick="quickTask('Proje dizinini listele ve yapıyı açıkla')">Dizini listele</button>
+            <button class="quick-chip" onclick="quickTaskRepoFiles()">Dizini listele</button>
             <button class="quick-chip" onclick="quickTask('Sistem sağlık raporu ver')">Sistem sağlığı</button>
             <button class="quick-chip" onclick="quickTask('Projeyi denetle ve hataları raporla')">Proje denetimi</button>
             <button class="quick-chip" onclick="quickTask('Son 10 commit\'i listele')">Son commitler</button>
@@ -1695,6 +1695,12 @@ function startTask() {
 function quickTask(text) {
   document.getElementById('task-input').value = text;
   startTask();
+}
+
+function quickTaskRepoFiles() {
+  const repo = currentRepo || 'aktif repo';
+  const branch = currentBranch || 'main';
+  quickTask(`GitHub deposunda ${repo} için ${branch} dalında kök dizini listele ve klasör yapısını özetle.`);
 }
 
 /* ─── Textarea otomatik boyutlandırma ───────────────────── */
