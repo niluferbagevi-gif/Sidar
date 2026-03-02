@@ -430,6 +430,17 @@ async def test_auto_handle_repo_files_list_command(agent, monkeypatch):
     assert "GitHub Dosya Listesi" in response
 
 
+@pytest.mark.asyncio
+async def test_auto_handle_read_file_content_getir_command(agent, monkeypatch):
+    """AutoHandle: '<dosya> içeriğini getir' komutunu dosya okuma akışına yönlendirir."""
+    monkeypatch.setattr(agent.auto.code, "read_file", lambda path: (True, "satır1\nsatır2"))
+
+    handled, response = await agent.auto.handle("config.py içeriğini getir")
+    assert handled is True
+    assert "[config.py]" in response
+    assert "satır1" in response
+
+
 # ─────────────────────────────────────────────
 # 11. BROKEN JSON KARANTINA TESTİ
 # ─────────────────────────────────────────────
