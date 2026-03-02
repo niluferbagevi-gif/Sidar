@@ -286,10 +286,13 @@ class Config:
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
 
     # ─── RAG — Belge Deposu ──────────────────────────────────
-    RAG_DIR:          Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
-    RAG_TOP_K:         int = get_int_env("RAG_TOP_K", 3)
-    RAG_CHUNK_SIZE:    int = get_int_env("RAG_CHUNK_SIZE", 1000)
-    RAG_CHUNK_OVERLAP: int = get_int_env("RAG_CHUNK_OVERLAP", 200)
+    RAG_DIR:            Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
+    RAG_TOP_K:           int = get_int_env("RAG_TOP_K", 3)
+    RAG_CHUNK_SIZE:      int = get_int_env("RAG_CHUNK_SIZE", 1000)
+    RAG_CHUNK_OVERLAP:   int = get_int_env("RAG_CHUNK_OVERLAP", 200)
+    # Büyük dosya eşiği: bu karakter sayısını geçen dosyalar okunduğunda
+    # RAG deposuna ekleme önerilir (varsayılan ≈ 400 satır / ~20 KB).
+    RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")

@@ -635,6 +635,75 @@ async def set_repo(request: Request):
     return JSONResponse({"success": ok, "message": msg})
 
 
+# ─────────────────────────────────────────────
+#  RAG BELGE DEPOSU YÖNETİMİ
+# ─────────────────────────────────────────────
+
+@app.get("/rag/docs")
+async def rag_list_docs():
+    """RAG deposundaki tüm belgeleri listeler."""
+    agent = await get_agent()
+    docs = agent.docs.get_index_info()
+    return JSONResponse({"success": True, "docs": docs, "count": len(docs)})
+
+
+@app.post("/rag/add-file")
+async def rag_add_file(request: Request):
+    """
+    Proje dizinindeki yerel bir dosyayı RAG deposuna ekler.
+    Body: {"path": "relative/path/to/file.py", "title": "Opsiyonel başlık"}
+    """
+    body = await request.json()
+    path = body.get("path", "").strip()
+    title = body.get("title", "").strip()
+    if not path:
+        return JSONResponse({"success": False, "error": "Dosya yolu boş."}, status_code=400)
+
+    _root = Path(__file__).parent
+    target = (_root / path).resolve()
+    try:
+        target.relative_to(_root)
+    except ValueError:
+        return JSONResponse({"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403)
+
+    agent = await get_agent()
+    ok, msg = await asyncio.to_thread(agent.docs.add_document_from_file, str(target), title or target.name)
+    return JSONResponse({"success": ok, "message": msg})
+
+
+@app.post("/rag/add-url")
+async def rag_add_url(request: Request):
+    """URL'den içerik çekerek RAG deposuna ekler."""
+    body = await request.json()
+    url   = body.get("url", "").strip()
+    title = body.get("title", "").strip()
+    if not url:
+        return JSONResponse({"success": False, "error": "URL boş."}, status_code=400)
+
+    agent = await get_agent()
+    ok, msg = await agent.docs.add_document_from_url(url, title=title)
+    return JSONResponse({"success": ok, "message": msg})
+
+
+@app.delete("/rag/docs/{doc_id}")
+async def rag_delete_doc(doc_id: str):
+    """RAG deposundan belge siler."""
+    agent = await get_agent()
+    msg = await asyncio.to_thread(agent.docs.delete_document, doc_id)
+    success = msg.startswith("✓")
+    return JSONResponse({"success": success, "message": msg})
+
+
+@app.get("/rag/search")
+async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
+    """RAG deposunda arama yapar."""
+    if not q.strip():
+        return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
+    agent = await get_agent()
+    ok, result = agent.docs.search(q.strip(), top_k=min(top_k, 10), mode=mode)
+    return JSONResponse({"success": ok, "result": result})
+
+
 @app.get("/todo")
 async def get_todo():
     """
