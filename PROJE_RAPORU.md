@@ -108,7 +108,8 @@ sidar_project/
 │   ├── github_manager.py           # GitHub API (binary koruma, branch, arama)
 │   ├── security.py                 # OpenClaw 3 seviyeli erişim kontrolü
 │   ├── web_search.py               # Tavily + Google + DuckDuckGo (async, çoklu motor)
-│   └── package_info.py             # PyPI + npm + GitHub Releases (async)
+│   ├── package_info.py             # PyPI + npm + GitHub Releases (async)
+│   └── todo_manager.py             # TodoWrite/TodoRead uyumlu görev takip yöneticisi
 ├── tests/
 │   └── test_sidar.py               # 9 test sınıfı, GPU + Chunking + Pydantic testleri
 ├── web_ui/
