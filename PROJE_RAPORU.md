@@ -146,9 +146,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif yüksek öncelikli sorun kalmamıştır.
 >
-> ~~**N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış~~ → ✅ **ÇÖZÜLDÜ** (`.env.example` `DOCKER_PYTHON_IMAGE` olarak düzeltildi)
->
-> Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
+> Geçmişte tespit edilen (N-02 dahil) tüm yüksek öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
 
 ---
 
