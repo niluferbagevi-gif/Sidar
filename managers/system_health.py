@@ -1,6 +1,6 @@
 """
 Sidar Project — Sistem Sağlığı Yöneticisi
-Sürüm: 2.6.1 (GPU Genişletilmiş İzleme)
+Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)
 
 Özellikler:
 - CPU kullanımı (psutil)

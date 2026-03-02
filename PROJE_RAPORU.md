@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — N-01–N-04 + O-02 giderildi — Kod v2.7.0 ile tam doğrulama tamamlandı)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — O-01–O-06 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
-**Versiyon:** SidarAgent v2.7.0 ✅ (kod v2.7.0 — `core/__init__.py` versiyonu N-01 yamasıyla güncellendi — bkz. O-01 docstring'ler)
+**Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / N-01–N-04 yeni bulgular: 2026-03-02 / O-01–O-06 yeni bulgular: 2026-03-02 / **N-01–N-04 + O-02 yamalar: 2026-03-02**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 yamaları: 2026-03-01 / N-01–N-04 + O-02 yamaları: 2026-03-02 / **O-01–O-06 yamaları: 2026-03-02**
 
 ---
 
@@ -153,15 +153,15 @@ sidar_project/
 
 ## 6. Orta Öncelikli Sorunlar
 
-> ⚠️ **2 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
+> ✅ 2026-03-02 güncel taramasında aktif orta öncelikli sorun kalmamıştır.
 >
-> ~~**N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"`~~ → ✅ **ÇÖZÜLDÜ** (`core/__init__.py` `__version__ = "2.7.0"` olarak güncellendi)
+> ~~**N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"`~~ → ✅ **ÇÖZÜLDÜ**
 >
-> ~~**O-02**: `web_server.py:325` `len(agent.docs._index)`~~ → ✅ **ÇÖZÜLDÜ** (`doc_count` property eklendi; `agent.docs.doc_count` kullanılıyor)
+> ~~**O-02**: `web_server.py:325` `len(agent.docs._index)`~~ → ✅ **ÇÖZÜLDÜ**
 >
-> **O-03**: `web_server.py:590` `/github-prs` endpoint'i `agent.github._repo.get_pulls(...)` kullanıyor — PyGithub nesnesine dış modülden erişim. Bkz. §8.2 O-03.
+> ~~**O-03**: `web_server.py:590` `agent.github._repo.get_pulls(...)`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.get_pull_requests_detailed()` eklendi)
 >
-> **O-05**: `web_server.py:92` `_RATE_GET_IO_PATHS` frozenset'inde yeni `GET /rag/docs` ve `GET /rag/search` endpoint'leri eksik — bu endpoint'lere rate limit uygulanmıyor. Bkz. §8.2 O-05.
+> ~~**O-05**: `web_server.py:92` RAG endpoint'leri rate limit dışı~~ → ✅ **ÇÖZÜLDÜ** (`/rag/docs` ve `/rag/search` `_RATE_GET_IO_PATHS`'e eklendi)
 >
 > Geçmişte tespit edilen tüm orta öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -170,17 +170,15 @@ sidar_project/
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ⚠️ **3 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
+> ✅ 2026-03-02 güncel taramasında aktif düşük öncelikli sorun kalmamıştır.
 >
-> ~~**N-03**: `web_server.py:321` `agent.docs._index` private erişimi~~ → ✅ **ÇÖZÜLDÜ** (`DocumentStore.doc_count` property eklendi; `agent.docs.doc_count` kullanılıyor — O-02 da kapandı)
+> ~~**N-03/N-04**~~ → ✅ **ÇÖZÜLDÜ**
 >
-> ~~**N-04**: `environment.yml:11` `packaging>=23.0` conda bölümünde~~ → ✅ **ÇÖZÜLDÜ** (`packaging>=23.0` pip bölümüne taşındı)
+> ~~**O-01**: 4 modül docstring `Sürüm: 2.6.1`~~ → ✅ **ÇÖZÜLDÜ** (4 dosyada `Sürüm: 2.7.0` olarak güncellendi)
 >
-> **O-01**: `core/rag.py:4`, `managers/security.py:5`, `managers/github_manager.py:4`, `managers/system_health.py:3` — modül docstring'leri `Sürüm: 2.6.1` gösteriyor; kod v2.7.0. Bkz. §8.2 O-01.
+> ~~**O-04**: `sidar_agent.py:626` `self.github._repo.default_branch`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.default_branch` property; `self.github.default_branch` kullanılıyor)
 >
-> **O-04**: `sidar_agent.py:626` `self.github._repo.default_branch` — `_tool_github_smart_pr` içinde GitHubManager'ın özel özelliğine doğrudan erişim. Bkz. §8.2 O-04.
->
-> **O-06**: `core/rag.py:399` `add_document_from_file()` içinde `_recursive_chunk_text(content)` gereksiz yere iki kez çağrılıyor (bir kez `len(chunks)` için, bir kez de `add_document()` içinde). Bkz. §8.2 O-06.
+> ~~**O-06**: `add_document_from_file()` çift chunking~~ → ✅ **ÇÖZÜLDÜ** (gereksiz `_recursive_chunk_text` çağrısı kaldırıldı)
 >
 > Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -361,14 +359,14 @@ Büyük dosyalarda (>20 KB) bu gereksiz chunking belirgin CPU maliyeti yaratır.
 | N-02 | 🔴 YÜKSEK | `.env.example:125` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | ✅ Kapalı |
 | N-03 | 🟢 DÜŞÜK | `web_server.py:321` | `agent.docs._index` private erişim — /metrics | ✅ Kapalı |
 | N-04 | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | ✅ Kapalı |
-| O-01 | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | 🔴 Açık |
+| O-01 | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | ✅ Kapalı |
 | O-02 | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | ✅ Kapalı |
-| O-03 | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | 🔴 Açık |
-| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | 🔴 Açık |
-| O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | 🔴 Açık |
-| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | 🔴 Açık |
+| O-03 | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | ✅ Kapalı |
+| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
+| O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
+| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
 
-**Toplam Açık:** 5 sorun (0 YÜKSEK, 2 ORTA, 3 DÜŞÜK) | **Toplam Kapalı:** 40 (N-01–N-04 + O-02 bu turda kapatıldı)
+**Toplam Açık:** 0 sorun ✅ | **Toplam Kapalı:** 45 (O-01–O-06 bu turda kapatıldı)
 
 ---
 
@@ -1387,6 +1385,6 @@ Bu oturumda özellikle şüpheyle incelenen ancak gerçekte sorun olmadığı do
 ---
 
 *Rapor satır satır manuel kod analizi ile oluşturulmuştur — 2026-03-01*
-*Son güncelleme: N-01–N-04 + O-02 yamalar (2026-03-02) — Session 8*
+*Son güncelleme: O-01–O-06 yamaları (2026-03-02) — Session 9*
 *Analiz kapsamı: ~35 kaynak dosya, ~11.500+ satır kod*
-*Toplam doğrulanan + uygulanan düzeltme: **81** (76 önceki + 5 bu tur: N-01/N-02/N-03/N-04/O-02) | Açık sorunlar: **5** (0 YÜKSEK, 2 ORTA, 3 DÜŞÜK)*
+*Toplam doğrulanan + uygulanan düzeltme: **86** (81 önceki + 5 bu tur: O-01/O-03/O-04/O-05/O-06) | Açık sorunlar: **0** ✅*

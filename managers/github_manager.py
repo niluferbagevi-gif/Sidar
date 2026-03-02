@@ -1,7 +1,7 @@
 """
 Sidar Project - GitHub Yöneticisi
 Depo analizi, commit geçmişi ve uzak dosya okuma (Binary Korumalı).
-Sürüm: 2.6.1
+Sürüm: 2.7.0
 """
 
 import logging
@@ -494,6 +494,46 @@ class GitHubManager:
             return "GitHub: Token geçersiz veya bağlantı hatası (log dosyasını kontrol edin)"
         repo_info = f" | Depo: {self.repo_name}" if self.repo_name else " | Depo: ayarlanmamış"
         return f"GitHub: Bağlı{repo_info}"
+
+    @property
+    def default_branch(self) -> str:
+        """Aktif repo'nun varsayılan branch adını döndürür; repo yoksa 'main'."""
+        return self._repo.default_branch if self._repo else "main"
+
+    def get_pull_requests_detailed(
+        self,
+        state: str = "open",
+        limit: int = 50,
+    ) -> Tuple[bool, List[Dict], str]:
+        """
+        PR listesini yapısal dict listesi olarak döndürür.
+
+        web_server.py gibi dış modüllerin _repo'ya doğrudan erişmesini önler.
+        """
+        if not self._repo:
+            return False, [], "Repo ayarlanmamış."
+        try:
+            prs = []
+            for pr in self._repo.get_pulls(state=state, sort="updated")[:limit]:
+                prs.append({
+                    "number":       pr.number,
+                    "title":        pr.title,
+                    "state":        pr.state,
+                    "author":       pr.user.login,
+                    "head":         pr.head.ref,
+                    "base":         pr.base.ref,
+                    "url":          pr.html_url,
+                    "created_at":   pr.created_at.strftime("%Y-%m-%d %H:%M"),
+                    "updated_at":   pr.updated_at.strftime("%Y-%m-%d %H:%M"),
+                    "additions":    pr.additions,
+                    "deletions":    pr.deletions,
+                    "changed_files": pr.changed_files,
+                    "comments":     pr.comments,
+                })
+            return True, prs, ""
+        except Exception as exc:
+            logger.error("get_pull_requests_detailed hatası: %s", exc)
+            return False, [], str(exc)
 
     def __repr__(self) -> str:
         return (

@@ -2,7 +2,7 @@
 """
 Sidar Project - Güvenlik Yöneticisi
 OpenClaw erişim kontrol sistemi.
-Sürüm: 2.6.1
+Sürüm: 2.7.0
 """
 
 import logging

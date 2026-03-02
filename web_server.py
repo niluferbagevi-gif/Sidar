@@ -89,7 +89,7 @@ _RATE_LIMIT           = 20   # /chat — LLM çağrısı başına limit
 _RATE_LIMIT_MUTATIONS = 60   # Diğer POST/DELETE — mutasyon endpoint'leri
 _RATE_LIMIT_GET_IO    = 30   # GET I/O endpoint'leri (git, dosya, vb.)
 _RATE_WINDOW          = 60   # saniye cinsinden pencere (tüm limitler için)
-_RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo"])
+_RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo", "/rag/docs", "/rag/search"])
 _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
@@ -581,31 +581,10 @@ async def github_prs(state: str = "open", limit: int = 10):
     agent = await get_agent()
     if not agent.github.is_available():
         return JSONResponse({"success": False, "error": "GitHub token ayarlanmamış.", "prs": []}, status_code=503)
-    ok, result = agent.github.list_pull_requests(state=state, limit=min(limit, 50))
+    ok, prs, err = agent.github.get_pull_requests_detailed(state=state, limit=min(limit, 50))
     if not ok:
-        return JSONResponse({"success": False, "error": result, "prs": []}, status_code=500)
-    # Yapısal veri için doğrudan PyGithub nesnelerini parse et
-    try:
-        prs = []
-        for pr in agent.github._repo.get_pulls(state=state, sort="updated")[:min(limit, 50)]:
-            prs.append({
-                "number": pr.number,
-                "title": pr.title,
-                "state": pr.state,
-                "author": pr.user.login,
-                "head": pr.head.ref,
-                "base": pr.base.ref,
-                "url": pr.html_url,
-                "created_at": pr.created_at.strftime("%Y-%m-%d %H:%M"),
-                "updated_at": pr.updated_at.strftime("%Y-%m-%d %H:%M"),
-                "additions": pr.additions,
-                "deletions": pr.deletions,
-                "changed_files": pr.changed_files,
-                "comments": pr.comments,
-            })
-        return JSONResponse({"success": True, "prs": prs, "repo": agent.github.repo_name})
-    except Exception as exc:
-        return JSONResponse({"success": False, "error": str(exc), "prs": []}, status_code=500)
+        return JSONResponse({"success": False, "error": err, "prs": []}, status_code=500)
+    return JSONResponse({"success": True, "prs": prs, "repo": agent.github.repo_name})
 
 
 @app.get("/github-prs/{number}")

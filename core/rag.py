@@ -1,7 +1,7 @@
 """
 Sidar Project - Belge Deposu ve Arama (RAG)
 ChromaDB tabanlı Vektör Arama + BM25 Hibrit Sistemi.
-Sürüm: 2.6.1 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
+Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
 Özellikler:
 1. Vektör Arama (ChromaDB): Anlamsal yakınlık (Semantic Search) - Chunking destekli
@@ -396,12 +396,11 @@ class DocumentStore:
             if not title:
                 title = file.name
 
-            chunks = self._recursive_chunk_text(content)
             source = f"file://{file}"
             doc_id = self.add_document(title, content, source=source, tags=tags or [])
             return True, (
                 f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} "
-                f"({len(content):,} karakter, {len(chunks)} parça)"
+                f"({len(content):,} karakter)"
             )
         except Exception as exc:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
