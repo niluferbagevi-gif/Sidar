@@ -7,7 +7,7 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 - DocumentStore     : ChromaDB + BM25 + Keyword hibrit RAG belgesi deposu
 """
 
-__version__ = "2.6.1"
+__version__ = "2.7.0"
 
 from .memory import ConversationMemory
 from .llm_client import LLMClient

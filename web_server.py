@@ -322,7 +322,7 @@ async def metrics(request: Request):
     """
     agent = await get_agent()
     uptime_s  = int(time.monotonic() - _start_time)
-    rag_docs  = len(agent.docs._index)
+    rag_docs  = agent.docs.doc_count
     sessions  = agent.memory.get_all_sessions()
     rl_total  = sum(len(v) for v in _rate_data.values())
 

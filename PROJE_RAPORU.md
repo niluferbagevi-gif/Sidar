@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — O-01–O-06 yeni bulgular eklendi — Kod v2.7.0 ile tam doğrulama tamamlandı)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — N-01–N-04 + O-02 giderildi — Kod v2.7.0 ile tam doğrulama tamamlandı)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
-**Versiyon:** SidarAgent v2.7.0 ⚠️ (kod v2.7.0 — bazı modül docstring'leri ve Dockerfile hâlâ v2.6.1 gösteriyor — bkz. N-01, O-01)
+**Versiyon:** SidarAgent v2.7.0 ✅ (kod v2.7.0 — `core/__init__.py` versiyonu N-01 yamasıyla güncellendi — bkz. O-01 docstring'ler)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / N-01–N-04 yeni bulgular: 2026-03-02 / **O-01–O-06 yeni bulgular: 2026-03-02**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / Derinlemesine analiz: 2026-03-01 / Uyumsuzluk taraması: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 doğrulama + yamalar: 2026-03-01 / N-01–N-04 yeni bulgular: 2026-03-02 / O-01–O-06 yeni bulgular: 2026-03-02 / **N-01–N-04 + O-02 yamalar: 2026-03-02**
 
 ---
 
@@ -143,9 +143,9 @@ sidar_project/
 
 ## 5. Yüksek Öncelikli Sorunlar
 
-> ⚠️ **1 aktif yüksek öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
+> ✅ 2026-03-02 güncel taramasında aktif yüksek öncelikli sorun kalmamıştır.
 >
-> **N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış — `config.py:298` `DOCKER_PYTHON_IMAGE` okuyor. Kullanıcının Docker sandbox imajı özelleştirmesi sessizce yoksayılır. Bkz. §8.4 N-02.
+> ~~**N-02**: `.env.example:125` → `DOCKER_IMAGE` ortam değişkeni adı yanlış~~ → ✅ **ÇÖZÜLDÜ** (`.env.example` `DOCKER_PYTHON_IMAGE` olarak düzeltildi)
 >
 > Geçmişte tespit edilen tüm yüksek öncelikli sorunlar giderilmiştir — bkz. §3.
 
@@ -153,11 +153,11 @@ sidar_project/
 
 ## 6. Orta Öncelikli Sorunlar
 
-> ⚠️ **4 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
+> ⚠️ **2 aktif orta öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
 >
-> **N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"` ve `Dockerfile:25` → `LABEL version="2.6.1"` — Kod v2.7.0'a güncellenmiş ancak bu dosyalar eski sürümü gösteriyor. Bkz. §8.4 N-01.
+> ~~**N-01**: `core/__init__.py:10` → `__version__ = "2.6.1"`~~ → ✅ **ÇÖZÜLDÜ** (`core/__init__.py` `__version__ = "2.7.0"` olarak güncellendi)
 >
-> **O-02**: `web_server.py:325` `/metrics` endpoint'i `len(agent.docs._index)` kullanıyor — N-03 kısmen düzeltilmişken bu satır atlanmış. Public `get_index_info()` metodu mevcut; kullanılmıyor. Bkz. §8.5 O-02.
+> ~~**O-02**: `web_server.py:325` `len(agent.docs._index)`~~ → ✅ **ÇÖZÜLDÜ** (`doc_count` property eklendi; `agent.docs.doc_count` kullanılıyor)
 >
 > **O-03**: `web_server.py:590` `/github-prs` endpoint'i `agent.github._repo.get_pulls(...)` kullanıyor — PyGithub nesnesine dış modülden erişim. Bkz. §8.5 O-03.
 >
@@ -170,11 +170,11 @@ sidar_project/
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ⚠️ **5 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
+> ⚠️ **3 aktif düşük öncelikli sorun** tespit edilmiştir (2026-03-02 güncel taraması):
 >
-> **N-03** (kısmen açık): `web_server.py:590` `agent.github._repo` — private attribute erişimi. `/rag/docs` endpoint'inin kullandığı `agent.docs._index` erişimi düzeltildi; ancak `/github-prs` ve `/metrics` hâlâ açık (bkz. O-02, O-03). Bkz. §8.4 N-03.
+> ~~**N-03**: `web_server.py:321` `agent.docs._index` private erişimi~~ → ✅ **ÇÖZÜLDÜ** (`DocumentStore.doc_count` property eklendi; `agent.docs.doc_count` kullanılıyor — O-02 da kapandı)
 >
-> **N-04**: `environment.yml:11` `packaging>=23.0` conda bölümünde — Docker build'da pip bölümüne aktarılmaz; versiyon kısıtlaması Docker ortamında güvence altında değil. Bkz. §8.4 N-04.
+> ~~**N-04**: `environment.yml:11` `packaging>=23.0` conda bölümünde~~ → ✅ **ÇÖZÜLDÜ** (`packaging>=23.0` pip bölümüne taşındı)
 >
 > **O-01**: `core/rag.py:4`, `managers/security.py:5`, `managers/github_manager.py:4`, `managers/system_health.py:3` — modül docstring'leri `Sürüm: 2.6.1` gösteriyor; kod v2.7.0. Bkz. §8.5 O-01.
 >
@@ -189,7 +189,7 @@ sidar_project/
 
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** (Önceki: 2026-03-01 — V-01–V-03 yamaları uygulandı) — Önceki 17 uyumsuzluktan **17'si**, U-01–U-15 taramasındaki **15 uyumsuzluktan 15'i**, V-01–V-03 taramasındaki **3 uyumsuzluktan 3'ü** giderilmiştir. **2026-03-02 taramasında 4 yeni uyumsuzluk (N-01–N-04) + 6 ek bulgu (O-01–O-06) tespit edildi.** Toplam: 35/35 kapatıldı + 10 yeni açık sorun (4'ü önceki turdan, 6'sı bu turdan).
+> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-02 dahil **40/40 kapatıldı**. **2026-03-02 taramasında** 4 yeni uyumsuzluk (N-01–N-04) + 6 ek bulgu (O-01–O-06) tespit edilmişti; N-01–N-04 + O-02 **2026-03-02** yamasıyla giderildi. Kalan açık: **5 sorun** (O-01, O-03, O-04, O-05, O-06).
 
 ### 8.1 Önceki Sürümlerde Giderilen Uyumsuzluklar (Kapalı)
 
@@ -615,10 +615,10 @@ remote = result.decode().strip()
 
 | # | Dosya A | Dosya B | Uyumsuzluk Açıklaması | Önem | Durum |
 |---|---------|---------|----------------------|------|-------|
-| N-01 | `core/__init__.py:10` (`__version__ = "2.6.1"`) | `config.py:212`, `sidar_agent.py:86` (`VERSION = "2.7.0"`) | Versiyon uyumsuzluğu: core paketi v2.6.1, kod tabanı v2.7.0 | 🟡 ORTA | 🔴 Açık |
-| N-02 | `.env.example:125` (`DOCKER_IMAGE=...`) | `config.py:295` (`os.getenv("DOCKER_PYTHON_IMAGE", ...)`) | `.env.example` ortam değişkeni adı yanlış — kullanıcı ayarı sessizce yoksayılır | 🔴 YÜKSEK | 🔴 Açık |
-| N-03 | `web_server.py:321` (`agent.docs._index`) | `core/rag.py` (`_index` private) | Private iç değişkene dış modülden doğrudan erişim (encapsulation ihlali) | 🟢 DÜŞÜK | 🔴 Açık |
-| N-04 | `environment.yml:11` (`packaging>=23.0` conda bölümünde) | `managers/package_info.py` (`from packaging.version import Version`) | `packaging` pip bölümünde değil; Docker build'da versiyon kısıtlaması uygulanmaz | 🟢 DÜŞÜK | 🔴 Açık |
+| N-01 | `core/__init__.py:10` (`__version__ = "2.6.1"`) | `config.py:212`, `sidar_agent.py:86` (`VERSION = "2.7.0"`) | Versiyon uyumsuzluğu: core paketi v2.6.1, kod tabanı v2.7.0 | 🟡 ORTA | ✅ Kapalı |
+| N-02 | `.env.example:125` (`DOCKER_IMAGE=...`) | `config.py:295` (`os.getenv("DOCKER_PYTHON_IMAGE", ...)`) | `.env.example` ortam değişkeni adı yanlış — kullanıcı ayarı sessizce yoksayılır | 🔴 YÜKSEK | ✅ Kapalı |
+| N-03 | `web_server.py:321` (`agent.docs._index`) | `core/rag.py` (`_index` private) | Private iç değişkene dış modülden doğrudan erişim (encapsulation ihlali) | 🟢 DÜŞÜK | ✅ Kapalı |
+| N-04 | `environment.yml:11` (`packaging>=23.0` conda bölümünde) | `managers/package_info.py` (`from packaging.version import Version`) | `packaging` pip bölümünde değil; Docker build'da versiyon kısıtlaması uygulanmaz | 🟢 DÜŞÜK | ✅ Kapalı |
 
 ---
 
@@ -898,18 +898,18 @@ Büyük dosyalarda (>20 KB) bu gereksiz chunking belirgin CPU maliyeti yaratır.
 
 | ID | Önem | Konum | Açıklama | Durum |
 |----|------|-------|----------|-------|
-| N-01 | 🟡 ORTA | `core/__init__.py:10`, `Dockerfile:25` | `__version__ = "2.6.1"` — kod v2.7.0 | 🔴 Açık |
-| N-02 | 🔴 YÜKSEK | `.env.example:125`, `config.py:298` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | 🔴 Açık |
-| N-03 | 🟢 DÜŞÜK | `web_server.py:590` | `_repo` private erişim (kısmi) | 🟡 Kısmi |
-| N-04 | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | 🔴 Açık |
+| N-01 | 🟡 ORTA | `core/__init__.py:10` | `__version__ = "2.6.1"` — kod v2.7.0 | ✅ Kapalı |
+| N-02 | 🔴 YÜKSEK | `.env.example:125` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | ✅ Kapalı |
+| N-03 | 🟢 DÜŞÜK | `web_server.py:321` | `agent.docs._index` private erişim — /metrics | ✅ Kapalı |
+| N-04 | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | ✅ Kapalı |
 | O-01 | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | 🔴 Açık |
-| O-02 | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | 🔴 Açık |
+| O-02 | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | ✅ Kapalı |
 | O-03 | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | 🔴 Açık |
 | O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | 🔴 Açık |
 | O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | 🔴 Açık |
 | O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | 🔴 Açık |
 
-**Toplam Açık:** 10 sorun (1 YÜKSEK, 4 ORTA, 5 DÜŞÜK) | **Toplam Kapalı:** 35
+**Toplam Açık:** 5 sorun (0 YÜKSEK, 2 ORTA, 3 DÜŞÜK) | **Toplam Kapalı:** 40 (N-01–N-04 + O-02 bu turda kapatıldı)
 
 ---
 
@@ -1900,17 +1900,17 @@ Bu oturumda özellikle şüpheyle incelenen ancak gerçekte sorun olmadığı do
 
 | ID | Önceki Durum | Güncel Durum | Not |
 |----|-------------|-------------|-----|
-| N-01 | 🔴 Açık | 🔴 Açık | `core/__init__.py:10` ve `Dockerfile:25` hâlâ "2.6.1" |
-| N-02 | 🔴 Açık | 🔴 Açık | `.env.example:125` `DOCKER_IMAGE` ≠ `config.py:298` `DOCKER_PYTHON_IMAGE` |
-| N-03 | 🔴 Açık | 🟡 Kısmi | `/rag/docs` düzeltildi; `/metrics`(O-02) ve `/github-prs`(O-03) hâlâ açık |
-| N-04 | 🔴 Açık | 🔴 Açık | `environment.yml:11` `packaging>=23.0` conda bölümünde |
+| N-01 | 🔴 Açık | ✅ Kapalı | `core/__init__.py` `__version__ = "2.7.0"` olarak güncellendi |
+| N-02 | 🔴 Açık | ✅ Kapalı | `.env.example` `DOCKER_PYTHON_IMAGE` olarak düzeltildi |
+| N-03 | 🔴 Açık | ✅ Kapalı | `DocumentStore.doc_count` property eklendi; `agent.docs.doc_count` kullanılıyor (O-02 da kapandı) |
+| N-04 | 🔴 Açık | ✅ Kapalı | `packaging>=23.0` `environment.yml` pip bölümüne taşındı |
 
 ### 18.3 Yeni Bulgular Özeti (O-01–O-06)
 
 | ID | Önem | Konum | Açıklama |
 |----|------|-------|---------|
 | O-01 | 🟢 DÜŞÜK | 4 modül | Docstring `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz |
-| O-02 | 🟡 ORTA | `web_server.py:325` | `/metrics` `agent.docs._index` — N-03 kalan kısım |
+| O-02 | 🟡 ORTA | `web_server.py:325` | `/metrics` `agent.docs._index` — N-03 ile birlikte kapatıldı | ✅ Kapalı |
 | O-03 | 🟡 ORTA | `web_server.py:590` | `/github-prs` `agent.github._repo.get_pulls()` |
 | O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_tool_github_smart_pr` `_repo.default_branch` |
 | O-05 | 🟡 ORTA | `web_server.py:92` | `/rag/docs`, `/rag/search` rate limit dışı |
@@ -1918,16 +1918,16 @@ Bu oturumda özellikle şüpheyle incelenen ancak gerçekte sorun olmadığı do
 
 ### 18.4 Doğrulama Skoru
 
-| Kategori | §3.1–§3.73 + V + N önceki | Yeni (O-01–O-06) | Toplam |
-|----------|--------------------------|------------------|--------|
-| Onaylandı / Kapatıldı ✅ | 76/76 + N-03 kısmen | N-03 kısmen | 76+ |
-| Açık sorun | 4 (N-01, N-02, N-03k, N-04) | 6 | **10** |
+| Kategori | §3.1–§3.73 + V + N önceki | N-01–N-04 + O-02 (bu tur) | Toplam |
+|----------|--------------------------|---------------------------|--------|
+| Onaylandı / Kapatıldı ✅ | 76/76 + 35 uyumsuzluk | 5 (N-01, N-02, N-03, N-04, O-02) | **40+** |
+| Açık sorun | — | 5 (O-01, O-03, O-04, O-05, O-06) | **5** |
 
-**Sonuç:** Proje v2.7.0 ile önemli özellikler kazandı (Activity Panel, Hybrid RAG, Todo Manager, RAG Web UI). Kritik hata bulunmuyor. Açık sorunlar teknik borç niteliğindedir; işlevselliği engellemez. Öncelik: **O-05** (rate limit güvenlik riski) → **N-02** (Docker config uyumsuzluğu) → **O-02/O-03** (encapsulation) → diğerleri.
+**Sonuç:** Proje v2.7.0 ile önemli özellikler kazandı (Activity Panel, Hybrid RAG, Todo Manager, RAG Web UI). Kritik hata bulunmuyor. Açık sorunlar teknik borç niteliğindedir; işlevselliği engellemez. Öncelik: **O-05** (rate limit güvenlik riski) → **O-03** (encapsulation / `_repo.get_pulls()`) → **O-01** (docstring versiyonları) → diğerleri.
 
 ---
 
 *Rapor satır satır manuel kod analizi ile oluşturulmuştur — 2026-03-01*
-*Son güncelleme: O-01–O-06 yeni bulgular (2026-03-02) — tüm ~35 kaynak dosyanın eksiksiz satır satır incelemesi (Session 7)*
+*Son güncelleme: N-01–N-04 + O-02 yamalar (2026-03-02) — Session 8*
 *Analiz kapsamı: ~35 kaynak dosya, ~11.500+ satır kod*
-*Toplam doğrulanan + uygulanan düzeltme: **76** (§3.1–§3.73 tümü onaylandı + V-01/V-02/V-03 yamalandı) | Açık sorunlar: **10** (1 YÜKSEK, 4 ORTA, 5 DÜŞÜK)*
+*Toplam doğrulanan + uygulanan düzeltme: **81** (76 önceki + 5 bu tur: N-01/N-02/N-03/N-04/O-02) | Açık sorunlar: **5** (0 YÜKSEK, 2 ORTA, 3 DÜŞÜK)*
