@@ -52,8 +52,11 @@ class GitHubManager:
             logger.warning("GitHub token ayarlanmamış. GitHub özellikleri devre dışı.")
             return
         try:
-            from github import Github  # type: ignore
-            self._gh = Github(self.token)
+            from github import Auth, Github  # type: ignore
+
+            # PyGithub: login_or_token parametresi deprecated.
+            # Yeni önerilen kullanım auth=Auth.Token(...).
+            self._gh = Github(auth=Auth.Token(self.token))
             # Token doğrulama
             _ = self._gh.get_user().login
             self._available = True
