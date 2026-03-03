@@ -4,7 +4,7 @@
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 yamaları: 2026-03-01 / N-01–N-04 + O-02 yamaları: 2026-03-02 / O-01–O-06 yamaları: 2026-03-02 / **P-01–P-07 yamaları: 2026-03-03**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8--p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
 
 ---
 
@@ -211,7 +211,7 @@ sidar_project/
 
 ## 4. Mevcut Kritik Hatalar
 
-> ✅ 2026-03-02 güncel taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. §3.
+> ✅ 2026-03-02 güncel taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. [§3](#3-önceki-rapordan-bu-yana-düzeltilen-hatalar).
 
 ---
 
@@ -234,21 +234,22 @@ sidar_project/
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ✅ **2026-03-03 güncel taramasında (Session 8) tespit edilen P-01–P-07 aynı oturumda giderilmiştir** — bkz. §17.
+> ✅ **2026-03-03 güncel taramasında (Session 8) tespit edilen P-01–P-07 aynı oturumda giderilmiştir** — bkz. [§17](#17-session-8--satır-satır-i̇nceleme-2026-03-03).
 >
 > Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar da giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
 
-**Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı):**
+### Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)
+
 
 | ID | Konum | Açıklama | Giderim |
 |----|-------|----------|---------|
-| P-01 | `Dockerfile:25` | `LABEL version="2.6.1"` — v2.7.0 ile uyumsuz | `"2.7.0"` yazıldı |
-| P-02 | `PROJE_RAPORU.md:121` | `environment.yml` açıklamasında "CUDA 12.1" — gerçekte cu124 | "CUDA 12.4 (cu124)" düzeltildi |
-| P-03 | `.env.example` | `DOCKER_EXEC_TIMEOUT` değişkeni belgelenmemiş | Son bölüme eklendi (varsayılan=10) |
-| P-04 | `environment.yml:17` | Comment: "CUDA 12.1 tam desteklidir" — gerçekte cu124 kullanılıyor | "CUDA 12.4 (cu124)" düzeltildi |
-| P-05 | `config.py:167` | WSL2 uyarısında `cu121` wheel URL'i öneriliyor — proje cu124 kullanıyor | `cu124` URL ile güncellendi |
-| P-06 | `managers/__init__.py` | `TodoManager` `__all__`'da yok — diğer tüm manager'lar dışa aktarılıyor | `__all__`'a eklendi |
-| P-07 | `.env.example` | `RAG_FILE_THRESHOLD` değişkeni belgelenmemiş | RAG bölümüne eklendi (varsayılan=20000) |
+| <a id="p-01"></a>[P-01](#p-01) | `Dockerfile:25` | `LABEL version="2.6.1"` — v2.7.0 ile uyumsuz | `"2.7.0"` yazıldı |
+| <a id="p-02"></a>[P-02](#p-02) | `PROJE_RAPORU.md:121` | `environment.yml` açıklamasında "CUDA 12.1" — gerçekte cu124 | "CUDA 12.4 (cu124)" düzeltildi |
+| <a id="p-03"></a>[P-03](#p-03) | `.env.example` | `DOCKER_EXEC_TIMEOUT` değişkeni belgelenmemiş | Son bölüme eklendi (varsayılan=10) |
+| <a id="p-04"></a>[P-04](#p-04) | `environment.yml:17` | Comment: "CUDA 12.1 tam desteklidir" — gerçekte cu124 kullanılıyor | "CUDA 12.4 (cu124)" düzeltildi |
+| <a id="p-05"></a>[P-05](#p-05) | `config.py:167` | WSL2 uyarısında `cu121` wheel URL'i öneriliyor — proje cu124 kullanıyor | `cu124` URL ile güncellendi |
+| <a id="p-06"></a>[P-06](#p-06) | `managers/__init__.py` | `TodoManager` `__all__`'da yok — diğer tüm manager'lar dışa aktarılıyor | `__all__`'a eklendi |
+| <a id="p-07"></a>[P-07](#p-07) | `.env.example` | `RAG_FILE_THRESHOLD` değişkeni belgelenmemiş | RAG bölümüne eklendi (varsayılan=20000) |
 
 ---
 
@@ -262,9 +263,9 @@ sidar_project/
 > ✅ Önceki sürümlerden gelen (§8.1–§8.4; U-01–U-15, V-01–V-03, N-01–N-04) taramalar ve 2026-03-02 tarihli O-01–O-06 ikinci tur doğrulama bulgularının tamamı kapatılmıştır.
 > Ayrıntılar ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşınmıştır:
 >
-> 📄 **[DUZELTME_GECMISI.md → §8.1–§8.4 bölümü](DUZELTME_GECMISI.md#kapatılan-uyumsuzluk-taramaları-81–84)**
+> 📄 **[DUZELTME_GECMISI.md → §8.1–§8.4 bölümü](DUZELTME_GECMISI.md#sec-8-1-8-4)**
 >
-> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#8218den-taşınan-bulgular-o-01o-06--session-7-2026-03-02)**
+> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06)**
 
 ---
 
@@ -282,13 +283,13 @@ sidar_project/
 | [O-04](DUZELTME_GECMISI.md#o-04) | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
 | [O-05](DUZELTME_GECMISI.md#o-05) | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
 | [O-06](DUZELTME_GECMISI.md#o-06) | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
-| P-01 | 🟢 DÜŞÜK | `Dockerfile:25` | `LABEL version="2.6.1"` — proje v2.7.0 | ✅ Kapalı |
-| P-02 | 🟢 DÜŞÜK | `PROJE_RAPORU.md:121` | "PyTorch CUDA 12.1 wheel" — gerçekte cu124 | ✅ Kapalı |
-| P-03 | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `DOCKER_EXEC_TIMEOUT` belgelenmemiş | ✅ Kapalı |
-| P-04 | 🟢 DÜŞÜK | `environment.yml:17` | Comment "CUDA 12.1" — gerçekte cu124 | ✅ Kapalı |
-| P-05 | 🟢 DÜŞÜK | `config.py:167` | WSL2 uyarısında cu121 URL önerisi — proje cu124 | ✅ Kapalı |
-| P-06 | 🟢 DÜŞÜK | `managers/__init__.py` | `TodoManager` `__all__`'dan eksik | ✅ Kapalı |
-| P-07 | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `RAG_FILE_THRESHOLD` belgelenmemiş | ✅ Kapalı |
+| <a id="p-01"></a>[P-01](#p-01) | 🟢 DÜŞÜK | `Dockerfile:25` | `LABEL version="2.6.1"` — proje v2.7.0 | ✅ Kapalı |
+| <a id="p-02"></a>[P-02](#p-02) | 🟢 DÜŞÜK | `PROJE_RAPORU.md:121` | "PyTorch CUDA 12.1 wheel" — gerçekte cu124 | ✅ Kapalı |
+| <a id="p-03"></a>[P-03](#p-03) | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `DOCKER_EXEC_TIMEOUT` belgelenmemiş | ✅ Kapalı |
+| <a id="p-04"></a>[P-04](#p-04) | 🟢 DÜŞÜK | `environment.yml:17` | Comment "CUDA 12.1" — gerçekte cu124 | ✅ Kapalı |
+| <a id="p-05"></a>[P-05](#p-05) | 🟢 DÜŞÜK | `config.py:167` | WSL2 uyarısında cu121 URL önerisi — proje cu124 | ✅ Kapalı |
+| <a id="p-06"></a>[P-06](#p-06) | 🟢 DÜŞÜK | `managers/__init__.py` | `TodoManager` `__all__`'dan eksik | ✅ Kapalı |
+| <a id="p-07"></a>[P-07](#p-07) | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `RAG_FILE_THRESHOLD` belgelenmemiş | ✅ Kapalı |
 
 **Toplam Açık:** 0 sorun ✅ | **Toplam Kapalı:** 52 (P-01–P-07 bu turda — Session 8, 2026-03-03 — kapatıldı)
 
