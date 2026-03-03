@@ -397,7 +397,7 @@ async for raw_bytes in resp.aiter_bytes():
 
 ### ✅ Test Kapsamı — Tüm Eksikler Giderildi
 
-> Toplam: **46 test fonksiyonu** · Son güncelleme: 2026-03-01
+> Toplam: **48 test fonksiyonu** · Son güncelleme: 2026-03-01
 
 | Alan | Öncelik | Test Grubu | Durum |
 |------|---------|-----------|-------|
@@ -436,7 +436,7 @@ async for raw_bytes in resp.aiter_bytes():
 | `#18` | RAG concurrent delete+upsert | 2 |
 | `#19` | GitHub Manager uzantı/token | 3 |
 | `#20` | PackageInfo version sort + is_prerelease | 4 |
-| **Toplam** | | **46** |
+| **Toplam** | | **48** |
 
 ---
 
