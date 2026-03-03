@@ -481,6 +481,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
 - **`managers/security.py`**: OpenClaw erişim katmanı; yol doğrulama, traversal/symlink koruması ve erişim seviyesine göre okuma-yazma-çalıştırma yetkisi sağlar. ⚠️ `can_read()` yalnızca regex tabanlı tehlikeli kalıp denetimi yapıyor (kök dizin sınırı yok); ayrıca `status_report()` içindeki “Terminal” satırı shell değil REPL/execute yetkisini temsil ettiği için operatör açısından yanıltıcı olabilir. → Detay: §13.5.15
 - **`managers/todo_manager.py`**: Claude Code uyumlu görev takip katmanı; thread-safe görev ekleme/güncelleme/listeleme API'leri ve durum bazlı raporlama sağlar. ⚠️ `set_tasks()` içinde “tek aktif in_progress” kuralı doğrulanmıyor; ayrıca görevler yalnızca process-memory'de tutulduğu için yeniden başlatmalarda kalıcılık yok. → Detay: §13.5.16
+- **`managers/__init__.py`**: Manager katmanının dışa aktarma (public API) yüzeyini tek noktada toplar; `TodoManager` dahil tüm manager sınıfları `__all__` ile açıkça listelenir. ⚠️ Manuel export listesi yeni manager eklendiğinde güncellenmezse import tutarsızlığı (drift) oluşabilir. → Detay: §13.5.17
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1293,6 +1294,31 @@ except Exception as exc:
 |----|------|-------|------|
 | TD-01 | `set_tasks()` toplu yüklemede aynı anda birden fazla `in_progress` görevi engellemiyor; sınıf dokümanındaki “aynı anda yalnızca bir aktif görev” beklentisiyle çelişebilir | 93–121 | Düşük |
 | TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 240–255 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.17 `managers/__init__.py` — Skor: 96/100 ✅
+
+**Sorumluluk:** Manager paketinin public export katmanı — üst modüllerin `from managers import ...` kullanımında erişilecek sınıfları merkezi olarak tanımlar.
+
+**Modül Organizasyonu (satır 2–8)**
+
+- `CodeManager`, `SystemHealthManager`, `GitHubManager`, `SecurityManager`, `WebSearchManager`, `PackageInfoManager`, `TodoManager` tek noktadan içe aktarılır.
+- Paket tüketicisi için import ergonomisi artar; alt modül yolunu bilmeden doğrudan manager sınıfı alınabilir.
+
+**Public API Sözleşmesi (satır 10–18)**
+
+- `__all__` listesi export edilecek sembolleri açıkça sınırlar.
+- Geçmişte görülen `TodoManager` export eksikliği bu dosya üzerinden kapatılmıştır; mevcut durumda manager katmanı tutarlıdır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| MGR-01 | `__all__` manuel yönetiliyor; yeni manager eklemelerinde unutulursa paket API’si ile gerçek modül içeriği arasında drift oluşabilir | 10–18 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
