@@ -498,6 +498,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
+- **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1781,6 +1782,35 @@ except Exception as exc:
 |----|------|-------|------|
 | RPR-01 | Dosya çok büyümüş durumda; yeni eklemelerle birlikte satır bazlı referansların sürdürülmesi zorlaşıyor ve bakım maliyeti artıyor | 1–1760+ | Orta |
 | RPR-02 | Aynı bilgiler hem özet hem detay bölümlerde tekrarlandığı için içerik drift’i riski (özellikle skor/sürüm satırlarında) devam ediyor | 466–510, 512–1760+ | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.34 `.gitignore` — Skor: 92/100 ✅
+
+**Sorumluluk:** Git takip filtresi — Python cache dosyaları, sanal ortamlar, `.env`, log/temp çıktıları, yerel RAG verisi ve IDE artefact’larını repodan hariç tutarak depo hijyenini korur.
+
+**Kapsam Özeti (satır 1–42)**
+
+- Python (`__pycache__`, `*.pyc`), test cache (`.pytest_cache`, `.coverage`, `htmlcov`) ve mypy cache dışlanır.
+- Çalışma zamanı çıktıları (`logs/`, `temp/`, `data/`) ve hassas yapılandırma (`.env`) repoya dahil edilmez.
+- `web_ui/vendor/` klasörü install betiğiyle indirildiği için takip dışı tutulmuştur.
+
+**Operasyonel Güçlü Yanlar**
+
+- Günlük geliştirme çıktılarının repoya karışmasını önemli ölçüde engeller.
+- Ortam bağımlı/gizli dosyaları dışlayarak güvenlik ve taşınabilirlik açısından doğru temel sunar.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| GIT-01 | `data/` top-level olarak tamamen ignore edildiği için bazı durumlarda paylaşılmak istenen örnek veri/fixture dosyaları yanlışlıkla commit edilemeyebilir (whitelist stratejisi gerekebilir) | 23 | Düşük |
+| GIT-02 | Yeni üretilen artefact türleri (örn. farklı tool cache klasörleri) için ignore listesi düzenli güncellenmezse zamanla repo kirliliği tekrar oluşabilir | 1–42 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
