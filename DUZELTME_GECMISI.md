@@ -1404,6 +1404,7 @@ await asyncio.to_thread(
 
 ---
 
+<a id="sec-8-1-8-4"></a>
 ## Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
 
 > Bu bölüm `PROJE_RAPORU.md §8` içinden ayrılmıştır.  
@@ -1964,6 +1965,7 @@ def get_pull_requests_raw(self, state: str, limit: int):
 
 ---
 
+<a id="sec-16-n-01-n-06"></a>
 ## §16'dan Taşınan Bulgular (N-01–N-06) — Session 4 (2026-03-01)
 
 > `PROJE_RAPORU.md` içindeki **“16. Son Satır Satır İnceleme — Yeni Bulgular”** bölümü sadeleştirilmiş; kapanmış maddelerin ayrıntıları bu bölüme taşınmıştır.
@@ -1985,6 +1987,7 @@ def get_pull_requests_raw(self, state: str, limit: int):
 <a id="o-04"></a>
 <a id="o-05"></a>
 <a id="o-06"></a>
+<a id="sec-8-2-18-o-01-o-06"></a>
 ## §8.2/§18’den Taşınan Bulgular (O-01–O-06) — Session 7 (2026-03-02)
 
 > `PROJE_RAPORU.md` içindeki §8.2 ve §18.3 bölümlerinde yer alan ve artık kapalı olan O-01–O-06 detayları bu bölüme taşınmıştır.
@@ -1999,6 +2002,7 @@ def get_pull_requests_raw(self, state: str, limit: int):
 | O-06 | `add_document_from_file()` içinde gereksiz çift chunking yapılıyordu | ✅ Kapalı | §3 (O-06 düzeltmesi) |
 
 **Özet:** O-01–O-06 kapsamındaki teknik borç maddelerinin tamamı giderilmiş olup ana rapordaki ilgili başlıklar özet forma indirilmiştir.
+<a id="sec-14-closed"></a>
 ## §14’ten Taşınan Kapatılmış Geliştirme Önerileri (2026-03-02)
 
 > `PROJE_RAPORU.md` içindeki **14. Geliştirme Önerileri** bölümü sadeleştirilmiş; kapanmış/uygulanmış maddeler ana rapordan çıkarılarak bu arşiv kaydına taşınmıştır.
