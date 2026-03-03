@@ -6,6 +6,7 @@
 
 ---
 
+<a id="sec-3-1-3-76"></a>
 
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
@@ -1840,6 +1841,7 @@ remote = result.decode().strip()
 
 ---
 
+<a id="n-01"></a>
 #### N-01 Detay: `core/__init__.py` — Versiyon v2.6.1 Eski (Kod v2.7.0'da)
 
 **Sorun:** Kod tabanı v2.7.0'a güncellenmiş ancak `core/__init__.py` ve `Dockerfile` hâlâ v2.6.1 gösteriyor:
@@ -1873,6 +1875,7 @@ LABEL version="2.7.0"
 
 ---
 
+<a id="n-02"></a>
 #### N-02 Detay: `.env.example` — `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` Ortam Değişkeni Adı Yanlış
 
 **Sorun:** `.env.example` belgesinde `DOCKER_IMAGE` adıyla ortam değişkeni sunulmuş, fakat `config.py`'de bu değişken farklı bir adla okunuyor:
@@ -1904,6 +1907,7 @@ Seçenek A daha güvenlidir (geriye dönük uyumluluk korunur).
 
 ---
 
+<a id="n-03"></a>
 #### N-03 Detay: `web_server.py` — Private Attribute'lara Dış Modülden Erişim
 
 **Sorun:** `web_server.py` iki farklı satırda private (alt-çizgi ön ekli) attribute'lara doğrudan erişiyor:
@@ -1934,6 +1938,7 @@ def get_pull_requests_raw(self, state: str, limit: int):
 
 ---
 
+<a id="n-04"></a>
 #### N-04 Detay: `environment.yml` — `packaging` Conda Bölümünde, Docker'da Versiyon Kısıtlaması Uygulanmıyor
 
 **Sorun:** `packaging>=23.0` conda bağımlılıkları bölümünde tanımlı; pip bölümünde değil:
@@ -1974,6 +1979,12 @@ def get_pull_requests_raw(self, state: str, limit: int):
 
 **Özet:** Session 4 kapsamında rapora eklenen yeni bulguların tamamı uygulanmış ve kapanmıştır; aktif sorun bulunmamaktadır.
 
+<a id="o-01"></a>
+<a id="o-02"></a>
+<a id="o-03"></a>
+<a id="o-04"></a>
+<a id="o-05"></a>
+<a id="o-06"></a>
 ## §8.2/§18’den Taşınan Bulgular (O-01–O-06) — Session 7 (2026-03-02)
 
 > `PROJE_RAPORU.md` içindeki §8.2 ve §18.3 bölümlerinde yer alan ve artık kapalı olan O-01–O-06 detayları bu bölüme taşınmıştır.
