@@ -489,6 +489,8 @@ async for raw_bytes in resp.aiter_bytes():
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ⚠️ Üst yorum bloğunda sürüm notu `2.6.1` olarak kalmış (metadata `2.7.0` ile tutarsız); ayrıca healthcheck'te `ps aux | grep` fallback'i yalancı-pozitif üretebilir. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ⚠️ `deploy.resources` limitleri standart Compose akışında her zaman uygulanmayabilir; ayrıca `host.docker.internal` bağımlılığı platformlar arası taşınabilirlik farkı üretebilir. → Detay: §13.5.24
+- **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
+- **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1539,6 +1541,35 @@ except Exception as exc:
 |----|------|-------|------|
 | ENV-01 | Conda ortamı için lockfile/pin (exact build hash) bulunmuyor; `>=` tabanlı pip bağımlılıkları zamanla farklı sürüm kombinasyonları üretebilir | 30–95 | Orta |
 | ENV-02 | CUDA wheel index'i varsayılan olarak aktif; GPU olmayan ortamlarda kullanıcı yorum satırındaki manuel adıma bağlı kalıyor (otomatik profile ayrımı yok) | 20–28 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.26 `.env.example` — Skor: 90/100 ✅
+
+**Sorumluluk:** Varsayılan çalışma konfigürasyonu şablonu — sağlayıcı seçimi, model/timeout ayarları, erişim seviyesi, GPU ve web parametreleri, RAG limitleri, loglama ve Docker sandbox değişkenlerini tek dosyada dokümante eder.
+
+**Kapsam ve Yapı (satır 1–139)**
+
+- Dosya, `AI_PROVIDER`, `OLLAMA_*`, `GEMINI_*`, `ACCESS_LEVEL`, `GITHUB_*` gibi çekirdek entegrasyon değişkenlerini açık başlıklarla gruplar.
+- GPU, HuggingFace, RAG, web ve loglama blokları hem varsayılan değer hem de kısa operasyon notu içerir.
+- Son bölümde `DOCKER_PYTHON_IMAGE` ve `DOCKER_EXEC_TIMEOUT` ile sandbox çalıştırma davranışı dış konfigürasyona taşınmıştır.
+
+**Operasyonel Güçlü Yanlar (satır 10–139)**
+
+- Değişkenlerin yanında açıklama satırları bulunduğundan yeni kurulumlarda anlamlandırma maliyeti düşüktür.
+- `MEMORY_ENCRYPTION_KEY` üretim yönergesi ve `RAG_FILE_THRESHOLD` gibi yeni parametrelerin belgelenmesi runtime davranışıyla tutarlıdır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| ENVX-01 | Şablon değerleri belirli donanım/ortam (WSL2 + RTX 3070 Ti) varsayımları içeriyor; farklı sistemlerde doğrudan kopyalama performans/timeout beklentisini bozabilir | 6–7, 16–18, 80–82 | Düşük |
+| ENVX-02 | `ACCESS_LEVEL=full` varsayılanı güvenli başlangıç için agresiftir; yanlışlıkla geniş yazma/çalıştırma yetkisiyle başlatma riski oluşturabilir | 28–32 | Orta |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
