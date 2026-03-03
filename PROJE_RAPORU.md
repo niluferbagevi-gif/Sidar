@@ -483,6 +483,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/todo_manager.py`**: Claude Code uyumlu görev takip katmanı; thread-safe görev ekleme/güncelleme/listeleme API'leri ve durum bazlı raporlama sağlar. ⚠️ `set_tasks()` içinde “tek aktif in_progress” kuralı doğrulanmıyor; ayrıca görevler yalnızca process-memory'de tutulduğu için yeniden başlatmalarda kalıcılık yok. → Detay: §13.5.16
 - **`managers/__init__.py`**: Manager katmanının dışa aktarma (public API) yüzeyini tek noktada toplar; `TodoManager` dahil tüm manager sınıfları `__all__` ile açıkça listelenir. ⚠️ Manuel export listesi yeni manager eklendiğinde güncellenmezse import tutarsızlığı (drift) oluşabilir. → Detay: §13.5.17
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
+- **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1341,6 +1342,27 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | CORE-01 | `__all__` manuel yönetildiği için yeni core modülleri eklendiğinde liste güncellenmezse public API ile gerçek içerik arasında drift oluşabilir | 16 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.19 `agent/__init__.py` — Skor: 96/100 ✅
+
+**Sorumluluk:** Agent paketinin public export katmanı — `SidarAgent` ve prompt/anahtar sabitlerini üst katmanlara sade bir import arayüzüyle sunar.
+
+**Paket API Sözleşmesi (satır 2–5)**
+
+- `SidarAgent`, `SIDAR_SYSTEM_PROMPT`, `SIDAR_KEYS`, `SIDAR_WAKE_WORDS` sembolleri tek noktadan dışa açılır.
+- `__all__` ile paket dışına açılan semboller açıkça sınırlandırılmıştır.
+- Üst katman kodunda `from agent import ...` kullanımını standardize eder.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| AGPK-01 | `__all__` manuel listelendiği için yeni agent sembolleri eklendiğinde unutulursa public API ile modül içeriği arasında drift riski oluşur | 5 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
