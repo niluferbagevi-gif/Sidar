@@ -497,6 +497,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
+- **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1751,6 +1752,35 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | TPK-01 | Dosya bilgilendirici ama aşırı minimal; test mimarisi veya fixture düzeni hakkında yönlendirici bağlam sunmaz | 1 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅
+
+**Sorumluluk:** Proje için merkezi teknik denetim raporu — mimari özet, öncelik bazlı açık durum, dosya incelemeleri ve iyileştirme önerilerini tek dokümanda toplar.
+
+**Kapsam ve Yapı (satır 1–1760+)**
+
+- İçindekiler, öncelik başlıkları ve dosya bazlı §13.5 serisi ile hem üst düzey hem detay görünüm sunar.
+- `DUZELTME_GECMISI.md` ayrımı sayesinde tarihsel kapanışlar ana rapordan ayrıştırılarak okunabilirlik korunur.
+- Bölümler arasında çapraz referanslar (`§13.5.x`, `§14`, `DUZELTME_GECMISI.md`) rapor navigasyonunu kolaylaştırır.
+
+**Operasyonel Güçlü Yanlar**
+
+- Tek kaynakta toplanmış teknik bağlam, bakım ve triage kararlarını hızlandırır.
+- Açık bulguların ID/seviye tablosu formatı önceliklendirmeyi standart hale getirir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| RPR-01 | Dosya çok büyümüş durumda; yeni eklemelerle birlikte satır bazlı referansların sürdürülmesi zorlaşıyor ve bakım maliyeti artıyor | 1–1760+ | Orta |
+| RPR-02 | Aynı bilgiler hem özet hem detay bölümlerde tekrarlandığı için içerik drift’i riski (özellikle skor/sürüm satırlarında) devam ediyor | 466–510, 512–1760+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
