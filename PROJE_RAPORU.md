@@ -477,6 +477,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
+- **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1155,6 +1156,39 @@ except Exception as exc:
 |----|------|-------|------|
 | SH-01 | `get_cpu_usage()` içinde `psutil.cpu_percent(interval=0.5)` bloklayıcı çağrı; sık health çağrılarında yanıt gecikmesini artırabilir | 94–101 | Düşük |
 | SH-02 | NVML temizliği `__del__` metoduna bağlı; interpreter kapanış sırası veya referans döngülerinde bu çağrı deterministik olmayabilir | 304–310 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.13 `managers/web_search.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** Web araştırma yöneticisi — çoklu arama motoru (Tavily, Google CSE, DuckDuckGo) üzerinden asenkron sorgu çalıştırır, fallback zinciri uygular ve URL içeriklerini temizleyip özetlenmiş metin olarak döndürür.
+
+**Motor Yönlendirme ve Fallback (satır 75–111)**
+
+- `engine` ayarına göre doğrudan motor seçimi yapılır; başarısızlık halinde `auto` zincirine düşülebilir.
+- `auto` modunda sıralama Tavily → Google → DuckDuckGo şeklindedir.
+- Tavily 401/403 durumunda anahtar oturum içinde devre dışı bırakılır (`self.tavily_key = ""`), gereksiz tekrar istekleri azaltılır.
+
+**Asenkron Davranış ve Performans (satır 116–219, 224–248)**
+
+- Tavily/Google/URL fetch işlemleri `httpx.AsyncClient` ile non-blocking yürütülür.
+- DuckDuckGo istemcisi senkron olduğundan `asyncio.to_thread` içinde çalıştırılarak event loop bloklanması önlenir.
+- URL çekiminde timeout, redirect takibi ve karakter limiti (`FETCH_MAX_CHARS`) uygulanır.
+
+**İçerik Temizleme ve Dokümantasyon Aramaları (satır 249–299)**
+
+- `_clean_html()` script/style bloklarını ve HTML etiketlerini regex ile temizler; yaygın entity dönüşümleri yapılır.
+- `search_docs` ve `search_stackoverflow` yardımcıları motor türüne göre sorgu stratejisini uyarlayarak daha hedefli sonuç üretir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| WS-01 | `search()` içinde motor başarısını belirlerken `"[HATA]"` metin içeriğine bakılıyor; yapılandırılmış hata kodu yerine string eşleşmeye bağımlı olması kırılgan | 99–105 | Orta |
+| WS-02 | `_clean_html()` regex tabanlı sadeleştirme yapıyor; karmaşık DOM veya script-rendered sayfalarda bağlam/biçim kaybı oluşabilir | 250–275 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
