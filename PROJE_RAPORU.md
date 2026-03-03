@@ -472,6 +472,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ⚠️ Metin tabanlı araç listesi dispatch tablosundan bağımsız tutulduğu için drift riski vardır; ayrıca "internet gerektirmez" ifadesi Gemini bulut sağlayıcısıyla koşullu ele alınmalıdır. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
+- **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -969,6 +970,46 @@ except Exception as exc:
 |----|------|-------|------|
 | L-01 | `_stream_ollama_response` sonunda newline ile bitmeyen kalan `buffer` için parse adımı yok; son JSON satırı kaçabilir | 163–178 | Orta |
 | L-02 | `_stream_gemini_generator` içinde `chunk.text` alanına doğrudan erişim yapılıyor; bazı SDK sürümlerinde alan yoksa `AttributeError` üretip hata akışına düşebilir | 260–263 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.8 `core/memory.py` — Skor: 92/100 ✅
+
+**Sorumluluk:** Kalıcı konuşma belleği ve oturum yönetimi — aktif sohbet turunu diskte JSON olarak saklar, oturum listesi/başlık/silme/yükleme işlevlerini yönetir, LLM bağlamına son mesajları sağlar.
+
+**Eşzamanlılık ve Kalıcılık (satır 23–41, 194–240)**
+
+- `threading.RLock` ile tüm kritik okuma-yazma yolları korunur; `add()`, `set_last_file()`, `clear()`, `load_session()` gibi metodlar aynı kilit altında çalışır.
+- `_save()` aktif oturum kimliği varsa dosyaya atomik olmayan ama tek-kilitli yazım yapar; tek süreç içinde yarış koşullarını azaltır.
+- `max_turns * 2` pencere sınırı uygulanarak bellek boyutu kontrollü tutulur.
+
+**Oturum Yönetimi ve Kurtarma Davranışı (satır 99–183)**
+
+- Oturumlar `updated_at` değerine göre sıralanır ve başlangıçta en güncel oturum yüklenir.
+- Bozuk JSON/encoding dosyaları `.json.broken` uzantısına taşınarak karantinaya alınır; ana akışın bozulması engellenir.
+- Aktif oturum silinirse `_init_sessions()` ile güvenli fallback yapılır (varsa son oturum, yoksa yeni oturum).
+
+**Şifreleme Katmanı (satır 43–84)**
+
+- `MEMORY_ENCRYPTION_KEY` sağlandığında Fernet ile şifreli saklama aktifleşir.
+- Şifre çözme başarısız olursa düz metin deneme fallback’i, geçiş döneminde eski dosyaların okunmasını mümkün kılar.
+- Şifreleme başlatma hataları loglanır ve sistem düz metin moduna geri döner.
+
+**Özetleme Desteği (satır 259–292)**
+
+- Karakter tabanlı yaklaşık token tahmini ile (`~3.5 karakter/token`) özetleme eşiği belirlenir.
+- `needs_summarization()` hem mesaj adedi eşiğini (%80) hem token eşiğini (6000) birlikte değerlendirir.
+- `apply_summary()` geçmişi iki mesajlık (istek + özet) sıkıştırılmış forma indirir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| M-01 | `_save()` her ekleme/güncellemede tüm oturum dosyasını yeniden serialize+yazıyor; uzun sohbetlerde I/O maliyeti artabilir | 194–211, 217–230 | Orta |
+| M-02 | Karantinaya alınan `*.json.broken` dosyaları için otomatik temizlik/retention politikası yok; uzun vadede disk birikimi olabilir | 117–128 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
