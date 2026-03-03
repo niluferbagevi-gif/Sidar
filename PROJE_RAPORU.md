@@ -23,6 +23,16 @@
 11. [Güvenlik Değerlendirmesi](#11-güvenlik-değerlendirmesi)
 12. [Test Kapsamı](#12-test-kapsamı)
 13. [Dosya Bazlı Detaylı İnceleme](#13-dosya-bazlı-detaylı-i̇nceleme)
+    - [13.1 Çekirdek Dosyalar — Güncel Durum](#131-çekirdek-dosyalar--güncel-durum)
+    - [13.2 Yönetici (manager) Katmanı — Güncel Durum](#132-yönetici-manager-katmanı--güncel-durum)
+    - [13.3 Test ve Dokümantasyon Uyum Özeti](#133-test-ve-dokümantasyon-uyum-özeti)
+    - [13.4 Açık Durum](#134-açık-durum)
+    - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazlı-teknik-detaylar)
+      - [13.5.1–13.5.10](#1351-mainpy--skor-100100-) — çekirdek + config + code/github altyapısı
+      - [13.5.11–13.5.20](#13511-managersgithub_managerpy--skor-91100-) — manager katmanı + test seti
+      - [13.5.21–13.5.30](#13521-web_uiindexhtml--skor-89100-) — web/ui + dağıtım + talimat dosyaları
+      - [13.5.31–13.5.35](#13531-duzeltme_gecmisimd--skor-87100-) — arşiv, test paketi, rapor ve repo notları
+    - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arası-uyum-doğrulaması)
 14. [Geliştirme Önerileri](#14-geliştirme-önerileri-öncelik-sırasıyla)
 15. [Genel Değerlendirme](#15-genel-değerlendirme)
 16. [Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satır-satır-i̇nceleme--yeni-bulgular)
@@ -1850,6 +1860,36 @@ except Exception as exc:
 | NTE-02 | Not dosyası için sahiplik/tarih/version metadatası bulunmadığından hangi önerinin güncel olduğu zamanla belirsizleşebilir | 1–181+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+### 13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması
+
+> Bu alt bölüm, raporun son turunda tüm repo dosyalarının kapsam/uyum kontrolünü özetler.
+
+**Kapsam Doğrulaması (Eksiksiz İnceleme):**
+
+- Repo içindeki izlenen dosya sayısı: **35**
+- `13.5.x` altında başlığı bulunan dosya sayısı: **35**
+- Sonuç: **35/35 dosya rapor kapsamında** ✅
+
+**Paralel Dosya Okuma + Uyum Kontrol Özeti:**
+
+| Kontrol Alanı | Bulgular | Durum |
+|---|---|---|
+| Dosya kapsamı (`git ls-files` vs `13.5.x`) | Eksik/eşleşmeyen dosya yok | ✅ Uyumlu |
+| Sürüm metinleri (`README.md`, `Dockerfile`, `install_sidar.sh`) | `2.6.1` izleri mevcut; §13.5 ilgili açık bulgularda zaten kayıtlı | ⚠️ Takipte |
+| Dağıtım/çalıştırma komutları (`README.md` vs `docker-compose.yml`) | `sidar-web-cpu` örneği güncel servis adıyla tam uyumlu değil; §13.5.28 altında kayıtlı | ⚠️ Takipte |
+| API/Export yüzeyi (`agent/core/managers __all__`) | Manuel export listesi güncel, ancak gelecekte drift riski taşıyor; ilgili dosyalarda işaretli | ⚠️ Takipte |
+
+**Son Değerlendirme (Final):**
+
+- Raporun §13.5 bölümü artık repo içindeki tüm izlenen dosyaları kapsar.
+- Dosyalar arası çapraz kontrollerde kritik yeni uyumsuzluk bulunmadı; tespit edilen noktalar açık bulgu tablolarına işlenmiş durumdadır.
+- Bu nedenle rapor, mevcut kod tabanı için **son kontrol geçmiş** sürüm olarak değerlendirilebilir.
 
 ---
 
