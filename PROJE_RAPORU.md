@@ -163,15 +163,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif düşük öncelikli sorun kalmamıştır.
 >
-> ~~**N-03/N-04**~~ → ✅ **ÇÖZÜLDÜ**
->
-> ~~**O-01**: 4 modül docstring `Sürüm: 2.6.1`~~ → ✅ **ÇÖZÜLDÜ** (4 dosyada `Sürüm: 2.7.0` olarak güncellendi)
->
-> ~~**O-04**: `sidar_agent.py:626` `self.github._repo.default_branch`~~ → ✅ **ÇÖZÜLDÜ** (`GitHubManager.default_branch` property; `self.github.default_branch` kullanılıyor)
->
-> ~~**O-06**: `add_document_from_file()` çift chunking~~ → ✅ **ÇÖZÜLDÜ** (gereksiz `_recursive_chunk_text` çağrısı kaldırıldı)
->
-> Geçmişte tespit edilen tüm düşük öncelikli sorunlar giderilmiştir — bkz. §3.
+> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
 
 ---
 
