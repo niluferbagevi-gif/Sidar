@@ -202,10 +202,10 @@ sidar_project/
 
 ## 3. Önceki Rapordan Bu Yana Düzeltilen Hatalar
 
-> ✅ **v2.5.0 → v2.7.0** arası toplam **76 düzeltme** uygulanmıştır (§3.1–§3.76).
+> ✅ **v2.5.0 → v2.7.0** arası toplam **76 düzeltme** uygulanmıştır ([§3.1–§3.76](DUZELTME_GECMISI.md#sec-3-1-3-76)).
 > Tüm düzeltme detayları okunabilirliği korumak amacıyla ayrı dosyaya taşınmıştır:
 >
-> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** — tam düzeltme geçmişi (§3.1–§3.76)
+> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76)** — tam düzeltme geçmişi (§3.1–§3.76)
 
 ---
 
@@ -219,7 +219,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif yüksek öncelikli sorun kalmamıştır.
 >
-> Geçmişte tespit edilen (N-02 dahil) tüm yüksek öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
+> Geçmişte tespit edilen (N-02 dahil) tüm yüksek öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
 
 ---
 
@@ -227,7 +227,7 @@ sidar_project/
 
 > ✅ 2026-03-02 güncel taramasında aktif orta öncelikli sorun kalmamıştır.
 >
-> Geçmişte tespit edilen (N-01, O-02, O-03, O-05 dahil) tüm orta öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
+> Geçmişte tespit edilen (N-01, O-02, O-03, O-05 dahil) tüm orta öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
 
 ---
 
@@ -236,7 +236,7 @@ sidar_project/
 
 > ✅ **2026-03-03 güncel taramasında (Session 8) tespit edilen P-01–P-07 aynı oturumda giderilmiştir** — bkz. §17.
 >
-> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar da giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
+> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar da giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
 
 **Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı):**
 
@@ -272,16 +272,16 @@ sidar_project/
 
 | ID | Önem | Konum | Açıklama | Durum |
 |----|------|-------|----------|-------|
-| N-01 | 🟡 ORTA | `core/__init__.py:10` | `__version__ = "2.6.1"` — kod v2.7.0 | ✅ Kapalı |
-| N-02 | 🔴 YÜKSEK | `.env.example:125` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | ✅ Kapalı |
-| N-03 | 🟢 DÜŞÜK | `web_server.py:321` | `agent.docs._index` private erişim — /metrics | ✅ Kapalı |
-| N-04 | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | ✅ Kapalı |
-| O-01 | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | ✅ Kapalı |
-| O-02 | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | ✅ Kapalı |
-| O-03 | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | ✅ Kapalı |
-| O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
-| O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
-| O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
+| [N-01](DUZELTME_GECMISI.md#n-01) | 🟡 ORTA | `core/__init__.py:10` | `__version__ = "2.6.1"` — kod v2.7.0 | ✅ Kapalı |
+| [N-02](DUZELTME_GECMISI.md#n-02) | 🔴 YÜKSEK | `.env.example:125` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | ✅ Kapalı |
+| [N-03](DUZELTME_GECMISI.md#n-03) | 🟢 DÜŞÜK | `web_server.py:321` | `agent.docs._index` private erişim — /metrics | ✅ Kapalı |
+| [N-04](DUZELTME_GECMISI.md#n-04) | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | ✅ Kapalı |
+| [O-01](DUZELTME_GECMISI.md#o-01) | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | ✅ Kapalı |
+| [O-02](DUZELTME_GECMISI.md#o-02) | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | ✅ Kapalı |
+| [O-03](DUZELTME_GECMISI.md#o-03) | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | ✅ Kapalı |
+| [O-04](DUZELTME_GECMISI.md#o-04) | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
+| [O-05](DUZELTME_GECMISI.md#o-05) | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
+| [O-06](DUZELTME_GECMISI.md#o-06) | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
 | P-01 | 🟢 DÜŞÜK | `Dockerfile:25` | `LABEL version="2.6.1"` — proje v2.7.0 | ✅ Kapalı |
 | P-02 | 🟢 DÜŞÜK | `PROJE_RAPORU.md:121` | "PyTorch CUDA 12.1 wheel" — gerçekte cu124 | ✅ Kapalı |
 | P-03 | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `DOCKER_EXEC_TIMEOUT` belgelenmemiş | ✅ Kapalı |
