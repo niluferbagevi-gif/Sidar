@@ -112,6 +112,8 @@ sidar_project/
 │   └── test_sidar.py               # 9 test sınıfı, GPU + Chunking + Pydantic testleri
 ├── web_ui/
 │   └── index.html                  # Dark/Light tema, Sidebar, Session yönetimi, SSE
+├── SIDAR.md                        # Proje genel talimat/bağlam dosyası (agent uyumu)
+├── CLAUDE.md                       # Proje genel talimat/bağlam dosyası (Claude/Codex uyumu)
 ├── config.py                       # GPU tespiti, RotatingFileHandler, WSL2 desteği
 ├── main.py                         # CLI — async döngü, asyncio.run() doğru kullanımı
 ├── web_server.py                   # FastAPI + SSE + Rate limiting + Session API
