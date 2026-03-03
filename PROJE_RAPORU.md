@@ -240,7 +240,7 @@ sidar_project/
 
 ### 10.1 Mimari — Önceki Versiyona Kıyasla İyileşmeler
 
-- ✅ **Dispatcher tablosu:** 25 araçlı `if/elif` zinciri temiz `dict` + ayrı `_tool_*` metodlarına dönüştürüldü
+- ✅ **Dispatcher tablosu:** genişleyen araç seti için `if/elif` zinciri yerine merkezi `dict` dispatch + ayrı `_tool_*` metodları kullanılıyor
 - ✅ **Thread pool kullanımı:** Disk I/O (`asyncio.to_thread`), Docker REPL (`asyncio.to_thread`), DDG araması (`asyncio.to_thread`) event loop'u bloke etmiyor
 - ✅ **Async lock yönetimi:** `_agent_lock = asyncio.Lock()` (web_server), `agent._lock = asyncio.Lock()` (sidar_agent) doğru event loop'ta yaşıyor
 - ✅ **Tekil `asyncio.run()` çağrısı:** CLI'da tüm döngü tek bir `asyncio.run(_interactive_loop_async(agent))` içinde
@@ -250,7 +250,7 @@ sidar_project/
 ```python
 # code_manager.py — Docker izolasyon parametreleri
 container = self.docker_client.containers.run(
-    image="python:3.11-alpine",
+    image=self.docker_image,   # cfg.DOCKER_PYTHON_IMAGE (varsayılan: python:3.11-alpine)
     command=["python", "-c", code],
     detach=True,
     network_disabled=True,    # Dış ağa erişim yok
@@ -314,15 +314,20 @@ USE_GPU, GPU_INFO, GPU_DEVICE, MULTI_GPU, GPU_MEMORY_FRACTION, GPU_MIXED_PRECISI
 ### 10.6 Rate Limiting (Yeni)
 
 ```python
-# web_server.py — In-memory rate limiting
-_RATE_LIMIT  = 20   # maksimum istek / dakika
-_RATE_WINDOW = 60   # saniye
+# web_server.py — In-memory rate limiting (çok katmanlı)
+_RATE_LIMIT           = 20  # /chat
+_RATE_LIMIT_MUTATIONS = 60  # POST/DELETE mutasyon endpoint'leri
+_RATE_LIMIT_GET_IO    = 30  # GET I/O endpoint'leri
+_RATE_WINDOW          = 60  # saniye
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     if request.url.path == "/chat":
-        if _is_rate_limited(client_ip):
-            return JSONResponse(..., status_code=429)
+        ...
+    elif request.method in ("POST", "DELETE"):
+        ...
+    elif request.method == "GET" and request.url.path in _RATE_GET_IO_PATHS:
+        ...
     return await call_next(request)
 ```
 
