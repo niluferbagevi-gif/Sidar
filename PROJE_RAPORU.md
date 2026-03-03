@@ -465,7 +465,7 @@ async for raw_bytes in resp.aiter_bytes():
 
 ### 13.1 Çekirdek Dosyalar — Güncel Durum
 
-- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir.
+- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
 - **`agent/sidar_agent.py`**: Araç çağrıları merkezi `dispatch` tablosu ile yönetilir; `DOCKER_PYTHON_IMAGE` konfigürasyonu `CodeManager`'a iletilir.
 - **`core/rag.py`**: RAG tarafında `get_index_info()` ve `doc_count` gibi public erişim noktaları kullanımdadır.
 - **`web_server.py`**: 3 katmanlı rate limiting (`/chat`, mutasyonlar, GET I/O), branch regex doğrulaması ve RAG endpoint'leri güncel akışla uyumludur.
@@ -487,6 +487,78 @@ async for raw_bytes in resp.aiter_bytes():
 
 > 2026-03-02 doğrulama setine göre bu bölüm kapsamında **aktif kritik/orta/düşük açık bulgu raporlanmamaktadır**.
 > Tarihsel doğrulama ve kapanış kayıtları: 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+### 13.5 Dosya Bazlı Teknik Detaylar
+
+> Bu alt bölüm her dosyanın **güncel teknik durumunu** satır referansları ile belgeler.
+> Sırası: `main.py` → `agent/sidar_agent.py` → devam
+
+---
+
+#### 13.5.1 `main.py` — Skor: 100/100 ✅
+
+**Sorumluluk:** CLI giriş noktası — interaktif döngü, tek komut modu, argüman ayrıştırma.
+
+**Async Mimarisi**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 90–185 | `async def _interactive_loop_async()` + `asyncio.run(...)` sarmalı | Tüm döngü tek event loop'ta; `asyncio.Lock()` aynı loop'a bağlı kalır |
+| 130 | `asyncio.to_thread(input, "Sen  > ")` | Blokeyici `input()` thread'e itilir; loop serbest bırakılır |
+| 131 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Async context'te `CTRL+C` bazen `CancelledError` olarak iletilir; üçlü handler tüm yolları kapatır |
+| 236 | `asyncio.run(_run_command())` | `--command` modu erken döner; `interactive_loop` ile çakışan `asyncio.run()` riski yoktur |
+
+**Banner Dinamik Üretim (`_make_banner`, satır 42–58)**
+
+- `ver_field = f"v{version}"` → `SidarAgent.VERSION` çalışma anında alınır; sabit string bağımlılığı yoktur.
+- `ver_padded = ver_field.ljust(7)` — "v2.7.0" = 6 karakter, padding 1 boşluk. ⚠️ **Açık Not:** sürüm "v10.0.0" (7 kar.) veya daha uzun olduğunda çerçeve taşabilir (düşük öncelikli).
+
+**Sağlayıcıya Göre Model Gösterimi (satır 103–107)**
+
+```python
+if agent.cfg.AI_PROVIDER == "gemini":
+    model_display = getattr(agent.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
+else:
+    model_display = agent.cfg.CODING_MODEL
+```
+
+Gemini ve Ollama için ayrı model adı gösterilir; yanlış model etiketi riski ortadan kalkmıştır.
+
+**Koşullu GPU / CUDA / Çoklu GPU Gösterimi (satır 111–120)**
+
+Üç katmanlı koşullu yapı:
+1. `USE_GPU` False ise → "✗ CPU Modu" satırı
+2. `CUDA_VERSION != "N/A"` ise → `(CUDA x.x)` eklenir
+3. `GPU_COUNT > 1` ise → `, N GPU` eklenir
+
+**Config CLI Override Mekanizması (satır 211–220)**
+
+```python
+cfg = Config()
+if args.level:    cfg.ACCESS_LEVEL = args.level    # instance attribute override
+if args.provider: cfg.AI_PROVIDER  = args.provider
+if args.model:    cfg.CODING_MODEL = args.model
+```
+
+`os.environ` üzerinden override **çalışmaz** — `Config` sınıf attribute'ları module import anında bir kez değerlendirilir. Override instance üzerinden yapılır; bu tasarım kod yorumunda açıklanmıştır.
+
+**Çıkış Anahtar Kelimeleri (satır 139)**
+
+`.exit`, `.q` yanı sıra `exit`, `quit`, `çıkış` da (öneksiz) kabul edilir. Türkçe giriş farkındalığı sağlar.
+
+**Nokta Önekli Dahili Komutlar (satır 142–171)**
+
+11 komut (`help`, `status`, `clear`, `audit`, `health`, `gpu`, `github`, `level`, `web`, `docs`, `exit`) → tümü eşzamanlı (`sync`) metod çağrısı; bu metotlar ağır I/O içermediği sürece event loop'u bloklama riski yoktur.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| — | `ver_padded.ljust(7)`: sürüm ≥ 8 karakter olursa banner taşabilir | 46 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
 ---
 
