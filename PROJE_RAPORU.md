@@ -487,6 +487,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (48+) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
+- **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ⚠️ Üst yorum bloğunda sürüm notu `2.6.1` olarak kalmış (metadata `2.7.0` ile tutarsız); ayrıca healthcheck'te `ps aux | grep` fallback'i yalancı-pozitif üretebilir. → Detay: §13.5.23
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1455,6 +1456,64 @@ except Exception as exc:
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
 ---
+
+
+#### 13.5.23 `Dockerfile` — Skor: 90/100 ✅
+
+**Sorumluluk:** Uygulamanın container paketleme tanımı — CPU/GPU taban imaj seçimi, bağımlılık kurulumu, çalışma zamanı env ayarları, sağlık kontrolü ve varsayılan giriş komutunu yönetir.
+
+**Build ve Runtime Mimarisi (satır 15–38, 52–70)**
+
+- `BASE_IMAGE` ve `GPU_ENABLED` build argümanlarıyla CPU/GPU çift mod desteklenir.
+- `TORCH_INDEX_URL` üzerinden PyTorch wheel kaynağı ayarlanır; GPU build için cu124 kaynağına geçiş mümkün.
+- `environment.yml` içinden pip bağımlılıkları dinamik çıkarılarak `requirements.txt` üretilir ve kurulumu yapılır.
+
+**Operasyonel Davranış (satır 74–92)**
+
+- Kalıcı dizinler (`logs`, `data`, `temp`) hazırlanır ve root olmayan `sidar` kullanıcısına geçilir.
+- `EXPOSE 7860` ve `/status` tabanlı healthcheck ile web modu izlenir.
+- Varsayılan `ENTRYPOINT` CLI (`python main.py`) olarak gelir; web modu için komut override edilir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| DF-01 | Üst açıklama yorumunda sürüm `2.6.1` görünüyor; metadata label `2.7.0` ile dokümantasyon tutarsızlığı yaratır | 3, 25 | Düşük |
+| DF-02 | Healthcheck fallback'i `ps aux | grep "[p]ython"` yaklaşımını kullanıyor; web endpoint çalışmasa bile herhangi bir python süreci varsa sağlık geçebilir | 87–88 | Orta |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+#### 13.5.24 `docker-compose.yml` — Skor: 88/100 ✅
+
+**Sorumluluk:** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
+
+**Servis Topolojisi ve Çalıştırma Modeli (satır 1–176)**
+
+- `sidar-ai` ve `sidar-gpu` CLI odaklıdır; interaktif kullanım için `stdin_open: true` + `tty: true` tanımlıdır.
+- `sidar-web` ve `sidar-web-gpu` web sunucusunu (`python web_server.py`) çalıştırır; CPU/GPU için farklı port varsayılanları (`7860` / `7861`) kullanır.
+- GPU servisleri `TORCH_INDEX_URL=.../cu124` ve NVIDIA device reservation ile CUDA runtime’a yönlendirilmiştir.
+
+**Operasyonel Güçlü Yanlar (satır 7–167)**
+
+- Build-time CPU/GPU ayrımı `BASE_IMAGE` + `GPU_ENABLED` argümanlarıyla nettir; Dockerfile ile uyumlu bir matrisi sürdürür.
+- Veri kalıcılığı için `data`, `logs`, `temp` dizinleri tüm servislerde ortak volume olarak bağlanır.
+- `host.docker.internal:host-gateway` kullanımı ile host üzerindeki Ollama servisine konteyner içinden erişim sadeleşir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| DC-01 | `deploy.resources.*` sınırları klasik `docker compose up` akışında çoğunlukla uygulanmaz (Swarm odaklıdır); kaynak limiti beklentisi yalancı güven oluşturabilir | 13–16, 47–56, 98–101, 139–148 | Orta |
+| DC-02 | Host erişimi için `host.docker.internal` bağımlılığı Linux/engine kombinasyonlarında farklı davranabilir; çevresel taşınabilirlikte platform farkı riski bulunur | 29–30, 74–75, 123–124, 175–176 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
 
 
 ## 14. Geliştirme Önerileri (Öncelik Sırasıyla)
