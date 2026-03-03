@@ -475,6 +475,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
+- **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1086,6 +1087,40 @@ except Exception as exc:
 |----|------|-------|------|
 | CM-01 | `run_shell()` çağrısı `shell=True` kullanıyor; erişim seviyesi kontrolü olsa da komut enjeksiyon etkisi güçlü kalır (özellikle model ürettiği komutlarda dikkat gerekir) | 361–364 | Orta |
 | CM-02 | `audit_project()` `rglob("*.py")` ile tüm alt ağacı tarıyor; büyük repo/vendor/venv içeren yapılarda süreyi artırabilir ve hedef dışı dosyaları rapora katabilir | 613–617 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
+
+**Bağlantı ve Repo Yükleme Akışı (satır 50–96)**
+
+- Token yoksa güvenli şekilde devre dışı moda geçer; token varsa `Auth.Token(...)` ile istemci başlatılır.
+- `_load_repo()` ile aktif repo nesnesi merkezi olarak yönetilir; `set_repo()` dış katmana net başarı/hata mesajı verir.
+- `is_available()` ve `status()` çıktıları operatöre token/repo durumunu anlaşılır şekilde iletir.
+
+**Güvenlik Korumaları (satır 13–37, 184–235, 306–334)**
+
+- Branch isimleri `_BRANCH_RE` ile doğrulanır; injection benzeri branch manipülasyonları erken reddedilir.
+- `read_remote_file()` yalnızca güvenli metin uzantıları/uzantısız dosya adları için içerik döndürür; binary dosya riski azaltılır.
+- Varsayılan dal erişimi için `default_branch` property sunularak dış modüllerin `_repo` private alanına doğrudan erişmesi engellenir.
+
+**PR ve Dosya Operasyonları (satır 250–537)**
+
+- Branch listesi, PR listesi/detayı/yorum/kapatma ve değişen dosya raporları kullanıcıya metin tabanlı okunabilir çıktı üretir.
+- `get_pull_requests_detailed()` web katmanı için yapısal dict çıktı sağlar; API tarafında serializasyonu kolaylaştırır.
+- `create_or_update_file()` mevcut dosyayı güncelleme, yoksa oluşturma yolunu tek metotta birleştirir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| GH-01 | `create_or_update_file()` içinde "dosya yok" kararını geniş `except Exception` ile veriyor; izin/bağlantı gibi gerçek hatalar da oluşturma yoluna düşebilir ve asıl neden gizlenebilir | 284–301 | Orta |
+| GH-02 | `list_repos(owner=...)` önce organization akışını zorunlu dener, kullanıcı owner senaryosu exception ile fallback’e bırakılır; kontrol akışı istisna tabanlı ve maliyetli | 106–133 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
