@@ -172,19 +172,12 @@ sidar_project/
 
 > Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-01–O-06 dahil tüm bulgular kapatılmıştır. Bu başlık altında kapanmış detaylar düzeltme geçmişine taşınmıştır.
 
-### 8.1 Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
+### 8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti
 
-> ✅ Önceki sürümlerdeki + U-01–U-15 + V-01–V-03 + N-01–N-04 taramalarındaki tüm uyumsuzluklar kapatılmıştır.
-> Detaylar okunabilirliği korumak amacıyla ayrı dosyaya taşınmıştır:
+> ✅ Önceki sürümlerden gelen (§8.1–§8.4; U-01–U-15, V-01–V-03, N-01–N-04) taramalar ve 2026-03-02 tarihli O-01–O-06 ikinci tur doğrulama bulgularının tamamı kapatılmıştır.
+> Ayrıntılar ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşınmıştır:
 >
 > 📄 **[DUZELTME_GECMISI.md → §8.1–§8.4 bölümü](DUZELTME_GECMISI.md#kapatılan-uyumsuzluk-taramaları-81–84)**
-
----
-
-### 8.2 Yeni Doğrulama Taraması — O-01–O-06 (2026-03-02 Güncel Bulgular — İkinci Tur)
-
-> **Durum güncellemesi (2026-03-02):** O-01–O-06 kapsamındaki bulguların tamamı giderildi.
-> Detaylı bulgu açıklamaları ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşındı.
 >
 > 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#8218den-taşınan-bulgular-o-01o-06--session-7-2026-03-02)**
 
