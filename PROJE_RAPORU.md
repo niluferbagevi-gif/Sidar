@@ -465,10 +465,10 @@ async for raw_bytes in resp.aiter_bytes():
 
 ### 13.1 Çekirdek Dosyalar — Güncel Durum
 
-- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir.
-- **`agent/sidar_agent.py`**: Araç çağrıları merkezi `dispatch` tablosu ile yönetilir; `DOCKER_PYTHON_IMAGE` konfigürasyonu `CodeManager`'a iletilir.
-- **`core/rag.py`**: RAG tarafında `get_index_info()` ve `doc_count` gibi public erişim noktaları kullanımdadır.
-- **`web_server.py`**: 3 katmanlı rate limiting (`/chat`, mutasyonlar, GET I/O), branch regex doğrulaması ve RAG endpoint'leri güncel akışla uyumludur.
+- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
+- **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ⚠️ Madde 6.9 kısmen açık: `_tool_subtask` ve döngü düzeltme mesajları format sabitlerini kullanmıyor. → Detay: §13.5.2
+- **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ `BM25Okapi` her sorguda yeniden oluşturulur (disk okuma); `_tool_docs_search` ChromaDB `search()` çağrısını `asyncio.to_thread` olmadan yapıyor. → Detay: §13.5.3
+- **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -487,6 +487,378 @@ async for raw_bytes in resp.aiter_bytes():
 
 > 2026-03-02 doğrulama setine göre bu bölüm kapsamında **aktif kritik/orta/düşük açık bulgu raporlanmamaktadır**.
 > Tarihsel doğrulama ve kapanış kayıtları: 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+### 13.5 Dosya Bazlı Teknik Detaylar
+
+> Bu alt bölüm her dosyanın **güncel teknik durumunu** satır referansları ile belgeler.
+> Sırası: `main.py` → `agent/sidar_agent.py` → devam
+
+---
+
+#### 13.5.1 `main.py` — Skor: 100/100 ✅
+
+**Sorumluluk:** CLI giriş noktası — interaktif döngü, tek komut modu, argüman ayrıştırma.
+
+**Async Mimarisi**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 90–185 | `async def _interactive_loop_async()` + `asyncio.run(...)` sarmalı | Tüm döngü tek event loop'ta; `asyncio.Lock()` aynı loop'a bağlı kalır |
+| 130 | `asyncio.to_thread(input, "Sen  > ")` | Blokeyici `input()` thread'e itilir; loop serbest bırakılır |
+| 131 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Async context'te `CTRL+C` bazen `CancelledError` olarak iletilir; üçlü handler tüm yolları kapatır |
+| 236 | `asyncio.run(_run_command())` | `--command` modu erken döner; `interactive_loop` ile çakışan `asyncio.run()` riski yoktur |
+
+**Banner Dinamik Üretim (`_make_banner`, satır 42–58)**
+
+- `ver_field = f"v{version}"` → `SidarAgent.VERSION` çalışma anında alınır; sabit string bağımlılığı yoktur.
+- `ver_padded = ver_field.ljust(7)` — "v2.7.0" = 6 karakter, padding 1 boşluk. ⚠️ **Açık Not:** sürüm "v10.0.0" (7 kar.) veya daha uzun olduğunda çerçeve taşabilir (düşük öncelikli).
+
+**Sağlayıcıya Göre Model Gösterimi (satır 103–107)**
+
+```python
+if agent.cfg.AI_PROVIDER == "gemini":
+    model_display = getattr(agent.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
+else:
+    model_display = agent.cfg.CODING_MODEL
+```
+
+Gemini ve Ollama için ayrı model adı gösterilir; yanlış model etiketi riski ortadan kalkmıştır.
+
+**Koşullu GPU / CUDA / Çoklu GPU Gösterimi (satır 111–120)**
+
+Üç katmanlı koşullu yapı:
+1. `USE_GPU` False ise → "✗ CPU Modu" satırı
+2. `CUDA_VERSION != "N/A"` ise → `(CUDA x.x)` eklenir
+3. `GPU_COUNT > 1` ise → `, N GPU` eklenir
+
+**Config CLI Override Mekanizması (satır 211–220)**
+
+```python
+cfg = Config()
+if args.level:    cfg.ACCESS_LEVEL = args.level    # instance attribute override
+if args.provider: cfg.AI_PROVIDER  = args.provider
+if args.model:    cfg.CODING_MODEL = args.model
+```
+
+`os.environ` üzerinden override **çalışmaz** — `Config` sınıf attribute'ları module import anında bir kez değerlendirilir. Override instance üzerinden yapılır; bu tasarım kod yorumunda açıklanmıştır.
+
+**Çıkış Anahtar Kelimeleri (satır 139)**
+
+`.exit`, `.q` yanı sıra `exit`, `quit`, `çıkış` da (öneksiz) kabul edilir. Türkçe giriş farkındalığı sağlar.
+
+**Nokta Önekli Dahili Komutlar (satır 142–171)**
+
+11 komut (`help`, `status`, `clear`, `audit`, `health`, `gpu`, `github`, `level`, `web`, `docs`, `exit`) → tümü eşzamanlı (`sync`) metod çağrısı; bu metotlar ağır I/O içermediği sürece event loop'u bloklama riski yoktur.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| — | `ver_padded.ljust(7)`: sürüm ≥ 8 karakter olursa banner taşabilir | 46 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+#### 13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅
+
+**Sorumluluk:** Ana ajan — ReAct döngüsü, araç dispatch, bellek yönetimi, LLM stream, vektör arşivleme.
+
+**Modül Düzeyi Format Sabitleri (satır 37–48)**
+
+```python
+_FMT_TOOL_OK  = "[ARAÇ:{name}:SONUÇ]\n===\n{result}\n===\n..."
+_FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"
+_FMT_SYS_ERR  = "[Sistem Hatası] {msg}"
+```
+
+Ana `_react_loop` bu üç sabiti tutarlı biçimde kullanır. ⚠️ **Madde 6.9 kısmen açık:** `_tool_subtask` (satır 833, 839–841) inline string kullanır; döngü düzeltme mesajı (satır 318) `[Sistem Uyarısı]` etiketiyle `_FMT_SYS_ERR`'den ayrışır.
+
+**Async Lock — Lazy Init (satır 90, 155–156)**
+
+```python
+self._lock = None           # __init__: event loop henüz yok
+# respond() ilk çağrıldığında:
+if self._lock is None:
+    self._lock = asyncio.Lock()
+```
+
+Lock, `respond()` çağrıldığı anda ve zaten aktif bir event loop içinde oluşturulur; import/init anında oluşturulması event loop uyumsuzluğuna yol açardı.
+
+**JSONDecoder ile Greedy Regex Çözümü (satır 262–275)**
+
+```python
+_decoder = json.JSONDecoder()
+_idx = raw_text.find('{')
+while _idx != -1:
+    try:
+        json_match, _ = _decoder.raw_decode(raw_text, _idx)
+        break
+    except json.JSONDecodeError:
+        _idx = raw_text.find('{', _idx + 1)
+```
+
+`re.search(r'\{.*\}', raw_text, re.DOTALL)` greedy regex yerine `raw_decode` ile ilk geçerli JSON nesnesi bulunur. Gömülü kod bloğu veya çoklu JSON olsa bile doğru nesne seçilir. Aynı pattern `_tool_subtask` (satır 814–818) ve `_tool_github_smart_pr` (satır 683–685) içinde de uygulanmış.
+
+**`asyncio.to_thread()` Kapsamı**
+
+| Satır(lar) | Çağrı | Açıklama |
+|------------|-------|----------|
+| 161, 172, 311 | `memory.add()` | Dosya I/O; lock içi ve lock dışı her iki noktada da sarmalı |
+| 398, 404–406, 424, 431, 438, 443 | Araç I/O (list_dir/read/write/patch/execute/audit) | Disk erişimi event loop'u bloke etmez |
+| 612, 631–638 | `run_shell` (smart PR içinde) | Kabuk çağrıları thread'e itilir |
+| 912 | `_tool_run_shell` | Genel kabuk komutu |
+| 924, 944 | glob/grep araçları | Dosya sistemi tarama thread'de |
+| 771 | `docs.add_document_from_file` | RAG dosya ekleme (U-14 çözümü) |
+| 1270–1276 | `docs.add_document` (_summarize_memory) | Vektör arşivleme (U-14 çözümü) |
+
+**`_try_direct_tool_route` — Hafif LLM Router (satır 188–221)**
+
+Tek adımlı istekleri `_DIRECT_ROUTE_ALLOWED_TOOLS` frozenset ile kısıtlı 17 güvenli araca yönlendirir. `temperature=0.0`, `json_mode=True`, `stream=False` → deterministik, yapısal çıktı. AutoHandle yakalayamazsa devreye girer; başarısız olursa `None` döner ve tam ReAct döngüsüne düşülür.
+
+**Tekrar Tespiti — Döngü Kırma (satır 315–328)**
+
+Aynı araç art arda çağrılıyorsa (`tool_name == _last_tool`) LLM'e önceki sonucu içeren zorlayıcı mesaj iletilerek `final_answer` verilmesi sağlanır; sonsuz araç döngüsü önlenir.
+
+**Sentinel Format — Web UI Entegrasyonu (satır 330–334)**
+
+```python
+yield f"\x00THOUGHT:{_thought_safe}\x00"   # düşünce akışı
+yield f"\x00TOOL:{tool_name}\x00"           # araç tetikleyici
+```
+
+`\x00` sentinel ile düşünce/araç olayları normal yanıt metninden ayrılır; web UI bu sinyalleri düşünce balonları ve araç göstergelerinde kullanır.
+
+**`_tool_subtask` — Mini ReAct Döngüsü (satır 782–848)**
+
+Bağımsız bir alt ajan olarak max 5 adımda çalışır. Claude Code'daki `Agent` tool eşdeğeri. `agent` alias'ı (`dispatch` tablosunda satır 1131) ile çağrılabilir. Not: kendi `_FMT_*` sabitlerini kullanmaz — inline string formatı.
+
+**`_tool_parallel` — Güvenli Eşzamanlı Çalıştırma (satır 859–904)**
+
+`asyncio.gather()` + `return_exceptions=True` ile birden fazla okuma aracı paralel çalıştırılır. `_PARALLEL_SAFE` frozenset (21 araç) yalnızca okuma/sorgulama araçlarına izin verir; mutasyon araçları reddedilir.
+
+**`_load_instruction_files()` — mtime Cache (satır 1197–1247)**
+
+SIDAR.md / CLAUDE.md dosyaları `path.stat().st_mtime` karşılaştırması ile izlenir. Değişiklik algılandığında cache geçersizleşir ve dosyalar taze okunur. Claude Code'un her konuşmada CLAUDE.md yeniden okumasına eşdeğer davranış.
+
+**`_tool_read_file()` — Büyük Dosya RAG Yönlendirmesi (satır 407–417)**
+
+`RAG_FILE_THRESHOLD` (varsayılan 20.000 karakter) aşıldığında dosyanın RAG deposuna eklenmesi için `docs_add_file` ve `docs_search` araç talimatı içeren açıklama döndürülür; model tekrarlı büyük dosya okumalarından caydırılır.
+
+**`_build_context()` — Runtime Durum (satır 1141–1195)**
+
+Her LLM turunda `system_prompt`'a gerçek runtime değerler eklenir: sağlayıcı, model, GPU, GitHub, RAG durumu, dosya metrikleri, aktif todo listesi ve talimat dosyaları. Hallüsinasyon riski azaltılır.
+
+**Dispatch Tablosu (satır 1077–1133)**
+
+40+ araç, alias'lar dahil:
+- `bash` / `shell` → `_tool_run_shell`
+- `ls` → `_tool_list_dir`
+- `grep` → `_tool_grep_files`
+- `agent` → `_tool_subtask`
+- `print_config_summary` → `_tool_get_config`
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| 6.9 | `_tool_subtask` (satır 833, 839–841) ve döngü düzeltme (satır 318) format sabitlerini kullanmıyor — `[ARAÇ:{name}:HATA]` inline, `[Sistem Uyarısı]` vs `_FMT_SYS_ERR` | 318, 833, 839 | Orta |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+#### 13.5.3 `core/rag.py` — Skor: 88/100 ✅
+
+**Sorumluluk:** Belge deposu — ChromaDB vektör arama, BM25, keyword fallback, chunking, GPU embedding, web API erişim noktaları.
+
+**Hibrit Arama Mimarisi (satır 472–515)**
+
+`mode` parametresi ile motor seçimi:
+
+| Mode | Motor | Fallback |
+|------|-------|---------|
+| `"auto"` | ChromaDB → BM25 → Keyword (cascade) | Her katman başarısız olursa bir sonrakine geçer |
+| `"vector"` | Yalnızca ChromaDB | Yoksa hata mesajı |
+| `"bm25"` | Yalnızca BM25 | Yoksa hata mesajı |
+| `"keyword"` | Yalnızca keyword | Her zaman çalışır |
+
+**GPU-Farkında Embedding (`_build_embedding_function`, satır 27–76)**
+
+- `USE_GPU=True` → `SentenceTransformerEmbeddingFunction("all-MiniLM-L6-v2", device="cuda:N")`
+- `GPU_MIXED_PRECISION=True` → `torch.autocast(device_type="cuda", dtype=torch.float16)` ile FP16 encode
+- Başlatma hatası (CUDA yoksa, paket eksikse) → `None` döner, ChromaDB CPU varsayılanına geçer; istisnalar yutulmaz, `logger.warning` ile loglanır
+- ⚠️ FP16 desteği `ef.__call__` monkey-patch ile uygulanıyor (satır 58–64); ChromaDB iç API değişimine karşı kırılgan (düşük öncelikli)
+
+**`threading.Lock` — Atomik Delete + Upsert (satır 112, 310–318)**
+
+```python
+self._write_lock = threading.Lock()
+# add_document içinde:
+with self._write_lock:
+    self.collection.delete(where={"parent_id": parent_id})
+    if chunks:
+        self.collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+```
+
+Aynı `parent_id` için eş zamanlı yazma çakışması önlenir. `asyncio.to_thread` çağrıları farklı thread'lerde çalıştığından senkron `threading.Lock` doğru tercihtir.
+
+**Recursive Chunking (`_recursive_chunk_text`, satır 193–257)**
+
+LangChain `RecursiveCharacterTextSplitter` mantığını simüle eden özyinelemeli bölme:
+- Ayırıcı öncelik sırası: `"\nclass "` → `"\ndef "` → `"\n\n"` → `"\n"` → `" "` → `""` (karakter)
+- Overlap mekanizması (satır 247–248): yeni chunk önceki chunk'ın son `_chunk_overlap` karakterini alarak bağlam sürekliliği sağlar
+- Hiçbir ayırıcı ile bölünemeyenler zorla `_chunk_size` ile kesilir
+
+**`parent_id` Tabanlı Atomik Update (satır 273, 312)**
+
+```python
+parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
+# Güncelleme: önce eski parçaları sil, sonra yenilerini ekle
+self.collection.delete(where={"parent_id": parent_id})
+```
+
+Aynı başlık+kaynak için tekrar ekleme yapıldığında ChromaDB'de yinelenen vektörler birikmez.
+
+**ChromaDB `n_results` Güvenlik Kontrolü (satır 521–524)**
+
+```python
+collection_size = self.collection.count()
+n_results = min(top_k * 2, max(collection_size, 1))
+```
+
+`n_results > koleksiyon boyutu` durumunda ChromaDB `InvalidArgumentError` fırlatır; bu kontrol hatayı önler.
+
+**`seen_parents` Çeşitlilik Filtresi (satır 535–560)**
+
+Aynı dokümanın farklı chunk'ları arama sonuçlarına girdiğinde `seen_parents` seti ile tekrarlı sonuçlar filtrelenir; `top_k` kadar farklı kaynak belge sunulur.
+
+**Public API Erişim Noktaları**
+
+| İmza | Amaç |
+|------|------|
+| `get_index_info() → List[Dict]` (satır 409) | Web API için belge özet listesi |
+| `doc_count` property (satır 426–429) | Belge sayısı (`len(self._index)`) |
+| `add_document_from_url` async (satır 327) | `httpx.AsyncClient` ile doğrudan async — to_thread gerektirmez |
+| `add_document_from_file` sync (satır 353) | `sidar_agent.py`'de `asyncio.to_thread()` ile çağrılır |
+| `add_document` sync (satır 259) | `sidar_agent.py`'de `asyncio.to_thread()` ile çağrılır |
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| R-01 | `BM25Okapi` her sorguda yeniden oluşturuluyor: tüm corpus dosyadan okunup tokenize ediliyor; belge sayısı arttıkça arama gecikmesi büyür | 565–596 | Orta |
+| R-02 | `_tool_docs_search` (sidar_agent.py:749) `self.docs.search()` senkron çağrısını `asyncio.to_thread` sarmadan yapıyor; ChromaDB disk I/O event loop'u bloklayabilir | sidar_agent.py:749 | Orta |
+| R-03 | `_build_embedding_function` içinde `ef.__call__` monkey-patch; ChromaDB iç API değişimine karşı kırılgan | 58–64 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+#### 13.5.4 `web_server.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** FastAPI + SSE tabanlı web arayüzü; rate limiting, güvenlik kontrolleri, RAG / GitHub / Git / Todo endpoint'leri, Prometheus metrikleri.
+
+**Genel Mimari**
+
+```
+Tarayıcı  ──SSE──▶  /chat  ──▶  SidarAgent.respond()  ──SSE──▶  Tarayıcı
+                ─ JSON ─▶  /status /sessions /rag/* /git-* /todo  ◀── JSON ─
+```
+
+**Singleton Ajan — Lazy Double-Checked Locking (satır 41–56)**
+
+```python
+_agent_lock: asyncio.Lock | None = None  # modül yüklenirken None
+
+async def get_agent() -> SidarAgent:
+    global _agent, _agent_lock
+    if _agent_lock is None:
+        _agent_lock = asyncio.Lock()   # event loop başladıktan sonra oluştur
+    if _agent is None:
+        async with _agent_lock:
+            if _agent is None:
+                _agent = SidarAgent(cfg)
+    return _agent
+```
+
+- Python < 3.10'da modül yüklenirken `asyncio.Lock()` oluşturulursa `DeprecationWarning` üretilir; lazy init bu riski sıfırlar.
+- `asyncio` single-thread koşucusu nedeniyle gerçek iki eş zamanlı `_agent is None` dallanması imkânsız olsa da, lock ile `async` task preemption korunuyor.
+
+**3 Katmanlı Rate Limiting (satır 87–173)**
+
+| Kapsam | Anahtar | Limit |
+|--------|---------|-------|
+| `/chat` | IP | 20 req / 60 s |
+| POST + DELETE | `IP:mut` | 60 req / 60 s |
+| GET I/O endpoint'leri | `IP:get` | 30 req / 60 s |
+
+`_RATE_GET_IO_PATHS` frozenset içinde: `/git-info`, `/git-branches`, `/files`, `/file-content`, `/github-prs`, `/todo`, `/rag/docs`, `/rag/search`.
+
+`_is_rate_limited` işlevi `asyncio.Lock` ile TOCTOU (Time-of-Check / Time-of-Use) yarış koşulunu önler; pencere dışı zaman damgaları her kontrol sırasında temizlenir.
+
+**Güvenlik Kontrolleri**
+
+| Kontrol | Satır | Kapsam |
+|---------|-------|--------|
+| Path traversal (`target.relative_to(_root)`) | 412, 452, 650 | `/files`, `/file-content`, `/rag/add-file` |
+| Vendor path traversal (`safe_path.startswith(vendor_dir)`) | 195 | `/vendor/{path}` |
+| Branch regex doğrulaması (`^[a-zA-Z0-9/_.-]+$`) | 523, 533 | `/set-branch` |
+| Uzantı whitelist (metin dosyaları) | 443–447, 460 | `/file-content` |
+| CORS (yalnızca localhost origins) | 66–76 | tüm rotalar |
+| `limit=min(limit, 50)`, `top_k=min(top_k, 10)` | 590, 688 | `/github-prs`, `/rag/search` |
+
+**SSE Bağlantı Yönetimi (satır 224–281)**
+
+```python
+async for chunk in agent.respond(user_message):
+    disconnected = await request.is_disconnected()  # istemci kesti mi?
+    if disconnected:
+        return
+    ...
+except asyncio.CancelledError:          # ESC / AbortController
+    logger.info(...)
+except Exception as exc:
+    if _ANYIO_CLOSED and isinstance(exc, _ANYIO_CLOSED):  # kapalı sokete yazma
+        return
+    logger.exception(...)
+    yield f"data: {json.dumps({'chunk': f'...'})}\n\n"    # hata SSE olarak bildir
+    yield f"data: {json.dumps({'done': True})}\n\n"
+```
+
+Üç bağlantı kopma senaryosunun tamamı yakalanıyor: `is_disconnected`, `CancelledError`, `ClosedResourceError`.
+
+**RAG Endpoint'leri — Senkron/Async Tutarlılık Tablosu (satır 627–689)**
+
+| Endpoint | `docs` metodu | Thread sarması |
+|----------|--------------|----------------|
+| `GET /rag/docs` | `get_index_info()` — saf dict | Gerekmez ✓ |
+| `POST /rag/add-file` | `add_document_from_file()` — sync + disk I/O | `asyncio.to_thread` ✓ |
+| `POST /rag/add-url` | `add_document_from_url()` — async/httpx | `await` ✓ |
+| `DELETE /rag/docs/{id}` | `delete_document()` — sync + disk I/O | `asyncio.to_thread` ✓ |
+| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | **Yok** ⚠️ |
+
+`/rag/search` → `docs.search()` doğrudan senkron çağrı; `asyncio.to_thread` sarması eksik (→ W-01 / R-02 bulgusunun web katmanındaki tezahürü).
+
+**Prometheus Metrikleri (satır 341–358)**
+
+`Accept: text/plain` başlığı geldiğinde ve `prometheus_client` kuruluysa 5 Gauge sunuluyor (`sidar_uptime_seconds`, `sidar_sessions_total`, `sidar_rag_documents_total`, `sidar_active_turns`, `sidar_rate_limit_requests`). `prometheus_client` yoksa `ImportError` sessizce atlanıp JSON döndürülüyor.
+
+**`_get_client_ip` Proxy Farkındalığı (satır 118–139)**
+
+`X-Forwarded-For` → ilk IP (sol en güvenilir orijin), `X-Real-IP`, `request.client.host` sırasıyla deneniyor. Dokümantasyonda güvenlik notu mevcut.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| W-01 | `GET /rag/search` endpoint'i `agent.docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor; ChromaDB disk I/O event loop'u bloklayabilir (R-02 ile örtüşür) | 688 | Orta |
+| W-02 | `_rate_data` dict'inde pencere dışına çıkmış key'ler hiç silinmiyor; uzun süreli çalışmada çok sayıda farklı IP'den gelen isteklerde dict sonsuza büyüyebilir | 87, 111 | Düşük |
+| W-03 | Banner satırı `v{_agent.VERSION}          ║` sabit boşluklu; VERSION ≥ 8 karakter ise görsel taşma oluşur | 753 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
 ---
 
