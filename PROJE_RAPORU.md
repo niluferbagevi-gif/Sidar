@@ -474,6 +474,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
+- **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1051,6 +1052,40 @@ except Exception as exc:
 |----|------|-------|------|
 | C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
 | C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** Kod/dosya operasyon yöneticisi — güvenlik katmanı üzerinden dosya okuma/yazma, doğrulama, proje denetimi, shell çalıştırma ve Docker sandbox içinde Python kodu yürütme sağlar.
+
+**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–387)**
+
+- `SecurityManager` ile `can_read/can_write/can_execute/can_run_shell` kontrolleri yapılarak yetkisiz işlemler erken reddedilir.
+- Docker erişimi varsa `execute_code()` izolasyonlu konteynerde (`network_disabled`, `mem_limit=128m`, `cpu_quota`) çalışır; timeout aşımlarında konteyner zorla sonlandırılır.
+- Docker yoksa kontrollü subprocess fallback’i ile çalışmaya devam eder.
+
+**Dosya ve Arama Araçları (satır 94–235, 393–580)**
+
+- `read_file()` satır numaralı çıktı üretir; `write_file()` uzantı ve güvenlik politikalarıyla sınırlı yazım yapar.
+- `glob_search()` ve `grep_files()` doğal geliştirici iş akışını destekleyen hızlı keşif araçları sunar.
+- `grep_files()` bağlam satırı, sonuç limiti ve dosya filtresi parametreleriyle dengeli çıktı üretir.
+
+**Doğrulama & Audit (satır 586–640)**
+
+- Python AST ve JSON parse doğrulaması bağımsız metotlarla sunulur.
+- `audit_project()` tüm Python dosyalarını tarayıp tek raporda özetler; hata satırlarıyla birlikte çıktı verir.
+- Metrik sayaçları (`files_read`, `files_written`, `syntax_checks`, `audits_done`) operasyonel görünürlük sağlar.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| CM-01 | `run_shell()` çağrısı `shell=True` kullanıyor; erişim seviyesi kontrolü olsa da komut enjeksiyon etkisi güçlü kalır (özellikle model ürettiği komutlarda dikkat gerekir) | 361–364 | Orta |
+| CM-02 | `audit_project()` `rglob("*.py")` ile tüm alt ağacı tarıyor; büyük repo/vendor/venv içeren yapılarda süreyi artırabilir ve hedef dışı dosyaları rapora katabilir | 613–617 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
