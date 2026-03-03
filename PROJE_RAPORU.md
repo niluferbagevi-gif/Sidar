@@ -471,6 +471,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ⚠️ Metin tabanlı araç listesi dispatch tablosundan bağımsız tutulduğu için drift riski vardır; ayrıca "internet gerektirmez" ifadesi Gemini bulut sağlayıcısıyla koşullu ele alınmalıdır. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
+- **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -929,6 +930,45 @@ except Exception as exc:
 |----|------|-------|------|
 | A-01 | `_try_docs_search` içinde `self.docs.search()` senkron çağrısı event loop üzerinde direkt çalışıyor; büyük RAG indekslerinde gecikme/bloklama riski var | 455–472 | Orta |
 | A-02 | Bazı tetikleyici regex'ler geniş eşleşiyor (`github.*(bilgi|info|repo|depo)` vb.); bağlamsal cümlelerde yanlış-pozitif yönlendirme üretebilir | 250–263 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.7 `core/llm_client.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** LLM sağlayıcı adaptörü — Ollama ve Gemini çağrılarını tek bir async API (`chat`) altında birleştirir; stream/non-stream modları ve JSON yanıt zorlama davranışını yönetir.
+
+**Mimari ve Sağlayıcı Seçimi (satır 36–61)**
+
+- `chat()` giriş noktasında opsiyonel `system_prompt` mesaj listesine prepend edilir.
+- Sağlayıcı seçimi (`ollama` / `gemini`) tek yerde yapılır; bilinmeyen değerler için açık `ValueError` fırlatılır.
+- Bu ayrım, üst katmandaki ajan kodunun sağlayıcı-agnostic kalmasına yardımcı olur.
+
+**Ollama Akışı ve Structured Output (satır 67–181)**
+
+- `json_mode=True` iken `payload["format"]` ile `{thought, tool, argument}` şeması zorlanır; ReAct döngüsünde format kaymasını azaltır.
+- Stream modunda `aiter_bytes()` + UTF-8 incremental decoder kullanımı, paket sınırında bölünmüş multibyte karakterleri güvenle birleştirir.
+- `ConnectError` ve genel istisnalarda standart JSON hata zarfı üretilip stream modunda `_fallback_stream()` ile tek-elemanlı akış döndürülür.
+
+**Gemini Akışı ve Geçmiş Dönüşümü (satır 186–265)**
+
+- `google-generativeai` importu runtime’da yapılarak opsiyonel bağımlılık modeli korunur.
+- Sistem mesajı `system_instruction` alanına taşınır; kalan mesajlar Gemini `history` formatına dönüştürülür.
+- Stream modunda `send_message_async(..., stream=True)` üzerinden dönen akış `_stream_gemini_generator` ile yukarı katmana iletilir.
+
+**Yardımcı Sağlık Fonksiyonları (satır 274–292)**
+
+- `list_ollama_models()` ve `is_ollama_available()` küçük timeout’larla erişilebilirlik kontrolü sağlar.
+- Hata durumunda fail-safe dönüş (`[]` / `False`) kullanılarak UI tarafında sert çökme engellenir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| L-01 | `_stream_ollama_response` sonunda newline ile bitmeyen kalan `buffer` için parse adımı yok; son JSON satırı kaçabilir | 163–178 | Orta |
+| L-02 | `_stream_gemini_generator` içinde `chunk.text` alanına doğrudan erişim yapılıyor; bazı SDK sürümlerinde alan yoksa `AttributeError` üretip hata akışına düşebilir | 260–263 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
