@@ -492,6 +492,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
+- **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ⚠️ İçerikte sürüm ve bazı komut örnekleri güncel servis adlarıyla tam hizalı değilse yanlış yönlendirme riski oluşur. → Detay: §13.5.28
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1602,6 +1603,36 @@ except Exception as exc:
 | INS-01 | Script header sürümü `2.6.1` olarak kalmış; rapor/kod tabanı `v2.7.0` ile sürüm uyumsuzluğu ve bakım drift riski oluşturur | 3 | Düşük |
 | INS-02 | `curl ... | sh` ile uzaktan script çalıştırma (Ollama install) tedarik zinciri ve bütünlük doğrulama riskini artırır | 74 | Orta |
 | INS-03 | `sudo apt upgrade -y` ve geniş paket kurulumları kullanıcı onayı olmadan sistem genelinde değişiklik yapar; CI/üretim makinelerinde öngörülemeyen yan etki doğurabilir | 32–34 | Orta |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.28 `README.md` — Skor: 84/100 ✅
+
+**Sorumluluk:** Proje için birincil kullanıcı dokümantasyonu — mimari özet, özellik listesi, kurulum adımları, çalışma komutları ve temel operasyon bilgisini tek dosyada sunar.
+
+**Dokümantasyon Kapsamı (satır 1–260+)**
+
+- Projenin amaç/özellik seti, manager katmanları ve araç listesi tabloyla anlatılmıştır.
+- Conda/pip kurulum yönergeleri, `.env` hazırlığı ve Ollama başlangıç adımları yer alır.
+- Web/CLI kullanım örnekleri ve parametre seçenekleri yeni kullanıcı için hızlı başlangıç sağlar.
+
+**Operasyonel Güçlü Yanlar**
+
+- Bölümlendirme ve başlık yapısı onboarding için okunabilir bir akış oluşturur.
+- Araç listesi ve güvenlik seviyesi tablosu, sistem davranışını kısa ve görünür biçimde özetler.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| RM-01 | README sürüm metni `v2.6.1` olarak kalmış; rapor/kod tabanı `v2.7.0` ile sürüm drift’i oluşturuyor | 3, 13 | Orta |
+| RM-02 | Docker kullanım örneğinde `sidar-web-cpu` servisi geçiyor; mevcut compose servis adı `sidar-web` olduğu için komut doğrudan çalışmayabilir | 223–224 | Orta |
+| RM-03 | GPU bölümünde “CUDA 12.1” ifadesi bulunuyor; proje genelinde cu124/CUDA 12.4 hattı kullanıldığı için teknik tutarsızlık yaratır | 82 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
