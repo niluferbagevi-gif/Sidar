@@ -1323,4 +1323,4 @@ class SidarAgent:
             f"  {self.docs.status()}",
             self.health.full_report(),
         ]
-        return "\n".join(lines) 
+        return "\n".join(lines)  

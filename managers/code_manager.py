@@ -665,4 +665,4 @@ class CodeManager:
             f"writes={m['files_written']} "
             f"checks={m['syntax_checks']} "
             f"docker={'on' if self.docker_available else 'off'}>"
-        ) 
+        )  

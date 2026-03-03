@@ -314,4 +314,4 @@ class SystemHealthManager:
             f"<SystemHealthManager gpu={self._gpu_available} "
             f"torch={self._torch_available} "
             f"pynvml={self._nvml_initialized}>"
-        ) 
+        )  

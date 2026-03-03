@@ -280,4 +280,4 @@ class PackageInfoManager:
         return "PackageInfo: PyPI + npm + GitHub Releases — Aktif (Asenkron)"
 
     def __repr__(self) -> str:
-        return f"<PackageInfoManager timeout={self.TIMEOUT}s>" 
+        return f"<PackageInfoManager timeout={self.TIMEOUT}s>"  

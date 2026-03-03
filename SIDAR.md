@@ -47,4 +47,4 @@ Sidar, bu dosyayı her konuşma turunda yeniden okur — değişiklikler anında
 - Kısa ve net; gereksiz uzatma.
 - Teknik bilgi verirken `dosya:satır_no` formatını kullan.
 - Görev listesi varsa her adımı tamamladıktan hemen sonra `completed` olarak işaretle.
-- Sonuçları Markdown ile biçimlendir; kod bloklarında dil belirt.
+- Sonuçları Markdown ile biçimlendir; kod bloklarında dil belirt. 

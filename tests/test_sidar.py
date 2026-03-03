@@ -1005,4 +1005,4 @@ def test_instruction_files_load_both_names_in_same_directory(test_config):
     context = agent._build_context()
 
     assert "SIDAR ROOT RULE" in context
-    assert "CLAUDE ROOT RULE" in context
+    assert "CLAUDE ROOT RULE" in context 

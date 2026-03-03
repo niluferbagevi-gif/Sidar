@@ -173,4 +173,4 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print(f"\n\n{Colors.FAIL}İşlem kullanıcı tarafından iptal edildi.{Colors.ENDC}")
-        sys.exit(0) 
+        sys.exit(0)  

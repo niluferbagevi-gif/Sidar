@@ -14,7 +14,7 @@ dependencies:
   #   libcuda.so.1 stub'ı ile ÇAKIŞIR → GPU görünmez hale gelir.
   #   Bu yüzden PyTorch'u CONDA yerine PIP (CUDA wheel) üzerinden kuruyoruz.
   #
-  #   RTX 3070 Ti Laptop (Compute 8.6 / Ampere) — CUDA 12.1 tam desteklidir.
+  #   RTX 3070 Ti Laptop (Compute 8.6 / Ampere) — CUDA 12.4 (cu124) tam desteklidir.
   #   Pip bölümünde torch wheel ile kurulumu yapılmaktadır (aşağıya bakın).
   #
   #   GPU YOK ise pip bölümündeki extra-index-url satırını silin;

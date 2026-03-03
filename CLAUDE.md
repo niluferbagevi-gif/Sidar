@@ -33,4 +33,4 @@ Sidar ajanı hem `SIDAR.md` hem `CLAUDE.md` dosyalarını okur; her ikisi de her
 
 - Ortak proje kurallarını `SIDAR.md` içinde tutun.
 - Claude Code'a özel davranış notları gerekiyorsa bu dosyada belirtin.
-- Her iki dosyayı da güncel tutun; Sidar değişiklikleri anında algılar (mtime izleme).
+- Her iki dosyayı da güncel tutun; Sidar değişiklikleri anında algılar (mtime izleme). 

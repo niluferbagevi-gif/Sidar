@@ -1,1 +1,1 @@
-"""Sidar Project - Test Paketi""" 
+"""Sidar Project - Test Paketi"""  

@@ -2002,4 +2002,4 @@ def get_pull_requests_raw(self, state: str, limit: int):
 | 21 | CodeManager Docker image hata mesajı yönlendirmesi | ✅ Kapalı |
 | 22 | GitHub token eksikliği için kullanıcı yönlendirmesi | ✅ Kapalı |
 
-**Özet:** Bu maddeler artık aktif geliştirme işi değildir; ana raporda sadece güncel açık iyileştirmeler bırakılmıştır.
+**Özet:** Bu maddeler artık aktif geliştirme işi değildir; ana raporda sadece güncel açık iyileştirmeler bırakılmıştır. 
