@@ -482,6 +482,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/security.py`**: OpenClaw erişim katmanı; yol doğrulama, traversal/symlink koruması ve erişim seviyesine göre okuma-yazma-çalıştırma yetkisi sağlar. ⚠️ `can_read()` yalnızca regex tabanlı tehlikeli kalıp denetimi yapıyor (kök dizin sınırı yok); ayrıca `status_report()` içindeki “Terminal” satırı shell değil REPL/execute yetkisini temsil ettiği için operatör açısından yanıltıcı olabilir. → Detay: §13.5.15
 - **`managers/todo_manager.py`**: Claude Code uyumlu görev takip katmanı; thread-safe görev ekleme/güncelleme/listeleme API'leri ve durum bazlı raporlama sağlar. ⚠️ `set_tasks()` içinde “tek aktif in_progress” kuralı doğrulanmıyor; ayrıca görevler yalnızca process-memory'de tutulduğu için yeniden başlatmalarda kalıcılık yok. → Detay: §13.5.16
 - **`managers/__init__.py`**: Manager katmanının dışa aktarma (public API) yüzeyini tek noktada toplar; `TodoManager` dahil tüm manager sınıfları `__all__` ile açıkça listelenir. ⚠️ Manuel export listesi yeni manager eklendiğinde güncellenmezse import tutarsızlığı (drift) oluşabilir. → Detay: §13.5.17
+- **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1319,6 +1320,27 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | MGR-01 | `__all__` manuel yönetiliyor; yeni manager eklemelerinde unutulursa paket API’si ile gerçek modül içeriği arasında drift oluşabilir | 10–18 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.18 `core/__init__.py` — Skor: 97/100 ✅
+
+**Sorumluluk:** Core paketinin dışa aktarma katmanı — bellek, LLM istemcisi ve RAG depo sınıflarını tek import yüzeyinde toplar.
+
+**Paket Sözleşmesi (satır 10–16)**
+
+- `__version__` değeri paket sürümünü merkezi noktadan sunar.
+- `ConversationMemory`, `LLMClient`, `DocumentStore` sembollerinin `core` seviyesinden import edilmesini sağlar.
+- `__all__` ile export sınırı açıkça tanımlanmıştır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| CORE-01 | `__all__` manuel yönetildiği için yeni core modülleri eklendiğinde liste güncellenmezse public API ile gerçek içerik arasında drift oluşabilir | 16 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
