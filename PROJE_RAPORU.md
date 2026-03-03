@@ -502,99 +502,33 @@ async for raw_bytes in resp.aiter_bytes():
 
 ## 15. Genel Değerlendirme
 
-| Kategori | v2.5.0 | v2.6.0 | v2.6.1 | v2.6.1 (Tüm Yamalar) | ANALIZ_RAPORU Doğrulama | v2.6.1 (U-Yamaları) | V-Doğrulama (Gerçek) |
-|----------|--------|--------|--------|----------------------|-------------------------|---------------------|---------------------|
-| **Mimari Tasarım** | 88/100 | 94/100 | 95/100 | 92/100 ✅ | 92/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **Async/Await Kullanımı** | 60/100 | 90/100 | 91/100 | 93/100 ✅ | 91/100 ✅ | **100/100** ✅ | **100/100** ✅ *(V-03 §3.76)* |
-| **Hata Yönetimi** | 75/100 | 82/100 | 86/100 | 84/100 ✅ | 84/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **Güvenlik** | 78/100 | 85/100 | 85/100 | 82/100 ✅ | 80/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **Test Kapsamı** | 55/100 | 68/100 | 68/100 | 62/100 ⚠️ | 93/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **Belgeleme** | 88/100 | 72/100 | 80/100 | 88/100 ✅ | 88/100 ✅ | **100/100** ✅ | **100/100** ✅ *(V-02 §3.75)* |
-| **Kod Temizliği** | 65/100 | 94/100 | 96/100 | 94/100 ✅ | 91/100 ✅ | **100/100** ✅ | **100/100** ✅ *(V-01 §3.74)* |
-| **Bağımlılık Yönetimi** | 72/100 | 84/100 | 84/100 | 84/100 ⚠️ | 97/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **GPU Desteği** | — | 88/100 | 88/100 | 85/100 ⚠️ | 85/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **Özellik Zenginliği** | 80/100 | 93/100 | 98/100 | 98/100 ✅ | 98/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **UI / UX Kalitesi** | 70/100 | 87/100 | 95/100 | 95/100 ✅ | 90/100 ✅ | **100/100** ✅ | **100/100** ✅ |
-| **GENEL ORTALAMA** | **75/100** | **85/100** | **88/100** | **89/100** ✅ | **92/100** ✅ | **100/100** ✅ | **100/100** ✅ |
+> Bu bölüm tarihsel v2.6.x skor tabloları yerine **v2.7.0 güncel durum özetini** sunar.
+> Ayrıntılı tarihsel V/U/N/O doğrulama kayıtları için:
+> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
-> **ANALIZ_RAPORU_2026_03_01 Sonucu:** Bağımsız satır satır incelemede proje skoru **92/100** olarak belirlenmiştir *(önceki tahmin: ~78/100)*. 54 düzeltmenin tamamı kaynak kodda doğrulanmış, 15 uyumsuzluk (U-01–U-15) tespit ve giderilmiştir. Tüm kategori yamaları (U-Yamaları) uygulandıktan sonra tüm kategoriler **100/100** tam skoru elde etmiştir.
+### 15.1 Güncel Durum Özeti (v2.7.0)
 
-### Dosya Bazlı Skor Tablosu (ANALIZ_RAPORU_2026_03_01 — Bağımsız Doğrulama)
+- Proje raporu ve kod tabanı sürüm hizası **v2.7.0** seviyesindedir.
+- Öncelik bazlı açık sorun listelerinde (kritik/yüksek/orta/düşük) aktif açık bulgu raporlanmamaktadır.
+- Test kapsamı raporlanan güncel sayıyla (48 test fonksiyonu) uyumludur.
+- Güvenlik ve operasyon başlıklarında (3 katman rate limiting, `DOCKER_PYTHON_IMAGE`, branch regex doğrulaması) rapor-kod eşleşmesi sağlanmıştır.
 
-| Dosya | Skor (Önceki) | Skor (v2.6.1) | Skor (Final 100/100) | Yapılan Değişiklikler |
-|-------|--------------|---------------|----------------------|----------------------|
-| `main.py` | 95/100 | 95/100 | **100/100** ✅ | `_make_banner(version)` dinamik sürüm · Gemini model gösterimi düzeltildi |
-| `web_server.py` | 88/100 | 97/100 | **100/100** ✅ | `/metrics` Accept header Prometheus · GET I/O rate limit yorumu |
-| `config.py` | 94/100 | 95/100 | **100/100** ✅ | `print_config_summary` şifreleme satırı · `validate_critical` `cryptography` kontrolü |
-| `agent/sidar_agent.py` | 89/100 | 95/100 | **100/100** ✅ | `_tool_docs_search` mode param · `_tool_get_config` şifreleme durumu |
-| `agent/auto_handle.py` | 93/100 | 96/100 | **100/100** ✅ | `_try_docs_search` `mode:vector/bm25/keyword` inline desteği |
-| `agent/definitions.py` | 96/100 | 96/100 | **100/100** ✅ | Eğitim tarihi "Ağustos 2025" · `docs_search` mode belgesi |
-| `core/llm_client.py` | 91/100 | 91/100 | **100/100** ✅ | `_ollama_base_url` property (DRY ×3) · `AsyncGenerator` tip düzeltme |
-| `core/memory.py` | 95/100 | 95/100 | **100/100** ✅ | Fernet fallback warning · `UnicodeDecodeError` karantina |
-| `core/rag.py` | 93/100 | 93/100 | **100/100** ✅ | Sürüm 2.6.1 · ChromaDB `n_results` bounds check · typo düzeltme |
-| `core/__init__.py` | — | 98/100 | **100/100** ✅ | Genişletilmiş docstring · `__version__ = "2.6.1"` |
-| `managers/code_manager.py` | 92/100 | **92/100** ✅ | Değişiklik yok |
-| `managers/system_health.py` | 95/100 | **95/100** ✅ | Değişiklik yok |
-| `managers/github_manager.py` | 93/100 | **93/100** ✅ | Değişiklik yok |
-| `managers/security.py` | 90/100 | **97/100** ✅ | U-02 giderildi |
-| `managers/web_search.py` | 91/100 | **91/100** ✅ | Değişiklik yok |
-| `managers/package_info.py` | 96/100 | **96/100** ✅ | Değişiklik yok |
-| `web_ui/index.html` | 90/100 | **97/100** ✅ | N-05 CDN → yerel vendor giderildi |
-| `tests/test_sidar.py` | 93/100 | **97/100** ✅ | U-01+U-09+U-15/N-02 giderildi |
-| `environment.yml` | 97/100 | **99/100** ✅ | U-04 cu121→cu124 giderildi |
-| `Dockerfile` | 85/100 | **97/100** ✅ | U-11 HEALTHCHECK giderildi |
-| `docker-compose.yml` | 88/100 | **97/100** ✅ | N-03 GPU_MIXED_PRECISION default giderildi |
-| `.env.example` | 84/100 | **97/100** ✅ | U-03 çift tanım giderildi |
-| `install_sidar.sh` | 80/100 | **92/100** ✅ | N-04 sleep race + N-05 vendor download giderildi |
+### 15.2 Kategori Bazlı Kısa Skor Görünümü (Güncel)
 
----
+| Kategori | Güncel Durum |
+|---|---|
+| Mimari Tasarım | ✅ Güçlü / stabil |
+| Async/Await Kullanımı | ✅ Event-loop uyumlu |
+| Hata Yönetimi | ✅ İyileştirilmiş |
+| Güvenlik | ✅ Katmanlı korumalar aktif |
+| Test Kapsamı | ✅ 48 test fonksiyonu |
+| Belgeleme | ✅ Aktif durum odaklı sadeleştirildi |
+| Bağımlılık Yönetimi | ✅ Güncel bağımlılık setiyle uyumlu |
+| UI / UX | ✅ v2.7.0 özellikleriyle güncel |
 
-### Özet
+### 15.3 Arşiv ve İzlenebilirlik Notu
 
-v2.5.0 → v2.6.1 sürecinde projenin teknik borcu **önemli ölçüde azaltılmıştır.** Toplam **19 sorun** giderilmiştir (önceki rapor döneminde 15 + bu dönemde 4 kritik hata).
-
-**v2.6.0'daki en önemli iyileştirmeler:**
-- Async generator hatası → `asyncio.run()` mimarisi doğru kuruldu
-- 25 `if/elif` → dispatcher + `_tool_*` metodları, test edilebilir yapı
-- `requests` bloklaması → `httpx.AsyncClient` ile tam async RAG
-- `threading.Lock` → `asyncio.Lock` web sunucusunda
-
-**v2.6.1'deki web UI ve backend düzeltmeleri:**
-- 5 sahte/işlevsiz UI özelliği (model adı, auto-accept, repo/dal seçimi, pkg_status) gerçek backend verileriyle bağlandı veya kaldırıldı
-- SSE streaming durdurma hataları (`CancelledError`, `ClosedResourceError`) artık sessizce loglanıyor
-- Oturum dışa aktarma (MD + JSON), ReAct araç görselleştirmesi ve mobil hamburger menüsü eklendi
-
-**Bu rapor döneminde düzeltilen sorunlar (9 adet — kritik + yüksek):**
-- ✅ Greedy regex JSON ayrıştırma → `json.JSONDecoder.raw_decode()` (sidar_agent.py) — KRİTİK
-- ✅ UTF-8 multibyte bölünmesi → byte buffer yönetimi (llm_client.py) — KRİTİK
-- ✅ Token limiti yok → `_estimate_tokens()` + `needs_summarization()` eşiği (memory.py) — KRİTİK
-- ✅ `self.health` null guard eksikliği → `if not self.health:` kontrolü (auto_handle.py) — KRİTİK
-- ✅ Hardcoded Docker image → `docker_image` param + `self.docker_image` + dinamik hata mesajı (code_manager.py) — KRİTİK
-- ✅ Stream generator reuse riski → tam tamponlama + doğrulanmış yanıt (sidar_agent.py) — YÜKSEK
-- ✅ ChromaDB delete+upsert atomikliği → `threading.Lock` (rag.py) — YÜKSEK
-- ✅ Rate limiting TOCTOU → `asyncio.Lock` + `async def` (web_server.py) — YÜKSEK
-- ✅ Senkron `requests` → `httpx.Client` (config.py) — YÜKSEK
-- ✅ README.md versiyon + eksik özellik belgeleri → v2.6.1 + tam dokümantasyon — YÜKSEK
-
-**Açık sorunlar — Güncel Durum (2026-03-01 — V-01–V-03 Yamaları Sonrası):**
-
-| Önem | Adet | Sorunlar |
-|------|------|---------|
-| 🔴 KRİTİK | **0** | ✅ Tümü giderildi |
-| 🔴 YÜKSEK | **0** | ✅ Tümü giderildi |
-| 🟡 ORTA | **0** | ✅ V-01 (§3.74), V-03 (§3.76) bu oturumda kapatıldı |
-| 🟢 DÜŞÜK | **0** | ✅ V-02 (§3.75) bu oturumda kapatıldı |
-| **TOPLAM** | **0** | ✅ Tüm V sorunları giderildi — Proje tamamlandı |
-
-**✅ Doğrulanan "bug değil" bulgular:**
-- `security.py:62-64`: `Path.resolve()` symlink traversal'ı zaten önlüyor
-- `index.html`: Tema localStorage'a kaydediliyor (`localStorage.setItem('sidar-theme', ...)`)
-- `auto_handle.py` health null guard: `self.health` `SidarAgent.__init__` içinde her zaman `SystemHealthManager(...)` ile koşulsuz başlatılıyor; `main.py` `.health` / `.gpu` komutları null riski taşımıyor
-- `_tool_health()` ve `_tool_gpu_optimize()` (`sidar_agent.py:361-365`): `self.health` her zaman başlatılmış olduğundan güvenli
-
-**Sonuç (V-01–V-03 yamaları uygulandı):** §3.1–§3.76 arası **76 düzeltmenin tamamı** kaynak kodda satır satır doğrulandı ve uygulandı. **Açık sorun kalmamıştır.** Tahmini güncel skor: **~100/100**.
-
----
+> Önceki sürümlere ait detaylı skor karşılaştırmaları, satır bazlı tarihsel doğrulama tabloları ve kapanış kayıtları arşiv değeri korunarak ilgili doğrulama bölümleri ile `DUZELTME_GECMISI.md` içinde tutulmaktadır.
 
 ---
 
