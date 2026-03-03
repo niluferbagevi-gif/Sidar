@@ -478,6 +478,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
+- **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1189,6 +1190,40 @@ except Exception as exc:
 |----|------|-------|------|
 | WS-01 | `search()` içinde motor başarısını belirlerken `"[HATA]"` metin içeriğine bakılıyor; yapılandırılmış hata kodu yerine string eşleşmeye bağımlı olması kırılgan | 99–105 | Orta |
 | WS-02 | `_clean_html()` regex tabanlı sadeleştirme yapıyor; karmaşık DOM veya script-rendered sayfalarda bağlam/biçim kaybı oluşabilir | 250–275 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.14 `managers/package_info.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** Paket ekosistemi bilgi yöneticisi — PyPI, npm ve GitHub Releases API’lerinden sürüm/metadata bilgisi toplar; paket güncellik ve karşılaştırma çıktıları üretir.
+
+**Asenkron API Tasarımı (satır 36–247)**
+
+- Tüm dış ağ çağrıları `httpx.AsyncClient` ile yürütülür; timeout/follow_redirects ayarları merkezi `TIMEOUT` üzerinden kontrol edilir.
+- PyPI, npm ve GitHub uçlarında 404 / timeout / request error senaryoları kullanıcıya okunur hata mesajlarıyla ayrıştırılır.
+- Çıktılar tek tip metin raporu formatında döndürülerek ajan yanıt zinciriyle uyum korunur.
+
+**Sürüm Mantığı ve Yardımcılar (satır 57–63, 253–278)**
+
+- Son sürümler listesinde pre-release sürümler filtrelenir ve `packaging.version.Version` ile sıralama yapılır.
+- Geçersiz sürüm formatlarında `0.0.0` fallback’i sayesinde sıralama kırılmaz.
+- `pypi_compare()` kurulu sürüm ile güncel sürümü kullanıcı dostu durum satırıyla karşılaştırır.
+
+**Ekosistem Kapsamı (satır 127–247)**
+
+- npm sorgusunda bağımlılıklar, peer deps ve engine gereksinimleri dahil edilerek JS ekosistemi için pratik özet sağlanır.
+- GitHub releases tarafında pre-release bilgisi, yayın tarihi ve kısa açıklama rapora eklenir.
+- `github_latest_release()` hızlı son sürüm sorgusu için düşük maliyetli yardımcı metod sunar.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| PKG-01 | `pypi_compare()` güncel sürümü `pypi_info()` tarafından üretilen metinden regex ile ayıklıyor; format değişirse kırılganlık oluşabilir (ham JSON’dan almak daha güvenli) | 113–119 | Orta |
+| PKG-02 | `_is_prerelease()` harf geçen her sürümü pre-release sayıyor; bazı özel sürüm etiketlerinde yanlış negatif/pozitif sınıflandırma riski var | 259–264 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
