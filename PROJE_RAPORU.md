@@ -362,7 +362,7 @@ async for raw_bytes in resp.aiter_bytes():
 |------|-------|--------|
 | Erişim Kontrolü (OpenClaw) | ✅ 3 katmanlı (`restricted/sandbox/full`) | İyi |
 | Kod Çalıştırma İzolasyonu | ✅ Docker sandbox — `network_disabled`, `mem_limit=128m`, `cpu_quota=50000`, 10sn timeout | Çok İyi |
-| Rate Limiting | ✅ 2 katman TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s (§3.22, §3.52 düzeltildi) | İyi |
+| Rate Limiting | ✅ 3 katman TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s, GET I/O 30 req/60s | İyi |
 | Bellek Şifreleme | ❌ JSON düz metin (`data/sessions/`) | Düşük |
 | Prompt Injection | ⚠️ Sistem prompt güçlü ama dinamik filtre yok | Orta |
 | Web Fetch Sandbox | ⚠️ HTML temizleniyor ama URL sınırlaması yok | Orta |
@@ -373,7 +373,7 @@ async for raw_bytes in resp.aiter_bytes():
 | Symlink Traversal | ✅ `Path.resolve()` ile önleniyor | İyi |
 | Git URL Ayrıştırma | ✅ `removesuffix(".git")` — düzeltildi (U-13) | İyi |
 | Dal Adı Güvenliği | ✅ `_BRANCH_RE` regex ile validate ediliyor (U-10 düzeltildi) | İyi |
-| Docker Image Konfigürasyonu | ⚠️ `.env.example` yanlış değişken adı (`DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE`) — N-02 | Orta |
+| Docker Image Konfigürasyonu | ✅ `DOCKER_PYTHON_IMAGE` ile konfigüre edilebilir; N-02 kapatıldı | İyi |
 
 ---
 
