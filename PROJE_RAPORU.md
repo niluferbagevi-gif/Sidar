@@ -466,7 +466,7 @@ async for raw_bytes in resp.aiter_bytes():
 ### 13.1 Çekirdek Dosyalar — Güncel Durum
 
 - **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
-- **`agent/sidar_agent.py`**: Araç çağrıları merkezi `dispatch` tablosu ile yönetilir; `DOCKER_PYTHON_IMAGE` konfigürasyonu `CodeManager`'a iletilir.
+- **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ⚠️ Madde 6.9 kısmen açık: `_tool_subtask` ve döngü düzeltme mesajları format sabitlerini kullanmıyor. → Detay: §13.5.2
 - **`core/rag.py`**: RAG tarafında `get_index_info()` ve `doc_count` gibi public erişim noktaları kullanımdadır.
 - **`web_server.py`**: 3 katmanlı rate limiting (`/chat`, mutasyonlar, GET I/O), branch regex doğrulaması ve RAG endpoint'leri güncel akışla uyumludur.
 
@@ -557,6 +557,114 @@ if args.model:    cfg.CODING_MODEL = args.model
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | — | `ver_padded.ljust(7)`: sürüm ≥ 8 karakter olursa banner taşabilir | 46 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+#### 13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅
+
+**Sorumluluk:** Ana ajan — ReAct döngüsü, araç dispatch, bellek yönetimi, LLM stream, vektör arşivleme.
+
+**Modül Düzeyi Format Sabitleri (satır 37–48)**
+
+```python
+_FMT_TOOL_OK  = "[ARAÇ:{name}:SONUÇ]\n===\n{result}\n===\n..."
+_FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"
+_FMT_SYS_ERR  = "[Sistem Hatası] {msg}"
+```
+
+Ana `_react_loop` bu üç sabiti tutarlı biçimde kullanır. ⚠️ **Madde 6.9 kısmen açık:** `_tool_subtask` (satır 833, 839–841) inline string kullanır; döngü düzeltme mesajı (satır 318) `[Sistem Uyarısı]` etiketiyle `_FMT_SYS_ERR`'den ayrışır.
+
+**Async Lock — Lazy Init (satır 90, 155–156)**
+
+```python
+self._lock = None           # __init__: event loop henüz yok
+# respond() ilk çağrıldığında:
+if self._lock is None:
+    self._lock = asyncio.Lock()
+```
+
+Lock, `respond()` çağrıldığı anda ve zaten aktif bir event loop içinde oluşturulur; import/init anında oluşturulması event loop uyumsuzluğuna yol açardı.
+
+**JSONDecoder ile Greedy Regex Çözümü (satır 262–275)**
+
+```python
+_decoder = json.JSONDecoder()
+_idx = raw_text.find('{')
+while _idx != -1:
+    try:
+        json_match, _ = _decoder.raw_decode(raw_text, _idx)
+        break
+    except json.JSONDecodeError:
+        _idx = raw_text.find('{', _idx + 1)
+```
+
+`re.search(r'\{.*\}', raw_text, re.DOTALL)` greedy regex yerine `raw_decode` ile ilk geçerli JSON nesnesi bulunur. Gömülü kod bloğu veya çoklu JSON olsa bile doğru nesne seçilir. Aynı pattern `_tool_subtask` (satır 814–818) ve `_tool_github_smart_pr` (satır 683–685) içinde de uygulanmış.
+
+**`asyncio.to_thread()` Kapsamı**
+
+| Satır(lar) | Çağrı | Açıklama |
+|------------|-------|----------|
+| 161, 172, 311 | `memory.add()` | Dosya I/O; lock içi ve lock dışı her iki noktada da sarmalı |
+| 398, 404–406, 424, 431, 438, 443 | Araç I/O (list_dir/read/write/patch/execute/audit) | Disk erişimi event loop'u bloke etmez |
+| 612, 631–638 | `run_shell` (smart PR içinde) | Kabuk çağrıları thread'e itilir |
+| 912 | `_tool_run_shell` | Genel kabuk komutu |
+| 924, 944 | glob/grep araçları | Dosya sistemi tarama thread'de |
+| 771 | `docs.add_document_from_file` | RAG dosya ekleme (U-14 çözümü) |
+| 1270–1276 | `docs.add_document` (_summarize_memory) | Vektör arşivleme (U-14 çözümü) |
+
+**`_try_direct_tool_route` — Hafif LLM Router (satır 188–221)**
+
+Tek adımlı istekleri `_DIRECT_ROUTE_ALLOWED_TOOLS` frozenset ile kısıtlı 17 güvenli araca yönlendirir. `temperature=0.0`, `json_mode=True`, `stream=False` → deterministik, yapısal çıktı. AutoHandle yakalayamazsa devreye girer; başarısız olursa `None` döner ve tam ReAct döngüsüne düşülür.
+
+**Tekrar Tespiti — Döngü Kırma (satır 315–328)**
+
+Aynı araç art arda çağrılıyorsa (`tool_name == _last_tool`) LLM'e önceki sonucu içeren zorlayıcı mesaj iletilerek `final_answer` verilmesi sağlanır; sonsuz araç döngüsü önlenir.
+
+**Sentinel Format — Web UI Entegrasyonu (satır 330–334)**
+
+```python
+yield f"\x00THOUGHT:{_thought_safe}\x00"   # düşünce akışı
+yield f"\x00TOOL:{tool_name}\x00"           # araç tetikleyici
+```
+
+`\x00` sentinel ile düşünce/araç olayları normal yanıt metninden ayrılır; web UI bu sinyalleri düşünce balonları ve araç göstergelerinde kullanır.
+
+**`_tool_subtask` — Mini ReAct Döngüsü (satır 782–848)**
+
+Bağımsız bir alt ajan olarak max 5 adımda çalışır. Claude Code'daki `Agent` tool eşdeğeri. `agent` alias'ı (`dispatch` tablosunda satır 1131) ile çağrılabilir. Not: kendi `_FMT_*` sabitlerini kullanmaz — inline string formatı.
+
+**`_tool_parallel` — Güvenli Eşzamanlı Çalıştırma (satır 859–904)**
+
+`asyncio.gather()` + `return_exceptions=True` ile birden fazla okuma aracı paralel çalıştırılır. `_PARALLEL_SAFE` frozenset (21 araç) yalnızca okuma/sorgulama araçlarına izin verir; mutasyon araçları reddedilir.
+
+**`_load_instruction_files()` — mtime Cache (satır 1197–1247)**
+
+SIDAR.md / CLAUDE.md dosyaları `path.stat().st_mtime` karşılaştırması ile izlenir. Değişiklik algılandığında cache geçersizleşir ve dosyalar taze okunur. Claude Code'un her konuşmada CLAUDE.md yeniden okumasına eşdeğer davranış.
+
+**`_tool_read_file()` — Büyük Dosya RAG Yönlendirmesi (satır 407–417)**
+
+`RAG_FILE_THRESHOLD` (varsayılan 20.000 karakter) aşıldığında dosyanın RAG deposuna eklenmesi için `docs_add_file` ve `docs_search` araç talimatı içeren açıklama döndürülür; model tekrarlı büyük dosya okumalarından caydırılır.
+
+**`_build_context()` — Runtime Durum (satır 1141–1195)**
+
+Her LLM turunda `system_prompt`'a gerçek runtime değerler eklenir: sağlayıcı, model, GPU, GitHub, RAG durumu, dosya metrikleri, aktif todo listesi ve talimat dosyaları. Hallüsinasyon riski azaltılır.
+
+**Dispatch Tablosu (satır 1077–1133)**
+
+40+ araç, alias'lar dahil:
+- `bash` / `shell` → `_tool_run_shell`
+- `ls` → `_tool_list_dir`
+- `grep` → `_tool_grep_files`
+- `agent` → `_tool_subtask`
+- `print_config_summary` → `_tool_get_config`
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| 6.9 | `_tool_subtask` (satır 833, 839–841) ve döngü düzeltme (satır 318) format sabitlerini kullanmıyor — `[ARAÇ:{name}:HATA]` inline, `[Sistem Uyarısı]` vs `_FMT_SYS_ERR` | 318, 833, 839 | Orta |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
