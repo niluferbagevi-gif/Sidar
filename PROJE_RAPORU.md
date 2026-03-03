@@ -485,6 +485,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (48+) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
+- **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1392,6 +1393,34 @@ except Exception as exc:
 |----|------|-------|------|
 | TST-01 | Bazı testler çevresel koşullara duyarlı (`web_search` durum çıktısında DDG kurulu değilse alternatif beklenti gibi); deterministiklik için daha sıkı mock izolasyonu faydalı olabilir | 106–118 | Düşük |
 | TST-02 | Tek dosyada çok geniş kapsam (unit+integration karışık) bakım maliyetini artırıyor; alt modüllere bölmek hata ayıklamayı hızlandırabilir | 1–940+ | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.21 `web_ui/index.html` — Skor: 89/100 ✅
+
+**Sorumluluk:** Web arayüzünün tek dosya istemci katmanı — tema, sohbet akışı, SSE yanıt işleme, oturum yönetimi, branch/repo modal etkileşimleri, dosya ekleme ve yardımcı UI panellerini yönetir.
+
+**Ön Yüz Mimarisi (satır 1–1814+)**
+
+- HTML + geniş kapsamlı CSS + inline JavaScript tek dosyada toplanmıştır.
+- Vendor-first yaklaşımı (`/vendor/*`) ile highlight.js ve marked yerelden yüklenir; eksikte CDN fallback devreye girer.
+- Tema (`localStorage`), mobil/sidebar düzeni ve çoklu panel geçişleri istemci tarafında yönetilir.
+
+**İşlevsel Kapsam (satır 1818–2545+)**
+
+- `/chat` SSE akışı okunur; chunk’lar buffer ile ayrıştırılıp mesaj kartları güncellenir.
+- Oturum (`/sessions`), repo (`/set-repo`) ve branch (`/set-branch`) akışları için modal/önbellek (`_cachedRepos`, `_cachedBranches`) mantığı bulunur.
+- Kod bloklarında highlight + “Kopyala” butonu ve dosya ekleme önizleme gibi UX iyileştirmeleri vardır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| UI-01 | `marked.parse(rawText)` çıktısı doğrudan `body.innerHTML` ile DOM’a basılıyor; sanitize katmanı olmadığı için model çıktısındaki ham HTML/XSS payload yüzeyi artar | 2324 | Orta |
+| UI-02 | HTML/CSS/JS’nin tek dosyada birleşik olması (2000+ satır) bakım ve modüler test edilebilirlik maliyetini yükseltir | 1–2545+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
