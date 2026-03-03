@@ -1959,16 +1959,40 @@ except Exception as exc:
 11. **Donanım tespitini lazy/cached hale getirme:**
     `config.py` import-time `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve yan etkiler kontrollü bir init adımına alınmalı.
 
+12. **Ajan sözleşmesi/talimat drift’ini azaltma (`definitions.py`, `SIDAR.md`, `CLAUDE.md`):**
+    Manuel araç listeleri ve tarihsel ifade parçaları güncel capability setiyle otomatik/yarı-otomatik hizalanmalı; prompt-talimat drift’i minimize edilmeli.
+
+13. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme:**
+    `can_read()` yalnızca regex blacklist’e değil proje kökü/izinli path modeline bağlanmalı; durum raporunda “Terminal” ifadesi shell yetkisiyle karışmayacak şekilde netleştirilmeli.
+
+14. **WebSearch hata modelini yapılandırılmış hale getirme:**
+    Motor başarısızlıklarını `"[HATA]"` string kontrolü yerine tipli hata kodları/istisna sınıflarıyla yönetme; HTML temizleme için regex yerine parser tabanlı yaklaşım değerlendirme.
+
+15. **SystemHealth ölçümlerinde non-blocking strateji:**
+    `get_cpu_usage(interval=0.5)` gibi bloklayıcı örneklemeler sık çağrı altında gecikme oluşturduğunda cache/arka plan örnekleme modeline geçilmeli.
+
+16. **PackageInfo sürüm doğruluğunu API tabanlı güçlendirme:**
+    Regex ile metin parse edilen sürüm yolları (`pypi_compare` vb.) doğrudan yapılandırılmış API verisiyle beslenmeli; pre-release sınıflandırması gözden geçirilmeli.
+
+17. **Public API (`__all__`) drift kontrolleri:**
+    `agent/core/managers __init__.py` için ya otomatik export üretimi ya da CI’de tutarlılık testi eklenmeli.
+
+18. **AutoHandle regex yanlış-pozitif azaltma:**
+    Geniş kalıplar daraltılmalı; gerektiğinde lightweight intent sınıflandırıcı/puanlama ile regex fallback yaklaşımı uygulanmalı.
+
 ### Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)
 
-12. **Dokümantasyon sürüm/komut drift temizliği:**
+19. **Dokümantasyon sürüm/komut drift temizliği:**
     `README.md`, `Dockerfile` yorum bloğu, `install_sidar.sh` ve benzeri dosyalardaki `2.6.1` izleri ile güncel servis adları (`sidar-web` vb.) tek turda hizalanmalı.
 
-13. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
+20. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
     `SIDAR.md` / `CLAUDE.md` / `README.md` üzerindeki bilgi yükünü azaltmak için “kullanıcı rehberi” ve “geliştirici rehberi” ayrı, güncel ve rol bazlı dokümanlara taşınmalı.
 
-14. **Web UI oturum UX iyileştirmeleri:**
+21. **Web UI oturum UX iyileştirmeleri:**
     Mevcut yeniden adlandırma önerisine ek olarak, otomatik başlık kalitesi ve tamamlanan oturum arşivleme akışı geliştirilmeli.
+
+22. **Test dosyalarını modülerleştirme:**
+    `tests/test_sidar.py` içindeki senaryoları birim/entegrasyon/güvenlik odaklı dosyalara bölerek bakım ve hata izolasyonu iyileştirilmeli.
 
 
 ### Açık Durum
