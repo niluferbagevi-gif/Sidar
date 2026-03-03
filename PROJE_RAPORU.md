@@ -480,6 +480,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
 - **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
 - **`managers/security.py`**: OpenClaw erişim katmanı; yol doğrulama, traversal/symlink koruması ve erişim seviyesine göre okuma-yazma-çalıştırma yetkisi sağlar. ⚠️ `can_read()` yalnızca regex tabanlı tehlikeli kalıp denetimi yapıyor (kök dizin sınırı yok); ayrıca `status_report()` içindeki “Terminal” satırı shell değil REPL/execute yetkisini temsil ettiği için operatör açısından yanıltıcı olabilir. → Detay: §13.5.15
+- **`managers/todo_manager.py`**: Claude Code uyumlu görev takip katmanı; thread-safe görev ekleme/güncelleme/listeleme API'leri ve durum bazlı raporlama sağlar. ⚠️ `set_tasks()` içinde “tek aktif in_progress” kuralı doğrulanmıyor; ayrıca görevler yalnızca process-memory'de tutulduğu için yeniden başlatmalarda kalıcılık yok. → Detay: §13.5.16
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1258,6 +1259,40 @@ except Exception as exc:
 |----|------|-------|------|
 | SEC-01 | `can_read()` yalnızca tehlikeli regex kalıplarını engelliyor; `base_dir` altı sınır doğrulaması yapmadığından proje dışı ama “tehlikesiz görünen” mutlak yollar okunabilir kalabilir | 107–118 | Orta |
 | SEC-02 | `status_report()` içindeki “Terminal” izni `self.level >= SANDBOX` ile hesaplanıyor; bu, shell yetkisinden farklı bir kavram olduğundan operatör tarafında yorum karmaşası oluşturabilir | 203–205 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.16 `managers/todo_manager.py` — Skor: 92/100 ✅
+
+**Sorumluluk:** Görev planlama yöneticisi — ajanın çok adımlı işleri takip etmesi için `pending / in_progress / completed` durumlu görev listesi sağlar; Claude Code TodoWrite/TodoRead modeline uyumlu API sunar.
+
+**Veri Modeli ve Eşzamanlılık (satır 14–60)**
+
+- `Task` dataclass ile görev kimliği, içerik ve zaman damgaları tutulur.
+- `threading.RLock` ile tüm mutasyon/okuma yolları korunur; eşzamanlı çağrılarda liste bütünlüğü korunur.
+- Durum sabitleri ve ikon haritası kullanıcıya tutarlı metin çıktısı sağlar.
+
+**İşlevsel Kapsam (satır 66–235)**
+
+- `add_task`, `set_tasks`, `update_task` ve kısa yol metodları (`mark_in_progress`, `mark_completed`) temel CRUD akışını kapsar.
+- `list_tasks()` durum bazlı gruplama yaparak insan okunur rapor üretir.
+- `clear_completed()` ve `clear_all()` bakım/temizlik işlemleri için pratik yardımcılar sunar.
+
+**UI/REST Entegrasyon Noktaları (satır 240–267)**
+
+- `get_tasks()` JSON-uyumlu dict listesi döndürerek endpoint katmanına uygun veri sağlar.
+- `get_active_count()` aktif görev metriklerini hızlıca üretir.
+- `__len__` ve `__repr__` gözlemlenebilirlik/debug kolaylığı sağlar.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| TD-01 | `set_tasks()` toplu yüklemede aynı anda birden fazla `in_progress` görevi engellemiyor; sınıf dokümanındaki “aynı anda yalnızca bir aktif görev” beklentisiyle çelişebilir | 93–121 | Düşük |
+| TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 240–255 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
