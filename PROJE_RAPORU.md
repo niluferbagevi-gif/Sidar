@@ -468,7 +468,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
 - **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ⚠️ Madde 6.9 kısmen açık: `_tool_subtask` ve döngü düzeltme mesajları format sabitlerini kullanmıyor. → Detay: §13.5.2
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ `BM25Okapi` her sorguda yeniden oluşturulur (disk okuma); `_tool_docs_search` ChromaDB `search()` çağrısını `asyncio.to_thread` olmadan yapıyor. → Detay: §13.5.3
-- **`web_server.py`**: 3 katmanlı rate limiting (`/chat`, mutasyonlar, GET I/O), branch regex doğrulaması ve RAG endpoint'leri güncel akışla uyumludur.
+- **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -752,6 +752,111 @@ Aynı dokümanın farklı chunk'ları arama sonuçlarına girdiğinde `seen_pare
 | R-01 | `BM25Okapi` her sorguda yeniden oluşturuluyor: tüm corpus dosyadan okunup tokenize ediliyor; belge sayısı arttıkça arama gecikmesi büyür | 565–596 | Orta |
 | R-02 | `_tool_docs_search` (sidar_agent.py:749) `self.docs.search()` senkron çağrısını `asyncio.to_thread` sarmadan yapıyor; ChromaDB disk I/O event loop'u bloklayabilir | sidar_agent.py:749 | Orta |
 | R-03 | `_build_embedding_function` içinde `ef.__call__` monkey-patch; ChromaDB iç API değişimine karşı kırılgan | 58–64 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+#### 13.5.4 `web_server.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** FastAPI + SSE tabanlı web arayüzü; rate limiting, güvenlik kontrolleri, RAG / GitHub / Git / Todo endpoint'leri, Prometheus metrikleri.
+
+**Genel Mimari**
+
+```
+Tarayıcı  ──SSE──▶  /chat  ──▶  SidarAgent.respond()  ──SSE──▶  Tarayıcı
+                ─ JSON ─▶  /status /sessions /rag/* /git-* /todo  ◀── JSON ─
+```
+
+**Singleton Ajan — Lazy Double-Checked Locking (satır 41–56)**
+
+```python
+_agent_lock: asyncio.Lock | None = None  # modül yüklenirken None
+
+async def get_agent() -> SidarAgent:
+    global _agent, _agent_lock
+    if _agent_lock is None:
+        _agent_lock = asyncio.Lock()   # event loop başladıktan sonra oluştur
+    if _agent is None:
+        async with _agent_lock:
+            if _agent is None:
+                _agent = SidarAgent(cfg)
+    return _agent
+```
+
+- Python < 3.10'da modül yüklenirken `asyncio.Lock()` oluşturulursa `DeprecationWarning` üretilir; lazy init bu riski sıfırlar.
+- `asyncio` single-thread koşucusu nedeniyle gerçek iki eş zamanlı `_agent is None` dallanması imkânsız olsa da, lock ile `async` task preemption korunuyor.
+
+**3 Katmanlı Rate Limiting (satır 87–173)**
+
+| Kapsam | Anahtar | Limit |
+|--------|---------|-------|
+| `/chat` | IP | 20 req / 60 s |
+| POST + DELETE | `IP:mut` | 60 req / 60 s |
+| GET I/O endpoint'leri | `IP:get` | 30 req / 60 s |
+
+`_RATE_GET_IO_PATHS` frozenset içinde: `/git-info`, `/git-branches`, `/files`, `/file-content`, `/github-prs`, `/todo`, `/rag/docs`, `/rag/search`.
+
+`_is_rate_limited` işlevi `asyncio.Lock` ile TOCTOU (Time-of-Check / Time-of-Use) yarış koşulunu önler; pencere dışı zaman damgaları her kontrol sırasında temizlenir.
+
+**Güvenlik Kontrolleri**
+
+| Kontrol | Satır | Kapsam |
+|---------|-------|--------|
+| Path traversal (`target.relative_to(_root)`) | 412, 452, 650 | `/files`, `/file-content`, `/rag/add-file` |
+| Vendor path traversal (`safe_path.startswith(vendor_dir)`) | 195 | `/vendor/{path}` |
+| Branch regex doğrulaması (`^[a-zA-Z0-9/_.-]+$`) | 523, 533 | `/set-branch` |
+| Uzantı whitelist (metin dosyaları) | 443–447, 460 | `/file-content` |
+| CORS (yalnızca localhost origins) | 66–76 | tüm rotalar |
+| `limit=min(limit, 50)`, `top_k=min(top_k, 10)` | 590, 688 | `/github-prs`, `/rag/search` |
+
+**SSE Bağlantı Yönetimi (satır 224–281)**
+
+```python
+async for chunk in agent.respond(user_message):
+    disconnected = await request.is_disconnected()  # istemci kesti mi?
+    if disconnected:
+        return
+    ...
+except asyncio.CancelledError:          # ESC / AbortController
+    logger.info(...)
+except Exception as exc:
+    if _ANYIO_CLOSED and isinstance(exc, _ANYIO_CLOSED):  # kapalı sokete yazma
+        return
+    logger.exception(...)
+    yield f"data: {json.dumps({'chunk': f'...'})}\n\n"    # hata SSE olarak bildir
+    yield f"data: {json.dumps({'done': True})}\n\n"
+```
+
+Üç bağlantı kopma senaryosunun tamamı yakalanıyor: `is_disconnected`, `CancelledError`, `ClosedResourceError`.
+
+**RAG Endpoint'leri — Senkron/Async Tutarlılık Tablosu (satır 627–689)**
+
+| Endpoint | `docs` metodu | Thread sarması |
+|----------|--------------|----------------|
+| `GET /rag/docs` | `get_index_info()` — saf dict | Gerekmez ✓ |
+| `POST /rag/add-file` | `add_document_from_file()` — sync + disk I/O | `asyncio.to_thread` ✓ |
+| `POST /rag/add-url` | `add_document_from_url()` — async/httpx | `await` ✓ |
+| `DELETE /rag/docs/{id}` | `delete_document()` — sync + disk I/O | `asyncio.to_thread` ✓ |
+| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | **Yok** ⚠️ |
+
+`/rag/search` → `docs.search()` doğrudan senkron çağrı; `asyncio.to_thread` sarması eksik (→ W-01 / R-02 bulgusunun web katmanındaki tezahürü).
+
+**Prometheus Metrikleri (satır 341–358)**
+
+`Accept: text/plain` başlığı geldiğinde ve `prometheus_client` kuruluysa 5 Gauge sunuluyor (`sidar_uptime_seconds`, `sidar_sessions_total`, `sidar_rag_documents_total`, `sidar_active_turns`, `sidar_rate_limit_requests`). `prometheus_client` yoksa `ImportError` sessizce atlanıp JSON döndürülüyor.
+
+**`_get_client_ip` Proxy Farkındalığı (satır 118–139)**
+
+`X-Forwarded-For` → ilk IP (sol en güvenilir orijin), `X-Real-IP`, `request.client.host` sırasıyla deneniyor. Dokümantasyonda güvenlik notu mevcut.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| W-01 | `GET /rag/search` endpoint'i `agent.docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor; ChromaDB disk I/O event loop'u bloklayabilir (R-02 ile örtüşür) | 688 | Orta |
+| W-02 | `_rate_data` dict'inde pencere dışına çıkmış key'ler hiç silinmiyor; uzun süreli çalışmada çok sayıda farklı IP'den gelen isteklerde dict sonsuza büyüyebilir | 87, 111 | Düşük |
+| W-03 | Banner satırı `v{_agent.VERSION}          ║` sabit boşluklu; VERSION ≥ 8 karakter ise görsel taşma oluşur | 753 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
