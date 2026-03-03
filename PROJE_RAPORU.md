@@ -493,6 +493,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ⚠️ İçerikte sürüm ve bazı komut örnekleri güncel servis adlarıyla tam hizalı değilse yanlış yönlendirme riski oluşur. → Detay: §13.5.28
+- **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1633,6 +1634,35 @@ except Exception as exc:
 | RM-01 | README sürüm metni `v2.6.1` olarak kalmış; rapor/kod tabanı `v2.7.0` ile sürüm drift’i oluşturuyor | 3, 13 | Orta |
 | RM-02 | Docker kullanım örneğinde `sidar-web-cpu` servisi geçiyor; mevcut compose servis adı `sidar-web` olduğu için komut doğrudan çalışmayabilir | 223–224 | Orta |
 | RM-03 | GPU bölümünde “CUDA 12.1” ifadesi bulunuyor; proje genelinde cu124/CUDA 12.4 hattı kullanıldığı için teknik tutarsızlık yaratır | 82 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.29 `SIDAR.md` — Skor: 88/100 ✅
+
+**Sorumluluk:** Proje kökü için ajan çalışma sözleşmesi — dosya okuma/yazma sırası, güvenlik sınırları, Git/GitHub akışı ve yanıt biçimini belirleyen kalıcı talimat dosyasıdır.
+
+**Talimat Kapsamı (satır 1–61)**
+
+- Araç kullanım öncelikleri (`read_file` → `glob_search` → `grep_files`) ve görev takibi yaklaşımı tanımlanır.
+- OpenClaw erişim seviyeleri (`full/sandbox/restricted`) özetlenir.
+- Git akışında branch adlandırma (`claude/` öneki) ve PR/commit beklentileri belirtilir.
+
+**Operasyonel Güçlü Yanlar**
+
+- Ajan davranışını proje genelinde standardize ederek tutarsız adım sıralarını azaltır.
+- Güvenlik ve çıktı formatı kurallarını tek yerde topladığı için bakım ve onboarding açısından netlik sağlar.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| SDR-01 | Bazı araç adları (`grep_files`, `glob_search`, `todo_write`) çalışma ortamına göre birebir mevcut olmayabilir; talimat-gerçek araç seti drift riski oluşur | 11–24 | Orta |
+| SDR-02 | `Branch adı claude/ ile başlamalı` kuralı mevcut ekip Git akışıyla çakışabilir; otomasyon/CI kural setiyle uyumsuzluk riski taşır | 39 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
