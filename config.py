@@ -163,7 +163,7 @@ def check_hardware() -> HardwareInfo:
                     "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
                     "Windows NVIDIA sürücüsü güncel mi? "
                     "PyTorch CUDA 12.x wheel ile kuruldu mu? "
-                    "(pip install torch --index-url https://download.pytorch.org/whl/cu121)"
+                    "(pip install torch --index-url https://download.pytorch.org/whl/cu124)"
                 )
             else:
                 logger.info("ℹ️  CUDA bulunamadı — CPU modunda çalışılacak.")

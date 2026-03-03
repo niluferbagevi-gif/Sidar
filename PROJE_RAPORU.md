@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-02** — O-01–O-06 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — P-01–P-07 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 yamaları: 2026-03-01 / N-01–N-04 + O-02 yamaları: 2026-03-02 / **O-01–O-06 yamaları: 2026-03-02**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / U-01–U-15 yamaları: 2026-03-01 / V-01–V-03 yamaları: 2026-03-01 / N-01–N-04 + O-02 yamaları: 2026-03-02 / O-01–O-06 yamaları: 2026-03-02 / **P-01–P-07 yamaları: 2026-03-03**
 
 ---
 
@@ -26,6 +26,7 @@
 14. [Geliştirme Önerileri](#14-geliştirme-önerileri-öncelik-sırasıyla)
 15. [Genel Değerlendirme](#15-genel-değerlendirme)
 16. [Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satır-satır-i̇nceleme--yeni-bulgular)
+17. [Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8--satır-satır-i̇nceleme-2026-03-03)
 
 ---
 
@@ -118,7 +119,7 @@ sidar_project/
 ├── github_upload.py                # Otomatik GitHub yedekleme scripti
 ├── Dockerfile                      # CPU/GPU dual-mode build
 ├── docker-compose.yml              # 4 servis: CPU/GPU × CLI/Web
-├── environment.yml                 # Conda — PyTorch CUDA 12.1 wheel, pytest-asyncio
+├── environment.yml                 # Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio
 ├── .env.example                    # Açıklamalı ortam değişkeni şablonu
 └── install_sidar.sh                # Ubuntu/WSL sıfırdan kurulum scripti
 ```
@@ -159,9 +160,21 @@ sidar_project/
 
 ## 7. Düşük Öncelikli Sorunlar
 
-> ✅ 2026-03-02 güncel taramasında aktif düşük öncelikli sorun kalmamıştır.
+> ✅ **2026-03-03 güncel taramasında (Session 8) tespit edilen P-01–P-07 aynı oturumda giderilmiştir** — bkz. §17.
 >
-> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
+> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar da giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md).
+
+**Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı):**
+
+| ID | Konum | Açıklama | Giderim |
+|----|-------|----------|---------|
+| P-01 | `Dockerfile:25` | `LABEL version="2.6.1"` — v2.7.0 ile uyumsuz | `"2.7.0"` yazıldı |
+| P-02 | `PROJE_RAPORU.md:121` | `environment.yml` açıklamasında "CUDA 12.1" — gerçekte cu124 | "CUDA 12.4 (cu124)" düzeltildi |
+| P-03 | `.env.example` | `DOCKER_EXEC_TIMEOUT` değişkeni belgelenmemiş | Son bölüme eklendi (varsayılan=10) |
+| P-04 | `environment.yml:17` | Comment: "CUDA 12.1 tam desteklidir" — gerçekte cu124 kullanılıyor | "CUDA 12.4 (cu124)" düzeltildi |
+| P-05 | `config.py:167` | WSL2 uyarısında `cu121` wheel URL'i öneriliyor — proje cu124 kullanıyor | `cu124` URL ile güncellendi |
+| P-06 | `managers/__init__.py` | `TodoManager` `__all__`'da yok — diğer tüm manager'lar dışa aktarılıyor | `__all__`'a eklendi |
+| P-07 | `.env.example` | `RAG_FILE_THRESHOLD` değişkeni belgelenmemiş | RAG bölümüne eklendi (varsayılan=20000) |
 
 ---
 
@@ -181,7 +194,7 @@ sidar_project/
 
 ---
 
-### 8.3 Özet Tablo — Tüm Açık Sorunlar (2026-03-02 Güncel)
+### 8.3 Özet Tablo — Tüm Açık Sorunlar (2026-03-03 Güncel)
 
 | ID | Önem | Konum | Açıklama | Durum |
 |----|------|-------|----------|-------|
@@ -195,8 +208,15 @@ sidar_project/
 | O-04 | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
 | O-05 | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
 | O-06 | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
+| P-01 | 🟢 DÜŞÜK | `Dockerfile:25` | `LABEL version="2.6.1"` — proje v2.7.0 | ✅ Kapalı |
+| P-02 | 🟢 DÜŞÜK | `PROJE_RAPORU.md:121` | "PyTorch CUDA 12.1 wheel" — gerçekte cu124 | ✅ Kapalı |
+| P-03 | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `DOCKER_EXEC_TIMEOUT` belgelenmemiş | ✅ Kapalı |
+| P-04 | 🟢 DÜŞÜK | `environment.yml:17` | Comment "CUDA 12.1" — gerçekte cu124 | ✅ Kapalı |
+| P-05 | 🟢 DÜŞÜK | `config.py:167` | WSL2 uyarısında cu121 URL önerisi — proje cu124 | ✅ Kapalı |
+| P-06 | 🟢 DÜŞÜK | `managers/__init__.py` | `TodoManager` `__all__`'dan eksik | ✅ Kapalı |
+| P-07 | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `RAG_FILE_THRESHOLD` belgelenmemiş | ✅ Kapalı |
 
-**Toplam Açık:** 0 sorun ✅ | **Toplam Kapalı:** 45 (O-01–O-06 bu turda kapatıldı)
+**Toplam Açık:** 0 sorun ✅ | **Toplam Kapalı:** 52 (P-01–P-07 bu turda — Session 8, 2026-03-03 — kapatıldı)
 
 ---
 
@@ -537,6 +557,79 @@ async for raw_bytes in resp.aiter_bytes():
 - 📦 Taşınan kayıtlar: **N-01, N-02, N-03, N-04, N-05, N-06**
 - 📄 Detaylar: **[DUZELTME_GECMISI.md → “§16'dan Taşınan Bulgular (N-01–N-06)”](DUZELTME_GECMISI.md#16dan-taşınan-bulgular-n-01n-06--session-4-2026-03-01)**
 - ✅ Sonuç: Session 4 yeni bulgularında açık madde kalmamıştır.
-- ℹ️ Session bazlı satır satır doğrulama kayıtları `DUZELTME_GECMISI.md` dosyasındadır.
+- ℹ️ Session 8 (2026-03-03) bulgularına bakınız: **§17**
+
+---
+
+## 17. Session 8 — Satır Satır İnceleme (2026-03-03)
+
+> **Tarih:** 2026-03-03 | **Session:** 8 | **Kapsam:** Tüm proje dosyaları satır bazlı çapraz kontrol
+> **Sonuç:** 7 düşük öncelikli bulgu tespit edildi; tamamı aynı oturumda giderildi ✅
+
+### Tespit Yöntemi
+
+Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası versiyon etiketleri, CUDA sürümü referansları, `.env.example` eksiklikleri ve `managers/__init__.py` dışa aktarım tutarlılığı çapraz kontrol edildi.
+
+### Bulgular ve Giderimler
+
+**P-01 — `Dockerfile:25` LABEL sürüm uyumsuzluğu**
+- **Tespit:** `LABEL version=”2.6.1”` — proje ve tüm diğer modüller v2.7.0 olarak işaretliyken Dockerfile LABEL hâlâ 2.6.1.
+- **Giderim:** `LABEL version=”2.7.0”` olarak güncellendi.
+- **Etki:** Görsel / belgeleme; çalışma davranışını etkilemez.
+
+**P-02 — `PROJE_RAPORU.md §2` CUDA sürüm referansı hatası**
+- **Tespit:** `environment.yml` satırı `# Conda — PyTorch CUDA 12.1 wheel, pytest-asyncio` olarak açıklanıyordu; gerçekte `environment.yml` CUDA 12.4 (cu124) wheel kullanıyor.
+- **Giderim:** `# Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio` olarak düzeltildi.
+- **Etki:** Rapor içi tutarsızlık; kodda etkisi yok.
+
+**P-03 — `.env.example` `DOCKER_EXEC_TIMEOUT` eksik**
+- **Tespit:** `config.py:300`'de `DOCKER_EXEC_TIMEOUT: int = get_int_env(“DOCKER_EXEC_TIMEOUT”, 10)` tanımlı ve `tests/test_sidar.py` bu değişkeni test ediyor, ancak `.env.example`'da belgelenmiyor.
+- **Giderim:** Docker REPL Sandbox bölümüne `DOCKER_EXEC_TIMEOUT=10` eklendi.
+- **Etki:** Belgeleme eksikliği; çalışma davranışını etkilemez (varsayılan=10s devrede).
+
+**P-04 — `environment.yml:17` CUDA 12.1 yorum hatası**
+- **Tespit:** `environment.yml` satır 17'de `# RTX 3070 Ti Laptop (Compute 8.6 / Ampere) — CUDA 12.1 tam desteklidir.` yorumu yer alıyor; pip bölümü CUDA 12.4 (cu124) wheel kullanıyor — tutarsız.
+- **Giderim:** `”CUDA 12.4 (cu124) tam desteklidir.”` olarak güncellendi.
+- **Etki:** Görsel tutarsızlık; kurulum davranışını etkilemez.
+
+**P-05 — `config.py:167` WSL2 uyarısında cu121 URL**
+- **Tespit:** `config.py:167`'de WSL2 ortamında CUDA bulunamadığında gösterilen uyarı mesajı `pip install torch --index-url https://download.pytorch.org/whl/cu121` URL'ini öneriyor; proje cu124 (CUDA 12.4) kullanıyor.
+- **Giderim:** URL `cu124` olarak düzeltildi.
+- **Etki:** Yanlış rehberlik — kullanıcı CUDA 12.1 wheel kurabilirdi; CUDA 12.4 wheel kurması gerekiyor.
+
+**P-06 — `managers/__init__.py` TodoManager eksik dışa aktarımı**
+- **Tespit:** `managers/__init__.py:__all__` listesinde `CodeManager`, `SystemHealthManager`, `GitHubManager`, `SecurityManager`, `WebSearchManager`, `PackageInfoManager` yer alıyor; ancak `TodoManager` (v2.7.0'da eklendi) eksik.
+- **Giderim:** `from .todo_manager import TodoManager` ve `”TodoManager”` `__all__`'a eklendi.
+- **Etki:** Tutarlılık sorunu; `from managers import TodoManager` biçiminde import denenirse `ImportError` alınırdı.
+
+**P-07 — `.env.example` `RAG_FILE_THRESHOLD` eksik**
+- **Tespit:** `config.py:295`'te `RAG_FILE_THRESHOLD: int = get_int_env(“RAG_FILE_THRESHOLD”, 20000)` tanımlı (v2.7.0 yeni özellik: büyük dosya RAG otomatik önerisi); `.env.example`'da belgelenmiyor.
+- **Giderim:** RAG bölümüne `RAG_FILE_THRESHOLD=20000` eklendi.
+- **Etki:** Belgeleme eksikliği; çalışma davranışını etkilemez (varsayılan=20000 karakter devrede).
+
+### Doğrulanan Tutarlılık Noktaları (Sorun Yok)
+
+- ✅ `core/__init__.py:10` → `__version__ = “2.7.0”` — tüm modüllerle uyumlu
+- ✅ `config.py:212` → `VERSION = “2.7.0”` — uyumlu
+- ✅ `agent/sidar_agent.py:VERSION` → `”2.7.0”` — uyumlu
+- ✅ `web_server.py:_BRANCH_RE` ve `github_manager.py:_BRANCH_RE` → aynı regex kalıbı (`^[a-zA-Z0-9/_.\-]+$`)
+- ✅ `environment.yml` cu124 ↔ `docker-compose.yml` `TORCH_INDEX_URL: .../cu124` — tutarlı
+- ✅ `web_server.py:/metrics` → `agent.docs.doc_count` (public property) — O-02/N-03 düzeltmesi mevcut
+- ✅ `managers/__init__.py` tüm manager sınıfları (TodoManager eklendi P-06 ile) — tutarlı
+- ✅ `tests/test_sidar.py` 48 test — `PROJE_RAPORU.md §12` ile uyumlu
+- ✅ `.env.example` `WEB_GPU_PORT=7861` ↔ `docker-compose.yml:136` `${WEB_GPU_PORT:-7861}` — tutarlı
+- ✅ `Dockerfile` `EXPOSE 7860` ↔ `docker-compose.yml:97` `${WEB_PORT:-7860}:7860` — tutarlı
+- ✅ `SIDAR.md` araç isimleri ↔ `agent/definitions.py` araç listesi — tutarlı
+
+### Özet
+
+| Metrik | Değer |
+|--------|-------|
+| İncelenen dosya | ~35 |
+| Tespit edilen bulgu | 7 (P-01–P-07) |
+| Önem seviyesi | Tamamı DÜŞÜK |
+| Aynı oturumda kapanan | 7 / 7 |
+| Kümülatif toplam kapalı | 52 |
+| Aktif açık sorun | **0** |
 
 ---
