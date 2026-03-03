@@ -91,37 +91,45 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 ```
 sidar_project/
 ├── agent/
-│   ├── __init__.py                 # SidarAgent, SIDAR_SYSTEM_PROMPT dışa aktarımı
-│   ├── definitions.py              # 25 araç tanımı, karakter profili, sistem prompt
-│   ├── sidar_agent.py              # Ana ReAct döngüsü — async/await, Pydantic v2, dispatcher
-│   └── auto_handle.py              # Örüntü tabanlı hızlı komut işleyici — async uyumlu
+│   ├── __init__.py                 # Agent public API dışa aktarımları
+│   ├── definitions.py              # Sistem promptu + araç sözleşmeleri
+│   ├── sidar_agent.py              # Ana ReAct ajan döngüsü ve tool dispatch
+│   └── auto_handle.py              # Örüntü tabanlı hızlı komut yönlendirme
 ├── core/
-│   ├── __init__.py
-│   ├── memory.py                   # Çoklu oturum (session) yönetimi — thread-safe JSON
-│   ├── llm_client.py               # Async LLM istemcisi (Ollama stream + Gemini)
-│   └── rag.py                      # Hibrit RAG — ChromaDB + BM25 + Fallback, Chunking
+│   ├── __init__.py                 # Core public API + sürüm bilgisi
+│   ├── llm_client.py               # Ollama/Gemini istemci katmanı (async stream)
+│   ├── memory.py                   # Oturum belleği, kalıcılık, şifreleme
+│   └── rag.py                      # Hibrit RAG (ChromaDB + BM25 + keyword)
 ├── managers/
-│   ├── __init__.py
-│   ├── code_manager.py             # Dosya işlemleri, AST doğrulama, Docker REPL
-│   ├── system_health.py            # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback)
-│   ├── github_manager.py           # GitHub API (binary koruma, branch, arama)
-│   ├── security.py                 # OpenClaw 3 seviyeli erişim kontrolü
-│   ├── web_search.py               # Tavily + Google + DuckDuckGo (async, çoklu motor)
-│   ├── package_info.py             # PyPI + npm + GitHub Releases (async)
-│   └── todo_manager.py             # TodoWrite/TodoRead uyumlu görev takip yöneticisi
+│   ├── __init__.py                 # Manager export yüzeyi
+│   ├── code_manager.py             # Dosya işlemleri + Docker sandbox çalıştırma
+│   ├── github_manager.py           # GitHub repo/branch/PR/dosya işlemleri
+│   ├── package_info.py             # PyPI/npm/GitHub sürüm sorguları
+│   ├── security.py                 # OpenClaw erişim kontrolü
+│   ├── system_health.py            # CPU/RAM/GPU telemetri ve optimizasyon
+│   ├── todo_manager.py             # TodoWrite/TodoRead uyumlu görev yönetimi
+│   └── web_search.py               # Çoklu motor web arama ve URL çekme
 ├── tests/
-│   └── test_sidar.py               # 9 test sınıfı, GPU + Chunking + Pydantic testleri
+│   ├── __init__.py                 # Test paket işaretleyicisi
+│   └── test_sidar.py               # Entegre async regresyon testleri
 ├── web_ui/
-│   └── index.html                  # Dark/Light tema, Sidebar, Session yönetimi, SSE
-├── config.py                       # GPU tespiti, RotatingFileHandler, WSL2 desteği
-├── main.py                         # CLI — async döngü, asyncio.run() doğru kullanımı
-├── web_server.py                   # FastAPI + SSE + Rate limiting + Session API
-├── github_upload.py                # Otomatik GitHub yedekleme scripti
-├── Dockerfile                      # CPU/GPU dual-mode build
-├── docker-compose.yml              # 4 servis: CPU/GPU × CLI/Web
-├── environment.yml                 # Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio
-├── .env.example                    # Açıklamalı ortam değişkeni şablonu
-└── install_sidar.sh                # Ubuntu/WSL sıfırdan kurulum scripti
+│   └── index.html                  # Tek dosya Web UI (SSE, oturum, modal, tema)
+├── .env.example                    # Örnek ortam değişkenleri
+├── .gitignore                      # Repo hijyeni için ignore kuralları
+├── .note                           # WSL/Conda odaklı çalışma notları (taslak)
+├── CLAUDE.md                       # Claude Code uyumluluk notları
+├── SIDAR.md                        # Proje-geneli ajan çalışma kuralları
+├── DUZELTME_GECMISI.md             # Kapatılan bulgular için tarihsel arşiv
+├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
+├── README.md                       # Kurulum/kullanım dokümantasyonu
+├── config.py                       # Merkezi konfigürasyon ve donanım tespiti
+├── main.py                         # CLI giriş noktası
+├── web_server.py                   # FastAPI web/sse sunucusu
+├── github_upload.py                # Etkileşimli GitHub upload yardımcı aracı
+├── Dockerfile                      # Uygulama container build tanımı
+├── docker-compose.yml              # CPU/GPU × CLI/Web servis orkestrasyonu
+├── environment.yml                 # Conda bağımlılık manifesti
+└── install_sidar.sh                # Ubuntu/WSL otomatik kurulum betiği
 ```
 
 ---
