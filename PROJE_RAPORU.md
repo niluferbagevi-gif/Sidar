@@ -476,6 +476,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
+- **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1121,6 +1122,39 @@ except Exception as exc:
 |----|------|-------|------|
 | GH-01 | `create_or_update_file()` içinde "dosya yok" kararını geniş `except Exception` ile veriyor; izin/bağlantı gibi gerçek hatalar da oluşturma yoluna düşebilir ve asıl neden gizlenebilir | 284–301 | Orta |
 | GH-02 | `list_repos(owner=...)` önce organization akışını zorunlu dener, kullanıcı owner senaryosu exception ile fallback’e bırakılır; kontrol akışı istisna tabanlı ve maliyetli | 106–133 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.12 `managers/system_health.py` — Skor: 92/100 ✅
+
+**Sorumluluk:** Sistem gözlemleme katmanı — CPU, RAM, GPU/CUDA, sürücü ve (varsa) sıcaklık/kullanım telemetrisini raporlar; gerektiğinde GPU önbellek temizliği yapar.
+
+**Bağımlılık ve Ortam Uyumu (satır 29–89)**
+
+- `torch`, `psutil`, `pynvml` bağımlılıkları opsiyonel kontrol edilir; eksik paketlerde manager degrade modda çalışmaya devam eder.
+- GPU kullanılabilirliği `use_gpu` + `torch.cuda.is_available()` ile belirlenir.
+- NVML başlatma hatalarında özellikle WSL2 için bilgilendirici fallback logları üretilir; metrikler mümkün olduğunca korunur.
+
+**Telemetri Toplama Akışı (satır 94–213, 253–299)**
+
+- CPU ve RAM ölçümleri psutil ile alınır; eksik bağımlılıkta güvenli `None/{}` dönüşü sağlanır.
+- GPU raporu, cihaz başına VRAM/compute capability bilgilerini döndürür; NVML varsa sıcaklık ve utilization verileri eklenir.
+- Sürücü sürümü önce NVML’den, başarısız olursa `nvidia-smi` subprocess fallback’i ile alınır.
+
+**Bellek Optimizasyonu ve Hata Dayanımı (satır 214–247)**
+
+- `optimize_gpu_memory()` içinde `torch.cuda.empty_cache()` başarısız olsa bile `finally` bloğunda `gc.collect()` garanti edilir.
+- Sonuç çıktısı boşaltılan MB miktarı + olası GPU cache hatasını kullanıcıya okunur formatta iletir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| SH-01 | `get_cpu_usage()` içinde `psutil.cpu_percent(interval=0.5)` bloklayıcı çağrı; sık health çağrılarında yanıt gecikmesini artırabilir | 94–101 | Düşük |
+| SH-02 | NVML temizliği `__del__` metoduna bağlı; interpreter kapanış sırası veya referans döngülerinde bu çağrı deterministik olmayabilir | 304–310 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
