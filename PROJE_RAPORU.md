@@ -474,112 +474,29 @@ async for raw_bytes in resp.aiter_bytes():
 
 ## 14. Geliştirme Önerileri (Öncelik Sırasıyla)
 
-### Öncelik 0 — KRİTİK (Hemen Düzeltilmeli)
+> Bu bölüm yalnızca **güncel açık iyileştirme adaylarını** içerir.
+> Kapatılmış/uygulanmış tüm maddeler okunabilirliği korumak amacıyla düzeltme geçmişine taşınmıştır:
+> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
-1. ~~**`sidar_agent.py:163` — Greedy regex JSON parsing** (madde 4.1):
-   Non-greedy veya `json.JSONDecoder.raw_decode()` ile değiştir.~~ → ✅ **TAMAMLANDI** (madde 3.14)
+### Öncelik 1 — Yüksek Etki (Kısa Vadede)
 
-2. ~~**`llm_client.py:129` — UTF-8 byte buffer** (madde 4.2):
-   `errors="replace"` yerine byte buffer tutarak tamamlanan multibyte karakterleri beklet.~~ → ✅ **TAMAMLANDI** (madde 3.15)
+1. **Oturum yeniden adlandırma arayüzü (Web UI):**
+   Sidebar'da oturum başlığını doğrudan düzenlenebilir hale getirme (çift tıklama / inline edit).
 
-3. ~~**`code_manager.py:208` — Hardcoded Docker image** (madde 4.3):
-   `__init__`'e `docker_image` parametresi ekle, `execute_code` içinde `self.docker_image` kullan, hata mesajını dinamik yap.~~ → ✅ **TAMAMLANDI** (madde 4.3)
+2. **AutoHandle test derinliği:**
+   Mock tabanlı ek senaryolarla komut yönlendirme ve hata dallarını genişletme.
 
-4. ~~**`memory.py:170` — Token limiti** (madde 4.4):
-   `needs_summarization()` içine yaklaşık token sayacı ekle (karakter/3.5 tahmini yeterli).~~ → ✅ **TAMAMLANDI** (madde 3.16)
+### Öncelik 2 — Orta Etki (Bakım / Kullanılabilirlik)
 
-5. ~~**`auto_handle.py:156` — Null guard** (madde 4.5):
-   `if not self.health:` kontrolü ekle.~~ → ✅ **TAMAMLANDI** (madde 3.17)
+3. **Tanım metni güncelliği:**
+   `agent/definitions.py` içindeki tarihsel/eğitim bağlamı yorumlarının güncellenmesi.
 
-### Öncelik 1 — Yüksek (Bu Sprint'te)
+4. **Dokümantasyon sadeleştirme:**
+   Ana raporda yalnızca güncel durumun korunması; tarihsel line-range ve sürüm geçiş detaylarının düzeltme geçmişinde tutulmaya devam edilmesi.
 
-5b. ~~**`web_server.py:301` — `rstrip(".git")` → `removesuffix(".git")`** (U-13):
-    `str.rstrip()` karakter kümesi siler, suffix değil. Repo URL yanlış parse edilebilir.~~ → ✅ **TAMAMLANDI** (§3.68)
+### Açık Durum
 
-5c. ~~**`web_server.py:66-70` — CORS `_ALLOWED_ORIGINS` dinamik hale getir** (U-05):~~ → ✅ **TAMAMLANDI** (§3.60)
-
-6. ~~**`sidar_agent.py` — Stream generator güvenliği** (madde 5.4):
-   Memory'e yalnızca tamamlanan yanıtları ekle.~~ → ✅ **TAMAMLANDI** (madde 3.20)
-
-7. ~~**`rag.py` — Delete+upsert atomikliği** (madde 5.5):
-   `async with self._write_lock:` ile sarmala.~~ → ✅ **TAMAMLANDI** (madde 3.21)
-
-8. ~~**`web_search.py` — Tavily 401/403 fallback** (madde 5.6):
-   Auth hatasında Google/DDG'ye geç.~~ → ✅ **TAMAMLANDI** (madde 5.6)
-
-9. ~~**`system_health.py` — pynvml hataları logla** (madde 5.7):
-   `except Exception: pass` → `logger.debug(...)`.~~ → ✅ **TAMAMLANDI** (madde 5.7)
-
-10. ~~**`github_manager.py` — Uzantısız dosya whitelist** (madde 5.8):
-    `SAFE_EXTENSIONLESS` kümesi tanımla; extensionless binary'leri engelle.~~ → ✅ **TAMAMLANDI** (madde 5.8)
-
-11. ~~**`web_server.py` — Rate limit atomik kontrol** (madde 5.9):
-    `asyncio.Lock` ile check+append'i atomic yap.~~ → ✅ **TAMAMLANDI** (madde 3.22)
-
-12. ~~**`README.md` güncellenmesi**~~ ✅ **TAMAMLANDI** (madde 3.18)
-
-13. ~~**`config.py:validate_critical_settings()` — `requests` → `httpx`** (madde 5.2):
-    `httpx.Client` ile senkron kontrol.~~ → ✅ **TAMAMLANDI** (madde 3.19)
-
-13b. ~~**`environment.yml` — `requests>=2.31.0` satırını sil** (madde 5.3):
-    5.2 tamamlandığına göre bu bağımlılık da kaldırılmalı.~~ → ✅ **TAMAMLANDI** (madde 5.3)
-
-14. **Session lifecycle testleri** (madde 6.6):
-    `ConversationMemory.create_session()`, `load_session()`, `delete_session()` için birim testler.
-
-### Öncelik 2 — Orta (Kalite / Kullanılabilirlik)
-
-15. **`config.py` — GPU_MEMORY_FRACTION validasyonu** (madde 6.7):
-    Geçersiz aralık için `logger.warning()` + varsayılan değere dön.
-
-16. **`package_info.py` — version sort** (madde 6.8):
-    `packaging.version.Version` kullan.
-
-17. **`sidar_agent.py` — Araç sonuç format şeması** (madde 6.9):
-    `[ARAÇ:{name}]` ve `[ARAÇ:{name}:HATA]` sabit şablonları tanımla.
-
-18. **`memory.py` — Bozuk JSON karantina** (madde 6.10):
-    `json.broken` uzantısıyla yeniden adlandır, kullanıcıya log göster.
-
-19. **`core/memory.py` — `asyncio.to_thread` ile I/O** (madde 6.1):
-    ```python
-    await asyncio.to_thread(self._save)
-    ```
-
-20. ~~**`web_server.py` — `_rate_lock` lazy initialization** (U-06):~~ → ✅ **TAMAMLANDI** (§3.61)
-
-20b. ~~**`sidar_agent.py:679` — `docs.add_document()` `asyncio.to_thread()` ile sar** (U-14):~~ → ✅ **TAMAMLANDI** (§3.69)
-
-20c. ~~**`core/__init__.py` — `DocumentStore` dışa aktar** (U-07):~~ → ✅ **TAMAMLANDI** (§3.62)
-
-21. **`code_manager.py` — Detaylı Docker hata mesajı** (madde 6.3)
-
-22. **`github_manager.py` — Token kurulum rehberi** (madde 6.4)
-
-23. ~~**Sohbet dışa aktarma özelliği**~~ ✅ **[v2.6.1'de tamamlandı]**
-
-24. **AutoHandle async testleri:** mock tabanlı testler.
-
-25. **Oturum yeniden adlandırma arayüzü:** çift tıklamayla düzenlenebilir.
-
-### Öncelik 3 — Düşük (İyileştirme)
-
-26. **`definitions.py:23` — Eğitim tarihi yorumunu güncelle** (madde 7.7)
-
-27. ~~**`package_info.py` — npm sayısal pre-release** (madde 7.8): `-\d+$` pattern ekle.~~ → ✅ **MEVCUT** (`_is_prerelease()` satır 262'de zaten uygulanmıştı)
-
-28. ~~**`tests/test_sidar.py` — `_gpu_available` private attribute erişimi** (U-15):
-    `get_gpu_info()["available"]` public API kullan.~~ → ✅ **TAMAMLANDI** (§3.70)
-
-29. ~~**`search_docs()` — motor bağımsız sorgu** (madde 7.2)~~ → ✅ **TAMAMLANDI** (`core/rag.py` `search(mode=)`: `"auto"` | `"vector"` | `"bm25"` | `"keyword"`)
-
-30. ~~**Mobil sidebar toggle butonu**~~ ✅ **[v2.6.1'de tamamlandı]**
-
-31. ~~**Rate limiting — tüm endpoint'lere yayma** (en azından `/clear`)~~ → ✅ **TAMAMLANDI** (`/clear` zaten POST→mut kapsamındaydı; `/git-info`, `/git-branches`, `/files`, `/file-content` GET endpoint'lerine 30 req/60s limit eklendi)
-
-32. ~~**Prometheus/OpenTelemetry metrik endpoint'i** (`/metrics`)~~ → ✅ **TAMAMLANDI** (`web_server.py` `/metrics` endpoint'i; `prometheus_client` kuruluysa Prometheus text format, değilse JSON)
-
-33. ~~**`memory.json` şifreleme seçeneği** (hassas kurumsal kullanım için)~~ → ✅ **TAMAMLANDI** (`core/memory.py` Fernet/AES-128-CBC şifreleme; `MEMORY_ENCRYPTION_KEY` env ile opsiyonel opt-in; `config.py`, `.env.example`, `environment.yml`, `sidar_agent.py` güncellendi)
+> 2026-03-02 doğrulama setine göre bu başlık altında yer alan öneriler teknik borç/iyileştirme niteliğindedir; kapanan maddelerin ayrıntıları `DUZELTME_GECMISI.md` dosyasında arşivlenmiştir.
 
 ---
 
