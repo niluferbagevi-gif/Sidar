@@ -479,6 +479,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
 - **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
+- **`managers/security.py`**: OpenClaw erişim katmanı; yol doğrulama, traversal/symlink koruması ve erişim seviyesine göre okuma-yazma-çalıştırma yetkisi sağlar. ⚠️ `can_read()` yalnızca regex tabanlı tehlikeli kalıp denetimi yapıyor (kök dizin sınırı yok); ayrıca `status_report()` içindeki “Terminal” satırı shell değil REPL/execute yetkisini temsil ettiği için operatör açısından yanıltıcı olabilir. → Detay: §13.5.15
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1224,6 +1225,39 @@ except Exception as exc:
 |----|------|-------|------|
 | PKG-01 | `pypi_compare()` güncel sürümü `pypi_info()` tarafından üretilen metinden regex ile ayıklıyor; format değişirse kırılganlık oluşabilir (ham JSON’dan almak daha güvenli) | 113–119 | Orta |
 | PKG-02 | `_is_prerelease()` harf geçen her sürümü pre-release sayıyor; bazı özel sürüm etiketlerinde yanlış negatif/pozitif sınıflandırma riski var | 259–264 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.15 `managers/security.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** Erişim kontrol katmanı — OpenClaw seviyelerine göre dosya okuma/yazma, kod çalıştırma ve shell yetkilerini belirler; path traversal ve symlink kaçışlarına karşı temel koruma sağlar.
+
+**Yetki Modeli ve Seviye Haritası (satır 15–24, 124–185)**
+
+- `restricted / sandbox / full` seviyeleri net sabitlerle tanımlanır.
+- Yazma izni seviyeye göre daraltılır: restricted=kapalı, sandbox=/temp ile sınırlı, full=proje kökü altı.
+- `can_execute()` ve `can_run_shell()` ayrımıyla REPL ile shell komutu farklı risk düzeylerinde ele alınır.
+
+**Yol Güvenliği ve Symlink Koruması (satır 26–102, 137–162)**
+
+- `..`, `/etc`, `/proc`, `/sys` gibi tehlikeli kalıplar erken regex kontrolüyle reddedilir.
+- `Path.resolve()` + `relative_to()` kombinasyonu ile çözülmüş gerçek hedef üzerinden dizin sınırı doğrulanır.
+- Sandbox modunda yazma işlemleri symlink dahil gerçek hedefi `temp_dir` altında tutacak şekilde sınırlandırılır.
+
+**Operasyonel Görünürlük (satır 190–212)**
+
+- `get_safe_write_path()` dosya adını normalize ederek güvenli temp yazım yolu üretir.
+- `status_report()` insan okunur izin özeti sunar; üst katman araçları bu metni hızlı durum kontrolü için kullanabilir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| SEC-01 | `can_read()` yalnızca tehlikeli regex kalıplarını engelliyor; `base_dir` altı sınır doğrulaması yapmadığından proje dışı ama “tehlikesiz görünen” mutlak yollar okunabilir kalabilir | 107–118 | Orta |
+| SEC-02 | `status_report()` içindeki “Terminal” izni `self.level >= SANDBOX` ile hesaplanıyor; bu, shell yetkisinden farklı bir kavram olduğundan operatör tarafında yorum karmaşası oluşturabilir | 203–205 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
