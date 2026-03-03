@@ -1922,21 +1922,54 @@ except Exception as exc:
 > Kapatılmış/uygulanmış tüm maddeler okunabilirliği korumak amacıyla düzeltme geçmişine taşınmıştır:
 > 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
-### Öncelik 1 — Yüksek Etki (Kısa Vadede)
+### Öncelik 1 — Yüksek Etki (Kısa Vadede, Olmazsa Olmaz)
 
-1. **Oturum yeniden adlandırma arayüzü (Web UI):**
-   Sidebar'da oturum başlığını doğrudan düzenlenebilir hale getirme (çift tıklama / inline edit).
+1. **Event-loop bloklama risklerini kapatma (RAG aramaları async güvenli hale getirilmeli):**
+   `web_server.py:/rag/search`, `agent/sidar_agent.py:_tool_docs_search` ve `agent/auto_handle.py:_try_docs_search` hatlarında senkron `docs.search()` çağrıları `asyncio.to_thread` (veya native async API) ile sarılmalı.
 
-2. **AutoHandle test derinliği:**
-   Mock tabanlı ek senaryolarla komut yönlendirme ve hata dallarını genişletme.
+2. **RAG performans darboğazını giderme (BM25 cache + incremental güncelleme):**
+   `core/rag.py` içinde BM25 indeksinin her sorguda yeniden inşası yerine, belge ekle/sil olaylarında invalidate edilen bellek içi indeks stratejisine geçilmeli.
 
-### Öncelik 2 — Orta Etki (Bakım / Kullanılabilirlik)
+3. **Web UI XSS yüzeyini kapatma:**
+   `web_ui/index.html` tarafında `marked.parse(...)` çıktısı DOM'a basılmadan önce DOMPurify benzeri sanitize katmanı zorunlu hale getirilmeli.
 
-3. **Tanım metni güncelliği:**
-   `agent/definitions.py` içindeki tarihsel/eğitim bağlamı yorumlarının güncellenmesi.
+4. **Rate limiter için key eviction/TTL mekanizması ekleme:**
+   `_rate_data` anahtarları süre dolunca sözlükten de temizlenmeli; uzun ömürlü süreçte bellek büyümesi engellenmeli.
 
-4. **Dokümantasyon sadeleştirme:**
-   Ana raporda yalnızca güncel durumun korunması; tarihsel line-range ve sürüm geçiş detaylarının düzeltme geçmişinde tutulmaya devam edilmesi.
+5. **Test stratejisini üretim seviyesine taşıma (tool + entegrasyon + güvenlik seviyeleri):**
+   Özellikle Docker sandbox, GitHub akışları, security access-level (`restricted/sandbox/full`) ve RAG aramaları için hedefli birim + entegrasyon testleri genişletilmeli.
+
+### Öncelik 2 — Orta Etki (Güvenlik / Operasyon / Bakım)
+
+6. **TodoManager kalıcılığı ve tek `in_progress` kuralı:**
+   Görevler yalnızca process-memory yerine JSON/SQLite ile kalıcı tutulmalı; aynı anda tek aktif `in_progress` doğrulaması zorunlu kılınmalı.
+
+7. **ConversationMemory I/O optimizasyonu + `.json.broken` yaşam döngüsü:**
+   Her mesajda tam dosya rewrite maliyeti azaltılmalı (append-only/segmentli kayıt seçenekleri değerlendirilmeli) ve karantina dosyaları için temizleme politikası eklenmeli.
+
+8. **`full` erişim için daha ince güvenlik bariyerleri:**
+   Tehlikeli shell komutları için allowlist/denylist + kritik yol yazma işlemlerinde kullanıcı onayı (özellikle web UI) uygulanmalı.
+
+9. **Kurulum ve healthcheck güvenliği:**
+   `install_sidar.sh` içindeki `curl|sh` ve otomatik `apt upgrade -y` adımları güvenlik/şeffaflık açısından yeniden tasarlanmalı; `Dockerfile` healthcheck daha deterministik endpoint odaklı hale getirilmeli.
+
+10. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
+    `environment.yml` için sürüm sabitleme/lock dosyası yaklaşımı netleştirilmeli; CI ve yerel kurulumlar arasında sürüm drift’i azaltılmalı.
+
+11. **Donanım tespitini lazy/cached hale getirme:**
+    `config.py` import-time `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve yan etkiler kontrollü bir init adımına alınmalı.
+
+### Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)
+
+12. **Dokümantasyon sürüm/komut drift temizliği:**
+    `README.md`, `Dockerfile` yorum bloğu, `install_sidar.sh` ve benzeri dosyalardaki `2.6.1` izleri ile güncel servis adları (`sidar-web` vb.) tek turda hizalanmalı.
+
+13. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
+    `SIDAR.md` / `CLAUDE.md` / `README.md` üzerindeki bilgi yükünü azaltmak için “kullanıcı rehberi” ve “geliştirici rehberi” ayrı, güncel ve rol bazlı dokümanlara taşınmalı.
+
+14. **Web UI oturum UX iyileştirmeleri:**
+    Mevcut yeniden adlandırma önerisine ek olarak, otomatik başlık kalitesi ve tamamlanan oturum arşivleme akışı geliştirilmeli.
+
 
 ### Açık Durum
 
