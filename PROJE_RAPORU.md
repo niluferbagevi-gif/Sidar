@@ -499,6 +499,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
+- **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1811,6 +1812,34 @@ except Exception as exc:
 |----|------|-------|------|
 | GIT-01 | `data/` top-level olarak tamamen ignore edildiği için bazı durumlarda paylaşılmak istenen örnek veri/fixture dosyaları yanlışlıkla commit edilemeyebilir (whitelist stratejisi gerekebilir) | 23 | Düşük |
 | GIT-02 | Yeni üretilen artefact türleri (örn. farklı tool cache klasörleri) için ignore listesi düzenli güncellenmezse zamanla repo kirliliği tekrar oluşabilir | 1–42 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.35 `.note` — Skor: 80/100 ✅
+
+**Sorumluluk:** Çalışma notu/öneri taslağı — WSL2, Docker networking, Conda/CUDA ve konfigürasyon hakkında değerlendirme metni ile örnek değişiklik parçaları içerir.
+
+**İçerik Özeti**
+
+- Dosya, `docker-compose.yml`, `environment.yml`, `config.py` için ortam odaklı öneriler ve örnek snippet’ler sunar.
+- Notlar serbest metin formatındadır; doğrulanmış “uygulandı” statüsü veya sürüm etiketi bulunmaz.
+
+**Operasyonel Güçlü Yanlar**
+
+- Ortam kaynaklı problemler için hızlı fikir havuzu sağlar.
+- Geçici analiz notlarının ana koddan ayrı tutulması, doğrudan runtime etkisini engeller.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| NTE-01 | İçerikte önerilen bazı değerler/profiller (örn. CUDA hattı, service isimleri, network_mode tercihleri) ana repo konfigürasyonundan farklılaşabilir; doğrulanmadan uygulanması uyumsuzluk riski taşır | 1–181+ | Orta |
+| NTE-02 | Not dosyası için sahiplik/tarih/version metadatası bulunmadığından hangi önerinin güncel olduğu zamanla belirsizleşebilir | 1–181+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
