@@ -495,6 +495,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ⚠️ İçerikte sürüm ve bazı komut örnekleri güncel servis adlarıyla tam hizalı değilse yanlış yönlendirme riski oluşur. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
+- **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1693,6 +1694,35 @@ except Exception as exc:
 |----|------|-------|------|
 | CLD-01 | Araç eşlemesi metin tabanlı ve manuel; yeni araç/alias eklendiğinde belgenin güncellenmemesi uyumluluk drift’i üretebilir | 8–18 | Orta |
 | CLD-02 | `github_smart_pr` gibi eşdeğer ifadeler her dağıtımda mevcut olmayabilir; opsiyonel yeteneklerin “her zaman var” algısı yanlış beklenti doğurabilir | 18, 35–37 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅
+
+**Sorumluluk:** Tarihsel düzeltme arşivi — ana raporda sade tutulmak istenen kapanmış bulguların ayrıntılarını, sürüm geçişlerini ve teknik çözüm notlarını kronolojik biçimde korur.
+
+**İçerik Kapsamı (satır 1–220+)**
+
+- v2.5.0 → v2.7.0 arası düzeltmeler “§3.x” formatıyla kayıt altına alınmıştır.
+- Kritikten düşüğe farklı öncelik seviyelerindeki kapanışlar için örnek kod blokları ve açıklamalar bulunur.
+- `PROJE_RAPORU.md` içindeki §3/§8 referansları bu dosyaya yönlendirilerek ana raporun okunabilirliği korunur.
+
+**Operasyonel Güçlü Yanlar**
+
+- Düzeltme kararlarının gerekçesini tek yerde tutarak denetim/geri izlenebilirlik sağlar.
+- “Açık rapor” ve “tarihsel arşiv” ayrımı, aktif sorun listelerinin güncel kalmasına yardımcı olur.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| DGH-01 | Dosya üst bilgisindeki “son güncelleme” tarihi `2026-03-02` olarak kalmış; ana raporda Session 8 (`2026-03-03`) kapanışları bulunduğundan zaman çizelgesi drift’i riski var | 4 | Orta |
+| DGH-02 | Uzun tek dosya yapısı (çok sayıda §3.x kaydı) büyüdükçe belirli bir bulgunun hızlı bulunmasını zorlaştırabilir; indeksleme/alt başlık kırılımı ihtiyacı doğabilir | 1–220+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
