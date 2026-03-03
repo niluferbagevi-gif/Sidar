@@ -33,6 +33,7 @@
       - [13.5.21–13.5.30](#13521-web_uiindexhtml--skor-89100-) — web/ui + dağıtım + talimat dosyaları
       - [13.5.31–13.5.35](#13531-duzeltme_gecmisimd--skor-87100-) — arşiv, test paketi, rapor ve repo notları
     - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arası-uyum-doğrulaması)
+      - [13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)](#1361-harici-yorum-teyidi-çapraz-kontrol)
 14. [Geliştirme Önerileri](#14-geliştirme-önerileri-öncelik-sırasıyla)
 15. [Genel Değerlendirme](#15-genel-değerlendirme)
 16. [Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satır-satır-i̇nceleme--yeni-bulgular)
@@ -1890,6 +1891,26 @@ except Exception as exc:
 - Raporun §13.5 bölümü artık repo içindeki tüm izlenen dosyaları kapsar.
 - Dosyalar arası çapraz kontrollerde kritik yeni uyumsuzluk bulunmadı; tespit edilen noktalar açık bulgu tablolarına işlenmiş durumdadır.
 - Bu nedenle rapor, mevcut kod tabanı için **son kontrol geçmiş** sürüm olarak değerlendirilebilir.
+
+### 13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)
+
+> Projeye dış gözle yapılan yorumlar, kod + rapor çapraz kontrolüyle doğrulanmıştır.
+
+**Teyit Edilen Noktalar:**
+
+- `main.py`, `agent/sidar_agent.py`, `core/rag.py`, `web_server.py`, `config.py` için belirtilen ana mimari çıkarımların büyük kısmı doğru ve raporla uyumludur.
+- Özellikle lazy `asyncio.Lock`, `JSONDecoder.raw_decode`, sentinel tabanlı SSE akışı ve WSL2/GPU tespit akışları kodda aktif durumdadır.
+- Raporun açık bulgu başlıkları (W-01, R-02, 6.9) güncel kodla hâlâ örtüşmektedir; ilgili teknik borçlar kapatılmış değildir.
+
+**Düzeltme / Netleştirme Notu:**
+
+- “Tüm entegrasyonlar tamamen uyumlu” ifadesi kısmen iyimserdir; dokümantasyon driftleri (örn. README sürüm/compose komutu) ve senkron `docs.search()` çağrıları hâlâ takip maddesidir.
+- Bu nedenle doğru çerçeve: **çekirdek mimari uyumlu, orta/düşük öncelikli teknik borçlar açık**.
+
+**Test Ortamı Notu (Bu tur doğrulama):**
+
+- `pytest -q tests/test_sidar.py` komutu bu çalışma ortamında `ModuleNotFoundError: pydantic` nedeniyle collect aşamasında tamamlanamamıştır.
+- Bu sonuç, rapordaki mimari teyitleri geçersiz kılmaz; ancak “bu turda testler geçti” ifadesi bu ortam için doğrulanmamıştır.
 
 ---
 
