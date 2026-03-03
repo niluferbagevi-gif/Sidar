@@ -473,6 +473,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
+- **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1010,6 +1011,46 @@ except Exception as exc:
 |----|------|-------|------|
 | M-01 | `_save()` her ekleme/güncellemede tüm oturum dosyasını yeniden serialize+yazıyor; uzun sohbetlerde I/O maliyeti artabilir | 194–211, 217–230 | Orta |
 | M-02 | Karantinaya alınan `*.json.broken` dosyaları için otomatik temizlik/retention politikası yok; uzun vadede disk birikimi olabilir | 117–128 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.9 `config.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** Merkez konfigürasyon omurgası — ortam değişkenlerini yükler, donanım/GPU tespiti yapar, loglama sistemini kurar ve tüm alt modüllerin kullandığı çalışma zamanı ayarlarını (`Config`) üretir.
+
+**Yükleme Sırası ve Başlangıç Etkileri (satır 25–34, 196–197, 455–462)**
+
+- `.env` dosyası modül importunda yüklenir; bulunamazsa varsayılanlarla devam edilir.
+- `HARDWARE = check_hardware()` çağrısı import anında bir kez çalışır; GPU/CPU/NVML tespiti bu aşamada tetiklenir.
+- Modül sonunda `Config.initialize_directories()` çağrılarak dizinler başlangıçta hazır hale getirilir.
+
+**Donanım Tespit Akışı (satır 122–193)**
+
+- `USE_GPU` kapalıysa erken dönüşle CPU moduna geçer.
+- PyTorch CUDA kullanılabilirliğine göre GPU adı/sayısı/CUDA sürümü doldurulur; `GPU_MEMORY_FRACTION` geçersizse 0.8’e normalize edilir.
+- WSL2 için özel uyarı mesajları ve `cu124` kurulum yönlendirmesi bulunur; NVML sürücü bilgisi opsiyonel alınır.
+
+**Config Sınıfı ve Ayar Kapsamı (satır 204–310)**
+
+- Sağlayıcı (`AI_PROVIDER`, `GEMINI_MODEL`, `OLLAMA_URL`), güvenlik (`ACCESS_LEVEL`), RAG, Docker sandbox, bellek şifreleme ve web ayarları tek sınıfta toplanmıştır.
+- Sınıf attribute yaklaşımı nedeniyle değerler modül yükleme anında okunur; sonradan ortam değişkeni güncellemesi doğrudan sınıf alanlarına yansımaz.
+- `set_provider_mode()` metodu runtime’da sağlayıcı geçişi için kontrollü bir alias haritası sunar.
+
+**Doğrulama ve Operasyonel Sağlık (satır 347–403)**
+
+- `validate_critical_settings()` Gemini API key, Fernet anahtar formatı ve `cryptography` varlığı gibi kritik ayarları doğrular.
+- Ollama modunda `/api/tags` erişilebilirlik kontrolü yaparak operatöre erken uyarı sağlar.
+- `get_system_info()` ve `print_config_summary()` operasyonel görünürlük için tutarlı özet üretir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
+| C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
