@@ -470,6 +470,8 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ `BM25Okapi` her sorguda yeniden oluşturulur (disk okuma); `_tool_docs_search` ChromaDB `search()` çağrısını `asyncio.to_thread` olmadan yapıyor. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ⚠️ Metin tabanlı araç listesi dispatch tablosundan bağımsız tutulduğu için drift riski vardır; ayrıca "internet gerektirmez" ifadesi Gemini bulut sağlayıcısıyla koşullu ele alınmalıdır. → Detay: §13.5.5
+- **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
+- **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -896,6 +898,77 @@ except Exception as exc:
 |----|------|-------|------|
 | D-01 | Sistem promptunda "internet bağlantısı gerektirmezsin" ifadesi var; proje Gemini (bulut) sağlayıcısını da desteklediği için koşullu/doğruluk riski taşıyor | 11 | Orta |
 | D-02 | Araç listesi metin tabanlı kopya olarak tutuluyor; dispatch tablosu ile manuel senkron gerektiriyor (drift riski) | 66–175 | Orta |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅
+
+**Sorumluluk:** Hızlı yol komut yönlendirici — doğal dildeki sık/tek-adımlı istekleri regex kalıplarıyla ilgili manager araçlarına bağlar; uygun değilse ReAct döngüsüne fallback yapar.
+
+**Akış Kontrolü ve Fallback (satır 50–149)**
+
+- `_MULTI_STEP_RE` ile "ardından / sonrasında / önce...sonra / numaralı adımlar" gibi çok adımlı niyetler erken tespit edilip `(False, "")` döndürülür; zincirli işleri AutoHandle yerine `sidar_agent.py` ReAct akışına bırakır.
+- `handle()` içinde senkron ve asenkron alt işleyiciler sıralı çağrılır; ilk eşleşmede erken dönüş (`return result`) yapıldığı için deterministik ve düşük gecikmeli bir kısa yol sağlar.
+
+**Kapsam ve Yetenek Dağılımı (satır 153–504)**
+
+- Yerel dosya/sağlık/GitHub komutları için senkron manager çağrıları; web/paket sorguları için `await` tabanlı çağrılar ayrıştırılmış.
+- PR listesi/detay, docs add/search/list gibi operasyonlar da AutoHandle içinde kapsanarak kullanıcıya doğal dilde hızlı tepki veriliyor.
+- `memory.get_last_file()` fallback'i (`_try_read_file`, `_try_validate_file`) kısa komutlarda kullanılabilirliği artırıyor.
+
+**Regex ve Yardımcılar (satır 510–544)**
+
+- `_extract_path`, `_extract_dir_path`, `_extract_url` yardımcıları ile doğal dil metinden yol/URL ayrıştırması yapılıyor.
+- Dizin ve dosya ayrımında uzantı kontrolü eklenmiş; traversal benzeri ham metinler doğrudan burada çalıştırılmıyor, yalnızca manager katmanına parametre olarak iletiliyor.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| A-01 | `_try_docs_search` içinde `self.docs.search()` senkron çağrısı event loop üzerinde direkt çalışıyor; büyük RAG indekslerinde gecikme/bloklama riski var | 455–472 | Orta |
+| A-02 | Bazı tetikleyici regex'ler geniş eşleşiyor (`github.*(bilgi|info|repo|depo)` vb.); bağlamsal cümlelerde yanlış-pozitif yönlendirme üretebilir | 250–263 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.7 `core/llm_client.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** LLM sağlayıcı adaptörü — Ollama ve Gemini çağrılarını tek bir async API (`chat`) altında birleştirir; stream/non-stream modları ve JSON yanıt zorlama davranışını yönetir.
+
+**Mimari ve Sağlayıcı Seçimi (satır 36–61)**
+
+- `chat()` giriş noktasında opsiyonel `system_prompt` mesaj listesine prepend edilir.
+- Sağlayıcı seçimi (`ollama` / `gemini`) tek yerde yapılır; bilinmeyen değerler için açık `ValueError` fırlatılır.
+- Bu ayrım, üst katmandaki ajan kodunun sağlayıcı-agnostic kalmasına yardımcı olur.
+
+**Ollama Akışı ve Structured Output (satır 67–181)**
+
+- `json_mode=True` iken `payload["format"]` ile `{thought, tool, argument}` şeması zorlanır; ReAct döngüsünde format kaymasını azaltır.
+- Stream modunda `aiter_bytes()` + UTF-8 incremental decoder kullanımı, paket sınırında bölünmüş multibyte karakterleri güvenle birleştirir.
+- `ConnectError` ve genel istisnalarda standart JSON hata zarfı üretilip stream modunda `_fallback_stream()` ile tek-elemanlı akış döndürülür.
+
+**Gemini Akışı ve Geçmiş Dönüşümü (satır 186–265)**
+
+- `google-generativeai` importu runtime’da yapılarak opsiyonel bağımlılık modeli korunur.
+- Sistem mesajı `system_instruction` alanına taşınır; kalan mesajlar Gemini `history` formatına dönüştürülür.
+- Stream modunda `send_message_async(..., stream=True)` üzerinden dönen akış `_stream_gemini_generator` ile yukarı katmana iletilir.
+
+**Yardımcı Sağlık Fonksiyonları (satır 274–292)**
+
+- `list_ollama_models()` ve `is_ollama_available()` küçük timeout’larla erişilebilirlik kontrolü sağlar.
+- Hata durumunda fail-safe dönüş (`[]` / `False`) kullanılarak UI tarafında sert çökme engellenir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| L-01 | `_stream_ollama_response` sonunda newline ile bitmeyen kalan `buffer` için parse adımı yok; son JSON satırı kaçabilir | 163–178 | Orta |
+| L-02 | `_stream_gemini_generator` içinde `chunk.text` alanına doğrudan erişim yapılıyor; bazı SDK sürümlerinde alan yoksa `AttributeError` üretip hata akışına düşebilir | 260–263 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
