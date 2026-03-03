@@ -488,6 +488,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ⚠️ Üst yorum bloğunda sürüm notu `2.6.1` olarak kalmış (metadata `2.7.0` ile tutarsız); ayrıca healthcheck'te `ps aux | grep` fallback'i yalancı-pozitif üretebilir. → Detay: §13.5.23
+- **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ⚠️ `deploy.resources` limitleri standart Compose akışında her zaman uygulanmayabilir; ayrıca `host.docker.internal` bağımlılığı platformlar arası taşınabilirlik farkı üretebilir. → Detay: §13.5.24
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1509,6 +1510,35 @@ except Exception as exc:
 |----|------|-------|------|
 | DC-01 | `deploy.resources.*` sınırları klasik `docker compose up` akışında çoğunlukla uygulanmaz (Swarm odaklıdır); kaynak limiti beklentisi yalancı güven oluşturabilir | 13–16, 47–56, 98–101, 139–148 | Orta |
 | DC-02 | Host erişimi için `host.docker.internal` bağımlılığı Linux/engine kombinasyonlarında farklı davranabilir; çevresel taşınabilirlikte platform farkı riski bulunur | 29–30, 74–75, 123–124, 175–176 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.25 `environment.yml` — Skor: 91/100 ✅
+
+**Sorumluluk:** Conda tabanlı geliştirme/çalışma ortamı tanımı — Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
+
+**Bağımlılık Stratejisi ve Tutarlılık (satır 1–95)**
+
+- Ortam çekirdeği `python=3.11` + `pip` + `git` + build araçları (`setuptools`, `wheel`) ile sabitlenmiştir.
+- PyTorch kurulumu Conda yerine pip üzerinden (`--extra-index-url .../cu124`) yönlendirilerek WSL2/libcuda çakışmasına karşı proje genelinde tutarlı bir yol izlenir.
+- Test (`pytest`, `pytest-asyncio`, `pytest-cov`) ve kalite (`black`, `flake8`, `mypy`) araçları aynı dosyada tanımlanarak yeniden üretilebilir kurulum kolaylaştırılır.
+
+**Operasyonel Notlar (satır 10–44)**
+
+- Dosya içi yorumlar GPU/CPU senaryoları için kurulum davranışını açıklar; CUDA 12.4 (cu124) yönlendirmesi `docker-compose.yml` ile hizalıdır.
+- `requests` yerine `httpx` standardizasyonu ve opsiyonel NVML notları, kod tabanındaki mevcut kullanım biçimiyle uyumludur.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| ENV-01 | Conda ortamı için lockfile/pin (exact build hash) bulunmuyor; `>=` tabanlı pip bağımlılıkları zamanla farklı sürüm kombinasyonları üretebilir | 30–95 | Orta |
+| ENV-02 | CUDA wheel index'i varsayılan olarak aktif; GPU olmayan ortamlarda kullanıcı yorum satırındaki manuel adıma bağlı kalıyor (otomatik profile ayrımı yok) | 20–28 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
