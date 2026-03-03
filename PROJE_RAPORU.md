@@ -486,6 +486,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (48+) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
+- **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1421,6 +1422,35 @@ except Exception as exc:
 |----|------|-------|------|
 | UI-01 | `marked.parse(rawText)` çıktısı doğrudan `body.innerHTML` ile DOM’a basılıyor; sanitize katmanı olmadığı için model çıktısındaki ham HTML/XSS payload yüzeyi artar | 2324 | Orta |
 | UI-02 | HTML/CSS/JS’nin tek dosyada birleşik olması (2000+ satır) bakım ve modüler test edilebilirlik maliyetini yükseltir | 1–2545+ | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.22 `github_upload.py` — Skor: 83/100 ✅
+
+**Sorumluluk:** Komut satırı GitHub yükleme otomasyon aracı — yerel projeyi git init/remote/commit/push adımlarıyla etkileşimli şekilde GitHub’a yedeklemeyi hedefler.
+
+**Akış Özeti (satır 55–170)**
+
+- Git kurulum ve kullanıcı kimliği (`git config user.name/email`) kontrolü yapar.
+- Repo yoksa `git init` ve `main` branch hazırlığı uygular.
+- `origin` yoksa kullanıcıdan URL alıp remote ekler, ardından `git add`, `commit`, `push` zincirini çalıştırır.
+- Push çakışmalarında `git pull ... --allow-unrelated-histories --no-edit -X ours` ile otomatik birleştirme deneyip yeniden push dener.
+
+**Riskli Noktalar ve Dayanıklılık (satır 27–50, 117, 131, 144)**
+
+- `run_command()` tüm komutları `shell=True` ile çalıştırır; kullanıcı girdisi içeren komutlarda güvenlik/kaçış riski yükselir.
+- Commit mesajı ve repo URL’si doğrudan komut string’ine gömülür; özel karakterler shell davranışını etkileyebilir.
+- Çakışma çözümünde `-X ours` stratejisi uzak değişiklikleri baskılayarak beklenmeyen içerik kaybına yol açabilir.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| GHU-01 | `subprocess.run(..., shell=True)` + string komut yaklaşımı kullanıcı girdisiyle birleştiğinde komut enjeksiyon/kaçış riski taşır | 30–33, 117, 131 | Orta |
+| GHU-02 | Otomatik merge’de `-X ours` kullanımı uzak taraf değişikliklerini bastırabilir; senkronizasyon başarısı sağlansa da veri kaybı riski vardır | 144–151 | Orta |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
