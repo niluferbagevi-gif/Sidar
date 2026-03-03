@@ -491,6 +491,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ⚠️ `deploy.resources` limitleri standart Compose akışında her zaman uygulanmayabilir; ayrıca `host.docker.internal` bağımlılığı platformlar arası taşınabilirlik farkı üretebilir. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
+- **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1570,6 +1571,37 @@ except Exception as exc:
 |----|------|-------|------|
 | ENVX-01 | Şablon değerleri belirli donanım/ortam (WSL2 + RTX 3070 Ti) varsayımları içeriyor; farklı sistemlerde doğrudan kopyalama performans/timeout beklentisini bozabilir | 6–7, 16–18, 80–82 | Düşük |
 | ENVX-02 | `ACCESS_LEVEL=full` varsayılanı güvenli başlangıç için agresiftir; yanlışlıkla geniş yazma/çalıştırma yetkisiyle başlatma riski oluşturabilir | 28–32 | Orta |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.27 `install_sidar.sh` — Skor: 85/100 ✅
+
+**Sorumluluk:** Ubuntu/WSL odaklı “sıfırdan kurulum” betiği — sistem paketlerini kurar, Miniconda ve ortamı hazırlar, Ollama/model çekimlerini yapar, proje klasörünü günceller ve web UI vendor dosyalarını indirir.
+
+**Akış ve Otomasyon Davranışı (satır 1–203)**
+
+- `set -euo pipefail` ile hata durumunda erken durma ve değişken güvenliği uygulanır.
+- Kurulum sırası deterministik fonksiyon zinciriyle (`install_system_packages` → `print_footer`) ilerler.
+- `trap cleanup EXIT` kullanımı ile arka planda başlatılan `ollama serve` süreci oturum sonunda sonlandırılır.
+
+**Operasyonel Güçlü Yanlar (satır 17–196)**
+
+- Repo yoksa clone, varsa pull yaklaşımı ile tekrar çalıştırılabilirlik kısmen desteklenir.
+- Conda ortamı var/yok kontrolüyle `env create` ve `env update --prune` ayrımı yapılır.
+- `.env` dosyası mevcutsa üzerine yazılmaz; yoksa `.env.example` kopyalanarak güvenli başlangıç sağlanır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| INS-01 | Script header sürümü `2.6.1` olarak kalmış; rapor/kod tabanı `v2.7.0` ile sürüm uyumsuzluğu ve bakım drift riski oluşturur | 3 | Düşük |
+| INS-02 | `curl ... | sh` ile uzaktan script çalıştırma (Ollama install) tedarik zinciri ve bütünlük doğrulama riskini artırır | 74 | Orta |
+| INS-03 | `sudo apt upgrade -y` ve geniş paket kurulumları kullanıcı onayı olmadan sistem genelinde değişiklik yapar; CI/üretim makinelerinde öngörülemeyen yan etki doğurabilir | 32–34 | Orta |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
