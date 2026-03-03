@@ -1988,3 +1988,18 @@ def get_pull_requests_raw(self, state: str, limit: int):
 | O-06 | `add_document_from_file()` içinde gereksiz çift chunking yapılıyordu | ✅ Kapalı | §3 (O-06 düzeltmesi) |
 
 **Özet:** O-01–O-06 kapsamındaki teknik borç maddelerinin tamamı giderilmiş olup ana rapordaki ilgili başlıklar özet forma indirilmiştir.
+## §14’ten Taşınan Kapatılmış Geliştirme Önerileri (2026-03-02)
+
+> `PROJE_RAPORU.md` içindeki **14. Geliştirme Önerileri** bölümü sadeleştirilmiş; kapanmış/uygulanmış maddeler ana rapordan çıkarılarak bu arşiv kaydına taşınmıştır.
+
+| Madde | Kısa Açıklama | Durum |
+|---|---|---|
+| 14 | Session lifecycle testleri (`create/load/delete/...`) | ✅ Kapalı (testler mevcut) |
+| 15 | `GPU_MEMORY_FRACTION` validasyonu ve warning fallback | ✅ Kapalı |
+| 16 | `package_info.py` version sort (`packaging.version.Version`) | ✅ Kapalı |
+| 17 | Araç sonuç format şeması (`[ARAÇ:{name}:SONUÇ/HATA]`) | ✅ Kapalı |
+| 18 | Bozuk JSON karantina (`.json.broken`) | ✅ Kapalı |
+| 21 | CodeManager Docker image hata mesajı yönlendirmesi | ✅ Kapalı |
+| 22 | GitHub token eksikliği için kullanıcı yönlendirmesi | ✅ Kapalı |
+
+**Özet:** Bu maddeler artık aktif geliştirme işi değildir; ana raporda sadece güncel açık iyileştirmeler bırakılmıştır.
