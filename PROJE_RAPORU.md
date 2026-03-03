@@ -494,6 +494,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ⚠️ İçerikte sürüm ve bazı komut örnekleri güncel servis adlarıyla tam hizalı değilse yanlış yönlendirme riski oluşur. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
+- **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1663,6 +1664,35 @@ except Exception as exc:
 |----|------|-------|------|
 | SDR-01 | Bazı araç adları (`grep_files`, `glob_search`, `todo_write`) çalışma ortamına göre birebir mevcut olmayabilir; talimat-gerçek araç seti drift riski oluşur | 11–24 | Orta |
 | SDR-02 | `Branch adı claude/ ile başlamalı` kuralı mevcut ekip Git akışıyla çakışabilir; otomasyon/CI kural setiyle uyumsuzluk riski taşır | 39 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.30 `CLAUDE.md` — Skor: 89/100 ✅
+
+**Sorumluluk:** Claude Code uyumluluk rehberi — Sidar araçlarının Claude karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
+
+**İçerik ve Kapsam (satır 1–37)**
+
+- `todo_*`, `glob_search`, `grep_files`, `run_shell`, `read/write/patch_file` gibi araçların Claude eşdeğerleri tablomsu biçimde listelenir.
+- `SIDAR.md` ve `CLAUDE.md` birlikte okuma/hiyerarşi davranışı dokümante edilir.
+- `ACCESS_LEVEL` temelli yetkilendirme farkı belirtilerek yerel ajan ile Claude Code izin modeli ayrıştırılır.
+
+**Operasyonel Güçlü Yanlar**
+
+- Ekiplerin farklı ajan ekosistemleri arasında zihinsel model geçişini kolaylaştırır.
+- Talimat dosyası öncelik sırası açık yazıldığı için davranış çatışmalarını azaltır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| CLD-01 | Araç eşlemesi metin tabanlı ve manuel; yeni araç/alias eklendiğinde belgenin güncellenmemesi uyumluluk drift’i üretebilir | 8–18 | Orta |
+| CLD-02 | `github_smart_pr` gibi eşdeğer ifadeler her dağıtımda mevcut olmayabilir; opsiyonel yeteneklerin “her zaman var” algısı yanlış beklenti doğurabilir | 18, 35–37 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
