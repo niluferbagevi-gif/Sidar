@@ -484,6 +484,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/__init__.py`**: Manager katmanının dışa aktarma (public API) yüzeyini tek noktada toplar; `TodoManager` dahil tüm manager sınıfları `__all__` ile açıkça listelenir. ⚠️ Manuel export listesi yeni manager eklendiğinde güncellenmezse import tutarsızlığı (drift) oluşabilir. → Detay: §13.5.17
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
+- **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (48+) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1363,6 +1364,34 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | AGPK-01 | `__all__` manuel listelendiği için yeni agent sembolleri eklendiğinde unutulursa public API ile modül içeriği arasında drift riski oluşur | 5 | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+#### 13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅
+
+**Sorumluluk:** Entegre test omurgası — ajan, RAG, bellek, manager katmanları, güvenlik kontrolleri ve web server yardımcılarının davranışını tek dosyada regresyon seti olarak doğrular.
+
+**Kapsam ve Organizasyon (satır 52–940+)**
+
+- Testler konu başlıklarına göre numaralı bloklara ayrılmış (manager temel testleri, Pydantic şema, async web arama fallback, RAG chunking, session lifecycle, dispatcher, rate limiter, güvenlik, config vb.).
+- `test_config` fixture’ı geçici dizinlerle izole çalışma alanı kurar; yan etkileri azaltır.
+- `@pytest.mark.asyncio` ile async akışlar (`agent.respond`, rate limiter, async manager çağrıları) doğrudan doğrulanır.
+
+**Güçlü Yönler (örnek kümeler)**
+
+- Güvenlik: path traversal/symlink ve branch regex doğrulamaları için doğrudan testler mevcut.
+- RAG/Memory: chunking, eşzamanlı ekleme, oturum karantina/sıralama/başlık güncelleme senaryoları kapsanmış.
+- Web/Rate limiting: `_get_client_ip` ve `_is_rate_limited` için eşzamanlılık/izolasyon testleri bulunuyor.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| TST-01 | Bazı testler çevresel koşullara duyarlı (`web_search` durum çıktısında DDG kurulu değilse alternatif beklenti gibi); deterministiklik için daha sıkı mock izolasyonu faydalı olabilir | 106–118 | Düşük |
+| TST-02 | Tek dosyada çok geniş kapsam (unit+integration karışık) bakım maliyetini artırıyor; alt modüllere bölmek hata ayıklamayı hızlandırabilir | 1–940+ | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
