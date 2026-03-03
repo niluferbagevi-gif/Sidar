@@ -496,6 +496,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
+- **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
 
 ### 13.2 Yönetici (manager) Katmanı — Güncel Durum
 
@@ -1723,6 +1724,33 @@ except Exception as exc:
 |----|------|-------|------|
 | DGH-01 | Dosya üst bilgisindeki “son güncelleme” tarihi `2026-03-02` olarak kalmış; ana raporda Session 8 (`2026-03-03`) kapanışları bulunduğundan zaman çizelgesi drift’i riski var | 4 | Orta |
 | DGH-02 | Uzun tek dosya yapısı (çok sayıda §3.x kaydı) büyüdükçe belirli bir bulgunun hızlı bulunmasını zorlaştırabilir; indeksleme/alt başlık kırılımı ihtiyacı doğabilir | 1–220+ | Düşük |
+
+**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+---
+
+
+
+
+#### 13.5.32 `tests/__init__.py` — Skor: 96/100 ✅
+
+**Sorumluluk:** `tests` dizinini Python paketi olarak işaretleyen yardımcı dosya; test import yollarının deterministik kalmasına ve bazı koşullarda test keşif (discovery) uyumluluğuna katkı sağlar.
+
+**İçerik Özeti (satır 1)**
+
+- Dosya yalnızca kısa bir docstring içerir: `"Sidar Project - Test Paketi"`.
+- Davranışsal kod içermediği için runtime etkisi yoktur; bakım maliyeti çok düşüktür.
+
+**Operasyonel Güçlü Yanlar**
+
+- Minimal içerik sayesinde gereksiz bağımlılık/yan etki oluşturmaz.
+- Test klasörü paket sınırını açıkça tanımlayarak araçlar arası uyumluluğu artırır.
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| TPK-01 | Dosya bilgilendirici ama aşırı minimal; test mimarisi veya fixture düzeni hakkında yönlendirici bağlam sunmaz | 1 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
