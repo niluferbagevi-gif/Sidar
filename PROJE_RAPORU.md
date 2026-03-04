@@ -34,6 +34,7 @@
   - [10.6 Rate Limiting (Yeni)](#106-rate-limiting-yeni)
   - [10.7 Recursive Character Chunking (Yeni)](#107-recursive-character-chunking-yeni)
   - [10.8 LLM Stream — Buffer Güvenliği](#108-llm-stream-buffer-guvenligi)
+  - [10.9 PyWebView Tabanlı Bağımsız Başlatıcı (Launcher)](#109-pywebview-tabanli-bagimsiz-baslatici-launcher)
 - [11. Güvenlik Değerlendirmesi](#11-guvenlik-degerlendirmesi)
 - [12. Test Kapsamı](#12-test-kapsami)
   - [Mevcut Test Yapısı (test_sidar.py)](#mevcut-test-yapisi-testsidarpy)
@@ -44,7 +45,7 @@
   - [13.3 Test ve Dokümantasyon Uyum Özeti](#133-test-ve-dokumantasyon-uyum-ozeti)
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
-    - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
+    - [13.5.1 `main.py` — Skor: 94/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 88/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
@@ -118,10 +119,13 @@
 
 SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli, yapay zeka destekli bir **Yazılım Mühendisi Asistanı**'dır.
 
+2026-03-04 itibarıyla proje yalnızca CLI/Web API ekseninde değil; **PyWebView tabanlı masaüstü launcher** + fallback web/CLI akışlarıyla hibrit bir çalıştırma mimarisine evrilmiştir.
+
 | Katman | Teknoloji |
 |--------|-----------|
 | **Dil / Framework** | Python 3.11, asyncio, Pydantic v2 |
 | **Web Arayüzü** | FastAPI 0.104+, Uvicorn, SSE |
+| **Masaüstü Kabuğu** | PyWebView (Launcher), JS↔Python API köprüsü |
 | **LLM Sağlayıcı** | Ollama (yerel) / Google Gemini (bulut) |
 | **Vektör DB** | ChromaDB 0.4+, BM25, sentence-transformers |
 | **Sistem İzleme** | psutil, pynvml, PyTorch CUDA |
@@ -530,6 +534,20 @@ async for raw_bytes in resp.aiter_bytes():
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
+<a id="109-pywebview-tabanli-bagimsiz-baslatici-launcher"></a>
+### 10.9 PyWebView Tabanlı Bağımsız Başlatıcı (Launcher)
+
+- `main.py` artık klasik CLI döngüsü değil; PyWebView penceresini açan ve launcher URL/fallback stratejisini yöneten orchestrator rolünde çalışır.
+- `launcher_api.py` frontend tarafına `get_defaults`, `preview_command`, `start_system`, `health` metotlarını sunan JS↔Python köprü katmanını sağlar.
+- `launcher_ui/` fallback wizard ile pywebview olmayan ortamlarda açıklayıcı geri bildirim ve kontrollü düşüş sağlar.
+- `launcher_frontend/` (React/Vite) prototip katmanı launcher UX geliştirmesini ana web UI’dan ayrıştırır.
+- `legacy-cli` / `open-browser` / `none` fallback seçenekleri operasyonel esneklik sağlar.
+
+---
+
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
 <a id="11-guvenlik-degerlendirmesi"></a>
 ## 11. Güvenlik Değerlendirmesi
 
@@ -644,7 +662,7 @@ async for raw_bytes in resp.aiter_bytes():
 <a id="131-cekirdek-dosyalar-guncel-durum"></a>
 ### 13.1 Çekirdek Dosyalar — Güncel Durum
 
-- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
+- **`main.py`**: PyWebView launcher giriş noktasıdır; `--launcher-url`, `--no-window`, `--fallback` argümanlarıyla masaüstü pencere açma, sağlık/önizleme modu ve fallback davranışını yönetir. `importlib.util.find_spec("webview")` ile bağımlılık yoksa kontrollü düşüşe geçer ve `LauncherAPI` ile komut üretim katmanına bağlanır. ⚠️ Alt süreç başlatılan akışta yaşam döngüsü temizliği (LNC-01) iyileştirme alanı olarak izlenmelidir. → Detay: §13.5.1
 - **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ⚠️ Madde 6.9 kısmen açık: `_tool_subtask` ve döngü düzeltme mesajları format sabitlerini kullanmıyor. → Detay: §13.5.2
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ `BM25Okapi` her sorguda yeniden oluşturulur (disk okuma); `_tool_docs_search` ChromaDB `search()` çağrısını `asyncio.to_thread` olmadan yapıyor. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
@@ -712,8 +730,13 @@ async for raw_bytes in resp.aiter_bytes():
 <a id="134-acik-durum"></a>
 ### 13.4 Açık Durum
 
-> 2026-03-02 doğrulama setine göre bu bölüm kapsamında **aktif kritik/orta/düşük açık bulgu raporlanmamaktadır**.
+> 2026-03-04 launcher kapsam genişletmesi sonrası bu bölümde **2 aktif takip maddesi** bırakılmıştır.
 > Tarihsel doğrulama ve kapanış kayıtları: 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+
+| ID | Konu | Önem | Durum |
+|---|---|---|---|
+| LNC-01 | `launcher_api.py:start_system` ile başlatılan alt süreçlerin kapanışta temizlenmesi (orphan risk) | Orta | Açık |
+| W-03 | Banner sürüm genişliğine bağlı görsel taşma riski | Düşük | Açık |
 
 ---
 
@@ -732,66 +755,30 @@ async for raw_bytes in resp.aiter_bytes():
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351-mainpy-skor-100100"></a>
-#### 13.5.1 `main.py` — Skor: 100/100 ✅
+#### 13.5.1 `main.py` — Skor: 94/100 ✅
 
-**Sorumluluk:** CLI giriş noktası — interaktif döngü, tek komut modu, argüman ayrıştırma.
+**Sorumluluk:** PyWebView tabanlı launcher orchestrator — pencere başlatma, URL çözümleme, fallback akışları, no-window tanılama modu.
 
-**Async Mimarisi**
+**Temel Akış**
 
-| Satır | Pattern | Açıklama |
-|-------|---------|----------|
-| 90–185 | `async def _interactive_loop_async()` + `asyncio.run(...)` sarmalı | Tüm döngü tek event loop'ta; `asyncio.Lock()` aynı loop'a bağlı kalır |
-| 130 | `asyncio.to_thread(input, "Sen  > ")` | Blokeyici `input()` thread'e itilir; loop serbest bırakılır |
-| 131 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Async context'te `CTRL+C` bazen `CancelledError` olarak iletilir; üçlü handler tüm yolları kapatır |
-| 236 | `asyncio.run(_run_command())` | `--command` modu erken döner; `interactive_loop` ile çakışan `asyncio.run()` riski yoktur |
+| Alan | Davranış |
+|------|----------|
+| URL çözümleme | Öncelik sırası: `--launcher-url` > `SIDAR_LAUNCHER_URL` > `launcher_ui/index.html` |
+| Pencere modu | `webview.create_window(...)` ile masaüstü kabuğu açılır; `LauncherAPI` JS köprüsü enjekte edilir |
+| No-window modu | `--no-window` ile UI açmadan launcher URL + default config yazdırılır |
+| Fallback | `legacy-cli` / `open-browser` / `none` seçenekleriyle pywebview yokluğunda kontrollü davranış |
 
-**Banner Dinamik Üretim (`_make_banner`, satır 42–58)**
+**Mimari Notlar**
 
-- `ver_field = f"v{version}"` → `SidarAgent.VERSION` çalışma anında alınır; sabit string bağımlılığı yoktur.
-- `ver_padded = ver_field.ljust(7)` — "v2.7.0" = 6 karakter, padding 1 boşluk. ⚠️ **Açık Not:** sürüm "v10.0.0" (7 kar.) veya daha uzun olduğunda çerçeve taşabilir (düşük öncelikli).
-
-**Sağlayıcıya Göre Model Gösterimi (satır 103–107)**
-
-```python
-if agent.cfg.AI_PROVIDER == "gemini":
-    model_display = getattr(agent.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
-else:
-    model_display = agent.cfg.CODING_MODEL
-```
-
-Gemini ve Ollama için ayrı model adı gösterilir; yanlış model etiketi riski ortadan kalkmıştır.
-
-**Koşullu GPU / CUDA / Çoklu GPU Gösterimi (satır 111–120)**
-
-Üç katmanlı koşullu yapı:
-1. `USE_GPU` False ise → "✗ CPU Modu" satırı
-2. `CUDA_VERSION != "N/A"` ise → `(CUDA x.x)` eklenir
-3. `GPU_COUNT > 1` ise → `, N GPU` eklenir
-
-**Config CLI Override Mekanizması (satır 211–220)**
-
-```python
-cfg = Config()
-if args.level:    cfg.ACCESS_LEVEL = args.level    # instance attribute override
-if args.provider: cfg.AI_PROVIDER  = args.provider
-if args.model:    cfg.CODING_MODEL = args.model
-```
-
-`os.environ` üzerinden override **çalışmaz** — `Config` sınıf attribute'ları module import anında bir kez değerlendirilir. Override instance üzerinden yapılır; bu tasarım kod yorumunda açıklanmıştır.
-
-**Çıkış Anahtar Kelimeleri (satır 139)**
-
-`.exit`, `.q` yanı sıra `exit`, `quit`, `çıkış` da (öneksiz) kabul edilir. Türkçe giriş farkındalığı sağlar.
-
-**Nokta Önekli Dahili Komutlar (satır 142–171)**
-
-11 komut (`help`, `status`, `clear`, `audit`, `health`, `gpu`, `github`, `level`, `web`, `docs`, `exit`) → tümü eşzamanlı (`sync`) metod çağrısı; bu metotlar ağır I/O içermediği sürece event loop'u bloklama riski yoktur.
+- `main.py` artık interaktif CLI döngüsünü içermez; bu sorumluluk `cli.py` dosyasına ayrılmıştır.
+- `importlib.util.find_spec("webview")` kontrolü ile bağımlılık yoksa fallback yoluna erken dönülür.
+- `_handle_fallback(...)` merkezi mekanizmasıyla kullanıcı deneyimi tek yerden yönetilir.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| — | `ver_padded.ljust(7)`: sürüm ≥ 8 karakter olursa banner taşabilir | 46 | Düşük |
+| LNC-01 | Launcher üzerinden başlatılan alt süreçlerin (özellikle `start_system`) ana uygulama kapanışında garanti cleanup mekanizması net değil; orphan süreç riski bulunur | 104–116, 130–149 | Orta |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
@@ -2201,7 +2188,7 @@ except Exception as exc:
 - Web/CLI modları için komut üretimi tek noktadan yönetilir.
 
 **Açık Bulgular**
-- LA-01: `start_system` arka plan sürecini başlatır ancak süreç yaşam döngüsü/cleanup yönetimi sınırlı; uzun oturumlarda orphan süreç riski takip edilmeli.
+- LNC-01: `start_system` arka plan sürecini başlatır ancak süreç yaşam döngüsü/cleanup yönetimi sınırlı; ana uygulama kapanışında orphan süreç riski takip edilmeli.
 
 ---
 
@@ -2387,43 +2374,46 @@ except Exception as exc:
 <a id="oncelik-2-orta-etki-guvenlik-operasyon-bakim"></a>
 ### Öncelik 2 — Orta Etki (Güvenlik / Operasyon / Bakım)
 
-6. **TodoManager kalıcılığı ve tek `in_progress` kuralı:**
+6. **Launcher alt süreç cleanup mekanizması (LNC-01):**
+   `LauncherAPI` içinde başlatılan süreçler için uygulama kapanışında `terminate()/wait()/kill` fallback zinciri uygulanmalı; orphan süreç riski azaltılmalı.
+
+7. **TodoManager kalıcılığı ve tek `in_progress` kuralı:**
    Görevler yalnızca process-memory yerine JSON/SQLite ile kalıcı tutulmalı; aynı anda tek aktif `in_progress` doğrulaması zorunlu kılınmalı.
 
-7. **ConversationMemory I/O optimizasyonu + `.json.broken` yaşam döngüsü:**
+8. **ConversationMemory I/O optimizasyonu + `.json.broken` yaşam döngüsü:**
    Her mesajda tam dosya rewrite maliyeti azaltılmalı (append-only/segmentli kayıt seçenekleri değerlendirilmeli) ve karantina dosyaları için temizleme politikası eklenmeli.
 
-8. **`full` erişim için daha ince güvenlik bariyerleri:**
+9. **`full` erişim için daha ince güvenlik bariyerleri:**
    Tehlikeli shell komutları için allowlist/denylist + kritik yol yazma işlemlerinde kullanıcı onayı (özellikle web UI) uygulanmalı.
 
-9. **Kurulum ve healthcheck güvenliği:**
+10. **Kurulum ve healthcheck güvenliği:**
    `install_sidar.sh` içindeki `curl|sh` ve otomatik `apt upgrade -y` adımları güvenlik/şeffaflık açısından yeniden tasarlanmalı; `Dockerfile` healthcheck daha deterministik endpoint odaklı hale getirilmeli.
 
-10. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
+11. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
     `environment.yml` için sürüm sabitleme/lock dosyası yaklaşımı netleştirilmeli; CI ve yerel kurulumlar arasında sürüm drift’i azaltılmalı.
 
-11. **Donanım tespitini lazy/cached hale getirme:**
+12. **Donanım tespitini lazy/cached hale getirme:**
     `config.py` import-time `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve yan etkiler kontrollü bir init adımına alınmalı.
 
-12. **Ajan sözleşmesi/talimat drift’ini azaltma (`definitions.py`, `SIDAR.md`, `CLAUDE.md`):**
+13. **Ajan sözleşmesi/talimat drift’ini azaltma (`definitions.py`, `SIDAR.md`, `CLAUDE.md`):**
     Manuel araç listeleri ve tarihsel ifade parçaları güncel capability setiyle otomatik/yarı-otomatik hizalanmalı; prompt-talimat drift’i minimize edilmeli.
 
-13. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme:**
+14. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme:**
     `can_read()` yalnızca regex blacklist’e değil proje kökü/izinli path modeline bağlanmalı; durum raporunda “Terminal” ifadesi shell yetkisiyle karışmayacak şekilde netleştirilmeli.
 
-14. **WebSearch hata modelini yapılandırılmış hale getirme:**
+15. **WebSearch hata modelini yapılandırılmış hale getirme:**
     Motor başarısızlıklarını `"[HATA]"` string kontrolü yerine tipli hata kodları/istisna sınıflarıyla yönetme; HTML temizleme için regex yerine parser tabanlı yaklaşım değerlendirme.
 
-15. **SystemHealth ölçümlerinde non-blocking strateji:**
+16. **SystemHealth ölçümlerinde non-blocking strateji:**
     `get_cpu_usage(interval=0.5)` gibi bloklayıcı örneklemeler sık çağrı altında gecikme oluşturduğunda cache/arka plan örnekleme modeline geçilmeli.
 
-16. **PackageInfo sürüm doğruluğunu API tabanlı güçlendirme:**
+17. **PackageInfo sürüm doğruluğunu API tabanlı güçlendirme:**
     Regex ile metin parse edilen sürüm yolları (`pypi_compare` vb.) doğrudan yapılandırılmış API verisiyle beslenmeli; pre-release sınıflandırması gözden geçirilmeli.
 
-17. **Public API (`__all__`) drift kontrolleri:**
+18. **Public API (`__all__`) drift kontrolleri:**
     `agent/core/managers __init__.py` için ya otomatik export üretimi ya da CI’de tutarlılık testi eklenmeli.
 
-18. **AutoHandle regex yanlış-pozitif azaltma:**
+19. **AutoHandle regex yanlış-pozitif azaltma:**
     Geniş kalıplar daraltılmalı; gerektiğinde lightweight intent sınıflandırıcı/puanlama ile regex fallback yaklaşımı uygulanmalı.
 
 
@@ -2432,16 +2422,16 @@ except Exception as exc:
 <a id="oncelik-3-dusuk-etki-dx-dokumantasyon-ux"></a>
 ### Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)
 
-19. **Dokümantasyon sürüm/komut drift temizliği:**
+20. **Dokümantasyon sürüm/komut drift temizliği:**
     `README.md`, `Dockerfile` yorum bloğu, `install_sidar.sh` ve benzeri dosyalardaki `2.6.1` izleri ile güncel servis adları (`sidar-web` vb.) tek turda hizalanmalı.
 
-20. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
+21. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
     `SIDAR.md` / `CLAUDE.md` / `README.md` üzerindeki bilgi yükünü azaltmak için “kullanıcı rehberi” ve “geliştirici rehberi” ayrı, güncel ve rol bazlı dokümanlara taşınmalı.
 
-21. **Web UI oturum UX iyileştirmeleri:**
+22. **Web UI oturum UX iyileştirmeleri:**
     Mevcut yeniden adlandırma önerisine ek olarak, otomatik başlık kalitesi ve tamamlanan oturum arşivleme akışı geliştirilmeli.
 
-22. **Test dosyalarını modülerleştirme:**
+23. **Test dosyalarını modülerleştirme:
     `tests/test_sidar.py` içindeki senaryoları birim/entegrasyon/güvenlik odaklı dosyalara bölerek bakım ve hata izolasyonu iyileştirilmeli.
 
 
