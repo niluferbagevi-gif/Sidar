@@ -150,14 +150,16 @@ def run_wizard() -> int:
     return subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
 
 
-def _can_use_webview_ui() -> bool:
+def _webview_support_status() -> tuple[bool, str]:
     if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        return False
+        return False, "DISPLAY/WAYLAND_DISPLAY bulunamadı (headless oturum)."
+
     try:
         import webview  # noqa: F401
-    except Exception:
-        return False
-    return True
+    except Exception as exc:  # pywebview bağımlılığı yoksa
+        return False, f"pywebview import edilemedi: {exc}"
+
+    return True, "ok"
 
 
 def _resolve_launcher_target(explicit_url: str | None) -> str:
@@ -227,6 +229,22 @@ def run_webview_ui(launcher_url: str | None = None) -> int:
     return result["code"]
 
 
+def _run_auto_or_webview(ui_mode: str, launcher_url: str | None) -> int:
+    ok, reason = _webview_support_status()
+
+    if ok:
+        return run_webview_ui(launcher_url)
+
+    print(f"⚠ WebView UI açılamadı: {reason}")
+    print("ℹ Çözüm: `pip install pywebview` ve masaüstü oturumunda çalıştırın.")
+    print("ℹ Geçici fallback: konsol sihirbazı açılıyor. (webview zorlamak için: --ui webview)")
+
+    if ui_mode == "webview":
+        return run_wizard()
+
+    return run_wizard()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
@@ -243,15 +261,7 @@ def main() -> None:
     if not args.quick:
         if args.ui == "console":
             raise SystemExit(run_wizard())
-        if args.ui == "webview":
-            if not _can_use_webview_ui():
-                print("⚠ WebView UI kullanılamadı (display veya pywebview yok). Konsol sihirbazı açılıyor.")
-                raise SystemExit(run_wizard())
-            raise SystemExit(run_webview_ui(args.launcher_url))
-
-        if _can_use_webview_ui():
-            raise SystemExit(run_webview_ui(args.launcher_url))
-        raise SystemExit(run_wizard())
+        raise SystemExit(_run_auto_or_webview(args.ui, args.launcher_url))
 
     provider = args.provider or "ollama"
     level = args.level or "full"

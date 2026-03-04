@@ -38,5 +38,6 @@
 ## 6) Operasyon Notu
 
 - WebView için işletim sisteminde görüntü ortamı (`DISPLAY`/`WAYLAND_DISPLAY`) ve `pywebview` gerekir.
-- WebView uygun değilse otomatik fallback ile konsol sihirbazı açılır.
+- WebView açılamazsa nedenini kullanıcıya açıkça yazdırır ve konsol sihirbazına fallback yapılır.
+- WebView'i zorlamak için `python main.py --ui webview` kullanılabilir.
 - `Config` importu çalışma anına taşındığı için `python main.py --help` daha güvenli çalışır.
