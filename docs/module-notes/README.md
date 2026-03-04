@@ -17,6 +17,7 @@ Amaç:
 - [`core/README.md`](./core/README.md): Core katmanı (`__init__`, llm_client, memory, rag) teknik notları.
 - [`managers/README.md`](./managers/README.md): Managers katmanı (code/security/github/web/package/system/todo) teknik notları.
 - [`ops/README.md`](./ops/README.md): Ops/dağıtım/dokümantasyon katmanı teknik notları.
+- [`tests-ui/README.md`](./tests-ui/README.md): Test altyapısı ve web UI katmanı teknik notları.
 
 ## Not
 
