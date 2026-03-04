@@ -2372,35 +2372,41 @@ except Exception as exc:
 <a id="151-guncel-durum-ozeti-v270"></a>
 ### 15.1 Güncel Durum Özeti (v2.7.0)
 
-- Proje raporu ve kod tabanı sürüm hizası **v2.7.0** seviyesindedir.
-- Öncelik bazlı açık sorun listelerinde (kritik/yüksek/orta/düşük) aktif açık bulgu raporlanmamaktadır.
-- Test kapsamı raporlanan güncel sayıyla (48 test fonksiyonu) uyumludur.
-- Güvenlik ve operasyon başlıklarında (3 katman rate limiting, `DOCKER_PYTHON_IMAGE`, branch regex doğrulaması) rapor-kod eşleşmesi sağlanmıştır.
-
+- **[2026-03-04 | Satır bazlı yeniden doğrulama]** Repo üzerindeki izlenen **35 dosya** tekrar gözden geçirilmiştir (metin tabanlı toplam ~17.993 satır).
+- **[Sürüm hizası]** `core/__init__.py::__version__`, `agent/sidar_agent.py::VERSION`, `config.py::VERSION` ve `Dockerfile LABEL version` alanları **2.7.0** ile tutarlıdır.
+- **[Konfigürasyon hizası]** `.env.example` içinde `DOCKER_PYTHON_IMAGE`, `DOCKER_EXEC_TIMEOUT` ve `RAG_FILE_THRESHOLD` tanımları mevcuttur; `config.py` varsayılanlarıyla eşleşmektedir.
+- **[CUDA/PyTorch hizası]** `environment.yml` ve `docker-compose.yml` tarafında `cu124` (CUDA 12.4) referansları birbiriyle uyumludur.
+- **[Test görünürlüğü]** `tests/test_sidar.py` içinde güncel olarak **64 test fonksiyonu** bulunmaktadır; rapordaki önceki 48 sayısı tarihsel kaldığı için bu bölümde güncellenmiştir.
+- **[Doğrulama notu]** Yerel çalıştırmada `pytest -q tests/test_sidar.py` bağımlılık eksiği (`ModuleNotFoundError: pydantic`) nedeniyle koleksiyon aşamasında durmuştur; bu nedenle tam test geçişi CI/bağımlılıkları tam ortamda yeniden teyit edilmelidir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="152-kategori-bazli-kisa-skor-gorunumu-guncel"></a>
 ### 15.2 Kategori Bazlı Kısa Skor Görünümü (Güncel)
 
-| Kategori | Güncel Durum |
-|---|---|
-| Mimari Tasarım | ✅ Güçlü / stabil |
-| Async/Await Kullanımı | ✅ Event-loop uyumlu |
-| Hata Yönetimi | ✅ İyileştirilmiş |
-| Güvenlik | ✅ Katmanlı korumalar aktif |
-| Test Kapsamı | ✅ 48 test fonksiyonu |
-| Belgeleme | ✅ Aktif durum odaklı sadeleştirildi |
-| Bağımlılık Yönetimi | ✅ Güncel bağımlılık setiyle uyumlu |
-| UI / UX | ✅ v2.7.0 özellikleriyle güncel |
-
+| Kategori | 2026-03-04 Durum Etiketi | Değerlendirme |
+|---|---|---|
+| Mimari Tasarım | 🟢 Stabil | Katman ayrımı (`agent/core/managers/web`) korunuyor, kritik mimari kırılma sinyali yok. |
+| Sürüm ve Yayın Meta Verisi | 🟢 Tutarlı | Kod ve Docker etiketlerinde 2.7.0 hizası sağlanmış durumda. |
+| Konfigürasyon / Ortam Değişkenleri | 🟢 Tutarlı | `.env.example` ile `config.py` kritik anahtarları uyumlu (docker timeout + RAG threshold dahil). |
+| Güvenlik / Girdi Doğrulama | 🟡 İzlemeli | Branch regex, path güvenliği ve rate-limit katmanı var; yine de `full` erişim ve UI güvenliği için §14 önerileri geçerli. |
+| Performans / Asenkron Davranış | 🟡 İzlemeli | Event-loop bloklama ve BM25 cache stratejisi için iyileştirme alanları sürüyor. |
+| Test Kapsamı | 🟡 Ortam-bağımlı | Test fonksiyon sayısı 64; ancak bu ortamda `pydantic` eksikliği nedeniyle otomatik koşu tamamlanamadı. |
+| Dokümantasyon İzlenebilirliği | 🟢 Güçlü | `PROJE_RAPORU.md` ↔ `DUZELTME_GECMISI.md` çapraz referansları ve anchor yapısı çalışır durumda. |
+| Operasyonel Hazırlık | 🟡 İzlemeli | Kurulum/healthcheck ve bağımlılık pinleme alanlarında teknik borç maddeleri planlanmış durumda. |
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="153-arsiv-ve-izlenebilirlik-notu"></a>
 ### 15.3 Arşiv ve İzlenebilirlik Notu
 
-> Önceki sürümlere ait detaylı skor karşılaştırmaları, satır bazlı tarihsel doğrulama tabloları ve kapanış kayıtları arşiv değeri korunarak ilgili doğrulama bölümleri ile `DUZELTME_GECMISI.md` içinde tutulmaktadır.
+> **Tarihsel etiketleme özeti:**
+> - **[2026-03-01]** v2.6.0/v2.6.1 sonrası ana tarama raporu yayımlandı.
+> - **[2026-03-02]** N- ve O-serisi bulgular kapatılarak arşive taşındı.
+> - **[2026-03-03]** Session 8 kapsamında P-01…P-07 aynı oturumda kapatıldı.
+> - **[2026-03-04]** Bu bölüm, repo dosyalarının yeniden satır bazlı kontrol çıktısına göre güncellenmiştir.
+>
+> Detay kapanış kayıtları, kanıt satırları ve teknik düzeltme geçmişi tekil referans noktası olarak `DUZELTME_GECMISI.md` içinde tutulmaya devam eder.
 
 ---
 
