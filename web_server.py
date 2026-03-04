@@ -95,6 +95,20 @@ _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
+def _prune_rate_buckets(now: float) -> None:
+    """Pencere dışına çıkan kayıtları ve boş bucket anahtarlarını temizle."""
+    window_start = now - _RATE_WINDOW
+    stale_keys = []
+    for key, timestamps in _rate_data.items():
+        filtered = [t for t in timestamps if t > window_start]
+        if filtered:
+            _rate_data[key] = filtered
+        else:
+            stale_keys.append(key)
+    for key in stale_keys:
+        _rate_data.pop(key, None)
+
+
 async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
     """
     Atomik kontrol+yaz: asyncio.Lock ile TOCTOU yarış koşulunu önler.
@@ -106,12 +120,14 @@ async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
         _rate_lock = asyncio.Lock()  # event loop başladıktan sonra oluştur
     async with _rate_lock:
         now = time.monotonic()
-        window_start = now - _RATE_WINDOW
-        # Pencere dışındakileri temizle
-        _rate_data[key] = [t for t in _rate_data[key] if t > window_start]
-        if len(_rate_data[key]) >= limit:
+        _prune_rate_buckets(now)
+
+        key_events = _rate_data.get(key, [])
+        if len(key_events) >= limit:
             return True
-        _rate_data[key].append(now)
+
+        key_events.append(now)
+        _rate_data[key] = key_events
         return False
 
 
@@ -685,7 +701,9 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     if not q.strip():
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
-    ok, result = agent.docs.search(q.strip(), top_k=min(top_k, 10), mode=mode)
+    ok, result = await asyncio.to_thread(
+        agent.docs.search, q.strip(), min(top_k, 10), mode
+    )
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -749,8 +767,10 @@ def main() -> None:
     _agent = SidarAgent(cfg)
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
+    version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"
+    version_display = version_label if len(version_label) <= 12 else f"{version_label[:11]}…"
     print(f"\n  ╔══════════════════════════════════════╗")
-    print(f"  ║  SİDAR Web Arayüzü — v{_agent.VERSION}          ║")
+    print(f"  ║  SİDAR Web Arayüzü — {version_display:<12}   ║")
     print(f"  ║  http://{display_host}:{args.port:<27}║")
     print(f"  ╚══════════════════════════════════════╝\n")
 

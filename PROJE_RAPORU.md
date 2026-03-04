@@ -48,7 +48,7 @@
     - [13.5.1A `cli.py` — Skor: 98/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
-    - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
+    - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 87/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 91/100 ✅](#1357-corellmclientpy-skor-91100)
@@ -664,7 +664,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`cli.py`**: Asıl terminal arayüzü bu dosyadadır; `asyncio` tabanlı interaktif loop, `--command` tek-shot modu, dahili `.help/.status/...` komutları ve banner/sürüm gösterimi burada sürdürülür. Önceki `main.py` CLI davranışı buraya taşınmıştır. → Detay: §13.5.1A
 - **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ✅ Madde 6.9 kapatıldı: `_tool_subtask` ve döngü düzeltme mesajları format sabitleriyle hizalandı. → Detay: §13.5.2
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ✅ BM25 tarafında bellek içi indeks cache + invalidation uygulanıyor; ayrıca `_tool_docs_search` çağrısı `asyncio.to_thread` ile event loop dışına alındı. → Detay: §13.5.3
-- **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
+- **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ✅ `/rag/search` endpoint'i `docs.search()` çağrısını `asyncio.to_thread` ile event-loop dışına alır; ayrıca rate-limit bucket prune ile boş key birikimi temizlenir. → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ⚠️ Metin tabanlı araç listesi dispatch tablosundan bağımsız tutulduğu için drift riski vardır; ayrıca "internet gerektirmez" ifadesi Gemini bulut sağlayıcısıyla koşullu ele alınmalıdır. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
@@ -1038,7 +1038,7 @@ Aynı dokümanın farklı chunk'ları arama sonuçlarına girdiğinde `seen_pare
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1354-webserverpy-skor-90100"></a>
-#### 13.5.4 `web_server.py` — Skor: 90/100 ✅
+#### 13.5.4 `web_server.py` — Skor: 95/100 ✅
 
 **Sorumluluk:** FastAPI + SSE tabanlı web arayüzü; rate limiting, güvenlik kontrolleri, RAG / GitHub / Git / Todo endpoint'leri, Prometheus metrikleri.
 
@@ -1119,9 +1119,7 @@ except Exception as exc:
 | `POST /rag/add-file` | `add_document_from_file()` — sync + disk I/O | `asyncio.to_thread` ✓ |
 | `POST /rag/add-url` | `add_document_from_url()` — async/httpx | `await` ✓ |
 | `DELETE /rag/docs/{id}` | `delete_document()` — sync + disk I/O | `asyncio.to_thread` ✓ |
-| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | **Yok** ⚠️ |
-
-`/rag/search` → `docs.search()` doğrudan senkron çağrı; `asyncio.to_thread` sarması eksik (→ W-01 / R-02 bulgusunun web katmanındaki tezahürü).
+| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | `asyncio.to_thread` ✓ |
 
 **Prometheus Metrikleri (satır 341–358)**
 
@@ -1135,9 +1133,14 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| W-01 | `GET /rag/search` endpoint'i `agent.docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor; ChromaDB disk I/O event loop'u bloklayabilir (R-02 ile örtüşür) | 688 | Orta |
-| W-02 | `_rate_data` dict'inde pencere dışına çıkmış key'ler hiç silinmiyor; uzun süreli çalışmada çok sayıda farklı IP'den gelen isteklerde dict sonsuza büyüyebilir | 87, 111 | Düşük |
-| W-03 | Banner satırı `v{_agent.VERSION}          ║` sabit boşluklu; VERSION ≥ 8 karakter ise görsel taşma oluşur | 753 | Düşük |
+| W-03 | Web sunucu banner'ı uzun sürüm etiketlerini kırparak sabit genişliği korur; tam sürüm metninin tamamı banner'da görünmez (bilinçli görsel tercih) | 764–767 | Bilgi |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| W-01 | ✅ Kapandı | `/rag/search` içinde `agent.docs.search(...)` çağrısı `await asyncio.to_thread(...)` ile event loop dışına alındı. |
+| W-02 | ✅ Kapandı | Rate limiter içinde `_prune_rate_buckets(now)` eklendi; pencere dışı ve boş bucket anahtarları temizleniyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
