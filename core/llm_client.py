@@ -176,6 +176,15 @@ class LLMClient:
                                     yield chunk
                             except json.JSONDecodeError:
                                 continue
+                    # Akış newline ile bitmezse buffer'da kalan son JSON satırını da işle.
+                    if buffer.strip():
+                        try:
+                            body = json.loads(buffer)
+                            chunk = body.get("message", {}).get("content", "")
+                            if chunk:
+                                yield chunk
+                        except json.JSONDecodeError:
+                            pass
         except Exception as exc:
             yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Akış kesildi: {exc}", "thought": "Hata"})
 
@@ -258,8 +267,9 @@ class LLMClient:
         """Gemini stream yanıtını asenkron dönüştürür."""
         try:
             async for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+                text = getattr(chunk, "text", "")
+                if text:
+                    yield text
         except Exception as exc:
             yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Gemini akış hatası: {exc}", "thought": "Hata"})
 
