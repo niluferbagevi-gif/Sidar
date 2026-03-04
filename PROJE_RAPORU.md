@@ -52,7 +52,7 @@
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
-    - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
+    - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
     - [13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅](#13510-managerscodemanagerpy-skor-90100)
     - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
@@ -668,7 +668,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ✅ Prompt metninde sağlayıcı koşulu netleştirildi (Gemini için internet gereksinimi); ayrıca araç listesi için source-of-truth olarak `sidar_agent.py` dispatch tablosu açıkça belirtildi. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ✅ `docs_search` artık `asyncio.to_thread` ile event-loop dışına alınır; GitHub info regex tetikleyicisi bilgi/özet niyetiyle daraltılarak yanlış-pozitifler azaltıldı. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ✅ Gemini akışında güvenli `getattr(chunk, "text", "")` erişimi kullanılıyor; ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son buffer satırı da parse edilerek olası son chunk kaybı önleniyor. → Detay: §13.5.7
-- **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
+- **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ✅ `_save(force=False)` kısa aralıkta yazımları birleştirerek I/O yükünü azaltır; ayrıca `*.json.broken` dosyaları için otomatik retention/temizlik uygulanır. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
@@ -1290,7 +1290,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1358-corememorypy-skor-92100"></a>
-#### 13.5.8 `core/memory.py` — Skor: 92/100 ✅
+#### 13.5.8 `core/memory.py` — Skor: 96/100 ✅
 
 **Sorumluluk:** Kalıcı konuşma belleği ve oturum yönetimi — aktif sohbet turunu diskte JSON olarak saklar, oturum listesi/başlık/silme/yükleme işlevlerini yönetir, LLM bağlamına son mesajları sağlar.
 
@@ -1322,8 +1322,14 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| M-01 | `_save()` her ekleme/güncellemede tüm oturum dosyasını yeniden serialize+yazıyor; uzun sohbetlerde I/O maliyeti artabilir | 194–211, 217–230 | Orta |
-| M-02 | Karantinaya alınan `*.json.broken` dosyaları için otomatik temizlik/retention politikası yok; uzun vadede disk birikimi olabilir | 117–128 | Düşük |
+| M-03 | `add()` çağrıları yazımı coalesce etse de ani süreç sonlanmalarında çok kısa pencere içindeki son mesajlar disk flush öncesi kaybolabilir (tasarım trade-off) | 194–218 | Bilgi |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| M-01 | ✅ Kapandı | `_save(force=False)` + `_save_interval_seconds` ile sık çağrılarda yazım birleştirme (coalescing) eklendi. |
+| M-02 | ✅ Kapandı | `*.json.broken` dosyaları için `_cleanup_broken_files()` retention/temizlik politikası eklendi (yaş + adet sınırı). |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
