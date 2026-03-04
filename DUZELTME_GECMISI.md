@@ -2251,3 +2251,22 @@ def get_pull_requests_raw(self, state: str, limit: int):
 - ✅ `python -m py_compile config.py tests/test_config_improvements.py`
 - ✅ `pytest -q tests/test_config_improvements.py` → `3 passed`
 - ⚠️ `pytest -q tests/test_sidar.py -k config_validate_critical_settings_returns_bool` (ortamda `pydantic` eksik)
+
+
+### ✅ 3.79 `managers/code_manager.py` — Shell Enjeksiyon Yüzeyi ve Audit Kapsamı (CM-01/CM-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `managers/code_manager.py`, `tests/test_code_manager_improvements.py`
+
+**Sorun (CM-01):** `run_shell()` içinde `shell=True` kullanımı model tarafından üretilen komutlarda enjeksiyon yüzeyini gereksiz büyütüyordu.
+
+**Sorun (CM-02):** `audit_project()` tüm alt ağacı `rglob("*.py")` ile taradığı için `node_modules/venv/.venv` gibi hedef dışı dizinleri de denetime katabiliyordu.
+
+**Yapılan düzeltmeler:**
+- `run_shell()` `shell=False` + `shlex.split()` akışına geçirildi.
+- Shell metachar içeren komutlar (`|`, `;`, `&&`, `>`, `<`, `$()`, backtick vb.) güvenlik nedeniyle erken reddedilir hale getirildi.
+- `audit_project()` için varsayılan dışlama kümesi eklendi (`node_modules`, `venv`, `.venv`, `.git`, `build`, `dist`, `__pycache__`, vb.).
+- Audit raporuna atlanan dizinlerin özeti eklendi.
+
+**Doğrulama:**
+- ✅ `python -m py_compile managers/code_manager.py tests/test_code_manager_improvements.py`
+- ✅ `pytest -q tests/test_code_manager_improvements.py` → `3 passed`
