@@ -10,6 +10,7 @@ Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)
 - GPU VRAM temizleme (torch.cuda.empty_cache + gc)
 """
 
+import atexit
 import gc
 import logging
 import platform
@@ -36,11 +37,23 @@ class SystemHealthManager:
         self._pynvml_available = self._check_import("pynvml")
 
         self._gpu_available = self._check_gpu()
+        self._closed = False
+
+        # psutil cpu_percent için ilk örnekleme tohumlanır (non-blocking okumalar için)
+        if self._psutil_available:
+            try:
+                import psutil
+                psutil.cpu_percent(interval=None)
+            except Exception:
+                pass
 
         # pynvml başlat (sıcaklık / kullanım için)
         self._nvml_initialized = False
         if self._pynvml_available and self._gpu_available:
             self._init_nvml()
+
+        # Interpreter kapanışında deterministik kaynak temizliği
+        atexit.register(self.close)
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ KONTROLLERI
@@ -91,13 +104,18 @@ class SystemHealthManager:
     #  CPU & RAM
     # ─────────────────────────────────────────────
 
-    def get_cpu_usage(self) -> Optional[float]:
-        """CPU kullanım yüzdesini döndür."""
+    def get_cpu_usage(self, sample_interval: Optional[float] = None) -> Optional[float]:
+        """
+        CPU kullanım yüzdesini döndür.
+
+        Varsayılan `sample_interval=None` ile non-blocking ölçüm alınır.
+        Gerekirse çağıran taraf bloklayıcı örnekleme için pozitif interval verebilir.
+        """
         if not self._psutil_available:
             return None
         try:
             import psutil
-            return psutil.cpu_percent(interval=0.5)
+            return psutil.cpu_percent(interval=sample_interval)
         except Exception:
             return None
 
@@ -259,7 +277,7 @@ class SystemHealthManager:
         lines.append(f"  Python    : {platform.python_version()}")
 
         # CPU
-        cpu = self.get_cpu_usage()
+        cpu = self.get_cpu_usage(sample_interval=None)
         if cpu is not None:
             lines.append(f"  CPU       : %{cpu:.1f} kullanımda")
         else:
@@ -301,13 +319,23 @@ class SystemHealthManager:
     #  TEMİZLİK
     # ─────────────────────────────────────────────
 
+    def close(self) -> None:
+        """NVML kaynağını deterministik ve idempotent şekilde kapat."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            if self._nvml_initialized:
+                try:
+                    import pynvml
+                    pynvml.nvmlShutdown()
+                except Exception:
+                    pass
+                finally:
+                    self._nvml_initialized = False
+
     def __del__(self) -> None:
-        if self._nvml_initialized:
-            try:
-                import pynvml
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
+        self.close()
 
     def __repr__(self) -> str:
         return (

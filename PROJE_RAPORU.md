@@ -56,7 +56,7 @@
     - [13.5.9 `config.py` — Skor: 93/100 ✅](#1359-configpy-skor-90100)
     - [13.5.10 `managers/code_manager.py` — Skor: 92/100 ✅](#13510-managerscodemanagerpy-skor-90100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
-    - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
+    - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-92100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
     - [13.5.15 `managers/security.py` — Skor: 91/100 ✅](#13515-managerssecuritypy-skor-91100)
@@ -672,7 +672,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ✅ Donanım tespiti lazy-cache modele alındı (`get_hardware_info`, `refresh_hardware_info`); `validate_critical_settings()` içindeki Ollama probe’u ise `OLLAMA_PROBE_ON_VALIDATE` / `OLLAMA_PROBE_TIMEOUT` ile çevreye duyarlı şekilde kontrol edilebilir hale getirildi. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ✅ `run_shell()` artık `shell=False` + `shlex.split()` ile çalışır ve shell metachar içeren komutları reddeder; `audit_project()` ise vendor/venv benzeri dizinleri varsayılan olarak dışlar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ✅ `create_or_update_file()` yalnızca 404 durumunda oluşturma yoluna düşer ve diğer hataları açıkça raporlar; `list_repos(owner=...)` owner çözümünde user→organization sırasını kontrollü uygular. → Detay: §13.5.11
-- **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
+- **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ✅ `get_cpu_usage()` varsayılanı non-blocking ölçümle çalışır ve NVML temizliği `close()` + `atexit` ile deterministik/idempotent hale getirilmiştir. → Detay: §13.5.12
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
 - **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
 - **`managers/security.py`**: OpenClaw erişim katmanı; yol doğrulama, traversal/symlink koruması ve erişim seviyesine göre okuma-yazma-çalıştırma yetkisi sağlar. ⚠️ `can_read()` yalnızca regex tabanlı tehlikeli kalıp denetimi yapıyor (kök dizin sınırı yok); ayrıca `status_report()` içindeki “Terminal” satırı shell değil REPL/execute yetkisini temsil ettiği için operatör açısından yanıltıcı olabilir. → Detay: §13.5.15
@@ -1413,7 +1413,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13512-managerssystemhealthpy-skor-92100"></a>
-#### 13.5.12 `managers/system_health.py` — Skor: 92/100 ✅
+#### 13.5.12 `managers/system_health.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Sistem gözlemleme katmanı — CPU, RAM, GPU/CUDA, sürücü ve (varsa) sıcaklık/kullanım telemetrisini raporlar; gerektiğinde GPU önbellek temizliği yapar.
 
@@ -1436,10 +1436,7 @@ except Exception as exc:
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SH-01 | `get_cpu_usage()` içinde `psutil.cpu_percent(interval=0.5)` bloklayıcı çağrı; sık health çağrılarında yanıt gecikmesini artırabilir | 94–101 | Düşük |
-| SH-02 | NVML temizliği `__del__` metoduna bağlı; interpreter kapanış sırası veya referans döngülerinde bu çağrı deterministik olmayabilir | 304–310 | Düşük |
+- Bu alt bölümde önceki SH-01/SH-02 bulguları kapatılmıştır.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
