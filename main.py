@@ -26,6 +26,28 @@ from pathlib import Path
 from launcher_api import LauncherAPI
 
 
+def _has_gui_backend() -> tuple[bool, str]:
+    """PyWebView için en az bir GUI backend mevcut mu kontrol et."""
+    # GTK backend
+    if importlib.util.find_spec("gi") is not None:
+        return True, "GTK (gi)"
+
+    # Qt backend (pywebview qtpy üzerinden bu modülleri kullanır)
+    qt_candidates = [
+        "PyQt5.QtWebEngineCore",
+        "PyQt6.QtWebEngineCore",
+        "PySide6.QtWebEngineCore",
+    ]
+    for mod in qt_candidates:
+        try:
+            if importlib.util.find_spec(mod) is not None:
+                return True, f"Qt ({mod})"
+        except ModuleNotFoundError:
+            continue
+
+    return False, "GTK (python3-gi) veya QtWebEngine (PyQtWebEngine/PySide6) bulunamadı"
+
+
 def _resolve_launcher_url(custom_url: str | None) -> str:
     """Öncelik: CLI flag > env > yerel fallback dosya."""
     if custom_url:
@@ -130,6 +152,16 @@ def main() -> None:
 
     if importlib.util.find_spec("webview") is None:
         _handle_fallback("pywebview paketi kurulu değil", args, api, launcher_url)
+        return
+
+    backend_ok, backend_msg = _has_gui_backend()
+    if not backend_ok:
+        _handle_fallback(
+            f"PyWebView GUI backend eksik: {backend_msg}",
+            args,
+            api,
+            launcher_url,
+        )
         return
 
     import webview

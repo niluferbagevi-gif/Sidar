@@ -10,6 +10,11 @@ dependencies:
   - wheel
   # launcher_frontend (Vite/React) geliştirmesi için opsiyonel
   - nodejs>=20
+  # PyWebView için Linux/WSL GUI backend (Qt yolu)
+  - pyqt>=5.15
+  - pyqtwebengine>=5.15
+  # Alternatif GTK yolu (sistemde GTK runtime gerektirir)
+  - pygobject>=3.48
   # ─── PyTorch ───────────────────────────────────────────────────────────────
   # WSL2 / Ubuntu / Conda ortamı için NOT:
   #   Conda'nın pytorch-cuda paketi, WSL2'nin Windows sürücüsünden gelen

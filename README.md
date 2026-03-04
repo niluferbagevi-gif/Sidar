@@ -256,6 +256,8 @@ SIDAR_LAUNCHER_URL=http://127.0.0.1:5173 python main.py
 Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini başlatır.
 
 Linux/WSL notu: `pywebview` için GTK (`python3-gi`) veya Qt WebEngine (örn. `PyQtWebEngine`) gerekir.
+Bu repo `environment.yml` içinde Qt backend için `pyqt` + `pyqtwebengine` kurar; GTK yolu için `pygobject` de tanımlıdır.
+GUI backend doğrulama: `python -c "import PyQt5.QtWebEngineCore as _; print('QtWebEngine OK')"`
 Conda `nodejs` paketi yalnızca `launcher_frontend` (Vite/React) geliştirmesi içindir; sadece Python/web server kullanıyorsanız kritik değildir.
 Eğer GUI backend eksikse launcher artık otomatik fallback uygular:
 
