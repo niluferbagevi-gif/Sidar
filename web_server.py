@@ -95,6 +95,15 @@ _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
+def _fit_box_line(content: str, inner_width: int = 38) -> str:
+    """Kutu içeriğini sabit genişliğe güvenli şekilde sığdırır."""
+    if len(content) <= inner_width:
+        return content.ljust(inner_width)
+    if inner_width <= 1:
+        return content[:inner_width]
+    return content[: inner_width - 1] + "…"
+
+
 async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
     """
     Atomik kontrol+yaz: asyncio.Lock ile TOCTOU yarış koşulunu önler.
@@ -107,11 +116,19 @@ async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
     async with _rate_lock:
         now = time.monotonic()
         window_start = now - _RATE_WINDOW
-        # Pencere dışındakileri temizle
-        _rate_data[key] = [t for t in _rate_data[key] if t > window_start]
-        if len(_rate_data[key]) >= limit:
+
+        # Tüm key'lerde pencere dışındaki kayıtları temizle; boş kalanları evict et.
+        for rate_key, timestamps in list(_rate_data.items()):
+            fresh = [t for t in timestamps if t > window_start]
+            if fresh:
+                _rate_data[rate_key] = fresh
+            else:
+                _rate_data.pop(rate_key, None)
+
+        bucket = _rate_data.setdefault(key, [])
+        if len(bucket) >= limit:
             return True
-        _rate_data[key].append(now)
+        bucket.append(now)
         return False
 
 
@@ -685,7 +702,7 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     if not q.strip():
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
-    ok, result = agent.docs.search(q.strip(), top_k=min(top_k, 10), mode=mode)
+    ok, result = await asyncio.to_thread(agent.docs.search, q.strip(), min(top_k, 10), mode)
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -749,9 +766,11 @@ def main() -> None:
     _agent = SidarAgent(cfg)
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
+    title_line = _fit_box_line(f"  SİDAR Web Arayüzü — v{_agent.VERSION}")
+    url_line = _fit_box_line(f"  http://{display_host}:{args.port}")
     print(f"\n  ╔══════════════════════════════════════╗")
-    print(f"  ║  SİDAR Web Arayüzü — v{_agent.VERSION}          ║")
-    print(f"  ║  http://{display_host}:{args.port:<27}║")
+    print(f"  ║{title_line}║")
+    print(f"  ║{url_line}║")
     print(f"  ╚══════════════════════════════════════╝\n")
 
     uvicorn.run(

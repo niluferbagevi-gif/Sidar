@@ -10,8 +10,9 @@
 <a id="sec-3-1-3-78"></a>
 <a id="sec-3-1-3-79"></a>
 <a id="sec-3-1-3-80"></a>
+<a id="sec-3-1-3-81"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 11 ek sorun giderilmiştir (toplam 58 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 12 ek sorun giderilmiştir (toplam 59 düzeltme).
 
 ---
 
@@ -1502,6 +1503,37 @@ _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
 ```
 
 ---
+
+### ✅ 3.81 `web_server.py` — RAG Search Async + Rate Key Eviction + Banner Fit (W-01/W-02/W-03 → ÇÖZÜLDÜ)
+
+**Dosya:** `web_server.py`  
+**Önem:** ~~🟡 ORTA + 🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorunlar:**
+- `GET /rag/search` endpoint'i `agent.docs.search()` çağrısını doğrudan senkron çalıştırıyordu (event loop bloklama riski).
+- `_rate_data` içinde pencere dışı key'ler boşalsa da key eviction yapılmadığı için uzun çalışmada birikim riski vardı.
+- Web banner sürüm satırı sabit boşlukla yazıldığı için uzun sürümlerde görsel taşma oluşabiliyordu.
+
+**Uygulanan düzeltme:**
+- `/rag/search` içinde `docs.search(...)` çağrısı `await asyncio.to_thread(...)` ile non-blocking hale getirildi.
+- `_is_rate_limited` içinde tüm key'ler için pencere temizliği + boş bucket eviction eklendi.
+- `_fit_box_line(...)` yardımcı fonksiyonu ile web banner başlık/URL satırları güvenli pad/kırp (ellipsis) akışına alındı.
+
+```python
+# /rag/search
+ok, result = await asyncio.to_thread(agent.docs.search, q.strip(), min(top_k, 10), mode)
+
+# rate eviction
+for rate_key, timestamps in list(_rate_data.items()):
+    fresh = [t for t in timestamps if t > window_start]
+    if fresh:
+        _rate_data[rate_key] = fresh
+    else:
+        _rate_data.pop(rate_key, None)
+```
+
+---
+
 
 <a id="sec-8-1-8-4"></a>
 ## Kapatılan Uyumsuzluk Taramaları (§8.1–§8.4)
