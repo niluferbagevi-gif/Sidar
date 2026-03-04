@@ -14,6 +14,7 @@ Amaç:
 - [`main.md`](./main.md): CLI giriş noktası, event-loop akışı ve runtime override davranışı.
 - [`web_server.md`](./web_server.md): FastAPI/SSE servis katmanı, endpoint grupları, rate-limit ve iyileştirme notları.
 - [`agent/README.md`](./agent/README.md): Agent katmanı (sidar_agent, auto_handle, definitions, init) teknik notları.
+- [`core/README.md`](./core/README.md): Core katmanı (`__init__`, llm_client, memory, rag) teknik notları.
 
 ## Not
 
