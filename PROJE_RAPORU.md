@@ -1,10 +1,10 @@
 <a id="top"></a>
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — P-01–P-07 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
-**Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-04** — launcher katmanı + dokümantasyon kapsamı yeniden doğrulandı ✅)
+**Analiz Eden:** Otomatik denetim (repo içi satır bazlı tarama + manuel teyit)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
-**Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
+**Toplam Dosya:** 81 izlenen dosya, ~14.100 satır (rapor+dokümantasyon dahil)
 **Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
 
 ---
@@ -89,8 +89,9 @@
 - [15. Genel Değerlendirme](#15-genel-degerlendirme)
   - [15.1 Tarihsel Gelişim ve Sürüm Özeti](#151-guncel-durum-ozeti-v270)
   - [15.2 Mimari ve Kod Kalitesi Değerlendirmesi (Mevcut Durum)](#152-kategori-bazli-kisa-skor-gorunumu-guncel)
-  - [15.3 Kategori Bazlı Güncel Durum Tablosu (v2.7.0)](#153-arsiv-ve-izlenebilirlik-notu)
+  - [15.3 Kategori Bazlı Güncel Durum Tablosu (v2.7.0)](#153-kategori-bazli-guncel-durum-tablosu-v270)
   - [15.4 Sonuç ve Proje Geleceği](#154-sonuc-ve-proje-gelecegi)
+- [18. Session 9 — 2026-03-04 Kapsam Güncellemesi (Launcher + Frontend)](#18-session-9--2026-03-04-kapsam-guncellemesi-launcher--frontend)
 - [16. Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satir-satir-inceleme-yeni-bulgular)
 - [17. Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8-satir-satir-inceleme-2026-03-03)
   - [Tespit Yöntemi](#tespit-yontemi)
@@ -168,46 +169,24 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 
 ```
 sidar_project/
-├── agent/
-│   ├── __init__.py                 # Agent public API dışa aktarımları
-│   ├── definitions.py              # Sistem promptu + araç sözleşmeleri
-│   ├── sidar_agent.py              # Ana ReAct ajan döngüsü ve tool dispatch
-│   └── auto_handle.py              # Örüntü tabanlı hızlı komut yönlendirme
-├── core/
-│   ├── __init__.py                 # Core public API + sürüm bilgisi
-│   ├── llm_client.py               # Ollama/Gemini istemci katmanı (async stream)
-│   ├── memory.py                   # Oturum belleği, kalıcılık, şifreleme
-│   └── rag.py                      # Hibrit RAG (ChromaDB + BM25 + keyword)
-├── managers/
-│   ├── __init__.py                 # Manager export yüzeyi
-│   ├── code_manager.py             # Dosya işlemleri + Docker sandbox çalıştırma
-│   ├── github_manager.py           # GitHub repo/branch/PR/dosya işlemleri
-│   ├── package_info.py             # PyPI/npm/GitHub sürüm sorguları
-│   ├── security.py                 # OpenClaw erişim kontrolü
-│   ├── system_health.py            # CPU/RAM/GPU telemetri ve optimizasyon
-│   ├── todo_manager.py             # TodoWrite/TodoRead uyumlu görev yönetimi
-│   └── web_search.py               # Çoklu motor web arama ve URL çekme
-├── tests/
-│   ├── __init__.py                 # Test paket işaretleyicisi
-│   └── test_sidar.py               # Entegre async regresyon testleri
-├── web_ui/
-│   └── index.html                  # Tek dosya Web UI (SSE, oturum, modal, tema)
-├── .env.example                    # Örnek ortam değişkenleri
-├── .gitignore                      # Repo hijyeni için ignore kuralları
-├── .note                           # WSL/Conda odaklı çalışma notları (taslak)
-├── CLAUDE.md                       # Claude Code uyumluluk notları
-├── SIDAR.md                        # Proje-geneli ajan çalışma kuralları
-├── DUZELTME_GECMISI.md             # Kapatılan bulgular için tarihsel arşiv
-├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
+├── agent/                          # ReAct ajan katmanı
+├── core/                           # LLM istemci, memory, RAG çekirdeği
+├── managers/                       # Araç yöneticileri (code/git/security/web/todo)
+├── tests/                          # pytest tabanlı regresyon testleri
+├── web_ui/                         # Ana tek-dosya web istemcisi
+├── launcher_ui/                    # PyWebView fallback launcher arayüzü (HTML/CSS/JS)
+├── launcher_frontend/              # Vite + React launcher prototipi
+├── docs/module-notes/              # Modül bazlı kısa teknik notlar
+├── main.py                         # PyWebView launcher giriş noktası
+├── launcher_api.py                 # JS↔Python köprü API
+├── cli.py                          # Terminal arayüzü giriş noktası
+├── web_server.py                   # FastAPI + SSE sunucusu
+├── config.py                       # Merkezi konfigürasyon
 ├── README.md                       # Kurulum/kullanım dokümantasyonu
-├── config.py                       # Merkezi konfigürasyon ve donanım tespiti
-├── main.py                         # CLI giriş noktası
-├── web_server.py                   # FastAPI web/sse sunucusu
-├── github_upload.py                # Etkileşimli GitHub upload yardımcı aracı
-├── Dockerfile                      # Uygulama container build tanımı
-├── docker-compose.yml              # CPU/GPU × CLI/Web servis orkestrasyonu
-├── environment.yml                 # Conda bağımlılık manifesti
-└── install_sidar.sh                # Ubuntu/WSL otomatik kurulum betiği
+├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
+├── DUZELTME_GECMISI.md             # Tarihsel düzeltme arşivi
+├── Dockerfile / docker-compose.yml # Container orkestrasyonu
+└── environment.yml                 # Conda bağımlılık manifesti
 ```
 
 ---
@@ -2529,3 +2508,25 @@ Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası ver
 ---
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="18-session-9--2026-03-04-kapsam-guncellemesi-launcher--frontend"></a>
+## 18. Session 9 — 2026-03-04 Kapsam Güncellemesi (Launcher + Frontend)
+
+Bu oturumda repo içindeki tüm güncel dosya listesi yeniden çıkarıldı (81 dosya) ve rapor kapsamı launcher katmanını da içerecek şekilde genişletildi.
+
+### 18.1 Yeni Kapsama Alınan Bileşenler
+- `main.py`: PyWebView tabanlı launcher orchestrator (CLI fallback + tarayıcı fallback).
+- `launcher_api.py`: `get_defaults`, `preview_command`, `start_system`, `health` köprü metodları.
+- `launcher_ui/`: fallback wizard akışı (`index.html`, `styles.css`, `wizard.js`).
+- `launcher_frontend/`: React/Vite launcher prototipi (`src/main.jsx` + `three.js` görsel demo).
+- `docs/module-notes/`: modül bazlı teknik notlar kümesi.
+
+### 18.2 Açık Bulgular (Kapatılmadı, İzlemde)
+1. **README sürüm drift’i:** `README.md` halen v2.6.1 ibaresi taşıyor; kod tarafı v2.7.0.
+2. **Script header drift’i:** `install_sidar.sh` ve `Dockerfile` üst yorumlarında v2.6.1 kalıntısı var.
+3. **Launcher frontend entegrasyonu:** React launcher, pywebview API köprüsü için altyapı notu içeriyor ancak fonksiyonel çağrılar fallback wizard kadar tamamlanmış değil.
+
+### 18.3 Sonuç
+- Ana çalışma hattı (`agent/core/managers/web_server`) v2.7.0 ile uyumlu.
+- Yeni launcher mimarisi repo’ya entegre edilmiş ve çalıştırma ergonomisini artırıyor.
+- Dokümantasyon ve sürüm etiketlerinin tekilleştirilmesi bir sonraki bakım sprint’ine alınmalıdır.
