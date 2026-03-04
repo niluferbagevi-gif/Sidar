@@ -10,6 +10,7 @@ Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)
 - GPU VRAM temizleme (torch.cuda.empty_cache + gc)
 """
 
+import atexit
 import gc
 import logging
 import platform
@@ -26,9 +27,16 @@ class SystemHealthManager:
     nvidia-ml-py (pynvml) kuruluysa GPU sıcaklık/kullanım verisi de sağlar.
     """
 
-    def __init__(self, use_gpu: bool = True) -> None:
+    def __init__(
+        self,
+        use_gpu: bool = True,
+        cpu_sample_interval: float = 0.0,
+    ) -> None:
         self.use_gpu = use_gpu
         self._lock = threading.RLock()
+        # Varsayılan 0.0 ile bloklamayan örnekleme (psutil.cpu_percent(interval=0.0))
+        # Aralığı 0.0–2.0 sn arasında sınırla.
+        self.cpu_sample_interval = max(0.0, min(float(cpu_sample_interval), 2.0))
 
         # Bağımlılık kontrolleri
         self._torch_available  = self._check_import("torch")
@@ -41,6 +49,9 @@ class SystemHealthManager:
         self._nvml_initialized = False
         if self._pynvml_available and self._gpu_available:
             self._init_nvml()
+
+        # __del__ her zaman deterministik çalışmayabileceği için, çıkışta da temizlik dene.
+        atexit.register(self.close)
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ KONTROLLERI
@@ -91,13 +102,18 @@ class SystemHealthManager:
     #  CPU & RAM
     # ─────────────────────────────────────────────
 
-    def get_cpu_usage(self) -> Optional[float]:
-        """CPU kullanım yüzdesini döndür."""
+    def get_cpu_usage(self, interval: Optional[float] = None) -> Optional[float]:
+        """
+        CPU kullanım yüzdesini döndür.
+
+        interval None ise `self.cpu_sample_interval` kullanılır (varsayılan 0.0, bloklamaz).
+        """
         if not self._psutil_available:
             return None
         try:
             import psutil
-            return psutil.cpu_percent(interval=0.5)
+            sample_interval = self.cpu_sample_interval if interval is None else max(0.0, interval)
+            return psutil.cpu_percent(interval=sample_interval)
         except Exception:
             return None
 
@@ -301,13 +317,22 @@ class SystemHealthManager:
     #  TEMİZLİK
     # ─────────────────────────────────────────────
 
-    def __del__(self) -> None:
-        if self._nvml_initialized:
+    def close(self) -> None:
+        """NVML oturumunu deterministik olarak kapatır (idempotent)."""
+        with self._lock:
+            if not self._nvml_initialized:
+                return
             try:
                 import pynvml
                 pynvml.nvmlShutdown()
             except Exception:
                 pass
+            finally:
+                self._nvml_initialized = False
+
+    def __del__(self) -> None:
+        # Geriye dönük uyumluluk: GC sırasında da kapanışı dene.
+        self.close()
 
     def __repr__(self) -> str:
         return (

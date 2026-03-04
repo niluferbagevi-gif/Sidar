@@ -56,7 +56,7 @@
     - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
-    - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
+    - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
     - [13.5.15 `managers/security.py` — Skor: 91/100 ✅](#13515-managerssecuritypy-skor-91100)
@@ -1446,34 +1446,29 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13512-managerssystemhealthpy-skor-92100"></a>
-#### 13.5.12 `managers/system_health.py` — Skor: 92/100 ✅
+<a id="13512-managerssystemhealthpy-skor-94100"></a>
+#### 13.5.12 `managers/system_health.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Sistem gözlemleme katmanı — CPU, RAM, GPU/CUDA, sürücü ve (varsa) sıcaklık/kullanım telemetrisini raporlar; gerektiğinde GPU önbellek temizliği yapar.
 
-**Bağımlılık ve Ortam Uyumu (satır 29–89)**
+**Bu Turdaki İyileştirmeler**
 
-- `torch`, `psutil`, `pynvml` bağımlılıkları opsiyonel kontrol edilir; eksik paketlerde manager degrade modda çalışmaya devam eder.
-- GPU kullanılabilirliği `use_gpu` + `torch.cuda.is_available()` ile belirlenir.
-- NVML başlatma hatalarında özellikle WSL2 için bilgilendirici fallback logları üretilir; metrikler mümkün olduğunca korunur.
-
-**Telemetri Toplama Akışı (satır 94–213, 253–299)**
-
-- CPU ve RAM ölçümleri psutil ile alınır; eksik bağımlılıkta güvenli `None/{}` dönüşü sağlanır.
-- GPU raporu, cihaz başına VRAM/compute capability bilgilerini döndürür; NVML varsa sıcaklık ve utilization verileri eklenir.
-- Sürücü sürümü önce NVML’den, başarısız olursa `nvidia-smi` subprocess fallback’i ile alınır.
-
-**Bellek Optimizasyonu ve Hata Dayanımı (satır 214–247)**
-
-- `optimize_gpu_memory()` içinde `torch.cuda.empty_cache()` başarısız olsa bile `finally` bloğunda `gc.collect()` garanti edilir.
-- Sonuç çıktısı boşaltılan MB miktarı + olası GPU cache hatasını kullanıcıya okunur formatta iletir.
+- `get_cpu_usage()` artık `interval` override parametresi destekliyor; varsayılan örnekleme `cpu_sample_interval=0.0` ile bloklamayan moda alındı.
+- `__init__` içine `atexit.register(self.close)` eklendi; süreç kapanışında NVML temizliği için ek güvence sağlandı.
+- Yeni `close()` metodu idempotent NVML kapanışı yapıyor ve `_nvml_initialized` bayrağını deterministik olarak sıfırlıyor.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| SH-01 | `get_cpu_usage()` içinde `psutil.cpu_percent(interval=0.5)` bloklayıcı çağrı; sık health çağrılarında yanıt gecikmesini artırabilir | 94–101 | Düşük |
-| SH-02 | NVML temizliği `__del__` metoduna bağlı; interpreter kapanış sırası veya referans döngülerinde bu çağrı deterministik olmayabilir | 304–310 | Düşük |
+| SH-03 | `atexit` temizliği en iyi çabadır; ani process kill/sinyal senaryolarında NVML kapanışı yine garanti edilemeyebilir | 52–54, 316–328 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| SH-01 | ✅ Kapandı | CPU ölçümünde bloklayıcı sabit `0.5` kaldırıldı; varsayılan örnekleme bloklamayan aralığa taşındı. |
+| SH-02 | ✅ Kapandı | `__del__` bağımlılığı azaltıldı; explicit `close()` + `atexit` ile daha deterministik temizlik akışı eklendi. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
