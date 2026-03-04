@@ -97,6 +97,7 @@
 - [18. Session 9 — 2026-03-04 Ek Rapor Drift Kontrolü](#session-9-2026-03-04-ek-rapor-drift-kontrolu)
 - [19. Session 10 — 2026-03-04 `main.py` / `cli.py` / `agent` Teyidi](#session-10-2026-03-04-main-cli-agent-teyidi)
 - [20. Session 11 — 2026-03-04 Ek Dokümantasyon Teyidi](#session-11-2026-03-04-ek-dokumantasyon-teyidi)
+- [21. Session 12 — 2026-03-04 Son Teyit](#session-12-2026-03-04-son-teyit)
   - [Özet](#ozet)
 
 ---
@@ -678,7 +679,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`managers/__init__.py`**: Manager katmanının dışa aktarma (public API) yüzeyini tek noktada toplar; `TodoManager` dahil tüm manager sınıfları `__all__` ile açıkça listelenir. ⚠️ Manuel export listesi yeni manager eklendiğinde güncellenmezse import tutarsızlığı (drift) oluşabilir. → Detay: §13.5.17
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
-- **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (48+) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
+- **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (64) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck'te `ps aux | grep` fallback'inin yalancı-pozitif riski ise takip notu olarak korunuyor. → Detay: §13.5.23
@@ -686,7 +687,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
-- **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ⚠️ İçerikte sürüm ve bazı komut örnekleri güncel servis adlarıyla tam hizalı değilse yanlış yönlendirme riski oluşur. → Detay: §13.5.28
+- **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Sürüm/komut örnekleri (`main.py --quick`, `python cli.py`, `sidar-web`, CUDA 12.4) güncel runtime davranışıyla hizalanmıştır. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
@@ -712,7 +713,7 @@ async for raw_bytes in resp.aiter_bytes():
 <a id="133-test-ve-dokumantasyon-uyum-ozeti"></a>
 ### 13.3 Test ve Dokümantasyon Uyum Özeti
 
-- **`tests/test_sidar.py`**: Güncel test sayısı 48; async senaryolar `pytest-asyncio` ile kapsanır.
+- **`tests/test_sidar.py`**: Güncel test sayısı 64; async senaryolar `pytest-asyncio` ile kapsanır.
 - **`PROJE_RAPORU.md`**: Öncelik başlıklarında (5/6/7/8) aktif durum odaklı özet yaklaşımı uygulanmıştır.
 - Tarihsel kapanış detayları ana raporda tekrarlanmaz; ilgili kayıtlar düzeltme geçmişinde tutulur.
 
@@ -2560,13 +2561,28 @@ Bu turda README ve kurulum scripti komut örnekleri, mevcut `main.py`/`cli.py` d
 
 **Session 11 çıktısı:** Dokümantasyon örnek komutları runtime davranışıyla hizalandı; raporun açık sorun durumu etkilenmedi (aktif açık: 0).
 
+
+<a id="session-12-2026-03-04-son-teyit"></a>
+## 21. Session 12 — 2026-03-04 Son Teyit
+
+Bu turda repo tekrar çapraz doğrulandı ve kullanıcı geri bildirimindeki maddeler doğrulandı.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S12-01 | `tests/test_sidar.py` | ✅ Doğrulandı | AST tabanlı sayımda `test_` fonksiyon sayısı **64** olarak teyit edildi. |
+| S12-02 | `PROJE_RAPORU.md` | ✅ Doğrulandı | Test sayısı geçen satırlardaki eski `48` referansları `64` ile hizalandı. |
+| S12-03 | `README.md`/`Dockerfile`/`install_sidar.sh` | ✅ Doğrulandı | Sürüm metinleri `v2.7.0`/`2.7.0` ile tutarlı. |
+| S12-04 | `agent/sidar_agent.py` | ✅ Doğrulandı | `_FMT_TOOL_ERR`, `_FMT_TOOL_STEP`, `_FMT_SYS_WARN` kullanım standardı korunuyor. |
+
+**Session 12 çıktısı:** Kod ve rapor arasında kritik uyumsuzluk bulunmadı; aktif açık sorun sayısı 0 olarak teyit edildi.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 22 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03) |
+| Tespit edilen bulgu | 26 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
 | Kümülatif toplam kapalı | 52 |
