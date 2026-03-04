@@ -87,9 +87,10 @@
   - [Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)](#oncelik-3-dusuk-etki-dx-dokumantasyon-ux)
   - [Açık Durum](#acik-durum)
 - [15. Genel Değerlendirme](#15-genel-degerlendirme)
-  - [15.1 Güncel Durum Özeti (v2.7.0)](#151-guncel-durum-ozeti-v270)
-  - [15.2 Kategori Bazlı Kısa Skor Görünümü (Güncel)](#152-kategori-bazli-kisa-skor-gorunumu-guncel)
-  - [15.3 Arşiv ve İzlenebilirlik Notu](#153-arsiv-ve-izlenebilirlik-notu)
+  - [15.1 Tarihsel Gelişim ve Sürüm Özeti](#151-guncel-durum-ozeti-v270)
+  - [15.2 Mimari ve Kod Kalitesi Değerlendirmesi (Mevcut Durum)](#152-kategori-bazli-kisa-skor-gorunumu-guncel)
+  - [15.3 Kategori Bazlı Güncel Durum Tablosu (v2.7.0)](#153-arsiv-ve-izlenebilirlik-notu)
+  - [15.4 Sonuç ve Proje Geleceği](#154-sonuc-ve-proje-gelecegi)
 - [16. Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satir-satir-inceleme-yeni-bulgular)
 - [17. Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8-satir-satir-inceleme-2026-03-03)
   - [Tespit Yöntemi](#tespit-yontemi)
@@ -2370,43 +2371,52 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="151-guncel-durum-ozeti-v270"></a>
-### 15.1 Güncel Durum Özeti (v2.7.0)
+### 15.1 Tarihsel Gelişim ve Sürüm Özeti
 
-- **[2026-03-04 | Satır bazlı yeniden doğrulama]** Repo üzerindeki izlenen **35 dosya** tekrar gözden geçirilmiştir (metin tabanlı toplam ~17.993 satır).
-- **[Sürüm hizası]** `core/__init__.py::__version__`, `agent/sidar_agent.py::VERSION`, `config.py::VERSION` ve `Dockerfile LABEL version` alanları **2.7.0** ile tutarlıdır.
-- **[Konfigürasyon hizası]** `.env.example` içinde `DOCKER_PYTHON_IMAGE`, `DOCKER_EXEC_TIMEOUT` ve `RAG_FILE_THRESHOLD` tanımları mevcuttur; `config.py` varsayılanlarıyla eşleşmektedir.
-- **[CUDA/PyTorch hizası]** `environment.yml` ve `docker-compose.yml` tarafında `cu124` (CUDA 12.4) referansları birbiriyle uyumludur.
-- **[Test görünürlüğü]** `tests/test_sidar.py` içinde güncel olarak **64 test fonksiyonu** bulunmaktadır; rapordaki önceki 48 sayısı tarihsel kaldığı için bu bölümde güncellenmiştir.
-- **[Doğrulama notu]** Yerel çalıştırmada `pytest -q tests/test_sidar.py` bağımlılık eksiği (`ModuleNotFoundError: pydantic`) nedeniyle koleksiyon aşamasında durmuştur; bu nedenle tam test geçişi CI/bağımlılıkları tam ortamda yeniden teyit edilmelidir.
+- **[2026-02-26 | v2.5.0 analizi]** İlk kapsamlı denetim fazında temel ReAct akışı, araç çağrıları ve doğrulama eksikleri (regex tabanlı yanlış eşleşme riskleri dahil) görünür hale gelmiştir.
+- **[2026-03-01 | v2.6.x olgunlaşma]** Web katmanı, çoklu oturum yönetimi, Docker tabanlı REPL izolasyonu ve GPU/CUDA odaklı altyapı projeye entegre edilmiştir.
+- **[2026-03-02 | N/O serisi kapanışları]** N-01…N-06 ve O-01…O-06 bulguları kapanarak ayrıntıları arşive taşınmıştır (`DUZELTME_GECMISI.md`).
+- **[2026-03-03 | Session 8]** P-01…P-07 maddeleri aynı oturumda kapatılmış ve rapor/konfigürasyon hizası güçlendirilmiştir.
+- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 35 izlenen dosya ve ~17.9k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="152-kategori-bazli-kisa-skor-gorunumu-guncel"></a>
-### 15.2 Kategori Bazlı Kısa Skor Görünümü (Güncel)
+### 15.2 Mimari ve Kod Kalitesi Değerlendirmesi (Mevcut Durum)
 
-| Kategori | 2026-03-04 Durum Etiketi | Değerlendirme |
-|---|---|---|
-| Mimari Tasarım | 🟢 Stabil | Katman ayrımı (`agent/core/managers/web`) korunuyor, kritik mimari kırılma sinyali yok. |
-| Sürüm ve Yayın Meta Verisi | 🟢 Tutarlı | Kod ve Docker etiketlerinde 2.7.0 hizası sağlanmış durumda. |
-| Konfigürasyon / Ortam Değişkenleri | 🟢 Tutarlı | `.env.example` ile `config.py` kritik anahtarları uyumlu (docker timeout + RAG threshold dahil). |
-| Güvenlik / Girdi Doğrulama | 🟡 İzlemeli | Branch regex, path güvenliği ve rate-limit katmanı var; yine de `full` erişim ve UI güvenliği için §14 önerileri geçerli. |
-| Performans / Asenkron Davranış | 🟡 İzlemeli | Event-loop bloklama ve BM25 cache stratejisi için iyileştirme alanları sürüyor. |
-| Test Kapsamı | 🟡 Ortam-bağımlı | Test fonksiyon sayısı 64; ancak bu ortamda `pydantic` eksikliği nedeniyle otomatik koşu tamamlanamadı. |
-| Dokümantasyon İzlenebilirliği | 🟢 Güçlü | `PROJE_RAPORU.md` ↔ `DUZELTME_GECMISI.md` çapraz referansları ve anchor yapısı çalışır durumda. |
-| Operasyonel Hazırlık | 🟡 İzlemeli | Kurulum/healthcheck ve bağımlılık pinleme alanlarında teknik borç maddeleri planlanmış durumda. |
+**Güçlü Yönler (Kod ile Teyitli)**
+- **Asenkron dayanıklılık:** Çok sayıda I/O ve araç çağrısı `asyncio.to_thread(...)` ile event-loop dışına alınmıştır (özellikle ajan tarafında dosya/shell/git işlemleri).
+- **Yapısal çıktı güvenliği:** `ToolCall.model_validate_json` + `json.JSONDecoder().raw_decode` birleşimiyle hatalı/pars edilemeyen LLM çıktıları daha kontrollü yönetilmektedir.
+- **Çok katmanlı güvenlik:** Path traversal engelleri, IP tabanlı rate-limit (TOCTOU kilidi ile) ve Docker izolasyonu bir arada uygulanmaktadır.
+- **Sürüm/ortam tutarlılığı:** `core/__init__.py`, `config.py`, `agent/sidar_agent.py` ve `Dockerfile` sürüm etiketleri 2.7.0 ile hizalıdır; `DOCKER_EXEC_TIMEOUT` ve `RAG_FILE_THRESHOLD` gibi anahtarlar `.env.example`/`config.py` arasında eşleşmektedir.
+
+**Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
+- **Event-loop bloklama riski:** `/rag/search` ve ajan içindeki `docs_search` yolu, `docs.search(...)` çağrısını doğrudan senkron yapıyor; yüksek eşzamanlılıkta gecikme üretebilir.
+- **Rate-limit bucket temizliği:** `_rate_data` içinde pencere dışı timestamp’ler temizlense de boş kalan IP anahtarları sözlükten düşürülmüyor; uzun uptime senaryosunda bellek büyümesi riski bulunuyor.
+- **Frontend XSS yüzeyi:** LLM çıktısı `marked.parse(...)` sonucu doğrudan `innerHTML`’e basılıyor; ayrıca Todo panelinde `t.content` HTML-escape edilmeden render ediliyor.
+- **Todo kalıcılığı:** `TodoManager` görevleri yalnızca process belleğinde tutuyor; servis yeniden başladığında görev listesi sıfırlanıyor.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="153-arsiv-ve-izlenebilirlik-notu"></a>
-### 15.3 Arşiv ve İzlenebilirlik Notu
+### 15.3 Kategori Bazlı Güncel Durum Tablosu (v2.7.0)
 
-> **Tarihsel etiketleme özeti:**
-> - **[2026-03-01]** v2.6.0/v2.6.1 sonrası ana tarama raporu yayımlandı.
-> - **[2026-03-02]** N- ve O-serisi bulgular kapatılarak arşive taşındı.
-> - **[2026-03-03]** Session 8 kapsamında P-01…P-07 aynı oturumda kapatıldı.
-> - **[2026-03-04]** Bu bölüm, repo dosyalarının yeniden satır bazlı kontrol çıktısına göre güncellenmiştir.
->
-> Detay kapanış kayıtları, kanıt satırları ve teknik düzeltme geçmişi tekil referans noktası olarak `DUZELTME_GECMISI.md` içinde tutulmaya devam eder.
+| Kategori | Durum (2026-03-04) | Değerlendirme |
+|---|---|---|
+| Mimari Tasarım | 🟢 Çok İyi | ReAct döngüsü, araç delegasyonu ve modüler katman ayrımı net. |
+| Async/Await Uyumu | 🟡 İyi (Eksikler Var) | Ana akış asenkron; ancak RAG arama yollarında senkron çağrı izleri sürüyor. |
+| Güvenlik | 🟡 Orta-İyi | Backend kontrolleri güçlü; frontend sanitize katmanı hâlâ iyileştirme alanı. |
+| Hata Yönetimi | 🟢 Çok İyi | Akış ve JSON ayrıştırma hataları kontrollü ele alınıyor. |
+| Test Kapsamı | 🟢 Güçlü | `tests/test_sidar.py` içinde güncelde 64 test fonksiyonu mevcut; ortam bağımlılığı nedeniyle tam koşu bu ortamda tamamlanamadı. |
+| Veri ve Hafıza | 🟡 İyi | JSON tabanlı bellek çalışıyor; Todo kalıcılığı ve RAG/BM25 performans optimizasyonu öneriliyor. |
+| Dokümantasyon İzlenebilirliği | 🟢 Güçlü | Rapor ↔ düzeltme geçmişi anchor zinciri ve tarihsel etiketleme korunuyor. |
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="154-sonuc-ve-proje-gelecegi"></a>
+### 15.4 Sonuç ve Proje Geleceği
+
+SİDAR v2.7.0, “Yapay Zeka Destekli Yazılım Mühendisi” hedefini taşıyabilecek olgun bir temel mimariye sahiptir. Kritik sürüm/konfigürasyon uyumsuzlukları kapatılmış, güvenlik ve operasyon tarafında önemli kontroller devrededir. Bununla birlikte üretim sertliği için bir sonraki odak; RAG arama yolunun tam non-blocking hale getirilmesi, frontend sanitize katmanının güçlendirilmesi, rate-limit belleğinin evict edilmesi ve TodoManager için kalıcı depolama desteğinin eklenmesi olmalıdır.
 
 ---
 
