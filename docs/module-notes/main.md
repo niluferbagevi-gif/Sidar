@@ -40,6 +40,6 @@
 - WebView için işletim sisteminde görüntü ortamı (`DISPLAY`/`WAYLAND_DISPLAY`) ve `pywebview` gerekir.
 - WebView açılamazsa nedenini kullanıcıya açıkça yazdırır ve konsol sihirbazına fallback yapılır.
 - `pywebview` kurulu olsa bile Linux'ta GTK/QT Python bağlayıcıları eksikse (`gi`, `qtpy`) başlatma hatası alınabilir; başlatıcı bunu yakalar ve fallback yapar.
-- Öneri: `pip install qtpy pyqt5` (veya sisteminize göre `pygobject`)
+- Öneri: `pip install qtpy pyqt5 pyqtwebengine` (veya sisteminize göre `pygobject`)
 - WebView'i zorlamak için `python main.py --ui webview` kullanılabilir.
 - `Config` importu çalışma anına taşındığı için `python main.py --help` daha güvenli çalışır.

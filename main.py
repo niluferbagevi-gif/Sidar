@@ -237,7 +237,7 @@ def _run_auto_or_webview(ui_mode: str, launcher_url: str | None) -> int:
             return run_webview_ui(launcher_url)
         except Exception as exc:
             print(f"⚠ WebView UI başlatılamadı: {exc}")
-            print("ℹ Linux ortamı için ek bağımlılıklar gerekebilir: `pip install qtpy pyqt5` veya `pip install pygobject`.")
+            print("ℹ Linux ortamı için ek bağımlılıklar gerekebilir: `pip install qtpy pyqt5 pyqtwebengine` veya `pip install pygobject`.")
             print("ℹ Geçici fallback: konsol sihirbazı açılıyor.")
             return run_wizard()
 
