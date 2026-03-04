@@ -15,6 +15,7 @@ Amaç:
 - [`web_server.md`](./web_server.md): FastAPI/SSE servis katmanı, endpoint grupları, rate-limit ve iyileştirme notları.
 - [`agent/README.md`](./agent/README.md): Agent katmanı (sidar_agent, auto_handle, definitions, init) teknik notları.
 - [`core/README.md`](./core/README.md): Core katmanı (`__init__`, llm_client, memory, rag) teknik notları.
+- [`managers/README.md`](./managers/README.md): Managers katmanı (code/security/github/web/package/system/todo) teknik notları.
 
 ## Not
 
