@@ -42,4 +42,7 @@ htmlcov/
 .pytest_cache/
 
 # mypy
-.mypy_cache/  
+.mypy_cache/
+
+# Documentation
+docs/
