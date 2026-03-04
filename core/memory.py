@@ -6,6 +6,7 @@ Sidar Project - Konuşma Belleği (Kalıcı)
 import json
 import time
 import uuid
+import atexit
 import threading
 import logging
 from pathlib import Path
@@ -20,8 +21,15 @@ class ConversationMemory:
     MEMORY_ENCRYPTION_KEY ayarlandığında oturum dosyaları Fernet (AES-128-CBC) ile şifrelenir.
     """
 
-    def __init__(self, file_path: Path, max_turns: int = 20,
-                 encryption_key: str = "") -> None:
+    def __init__(
+        self,
+        file_path: Path,
+        max_turns: int = 20,
+        encryption_key: str = "",
+        autosave_interval_sec: float = 0.35,
+        broken_retention_days: int = 14,
+        broken_max_files: int = 50,
+    ) -> None:
         # Eski memory.json yolunu alıp yerine 'sessions' klasörü oluşturuyoruz
         self.sessions_dir = file_path.parent / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +44,14 @@ class ConversationMemory:
         self.active_title: str = "Yeni Sohbet"
         self._turns: List[Dict] = []
         self._last_file: Optional[str] = None
+        self._autosave_interval_sec = max(0.0, autosave_interval_sec)
+        self._broken_retention_days = max(1, broken_retention_days)
+        self._broken_max_files = max(1, broken_max_files)
+        self._pending_save = False
+        self._last_save_monotonic = 0.0
+
+        # Kapanışta bekleyen yazımı kaçırmamak için güvenli flush.
+        atexit.register(self.flush)
 
         # Başlangıçta oturumları yükle veya yeni oluştur
         self._init_sessions()
@@ -76,14 +92,45 @@ class ConversationMemory:
 
     def _write_session_file(self, file_path: Path, data: dict) -> None:
         """Oturum dosyasını yazar; şifreleme etkinse Fernet ile şifreler."""
-        json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        json_bytes = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if self._fernet:
             file_path.write_bytes(self._fernet.encrypt(json_bytes))
         else:
             file_path.write_bytes(json_bytes)
 
+    def _cleanup_quarantine_files(self) -> None:
+        """Karantinadaki .json.broken dosyalarını yaş ve adet limitine göre temizler."""
+        with self._lock:
+            broken_files = sorted(
+                self.sessions_dir.glob("*.json.broken"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if not broken_files:
+                return
+
+            now = time.time()
+            retention_seconds = self._broken_retention_days * 24 * 60 * 60
+
+            removed = 0
+            for index, file_path in enumerate(broken_files):
+                file_age = now - file_path.stat().st_mtime
+                should_delete_by_age = file_age > retention_seconds
+                should_delete_by_count = index >= self._broken_max_files
+                if not (should_delete_by_age or should_delete_by_count):
+                    continue
+                try:
+                    file_path.unlink()
+                    removed += 1
+                except OSError as exc:
+                    logger.warning("Karantina dosyası silinemedi (%s): %s", file_path.name, exc)
+
+            if removed:
+                logger.info("Karantina temizliği: %d dosya kaldırıldı.", removed)
+
     def _init_sessions(self) -> None:
         """Mevcut oturumları bul, yoksa yeni bir tane oluştur ve aktif yap."""
+        self._cleanup_quarantine_files()
         sessions = self.get_all_sessions()
         if sessions:
             # En son güncellenen (en yeni) oturumu yükle
@@ -126,6 +173,8 @@ class ConversationMemory:
                         )
                     except OSError as rename_exc:
                         logger.warning("Karantina yeniden adlandırması başarısız: %s", rename_exc)
+                    else:
+                        self._cleanup_quarantine_files()
                 except Exception as exc:
                     logger.error("Oturum okuma hatası (%s): %s", file_path.name, exc)
 
@@ -141,7 +190,7 @@ class ConversationMemory:
             self.active_title = title
             self._turns = []
             self._last_file = None
-            self._save()
+            self._save(force=True)
             logger.info(f"Yeni oturum oluşturuldu: {session_id} - {title}")
         return session_id
 
@@ -191,24 +240,39 @@ class ConversationMemory:
     #  PERSISTENCE (Kalıcılık)
     # ─────────────────────────────────────────────
 
-    def _save(self) -> None:
+    def _save(self, force: bool = False) -> None:
         """Aktif belleği (oturumu) diske kaydet."""
-        if not self.active_session_id:
+        if not self.active_session_id or not self.sessions_dir.exists():
             return
-            
+        
         try:
-            data = {
-                "id": self.active_session_id,
-                "title": self.active_title,
-                "updated_at": time.time(),
-                "last_file": self._last_file,
-                "turns": self._turns
-            }
-            file_path = self.sessions_dir / f"{self.active_session_id}.json"
             with self._lock:
+                now_mono = time.monotonic()
+                if (
+                    not force
+                    and self._autosave_interval_sec > 0
+                    and now_mono - self._last_save_monotonic < self._autosave_interval_sec
+                ):
+                    self._pending_save = True
+                    return
+
+                data = {
+                    "id": self.active_session_id,
+                    "title": self.active_title,
+                    "updated_at": time.time(),
+                    "last_file": self._last_file,
+                    "turns": self._turns,
+                }
+                file_path = self.sessions_dir / f"{self.active_session_id}.json"
                 self._write_session_file(file_path, data)
+                self._pending_save = False
+                self._last_save_monotonic = now_mono
         except Exception as exc:
             logger.error(f"Bellek kaydetme hatası: {exc}")
+
+    def flush(self) -> None:
+        """Bekleyen yazımı zorla diske geçir."""
+        self._save(force=True)
 
     # ─────────────────────────────────────────────
     #  EKLEME & OKUMA
@@ -225,7 +289,7 @@ class ConversationMemory:
             # Pencere boyutunu koru
             if len(self._turns) > self.max_turns * 2:
                 self._turns = self._turns[-(self.max_turns * 2):]
-            
+
             self._save()
 
     def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
@@ -246,7 +310,7 @@ class ConversationMemory:
     def set_last_file(self, path: str) -> None:
         with self._lock:
             self._last_file = path
-            self._save()
+            self._save(force=True)
 
     def get_last_file(self) -> Optional[str]:
         with self._lock:
@@ -288,7 +352,7 @@ class ConversationMemory:
                     "timestamp": time.time(),
                 },
             ]
-            self._save()
+            self._save(force=True)
         logger.info("Konuşma belleği özetleme ile sıkıştırıldı.")
 
     # ─────────────────────────────────────────────
@@ -300,7 +364,7 @@ class ConversationMemory:
         with self._lock:
             self._turns.clear()
             self._last_file = None
-            self._save()
+            self._save(force=True)
 
     def __len__(self) -> int:
         with self._lock:
