@@ -8,7 +8,7 @@ etkileşimli bir menü üzerinden aşağıdaki seçimler yapılabilir:
 
 1. AI sağlayıcısı: `ollama` veya `gemini`.
 2. Erişim seviyesi: `restricted`, `sandbox` veya `full`.
-3. Arayüz türü: CLI (terminal) veya Web (FastAPI tabanlı web arayüzü).
+3. Arayüz türü: CLI (terminal), Web (FastAPI) veya Desktop (PyWebView + ayrı frontend).
 
 Seçimler yapıldıktan sonra, uygun alt modu başlatmak için ilgili
 Python betiği (`cli.py` veya `web_server.py`) çağrılır ve seçilen
@@ -94,7 +94,7 @@ def main() -> None:
     # Arayüz modu seçimi
     ui = _ask_choice(
         "Arayüz modunu seçin:",
-        ["cli", "web"],
+        ["cli", "web", "desktop"],
     )
 
     # Seçimlere göre komut parametreleri oluştur
@@ -113,11 +113,16 @@ def main() -> None:
         cmd = [python_exe, target_script] + args
         print("\nTerminal modu başlatılıyor...\n")
         subprocess.run(cmd)
-    else:
+    elif ui == "web":
         target_script = os.path.join(base_dir, "web_server.py")
         # Web arayüzü için varsayılan port ve host config.py'den okunur.
         cmd = [python_exe, target_script] + args
         print("\nWeb arayüzü başlatılıyor...\n")
+        subprocess.run(cmd)
+    else:
+        target_script = os.path.join(base_dir, "desktop_app.py")
+        cmd = [python_exe, target_script] + args
+        print("\nDesktop modu başlatılıyor (PyWebView + ayrı frontend)...\n")
         subprocess.run(cmd)
 
 

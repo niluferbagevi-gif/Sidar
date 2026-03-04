@@ -172,7 +172,8 @@ pip install python-dotenv httpx psutil pynvml \
             google-generativeai PyGithub duckduckgo-search \
             rank-bm25 chromadb sentence-transformers \
             fastapi uvicorn pydantic docker \
-            pytest pytest-asyncio pytest-cov
+            pytest pytest-asyncio pytest-cov \
+            pywebview
 ```
 
 > **Not:** GPU desteği için `torch` ve `torchvision`'ı [PyTorch resmi sitesinden](https://pytorch.org/get-started/locally/) CUDA sürümünüze uygun wheel ile kurun.
@@ -205,6 +206,19 @@ docker compose up --build sidar-web-gpu
 ---
 
 ## Kullanım
+
+### 🖥️ Desktop (PyWebView + Ayrı Frontend)
+
+```bash
+# 1) Backend + pywebview penceresi (default frontend: http://127.0.0.1:5173)
+python desktop_app.py --provider ollama --level sandbox
+
+# 2) Üretim derlemesi ile açmak için
+python desktop_app.py --frontend-dist /path/to/frontend/dist
+```
+
+> Not: Ayrı frontend yaklaşımında React/Vite uygulamanız backend API
+> adresi olarak varsayılan `http://127.0.0.1:7860` noktasına istek atmalıdır.
 
 ### 🌐 Web Arayüzü (Önerilen)
 
