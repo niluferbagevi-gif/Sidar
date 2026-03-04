@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import shlex
 import subprocess
@@ -33,6 +34,7 @@ class LauncherAPI:
         self.cfg = _Config() if _Config is not None else _FallbackConfig()
         self.config_error = _CONFIG_IMPORT_ERROR
         self._last_process: subprocess.Popen[str] | None = None
+        atexit.register(self.cleanup)
 
     def _safe_text(self, value: Any, fallback: str) -> str:
         text = str(value).strip()
@@ -79,6 +81,8 @@ class LauncherAPI:
             cmd,
             cwd=self.base_dir,
             text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         return {
             "ok": True,
@@ -86,6 +90,37 @@ class LauncherAPI:
             "message": "Sistem başlatıldı.",
             "command": shlex.join(cmd),
         }
+
+    def stop_system(self) -> dict[str, Any]:
+        proc = self._last_process
+        if proc is None or proc.poll() is not None:
+            return {"ok": False, "message": "Durdurulacak çalışan bir süreç yok."}
+
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2)
+
+        self._last_process = None
+        return {"ok": True, "message": "Süreç durduruldu."}
+
+    def cleanup(self) -> None:
+        """Launcher kapanırken varsa alt süreci temizler."""
+        proc = self._last_process
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        finally:
+            self._last_process = None
 
     def _build_command(self, payload: dict[str, Any]) -> list[str]:
         data = payload or {}

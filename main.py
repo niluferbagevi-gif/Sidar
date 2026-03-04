@@ -147,6 +147,8 @@ def main() -> None:
         webview.start(debug=False)
     except Exception as exc:
         _handle_fallback(str(exc), args, api, launcher_url)
+    finally:
+        api.cleanup()
 
 
 if __name__ == "__main__":

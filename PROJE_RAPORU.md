@@ -2579,4 +2579,10 @@ Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası ver
 - Son committeki yeni eklentiler tek tek tespit edilip proje mimarisi ile uyumlulukları doğrulandı.
 - Kritik uyumsuzluk tespit edilmedi; launcher altyapısı mevcut Sidar çalışma modeline uyumludur.
 
+### 9.6 Geri Bildirim Bulguları (LN/RM) — Durum Güncellemesi
+- **LN-01 (launcher kapanışında child process temizliği):** Doğru bulgu. `LauncherAPI.cleanup()` eklendi ve `main.py` içinde `finally` bloğunda çağrılarak pencere kapanışında alt süreçlerin sonlandırılması sağlandı.
+- **LN-02 (`subprocess.Popen` çıktı tamponu riski):** Doğru bulgu. Launcher tarafından başlatılan alt süreçlerde `stdout`/`stderr` `subprocess.DEVNULL`'a yönlendirildi; buffer dolumu kaynaklı blokaj riski azaltıldı.
+- **LN-03 (README sürüm drift'i):** Doğru bulgu. README giriş sürümü ve başlık etiketleri `v2.7.0` ile hizalandı.
+- **LN-04 (`subprocess.run(..., check=False)` sonrası asılı kalma):** Düşük etki. Mevcut akışta `subprocess.run` bloklayıcı olduğundan komut tamamlandığında kontrol doğal olarak çağırana döner; kritik bir asılı kalma kanıtı gözlenmedi.
+
 <div align="right"><a href="#top">⬆️ Up</a></div>
