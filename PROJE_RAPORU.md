@@ -55,7 +55,7 @@
     - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
-    - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
+    - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
@@ -1414,35 +1414,29 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13511-managersgithubmanagerpy-skor-91100"></a>
-#### 13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅
+<a id="13511-managersgithubmanagerpy-skor-93100"></a>
+#### 13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅
 
 **Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
 
-**Bağlantı ve Repo Yükleme Akışı (satır 50–96)**
+**Bu Turdaki İyileştirmeler**
 
-- Token yoksa güvenli şekilde devre dışı moda geçer; token varsa `Auth.Token(...)` ile istemci başlatılır.
-- `_load_repo()` ile aktif repo nesnesi merkezi olarak yönetilir; `set_repo()` dış katmana net başarı/hata mesajı verir.
-- `is_available()` ve `status()` çıktıları operatöre token/repo durumunu anlaşılır şekilde iletir.
-
-**Güvenlik Korumaları (satır 13–37, 184–235, 306–334)**
-
-- Branch isimleri `_BRANCH_RE` ile doğrulanır; injection benzeri branch manipülasyonları erken reddedilir.
-- `read_remote_file()` yalnızca güvenli metin uzantıları/uzantısız dosya adları için içerik döndürür; binary dosya riski azaltılır.
-- Varsayılan dal erişimi için `default_branch` property sunularak dış modüllerin `_repo` private alanına doğrudan erişmesi engellenir.
-
-**PR ve Dosya Operasyonları (satır 250–537)**
-
-- Branch listesi, PR listesi/detayı/yorum/kapatma ve değişen dosya raporları kullanıcıya metin tabanlı okunabilir çıktı üretir.
-- `get_pull_requests_detailed()` web katmanı için yapısal dict çıktı sağlar; API tarafında serializasyonu kolaylaştırır.
-- `create_or_update_file()` mevcut dosyayı güncelleme, yoksa oluşturma yolunu tek metotta birleştirir.
+- `create_or_update_file()` içinde dosya yok kararı artık 404/not-found odaklı yapılır; diğer gerçek API/izin hataları “dosya oluştur” yoluna düşürülmeden doğrudan raporlanır.
+- `list_repos(owner=...)` akışı exception-driven fallback yerine hesap tipini (`account.type`) okuyarak organizasyon/kullanıcı repo tipi seçer.
+- Bu sayede hata maskelenmesi azalır ve owner repo listelemede kontrol akışı daha öngörülebilir hale gelir.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| GH-01 | `create_or_update_file()` içinde "dosya yok" kararını geniş `except Exception` ile veriyor; izin/bağlantı gibi gerçek hatalar da oluşturma yoluna düşebilir ve asıl neden gizlenebilir | 284–301 | Orta |
-| GH-02 | `list_repos(owner=...)` önce organization akışını zorunlu dener, kullanıcı owner senaryosu exception ile fallback’e bırakılır; kontrol akışı istisna tabanlı ve maliyetli | 106–133 | Düşük |
+| GH-03 | `account.type` bilgisi API yanıtına bağlıdır; beklenmeyen/boş tiplerde varsayılan `owner` stratejisi bazı özel hesaplarda eksik sonuç döndürebilir | 115–119 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| GH-01 | ✅ Kapandı | Geniş `except` ile “dosya yok” fallback’i kaldırıldı; yalnızca not-found senaryosunda create akışı çalışıyor. |
+| GH-02 | ✅ Kapandı | `list_repos(owner=...)` artık exception tabanlı organizasyon→kullanıcı fallback’i yerine hesap tipi tabanlı seçim yapıyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
