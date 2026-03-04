@@ -58,7 +58,7 @@
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
-    - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
+    - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 91/100 ✅](#13515-managerssecuritypy-skor-91100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 92/100 ✅](#13516-managerstodomanagerpy-skor-92100)
     - [13.5.17 `managers/__init__.py` — Skor: 96/100 ✅](#13517-managersinitpy-skor-96100)
@@ -1510,35 +1510,29 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13514-managerspackageinfopy-skor-91100"></a>
-#### 13.5.14 `managers/package_info.py` — Skor: 91/100 ✅
+<a id="13514-managerspackageinfopy-skor-94100"></a>
+#### 13.5.14 `managers/package_info.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Paket ekosistemi bilgi yöneticisi — PyPI, npm ve GitHub Releases API’lerinden sürüm/metadata bilgisi toplar; paket güncellik ve karşılaştırma çıktıları üretir.
 
-**Asenkron API Tasarımı (satır 36–247)**
+**Bu Turdaki İyileştirmeler**
 
-- Tüm dış ağ çağrıları `httpx.AsyncClient` ile yürütülür; timeout/follow_redirects ayarları merkezi `TIMEOUT` üzerinden kontrol edilir.
-- PyPI, npm ve GitHub uçlarında 404 / timeout / request error senaryoları kullanıcıya okunur hata mesajlarıyla ayrıştırılır.
-- Çıktılar tek tip metin raporu formatında döndürülerek ajan yanıt zinciriyle uyum korunur.
-
-**Sürüm Mantığı ve Yardımcılar (satır 57–63, 253–278)**
-
-- Son sürümler listesinde pre-release sürümler filtrelenir ve `packaging.version.Version` ile sıralama yapılır.
-- Geçersiz sürüm formatlarında `0.0.0` fallback’i sayesinde sıralama kırılmaz.
-- `pypi_compare()` kurulu sürüm ile güncel sürümü kullanıcı dostu durum satırıyla karşılaştırır.
-
-**Ekosistem Kapsamı (satır 127–247)**
-
-- npm sorgusunda bağımlılıklar, peer deps ve engine gereksinimleri dahil edilerek JS ekosistemi için pratik özet sağlanır.
-- GitHub releases tarafında pre-release bilgisi, yayın tarihi ve kısa açıklama rapora eklenir.
-- `github_latest_release()` hızlı son sürüm sorgusu için düşük maliyetli yardımcı metod sunar.
+- PyPI için `_fetch_pypi_json(...)` yardımcı metodu eklendi; `pypi_info`, `pypi_latest_version` ve `pypi_compare` aynı ham JSON akışını kullanarak tekrar eden ağ/hata yönetimini merkezileştirdi.
+- `pypi_compare()` artık güncel sürümü metin regex’i ile çıkarmak yerine doğrudan JSON (`info.version`) üzerinden okuyor.
+- `_is_prerelease()` sınıflandırması `Version(version).is_prerelease` temelli hale getirildi; PEP440 dışı semver etiketleri için kontrollü regex fallback eklendi.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| PKG-01 | `pypi_compare()` güncel sürümü `pypi_info()` tarafından üretilen metinden regex ile ayıklıyor; format değişirse kırılganlık oluşabilir (ham JSON’dan almak daha güvenli) | 113–119 | Orta |
-| PKG-02 | `_is_prerelease()` harf geçen her sürümü pre-release sayıyor; bazı özel sürüm etiketlerinde yanlış negatif/pozitif sınıflandırma riski var | 259–264 | Düşük |
+| PKG-03 | Semver fallback regex’i pre-release etiketlerini yakalasa da tamamen serbest sürüm şemalarında tüm edge-case varyasyonlarını kapsamayabilir | 258–266 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| PKG-01 | ✅ Kapandı | `pypi_compare` güncel sürümü artık regex yerine ham JSON alanından alıyor. |
+| PKG-02 | ✅ Kapandı | Pre-release tespiti `packaging.Version.is_prerelease` + semver fallback ile daha doğru hale getirildi. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
