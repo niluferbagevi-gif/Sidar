@@ -12,8 +12,9 @@
 <a id="sec-3-1-3-80"></a>
 <a id="sec-3-1-3-81"></a>
 <a id="sec-3-1-3-82"></a>
+<a id="sec-3-1-3-83"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 13 ek sorun giderilmiştir (toplam 60 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 14 ek sorun giderilmiştir (toplam 61 düzeltme).
 
 ---
 
@@ -1557,6 +1558,30 @@ for rate_key, timestamps in list(_rate_data.items()):
 # sidar_agent.py
 tool_names = sorted(self._get_tool_dispatch_map().keys())
 lines.append(f"  Araç Sayısı: {len(tool_names)} (dispatch tablosundan canlı)")
+```
+
+---
+
+
+### ✅ 3.83 `agent/auto_handle.py` — Async Docs Search + Regex Daraltma (A-01/A-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `agent/auto_handle.py`  
+**Önem:** ~~🟡 ORTA + 🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorunlar:**
+- `_try_docs_search` içinde `self.docs.search(...)` doğrudan senkron çağrılıyordu; event loop bloklama riski vardı.
+- `github.*(bilgi|info|repo|depo)` benzeri geniş regex kalıbı bağlam dışı yanlış-pozitif eşleşme üretebiliyordu.
+
+**Uygulanan düzeltme:**
+- `_try_docs_search` asenkronlaştırıldı ve arama çağrısı `await asyncio.to_thread(...)` ile non-blocking hale getirildi.
+- `github repo/depo bilgi` tetikleyicisi daraltılarak bilgi niyeti + repo/depo bağlamı birlikte aranır hale getirildi.
+
+```python
+# docs search
+_, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+
+# github info regex (daraltılmış)
+r"(?:github\s+)?(?:repo|depo)\s*(?:bilgisi|bilgi|info|detay...)"
 ```
 
 ---

@@ -50,7 +50,7 @@
     - [13.5.3 `core/rag.py` — Skor: 91/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 94/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 90/100 ✅](#1355-agentdefinitionspy-skor-87100)
-    - [13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅](#1356-agentautohandlepy-skor-89100)
+    - [13.5.6 `agent/auto_handle.py` — Skor: 92/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 91/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
@@ -666,7 +666,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ BM25 cache ile sorgu başı rebuild maliyeti azaltıldı ve `_tool_docs_search` artık `asyncio.to_thread` ile non-blocking; açık kalan ana risk embedding tarafındaki monkey-patch kırılganlığıdır. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i artık `asyncio.to_thread` kullanıyor ve rate limiter boş bucket eviction ile key birikimini temizliyor; açık kalan başlıca risk web banner sürüm satırında değil, genel bellek büyümesi için TTL metrik izlemesidir. → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ✅ Sağlayıcıya bağlı internet gereksinimi netleştirildi; canlı araç setinin dispatch tablosundan geldiği açıkça belirtildi. → Detay: §13.5.5
-- **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
+- **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ✅ `docs_search` çağrısı artık `asyncio.to_thread` ile non-blocking; GitHub repo bilgi regex’i daha dar eşleşecek şekilde güncellendi. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
@@ -1186,7 +1186,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1356-agentautohandlepy-skor-89100"></a>
-#### 13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅
+#### 13.5.6 `agent/auto_handle.py` — Skor: 92/100 ✅
 
 **Sorumluluk:** Hızlı yol komut yönlendirici — doğal dildeki sık/tek-adımlı istekleri regex kalıplarıyla ilgili manager araçlarına bağlar; uygun değilse ReAct döngüsüne fallback yapar.
 
@@ -1210,8 +1210,10 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| A-01 | `_try_docs_search` içinde `self.docs.search()` senkron çağrısı event loop üzerinde direkt çalışıyor; büyük RAG indekslerinde gecikme/bloklama riski var | 455–472 | Orta |
-| A-02 | Bazı tetikleyici regex'ler geniş eşleşiyor (`github.*(bilgi|info|repo|depo)` vb.); bağlamsal cümlelerde yanlış-pozitif yönlendirme üretebilir | 250–263 | Düşük |
+| A-01 | `_try_docs_search` artık `await asyncio.to_thread(self.docs.search, ...)` ile çalışıyor; event loop bloklanması giderildi | 460–477 | ✅ Kapalı |
+| A-02 | `github repo/depo bilgi` tetikleyicisi daraltıldı; bağlam dışı yanlış-pozitif eşleşmeler azaltıldı | 251–256 | ✅ Kapalı |
+
+**Düzeltme Geçmişi Referansı:** Detaylı kapanış kaydı için bkz. `DUZELTME_GECMISI.md` §3.83.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
@@ -2292,7 +2294,7 @@ except Exception as exc:
 ### Öncelik 1 — Yüksek Etki (Kısa Vadede, Olmazsa Olmaz)
 
 1. **Event-loop bloklama risklerini kapatma (RAG aramaları async güvenli hale getirilmeli):**
-   `agent/auto_handle.py:_try_docs_search` hattındaki senkron `docs.search()` çağrısı `asyncio.to_thread` (veya native async API) ile sarılmalı.
+   `agent/auto_handle.py:_try_docs_search` hattı `asyncio.to_thread` ile güncellendi; benzer yaklaşımın diğer olası senkron I/O noktalarına genişletilmesi önerilir.
 
 2. **RAG performans darboğazını izleme (BM25 cache sonrası):**
    `core/rag.py` içinde BM25 cache uygulanmıştır; bir sonraki adımda incremental token güncelleme ve cache metrikleri (hit/miss) eklenmesi önerilir.
@@ -2414,8 +2416,8 @@ except Exception as exc:
 - **Sürüm/ortam tutarlılığı:** `core/__init__.py`, `config.py`, `agent/sidar_agent.py` ve `Dockerfile` sürüm etiketleri 2.7.0 ile hizalıdır; `DOCKER_EXEC_TIMEOUT` ve `RAG_FILE_THRESHOLD` gibi anahtarlar `.env.example`/`config.py` arasında eşleşmektedir.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
-- **Event-loop bloklama riski:** `/rag/search` ve ajan içindeki `docs_search` yolu, `docs.search(...)` çağrısını doğrudan senkron yapıyor; yüksek eşzamanlılıkta gecikme üretebilir.
-- **Rate-limit bucket temizliği:** `_rate_data` içinde pencere dışı timestamp’ler temizlense de boş kalan IP anahtarları sözlükten düşürülmüyor; uzun uptime senaryosunda bellek büyümesi riski bulunuyor.
+- **Event-loop bloklama riski:** `/rag/search` ve ajanın `docs_search` yollarında `asyncio.to_thread` uygulandı; kalan risk benzer senkron I/O noktalarının gelecekte eklenmesi durumunda yeniden oluşabilir.
+- **Embedding entegrasyonu kırılganlığı:** `core/rag.py` içinde mixed precision için `ef.__call__` monkey-patch yaklaşımı ChromaDB iç API değişimlerinde kırılabilir.
 - **Frontend XSS yüzeyi:** LLM çıktısı `marked.parse(...)` sonucu doğrudan `innerHTML`’e basılıyor; ayrıca Todo panelinde `t.content` HTML-escape edilmeden render ediliyor.
 - **Todo kalıcılığı:** `TodoManager` görevleri yalnızca process belleğinde tutuyor; servis yeniden başladığında görev listesi sıfırlanıyor.
 
