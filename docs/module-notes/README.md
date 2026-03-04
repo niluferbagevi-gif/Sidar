@@ -13,6 +13,7 @@ Amaç:
 - [`config.md`](./config.md): `config.py` için görev, özellik, bağımlılık ve entegrasyon haritası.
 - [`main.md`](./main.md): CLI giriş noktası, event-loop akışı ve runtime override davranışı.
 - [`web_server.md`](./web_server.md): FastAPI/SSE servis katmanı, endpoint grupları, rate-limit ve iyileştirme notları.
+- [`agent/README.md`](./agent/README.md): Agent katmanı (sidar_agent, auto_handle, definitions, init) teknik notları.
 
 ## Not
 
