@@ -1,10 +1,10 @@
 <a id="top"></a>
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — P-01–P-07 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-04** — satır bazlı repo doğrulaması yapıldı; ek rapor drift bulguları notlandı)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
-**Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
+**Toplam Dosya:** 36 izlenen dosya, ~17.9k satır metin içerik
 **Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
 
 ---
@@ -44,7 +44,7 @@
   - [13.3 Test ve Dokümantasyon Uyum Özeti](#133-test-ve-dokumantasyon-uyum-ozeti)
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
-    - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
+    - [13.5.1 `main.py` — Skor: 96/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 88/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
@@ -79,6 +79,7 @@
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
+    - [13.5.1A `cli.py` — Skor: 95/100 ✅](#1351a-clipy-skor-95100)
   - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi)
   - [13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)](#1361-harici-yorum-teyidi-capraz-kontrol)
 - [14. Geliştirme Önerileri (Öncelik Sırasıyla)](#14-gelistirme-onerileri-oncelik-sirasiyla)
@@ -93,9 +94,8 @@
   - [15.4 Sonuç ve Proje Geleceği](#154-sonuc-ve-proje-gelecegi)
 - [16. Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satir-satir-inceleme-yeni-bulgular)
 - [17. Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8-satir-satir-inceleme-2026-03-03)
-  - [Tespit Yöntemi](#tespit-yontemi)
-  - [Bulgular ve Giderimler](#bulgular-ve-giderimler)
-  - [Doğrulanan Tutarlılık Noktaları (Sorun Yok)](#dogrulanan-tutarlilik-noktalari-sorun-yok)
+- [18. Session 9 — 2026-03-04 Ek Rapor Drift Kontrolü](#session-9-2026-03-04-ek-rapor-drift-kontrolu)
+- [19. Session 10 — 2026-03-04 `main.py` / `cli.py` / `agent` Teyidi](#session-10-2026-03-04-main-cli-agent-teyidi)
   - [Özet](#ozet)
 
 ---
@@ -201,7 +201,8 @@ sidar_project/
 ├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
 ├── README.md                       # Kurulum/kullanım dokümantasyonu
 ├── config.py                       # Merkezi konfigürasyon ve donanım tespiti
-├── main.py                         # CLI giriş noktası
+├── main.py                         # Etkileşimli launcher (Wizard + quick start)
+├── cli.py                          # Asıl terminal tabanlı CLI giriş noktası
 ├── web_server.py                   # FastAPI web/sse sunucusu
 ├── github_upload.py                # Etkileşimli GitHub upload yardımcı aracı
 ├── Dockerfile                      # Uygulama container build tanımı
@@ -656,7 +657,8 @@ async for raw_bytes in resp.aiter_bytes():
 <a id="131-cekirdek-dosyalar-guncel-durum"></a>
 ### 13.1 Çekirdek Dosyalar — Güncel Durum
 
-- **`main.py`**: CLI akışı tekil `asyncio.run(...)` modeliyle çalışır; banner sürüm bilgisi dinamik üretilir. `input()` çağrısı `asyncio.to_thread()` ile event loop'tan izole edilir. Sağlayıcıya göre model adı (Gemini/Ollama), koşullu GPU/CUDA/çoklu-GPU bilgisi ve üçlü interrupt handler (`EOFError` / `KeyboardInterrupt` / `asyncio.CancelledError`) aktiftir. CLI flag override'ları instance attribute üzerinden yapılır (env var override çalışmaz). → Detay: §13.5.1
+- **`main.py`**: Artık interaktif CLI döngüsü değil, **akıllı launcher** katmanı olarak çalışır. Kullanıcıdan mode/provider/level/log seçimlerini alır, `preflight` kontrollerini yapar ve hedef script'i (`web_server.py` veya `cli.py`) `subprocess.run(...)` ile başlatır. → Detay: §13.5.1
+- **`cli.py`**: Asıl terminal arayüzü bu dosyadadır; `asyncio` tabanlı interaktif loop, `--command` tek-shot modu, dahili `.help/.status/...` komutları ve banner/sürüm gösterimi burada sürdürülür. Önceki `main.py` CLI davranışı buraya taşınmıştır. → Detay: §13.5.1A
 - **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ⚠️ Madde 6.9 kısmen açık: `_tool_subtask` ve döngü düzeltme mesajları format sabitlerini kullanmıyor. → Detay: §13.5.2
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ `BM25Okapi` her sorguda yeniden oluşturulur (disk okuma); `_tool_docs_search` ChromaDB `search()` çağrısını `asyncio.to_thread` olmadan yapıyor. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i `docs.search()` senkron çağrısını `asyncio.to_thread` olmadan yapıyor (R-02 ile örtüşen); `_rate_data` dict key'leri hiç temizlenmiyor (uzun süreli hafıza birikimi). → Detay: §13.5.4
@@ -731,7 +733,7 @@ async for raw_bytes in resp.aiter_bytes():
 ### 13.5 Dosya Bazlı Teknik Detaylar
 
 > Bu alt bölüm her dosyanın **güncel teknik durumunu** satır referansları ile belgeler.
-> Sırası: `main.py` → `agent/sidar_agent.py` → devam
+> Sırası: `main.py` → `cli.py` → `agent/sidar_agent.py` → devam
 
 ---
 
@@ -739,68 +741,64 @@ async for raw_bytes in resp.aiter_bytes():
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351-mainpy-skor-100100"></a>
-#### 13.5.1 `main.py` — Skor: 100/100 ✅
+#### 13.5.1 `main.py` — Skor: 96/100 ✅
 
-**Sorumluluk:** CLI giriş noktası — interaktif döngü, tek komut modu, argüman ayrıştırma.
+**Sorumluluk (Güncel):** Etkileşimli **akıllı başlatıcı (Ultimate Launcher)**. Web/CLI mod seçimi, sağlayıcı ve erişim seviyesi seçimi, ön kontroller (preflight) ve hedef script'i alt süreçte çalıştırma.
 
-**Async Mimarisi**
+**Mimari Özeti (satır 1–251)**
 
 | Satır | Pattern | Açıklama |
 |-------|---------|----------|
-| 90–185 | `async def _interactive_loop_async()` + `asyncio.run(...)` sarmalı | Tüm döngü tek event loop'ta; `asyncio.Lock()` aynı loop'a bağlı kalır |
-| 130 | `asyncio.to_thread(input, "Sen  > ")` | Blokeyici `input()` thread'e itilir; loop serbest bırakılır |
-| 131 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Async context'te `CTRL+C` bazen `CancelledError` olarak iletilir; üçlü handler tüm yolları kapatır |
-| 236 | `asyncio.run(_run_command())` | `--command` modu erken döner; `interactive_loop` ile çakışan `asyncio.run()` riski yoktur |
+| 1–8 | Modül başlığı | Dosyanın launcher rolü (`python main.py`, `--quick`) açıkça tanımlı |
+| 101–133 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
+| 136–144 | `target_script = "web_server.py" if mode == "web" else "cli.py"` | Asıl çalışma script'i kullanıcı seçimine göre dinamik belirlenir |
+| 147–201 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
+| 204–218 | `subprocess.run(cmd, check=True, ...)` | Launcher, hedef script'i alt süreçte başlatır; hata kodu yönetişimi içerir |
+| 221–247 | `--quick` hızlı başlatma | Sihirbaz atlanarak parametrelerle doğrudan komut oluşturulabilir |
 
-**Banner Dinamik Üretim (`_make_banner`, satır 42–58)**
-
-- `ver_field = f"v{version}"` → `SidarAgent.VERSION` çalışma anında alınır; sabit string bağımlılığı yoktur.
-- `ver_padded = ver_field.ljust(7)` — "v2.7.0" = 6 karakter, padding 1 boşluk. ⚠️ **Açık Not:** sürüm "v10.0.0" (7 kar.) veya daha uzun olduğunda çerçeve taşabilir (düşük öncelikli).
-
-**Sağlayıcıya Göre Model Gösterimi (satır 103–107)**
-
-```python
-if agent.cfg.AI_PROVIDER == "gemini":
-    model_display = getattr(agent.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
-else:
-    model_display = agent.cfg.CODING_MODEL
-```
-
-Gemini ve Ollama için ayrı model adı gösterilir; yanlış model etiketi riski ortadan kalkmıştır.
-
-**Koşullu GPU / CUDA / Çoklu GPU Gösterimi (satır 111–120)**
-
-Üç katmanlı koşullu yapı:
-1. `USE_GPU` False ise → "✗ CPU Modu" satırı
-2. `CUDA_VERSION != "N/A"` ise → `(CUDA x.x)` eklenir
-3. `GPU_COUNT > 1` ise → `, N GPU` eklenir
-
-**Config CLI Override Mekanizması (satır 211–220)**
-
-```python
-cfg = Config()
-if args.level:    cfg.ACCESS_LEVEL = args.level    # instance attribute override
-if args.provider: cfg.AI_PROVIDER  = args.provider
-if args.model:    cfg.CODING_MODEL = args.model
-```
-
-`os.environ` üzerinden override **çalışmaz** — `Config` sınıf attribute'ları module import anında bir kez değerlendirilir. Override instance üzerinden yapılır; bu tasarım kod yorumunda açıklanmıştır.
-
-**Çıkış Anahtar Kelimeleri (satır 139)**
-
-`.exit`, `.q` yanı sıra `exit`, `quit`, `çıkış` da (öneksiz) kabul edilir. Türkçe giriş farkındalığı sağlar.
-
-**Nokta Önekli Dahili Komutlar (satır 142–171)**
-
-11 komut (`help`, `status`, `clear`, `audit`, `health`, `gpu`, `github`, `level`, `web`, `docs`, `exit`) → tümü eşzamanlı (`sync`) metod çağrısı; bu metotlar ağır I/O içermediği sürece event loop'u bloklama riski yoktur.
+**Önemli Not:** Önceki rapordaki `asyncio.run(...)` tabanlı interaktif döngü ve `.help/.status/...` CLI komutları artık `main.py` içinde değil, **`cli.py`** dosyasındadır.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| — | `ver_padded.ljust(7)`: sürüm ≥ 8 karakter olursa banner taşabilir | 46 | Düşük |
+| M-01 | `subprocess.run` ile başlatma modelinde child-process stdout/stderr yönlendirmesi özelleştirilmiyor; ileri seviye gözlemlenebilirlik ihtiyacında wrapper loglama gerekebilir | 204–218 | Düşük |
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapalı/Terslenen Eski Notlar:** `main.py` için önceki “event-loop / `asyncio.run` çakışma riski” yorumu artık geçerli değildir; bu sorumluluk `cli.py`'ye taşınmıştır.
+
+---
+
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="1351a-clipy-skor-95100"></a>
+#### 13.5.1A `cli.py` — Skor: 95/100 ✅
+
+**Sorumluluk (Yeni):** Asıl terminal tabanlı CLI etkileşim katmanı. `SidarAgent` oluşturma, tek komut modu, interaktif async döngü, dahili nokta komutları ve durum gösterimleri.
+
+**Async Mimarisi (satır 103–257)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 103–199 | `async def _interactive_loop_async(...)` | Interaktif sohbet döngüsü tek event loop içinde yürütülür |
+| 143 | `await asyncio.to_thread(input, "Sen  > ")` | Bloklayıcı `input()` çağrısı event loop dışına taşınır |
+| 144 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Üçlü kesme handler'ı ile güvenli kapanış |
+| 197–199 | `interactive_loop -> asyncio.run(...)` | Tek girişten async döngü başlatılır |
+| 242–251 | `asyncio.run(_run_command())` | `--command` tek-shot modunda izole async yürütme |
+
+**CLI İşlevsel Kapsamı**
+
+- Dinamik banner (`_make_banner`) sürümü çalışma anında yazar.
+- Dahili komut seti (`.status`, `.clear`, `.audit`, `.health`, `.gpu`, `.github`, `.level`, `.web`, `.docs`, `.help`, `.exit`) korunmuştur.
+- Config override mantığı instance attribute üzerinden yapılır (`cfg.ACCESS_LEVEL`, `cfg.AI_PROVIDER`, `cfg.CODING_MODEL`).
+
+**Açık Bulgular**
+
+| ID | Konu | Satır | Önem |
+|----|------|-------|------|
+| CLI-01 | Banner sürüm alanı `ljust(7)` ile sabit; sürüm metni uzarsa görsel taşma riski oluşabilir | 56–69 | Düşük |
+
+**Not:** Önceki raporda `main.py` altında değerlendirilen async CLI davranışları artık bu dosya kapsamında izlenmelidir.
 
 ---
 
@@ -2514,17 +2512,50 @@ Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası ver
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
+
+<a id="session-9-2026-03-04-ek-rapor-drift-kontrolu"></a>
+## 18. Session 9 — 2026-03-04 Ek Rapor Drift Kontrolü
+
+Bu turda depo yeniden satır bazlı gözden geçirildi ve raporla canlı dosyalar arasında aşağıdaki **ek sapmalar** doğrulandı.
+
+| ID | Tür | Konum | Tespit | Öneri |
+|----|-----|-------|--------|-------|
+| S9-01 | Dokümantasyon drift | `README.md` | Üst sürüm etiketleri hâlâ `v2.6.1` iken rapor proje sürümünü `v2.7.0` olarak işaretliyor. | README sürüm başlıkları/versiyon geçmişi satırları `v2.7.0` ile hizalanmalı. |
+| S9-02 | Dokümantasyon drift | `install_sidar.sh` | Script header satırında `# Sürüm: 2.6.1` yazıyor. | Header sürümü `2.7.0` yapılmalı. |
+| S9-03 | Dokümantasyon drift | `Dockerfile` | Üst yorum bloğunda `# Sürüm: 2.6.1` yazarken LABEL `2.7.0`. | Yorum bloğu sürümü `2.7.0` yapılmalı. |
+| S9-04 | Kapsam eksikliği | `PROJE_RAPORU.md §2` | Dizin ağacında `cli.py` satırı eksikti. | ✅ Bu turda eklendi (kapatıldı). |
+
+**Session 9 durumu:** Bu bulgular kod kıran kritik hatalar değil; tamamı sürüm/belgeleme ve rapor kapsam hizası odaklıdır.
+
+<a id="session-10-2026-03-04-main-cli-agent-teyidi"></a>
+## 19. Session 10 — 2026-03-04 `main.py` / `cli.py` / `agent` Teyidi
+
+Bu tur, harici geri bildirimlerde geçen maddelerin satır bazlı yeniden doğrulanması için yapılmıştır.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S10-01 | `main.py` | ✅ Doğrulandı | Dosya launcher rolüne geçmiş; `run_wizard`, `build_command`, `subprocess.run` akışı mevcut. |
+| S10-02 | `cli.py` | ✅ Doğrulandı | Async interaktif CLI döngüsü (`_interactive_loop_async`) ve tek komut (`--command`) yürütmesi bu dosyada. |
+| S10-03 | `agent/sidar_agent.py` | ✅ Doğrulandı | `VERSION = "2.7.0"`, `JSONDecoder.raw_decode`, `_try_direct_tool_route`, `_tool_parallel`, THOUGHT sentinel akışları mevcut. |
+| S10-04 | `agent/sidar_agent.py` | ⚠️ Açık | `_tool_subtask` içinde bazı format metinleri inline; format sabitleriyle tam hizalanmamış eleştiri geçerliliğini koruyor. |
+| S10-05 | `web_ui/launcher/index.html` | ✅ Doğrulandı | Dosya depoda yok (kaldırılmış durumda); raporun dizin ağacında zaten referans verilmiyor. |
+| S10-06 | `README.md` | ⚠️ Açık | Üst sürüm satırlarında hâlâ `v2.6.1` etiketleri bulunuyor; rapordaki v2.7.0 hattıyla drift sürüyor. |
+| S10-07 | `.gitignore` | ✅ Doğrulandı | `__pycache__/`, `.venv/`, `venv/` gibi temel ignore girdileri mevcut; dosya raporda listeleniyor. |
+| S10-08 | `.note` | ✅ Doğrulandı | WSL/CUDA/network_mode önerileri detaylı; raporda teknik borç/öneri bağlamında ele alınıyor. |
+
+**Session 10 çıktısı:** Raporun `main.py` ve `cli.py` bölümleri güncel mimariye göre revize edildi; `agent/sidar_agent.py` için önceki teknik tespitlerin büyük kısmı doğrulandı.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
-| İncelenen dosya | ~35 |
-| Tespit edilen bulgu | 7 (P-01–P-07) |
-| Önem seviyesi | Tamamı DÜŞÜK |
-| Aynı oturumda kapanan | 7 / 7 |
+| İncelenen dosya | 36 |
+| Tespit edilen bulgu | 19 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08) |
+| Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
+| Aynı oturumda kapanan | 7 / 7 (P serisi) |
 | Kümülatif toplam kapalı | 52 |
-| Aktif açık sorun | **0** |
+| Aktif açık sorun | **5 (S9-01–S9-03 + S10-04 + S10-06)** |
 
 ---
 
