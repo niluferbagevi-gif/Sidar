@@ -51,7 +51,7 @@
     - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
-    - [13.5.7 `core/llm_client.py` — Skor: 91/100 ✅](#1357-corellmclientpy-skor-91100)
+    - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
     - [13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅](#13510-managerscodemanagerpy-skor-90100)
@@ -667,7 +667,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ✅ `/rag/search` endpoint'i `docs.search()` çağrısını `asyncio.to_thread` ile event-loop dışına alır; ayrıca rate-limit bucket prune ile boş key birikimi temizlenir. → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ✅ Prompt metninde sağlayıcı koşulu netleştirildi (Gemini için internet gereksinimi); ayrıca araç listesi için source-of-truth olarak `sidar_agent.py` dispatch tablosu açıkça belirtildi. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ✅ `docs_search` artık `asyncio.to_thread` ile event-loop dışına alınır; GitHub info regex tetikleyicisi bilgi/özet niyetiyle daraltılarak yanlış-pozitifler azaltıldı. → Detay: §13.5.6
-- **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
+- **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ✅ Gemini akışında güvenli `getattr(chunk, "text", "")` erişimi kullanılıyor; ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son buffer satırı da parse edilerek olası son chunk kaybı önleniyor. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
@@ -1241,7 +1241,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1357-corellmclientpy-skor-91100"></a>
-#### 13.5.7 `core/llm_client.py` — Skor: 91/100 ✅
+#### 13.5.7 `core/llm_client.py` — Skor: 96/100 ✅
 
 **Sorumluluk:** LLM sağlayıcı adaptörü — Ollama ve Gemini çağrılarını tek bir async API (`chat`) altında birleştirir; stream/non-stream modları ve JSON yanıt zorlama davranışını yönetir.
 
@@ -1272,8 +1272,14 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| L-01 | `_stream_ollama_response` sonunda newline ile bitmeyen kalan `buffer` için parse adımı yok; son JSON satırı kaçabilir | 163–178 | Orta |
-| L-02 | `_stream_gemini_generator` içinde `chunk.text` alanına doğrudan erişim yapılıyor; bazı SDK sürümlerinde alan yoksa `AttributeError` üretip hata akışına düşebilir | 260–263 | Düşük |
+| L-03 | Ollama/Gemini stream parse katmanı metin odaklıdır; sağlayıcıların farklı event şemalarında (ör. yeni alan isimleri) adaptör güncellemesi gerekebilir | 129–273 | Bilgi |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| L-01 | ✅ Kapandı | `_stream_ollama_response` sonundaki kalan `buffer` için ek parse adımı eklendi; newline ile bitmeyen son JSON satırı da işleniyor. |
+| L-02 | ✅ Kapandı | `_stream_gemini_generator` içinde `chunk.text` doğrudan erişimi `getattr(chunk, "text", "")` ile güvenli hale getirildi. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
