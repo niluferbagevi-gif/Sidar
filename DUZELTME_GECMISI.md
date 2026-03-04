@@ -8,8 +8,9 @@
 
 <a id="sec-3-1-3-76"></a>
 <a id="sec-3-1-3-78"></a>
+<a id="sec-3-1-3-79"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 9 ek sorun giderilmiştir (toplam 56 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 10 ek sorun giderilmiştir (toplam 57 düzeltme).
 
 ---
 
@@ -1442,6 +1443,33 @@ def _fit_banner_field(value: str, width: int) -> str:
     if len(value) <= width:
         return value.ljust(width)
     return value[: width - 1] + "…"
+```
+
+---
+
+### ✅ 3.79 `agent/sidar_agent.py` — JSON Parse Yardımcısı Tekilleştirme (AG-01 → ÇÖZÜLDÜ)
+
+**Dosya:** `agent/sidar_agent.py`  
+**Önem:** ~~🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorun:** `_react_loop`, `_tool_github_smart_pr` ve `_tool_subtask` içinde JSON nesnesi yakalama akışı ayrı ayrı yazılıyordu. Davranış aynı olsa da tekrar eden kod gelecekte parser drift riskini artırıyordu.
+
+**Uygulanan düzeltme:** `_extract_first_json_object(raw_text)` yardımcı metodu eklendi ve üç farklı akış bu ortak parse fonksiyonunu kullanacak şekilde birleştirildi. Yardımcı metod dict dışındaki parse sonuçlarını filtreler, geçersiz parse denemelerinde güvenli fallback ile `None` döner.
+
+```python
+@staticmethod
+def _extract_first_json_object(raw_text: str) -> Optional[dict]:
+    decoder = json.JSONDecoder()
+    idx = raw_text.find("{")
+    while idx != -1:
+        try:
+            parsed, _ = decoder.raw_decode(raw_text, idx)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+        idx = raw_text.find("{", idx + 1)
+    return None
 ```
 
 ---

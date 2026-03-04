@@ -222,6 +222,21 @@ class SidarAgent:
         except Exception:
             return None
 
+    @staticmethod
+    def _extract_first_json_object(raw_text: str) -> Optional[dict]:
+        """Metin içindeki ilk geçerli JSON objesini güvenli şekilde döndürür."""
+        decoder = json.JSONDecoder()
+        idx = raw_text.find("{")
+        while idx != -1:
+            try:
+                parsed, _ = decoder.raw_decode(raw_text, idx)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+            idx = raw_text.find("{", idx + 1)
+        return None
+
     # ─────────────────────────────────────────────
     #  ReAct DÖNGÜSÜ (PYDANTIC PARSING)
     # ─────────────────────────────────────────────
@@ -263,15 +278,7 @@ class SidarAgent:
 
                 # JSONDecoder ile ilk geçerli JSON nesnesini bul (greedy regex yerine)
                 # Bu yaklaşım: birden fazla JSON bloğu veya gömülü kod olsa bile doğru olanı seçer
-                _decoder = json.JSONDecoder()
-                json_match = None
-                _idx = raw_text.find('{')
-                while _idx != -1:
-                    try:
-                        json_match, _ = _decoder.raw_decode(raw_text, _idx)
-                        break
-                    except json.JSONDecodeError:
-                        _idx = raw_text.find('{', _idx + 1)
+                json_match = self._extract_first_json_object(raw_text)
 
                 if json_match is None:
                     raise ValueError("Yanıtın içerisinde süslü parantezlerle ( { ... } ) çevrili bir JSON objesi bulunamadı.")
@@ -683,10 +690,8 @@ class SidarAgent:
                 json_mode=True,
             )
             if isinstance(raw, str):
-                _dec = json.JSONDecoder()
-                idx = raw.find("{")
-                if idx != -1:
-                    pr_data, _ = _dec.raw_decode(raw, idx)
+                pr_data = self._extract_first_json_object(raw)
+                if pr_data:
                     title = str(pr_data.get("title", title)).strip()[:70] or title
                     body = str(pr_data.get("body", body)).strip() or body
         except Exception as llm_exc:
@@ -815,11 +820,9 @@ class SidarAgent:
                 if not isinstance(raw, str):
                     break
 
-                _dec = json.JSONDecoder()
-                idx = raw.find("{")
-                if idx == -1:
+                action = self._extract_first_json_object(raw)
+                if not action:
                     break
-                action, _ = _dec.raw_decode(raw, idx)
 
                 tool_name = str(action.get("tool", "")).strip()
                 tool_arg  = str(action.get("argument", "")).strip()
