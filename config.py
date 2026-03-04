@@ -37,7 +37,10 @@ else:
 # ═══════════════════════════════════════════════════════════════
 
 def get_bool_env(key: str, default: bool = False) -> bool:
-    val = os.getenv(key, str(default)).lower()
+    raw_val = os.getenv(key)
+    if raw_val is None or not raw_val.strip():
+        return default
+    val = raw_val.strip().lower()
     return val in ("true", "1", "yes", "on")
 
 
