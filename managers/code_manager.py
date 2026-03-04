@@ -6,11 +6,11 @@ Sürüm: 2.7.0
 
 import ast
 import fnmatch
-import glob as _glob
 import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -329,18 +329,25 @@ class CodeManager:
     #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
     # ─────────────────────────────────────────────
 
-    def run_shell(self, command: str, cwd: Optional[str] = None) -> Tuple[bool, str]:
+    def run_shell(
+        self,
+        command: str,
+        cwd: Optional[str] = None,
+        allow_shell_features: bool = False,
+    ) -> Tuple[bool, str]:
         """
         Kabuk komutunu güvenli subprocess ile çalıştırır.
         Claude Code'daki Bash aracına eşdeğer.
 
         Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
-        - git, npm, pip, ls, grep, find gibi tüm kabuk komutlarını destekler.
+        - Varsayılan modda `shell=False` ve `shlex.split(...)` kullanır.
+        - Pipe/redirect gibi shell operatörleri için `allow_shell_features=True` gerekir.
         - 60 saniyelik zaman aşımı koruması vardır.
 
         Args:
-            command: Çalıştırılacak kabuk komutu (shell=True ile işlenir)
+            command: Çalıştırılacak komut
             cwd: Çalışma dizini (None ise base_dir kullanılır)
+            allow_shell_features: True ise shell operatörleri (|, >, &&, vb.) aktif edilir.
 
         Returns:
             (başarı, çıktı_veya_hata)
@@ -357,16 +364,37 @@ class CodeManager:
 
         work_dir = cwd or str(self.base_dir)
 
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=work_dir,
-                env={**os.environ},
+        shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
+        uses_shell_features = any(token in command for token in shell_meta_chars)
+        if uses_shell_features and not allow_shell_features:
+            return False, (
+                "⚠ Komut shell operatörleri içeriyor (|, >, &&, vb.).\n"
+                "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
+                "Gerekliyse allow_shell_features=True ile tekrar deneyin."
             )
+
+        try:
+            if allow_shell_features:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=work_dir,
+                    env={**os.environ},
+                )
+            else:
+                args = shlex.split(command)
+                result = subprocess.run(
+                    args,
+                    shell=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=work_dir,
+                    env={**os.environ},
+                )
             output_parts = []
             if result.stdout.strip():
                 output_parts.append(result.stdout.strip())
@@ -381,10 +409,13 @@ class CodeManager:
                 )
             return True, combined
 
+        except ValueError as exc:
+            return False, f"Komut ayrıştırılamadı: {exc}"
         except subprocess.TimeoutExpired:
             return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
         except Exception as exc:
             return False, f"Kabuk hatası: {exc}"
+
 
     # ─────────────────────────────────────────────
     #  GLOB DOSYA ARAMA
@@ -605,12 +636,34 @@ class CodeManager:
     #  KOD DENETİMİ
     # ─────────────────────────────────────────────
 
-    def audit_project(self, root: str = ".") -> str:
+    def audit_project(
+        self,
+        root: str = ".",
+        exclude_dirs: Optional[List[str]] = None,
+        max_files: int = 5000,
+    ) -> str:
         with self._lock:
             self._audits_done += 1
 
         target = Path(root).resolve()
-        py_files: List[Path] = list(target.rglob("*.py"))
+        if exclude_dirs is None:
+            exclude_dirs = [
+                ".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"
+            ]
+        exclude_set = {name.strip() for name in exclude_dirs if name and name.strip()}
+
+        py_files: List[Path] = []
+        for cur_root, dirs, files in os.walk(target):
+            dirs[:] = [d for d in dirs if d not in exclude_set]
+            for file_name in files:
+                if not file_name.endswith(".py"):
+                    continue
+                py_files.append(Path(cur_root) / file_name)
+                if len(py_files) >= max_files:
+                    break
+            if len(py_files) >= max_files:
+                break
+
         errors: List[str] = []
         ok_count = 0
 
@@ -631,6 +684,8 @@ class CodeManager:
             f"  Geçerli             : {ok_count}",
             f"  Hatalı              : {len(errors)}",
         ]
+        if len(py_files) >= max_files:
+            report_lines.append(f"  Uyarı               : Dosya limiti nedeniyle ilk {max_files} dosya tarandı")
         if errors:
             report_lines.append("\n  Hatalar:")
             report_lines.extend(errors)
@@ -638,6 +693,7 @@ class CodeManager:
             report_lines.append("  Tüm dosyalar sözdizimi açısından temiz. ✓")
 
         return "\n".join(report_lines)
+
 
     # ─────────────────────────────────────────────
     #  METRİKLER
