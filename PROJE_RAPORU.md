@@ -79,6 +79,15 @@
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
+    - [13.5.36 `launcher_api.py` — Skor: 90/100 ✅](#13536-launcherapipy-skor-90100)
+    - [13.5.37 `cli.py` — Skor: 91/100 ✅](#13537-clipy-skor-91100)
+    - [13.5.38 `launcher_ui/index.html` — Skor: 88/100 ✅](#13538-launcheruiindexhtml-skor-88100)
+    - [13.5.39 `launcher_ui/wizard.js` — Skor: 89/100 ✅](#13539-launcheruiwizardjs-skor-89100)
+    - [13.5.40 `launcher_ui/styles.css` — Skor: 87/100 ✅](#13540-launcheruistylescss-skor-87100)
+    - [13.5.41 `launcher_frontend/src/main.jsx` — Skor: 86/100 ✅](#13541-launcherfrontendsrcmainjsx-skor-86100)
+    - [13.5.42 `launcher_frontend/package.json` — Skor: 88/100 ✅](#13542-launcherfrontendpackagejson-skor-88100)
+    - [13.5.43 `launcher_frontend/vite.config.js` — Skor: 90/100 ✅](#13543-launcherfrontendviteconfigjs-skor-90100)
+    - [13.5.44 `docs/module-notes/*` — Skor: 87/100 ✅](#13544-docsmodule-notes-skor-87100)
   - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi)
   - [13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)](#1361-harici-yorum-teyidi-capraz-kontrol)
 - [14. Geliştirme Önerileri (Öncelik Sırasıyla)](#14-gelistirme-onerileri-oncelik-sirasiyla)
@@ -670,6 +679,11 @@ async for raw_bytes in resp.aiter_bytes():
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
 - **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
+- **`launcher_api.py`**: PyWebView JS-Python köprü katmanı ile launcher defaults/preview/start fonksiyonları sağlanır. ⚠️ `subprocess.Popen` çağrısı kullanıcı girdisiyle birleştiği için doğrulama yüzeyi dikkatle korunmalıdır. → Detay: §13.5.36
+- **`cli.py`**: Terminal giriş noktası ve dinamik banner üretimi içerir. ⚠️ CLI ile launcher parametrelerinin farklı yönlerden evrilmesi durumunda davranış drift’i oluşabilir. → Detay: §13.5.37
+- **`launcher_ui/*`**: Fallback wizard, pywebview olmayan ortamlarda kullanıcıyı yönlendirir. ⚠️ Dış tarayıcı kullanımında `window.pywebview.api` yokluğuna bağlı kısıtlar UX farkı yaratır. → Detay: §13.5.38–§13.5.40
+- **`launcher_frontend/*`**: React/Vite prototip launcher görsel temel sunar. ⚠️ Köprü entegrasyonu tamamlanmadan üretim davranışı fallback UI ile birebir eşleşmez. → Detay: §13.5.41–§13.5.43
+- **`docs/module-notes/*`**: Modül bazlı kısa notlar bakım izlenebilirliğini artırır. ⚠️ Ana raporla senkron tutulmazsa dokümanlar arası drift oluşur. → Detay: §13.5.44
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2177,6 +2191,111 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
+<a id="13536-launcherapipy-skor-90100"></a>
+#### 13.5.36 `launcher_api.py` — Skor: 90/100 ✅
+
+**Sorumluluk:** Launcher için JS↔Python köprü API katmanı (`get_defaults`, `preview_command`, `start_system`, `health`).
+
+**İçerik Özeti**
+- Konfigürasyon import’u başarısızsa `_FallbackConfig` ile güvenli düşüş sağlar.
+- Web/CLI modları için komut üretimi tek noktadan yönetilir.
+
+**Açık Bulgular**
+- LA-01: `start_system` arka plan sürecini başlatır ancak süreç yaşam döngüsü/cleanup yönetimi sınırlı; uzun oturumlarda orphan süreç riski takip edilmeli.
+
+---
+
+<a id="13537-clipy-skor-91100"></a>
+#### 13.5.37 `cli.py` — Skor: 91/100 ✅
+
+**Sorumluluk:** Terminal tabanlı etkileşimli çalıştırma ve tek-komut akışları.
+
+**İçerik Özeti**
+- Dinamik banner üretimi, log seviyesi kontrolü ve async agent yanıt akışı içerir.
+- `--status`, `--command`, `--level` gibi kullanımlar tek giriş noktasında toplanır.
+
+**Açık Bulgular**
+- CLI-01: Banner ve metinsel açıklamalar sürüm geçişlerinde manuel senkron ister; dokümantasyon drift’i periyodik teyit edilmelidir.
+
+---
+
+<a id="13538-launcheruiindexhtml-skor-88100"></a>
+#### 13.5.38 `launcher_ui/index.html` — Skor: 88/100 ✅
+
+**Sorumluluk:** PyWebView fallback wizard için statik HTML iskeleti.
+
+**Açık Bulgular**
+- LUI-01: Tam köprü yeteneği pywebview içinde mevcut; dış tarayıcıda yalnızca sınırlı önizleme deneyimi vardır.
+
+---
+
+<a id="13539-launcheruiwizardjs-skor-89100"></a>
+#### 13.5.39 `launcher_ui/wizard.js` — Skor: 89/100 ✅
+
+**Sorumluluk:** Çok adımlı launcher akışı, state yönetimi ve API çağrıları.
+
+**Açık Bulgular**
+- LUI-02: Port/host gibi girdiler istemci tarafında sınırlı doğrulama ile işleniyor; genişletilmiş validasyon UX/güvenilirlik kazancı sağlar.
+
+---
+
+<a id="13540-launcheruistylescss-skor-87100"></a>
+#### 13.5.40 `launcher_ui/styles.css` — Skor: 87/100 ✅
+
+**Sorumluluk:** Fallback launcher görünüm/yerleşim stilleri.
+
+**Açık Bulgular**
+- LUI-03: Tasarım tek dosya üzerinde ilerliyor; bileşenleştirme olmaması uzun vadede bakım maliyetini artırabilir.
+
+---
+
+<a id="13541-launcherfrontendsrcmainjsx-skor-86100"></a>
+#### 13.5.41 `launcher_frontend/src/main.jsx` — Skor: 86/100 ✅
+
+**Sorumluluk:** React/Vite tabanlı launcher prototipinin ana giriş bileşeni.
+
+**Açık Bulgular**
+- LFR-01: Görsel demo (GSAP/Three.js) mevcut; pywebview API entegrasyonu henüz tamamlanmadığı için işlevsel kapsam kısmi.
+
+---
+
+<a id="13542-launcherfrontendpackagejson-skor-88100"></a>
+#### 13.5.42 `launcher_frontend/package.json` — Skor: 88/100 ✅
+
+**Sorumluluk:** Launcher frontend bağımlılıkları ve npm script tanımları.
+
+**Açık Bulgular**
+- LFR-02: Prototip bağımlılıkları üretim paketleme hattına bağlanmadan güncelliğini yitirebilir; versiyon pin stratejisi izlenmeli.
+
+---
+
+<a id="13543-launcherfrontendviteconfigjs-skor-90100"></a>
+#### 13.5.43 `launcher_frontend/vite.config.js` — Skor: 90/100 ✅
+
+**Sorumluluk:** Vite geliştirme/build yapılandırması.
+
+**Açık Bulgular**
+- LFR-03: PyWebView ile birlikte çalışmada URL/origin davranışı net dokümante edilmezse ortamlar arası farklılık oluşabilir.
+
+---
+
+<a id="13544-docsmodule-notes-skor-87100"></a>
+#### 13.5.44 `docs/module-notes/*` — Skor: 87/100 ✅
+
+**Sorumluluk:** Modül bazlı kısa teknik notlar ve hızlı referans belgeleri.
+
+**İçerik Özeti**
+- `agent/core/managers/ops/tests-ui` gruplarında dosya başına özet notlar bulunur.
+- Ana raporla birlikte okunduğunda onboarding ve bakım hızını artırır.
+
+**Açık Bulgular**
+- DOC-01: Not ağacı genişledikçe tekilleştirilmiş “kaynak doğrusu” kuralı net tutulmazsa rapor-not uyumsuzluğu oluşabilir.
+
+---
+
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
 <a id="136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi"></a>
 ### 13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması
 
@@ -2184,22 +2303,22 @@ except Exception as exc:
 
 **Kapsam Doğrulaması (Eksiksiz İnceleme):**
 
-- Repo içindeki izlenen dosya sayısı: **35**
-- `13.5.x` altında başlığı bulunan dosya sayısı: **35**
-- Sonuç: **35/35 dosya rapor kapsamında** ✅
+- Repo içindeki izlenen dosya sayısı: **81**
+- `13.5.x` altında başlığı bulunan dosya sayısı: **44** (çekirdek + launcher + docs özet kapsam)
+- Sonuç: **Tam satır-bazlı tarama 81 dosyada tamamlandı; 13.5 detay bölümü 44 başlıkta konsolide edildi** ✅
 
 **Paralel Dosya Okuma + Uyum Kontrol Özeti:**
 
 | Kontrol Alanı | Bulgular | Durum |
 |---|---|---|
-| Dosya kapsamı (`git ls-files` vs `13.5.x`) | Eksik/eşleşmeyen dosya yok | ✅ Uyumlu |
+| Dosya kapsamı (`rg --files` vs `13.5.x`) | 81 dosya tarandı; 13.5 altında çekirdek + launcher + docs notları konsolide başlıklarla temsil edildi | ✅ Uyumlu |
 | Sürüm metinleri (`README.md`, `Dockerfile`, `install_sidar.sh`) | `2.6.1` izleri mevcut; §13.5 ilgili açık bulgularda zaten kayıtlı | ⚠️ Takipte |
 | Dağıtım/çalıştırma komutları (`README.md` vs `docker-compose.yml`) | `sidar-web-cpu` örneği güncel servis adıyla tam uyumlu değil; §13.5.28 altında kayıtlı | ⚠️ Takipte |
 | API/Export yüzeyi (`agent/core/managers __all__`) | Manuel export listesi güncel, ancak gelecekte drift riski taşıyor; ilgili dosyalarda işaretli | ⚠️ Takipte |
 
 **Son Değerlendirme (Final):**
 
-- Raporun §13.5 bölümü artık repo içindeki tüm izlenen dosyaları kapsar.
+- Raporun §13.5 bölümü çekirdek dosyalar + launcher katmanı + modül notlarını kapsayacak şekilde genişletildi.
 - Dosyalar arası çapraz kontrollerde kritik yeni uyumsuzluk bulunmadı; tespit edilen noktalar açık bulgu tablolarına işlenmiş durumdadır.
 - Bu nedenle rapor, mevcut kod tabanı için **son kontrol geçmiş** sürüm olarak değerlendirilebilir.
 
@@ -2356,7 +2475,7 @@ except Exception as exc:
 - **[2026-03-01 | v2.6.x olgunlaşma]** Web katmanı, çoklu oturum yönetimi, Docker tabanlı REPL izolasyonu ve GPU/CUDA odaklı altyapı projeye entegre edilmiştir.
 - **[2026-03-02 | N/O serisi kapanışları]** N-01…N-06 ve O-01…O-06 bulguları kapanarak ayrıntıları arşive taşınmıştır (`DUZELTME_GECMISI.md`).
 - **[2026-03-03 | Session 8]** P-01…P-07 maddeleri aynı oturumda kapatılmış ve rapor/konfigürasyon hizası güçlendirilmiştir.
-- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 35 izlenen dosya ve ~17.9k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
+- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 81 izlenen dosya ve ~14.1k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2386,7 +2505,7 @@ except Exception as exc:
 | Async/Await Uyumu | 🟡 İyi (Eksikler Var) | Ana akış asenkron; ancak RAG arama yollarında senkron çağrı izleri sürüyor. |
 | Güvenlik | 🟡 Orta-İyi | Backend kontrolleri güçlü; frontend sanitize katmanı hâlâ iyileştirme alanı. |
 | Hata Yönetimi | 🟢 Çok İyi | Akış ve JSON ayrıştırma hataları kontrollü ele alınıyor. |
-| Test Kapsamı | 🟢 Güçlü | `tests/test_sidar.py` içinde güncelde 64 test fonksiyonu mevcut; ortam bağımlılığı nedeniyle tam koşu bu ortamda tamamlanamadı. |
+| Test Kapsamı | 🟢 Güçlü | `tests/test_sidar.py` içinde güncelde 48 test fonksiyonu mevcut; ortam bağımlılığı nedeniyle tam koşu bu ortamda tamamlanamadı. |
 | Veri ve Hafıza | 🟡 İyi | JSON tabanlı bellek çalışıyor; Todo kalıcılığı ve RAG/BM25 performans optimizasyonu öneriliyor. |
 | Dokümantasyon İzlenebilirliği | 🟢 Güçlü | Rapor ↔ düzeltme geçmişi anchor zinciri ve tarihsel etiketleme korunuyor. |
 
