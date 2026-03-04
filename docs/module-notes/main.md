@@ -1,34 +1,26 @@
-# main.py Teknik Notu
+# main.py Teknik Notu (Akıllı Başlatıcı)
 
-`main.py`, Sidar CLI uygulamasının giriş noktasıdır. Kullanıcı etkileşimini, tek-komut modunu ve çalışma zamanı override akışını yönetir.
+`main.py`, Sidar için etkileşimli başlangıç sihirbazıdır. Kullanıcıdan adım adım seçim alır ve uygun çalışma modunu (`cli.py` veya `web_server.py`) başlatır.
 
 ## 1) Sorumluluklar
 
-- CLI argümanlarını parse etmek (`--status`, `--command`, `--provider`, `--level`, `--model`, `--log`).
-- `Config` nesnesini oluşturup gerektiğinde CLI ile override etmek.
-- `SidarAgent` örneğini başlatmak.
-- Interaktif döngüde kullanıcı girdisini güvenli biçimde ajana aktarmak.
+- Karşılama/başlatma menüsü sunmak.
+- Sağlayıcı (`ollama/gemini`), erişim seviyesi (`restricted/sandbox/full`) ve çalışma modu (`cli/web`) seçimini almak.
+- Başlatma öncesi temel kontroller yapmak (`.env`, Ollama erişimi, Gemini key uyarısı).
+- Seçimlere göre alt komutu üretip süreci başlatmak.
 
-## 2) Çalışma Akışı
+## 2) Çalışma Modları
 
-1. `config.py` import edilir (merkezi logging ve config altyapısı devrede).
-2. `main()` içinde `argparse` ile parametreler alınır.
-3. `cfg = Config()` oluşturulur; CLI parametreleri sınıf yerine **instance** üzerinde override edilir.
-4. `agent = SidarAgent(cfg)` başlatılır.
-5. `--status` veya `--command` modları varsa tek-atış akış çalışır, değilse interaktif döngüye girilir.
+- **Wizard modu (varsayılan):** Etkileşimli soru-cevap akışı.
+- **Quick modu:** `--quick cli` veya `--quick web` ile sihirbazı atlayıp doğrudan başlatma.
 
-## 3) Teknik Özellikler
+## 3) Bağlantılı Dosyalar
 
-- **Tek event-loop yaklaşımı:** interaktif mod, her komutta yeni loop açmak yerine tek `asyncio.run(_interactive_loop_async(...))` ile yönetilir.
-- **`input()` izolasyonu:** kullanıcı girişi `asyncio.to_thread(input, ...)` ile alınır; event-loop bloklanmaz.
-- **Dinamik banner/sürüm gösterimi:** sürüm `agent.VERSION` üzerinden çalışma anında yazdırılır.
+- `cli.py`: terminal/CLI agent arayüzü
+- `web_server.py`: web arayüzü sunucusu
+- `config.py`: varsayılan değerler ve preflight kontrol verisi
 
-## 4) Bağlantılı Dosyalar
+## 4) Operasyon Notu
 
-- `config.py`: merkezi ayar kaynağı
-- `agent/sidar_agent.py`: ana davranış motoru
-- Dolaylı olarak `core/*` ve `managers/*` (ajan inşası sırasında)
-
-## 5) Operasyon Notu
-
-CLI ile verilen `--provider`, `--level`, `--model` değerleri yalnızca o process ömründe geçerlidir; kalıcı değişiklik için `.env`/deployment ayarları güncellenmelidir.
+- `Dockerfile` varsayılan entrypoint olarak `main.py` çalıştırdığında artık kullanıcıyı etkileşimli başlatıcı karşılar.
+- Non-interactive otomasyon için `--quick` argümanları kullanılmalıdır.

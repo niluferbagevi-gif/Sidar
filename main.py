@@ -1,243 +1,172 @@
 """
-Sidar Project - Giriş Noktası
-Yazılım Mühendisi AI Asistanı — CLI Arayüzü
+Sidar Project - Akıllı Başlatıcı
 
-Kullanım:
-    python main.py                  # interaktif mod
-    python main.py --status         # sistem durumunu göster
-    python main.py -c "komut"       # tek komut çalıştır
-    python main.py --level full     # erişim seviyesini geçici olarak ayarla
+Bu dosya, kullanıcıdan etkileşimli seçimler alarak Sidar'ı CLI veya Web modunda başlatır.
 """
+
+from __future__ import annotations
 
 import argparse
-import asyncio
-import logging
 import os
+import subprocess
 import sys
-
-# Proje kökünü sys.path'e ekle
-sys.path.insert(0, os.path.dirname(__file__))
+from pathlib import Path
+from typing import List, Sequence
 
 from config import Config
-from agent.sidar_agent import SidarAgent
 
 
-# ─────────────────────────────────────────────
-#  LOGLAMA
-# ─────────────────────────────────────────────
-
-def _setup_logging(level: str) -> None:
-    """
-    config.py zaten logging.basicConfig'i RotatingFileHandler ile kurmuştur.
-    Burada yalnızca CLI --log argümanına göre kök logger seviyesini güncelliyoruz.
-    """
-    log_level = getattr(logging, level.upper(), logging.INFO)
-    logging.getLogger().setLevel(log_level)
+def _print_header() -> None:
+    print("\n" + "═" * 64)
+    print("  SİDAR Başlatıcı")
+    print("  Hoş geldiniz ✨")
+    print("═" * 64)
 
 
-# ─────────────────────────────────────────────
-#  BANNER  (sürüm çalışma anında okunur)
-# ─────────────────────────────────────────────
-
-def _make_banner(version: str) -> str:
-    """Sürüm numarasını dinamik olarak içeren ASCII banner'ı oluşturur."""
-    ver_field = f"v{version}"
-    # Sabit genişlik: 7 karakter; sağa boşluk ekle
-    ver_padded = ver_field.ljust(7)
-    return (
-        "\n"
-        " ╔══════════════════════════════════════════════╗\n"
-        " ║  ███████╗██╗██████╗  █████╗ ██████╗          ║\n"
-        " ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║\n"
-        " ║  ███████╗██║██║  ██║███████║██████╔╝         ║\n"
-        " ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║\n"
-        " ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║\n"
-        " ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║\n"
-        f" ║  Yazılım Mimarı & Baş Mühendis AI  {ver_padded}║\n"
-        " ╚══════════════════════════════════════════════╝\n"
-    )
-
-
-HELP_TEXT = """
-Komutlar:
-  .status     — Sistem durumunu göster
-  .clear      — Konuşma belleğini temizle
-  .audit      — Proje denetimini çalıştır
-  .health     — Sistem sağlık raporu
-  .gpu        — GPU belleğini optimize et
-  .github     — GitHub bağlantı durumu
-  .level      — Mevcut erişim seviyesini göster
-  .web        — Web arama durumu
-  .docs       — Belge deposunu listele
-  .help       — Bu yardım mesajını göster
-  .exit / .q  — Çıkış
-
-Doğrudan Komutlar (serbest metin):
-  web'de ara: <sorgu>              → DuckDuckGo web araması
-  pypi: <paket>                    → PyPI paket bilgisi
-  npm: <paket>                     → npm paket bilgisi
-  github releases: <owner/repo>    → GitHub release listesi
-  docs ara: <sorgu>                → Belge deposunda ara
-  belge ekle <url>                 → URL'den belge ekle
-  stackoverflow: <sorgu>           → Stack Overflow araması
-"""
-
-
-# ─────────────────────────────────────────────
-#  İNTERAKTİF DÖNGÜ
-# ─────────────────────────────────────────────
-
-async def _interactive_loop_async(agent: SidarAgent) -> None:
-    """
-    Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
-
-    Sorun (eski kod): while döngüsü içinde her mesajda asyncio.run() çağrılıyordu.
-    Her çağrı yeni bir Event Loop açıp kapattığından, ikinci mesajda
-    agent._lock eski (kapalı) loop'a bağlı kalıyordu → RuntimeError riski.
-
-    Çözüm: Tüm döngü tek bir async fonksiyon içine alındı.
-    asyncio.Lock() tüm oturum boyunca aynı loop'ta yaşar.
-    """
-    print(_make_banner(agent.VERSION))
-
-    # Sağlayıcıya göre doğru model adını göster
-    if agent.cfg.AI_PROVIDER == "gemini":
-        model_display = getattr(agent.cfg, "GEMINI_MODEL", "gemini-2.0-flash")
-    else:
-        model_display = agent.cfg.CODING_MODEL
-
-    print(f"  Erişim Seviyesi : {agent.cfg.ACCESS_LEVEL.upper()}")
-    print(f"  AI Sağlayıcı    : {agent.cfg.AI_PROVIDER} ({model_display})")
-    if agent.cfg.USE_GPU:
-        gpu_line = f"✓ {agent.cfg.GPU_INFO}"
-        if getattr(agent.cfg, "CUDA_VERSION", "N/A") != "N/A":
-            gpu_line += f"  (CUDA {agent.cfg.CUDA_VERSION}"
-            if getattr(agent.cfg, "GPU_COUNT", 1) > 1:
-                gpu_line += f", {agent.cfg.GPU_COUNT} GPU"
-            gpu_line += ")"
-        print(f"  GPU             : {gpu_line}")
-    else:
-        print(f"  GPU             : ✗ CPU Modu  ({agent.cfg.GPU_INFO})")
-    print(f"  GitHub          : {'Bağlı' if agent.github.is_available() else 'Bağlı değil'}")
-    print(f"  Web Arama       : {'Aktif' if agent.web.is_available() else 'duckduckgo-search kurulu değil'}")
-    print(f"  Paket Bilgi     : {agent.pkg.status()}")
-    print(f"  Belge Deposu    : {agent.docs.status()}")
-    print(f"\n  '.help' yazarak komut listesini görebilirsiniz.\n")
-
+def _choose(prompt: str, options: Sequence[str], default_index: int = 0) -> str:
     while True:
+        print(f"\n{prompt}")
+        for i, opt in enumerate(options, start=1):
+            mark = " (varsayılan)" if i - 1 == default_index else ""
+            print(f"  {i}) {opt}{mark}")
+
+        raw = input("Seçiminiz: ").strip()
+        if not raw:
+            return options[default_index]
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(options):
+                return options[idx]
+
+        print("⚠ Geçersiz seçim, tekrar deneyin.")
+
+
+def _ask_text(prompt: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    raw = input(f"{prompt}{suffix}: ").strip()
+    return raw or default
+
+
+def _confirm(prompt: str, default_yes: bool = True) -> bool:
+    hint = "[Y/n]" if default_yes else "[y/N]"
+    raw = input(f"{prompt} {hint}: ").strip().lower()
+    if not raw:
+        return default_yes
+    return raw in {"y", "yes", "e", "evet"}
+
+
+def _preflight(cfg: Config, provider: str) -> None:
+    print("\n🔎 Ön kontroller yapılıyor...")
+
+    if sys.version_info < (3, 10):
+        print("⚠ Python 3.10+ önerilir.")
+
+    env_path = Path(cfg.BASE_DIR) / ".env"
+    if env_path.exists():
+        print(f"✅ .env bulundu: {env_path}")
+    else:
+        print("⚠ .env bulunamadı, varsayılan ayarlarla devam edilecek.")
+
+    if provider == "gemini" and not cfg.GEMINI_API_KEY:
+        print("⚠ GEMINI_API_KEY boş görünüyor.")
+
+    if provider == "ollama":
         try:
-            # input() senkron olduğu için event loop'u bloke etmemesi için thread'e itilir
-            user_input = (await asyncio.to_thread(input, "Sen  > ")).strip()
-        except (EOFError, KeyboardInterrupt, asyncio.CancelledError):
-            print("\nSidar > Görüşürüz. ✓")
-            break
+            import httpx
 
-        if not user_input:
-            continue
-
-        # Dahili komutlar
-        if user_input.lower() in (".exit", ".q", "exit", "quit", "çıkış"):
-            print("Sidar > Görüşürüz. ✓")
-            break
-        elif user_input.lower() == ".help":
-            print(HELP_TEXT)
-            continue
-        elif user_input.lower() == ".status":
-            print(agent.status())
-            continue
-        elif user_input.lower() == ".clear":
-            print(agent.clear_memory())
-            continue
-        elif user_input.lower() == ".audit":
-            print(agent.code.audit_project("."))
-            continue
-        elif user_input.lower() == ".health":
-            print(agent.health.full_report())
-            continue
-        elif user_input.lower() == ".gpu":
-            print(agent.health.optimize_gpu_memory())
-            continue
-        elif user_input.lower() == ".github":
-            print(agent.github.status())
-            continue
-        elif user_input.lower() == ".level":
-            print(agent.security.status_report())
-            continue
-        elif user_input.lower() == ".web":
-            print(agent.web.status())
-            continue
-        elif user_input.lower() == ".docs":
-            print(agent.docs.list_documents())
-            continue
-
-        # Ajan yanıtı — aynı event loop içinde doğrudan async for kullanılır
-        try:
-            print("Sidar > ", end="", flush=True)
-            async for chunk in agent.respond(user_input):
-                print(chunk, end="", flush=True)
-            print("\n")
-        except Exception as exc:
-            print(f"\nSidar > ✗ Hata: {exc}\n")
-            logging.exception("Ajan yanıt hatası")
+            base = cfg.OLLAMA_URL.rstrip("/")
+            tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
+            with httpx.Client(timeout=2) as client:
+                code = client.get(tags_url).status_code
+            if code == 200:
+                print("✅ Ollama erişimi başarılı.")
+            else:
+                print(f"⚠ Ollama yanıt kodu: {code}")
+        except Exception:
+            print("⚠ Ollama erişimi doğrulanamadı (servis kapalı olabilir).")
 
 
-def interactive_loop(agent: SidarAgent) -> None:
-    asyncio.run(_interactive_loop_async(agent))
+def _build_cli_command(provider: str, access_level: str, model: str | None, log: str) -> List[str]:
+    cmd = [sys.executable, "cli.py", "--provider", provider, "--level", access_level, "--log", log]
+    if model and provider == "ollama":
+        cmd.extend(["--model", model])
+    return cmd
 
 
-# ─────────────────────────────────────────────
-#  GİRİŞ NOKTASI
-# ─────────────────────────────────────────────
+def _build_web_command(provider: str, access_level: str, host: str, port: str, log: str) -> List[str]:
+    return [
+        sys.executable,
+        "web_server.py",
+        "--provider",
+        provider,
+        "--level",
+        access_level,
+        "--host",
+        host,
+        "--port",
+        port,
+        "--log",
+        log.lower(),
+    ]
+
+
+def run_wizard() -> int:
+    cfg = Config()
+    _print_header()
+
+    provider = _choose("AI sağlayıcısı seçin:", ["ollama", "gemini"], 0)
+    access_level = _choose("Erişim seviyesini seçin:", ["restricted", "sandbox", "full"], 2)
+    mode = _choose("Başlatma modu seçin:", ["cli", "web"], 0)
+    log_level = _choose("Log seviyesini seçin:", ["DEBUG", "INFO", "WARNING"], 1)
+
+    ollama_model = None
+    if provider == "ollama":
+        ollama_model = _ask_text("Ollama modeli", cfg.CODING_MODEL)
+
+    _preflight(cfg, provider)
+
+    if mode == "cli":
+        cmd = _build_cli_command(provider, access_level, ollama_model, log_level)
+    else:
+        host = _ask_text("Web host", cfg.WEB_HOST)
+        port = _ask_text("Web port", str(cfg.WEB_PORT))
+        cmd = _build_web_command(provider, access_level, host, port, log_level)
+
+    print("\n🚀 Başlatılacak komut:")
+    print("   " + " ".join(cmd))
+
+    if not _confirm("Devam edilsin mi?", True):
+        print("İşlem iptal edildi.")
+        return 0
+
+    return subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Sidar — Yazılım Mühendisi AI Asistanı",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("-c", "--command", help="Tek komut çalıştır ve çık")
-    parser.add_argument("--status", action="store_true", help="Sistem durumunu göster ve çık")
-    parser.add_argument(
-        "--level",
-        choices=["restricted", "sandbox", "full"],
-        help="Erişim seviyesini geçici olarak ayarla",
-    )
-    parser.add_argument("--provider", choices=["ollama", "gemini"], help="AI sağlayıcısı")
-    parser.add_argument("--model", help="Ollama model adı")
-    parser.add_argument("--log", default="INFO", help="Log seviyesi (DEBUG/INFO/WARNING)")
+    parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
+    parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
+    parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için sağlayıcı")
+    parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim")
+    parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
+    parser.add_argument("--host", help="Hızlı web başlat için host")
+    parser.add_argument("--port", help="Hızlı web başlat için port")
+    parser.add_argument("--log", default="INFO", help="Log seviyesi")
     args = parser.parse_args()
 
-    _setup_logging(args.log)
+    if not args.quick:
+        raise SystemExit(run_wizard())
 
-    # Config nesnesini oluştur; CLI flag'leri instance attribute olarak
-    # doğrudan override et. os.environ üzerinden override ÇALIŞMAZ çünkü
-    # Config sınıf attribute'ları module import anında bir kez değerlendirilir.
-    cfg = Config()
-    if args.level:
-        cfg.ACCESS_LEVEL = args.level
-    if args.provider:
-        cfg.AI_PROVIDER = args.provider
-    if args.model:
-        cfg.CODING_MODEL = args.model
+    provider = args.provider or "ollama"
+    level = args.level or "full"
 
-    agent = SidarAgent(cfg)
+    if args.quick == "cli":
+        cmd = _build_cli_command(provider, level, args.model, args.log)
+    else:
+        cfg = Config()
+        cmd = _build_web_command(provider, level, args.host or cfg.WEB_HOST, args.port or str(cfg.WEB_PORT), args.log)
 
-    if args.status:
-        print(agent.status())
-        return
-
-    if args.command:
-        # respond() async generator olduğu için asyncio.run() ile çalıştırılır
-        async def _run_command() -> None:
-            print("Sidar > ", end="", flush=True)
-            async for chunk in agent.respond(args.command):
-                print(chunk, end="", flush=True)
-            print()
-
-        asyncio.run(_run_command())
-        return
-
-    interactive_loop(agent)
+    raise SystemExit(subprocess.call(cmd, cwd=os.path.dirname(__file__) or "."))
 
 
 if __name__ == "__main__":
-    main()  
+    main()
