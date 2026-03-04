@@ -16,6 +16,7 @@ Amaç:
 - [`agent/README.md`](./agent/README.md): Agent katmanı (sidar_agent, auto_handle, definitions, init) teknik notları.
 - [`core/README.md`](./core/README.md): Core katmanı (`__init__`, llm_client, memory, rag) teknik notları.
 - [`managers/README.md`](./managers/README.md): Managers katmanı (code/security/github/web/package/system/todo) teknik notları.
+- [`ops/README.md`](./ops/README.md): Ops/dağıtım/dokümantasyon katmanı teknik notları.
 
 ## Not
 
