@@ -45,7 +45,7 @@
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
     - [13.5.1 `main.py` — Skor: 96/100 ✅](#1351-mainpy-skor-100100)
-    - [13.5.1A `cli.py` — Skor: 95/100 ✅](#1351a-clipy-skor-95100)
+    - [13.5.1A `cli.py` — Skor: 98/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 88/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
@@ -783,7 +783,7 @@ async for raw_bytes in resp.aiter_bytes():
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351a-clipy-skor-95100"></a>
-#### 13.5.1A `cli.py` — Skor: 95/100 ✅
+#### 13.5.1A `cli.py` — Skor: 98/100 ✅
 
 **Sorumluluk (Yeni):** Asıl terminal tabanlı CLI etkileşim katmanı. `SidarAgent` oluşturma, tek komut modu, interaktif async döngü, dahili nokta komutları ve durum gösterimleri.
 
@@ -807,7 +807,13 @@ async for raw_bytes in resp.aiter_bytes():
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| CLI-01 | Banner sürüm alanı `ljust(7)` ile sabit; sürüm metni uzarsa görsel taşma riski oluşabilir | 56–69 | Düşük |
+| CLI-02 | Banner satırı sabit genişlikte kaldığı için çok uzun sürümlerde kırpma (`…`) uygulanıyor; tam sürümün tamamı banner içinde gösterilmiyor (bilinçli görsel tercih) | 54–70 | Bilgi |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| CLI-01 | ✅ Kapandı | `_make_banner()` uzun sürüm metinlerini kırparak çerçeve taşmasını engelliyor (`ver_display`). |
 
 **Not:** Önceki raporda `main.py` altında değerlendirilen async CLI davranışları artık bu dosya kapsamında izlenmelidir.
 

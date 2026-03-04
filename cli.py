@@ -53,9 +53,11 @@ def _setup_logging(level: str) -> None:
 
 def _make_banner(version: str) -> str:
     """Sürüm numarasını dinamik olarak içeren ASCII banner'ı oluşturur."""
-    ver_field = f"v{version}"
-    # Sabit genişlik: 7 karakter; sağa boşluk ekle
-    ver_padded = ver_field.ljust(7)
+    ver_field = f"v{version}" if version else "v?"
+    # Banner satırı sabit genişlikte kaldığı için uzun sürüm metnini kırp.
+    # Satır iç genişliği 10 karakterdir; çerçeve taşmasını bu şekilde önleriz.
+    ver_display = ver_field if len(ver_field) <= 10 else f"{ver_field[:9]}…"
+    ver_padded = ver_display.ljust(10)
     return (
         "\n"
         " ╔══════════════════════════════════════════════╗\n"
