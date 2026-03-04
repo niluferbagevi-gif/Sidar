@@ -233,15 +233,17 @@ def _run_auto_or_webview(ui_mode: str, launcher_url: str | None) -> int:
     ok, reason = _webview_support_status()
 
     if ok:
-        return run_webview_ui(launcher_url)
+        try:
+            return run_webview_ui(launcher_url)
+        except Exception as exc:
+            print(f"⚠ WebView UI başlatılamadı: {exc}")
+            print("ℹ Linux ortamı için ek bağımlılıklar gerekebilir: `pip install qtpy pyqt5` veya `pip install pygobject`.")
+            print("ℹ Geçici fallback: konsol sihirbazı açılıyor.")
+            return run_wizard()
 
     print(f"⚠ WebView UI açılamadı: {reason}")
     print("ℹ Çözüm: `pip install pywebview` ve masaüstü oturumunda çalıştırın.")
     print("ℹ Geçici fallback: konsol sihirbazı açılıyor. (webview zorlamak için: --ui webview)")
-
-    if ui_mode == "webview":
-        return run_wizard()
-
     return run_wizard()
 
 
