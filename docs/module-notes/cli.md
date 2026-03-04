@@ -13,6 +13,7 @@
 - Interaktif döngü tek event-loop yaklaşımı ile çalışır.
 - `input()` çağrıları `asyncio.to_thread` ile izole edilmiştir.
 - CLI flag’leri (`--provider`, `--level`, `--model`, `--log`) ile runtime override yapılabilir.
+- `Config` ve `SidarAgent` importları `main()` içinde yapılır; böylece `python cli.py --help` gibi çağrılar bağımlılık hatası olmadan daha dayanıklı çalışır.
 
 ## 3) Bağlantılı Dosyalar
 

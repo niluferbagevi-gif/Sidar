@@ -13,8 +13,6 @@ import sys
 from pathlib import Path
 from typing import List, Sequence
 
-from config import Config
-
 
 def _print_header() -> None:
     print("\n" + "═" * 64)
@@ -55,7 +53,7 @@ def _confirm(prompt: str, default_yes: bool = True) -> bool:
     return raw in {"y", "yes", "e", "evet"}
 
 
-def _preflight(cfg: Config, provider: str) -> None:
+def _preflight(cfg, provider: str) -> None:
     print("\n🔎 Ön kontroller yapılıyor...")
 
     if sys.version_info < (3, 10):
@@ -111,6 +109,8 @@ def _build_web_command(provider: str, access_level: str, host: str, port: str, l
 
 
 def run_wizard() -> int:
+    from config import Config
+
     cfg = Config()
     _print_header()
 
@@ -162,6 +162,8 @@ def main() -> None:
     if args.quick == "cli":
         cmd = _build_cli_command(provider, level, args.model, args.log)
     else:
+        from config import Config
+
         cfg = Config()
         cmd = _build_web_command(provider, level, args.host or cfg.WEB_HOST, args.port or str(cfg.WEB_PORT), args.log)
 

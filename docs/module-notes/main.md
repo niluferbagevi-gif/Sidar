@@ -24,3 +24,4 @@
 
 - `Dockerfile` varsayılan entrypoint olarak `main.py` çalıştırdığında artık kullanıcıyı etkileşimli başlatıcı karşılar.
 - Non-interactive otomasyon için `--quick` argümanları kullanılmalıdır.
+- `Config` importu çalışma anına taşınmıştır; bu sayede `python main.py --help` çağrısı, konfigürasyon bağımlılıkları eksik olsa bile daha güvenli şekilde yanıt verebilir.
