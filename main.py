@@ -2,7 +2,7 @@
 Sidar Project - Akıllı Başlatıcı
 
 Bu dosya, kullanıcıdan etkileşimli seçimler alarak Sidar'ı CLI veya Web modunda
-başlatır. Başlatıcı hem konsol sihirbazı hem de (uygunsa) GUI arayüzü sunar.
+başlatır. Başlatıcı hem konsol sihirbazı hem de (uygunsa) WebView arayüzü sunar.
 """
 
 from __future__ import annotations
@@ -150,119 +150,123 @@ def run_wizard() -> int:
     return subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
 
 
-def _can_use_gui() -> bool:
+def _can_use_webview_ui() -> bool:
     if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return False
     try:
-        import tkinter  # noqa: F401
+        import webview  # noqa: F401
     except Exception:
         return False
     return True
 
 
-def run_gui() -> int:
+def run_webview_ui() -> int:
     from config import Config
-    import tkinter as tk
-    from tkinter import messagebox, ttk
+    import webview
 
     cfg = Config()
     result = {"code": 0}
 
-    root = tk.Tk()
-    root.title("Sidar Başlatıcı")
-    root.geometry("660x430")
-    root.resizable(False, False)
+    class Api:
+        def preflight(self, provider: str) -> str:
+            return "\n".join(_collect_preflight_messages(cfg, provider))
 
-    provider_var = tk.StringVar(value="ollama")
-    level_var = tk.StringVar(value="full")
-    mode_var = tk.StringVar(value="cli")
-    log_var = tk.StringVar(value="INFO")
-    model_var = tk.StringVar(value=cfg.CODING_MODEL)
-    host_var = tk.StringVar(value=cfg.WEB_HOST)
-    port_var = tk.StringVar(value=str(cfg.WEB_PORT))
-    cmd_var = tk.StringVar(value="")
+        def launch(
+            self,
+            provider: str,
+            access_level: str,
+            mode: str,
+            log: str,
+            model: str,
+            host: str,
+            port: str,
+        ) -> str:
+            provider = provider or "ollama"
+            access_level = access_level or "full"
+            log = log or "INFO"
 
-    def build_cmd() -> List[str]:
-        provider = provider_var.get()
-        if mode_var.get() == "cli":
-            model = model_var.get().strip() if provider == "ollama" else None
-            return _build_cli_command(provider, level_var.get(), model, log_var.get())
-        return _build_web_command(provider, level_var.get(), host_var.get().strip(), port_var.get().strip(), log_var.get())
+            if mode == "web":
+                cmd = _build_web_command(provider, access_level, host or cfg.WEB_HOST, port or str(cfg.WEB_PORT), log)
+            else:
+                cmd = _build_cli_command(provider, access_level, model or cfg.CODING_MODEL, log)
 
-    def refresh_state(*_args) -> None:
-        provider = provider_var.get()
-        mode = mode_var.get()
-        model_entry.configure(state="normal" if provider == "ollama" else "disabled")
-        host_entry.configure(state="normal" if mode == "web" else "disabled")
-        port_entry.configure(state="normal" if mode == "web" else "disabled")
-        cmd_var.set(" ".join(build_cmd()))
-
-    def run_checks() -> None:
-        lines = _collect_preflight_messages(cfg, provider_var.get())
-        messagebox.showinfo("Ön Kontrol", "\n".join(lines), parent=root)
-
-    def launch() -> None:
-        cmd = build_cmd()
-        confirm = messagebox.askyesno("Başlat", "Bu komut çalıştırılsın mı?\n\n" + " ".join(cmd), parent=root)
-        if not confirm:
-            return
-        root.withdraw()
-        try:
             result["code"] = subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
-        finally:
-            root.destroy()
+            for win in webview.windows:
+                win.destroy()
+            return "OK"
 
-    frame = ttk.Frame(root, padding=18)
-    frame.pack(fill="both", expand=True)
+    html = f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <title>Sidar Launcher</title>
+  <style>
+    body {{ margin: 0; font-family: Inter, Arial, sans-serif; background: radial-gradient(circle at 20% 20%, #1f2937, #0b1020 70%); color: #e5e7eb; }}
+    .wrap {{ max-width: 860px; margin: 24px auto; padding: 20px; }}
+    .card {{ background: rgba(17,24,39,.75); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }}
+    h1 {{ margin: 0 0 14px; font-size: 26px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }}
+    label {{ display: block; font-size: 13px; margin-bottom: 4px; opacity: .9; }}
+    input, select {{ width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f3f4f6; }}
+    .row {{ margin-top: 12px; display: flex; gap: 10px; }}
+    button {{ border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-weight: 600; }}
+    .p {{ background: #3b82f6; color: white; }}
+    .s {{ background: #374151; color: white; }}
+    .hint {{ margin-top: 12px; font-size: 13px; color: #9ca3af; }}
+  </style>
+</head>
+<body>
+  <div class='wrap'>
+    <div class='card'>
+      <h1>Sidar Interaktif Başlatıcı</h1>
+      <div class='grid'>
+        <div><label>Sağlayıcı</label><select id='provider'><option>ollama</option><option>gemini</option></select></div>
+        <div><label>Erişim Seviyesi</label><select id='level'><option>restricted</option><option>sandbox</option><option selected>full</option></select></div>
+        <div><label>Mod</label><select id='mode'><option selected>cli</option><option>web</option></select></div>
+        <div><label>Log</label><select id='log'><option>DEBUG</option><option selected>INFO</option><option>WARNING</option></select></div>
+        <div><label>Ollama Model</label><input id='model' value='{cfg.CODING_MODEL}' /></div>
+        <div><label>Web Host</label><input id='host' value='{cfg.WEB_HOST}' /></div>
+        <div><label>Web Port</label><input id='port' value='{cfg.WEB_PORT}' /></div>
+      </div>
+      <div class='row'>
+        <button class='s' onclick='runChecks()'>Ön Kontrol</button>
+        <button class='p' onclick='launch()'>Başlat</button>
+      </div>
+      <div class='hint'>Not: Bu arayüz web teknolojileri tabanlıdır (PyWebView). Flash hissi için JS animasyon kütüphaneleri eklenebilir.</div>
+    </div>
+  </div>
+  <script>
+    const el = id => document.getElementById(id);
+    async function runChecks() {{
+      const txt = await window.pywebview.api.preflight(el('provider').value);
+      alert(txt);
+    }}
+    async function launch() {{
+      await window.pywebview.api.launch(
+        el('provider').value,
+        el('level').value,
+        el('mode').value,
+        el('log').value,
+        el('model').value,
+        el('host').value,
+        el('port').value,
+      );
+    }}
+  </script>
+</body>
+</html>
+"""
 
-    ttk.Label(frame, text="Sidar Interaktif Başlatıcı", font=("Arial", 14, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
-
-    ttk.Label(frame, text="Sağlayıcı").grid(row=1, column=0, sticky="w", pady=(12, 4))
-    ttk.Combobox(frame, textvariable=provider_var, values=["ollama", "gemini"], state="readonly", width=16).grid(row=1, column=1, sticky="w", pady=(12, 4))
-
-    ttk.Label(frame, text="Erişim").grid(row=1, column=2, sticky="w", pady=(12, 4))
-    ttk.Combobox(frame, textvariable=level_var, values=["restricted", "sandbox", "full"], state="readonly", width=16).grid(row=1, column=3, sticky="w", pady=(12, 4))
-
-    ttk.Label(frame, text="Mod").grid(row=2, column=0, sticky="w", pady=4)
-    ttk.Combobox(frame, textvariable=mode_var, values=["cli", "web"], state="readonly", width=16).grid(row=2, column=1, sticky="w", pady=4)
-
-    ttk.Label(frame, text="Log").grid(row=2, column=2, sticky="w", pady=4)
-    ttk.Combobox(frame, textvariable=log_var, values=["DEBUG", "INFO", "WARNING"], state="readonly", width=16).grid(row=2, column=3, sticky="w", pady=4)
-
-    ttk.Label(frame, text="Ollama model").grid(row=3, column=0, sticky="w", pady=4)
-    model_entry = ttk.Entry(frame, textvariable=model_var, width=24)
-    model_entry.grid(row=3, column=1, sticky="w", pady=4)
-
-    ttk.Label(frame, text="Web host").grid(row=3, column=2, sticky="w", pady=4)
-    host_entry = ttk.Entry(frame, textvariable=host_var, width=24)
-    host_entry.grid(row=3, column=3, sticky="w", pady=4)
-
-    ttk.Label(frame, text="Web port").grid(row=4, column=2, sticky="w", pady=4)
-    port_entry = ttk.Entry(frame, textvariable=port_var, width=24)
-    port_entry.grid(row=4, column=3, sticky="w", pady=4)
-
-    ttk.Label(frame, text="Çalıştırılacak komut").grid(row=5, column=0, columnspan=4, sticky="w", pady=(12, 4))
-    cmd_label = ttk.Label(frame, textvariable=cmd_var, foreground="#0d47a1", wraplength=620, justify="left")
-    cmd_label.grid(row=6, column=0, columnspan=4, sticky="w")
-
-    btn_row = ttk.Frame(frame)
-    btn_row.grid(row=7, column=0, columnspan=4, sticky="w", pady=(18, 0))
-    ttk.Button(btn_row, text="Ön Kontrol", command=run_checks).pack(side="left", padx=(0, 8))
-    ttk.Button(btn_row, text="Başlat", command=launch).pack(side="left")
-    ttk.Button(btn_row, text="Kapat", command=root.destroy).pack(side="left", padx=(8, 0))
-
-    for var in (provider_var, level_var, mode_var, log_var, model_var, host_var, port_var):
-        var.trace_add("write", refresh_state)
-    refresh_state()
-
-    root.mainloop()
+    webview.create_window("Sidar Launcher", html=html, width=920, height=640, js_api=Api())
+    webview.start()
     return result["code"]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
-    parser.add_argument("--ui", choices=["auto", "console", "gui"], default="auto", help="Sihirbaz arayüzü (auto/console/gui)")
+    parser.add_argument("--ui", choices=["auto", "console", "webview"], default="auto", help="Sihirbaz arayüzü (auto/console/webview)")
     parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için sağlayıcı")
     parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim")
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
@@ -274,14 +278,14 @@ def main() -> None:
     if not args.quick:
         if args.ui == "console":
             raise SystemExit(run_wizard())
-        if args.ui == "gui":
-            if not _can_use_gui():
-                print("⚠ GUI kullanılamadı (display/tkinter yok). Konsol sihirbazı açılıyor.")
+        if args.ui == "webview":
+            if not _can_use_webview_ui():
+                print("⚠ WebView UI kullanılamadı (display veya pywebview yok). Konsol sihirbazı açılıyor.")
                 raise SystemExit(run_wizard())
-            raise SystemExit(run_gui())
+            raise SystemExit(run_webview_ui())
 
-        if _can_use_gui():
-            raise SystemExit(run_gui())
+        if _can_use_webview_ui():
+            raise SystemExit(run_webview_ui())
         raise SystemExit(run_wizard())
 
     provider = args.provider or "ollama"
