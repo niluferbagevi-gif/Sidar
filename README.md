@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v2.6.1** — ReAct mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v2.7.0** — ReAct mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║  Yazılım Mimarı & Baş Mühendis AI  v2.6.1  ║
+ ║  Yazılım Mimarı & Baş Mühendis AI  v2.7.0  ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -69,7 +69,7 @@
 - Streaming yanıt (daktilo efekti)
 
 ### GPU Hızlandırma (v2.6.0+)
-- PyTorch CUDA 12.1 desteği (RTX / Ampere serisi)
+- PyTorch CUDA 12.4 desteği (RTX / Ampere serisi)
 - FP16 mixed precision embedding (`GPU_MIXED_PRECISION=true`)
 - VRAM fraksiyonu kontrolü (`GPU_MEMORY_FRACTION`)
 - Çoklu GPU desteği (`MULTI_GPU=true`)
@@ -105,7 +105,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v2.6.1)
+### Web Arayüzü (v2.7.0)
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (23 araç)
@@ -196,7 +196,7 @@ ollama serve
 
 ```bash
 # CPU modu
-docker compose up --build sidar-web-cpu
+docker compose up --build sidar-web
 
 # GPU modu (NVIDIA)
 docker compose up --build sidar-web-gpu
@@ -368,12 +368,12 @@ sidar_project/
 ├── temp/                   # Sandbox modunda yazma dizini (gitignore'da)
 ├── logs/                   # Log dosyaları — RotatingFileHandler (gitignore'da)
 ├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği
-├── main.py                 # CLI giriş noktası (async döngü, asyncio.run doğru kullanımı)
+├── main.py                 # Etkileşimli launcher (wizard + quick start)
 ├── web_server.py           # FastAPI + SSE + Rate limiting + Session API + /set-branch
 ├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği
 ├── Dockerfile              # CPU/GPU dual-mode build (python:3.11-slim)
 ├── docker-compose.yml      # 4 servis: CPU/GPU × CLI/Web
-├── environment.yml         # Conda — PyTorch CUDA 12.1 wheel, pytest-asyncio
+├── environment.yml         # Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio
 ├── .env.example            # Açıklamalı ortam değişkeni şablonu
 └── install_sidar.sh        # Ubuntu/WSL sıfırdan kurulum scripti
 ```
@@ -467,6 +467,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v2.7.0** | Launcher/CLI ayrımı (`main.py` launcher, `cli.py` async terminal), canlı aktivite paneli, THOUGHT sentinel, hibrit RAG belge yönetimi ve ek doğrulama düzeltmeleri |
 | **v2.6.1** | Web UI düzeltmeleri: dışa aktarma, araç görselleştirme, mobil menü, dinamik model adı, gerçek git checkout, CancelledError düzeltmesi |
 | **v2.6.0** | GPU hızlandırma, Docker REPL sandbox, çoklu oturum, Recursive Chunking, Pydantic v2, rate limiting, WSL2 desteği |
 | **v2.5.0** | Async mimari (httpx, asyncio.Lock), dispatcher tablosu, pytest-asyncio |

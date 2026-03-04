@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
-# Sürüm: 2.6.1  (GPU & CPU destekli çift mod)
+# Sürüm: 2.7.0  (GPU & CPU destekli çift mod)
 #
 #  CPU modu (varsayılan):
 #    docker build -t sidar-ai .
