@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 _BRANCH_RE = re.compile(r"^[a-zA-Z0-9/_.\-]+$")
 
 
+def _is_not_found_error(exc: Exception) -> bool:
+    """PyGithub 404/UnknownObject benzeri hataları güvenli şekilde tespit eder."""
+    status = getattr(exc, "status", None)
+    if status == 404:
+        return True
+    message = str(exc).lower()
+    return "404" in message or "not found" in message
+
+
 class GitHubManager:
     """
     GitHub API üzerinden depo analizi yapar.
@@ -97,15 +106,17 @@ class GitHubManager:
     def list_repos(self, owner: str = "", limit: int = 100) -> Tuple[bool, List[Dict[str, str]]]:
         """
         Erişilebilen depoları listeler.
-        owner verilirse yalnızca ilgili kullanıcı/organizasyon depoları döner.
+        owner verilirse ilgili kullanıcı/organizasyon hesabının depolarını döner.
         """
         if not self._gh:
             return False, []
         try:
-            repos = []
+            repos: List[Dict[str, str]] = []
             if owner:
-                owner_obj = self._gh.get_organization(owner)
-                source = owner_obj.get_repos(type="all")
+                account = self._gh.get_user(owner)
+                account_type = str(getattr(account, "type", "")).lower()
+                repo_type = "all" if account_type == "organization" else "owner"
+                source = account.get_repos(type=repo_type)
             else:
                 source = self._gh.get_user().get_repos(visibility="all")
 
@@ -118,25 +129,8 @@ class GitHubManager:
                     "private": str(bool(getattr(repo, "private", False))).lower(),
                 })
             return True, repos
-        except Exception:
-            # owner bir kullanıcı olabilir (organization değil)
-            if owner:
-                try:
-                    user_obj = self._gh.get_user(owner)
-                    repos = []
-                    for i, repo in enumerate(user_obj.get_repos(type="owner")):
-                        if i >= limit:
-                            break
-                        repos.append({
-                            "full_name": repo.full_name,
-                            "default_branch": repo.default_branch,
-                            "private": str(bool(getattr(repo, "private", False))).lower(),
-                        })
-                    return True, repos
-                except Exception as exc:
-                    logger.error("Repo listesi alınamadı (%s): %s", owner, exc)
-                    return False, []
-            logger.error("Repo listesi alınamadı")
+        except Exception as exc:
+            logger.error("Repo listesi alınamadı (%s): %s", owner or "self", exc)
             return False, []
 
     def get_repo_info(self) -> Tuple[bool, str]:
@@ -280,9 +274,16 @@ class GitHubManager:
             kwargs = {}
             if branch:
                 kwargs["branch"] = branch
-            # Mevcut dosyayı kontrol et (güncelleme mi, oluşturma mı?)
+
             try:
                 existing = self._repo.get_contents(file_path, **kwargs)
+            except Exception as exc:
+                if _is_not_found_error(exc):
+                    existing = None
+                else:
+                    return False, f"GitHub dosya okuma hatası: {exc}"
+
+            if existing is not None:
                 self._repo.update_file(
                     path=file_path,
                     message=message,
@@ -291,15 +292,14 @@ class GitHubManager:
                     **kwargs,
                 )
                 return True, f"✓ Dosya güncellendi: {file_path}"
-            except Exception:
-                # Dosya yok → oluştur
-                self._repo.create_file(
-                    path=file_path,
-                    message=message,
-                    content=content,
-                    **kwargs,
-                )
-                return True, f"✓ Dosya oluşturuldu: {file_path}"
+
+            self._repo.create_file(
+                path=file_path,
+                message=message,
+                content=content,
+                **kwargs,
+            )
+            return True, f"✓ Dosya oluşturuldu: {file_path}"
         except Exception as exc:
             return False, f"GitHub dosya yazma hatası: {exc}"
 

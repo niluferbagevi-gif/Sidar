@@ -53,9 +53,9 @@
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
-    - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
-    - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
-    - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
+    - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
+    - [13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅](#13510-managerscodemanagerpy-skor-90100)
+    - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
     - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
@@ -1339,8 +1339,8 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="1359-configpy-skor-91100"></a>
-#### 13.5.9 `config.py` — Skor: 91/100 ✅
+<a id="1359-configpy-skor-90100"></a>
+#### 13.5.9 `config.py` — Skor: 90/100 ✅
 
 **Sorumluluk:** Merkez konfigürasyon omurgası — ortam değişkenlerini yükler, donanım/GPU tespiti yapar, loglama sistemini kurar ve tüm alt modüllerin kullandığı çalışma zamanı ayarlarını (`Config`) üretir.
 
@@ -1350,10 +1350,23 @@ except Exception as exc:
 - `HARDWARE = check_hardware()` çağrısı import anında bir kez çalışır; GPU/CPU/NVML tespiti bu aşamada tetiklenir.
 - Modül sonunda `Config.initialize_directories()` çağrılarak dizinler başlangıçta hazır hale getirilir.
 
-**Son Güncelleme (13.5.9 iyileştirmesi)**
+**Donanım Tespit Akışı (satır 122–193)**
 
-- `get_bool_env(...)` boş/yalnızca whitespace değerleri artık `False` olarak yanlış yorumlamıyor; bu durumda doğrudan verilen `default` değerine dönüyor.
-- Boolean parse öncesi `strip().lower()` kullanımıyla çevresel boşluk kaynaklı sürpriz davranışlar giderildi.
+- `USE_GPU` kapalıysa erken dönüşle CPU moduna geçer.
+- PyTorch CUDA kullanılabilirliğine göre GPU adı/sayısı/CUDA sürümü doldurulur; `GPU_MEMORY_FRACTION` geçersizse 0.8’e normalize edilir.
+- WSL2 için özel uyarı mesajları ve `cu124` kurulum yönlendirmesi bulunur; NVML sürücü bilgisi opsiyonel alınır.
+
+**Config Sınıfı ve Ayar Kapsamı (satır 204–310)**
+
+- Sağlayıcı (`AI_PROVIDER`, `GEMINI_MODEL`, `OLLAMA_URL`), güvenlik (`ACCESS_LEVEL`), RAG, Docker sandbox, bellek şifreleme ve web ayarları tek sınıfta toplanmıştır.
+- Sınıf attribute yaklaşımı nedeniyle değerler modül yükleme anında okunur; sonradan ortam değişkeni güncellemesi doğrudan sınıf alanlarına yansımaz.
+- `set_provider_mode()` metodu runtime’da sağlayıcı geçişi için kontrollü bir alias haritası sunar.
+
+**Doğrulama ve Operasyonel Sağlık (satır 347–403)**
+
+- `validate_critical_settings()` Gemini API key, Fernet anahtar formatı ve `cryptography` varlığı gibi kritik ayarları doğrular.
+- Ollama modunda `/api/tags` erişilebilirlik kontrolü yaparak operatöre erken uyarı sağlar.
+- `get_system_info()` ve `print_config_summary()` operasyonel görünürlük için tutarlı özet üretir.
 
 **Açık Bulgular**
 
@@ -1362,12 +1375,6 @@ except Exception as exc:
 | C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
 | C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
 
-**Kapanan Bulgu (Bu Tur)**
-
-| ID | Durum | Not |
-|----|------|-----|
-| C-03 | ✅ Kapandı | `get_bool_env` boş/whitespace env değerlerinde artık `default` döndürüyor; yanlış boolean parse riski azaltıldı. |
-
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
 ---
@@ -1376,35 +1383,35 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13510-managerscodemanagerpy-skor-94100"></a>
-#### 13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅
+<a id="13510-managerscodemanagerpy-skor-90100"></a>
+#### 13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅
 
 **Sorumluluk:** Kod/dosya operasyon yöneticisi — güvenlik katmanı üzerinden dosya okuma/yazma, doğrulama, proje denetimi, shell çalıştırma ve Docker sandbox içinde Python kodu yürütme sağlar.
 
-**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–417)**
+**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–387)**
 
 - `SecurityManager` ile `can_read/can_write/can_execute/can_run_shell` kontrolleri yapılarak yetkisiz işlemler erken reddedilir.
 - Docker erişimi varsa `execute_code()` izolasyonlu konteynerde (`network_disabled`, `mem_limit=128m`, `cpu_quota`) çalışır; timeout aşımlarında konteyner zorla sonlandırılır.
 - Docker yoksa kontrollü subprocess fallback’i ile çalışmaya devam eder.
 
-**Bu Turdaki İyileştirmeler**
+**Dosya ve Arama Araçları (satır 94–235, 393–580)**
 
-- `run_shell()` artık varsayılan olarak `shlex.split(...)` + `shell=False` ile güvenli tokenized modda çalışır.
-- Pipe/redirect gibi shell operatörleri yalnızca açık onay (`allow_shell_features=True`) ile etkinleşir.
-- `audit_project()` için `exclude_dirs` ve `max_files` parametreleri eklendi; `.git`, `.venv`, `node_modules` gibi dizinler varsayılan dışlama setine alındı.
+- `read_file()` satır numaralı çıktı üretir; `write_file()` uzantı ve güvenlik politikalarıyla sınırlı yazım yapar.
+- `glob_search()` ve `grep_files()` doğal geliştirici iş akışını destekleyen hızlı keşif araçları sunar.
+- `grep_files()` bağlam satırı, sonuç limiti ve dosya filtresi parametreleriyle dengeli çıktı üretir.
+
+**Doğrulama & Audit (satır 586–640)**
+
+- Python AST ve JSON parse doğrulaması bağımsız metotlarla sunulur.
+- `audit_project()` tüm Python dosyalarını tarayıp tek raporda özetler; hata satırlarıyla birlikte çıktı verir.
+- Metrik sayaçları (`files_read`, `files_written`, `syntax_checks`, `audits_done`) operasyonel görünürlük sağlar.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| CM-03 | `run_shell(..., allow_shell_features=True)` ile bilinçli olarak shell modu açıldığında komut operatörleri tekrar aktif olur; model kaynaklı komutlarda çağıran katman ek doğrulama yapmalıdır | 377–386 | Düşük |
-
-**Kapanan Bulgular (Bu Tur)**
-
-| ID | Durum | Not |
-|----|------|-----|
-| CM-01 | ✅ Kapandı | Varsayılan yol `shell=False` + `shlex.split` olacak şekilde güvenli moda alındı. |
-| CM-02 | ✅ Kapandı | `audit_project` artık dışlama listesi ve dosya limiti ile büyük/vendor ağaçlarda kontrollü çalışıyor. |
+| CM-01 | `run_shell()` çağrısı `shell=True` kullanıyor; erişim seviyesi kontrolü olsa da komut enjeksiyon etkisi güçlü kalır (özellikle model ürettiği komutlarda dikkat gerekir) | 361–364 | Orta |
+| CM-02 | `audit_project()` `rglob("*.py")` ile tüm alt ağacı tarıyor; büyük repo/vendor/venv içeren yapılarda süreyi artırabilir ve hedef dışı dosyaları rapora katabilir | 613–617 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
@@ -1414,29 +1421,35 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13511-managersgithubmanagerpy-skor-93100"></a>
-#### 13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅
+<a id="13511-managersgithubmanagerpy-skor-91100"></a>
+#### 13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅
 
 **Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Bağlantı ve Repo Yükleme Akışı (satır 50–96)**
 
-- `create_or_update_file()` içinde dosya yok kararı artık 404/not-found odaklı yapılır; diğer gerçek API/izin hataları “dosya oluştur” yoluna düşürülmeden doğrudan raporlanır.
-- `list_repos(owner=...)` akışı exception-driven fallback yerine hesap tipini (`account.type`) okuyarak organizasyon/kullanıcı repo tipi seçer.
-- Bu sayede hata maskelenmesi azalır ve owner repo listelemede kontrol akışı daha öngörülebilir hale gelir.
+- Token yoksa güvenli şekilde devre dışı moda geçer; token varsa `Auth.Token(...)` ile istemci başlatılır.
+- `_load_repo()` ile aktif repo nesnesi merkezi olarak yönetilir; `set_repo()` dış katmana net başarı/hata mesajı verir.
+- `is_available()` ve `status()` çıktıları operatöre token/repo durumunu anlaşılır şekilde iletir.
+
+**Güvenlik Korumaları (satır 13–37, 184–235, 306–334)**
+
+- Branch isimleri `_BRANCH_RE` ile doğrulanır; injection benzeri branch manipülasyonları erken reddedilir.
+- `read_remote_file()` yalnızca güvenli metin uzantıları/uzantısız dosya adları için içerik döndürür; binary dosya riski azaltılır.
+- Varsayılan dal erişimi için `default_branch` property sunularak dış modüllerin `_repo` private alanına doğrudan erişmesi engellenir.
+
+**PR ve Dosya Operasyonları (satır 250–537)**
+
+- Branch listesi, PR listesi/detayı/yorum/kapatma ve değişen dosya raporları kullanıcıya metin tabanlı okunabilir çıktı üretir.
+- `get_pull_requests_detailed()` web katmanı için yapısal dict çıktı sağlar; API tarafında serializasyonu kolaylaştırır.
+- `create_or_update_file()` mevcut dosyayı güncelleme, yoksa oluşturma yolunu tek metotta birleştirir.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| GH-03 | `account.type` bilgisi API yanıtına bağlıdır; beklenmeyen/boş tiplerde varsayılan `owner` stratejisi bazı özel hesaplarda eksik sonuç döndürebilir | 115–119 | Düşük |
-
-**Kapanan Bulgular (Bu Tur)**
-
-| ID | Durum | Not |
-|----|------|-----|
-| GH-01 | ✅ Kapandı | Geniş `except` ile “dosya yok” fallback’i kaldırıldı; yalnızca not-found senaryosunda create akışı çalışıyor. |
-| GH-02 | ✅ Kapandı | `list_repos(owner=...)` artık exception tabanlı organizasyon→kullanıcı fallback’i yerine hesap tipi tabanlı seçim yapıyor. |
+| GH-01 | `create_or_update_file()` içinde "dosya yok" kararını geniş `except Exception` ile veriyor; izin/bağlantı gibi gerçek hatalar da oluşturma yoluna düşebilir ve asıl neden gizlenebilir | 284–301 | Orta |
+| GH-02 | `list_repos(owner=...)` önce organization akışını zorunlu dener, kullanıcı owner senaryosu exception ile fallback’e bırakılır; kontrol akışı istisna tabanlı ve maliyetli | 106–133 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
