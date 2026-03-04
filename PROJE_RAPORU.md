@@ -1,7 +1,7 @@
 <a id="top"></a>
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — P-01–P-07 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-04** — Session 9 ile rapor yeniden doğrulandı; 4 açık dokümantasyon/rapor uyumsuzluğu kayda alındı ⚠️)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
@@ -21,6 +21,7 @@
 - [7. Düşük Öncelikli Sorunlar](#7-dusuk-oncelikli-sorunlar)
   - [Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi)
 - [8. Dosyalar Arası Uyumsuzluk Tablosu](#8-dosyalar-arasi-uyumsuzluk-tablosu)
+- [18. Session 9 — Satır Bazlı Yeniden Doğrulama (2026-03-04)](#18-session-9--satir-bazli-yeniden-dogrulama-2026-03-04)
   - [8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti](#8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti)
   - [8.3 Özet Tablo — Tüm Açık Sorunlar (2026-03-03 Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
 - [9. Bağımlılık Analizi](#9-bagimlilik-analizi)
@@ -2525,6 +2526,54 @@ Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası ver
 | Aynı oturumda kapanan | 7 / 7 |
 | Kümülatif toplam kapalı | 52 |
 | Aktif açık sorun | **0** |
+
+---
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="18-session-9--satir-bazli-yeniden-dogrulama-2026-03-04"></a>
+## 18. Session 9 — Satır Bazlı Yeniden Doğrulama (2026-03-04)
+
+> **Tarih:** 2026-03-04 | **Kapsam:** Repo kökündeki 36 izlenen dosyanın satır bazlı karşılaştırması
+> **Sonuç:** Session 8 sonrası rapor ve dokümantasyonda 4 açık uyumsuzluk tespit edildi (kod kıran kritik bulgu yok, tamamı dokümantasyon/rapor drift’i).
+
+### 18.1 Tespit Edilen Açık Uyumsuzluklar
+
+**S9-01 — README sürüm drift’i sürüyor (Açık)**
+- **Tespit:** `README.md` üst başlık ve banner hâlâ `v2.6.1`; kod tabanı ve agent sürümü `v2.7.0`.
+- **Kanıt satırlar:** `README.md:3`, `README.md:13`, `README.md:108`.
+- **Etki:** Kurulum/kullanım dokümantasyonunda sürüm algısı bozuluyor.
+
+**S9-02 — `install_sidar.sh` header sürümü güncel değil (Açık)**
+- **Tespit:** Kurulum betiği açıklama başlığında `# Sürüm: 2.6.1` yazıyor.
+- **Kanıt satır:** `install_sidar.sh:3`.
+- **Etki:** Operasyon dokümantasyonunda bakım drift’i.
+
+**S9-03 — Dockerfile üst yorum bloğunda eski sürüm izi (Açık)**
+- **Tespit:** `LABEL version="2.7.0"` doğru olmasına rağmen açıklama bloğu `# Sürüm: 2.6.1` içeriyor.
+- **Kanıt satırlar:** `Dockerfile:3` ve `Dockerfile:25`.
+- **Etki:** Dosya içi kendi kendine çelişki; release notlarında belirsizlik.
+
+**S9-04 — Rapor metni ile gerçek web akışı arasında drift (Açık)**
+- **Tespit:** Raporun erken bölümlerinde “repo seçici modal kaldırıldı / `/set-repo` kaldırıldı” benzeri ifadeler yer alırken, mevcut kodda `_cachedRepos`, repo modal render akışı ve `POST /set-repo` endpoint’i aktif.
+- **Kanıt satırlar:** `PROJE_RAPORU.md:140`, `web_ui/index.html:1828`, `web_ui/index.html:2360`, `web_ui/index.html:2409`, `web_server.py:608`.
+- **Etki:** Rapor, ürün davranışını birebir yansıtmuyor; denetim izlenebilirliği düşüyor.
+
+### 18.2 Bu Oturumda Doğrulanan Ek Durumlar
+
+- ✅ `RAG_FILE_THRESHOLD` `.env.example` ve `config.py` arasında eşleşiyor (`.env.example:107`, `config.py:295`).
+- ✅ `DOCKER_EXEC_TIMEOUT` `.env.example` içinde belgeli (`.env.example:129`) ve kodda kullanılıyor (`agent/sidar_agent.py:98`).
+- ✅ Test dosyasında tanımlı test sayısı 48 (`tests/test_sidar.py`).
+
+### 18.3 Güncel Özet (Session 9)
+
+| Metrik | Değer |
+|---|---|
+| İncelenen dosya | 36 |
+| Satır toplamı (yaklaşık) | 18.367 |
+| Yeni açık bulgu | 4 (S9-01…S9-04) |
+| Kritik/Yüksek bulgu | 0 |
+| Aktif açık sorun (genel) | **4** |
 
 ---
 
