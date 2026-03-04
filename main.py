@@ -1,124 +1,87 @@
 """
-Sidar Project - Başlatıcı Arayüz
-=================================
+Sidar Project - PyWebView Launcher
+==================================
 
-Bu modül, kullanıcıya projeyi nasıl başlatmak istediğini soran bir
-başlatıcı (starter) arayüzü sağlar. Terminal içinde çalışan basit ve
-etkileşimli bir menü üzerinden aşağıdaki seçimler yapılabilir:
+Yeni başlatıcı mimarisi:
+- Masaüstü kabuğu: PyWebView
+- Arayüz: Ayrı frontend (Vite/React) veya yerel fallback HTML
+- Köprü: JS <-> Python API (start/health/preview)
 
-1. AI sağlayıcısı: `ollama` veya `gemini`.
-2. Erişim seviyesi: `restricted`, `sandbox` veya `full`.
-3. Arayüz türü: CLI (terminal) veya Web (FastAPI tabanlı web arayüzü).
-
-Seçimler yapıldıktan sonra, uygun alt modu başlatmak için ilgili
-Python betiği (`cli.py` veya `web_server.py`) çağrılır ve seçilen
-parametreler komut satırı argümanları olarak iletilir.
-
-Not: Bu başlatıcı, gelişmiş bir grafik kütüphanesine (örneğin
-Tkinter) ihtiyaç duymadan etkileşimli bir deneyim sağlar. Seçimleri
-alırken yanlış girişleri kontrol eder ve kullanıcıyı yönlendirir.
+Kullanım:
+    python main.py
+    python main.py --launcher-url http://localhost:5173
+    python main.py --no-window   # sadece sağlık kontrolü/komut önizleme
 """
 
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import os
-import subprocess
 import sys
-from typing import List
+from pathlib import Path
+
+from launcher_api import LauncherAPI
 
 
-def _clear_screen() -> None:
-    """Konsolu temizler (Windows ve POSIX desteği)."""
-    command = "cls" if os.name == "nt" else "clear"
-    try:
-        subprocess.call(command, shell=True)
-    except Exception:
-        # Konsol temizleme başarısız olursa yoksay
-        pass
+def _resolve_launcher_url(custom_url: str | None) -> str:
+    """Öncelik: CLI flag > env > yerel fallback dosya."""
+    if custom_url:
+        return custom_url
+
+    env_url = os.getenv("SIDAR_LAUNCHER_URL", "").strip()
+    if env_url:
+        return env_url
+
+    local_html = Path(__file__).resolve().parent / "launcher_ui" / "index.html"
+    return local_html.resolve().as_uri()
 
 
-def _ask_choice(prompt: str, options: List[str]) -> str:
-    """
-    Kullanıcıya numerik seçimli bir soru sorar ve geçerli bir yanıt alana
-    kadar soruyu tekrarlar.
-
-    Args:
-        prompt: Ekranda gösterilecek açıklama metni.
-        options: Seçenekler listesi (küçük harflerle). Seçim numarası ya da
-                 metin eşleşmesi kabul edilir.
-
-    Returns:
-        Kullanıcının seçtiği seçenek (liste elemanı).
-    """
-    while True:
-        print(prompt)
-        for idx, opt in enumerate(options, 1):
-            print(f"  {idx}) {opt}")
-        choice = input("Seçiminiz (numara veya isim): ").strip().lower()
-        if not choice:
-            print("Lütfen bir seçim yapın.\n")
-            continue
-        # Sayı ise
-        if choice.isdigit():
-            num = int(choice)
-            if 1 <= num <= len(options):
-                return options[num - 1]
-        # Doğrudan isimle eşleşme
-        for opt in options:
-            if choice == opt.lower():
-                return opt
-        print("Geçersiz seçim, lütfen tekrar deneyin.\n")
-
-
-def _welcome_banner() -> None:
-    """Basit bir hoş geldin mesajı yazdırır."""
-    print("\n  ╔══════════════════════════════════════════════╗")
-    print("  ║             SİDAR Başlatıcı Arayüzü        ║")
-    print("  ╚══════════════════════════════════════════════╝\n")
-    print("Hoş geldiniz! Lütfen proje başlatma seçeneklerinizi seçin:\n")
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Sidar PyWebView Launcher")
+    parser.add_argument(
+        "--launcher-url",
+        help="Harici frontend URL (örn. Vite dev server: http://localhost:5173)",
+    )
+    parser.add_argument(
+        "--no-window",
+        action="store_true",
+        help="PyWebView penceresini açmadan launcher bilgisini yazdır.",
+    )
+    parser.add_argument("--width", type=int, default=1120, help="Pencere genişliği")
+    parser.add_argument("--height", type=int, default=760, help="Pencere yüksekliği")
+    return parser.parse_args()
 
 
 def main() -> None:
-    _clear_screen()
-    _welcome_banner()
-    # AI sağlayıcı seçimi
-    provider = _ask_choice(
-        "Hangi AI sağlayıcısını kullanmak istersiniz?",
-        ["ollama", "gemini"],
-    )
-    # Erişim seviyesi seçimi
-    level = _ask_choice(
-        "Erişim seviyesini seçin:",
-        ["restricted", "sandbox", "full"],
-    )
-    # Arayüz modu seçimi
-    ui = _ask_choice(
-        "Arayüz modunu seçin:",
-        ["cli", "web"],
-    )
+    args = _parse_args()
+    api = LauncherAPI(base_dir=Path(__file__).resolve().parent)
+    launcher_url = _resolve_launcher_url(args.launcher_url)
 
-    # Seçimlere göre komut parametreleri oluştur
-    args: List[str] = []
-    if provider:
-        args.extend(["--provider", provider])
-    if level:
-        args.extend(["--level", level])
+    if args.no_window:
+        print("Sidar Launcher hazır")
+        print(f"UI URL : {launcher_url}")
+        print(f"Config : {api.get_defaults()}")
+        return
 
-    # Komut yolu (aynı dizinde olduğumuzu varsayar)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    python_exe = sys.executable or "python"
+    if importlib.util.find_spec("webview") is None:
+        print("❌ PyWebView kurulu değil.")
+        print("Kurulum: pip install pywebview")
+        print("Geçici çözüm: python main.py --no-window")
+        sys.exit(1)
 
-    if ui == "cli":
-        target_script = os.path.join(base_dir, "cli.py")
-        cmd = [python_exe, target_script] + args
-        print("\nTerminal modu başlatılıyor...\n")
-        subprocess.run(cmd)
-    else:
-        target_script = os.path.join(base_dir, "web_server.py")
-        # Web arayüzü için varsayılan port ve host config.py'den okunur.
-        cmd = [python_exe, target_script] + args
-        print("\nWeb arayüzü başlatılıyor...\n")
-        subprocess.run(cmd)
+    import webview
+
+    window = webview.create_window(
+        title="Sidar Launcher",
+        url=launcher_url,
+        js_api=api,
+        width=max(900, args.width),
+        height=max(640, args.height),
+        min_size=(900, 640),
+        resizable=True,
+    )
+    webview.start(debug=False, window=window)
 
 
 if __name__ == "__main__":

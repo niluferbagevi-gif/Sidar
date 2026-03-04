@@ -171,7 +171,7 @@ conda activate sidar-ai
 pip install python-dotenv httpx psutil pynvml \
             google-generativeai PyGithub duckduckgo-search \
             rank-bm25 chromadb sentence-transformers \
-            fastapi uvicorn pydantic docker \
+            fastapi uvicorn pydantic docker pywebview \
             pytest pytest-asyncio pytest-cov
 ```
 
@@ -234,19 +234,33 @@ Web arayüzü özellikleri:
 - Dal seçimi (gerçek git checkout)
 - Mobil uyumlu hamburger menüsü
 
+### 🖥️ PyWebView Launcher (Yeni)
+
+```bash
+# fallback yerel launcher_ui/index.html açar
+python main.py
+
+# Vite/React frontend ile çalıştırmak için
+python main.py --launcher-url http://127.0.0.1:5173
+# veya
+SIDAR_LAUNCHER_URL=http://127.0.0.1:5173 python main.py
+```
+
+Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini başlatır.
+
 ### 💻 Terminal (CLI) Modu
 
 ```bash
-python main.py
+python cli.py
 ```
 
 ### Tek Komut Modu
 
 ```bash
-python main.py -c "Proje dizinini listele"
-python main.py --status
-python main.py --level full -c "Sistemi denetle"
-python main.py --provider gemini -c "FastAPI nedir?"
+python cli.py -c "Proje dizinini listele"
+python cli.py --status
+python cli.py --level full -c "Sistemi denetle"
+python cli.py --provider gemini -c "FastAPI nedir?"
 ```
 
 ### CLI Seçenekleri
