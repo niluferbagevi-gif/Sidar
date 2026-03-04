@@ -53,7 +53,7 @@
     - [13.5.6 `agent/auto_handle.py` — Skor: 92/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 94/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
-    - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
+    - [13.5.9 `config.py` — Skor: 93/100 ✅](#1359-configpy-skor-90100)
     - [13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅](#13510-managerscodemanagerpy-skor-90100)
     - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
     - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
@@ -669,7 +669,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ✅ `docs_search` çağrısı artık `asyncio.to_thread` ile non-blocking; GitHub repo bilgi regex’i daha dar eşleşecek şekilde güncellendi. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ✅ Gemini akışında `chunk.text` erişimi `getattr` ile güvenli hale getirildi ve `_stream_ollama_response` sonunda newline olmadan kalan son buffer satırı da parse ediliyor. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
-- **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
+- **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ✅ Donanım tespiti lazy-cache modele alındı (`get_hardware_info`, `refresh_hardware_info`); `validate_critical_settings()` içindeki Ollama probe’u ise `OLLAMA_PROBE_ON_VALIDATE` / `OLLAMA_PROBE_TIMEOUT` ile çevreye duyarlı şekilde kontrol edilebilir hale getirildi. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
@@ -1313,40 +1313,31 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1359-configpy-skor-90100"></a>
-#### 13.5.9 `config.py` — Skor: 90/100 ✅
+#### 13.5.9 `config.py` — Skor: 93/100 ✅
 
 **Sorumluluk:** Merkez konfigürasyon omurgası — ortam değişkenlerini yükler, donanım/GPU tespiti yapar, loglama sistemini kurar ve tüm alt modüllerin kullandığı çalışma zamanı ayarlarını (`Config`) üretir.
 
-**Yükleme Sırası ve Başlangıç Etkileri (satır 25–34, 196–197, 455–462)**
+**Yükleme Sırası ve Başlangıç Etkileri (güncel durum)**
 
 - `.env` dosyası modül importunda yüklenir; bulunamazsa varsayılanlarla devam edilir.
-- `HARDWARE = check_hardware()` çağrısı import anında bir kez çalışır; GPU/CPU/NVML tespiti bu aşamada tetiklenir.
+- Donanım tespiti import-time ağır probe yerine lazy-cache modele taşınmıştır: `HARDWARE = get_default_hardware_info()`, gerçek tespit `get_hardware_info()` / `refresh_hardware_info()` ile ihtiyaç anında yapılır.
 - Modül sonunda `Config.initialize_directories()` çağrılarak dizinler başlangıçta hazır hale getirilir.
 
-**Donanım Tespit Akışı (satır 122–193)**
+**Donanım Tespit Akışı (güncel durum)**
 
-- `USE_GPU` kapalıysa erken dönüşle CPU moduna geçer.
-- PyTorch CUDA kullanılabilirliğine göre GPU adı/sayısı/CUDA sürümü doldurulur; `GPU_MEMORY_FRACTION` geçersizse 0.8’e normalize edilir.
-- WSL2 için özel uyarı mesajları ve `cu124` kurulum yönlendirmesi bulunur; NVML sürücü bilgisi opsiyonel alınır.
+- `check_hardware()` hâlâ GPU/CPU/NVML tespitinin tek kaynağıdır; ancak artık cache üzerinden çağrıldığı için gereksiz tekrar probe azaltılmıştır.
+- `Config.refresh_hardware_info()` ile runtime’da `USE_GPU`, `GPU_INFO`, `GPU_COUNT`, `CPU_COUNT`, `CUDA_VERSION`, `DRIVER_VERSION` alanları güncellenir.
+- `get_system_info()` ve `print_config_summary()` raporlama öncesi `refresh_hardware_info()` çağırarak canlı durum üretir.
 
-**Config Sınıfı ve Ayar Kapsamı (satır 204–310)**
-
-- Sağlayıcı (`AI_PROVIDER`, `GEMINI_MODEL`, `OLLAMA_URL`), güvenlik (`ACCESS_LEVEL`), RAG, Docker sandbox, bellek şifreleme ve web ayarları tek sınıfta toplanmıştır.
-- Sınıf attribute yaklaşımı nedeniyle değerler modül yükleme anında okunur; sonradan ortam değişkeni güncellemesi doğrudan sınıf alanlarına yansımaz.
-- `set_provider_mode()` metodu runtime’da sağlayıcı geçişi için kontrollü bir alias haritası sunar.
-
-**Doğrulama ve Operasyonel Sağlık (satır 347–403)**
+**Doğrulama ve Operasyonel Sağlık (güncel durum)**
 
 - `validate_critical_settings()` Gemini API key, Fernet anahtar formatı ve `cryptography` varlığı gibi kritik ayarları doğrular.
-- Ollama modunda `/api/tags` erişilebilirlik kontrolü yaparak operatöre erken uyarı sağlar.
-- `get_system_info()` ve `print_config_summary()` operasyonel görünürlük için tutarlı özet üretir.
+- Ollama probe akışı artık çevreye duyarlı şekilde kontrol edilebilir: `OLLAMA_PROBE_ON_VALIDATE` ile kapatılabilir, `OLLAMA_PROBE_TIMEOUT` ile timeout ayarlanabilir.
+- CI/offline ortamlarda probe kapatılarak gürültü ve başlangıç gecikmesi azaltılabilir.
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
-| C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
+- Bu alt bölümde önceki C-01/C-02 bulguları kapatılmıştır.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
@@ -2331,8 +2322,7 @@ except Exception as exc:
 10. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
     `environment.yml` için sürüm sabitleme/lock dosyası yaklaşımı netleştirilmeli; CI ve yerel kurulumlar arasında sürüm drift’i azaltılmalı.
 
-11. **Donanım tespitini lazy/cached hale getirme:**
-    `config.py` import-time `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve yan etkiler kontrollü bir init adımına alınmalı.
+11. **Donanım tespitini lazy/cached hale getirme:** ✅ **Kapatıldı** (`config.py` lazy-cache geçişi tamamlandı; detay: §13.5.9 ve `DUZELTME_GECMISI.md`).
 
 12. **Ajan sözleşmesi/talimat drift’ini azaltma (`definitions.py`, `SIDAR.md`, `CLAUDE.md`):**
     Manuel araç listeleri ve tarihsel ifade parçaları güncel capability setiyle otomatik/yarı-otomatik hizalanmalı; prompt-talimat drift’i minimize edilmeli.

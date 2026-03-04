@@ -2229,3 +2229,25 @@ def get_pull_requests_raw(self, state: str, limit: int):
 | 22 | GitHub token eksikliği için kullanıcı yönlendirmesi | ✅ Kapalı |
 
 **Özet:** Bu maddeler artık aktif geliştirme işi değildir; ana raporda sadece güncel açık iyileştirmeler bırakılmıştır. 
+
+### ✅ 3.78 `config.py` — Import-time Donanım Probe ve Çevreye Duyarlı Ollama Probe (C-01/C-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `config.py`, `tests/test_config_improvements.py`
+
+**Sorun (C-01):** `check_hardware()` import anında çalıştığı için başlangıç gecikmesi ve test/import yan etkileri üretiyordu.
+
+**Sorun (C-02):** `validate_critical_settings()` içinde zorunlu Ollama HTTP probe’u CI/offline ortamlarda gürültülü uyarı ve gereksiz bekleme yaratıyordu.
+
+**Yapılan düzeltmeler:**
+- Donanım tespiti lazy-cache modele alındı: `_HARDWARE_CACHE`, `get_hardware_info(force_refresh=False)`, `get_default_hardware_info()`.
+- `Config.refresh_hardware_info()` eklendi ve runtime donanım alan güncellemesi merkezileştirildi.
+- `get_system_info()` ve `print_config_summary()` canlı raporlama öncesi `refresh_hardware_info()` çağıracak şekilde güncellendi.
+- Ollama doğrulama probe’u konfigüre edilebilir hale getirildi:
+  - `OLLAMA_PROBE_ON_VALIDATE` (CI için kapatılabilir)
+  - `OLLAMA_PROBE_TIMEOUT` (varsayılan 1.5s)
+- Probe kapalıyken network çağrısı yapılmadan doğrulama akışı sürdürülebilir hale getirildi.
+
+**Doğrulama:**
+- ✅ `python -m py_compile config.py tests/test_config_improvements.py`
+- ✅ `pytest -q tests/test_config_improvements.py` → `3 passed`
+- ⚠️ `pytest -q tests/test_sidar.py -k config_validate_critical_settings_returns_bool` (ortamda `pydantic` eksik)
