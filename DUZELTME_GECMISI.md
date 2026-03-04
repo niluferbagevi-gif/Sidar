@@ -13,8 +13,9 @@
 <a id="sec-3-1-3-81"></a>
 <a id="sec-3-1-3-82"></a>
 <a id="sec-3-1-3-83"></a>
+<a id="sec-3-1-3-84"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 14 ek sorun giderilmiştir (toplam 61 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 15 ek sorun giderilmiştir (toplam 62 düzeltme).
 
 ---
 
@@ -1582,6 +1583,33 @@ _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
 
 # github info regex (daraltılmış)
 r"(?:github\s+)?(?:repo|depo)\s*(?:bilgisi|bilgi|info|detay...)"
+```
+
+---
+
+
+### ✅ 3.84 `core/llm_client.py` — Stream Son Satır Parse + Güvenli Gemini Chunk Erişimi (L-01/L-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `core/llm_client.py`  
+**Önem:** ~~🟡 ORTA + 🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorunlar:**
+- Ollama stream akışında newline ile bitmeyen son `buffer` satırı parse edilmiyordu; son JSON chunk kaçabiliyordu.
+- Gemini stream akışında `chunk.text` alanına doğrudan erişim yapılıyordu; bazı SDK varyantlarında alan yoksa hata riski vardı.
+
+**Uygulanan düzeltme:**
+- `_extract_ollama_stream_chunk(...)` yardımcı metodu eklendi ve stream parse akışı tekilleştirildi.
+- `_stream_ollama_response` sonunda kalan `remainder` satırı için ek parse adımı eklendi.
+- `_stream_gemini_generator` içinde `getattr(chunk, "text", None)` ile güvenli erişim kullanıldı.
+
+```python
+remainder = buffer.strip()
+if remainder:
+    chunk = self._extract_ollama_stream_chunk(remainder)
+
+text = getattr(chunk, "text", None)
+if text:
+    yield str(text)
 ```
 
 ---
