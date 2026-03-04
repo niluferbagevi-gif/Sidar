@@ -234,30 +234,20 @@ Web arayüzü özellikleri:
 - Dal seçimi (gerçek git checkout)
 - Mobil uyumlu hamburger menüsü
 
-### 🖥️ PyWebView Launcher (Yeni)
+### 🚀 Akıllı Launcher (main.py)
 
 ```bash
-# fallback yerel launcher_ui/index.html açar
+# Etkileşimli sihirbaz (önerilen)
 python main.py
 
-# Vite/React frontend ile çalıştırmak için
-python main.py --launcher-url http://127.0.0.1:5173
-# veya
-SIDAR_LAUNCHER_URL=http://127.0.0.1:5173 python main.py
+# Sihirbazı atlayıp hızlı CLI başlat
+python main.py --quick cli --provider ollama --level full --model qwen2.5-coder:7b
+
+# Sihirbazı atlayıp hızlı Web başlat
+python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --port 7860
 ```
 
-Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini başlatır.
-
-Linux/WSL notu: `pywebview` için GTK (`python3-gi`) veya Qt WebEngine (örn. `PyQtWebEngine`) gerekir.
-Eğer GUI backend eksikse launcher artık otomatik fallback uygular:
-
-```bash
-# pywebview açılamazsa terminal tabanlı launcher
-python main.py --fallback legacy-cli
-
-# pywebview açılamazsa dış tarayıcıda fallback UI
-python main.py --fallback open-browser
-```
+Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini alt süreçte başlatır.
 
 ### 💻 Terminal (CLI) Modu
 
@@ -369,6 +359,7 @@ sidar_project/
 ├── logs/                   # Log dosyaları — RotatingFileHandler (gitignore'da)
 ├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği
 ├── main.py                 # Etkileşimli launcher (wizard + quick start)
+├── cli.py                  # Asıl terminal tabanlı CLI giriş noktası (async loop)
 ├── web_server.py           # FastAPI + SSE + Rate limiting + Session API + /set-branch
 ├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği
 ├── Dockerfile              # CPU/GPU dual-mode build (python:3.11-slim)
