@@ -135,7 +135,7 @@ print_footer() {
   echo "  2. conda activate $ENV_NAME"
   echo "  3. nano .env            ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
   echo "  4. python web_server.py ← Web arayüzünü başlatmak için (http://localhost:7860)"
-  echo "     VEYA: python main.py ← Komut satırı (CLI) modu için"
+  echo "     VEYA: python cli.py  ← Komut satırı (CLI) modu için"
   echo ""
   echo "Hızlı sağlık kontrolü:"
   echo "  curl http://localhost:7860/status"

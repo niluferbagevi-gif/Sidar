@@ -96,6 +96,7 @@
 - [17. Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8-satir-satir-inceleme-2026-03-03)
 - [18. Session 9 — 2026-03-04 Ek Rapor Drift Kontrolü](#session-9-2026-03-04-ek-rapor-drift-kontrolu)
 - [19. Session 10 — 2026-03-04 `main.py` / `cli.py` / `agent` Teyidi](#session-10-2026-03-04-main-cli-agent-teyidi)
+- [20. Session 11 — 2026-03-04 Ek Dokümantasyon Teyidi](#session-11-2026-03-04-ek-dokumantasyon-teyidi)
   - [Özet](#ozet)
 
 ---
@@ -2545,13 +2546,27 @@ Bu tur, harici geri bildirimlerde geçen maddelerin satır bazlı yeniden doğru
 
 **Session 10 çıktısı:** Raporun `main.py` ve `cli.py` bölümleri güncel mimariye göre revize edildi; `agent/sidar_agent.py` için önceki teknik tespitlerin büyük kısmı doğrulandı.
 
+
+<a id="session-11-2026-03-04-ek-dokumantasyon-teyidi"></a>
+## 20. Session 11 — 2026-03-04 Ek Dokümantasyon Teyidi
+
+Bu turda README ve kurulum scripti komut örnekleri, mevcut `main.py`/`cli.py` davranışıyla yeniden eşleştirildi.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S11-01 | `README.md` | ✅ Doğrulandı | Geçersiz `--launcher-url` / `--fallback` örnekleri kaldırıldı; `main.py --quick ...` örnekleri eklendi. |
+| S11-02 | `README.md` | ✅ Doğrulandı | Dizin ağacına `cli.py` satırı eklendi ve launcher/CLI ayrımı görünür hale getirildi. |
+| S11-03 | `install_sidar.sh` | ✅ Doğrulandı | Kurulum sonrası yönergede CLI komutu `python cli.py` olarak düzeltildi. |
+
+**Session 11 çıktısı:** Dokümantasyon örnek komutları runtime davranışıyla hizalandı; raporun açık sorun durumu etkilenmedi (aktif açık: 0).
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 19 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08) |
+| Tespit edilen bulgu | 22 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
 | Kümülatif toplam kapalı | 52 |
