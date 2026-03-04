@@ -1,0 +1,4 @@
+body { margin: 0; background: #08102a; color: #dbe5ff; font-family: Inter, Arial, sans-serif; }
+.page { min-height: 100vh; display: grid; place-items: center; }
+.wizard { max-width: 640px; padding: 20px; border: 1px solid #3655c7; border-radius: 14px; background: rgba(6, 15, 50, 0.8); }
+#three-bg { position: fixed; inset: 20px auto auto 20px; }
