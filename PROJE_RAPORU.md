@@ -4,7 +4,7 @@
 **Tarih:** 2026-03-01 (Son güncelleme: **2026-03-04** — satır bazlı repo doğrulaması yapıldı; ek rapor drift bulguları notlandı)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
-**Toplam Dosya:** 36 izlenen dosya, ~17.9k satır metin içerik
+**Toplam Dosya:** 36 izlenen dosya, ~18.4k satır metin içerik
 **Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
 
 ---
@@ -45,6 +45,7 @@
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
     - [13.5.1 `main.py` — Skor: 96/100 ✅](#1351-mainpy-skor-100100)
+    - [13.5.1A `cli.py` — Skor: 95/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 88/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
@@ -79,7 +80,6 @@
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
-    - [13.5.1A `cli.py` — Skor: 95/100 ✅](#1351a-clipy-skor-95100)
   - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi)
   - [13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)](#1361-harici-yorum-teyidi-capraz-kontrol)
 - [14. Geliştirme Önerileri (Öncelik Sırasıyla)](#14-gelistirme-onerileri-oncelik-sirasiyla)
@@ -2375,7 +2375,7 @@ except Exception as exc:
 - **[2026-03-01 | v2.6.x olgunlaşma]** Web katmanı, çoklu oturum yönetimi, Docker tabanlı REPL izolasyonu ve GPU/CUDA odaklı altyapı projeye entegre edilmiştir.
 - **[2026-03-02 | N/O serisi kapanışları]** N-01…N-06 ve O-01…O-06 bulguları kapanarak ayrıntıları arşive taşınmıştır (`DUZELTME_GECMISI.md`).
 - **[2026-03-03 | Session 8]** P-01…P-07 maddeleri aynı oturumda kapatılmış ve rapor/konfigürasyon hizası güçlendirilmiştir.
-- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 35 izlenen dosya ve ~17.9k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
+- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 36 izlenen dosya ve ~18.4k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
