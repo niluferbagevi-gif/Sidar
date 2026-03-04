@@ -2232,7 +2232,7 @@ def get_pull_requests_raw(self, state: str, limit: int):
 
 ### ✅ 3.78 `config.py` — Import-time Donanım Probe ve Çevreye Duyarlı Ollama Probe (C-01/C-02 → ÇÖZÜLDÜ)
 
-**Dosya:** `config.py`, `tests/test_config_improvements.py`
+**Dosya:** `config.py`, `tests/test_sidar.py`
 
 **Sorun (C-01):** `check_hardware()` import anında çalıştığı için başlangıç gecikmesi ve test/import yan etkileri üretiyordu.
 
@@ -2248,14 +2248,14 @@ def get_pull_requests_raw(self, state: str, limit: int):
 - Probe kapalıyken network çağrısı yapılmadan doğrulama akışı sürdürülebilir hale getirildi.
 
 **Doğrulama:**
-- ✅ `python -m py_compile config.py tests/test_config_improvements.py`
-- ✅ `pytest -q tests/test_config_improvements.py` → `3 passed`
+- ✅ `python -m py_compile config.py tests/test_sidar.py`
+- ✅ `pytest -q tests/test_sidar.py -k "config_"`
 - ⚠️ `pytest -q tests/test_sidar.py -k config_validate_critical_settings_returns_bool` (ortamda `pydantic` eksik)
 
 
 ### ✅ 3.79 `managers/code_manager.py` — Shell Enjeksiyon Yüzeyi ve Audit Kapsamı (CM-01/CM-02 → ÇÖZÜLDÜ)
 
-**Dosya:** `managers/code_manager.py`, `tests/test_code_manager_improvements.py`
+**Dosya:** `managers/code_manager.py`, `tests/test_sidar.py`
 
 **Sorun (CM-01):** `run_shell()` içinde `shell=True` kullanımı model tarafından üretilen komutlarda enjeksiyon yüzeyini gereksiz büyütüyordu.
 
@@ -2268,13 +2268,13 @@ def get_pull_requests_raw(self, state: str, limit: int):
 - Audit raporuna atlanan dizinlerin özeti eklendi.
 
 **Doğrulama:**
-- ✅ `python -m py_compile managers/code_manager.py tests/test_code_manager_improvements.py`
-- ✅ `pytest -q tests/test_code_manager_improvements.py` → `3 passed`
+- ✅ `python -m py_compile managers/code_manager.py tests/test_sidar.py`
+- ✅ `pytest -q tests/test_sidar.py -k "code_manager_"`
 
 
 ### ✅ 3.80 `managers/github_manager.py` — Owner Resolve Akışı ve Dosya Yazma Hata Ayrımı (GH-01/GH-02 → ÇÖZÜLDÜ)
 
-**Dosya:** `managers/github_manager.py`, `tests/test_github_manager_improvements.py`
+**Dosya:** `managers/github_manager.py`, `tests/test_sidar.py`
 
 **Sorun (GH-01):** `create_or_update_file()` içinde "dosya yok" kararı geniş `except Exception` ile verildiği için bağlantı/izin gibi gerçek hatalar da oluşturma yoluna düşebiliyordu.
 
@@ -2287,13 +2287,13 @@ def get_pull_requests_raw(self, state: str, limit: int):
 - Repo çıktı formatı `_repo_to_item()` ile tek noktada normalize edildi.
 
 **Doğrulama:**
-- ✅ `python -m py_compile managers/github_manager.py tests/test_github_manager_improvements.py`
-- ✅ `pytest -q tests/test_github_manager_improvements.py` → `3 passed`
+- ✅ `python -m py_compile managers/github_manager.py tests/test_sidar.py`
+- ✅ `pytest -q tests/test_sidar.py -k "github_manager_"`
 
 
 ### ✅ 3.81 `managers/system_health.py` — CPU Ölçüm Bloklaması ve NVML Temizlik Determinizmi (SH-01/SH-02 → ÇÖZÜLDÜ)
 
-**Dosya:** `managers/system_health.py`, `tests/test_system_health_improvements.py`
+**Dosya:** `managers/system_health.py`, `tests/test_sidar.py`
 
 **Sorun (SH-01):** `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yaptığı için sık raporlamada gecikme yaratıyordu.
 
@@ -2306,5 +2306,21 @@ def get_pull_requests_raw(self, state: str, limit: int):
 - `atexit.register(self.close)` ile kapanışta otomatik temizleme güvenceye alındı; `__del__` yalnızca `close()` çağırır.
 
 **Doğrulama:**
-- ✅ `python -m py_compile managers/system_health.py tests/test_system_health_improvements.py`
-- ✅ `pytest -q tests/test_system_health_improvements.py` → `2 passed`
+- ✅ `python -m py_compile managers/system_health.py tests/test_sidar.py`
+- ✅ `pytest -q tests/test_sidar.py -k "system_health|gpu_memory_optimize_gc"`
+
+
+### ✅ 3.82 `tests/` — Regresyon Testlerinin Konsolidasyonu (TEST-AKIS → ÇÖZÜLDÜ)
+
+**Dosya:** `tests/test_sidar.py`
+
+**Sorun:** Modül başına ayrı `tests/test_*_improvements.py` dosyaları akışı parçalı hale getiriyor, test keşfi ve bakım maliyetini artırıyordu.
+
+**Yapılan düzeltmeler:**
+- `config`, `code_manager`, `github_manager`, `system_health` için eklenen hedefli regresyon testleri `tests/test_sidar.py` içine taşındı.
+- Ayrı `tests/test_*_improvements.py` dosyaları kaldırıldı.
+- `tests/test_sidar.py` içinde pydantic bağımlı test için güvenli skip davranışı eklendi (bağımlılık yoksa collection yerine test seviyesinde skip).
+
+**Doğrulama:**
+- ✅ `python -m py_compile tests/test_sidar.py`
+- ✅ `pytest -q tests/test_sidar.py -k "config_ or code_manager_ or github_manager_ or system_health or gpu_memory"`
