@@ -772,6 +772,8 @@ async for raw_bytes in resp.aiter_bytes():
 - **M-01 kapandı:** child-process stdout/stderr yönlendirmesi `--launcher-log-file` ve wizard akışı ile uygulandı.
 - `main.py` için önceki “event-loop / `asyncio.run` çakışma riski” yorumu artık geçerli değildir; bu sorumluluk `cli.py`'ye taşınmıştır.
 
+**Düzeltme Geçmişi Referansı:** Detaylı kapanış kaydı için bkz. `DUZELTME_GECMISI.md` §3.77.
+
 ---
 
 
@@ -807,6 +809,8 @@ async for raw_bytes in resp.aiter_bytes():
 
 **Kapalı/Terslenen Eski Notlar:**
 - **CLI-01 kapandı:** sürüm metni artık `ljust(7)` sabit alanına bağlı değil; `_fit_banner_field` ile alan genişliğine göre güvenli işleniyor.
+
+**Düzeltme Geçmişi Referansı:** Detaylı kapanış kaydı için bkz. `DUZELTME_GECMISI.md` §3.78.
 
 **Not:** Önceki raporda `main.py` altında değerlendirilen async CLI davranışları artık bu dosya kapsamında izlenmelidir.
 
