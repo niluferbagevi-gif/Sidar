@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -144,6 +145,11 @@ def build_command(mode: str, provider: str, level: str, log: str, extra_args: Di
     return cmd
 
 
+def _format_cmd(cmd: List[str]) -> str:
+    """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
+    return " ".join(shlex.quote(part) for part in cmd)
+
+
 def run_wizard() -> int:
     """Etkileşimli menüyü çalıştırır."""
     print_banner()
@@ -192,7 +198,7 @@ def run_wizard() -> int:
     cmd = build_command(mode, provider, level, log_level, extra_args)
 
     print(f"\n{CYAN}🚀 Başlatılacak komut:{RESET}")
-    print(f"   {GREEN}{' '.join(cmd)}{RESET}")
+    print(f"   {GREEN}{_format_cmd(cmd)}{RESET}")
 
     if not confirm("Sidar'ı başlatmak istiyor musunuz?", True):
         print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
@@ -201,16 +207,56 @@ def run_wizard() -> int:
     return execute_command(cmd)
 
 
-def execute_command(cmd: List[str]) -> int:
-    """Oluşturulan komutu alt işlem olarak çalıştırır ve hataları yakalar."""
+def execute_command(cmd: List[str], capture_output: bool = False, child_log_path: str | None = None) -> int:
+    """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
-        subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
+        result = subprocess.run(
+            cmd,
+            check=True,
+            cwd=os.path.dirname(__file__) or ".",
+            text=True,
+            capture_output=(capture_output or bool(child_log_path)),
+        )
+
+        if result.stdout:
+            print(f"{CYAN}[Child stdout]{RESET}\n{result.stdout}")
+        if result.stderr:
+            print(f"{YELLOW}[Child stderr]{RESET}\n{result.stderr}")
+
+        if child_log_path:
+            log_path = Path(child_log_path)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(
+                f"$ {_format_cmd(cmd)}\n\n"
+                f"[stdout]\n{result.stdout or ''}\n"
+                f"[stderr]\n{result.stderr or ''}\n",
+                encoding="utf-8",
+            )
+            print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
+
         return 0
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
         return 0
     except subprocess.CalledProcessError as e:
+        if e.stdout:
+            print(f"{CYAN}[Child stdout]{RESET}\n{e.stdout}")
+        if e.stderr:
+            print(f"{YELLOW}[Child stderr]{RESET}\n{e.stderr}")
+
+        if child_log_path:
+            log_path = Path(child_log_path)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(
+                f"$ {_format_cmd(cmd)}\n\n"
+                f"[stdout]\n{e.stdout or ''}\n"
+                f"[stderr]\n{e.stderr or ''}\n"
+                f"[exit_code]\n{e.returncode}\n",
+                encoding="utf-8",
+            )
+            print(f"{GREEN}📝 Child process hata çıktısı kaydedildi: {log_path}{RESET}")
+
         print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {e.returncode}){RESET}")
         return e.returncode
     except Exception as e:
@@ -227,6 +273,15 @@ def main() -> None:
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
     parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
+    parser.add_argument(
+        "--capture-output",
+        action="store_true",
+        help="Alt süreç stdout/stderr çıktısını launcherdan yakala ve yazdır",
+    )
+    parser.add_argument(
+        "--child-log",
+        help="Alt süreç stdout/stderr çıktısını dosyaya kaydet (ör. logs/child.log)",
+    )
     args = parser.parse_args()
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
@@ -244,7 +299,7 @@ def main() -> None:
     }
 
     cmd = build_command(args.quick, provider, level, args.log, extra_args)
-    sys.exit(execute_command(cmd))
+    sys.exit(execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log))
 
 
 if __name__ == "__main__":

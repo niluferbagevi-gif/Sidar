@@ -1006,3 +1006,28 @@ def test_instruction_files_load_both_names_in_same_directory(test_config):
 
     assert "SIDAR ROOT RULE" in context
     assert "CLAUDE ROOT RULE" in context 
+
+def test_launcher_format_cmd_quotes_spaces():
+    """main._format_cmd: Boşluk içeren argümanları shell-safe biçimde quote eder."""
+    import main as launcher_main
+
+    rendered = launcher_main._format_cmd(["python", "cli.py", "--model", "llama 3"])
+    assert "'llama 3'" in rendered or '"llama 3"' in rendered
+
+
+def test_launcher_execute_command_writes_child_log(tmp_path):
+    """main.execute_command: capture + dosya loglama modunda child çıktısını kaydeder."""
+    import main as launcher_main
+
+    log_path = tmp_path / "child.log"
+    cmd = [
+        os.sys.executable,
+        "-c",
+        "import sys; print('child-out'); print('child-err', file=sys.stderr)",
+    ]
+
+    code = launcher_main.execute_command(cmd, capture_output=True, child_log_path=str(log_path))
+    assert code == 0
+    content = log_path.read_text(encoding="utf-8")
+    assert "child-out" in content
+    assert "child-err" in content
