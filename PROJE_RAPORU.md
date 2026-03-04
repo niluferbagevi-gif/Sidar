@@ -54,7 +54,7 @@
     - [13.5.7 `core/llm_client.py` — Skor: 94/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 93/100 ✅](#1359-configpy-skor-90100)
-    - [13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅](#13510-managerscodemanagerpy-skor-90100)
+    - [13.5.10 `managers/code_manager.py` — Skor: 92/100 ✅](#13510-managerscodemanagerpy-skor-90100)
     - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
     - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
@@ -670,7 +670,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ✅ Gemini akışında `chunk.text` erişimi `getattr` ile güvenli hale getirildi ve `_stream_ollama_response` sonunda newline olmadan kalan son buffer satırı da parse ediliyor. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ✅ Donanım tespiti lazy-cache modele alındı (`get_hardware_info`, `refresh_hardware_info`); `validate_critical_settings()` içindeki Ollama probe’u ise `OLLAMA_PROBE_ON_VALIDATE` / `OLLAMA_PROBE_TIMEOUT` ile çevreye duyarlı şekilde kontrol edilebilir hale getirildi. → Detay: §13.5.9
-- **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ⚠️ `run_shell(..., shell=True)` tasarımı erişim seviyesi ile sınırlandırılsa da komut enjeksiyon yüzeyini büyütür; `audit_project()` ise `rglob("*.py")` ile vendor/venv ayrımı yapmadan tüm ağacı tarar. → Detay: §13.5.10
+- **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ✅ `run_shell()` artık `shell=False` + `shlex.split()` ile çalışır ve shell metachar içeren komutları reddeder; `audit_project()` ise vendor/venv benzeri dizinleri varsayılan olarak dışlar. → Detay: §13.5.10
 - **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
@@ -1348,34 +1348,25 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13510-managerscodemanagerpy-skor-90100"></a>
-#### 13.5.10 `managers/code_manager.py` — Skor: 90/100 ✅
+#### 13.5.10 `managers/code_manager.py` — Skor: 92/100 ✅
 
 **Sorumluluk:** Kod/dosya operasyon yöneticisi — güvenlik katmanı üzerinden dosya okuma/yazma, doğrulama, proje denetimi, shell çalıştırma ve Docker sandbox içinde Python kodu yürütme sağlar.
 
-**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–387)**
+**Güvenlik ve İzolasyon Modeli (güncel durum)**
 
 - `SecurityManager` ile `can_read/can_write/can_execute/can_run_shell` kontrolleri yapılarak yetkisiz işlemler erken reddedilir.
+- `run_shell()` artık `shell=False` ile çalışır; komut `shlex.split()` ile ayrıştırılır ve shell metachar (`|`, `;`, `&&`, `$()`, backtick vb.) içeren komutlar güvenlik nedeniyle reddedilir.
 - Docker erişimi varsa `execute_code()` izolasyonlu konteynerde (`network_disabled`, `mem_limit=128m`, `cpu_quota`) çalışır; timeout aşımlarında konteyner zorla sonlandırılır.
-- Docker yoksa kontrollü subprocess fallback’i ile çalışmaya devam eder.
 
-**Dosya ve Arama Araçları (satır 94–235, 393–580)**
+**Dosya/Arama ve Audit (güncel durum)**
 
 - `read_file()` satır numaralı çıktı üretir; `write_file()` uzantı ve güvenlik politikalarıyla sınırlı yazım yapar.
 - `glob_search()` ve `grep_files()` doğal geliştirici iş akışını destekleyen hızlı keşif araçları sunar.
-- `grep_files()` bağlam satırı, sonuç limiti ve dosya filtresi parametreleriyle dengeli çıktı üretir.
-
-**Doğrulama & Audit (satır 586–640)**
-
-- Python AST ve JSON parse doğrulaması bağımsız metotlarla sunulur.
-- `audit_project()` tüm Python dosyalarını tarayıp tek raporda özetler; hata satırlarıyla birlikte çıktı verir.
-- Metrik sayaçları (`files_read`, `files_written`, `syntax_checks`, `audits_done`) operasyonel görünürlük sağlar.
+- `audit_project()` artık `node_modules`, `venv`, `.venv`, `.git`, `build`, `dist` vb. dizinleri varsayılan olarak atlayarak denetim kapsamını hedefli tutar.
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CM-01 | `run_shell()` çağrısı `shell=True` kullanıyor; erişim seviyesi kontrolü olsa da komut enjeksiyon etkisi güçlü kalır (özellikle model ürettiği komutlarda dikkat gerekir) | 361–364 | Orta |
-| CM-02 | `audit_project()` `rglob("*.py")` ile tüm alt ağacı tarıyor; büyük repo/vendor/venv içeren yapılarda süreyi artırabilir ve hedef dışı dosyaları rapora katabilir | 613–617 | Düşük |
+- Bu alt bölümde önceki CM-01/CM-02 bulguları kapatılmıştır.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
