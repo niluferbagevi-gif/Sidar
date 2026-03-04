@@ -45,4 +45,4 @@ htmlcov/
 .mypy_cache/
 
 # Documentation
-docs/
+/docs/
