@@ -126,6 +126,15 @@ class LLMClient:
             msg = json.dumps({"tool": "final_answer", "argument": f"[HATA] Ollama: {exc}", "thought": "Hata oluştu."})
             return self._fallback_stream(msg) if stream else msg
 
+    @staticmethod
+    def _extract_ollama_stream_chunk(line: str) -> str:
+        """Tek bir Ollama stream satırından içerik parçasını güvenli çek."""
+        try:
+            body = json.loads(line)
+        except json.JSONDecodeError:
+            return ""
+        return body.get("message", {}).get("content", "")
+
     async def _stream_ollama_response(self, url: str, payload: dict, timeout: int = 120) -> AsyncGenerator[str, None]:
         """
         Ollama stream yanıtını manuel buffer ile güvenli şekilde ayrıştırır.
@@ -153,13 +162,9 @@ class LLMClient:
                             line = line.strip()
                             if not line:
                                 continue
-                            try:
-                                body = json.loads(line)
-                                chunk = body.get("message", {}).get("content", "")
-                                if chunk:
-                                    yield chunk
-                            except json.JSONDecodeError:
-                                continue
+                            chunk = self._extract_ollama_stream_chunk(line)
+                            if chunk:
+                                yield chunk
                     # Stream bittiğinde decoder içinde kalan parçayı boşalt
                     trailing = utf8_decoder.decode(b"", final=True)
                     if trailing:
@@ -169,13 +174,16 @@ class LLMClient:
                             line = line.strip()
                             if not line:
                                 continue
-                            try:
-                                body = json.loads(line)
-                                chunk = body.get("message", {}).get("content", "")
-                                if chunk:
-                                    yield chunk
-                            except json.JSONDecodeError:
-                                continue
+                            chunk = self._extract_ollama_stream_chunk(line)
+                            if chunk:
+                                yield chunk
+
+                    # Stream newline ile bitmezse kalan son satırı da parse et.
+                    remainder = buffer.strip()
+                    if remainder:
+                        chunk = self._extract_ollama_stream_chunk(remainder)
+                        if chunk:
+                            yield chunk
         except Exception as exc:
             yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Akış kesildi: {exc}", "thought": "Hata"})
 
@@ -258,8 +266,9 @@ class LLMClient:
         """Gemini stream yanıtını asenkron dönüştürür."""
         try:
             async for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+                text = getattr(chunk, "text", None)
+                if text:
+                    yield str(text)
         except Exception as exc:
             yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Gemini akış hatası: {exc}", "thought": "Hata"})
 
