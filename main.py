@@ -1,8 +1,10 @@
 """
-Sidar Project - Akıllı Başlatıcı
-
-Bu dosya, kullanıcıdan etkileşimli seçimler alarak Sidar'ı CLI veya Web modunda
-başlatır. Başlatıcı hem konsol sihirbazı hem de (uygunsa) WebView arayüzü sunar.
+Sidar Project - Ultimate Launcher
+=================================
+Görsel olarak zenginleştirilmiş etkileşimli menüler ile 
+argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.
+Kullanım: python main.py
+Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 """
 
 from __future__ import annotations
@@ -12,271 +14,237 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Dict, Tuple
+
+# Terminal Renkleri (ANSI)
+CYAN = "\033[96m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+# Config yükleme denemesi (Eğer dosya yoksa varsayılan değerler oluşturulur)
+class DummyConfig:
+    AI_PROVIDER = "ollama"
+    ACCESS_LEVEL = "full"
+    WEB_HOST = "127.0.0.1"
+    WEB_PORT = 8000
+    CODING_MODEL = "llama3"
+    GEMINI_API_KEY = ""
+    OLLAMA_URL = "http://localhost:11434"
+    BASE_DIR = "."
+
+try:
+    from config import Config
+    cfg = Config()
+except ImportError:
+    print(f"{YELLOW}⚠ config.py bulunamadı, varsayılan ayarlar kullanılıyor.{RESET}")
+    cfg = DummyConfig()
 
 
-def _print_header() -> None:
-    print("\n" + "═" * 64)
-    print("  SİDAR Başlatıcı")
-    print("  Hoş geldiniz ✨")
-    print("═" * 64)
+def print_banner() -> None:
+    """Etkileşimli menü için renkli karşılama ekranı."""
+    banner = f"""{CYAN}{BOLD}
+ ╔══════════════════════════════════════════════╗
+ ║  ███████╗██╗██████╗  █████╗ ██████╗          ║
+ ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║
+ ║  ███████╗██║██║  ██║███████║██████╔╝         ║
+ ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
+ ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
+ ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
+ ║         SİDAR AKILLI BAŞLATICI               ║
+ ╚══════════════════════════════════════════════╝{RESET}
+    """
+    print(banner)
+    print(f"{GREEN}Hoş geldiniz! Lütfen Sidar'ı nasıl başlatmak istediğinizi seçin.{RESET}\n")
 
 
-def _choose(prompt: str, options: Sequence[str], default_index: int = 0) -> str:
+def ask_choice(prompt: str, options: Dict[str, Tuple[str, str]], default_key: str) -> str:
+    """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
+    print(f"{YELLOW}{BOLD}{prompt}{RESET}")
+    
+    for key, (desc, value) in options.items():
+        is_default = f" {GREEN}(Varsayılan){RESET}" if key == default_key else ""
+        print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
+    
     while True:
-        print(f"\n{prompt}")
-        for i, opt in enumerate(options, start=1):
-            mark = " (varsayılan)" if i - 1 == default_index else ""
-            print(f"  {i}) {opt}{mark}")
-
-        raw = input("Seçiminiz: ").strip()
-        if not raw:
-            return options[default_index]
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(options):
-                return options[idx]
-
-        print("⚠ Geçersiz seçim, tekrar deneyin.")
+        choice = input(f"\n{BOLD}Seçiminiz [{'/'.join(options.keys())}]: {RESET}").strip()
+        
+        if not choice:
+            return options[default_key][1]
+            
+        if choice in options:
+            return options[choice][1]
+        
+        print(f"{MAGENTA}Geçersiz seçim. Lütfen tekrar deneyin.{RESET}")
 
 
-def _ask_text(prompt: str, default: str = "") -> str:
-    suffix = f" [{default}]" if default else ""
-    raw = input(f"{prompt}{suffix}: ").strip()
+def ask_text(prompt: str, default: str = "") -> str:
+    """Kullanıcıdan metin girdisi alır."""
+    suffix = f" {CYAN}[{default}]{RESET}" if default else ""
+    raw = input(f"{YELLOW}{BOLD}{prompt}{RESET}{suffix}: ").strip()
     return raw or default
 
 
-def _confirm(prompt: str, default_yes: bool = True) -> bool:
+def confirm(prompt: str, default_yes: bool = True) -> bool:
+    """Kullanıcıdan Evet/Hayır onayı alır."""
     hint = "[Y/n]" if default_yes else "[y/N]"
-    raw = input(f"{prompt} {hint}: ").strip().lower()
+    raw = input(f"\n{YELLOW}{BOLD}{prompt}{RESET} {CYAN}{hint}{RESET}: ").strip().lower()
     if not raw:
         return default_yes
     return raw in {"y", "yes", "e", "evet"}
 
 
-def _collect_preflight_messages(cfg, provider: str) -> List[str]:
-    messages: List[str] = ["🔎 Ön kontroller yapılıyor..."]
+def preflight(provider: str) -> None:
+    """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
+    print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
 
     if sys.version_info < (3, 10):
-        messages.append("⚠ Python 3.10+ önerilir.")
+        print(f"{YELLOW}⚠ Python 3.10+ önerilir. (Mevcut: {sys.version.split()[0]}){RESET}")
 
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
-        messages.append(f"✅ .env bulundu: {env_path}")
+        print(f"{GREEN}✅ .env dosyası bulundu.{RESET}")
     else:
-        messages.append("⚠ .env bulunamadı, varsayılan ayarlarla devam edilecek.")
+        print(f"{YELLOW}⚠ .env bulunamadı, sistem ortam değişkenleri kullanılacak.{RESET}")
 
-    if provider == "gemini" and not cfg.GEMINI_API_KEY:
-        messages.append("⚠ GEMINI_API_KEY boş görünüyor.")
+    if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
+        print(f"{RED}⚠ Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
 
     if provider == "ollama":
         try:
             import httpx
-
-            base = cfg.OLLAMA_URL.rstrip("/")
+            base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
             tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
             with httpx.Client(timeout=2) as client:
                 code = client.get(tags_url).status_code
             if code == 200:
-                messages.append("✅ Ollama erişimi başarılı.")
+                print(f"{GREEN}✅ Ollama erişimi başarılı ({base}).{RESET}")
             else:
-                messages.append(f"⚠ Ollama yanıt kodu: {code}")
+                print(f"{YELLOW}⚠ Ollama yanıt kodu: {code}{RESET}")
+        except ImportError:
+            print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
         except Exception:
-            messages.append("⚠ Ollama erişimi doğrulanamadı (servis kapalı olabilir).")
-
-    return messages
+            print(f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}")
 
 
-def _preflight(cfg, provider: str) -> None:
-    for line in _collect_preflight_messages(cfg, provider):
-        print(line)
-
-
-def _build_cli_command(provider: str, access_level: str, model: str | None, log: str) -> List[str]:
-    cmd = [sys.executable, "cli.py", "--provider", provider, "--level", access_level, "--log", log]
-    if model and provider == "ollama":
-        cmd.extend(["--model", model])
+def build_command(mode: str, provider: str, level: str, log: str, extra_args: Dict[str, str]) -> List[str]:
+    """Seçimlere göre çalıştırılacak terminal komutunu inşa eder."""
+    target_script = "web_server.py" if mode == "web" else "cli.py"
+    cmd = [sys.executable, target_script, "--provider", provider, "--level", level, "--log", log]
+    
+    if mode == "cli" and provider == "ollama" and extra_args.get("model"):
+        cmd.extend(["--model", extra_args["model"]])
+    elif mode == "web":
+        cmd.extend(["--host", extra_args.get("host", "127.0.0.1"), "--port", extra_args.get("port", "8000")])
+        
     return cmd
 
 
-def _build_web_command(provider: str, access_level: str, host: str, port: str, log: str) -> List[str]:
-    return [
-        sys.executable,
-        "web_server.py",
-        "--provider",
-        provider,
-        "--level",
-        access_level,
-        "--host",
-        host,
-        "--port",
-        port,
-        "--log",
-        log.lower(),
-    ]
-
-
 def run_wizard() -> int:
-    from config import Config
+    """Etkileşimli menüyü çalıştırır."""
+    print_banner()
 
-    cfg = Config()
-    _print_header()
+    mode_options = {
+        "1": ("Web Arayüzü Sunucusu (FastAPI + UI)", "web"),
+        "2": ("CLI Terminal Arayüzü", "cli")
+    }
+    mode = ask_choice("1. Hangi arayüzle başlatmak istiyorsunuz?", mode_options, "1")
+    print("-" * 50)
 
-    provider = _choose("AI sağlayıcısı seçin:", ["ollama", "gemini"], 0)
-    access_level = _choose("Erişim seviyesini seçin:", ["restricted", "sandbox", "full"], 2)
-    mode = _choose("Başlatma modu seçin:", ["cli", "web"], 0)
-    log_level = _choose("Log seviyesini seçin:", ["DEBUG", "INFO", "WARNING"], 1)
+    default_provider = "1" if getattr(cfg, "AI_PROVIDER", "ollama").lower() == "ollama" else "2"
+    provider_options = {
+        "1": ("Ollama (Yerel LLM)", "ollama"),
+        "2": ("Gemini (Bulut LLM)", "gemini")
+    }
+    provider = ask_choice("2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider)
+    print("-" * 50)
 
-    ollama_model = None
-    if provider == "ollama":
-        ollama_model = _ask_text("Ollama modeli", cfg.CODING_MODEL)
+    default_level_val = getattr(cfg, "ACCESS_LEVEL", "full").lower()
+    default_level = "1" if default_level_val == "full" else "2" if default_level_val == "sandbox" else "3"
+    level_options = {
+        "1": ("Full (Sınırsız Sistem Erişimi)", "full"),
+        "2": ("Sandbox (Docker İzolasyonlu Sınırlandırılmış Erişim)", "sandbox"),
+        "3": ("Restricted (Sadece Okuma ve Sohbet)", "restricted")
+    }
+    level = ask_choice("3. Güvenlik/Yetki seviyesi ne olsun?", level_options, default_level)
+    print("-" * 50)
 
-    _preflight(cfg, provider)
+    log_options = {
+        "1": ("INFO (Standart)", "INFO"),
+        "2": ("DEBUG (Detaylı Geliştirici Logları)", "DEBUG"),
+        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "WARNING")
+    }
+    log_level = ask_choice("4. Log seviyesini seçin:", log_options, "1")
 
-    if mode == "cli":
-        cmd = _build_cli_command(provider, access_level, ollama_model, log_level)
-    else:
-        host = _ask_text("Web host", cfg.WEB_HOST)
-        port = _ask_text("Web port", str(cfg.WEB_PORT))
-        cmd = _build_web_command(provider, access_level, host, port, log_level)
+    extra_args = {}
+    if provider == "ollama" and mode == "cli":
+        extra_args["model"] = ask_text("\nKullanılacak Ollama modeli", getattr(cfg, "CODING_MODEL", "llama3"))
+    elif mode == "web":
+        extra_args["host"] = ask_text("\nWeb Sunucu Host IP'si", getattr(cfg, "WEB_HOST", "127.0.0.1"))
+        extra_args["port"] = ask_text("Web Sunucu Portu", str(getattr(cfg, "WEB_PORT", 8000)))
 
-    print("\n🚀 Başlatılacak komut:")
-    print("   " + " ".join(cmd))
+    preflight(provider)
 
-    if not _confirm("Devam edilsin mi?", True):
-        print("İşlem iptal edildi.")
+    cmd = build_command(mode, provider, level, log_level, extra_args)
+
+    print(f"\n{CYAN}🚀 Başlatılacak komut:{RESET}")
+    print(f"   {GREEN}{' '.join(cmd)}{RESET}")
+
+    if not confirm("Sidar'ı başlatmak istiyor musunuz?", True):
+        print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
         return 0
 
-    return subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
+    return execute_command(cmd)
 
 
-def _webview_support_status() -> tuple[bool, str]:
-    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        return False, "DISPLAY/WAYLAND_DISPLAY bulunamadı (headless oturum)."
-
+def execute_command(cmd: List[str]) -> int:
+    """Oluşturulan komutu alt işlem olarak çalıştırır ve hataları yakalar."""
     try:
-        import webview  # noqa: F401
-    except Exception as exc:  # pywebview bağımlılığı yoksa
-        return False, f"pywebview import edilemedi: {exc}"
-
-    return True, "ok"
-
-
-def _resolve_launcher_target(explicit_url: str | None) -> str:
-    if explicit_url:
-        return explicit_url
-
-    env_url = os.environ.get("SIDAR_LAUNCHER_URL", "").strip()
-    if env_url:
-        return env_url
-
-    launcher_html = Path(__file__).resolve().parent / "web_ui" / "launcher" / "index.html"
-    if launcher_html.exists():
-        return launcher_html.as_uri()
-
-    raise FileNotFoundError("web_ui/launcher/index.html bulunamadı. --launcher-url ile frontend URL verin.")
-
-
-def run_webview_ui(launcher_url: str | None = None) -> int:
-    from config import Config
-    import webview
-
-    cfg = Config()
-    result = {"code": 0}
-
-    class Api:
-        def get_defaults(self) -> dict:
-            return {
-                "provider": "ollama",
-                "access_level": "full",
-                "mode": "cli",
-                "log": "INFO",
-                "model": cfg.CODING_MODEL,
-                "host": cfg.WEB_HOST,
-                "port": str(cfg.WEB_PORT),
-            }
-
-        def preflight(self, provider: str) -> str:
-            return "\n".join(_collect_preflight_messages(cfg, provider))
-
-        def launch(
-            self,
-            provider: str,
-            access_level: str,
-            mode: str,
-            log: str,
-            model: str,
-            host: str,
-            port: str,
-        ) -> str:
-            provider = provider or "ollama"
-            access_level = access_level or "full"
-            log = log or "INFO"
-
-            if mode == "web":
-                cmd = _build_web_command(provider, access_level, host or cfg.WEB_HOST, port or str(cfg.WEB_PORT), log)
-            else:
-                cmd = _build_cli_command(provider, access_level, model or cfg.CODING_MODEL, log)
-
-            result["code"] = subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
-            for win in webview.windows:
-                win.destroy()
-            return "OK"
-
-    target = _resolve_launcher_target(launcher_url)
-    webview.create_window("Sidar Launcher", url=target, width=1000, height=720, js_api=Api())
-    webview.start(debug=False)
-    return result["code"]
-
-
-def _run_auto_or_webview(ui_mode: str, launcher_url: str | None) -> int:
-    ok, reason = _webview_support_status()
-
-    if ok:
-        try:
-            return run_webview_ui(launcher_url)
-        except Exception as exc:
-            print(f"⚠ WebView UI başlatılamadı: {exc}")
-            print("ℹ Linux ortamı için ek bağımlılıklar gerekebilir: `pip install qtpy pyqt5 pyqtwebengine` veya `pip install pygobject`.")
-            print("ℹ Geçici fallback: konsol sihirbazı açılıyor.")
-            return run_wizard()
-
-    print(f"⚠ WebView UI açılamadı: {reason}")
-    print("ℹ Çözüm: `pip install pywebview` ve masaüstü oturumunda çalıştırın.")
-    print("ℹ Geçici fallback: konsol sihirbazı açılıyor. (webview zorlamak için: --ui webview)")
-    return run_wizard()
+        print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
+        subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
+        return 0
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
+        return 0
+    except subprocess.CalledProcessError as e:
+        print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {e.returncode}){RESET}")
+        return e.returncode
+    except Exception as e:
+        print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
+        return 1
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
-    parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
-    parser.add_argument("--ui", choices=["auto", "console", "webview"], default="auto", help="Sihirbaz arayüzü (auto/console/webview)")
-    parser.add_argument("--launcher-url", help="WebView için dış frontend URL (örn. Vite: http://127.0.0.1:5173)")
-    parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için sağlayıcı")
-    parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim")
+    parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
+    parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat")
+    parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için AI sağlayıcı")
+    parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim seviyesi")
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
-    parser.add_argument("--host", help="Hızlı web başlat için host")
-    parser.add_argument("--port", help="Hızlı web başlat için port")
-    parser.add_argument("--log", default="INFO", help="Log seviyesi")
+    parser.add_argument("--host", help="Hızlı web başlat için host adresi")
+    parser.add_argument("--port", help="Hızlı web başlat için port numarası")
+    parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
     args = parser.parse_args()
 
+    # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
     if not args.quick:
-        if args.ui == "console":
-            raise SystemExit(run_wizard())
-        raise SystemExit(_run_auto_or_webview(args.ui, args.launcher_url))
+        sys.exit(run_wizard())
 
-    provider = args.provider or "ollama"
-    level = args.level or "full"
+    # --quick argümanı verildiyse varsayılanları veya cli argümanlarını kullan
+    provider = args.provider or getattr(cfg, "AI_PROVIDER", "ollama").lower()
+    level = args.level or getattr(cfg, "ACCESS_LEVEL", "full").lower()
+    
+    extra_args = {
+        "model": args.model or getattr(cfg, "CODING_MODEL", "llama3"),
+        "host": args.host or getattr(cfg, "WEB_HOST", "127.0.0.1"),
+        "port": args.port or str(getattr(cfg, "WEB_PORT", 8000))
+    }
 
-    if args.quick == "cli":
-        cmd = _build_cli_command(provider, level, args.model, args.log)
-    else:
-        from config import Config
-
-        cfg = Config()
-        cmd = _build_web_command(provider, level, args.host or cfg.WEB_HOST, args.port or str(cfg.WEB_PORT), args.log)
-
-    raise SystemExit(subprocess.call(cmd, cwd=os.path.dirname(__file__) or "."))
+    cmd = build_command(args.quick, provider, level, args.log, extra_args)
+    sys.exit(execute_command(cmd))
 
 
 if __name__ == "__main__":

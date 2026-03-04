@@ -1,12 +1,22 @@
 """
-Sidar Project - CLI Giriş Noktası
-Yazılım Mühendisi AI Asistanı — Terminal Arayüzü
+Sidar Project - CLI Arayüzü
+==================================
+
+Bu modül, proje için terminal tabanlı etkileşimli arayüzün giriş noktasıdır.
+Önceden `main.py` olarak adlandırılıyordu. İsim değişikliği yapılarak
+`cli.py` olarak taşınmıştır. Dosyanın geri kalanı, önceki sürümdeki
+komut satırı argüman işleme, yapılandırma override etme ve `SidarAgent`
+oluşturma mantığını korur.
 
 Kullanım:
-    python cli.py                   # interaktif mod
-    python cli.py --status          # sistem durumunu göster
-    python cli.py -c "komut"        # tek komut çalıştır
-    python cli.py --level full      # erişim seviyesini geçici olarak ayarla
+
+    python cli.py                  # interaktif mod
+    python cli.py --status         # sistem durumunu göster
+    python cli.py -c "komut"       # tek komut çalıştır
+    python cli.py --level full     # erişim seviyesini geçici olarak ayarla
+
+Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
+noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
 """
 
 import argparse
@@ -14,18 +24,18 @@ import asyncio
 import logging
 import os
 import sys
-from typing import TYPE_CHECKING
 
 # Proje kökünü sys.path'e ekle
 sys.path.insert(0, os.path.dirname(__file__))
 
-if TYPE_CHECKING:
-    from agent.sidar_agent import SidarAgent
+from config import Config
+from agent.sidar_agent import SidarAgent
 
 
 # ─────────────────────────────────────────────
 #  LOGLAMA
 # ─────────────────────────────────────────────
+
 
 def _setup_logging(level: str) -> None:
     """
@@ -39,6 +49,7 @@ def _setup_logging(level: str) -> None:
 # ─────────────────────────────────────────────
 #  BANNER  (sürüm çalışma anında okunur)
 # ─────────────────────────────────────────────
+
 
 def _make_banner(version: str) -> str:
     """Sürüm numarasını dinamik olarak içeren ASCII banner'ı oluşturur."""
@@ -88,7 +99,8 @@ Doğrudan Komutlar (serbest metin):
 #  İNTERAKTİF DÖNGÜ
 # ─────────────────────────────────────────────
 
-async def _interactive_loop_async(agent: "SidarAgent") -> None:
+
+async def _interactive_loop_async(agent: SidarAgent) -> None:
     """
     Tek asyncio.run() çağrısıyla yönetilen interaktif döngü.
 
@@ -182,7 +194,7 @@ async def _interactive_loop_async(agent: "SidarAgent") -> None:
             logging.exception("Ajan yanıt hatası")
 
 
-def interactive_loop(agent: "SidarAgent") -> None:
+def interactive_loop(agent: SidarAgent) -> None:
     asyncio.run(_interactive_loop_async(agent))
 
 
@@ -190,9 +202,10 @@ def interactive_loop(agent: "SidarAgent") -> None:
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Sidar — Yazılım Mühendisi AI Asistanı",
+        description="Sidar — Yazılım Mühendisi AI Asistanı (CLI)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-c", "--command", help="Tek komut çalıştır ve çık")
@@ -206,9 +219,6 @@ def main() -> None:
     parser.add_argument("--model", help="Ollama model adı")
     parser.add_argument("--log", default="INFO", help="Log seviyesi (DEBUG/INFO/WARNING)")
     args = parser.parse_args()
-
-    from agent.sidar_agent import SidarAgent
-    from config import Config
 
     _setup_logging(args.log)
 
@@ -244,4 +254,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()  
+    main()
