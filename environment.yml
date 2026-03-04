@@ -8,6 +8,8 @@ dependencies:
   - git
   - setuptools
   - wheel
+  # launcher_frontend (Vite/React) geliştirmesi için opsiyonel
+  - nodejs>=20
   # ─── PyTorch ───────────────────────────────────────────────────────────────
   # WSL2 / Ubuntu / Conda ortamı için NOT:
   #   Conda'nın pytorch-cuda paketi, WSL2'nin Windows sürücüsünden gelen
@@ -73,6 +75,10 @@ dependencies:
       # ── Web Arayüzü ───────────────────────────────────────────────────────
       - fastapi>=0.104.0
       - uvicorn[standard]>=0.24.0
+
+      # ── Launcher (PyWebView) ─────────────────────────────────────────────
+      # main.py desktop launcher için zorunlu (yoksa fallback moduna düşer)
+      - pywebview>=4.4
 
       # ── Geliştirme & Test ─────────────────────────────────────────────────
       - pytest>=7.4.0
