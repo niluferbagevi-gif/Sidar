@@ -13,8 +13,9 @@ import argparse
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import Dict, List, Optional, TextIO, Tuple
 
 # Terminal Renkleri (ANSI)
 CYAN = "\033[96m"
@@ -198,13 +199,51 @@ def run_wizard() -> int:
         print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
         return 0
 
-    return execute_command(cmd)
+    launcher_log = ask_text(
+        "\nLauncher çıktı kaydı (opsiyonel, boş bırakılırsa sadece terminale yazılır)",
+        ""
+    )
+
+    return execute_command(cmd, launcher_log.strip() or None)
 
 
-def execute_command(cmd: List[str]) -> int:
+def _write_launch_header(log_file: TextIO, cmd: List[str]) -> None:
+    """Launcher tarafından başlatılan alt sürecin meta bilgisini log dosyasına yazar."""
+    started_at = datetime.now().isoformat(timespec="seconds")
+    separator = "=" * 72
+    log_file.write(f"\n{separator}\n")
+    log_file.write(f"[SIDAR LAUNCHER] Başlangıç: {started_at}\n")
+    log_file.write(f"[SIDAR LAUNCHER] Komut: {' '.join(cmd)}\n")
+    log_file.write(f"{separator}\n")
+    log_file.flush()
+
+
+def execute_command(cmd: List[str], launcher_log_file: Optional[str] = None) -> int:
     """Oluşturulan komutu alt işlem olarak çalıştırır ve hataları yakalar."""
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
+
+        if launcher_log_file:
+            log_path = Path(launcher_log_file).expanduser()
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as log_file:
+                _write_launch_header(log_file, cmd)
+                result = subprocess.run(
+                    cmd,
+                    check=False,
+                    cwd=os.path.dirname(__file__) or ".",
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+
+            if result.returncode != 0:
+                print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {result.returncode}){RESET}")
+                print(f"{YELLOW}Detaylar log dosyasına yazıldı: {log_path}{RESET}")
+                return result.returncode
+
+            print(f"{GREEN}Launcher çıktısı kaydedildi: {log_path}{RESET}")
+            return 0
+
         subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
         return 0
     except KeyboardInterrupt:
@@ -227,6 +266,7 @@ def main() -> None:
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
     parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
+    parser.add_argument("--launcher-log-file", help="Alt süreç stdout/stderr çıktısını belirtilen dosyaya yönlendir")
     args = parser.parse_args()
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
@@ -244,7 +284,7 @@ def main() -> None:
     }
 
     cmd = build_command(args.quick, provider, level, args.log, extra_args)
-    sys.exit(execute_command(cmd))
+    sys.exit(execute_command(cmd, args.launcher_log_file))
 
 
 if __name__ == "__main__":
