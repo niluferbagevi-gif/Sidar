@@ -72,7 +72,7 @@ def main() -> None:
 
     import webview
 
-    window = webview.create_window(
+    webview.create_window(
         title="Sidar Launcher",
         url=launcher_url,
         js_api=api,
@@ -81,7 +81,7 @@ def main() -> None:
         min_size=(900, 640),
         resizable=True,
     )
-    webview.start(debug=False, window=window)
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":

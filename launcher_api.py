@@ -9,7 +9,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from config import Config
+try:
+    from config import Config as _Config
+    _CONFIG_IMPORT_ERROR: str | None = None
+except Exception as exc:  # Ortamda opsiyonel bağımlılıklar eksik olabilir
+    _Config = None
+    _CONFIG_IMPORT_ERROR = str(exc)
+
+
+class _FallbackConfig:
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama")
+    ACCESS_LEVEL = os.getenv("ACCESS_LEVEL", "full")
+    CODING_MODEL = os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
+    WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
+    WEB_PORT = int(os.getenv("WEB_PORT", "7860"))
 
 
 class LauncherAPI:
@@ -17,7 +30,8 @@ class LauncherAPI:
 
     def __init__(self, base_dir: Path) -> None:
         self.base_dir = base_dir
-        self.cfg = Config()
+        self.cfg = _Config() if _Config is not None else _FallbackConfig()
+        self.config_error = _CONFIG_IMPORT_ERROR
         self._last_process: subprocess.Popen[str] | None = None
 
     def _safe_text(self, value: Any, fallback: str) -> str:
@@ -45,6 +59,8 @@ class LauncherAPI:
             "python": sys.executable,
             "cwd": str(self.base_dir),
             "pywebview": self._module_exists("webview"),
+            "config_ok": self.config_error is None,
+            "config_error": self.config_error,
         }
 
     def start_system(self, payload: dict[str, Any]) -> dict[str, Any]:
