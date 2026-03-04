@@ -786,23 +786,24 @@ class SidarAgent:
     async def _tool_subtask(self, task: str) -> str:
         """
         Bir alt görevi bağımsız mini ReAct döngüsünde çalıştırır.
-        Claude Code'daki Agent tool eşdeğeri — max 5 adım.
+        Claude Code'daki Agent tool eşdeğeri.
         Format: 'görev açıklaması'
         """
         if not task.strip():
             return "⚠ Alt görev açıklaması belirtilmedi."
 
-        MAX_STEPS = 5
+        max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5) or 5)
+        max_steps = max(1, min(max_steps, 10))  # güvenli sınır: [1, 10]
         messages: list = [{"role": "user", "content": task}]
         mini_system = (
             "Sen bağımsız bir alt ajansın. Verilen görevi tamamla.\n"
             "Her adımda şu JSON formatında yanıt ver:\n"
             '{"thought": "analiz", "tool": "araç_adı", "argument": "argüman"}\n'
             "Görev tamamlandığında tool='final_answer' kullan.\n"
-            "Maksimum 5 adımda tamamla. Sonucu Türkçe olarak özetle."
+            f"Maksimum {max_steps} adımda tamamla. Sonucu Türkçe olarak özetle."
         )
 
-        for _ in range(MAX_STEPS):
+        for _ in range(max_steps):
             try:
                 raw = await self.llm.chat(
                     messages=messages,
@@ -813,40 +814,61 @@ class SidarAgent:
                     json_mode=True,
                 )
                 if not isinstance(raw, str):
-                    break
+                    messages += [
+                        {"role": "assistant", "content": str(raw)},
+                        {"role": "user", "content": _FMT_SYS_WARN.format(msg="Alt görevde model string dışı çıktı döndürdü; JSON üret.")},
+                    ]
+                    continue
 
                 _dec = json.JSONDecoder()
                 idx = raw.find("{")
                 if idx == -1:
-                    break
+                    messages += [
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": _FMT_SYS_ERR.format(msg="JSON bloğu bulunamadı. Geçerli ToolCall JSON üret.")},
+                    ]
+                    continue
                 action, _ = _dec.raw_decode(raw, idx)
+                action_data = ToolCall.model_validate(action)
 
-                tool_name = str(action.get("tool", "")).strip()
-                tool_arg  = str(action.get("argument", "")).strip()
+                tool_name = action_data.tool.strip()
+                tool_arg = action_data.argument
 
                 if tool_name == "final_answer":
-                    return f"[Alt Görev Tamamlandı]\n{tool_arg}"
+                    final_text = str(tool_arg).strip() or "✓ Alt görev tamamlandı."
+                    return f"[Alt Görev Tamamlandı]\n{final_text}"
 
                 if not tool_name:
-                    break
+                    messages += [
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": _FMT_SYS_ERR.format(msg="tool alanı boş. Geçerli bir araç seç.")},
+                    ]
+                    continue
 
                 tool_result = await self._execute_tool(tool_name, tool_arg)
                 if tool_result is None:
                     messages += [
                         {"role": "assistant", "content": raw},
-                        {"role": "user",      "content": _FMT_TOOL_ERR.format(name=tool_name, error="Bu araç mevcut değil.")},
+                        {"role": "user", "content": _FMT_TOOL_ERR.format(name=tool_name, error="Bu araç mevcut değil.")},
                     ]
                     continue
 
                 messages += [
                     {"role": "assistant", "content": raw},
-                    {"role": "user",      "content": _FMT_TOOL_STEP.format(name=tool_name, result=str(tool_result)[:1500])},
+                    {"role": "user", "content": _FMT_TOOL_STEP.format(name=tool_name, result=str(tool_result)[:1500])},
                 ]
+            except ValidationError as exc:
+                logger.warning("Subtask ToolCall doğrulama hatası: %s", exc)
+                messages += [
+                    {"role": "assistant", "content": raw if 'raw' in locals() else ""},
+                    {"role": "user", "content": _FMT_SYS_ERR.format(msg="ToolCall şeması hatalı. thought/tool/argument alanlarını eksiksiz üret.")},
+                ]
+                continue
             except Exception as exc:
                 logger.warning("Subtask adım hatası: %s", exc)
                 break
 
-        return "[Alt Görev] Maksimum adım sayısına ulaşıldı veya görev tamamlanamadı."
+        return f"[Alt Görev] Maksimum adım sayısına ({max_steps}) ulaşıldı veya görev tamamlanamadı."
 
     # Yalnızca okuma/sorgulama araçları paralel çalışabilir.
     _PARALLEL_SAFE = frozenset({
