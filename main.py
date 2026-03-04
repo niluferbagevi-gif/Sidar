@@ -1,7 +1,8 @@
 """
 Sidar Project - Akıllı Başlatıcı
 
-Bu dosya, kullanıcıdan etkileşimli seçimler alarak Sidar'ı CLI veya Web modunda başlatır.
+Bu dosya, kullanıcıdan etkileşimli seçimler alarak Sidar'ı CLI veya Web modunda
+başlatır. Başlatıcı hem konsol sihirbazı hem de (uygunsa) GUI arayüzü sunar.
 """
 
 from __future__ import annotations
@@ -53,20 +54,20 @@ def _confirm(prompt: str, default_yes: bool = True) -> bool:
     return raw in {"y", "yes", "e", "evet"}
 
 
-def _preflight(cfg, provider: str) -> None:
-    print("\n🔎 Ön kontroller yapılıyor...")
+def _collect_preflight_messages(cfg, provider: str) -> List[str]:
+    messages: List[str] = ["🔎 Ön kontroller yapılıyor..."]
 
     if sys.version_info < (3, 10):
-        print("⚠ Python 3.10+ önerilir.")
+        messages.append("⚠ Python 3.10+ önerilir.")
 
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
-        print(f"✅ .env bulundu: {env_path}")
+        messages.append(f"✅ .env bulundu: {env_path}")
     else:
-        print("⚠ .env bulunamadı, varsayılan ayarlarla devam edilecek.")
+        messages.append("⚠ .env bulunamadı, varsayılan ayarlarla devam edilecek.")
 
     if provider == "gemini" and not cfg.GEMINI_API_KEY:
-        print("⚠ GEMINI_API_KEY boş görünüyor.")
+        messages.append("⚠ GEMINI_API_KEY boş görünüyor.")
 
     if provider == "ollama":
         try:
@@ -77,11 +78,18 @@ def _preflight(cfg, provider: str) -> None:
             with httpx.Client(timeout=2) as client:
                 code = client.get(tags_url).status_code
             if code == 200:
-                print("✅ Ollama erişimi başarılı.")
+                messages.append("✅ Ollama erişimi başarılı.")
             else:
-                print(f"⚠ Ollama yanıt kodu: {code}")
+                messages.append(f"⚠ Ollama yanıt kodu: {code}")
         except Exception:
-            print("⚠ Ollama erişimi doğrulanamadı (servis kapalı olabilir).")
+            messages.append("⚠ Ollama erişimi doğrulanamadı (servis kapalı olabilir).")
+
+    return messages
+
+
+def _preflight(cfg, provider: str) -> None:
+    for line in _collect_preflight_messages(cfg, provider):
+        print(line)
 
 
 def _build_cli_command(provider: str, access_level: str, model: str | None, log: str) -> List[str]:
@@ -142,9 +150,119 @@ def run_wizard() -> int:
     return subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
 
 
+def _can_use_gui() -> bool:
+    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+    try:
+        import tkinter  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def run_gui() -> int:
+    from config import Config
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    cfg = Config()
+    result = {"code": 0}
+
+    root = tk.Tk()
+    root.title("Sidar Başlatıcı")
+    root.geometry("660x430")
+    root.resizable(False, False)
+
+    provider_var = tk.StringVar(value="ollama")
+    level_var = tk.StringVar(value="full")
+    mode_var = tk.StringVar(value="cli")
+    log_var = tk.StringVar(value="INFO")
+    model_var = tk.StringVar(value=cfg.CODING_MODEL)
+    host_var = tk.StringVar(value=cfg.WEB_HOST)
+    port_var = tk.StringVar(value=str(cfg.WEB_PORT))
+    cmd_var = tk.StringVar(value="")
+
+    def build_cmd() -> List[str]:
+        provider = provider_var.get()
+        if mode_var.get() == "cli":
+            model = model_var.get().strip() if provider == "ollama" else None
+            return _build_cli_command(provider, level_var.get(), model, log_var.get())
+        return _build_web_command(provider, level_var.get(), host_var.get().strip(), port_var.get().strip(), log_var.get())
+
+    def refresh_state(*_args) -> None:
+        provider = provider_var.get()
+        mode = mode_var.get()
+        model_entry.configure(state="normal" if provider == "ollama" else "disabled")
+        host_entry.configure(state="normal" if mode == "web" else "disabled")
+        port_entry.configure(state="normal" if mode == "web" else "disabled")
+        cmd_var.set(" ".join(build_cmd()))
+
+    def run_checks() -> None:
+        lines = _collect_preflight_messages(cfg, provider_var.get())
+        messagebox.showinfo("Ön Kontrol", "\n".join(lines), parent=root)
+
+    def launch() -> None:
+        cmd = build_cmd()
+        confirm = messagebox.askyesno("Başlat", "Bu komut çalıştırılsın mı?\n\n" + " ".join(cmd), parent=root)
+        if not confirm:
+            return
+        root.withdraw()
+        try:
+            result["code"] = subprocess.call(cmd, cwd=os.path.dirname(__file__) or ".")
+        finally:
+            root.destroy()
+
+    frame = ttk.Frame(root, padding=18)
+    frame.pack(fill="both", expand=True)
+
+    ttk.Label(frame, text="Sidar Interaktif Başlatıcı", font=("Arial", 14, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+
+    ttk.Label(frame, text="Sağlayıcı").grid(row=1, column=0, sticky="w", pady=(12, 4))
+    ttk.Combobox(frame, textvariable=provider_var, values=["ollama", "gemini"], state="readonly", width=16).grid(row=1, column=1, sticky="w", pady=(12, 4))
+
+    ttk.Label(frame, text="Erişim").grid(row=1, column=2, sticky="w", pady=(12, 4))
+    ttk.Combobox(frame, textvariable=level_var, values=["restricted", "sandbox", "full"], state="readonly", width=16).grid(row=1, column=3, sticky="w", pady=(12, 4))
+
+    ttk.Label(frame, text="Mod").grid(row=2, column=0, sticky="w", pady=4)
+    ttk.Combobox(frame, textvariable=mode_var, values=["cli", "web"], state="readonly", width=16).grid(row=2, column=1, sticky="w", pady=4)
+
+    ttk.Label(frame, text="Log").grid(row=2, column=2, sticky="w", pady=4)
+    ttk.Combobox(frame, textvariable=log_var, values=["DEBUG", "INFO", "WARNING"], state="readonly", width=16).grid(row=2, column=3, sticky="w", pady=4)
+
+    ttk.Label(frame, text="Ollama model").grid(row=3, column=0, sticky="w", pady=4)
+    model_entry = ttk.Entry(frame, textvariable=model_var, width=24)
+    model_entry.grid(row=3, column=1, sticky="w", pady=4)
+
+    ttk.Label(frame, text="Web host").grid(row=3, column=2, sticky="w", pady=4)
+    host_entry = ttk.Entry(frame, textvariable=host_var, width=24)
+    host_entry.grid(row=3, column=3, sticky="w", pady=4)
+
+    ttk.Label(frame, text="Web port").grid(row=4, column=2, sticky="w", pady=4)
+    port_entry = ttk.Entry(frame, textvariable=port_var, width=24)
+    port_entry.grid(row=4, column=3, sticky="w", pady=4)
+
+    ttk.Label(frame, text="Çalıştırılacak komut").grid(row=5, column=0, columnspan=4, sticky="w", pady=(12, 4))
+    cmd_label = ttk.Label(frame, textvariable=cmd_var, foreground="#0d47a1", wraplength=620, justify="left")
+    cmd_label.grid(row=6, column=0, columnspan=4, sticky="w")
+
+    btn_row = ttk.Frame(frame)
+    btn_row.grid(row=7, column=0, columnspan=4, sticky="w", pady=(18, 0))
+    ttk.Button(btn_row, text="Ön Kontrol", command=run_checks).pack(side="left", padx=(0, 8))
+    ttk.Button(btn_row, text="Başlat", command=launch).pack(side="left")
+    ttk.Button(btn_row, text="Kapat", command=root.destroy).pack(side="left", padx=(8, 0))
+
+    for var in (provider_var, level_var, mode_var, log_var, model_var, host_var, port_var):
+        var.trace_add("write", refresh_state)
+    refresh_state()
+
+    root.mainloop()
+    return result["code"]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
+    parser.add_argument("--ui", choices=["auto", "console", "gui"], default="auto", help="Sihirbaz arayüzü (auto/console/gui)")
     parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için sağlayıcı")
     parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim")
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
@@ -154,6 +272,16 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.quick:
+        if args.ui == "console":
+            raise SystemExit(run_wizard())
+        if args.ui == "gui":
+            if not _can_use_gui():
+                print("⚠ GUI kullanılamadı (display/tkinter yok). Konsol sihirbazı açılıyor.")
+                raise SystemExit(run_wizard())
+            raise SystemExit(run_gui())
+
+        if _can_use_gui():
+            raise SystemExit(run_gui())
         raise SystemExit(run_wizard())
 
     provider = args.provider or "ollama"
