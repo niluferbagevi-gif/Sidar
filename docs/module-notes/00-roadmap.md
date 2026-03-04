@@ -42,3 +42,10 @@ Her modül notu için:
 - Operasyon notları (varsa)
 
 Not: Teknik notlar kodu referans alan **yaşayan doküman** olarak tutulur; her büyük refaktörde ilgili not güncellenmelidir.
+
+
+## Durum
+
+- ✅ Parti-1 tamamlandı (`config.py`, `main.py`, `web_server.py`)
+- ✅ Parti-2 tamamlandı (`agent/*`)
+- ⏳ Parti-3 sıradaki adım (`core/*`)
