@@ -1075,10 +1075,9 @@ class SidarAgent:
         ]
         return "\n".join(lines)
 
-    async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
-        """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
-        tool_arg = str(tool_arg).strip()
-        dispatch = {
+    def _get_tool_dispatch_map(self):
+        """Araç dispatch tablosunu tek noktada üretir."""
+        return {
             "list_dir":               self._tool_list_dir,
             "read_file":              self._tool_read_file,
             "write_file":             self._tool_write_file,
@@ -1135,7 +1134,11 @@ class SidarAgent:
             "agent":                  self._tool_subtask,      # alias — Claude Code uyumu
             "parallel":               self._tool_parallel,
         }
-        handler = dispatch.get(tool_name)
+
+    async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
+        """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
+        tool_arg = str(tool_arg).strip()
+        handler = self._get_tool_dispatch_map().get(tool_name)
         return await handler(tool_arg) if handler else None
 
     # ─────────────────────────────────────────────
@@ -1179,6 +1182,10 @@ class SidarAgent:
 
         m = self.code.get_metrics()
         lines.append(f"  Okunan     : {m['files_read']} dosya | Yazılan: {m['files_written']}")
+
+        tool_names = sorted(self._get_tool_dispatch_map().keys())
+        lines.append(f"  Araç Sayısı: {len(tool_names)} (dispatch tablosundan canlı)")
+        lines.append(f"  Araçlar    : {', '.join(tool_names)}")
 
         last_file = self.memory.get_last_file()
         if last_file:

@@ -49,7 +49,7 @@
     - [13.5.2 `agent/sidar_agent.py` — Skor: 96/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 91/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 94/100 ✅](#1354-webserverpy-skor-90100)
-    - [13.5.5 `agent/definitions.py` — Skor: 87/100 ✅](#1355-agentdefinitionspy-skor-87100)
+    - [13.5.5 `agent/definitions.py` — Skor: 90/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 91/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
@@ -665,7 +665,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`agent/sidar_agent.py`**: Merkezi `dispatch` tablosu (40+ araç, alias'lar dahil) kullanılır; `asyncio.Lock()` lazy init ile event loop uyumlu. `JSONDecoder.raw_decode()` greedy regex riskini ortadan kaldırır. Tüm disk/ağ I/O `asyncio.to_thread()` ile sarmalanmıştır. `_try_direct_tool_route` hafif LLM router, `_tool_subtask` mini ReAct döngüsü, `_tool_parallel` güvenli eşzamanlı araç çalıştırma aktiftir. SIDAR.md/CLAUDE.md mtime cache ile otomatik yeniden yüklenir. ✅ Madde 6.9 kapatıldı: `_tool_subtask` ve döngü düzeltme mesajları format sabitleriyle hizalandı. → Detay: §13.5.2
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ⚠️ BM25 cache ile sorgu başı rebuild maliyeti azaltıldı ve `_tool_docs_search` artık `asyncio.to_thread` ile non-blocking; açık kalan ana risk embedding tarafındaki monkey-patch kırılganlığıdır. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ⚠️ `/rag/search` endpoint'i artık `asyncio.to_thread` kullanıyor ve rate limiter boş bucket eviction ile key birikimini temizliyor; açık kalan başlıca risk web banner sürüm satırında değil, genel bellek büyümesi için TTL metrik izlemesidir. → Detay: §13.5.4
-- **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ⚠️ Metin tabanlı araç listesi dispatch tablosundan bağımsız tutulduğu için drift riski vardır; ayrıca "internet gerektirmez" ifadesi Gemini bulut sağlayıcısıyla koşullu ele alınmalıdır. → Detay: §13.5.5
+- **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ✅ Sağlayıcıya bağlı internet gereksinimi netleştirildi; canlı araç setinin dispatch tablosundan geldiği açıkça belirtildi. → Detay: §13.5.5
 - **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
@@ -1142,7 +1142,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1355-agentdefinitionspy-skor-87100"></a>
-#### 13.5.5 `agent/definitions.py` — Skor: 87/100 ✅
+#### 13.5.5 `agent/definitions.py` — Skor: 90/100 ✅
 
 **Sorumluluk:** Ajan davranış sözleşmesi — kimlik/persona, güvenlik ilkeleri, araç kullanım semantiği ve JSON yanıt şeması.
 
@@ -1165,15 +1165,17 @@ except Exception as exc:
 
 **Bakım ve Sürdürme Notu (satır 66–175)**
 
-- Araç listesi bu dosyada metin olarak hardcoded durumda; `sidar_agent.py` dispatch tablosu genişledikçe drift riski doğar.
-- Özellikle alias veya yeni araç eklentilerinde prompt dokümanı ayrı güncellenmek zorunda kalıyor.
+- Araç listesi prompt içinde metin olarak dursa da canlı dispatch listesi artık runtime bağlamına enjekte ediliyor; drift riski düşürüldü.
+- Yeni araç eklentilerinde prompt metni güncellemesi yine faydalıdır; ancak çelişki durumunda dispatch tablosu yetkili kaynak olarak belirtilmiştir.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| D-01 | Sistem promptunda "internet bağlantısı gerektirmezsin" ifadesi var; proje Gemini (bulut) sağlayıcısını da desteklediği için koşullu/doğruluk riski taşıyor | 11 | Orta |
-| D-02 | Araç listesi metin tabanlı kopya olarak tutuluyor; dispatch tablosu ile manuel senkron gerektiriyor (drift riski) | 66–175 | Orta |
+| D-01 | Promptta sağlayıcıya bağlı internet gereksinimi açıkça koşullu ifade edildi (Ollama/Gemini ayrımı) | 11 | ✅ Kapalı |
+| D-02 | Prompta “yetkili canlı araç seti dispatch tablosudur” notu eklendi; `sidar_agent._build_context()` artık dispatch'ten canlı araç listesini enjekte ediyor | definitions.py:66, sidar_agent.py:1145–1195 | ✅ Kapalı |
+
+**Düzeltme Geçmişi Referansı:** Detaylı kapanış kaydı için bkz. `DUZELTME_GECMISI.md` §3.82.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
