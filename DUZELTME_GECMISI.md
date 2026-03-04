@@ -2270,3 +2270,22 @@ def get_pull_requests_raw(self, state: str, limit: int):
 **Doğrulama:**
 - ✅ `python -m py_compile managers/code_manager.py tests/test_code_manager_improvements.py`
 - ✅ `pytest -q tests/test_code_manager_improvements.py` → `3 passed`
+
+
+### ✅ 3.80 `managers/github_manager.py` — Owner Resolve Akışı ve Dosya Yazma Hata Ayrımı (GH-01/GH-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `managers/github_manager.py`, `tests/test_github_manager_improvements.py`
+
+**Sorun (GH-01):** `create_or_update_file()` içinde "dosya yok" kararı geniş `except Exception` ile verildiği için bağlantı/izin gibi gerçek hatalar da oluşturma yoluna düşebiliyordu.
+
+**Sorun (GH-02):** `list_repos(owner=...)` önce organization akışını zorunlu denerken kullanıcı-owner senaryosunu istisna ile yönettiğinden kontrol akışı kırılgan ve maliyetliydi.
+
+**Yapılan düzeltmeler:**
+- `create_or_update_file()` içinde dosya yok kararı yalnızca 404/bulunamadı durumunda create yoluna düşecek şekilde daraltıldı.
+- 404 dışı durumlar artık açıkça "durum kontrol" veya "güncelleme" hatası olarak raporlanır.
+- `list_repos(owner=...)` için owner çözümleyici yardımcı (`_get_owner_source`) eklendi; user → organization sıralı ve kontrollü fallback akışı uygulandı.
+- Repo çıktı formatı `_repo_to_item()` ile tek noktada normalize edildi.
+
+**Doğrulama:**
+- ✅ `python -m py_compile managers/github_manager.py tests/test_github_manager_improvements.py`
+- ✅ `pytest -q tests/test_github_manager_improvements.py` → `3 passed`

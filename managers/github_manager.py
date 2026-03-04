@@ -94,49 +94,59 @@ class GitHubManager:
             return True, f"Depo değiştirildi: {repo_name}"
         return False, f"Depo bulunamadı veya erişim reddedildi: {repo_name}"
 
+    def _repo_to_item(self, repo) -> Dict[str, str]:
+        """Repo nesnesini standart sözlük yapısına dönüştür."""
+        return {
+            "full_name": repo.full_name,
+            "default_branch": repo.default_branch,
+            "private": str(bool(getattr(repo, "private", False))).lower(),
+        }
+
+    def _get_owner_source(self, owner: str):
+        """Owner için repo kaynağını user → organization sırasıyla bul."""
+        user_exc = None
+        try:
+            user_obj = self._gh.get_user(owner)
+            return user_obj.get_repos(type="owner")
+        except Exception as exc:
+            user_exc = exc
+
+        try:
+            org_obj = self._gh.get_organization(owner)
+            return org_obj.get_repos(type="all")
+        except Exception as org_exc:
+            logger.error(
+                "Repo listesi alınamadı (owner=%s). user_err=%s org_err=%s",
+                owner,
+                user_exc,
+                org_exc,
+            )
+            return None
+
     def list_repos(self, owner: str = "", limit: int = 100) -> Tuple[bool, List[Dict[str, str]]]:
         """
         Erişilebilen depoları listeler.
-        owner verilirse yalnızca ilgili kullanıcı/organizasyon depoları döner.
+        owner verilirse ilgili kullanıcı veya organizasyon depoları döner.
         """
         if not self._gh:
             return False, []
+
+        repos: List[Dict[str, str]] = []
         try:
-            repos = []
             if owner:
-                owner_obj = self._gh.get_organization(owner)
-                source = owner_obj.get_repos(type="all")
+                source = self._get_owner_source(owner)
+                if source is None:
+                    return False, []
             else:
                 source = self._gh.get_user().get_repos(visibility="all")
 
             for i, repo in enumerate(source):
                 if i >= limit:
                     break
-                repos.append({
-                    "full_name": repo.full_name,
-                    "default_branch": repo.default_branch,
-                    "private": str(bool(getattr(repo, "private", False))).lower(),
-                })
+                repos.append(self._repo_to_item(repo))
             return True, repos
-        except Exception:
-            # owner bir kullanıcı olabilir (organization değil)
-            if owner:
-                try:
-                    user_obj = self._gh.get_user(owner)
-                    repos = []
-                    for i, repo in enumerate(user_obj.get_repos(type="owner")):
-                        if i >= limit:
-                            break
-                        repos.append({
-                            "full_name": repo.full_name,
-                            "default_branch": repo.default_branch,
-                            "private": str(bool(getattr(repo, "private", False))).lower(),
-                        })
-                    return True, repos
-                except Exception as exc:
-                    logger.error("Repo listesi alınamadı (%s): %s", owner, exc)
-                    return False, []
-            logger.error("Repo listesi alınamadı")
+        except Exception as exc:
+            logger.error("Repo listesi alınamadı (owner=%s): %s", owner or "self", exc)
             return False, []
 
     def get_repo_info(self) -> Tuple[bool, str]:
@@ -276,32 +286,40 @@ class GitHubManager:
         """GitHub deposuna dosya oluştur veya güncelle."""
         if not self._repo:
             return False, "Aktif depo yok."
+
+        kwargs = {}
+        if branch:
+            kwargs["branch"] = branch
+
+        # Dosya var mı kontrolü: yalnızca "bulunamadı" durumunda create yoluna düş.
         try:
-            kwargs = {}
-            if branch:
-                kwargs["branch"] = branch
-            # Mevcut dosyayı kontrol et (güncelleme mi, oluşturma mı?)
-            try:
-                existing = self._repo.get_contents(file_path, **kwargs)
-                self._repo.update_file(
-                    path=file_path,
-                    message=message,
-                    content=content,
-                    sha=existing.sha,
-                    **kwargs,
-                )
-                return True, f"✓ Dosya güncellendi: {file_path}"
-            except Exception:
-                # Dosya yok → oluştur
-                self._repo.create_file(
-                    path=file_path,
-                    message=message,
-                    content=content,
-                    **kwargs,
-                )
-                return True, f"✓ Dosya oluşturuldu: {file_path}"
+            existing = self._repo.get_contents(file_path, **kwargs)
         except Exception as exc:
-            return False, f"GitHub dosya yazma hatası: {exc}"
+            status = getattr(exc, "status", None)
+            if status == 404 or "404" in str(exc):
+                try:
+                    self._repo.create_file(
+                        path=file_path,
+                        message=message,
+                        content=content,
+                        **kwargs,
+                    )
+                    return True, f"✓ Dosya oluşturuldu: {file_path}"
+                except Exception as create_exc:
+                    return False, f"GitHub dosya oluşturma hatası: {create_exc}"
+            return False, f"Dosya durumu kontrol edilemedi: {exc}"
+
+        try:
+            self._repo.update_file(
+                path=file_path,
+                message=message,
+                content=content,
+                sha=existing.sha,
+                **kwargs,
+            )
+            return True, f"✓ Dosya güncellendi: {file_path}"
+        except Exception as exc:
+            return False, f"GitHub dosya güncelleme hatası: {exc}"
 
     def create_branch(self, branch_name: str, from_branch: Optional[str] = None) -> Tuple[bool, str]:
         """
