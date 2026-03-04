@@ -160,7 +160,22 @@ def _can_use_webview_ui() -> bool:
     return True
 
 
-def run_webview_ui() -> int:
+def _resolve_launcher_target(explicit_url: str | None) -> str:
+    if explicit_url:
+        return explicit_url
+
+    env_url = os.environ.get("SIDAR_LAUNCHER_URL", "").strip()
+    if env_url:
+        return env_url
+
+    launcher_html = Path(__file__).resolve().parent / "web_ui" / "launcher" / "index.html"
+    if launcher_html.exists():
+        return launcher_html.as_uri()
+
+    raise FileNotFoundError("web_ui/launcher/index.html bulunamadı. --launcher-url ile frontend URL verin.")
+
+
+def run_webview_ui(launcher_url: str | None = None) -> int:
     from config import Config
     import webview
 
@@ -168,6 +183,17 @@ def run_webview_ui() -> int:
     result = {"code": 0}
 
     class Api:
+        def get_defaults(self) -> dict:
+            return {
+                "provider": "ollama",
+                "access_level": "full",
+                "mode": "cli",
+                "log": "INFO",
+                "model": cfg.CODING_MODEL,
+                "host": cfg.WEB_HOST,
+                "port": str(cfg.WEB_PORT),
+            }
+
         def preflight(self, provider: str) -> str:
             return "\n".join(_collect_preflight_messages(cfg, provider))
 
@@ -195,71 +221,9 @@ def run_webview_ui() -> int:
                 win.destroy()
             return "OK"
 
-    html = f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset='utf-8' />
-  <title>Sidar Launcher</title>
-  <style>
-    body {{ margin: 0; font-family: Inter, Arial, sans-serif; background: radial-gradient(circle at 20% 20%, #1f2937, #0b1020 70%); color: #e5e7eb; }}
-    .wrap {{ max-width: 860px; margin: 24px auto; padding: 20px; }}
-    .card {{ background: rgba(17,24,39,.75); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }}
-    h1 {{ margin: 0 0 14px; font-size: 26px; }}
-    .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }}
-    label {{ display: block; font-size: 13px; margin-bottom: 4px; opacity: .9; }}
-    input, select {{ width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #f3f4f6; }}
-    .row {{ margin-top: 12px; display: flex; gap: 10px; }}
-    button {{ border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-weight: 600; }}
-    .p {{ background: #3b82f6; color: white; }}
-    .s {{ background: #374151; color: white; }}
-    .hint {{ margin-top: 12px; font-size: 13px; color: #9ca3af; }}
-  </style>
-</head>
-<body>
-  <div class='wrap'>
-    <div class='card'>
-      <h1>Sidar Interaktif Başlatıcı</h1>
-      <div class='grid'>
-        <div><label>Sağlayıcı</label><select id='provider'><option>ollama</option><option>gemini</option></select></div>
-        <div><label>Erişim Seviyesi</label><select id='level'><option>restricted</option><option>sandbox</option><option selected>full</option></select></div>
-        <div><label>Mod</label><select id='mode'><option selected>cli</option><option>web</option></select></div>
-        <div><label>Log</label><select id='log'><option>DEBUG</option><option selected>INFO</option><option>WARNING</option></select></div>
-        <div><label>Ollama Model</label><input id='model' value='{cfg.CODING_MODEL}' /></div>
-        <div><label>Web Host</label><input id='host' value='{cfg.WEB_HOST}' /></div>
-        <div><label>Web Port</label><input id='port' value='{cfg.WEB_PORT}' /></div>
-      </div>
-      <div class='row'>
-        <button class='s' onclick='runChecks()'>Ön Kontrol</button>
-        <button class='p' onclick='launch()'>Başlat</button>
-      </div>
-      <div class='hint'>Not: Bu arayüz web teknolojileri tabanlıdır (PyWebView). Flash hissi için JS animasyon kütüphaneleri eklenebilir.</div>
-    </div>
-  </div>
-  <script>
-    const el = id => document.getElementById(id);
-    async function runChecks() {{
-      const txt = await window.pywebview.api.preflight(el('provider').value);
-      alert(txt);
-    }}
-    async function launch() {{
-      await window.pywebview.api.launch(
-        el('provider').value,
-        el('level').value,
-        el('mode').value,
-        el('log').value,
-        el('model').value,
-        el('host').value,
-        el('port').value,
-      );
-    }}
-  </script>
-</body>
-</html>
-"""
-
-    webview.create_window("Sidar Launcher", html=html, width=920, height=640, js_api=Api())
-    webview.start()
+    target = _resolve_launcher_target(launcher_url)
+    webview.create_window("Sidar Launcher", url=target, width=1000, height=720, js_api=Api())
+    webview.start(debug=False)
     return result["code"]
 
 
@@ -267,6 +231,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar akıllı başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve hızlı başlat")
     parser.add_argument("--ui", choices=["auto", "console", "webview"], default="auto", help="Sihirbaz arayüzü (auto/console/webview)")
+    parser.add_argument("--launcher-url", help="WebView için dış frontend URL (örn. Vite: http://127.0.0.1:5173)")
     parser.add_argument("--provider", choices=["ollama", "gemini"], help="Hızlı başlat için sağlayıcı")
     parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim")
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
@@ -282,10 +247,10 @@ def main() -> None:
             if not _can_use_webview_ui():
                 print("⚠ WebView UI kullanılamadı (display veya pywebview yok). Konsol sihirbazı açılıyor.")
                 raise SystemExit(run_wizard())
-            raise SystemExit(run_webview_ui())
+            raise SystemExit(run_webview_ui(args.launcher_url))
 
         if _can_use_webview_ui():
-            raise SystemExit(run_webview_ui())
+            raise SystemExit(run_webview_ui(args.launcher_url))
         raise SystemExit(run_wizard())
 
     provider = args.provider or "ollama"

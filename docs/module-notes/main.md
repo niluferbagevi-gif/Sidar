@@ -11,22 +11,31 @@
 
 ## 2) Arayüz Modları
 
-- **WebView modu:** `pywebview` tabanlı masaüstü başlatıcı (HTML/CSS/JS). Daha modern, animasyon eklemeye açık bir yapı sağlar.
+- **WebView modu:** `pywebview` tabanlı masaüstü başlatıcı. Arayüz dosyası `web_ui/launcher/index.html` üzerinden gelir.
 - **Konsol modu:** Klasik soru-cevap sihirbazı.
 - **Auto modu (varsayılan):** WebView mümkünse WebView, değilse konsol sihirbazı.
 
-## 3) Çalışma Modları
+## 3) Ayrı Frontend Stratejisi (Vite/React + GSAP/Three.js)
+
+- `main.py`, WebView penceresine harici frontend URL yükleyebilir: `--launcher-url http://127.0.0.1:5173`.
+- URL verilmezse sırasıyla şu fallback kullanılır:
+  1) `SIDAR_LAUNCHER_URL` ortam değişkeni,
+  2) `web_ui/launcher/index.html` yerel dosyası.
+- Frontend, PyWebView `js_api` köprüsü ile `get_defaults`, `preflight`, `launch` metodlarını çağırır.
+
+## 4) Çalışma Modları
 
 - **Wizard modu (varsayılan):** Etkileşimli başlatıcı (`--ui auto|webview|console`).
 - **Quick modu:** `--quick cli` veya `--quick web` ile sihirbazı atlayıp doğrudan başlatma.
 
-## 4) Bağlantılı Dosyalar
+## 5) Bağlantılı Dosyalar
 
 - `cli.py`: terminal/CLI agent arayüzü
 - `web_server.py`: web arayüzü sunucusu
+- `web_ui/launcher/index.html`: WebView fallback launcher frontend
 - `config.py`: varsayılan değerler ve preflight kontrol verisi
 
-## 5) Operasyon Notu
+## 6) Operasyon Notu
 
 - WebView için işletim sisteminde görüntü ortamı (`DISPLAY`/`WAYLAND_DISPLAY`) ve `pywebview` gerekir.
 - WebView uygun değilse otomatik fallback ile konsol sihirbazı açılır.
