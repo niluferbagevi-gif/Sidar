@@ -14,6 +14,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -150,6 +151,64 @@ def _format_cmd(cmd: List[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
+def _stream_pipe(pipe, collector: List[str], prefix: str, color: str, mirror: bool) -> None:
+    """Child process pipe akışını satır satır okuyup toplayan yardımcı thread."""
+    for line in iter(pipe.readline, ""):
+        collector.append(line)
+        if mirror:
+            print(f"{color}{prefix}{RESET} {line}", end="")
+    pipe.close()
+
+
+def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
+    """Child process çıktısını canlı izleyerek (stdout/stderr) isteğe bağlı log dosyasına yazar."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=os.path.dirname(__file__) or ".",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    stdout_lines: List[str] = []
+    stderr_lines: List[str] = []
+
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    t_out = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stdout, stdout_lines, "[Child stdout]", CYAN, True),
+        daemon=True,
+    )
+    t_err = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stderr, stderr_lines, "[Child stderr]", YELLOW, True),
+        daemon=True,
+    )
+    t_out.start()
+    t_err.start()
+
+    return_code = process.wait()
+    t_out.join()
+    t_err.join()
+
+    if child_log_path:
+        log_path = Path(child_log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            f"$ {_format_cmd(cmd)}\n\n"
+            f"[stdout]\n{''.join(stdout_lines)}\n"
+            f"[stderr]\n{''.join(stderr_lines)}\n"
+            f"[exit_code]\n{return_code}\n",
+            encoding="utf-8",
+        )
+        print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
+
+    return return_code
+
+
 def run_wizard() -> int:
     """Etkileşimli menüyü çalıştırır."""
     print_banner()
@@ -211,58 +270,24 @@ def execute_command(cmd: List[str], capture_output: bool = False, child_log_path
     """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
-        result = subprocess.run(
-            cmd,
-            check=True,
-            cwd=os.path.dirname(__file__) or ".",
-            text=True,
-            capture_output=(capture_output or bool(child_log_path)),
-        )
 
-        if result.stdout:
-            print(f"{CYAN}[Child stdout]{RESET}\n{result.stdout}")
-        if result.stderr:
-            print(f"{YELLOW}[Child stderr]{RESET}\n{result.stderr}")
+        if capture_output or child_log_path:
+            return_code = _run_with_streaming(cmd, child_log_path)
+            if return_code != 0:
+                print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
+            return return_code
 
-        if child_log_path:
-            log_path = Path(child_log_path)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text(
-                f"$ {_format_cmd(cmd)}\n\n"
-                f"[stdout]\n{result.stdout or ''}\n"
-                f"[stderr]\n{result.stderr or ''}\n",
-                encoding="utf-8",
-            )
-            print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
-
+        subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
         return 0
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
         return 0
     except subprocess.CalledProcessError as e:
-        if e.stdout:
-            print(f"{CYAN}[Child stdout]{RESET}\n{e.stdout}")
-        if e.stderr:
-            print(f"{YELLOW}[Child stderr]{RESET}\n{e.stderr}")
-
-        if child_log_path:
-            log_path = Path(child_log_path)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text(
-                f"$ {_format_cmd(cmd)}\n\n"
-                f"[stdout]\n{e.stdout or ''}\n"
-                f"[stderr]\n{e.stderr or ''}\n"
-                f"[exit_code]\n{e.returncode}\n",
-                encoding="utf-8",
-            )
-            print(f"{GREEN}📝 Child process hata çıktısı kaydedildi: {log_path}{RESET}")
-
         print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {e.returncode}){RESET}")
         return e.returncode
     except Exception as e:
         print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
         return 1
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")

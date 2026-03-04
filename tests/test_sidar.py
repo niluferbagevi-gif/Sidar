@@ -1031,3 +1031,17 @@ def test_launcher_execute_command_writes_child_log(tmp_path):
     content = log_path.read_text(encoding="utf-8")
     assert "child-out" in content
     assert "child-err" in content
+
+
+def test_launcher_execute_command_logs_exit_code_on_failure(tmp_path):
+    """main.execute_command: child başarısız olursa çıkış kodunu log dosyasına yazar."""
+    import main as launcher_main
+
+    log_path = tmp_path / "child_fail.log"
+    cmd = [os.sys.executable, "-c", "import sys; print('boom'); sys.exit(7)"]
+
+    code = launcher_main.execute_command(cmd, capture_output=True, child_log_path=str(log_path))
+    assert code == 7
+    content = log_path.read_text(encoding="utf-8")
+    assert "[exit_code]" in content
+    assert "7" in content

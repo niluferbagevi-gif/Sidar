@@ -744,20 +744,22 @@ async for raw_bytes in resp.aiter_bytes():
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351-mainpy-skor-100100"></a>
-#### 13.5.1 `main.py` — Skor: 96/100 ✅
+#### 13.5.1 `main.py` — Skor: 99/100 ✅
 
 **Sorumluluk (Güncel):** Etkileşimli **akıllı başlatıcı (Ultimate Launcher)**. Web/CLI mod seçimi, sağlayıcı ve erişim seviyesi seçimi, ön kontroller (preflight) ve hedef script'i alt süreçte çalıştırma.
 
-**Mimari Özeti (satır 1–251)**
+**Mimari Özeti (satır 1–344)**
 
 | Satır | Pattern | Açıklama |
 |-------|---------|----------|
 | 1–8 | Modül başlığı | Dosyanın launcher rolü (`python main.py`, `--quick`) açıkça tanımlı |
-| 101–133 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
+| 102–133 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
 | 136–144 | `target_script = "web_server.py" if mode == "web" else "cli.py"` | Asıl çalışma script'i kullanıcı seçimine göre dinamik belirlenir |
-| 147–201 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
-| 204–218 | `subprocess.run(cmd, check=True, ...)` | Launcher, hedef script'i alt süreçte başlatır; hata kodu yönetişimi içerir |
-| 221–247 | `--quick` hızlı başlatma | Sihirbaz atlanarak parametrelerle doğrudan komut oluşturulabilir |
+| 148–150 | `_format_cmd(cmd)` | Komut görüntüleme için shell-safe quote üretimi |
+| 153–207 | `_run_with_streaming(...)` | Child stdout/stderr canlı okunur; istenirse tek log dosyasına yazılır |
+| 220–265 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
+| 268–291 | `execute_command(...)` | Normal passthrough + opsiyonel canlı capture/loglama akışı |
+| 294–344 | `--quick`, `--capture-output`, `--child-log` | Sihirbaz atlanarak parametre + gözlemlenebilirlik bayraklarıyla doğrudan başlatma |
 
 **Önemli Not:** Önceki rapordaki `asyncio.run(...)` tabanlı interaktif döngü ve `.help/.status/...` CLI komutları artık `main.py` içinde değil, **`cli.py`** dosyasındadır.
 
@@ -765,7 +767,13 @@ async for raw_bytes in resp.aiter_bytes():
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| M-01 | `subprocess.run` ile başlatma modelinde child-process stdout/stderr yönlendirmesi özelleştirilmiyor; ileri seviye gözlemlenebilirlik ihtiyacında wrapper loglama gerekebilir | 204–218 | Düşük |
+| M-02 | `capture/log` modu uzun süreli süreçlerde tüm stdout/stderr'i bellekte de tutar (`stdout_lines`/`stderr_lines`); çok büyük loglarda ek bellek tüketimi yaratabilir | 167–174, 197–207 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| M-01 | ✅ Kapandı | Child-process gözlemlenebilirliği için canlı stdout/stderr aynalama ve opsiyonel dosya loglama eklendi (`--capture-output`, `--child-log`). |
 
 **Kapalı/Terslenen Eski Notlar:** `main.py` için önceki “event-loop / `asyncio.run` çakışma riski” yorumu artık geçerli değildir; bu sorumluluk `cli.py`'ye taşınmıştır.
 
