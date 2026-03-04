@@ -484,6 +484,73 @@ def test_session_broken_json_quarantine(test_config):
     assert not broken_file.exists(), "Orijinal bozuk dosya hâlâ mevcut"
 
 
+def test_session_autosave_debounce_and_flush(test_config, monkeypatch):
+    """ConversationMemory: sık add çağrılarında yazımı debounce eder, flush ile kalıcılaştırır."""
+    from core.memory import ConversationMemory
+    import json
+
+    mem = ConversationMemory(
+        file_path=test_config.MEMORY_FILE,
+        max_turns=10,
+        autosave_interval_sec=3600,
+    )
+
+    write_calls = {"count": 0}
+    original_write = mem._write_session_file
+
+    def _counted_write(file_path, data):
+        write_calls["count"] += 1
+        return original_write(file_path, data)
+
+    monkeypatch.setattr(mem, "_write_session_file", _counted_write)
+
+    mem.add("user", "ilk mesaj")
+    mem.add("assistant", "ikinci mesaj")
+
+    assert write_calls["count"] == 0
+    assert mem._pending_save is True
+
+    mem.flush()
+    assert write_calls["count"] == 1
+    assert mem._pending_save is False
+
+    session_file = test_config.DATA_DIR / "sessions" / f"{mem.active_session_id}.json"
+    data = json.loads(session_file.read_text(encoding="utf-8"))
+    assert len(data["turns"]) == 2
+
+
+def test_session_broken_quarantine_retention_cleanup(test_config):
+    """ConversationMemory: karantina dosyaları retention + adet limiti ile temizlenir."""
+    from core.memory import ConversationMemory
+    import os
+    import time as _time
+
+    sessions_dir = test_config.DATA_DIR / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    now = _time.time()
+    names = ["a", "b", "c", "d"]
+    for idx, name in enumerate(names):
+        p = sessions_dir / f"{name}.json.broken"
+        p.write_text("broken", encoding="utf-8")
+        # a çok eski, diğerleri daha yeni
+        age_seconds = 3 * 24 * 3600 if idx == 0 else (100 - idx)
+        _time_tuple = (now - age_seconds, now - age_seconds)
+        p.touch()
+        os.utime(p, _time_tuple)
+
+    ConversationMemory(
+        file_path=test_config.MEMORY_FILE,
+        max_turns=10,
+        broken_retention_days=1,
+        broken_max_files=2,
+    )
+
+    remaining = sorted(sessions_dir.glob("*.json.broken"))
+    assert len(remaining) <= 2
+    assert (sessions_dir / "a.json.broken").exists() is False
+
+
 # ─────────────────────────────────────────────
 # 12. JSON PARSE DOĞRULUĞU (GREEDY REGEX YERİNE JSONDecoder)
 # ─────────────────────────────────────────────
