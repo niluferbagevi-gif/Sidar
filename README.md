@@ -254,6 +254,7 @@ SIDAR_LAUNCHER_URL=http://127.0.0.1:5173 python main.py
 ```
 
 Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini başlatır.
+Not: GUI açılamazsa varsayılan fallback artık `open-browser` olduğu için seçim ekranı terminal yerine tarayıcıda açılır.
 
 Linux/WSL notu: `pywebview` için GTK (`python3-gi`) veya Qt WebEngine (örn. `PyQtWebEngine`) gerekir.
 Bu repo `environment.yml` içinde Qt backend için `pyqt` + `pyqtwebengine` kurar; GTK yolu için `pygobject` de tanımlıdır.

@@ -112,8 +112,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fallback",
         choices=["legacy-cli", "open-browser", "none"],
-        default="legacy-cli",
-        help="PyWebView başlatılamazsa uygulanacak fallback davranışı",
+        default="open-browser",
+        help="PyWebView başlatılamazsa uygulanacak fallback davranışı (varsayılan: open-browser)",
     )
     return parser.parse_args()
 

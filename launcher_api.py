@@ -92,14 +92,16 @@ class LauncherAPI:
         provider = self._safe_text(data.get("provider"), self.cfg.AI_PROVIDER)
         level = self._safe_text(data.get("level"), self.cfg.ACCESS_LEVEL)
         mode = self._safe_text(data.get("mode"), "web")
-        log = self._safe_text(data.get("log"), "INFO").upper()
-
-        args = ["--provider", provider, "--level", level, "--log", log]
+        log = self._safe_text(data.get("log"), "INFO")
 
         if mode == "cli":
+            args = ["--provider", provider, "--level", level, "--log", log.upper()]
             model = self._safe_text(data.get("model"), self.cfg.CODING_MODEL)
             cmd = [sys.executable, str(self.base_dir / "cli.py"), *args, "--model", model]
             return cmd
+
+        # web_server.py --log değeri uvicorn'a verildiği için lowercase olmalı
+        args = ["--provider", provider, "--level", level, "--log", log.lower()]
 
         host = self._safe_text(data.get("host"), self.cfg.WEB_HOST)
         port = int(data.get("port", self.cfg.WEB_PORT) or self.cfg.WEB_PORT)
