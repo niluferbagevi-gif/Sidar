@@ -199,12 +199,14 @@ def run_wizard() -> int:
         print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
         return 0
 
-    launcher_log = ask_text(
-        "\nLauncher çıktı kaydı (opsiyonel, boş bırakılırsa sadece terminale yazılır)",
-        ""
-    )
+    launcher_log = None
+    if confirm("Launcher çıktısını dosyaya kaydetmek ister misiniz?", False):
+        launcher_log = ask_text(
+            "Launcher çıktı dosya yolu",
+            "logs/launcher.log"
+        ).strip() or None
 
-    return execute_command(cmd, launcher_log.strip() or None)
+    return execute_command(cmd, launcher_log)
 
 
 def _write_launch_header(log_file: TextIO, cmd: List[str]) -> None:
@@ -236,16 +238,18 @@ def execute_command(cmd: List[str], launcher_log_file: Optional[str] = None) -> 
                     stderr=subprocess.STDOUT,
                 )
 
+            print(f"{GREEN}Launcher çıktısı kaydedildi: {log_path}{RESET}")
             if result.returncode != 0:
                 print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {result.returncode}){RESET}")
                 print(f"{YELLOW}Detaylar log dosyasına yazıldı: {log_path}{RESET}")
                 return result.returncode
-
-            print(f"{GREEN}Launcher çıktısı kaydedildi: {log_path}{RESET}")
             return 0
 
         subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
         return 0
+    except OSError as e:
+        print(f"\n{RED}Log dosyası erişim hatası: {e}{RESET}")
+        return 1
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
         return 0
