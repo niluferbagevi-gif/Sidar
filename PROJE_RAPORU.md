@@ -45,7 +45,7 @@
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
     - [13.5.1 `main.py` — Skor: 98/100 ✅](#1351-mainpy-skor-100100)
-    - [13.5.1A `cli.py` — Skor: 95/100 ✅](#1351a-clipy-skor-95100)
+    - [13.5.1A `cli.py` — Skor: 97/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 95/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 88/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 90/100 ✅](#1354-webserverpy-skor-90100)
@@ -778,23 +778,24 @@ async for raw_bytes in resp.aiter_bytes():
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351a-clipy-skor-95100"></a>
-#### 13.5.1A `cli.py` — Skor: 95/100 ✅
+#### 13.5.1A `cli.py` — Skor: 97/100 ✅
 
 **Sorumluluk (Yeni):** Asıl terminal tabanlı CLI etkileşim katmanı. `SidarAgent` oluşturma, tek komut modu, interaktif async döngü, dahili nokta komutları ve durum gösterimleri.
 
-**Async Mimarisi (satır 103–257)**
+**Async Mimarisi (satır 112–266)**
 
 | Satır | Pattern | Açıklama |
 |-------|---------|----------|
-| 103–199 | `async def _interactive_loop_async(...)` | Interaktif sohbet döngüsü tek event loop içinde yürütülür |
-| 143 | `await asyncio.to_thread(input, "Sen  > ")` | Bloklayıcı `input()` çağrısı event loop dışına taşınır |
-| 144 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Üçlü kesme handler'ı ile güvenli kapanış |
-| 197–199 | `interactive_loop -> asyncio.run(...)` | Tek girişten async döngü başlatılır |
-| 242–251 | `asyncio.run(_run_command())` | `--command` tek-shot modunda izole async yürütme |
+| 112–208 | `async def _interactive_loop_async(...)` | Interaktif sohbet döngüsü tek event loop içinde yürütülür |
+| 152 | `await asyncio.to_thread(input, "Sen  > ")` | Bloklayıcı `input()` çağrısı event loop dışına taşınır |
+| 153 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Üçlü kesme handler'ı ile güvenli kapanış |
+| 206–208 | `interactive_loop -> asyncio.run(...)` | Tek girişten async döngü başlatılır |
+| 251–260 | `asyncio.run(_run_command())` | `--command` tek-shot modunda izole async yürütme |
 
 **CLI İşlevsel Kapsamı**
 
 - Dinamik banner (`_make_banner`) sürümü çalışma anında yazar.
+- Banner sürüm alanı `_fit_banner_field(...)` ile güvenli şekilde kırpılır/pad edilir; uzun sürümlerde çerçeve taşması engellenir.
 - Dahili komut seti (`.status`, `.clear`, `.audit`, `.health`, `.gpu`, `.github`, `.level`, `.web`, `.docs`, `.help`, `.exit`) korunmuştur.
 - Config override mantığı instance attribute üzerinden yapılır (`cfg.ACCESS_LEVEL`, `cfg.AI_PROVIDER`, `cfg.CODING_MODEL`).
 
@@ -802,7 +803,10 @@ async for raw_bytes in resp.aiter_bytes():
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| CLI-01 | Banner sürüm alanı `ljust(7)` ile sabit; sürüm metni uzarsa görsel taşma riski oluşabilir | 56–69 | Düşük |
+| CLI-02 | Çok uzun banner label metinlerinde (sürüm değil, sabit başlık metni) ayrı satır stratejisi gerekebilir; mevcut implementasyon pratikte yeterlidir | 54–79 | Düşük |
+
+**Kapalı/Terslenen Eski Notlar:**
+- **CLI-01 kapandı:** sürüm metni artık `ljust(7)` sabit alanına bağlı değil; `_fit_banner_field` ile alan genişliğine göre güvenli işleniyor.
 
 **Not:** Önceki raporda `main.py` altında değerlendirilen async CLI davranışları artık bu dosya kapsamında izlenmelidir.
 
