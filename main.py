@@ -48,6 +48,37 @@ def _has_gui_backend() -> tuple[bool, str]:
     return False, "GTK (python3-gi) veya QtWebEngine (PyQtWebEngine/PySide6) bulunamadı"
 
 
+
+
+def _probe_gui_runtime() -> tuple[bool, str]:
+    """GUI backend'in gerçekten çalıştırılabilir olup olmadığını alt süreçte test et."""
+    checks: list[tuple[str, str]] = [
+        (
+            "GTK",
+            "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk; print('GTK OK')",
+        ),
+        (
+            "Qt",
+            "from PyQt5.QtWidgets import QApplication; app = QApplication([]); print('QT OK'); app.quit()",
+        ),
+    ]
+
+    for name, code in checks:
+        cmd = [sys.executable, "-c", code]
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
+            check=False,
+        )
+        if proc.returncode == 0:
+            return True, f"{name} runtime doğrulandı"
+
+    return False, "GTK/Qt runtime doğrulanamadı (örn. Gtk namespace veya xcb platform eklentisi eksik)"
+
+
 def _resolve_launcher_url(custom_url: str | None) -> str:
     """Öncelik: CLI flag > env > yerel fallback dosya."""
     if custom_url:
@@ -163,6 +194,18 @@ def main() -> None:
             launcher_url,
         )
         return
+
+    runtime_ok, runtime_msg = _probe_gui_runtime()
+    if not runtime_ok:
+        _handle_fallback(
+            f"PyWebView runtime hazır değil: {runtime_msg}",
+            args,
+            api,
+            launcher_url,
+        )
+        return
+
+    print(f"✅ PyWebView backend hazır: {runtime_msg}")
 
     import webview
 
