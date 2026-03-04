@@ -11,8 +11,9 @@
 <a id="sec-3-1-3-79"></a>
 <a id="sec-3-1-3-80"></a>
 <a id="sec-3-1-3-81"></a>
+<a id="sec-3-1-3-82"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 12 ek sorun giderilmiştir (toplam 59 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 13 ek sorun giderilmiştir (toplam 60 düzeltme).
 
 ---
 
@@ -1530,6 +1531,32 @@ for rate_key, timestamps in list(_rate_data.items()):
         _rate_data[rate_key] = fresh
     else:
         _rate_data.pop(rate_key, None)
+```
+
+---
+
+
+### ✅ 3.82 `agent/definitions.py` + `agent/sidar_agent.py` — Prompt/Dispatch Drift Azaltma (D-01/D-02 → ÇÖZÜLDÜ)
+
+**Dosyalar:** `agent/definitions.py`, `agent/sidar_agent.py`  
+**Önem:** ~~🟡 ORTA~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorunlar:**
+- Prompt'ta internet gereksinimi sabit “gerekmez” ifadesiyle geçiyordu; Gemini bulut sağlayıcısı için yanlış yönlendirme riski vardı.
+- Prompt araç listesi ile gerçek dispatch tablosu arasında manual senkron zorunluluğu drift riski doğuruyordu.
+
+**Uygulanan düzeltme:**
+- `SIDAR_SYSTEM_PROMPT` içinde internet gereksinimi sağlayıcıya bağlı olacak şekilde netleştirildi (Ollama/Gemini ayrımı).
+- Prompt araç bölümüne “yetkili canlı araç seti dispatch tablosudur” notu eklendi.
+- `sidar_agent.py` içinde dispatch tablosu `_get_tool_dispatch_map()` altında tekilleştirildi ve `_build_context()` her turda canlı araç listesini (`Araç Sayısı`, `Araçlar`) prompt bağlamına ekleyecek şekilde güncellendi.
+
+```python
+# definitions.py
+"internet gereksinimi seçilen sağlayıcıya bağlıdır (Ollama/Gemini)"
+
+# sidar_agent.py
+tool_names = sorted(self._get_tool_dispatch_map().keys())
+lines.append(f"  Araç Sayısı: {len(tool_names)} (dispatch tablosundan canlı)")
 ```
 
 ---
