@@ -9,8 +9,9 @@
 <a id="sec-3-1-3-76"></a>
 <a id="sec-3-1-3-78"></a>
 <a id="sec-3-1-3-79"></a>
+<a id="sec-3-1-3-80"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 10 ek sorun giderilmiştir (toplam 57 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 11 ek sorun giderilmiştir (toplam 58 düzeltme).
 
 ---
 
@@ -1473,6 +1474,32 @@ def _extract_first_json_object(raw_text: str) -> Optional[dict]:
 ```
 
 ---
+
+---
+
+### ✅ 3.80 `core/rag.py` + `agent/sidar_agent.py` — BM25 Cache + Async Docs Search (R-01/R-02 → ÇÖZÜLDÜ)
+
+**Dosyalar:** `core/rag.py`, `agent/sidar_agent.py`  
+**Önem:** ~~🟡 ORTA~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorunlar:**
+- `core/rag.py` içinde BM25 motoru her sorguda yeniden inşa ediliyordu (dosya okuma + tokenize maliyeti).
+- `sidar_agent.py::_tool_docs_search` içinde `self.docs.search(...)` senkron çağrısı doğrudan event loop üzerinde çalışıyordu.
+
+**Uygulanan düzeltme:**
+- `DocumentStore` içine `_bm25_engine` / `_bm25_doc_ids` cache alanları eklendi.
+- `_build_bm25_engine()` helper'ı ile BM25 yalnızca belge seti değiştiğinde yeniden kuruluyor.
+- `add_document` ve `delete_document` akışlarına `_invalidate_bm25_cache()` eklendi.
+- `_tool_docs_search` çağrısı `await asyncio.to_thread(self.docs.search, query, None, mode)` ile non-blocking hale getirildi.
+
+```python
+# core/rag.py
+if self._bm25_engine is not None and doc_ids == self._bm25_doc_ids:
+    return self._bm25_engine, doc_ids
+
+# agent/sidar_agent.py
+_, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+```
 
 ---
 

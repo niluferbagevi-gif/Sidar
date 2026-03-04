@@ -755,7 +755,7 @@ class SidarAgent:
         parts = a.split("|", 1)
         query = parts[0].strip()
         mode  = parts[1].strip() if len(parts) > 1 else "auto"
-        _, result = self.docs.search(query, mode=mode)
+        _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
         return result
 
     async def _tool_docs_add(self, a: str) -> str:
