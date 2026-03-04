@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -144,6 +146,69 @@ def build_command(mode: str, provider: str, level: str, log: str, extra_args: Di
     return cmd
 
 
+def _format_cmd(cmd: List[str]) -> str:
+    """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
+    return " ".join(shlex.quote(part) for part in cmd)
+
+
+def _stream_pipe(pipe, collector: List[str], prefix: str, color: str, mirror: bool) -> None:
+    """Child process pipe akışını satır satır okuyup toplayan yardımcı thread."""
+    for line in iter(pipe.readline, ""):
+        collector.append(line)
+        if mirror:
+            print(f"{color}{prefix}{RESET} {line}", end="")
+    pipe.close()
+
+
+def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
+    """Child process çıktısını canlı izleyerek (stdout/stderr) isteğe bağlı log dosyasına yazar."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=os.path.dirname(__file__) or ".",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    stdout_lines: List[str] = []
+    stderr_lines: List[str] = []
+
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    t_out = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stdout, stdout_lines, "[Child stdout]", CYAN, True),
+        daemon=True,
+    )
+    t_err = threading.Thread(
+        target=_stream_pipe,
+        args=(process.stderr, stderr_lines, "[Child stderr]", YELLOW, True),
+        daemon=True,
+    )
+    t_out.start()
+    t_err.start()
+
+    return_code = process.wait()
+    t_out.join()
+    t_err.join()
+
+    if child_log_path:
+        log_path = Path(child_log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            f"$ {_format_cmd(cmd)}\n\n"
+            f"[stdout]\n{''.join(stdout_lines)}\n"
+            f"[stderr]\n{''.join(stderr_lines)}\n"
+            f"[exit_code]\n{return_code}\n",
+            encoding="utf-8",
+        )
+        print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
+
+    return return_code
+
+
 def run_wizard() -> int:
     """Etkileşimli menüyü çalıştırır."""
     print_banner()
@@ -192,7 +257,7 @@ def run_wizard() -> int:
     cmd = build_command(mode, provider, level, log_level, extra_args)
 
     print(f"\n{CYAN}🚀 Başlatılacak komut:{RESET}")
-    print(f"   {GREEN}{' '.join(cmd)}{RESET}")
+    print(f"   {GREEN}{_format_cmd(cmd)}{RESET}")
 
     if not confirm("Sidar'ı başlatmak istiyor musunuz?", True):
         print(f"{YELLOW}İşlem kullanıcı tarafından iptal edildi.{RESET}")
@@ -201,10 +266,17 @@ def run_wizard() -> int:
     return execute_command(cmd)
 
 
-def execute_command(cmd: List[str]) -> int:
-    """Oluşturulan komutu alt işlem olarak çalıştırır ve hataları yakalar."""
+def execute_command(cmd: List[str], capture_output: bool = False, child_log_path: str | None = None) -> int:
+    """Oluşturulan komutu alt işlem olarak çalıştırır ve gerekirse çıktıyı yakalar."""
     try:
         print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
+
+        if capture_output or child_log_path:
+            return_code = _run_with_streaming(cmd, child_log_path)
+            if return_code != 0:
+                print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
+            return return_code
+
         subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
         return 0
     except KeyboardInterrupt:
@@ -217,7 +289,6 @@ def execute_command(cmd: List[str]) -> int:
         print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
         return 1
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat")
@@ -227,6 +298,15 @@ def main() -> None:
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
     parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
+    parser.add_argument(
+        "--capture-output",
+        action="store_true",
+        help="Alt süreç stdout/stderr çıktısını launcherdan yakala ve yazdır",
+    )
+    parser.add_argument(
+        "--child-log",
+        help="Alt süreç stdout/stderr çıktısını dosyaya kaydet (ör. logs/child.log)",
+    )
     args = parser.parse_args()
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
@@ -244,7 +324,7 @@ def main() -> None:
     }
 
     cmd = build_command(args.quick, provider, level, args.log, extra_args)
-    sys.exit(execute_command(cmd))
+    sys.exit(execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log))
 
 
 if __name__ == "__main__":
