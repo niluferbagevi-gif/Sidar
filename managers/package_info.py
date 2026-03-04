@@ -8,7 +8,7 @@ Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları
 
 import logging
 import re
-from typing import Tuple
+from typing import Dict, Tuple
 
 import httpx
 from packaging.version import Version, InvalidVersion
@@ -33,6 +33,24 @@ class PackageInfoManager:
     #  PyPI (ASYNC)
     # ─────────────────────────────────────────────
 
+    async def _fetch_pypi_json(self, package: str) -> Tuple[bool, Dict, str]:
+        """PyPI JSON verisini ham olarak döndürür."""
+        url = f"https://pypi.org/pypi/{package}/json"
+        try:
+            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(url)
+            if resp.status_code == 404:
+                return False, {}, f"✗ PyPI'de '{package}' paketi bulunamadı."
+            resp.raise_for_status()
+            return True, resp.json(), ""
+        except httpx.TimeoutException:
+            return False, {}, f"[HATA] PyPI zaman aşımı: {package}"
+        except httpx.RequestError as exc:
+            return False, {}, f"[HATA] PyPI bağlantı hatası: {exc}"
+        except Exception as exc:
+            logger.error("PyPI sorgu hatası: %s", exc)
+            return False, {}, f"[HATA] PyPI: {exc}"
+
     async def pypi_info(self, package: str) -> Tuple[bool, str]:
         """
         PyPI JSON API'den paket bilgisi çek (Asenkron).
@@ -43,79 +61,60 @@ class PackageInfoManager:
         Returns:
             (başarı, biçimlendirilmiş_bilgi)
         """
-        url = f"https://pypi.org/pypi/{package}/json"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url)
-                
-            if resp.status_code == 404:
-                return False, f"✗ PyPI'de '{package}' paketi bulunamadı."
-            resp.raise_for_status()
-            data = resp.json()
+        ok, data, err = await self._fetch_pypi_json(package)
+        if not ok:
+            return False, err
 
-            info = data.get("info", {})
-            all_versions = list(data.get("releases", {}).keys())
-            recent_versions = sorted(
-                [v for v in all_versions if not self._is_prerelease(v)],
-                key=self._version_sort_key,
-                reverse=True,
-            )[:8]
+        info = data.get("info", {})
+        all_versions = list(data.get("releases", {}).keys())
+        recent_versions = sorted(
+            [v for v in all_versions if not self._is_prerelease(v)],
+            key=self._version_sort_key,
+            reverse=True,
+        )[:8]
 
-            lines = [
-                f"[PyPI: {package}]",
-                f"  Güncel sürüm  : {info.get('version', '?')}",
-                f"  Yazar         : {(info.get('author') or info.get('author_email') or '?')[:80]}",
-                f"  Lisans        : {info.get('license', '?') or '?'}",
-                f"  Python gerekli: {info.get('requires_python', '?') or '?'}",
-                f"  Özet          : {(info.get('summary') or '')[:150]}",
-                f"  Proje URL     : {info.get('project_url') or 'https://pypi.org/project/' + package}",
-                f"  Son sürümler  : {', '.join(recent_versions)}",
-            ]
+        lines = [
+            f"[PyPI: {package}]",
+            f"  Güncel sürüm  : {info.get('version', '?')}",
+            f"  Yazar         : {(info.get('author') or info.get('author_email') or '?')[:80]}",
+            f"  Lisans        : {info.get('license', '?') or '?'}",
+            f"  Python gerekli: {info.get('requires_python', '?') or '?'}",
+            f"  Özet          : {(info.get('summary') or '')[:150]}",
+            f"  Proje URL     : {info.get('project_url') or 'https://pypi.org/project/' + package}",
+            f"  Son sürümler  : {', '.join(recent_versions)}",
+        ]
 
-            requires = info.get("requires_dist") or []
-            if requires:
-                cleaned = [r.split(";")[0].strip() for r in requires[:10]]
-                lines.append(f"  Bağımlılıklar : {', '.join(cleaned)}")
+        requires = info.get("requires_dist") or []
+        if requires:
+            cleaned = [r.split(";")[0].strip() for r in requires[:10]]
+            lines.append(f"  Bağımlılıklar : {', '.join(cleaned)}")
 
-            home_page = info.get("home_page") or info.get("project_url")
-            if home_page:
-                lines.append(f"  Ana sayfa     : {home_page}")
+        home_page = info.get("home_page") or info.get("project_url")
+        if home_page:
+            lines.append(f"  Ana sayfa     : {home_page}")
 
-            return True, "\n".join(lines)
-
-        except httpx.TimeoutException:
-            return False, f"[HATA] PyPI zaman aşımı: {package}"
-        except httpx.RequestError as exc:
-            return False, f"[HATA] PyPI bağlantı hatası: {exc}"
-        except Exception as exc:
-            logger.error("PyPI sorgu hatası: %s", exc)
-            return False, f"[HATA] PyPI: {exc}"
+        return True, "\n".join(lines)
 
     async def pypi_latest_version(self, package: str) -> Tuple[bool, str]:
         """Sadece güncel sürüm numarasını döndür (Asenkron)."""
-        url = f"https://pypi.org/pypi/{package}/json"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url)
-                
-            if resp.status_code == 404:
-                return False, f"✗ '{package}' bulunamadı."
-            resp.raise_for_status()
-            version = resp.json().get("info", {}).get("version", "?")
-            return True, f"{package}=={version}"
-        except Exception as exc:
-            return False, f"[HATA] PyPI son sürüm sorgusu: {exc}"
+        ok, data, err = await self._fetch_pypi_json(package)
+        if not ok:
+            return False, err
+        version = data.get("info", {}).get("version", "?")
+        return True, f"{package}=={version}"
 
     async def pypi_compare(self, package: str, current_version: str) -> Tuple[bool, str]:
         """
         Kurulu sürümü PyPI'deki güncel sürümle karşılaştır (Asenkron).
         """
-        ok, info = await self.pypi_info(package)
+        ok, data, err = await self._fetch_pypi_json(package)
         if not ok:
-            return False, info
+            return False, err
 
-        m = re.search(r"Güncel sürüm\s*:\s*([\d.\w-]+)", info)
-        latest = m.group(1) if m else "?"
+        latest = data.get("info", {}).get("version", "?")
+        ok_info, info = await self.pypi_info(package)
+        if not ok_info:
+            return False, info
 
         if current_version == latest:
             status_line = f"  Durum         : ✓ Güncel ({current_version})"
@@ -252,17 +251,15 @@ class PackageInfoManager:
 
     @staticmethod
     def _is_prerelease(version: str) -> bool:
-        """
-        Sürümün pre-release olup olmadığını kontrol et.
-        Harf tabanlı (alpha/beta/rc/a0/b1) ve npm sayısal pre-release (1.0.0-0) desteklenir.
-        """
-        # Harf tabanlı pre-release: 1.0.0a1, 1.0.0b2, 1.0.0rc1, 1.0.0alpha
-        if re.search(r"[a-zA-Z]", version):
-            return True
-        # npm sayısal pre-release: 1.0.0-0, 1.0.0-1 (tire + sayı sonu)
-        if re.search(r"-\d+$", version):
-            return True
-        return False
+        """Sürümün pre-release olup olmadığını kontrol et."""
+        try:
+            return Version(version).is_prerelease
+        except InvalidVersion:
+            # PEP440 dışı semver pre-release etiketlerini yakala: 1.2.3-alpha.1, 2.0.0-rc
+            if re.search(r"-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)$", version):
+                return True
+            # Bilinmeyen formatlar için agresif filtreleme yerine stable kabul et
+            return False
 
     @staticmethod
     def _version_sort_key(version: str) -> Version:
