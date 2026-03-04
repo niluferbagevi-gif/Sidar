@@ -11,7 +11,8 @@ Amaç:
 
 - [`00-roadmap.md`](./00-roadmap.md): Klasör bazlı + parti bazlı dokümantasyon planı.
 - [`config.md`](./config.md): `config.py` için görev, özellik, bağımlılık ve entegrasyon haritası.
-- [`main.md`](./main.md): CLI giriş noktası, event-loop akışı ve runtime override davranışı.
+- [`main.md`](./main.md): Akıllı başlatıcı (wizard/quick), çalışma modu seçim akışı.
+- [`cli.md`](./cli.md): Terminal/CLI çalışma giriş noktası (eski main akışı).
 - [`web_server.md`](./web_server.md): FastAPI/SSE servis katmanı, endpoint grupları, rate-limit ve iyileştirme notları.
 - [`agent/README.md`](./agent/README.md): Agent katmanı (sidar_agent, auto_handle, definitions, init) teknik notları.
 - [`core/README.md`](./core/README.md): Core katmanı (`__init__`, llm_client, memory, rag) teknik notları.
