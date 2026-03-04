@@ -49,4 +49,5 @@ Not: Teknik notlar kodu referans alan **yaşayan doküman** olarak tutulur; her 
 - ✅ Parti-1 tamamlandı (`config.py`, `main.py`, `web_server.py`)
 - ✅ Parti-2 tamamlandı (`agent/*`)
 - ✅ Parti-3 tamamlandı (`core/*`)
-- ⏳ Parti-4 sıradaki adım (`managers/*`)
+- ✅ Parti-4 tamamlandı (`managers/*`)
+- ⏳ Parti-5 sıradaki adım (ops/dağıtım/dokümantasyon)
