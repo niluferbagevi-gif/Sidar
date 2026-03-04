@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sidar AI — Otomatik Kurulum Betiği
-# Sürüm: 2.6.1
+# Sürüm: 2.7.0
 
 # Hata durumunda betiği durdur
 set -euo pipefail

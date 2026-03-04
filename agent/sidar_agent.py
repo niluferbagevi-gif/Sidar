@@ -46,6 +46,8 @@ _FMT_TOOL_OK = (
 )
 _FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"  # araç hatası (bilinmeyen araç vb.)
 _FMT_SYS_ERR  = "[Sistem Hatası] {msg}"        # ayrıştırma / doğrulama hatası
+_FMT_SYS_WARN = "[Sistem Uyarısı] {msg}"       # döngü / iyileştirme uyarıları
+_FMT_TOOL_STEP = "[ARAÇ:{name}:SONUÇ]\n===\n{result}\n===\nDevam et veya final_answer ver."
 
 # Kodex-benzeri kullanım için: basit/tek-adım istekleri ReAct döngüsüne girmeden
 # doğrudan güvenli araçlara yönlendiren hafif intent router.
@@ -315,11 +317,13 @@ class SidarAgent:
                 # ── Tekrar tespiti: aynı araç art arda 2+ kez çağrılıyorsa
                 # modeli zorla final_answer ver.
                 if tool_name == _last_tool and _last_tool_result:
-                    loop_correction = (
-                        f"[Sistem Uyarısı] '{tool_name}' aracı art arda çağrıldı — döngü tespit edildi.\n"
-                        f"Bu araç zaten aşağıdaki sonucu döndürdü:\n===\n{_last_tool_result}\n===\n"
-                        f"Artık MUTLAKA final_answer aracını kullanarak bu sonucu kullanıcıya ilet.\n"
-                        f"Örnek: {{\"thought\": \"Sonuç mevcut.\", \"tool\": \"final_answer\", \"argument\": \"<özet>\"}}"
+                    loop_correction = _FMT_SYS_WARN.format(
+                        msg=(
+                            f"'{tool_name}' aracı art arda çağrıldı — döngü tespit edildi.\n"
+                            f"Bu araç zaten aşağıdaki sonucu döndürdü:\n===\n{_last_tool_result}\n===\n"
+                            f"Artık MUTLAKA final_answer aracını kullanarak bu sonucu kullanıcıya ilet.\n"
+                            f"Örnek: {{\"thought\": \"Sonuç mevcut.\", \"tool\": \"final_answer\", \"argument\": \"<özet>\"}}"
+                        )
                     )
                     messages = messages + [
                         {"role": "assistant", "content": llm_response_accumulated},
@@ -830,16 +834,13 @@ class SidarAgent:
                 if tool_result is None:
                     messages += [
                         {"role": "assistant", "content": raw},
-                        {"role": "user",      "content": f"[ARAÇ:{tool_name}:HATA] Bu araç mevcut değil."},
+                        {"role": "user",      "content": _FMT_TOOL_ERR.format(name=tool_name, error="Bu araç mevcut değil.")},
                     ]
                     continue
 
                 messages += [
                     {"role": "assistant", "content": raw},
-                    {"role": "user",      "content": (
-                        f"[ARAÇ:{tool_name}:SONUÇ]\n===\n{str(tool_result)[:1500]}\n===\n"
-                        "Devam et veya final_answer ver."
-                    )},
+                    {"role": "user",      "content": _FMT_TOOL_STEP.format(name=tool_name, result=str(tool_result)[:1500])},
                 ]
             except Exception as exc:
                 logger.warning("Subtask adım hatası: %s", exc)
