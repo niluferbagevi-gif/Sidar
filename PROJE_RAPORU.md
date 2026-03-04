@@ -50,7 +50,7 @@
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
-    - [13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅](#1356-agentautohandlepy-skor-89100)
+    - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 91/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 90/100 ✅](#1359-configpy-skor-90100)
@@ -666,7 +666,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/rag.py`**: ChromaDB (vektör) → BM25 → Keyword 3 katmanlı hibrit arama; `mode` parametresiyle motor seçimi. GPU embedding (`sentence-transformers` CUDA, FP16 mixed precision), recursive chunking, `parent_id` tabanlı atomik update ve `threading.Lock` ile delete+upsert koruması aktiftir. `doc_count` property ve `get_index_info()` web API erişim noktaları günceldir. ✅ BM25 tarafında bellek içi indeks cache + invalidation uygulanıyor; ayrıca `_tool_docs_search` çağrısı `asyncio.to_thread` ile event loop dışına alındı. → Detay: §13.5.3
 - **`web_server.py`**: FastAPI + SSE akış mimarisi; 3 katmanlı rate limiting (`asyncio.Lock` TOCTOU koruması), lazy `asyncio.Lock` init, double-checked locking singleton ajan, path traversal koruması (`target.relative_to(_root)`), branch regex doğrulaması, `CancelledError`/`ClosedResourceError` SSE bağlantı yönetimi, opsiyonel Prometheus metrikleri aktiftir. ✅ `/rag/search` endpoint'i `docs.search()` çağrısını `asyncio.to_thread` ile event-loop dışına alır; ayrıca rate-limit bucket prune ile boş key birikimi temizlenir. → Detay: §13.5.4
 - **`agent/definitions.py`**: Ajan persona/sistem prompt sözleşmesi, araç kullanım stratejileri, todo iş akışı ve JSON çıktı şeması tek noktadan tanımlanır. ✅ Prompt metninde sağlayıcı koşulu netleştirildi (Gemini için internet gereksinimi); ayrıca araç listesi için source-of-truth olarak `sidar_agent.py` dispatch tablosu açıkça belirtildi. → Detay: §13.5.5
-- **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ⚠️ `docs_search` doğrudan senkron `self.docs.search()` çağrısı yapar (event loop bloklama riski); bazı regex kalıpları geniş eşleşme nedeniyle yanlış-pozitif yakalama üretebilir. → Detay: §13.5.6
+- **`agent/auto_handle.py`**: Örüntü tabanlı hızlı yönlendirme katmanı; çok adımlı komutları `_MULTI_STEP_RE` ile ReAct döngüsüne bırakır, tek adımlı sık isteklerde LLM çağrısını azaltır. ✅ `docs_search` artık `asyncio.to_thread` ile event-loop dışına alınır; GitHub info regex tetikleyicisi bilgi/özet niyetiyle daraltılarak yanlış-pozitifler azaltıldı. → Detay: §13.5.6
 - **`core/llm_client.py`**: Sağlayıcı soyutlama katmanı (Ollama/Gemini), JSON-mode yapılandırması ve stream ayrıştırma mantığı tek noktada yönetilir. ⚠️ Gemini akışında `chunk.text` alanına doğrudan erişim var (None/attribute yok senaryosunda kırılganlık); ayrıca `_stream_ollama_response` sonunda newline ile bitmeyen son JSON satırı parse edilmiyor olabilir. → Detay: §13.5.7
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ⚠️ Donanım tespiti (`check_hardware`) modül importunda çalıştığı için başlangıçta ek gecikme/yan etki üretir; ayrıca `validate_critical_settings()` içinde ağ bağımlı Ollama probe’u (2 sn timeout) startup davranışını çevreye duyarlı kılar. → Detay: §13.5.9
@@ -1199,7 +1199,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1356-agentautohandlepy-skor-89100"></a>
-#### 13.5.6 `agent/auto_handle.py` — Skor: 89/100 ✅
+#### 13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Hızlı yol komut yönlendirici — doğal dildeki sık/tek-adımlı istekleri regex kalıplarıyla ilgili manager araçlarına bağlar; uygun değilse ReAct döngüsüne fallback yapar.
 
@@ -1223,8 +1223,14 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| A-01 | `_try_docs_search` içinde `self.docs.search()` senkron çağrısı event loop üzerinde direkt çalışıyor; büyük RAG indekslerinde gecikme/bloklama riski var | 455–472 | Orta |
-| A-02 | Bazı tetikleyici regex'ler geniş eşleşiyor (`github.*(bilgi|info|repo|depo)` vb.); bağlamsal cümlelerde yanlış-pozitif yönlendirme üretebilir | 250–263 | Düşük |
+| A-03 | Regex tabanlı hızlı yönlendirme doğası gereği bağlamdan bağımsızdır; nadir ifadelerde yanlış-pozitif/negatif olasılığı tamamen sıfırlanamaz | 48–544 | Bilgi |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| A-01 | ✅ Kapandı | `_try_docs_search` asenkronlaştırıldı ve `await asyncio.to_thread(self.docs.search, ...)` ile bloklayıcı arama event loop dışına taşındı. |
+| A-02 | ✅ Kapandı | `_try_github_info` regex'i bilgi/özet/durum/detay niyeti şartına daraltıldı; geniş eşleşme kaynaklı yanlış-pozitifler azaltıldı. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
