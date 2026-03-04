@@ -2289,3 +2289,22 @@ def get_pull_requests_raw(self, state: str, limit: int):
 **Doğrulama:**
 - ✅ `python -m py_compile managers/github_manager.py tests/test_github_manager_improvements.py`
 - ✅ `pytest -q tests/test_github_manager_improvements.py` → `3 passed`
+
+
+### ✅ 3.81 `managers/system_health.py` — CPU Ölçüm Bloklaması ve NVML Temizlik Determinizmi (SH-01/SH-02 → ÇÖZÜLDÜ)
+
+**Dosya:** `managers/system_health.py`, `tests/test_system_health_improvements.py`
+
+**Sorun (SH-01):** `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yaptığı için sık raporlamada gecikme yaratıyordu.
+
+**Sorun (SH-02):** NVML temizliği yalnızca `__del__` metoduna bağlıydı; interpreter kapanış sırası nedeniyle deterministik garanti zayıftı.
+
+**Yapılan düzeltmeler:**
+- `get_cpu_usage()` varsayılanı non-blocking olacak şekilde `sample_interval=None` ile güncellendi.
+- Başlangıçta `psutil.cpu_percent(interval=None)` seed çağrısı eklenerek ilk ölçümde tutarlılık artırıldı.
+- `close()` metodu eklendi; NVML shutdown artık idempotent ve deterministik kaynak kapatma akışıyla yapılır.
+- `atexit.register(self.close)` ile kapanışta otomatik temizleme güvenceye alındı; `__del__` yalnızca `close()` çağırır.
+
+**Doğrulama:**
+- ✅ `python -m py_compile managers/system_health.py tests/test_system_health_improvements.py`
+- ✅ `pytest -q tests/test_system_health_improvements.py` → `2 passed`
