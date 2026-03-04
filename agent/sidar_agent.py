@@ -222,21 +222,6 @@ class SidarAgent:
         except Exception:
             return None
 
-    @staticmethod
-    def _extract_first_json_object(raw_text: str) -> Optional[dict]:
-        """Metin içindeki ilk geçerli JSON objesini güvenli şekilde döndürür."""
-        decoder = json.JSONDecoder()
-        idx = raw_text.find("{")
-        while idx != -1:
-            try:
-                parsed, _ = decoder.raw_decode(raw_text, idx)
-                if isinstance(parsed, dict):
-                    return parsed
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
-            idx = raw_text.find("{", idx + 1)
-        return None
-
     # ─────────────────────────────────────────────
     #  ReAct DÖNGÜSÜ (PYDANTIC PARSING)
     # ─────────────────────────────────────────────
@@ -278,7 +263,15 @@ class SidarAgent:
 
                 # JSONDecoder ile ilk geçerli JSON nesnesini bul (greedy regex yerine)
                 # Bu yaklaşım: birden fazla JSON bloğu veya gömülü kod olsa bile doğru olanı seçer
-                json_match = self._extract_first_json_object(raw_text)
+                _decoder = json.JSONDecoder()
+                json_match = None
+                _idx = raw_text.find('{')
+                while _idx != -1:
+                    try:
+                        json_match, _ = _decoder.raw_decode(raw_text, _idx)
+                        break
+                    except json.JSONDecodeError:
+                        _idx = raw_text.find('{', _idx + 1)
 
                 if json_match is None:
                     raise ValueError("Yanıtın içerisinde süslü parantezlerle ( { ... } ) çevrili bir JSON objesi bulunamadı.")
@@ -690,8 +683,10 @@ class SidarAgent:
                 json_mode=True,
             )
             if isinstance(raw, str):
-                pr_data = self._extract_first_json_object(raw)
-                if pr_data:
+                _dec = json.JSONDecoder()
+                idx = raw.find("{")
+                if idx != -1:
+                    pr_data, _ = _dec.raw_decode(raw, idx)
                     title = str(pr_data.get("title", title)).strip()[:70] or title
                     body = str(pr_data.get("body", body)).strip() or body
         except Exception as llm_exc:
@@ -755,7 +750,7 @@ class SidarAgent:
         parts = a.split("|", 1)
         query = parts[0].strip()
         mode  = parts[1].strip() if len(parts) > 1 else "auto"
-        _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+        _, result = self.docs.search(query, mode=mode)
         return result
 
     async def _tool_docs_add(self, a: str) -> str:
@@ -820,9 +815,11 @@ class SidarAgent:
                 if not isinstance(raw, str):
                     break
 
-                action = self._extract_first_json_object(raw)
-                if not action:
+                _dec = json.JSONDecoder()
+                idx = raw.find("{")
+                if idx == -1:
                     break
+                action, _ = _dec.raw_decode(raw, idx)
 
                 tool_name = str(action.get("tool", "")).strip()
                 tool_arg  = str(action.get("argument", "")).strip()
@@ -1075,9 +1072,10 @@ class SidarAgent:
         ]
         return "\n".join(lines)
 
-    def _get_tool_dispatch_map(self):
-        """Araç dispatch tablosunu tek noktada üretir."""
-        return {
+    async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
+        """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
+        tool_arg = str(tool_arg).strip()
+        dispatch = {
             "list_dir":               self._tool_list_dir,
             "read_file":              self._tool_read_file,
             "write_file":             self._tool_write_file,
@@ -1134,11 +1132,7 @@ class SidarAgent:
             "agent":                  self._tool_subtask,      # alias — Claude Code uyumu
             "parallel":               self._tool_parallel,
         }
-
-    async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
-        """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
-        tool_arg = str(tool_arg).strip()
-        handler = self._get_tool_dispatch_map().get(tool_name)
+        handler = dispatch.get(tool_name)
         return await handler(tool_arg) if handler else None
 
     # ─────────────────────────────────────────────
@@ -1182,10 +1176,6 @@ class SidarAgent:
 
         m = self.code.get_metrics()
         lines.append(f"  Okunan     : {m['files_read']} dosya | Yazılan: {m['files_written']}")
-
-        tool_names = sorted(self._get_tool_dispatch_map().keys())
-        lines.append(f"  Araç Sayısı: {len(tool_names)} (dispatch tablosundan canlı)")
-        lines.append(f"  Araçlar    : {', '.join(tool_names)}")
 
         last_file = self.memory.get_last_file()
         if last_file:

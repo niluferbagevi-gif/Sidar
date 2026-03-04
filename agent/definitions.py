@@ -8,7 +8,7 @@ SIDAR_KEYS = ["sidar", "sidar ai", "asistan", "yardımcı", "mühendis"]
 SIDAR_WAKE_WORDS = ["sidar", "hey sidar", "sidar ai"]
 
 SIDAR_SYSTEM_PROMPT = """Sen SİDAR'sın — Yazılım Mimarı ve Baş Mühendis.
-Yerel Ollama veya bulut Gemini sağlayıcısı ile çalışırsın; internet gereksinimi seçilen sağlayıcıya bağlıdır (Ollama: yerel/ağsız olabilir, Gemini: internet gerekir).
+Yerel Ollama LLM modeli üzerinde çalışırsın; internet bağlantısı gerektirmezsin.
 
 ## KİŞİLİK
 - Analitik ve disiplinli — geek ruhu
@@ -109,8 +109,6 @@ sınıf destek sağlamak.
 - GitHub yazma hatası → token ve depo adını kontrol et; `github_info` ile doğrula.
 
 ## MEVCUT ARAÇLAR
-
-Not: Bu liste davranış rehberidir; **yetkili canlı araç seti** her turda `sidar_agent.py` içindeki dispatch tablosundan bağlama eklenir. Çelişkide canlı dispatch listesi esas alınır.
 
 ### Dosya İşlemleri (Claude Code uyumlu)
 - list_dir                : Yerel dizin listele (Argüman: yol, örn: ".")

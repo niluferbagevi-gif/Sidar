@@ -3,7 +3,6 @@ Sidar Project - Otomatik Komut İşleyici
 Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Asenkron Uyumlu).
 """
 
-import asyncio
 import re
 from typing import Optional, Tuple
 
@@ -136,7 +135,7 @@ class AutoHandle:
         if result[0]: return result
 
         # ── RAG / Belge Deposu ────────────────────────────────
-        result = await self._try_docs_search(t, text)
+        result = self._try_docs_search(t, text)
         if result[0]: return result
 
         result = self._try_docs_list(t, text)
@@ -249,11 +248,7 @@ class AutoHandle:
         return False, ""
 
     def _try_github_info(self, t: str) -> Tuple[bool, str]:
-        if re.search(
-            r"(?:github\s+)?(?:repo|depo)\s*(?:bilgisi|bilgi|info|detay(?:ı|i)?)"
-            r"|(?:bilgisi|bilgi|info|detay(?:ı|i)?)\s*(?:github\s+)?(?:repo|depo)",
-            t,
-        ):
+        if re.search(r"github.*(bilgi|info|repo|depo)|(depo|repo).*(bilgi|info)", t):
             if not self.github.is_available():
                 return True, "⚠ GitHub token ayarlanmamış."
             _, result = self.github.get_repo_info()
@@ -454,10 +449,10 @@ class AutoHandle:
         return False, ""
 
     # ─────────────────────────────────────────────
-    #  RAG / BELGE DEPOSU İŞLEYİCİLERİ (ASYNC GÜVENLİ)
+    #  RAG / BELGE DEPOSU İŞLEYİCİLERİ (SENKRON)
     # ─────────────────────────────────────────────
 
-    async def _try_docs_search(self, t: str, raw: str) -> Tuple[bool, str]:
+    def _try_docs_search(self, t: str, raw: str) -> Tuple[bool, str]:
         """Belge deposunda arama — 'depoda ara', 'bilgi bankası', 'rag ara vektör:' vb."""
         m = re.search(
             r"(?:depoda\s+ara|bilgi\s+bankası|rag\s+ara|belgeler.*ara)\s*[:\-]?\s*(.+)",
@@ -473,7 +468,7 @@ class AutoHandle:
             else:
                 mode = "auto"
                 query = query_raw
-            _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+            _, result = self.docs.search(query, mode=mode)
             return True, result
         return False, ""
 

@@ -121,10 +121,6 @@ class DocumentStore:
         self.chroma_client = None
         self.collection    = None
 
-        # BM25 cache: her sorguda corpus/tokenize yeniden kurulumunu önler
-        self._bm25_engine = None
-        self._bm25_doc_ids: List[str] = []
-
         if self._chroma_available:
             self._init_chroma()
 
@@ -189,11 +185,6 @@ class DocumentStore:
             json.dumps(self._index, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-
-    def _invalidate_bm25_cache(self) -> None:
-        """Belge seti değiştiğinde BM25 cache'ini sıfırla."""
-        self._bm25_engine = None
-        self._bm25_doc_ids = []
 
     # ─────────────────────────────────────────────
     #  BELGE YÖNETİMİ & CHUNKING
@@ -296,7 +287,6 @@ class DocumentStore:
             "parent_id": parent_id,
         }
         self._save_index()
-        self._invalidate_bm25_cache()
 
         # 3. ChromaDB'ye parçalayarak (Chunking) ekle
         if self._chroma_available and self.collection:
@@ -461,7 +451,6 @@ class DocumentStore:
         title = self._index[doc_id].get("title", doc_id)
         del self._index[doc_id]
         self._save_index()
-        self._invalidate_bm25_cache()
         
         return f"✓ Belge silindi: [{doc_id}] {title}"
 
@@ -573,26 +562,17 @@ class DocumentStore:
         
         return self._format_results_from_struct(found_docs, query, source_name="Vektör Arama (ChromaDB + Chunking)")
 
-    def _build_bm25_engine(self):
-        """BM25 motorunu cache'li şekilde hazırla."""
+    def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
         from rank_bm25 import BM25Okapi
 
         doc_ids = list(self._index.keys())
-        if self._bm25_engine is not None and doc_ids == self._bm25_doc_ids:
-            return self._bm25_engine, doc_ids
-
         corpus = []
         for doc_id in doc_ids:
             doc_file = self.store_dir / f"{doc_id}.txt"
             text = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
             corpus.append(text.lower().split())
 
-        self._bm25_engine = BM25Okapi(corpus)
-        self._bm25_doc_ids = doc_ids
-        return self._bm25_engine, doc_ids
-
-    def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
-        bm25, doc_ids = self._build_bm25_engine()
+        bm25 = BM25Okapi(corpus)
         scores = bm25.get_scores(query.lower().split())
         ranked = sorted(zip(doc_ids, scores), key=lambda x: x[1], reverse=True)
         ranked = [(d, s) for d, s in ranked if s > 0][:top_k]

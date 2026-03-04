@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -33,8 +32,6 @@ class CodeManager:
     """
 
     SUPPORTED_EXTENSIONS = {".py", ".js", ".ts", ".json", ".yaml", ".yml", ".md", ".txt", ".sh"}
-    AUDIT_EXCLUDE_DIRS = {".git", ".hg", ".svn", "__pycache__", "venv", ".venv", "node_modules", "dist", "build", ".mypy_cache", ".pytest_cache"}
-    SHELL_META_RE = re.compile(r"[|&;<>`$(){}\[\]\n]")
 
     def __init__(self, security: SecurityManager, base_dir: Path,
                  docker_image: str = "python:3.11-alpine",
@@ -334,16 +331,15 @@ class CodeManager:
 
     def run_shell(self, command: str, cwd: Optional[str] = None) -> Tuple[bool, str]:
         """
-        Kabuk komutunu güvenli subprocess ile çalıştırır (shell=False).
-        Claude Code'daki Bash aracına benzer ama metachar/pipeline kullanımını reddeder.
+        Kabuk komutunu güvenli subprocess ile çalıştırır.
+        Claude Code'daki Bash aracına eşdeğer.
 
         Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
-        - Komut `shlex.split()` ile parçalanır (shell enjeksiyon yüzeyi azaltılır).
-        - `|`, `;`, `&&`, `$()`, backtick vb. shell metachar içeren komutlar reddedilir.
+        - git, npm, pip, ls, grep, find gibi tüm kabuk komutlarını destekler.
         - 60 saniyelik zaman aşımı koruması vardır.
 
         Args:
-            command: Çalıştırılacak kabuk komutu
+            command: Çalıştırılacak kabuk komutu (shell=True ile işlenir)
             cwd: Çalışma dizini (None ise base_dir kullanılır)
 
         Returns:
@@ -359,27 +355,12 @@ class CodeManager:
         if not command or not command.strip():
             return False, "⚠ Çalıştırılacak komut belirtilmedi."
 
-        if self.SHELL_META_RE.search(command):
-            return False, (
-                "⚠ Güvenlik nedeniyle shell metachar içeren komutlar reddedildi.\n"
-                "Desteklenmeyen örnekler: |, ;, &&, >, <, $(), `...`\n"
-                "Gerekirse komutu tek bir executable + argümanlar formatında çalıştırın."
-            )
-
         work_dir = cwd or str(self.base_dir)
 
         try:
-            args = shlex.split(command)
-        except ValueError as exc:
-            return False, f"⚠ Komut ayrıştırılamadı: {exc}"
-
-        if not args:
-            return False, "⚠ Çalıştırılacak komut belirtilmedi."
-
-        try:
             result = subprocess.run(
-                args,
-                shell=False,
+                command,
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -629,17 +610,7 @@ class CodeManager:
             self._audits_done += 1
 
         target = Path(root).resolve()
-        py_files: List[Path] = []
-        skipped_dirs: List[str] = []
-
-        for fp in target.rglob("*.py"):
-            rel_parts = fp.relative_to(target).parts[:-1]
-            hit_excluded = next((part for part in rel_parts if part in self.AUDIT_EXCLUDE_DIRS), None)
-            if hit_excluded:
-                skipped_dirs.append(hit_excluded)
-                continue
-            py_files.append(fp)
-
+        py_files: List[Path] = list(target.rglob("*.py"))
         errors: List[str] = []
         ok_count = 0
 
@@ -660,9 +631,6 @@ class CodeManager:
             f"  Geçerli             : {ok_count}",
             f"  Hatalı              : {len(errors)}",
         ]
-        if skipped_dirs:
-            uniq_skipped = sorted(set(skipped_dirs))
-            report_lines.append(f"  Atlanan dizinler    : {', '.join(uniq_skipped)}")
         if errors:
             report_lines.append("\n  Hatalar:")
             report_lines.extend(errors)

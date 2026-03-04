@@ -193,28 +193,8 @@ def check_hardware() -> HardwareInfo:
     return info
 
 
-# Donanım bilgisi import anında ağır tespit çalıştırmaz; ilk ihtiyaçta doldurulur.
-_HARDWARE_CACHE: Optional[HardwareInfo] = None
-
-
-def get_hardware_info(force_refresh: bool = False) -> HardwareInfo:
-    """Donanım bilgisini lazy-load eder ve cache'ler."""
-    global _HARDWARE_CACHE
-    if force_refresh or _HARDWARE_CACHE is None:
-        _HARDWARE_CACHE = check_hardware()
-    return _HARDWARE_CACHE
-
-
-def get_default_hardware_info() -> HardwareInfo:
-    """Import-time güvenli varsayılan donanım özeti döndürür."""
-    return HardwareInfo(
-        has_cuda=False,
-        gpu_name="Henüz Tespit Edilmedi",
-        cpu_count=os.cpu_count() or 1,
-    )
-
-
-HARDWARE = get_default_hardware_info()
+# Modül yüklendiğinde bir kez çalışır
+HARDWARE = check_hardware()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -251,11 +231,6 @@ class Config:
     OLLAMA_TIMEOUT: int = get_int_env("OLLAMA_TIMEOUT", 30)
     CODING_MODEL:   str = os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
     TEXT_MODEL:     str = os.getenv("TEXT_MODEL", "gemma2:9b")
-    OLLAMA_PROBE_ON_VALIDATE: bool = get_bool_env(
-        "OLLAMA_PROBE_ON_VALIDATE",
-        not get_bool_env("CI", False),
-    )
-    OLLAMA_PROBE_TIMEOUT: float = get_float_env("OLLAMA_PROBE_TIMEOUT", 1.5)
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "full")
@@ -369,18 +344,6 @@ class Config:
             )
 
     @classmethod
-    def refresh_hardware_info(cls, force: bool = False) -> HardwareInfo:
-        """Donanım tespitini gerektiğinde çalıştırır ve sınıf alanlarını günceller."""
-        info = get_hardware_info(force_refresh=force)
-        cls.USE_GPU = info.has_cuda
-        cls.GPU_INFO = info.gpu_name
-        cls.GPU_COUNT = info.gpu_count
-        cls.CPU_COUNT = info.cpu_count
-        cls.CUDA_VERSION = info.cuda_version
-        cls.DRIVER_VERSION = info.driver_version
-        return info
-
-    @classmethod
     def validate_critical_settings(cls) -> bool:
         """Kritik yapılandırmaları doğrular; uyarıları loglar."""
         is_valid = True
@@ -417,37 +380,31 @@ class Config:
                 is_valid = False
 
         if cls.AI_PROVIDER == "ollama":
-            if not cls.OLLAMA_PROBE_ON_VALIDATE:
-                logger.debug("Ollama probe doğrulaması kapalı (OLLAMA_PROBE_ON_VALIDATE=false).")
-            else:
-                try:
-                    import httpx
-                    base = cls.OLLAMA_URL.rstrip("/")
-                    if base.endswith("/api"):
-                        tags_url = base + "/tags"
-                    else:
-                        tags_url = base + "/api/tags"
-                    with httpx.Client(timeout=cls.OLLAMA_PROBE_TIMEOUT) as client:
-                        r = client.get(tags_url)
-                    if r.status_code == 200:
-                        logger.info("✅ Ollama bağlantısı başarılı.")
-                    else:
-                        logger.warning("⚠️  Ollama yanıt kodu: %d", r.status_code)
-                except Exception:
-                    logger.warning(
-                        "⚠️  Ollama'ya ulaşılamadı (%s) [timeout=%.1fs]\n"
-                        "    'ollama serve' çalıştırıldığından emin olun ya da "
-                        "OLLAMA_PROBE_ON_VALIDATE=false kullanın.",
-                        cls.OLLAMA_URL,
-                        cls.OLLAMA_PROBE_TIMEOUT,
-                    )
+            try:
+                import httpx
+                base = cls.OLLAMA_URL.rstrip("/")
+                if base.endswith("/api"):
+                    tags_url = base + "/tags"
+                else:
+                    tags_url = base + "/api/tags"
+                with httpx.Client(timeout=2) as client:
+                    r = client.get(tags_url)
+                if r.status_code == 200:
+                    logger.info("✅ Ollama bağlantısı başarılı.")
+                else:
+                    logger.warning("⚠️  Ollama yanıt kodu: %d", r.status_code)
+            except Exception:
+                logger.warning(
+                    "⚠️  Ollama'ya ulaşılamadı (%s)\n"
+                    "    'ollama serve' çalıştırıldığından emin olun.",
+                    cls.OLLAMA_URL,
+                )
 
         return is_valid
 
     @classmethod
     def get_system_info(cls) -> Dict[str, Any]:
         """Özet sistem bilgisini sözlük olarak döndürür."""
-        cls.refresh_hardware_info()
         return {
             "project":            cls.PROJECT_NAME,
             "version":            cls.VERSION,
@@ -468,7 +425,6 @@ class Config:
     @classmethod
     def print_config_summary(cls) -> None:
         """Konsola yapılandırma özetini yazdırır."""
-        cls.refresh_hardware_info()
         print("\n" + "═" * 62)
         print(f"  {cls.PROJECT_NAME} v{cls.VERSION} — Yapılandırma Özeti")
         print("═" * 62)
