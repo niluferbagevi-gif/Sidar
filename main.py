@@ -10,6 +10,7 @@ Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import subprocess
 import sys
@@ -201,11 +202,41 @@ def run_wizard() -> int:
     return execute_command(cmd)
 
 
-def execute_command(cmd: List[str]) -> int:
-    """Oluşturulan komutu alt işlem olarak çalıştırır ve hataları yakalar."""
+def _default_child_log_path() -> Path:
+    """Alt süreç çıktısı için zaman damgalı varsayılan log yolu üretir."""
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path("logs") / f"launcher_child_{stamp}.log"
+
+
+def execute_command(cmd: List[str], child_log_path: str | None = None) -> int:
+    """Komutu alt süreçte çalıştırır, çıktıyı canlı gösterir ve isteğe bağlı loglar."""
+    log_path = Path(child_log_path) if child_log_path else _default_child_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
-        print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}\n")
-        subprocess.run(cmd, check=True, cwd=os.path.dirname(__file__) or ".")
+        print(f"\n{GREEN}{BOLD}Sidar Başlatılıyor...{RESET}")
+        print(f"{CYAN}📝 Alt süreç çıktısı loglanıyor: {log_path}{RESET}\n")
+
+        with log_path.open("w", encoding="utf-8") as logfile:
+            process = subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(__file__) or ".",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            assert process.stdout is not None
+            for line in process.stdout:
+                print(line, end="")
+                logfile.write(line)
+
+            return_code = process.wait()
+
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, cmd)
+
         return 0
     except KeyboardInterrupt:
         print(f"\n{YELLOW}Başlatıcıdan çıkıldı (Kullanıcı müdahalesi).{RESET}")
@@ -227,6 +258,10 @@ def main() -> None:
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
     parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
+    parser.add_argument(
+        "--child-log",
+        help="Launcher'ın başlattığı alt süreç çıktısını yazacağı log dosyası yolu",
+    )
     args = parser.parse_args()
 
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
@@ -244,7 +279,7 @@ def main() -> None:
     }
 
     cmd = build_command(args.quick, provider, level, args.log, extra_args)
-    sys.exit(execute_command(cmd))
+    sys.exit(execute_command(cmd, child_log_path=args.child_log))
 
 
 if __name__ == "__main__":
