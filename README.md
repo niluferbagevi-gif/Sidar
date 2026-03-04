@@ -259,6 +259,7 @@ Linux/WSL notu: `pywebview` için GTK (`python3-gi`) veya Qt WebEngine (örn. `P
 Bu repo `environment.yml` içinde Qt backend için `pyqt` + `pyqtwebengine` kurar; GTK yolu için `pygobject` de tanımlıdır.
 GUI backend doğrulama: `python -c "import PyQt5.QtWebEngineCore as _; print('QtWebEngine OK')"`
 Eğer `xcb` plugin hatası alırsanız sistem paketlerini kurun (Ubuntu/WSL): `sudo apt install -y libxcb-cursor0 libxkbcommon-x11-0 libegl1`
+GUI oturumu yoksa (`DISPLAY` / `WAYLAND_DISPLAY` boş) launcher güvenli şekilde fallback moduna düşer; bu durumda `--fallback open-browser` seçeneğini kullanabilirsiniz.
 Yeni sürümde launcher, GUI runtime testi başarısızsa pywebview açmayı denemeden fallback moduna düşer.
 Conda `nodejs` paketi yalnızca `launcher_frontend` (Vite/React) geliştirmesi içindir; sadece Python/web server kullanıyorsanız kritik değildir.
 Eğer GUI backend eksikse launcher artık otomatik fallback uygular:

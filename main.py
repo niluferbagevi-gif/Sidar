@@ -51,32 +51,36 @@ def _has_gui_backend() -> tuple[bool, str]:
 
 
 def _probe_gui_runtime() -> tuple[bool, str]:
-    """GUI backend'in gerçekten çalıştırılabilir olup olmadığını alt süreçte test et."""
-    checks: list[tuple[str, str]] = [
-        (
-            "GTK",
-            "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk; print('GTK OK')",
-        ),
-        (
-            "Qt",
-            "from PyQt5.QtWidgets import QApplication; app = QApplication([]); print('QT OK'); app.quit()",
-        ),
+    """GUI backend'in başlatma öncesi temel runtime uygunluğunu kontrol et."""
+    display = os.getenv("DISPLAY", "").strip()
+    wayland = os.getenv("WAYLAND_DISPLAY", "").strip()
+
+    # Linux/WSL GUI oturumu yoksa pywebview başlatmak anlamsız ve çoğu durumda crash üretir.
+    if not (display or wayland):
+        return False, "GUI display bulunamadı (DISPLAY/WAYLAND_DISPLAY boş)"
+
+    # GTK: gi + Gtk namespace doğrulaması
+    gtk_cmd = [
+        sys.executable,
+        "-c",
+        "import gi; gi.require_version('Gtk', '3.0'); from gi.repository import Gtk; print('GTK OK')",
     ]
+    gtk = subprocess.run(gtk_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if gtk.returncode == 0:
+        return True, "GTK runtime doğrulandı"
 
-    for name, code in checks:
-        cmd = [sys.executable, "-c", code]
-        proc = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=os.environ.copy(),
-            check=False,
-        )
-        if proc.returncode == 0:
-            return True, f"{name} runtime doğrulandı"
+    # Qt: yalnızca import testi (QApplication açmak xcb/plugin sorunlarında hard abort üretebilir)
+    qt_checks = [
+        "import PyQt5.QtWebEngineCore as _; print('QT5 OK')",
+        "import PyQt6.QtWebEngineCore as _; print('QT6 OK')",
+        "import PySide6.QtWebEngineCore as _; print('PYSIDE6 OK')",
+    ]
+    for code in qt_checks:
+        qt = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if qt.returncode == 0:
+            return True, "Qt WebEngine import doğrulandı"
 
-    return False, "GTK/Qt runtime doğrulanamadı (örn. Gtk namespace veya xcb platform eklentisi eksik)"
+    return False, "GTK/Qt runtime doğrulanamadı (Gtk namespace veya Qt runtime/plugin eksiği)"
 
 
 def _resolve_launcher_url(custom_url: str | None) -> str:
