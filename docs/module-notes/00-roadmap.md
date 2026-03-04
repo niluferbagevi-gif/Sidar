@@ -50,4 +50,5 @@ Not: Teknik notlar kodu referans alan **yaşayan doküman** olarak tutulur; her 
 - ✅ Parti-2 tamamlandı (`agent/*`)
 - ✅ Parti-3 tamamlandı (`core/*`)
 - ✅ Parti-4 tamamlandı (`managers/*`)
-- ⏳ Parti-5 sıradaki adım (ops/dağıtım/dokümantasyon)
+- ✅ Parti-5 tamamlandı (ops/dağıtım/dokümantasyon)
+- ⏳ Parti-6 sıradaki adım (`tests/*`, `web_ui/index.html`)
