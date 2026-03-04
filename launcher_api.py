@@ -51,8 +51,12 @@ class LauncherAPI:
         }
 
     def preview_command(self, payload: dict[str, Any]) -> dict[str, Any]:
-        cmd = self._build_command(payload)
+        cmd = self.build_command(payload)
         return {"command": shlex.join(cmd)}
+
+    def build_command(self, payload: dict[str, Any]) -> list[str]:
+        """Payload'dan çalıştırılacak alt sürecin komut listesini üretir."""
+        return self._build_command(payload)
 
     def health(self) -> dict[str, Any]:
         return {
