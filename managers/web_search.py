@@ -6,10 +6,11 @@ Sürüm: 2.7.0
 Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 """
 
+import asyncio
 import logging
 import re
-import asyncio
-from typing import Tuple, Optional
+from html import unescape
+from typing import Optional, Tuple
 
 import httpx
 
@@ -25,6 +26,8 @@ class WebSearchManager:
     MAX_RESULTS = 5
     FETCH_TIMEOUT = 15  # saniye
     FETCH_MAX_CHARS = 4000
+
+    _NO_RESULTS_PREFIX = "[NO_RESULTS]"
 
     def __init__(self, config=None) -> None:
         if config is not None:
@@ -77,6 +80,11 @@ class WebSearchManager:
         Belirlenen motora veya fallback (yedek) mantığına göre arama yapar.
         """
         n = max_results or self.MAX_RESULTS
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            n = self.MAX_RESULTS
+        n = max(1, min(n, 10))
 
         tavily_already_tried = False
 
@@ -84,28 +92,31 @@ class WebSearchManager:
             ok, res = await self._search_tavily(query, n)
             tavily_already_tried = True
             if ok:
-                return ok, res
+                return True, self._normalize_result_text(res)
             # 401/403 veya başka bir hata → aşağıdaki auto-fallback'e düş
             logger.info("Tavily başarısız; otomatik fallback başlatılıyor.")
         elif self.engine == "google" and self.google_key and self.google_cx:
-            return await self._search_google(query, n)
+            ok, res = await self._search_google(query, n)
+            return ok, self._normalize_result_text(res)
         elif self.engine == "duckduckgo" and self._ddg_available:
-            return await self._search_duckduckgo(query, n)
+            ok, res = await self._search_duckduckgo(query, n)
+            return ok, self._normalize_result_text(res)
 
         # AUTO MODU VEYA FALLBACK: Tavily -> Google -> DuckDuckGo
         # tavily_already_tried=True ise yukarıda denendiydi ve başarısız oldu — atla
         if self.tavily_key and not tavily_already_tried:
             ok, res = await self._search_tavily(query, n)
-            if ok and "sonuç bulunamadı" not in res.lower() and "[HATA]" not in res:
-                return ok, res
+            if self._is_actionable_result(ok, res):
+                return True, self._normalize_result_text(res)
         
         if self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
-            if ok and "sonuç bulunamadı" not in res.lower() and "[HATA]" not in res:
-                return ok, res
+            if self._is_actionable_result(ok, res):
+                return True, self._normalize_result_text(res)
         
         if self._ddg_available:
-            return await self._search_duckduckgo(query, n)
+            ok, res = await self._search_duckduckgo(query, n)
+            return ok, self._normalize_result_text(res)
         
         return False, "⚠ Web arama yapılamadı. API anahtarları veya duckduckgo-search paketi eksik."
 
@@ -130,7 +141,7 @@ class WebSearchManager:
 
             results = data.get("results", [])
             if not results:
-                return True, f"'{query}' için Tavily'de sonuç bulunamadı."
+                return True, self._mark_no_results(f"'{query}' için Tavily'de sonuç bulunamadı.")
 
             lines = [f"[Web Arama (Tavily): {query}]", ""]
             for i, r in enumerate(results, 1):
@@ -173,7 +184,7 @@ class WebSearchManager:
 
             items = data.get("items", [])
             if not items:
-                return True, f"'{query}' için Google'da sonuç bulunamadı."
+                return True, self._mark_no_results(f"'{query}' için Google'da sonuç bulunamadı.")
 
             lines = [f"[Web Arama (Google): {query}]", ""]
             for i, r in enumerate(items, 1):
@@ -201,7 +212,7 @@ class WebSearchManager:
             results = await asyncio.to_thread(_sync_search)
 
             if not results:
-                return True, f"'{query}' için DuckDuckGo'da sonuç bulunamadı."
+                return True, self._mark_no_results(f"'{query}' için DuckDuckGo'da sonuç bulunamadı.")
 
             lines = [f"[Web Arama (DuckDuckGo): {query}]", ""]
             for i, r in enumerate(results, 1):
@@ -255,22 +266,8 @@ class WebSearchManager:
             flags=re.DOTALL | re.IGNORECASE,
         )
         clean = re.sub(r"<[^>]+>", " ", clean)
-        # Yaygın HTML entity'lerini decode et
-        clean = (
-            clean
-            .replace("&amp;",  "&")
-            .replace("&lt;",   "<")
-            .replace("&gt;",   ">")
-            .replace("&nbsp;", " ")
-            .replace("&quot;", '"')
-            .replace("&apos;", "'")
-            .replace("&#39;",  "'")
-            .replace("&mdash;", "—")
-            .replace("&ndash;", "–")
-            .replace("&hellip;", "…")
-        )
-        # Sayısal entity'leri temizle (örn. &#160; &#8211;)
-        clean = re.sub(r"&#\d+;", " ", clean)
+        # HTML entity decode (named + numeric)
+        clean = unescape(clean)
         clean = re.sub(r"\s+", " ", clean)
         return clean.strip()
 
@@ -296,6 +293,21 @@ class WebSearchManager:
         else:
             q = f"stackoverflow {query}"
         return await self.search(q, max_results=5)
+
+
+    @classmethod
+    def _mark_no_results(cls, text: str) -> str:
+        return f"{cls._NO_RESULTS_PREFIX} {text}"
+
+    @classmethod
+    def _is_actionable_result(cls, ok: bool, result_text: str) -> bool:
+        return ok and not result_text.startswith(cls._NO_RESULTS_PREFIX)
+
+    @classmethod
+    def _normalize_result_text(cls, result_text: str) -> str:
+        if result_text.startswith(cls._NO_RESULTS_PREFIX):
+            return result_text[len(cls._NO_RESULTS_PREFIX):].strip()
+        return result_text
 
     def __repr__(self) -> str:
         engines = []

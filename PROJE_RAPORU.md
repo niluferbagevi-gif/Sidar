@@ -57,7 +57,7 @@
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
-    - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
+    - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
     - [13.5.15 `managers/security.py` — Skor: 91/100 ✅](#13515-managerssecuritypy-skor-91100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 92/100 ✅](#13516-managerstodomanagerpy-skor-92100)
@@ -1478,34 +1478,29 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13513-managerswebsearchpy-skor-90100"></a>
-#### 13.5.13 `managers/web_search.py` — Skor: 90/100 ✅
+<a id="13513-managerswebsearchpy-skor-93100"></a>
+#### 13.5.13 `managers/web_search.py` — Skor: 93/100 ✅
 
 **Sorumluluk:** Web araştırma yöneticisi — çoklu arama motoru (Tavily, Google CSE, DuckDuckGo) üzerinden asenkron sorgu çalıştırır, fallback zinciri uygular ve URL içeriklerini temizleyip özetlenmiş metin olarak döndürür.
 
-**Motor Yönlendirme ve Fallback (satır 75–111)**
+**Bu Turdaki İyileştirmeler**
 
-- `engine` ayarına göre doğrudan motor seçimi yapılır; başarısızlık halinde `auto` zincirine düşülebilir.
-- `auto` modunda sıralama Tavily → Google → DuckDuckGo şeklindedir.
-- Tavily 401/403 durumunda anahtar oturum içinde devre dışı bırakılır (`self.tavily_key = ""`), gereksiz tekrar istekleri azaltılır.
-
-**Asenkron Davranış ve Performans (satır 116–219, 224–248)**
-
-- Tavily/Google/URL fetch işlemleri `httpx.AsyncClient` ile non-blocking yürütülür.
-- DuckDuckGo istemcisi senkron olduğundan `asyncio.to_thread` içinde çalıştırılarak event loop bloklanması önlenir.
-- URL çekiminde timeout, redirect takibi ve karakter limiti (`FETCH_MAX_CHARS`) uygulanır.
-
-**İçerik Temizleme ve Dokümantasyon Aramaları (satır 249–299)**
-
-- `_clean_html()` script/style bloklarını ve HTML etiketlerini regex ile temizler; yaygın entity dönüşümleri yapılır.
-- `search_docs` ve `search_stackoverflow` yardımcıları motor türüne göre sorgu stratejisini uyarlayarak daha hedefli sonuç üretir.
+- `search()` fallback kararında kırılgan `"[HATA]"` string eşleşmesi kaldırıldı; bunun yerine yapılandırılmış internal no-result marker (`_NO_RESULTS_PREFIX`) ve yardımcı metotlarla (`_is_actionable_result`, `_normalize_result_text`) karar veriliyor.
+- `max_results` artık sayısal doğrulama + clamp (`1..10`) ile normalize ediliyor; hatalı tipler güvenli şekilde varsayılan değere dönüyor.
+- `_clean_html()` tarafında entity decode için `html.unescape(...)` kullanılarak named + numeric HTML entity çözümleme kapsamı genişletildi.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| WS-01 | `search()` içinde motor başarısını belirlerken `"[HATA]"` metin içeriğine bakılıyor; yapılandırılmış hata kodu yerine string eşleşmeye bağımlı olması kırılgan | 99–105 | Orta |
-| WS-02 | `_clean_html()` regex tabanlı sadeleştirme yapıyor; karmaşık DOM veya script-rendered sayfalarda bağlam/biçim kaybı oluşabilir | 250–275 | Düşük |
+| WS-03 | `_clean_html()` halen regex tabanlı sadeleştirme kullanıyor; çok karmaşık DOM/script-rendered sayfalarda bağlam kaybı tamamen önlenemez | 260–272 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| WS-01 | ✅ Kapandı | Fallback başarısı artık hata metni string arama yerine internal marker tabanlı belirleniyor. |
+| WS-02 | ✅ Kısmen Kapandı | Entity çözümleme `unescape` ile güçlendirildi; regex tabanlı temizleme kaynaklı sınırlama düşük risk notu olarak devam ediyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
