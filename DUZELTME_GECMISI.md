@@ -7,8 +7,9 @@
 ---
 
 <a id="sec-3-1-3-76"></a>
+<a id="sec-3-1-3-78"></a>
 
-> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
+> ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 9 ek sorun giderilmiştir (toplam 56 düzeltme).
 
 ---
 
@@ -1398,6 +1399,49 @@ await asyncio.to_thread(
     cwd=_root,
     stderr=subprocess.STDOUT,
 )  # ✅ thread pool
+```
+
+---
+
+### ✅ 3.77 `main.py` — Launcher Child-Process Log Yönlendirmesi (M-01 → ÇÖZÜLDÜ)
+
+**Dosya:** `main.py`  
+**Önem:** ~~🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorun:** `subprocess.run(...)` ile başlatılan child-process çıktısı yalnızca terminale akıyordu; gerektiğinde dosyaya yönlendirip oturum sonrası inceleme yapmak mümkün değildi.
+
+**Uygulanan düzeltme:**
+- `execute_command(cmd, launcher_log_file=None)` imzası genişletildi.
+- `--launcher-log-file` CLI argümanı eklendi; `--quick` akışında doğrudan kullanılabilir hale getirildi.
+- Wizard akışında isteğe bağlı log kaydı sorusu eklendi.
+- Log dosyasına başlangıç zamanı ve komut bilgisini yazan `_write_launch_header(...)` yardımcı fonksiyonu eklendi.
+
+```python
+# Özet akış
+parser.add_argument("--launcher-log-file", ... )
+...
+if launcher_log_file:
+    with log_path.open("a", encoding="utf-8") as log_file:
+        _write_launch_header(log_file, cmd)
+        subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, check=False)
+```
+
+---
+
+### ✅ 3.78 `cli.py` — Banner Sürüm Alanı Taşma Koruması (CLI-01 → ÇÖZÜLDÜ)
+
+**Dosya:** `cli.py`  
+**Önem:** ~~🟢 DÜŞÜK~~ → ✅ **ÇÖZÜLDÜ**
+
+**Sorun:** Banner içinde sürüm alanı `ljust(7)` ile sabitti; sürüm metni uzadığında çerçeve taşması oluşabiliyordu.
+
+**Uygulanan düzeltme:** `_fit_banner_field(value, width)` yardımcı fonksiyonu eklendi; `_make_banner(...)` sürüm alanını kullanılabilir genişliğe göre pad/kırp (`…`) ederek üretir.
+
+```python
+def _fit_banner_field(value: str, width: int) -> str:
+    if len(value) <= width:
+        return value.ljust(width)
+    return value[: width - 1] + "…"
 ```
 
 ---

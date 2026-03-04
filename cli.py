@@ -51,11 +51,23 @@ def _setup_logging(level: str) -> None:
 # ─────────────────────────────────────────────
 
 
+def _fit_banner_field(value: str, width: int) -> str:
+    """Banner alanını verilen genişliğe güvenli şekilde sığdırır."""
+    if len(value) <= width:
+        return value.ljust(width)
+    if width <= 1:
+        return value[:width]
+    return value[: width - 1] + "…"
+
+
 def _make_banner(version: str) -> str:
     """Sürüm numarasını dinamik olarak içeren ASCII banner'ı oluşturur."""
+    inner_width = 44
+    label = "  Yazılım Mimarı & Baş Mühendis AI  "
     ver_field = f"v{version}"
-    # Sabit genişlik: 7 karakter; sağa boşluk ekle
-    ver_padded = ver_field.ljust(7)
+    ver_padded = _fit_banner_field(ver_field, max(inner_width - len(label), 1))
+    banner_line = f"{label}{ver_padded}"
+
     return (
         "\n"
         " ╔══════════════════════════════════════════════╗\n"
@@ -65,9 +77,10 @@ def _make_banner(version: str) -> str:
         " ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║\n"
         " ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║\n"
         " ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║\n"
-        f" ║  Yazılım Mimarı & Baş Mühendis AI  {ver_padded}║\n"
+        f" ║{banner_line}║\n"
         " ╚══════════════════════════════════════════════╝\n"
     )
+
 
 
 HELP_TEXT = """
