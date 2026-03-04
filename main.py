@@ -1,124 +1,95 @@
 """
-Sidar Project - Başlatıcı Arayüz
-=================================
-
-Bu modül, kullanıcıya projeyi nasıl başlatmak istediğini soran bir
-başlatıcı (starter) arayüzü sağlar. Terminal içinde çalışan basit ve
-etkileşimli bir menü üzerinden aşağıdaki seçimler yapılabilir:
-
-1. AI sağlayıcısı: `ollama` veya `gemini`.
-2. Erişim seviyesi: `restricted`, `sandbox` veya `full`.
-3. Arayüz türü: CLI (terminal) veya Web (FastAPI tabanlı web arayüzü).
-
-Seçimler yapıldıktan sonra, uygun alt modu başlatmak için ilgili
-Python betiği (`cli.py` veya `web_server.py`) çağrılır ve seçilen
-parametreler komut satırı argümanları olarak iletilir.
-
-Not: Bu başlatıcı, gelişmiş bir grafik kütüphanesine (örneğin
-Tkinter) ihtiyaç duymadan etkileşimli bir deneyim sağlar. Seçimleri
-alırken yanlış girişleri kontrol eder ve kullanıcıyı yönlendirir.
+Sidar Project - PyWebView + React 3D Başlatıcı
+Kullanım: python main.py
+(Çalıştırmak için 'pip install pywebview' gereklidir)
 """
 
-from __future__ import annotations
-
 import os
-import subprocess
 import sys
-from typing import List
+import subprocess
+import threading
+import webview
 
 
-def _clear_screen() -> None:
-    """Konsolu temizler (Windows ve POSIX desteği)."""
-    command = "cls" if os.name == "nt" else "clear"
-    try:
-        subprocess.call(command, shell=True)
-    except Exception:
-        # Konsol temizleme başarısız olursa yoksay
-        pass
+class Api:
+    """JavaScript (React) tarafından çağrılabilen Python fonksiyonları"""
+
+    def __init__(self):
+        self.provider = "ollama"
+        self.level = "full"
+        self._load_defaults()
+
+    def _load_defaults(self):
+        # Varsayılan ayarları config'den çek
+        try:
+            sys.path.insert(0, os.path.dirname(__file__))
+            from config import Config
+            cfg = Config()
+            self.provider = cfg.AI_PROVIDER.lower()
+            self.level = cfg.ACCESS_LEVEL.lower()
+        except ImportError:
+            pass
+
+    def get_defaults(self):
+        """Frontend ilk yüklendiğinde varsayılan ayarları almak için çağırır"""
+        return {"provider": self.provider, "level": self.level}
+
+    def launch_system(self, mode, provider, level):
+        """Kullanıcı BAŞLAT butonuna bastığında çalışır"""
+        target_script = "web_server.py" if mode == "web" else "cli.py"
+
+        cmd_args = [
+            sys.executable,
+            target_script,
+            "--provider", provider,
+            "--level", level
+        ]
+
+        def run_subprocess():
+            kwargs = {}
+            # Windows'ta CLI seçildiyse yeni terminal penceresi açar
+            if sys.platform == "win32" and mode == "cli":
+                kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+            subprocess.Popen(cmd_args, **kwargs)
+
+        # Sistemi arka planda başlat
+        threading.Thread(target=run_subprocess, daemon=True).start()
+
+        # Başlatıcı penceresini kapat ve yeri Sidar'a bırak
+        webview.windows[0].destroy()
+        return "Başlatıldı"
+
+    def close_app(self):
+        """Pencereyi kapatmak için (Frameless yaptığımız için gerekli)"""
+        webview.windows[0].destroy()
 
 
-def _ask_choice(prompt: str, options: List[str]) -> str:
-    """
-    Kullanıcıya numerik seçimli bir soru sorar ve geçerli bir yanıt alana
-    kadar soruyu tekrarlar.
+def main():
+    api = Api()
 
-    Args:
-        prompt: Ekranda gösterilecek açıklama metni.
-        options: Seçenekler listesi (küçük harflerle). Seçim numarası ya da
-                 metin eşleşmesi kabul edilir.
+    # Eğer frontend build edilmişse doğrudan o dosyayı oku, yoksa Vite dev sunucusuna bağlan
+    dist_path = os.path.join(os.path.dirname(__file__), "launcher_ui", "dist", "index.html")
 
-    Returns:
-        Kullanıcının seçtiği seçenek (liste elemanı).
-    """
-    while True:
-        print(prompt)
-        for idx, opt in enumerate(options, 1):
-            print(f"  {idx}) {opt}")
-        choice = input("Seçiminiz (numara veya isim): ").strip().lower()
-        if not choice:
-            print("Lütfen bir seçim yapın.\n")
-            continue
-        # Sayı ise
-        if choice.isdigit():
-            num = int(choice)
-            if 1 <= num <= len(options):
-                return options[num - 1]
-        # Doğrudan isimle eşleşme
-        for opt in options:
-            if choice == opt.lower():
-                return opt
-        print("Geçersiz seçim, lütfen tekrar deneyin.\n")
-
-
-def _welcome_banner() -> None:
-    """Basit bir hoş geldin mesajı yazdırır."""
-    print("\n  ╔══════════════════════════════════════════════╗")
-    print("  ║             SİDAR Başlatıcı Arayüzü        ║")
-    print("  ╚══════════════════════════════════════════════╝\n")
-    print("Hoş geldiniz! Lütfen proje başlatma seçeneklerinizi seçin:\n")
-
-
-def main() -> None:
-    _clear_screen()
-    _welcome_banner()
-    # AI sağlayıcı seçimi
-    provider = _ask_choice(
-        "Hangi AI sağlayıcısını kullanmak istersiniz?",
-        ["ollama", "gemini"],
-    )
-    # Erişim seviyesi seçimi
-    level = _ask_choice(
-        "Erişim seviyesini seçin:",
-        ["restricted", "sandbox", "full"],
-    )
-    # Arayüz modu seçimi
-    ui = _ask_choice(
-        "Arayüz modunu seçin:",
-        ["cli", "web"],
-    )
-
-    # Seçimlere göre komut parametreleri oluştur
-    args: List[str] = []
-    if provider:
-        args.extend(["--provider", provider])
-    if level:
-        args.extend(["--level", level])
-
-    # Komut yolu (aynı dizinde olduğumuzu varsayar)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    python_exe = sys.executable or "python"
-
-    if ui == "cli":
-        target_script = os.path.join(base_dir, "cli.py")
-        cmd = [python_exe, target_script] + args
-        print("\nTerminal modu başlatılıyor...\n")
-        subprocess.run(cmd)
+    if os.path.exists(dist_path):
+        url = dist_path
     else:
-        target_script = os.path.join(base_dir, "web_server.py")
-        # Web arayüzü için varsayılan port ve host config.py'den okunur.
-        cmd = [python_exe, target_script] + args
-        print("\nWeb arayüzü başlatılıyor...\n")
-        subprocess.run(cmd)
+        url = "http://localhost:5173"
+        print("💡 Geliştirme Modu Aktif: Lütfen 'launcher_ui' klasöründe 'npm run dev' çalıştırdığınızdan emin olun.")
+
+    # Modern frameless (çerçevesiz) bir pencere yaratıyoruz
+    window = webview.create_window(
+        title="SİDAR AI - Core System Launcher",
+        url=url,
+        js_api=api,
+        width=1000,
+        height=650,
+        resizable=False,
+        frameless=True,       # Standart Windows/Mac çerçevelerini gizler
+        easy_drag=True,       # Çerçeve olmadığı için pencereyi her yerinden sürüklenebilir yapar
+        background_color='#050505'
+    )
+
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":

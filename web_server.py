@@ -8,6 +8,7 @@ Başlatmak için:
 """
 
 import argparse
+import os
 import asyncio
 import json
 import logging
@@ -62,12 +63,23 @@ async def get_agent() -> SidarAgent:
 
 app = FastAPI(title="Sidar Web UI", docs_url=None, redoc_url=None)
 
-# CORS: Yalnızca localhost'tan gelen isteklere izin ver (port cfg.WEB_PORT'tan okunur)
-_ALLOWED_ORIGINS = [
+# CORS: Desktop/Web frontend'lerin backend'e erişimi
+# - Gömülü web_ui (cfg.WEB_PORT)
+# - Vite dev/preview varsayılan portları (5173/4173)
+# - FRONTEND_ORIGINS env ile ek origin desteği (virgülle ayrılmış)
+_frontend_origins_env = [
+    item.strip() for item in os.getenv("FRONTEND_ORIGINS", "").split(",") if item.strip()
+]
+_ALLOWED_ORIGINS = list(dict.fromkeys([
     f"http://localhost:{cfg.WEB_PORT}",
     f"http://127.0.0.1:{cfg.WEB_PORT}",
     f"http://0.0.0.0:{cfg.WEB_PORT}",
-]
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    *_frontend_origins_env,
+]))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
