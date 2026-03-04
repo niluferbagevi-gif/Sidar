@@ -55,7 +55,7 @@
     - [13.5.8 `core/memory.py` — Skor: 92/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 93/100 ✅](#1359-configpy-skor-90100)
     - [13.5.10 `managers/code_manager.py` — Skor: 92/100 ✅](#13510-managerscodemanagerpy-skor-90100)
-    - [13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
+    - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-91100)
     - [13.5.12 `managers/system_health.py` — Skor: 92/100 ✅](#13512-managerssystemhealthpy-skor-92100)
     - [13.5.13 `managers/web_search.py` — Skor: 90/100 ✅](#13513-managerswebsearchpy-skor-90100)
     - [13.5.14 `managers/package_info.py` — Skor: 91/100 ✅](#13514-managerspackageinfopy-skor-91100)
@@ -671,7 +671,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`core/memory.py`**: Çoklu oturumlu kalıcı bellek yöneticisi; `threading.RLock` ile thread-safe mesaj ekleme/kaydetme ve opsiyonel Fernet şifreleme içerir. ⚠️ `_save()` her `add()` çağrısında tüm oturum JSON'unu yeniden yazar (yüksek frekansta I/O maliyeti); ayrıca `*.json.broken` karantina dosyaları için yaşam döngüsü/temizlik politikası tanımlı değildir. → Detay: §13.5.8
 - **`config.py`**: Merkezi yapılandırma ve donanım tespit katmanı; `.env` yükleme, log altyapısı, provider/GPU/RAG/web ayarları ve başlangıç doğrulaması tek noktadan yönetilir. ✅ Donanım tespiti lazy-cache modele alındı (`get_hardware_info`, `refresh_hardware_info`); `validate_critical_settings()` içindeki Ollama probe’u ise `OLLAMA_PROBE_ON_VALIDATE` / `OLLAMA_PROBE_TIMEOUT` ile çevreye duyarlı şekilde kontrol edilebilir hale getirildi. → Detay: §13.5.9
 - **`managers/code_manager.py`**: Dosya I/O, sözdizimi doğrulama, audit ve Docker izoleli kod çalıştırma yeteneklerini tek manager altında toplar. ✅ `run_shell()` artık `shell=False` + `shlex.split()` ile çalışır ve shell metachar içeren komutları reddeder; `audit_project()` ise vendor/venv benzeri dizinleri varsayılan olarak dışlar. → Detay: §13.5.10
-- **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ⚠️ `create_or_update_file()` güncelleme/yoklama ayrımı için geniş `except Exception` kullanıyor (hata nedeni belirsizleşebilir); ayrıca `list_repos(owner=...)` ilk denemede yalnızca organization akışını deneyip kullanıcı/organization ayrımını istisna ile yönetiyor. → Detay: §13.5.11
+- **`managers/github_manager.py`**: PyGithub tabanlı repo/commit/branch/PR/dosya operasyonlarını kapsar; branch adı doğrulaması (`_BRANCH_RE`) ve metin tabanlı uzantı filtresi ile güvenli okuma yaklaşımı uygulanır. ✅ `create_or_update_file()` yalnızca 404 durumunda oluşturma yoluna düşer ve diğer hataları açıkça raporlar; `list_repos(owner=...)` owner çözümünde user→organization sırasını kontrollü uygular. → Detay: §13.5.11
 - **`managers/system_health.py`**: CPU/RAM/GPU sağlık telemetrisi ve VRAM temizleme işlevlerini birleştirir; WSL2/NVML fallback mantığıyla farklı ortamlarda dayanıklı raporlama sağlar. ⚠️ `get_cpu_usage(interval=0.5)` her çağrıda bloklayıcı örnekleme yapar; ayrıca `__del__` içinde NVML shutdown güvenceye alınsa da interpreter kapanış sırası nedeniyle her zaman deterministik çalışmayabilir. → Detay: §13.5.12
 - **`managers/web_search.py`**: Tavily/Google/DDG çoklu motor mimarisiyle async arama ve URL içerik çekme sağlar; `auto` modda kademeli fallback uygulanır. ⚠️ `search()` sonucu hata tespitini çıktı metninde `"[HATA]"` string kontrolüyle yapıyor (kırılgan); ayrıca `_clean_html` regex tabanlı sadeleştirme karmaşık sayfalarda içerik kaybına yol açabilir. → Detay: §13.5.13
 - **`managers/package_info.py`**: PyPI, npm ve GitHub Releases sorgularını asenkron `httpx` akışıyla birleştirir; sürüm karşılaştırma ve pre-release filtreleme yardımcıları içerir. ⚠️ `pypi_compare()` güncel sürümü formatlı metinden regex ile çekiyor (API verisi yerine string parse bağımlılığı); `_is_prerelease()` harf içeren tüm sürümleri pre-release saydığı için bazı edge-case etiketleri yanlış sınıflandırabilir. → Detay: §13.5.14
@@ -1377,7 +1377,7 @@ except Exception as exc:
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13511-managersgithubmanagerpy-skor-91100"></a>
-#### 13.5.11 `managers/github_manager.py` — Skor: 91/100 ✅
+#### 13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅
 
 **Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
 
@@ -1393,18 +1393,16 @@ except Exception as exc:
 - `read_remote_file()` yalnızca güvenli metin uzantıları/uzantısız dosya adları için içerik döndürür; binary dosya riski azaltılır.
 - Varsayılan dal erişimi için `default_branch` property sunularak dış modüllerin `_repo` private alanına doğrudan erişmesi engellenir.
 
-**PR ve Dosya Operasyonları (satır 250–537)**
+**PR ve Dosya Operasyonları (güncel durum)**
 
 - Branch listesi, PR listesi/detayı/yorum/kapatma ve değişen dosya raporları kullanıcıya metin tabanlı okunabilir çıktı üretir.
 - `get_pull_requests_detailed()` web katmanı için yapısal dict çıktı sağlar; API tarafında serializasyonu kolaylaştırır.
-- `create_or_update_file()` mevcut dosyayı güncelleme, yoksa oluşturma yolunu tek metotta birleştirir.
+- `create_or_update_file()` yalnızca 404/bulunamadı durumunda oluşturma yoluna düşer; diğer hata türlerini ayrı mesajlarla korur.
+- `list_repos(owner=...)` owner çözümünü user→organization sıralı ve kontrollü fallback ile yapar; sonuç formatını `_repo_to_item()` ile tekilleştirir.
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GH-01 | `create_or_update_file()` içinde "dosya yok" kararını geniş `except Exception` ile veriyor; izin/bağlantı gibi gerçek hatalar da oluşturma yoluna düşebilir ve asıl neden gizlenebilir | 284–301 | Orta |
-| GH-02 | `list_repos(owner=...)` önce organization akışını zorunlu dener, kullanıcı owner senaryosu exception ile fallback’e bırakılır; kontrol akışı istisna tabanlı ve maliyetli | 106–133 | Düşük |
+- Bu alt bölümde önceki GH-01/GH-02 bulguları kapatılmıştır.
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
