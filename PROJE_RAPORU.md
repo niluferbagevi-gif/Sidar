@@ -1,6 +1,6 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — P-01–P-07 giderildi — Tüm bilinen sorunlar kapatıldı ✅)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-03** — Session 9 doğrulama eklendi, Q-01–Q-05 yeni bulgular açıldı ⚠️)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** ~35 kaynak dosyası, ~11.500+ satır kod
@@ -37,6 +37,7 @@
 15. [Genel Değerlendirme](#15-genel-değerlendirme)
 16. [Son Satır Satır İnceleme — Yeni Bulgular](#16-son-satır-satır-i̇nceleme--yeni-bulgular)
 17. [Session 8 — Satır Satır İnceleme (2026-03-03)](#17-session-8--satır-satır-i̇nceleme-2026-03-03)
+18. [Session 9 — 13.5 Teyit ve Paralel Uyum Kontrolü (2026-03-03)](#18-session-9--135-teyit-ve-paralel-uyum-kontrolü-2026-03-03)
 
 ---
 
@@ -1932,7 +1933,7 @@ except Exception as exc:
 ### 15.1 Güncel Durum Özeti (v2.7.0)
 
 - Proje raporu ve kod tabanı sürüm hizası **v2.7.0** seviyesindedir.
-- Öncelik bazlı açık sorun listelerinde (kritik/yüksek/orta/düşük) aktif açık bulgu raporlanmamaktadır.
+- Session 9 sonrası açık bulgular: **Q-01–Q-05 (tamamı düşük/orta, dokümantasyon ve sürüm etiket uyumu)**.
 - Test kapsamı raporlanan güncel sayıyla (48 test fonksiyonu) uyumludur.
 - Güvenlik ve operasyon başlıklarında (3 katman rate limiting, `DOCKER_PYTHON_IMAGE`, branch regex doğrulaması) rapor-kod eşleşmesi sağlanmıştır.
 
@@ -2038,3 +2039,42 @@ Tüm proje dosyaları paralel okuma batchleri ile incelendi; dosyalar arası ver
 | Aktif açık sorun | **0** |
 
 ---
+
+
+## 18. Session 9 — 13.5 Teyit ve Paralel Uyum Kontrolü (2026-03-03)
+
+> **Tarih:** 2026-03-03 | **Session:** 9 | **Kapsam:** `13.5 Dosya Bazlı Teknik Detaylar` başlıklarının satır bazlı teyidi + dosyalar arası çapraz tutarlılık denetimi
+
+### 18.1 Uygulanan Doğrulama Yöntemi
+
+- Repo kapsamı `git ls-files` ile çıkarıldı (**35 izlenen dosya**).
+- `PROJE_RAPORU.md` içindeki `13.5.x` başlıkları regex ile ayrıştırıldı ve dosya listesi ile birebir eşleştirildi.
+- Sürüm, CUDA, servis adı ve `.env` değişken uyumu için paralel pattern taramaları (`rg`) yapıldı.
+- `config.py` içindeki env değişkenleri ile `.env.example` eşleşmesi script ile doğrulandı (**eksik anahtar yok**).
+
+### 18.2 13.5 Başlık Teyidi (Dosya Bazlı)
+
+| Kontrol | Sonuç | Durum |
+|---|---|---|
+| `13.5.x` başlık sayısı | 35 | ✅ |
+| `git ls-files` dosya sayısı | 35 | ✅ |
+| `13.5`te olup repoda olmayan dosya | 0 | ✅ |
+| Repoda olup `13.5`te olmayan dosya | 0 | ✅ |
+| `.env.example` vs `config.py` env anahtar eşleşmesi | Eksik anahtar yok | ✅ |
+
+### 18.3 Dosyalar Arası Uyum Kontrolü — Ek Bulgular
+
+Bu turda, §13.5 altında daha önce “takipte” görünen bazı maddelerin halen açık olduğu teyit edildi:
+
+- **Q-01 (Orta): `README.md` sürüm etiketi eski** — satır 3 ve banner satır 13 hâlâ `v2.6.1`; kod tabanı `v2.7.0`.
+- **Q-02 (Orta): `README.md` Docker komutu eski servis adı kullanıyor** — `sidar-web-cpu` örneği mevcut compose servisleriyle eşleşmiyor (`sidar-web`).
+- **Q-03 (Düşük): `README.md` GPU açıklamasında “CUDA 12.1” ifadesi var** — proje hattı cu124/CUDA 12.4.
+- **Q-04 (Düşük): `Dockerfile` üst başlık yorumunda sürüm `2.6.1`** — metadata label `2.7.0` ile uyumsuz dokümantasyon izi.
+- **Q-05 (Düşük): `install_sidar.sh` başlık sürümü `2.6.1`** — rapor/kod sürümüyle (v2.7.0) drift.
+
+### 18.4 Sonuç
+
+- `13.5 Dosya Bazlı Teknik Detaylar` kapsamı **dosya sayısı açısından eksiksiz ve güncel** teyit edildi.
+- Çekirdek teknik eşleşmeler (env anahtarları, servis envanteri, export listeleri) büyük ölçüde tutarlı.
+- Buna karşın dokümantasyon/sürüm etiketi tarafında **Q-01–Q-05** açık kalemleri mevcuttur; raporun sonraki revizyonunda bu maddeler kapatılmalıdır.
+
