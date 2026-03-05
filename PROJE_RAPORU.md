@@ -264,7 +264,13 @@ sidar_project/
 <a id="4-mevcut-kritik-hatalar"></a>
 ## 4. Mevcut Kritik Hatalar
 
-> ✅ 2026-03-02 güncel taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. [§3](#3-onceki-rapordan-bu-yana-duzeltilen-hatalar).
+> ⚠️ **2026-03-05 Güncel Taraması:** v2.7.0 itibarıyla önceki sürümlerden kalan yapısal hatalar çözülmüş olsa da, asenkron web mimarisi (FastAPI) ile senkron RAG işlemlerinin kesişiminden doğan yeni bir kritik risk tespit edilmiştir.
+
+| ID | Modül / Dosya | Hata Açıklaması | Kritiklik Etkisi |
+| :--- | :--- | :--- | :--- |
+| **C-01** | `core/rag.py` &<br>`web_server.py` | **Event-Loop Bloklama (BM25 Cache Rebuild):**<br>`_ensure_bm25_index` metodu belge eklendiğinde/silindiğinde tüm RAG deposunu diskten **senkron (blocking)** olarak okuyarak BM25 matrisini baştan hesaplar. Bu işlem büyük belge setlerinde saniyeler sürebilir. Bu esnada FastAPI ana event-loop'u kilitlenir (Event-Loop Starvation) ve tüm aktif SSE sohbet akışları ile API istekleri donar. | Çok kullanıcılı web ortamında servisin geçici olarak erişilemez hale gelmesine (Denial of Service) neden olur. Çözüm olarak BM25 rebuild işleminin `asyncio.to_thread` ile tamamen arka plana itilmesi veya inkremental bir indekslemeye geçilmesi zorunludur. |
+
+*(Geçmişteki diğer kritik sorunlar tamamen giderilmiştir; detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
