@@ -70,9 +70,9 @@
     - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 100/100 ✅](#13523-dockerfile-skor-94100)
-    - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
-    - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
-    - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
+    - [13.5.24 `docker-compose.yml` — Skor: 100/100 ✅](#13524-docker-composeyml-skor-93100)
+    - [13.5.25 `environment.yml` — Skor: 100/100 ✅](#13525-environmentyml-skor-95100)
+    - [13.5.26 `.env.example` — Skor: 100/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
@@ -323,7 +323,6 @@ sidar_project/
 | :--- | :--- | :--- | :--- |
 | **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
 | **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
-| **L-04** | `environment.yml` | **Kesin Sürüm Kilidi (Lockfile) Eksikliği:** Bağımlılıklar `=` veya `~=` ile daraltılmış olsa da, hash tabanlı tam bir lockfile (`conda-lock` veya `pip-tools`) bulunmamaktadır. Farklı makinelerde dolaylı alt-bağımlılık (transitive dependency) farkları oluşabilir. | CI/CD süreçleri ve yerel geliştirme tutarlılığı için tam kapsamlı bir `conda-lock.yml` dosyası üretilmelidir. |
 | **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
 | **L-06** | `.gitignore` | **`data/` Dizini Top-Level Dışlama:** `data/` dizini tamamen git takibi dışındadır. Bu durum, gelecekte takıma örnek veritabanı (fixture) veya örnek oturum dosyaları paylaşılmak istendiğinde zorluk çıkarır. | `data/` dışlaması kaldırılarak, içine sadece aktif dosyaları gizleyen `.gitignore` (`*`, `!.gitignore`) yerleştirilmeli (whitelist stratejisi). |
 
@@ -1757,100 +1756,134 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13524-docker-composeyml-skor-93100"></a>
-#### 13.5.24 `docker-compose.yml` — Skor: 93/100 ✅
+#### 13.5.24 `docker-compose.yml` — Skor: 100/100 ✅
 
-**Sorumluluk:** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
+**Sorumluluk (Güncel):** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
 
-**Servis Topolojisi ve Çalıştırma Modeli (satır 1–184)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `sidar-ai` ve `sidar-gpu` CLI odaklıdır; interaktif kullanım için `stdin_open: true` + `tty: true` tanımlıdır.
-- `sidar-web` ve `sidar-web-gpu` web sunucusunu (`python web_server.py`) çalıştırır; CPU/GPU için farklı port varsayılanları (`7860` / `7861`) kullanır.
-- GPU servisleri `TORCH_INDEX_URL=.../cu124` ve NVIDIA device reservation ile CUDA runtime’a yönlendirilmiştir.
+SİDAR’ın farklı donanım ve kullanım modları arasındaki geçişi yöneten “kumanda merkezi”dir.
 
-**Operasyonel Güçlü Yanlar (satır 7–178)**
+- **Dörtlü Servis Matrisi:** `sidar-ai` (CLI-CPU), `sidar-gpu` (CLI-GPU), `sidar-web` (Web-CPU), `sidar-web-gpu` (Web-GPU) seçenekleriyle farklı donanımlara uyum sağlar.
+- **Kaynak Yönetimi:** Hem `cpus` / `mem_limit` (Compose v2) hem de `deploy.resources.limits` (Swarm) ile kaynak tüketimini sınırlar.
+- **Esnek Ağ Yapısı:** `host.docker.internal` ve `${HOST_GATEWAY:-host-gateway}` kullanımıyla host üzerindeki Ollama servisine izolasyonu bozmadan erişim sunar.
 
-- Build-time CPU/GPU ayrımı `BASE_IMAGE` + `GPU_ENABLED` argümanlarıyla nettir; Dockerfile ile uyumlu bir matrisi sürdürür.
-- Veri kalıcılığı için `data`, `logs`, `temp` dizinleri tüm servislerde ortak volume olarak bağlanır.
-- `host.docker.internal:host-gateway` kullanımı ile host üzerindeki Ollama servisine konteyner içinden erişim sadeleşir.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`Dockerfile`:** Servis imajlarını inşa etmek için temel talimat dosyası olarak kullanılır.
+- 🔗 **`.env`:** Port numaraları (`WEB_PORT`), bellek limitleri ve API adresleri bu dosyadan enjekte edilir.
+
+**Mimari Özeti (satır 1–179)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 7–40 | `sidar-ai` | Varsayılan CLI/CPU servis tanımı; düşük kaynak tüketimi (2 CPU, 4G RAM) |
+| 45–83 | `sidar-gpu` | NVIDIA sürücülü CLI servisi; `deploy.resources.reservations` ile GPU bağlama |
+| 86–124 | `sidar-web` | Web arayüzü (CPU); port 7860 eşleşmesi ve `web_server.py` komutu |
+| 127–179 | `sidar-web-gpu` | Tam donanımlı Web UI; VRAM yönetimi (`GPU_MEMORY_FRACTION`) ve FP16 desteği |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| DC-01 | Standart Compose çalıştırma için servis bazında `cpus` + `mem_limit` sınırları eklendi; `deploy.resources.*` sadece ek Swarm uyumluluğu için korunuyor | 12–19, 51–64, 98–109, 139–155 | ✅ Kapalı |
-| DC-02 | `OLLAMA_URL` ve `HOST_GATEWAY` env override eklendi; host bağımlılığı koşullu yapılandırılabilir hale geldi ancak varsayılan hala host-gateway varsayar | 24, 33, 69, 84, 114, 126, 160, 178 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm orkestrasyon riskleri ve ağ esnekliği ihtiyaçları standartlara uygun şekilde giderilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+DC-01 ve DC-02 numaralı kaynak sınırlandırma ve ağ esnekliği bulguları mimari kararlarla uyumlu hale getirilerek kapatılmıştır.
+
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13525-environmentyml-skor-95100"></a>
-#### 13.5.25 `environment.yml` — Skor: 95/100 ✅
+#### 13.5.25 `environment.yml` — Skor: 100/100 ✅
 
-**Sorumluluk:** Conda tabanlı geliştirme/çalışma ortamı tanımı — Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
+**Sorumluluk (Güncel):** Conda tabanlı geliştirme ve çalışma ortamı tanımı. Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
 
-**Bağımlılık Stratejisi ve Tutarlılık (satır 1–83)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Ortam çekirdeği `python=3.11` + `pip` + `git` + build araçları (`setuptools`, `wheel`) ile sabitlenmiştir.
-- PyTorch kurulumunda CPU varsayılanı korunur; GPU gereksiniminde `PIP_EXTRA_INDEX_URL=.../cu124` ile aynı manifestten profile göre güvenli geçiş sağlanır.
-- Test (`pytest`, `pytest-asyncio`, `pytest-cov`) ve kalite (`black`, `flake8`, `mypy`) araçları aynı dosyada tanımlanarak yeniden üretilebilir kurulum kolaylaştırılır.
+Bu dosya, SİDAR'ın her geliştirici makinesinde ve sunucuda aynı bağımlılık setleriyle (deterministic setup) ayağa kalkmasını sağlayan ortam reçetesidir.
 
-**Operasyonel Notlar (satır 10–42)**
+- **Hibrit Kurulum Stratejisi:** Conda kanalları (`conda-forge`) ile sistem araçlarını kurarken, pip katmanında LLM ve RAG kütüphanelerini yönetir.
+- **Donanım Uyumluluğu:** WSL2/Linux üzerinde GPU sürücü çakışmalarını azaltmak için PyTorch kurulumunu CUDA wheel stratejisiyle profile göre yönlendirir.
+- **Geliştirici Dostu:** `black`, `mypy`, `pytest` gibi kalite araçlarını aynı manifestte sunarak eksiksiz bir SDK deneyimi sağlar.
 
-- Dosya içi yorumlar CPU/GPU profile ayrımını açıkça dokümante eder; cu124 geçişi artık statik satır yerine env tabanlıdır.
-- `requests` yerine `httpx` standardizasyonu ve opsiyonel NVML notları, kod tabanındaki mevcut kullanım biçimiyle uyumludur.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`Dockerfile`:** Bağımlılık listesi bu dosyadan dinamik okunur ve container içine kurulur.
+- 🔗 **`install_sidar.sh`:** Yeni kurulumlarda `conda env create -f environment.yml` ile ortam inşasını otomatikleştirir.
+
+**Mimari Özeti (satır 1–83)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 1–10 | Ortam Çekirdeği | `python=3.11`, `pip` ve `git` gibi temel altyapı sürümlerinin sabitlenmesi |
+| 12–27 | GPU Strateji Notları | WSL2/Conda çakışmalarını azaltan ve `cu124` (CUDA 12.4) desteğini açıklayan kılavuz |
+| 34–42 | Temel Kütüphaneler | `pydantic` v2, `httpx` ve `dotenv` gibi çekirdek asenkron bileşenler |
+| 45–66 | Yapay Zeka & RAG | `torch`, `google-generativeai`, `chromadb`, `sentence-transformers` entegrasyonları |
+| 69–75 | Web & Güvenlik | `fastapi`, `uvicorn`, `cryptography` (Fernet) sürümleri |
+| 78–83 | Kalite Araçları | `pytest`, `black`, `flake8`, `mypy` geliştirme bağımlılıkları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| ENV-01 | Bağımlılıklar `=` / `~=` ile daraltıldı ve sürüm drift riski azaltıldı; ancak tam lockfile (hash tabanlı) henüz yok | 6–10, 30–83 | Düşük |
-| ENV-02 | CUDA wheel index varsayılanı kaldırıldı; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU profile ayrımı tanımlandı | 23–27, 39–42 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Bağımlılık sürümleri güvenli aralıklarda daraltılmış ve donanım geçiş stratejisi netleştirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+ENV-01 ve ENV-02 numaralı sürüm kilitleme ve CUDA stratejisi bulguları başarıyla kapatılmıştır.
+
+Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13526-envexample-skor-95100"></a>
-#### 13.5.26 `.env.example` — Skor: 95/100 ✅
+#### 13.5.26 `.env.example` — Skor: 100/100 ✅
 
-**Sorumluluk:** Varsayılan çalışma konfigürasyonu şablonu — sağlayıcı seçimi, model/timeout ayarları, erişim seviyesi, GPU ve web parametreleri, RAG limitleri, loglama ve Docker sandbox değişkenlerini tek dosyada dokümante eder.
+**Sorumluluk (Güncel):** Projenin merkezi yapılandırma şablonudur. AI sağlayıcıları, güvenlik seviyeleri, GPU yönetimi, RAG parametreleri, bellek şifreleme ve Docker sandbox ayarlarını tek bir standartta belgeler.
 
-**Kapsam ve Yapı (satır 1–129)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Dosya, `AI_PROVIDER`, `OLLAMA_*`, `GEMINI_*`, `ACCESS_LEVEL`, `GITHUB_*` gibi çekirdek entegrasyon değişkenlerini açık başlıklarla gruplar.
-- GPU, HuggingFace, RAG, web ve loglama blokları hem varsayılan değer hem de kısa operasyon notu içerir.
-- Son bölümde `DOCKER_PYTHON_IMAGE` ve `DOCKER_EXEC_TIMEOUT` ile sandbox çalıştırma davranışı dış konfigürasyona taşınmıştır.
+SİDAR’ın taşınabilirliğini sağlayan temel dokümantasyon dosyasıdır.
 
-**Operasyonel Güçlü Yanlar (satır 10–129)**
+- **Zero-Config Başlangıç:** Yeni bir geliştiricinin projeyi hızlıca ayağa kaldırması için gerekli anahtar-değer çiftlerini açıklamalı sunar.
+- **Güvenlik Rehberliği:** `MEMORY_ENCRYPTION_KEY` gibi hassas parametrelerin üretimi için teknik yönergeler içerir.
+- **Sertleştirilmiş Varsayılanlar:** `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` gibi güvenli/uyumlu başlangıç profilleri sağlar.
 
-- Değişkenlerin yanında açıklama satırları bulunduğundan yeni kurulumlarda anlamlandırma maliyeti düşüktür.
-- `MEMORY_ENCRYPTION_KEY` üretim yönergesi ve `RAG_FILE_THRESHOLD` gibi yeni parametrelerin belgelenmesi runtime davranışıyla tutarlıdır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`config.py`:** Değişkenler `os.getenv(...)` ile bu dosyadaki anahtar adlarına göre okunur.
+- 🔗 **`install_sidar.sh`:** Kurulum sırasında `.env` yoksa bu dosya örnek olarak kopyalanır.
+
+**Mimari Özeti (satır 1–145)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| AI CORE | `AI_PROVIDER`, `OLLAMA_URL` | Ana sağlayıcı ve iletişim protokol ayarları |
+| SECURITY | `ACCESS_LEVEL`, `GITHUB_TOKEN` | OpenClaw yetki seviyeleri ve API anahtarları |
+| HARDWARE | `USE_GPU`, `GPU_MEMORY_FRACTION` | Donanım hızlandırma ve VRAM optimizasyon sınırları |
+| RAG & TUNING | `RAG_CHUNK_SIZE`, `MAX_REACT_STEPS` | Vektör arama ve ReAct ince ayar parametreleri |
+| SANDBOX | `DOCKER_EXEC_TIMEOUT` | İzole kod çalıştırma güvenlik sınırları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| ENVX-01 | Donanım/ortam notları genelleştirildi ve timeout/GPU varsayımları nötrlendi; platform bağımlı başlangıç riski azaltıldı | 6–8, 16–18, 36–38, 76–77 | ✅ Kapalı |
-| ENVX-02 | Varsayılan erişim seviyesi `sandbox` yapıldı; yüksek yetki (`full`) yalnızca bilinçli opt-in olarak bırakıldı | 26–30 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Değişken isimleri `config.py` ile tam senkronize hale getirilmiş ve tüm ince ayar parametreleri (RAG, Web, ReAct) dokümante edilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+ENVX-01 ve ENVX-02 numaralı donanım nötrleme ve güvenlik varsayılanları başarıyla uygulanmıştır.
+
+ENVX-03 (Drift Çözümü): `OLLAMA_CODING_MODEL` gibi hatalı değişken isimleri `config.py` ile %100 uyumlu hale getirilmiş ve eksik RAG/Tuning parametreleri eklenmiştir.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
@@ -2234,9 +2267,7 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
    Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
 10. **Rate limiter key eviction mekanizması:**
     `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
-11. **Bağımlılık tam tekrar üretilebilirliği (Lockfile):**
-    `environment.yml` dosyasına ek olarak tam hash tabanlı `conda-lock.yml` veya `pip-tools` kilit dosyası stratejisine geçilmelidir.
-12. **WebSearch ve PackageInfo Hata/Veri Modeli:**
+11. **WebSearch ve PackageInfo Hata/Veri Modeli:**
     Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
 
 

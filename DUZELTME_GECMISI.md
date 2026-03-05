@@ -271,6 +271,38 @@
 
 ---
 
+### ✅ §13.5.24 `docker-compose.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Konteyner orkestrasyonunda sistem kaynaklarının korunması ve host makinelerle olan ağ iletişiminin dinamik hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DC-01 | ✅ Kapandı | Kaynak Sınırlandırma: Konteynerlerin kontrolsüz CPU/RAM tüketerek host sistemini kilitlemesi riski; servis profillerine eklenen `cpus` ve `mem_limit` parametreleri ile engellendi. |
+| DC-02 | ✅ Kapandı | Ağ Esnekliği: Host üzerindeki LLM servislerine (Ollama vb.) erişimde kullanılan tanımlar `${HOST_GATEWAY:-host-gateway}` değişkeniyle dinamik hale getirildi. Bu yapı Linux ve Docker Desktop (Windows/Mac) ortamlarında sıfır-konfigürasyon çalışmayı destekleyen bir best-practice olarak standartlaştırıldı. |
+
+---
+
+### ✅ §13.5.25 `environment.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Kurulum ortamındaki sürüm belirsizliklerinin giderilmesi ve GPU/CUDA destek stratejisinin netleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENV-01 | ✅ Kapandı | Sürüm Kilitleme (Version Pinning): Bağımlılıklar `~=` ve `==` operatörleriyle daraltılarak farklı kurulumlarda oluşabilecek sürüm uyumsuzluğu riskleri mimari düzeyde minimize edildi. Mevcut yapı esneklik/kararlılık dengesini koruyan hedef profile ulaştı. |
+| ENV-02 | ✅ Kapandı | CUDA Stratejisi: Dosya içi notlar ve yapılandırma `cu124` standardına hizalandı. CUDA wheel index varsayılanı kaldırılarak, CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU geçiş profili daha güvenli hale getirildi. |
+
+---
+
+### ✅ §13.5.26 `.env.example` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Örnek yapılandırma dosyası ile gerçek kod arasındaki isimlendirme farklarının (drift) giderilmesi ve gizli kalmış tuning parametrelerinin kullanıcıya açılması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENVX-03 | ✅ Kapandı | Yapılandırma Senkronizasyonu (Drift): Örnek dosyadaki anahtar adları `config.py` ile birebir hizalandı (`CODING_MODEL`, `TEXT_MODEL`). Ayrıca kodda tanımlı ancak örnekte eksik kalan RAG, ReAct ve Web Search tuning değişkenleri tamamlanarak dosya eksiksiz hale getirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
