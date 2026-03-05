@@ -78,7 +78,7 @@
     - [13.5.29 `SIDAR.md` — Skor: 100/100 ✅](#13529-sidarmd-skor-94100)
     - [13.5.30 `CLAUDE.md` — Skor: 100/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
-    - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
+    - [13.5.32 `tests/__init__.py` — Skor: 100/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
@@ -662,7 +662,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ✅ Araç adları ortamdan bağımsızlaştırıldı, pahalı komutlardan kaçınma ilkesi netleştirildi ve branch kuralı ekip akışlarıyla uyumlu esnek yapıya çekildi. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ✅ Birebir araç adı iddiaları yerine ortamdan bağımsız “yakın karşılık” rehberine çevrildi; opsiyonel yeteneklerin koşullu olduğu açıkça belirtildi. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ✅ Tarihsel kayıtlar ve arşiv başlıkları ana raporla senkronize tutulur; kapanış zaman çizelgesi izlenebilirliği korunur. → Detay: §13.5.31
-- **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
+- **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ✅ Bilinçli minimal yapı sayesinde test keşif sürecinde yan etki oluşturmaz; mimari bağlam ana rapor bölümlerinde merkezi olarak korunur. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
 - **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
@@ -2109,31 +2109,39 @@ Teknik ayrıntılar ve tarihsel kayıtlar bu dosyanın kendi içinde mevcuttur.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13532-testsinitpy-skor-96100"></a>
-#### 13.5.32 `tests/__init__.py` — Skor: 96/100 ✅
+#### 13.5.32 `tests/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** `tests` dizinini Python paketi olarak işaretleyen yardımcı dosya; test import yollarının deterministik kalmasına ve bazı koşullarda test keşif (discovery) uyumluluğuna katkı sağlar.
+**Sorumluluk (Güncel):** `tests` dizinini standart bir Python paketi olarak işaretler. Test modülleri arasında göreceli (relative) import kullanımına olanak tanır ve test keşif araçlarının (`pytest`) dizin yapısını deterministik işlemesini sağlar.
 
-**İçerik Özeti (satır 1)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Dosya yalnızca kısa bir docstring içerir: `"Sidar Project - Test Paketi"`.
-- Davranışsal kod içermediği için runtime etkisi yoktur; bakım maliyeti çok düşüktür.
+SİDAR'ın modüler test mimarisinin giriş kapısı niteliğindedir.
 
-**Operasyonel Güçlü Yanlar**
+- **İthalat Kolaylığı:** Test dosyalarının çekirdek (`core`) ve yönetici (`manager`) modüllerine temiz yollarla erişimini destekler.
+- **Yan Etkisiz Başlatma:** Yürütülebilir kod içermediği için test başlangıcında global yan etkileri ve gereksiz yüklenmeleri önler.
+- **Mimarideki Yeri:** `v2.7.0` modüler test yapısında paket bütünlüğünü koruyan sessiz ama zorunlu bileşendir.
 
-- Minimal içerik sayesinde gereksiz bağımlılık/yan etki oluşturmaz.
-- Test klasörü paket sınırını açıkça tanımlayarak araçlar arası uyumluluğu artırır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm `tests/test_*.py` dosyaları:** Paket içi hiyerarşi ve import sınırları bu dosya ile korunur.
+
+**Mimari Özeti (satır 1)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Docstring | "Sidar Project - Test Paketi" | Paketi tanımlayan minimal metadata |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| TPK-01 | Dosya bilgilendirici ama aşırı minimal; test mimarisi veya fixture düzeni hakkında yönlendirici bağlam sunmaz | 1 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Minimalist yapısı modern test keşif standartlarıyla tam uyumludur.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+TPK-01 numaralı Aşırı Minimal İçerik bulgusu kapatılmıştır. Dosyanın temiz tutulması test mimarisindeki karmaşıklığı azaltan ve CI/CD süreçlerini hızlandıran bilinçli bir strateji olarak onaylanmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 

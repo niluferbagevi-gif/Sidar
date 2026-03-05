@@ -358,6 +358,16 @@
 
 ---
 
+### ✅ §13.5.32 `tests/__init__.py` Değerlendirmesi (Tarih: 2026-03-05)
+
+**Bağlam:** Test paket işaretleyicisinin yeni modüler test yapısıyla uyumunun doğrulanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TPK-01 | ✅ Kapandı | Bilinçli Minimalizm: Dosyanın test mimarisi hakkında geniş açıklama taşımaması eksiklik değil, bir best-practice olarak değerlendirildi. Mimari bağlam ana raporun §12 ve §13.5.20 bölümlerine taşınarak dosyanın `pytest` keşif süreci için hafif ve sorunsuz kalması sağlandı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
