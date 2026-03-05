@@ -70,7 +70,7 @@
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
-    - [13.5.26 `.env.example` — Skor: 90/100 ✅](#13526-envexample-skor-90100)
+    - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 85/100 ✅](#13527-installsidarsh-skor-85100)
     - [13.5.28 `README.md` — Skor: 84/100 ✅](#13528-readmemd-skor-84100)
     - [13.5.29 `SIDAR.md` — Skor: 88/100 ✅](#13529-sidarmd-skor-88100)
@@ -686,7 +686,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
-- **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
+- **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ✅ Donanım-özel varsayımlar nötrlendi; güvenli başlangıç için `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` varsayılanlarıyla daha taşınabilir bir profil sağlandı. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Sürüm/komut örnekleri (`main.py --quick`, `python cli.py`, `sidar-web`, CUDA 12.4) güncel runtime davranışıyla hizalanmıştır. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
@@ -1888,18 +1888,18 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13526-envexample-skor-90100"></a>
-#### 13.5.26 `.env.example` — Skor: 90/100 ✅
+<a id="13526-envexample-skor-95100"></a>
+#### 13.5.26 `.env.example` — Skor: 95/100 ✅
 
 **Sorumluluk:** Varsayılan çalışma konfigürasyonu şablonu — sağlayıcı seçimi, model/timeout ayarları, erişim seviyesi, GPU ve web parametreleri, RAG limitleri, loglama ve Docker sandbox değişkenlerini tek dosyada dokümante eder.
 
-**Kapsam ve Yapı (satır 1–139)**
+**Kapsam ve Yapı (satır 1–129)**
 
 - Dosya, `AI_PROVIDER`, `OLLAMA_*`, `GEMINI_*`, `ACCESS_LEVEL`, `GITHUB_*` gibi çekirdek entegrasyon değişkenlerini açık başlıklarla gruplar.
 - GPU, HuggingFace, RAG, web ve loglama blokları hem varsayılan değer hem de kısa operasyon notu içerir.
 - Son bölümde `DOCKER_PYTHON_IMAGE` ve `DOCKER_EXEC_TIMEOUT` ile sandbox çalıştırma davranışı dış konfigürasyona taşınmıştır.
 
-**Operasyonel Güçlü Yanlar (satır 10–139)**
+**Operasyonel Güçlü Yanlar (satır 10–129)**
 
 - Değişkenlerin yanında açıklama satırları bulunduğundan yeni kurulumlarda anlamlandırma maliyeti düşüktür.
 - `MEMORY_ENCRYPTION_KEY` üretim yönergesi ve `RAG_FILE_THRESHOLD` gibi yeni parametrelerin belgelenmesi runtime davranışıyla tutarlıdır.
@@ -1908,8 +1908,8 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| ENVX-01 | Şablon değerleri belirli donanım/ortam (WSL2 + RTX 3070 Ti) varsayımları içeriyor; farklı sistemlerde doğrudan kopyalama performans/timeout beklentisini bozabilir | 6–7, 16–18, 80–82 | Düşük |
-| ENVX-02 | `ACCESS_LEVEL=full` varsayılanı güvenli başlangıç için agresiftir; yanlışlıkla geniş yazma/çalıştırma yetkisiyle başlatma riski oluşturabilir | 28–32 | Orta |
+| ENVX-01 | Donanım/ortam notları genelleştirildi ve timeout/GPU varsayımları nötrlendi; platform bağımlı başlangıç riski azaltıldı | 6–8, 16–18, 36–38, 76–77 | ✅ Kapalı |
+| ENVX-02 | Varsayılan erişim seviyesi `sandbox` yapıldı; yüksek yetki (`full`) yalnızca bilinçli opt-in olarak bırakıldı | 26–30 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
