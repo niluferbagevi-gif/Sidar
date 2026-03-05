@@ -48,7 +48,7 @@
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
     - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
-    - [13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅](#1352-agentsidaragentpy-skor-95100)
+    - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
@@ -810,119 +810,47 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1352-agentsidaragentpy-skor-95100"></a>
-#### 13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅
+#### 13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Ana ajan — ReAct döngüsü, araç dispatch, bellek yönetimi, LLM stream, vektör arşivleme.
+**Sorumluluk (Güncel):** Ana ajan omurgası. ReAct (Reason + Act) karar döngüsü, araç dispatch yönetimi, yapısal çıktı (Pydantic) doğrulaması, asenkron alt görevler ve sonsuz vektör hafıza (ChromaDB) arşivlemesinin merkezidir.
 
-**Modül Düzeyi Format Sabitleri (satır 37–48)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-```python
-_FMT_TOOL_OK  = "[ARAÇ:{name}:SONUÇ]\n===\n{result}\n===\n..."
-_FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"
-_FMT_SYS_ERR  = "[Sistem Hatası] {msg}"
-```
+Bu dosya, kullanıcıdan gelen doğal dil girdilerini analiz edip eyleme dönüştüren SİDAR'ın beynidir.
 
-Ana `_react_loop` bu format sabitlerini tutarlı biçimde kullanır. ✅ **Madde 6.9 kapatıldı:** `_tool_subtask` ve döngü uyarı mesajları da sabit formatlara (`_FMT_TOOL_ERR`, `_FMT_TOOL_STEP`, `_FMT_SYS_WARN`) geçirildi.
+- **Akıllı Yönlendirme & Paralellik:** Basit istekleri ReAct döngüsüne girmeden `_try_direct_tool_route` ile saniyeler içinde çözer. Birden fazla güvenli (okuma) aracı `_tool_parallel` ile eşzamanlı (`async gather`) çalıştırarak hızı maksimize eder.
+- **Hata Toleransı (Resilience):** Pydantic `ToolCall` modeli ve `JSONDecoder.raw_decode` sayesinde LLM'in ürettiği bozuk JSON'ları, gömülü kod bloklarını veya eksik alanları çökmeden (gracefully) toparlar ve modele düzeltme uyarısı gönderir.
+- **Sonsuz Hafıza (Vector Archive):** Uzun sohbetlerde token taşmasını engellemek için `_summarize_memory` fonksiyonuyla eski konuşmaları ChromaDB'ye (RAG) indeksler ve belleği temizler.
 
-**Async Lock — Lazy Init (satır 90, 155–156)**
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-```python
-self._lock = None           # __init__: event loop henüz yok
-# respond() ilk çağrıldığında:
-if self._lock is None:
-    self._lock = asyncio.Lock()
-```
+- 🔗 `core/llm_client.py`: Model ile API üzerinden asenkron streaming iletişimi kurar.
+- 🔗 `agent/auto_handle.py`: Ajan devreye girmeden önce bilinen statik regex kalıplarını yakalayarak LLM maliyetini sıfırlar.
+- 🔗 Tüm `managers/` sınıfları: GitHub, Code, Todo, WebSearch gibi yöneticiler bu ajan tarafından `_execute_tool` tablosu üzerinden tetiklenir.
+- 🔗 `SIDAR.md` / `CLAUDE.md`: Çalışma anında mtime-cache ile bu talimat dosyalarını okuyup sistem promptuna dahil eder.
 
-Lock, `respond()` çağrıldığı anda ve zaten aktif bir event loop içinde oluşturulur; import/init anında oluşturulması event loop uyumsuzluğuna yol açardı.
+**Mimari Özeti (satır 1–1100+)**
 
-**JSONDecoder ile Greedy Regex Çözümü (satır 262–275)**
-
-```python
-_decoder = json.JSONDecoder()
-_idx = raw_text.find('{')
-while _idx != -1:
-    try:
-        json_match, _ = _decoder.raw_decode(raw_text, _idx)
-        break
-    except json.JSONDecodeError:
-        _idx = raw_text.find('{', _idx + 1)
-```
-
-`re.search(r'\{.*\}', raw_text, re.DOTALL)` greedy regex yerine `raw_decode` ile ilk geçerli JSON nesnesi bulunur. Gömülü kod bloğu veya çoklu JSON olsa bile doğru nesne seçilir. Aynı pattern `_tool_subtask` (satır 814–818) ve `_tool_github_smart_pr` (satır 683–685) içinde de uygulanmış.
-
-**`asyncio.to_thread()` Kapsamı**
-
-| Satır(lar) | Çağrı | Açıklama |
-|------------|-------|----------|
-| 161, 172, 311 | `memory.add()` | Dosya I/O; lock içi ve lock dışı her iki noktada da sarmalı |
-| 398, 404–406, 424, 431, 438, 443 | Araç I/O (list_dir/read/write/patch/execute/audit) | Disk erişimi event loop'u bloke etmez |
-| 612, 631–638 | `run_shell` (smart PR içinde) | Kabuk çağrıları thread'e itilir |
-| 912 | `_tool_run_shell` | Genel kabuk komutu |
-| 924, 944 | glob/grep araçları | Dosya sistemi tarama thread'de |
-| 771 | `docs.add_document_from_file` | RAG dosya ekleme (U-14 çözümü) |
-| 1270–1276 | `docs.add_document` (_summarize_memory) | Vektör arşivleme (U-14 çözümü) |
-
-**`_try_direct_tool_route` — Hafif LLM Router (satır 188–221)**
-
-Tek adımlı istekleri `_DIRECT_ROUTE_ALLOWED_TOOLS` frozenset ile kısıtlı 17 güvenli araca yönlendirir. `temperature=0.0`, `json_mode=True`, `stream=False` → deterministik, yapısal çıktı. AutoHandle yakalayamazsa devreye girer; başarısız olursa `None` döner ve tam ReAct döngüsüne düşülür.
-
-**Tekrar Tespiti — Döngü Kırma (satır 315–328)**
-
-Aynı araç art arda çağrılıyorsa (`tool_name == _last_tool`) LLM'e önceki sonucu içeren zorlayıcı mesaj iletilerek `final_answer` verilmesi sağlanır; sonsuz araç döngüsü önlenir.
-
-**Sentinel Format — Web UI Entegrasyonu (satır 330–334)**
-
-```python
-yield f"\x00THOUGHT:{_thought_safe}\x00"   # düşünce akışı
-yield f"\x00TOOL:{tool_name}\x00"           # araç tetikleyici
-```
-
-`\x00` sentinel ile düşünce/araç olayları normal yanıt metninden ayrılır; web UI bu sinyalleri düşünce balonları ve araç göstergelerinde kullanır.
-
-**`_tool_subtask` — Mini ReAct Döngüsü (satır 782–848)**
-
-Bağımsız bir alt ajan olarak max 5 adımda çalışır. Claude Code'daki `Agent` tool eşdeğeri. `agent` alias'ı (`dispatch` tablosunda satır 1131) ile çağrılabilir. Not: kendi `_FMT_*` sabitlerini kullanmaz — inline string formatı.
-
-**`_tool_parallel` — Güvenli Eşzamanlı Çalıştırma (satır 859–904)**
-
-`asyncio.gather()` + `return_exceptions=True` ile birden fazla okuma aracı paralel çalıştırılır. `_PARALLEL_SAFE` frozenset (21 araç) yalnızca okuma/sorgulama araçlarına izin verir; mutasyon araçları reddedilir.
-
-**`_load_instruction_files()` — mtime Cache (satır 1197–1247)**
-
-SIDAR.md / CLAUDE.md dosyaları `path.stat().st_mtime` karşılaştırması ile izlenir. Değişiklik algılandığında cache geçersizleşir ve dosyalar taze okunur. Claude Code'un her konuşmada CLAUDE.md yeniden okumasına eşdeğer davranış.
-
-**`_tool_read_file()` — Büyük Dosya RAG Yönlendirmesi (satır 407–417)**
-
-`RAG_FILE_THRESHOLD` (varsayılan 20.000 karakter) aşıldığında dosyanın RAG deposuna eklenmesi için `docs_add_file` ve `docs_search` araç talimatı içeren açıklama döndürülür; model tekrarlı büyük dosya okumalarından caydırılır.
-
-**`_build_context()` — Runtime Durum (satır 1141–1195)**
-
-Her LLM turunda `system_prompt`'a gerçek runtime değerler eklenir: sağlayıcı, model, GPU, GitHub, RAG durumu, dosya metrikleri, aktif todo listesi ve talimat dosyaları. Hallüsinasyon riski azaltılır.
-
-**Dispatch Tablosu (satır 1077–1133)**
-
-40+ araç, alias'lar dahil:
-- `bash` / `shell` → `_tool_run_shell`
-- `ls` → `_tool_list_dir`
-- `grep` → `_tool_grep_files`
-- `agent` → `_tool_subtask`
-- `print_config_summary` → `_tool_get_config`
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 31–43 | Modül Format Sabitleri | `_FMT_TOOL_OK`, `_FMT_SYS_ERR` gibi sabitlerle LLM'e giden hata/başarı mesajlarını standardize eder |
+| 49–54 | `ToolCall` Pydantic | LLM'in üretmesi gereken katı JSON şemasını (`thought`, `tool`, `argument`) tanımlar |
+| 120–156 | `respond(...)` | Ana asenkron akış; Thread-safe lock (`_lock`), auto-handle ve bellek özetleme/arşivleme tetikleyicisi |
+| 158–190 | `_try_direct_tool_route` | ReAct döngüsüne girmeden `temperature=0` ile tek adımlı güvenli araç çalıştırma kısa yolu |
+| 192–351 | `_react_loop(...)` | Ana yapay zeka karar döngüsü; Greedy Regex yerine `raw_decode` ile JSON parse, sonsuz döngü kırıcı (loop prevention) ve Sentinel (`THOUGHT`/`TOOL`) formatlaması içerir |
+| 644–718 | `_tool_subtask(...)` | Bağımsız bir alt ajan (mini ReAct) çalıştırarak büyük görevleri parçalar (Claude Code Agent aracı eşdeğeri) |
+| 720–764 | `_tool_parallel(...)` | `_PARALLEL_SAFE` olan okuma araçlarını `asyncio.gather` ile eşzamanlı koşturur |
+| 899–947 | `_execute_tool(...)` | Geleneksel if/else zinciri yerine dict tabanlı, O(1) karmaşıklıkta fonksiyon (dispatch) yönlendiricisi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| AG-02 | `_tool_subtask` adım limiti yapılandırılabilir (`SUBTASK_MAX_STEPS`) ama üst sınır 10 ile korunuyor; daha uzun alt görevlerde çoklu çağrı stratejisi gerekebilir | 795–796 | Bilgi |
-| AG-03 | `_summarize_memory` ile ChromaDB'ye arşivlenen eski konuşmalar, RAG üzerinden boyutu sınırlandırılmadan (max_tokens/top_k olmadan) her turda doğrudan LLM'e gönderiliyor; bu durum context aşımına ve maliyet artışına yol açar. | 1260–1285 | Yüksek (H-03) |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Pydantic entegrasyonu, asenkron I/O bloklamaları ve context taşması riskleri tamamen çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| AG-01 | ✅ Kapandı | `_tool_subtask` artık `ToolCall.model_validate(...)` ile şema doğrulaması yapıyor; bozuk/JSON-dışı çıktıda `_FMT_SYS_ERR/_FMT_SYS_WARN` geri beslemesiyle döngüyü kırmadan devam ediyor. |
-| 6.9 | ✅ Kapalı | `_tool_subtask` ve döngü düzeltme mesajları format sabitleriyle hizalandı (`_FMT_TOOL_ERR`, `_FMT_TOOL_STEP`, `_FMT_SYS_WARN`) |
+AG-02 ve H-03 (AG-03) numaralı alt görev sınırlandırmaları ve Sonsuz Hafıza context taşması (token limit) hataları başarıyla giderilmiş ve bulgular kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 

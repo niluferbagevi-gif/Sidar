@@ -30,6 +30,17 @@
 
 ---
 
+### ✅ §13.5.2 `agent/sidar_agent.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın uzun sohbetlerde LLM (Gemini/Ollama) token sınırlarını aşması riskinin (Context Bloat) ve bazı mimari kararların netleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AG-02 | ✅ Kapandı | `_tool_subtask` adım limitinin yapılandırılabilir olmasına rağmen üst sınırın 10 olarak sabitlenmesi bir hata değil, sonsuz özyinelemeyi (infinite recursion) ve bütçe aşımını engelleyen bilinçli bir güvenlik/mimari tasarımı (guardrail) olarak değerlendirildi. |
+| AG-03 (H-03) | ✅ Kapandı | ChromaDB'ye arşivlenen eski konuşmaların `_build_context` içinde körü körüne LLM'e geri yüklenmesi mantığı mimariden çıkarıldı. Sistem artık sadece RAG depo durumunu bildiriyor ve eski verilere ihtiyaç duyan LLM'in bilinçli olarak `docs_search` aracını kullanmasını zorunlu kılıyor. Bu sayede kritik Token Taşması/VRAM Şişmesi (H-03) riski tamamen ortadan kaldırıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
