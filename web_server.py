@@ -62,15 +62,10 @@ async def get_agent() -> SidarAgent:
 
 app = FastAPI(title="Sidar Web UI", docs_url=None, redoc_url=None)
 
-# CORS: Yalnızca localhost'tan gelen isteklere izin ver (port cfg.WEB_PORT'tan okunur)
-_ALLOWED_ORIGINS = [
-    f"http://localhost:{cfg.WEB_PORT}",
-    f"http://127.0.0.1:{cfg.WEB_PORT}",
-    f"http://0.0.0.0:{cfg.WEB_PORT}",
-]
+# CORS: localhost/loopback kökenlerine porttan bağımsız izin ver.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
@@ -89,7 +84,10 @@ _RATE_LIMIT           = cfg.RATE_LIMIT_CHAT       # /chat — LLM çağrısı ba
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS  # Diğer POST/DELETE — mutasyon endpoint'leri
 _RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO     # GET I/O endpoint'leri (git, dosya, vb.)
 _RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW     # saniye cinsinden pencere (tüm limitler için)
-_RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo", "/rag/docs", "/rag/search"])
+_RATE_GET_IO_PATHS    = (
+    "/git-info", "/git-branches", "/files", "/file-content",
+    "/github-prs", "/github-repos", "/todo", "/rag/", "/sessions",
+)
 _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
@@ -178,13 +176,15 @@ async def rate_limit_middleware(request: Request, call_next):
                 {"error": "Çok fazla işlem isteği. Lütfen bir dakika bekleyin."},
                 status_code=429,
             )
-    elif request.method == "GET" and request.url.path in _RATE_GET_IO_PATHS:
-        # Dosya sistemi / Git I/O endpoint'leri — orta limit (30 req/60s)
-        if await _is_rate_limited(f"{client_ip}:get", _RATE_LIMIT_GET_IO):
-            return JSONResponse(
-                {"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."},
-                status_code=429,
-            )
+    elif request.method == "GET":
+        is_io_route = any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS)
+        if is_io_route:
+            # Dosya sistemi / Git I/O endpoint'leri — orta limit (30 req/60s)
+            if await _is_rate_limited(f"{client_ip}:get", _RATE_LIMIT_GET_IO):
+                return JSONResponse(
+                    {"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."},
+                    status_code=429,
+                )
 
     return await call_next(request)
 
@@ -778,7 +778,7 @@ def main() -> None:
         app,
         host=args.host,
         port=args.port,
-        log_level=args.log,
+        log_level=args.log.lower(),
     )
 
 
