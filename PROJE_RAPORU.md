@@ -72,7 +72,7 @@
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
-    - [13.5.28 `README.md` — Skor: 84/100 ✅](#13528-readmemd-skor-84100)
+    - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 88/100 ✅](#13529-sidarmd-skor-88100)
     - [13.5.30 `CLAUDE.md` — Skor: 89/100 ✅](#13530-claudemd-skor-89100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
@@ -688,7 +688,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ✅ Donanım-özel varsayımlar nötrlendi; güvenli başlangıç için `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` varsayılanlarıyla daha taşınabilir bir profil sağlandı. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ✅ Varsayılan akışta sistem yükseltmesi ve uzaktan script çalıştırma kapatıldı; her ikisi de açık opt-in env bayrağı gerektirecek şekilde güvenli hale getirildi. → Detay: §13.5.27
-- **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Sürüm/komut örnekleri (`main.py --quick`, `python cli.py`, `sidar-web`, CUDA 12.4) güncel runtime davranışıyla hizalanmıştır. → Detay: §13.5.28
+- **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Kurulum güvenlik modeli (`ALLOW_*` opt-in), `.env` anahtar adları ve güvenli erişim örnekleri güncel runtime davranışıyla hizalandı. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
@@ -1956,8 +1956,8 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13528-readmemd-skor-84100"></a>
-#### 13.5.28 `README.md` — Skor: 84/100 ✅
+<a id="13528-readmemd-skor-92100"></a>
+#### 13.5.28 `README.md` — Skor: 92/100 ✅
 
 **Sorumluluk:** Proje için birincil kullanıcı dokümantasyonu — mimari özet, özellik listesi, kurulum adımları, çalışma komutları ve temel operasyon bilgisini tek dosyada sunar.
 
@@ -1979,6 +1979,8 @@ except Exception as exc:
 | RM-01 | README üst sürüm satırları `v2.7.0` ile hizalandı; önceki sürüm drift’i kapatıldı | 3, 13 | ✅ Kapalı |
 | RM-02 | Docker kullanım örneği `sidar-web` servisine güncellendi; compose servis adıyla hizalı | 199 | ✅ Kapalı |
 | RM-03 | README içindeki CUDA referansları `12.4 (cu124)` ile hizalandı; teknik tutarsızlık kapatıldı | 72, 376 | ✅ Kapalı |
+| RM-04 | Kurulum bölümüne `install_sidar.sh` için güvenli opt-in bayrakları (`ALLOW_APT_UPGRADE`, `ALLOW_OLLAMA_INSTALL_SCRIPT`) eklendi; betik davranışıyla dokümantasyon hizalandı | 208–215 | ✅ Kapalı |
+| RM-05 | `.env` örnek anahtarları (`GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`, `MEMORY_ENCRYPTION_KEY`) ve web erişim örneği (`--level sandbox`) güncel varsayımlarla hizalandı | 233–234, 431, 439–440 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
