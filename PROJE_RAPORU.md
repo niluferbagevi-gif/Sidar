@@ -105,6 +105,7 @@
 - [24. Session 15 — 2026-03-06 Altyapı ve Sandbox İzolasyon Güncellemesi](#session-15-altyapi-ve-sandbox-izolasyon-guncellemesi)
 - [25. Session 16 — 2026-03-06 Konfigürasyon ve Rate Limit Merkezileştirmesi](#session-16-konfigurasyon-ve-rate-limit-merkezilestirmesi)
 - [26. Session 17 — 2026-03-06 Başlatıcı (main.py) Uyum ve Hata Giderme](#session-17-baslatici-mainpy-uyum-ve-hata-giderme)
+- [27. Session 18 — 2026-03-06 Web Sunucusu Güvenlik ve CORS İyileştirmeleri](#session-18-web-sunucusu-guvenlik-ve-cors-iyilestirmeleri)
   - [Özet](#ozet)
 
 ---
@@ -945,6 +946,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm asenkron mimari riskler
 WS-01, WS-02 ve WS-03 numaralı event-loop bloklama, lock başlatma (Deprecation) ve rate-limit race condition bulguları başarıyla çözülmüş ve kapatılmıştır.
 
 ✅ Rate Limiting (hız sınırı) parametreleri hardcoded yapıdan kurtarılarak tamamen `config.py` ve `.env` üzerinden dinamik yönetilebilir hale getirildi.
+
+✅ Hız sınırı (Rate Limit) mekanizmasındaki tam eşleşme bypass zafiyeti (`startswith` kontrolüne geçilerek) kapatıldı. Sabit (statik) portlu CORS yapısı esnetilerek Regex tabanlı dinamik port desteği sağlandı ve Uvicorn log parametresi `.lower()` ile güvenli hale getirildi.
 
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2666,16 +2669,30 @@ Bu turda uygulamanın ana giriş kapısı olan `main.py` başlatıcısı, merkez
 
 **Session 17 çıktısı:** Başlatıcı sihirbazı (Wizard) ve CLI argümanlarının yanlış varsayılan değerlerle (eski port veya modelle) sistemi ayağa kaldırma veya Uvicorn ValueError nedeniyle çökme riski tamamen ortadan kaldırılmıştır.
 
+
+<a id="session-18-web-sunucusu-guvenlik-ve-cors-iyilestirmeleri"></a>
+## 27. Session 18 — 2026-03-06 Web Sunucusu Güvenlik ve CORS İyileştirmeleri
+
+Bu turda, asenkron web sunucusunun (`web_server.py`) ağ sınırları, CORS ayarları ve kötü niyetli istekleri (spam/DoS) engelleyen Rate Limit mekanizması güçlendirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S18-01 | `web_server.py` | ✅ Kusursuz | Dinamik URL'lerin (`/sessions/{id}`, vb.) hız sınırını aşmasını sağlayan (bypass) yapı `startswith` ile kapatıldı. |
+| S18-02 | `web_server.py` | ✅ Kusursuz | CORS (Cross-Origin) ayarları sabit porttan regex yapısına geçirilerek, projenin farklı portlarda (örn: 8080) çalıştırılması sağlandı. |
+| S18-03 | `web_server.py` | ✅ Kusursuz | `uvicorn.run` log seviyesi büyük harfe karşı `.lower()` ile zorlanarak olası çökme riskleri giderildi. |
+
+**Session 18 çıktısı:** Web arayüzünün sömürüye (exploit) ve çökertilmeye açık yönleri kapatılarak ağ güvenliği, erişilebilirlik ve çalışma kararlılığı üretim seviyesinde güçlendirilmiştir.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 39 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02) |
+| Tespit edilen bulgu | 42 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02 + S18-01–S18-03) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 61 |
+| Kümülatif toplam kapalı | 64 |
 | Aktif açık sorun | **2** |
 
 ---
