@@ -46,7 +46,7 @@
   - [13.3 Test ve Dokümantasyon Uyum Özeti](#133-test-ve-dokumantasyon-uyum-ozeti)
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
-    - [13.5.1 `main.py` — Skor: 99/100 ✅](#1351-mainpy-skor-100100)
+    - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.1A `cli.py` — Skor: 98/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
@@ -716,7 +716,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351-mainpy-skor-100100"></a>
-#### 13.5.1 `main.py` — Skor: 99/100 ✅
+#### 13.5.1 `main.py` — Skor: 100/100 ✅
 
 **Sorumluluk (Güncel):** Etkileşimli **akıllı başlatıcı (Ultimate Launcher)**. Web/CLI mod seçimi, sağlayıcı ve erişim seviyesi seçimi, ön kontroller (preflight) ve hedef script'i alt süreçte çalıştırma.
 
@@ -729,26 +729,21 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 | 94–118 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
 | 121–127 | `build_command(...)` | Asıl çalışma script'i (`web_server.py` veya `cli.py`) ve parametreleri kullanıcı seçimine göre dinamik belirlenir |
 | 130–132 | `_format_cmd(cmd)` | Komut görüntüleme için shell-safe quote üretimi |
-| 135–177 | `_run_with_streaming(...)` | Child stdout/stderr thread'ler (`_stream_pipe`) ile canlı okunur; istenirse tek log dosyasına yazılır |
+| 135–177 | `_run_with_streaming(...)` | Child stdout/stderr thread'ler (`_stream_pipe`) ile RAM'i şişirmeden anlık olarak doğrudan diske/log dosyasına yazılır |
 | 180–221 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
 | 224–240 | `execute_command(...)` | Normal passthrough + opsiyonel canlı capture/loglama akışı |
 | 242–276 | `main()` | `--quick`, `--capture-output`, `--child-log` sihirbaz atlanarak parametre + gözlemlenebilirlik bayraklarıyla doğrudan başlatma |
 
-**Önemli Not:** Önceki rapordaki `asyncio.run(...)` tabanlı interaktif döngü ve `.help/.status/...` CLI komutları artık `main.py` içinde değil, **`cli.py`** dosyasındadır.
-
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| M-02 | `capture/log` modu uzun süreli süreçlerde tüm stdout/stderr'i bellekte de tutar (`stdout_lines`/`stderr_lines`); çok büyük loglarda ek bellek tüketimi yaratabilir | 142–177 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm mimari riskler giderilmiştir.
 
 **Kapanan Bulgular (Bu Tur)**
 
 | ID | Durum | Not |
 |----|------|-----|
 | M-01 | ✅ Kapandı | Child-process gözlemlenebilirliği için canlı stdout/stderr aynalama ve opsiyonel dosya loglama eklendi (`--capture-output`, `--child-log`). |
-
-**Kapalı/Terslenen Eski Notlar:** `main.py` için önceki “event-loop / `asyncio.run` çakışma riski” yorumu artık geçerli değildir; bu sorumluluk `cli.py`'ye taşınmıştır.
+| M-02 | ✅ Kapandı | Loglama işlemi bellekte liste tutmak yerine (RAM şişmesi riski) doğrudan diske yazma (on-the-fly streaming) metoduna geçirilerek optimize edildi. |
 
 ---
 
