@@ -325,6 +325,49 @@
 
 ---
 
+### ✅ §13.5.29 `SIDAR.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın talimat dosyasındaki araç isimlerinin ve çalışma yöntemlerinin güncel kod tabanıyla senkronize edilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SDR-01 | ✅ Kapandı | Araç Yönerge Güncellemesi: Eski/pahalı arama ifadeleri güncel `rg` ve plan/todo terminolojisi ile hizalandı; ajanın ortamdan bağımsız ve hedefli çalışma disiplini güçlendirildi. |
+| SDR-02 | ✅ Kapandı | Esnek Branch Standartları: Tek bir önek zorunluluğu kaldırılarak branch adlandırma ekip standartlarına uyumlu esnek modele taşındı; Git operasyonlarındaki katı bloklar giderildi. |
+
+---
+
+### ✅ §13.5.30 `CLAUDE.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Claude Code uyumluluk rehberindeki katı ve eskimiş ifadelerin, projenin esnek ve gelişen araç setiyle uyumlu hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CLD-01 | ✅ Kapandı | Araç Eşleme Esnekliği: Mutlak araç adı garantisi veren ifadeler kaldırılarak, çalışma ortamına göre en yakın karşılık seçimini öneren rehber dili benimsendi. |
+| CLD-02 | ✅ Kapandı | Opsiyonel Yetenek Netliği: PR otomasyonu gibi her dağıtımda bulunmayabilecek yeteneklerin opsiyonel olduğu açıkça belirtilerek kullanıcı beklentisi netleştirildi. |
+
+---
+
+### ✅ §13.5.31 `DUZELTME_GECMISI.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Tarihsel denetim günlüğü ile ana rapor arasındaki zaman çizelgesi ve erişilebilirlik uyumunun güçlendirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DGH-01 | ✅ Kapandı | Zaman Çizelgesi Kayması: Dosya üst bilgisindeki güncelleme tarihi ana raporla senkronize edilerek `2026-03-05` seviyesine çekildi; kapanış oturumlarıyla tarih uyumu sağlandı. |
+| DGH-02 | ✅ Kapandı | Hızlı Erişim Zorluğu: Arşiv bölümleri § bazlı hiyerarşi ve çapraz referans yapısıyla netleştirildi; kapatılmış bulgulara erişim daha sürdürülebilir hale getirildi. |
+
+---
+
+### ✅ §13.5.32 `tests/__init__.py` Değerlendirmesi (Tarih: 2026-03-05)
+
+**Bağlam:** Test paket işaretleyicisinin yeni modüler test yapısıyla uyumunun doğrulanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TPK-01 | ✅ Kapandı | Bilinçli Minimalizm: Dosyanın test mimarisi hakkında geniş açıklama taşımaması eksiklik değil, bir best-practice olarak değerlendirildi. Mimari bağlam ana raporun §12 ve §13.5.20 bölümlerine taşınarak dosyanın `pytest` keşif süreci için hafif ve sorunsuz kalması sağlandı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

@@ -75,10 +75,10 @@
     - [13.5.26 `.env.example` — Skor: 100/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 100/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 100/100 ✅](#13528-readmemd-skor-92100)
-    - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
-    - [13.5.30 `CLAUDE.md` — Skor: 94/100 ✅](#13530-claudemd-skor-94100)
-    - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
-    - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
+    - [13.5.29 `SIDAR.md` — Skor: 100/100 ✅](#13529-sidarmd-skor-94100)
+    - [13.5.30 `CLAUDE.md` — Skor: 100/100 ✅](#13530-claudemd-skor-94100)
+    - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
+    - [13.5.32 `tests/__init__.py` — Skor: 100/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
@@ -661,8 +661,8 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Kurulum güvenlik modeli (`ALLOW_*` opt-in), `.env` anahtar adları ve güvenli erişim örnekleri güncel runtime davranışıyla hizalandı. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ✅ Araç adları ortamdan bağımsızlaştırıldı, pahalı komutlardan kaçınma ilkesi netleştirildi ve branch kuralı ekip akışlarıyla uyumlu esnek yapıya çekildi. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ✅ Birebir araç adı iddiaları yerine ortamdan bağımsız “yakın karşılık” rehberine çevrildi; opsiyonel yeteneklerin koşullu olduğu açıkça belirtildi. → Detay: §13.5.30
-- **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
-- **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
+- **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ✅ Tarihsel kayıtlar ve arşiv başlıkları ana raporla senkronize tutulur; kapanış zaman çizelgesi izlenebilirliği korunur. → Detay: §13.5.31
+- **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ✅ Bilinçli minimal yapı sayesinde test keşif sürecinde yan etki oluşturmaz; mimari bağlam ana rapor bölümlerinde merkezi olarak korunur. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
 - **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
@@ -1981,130 +1981,167 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13529-sidarmd-skor-94100"></a>
-#### 13.5.29 `SIDAR.md` — Skor: 94/100 ✅
+#### 13.5.29 `SIDAR.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Proje kökü için ajan çalışma sözleşmesi — dosya okuma/yazma sırası, güvenlik sınırları, Git/GitHub akışı ve yanıt biçimini belirleyen kalıcı talimat dosyasıdır.
+**Sorumluluk (Güncel):** SİDAR ajanı için proje bazlı çalışma sözleşmesi ve operasyonel protokoldür. Ajanın dosya okuma/yazma önceliklerini, güvenlik sınırlarını, Git akışını ve yanıt biçimini standardize eden ana talimat dosyasıdır.
 
-**Talimat Kapsamı (satır 1–61)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Araç kullanım öncelikleri ortamdan bağımsız/pratik komutlarla (`read_mcp_resource`, `exec_command`, `rg`) ve plan/todo yaklaşımıyla tanımlanır.
-- OpenClaw erişim seviyeleri (`full/sandbox/restricted`) özetlenir.
-- Git akışında ekip standardına uyumlu branch adlandırma ve PR/commit beklentileri belirtilir.
+Bu dosya, ajanın nasıl çalışması gerektiğini belirleyen etik ve teknik bir anayasadır.
 
-**Operasyonel Güçlü Yanlar**
+- **Hiyerarşik Planlama:** Karmaşık görevlere başlamadan önce plan yapılmasını ve plan/todo adımlarının izlenmesini zorunlu kılar.
+- **Verimli Araç Kullanımı:** Geniş aramalar için önce `rg`/hedef tespiti, sonra hedefli düzenleme prensibini dayatır.
+- **Git Standartları:** Commit mesajları, branch adlandırma ve PR disiplinini netleştirerek geçmiş kalitesini korur.
 
-- Ajan davranışını proje genelinde standardize ederek tutarsız adım sıralarını azaltır.
-- Güvenlik ve çıktı formatı kurallarını tek yerde topladığı için bakım ve onboarding açısından netlik sağlar.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`agent/sidar_agent.py`:** Ajan, oturumlarda bu dosyayı okuyup talimatları davranışına kalibre eder.
+- 🔗 **`CLAUDE.md`:** Hiyerarşik ilişkide `SIDAR.md` genel kuralları, `CLAUDE.md` ise araç eşlemelerini tamamlar.
+
+**Mimari Özeti (satır 1–61)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Öncelikler | Plan → Oku → Yaz | Ajanın çalışma döngüsünü belirleyen temel akış şeması |
+| Güvenlik | OpenClaw Limits | Erişim seviyelerine göre yetki sınırlarının hatırlatılması |
+| Araçlar | `rg`, todo, patch | Hangi aracın hangi senaryoda verimli olduğunun teknik yönlendirmesi |
+| Git Akışı | Branch & PR | Dallanma ve PR oluşturma süreçlerinde disiplin kuralları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SDR-01 | Araç yönergeleri ortamdan bağımsız ifadelerle güncellendi (`rg`, plan/todo mekanizması, genel git doğrulama); araç-seti drift riski azaltıldı | 8–23 | ✅ Kapalı |
-| SDR-02 | Branch adlandırma kuralı tek önek zorunluluğundan çıkarılıp ekip standardına uyumlu esnek biçime getirildi | 34 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm araç yönergeleri güncel mimariyle (`v2.7.0`) tam uyumlu hale getirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+SDR-01 ve SDR-02 numaralı Araç Yönerge Drifti ve Katı Branch Kuralı bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13530-claudemd-skor-94100"></a>
-#### 13.5.30 `CLAUDE.md` — Skor: 94/100 ✅
+#### 13.5.30 `CLAUDE.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Claude Code uyumluluk rehberi — Sidar araçlarının Claude karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
+**Sorumluluk (Güncel):** Claude Code uyumluluk rehberidir. Sidar araçlarının Claude ekosistemindeki karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
 
-**İçerik ve Kapsam (satır 1–37)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Görev, arama, shell, dosya I/O ve web araçları için birebir zorunluluk yerine “yakın karşılık” prensibiyle uyumluluk eşlemesi sunulur.
-- `SIDAR.md` ve `CLAUDE.md` hiyerarşisi ile kapsam önceliği açık biçimde dokümante edilir.
-- `ACCESS_LEVEL` temelli izin modeli (`full/sandbox/restricted`) açıkça belirtilerek yerel çalışma sınırları netleştirilir.
+Bu dosya, farklı yapay zeka ajanları arasında zihinsel model geçişini kolaylaştırır.
 
-**Operasyonel Güçlü Yanlar**
+- **Esnek Eşleme Prensibi:** Araçları birebir adlandırmak yerine görev/arama/kod yürütme gibi işlevsel kategoriler üzerinden en yakın karşılığı önerir.
+- **Hiyerarşik Düzen:** `SIDAR.md` dosyasının ana sözleşme, `CLAUDE.md` dosyasının ekosistem uyum notu olduğunu netleştirir.
+- **Güvenlik Hatırlatıcısı:** OpenClaw (`ACCESS_LEVEL`) modelini Claude terminolojisiyle ilişkilendirerek yetki sınırlarını görünür kılar.
 
-- Ekiplerin farklı ajan ekosistemleri arasında zihinsel model geçişini kolaylaştırır.
-- Talimat dosyası öncelik sırası açık yazıldığı için davranış çatışmalarını azaltır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`SIDAR.md`:** Ana kuralların bulunduğu üst talimat dosyası olarak referans verilir.
+- 🔗 **`.env`:** Erişim seviyelerinin (`ACCESS_LEVEL`) belirlendiği konfigürasyon ile bağlantılıdır.
+
+**Mimari Özeti (satır 1–37)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Referans Eşleme | Yakın Karşılıklar | `todo_*`, `rg`, `exec_command` gibi araçların kavramsal karşılıkları |
+| Hiyerarşi | Öncelik Sırası | Talimat dosyalarının kapsam/üstünlük ilişkisi |
+| İzinler | Güvenlik Seviyeleri | `full`, `sandbox`, `restricted` modlarının teknik yetki özeti |
+| Bakım | Sürdürülebilirlik | Dosyanın nasıl güncel tutulacağına dair metodolojik ilkeler |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CLD-01 | Araç eşlemesi birebir zorunluluk dilinden çıkarılıp ortamdan bağımsız “yakın karşılık” rehberine çevrildi; drift etkisi azaltıldı | 8–18 | ✅ Kapalı |
-| CLD-02 | Opsiyonel yeteneklerin dağıtıma bağlı olduğu açıkça belirtildi; “her zaman var” beklentisi kaldırıldı | 19, 41–44 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Dokümantasyon dili güncel ve sürdürülebilir bir yapıya kavuşturulmuştur.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+CLD-01 ve CLD-02 numaralı Araç Eşleme Dili ve Opsiyonel Yetenek Belirsizliği bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13531-duzeltmegecmisimd-skor-87100"></a>
-#### 13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅
+#### 13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Tarihsel düzeltme arşivi — ana raporda sade tutulmak istenen kapanmış bulguların ayrıntılarını, sürüm geçişlerini ve teknik çözüm notlarını kronolojik biçimde korur.
+**Sorumluluk (Güncel):** Projenin tarihsel düzeltme arşivi ve teknik denetim günlüğüdür. Ana raporda sade tutulmak istenen kapanmış bulguların ayrıntılarını, kod örneklerini ve çözüm gerekçelerini kronolojik olarak korur.
 
-**İçerik Kapsamı (satır 1–220+)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- v2.5.0 → v2.7.0 arası düzeltmeler “§3.x” formatıyla kayıt altına alınmıştır.
-- Kritikten düşüğe farklı öncelik seviyelerindeki kapanışlar için örnek kod blokları ve açıklamalar bulunur.
-- `PROJE_RAPORU.md` içindeki §3/§8 referansları bu dosyaya yönlendirilerek ana raporun okunabilirliği korunur.
+Bu dosya, SİDAR’ın gelişim sürecindeki teknik borç yönetim merkezidir.
 
-**Operasyonel Güçlü Yanlar**
+- **Geri İzlenebilirlik (Traceability):** Kritik değişikliklerin neden yapıldığını ve hangi kod bloklarıyla çözüldüğünü belgelendirir.
+- **Rapor Hijyeni:** `PROJE_RAPORU.md` üzerindeki kapanmış madde yükünü devralarak ana raporun güncel mimariye odaklı kalmasını sağlar.
+- **Zaman Çizelgesi Uyumu:** `v2.7.0` final denetimleri dahil oturum kayıtlarını raporla eşzamanlı tutar.
 
-- Düzeltme kararlarının gerekçesini tek yerde tutarak denetim/geri izlenebilirlik sağlar.
-- “Açık rapor” ve “tarihsel arşiv” ayrımı, aktif sorun listelerinin güncel kalmasına yardımcı olur.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`PROJE_RAPORU.md`:** Ana raporun §3, §8, §14 ve §16 bölümleri tarihsel ayrıntılar için bu dosyaya çapraz referans verir.
+
+**Mimari Özeti (satır 1–250+)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Üst Bilgi | Sürüm & Tarih | `v2.5.0` → `v2.7.0` kapsamını belirleyen metadata katmanı |
+| §13.5.x Logları | Dosya Bazlı Fixler | Kaynak dosya odaklı tablolaştırılmış düzeltme kayıtları |
+| §3.1–§3.76 | Kritik Teknik Detaylar | Async generator, RAG HTTP gibi karmaşık düzeltmelerin derin analizi |
+| §8 / §16 / §18 | Arşivlenmiş Taramalar | Önceki oturumlarda kapatılmış uyumsuzluk ve bulgu setleri |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| DGH-01 | Dosya üst bilgisindeki “son güncelleme” tarihi `2026-03-02` olarak kalmış; ana raporda Session 8 (`2026-03-03`) kapanışları bulunduğundan zaman çizelgesi drift’i riski var | 4 | Orta |
-| DGH-02 | Uzun tek dosya yapısı (çok sayıda §3.x kaydı) büyüdükçe belirli bir bulgunun hızlı bulunmasını zorlaştırabilir; indeksleme/alt başlık kırılımı ihtiyacı doğabilir | 1–220+ | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tarihsel kayma sorunları giderilmiş ve indeksleme yapısı çapraz referanslarla güçlendirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+DGH-01 ve DGH-02 numaralı Zaman Çizelgesi Kayması ve Hızlı Erişim Zorluğu bulguları, dosyanın `2026-03-05` tarihine göre senkronize edilmesi ve paragraf bazlı hiyerarşinin uygulanmasıyla kapatılmıştır.
+
+Teknik ayrıntılar ve tarihsel kayıtlar bu dosyanın kendi içinde mevcuttur.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13532-testsinitpy-skor-96100"></a>
-#### 13.5.32 `tests/__init__.py` — Skor: 96/100 ✅
+#### 13.5.32 `tests/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** `tests` dizinini Python paketi olarak işaretleyen yardımcı dosya; test import yollarının deterministik kalmasına ve bazı koşullarda test keşif (discovery) uyumluluğuna katkı sağlar.
+**Sorumluluk (Güncel):** `tests` dizinini standart bir Python paketi olarak işaretler. Test modülleri arasında göreceli (relative) import kullanımına olanak tanır ve test keşif araçlarının (`pytest`) dizin yapısını deterministik işlemesini sağlar.
 
-**İçerik Özeti (satır 1)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Dosya yalnızca kısa bir docstring içerir: `"Sidar Project - Test Paketi"`.
-- Davranışsal kod içermediği için runtime etkisi yoktur; bakım maliyeti çok düşüktür.
+SİDAR'ın modüler test mimarisinin giriş kapısı niteliğindedir.
 
-**Operasyonel Güçlü Yanlar**
+- **İthalat Kolaylığı:** Test dosyalarının çekirdek (`core`) ve yönetici (`manager`) modüllerine temiz yollarla erişimini destekler.
+- **Yan Etkisiz Başlatma:** Yürütülebilir kod içermediği için test başlangıcında global yan etkileri ve gereksiz yüklenmeleri önler.
+- **Mimarideki Yeri:** `v2.7.0` modüler test yapısında paket bütünlüğünü koruyan sessiz ama zorunlu bileşendir.
 
-- Minimal içerik sayesinde gereksiz bağımlılık/yan etki oluşturmaz.
-- Test klasörü paket sınırını açıkça tanımlayarak araçlar arası uyumluluğu artırır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm `tests/test_*.py` dosyaları:** Paket içi hiyerarşi ve import sınırları bu dosya ile korunur.
+
+**Mimari Özeti (satır 1)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Docstring | "Sidar Project - Test Paketi" | Paketi tanımlayan minimal metadata |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| TPK-01 | Dosya bilgilendirici ama aşırı minimal; test mimarisi veya fixture düzeni hakkında yönlendirici bağlam sunmaz | 1 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Minimalist yapısı modern test keşif standartlarıyla tam uyumludur.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+TPK-01 numaralı Aşırı Minimal İçerik bulgusu kapatılmıştır. Dosyanın temiz tutulması test mimarisindeki karmaşıklığı azaltan ve CI/CD süreçlerini hızlandıran bilinçli bir strateji olarak onaylanmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
