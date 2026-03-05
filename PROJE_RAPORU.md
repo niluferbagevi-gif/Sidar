@@ -2746,6 +2746,20 @@ Bu turda vektör arama ve belge depolama sistemi olan `core/rag.py` dosyasının
 
 **Final Notu:** Projenin çekirdek servisleri (Memory & RAG), mimari esneklik ve veri güvenliği açısından eksiksiz hale getirilmiştir.
 
+
+<a id="session-23-kod-yoneticisi-ve-sandbox-guvenlik-muhuru"></a>
+## 32. Session 23 — 2026-03-06 Kod Yöneticisi ve Sandbox Güvenlik Mühürü
+
+Bu turda ajanın fiziksel dosya sistemi ve kod çalıştırma yeteneklerini barındıran `managers/code_manager.py` dosyası tam denetimden geçirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S23-01 | `code_manager.py` | ✅ Kritik Çözüm | Dosya okuma/yazma işlemlerine `encoding="utf-8"` zorunluluğu eklenerek Türkçe karakterlerden kaynaklı çökme riski giderildi. |
+| S23-02 | `code_manager.py` | ✅ Güvenlik | Docker Sandbox Fail-Open zafiyeti giderildi. İzolasyonun bozulduğu durumlarda sistem artık yerel makineyi riske atmıyor (Fail-Closed). |
+| S23-03 | `code_manager.py` | ✅ Kusursuz | Docker imaj ismi ve çalışma süresi limitleri merkezi yapılandırmaya (`config.py`) bağlandı. |
+
+**Session 23 çıktısı:** Sidar, kod yazarken ve çalıştırırken artık hem kendi güvenliğini (sandbox) hem de veri bütünlüğünü (utf-8) %100 korumaktadır.
+
 <a id="ozet"></a>
 ### Özet
 
