@@ -2241,9 +2241,7 @@ except Exception as exc:
 <a id="14-gelistirme-onerileri-oncelik-sirasiyla"></a>
 ## 14. Geliştirme Önerileri (Öncelik Sırasıyla)
 
-> Bu bölüm yalnızca **güncel açık iyileştirme adaylarını** içerir.
-> Kapatılmış/uygulanmış tüm maddeler okunabilirliği korumak amacıyla düzeltme geçmişine taşınmıştır:
-> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+> Bu bölüm yalnızca **güncel açık iyileştirme adaylarını ve teknik borçları** içerir. Kapatılmış/uygulanmış tüm maddeler (özellikle testlerin modülerleştirilmesi gibi büyük operasyonlar) okunabilirliği korumak amacıyla `DUZELTME_GECMISI.md` dosyasına taşınmıştır.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2251,20 +2249,14 @@ except Exception as exc:
 <a id="oncelik-1-yuksek-etki-kisa-vadede-olmazsa-olmaz"></a>
 ### Öncelik 1 — Yüksek Etki (Kısa Vadede, Olmazsa Olmaz)
 
-1. **Event-loop bloklama risklerini kapatma (RAG aramaları async güvenli hale getirilmeli):**
-   `web_server.py:/rag/search`, `agent/sidar_agent.py:_tool_docs_search` ve `agent/auto_handle.py:_try_docs_search` hatlarında senkron `docs.search()` çağrıları `asyncio.to_thread` (veya native async API) ile sarılmalı.
-
-2. **RAG performans darboğazını giderme (BM25 cache + incremental güncelleme):**
-   `core/rag.py` içinde BM25 indeksinin her sorguda yeniden inşası yerine, belge ekle/sil olaylarında invalidate edilen bellek içi indeks stratejisine geçilmeli.
-
-3. **Web UI XSS yüzeyini kapatma:**
-   `web_ui/index.html` tarafında `marked.parse(...)` çıktısı DOM'a basılmadan önce DOMPurify benzeri sanitize katmanı zorunlu hale getirilmeli.
-
-4. **Rate limiter için key eviction/TTL mekanizması ekleme:**
-   `_rate_data` anahtarları süre dolunca sözlükten de temizlenmeli; uzun ömürlü süreçte bellek büyümesi engellenmeli.
-
-5. **Test stratejisini üretim seviyesine taşıma (tool + entegrasyon + güvenlik seviyeleri):**
-   Özellikle Docker sandbox, GitHub akışları, security access-level (`restricted/sandbox/full`) ve RAG aramaları için hedefli birim + entegrasyon testleri genişletilmeli.
+1. **Event-loop bloklama risklerini kapatma (C-01):**
+   `core/rag.py` içinde BM25 indeksinin her sorguda/belge eklemede senkron (`_ensure_bm25_index`) olarak yeniden inşası FastAPI event-loop'unu dondurmaktadır. Bu işlem `asyncio.to_thread` ile arka plana itilmeli veya inkremental güncellemeyle çözülmelidir.
+2. **Sonsuz Hafıza Context Aşımını Engelleme (H-03):**
+   `agent/sidar_agent.py` içinde ChromaDB'ye arşivlenen eski konuşmalar geri çağrılırken katı bir `top_k` (örn. 3) ve skor eşiği getirilmelidir; aksi takdirde uzun sohbetlerde Gemini kota aşımı ve Ollama VRAM yetersizliği yaşanacaktır.
+3. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
+   `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değişir veya kaybolursa sistemin `InvalidToken` hatasıyla çökmesi engellenmeli, oturum salt okunur (read-only) açılıp Web UI üzerinden kullanıcı uyarılmalıdır.
+4. **Web UI XSS yüzeyini kapatma (L-02):**
+   `web_ui/index.html` tarafında `marked.parse(...)` çıktısı DOM'a basılmadan önce kullanılan custom regex sanitize katmanı, `DOMPurify` gibi standart/güvenli bir kütüphane ile değiştirilmelidir.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2272,44 +2264,22 @@ except Exception as exc:
 <a id="oncelik-2-orta-etki-guvenlik-operasyon-bakim"></a>
 ### Öncelik 2 — Orta Etki (Güvenlik / Operasyon / Bakım)
 
-6. **TodoManager kalıcılığı ve tek `in_progress` kuralı:**
-   Görevler yalnızca process-memory yerine JSON/SQLite ile kalıcı tutulmalı; aynı anda tek aktif `in_progress` doğrulaması zorunlu kılınmalı.
-
-7. **ConversationMemory I/O optimizasyonu + `.json.broken` yaşam döngüsü:**
-   Her mesajda tam dosya rewrite maliyeti azaltılmalı (append-only/segmentli kayıt seçenekleri değerlendirilmeli) ve karantina dosyaları için temizleme politikası eklenmeli.
-
-8. **`full` erişim için daha ince güvenlik bariyerleri:**
-   Tehlikeli shell komutları için allowlist/denylist + kritik yol yazma işlemlerinde kullanıcı onayı (özellikle web UI) uygulanmalı.
-
-9. **Kurulum ve healthcheck güvenliği:**
-   `install_sidar.sh` içindeki `curl|sh` ve otomatik `apt upgrade -y` adımları güvenlik/şeffaflık açısından yeniden tasarlanmalı.
-
-10. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
-    `environment.yml` için sürüm sabitleme/lock dosyası yaklaşımı netleştirilmeli; CI ve yerel kurulumlar arasında sürüm drift’i azaltılmalı.
-
-11. **Donanım tespitini lazy/cached hale getirme:**
-    `config.py` import-time `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve yan etkiler kontrollü bir init adımına alınmalı.
-
-12. **Ajan sözleşmesi/talimat drift’ini azaltma (`definitions.py`, `SIDAR.md`, `CLAUDE.md`):**
-    Manuel araç listeleri ve tarihsel ifade parçaları güncel capability setiyle otomatik/yarı-otomatik hizalanmalı; prompt-talimat drift’i minimize edilmeli.
-
-13. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme:**
-    `can_read()` yalnızca regex blacklist’e değil proje kökü/izinli path modeline bağlanmalı; durum raporunda “Terminal” ifadesi shell yetkisiyle karışmayacak şekilde netleştirilmeli.
-
-14. **WebSearch hata modelini yapılandırılmış hale getirme:**
-    Motor başarısızlıklarını `"[HATA]"` string kontrolü yerine tipli hata kodları/istisna sınıflarıyla yönetme; HTML temizleme için regex yerine parser tabanlı yaklaşım değerlendirme.
-
-15. **SystemHealth ölçümlerinde non-blocking strateji:**
-    `get_cpu_usage(interval=0.5)` gibi bloklayıcı örneklemeler sık çağrı altında gecikme oluşturduğunda cache/arka plan örnekleme modeline geçilmeli.
-
-16. **PackageInfo sürüm doğruluğunu API tabanlı güçlendirme:**
-    Regex ile metin parse edilen sürüm yolları (`pypi_compare` vb.) doğrudan yapılandırılmış API verisiyle beslenmeli; pre-release sınıflandırması gözden geçirilmeli.
-
-17. **Public API (`__all__`) drift kontrolleri:**
-    `agent/core/managers __init__.py` için ya otomatik export üretimi ya da CI’de tutarlılık testi eklenmeli.
-
-18. **AutoHandle regex yanlış-pozitif azaltma:**
-    Geniş kalıplar daraltılmalı; gerektiğinde lightweight intent sınıflandırıcı/puanlama ile regex fallback yaklaşımı uygulanmalı.
+5. **TodoManager kalıcılığı (M-01):**
+   Görevler yalnızca process-memory yerine JSON veya SQLite ile kalıcı tutulmalı; servis yeniden başlatıldığında görev listesinin sıfırlanması önlenmelidir.
+6. **Donanım tespitini lazy/cached hale getirme (M-02):**
+   `config.py` import anında senkron çalışan `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve subprocess yan etkileri açık bir `init` adımına alınmalıdır.
+7. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme (M-03):**
+   `can_read()` yalnızca regex blacklist'e değil, proje kökü/izinli çalışma alanı (workspace) modeline bağlanmalı, dış dizinlere çıkışlar kesin engellenmelidir.
+8. **Git Kör Merge (-X ours) Stratejisini Engelleme (M-04):**
+   `github_upload.py` içindeki otomatik birleştirme adımı uzak taraf (remote) değişikliklerini ezme riski taşıdığından kullanıcı onayına bağlanmalıdır.
+9. **ConversationMemory I/O optimizasyonu:**
+   Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
+10. **Rate limiter key eviction mekanizması:**
+    `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
+11. **Bağımlılık tam tekrar üretilebilirliği (Lockfile):**
+    `environment.yml` dosyasına ek olarak tam hash tabanlı `conda-lock.yml` veya `pip-tools` kilit dosyası stratejisine geçilmelidir.
+12. **WebSearch ve PackageInfo Hata/Veri Modeli:**
+    Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2317,18 +2287,14 @@ except Exception as exc:
 <a id="oncelik-3-dusuk-etki-dx-dokumantasyon-ux"></a>
 ### Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)
 
-19. **Dokümantasyon sürüm/komut drift temizliği:**
-    `README.md`, `Dockerfile` yorum bloğu, `install_sidar.sh` sürüm izleri ve servis adı örnekleri (`sidar-web`) bu turda hizalandı; benzer driftler için periyodik doküman doğrulaması sürdürülmeli.
-
-20. **`docs/` altında kullanıcı + geliştirici rehberi ayrıştırma:**
-    `SIDAR.md` / `CLAUDE.md` / `README.md` üzerindeki bilgi yükünü azaltmak için “kullanıcı rehberi” ve “geliştirici rehberi” ayrı, güncel ve rol bazlı dokümanlara taşınmalı.
-
-21. **Web UI oturum UX iyileştirmeleri:**
-    Mevcut yeniden adlandırma önerisine ek olarak, otomatik başlık kalitesi ve tamamlanan oturum arşivleme akışı geliştirilmeli.
-
-22. **Test dosyalarını modülerleştirme:**
-    `tests/test_sidar.py` içindeki senaryoları birim/entegrasyon/güvenlik odaklı dosyalara bölerek bakım ve hata izolasyonu iyileştirilmeli.
-
+13. **Ajan sözleşmesi/talimat drift'ini azaltma (L-01):**
+    `agent/definitions.py` içindeki manuel araç listesi ve `SIDAR.md` yönergeleri, güncel capability setiyle (`sidar_agent.py` dispatch tablosu) dinamik olarak hizalanmalı/üretilmelidir.
+14. **`docs/` altında dokümantasyon ayrıştırması:**
+    `README.md` üzerindeki bilgi yükünü hafifletmek için "Kullanıcı Rehberi", "Geliştirici Rehberi" ve "Claude Code Uyumluluk Rehberi" ayrı dokümanlara bölünmelidir.
+15. **Banner ve CLI/Web UX İyileştirmeleri:**
+    CLI ve Web banner'ı dinamik terminal genişliğine göre uyarlanmalı, Web UI tarafında otomatik oturum başlıklandırma performansı artırılmalıdır.
+16. **CI/CD Entegrasyonu:**
+    Yazılmış olan 20+ test modülü, GitHub Actions (veya benzeri bir runner) üzerinde otomatikleştirilerek her PR'da donanım-bağımsız çalıştırılacak bir pipeline kurulmalıdır.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2336,7 +2302,7 @@ except Exception as exc:
 <a id="acik-durum"></a>
 ### Açık Durum
 
-> 2026-03-02 doğrulama setine göre bu başlık altında yer alan öneriler teknik borç/iyileştirme niteliğindedir; kapanan maddelerin ayrıntıları `DUZELTME_GECMISI.md` dosyasında arşivlenmiştir.
+> 2026-03-05 güncel doğrulama setine göre bu başlık altındaki maddeler aktif teknik borç/iyileştirme adaylarıdır. Kapatılan maddelerin ayrıntıları `DUZELTME_GECMISI.md` dosyasında arşivlenmiştir.
 
 ---
 
