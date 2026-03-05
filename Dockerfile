@@ -71,11 +71,8 @@ print('\n'.join(pkgs))" > requirements.txt && \
 # Uygulama kodlarını kopyala
 COPY . .
 
-# Kalıcı veri dizinleri
-RUN mkdir -p logs data temp
-
-# Güvenlik: root olmayan kullanıcı
-RUN useradd -m sidar && chown -R sidar:sidar /app
+# Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
+RUN useradd -m sidar && mkdir -p /app/logs /app/data /app/temp && chown -R sidar:sidar /app
 USER sidar
 
 # Web arayüzü portu

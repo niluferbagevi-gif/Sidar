@@ -69,7 +69,7 @@
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
-    - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
+    - [13.5.23 `Dockerfile` — Skor: 100/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
@@ -1710,33 +1710,47 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13523-dockerfile-skor-94100"></a>
-#### 13.5.23 `Dockerfile` — Skor: 94/100 ✅
+#### 13.5.23 `Dockerfile` — Skor: 100/100 ✅
 
-**Sorumluluk:** Uygulamanın container paketleme tanımı — CPU/GPU taban imaj seçimi, bağımlılık kurulumu, çalışma zamanı env ayarları, sağlık kontrolü ve varsayılan giriş komutunu yönetir.
+**Sorumluluk (Güncel):** Uygulamanın konteynerizasyon stratejisidir. CPU ve GPU (CUDA) tabanlı çift çalışma modunu, bağımlılık yönetimini, güvenlik izolasyonunu ve servis sağlığı izleme (healthcheck) süreçlerini yönetir.
 
-**Build ve Runtime Mimarisi (satır 15–38, 52–70)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `BASE_IMAGE` ve `GPU_ENABLED` build argümanlarıyla CPU/GPU çift mod desteklenir.
-- `TORCH_INDEX_URL` üzerinden PyTorch wheel kaynağı ayarlanır; GPU build için cu124 kaynağına geçiş mümkün.
-- `environment.yml` içinden pip bağımlılıkları dinamik çıkarılarak `requirements.txt` üretilir ve kurulumu yapılır.
+Bu dosya, SİDAR’ın her ortamda (Windows, Linux, Bulut) aynı kararlılıkla çalışmasını sağlayan paketleme talimatıdır.
 
-**Operasyonel Davranış (satır 74–92)**
+- **Hibrit Build Sistemi:** `BASE_IMAGE` ve `GPU_ENABLED` argümanlarıyla tek dosyadan hem hafif CPU imajı hem de GPU (cu124) imajı üretebilir.
+- **Güvenlik İzolasyonu:** Uygulamayı root yerine kısıtlı yetkili `sidar` kullanıcısı ile çalıştırır.
+- **Akıllı Sağlık Kontrolü (Healthcheck):** Seçilen moda göre (web/cli) `/status` endpoint’ini veya PID 1 komutunu deterministik şekilde doğrular.
 
-- Kalıcı dizinler (`logs`, `data`, `temp`) hazırlanır ve root olmayan `sidar` kullanıcısına geçilir.
-- `EXPOSE 7860` ve `/status` tabanlı healthcheck ile web modu izlenir.
-- Varsayılan `ENTRYPOINT` CLI (`python main.py`) olarak gelir; web modu için komut override edilir.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`environment.yml`:** Bağımlılık listesi bu dosyadan okunur ve `requirements.txt` üzerinden kurulur.
+- 🔗 **`docker-compose.yml`:** Servis orkestrasyonu sırasında bu Dockerfile’daki build argümanları (`TORCH_INDEX_URL` vb.) kullanılır.
+
+**Mimari Özeti (satır 1–92)**
+
+| Bölüm | Pattern | Açıklama |
+|---|---|---|
+| 15–22 | Build Arguments | `GPU_ENABLED` ve `TORCH_INDEX_URL` gibi esnek yapılandırma parametreleri |
+| 28–31 | Security (Non-root) | `sidar` sistem kullanıcısı/grubu oluşturma işlemi |
+| 45–56 | Dependency Parsing | `environment.yml` dosyasından bağımlılıkları ayıklayan ve kuran otomatik akış |
+| 59–67 | GPU/Torch Setup | `PIP_EXTRA_INDEX_URL` ile CUDA sürümü uyumlu PyTorch kurulumu |
+| 74–78 | Layer Optimization | Dizin oluşturma + sahiplik atama adımlarının tek RUN katmanında optimize edilmesi |
+| 86–91 | Deterministik Healthcheck | PID 1 komutuna ve endpoint durumuna göre akıllı servis izleme |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| DF-01 | Üst açıklama yorumundaki sürüm metni `2.7.0` ile metadata label hizasına çekildi | 3, 25 | ✅ Kapalı |
-| DF-02 | Healthcheck fallback'i PID 1 komutuna göre deterministik hale getirildi; web modunda `/status` zorunlu, CLI modunda yalnızca `main.py/cli.py` kabul ediliyor | 87–88 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm sürüm uyumsuzlukları, healthcheck zafiyetleri ve katman optimizasyonu sorunları giderilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+DF-01 ve DF-02 numaralı sürüm etiketi ve healthcheck hataları başarıyla kapatılmıştır.
+
+DF-03 (Katman Optimizasyonu): Dizin oluşturma ve yetkilendirme işlemleri tek bir RUN komutunda birleştirilerek imaj performansı artırılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 

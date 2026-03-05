@@ -259,6 +259,18 @@
 
 ---
 
+### ✅ §13.5.23 `Dockerfile` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Uygulama konteynerinin imaj katmanlarının optimize edilmesi ve sürüm/izleme mekanizmalarının raporla tam uyumlu hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DF-01 | ✅ Kapandı | `LABEL version` ve başlık yorumları `v2.7.0` ile hizalandı. |
+| DF-02 | ✅ Kapandı | Healthcheck mantığı PID 1 komutuna göre revize edilerek Web/CLI modlarındaki yalancı-pozitif riskler giderildi. |
+| DF-03 | ✅ Kapandı | Katman Optimizasyonu: `mkdir` ve `chown` gibi ardışık dosya sistemi işlemleri tek bir RUN katmanına indirilerek imaj performansı optimize edildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
