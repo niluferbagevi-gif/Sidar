@@ -293,11 +293,18 @@ sidar_project/
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="6-orta-oncelikli-sorunlar"></a>
-## 6. Orta Öncelikli Sorunlar
+## 6. Orta Öncelikli Sorunlar (Medium Priority)
 
-> ✅ 2026-03-02 güncel taramasında aktif orta öncelikli sorun kalmamıştır.
->
-> Geçmişte tespit edilen (N-01, O-02, O-03, O-05 dahil) tüm orta öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
+> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, v2.7.0 itibarıyla sistemin kararlılığını, güvenliğini ve operasyonel deneyimini etkileyen yeni orta öncelikli sorunlar tespit edilmiştir.
+
+| ID | Modül / Dosya | Hata Açıklaması | Çözüm Önerisi |
+| :--- | :--- | :--- | :--- |
+| **M-01** | `managers/todo_manager.py` | **Todo Listesi Kalıcılık Eksikliği:** `TodoManager` görevleri yalnızca süreç belleğinde (in-memory `self.tasks = []` olarak) tutmaktadır. Web sunucusu veya CLI yeniden başlatıldığında, tamamlanmış veya devam eden tüm planlı görevler kaybolmaktadır. | Görev listesi `data/sessions/` altındaki JSON dosyalarına veya SQLite veritabanına periyodik olarak kaydedilmeli ve sunucu başlangıcında diskten geri yüklenmelidir. |
+| **M-02** | `config.py` | **Import Anında Donanım Tespiti:** `HARDWARE = check_hardware()` çağrısı modül yüklenme (import) seviyesinde yapılmaktadır. Bu durum, uygulama her başlatıldığında `nvidia-smi` subprocess'ini ve PyTorch/CUDA sorgularını senkron olarak tetikleyerek CLI/Web başlangıcını yavaşlatır ve test izolasyonunu zorlaştırır. | `check_hardware()` çağrısı "lazy-init" (ihtiyaç anında) modeline geçirilmeli veya uygulamanın açık başlatma fazına (`main()` içine) taşınmalıdır. |
+| **M-03** | `managers/security.py` | **Gevşek Okuma Sınırı (Path Traversal Riski):** `can_read()` fonksiyonu temel olarak statik kara liste (blacklist) regex'lerine dayanmaktadır. Proje dizini dışındaki dosyalar, kara listede değilse okunabilir durumdadır. | Sadece proje kök dizini (veya belirlenen çalışma alanı) altındaki dosyalara izin verecek şekilde katı `is_path_under()` root boundary (kök sınırı) kontrolü zorunlu kılınmalıdır. |
+| **M-04** | `github_upload.py` | **Kör Merge Stratejisi (Veri Kaybı):** Otomatik senkronizasyon sırasında `git merge origin/main -X ours` komutu kullanılmaktadır. Bu durum, uzak depoda takım arkadaşları tarafından yapılan değişikliklerin sessizce ezilmesine (silinmesine) neden olur. | Otomatik merge stratejisi kullanıcı onayına bağlanmalı veya conflict (çakışma) durumlarında işlemin durdurularak kullanıcının uyarılması sağlanmalıdır. |
+
+*(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
