@@ -63,7 +63,7 @@
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
-    - [13.5.19 `agent/__init__.py` — Skor: 96/100 ✅](#13519-agentinitpy-skor-96100)
+    - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅](#13520-teststestsidarpy-skor-93100)
     - [13.5.21 `web_ui/index.html` — Skor: 89/100 ✅](#13521-webuiindexhtml-skor-89100)
     - [13.5.22 `github_upload.py` — Skor: 83/100 ✅](#13522-githubuploadpy-skor-83100)
@@ -1666,22 +1666,27 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13519-agentinitpy-skor-96100"></a>
-#### 13.5.19 `agent/__init__.py` — Skor: 96/100 ✅
+<a id="13519-agentinitpy-skor-98100"></a>
+#### 13.5.19 `agent/__init__.py` — Skor: 98/100 ✅
 
 **Sorumluluk:** Agent paketinin public export katmanı — `SidarAgent` ve prompt/anahtar sabitlerini üst katmanlara sade bir import arayüzüyle sunar.
 
-**Paket API Sözleşmesi (satır 2–5)**
+**Bu Turdaki İyileştirmeler**
 
-- `SidarAgent`, `SIDAR_SYSTEM_PROMPT`, `SIDAR_KEYS`, `SIDAR_WAKE_WORDS` sembolleri tek noktadan dışa açılır.
-- `__all__` ile paket dışına açılan semboller açıkça sınırlandırılmıştır.
-- Üst katman kodunda `from agent import ...` kullanımını standardize eder.
+- Agent export sözleşmesi tek kaynakta toplandı: `_EXPORTED_AGENT_SYMBOLS` map’i üzerinden public semboller merkezi olarak yönetiliyor.
+- `__all__` artık manuel liste yerine mapping anahtarlarından türetiliyor (`list(_EXPORTED_AGENT_SYMBOLS.keys())`), böylece export drift riski azaltıldı.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| AGPK-01 | `__all__` manuel listelendiği için yeni agent sembolleri eklendiğinde unutulursa public API ile modül içeriği arasında drift riski oluşur | 5 | Düşük |
+| AGPK-02 | Yeni sembol import edilip `_EXPORTED_AGENT_SYMBOLS` içine eklenmezse public API dışında kalır; yine de tek noktadan yönetim riski düşürür | 5–12 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| AGPK-01 | ✅ Kapandı | `__all__` manuel liste yerine merkezi export mapping’inden türetiliyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
