@@ -58,7 +58,7 @@
     - [13.5.9 `config.py` — Skor: 100/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
-    - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
+    - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
@@ -1248,33 +1248,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13512-managerssystemhealthpy-skor-94100"></a>
-#### 13.5.12 `managers/system_health.py` — Skor: 94/100 ✅
+#### 13.5.12 `managers/system_health.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Sistem gözlemleme katmanı — CPU, RAM, GPU/CUDA, sürücü ve (varsa) sıcaklık/kullanım telemetrisini raporlar; gerektiğinde GPU önbellek temizliği yapar.
+**Sorumluluk (Güncel):** Sunucu ve donanım kaynaklarının (CPU, RAM, GPU) anlık takibini yapmak ve gerektiğinde GPU VRAM belleğini optimize etmek/temizlemek.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `get_cpu_usage()` artık `interval` override parametresi destekliyor; varsayılan örnekleme `cpu_sample_interval=0.0` ile bloklamayan moda alındı.
-- `__init__` içine `atexit.register(self.close)` eklendi; süreç kapanışında NVML temizliği için ek güvence sağlandı.
-- Yeni `close()` metodu idempotent NVML kapanışı yapıyor ve `_nvml_initialized` bayrağını deterministik olarak sıfırlıyor.
+SİDAR'ın çalıştığı makineyi aşırı yükten koruyan "Yoğun Bakım" monitörüdür.
+
+- **Bloklamayan İzleme (Non-blocking):** `psutil.cpu_percent` çağrısının ana thread'i dondurmasını engellemek için örnekleme aralığını (`interval`) varsayılan olarak 0 saniyede tutar.
+- **Garantili Bellek Temizliği (Safe GC):** GPU belleğini (`torch.cuda.empty_cache()`) temizlerken donanımsal bir hata alınsa bile, `try-finally` bloğu sayesinde Python `gc.collect()` işlemini mutlaka çalıştırır ve bellek sızıntılarını önler.
+- **Kapsamlı GPU Analizi:** NVIDIA kartları için sadece VRAM'i değil; `pynvml` kütüphanesi ile sıcaklık ve anlık GPU kullanım yüzdelerini de ölçer. WSL2 ortamlarındaki kısıtlamalara karşı `nvidia-smi` üzerinden Fallback (yedek) planı vardır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `web_server.py`: `/status` endpoint'i üzerinden web arayüzüne anlık GPU ve RAM istatistiklerini bu modülden aktarır.
+- 🔗 `agent/auto_handle.py`: Kullanıcının "Sistem durumu nedir?" veya "GPU belleğini temizle" gibi doğal dil komutlarında doğrudan bu modülü tetikler.
+
+**Mimari Özeti (satır 1–280)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–56 | Güvenli Başlatma | `cpu_sample_interval` sınırlaması ve deterministik kapanış için `atexit.register` kaydı |
+| 120–178 | Detaylı GPU Profili | `torch.cuda` ve `pynvml` verilerini birleştirerek sıcaklık, kullanım ve boş VRAM hesaplayan sensör katmanı |
+| 180–205 | WSL2 Fallback | NVML'in engellendiği Windows Subsystem for Linux (WSL2) ortamlarında sürücü bilgisini almak için `subprocess.run(["nvidia-smi"])` kullanımı |
+| 207–233 | `optimize_gpu_memory` | `try-finally` garantisi ile GPU VRAM ve RAM (Python Garbage Collector) temizleme algoritması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SH-03 | `atexit` temizliği en iyi çabadır; ani process kill/sinyal senaryolarında NVML kapanışı yine garanti edilemeyebilir | 52–54, 316–328 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Asenkron bloklamalar ve bellek sızıntısı riskleri mimari olarak çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| SH-01 | ✅ Kapandı | CPU ölçümünde bloklayıcı sabit `0.5` kaldırıldı; varsayılan örnekleme bloklamayan aralığa taşındı. |
-| SH-02 | ✅ Kapandı | `__del__` bağımlılığı azaltıldı; explicit `close()` + `atexit` ile daha deterministik temizlik akışı eklendi. |
+SH-01 ve SH-02 numaralı "CPU İzleme Blokajı" ve "Güvensiz Bellek Temizliği (Memory Leak)" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

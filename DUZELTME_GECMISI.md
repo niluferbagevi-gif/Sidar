@@ -141,6 +141,17 @@
 
 ---
 
+### ✅ §13.5.12 `managers/system_health.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Sistem sağlığı izleme işlevlerinin web sunucusunu (FastAPI) dondurmasını engellemek ve donanım kaynaklarının daha güvenilir şekilde serbest bırakılmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SH-01 | ✅ Kapandı | CPU İzleme Blokajı (Event-Loop Starvation): `psutil.cpu_percent(interval=1)` gibi senkron beklemeler içeren kodların asenkron ana akışı kilitlediği tespit edildi. Kod güncellenerek `cpu_sample_interval` parametresi eklendi ve varsayılan olarak non-blocking (`0.0` sn) çalışması güvence altına alındı. |
+| SH-02 | ✅ Kapandı | Güvensiz Bellek Temizliği & Kaynak Sızıntısı: `optimize_gpu_memory` çalışırken `torch.cuda` tarafında oluşacak bir hatanın `gc.collect()` satırının atlanmasına sebep olduğu anlaşıldı. Koda `try-finally` bloğu eklenerek bellek temizliğinin her koşulda çalışması garanti edildi. Ayrıca program çıkışında NVIDIA kaynaklarının asılı kalmaması için `atexit.register(self.close)` mekanizması entegre edildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
