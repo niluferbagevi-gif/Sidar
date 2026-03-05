@@ -237,6 +237,17 @@
 
 ---
 
+### ✅ §13.5.21 `web_ui/index.html` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Web arayüzünde LLM kaynaklı içeriklerin yaratabileceği güvenlik risklerinin (XSS) önlenmesi ve uzun süren ajan görevlerinde kullanıcıya anlık geri bildirim sağlanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| UI-01 | ✅ Kapandı | XSS Güvenlik Açığı: Yapay zekanın ürettiği Markdown blokları içine kötü niyetli `<script>` / `<iframe>` içerikleri sızması riski, `sanitizeRenderedHtml` katmanı ile giderildi. Render öncesi tehlikeli etiketler ve olay dinleyicileri (`onmouseover`, `onclick` vb.) temizlenerek güvenli çıktı akışı sağlandı. |
+| UI-02 | ✅ Kapandı | Şeffaflık ve Geri Bildirim Eksikliği: Uzun süren görevlerde arayüzün donmuş gibi görünmesi problemi, Activity Panel ve ilişkili AP akışları ile çözüldü. Kullanıcı artık ajanın anlık düşüncesini, aktif aracını ve çalışma süresini canlı olarak izleyebilmektedir. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

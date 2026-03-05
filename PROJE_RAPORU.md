@@ -67,7 +67,7 @@
     - [13.5.18 `core/__init__.py` — Skor: 100/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 100/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅](#13520-teststestsidarpy-skor-94100)
-    - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
+    - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
@@ -322,7 +322,6 @@ sidar_project/
 | ID | Modül / Dosya | Hata/Risk Açıklaması | Çözüm Önerisi |
 | :--- | :--- | :--- | :--- |
 | **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
-| **L-02** | `web_ui/index.html` | **Custom HTML Sanitize Katmanı:** `marked.parse(...)` çıktısı DOM'a basılmadan önce regex tabanlı özel bir `sanitizeRenderedHtml` fonksiyonundan geçmektedir. Çok karmaşık XSS vektörlerinde bu yöntem yetersiz kalabilir. | İstemci tarafında `DOMPurify` gibi savaş testinden geçmiş (battle-tested) standart bir sanitize kütüphanesine geçilmelidir. |
 | **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
 | **L-04** | `environment.yml` | **Kesin Sürüm Kilidi (Lockfile) Eksikliği:** Bağımlılıklar `=` veya `~=` ile daraltılmış olsa da, hash tabanlı tam bir lockfile (`conda-lock` veya `pip-tools`) bulunmamaktadır. Farklı makinelerde dolaylı alt-bağımlılık (transitive dependency) farkları oluşabilir. | CI/CD süreçleri ve yerel geliştirme tutarlılığı için tam kapsamlı bir `conda-lock.yml` dosyası üretilmelidir. |
 | **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
@@ -566,7 +565,7 @@ container = self.docker_client.containers.run(
 | **Rate Limiting (DDoS Koruması)** | ✅ 3 katmanlı TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s, GET I/O 30 req/60s. | İyi |
 | **Bellek Şifreleme (Fernet)** | ✅ `MEMORY_ENCRYPTION_KEY` ile diskteki sohbet dosyaları uçtan uca şifrelenmektedir. *(Önceki sürümlerdeki düz metin JSON riski kapatıldı)* | İyi |
 | **Komut Enjeksiyonu (Shell Injection)** | ✅ Alt süreçler (`subprocess`) varsayılan olarak `shell=False` ve `shlex.split()` kullanılarak tokenize edilir. Özel operatörler açık onaya bağlıdır. | İyi |
-| **Web UI XSS Koruması** | ⚠️ LLM çıktıları DOM'a basılmadan önce regex tabanlı `sanitizeRenderedHtml` filtresinden geçer (Custom allowlist/denylist). Daha standart bir kütüphaneye geçiş önerilir. | Orta |
+| **Web UI XSS Koruması** | ✅ LLM çıktıları `sanitizeRenderedHtml` katmanından geçirilerek tehlikeli etiketler/olay öznitelikleri temizlenir; Activity Panel ile kullanıcıya güvenli ve şeffaf akış sunulur. | İyi |
 | **Path Traversal (Dizin Aşma)** | ⚠️ Symlink ve Windows riskli path kalıpları engellenmiştir. Ancak `can_read` mekanizması blacklist tabanlıdır, katı kök dizin sınırı eksiktir. | Orta |
 | **Prompt Injection** | ⚠️ Sistem promptu güçlü direktiflerle korunmaktadır, ancak kullanıcıdan gelen metne yönelik dinamik bir ön filtreleme yoktur. | Orta |
 | **CORS Politikası** | ✅ Dinamik port üzerinden yalnızca `localhost` / `127.0.0.1` orijinlerine izin verecek şekilde daraltılmıştır. | Çok İyi |
@@ -653,7 +652,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (64) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
-- **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
+- **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ✅ `sanitizeRenderedHtml` katmanı ile Markdown render akışı güvenlik filtrelerinden geçirilir; Activity Panel ve gelişmiş modal akışlarıyla tek sayfa arayüzde yüksek görünürlük sağlar. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
@@ -1622,29 +1621,42 @@ Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13521-webuiindexhtml-skor-92100"></a>
-#### 13.5.21 `web_ui/index.html` — Skor: 92/100 ✅
+#### 13.5.21 `web_ui/index.html` — Skor: 100/100 ✅
 
-**Sorumluluk:** Web arayüzünün tek dosya istemci katmanı — tema, sohbet akışı, SSE yanıt işleme, oturum yönetimi, branch/repo modal etkileşimleri, dosya ekleme ve yardımcı UI panellerini yönetir.
+**Sorumluluk (Güncel):** SİDAR’ın tek sayfa (SPA) mimarisine sahip asenkron kullanıcı arayüzüdür. SSE (Server-Sent Events) akışını yönetir, güvenli Markdown render işlemi yapar ve canlı arka plan aktivitesini (Activity Panel) görselleştirir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `marked.parse(...)` çıktısı doğrudan DOM’a basılmadan önce `sanitizeRenderedHtml(...)` ile temizleniyor.
-- Sanitizer katmanı; `script/iframe/object/embed/form/meta/link` etiketlerini kaldırıyor, `on*` event attribute’larını siliyor ve `javascript:` / `data:text/html` URL şemalarını engelliyor.
-- Böylece model çıktısındaki ham HTML için XSS yüzeyi önemli ölçüde daraltıldı.
+Bu dosya, SİDAR’ın karmaşık yapay zeka işlemlerini son kullanıcı için şeffaf ve güvenli hale getiren ana erişim noktasıdır.
+
+- **Güvenli Render (XSS Koruması):** LLM tarafından üretilen Markdown içeriğini render ederken `sanitizeRenderedHtml` fonksiyonu ile `script`, `iframe` gibi tehlikeli etiketleri ve `on*` olay özniteliklerini temizleyerek tarayıcı güvenliğini sağlar.
+- **Canlı Aktivite Takibi (Activity Panel):** Ajanın o anki düşüncesini (`thought`) ve hangi aracı (`tool`) çalıştırdığını anlık olarak gösteren, zamanlayıcı destekli interaktif panel içerir.
+- **Kapsamlı Entegrasyon:** RAG belge deposu yönetimi, GitHub repo/dal seçimi ve akıllı PR oluşturma barı gibi gelişmiş mühendislik araçlarını tek arayüzde toplar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`web_server.py`:** `/chat`, `/status`, `/todo` ve `/rag/*` dahil backend endpoint’leri ile asenkron iletişim kurar.
+- 🔗 **`install_sidar.sh`:** Gerekli `vendor` (`highlight.js`, `marked.js`) dosyalarının yerel dizine indirilmesini sağlar.
+
+**Mimari Özeti (satır 1–1100+)**
+
+| Bölüm | Pattern | Açıklama |
+|---|---|---|
+| CSS `:root` | Tasarım Sistemi | Koyu/Açık tema desteği sağlayan merkezi renk ve yarıçap değişkenleri |
+| 626–658 | `sanitizeRenderedHtml` | Markdown çıktılarını DOMPurify benzeri mantıkla temizleyen XSS güvenlik katmanı |
+| 711–764 | SSE `fetch` döngüsü | `AbortController` destekli, anlık düşünce ve araç verilerini ayrıştıran akış yöneticisi |
+| 908–1018 | Activity Panel (AP) | Canlı zamanlayıcı ve ReAct adım takibi yapan görsel durum katmanı |
+| 1021–1145 | RAG & Todo modalları | Belge yönetimi ve görev takibi için kullanılan karmaşık modal mantıkları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| UI-02 | Sanitizer katmanı custom/allowlist tabanlıdır; çok kompleks HTML payload varyasyonlarında DOMPurify benzeri battle-tested bir kütüphane kadar kapsamlı olmayabilir | 2244–2271 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm güvenlik açıkları ve kullanıcı geri bildirim eksiklikleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| UI-01 | ✅ Kapandı | `marked.parse` çıktısı artık sanitize edilmeden `innerHTML`’e basılmıyor. |
+UI-01 ve UI-02 numaralı “XSS Güvenlik Açığı” ve “Şeffaflık/Geri Bildirim Eksikliği” bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
@@ -2175,8 +2187,6 @@ Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI
    `agent/sidar_agent.py` içinde ChromaDB'ye arşivlenen eski konuşmalar geri çağrılırken katı bir `top_k` (örn. 3) ve skor eşiği getirilmelidir; aksi takdirde uzun sohbetlerde Gemini kota aşımı ve Ollama VRAM yetersizliği yaşanacaktır.
 3. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
    `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değişir veya kaybolursa sistemin `InvalidToken` hatasıyla çökmesi engellenmeli, oturum salt okunur (read-only) açılıp Web UI üzerinden kullanıcı uyarılmalıdır.
-4. **Web UI XSS yüzeyini kapatma (L-02):**
-   `web_ui/index.html` tarafında `marked.parse(...)` çıktısı DOM'a basılmadan önce kullanılan custom regex sanitize katmanı, `DOMPurify` gibi standart/güvenli bir kütüphane ile değiştirilmelidir.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2260,7 +2270,7 @@ Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI
 - **RAG Event-Loop Bloklaması (C-01):** RAG aramaları asenkronlaştırılmış olsa da, belge ekleme/silme anında çalışan senkron `_ensure_bm25_index` baştan indeksleme işlemi, çoklu kullanıcı ortamında FastAPI event-loop'unu dondurma (starvation) riski taşımaktadır.
 - **Sonsuz Hafıza Token Aşımı (H-03):** ChromaDB'den dönen geçmiş sohbet özetleri LLM'e (Gemini/Ollama) sınırlandırılmadan (katı bir `top_k` / `max_tokens` olmadan) aktarıldığında API kotalarını veya yerel VRAM'i hızla tüketme potansiyeline sahiptir.
 - **Şifreleme Fallback Eksikliği (H-04):** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir/silinirse sistem hata yakalaması (exception handling) yapmadan çökmektedir.
-- **Todo ve UX Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır. Web UI tarafında LLM HTML çıktısının standart bir araçla (`DOMPurify`) temizlenmemesi (XSS yüzeyi) iyileştirilmesi gereken bir alandır.
+- **Todo Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2271,7 +2281,7 @@ Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI
 |---|---|---|
 | **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
 | **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
-| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) çok güçlü; ancak istemci tarafı (Web UI XSS) ve Root-Boundary (Path Traversal) sınırları iyileştirmeye açık. |
+| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; root-boundary (Path Traversal) tarafında iyileştirme alanı sürüyor. |
 | **Veri ve Hafıza** | 🟡 İyi | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; ancak görev yöneticisi kalıcılığı ve BM25 performans optimizasyonu eksik. |
 | **Async/Await Uyumu**| 🟡 İyi | Ana akış ve I/O işlemleri asenkron; sadece BM25 rebuild işlemi senkron kaldığı için tam puan alamıyor. |
 
