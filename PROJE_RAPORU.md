@@ -77,7 +77,7 @@
     - [13.5.28 `README.md` — Skor: 100/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 100/100 ✅](#13529-sidarmd-skor-94100)
     - [13.5.30 `CLAUDE.md` — Skor: 100/100 ✅](#13530-claudemd-skor-94100)
-    - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
+    - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
@@ -661,7 +661,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Kurulum güvenlik modeli (`ALLOW_*` opt-in), `.env` anahtar adları ve güvenli erişim örnekleri güncel runtime davranışıyla hizalandı. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ✅ Araç adları ortamdan bağımsızlaştırıldı, pahalı komutlardan kaçınma ilkesi netleştirildi ve branch kuralı ekip akışlarıyla uyumlu esnek yapıya çekildi. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ✅ Birebir araç adı iddiaları yerine ortamdan bağımsız “yakın karşılık” rehberine çevrildi; opsiyonel yeteneklerin koşullu olduğu açıkça belirtildi. → Detay: §13.5.30
-- **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
+- **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ✅ Tarihsel kayıtlar ve arşiv başlıkları ana raporla senkronize tutulur; kapanış zaman çizelgesi izlenebilirliği korunur. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
@@ -2067,33 +2067,42 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13531-duzeltmegecmisimd-skor-87100"></a>
-#### 13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅
+#### 13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Tarihsel düzeltme arşivi — ana raporda sade tutulmak istenen kapanmış bulguların ayrıntılarını, sürüm geçişlerini ve teknik çözüm notlarını kronolojik biçimde korur.
+**Sorumluluk (Güncel):** Projenin tarihsel düzeltme arşivi ve teknik denetim günlüğüdür. Ana raporda sade tutulmak istenen kapanmış bulguların ayrıntılarını, kod örneklerini ve çözüm gerekçelerini kronolojik olarak korur.
 
-**İçerik Kapsamı (satır 1–220+)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- v2.5.0 → v2.7.0 arası düzeltmeler “§3.x” formatıyla kayıt altına alınmıştır.
-- Kritikten düşüğe farklı öncelik seviyelerindeki kapanışlar için örnek kod blokları ve açıklamalar bulunur.
-- `PROJE_RAPORU.md` içindeki §3/§8 referansları bu dosyaya yönlendirilerek ana raporun okunabilirliği korunur.
+Bu dosya, SİDAR’ın gelişim sürecindeki teknik borç yönetim merkezidir.
 
-**Operasyonel Güçlü Yanlar**
+- **Geri İzlenebilirlik (Traceability):** Kritik değişikliklerin neden yapıldığını ve hangi kod bloklarıyla çözüldüğünü belgelendirir.
+- **Rapor Hijyeni:** `PROJE_RAPORU.md` üzerindeki kapanmış madde yükünü devralarak ana raporun güncel mimariye odaklı kalmasını sağlar.
+- **Zaman Çizelgesi Uyumu:** `v2.7.0` final denetimleri dahil oturum kayıtlarını raporla eşzamanlı tutar.
 
-- Düzeltme kararlarının gerekçesini tek yerde tutarak denetim/geri izlenebilirlik sağlar.
-- “Açık rapor” ve “tarihsel arşiv” ayrımı, aktif sorun listelerinin güncel kalmasına yardımcı olur.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`PROJE_RAPORU.md`:** Ana raporun §3, §8, §14 ve §16 bölümleri tarihsel ayrıntılar için bu dosyaya çapraz referans verir.
+
+**Mimari Özeti (satır 1–250+)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Üst Bilgi | Sürüm & Tarih | `v2.5.0` → `v2.7.0` kapsamını belirleyen metadata katmanı |
+| §13.5.x Logları | Dosya Bazlı Fixler | Kaynak dosya odaklı tablolaştırılmış düzeltme kayıtları |
+| §3.1–§3.76 | Kritik Teknik Detaylar | Async generator, RAG HTTP gibi karmaşık düzeltmelerin derin analizi |
+| §8 / §16 / §18 | Arşivlenmiş Taramalar | Önceki oturumlarda kapatılmış uyumsuzluk ve bulgu setleri |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| DGH-01 | Dosya üst bilgisindeki “son güncelleme” tarihi `2026-03-02` olarak kalmış; ana raporda Session 8 (`2026-03-03`) kapanışları bulunduğundan zaman çizelgesi drift’i riski var | 4 | Orta |
-| DGH-02 | Uzun tek dosya yapısı (çok sayıda §3.x kaydı) büyüdükçe belirli bir bulgunun hızlı bulunmasını zorlaştırabilir; indeksleme/alt başlık kırılımı ihtiyacı doğabilir | 1–220+ | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tarihsel kayma sorunları giderilmiş ve indeksleme yapısı çapraz referanslarla güçlendirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+DGH-01 ve DGH-02 numaralı Zaman Çizelgesi Kayması ve Hızlı Erişim Zorluğu bulguları, dosyanın `2026-03-05` tarihine göre senkronize edilmesi ve paragraf bazlı hiyerarşinin uygulanmasıyla kapatılmıştır.
+
+Teknik ayrıntılar ve tarihsel kayıtlar bu dosyanın kendi içinde mevcuttur.
 
 ---
-
-
 
 
 

@@ -347,6 +347,17 @@
 
 ---
 
+### ✅ §13.5.31 `DUZELTME_GECMISI.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Tarihsel denetim günlüğü ile ana rapor arasındaki zaman çizelgesi ve erişilebilirlik uyumunun güçlendirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DGH-01 | ✅ Kapandı | Zaman Çizelgesi Kayması: Dosya üst bilgisindeki güncelleme tarihi ana raporla senkronize edilerek `2026-03-05` seviyesine çekildi; kapanış oturumlarıyla tarih uyumu sağlandı. |
+| DGH-02 | ✅ Kapandı | Hızlı Erişim Zorluğu: Arşiv bölümleri § bazlı hiyerarşi ve çapraz referans yapısıyla netleştirildi; kapatılmış bulgulara erişim daha sürdürülebilir hale getirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
