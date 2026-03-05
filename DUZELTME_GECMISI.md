@@ -248,6 +248,17 @@
 
 ---
 
+### ✅ §13.5.22 `github_upload.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** GitHub yükleme aracındaki güvenlik açıklarının kapatılması ve otomatik senkronizasyon sırasında oluşabilecek veri kaybı risklerinin önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GHU-01 | ✅ Kapandı | Shell Injection Koruması: Kullanıcıdan alınan URL ve mesajların shell komutuna doğrudan birleştirilmesi engellendi. Tüm komutlar `shell=False` ve argüman listesi formatına geçirilerek enjeksiyon riski giderildi. |
+| GHU-02 | ✅ Kapandı | Kör Merge (Veri Kaybı) Engellemesi: Çakışma durumunda otomatik birleştirme adımı kullanıcı onayına bağlandı. Sistem, birleştirme öncesi açık teyit alır; onay yoksa push güvenli şekilde durdurulur. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

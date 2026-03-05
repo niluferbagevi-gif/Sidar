@@ -68,7 +68,7 @@
     - [13.5.19 `agent/__init__.py` — Skor: 100/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
-    - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
+    - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
@@ -304,7 +304,7 @@ sidar_project/
 | **M-01** | `managers/todo_manager.py` | **Todo Listesi Kalıcılık Eksikliği:** `TodoManager` görevleri yalnızca süreç belleğinde (in-memory `self.tasks = []` olarak) tutmaktadır. Web sunucusu veya CLI yeniden başlatıldığında, tamamlanmış veya devam eden tüm planlı görevler kaybolmaktadır. | Görev listesi `data/sessions/` altındaki JSON dosyalarına veya SQLite veritabanına periyodik olarak kaydedilmeli ve sunucu başlangıcında diskten geri yüklenmelidir. |
 | **M-02** | `config.py` | **Import Anında Donanım Tespiti:** `HARDWARE = check_hardware()` çağrısı modül yüklenme (import) seviyesinde yapılmaktadır. Bu durum, uygulama her başlatıldığında `nvidia-smi` subprocess'ini ve PyTorch/CUDA sorgularını senkron olarak tetikleyerek CLI/Web başlangıcını yavaşlatır ve test izolasyonunu zorlaştırır. | `check_hardware()` çağrısı "lazy-init" (ihtiyaç anında) modeline geçirilmeli veya uygulamanın açık başlatma fazına (`main()` içine) taşınmalıdır. |
 | **M-03** | `managers/security.py` | **Gevşek Okuma Sınırı (Path Traversal Riski):** `can_read()` fonksiyonu temel olarak statik kara liste (blacklist) regex'lerine dayanmaktadır. Proje dizini dışındaki dosyalar, kara listede değilse okunabilir durumdadır. | Sadece proje kök dizini (veya belirlenen çalışma alanı) altındaki dosyalara izin verecek şekilde katı `is_path_under()` root boundary (kök sınırı) kontrolü zorunlu kılınmalıdır. |
-| **M-04** | `github_upload.py` | **Kör Merge Stratejisi (Veri Kaybı):** Otomatik senkronizasyon sırasında `git merge origin/main -X ours` komutu kullanılmaktadır. Bu durum, uzak depoda takım arkadaşları tarafından yapılan değişikliklerin sessizce ezilmesine (silinmesine) neden olur. | Otomatik merge stratejisi kullanıcı onayına bağlanmalı veya conflict (çakışma) durumlarında işlemin durdurularak kullanıcının uyarılması sağlanmalıdır. |
+| **M-04** | `github_upload.py` | **Push çakışmalarında kullanıcı onayı zorunluluğu:** Otomatik birleştirme sadece kullanıcı açık onay verirse çalıştırılır; aksi durumda süreç güvenli şekilde durdurulur. | Bu davranış korunmalı, kullanıcı onayı olmayan birleştime adımları engellenmeye devam edilmelidir. |
 
 *(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
@@ -653,7 +653,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (64) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ✅ `sanitizeRenderedHtml` katmanı ile Markdown render akışı güvenlik filtrelerinden geçirilir; Activity Panel ve gelişmiş modal akışlarıyla tek sayfa arayüzde yüksek görünürlük sağlar. → Detay: §13.5.21
-- **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
+- **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ✅ Komut yürütme katmanı `shell=False` + argüman listesiyle güvenli çalışır; push çakışmalarında otomatik birleştirme kullanıcı onayına bağlıdır. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
@@ -1665,29 +1665,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13522-githubuploadpy-skor-90100"></a>
-#### 13.5.22 `github_upload.py` — Skor: 90/100 ✅
+#### 13.5.22 `github_upload.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Komut satırı GitHub yükleme otomasyon aracı — yerel projeyi git init/remote/commit/push adımlarıyla etkileşimli şekilde GitHub’a yedeklemeyi hedefler.
+**Sorumluluk (Güncel):** Komut satırı tabanlı GitHub yükleme ve yedekleme otomasyon aracıdır. Yerel projeyi Git ile başlatma, remote (uzak sunucu) bağlama, kimlik doğrulama, çakışma yönetimi ve push işlemlerini etkileşimli bir akışla yönetir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Komut yürütme katmanı `shell=True` yerine güvenli argüman listesi + `shell=False` modeline geçirildi.
-- `repo_url` ve `commit_msg` gibi kullanıcı girdileri artık string komut birleştirmesi yerine ayrı argümanlar olarak `subprocess.run(...)` çağrısına aktarılıyor.
-- Temel repo URL doğrulaması (`_is_valid_repo_url`) eklendi; boş/geçersiz URL durumunda işlem erken ve güvenli şekilde sonlandırılıyor.
+Bu dosya, SİDAR ekosisteminin "Sürekli Teslimat" (CD) yardımcısıdır.
+
+- **Etkileşimli Akış:** Kullanıcıdan GitHub URL'sini ve commit mesajını alarak tüm Git sürecini tek komutla tamamlar.
+- **Güvenlik ve Kimlik Denetimi:** Sistemde Git kimliği (`user.name`/`user.email`) tanımlı değilse kullanıcıyı uyarır ve kurulumu yönlendirir.
+- **Çakışma Çözümü (Safe Sync):** GitHub'da yerelde olmayan değişiklikler bulunduğunda (rejected push), otomatik birleştirme kullanıcı onayı ile yürütülür.
+- **Gelişmiş Hata Yakalama:** GitHub "Push Protection" (gizli bilgi tespiti) engellerini algılar ve kullanıcıyı düzeltme için yönlendirir.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`.gitignore`:** `git add .` sırasında kurallar otomatik uygulanır; `.env` gibi hassas verilerin yanlışlıkla repoya sızma riski azaltılır.
+
+**Mimari Özeti (satır 1–202)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 39–59 | `run_command` | Tüm Git komutlarını `shell=False` ile güvenli çalıştıran çekirdek yardımcı |
+| 62–69 | `_is_valid_repo_url` | GitHub HTTPS/SSH tabanlı URL'lerin temel doğrulaması |
+| 75–92 | Identity Check | Git kullanıcı bilgilerinin varlığını denetleyen ve eksikse kuran katman |
+| 94–118 | Remote Setup | Repo hazır değilse `git init` yapan ve `origin` bağlantısını kuran akış |
+| 141–163 | Commit Flow | Değişiklikleri paketleyen ve kullanıcı notu ile kaydeden adım |
+| 166–202 | Push & Safe-Merge | Push işlemi; çakışma halinde kullanıcı onaylı güvenli birleştirme senaryosu |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GHU-02 | Otomatik merge’de `-X ours` kullanımı uzak taraf değişikliklerini bastırabilir; senkronizasyon başarısı sağlansa da veri kaybı riski vardır | 186–193 | Orta |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Enjeksiyon riskleri ve veri kaybı ihtimalleri mimari olarak giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| GHU-01 | ✅ Kapandı | `subprocess` çalıştırmaları artık shell-free argüman listesi ile yapılıyor; enjeksiyon/kaçış yüzeyi azaltıldı. |
+GHU-01 ve GHU-02 numaralı “Shell Injection” ve “Kör Merge (Veri Kaybı)” bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
@@ -2200,8 +2214,8 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
    `config.py` import anında senkron çalışan `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve subprocess yan etkileri açık bir `init` adımına alınmalıdır.
 7. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme (M-03):**
    `can_read()` yalnızca regex blacklist'e değil, proje kökü/izinli çalışma alanı (workspace) modeline bağlanmalı, dış dizinlere çıkışlar kesin engellenmelidir.
-8. **Git Kör Merge (-X ours) Stratejisini Engelleme (M-04):**
-   `github_upload.py` içindeki otomatik birleştirme adımı uzak taraf (remote) değişikliklerini ezme riski taşıdığından kullanıcı onayına bağlanmalıdır.
+8. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
+   `github_upload.py` tarafında otomatik birleştirme yalnızca açık kullanıcı onayıyla yürütülmelidir; onay verilmezse süreç güvenli şekilde sonlandırılmalıdır.
 9. **ConversationMemory I/O optimizasyonu:**
    Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
 10. **Rate limiter key eviction mekanizması:**
