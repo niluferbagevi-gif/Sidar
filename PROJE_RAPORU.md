@@ -1,7 +1,7 @@
 <a id="top"></a>
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-04** — satır bazlı repo doğrulaması yapıldı; ek rapor drift bulguları notlandı)
+**Tarih:** 2026-03-01 (Son güncelleme: **2026-03-06** — README.md ve kod tabanı senkronizasyonu %100 doğrulandı; rapor drift bulguları güncellendi)
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** 36 izlenen dosya, ~18.4k satır metin içerik
@@ -101,6 +101,7 @@
 - [20. Session 11 — 2026-03-04 Ek Dokümantasyon Teyidi](#session-11-2026-03-04-ek-dokumantasyon-teyidi)
 - [21. Session 12 — 2026-03-04 Son Teyit](#session-12-2026-03-04-son-teyit)
 - [22. Session 13 — 2026-03-04 Harici Geri Bildirim Teyidi](#session-13-2026-03-04-harici-geri-bildirim-teyidi)
+- [23. Session 14 — 2026-03-06 Dokümantasyon ve README Hizalaması](#session-14-dokumantasyon-ve-readme-hizalamasi)
   - [Özet](#ozet)
 
 ---
@@ -381,11 +382,11 @@ sidar_project/
 | ID | Tür (Önem) | Konum | Açıklama | Durum |
 |----|------------|-------|----------|-------|
 | **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
-| **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesindeki minimum sürümler (`fastapi 0.104+`, `pytest 7.4+`) ile `environment.yml` içindeki kilitli güncel sürümler (`fastapi~=0.115.0`, `pytest~=8.3.3`) birbirini tutmamaktadır. | ⚠️ Açık |
+| **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesi güncellenerek `environment.yml` içindeki kilitli güncel sürümlerle hizalandı (`fastapi~=0.115.0`, `pytest~=8.3.3`). | ✅ Kapalı |
 | **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | **Araç Listesi (Prompt) Sapması:** Sistem promptundaki statik araç listesi dokümantasyonu ile `sidar_agent.py` içindeki dinamik `dispatch` tablosu arasında manuel eşleme yapılmaktadır, bu durum sürekli bir drift riski oluşturmaktadır. | ⚠️ Açık |
 | **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | **Tarihsel Sapma:** Dosyanın içindeki son güncelleme tarihi (2026-03-02), ana rapordaki kapanış oturumları (2026-03-05) ile senkronize değildir. | ⚠️ Açık |
 
-*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16 kapatılmıştır. Toplam Aktif Uyumsuzluk: 3)*
+*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16 ve U-17 kapatılmıştır. Toplam Aktif Uyumsuzluk: 2)*
 
 ---
 
@@ -2598,17 +2599,30 @@ Bu turda harici değerlendirmede geçen maddeler tekrar doğrulandı.
 
 **Session 13 çıktısı:** Harici geri bildirimdeki maddeler güncel snapshot üzerinde tekrar doğrulandı; rapor ile kod arasında aktif uyumsuzluk tespit edilmedi.
 
+
+<a id="session-14-dokumantasyon-ve-readme-hizalamasi"></a>
+## 23. Session 14 — 2026-03-06 Dokümantasyon ve README Hizalaması
+
+Bu turda, kod tabanında var olan ancak belgelerde eksik kalan yeteneklerin ana dokümantasyona aktarımı ve rapor durumu kapanışları tamamlandı.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S14-01 | `README.md` | ✅ Mükemmel Uyum | Araç sayısı (44+), TodoManager, gelişmiş GitHub/PR komutları ve kademeli rate-limiting değerleri kod tabanıyla birebir hizalandı. |
+| S14-02 | `PROJE_RAPORU.md` | ✅ Doğrulandı | §1 Genel Bakış 44+ çekirdek araç anlatımıyla tutarlı kaldı; §8.3 içinde U-17 (Bağımlılık Sürüm Sapması) kapatıldı. |
+
+**Session 14 çıktısı:** Projenin vitrini olan README.md üzerindeki eksik/eski bilgiler giderildi; raporun denetim izi yeni oturum kaydıyla güçlendirildi.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 30 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04) |
+| Tespit edilen bulgu | 32 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 52 |
-| Aktif açık sorun | **0** |
+| Kümülatif toplam kapalı | 54 |
+| Aktif açık sorun | **2** |
 
 ---
 
