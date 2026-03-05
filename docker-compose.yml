@@ -24,11 +24,14 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api}
 
+    env_file:
+      - .env
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -75,11 +78,14 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
+    env_file:
+      - .env
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -98,7 +104,7 @@ services:
     restart: unless-stopped
     cpus: ${SIDAR_WEB_CPU_LIMIT:-2.0}
     mem_limit: ${SIDAR_WEB_MEM_LIMIT:-4g}
-    command: python web_server.py
+    command: --quick web --host 0.0.0.0 --port 7860
 
     ports:
       - "${WEB_PORT:-7860}:7860"
@@ -117,11 +123,14 @@ services:
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
 
+    env_file:
+      - .env
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -139,7 +148,7 @@ services:
     restart: unless-stopped
     cpus: ${SIDAR_WEB_GPU_CPU_LIMIT:-4.0}
     mem_limit: ${SIDAR_WEB_GPU_MEM_LIMIT:-8g}
-    command: python web_server.py
+    command: --quick web --host 0.0.0.0 --port 7860
 
     ports:
       - "${WEB_GPU_PORT:-7861}:7860"
@@ -169,11 +178,14 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
 
+    env_file:
+      - .env
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"

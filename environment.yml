@@ -72,6 +72,7 @@ dependencies:
       # ── Web Arayüzü ───────────────────────────────────────────────────────
       - fastapi~=0.115.0
       - uvicorn[standard]~=0.30.6
+      - prometheus-client~=0.21.0  # /metrics endpoint'inde Prometheus format çıktısı için opsiyonel
 
       # ── Geliştirme & Test ─────────────────────────────────────────────────
       - pytest~=8.3.3
