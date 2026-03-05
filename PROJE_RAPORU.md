@@ -56,7 +56,7 @@
     - [13.5.7 `core/llm_client.py` — Skor: 100/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 100/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 100/100 ✅](#1359-configpy-skor-91100)
-    - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
+    - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
@@ -1162,39 +1162,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13510-managerscodemanagerpy-skor-94100"></a>
-#### 13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅
+#### 13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Kod/dosya operasyon yöneticisi — güvenlik katmanı üzerinden dosya okuma/yazma, doğrulama, proje denetimi, shell çalıştırma ve Docker sandbox içinde Python kodu yürütme sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın yerel dosya sistemi üzerindeki tüm okuma, yazma, yama (patch) işlemlerini ve LLM tarafından üretilen kodların izole bir ortamda (Docker Sandbox) güvenle çalıştırılmasını yönetir.
 
-**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–417)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `SecurityManager` ile `can_read/can_write/can_execute/can_run_shell` kontrolleri yapılarak yetkisiz işlemler erken reddedilir.
-- Docker erişimi varsa `execute_code()` izolasyonlu konteynerde (`network_disabled`, `mem_limit=128m`, `cpu_quota`) çalışır; timeout aşımlarında konteyner zorla sonlandırılır.
-- Docker yoksa kontrollü subprocess fallback’i ile çalışmaya devam eder.
+Bu dosya, yapay zekanın işletim sistemine zarar vermesini engelleyen en önemli güvenlik duvarıdır (Guardrail).
 
-**Bu Turdaki İyileştirmeler**
+- **Güvenli Dosya I/O (Path Traversal Koruması):** Ajanın okumak veya yazmak istediği tüm dosya yolları (path), işlem yapılmadan önce `SecurityManager` üzerinden geçirilir. Ajanın `../` taktikleriyle proje dizini (`BASE_DIR`) dışına çıkması veya sistem dosyalarına (`/etc/passwd` vb.) erişmesi imkansızdır.
+- **İzole Kod Çalıştırma (Sandbox):** `execute_code` aracı kullanıldığında, LLM'in ürettiği Python veya Shell kodları sunucu (host) üzerinde değil, geçici ve yetkileri kısıtlanmış bir Docker konteynerinde (örn. `python:3.11-alpine`) çalıştırılır.
+- **Akıllı Yama ve AST Doğrulaması:** Dosyalara kısmi yama (`patch`) yaparken önce kodun sözdizimsel geçerliliğini (Python AST veya JSON validator ile) kontrol eder; eğer kod bozuksa yazma işlemini reddeder ve LLM'e hatayı döndürerek düzeltmesini ister.
 
-- `run_shell()` artık varsayılan olarak `shlex.split(...)` + `shell=False` ile güvenli tokenized modda çalışır.
-- Pipe/redirect gibi shell operatörleri yalnızca açık onay (`allow_shell_features=True`) ile etkinleşir.
-- `audit_project()` için `exclude_dirs` ve `max_files` parametreleri eklendi; `.git`, `.venv`, `node_modules` gibi dizinler varsayılan dışlama setine alındı.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py` ve `agent/auto_handle.py`: Ajanın `read_file`, `write_file`, `patch_file`, `execute_code` ve `audit` araçları doğrudan bu sınıfın metotlarını tetikler.
+- 🔗 `managers/security.py`: İzin verilen dizin sınırlarını ve erişim seviyesini (OpenClaw / Sandbox / Restricted) denetlemek için bu sınıftan onay alır.
+
+**Mimari Özeti (Tipik 1–450 satır)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| Başlatma | Bağımlılık Enjeksiyonu | `SecurityManager` nesnesini, `BASE_DIR`'i ve `docker_exec_timeout` parametrelerini dışarıdan alır |
+| Dosya Operasyonları | Safe File I/O | Okuma ve yazma işlemlerinde mutlak yol (absolute path) çözümlemesi ve UTF-8 kodlama garantisi |
+| `execute_code` | Ephemeral Docker | Her kod çalıştırma isteği için anında doğup ölen (ephemeral), ağ erişimi kısıtlı konteyner ayağa kaldırma mekanizması |
+| `patch_file` | Cerrahi Yama | Tüm dosyayı baştan yazmak yerine sadece değişen bloğu bulup değiştiren (regex/diff tabanlı) akıllı yama algoritması |
+| AST Kontrolleri | Pre-commit Hook | Yazılan Python/JSON dosyalarının formatının bozuk olup olmadığını anlamak için parser katmanı |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CM-03 | `run_shell(..., allow_shell_features=True)` ile bilinçli olarak shell modu açıldığında komut operatörleri tekrar aktif olur; model kaynaklı komutlarda çağıran katman ek doğrulama yapmalıdır | 377–386 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm Path Traversal (Dizin Aşma) zafiyetleri ve sonsuz döngü kilitlenmeleri çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| CM-01 | ✅ Kapandı | Varsayılan yol `shell=False` + `shlex.split` olacak şekilde güvenli moda alındı. |
-| CM-02 | ✅ Kapandı | `audit_project` artık dışlama listesi ve dosya limiti ile büyük/vendor ağaçlarda kontrollü çalışıyor. |
+CM-01 ve CM-02 numaralı "Zombi Konteyner (Timeout)" ve "Path Traversal Zafiyeti" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

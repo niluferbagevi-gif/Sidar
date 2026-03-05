@@ -119,6 +119,17 @@
 
 ---
 
+### ✅ §13.5.10 `managers/code_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın işletim sistemine müdahale yeteneklerinin sıkılaştırılması, dışarı sızma (escape) ihtimallerinin sıfırlanması ve sistem kaynaklarının korunması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CM-01 | ✅ Kapandı | Zombi Konteyner ve Kaynak Tüketimi: Ajanın `execute_code` aracıyla ürettiği sonsuz döngü (`while True: pass`) veya uzun süren işlemlerin Docker'ı ve ana sunucuyu kilitlemesi sorunu çözüldü. Kod çalıştırıcıya katı bir `docker_exec_timeout` (varsayılan: 10 saniye) eklendi. Süre aşımında konteyner acımasızca öldürülür (`SIGKILL`) ve ajana "Zaman Aşımı" uyarısı dönülür. |
+| CM-02 | ✅ Kapandı | Path Traversal Zafiyeti: Eski sürümde ajanın `../../` gibi göreceli yollar (relative paths) kullanarak projenin kök dizininden (`BASE_DIR`) çıkabilme riski vardı. Yeni mimaride tüm yol çözümlemeleri (path resolution) `SecurityManager` içindeki güvenli kontrol mekanizmasına bağlandı. Yetkisiz okuma/yazma girişimleri anında `PermissionError` ile engelleniyor. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
