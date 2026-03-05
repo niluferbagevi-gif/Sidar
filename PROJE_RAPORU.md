@@ -278,11 +278,14 @@ sidar_project/
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="5-yuksek-oncelikli-sorunlar"></a>
-## 5. Yüksek Öncelikli Sorunlar
+## 5. Yüksek Öncelikli Sorunlar (High Priority)
 
-> ✅ 2026-03-02 güncel taramasında aktif yüksek öncelikli sorun kalmamıştır.
->
-> Geçmişte tespit edilen (N-02 dahil) tüm yüksek öncelikli sorunlar giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
+| ID | Modül | Hata Açıklaması | Çözüm Önerisi |
+| :--- | :--- | :--- | :--- |
+| **H-03** | `agent/sidar_agent.py` | **Sonsuz Hafıza Context Taşması:** `_summarize_memory` ile ChromaDB'ye arşivlenen geçmiş konuşmalar, boyut sınırı olmaksızın her yeni mesajda RAG üzerinden LLM'e gönderilmektedir. Uzun sohbetlerde bu durum token aşımına, maliyet artışına (Gemini) veya VRAM yetersizliğine (Ollama) yol açmaktadır. | Arşivden getirilen geçmiş fragmanları için katı bir `top_k` (örn: en alakalı 3 sonuç) ve `min_score` (örn: >0.75) eşiği konulmalı, `agent_system_prompt`'a eklenen metin sınırlandırılmalıdır. |
+| **H-04** | `core/memory.py` | **Şifreleme Anahtarı (Fernet) Zafiyeti:** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir veya kaybolursa, diskteki mevcut JSON sohbet geçmişleri çözülemediği için `cryptography.fernet.InvalidToken` hatası fırlatılarak sistemin o oturum için çökmesine neden olur. Veri kaybı riski mevcuttur. | `_load_sessions` metodunda şifre çözme işlemi `try-except` bloğuna alınmalı, hata durumunda oturumun bozulmasını engellemek için kullanıcı UI üzerinden uyarılmalı veya geçici bir salt-okunur modda başlatılmalıdır. |
+
+*(Önceki sürümlerden kalan H-01 ve H-02 numaralı SSE ve XSS hataları v2.6.1 ile çözülmüştür. Detaylar için DUZELTME_GECMISI.md dosyasına bakınız.)*
 
 ---
 
