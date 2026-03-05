@@ -315,6 +315,16 @@
 
 ---
 
+### ✅ §13.5.28 `README.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dokümantasyonun `v2.7.0` kod tabanındaki büyük mimari değişiklikleri ve yeni araçları yansıtacak şekilde güncellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| RM-06 | ✅ Kapandı | `v2.7.0` Özellik Entegrasyonu: README.md yalnızca sürüm etiketiyle değil, içerik düzeyinde de güncellendi. TodoManager (Görev Yönetimi), Sonsuz Hafıza (Vector Archive) ve Fernet şifreleme için özel başlıklar ve kullanım notları eklenerek dokümantasyon teknik borcu kapatıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
