@@ -396,7 +396,6 @@ sidar_project/
 <a id="9-bagimlilik-analizi"></a>
 ## 9. Bağımlılık Analizi
 
-
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="environmentyml-guncel-durum-tablosu"></a>
@@ -404,31 +403,39 @@ sidar_project/
 
 | Paket | Versiyon | Kullanım Yeri | Durum |
 |-------|----------|---------------|-------|
-| `python-dotenv` | ≥1.0.0 | `config.py` | ✅ Aktif |
-| `pyyaml` | ≥6.0.1 | `Dockerfile` build | ✅ Aktif |
-| ~~`requests`~~ | — | *Kaldırıldı* | ✅ Tüm HTTP httpx ile yapılıyor |
-| `httpx` | ≥0.25.0 | LLMClient, WebSearch, PackageInfo, RAG | ✅ Ana HTTP kütüphanesi |
-| `pydantic` | ≥2.4.0 | `ToolCall` modeli, validation | ✅ v2 API doğru |
-| `torch` | ≥2.4.0 | GPU embedding, CUDA kontrolü | ✅ CUDA 12.4 wheel (cu124) |
-| `torchvision` | ≥0.19.0 | PyTorch bağımlılığı | ✅ Wheel ile |
-| `psutil` | ≥5.9.5 | CPU/RAM izleme | ✅ Aktif |
-| `nvidia-ml-py` | ≥12.535.77 | GPU sıcaklık/kullanım | ✅ WSL2 fallback ile |
-| `docker` | ≥6.0.0 | CodeManager REPL sandbox | ✅ Aktif |
-| `ollama` | — | *(pip'den kaldırıldı — httpx ile API çağrısı)* | ✅ Doğru yaklaşım |
-| `google-generativeai` | ≥0.7.0 | Gemini sağlayıcı | ✅ Aktif |
-| `PyGithub` | ≥2.1.0 | GitHub API | ✅ Aktif |
-| `duckduckgo-search` | ≥6.1.0 | Web arama (v8 uyumlu `DDGS`) | ✅ Aktif |
-| `rank-bm25` | ≥0.2.2 | BM25 arama | ✅ Aktif |
-| `chromadb` | ≥0.4.0 | Vektör DB | ✅ Aktif |
-| `sentence-transformers` | ≥2.2.0 | Embedding modeli | ✅ GPU destekli |
-| `fastapi` | ≥0.104.0 | Web sunucu | ✅ Aktif |
-| `uvicorn` | ≥0.24.0 | ASGI sunucu | ✅ Aktif |
-| `pytest` | ≥7.4.0 | Test | ✅ Aktif |
-| `pytest-asyncio` | ≥0.21.0 | Async test | ✅ **Eklendi** |
-| `pytest-cov` | ≥4.1.0 | Test kapsamı | ✅ Aktif |
-| `black` | ≥23.0.0 | Kod formatı | ✅ Aktif |
-| `flake8` | ≥6.0.0 | Lint | ✅ Aktif |
-| `mypy` | ≥1.5.0 | Tip kontrolü | ✅ Aktif |
+| **Çekirdek Ortam** | | | |
+| `python` | `=3.11` | Ana çalışma ortamı | ✅ Aktif |
+| `pip` / `git` | `=24.2` / `=2.45` | Paket yöneticisi ve Sürüm kontrol | ✅ Aktif |
+| `setuptools` / `wheel` | `75.1` / `0.44` | Build yardımcıları | ✅ Aktif |
+| **Temel Pip Paketleri** | | | |
+| `packaging` | `~=24.1` | Paket sürüm kıyaslama işlemleri | ✅ Aktif |
+| `python-dotenv` | `~=1.0.1` | `config.py` (.env yükleme) | ✅ Aktif |
+| `pyyaml` | `~=6.0.2` | `Dockerfile` / Compose build | ✅ Aktif |
+| ~~`requests`~~ | — | *Kaldırıldı* | ✅ Tüm HTTP `httpx` ile yapılıyor |
+| `httpx` | `~=0.27.0` | LLMClient, WebSearch, PackageInfo, RAG | ✅ Ana asenkron HTTP kütüphanesi |
+| `pydantic` | `~=2.8.2` | `ToolCall` modeli, şema doğrulama | ✅ v2 API doğru |
+| `psutil` | `~=6.0.0` | CPU/RAM izleme telemetrisi | ✅ Aktif |
+| `nvidia-ml-py` | `~=12.560.30` | GPU sıcaklık/kullanım | ✅ WSL2 fallback ile |
+| `docker` | `~=7.1.0` | CodeManager REPL sandbox | ✅ Aktif |
+| `cryptography` | `~=43.0.1` | Memory Fernet şifreleme | ✅ **YENİ** Aktif |
+| **Yapay Zeka & RAG** | | | |
+| `torch` / `torchvision`| `~=2.4.1` / `~=0.19.1`| GPU embedding, CUDA kontrolü | ✅ CUDA 12.4 wheel (cu124) |
+| `google-generativeai` | `~=0.8.3` | Gemini sağlayıcı | ✅ Aktif |
+| `rank-bm25` | `==0.2.2` | Hibrit arama (BM25 motoru) | ✅ Aktif |
+| `chromadb` | `~=0.5.5` | Vektör veritabanı | ✅ Aktif |
+| `sentence-transformers`| `~=3.0.1` | Embedding modeli | ✅ GPU destekli |
+| **Ajan Araçları** | | | |
+| `PyGithub` | `~=2.4.0` | GitHub API (Manager) | ✅ Aktif |
+| `duckduckgo-search` | `~=6.2.13` | Web arama motoru | ✅ Aktif |
+| **Web Sunucusu** | | | |
+| `fastapi` | `~=0.115.0` | Web ve SSE sunucu | ✅ Aktif |
+| `uvicorn[standard]` | `~=0.30.6` | ASGI sunucu motoru | ✅ Aktif |
+| **Test & Kalite** | | | |
+| `pytest` / `pytest-cov`| `~=8.3.3` / `~=5.0.0`| Birim ve Regresyon testleri | ✅ Aktif |
+| `pytest-asyncio` | `~=0.24.0` | Asenkron test koşucusu | ✅ Aktif |
+| `black` / `flake8` | `~=24.8.0` / `~=7.1.1`| Kod formatlama ve Linting | ✅ Aktif |
+| `mypy` | `~=1.11.2` | Statik tip kontrolü | ✅ Aktif |
+
 
 ---
 
