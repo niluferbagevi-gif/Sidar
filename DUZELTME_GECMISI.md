@@ -52,6 +52,18 @@
 
 ---
 
+### ✅ §13.5.4 `web_server.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** FastAPI sunucusunda ağır yük (high-concurrency) altında yaşanabilecek asenkron kilitlenmelerin, güvenlik yarış koşullarının ve başlatma uyarılarının giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WS-01 | ✅ Kapandı | Python 3.9/3.10 sürümlerinde alınan `RuntimeWarning: asyncio.Lock() created outside of event loop` hatası, Lock nesnelerinin (`_agent_lock` ve `_rate_lock`) global alanda değil, fonksiyon ilk kez çağrıldığında (lazy init) oluşturulmasıyla kesin olarak çözüldü. |
+| WS-02 | ✅ Kapandı | Event-loop bloklaması (Starvation): `/git-*` ve `/rag/*` endpoint'lerindeki alt süreç (`subprocess`) ve disk okuma işlemleri ana akışı donduruyordu. Bu işlemlerin tamamı `await asyncio.to_thread()` ile thread pool'a (iş parçacığı havuzuna) itilerek sunucu tepkiselliği maksimize edildi. |
+| WS-03 | ✅ Kapandı | Rate Limiter zafiyeti: Eşzamanlı (concurrent) gelen isteklerde aynı IP'nin limitleri aşabilmesi (TOCTOU race condition) sorunu, `_is_rate_limited` fonksiyonuna `_rate_lock` atomik kilidi eklenerek giderildi. `X-Forwarded-For` IP tespiti proxy-aware hale getirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

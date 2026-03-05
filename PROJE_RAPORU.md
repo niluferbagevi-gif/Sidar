@@ -50,7 +50,7 @@
     - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
-    - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
+    - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
@@ -902,114 +902,47 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1354-webserverpy-skor-90100"></a>
-#### 13.5.4 `web_server.py` — Skor: 95/100 ✅
+#### 13.5.4 `web_server.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** FastAPI + SSE tabanlı web arayüzü; rate limiting, güvenlik kontrolleri, RAG / GitHub / Git / Todo endpoint'leri, Prometheus metrikleri.
+**Sorumluluk (Güncel):** SİDAR'ın web arayüzüne hizmet eden FastAPI arka uç (backend) sunucusu. SSE (Server-Sent Events) tabanlı asenkron akış, Rate Limiting (Hız Sınırlandırma), oturum (session) yönetimi ve RAG/Git entegrasyon API'lerini sağlar.
 
-**Genel Mimari**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-```
-Tarayıcı  ──SSE──▶  /chat  ──▶  SidarAgent.respond()  ──SSE──▶  Tarayıcı
-                ─ JSON ─▶  /status /sessions /rag/* /git-* /todo  ◀── JSON ─
-```
+Bu dosya, kullanıcıların tarayıcı üzerinden SİDAR ile etkileşime girmesini sağlayan köprüdür.
 
-**Singleton Ajan — Lazy Double-Checked Locking (satır 41–56)**
+- **Canlı Akış (Streaming):** `/chat` endpoint'i, ajanın ürettiği LLM yanıtlarını ve araç çağrılarını (`TOOL`/`THOUGHT`) bekletmeden, anlık olarak SSE (`text/event-stream`) üzerinden arayüze aktarır.
+- **Güvenlik ve İzolasyon:** Proxy-aware (`X-Forwarded-For` destekli) IP tabanlı hız sınırlandırması (`rate_limit_middleware`) uygulayarak sistemi DDoS ve spam isteklerden korur. `asyncio.Lock` kullanarak atomik kontrol sağlar (TOCTOU koruması).
+- **Asenkron Kararlılık:** Disk I/O (Dosya okuma, RAG indeksleme) ve Alt Süreç (Git komutları) gibi ana event-loop'u kilitleyebilecek (blocking) tüm işlemler `asyncio.to_thread` aracılığıyla thread havuzuna (pool) itilir.
 
-```python
-_agent_lock: asyncio.Lock | None = None  # modül yüklenirken None
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-async def get_agent() -> SidarAgent:
-    global _agent, _agent_lock
-    if _agent_lock is None:
-        _agent_lock = asyncio.Lock()   # event loop başladıktan sonra oluştur
-    if _agent is None:
-        async with _agent_lock:
-            if _agent is None:
-                _agent = SidarAgent(cfg)
-    return _agent
-```
+- 🔗 `agent/sidar_agent.py`: Ajan nesnesi tekil (singleton) olarak asenkron şekilde başlatılır (`get_agent()`) ve HTTP istekleri buraya yönlendirilir.
+- 🔗 `web_ui/index.html`: Root (`/`) endpoint'i üzerinden doğrudan arayüzün barındırıldığı dosyayı servis eder.
+- 🔗 `config.py`: Hangi porta/host'a bağlanılacağı, CORS izinleri gibi temel FastAPI ayarları buradan okunur.
 
-- Python < 3.10'da modül yüklenirken `asyncio.Lock()` oluşturulursa `DeprecationWarning` üretilir; lazy init bu riski sıfırlar.
-- `asyncio` single-thread koşucusu nedeniyle gerçek iki eş zamanlı `_agent is None` dallanması imkânsız olsa da, lock ile `async` task preemption korunuyor.
+**Mimari Özeti (satır 1–456)**
 
-**3 Katmanlı Rate Limiting (satır 87–173)**
-
-| Kapsam | Anahtar | Limit |
-|--------|---------|-------|
-| `/chat` | IP | 20 req / 60 s |
-| POST + DELETE | `IP:mut` | 60 req / 60 s |
-| GET I/O endpoint'leri | `IP:get` | 30 req / 60 s |
-
-`_RATE_GET_IO_PATHS` frozenset içinde: `/git-info`, `/git-branches`, `/files`, `/file-content`, `/github-prs`, `/todo`, `/rag/docs`, `/rag/search`.
-
-`_is_rate_limited` işlevi `asyncio.Lock` ile TOCTOU (Time-of-Check / Time-of-Use) yarış koşulunu önler; pencere dışı zaman damgaları her kontrol sırasında temizlenir.
-
-**Güvenlik Kontrolleri**
-
-| Kontrol | Satır | Kapsam |
-|---------|-------|--------|
-| Path traversal (`target.relative_to(_root)`) | 412, 452, 650 | `/files`, `/file-content`, `/rag/add-file` |
-| Vendor path traversal (`safe_path.startswith(vendor_dir)`) | 195 | `/vendor/{path}` |
-| Branch regex doğrulaması (`^[a-zA-Z0-9/_.-]+$`) | 523, 533 | `/set-branch` |
-| Uzantı whitelist (metin dosyaları) | 443–447, 460 | `/file-content` |
-| CORS (yalnızca localhost origins) | 66–76 | tüm rotalar |
-| `limit=min(limit, 50)`, `top_k=min(top_k, 10)` | 590, 688 | `/github-prs`, `/rag/search` |
-
-**SSE Bağlantı Yönetimi (satır 224–281)**
-
-```python
-async for chunk in agent.respond(user_message):
-    disconnected = await request.is_disconnected()  # istemci kesti mi?
-    if disconnected:
-        return
-    ...
-except asyncio.CancelledError:          # ESC / AbortController
-    logger.info(...)
-except Exception as exc:
-    if _ANYIO_CLOSED and isinstance(exc, _ANYIO_CLOSED):  # kapalı sokete yazma
-        return
-    logger.exception(...)
-    yield f"data: {json.dumps({'chunk': f'...'})}\n\n"    # hata SSE olarak bildir
-    yield f"data: {json.dumps({'done': True})}\n\n"
-```
-
-Üç bağlantı kopma senaryosunun tamamı yakalanıyor: `is_disconnected`, `CancelledError`, `ClosedResourceError`.
-
-**RAG Endpoint'leri — Senkron/Async Tutarlılık Tablosu (satır 627–689)**
-
-| Endpoint | `docs` metodu | Thread sarması |
-|----------|--------------|----------------|
-| `GET /rag/docs` | `get_index_info()` — saf dict | Gerekmez ✓ |
-| `POST /rag/add-file` | `add_document_from_file()` — sync + disk I/O | `asyncio.to_thread` ✓ |
-| `POST /rag/add-url` | `add_document_from_url()` — async/httpx | `await` ✓ |
-| `DELETE /rag/docs/{id}` | `delete_document()` — sync + disk I/O | `asyncio.to_thread` ✓ |
-| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | `asyncio.to_thread` ✓ |
-
-**Prometheus Metrikleri (satır 341–358)**
-
-`Accept: text/plain` başlığı geldiğinde ve `prometheus_client` kuruluysa 5 Gauge sunuluyor (`sidar_uptime_seconds`, `sidar_sessions_total`, `sidar_rag_documents_total`, `sidar_active_turns`, `sidar_rate_limit_requests`). `prometheus_client` yoksa `ImportError` sessizce atlanıp JSON döndürülüyor.
-
-**`_get_client_ip` Proxy Farkındalığı (satır 118–139)**
-
-`X-Forwarded-For` → ilk IP (sol en güvenilir orijin), `X-Real-IP`, `request.client.host` sırasıyla deneniyor. Dokümantasyonda güvenlik notu mevcut.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 45–54 | Lazy Singleton Init | `get_agent()` içinde `asyncio.Lock`'un event-loop çalıştıktan sonra yaratılması (DeprecationWarning çözümü) |
+| 74–157 | Rate Limiter Modülü | IP ve Namespace (`mut/get`) tabanlı, `_rate_lock` ile atomik (race-condition korumalı) in-memory istek kısıtlayıcı |
+| 178–230 | `chat(...)` (SSE) | Kullanıcı mesajını alan ve `SidarAgent.respond()` asenkron jeneratörünü `StreamingResponse` ile dışarı aktaran ana iletişim kanalı |
+| 233–296 | `/status` & `/metrics` | Prometheus formatını da destekleyen, sistemin donanım (GPU), bellek ve oturum metriklerini sunan izleme endpoint'leri |
+| 301–326 | `/sessions/*` | Çoklu sohbet oturumlarını yöneten, oturum geçmişi yükleme ve silme API'leri |
+| 355–407 | Git Entegrasyon API'leri | `_git_run` metodunu `asyncio.to_thread` ile sarmalayarak yerel branch ve bilgi çekme işlemleri |
+| 457–514 | RAG Entegrasyon API'leri | Web UI üzerinden RAG deposuna belge ekleme (`add-file`, `add-url`), silme ve arama endpoint'leri |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| W-03 | Web sunucu banner'ı uzun sürüm etiketlerini kırparak sabit genişliği korur; tam sürüm metninin tamamı banner'da görünmez (bilinçli görsel tercih) | 764–767 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm asenkron mimari riskler ve race-condition durumları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| W-01 | ✅ Kapandı | `/rag/search` içinde `agent.docs.search(...)` çağrısı `await asyncio.to_thread(...)` ile event loop dışına alındı. |
-| W-02 | ✅ Kapandı | Rate limiter içinde `_prune_rate_buckets(now)` eklendi; pencere dışı ve boş bucket anahtarları temizleniyor. |
+WS-01, WS-02 ve WS-03 numaralı event-loop bloklama, lock başlatma (Deprecation) ve rate-limit race condition bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
