@@ -64,6 +64,17 @@
 
 ---
 
+### ✅ §13.5.5 `agent/definitions.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM modellerinin (özellikle açık kaynaklı Llama türevlerinin) araç çağrısı yaparken JSON formatının dışına çıkması, Markdown blokları kullanması ve sistemin Pydantic ayrıştırıcısını (parser) bozmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DEF-01 | ✅ Kapandı | Format Kayması (Format Drift): Modellerin JSON yanıtlarını ```json ... ``` tagleri arasına alma eğilimi, prompt içine eklenen "Asla markdown bloğu kullanma, saf string olarak geçerli bir JSON döndür" şeklindeki katı sistem kuralıyla (Zero-Shot Constraint) çözüldü. Bu sayede `sidar_agent.py` tarafındaki regex bağımlılığı azaltıldı. |
+| DEF-02 | ✅ Kapandı | Token Optimizasyonu: Prompt içindeki eski, uzun ve gereksiz tekrar eden araç tanımlamaları temizlendi. Modelin bağlam penceresinde (context window) yer açıldı ve asıl odaklanması gereken "görev ve çalışma alanı" talimatlarının etkisi artırıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

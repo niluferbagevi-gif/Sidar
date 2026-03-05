@@ -51,7 +51,7 @@
     - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
-    - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
+    - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
@@ -948,49 +948,42 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1355-agentdefinitionspy-skor-87100"></a>
-#### 13.5.5 `agent/definitions.py` — Skor: 92/100 ✅
+#### 13.5.5 `agent/definitions.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Ajan davranış sözleşmesi — kimlik/persona, güvenlik ilkeleri, araç kullanım semantiği ve JSON yanıt şeması.
+**Sorumluluk (Güncel):** SİDAR'ın kişiliğini (persona), ReAct (Düşünce + Eylem) döngüsündeki kurallarını ve Pydantic modeline uygun katı JSON çıktı formatını belirleyen temel sistem komutunu (System Prompt) barındırır.
 
-**Modül Seviyesi Sabitler (satır 7–10)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `SIDAR_KEYS` ve `SIDAR_WAKE_WORDS` geriye dönük çağırma anahtarlarını korur.
-- `SIDAR_SYSTEM_PROMPT` tek bir uzun metin bloğu olarak tutulur; ajanın karar bağlamı bu metinden beslenir.
+Bu dosya, yapay zeka modelinin (Gemini veya Ollama) kendini nasıl konumlandıracağını ve çıktılarını nasıl biçimlendireceğini belirler.
 
-**Güvenlik ve Hallucination Kontrolleri (satır 25–46)**
+- **Karakter ve Güvenlik:** Ajanın kendini "Sidar" adında kıdemli bir yazılım mühendisi olarak tanıtmasını, yıkıcı komutlara (örn. tüm diski silme) karşı uyanık olmasını ve kullanıcının isteklerini en verimli şekilde çözmesini sağlar.
+- **Format Zorlaması (Strict Formatting):** Ajanın her adımda kesinlikle geçerli bir JSON objesi döndürmesini zorunlu kılar. `sidar_agent.py` içindeki Pydantic ayrıştırıcısının çökmemesi için Markdown tag'leri (```json) kullanımını kesin bir dille yasaklar.
+- **Araç (Tool) Yönlendirmesi:** LLM'e kullanabileceği araçların sınırlarını ve `final_answer` verene kadar döngüde nasıl kalacağını öğretir.
 
-- Eğitim verisi sınırı, tahmin yasağı ve `get_config` zorlaması açık biçimde tanımlanmış.
-- Dosya erişiminde `glob_search` / `grep_files` / `read_file` sıralı stratejisi ve `run_shell` için `ACCESS_LEVEL=full` koşulu belirtilmiş.
-- Bu kurallar, `sidar_agent.py` içindeki runtime config bloğu yaklaşımıyla uyumlu bir "uydurmama" çerçevesi oluşturuyor.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Görev Takibi ve Araç Politikası (satır 48–175)**
+- 🔗 `agent/sidar_agent.py`: Bu dosyadaki `SIDAR_SYSTEM_PROMPT` sabiti import edilerek her LLM çağrısında `system_prompt` parametresi olarak modele iletilir.
 
-- Çok adımlı işlerde `todo_write` / `todo_update` / `todo_read` kullanımının zorunlu tutulması, planlı ilerleme için güçlü bir politika.
-- Araç listesi ve argüman formatları metin içinde tek tek tarif edilmiş; yeni geliştirici/operatör için onboarding maliyetini düşürüyor.
-- JSON yanıt şeması (`thought/tool/argument`) ve örnekler, ajan çıktısının beklenen formatını netleştiriyor.
+**Mimari Özeti (Tipik 1–85 satır)**
 
-**Bakım ve Sürdürme Notu (satır 66–175)**
-
-- Araç listesi bu dosyada metin olarak hardcoded durumda; `sidar_agent.py` dispatch tablosu genişledikçe drift riski doğar.
-- Özellikle alias veya yeni araç eklentilerinde prompt dokümanı ayrı güncellenmek zorunda kalıyor.
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| Karakter Tanımı | Persona Injection | Kıdemli, çözüm odaklı ve Türkçe iletişim kuran mühendis profili |
+| Çıktı Şeması | Zero-Shot Constraint | Sadece `{"thought": "...", "tool": "...", "argument": "..."}` şemasında çıktı üretme zorunluluğu |
+| Anti-Hallucination | Guardrails | Modelin araç sonuçları uydurmasını engelleyen, sadece terminal/araç çıktılarına güvenmesini söyleyen kurallar |
+| Token Optimizasyonu | Minimalizm | Eski sürümdeki tekrarlayan ve uzun talimatların kaldırılarak modelin dikkat mekanizmasının (attention) artırılması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| D-03 | Araç listesi hâlâ metin tabanlı dokümantasyon içeriyor; dispatch tablosu source-of-truth olarak belirtilse de yeni araçlarda manuel belge güncellemesi gerektirir | 66–177 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Prompt zehirlenmesi (injection) ve format kayması (format drift) riskleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| D-01 | ✅ Kapandı | Promptta sağlayıcı koşulu netleştirildi: Gemini kullanımında internet bağlantısı gerektiği açıkça yazıldı. |
-| D-02 | ✅ Kapandı | Araç listesi için source-of-truth notu eklendi; çelişki durumunda `sidar_agent.py` dispatch tablosunun esas alınacağı belirtildi. |
+DEF-01 ve DEF-02 numaralı format kayması ve token optimizasyonu bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
