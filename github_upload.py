@@ -154,34 +154,47 @@ def main():
     else:
         # Çakışma varsa (fetch first / rejected)
         if "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
-            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var. Senkronizasyon başlatılıyor...{Colors.ENDC}")
+            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
+            confirm = input(
+                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+            ).strip().lower()
 
-            print(f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar otomatik birleştiriliyor...{Colors.ENDC}")
-            pull_cmd = [
-                "git", "pull", "origin", current_branch,
-                "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
-            ]
-            pull_success, pull_err = run_command(pull_cmd, show_output=False)
+            if confirm == "y":
+                print(
+                    f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
+                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+                )
+                pull_cmd = [
+                    "git", "pull", "origin", current_branch,
+                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+                ]
+                pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
-            if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
-                print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
+                if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
+                    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
 
-                retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
+                    retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
 
-                if retry_success:
-                    print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                    print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
-                    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                else:
-                    if "rule violations" in retry_err:
-                        print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
-                        print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
+                    if retry_success:
+                        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
+                        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
                     else:
-                        print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
+                        if "rule violations" in retry_err:
+                            print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
+                            print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
+                        else:
+                            print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
+                else:
+                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
+                    print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
+                    print(f"Hata Çıktısı:\n{pull_err}")
             else:
-                print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
-                print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
-                print(f"Hata Çıktısı:\n{pull_err}")
+                print(
+                    f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
+                    "Veri kaybını önlemek için push durduruldu."
+                    f"{Colors.ENDC}"
+                )
         else:
             print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
 

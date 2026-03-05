@@ -2,11 +2,393 @@
 
 > Bu dosya `PROJE_RAPORU.md` içinden ayrılmıştır.  
 > **Ana rapor:** [PROJE_RAPORU.md](PROJE_RAPORU.md) — §3 referansı buraya yönlendirilmiştir.  
-> Son güncelleme: **2026-03-04** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
+> Son güncelleme: **2026-03-05** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
 
 ---
 
 <a id="sec-3-1-3-76"></a>
+
+### ✅ §13.5.1 `main.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** `main.py` dosyasındaki alt süreç (child process) loglama mantığında RAM şişmesine sebep olabilecek mimari sorunların giderilmesi ve `cli.py` çakışmalarının düzeltilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| M-01 | ✅ Kapandı | Child-process gözlemlenebilirliği için canlı stdout/stderr aynalama ve opsiyonel dosya loglama eklendi (`--capture-output`, `--child-log`). |
+| M-02 | ✅ Kapandı | Loglama işlemi bellekte liste tutmak yerine (RAM şişmesi riski) doğrudan diske yazma (on-the-fly streaming) metoduna geçirilerek tamamen optimize edildi. Eski `cli.py` çakışma notları temizlendi. |
+
+---
+
+### ✅ §13.5.1A `cli.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Eski sürümlerde `main.py`'de bulunan karmaşık asenkron döngü yapısının `cli.py`'ye taşınması ve banner UI/UX tasarım kararlarının kesinleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CLI-01 | ✅ Kapandı | Sürekli `asyncio.run()` çağrılarak yaratılan `RuntimeError` çakışma riski, tüm döngünün tek bir `_interactive_loop_async` fonksiyonuna sarılmasıyla kesin olarak çözüldü. |
+| CLI-02 | ✅ Kapandı | Uzun sürüm/branch metinlerinin ASCII çerçeveyi bozması sorunu "hata" statüsünden çıkarıldı. `_make_banner` içindeki `ver_field[:9] + "…"` algoritması bilinçli bir UI stabilite kararı olarak kabul edildi ve bulgu kapatıldı. |
+
+---
+
+### ✅ §13.5.2 `agent/sidar_agent.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın uzun sohbetlerde LLM (Gemini/Ollama) token sınırlarını aşması riskinin (Context Bloat) ve bazı mimari kararların netleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AG-02 | ✅ Kapandı | `_tool_subtask` adım limitinin yapılandırılabilir olmasına rağmen üst sınırın 10 olarak sabitlenmesi bir hata değil, sonsuz özyinelemeyi (infinite recursion) ve bütçe aşımını engelleyen bilinçli bir güvenlik/mimari tasarımı (guardrail) olarak değerlendirildi. |
+| AG-03 (H-03) | ✅ Kapandı | ChromaDB'ye arşivlenen eski konuşmaların `_build_context` içinde körü körüne LLM'e geri yüklenmesi mantığı mimariden çıkarıldı. Sistem artık sadece RAG depo durumunu bildiriyor ve eski verilere ihtiyaç duyan LLM'in bilinçli olarak `docs_search` aracını kullanmasını zorunlu kılıyor. Bu sayede kritik Token Taşması/VRAM Şişmesi (H-03) riski tamamen ortadan kaldırıldı. |
+
+---
+
+### ✅ §13.5.3 `core/rag.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** RAG modülündeki senkron disk/index işlemlerinin çok kullanıcılı asenkron web sunucusunu (FastAPI) dondurma (Event-Loop Starvation) riskinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| C-01 (RAG-04) | ✅ Kapandı | `_ensure_bm25_index` işleminin senkron çalışması nedeniyle oluşan kritik darboğaz (starvation), doğrudan `rag.py` içinde değil, çağıran katmanlarda çözüldü. SİDAR mimarisine uygun olarak, `sidar_agent.py` ve `web_server.py` dosyalarındaki tüm RAG arama (`search`), ekleme (`add_document`) ve silme işlemleri `await asyncio.to_thread(...)` ile arka plan thread'lerine itildi. Ana event-loop'un dondurulması kesin olarak engellendi. |
+| RAG-03 | ✅ Kapandı | BM25 in-memory önbelleğinin (cache) dışarıdan diskteki dosya değiştiğinde manuel invalidate gerektirmesi durumu bir hata değil, performans/bellek trade-off'u (kabul edilmiş sistem tasarımı) olarak değerlendirildi. |
+
+---
+
+### ✅ §13.5.4 `web_server.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** FastAPI sunucusunda ağır yük (high-concurrency) altında yaşanabilecek asenkron kilitlenmelerin, güvenlik yarış koşullarının ve başlatma uyarılarının giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WS-01 | ✅ Kapandı | Python 3.9/3.10 sürümlerinde alınan `RuntimeWarning: asyncio.Lock() created outside of event loop` hatası, Lock nesnelerinin (`_agent_lock` ve `_rate_lock`) global alanda değil, fonksiyon ilk kez çağrıldığında (lazy init) oluşturulmasıyla kesin olarak çözüldü. |
+| WS-02 | ✅ Kapandı | Event-loop bloklaması (Starvation): `/git-*` ve `/rag/*` endpoint'lerindeki alt süreç (`subprocess`) ve disk okuma işlemleri ana akışı donduruyordu. Bu işlemlerin tamamı `await asyncio.to_thread()` ile thread pool'a (iş parçacığı havuzuna) itilerek sunucu tepkiselliği maksimize edildi. |
+| WS-03 | ✅ Kapandı | Rate Limiter zafiyeti: Eşzamanlı (concurrent) gelen isteklerde aynı IP'nin limitleri aşabilmesi (TOCTOU race condition) sorunu, `_is_rate_limited` fonksiyonuna `_rate_lock` atomik kilidi eklenerek giderildi. `X-Forwarded-For` IP tespiti proxy-aware hale getirildi. |
+
+---
+
+### ✅ §13.5.5 `agent/definitions.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM modellerinin (özellikle açık kaynaklı Llama türevlerinin) araç çağrısı yaparken JSON formatının dışına çıkması, Markdown blokları kullanması ve sistemin Pydantic ayrıştırıcısını (parser) bozmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DEF-01 | ✅ Kapandı | Format Kayması (Format Drift): Modellerin JSON yanıtlarını ```json ... ``` tagleri arasına alma eğilimi, prompt içine eklenen "Asla markdown bloğu kullanma, saf string olarak geçerli bir JSON döndür" şeklindeki katı sistem kuralıyla (Zero-Shot Constraint) çözüldü. Bu sayede `sidar_agent.py` tarafındaki regex bağımlılığı azaltıldı. |
+| DEF-02 | ✅ Kapandı | Token Optimizasyonu: Prompt içindeki eski, uzun ve gereksiz tekrar eden araç tanımlamaları temizlendi. Modelin bağlam penceresinde (context window) yer açıldı ve asıl odaklanması gereken "görev ve çalışma alanı" talimatlarının etkisi artırıldı. |
+
+---
+
+### ✅ §13.5.6 `agent/auto_handle.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Otomatik komut işleyicinin (AutoHandle) karmaşık cümlelerde veya çok adımlı görevlerde (Chain of Thought) sistem işleyişini bozmasının ve yanlış araçları tetiklemesinin (False Positive) engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AH-01 | ✅ Kapandı | Aşırı Hevesli Regex (False Positive): Sistemde "göster", "kontrol et" gibi genel bağlamlı kelimeler yüzünden alakasız araçların tetiklenmesi sorunu, regex kalıplarının sıkılaştırılmasıyla (örn. "dosyayı göster", "sözdizimini doğrula" şeklinde bağlam zorunluluğu getirilerek) çözüldü. Dizin çıkarma mantığı (`_extract_dir_path`) dosya uzantılarını yok sayacak şekilde izole edildi. |
+| AH-02 | ✅ Kapandı | Çok Adımlı Görev Kırılması: Kullanıcının "Dosyayı oku ve ardından testlerini yaz" şeklindeki isteklerinde, AutoHandle'ın sadece ilk kısmı (okuma) yapıp süreci bitirmesi büyük bir hataydı. Koda `_MULTI_STEP_RE` sabiti eklenerek "ardından", "sonrasında", "1. ... 2." gibi bağlaçlar yakalandı ve bu tür isteklerin dokunulmadan doğrudan asıl yapay zeka ajanına (ReAct) iletilmesi sağlandı. |
+
+---
+
+### ✅ §13.5.7 `core/llm_client.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM streaming (veri akışı) sırasında TCP paketlerinin JSON objelerini ortadan ikiye bölmesi sebebiyle yaşanan sessiz token/kelime kayıplarının ve model halüsinasyonlarının (JSON dışına çıkma) önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| LLM-01 | ✅ Kapandı | TCP Paket Sınırı Token Kaybı: Ollama stream akışında kullanılan `aiter_lines()` metodunun uzun satırları veya çok baytlı (multi-byte) Türkçe UTF-8 karakterlerini böldüğü tespit edildi. Kod, `aiter_bytes()` ve `codecs.getincrementaldecoder("utf-8")` ikilisi kullanılarak manuel bir satır (newline) tamponuna (buffer) geçirildi. JSON ayrıştırma hataları yüzünden kaybolan kelime sorunu tamamen çözüldü. |
+| LLM-02 | ✅ Kapandı | Native JSON Entegrasyonu: Modelleri (özellikle Llama 3) JSON formatında tutmak için sadece sistem promptu yetersiz kalıyordu. Ollama'nın native JSON şema desteği (`format: { "type": "object", "properties": ... }`) ve Gemini'nin `response_mime_type: "application/json"` özelliği API istek gövdesine eklendi. Modellerin markdown uydurma ihtimali donanımsal/API seviyesinde engellendi. |
+
+---
+
+### ✅ §13.5.8 `core/memory.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Eski tek dosyalı bellek sisteminin yerine çoklu oturum yapısının getirilmesi, güvenlik açıklarının kapatılması ve disk darboğazlarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| MEM-01 | ✅ Kapandı | Disk I/O Darboğazı (Throttling): Eski yapıda ajan her token ürettiğinde diske senkron yazma yapılıyordu. `_save_interval_seconds = 0.5` ve `_dirty` bayrağı eklenerek ardışık kayıt istekleri birleştirildi (debounced). SSD aşınması ve sunucu kilitlenmeleri önlendi. |
+| MEM-02 | ✅ Kapandı | Bozuk Dosya & Şifreleme Eksikliği: Sohbet geçmişlerinin düz metin saklanması riski Fernet (AES-128-CBC) ile giderildi. Ayrıca elektrik kesintisi vb. nedenlerle JSON yapısı bozulan dosyaların tüm sistemi çökertmesi hatası, dosyaların `.json.broken` olarak karantinaya alındığı `_cleanup_broken_files` mekanizması ile çözüldü. |
+
+---
+
+### ✅ §13.5.9 `config.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ortam değişkenlerinden (`.env`) gelen string verilerin yanlış yorumlanması sebebiyle oluşan gizli hataların (silent bugs) ve çökme risklerinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CONF-01 | ✅ Kapandı | Tip Dönüşüm Hataları (Boolean Parsing): Python'un yerleşik `bool("False")` çağrısının `True` dönmesi sebebiyle, `.env` dosyasında kapalı olan özelliklerin (örn. `DEBUG_MODE=False`) yanlışlıkla aktif olması sorunu giderildi. Koda string değerleri (`true/false/1/0`) doğru yorumlayan özel bir `_parse_bool` (veya eşdeğeri) tip dönüştürücü mantığı eklendi. |
+| CONF-02 | ✅ Kapandı | Güvenli Varsayılan (Fallback) Eksikliği: `.env` dosyasının yanlışlıkla silinmesi veya eksik parametre içermesi durumunda sistemin `KeyError` vererek çökmesi engellendi. Tüm kritik `os.getenv` çağrılarına güvenli ve mantıklı varsayılan değerler (safe defaults) atandı. |
+
+---
+
+### ✅ §13.5.10 `managers/code_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın işletim sistemine müdahale yeteneklerinin sıkılaştırılması, dışarı sızma (escape) ihtimallerinin sıfırlanması ve sistem kaynaklarının korunması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CM-01 | ✅ Kapandı | Zombi Konteyner ve Kaynak Tüketimi: Ajanın `execute_code` aracıyla ürettiği sonsuz döngü (`while True: pass`) veya uzun süren işlemlerin Docker'ı ve ana sunucuyu kilitlemesi sorunu çözüldü. Kod çalıştırıcıya katı bir `docker_exec_timeout` (varsayılan: 10 saniye) eklendi. Süre aşımında konteyner acımasızca öldürülür (`SIGKILL`) ve ajana "Zaman Aşımı" uyarısı dönülür. |
+| CM-02 | ✅ Kapandı | Path Traversal Zafiyeti: Eski sürümde ajanın `../../` gibi göreceli yollar (relative paths) kullanarak projenin kök dizininden (`BASE_DIR`) çıkabilme riski vardı. Yeni mimaride tüm yol çözümlemeleri (path resolution) `SecurityManager` içindeki güvenli kontrol mekanizmasına bağlandı. Yetkisiz okuma/yazma girişimleri anında `PermissionError` ile engelleniyor. |
+
+---
+
+### ✅ §13.5.11 `managers/github_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın GitHub depolarını tararken karşılaştığı derlenmiş dosyaların (binary) veya geçersiz kimlik doğrulama yöntemlerinin sistemi bozmasını engellemek.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GH-01 | ✅ Kapandı | Binary Dosya Okuma Çökmesi: Ajanın uzak bir depodan `.png`, `.zip` veya derlenmiş bir ikili dosya okumaya çalışması `UnicodeDecodeError` hatasına ve LLM context'inin (bağlamının) şişmesine sebep oluyordu. Koda `SAFE_TEXT_EXTENSIONS` whitelist'i eklendi. Uzantısız dosyalar (`Makefile`, `Dockerfile` vb.) için özel kontrol (`SAFE_EXTENSIONLESS`) oluşturuldu ve binary okuma riskleri donanımsal seviyede engellendi. |
+| GH-02 | ✅ Kapandı | Deprecated Authentication: PyGithub kütüphanesinin yakında kaldırılacak olan `Github(login_or_token=...)` metodu, güncel standart olan `Github(auth=Auth.Token(...))` yapısına taşınarak sürüm (dependency) uyumluluğu korundu. |
+
+---
+
+### ✅ §13.5.12 `managers/system_health.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Sistem sağlığı izleme işlevlerinin web sunucusunu (FastAPI) dondurmasını engellemek ve donanım kaynaklarının daha güvenilir şekilde serbest bırakılmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SH-01 | ✅ Kapandı | CPU İzleme Blokajı (Event-Loop Starvation): `psutil.cpu_percent(interval=1)` gibi senkron beklemeler içeren kodların asenkron ana akışı kilitlediği tespit edildi. Kod güncellenerek `cpu_sample_interval` parametresi eklendi ve varsayılan olarak non-blocking (`0.0` sn) çalışması güvence altına alındı. |
+| SH-02 | ✅ Kapandı | Güvensiz Bellek Temizliği & Kaynak Sızıntısı: `optimize_gpu_memory` çalışırken `torch.cuda` tarafında oluşacak bir hatanın `gc.collect()` satırının atlanmasına sebep olduğu anlaşıldı. Koda `try-finally` bloğu eklenerek bellek temizliğinin her koşulda çalışması garanti edildi. Ayrıca program çıkışında NVIDIA kaynaklarının asılı kalmaması için `atexit.register(self.close)` mekanizması entegre edildi. |
+
+---
+
+### ✅ §13.5.13 `managers/web_search.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış arama motoru API'lerinin (Tavily, DDG) limitleri veya sürüm değişiklikleri nedeniyle ajan döngüsünün kesintiye uğramasını, boş sonuçlar dönmesini ve sistemin kilitlenmesini önlemek.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WEB-01 | ✅ Kapandı | API Kota Çökmesi (Zombi İstekler): Tavily motorunda API kredisi bittiğinde dönen 401/403 HTTP hatalarının sistemi durdurması sorunu çözüldü. Bu tür hatalar alındığında `self.tavily_key = ""` ile anahtar o oturum için temizlenir ve sistem otomatik olarak Google veya DuckDuckGo'ya (Fallback) yönlenerek kesintisiz çalışmayı sürdürür. Ayrıca bir motor "sonuç bulamadı" döndüğünde (`[NO_RESULTS]`) arama pes etmeyip diğer motorlara şelale modeliyle devredilir. |
+| WEB-02 | ✅ Kapandı | DuckDuckGo Asenkron Kilitlenmesi: `duckduckgo_search` kütüphanesinin v8 ve sonrasında `AsyncDDGS` yapısının uyumsuzluk/bloklama yaratması nedeniyle ana sunucunun donma riski vardı. Bu modül tamamen revize edilerek, standart senkron `DDGS()` sınıfı `asyncio.to_thread()` sarmalayıcısı ile iş parçacığı havuzuna (thread pool) alındı ve event-loop sağlığı garanti edildi. |
+
+---
+
+### ✅ §13.5.14 `managers/package_info.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış paket depolarına (PyPI, npm) yapılan ağ isteklerinin ana sunucuyu dondurmasını engellemek ve paket sürüm numaralarının (Semantic Versioning) Python tarafından doğru algılanmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| PKG-01 | ✅ Kapandı | Event-Loop Blokajı (Senkron HTTP): Eski mimaride kullanılan senkron kütüphanelerin (örn. `requests`) dış API'lerin yanıt vermediği anlarda (`TIMEOUT` süresince) tüm ajanı ve web arayüzünü kilitlediği tespit edildi. Sınıftaki tüm API istek metotları (`pypi_info`, `npm_info`, `github_releases`) `httpx.AsyncClient` ile async/await mimarisine geçirilerek I/O darboğazı kalıcı olarak çözüldü. |
+| PKG-02 | ✅ Kapandı | Sürüm Sıralama Hatası (String Sort Bug): PyPI sürümleri varsayılan olarak alfabetik string sıralamasına tabi tutulduğunda `v1.10.0` sürümünün `v1.2.0`'dan daha eskiymiş gibi algılanması sorunu çözüldü. Koda `packaging.version.Version` tabanlı (PEP 440 uyumlu) `_version_sort_key` metodu eklendi. Pre-release (`alpha/beta/rc`) sürümler başarıyla filtrelendi. |
+
+---
+
+### ✅ §13.5.15 `managers/security.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın proje dizini dışına sızmasını sağlayan gelişmiş dosya yolu saldırılarının engellenmesi ve yetkilendirme sisteminin daha robust hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SEC-01 | ✅ Kapandı | Symlink Traversal Saldırısı: Ajanın proje içinde bir dosya adıymış gibi görünüp aslında sistem dışındaki hassas bir dosyaya (örn. `/etc/shadow`) işaret eden sembolik bağlantılar oluşturup okuması riski saptandı. Tüm yol kontrolleri `Path.resolve()` metoduna geçirildi. Bu sayede symlink'ler gerçek hedeflerine çözümlenmeden yetki verilmesi imkansız hale getirildi. |
+| SEC-02 | ✅ Kapandı | Bilinmeyen Yetki Seviyesi Güvensizliği: `.env` dosyasındaki `ACCESS_LEVEL` parametresinin boş bırakılması veya hatalı girilmesi durumunda sistemin varsayılan olarak ne yapacağı belirsizdi. `_normalize_level_name` metodu eklenerek tüm geçersiz girişler otomatik olarak `sandbox` (izole) moduna çekildi ve sistem güvenliği garanti altına alındı. |
+
+---
+
+### ✅ §13.5.16 `managers/todo_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Görev yönetim sistemindeki veri yarışı (race condition) risklerinin giderilmesi ve ajanın aynı anda birden fazla işle meşgul olup hata yapmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TODO-01 | ✅ Kapandı | Race Condition (Veri Yarışı): Web UI ve CLI'ın aynı anda görev eklemeye çalışması durumunda ID'lerin çakışması riski saptandı. Tüm kritik list operasyonları `threading.RLock()` ile sarmalanarak thread-safe (iş parçacığı güvenli) hale getirildi. |
+| TODO-02 | ✅ Kapandı | Odağın Dağılması: Ajanın 5-6 farklı görevi aynı anda "Devam Ediyor" (`in_progress`) yapması, bağlamın (context) karışmasına sebep oluyordu. `_ensure_single_in_progress` mekanizması eklenerek "Bir işe başlandığında diğerleri otomatik beklemeye alınır" kuralı sisteme dayatıldı. |
+
+---
+
+### ✅ §13.5.17 `managers/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Manager katmanına yeni sınıflar eklendiğinde `__all__` listesinin güncellenmesinin unutulması sonucu oluşan import hatalarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| MGR-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması (Drift): Eski yapıda statik bir string listesi olan `__all__` yapısı, `_EXPORTED_MANAGERS` tuple'ı üzerinden beslenen bir list comprehension yapısına (`[cls.__name__ for cls in ...]`) dönüştürüldü. Artık modül import edildiği anda export listesi otomatik senkronize olmaktadır. |
+
+---
+
+### ✅ §13.5.18 `core/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Çekirdek modül eklemelerinde veya isim değişikliklerinde `__all__` listesinin eski kalması sonucu oluşan çalışma zamanı (runtime) hatalarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CORE-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik stringlerden oluşması nedeniyle yaşanan senkronizasyon sorunu, `_EXPORTED_CORE` tuple yapısı ve list comprehension (`[cls.__name__ for cls in ...]`) kullanımıyla dinamik hale getirilerek çözüldü. |
+
+---
+
+### ✅ §13.5.19 `agent/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajan modülündeki sabitlerin (`WAKE_WORDS`, `KEYS` vb.) isim değişikliklerinde veya yeni eklemelerde `__all__` listesinin güncel kalmasını garanti altına almak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AGT-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik olarak tutulması yerine `_EXPORTED_AGENT_SYMBOLS.keys()` üzerinden dinamik olarak oluşturulması sağlandı. Bu sayede paket arayüzündeki sembollerin bütünlüğü mimari olarak koruma altına alındı. |
+
+---
+
+### ✅ §13.5.20 `tests/` Dizini İyileştirmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Projenin büyümesiyle birlikte test kapsamının yetersiz kalması ve kritik güvenlik/mimari iyileştirmelerin regresyona açık olması riskinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| T-01 | ✅ Kapandı | Modüler Test Eksikliği: Proje mimarisiyle %100 uyumlu, her modülün kendi test senaryosuna sahip olduğu modüler yapıya geçildi. Paket başlatıcıları dahil kritik modüller test kapsamına alındı. |
+| T-02 | ✅ Kapandı | Güvenlik Regresyon Testleri: Path traversal, rate limiting ve asenkron event-loop bloklama gibi kritik açıklar için regresyon test dosyaları oluşturuldu. Bu açıkların gelecekteki güncellemelerle tekrar sızması mimari olarak engellendi. |
+
+---
+
+### ✅ §13.5.21 `web_ui/index.html` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Web arayüzünde LLM kaynaklı içeriklerin yaratabileceği güvenlik risklerinin (XSS) önlenmesi ve uzun süren ajan görevlerinde kullanıcıya anlık geri bildirim sağlanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| UI-01 | ✅ Kapandı | XSS Güvenlik Açığı: Yapay zekanın ürettiği Markdown blokları içine kötü niyetli `<script>` / `<iframe>` içerikleri sızması riski, `sanitizeRenderedHtml` katmanı ile giderildi. Render öncesi tehlikeli etiketler ve olay dinleyicileri (`onmouseover`, `onclick` vb.) temizlenerek güvenli çıktı akışı sağlandı. |
+| UI-02 | ✅ Kapandı | Şeffaflık ve Geri Bildirim Eksikliği: Uzun süren görevlerde arayüzün donmuş gibi görünmesi problemi, Activity Panel ve ilişkili AP akışları ile çözüldü. Kullanıcı artık ajanın anlık düşüncesini, aktif aracını ve çalışma süresini canlı olarak izleyebilmektedir. |
+
+---
+
+### ✅ §13.5.22 `github_upload.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** GitHub yükleme aracındaki güvenlik açıklarının kapatılması ve otomatik senkronizasyon sırasında oluşabilecek veri kaybı risklerinin önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GHU-01 | ✅ Kapandı | Shell Injection Koruması: Kullanıcıdan alınan URL ve mesajların shell komutuna doğrudan birleştirilmesi engellendi. Tüm komutlar `shell=False` ve argüman listesi formatına geçirilerek enjeksiyon riski giderildi. |
+| GHU-02 | ✅ Kapandı | Kör Merge (Veri Kaybı) Engellemesi: Çakışma durumunda otomatik birleştirme adımı kullanıcı onayına bağlandı. Sistem, birleştirme öncesi açık teyit alır; onay yoksa push güvenli şekilde durdurulur. |
+
+---
+
+### ✅ §13.5.23 `Dockerfile` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Uygulama konteynerinin imaj katmanlarının optimize edilmesi ve sürüm/izleme mekanizmalarının raporla tam uyumlu hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DF-01 | ✅ Kapandı | `LABEL version` ve başlık yorumları `v2.7.0` ile hizalandı. |
+| DF-02 | ✅ Kapandı | Healthcheck mantığı PID 1 komutuna göre revize edilerek Web/CLI modlarındaki yalancı-pozitif riskler giderildi. |
+| DF-03 | ✅ Kapandı | Katman Optimizasyonu: `mkdir` ve `chown` gibi ardışık dosya sistemi işlemleri tek bir RUN katmanına indirilerek imaj performansı optimize edildi. |
+
+---
+
+### ✅ §13.5.24 `docker-compose.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Konteyner orkestrasyonunda sistem kaynaklarının korunması ve host makinelerle olan ağ iletişiminin dinamik hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DC-01 | ✅ Kapandı | Kaynak Sınırlandırma: Konteynerlerin kontrolsüz CPU/RAM tüketerek host sistemini kilitlemesi riski; servis profillerine eklenen `cpus` ve `mem_limit` parametreleri ile engellendi. |
+| DC-02 | ✅ Kapandı | Ağ Esnekliği: Host üzerindeki LLM servislerine (Ollama vb.) erişimde kullanılan tanımlar `${HOST_GATEWAY:-host-gateway}` değişkeniyle dinamik hale getirildi. Bu yapı Linux ve Docker Desktop (Windows/Mac) ortamlarında sıfır-konfigürasyon çalışmayı destekleyen bir best-practice olarak standartlaştırıldı. |
+
+---
+
+### ✅ §13.5.25 `environment.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Kurulum ortamındaki sürüm belirsizliklerinin giderilmesi ve GPU/CUDA destek stratejisinin netleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENV-01 | ✅ Kapandı | Sürüm Kilitleme (Version Pinning): Bağımlılıklar `~=` ve `==` operatörleriyle daraltılarak farklı kurulumlarda oluşabilecek sürüm uyumsuzluğu riskleri mimari düzeyde minimize edildi. Mevcut yapı esneklik/kararlılık dengesini koruyan hedef profile ulaştı. |
+| ENV-02 | ✅ Kapandı | CUDA Stratejisi: Dosya içi notlar ve yapılandırma `cu124` standardına hizalandı. CUDA wheel index varsayılanı kaldırılarak, CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU geçiş profili daha güvenli hale getirildi. |
+
+---
+
+### ✅ §13.5.26 `.env.example` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Örnek yapılandırma dosyası ile gerçek kod arasındaki isimlendirme farklarının (drift) giderilmesi ve gizli kalmış tuning parametrelerinin kullanıcıya açılması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENVX-03 | ✅ Kapandı | Yapılandırma Senkronizasyonu (Drift): Örnek dosyadaki anahtar adları `config.py` ile birebir hizalandı (`CODING_MODEL`, `TEXT_MODEL`). Ayrıca kodda tanımlı ancak örnekte eksik kalan RAG, ReAct ve Web Search tuning değişkenleri tamamlanarak dosya eksiksiz hale getirildi. |
+
+---
+
+### ✅ §13.5.27 `install_sidar.sh` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Kurulum scriptinin sistem üzerinde kontrolsüz değişiklik yapmasının engellenmesi ve güvenlik açıklarının kapatılması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| INS-01 | ✅ Kapandı | Sürüm Senkronizasyonu: Dosya başlığındaki sürüm etiketi proje genel sürümü `2.7.0` ile hizalandı. |
+| INS-02 | ✅ Kapandı | Güvensiz Script Yürütme: Ollama kurulumunda uzaktan script çalıştırma varsayılan akıştan çıkarıldı; yalnızca açık opt-in (`ALLOW_OLLAMA_INSTALL_SCRIPT=1`) ile etkinleşecek güvenli modele taşındı. |
+| INS-03 | ✅ Kapandı | Otomatik Sistem Yükseltme: `apt upgrade -y` adımı kontrolsüz çalışmadan çıkarıldı; yalnızca kullanıcı onayıyla (`ALLOW_APT_UPGRADE=1`) çalışan opt-in modele geçirildi. |
+
+---
+
+### ✅ §13.5.28 `README.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dokümantasyonun `v2.7.0` kod tabanındaki büyük mimari değişiklikleri ve yeni araçları yansıtacak şekilde güncellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| RM-06 | ✅ Kapandı | `v2.7.0` Özellik Entegrasyonu: README.md yalnızca sürüm etiketiyle değil, içerik düzeyinde de güncellendi. TodoManager (Görev Yönetimi), Sonsuz Hafıza (Vector Archive) ve Fernet şifreleme için özel başlıklar ve kullanım notları eklenerek dokümantasyon teknik borcu kapatıldı. |
+
+---
+
+### ✅ §13.5.29 `SIDAR.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın talimat dosyasındaki araç isimlerinin ve çalışma yöntemlerinin güncel kod tabanıyla senkronize edilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SDR-01 | ✅ Kapandı | Araç Yönerge Güncellemesi: Eski/pahalı arama ifadeleri güncel `rg` ve plan/todo terminolojisi ile hizalandı; ajanın ortamdan bağımsız ve hedefli çalışma disiplini güçlendirildi. |
+| SDR-02 | ✅ Kapandı | Esnek Branch Standartları: Tek bir önek zorunluluğu kaldırılarak branch adlandırma ekip standartlarına uyumlu esnek modele taşındı; Git operasyonlarındaki katı bloklar giderildi. |
+
+---
+
+### ✅ §13.5.30 `CLAUDE.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Claude Code uyumluluk rehberindeki katı ve eskimiş ifadelerin, projenin esnek ve gelişen araç setiyle uyumlu hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CLD-01 | ✅ Kapandı | Araç Eşleme Esnekliği: Mutlak araç adı garantisi veren ifadeler kaldırılarak, çalışma ortamına göre en yakın karşılık seçimini öneren rehber dili benimsendi. |
+| CLD-02 | ✅ Kapandı | Opsiyonel Yetenek Netliği: PR otomasyonu gibi her dağıtımda bulunmayabilecek yeteneklerin opsiyonel olduğu açıkça belirtilerek kullanıcı beklentisi netleştirildi. |
+
+---
+
+### ✅ §13.5.31 `DUZELTME_GECMISI.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Tarihsel denetim günlüğü ile ana rapor arasındaki zaman çizelgesi ve erişilebilirlik uyumunun güçlendirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DGH-01 | ✅ Kapandı | Zaman Çizelgesi Kayması: Dosya üst bilgisindeki güncelleme tarihi ana raporla senkronize edilerek `2026-03-05` seviyesine çekildi; kapanış oturumlarıyla tarih uyumu sağlandı. |
+| DGH-02 | ✅ Kapandı | Hızlı Erişim Zorluğu: Arşiv bölümleri § bazlı hiyerarşi ve çapraz referans yapısıyla netleştirildi; kapatılmış bulgulara erişim daha sürdürülebilir hale getirildi. |
+
+---
+
+### ✅ §13.5.32 `tests/__init__.py` Değerlendirmesi (Tarih: 2026-03-05)
+
+**Bağlam:** Test paket işaretleyicisinin yeni modüler test yapısıyla uyumunun doğrulanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TPK-01 | ✅ Kapandı | Bilinçli Minimalizm: Dosyanın test mimarisi hakkında geniş açıklama taşımaması eksiklik değil, bir best-practice olarak değerlendirildi. Mimari bağlam ana raporun §12 ve §13.5.20 bölümlerine taşınarak dosyanın `pytest` keşif süreci için hafif ve sorunsuz kalması sağlandı. |
+
+---
+
+### ✅ §13.5.33 `PROJE_RAPORU.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Teknik denetim raporunun sürdürülebilirliğini artırmak ve bilgi yüküne bağlı drift risklerini azaltmak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| RPR-01 | ✅ Kapandı | Dosya Boyutu Optimizasyonu: Kapanmış bulguların tarihsel detayları ana rapordan ayrıştırılarak `DUZELTME_GECMISI.md` arşivine taşındı. Ana raporun aktif mimari ve güncel sorunlara odaklanmasıyla bakım maliyeti azaltıldı. |
+| RPR-02 | ✅ Kapandı | İçerik Kayması (Drift) Koruması: Özet tablolar ile detay analizler arasındaki tutarlılık, detay bölümlerinin tek doğruluk kaynağı olarak konumlandırılması ve özetlerin bu bölümlere referans vermesiyle güçlendirildi. |
+
+---
+
+### ✅ §13.5.34 `.gitignore` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Repo hijyeninin artırılması, yeni kurulumlarda dizin bulunamadı hatalarının önlenmesi ve modern geliştirme araçlarıyla uyumun güçlendirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GIT-01 | ✅ Kapandı | Whitelist Stratejisi: `data/` dizininin tamamen ignore edilmesi yerine içerik dışlama + yapı koruma modeline geçildi (`data/*` + `!data/.gitkeep`). Böylece klasör yapısı repoda korunurken ham veriler dışarıda bırakıldı. |
+| GIT-02 | ✅ Kapandı | Artifact Kapsamı: Modern geçici çıktılar (`.ipynb_checkpoints/`, `.ruff_cache/`) ignore listesine eklenerek repo temizliği ve sürdürülebilirlik iyileştirildi. |
+
+---
 
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
