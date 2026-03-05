@@ -114,22 +114,16 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 | Katman | Teknoloji |
 |--------|-----------|
 | **Dil / Framework** | Python 3.11, asyncio, Pydantic v2 |
-| **Web Arayüzü** | FastAPI 0.104+, Uvicorn, SSE |
+| **Web Arayüzü** | FastAPI 0.115+, Uvicorn, SSE |
 | **LLM Sağlayıcı** | Ollama (yerel) / Google Gemini (bulut) |
-| **Vektör DB** | ChromaDB 0.4+, BM25, sentence-transformers |
-| **Sistem İzleme** | psutil, pynvml, PyTorch CUDA |
-| **GitHub Entegrasyonu** | PyGithub 2.1+ |
+| **Vektör DB & RAG** | ChromaDB 0.5+, BM25, sentence-transformers |
+| **Sistem & İzleme** | psutil, pynvml, PyTorch CUDA, opsiyonel Prometheus (`/metrics`) |
+| **GitHub Entegrasyonu** | PyGithub 2.4+ |
 | **Web Arama** | httpx, DuckDuckGo, Tavily, Google Custom Search |
-| **Test** | pytest 7.4+, pytest-asyncio 0.21+, pytest-cov |
+| **Test** | pytest 8.3+, pytest-asyncio 0.24+, pytest-cov |
 | **Container** | Docker, docker-compose |
-| **Kod Çalıştırma** | Docker izolasyonu (python:3.11-alpine) |
-| **Bellek** | Çoklu oturum (session) JSON tabanlı kalıcı depolama |
-
-**2026-03-05 Güncellik Kontrol Notu (1. madde için):**
-- ⚠️ Üst bilgi satırındaki "Toplam Dosya: 36 izlenen dosya" ifadesi güncel değil; repo şu anda **59 izlenen dosya** içeriyor.
-- ⚠️ "~18.4k satır" ifadesi güncel değil; UTF-8 metin dosyalarında toplam içerik yaklaşık **21.9k satıra** ulaştı.
-- ℹ️ Test ekosistemi satırında verilen alt sınırlar (`pytest 7.4+`, `pytest-asyncio 0.21+`) teknik olarak doğru olsa da, manifestte güncel hedefler `pytest~=8.3.3` ve `pytest-asyncio~=0.24.0` seviyesinde.
-- ℹ️ Kod çalıştırma satırı yalnızca `python:3.11-alpine` bilgisini içeriyor; güncel yapı hem `python:3.11-alpine` (CodeManager varsayılanı) hem de `python:3.11-slim` (Dockerfile/compose varsayılanı) kullanabildiği için bu çift profilin not edilmesi daha doğru olur.
+| **Kod Çalıştırma** | Docker izolasyonu (`python:3.11-alpine` varsayılan; compose/Dockerfile profili: `python:3.11-slim`) |
+| **Bellek & Güvenlik** | Çoklu oturum (JSON), opsiyonel Fernet şifreleme (`MEMORY_ENCRYPTION_KEY`, `cryptography`) |
 
 **v2.5.0 → v2.6.0 Major Değişiklikler:**
 - GPU hızlandırma desteği eklendi (RTX 3070 Ti / Ampere)
@@ -153,19 +147,22 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 - **YENİ:** ReAct araç görselleştirmesi (her tool çağrısı badge olarak gösteriliyor)
 - **YENİ:** Mobil hamburger menüsü (768px altında sidebar toggle + overlay)
 
-**v2.6.1 → v2.7.0 Büyük Özellik Güncellemeleri (2026-03-02):**
-- **YENİ:** Canlı Aktivite Paneli (`#activity-panel`) — streaming sırasında araç çağrıları ve düşünce süreçleri gerçek zamanlı gösterilir
-- **YENİ:** THOUGHT sentinel (`\x00THOUGHT:<text>\x00`) — ajan düşünce süreçleri SSE üzerinden UI'ya iletilir
+**v2.6.1 → v2.7.0 Büyük Özellik Güncellemeleri (Güncel):**
+- **YENİ:** Sonsuz Hafıza (Vector Archive) — eski sohbetler özetlenmeden önce RAG/Chroma deposuna arşivlenir.
+- **YENİ:** Akıllı Başlatıcı + CLI ayrımı — `main.py` etkileşimli wizard/launcher katmanı; asıl terminal döngüsü `cli.py` dosyasına ayrıldı.
+- **YENİ:** Bellek Şifrelemesi — `MEMORY_ENCRYPTION_KEY` ile yerel oturum dosyaları Fernet (`cryptography`) üzerinden şifrelenebilir.
+- **YENİ:** Claude Code uyumluluk/hızlandırma paketi:
+  - `_try_direct_tool_route`: basit istekleri ReAct döngüsüne girmeden tek adımda araca yönlendirebilir.
+  - `_tool_parallel`: güvenli okuma araçlarını eşzamanlı çalıştırır.
+  - mtime cache: `SIDAR.md` / `CLAUDE.md` değişimlerini algılayıp talimat önbelleğini otomatik yeniler.
+- **YENİ:** Canlı Aktivite Paneli (`#activity-panel`) + THOUGHT sentinel (`\x00THOUGHT:<text>\x00`) ile gerçek zamanlı süreç görünürlüğü.
 - **YENİ:** Hibrit RAG Büyük Dosya Yönetimi:
-  - `docs_add_file` aracı: yerel dosyaları RAG deposuna ekler
-  - `_tool_read_file` büyük dosya tespiti: `RAG_FILE_THRESHOLD` (20 000 karakter) aşıldığında otomatik RAG önerisi
-  - `DocumentStore.add_document_from_file()` ve `get_index_info()` public metotları eklendi
-  - `RAG_FILE_THRESHOLD: int` config ayarı eklendi
-- **YENİ:** 5 yeni RAG yönetim endpoint'i: `GET /rag/docs`, `POST /rag/add-file`, `POST /rag/add-url`, `DELETE /rag/docs/{id}`, `GET /rag/search`
-- **YENİ:** Web UI RAG Belge Deposu modalı (3 sekme: Belgeler / Ekle / Arama)
+  - `docs_add_file` aracı ve `RAG_FILE_THRESHOLD` ile büyük dosyalarda otomatik RAG önerisi
+  - 5 yeni RAG endpoint'i: `GET /rag/docs`, `POST /rag/add-file`, `POST /rag/add-url`, `DELETE /rag/docs/{id}`, `GET /rag/search`
+  - Web UI RAG Belge Deposu modalı (Belgeler / Ekle / Arama)
 - **YENİ:** `managers/todo_manager.py` — Claude Code TodoWrite/TodoRead uyumlu görev takip yöneticisi
-- **DÜZELTME:** CORS konfigürasyonu sadece localhost origin'lerini kabul edecek şekilde daraltıldı
-- **DÜZELTME:** Git injection koruması — `_BRANCH_RE` regex doğrulaması eklendi
+- **DÜZELTME:** CORS konfigürasyonu localhost origin'leriyle sınırlandı
+- **DÜZELTME:** Git injection koruması (`_BRANCH_RE` regex) eklendi
 
 ---
 
