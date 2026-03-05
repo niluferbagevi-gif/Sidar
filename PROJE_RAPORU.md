@@ -69,7 +69,7 @@
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
-    - [13.5.25 `environment.yml` — Skor: 91/100 ✅](#13525-environmentyml-skor-91100)
+    - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 90/100 ✅](#13526-envexample-skor-90100)
     - [13.5.27 `install_sidar.sh` — Skor: 85/100 ✅](#13527-installsidarsh-skor-85100)
     - [13.5.28 `README.md` — Skor: 84/100 ✅](#13528-readmemd-skor-84100)
@@ -685,7 +685,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
-- **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
+- **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Sürüm/komut örnekleri (`main.py --quick`, `python cli.py`, `sidar-web`, CUDA 12.4) güncel runtime davranışıyla hizalanmıştır. → Detay: §13.5.28
@@ -1855,28 +1855,28 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13525-environmentyml-skor-91100"></a>
-#### 13.5.25 `environment.yml` — Skor: 91/100 ✅
+<a id="13525-environmentyml-skor-95100"></a>
+#### 13.5.25 `environment.yml` — Skor: 95/100 ✅
 
 **Sorumluluk:** Conda tabanlı geliştirme/çalışma ortamı tanımı — Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
 
-**Bağımlılık Stratejisi ve Tutarlılık (satır 1–95)**
+**Bağımlılık Stratejisi ve Tutarlılık (satır 1–83)**
 
 - Ortam çekirdeği `python=3.11` + `pip` + `git` + build araçları (`setuptools`, `wheel`) ile sabitlenmiştir.
-- PyTorch kurulumu Conda yerine pip üzerinden (`--extra-index-url .../cu124`) yönlendirilerek WSL2/libcuda çakışmasına karşı proje genelinde tutarlı bir yol izlenir.
+- PyTorch kurulumunda CPU varsayılanı korunur; GPU gereksiniminde `PIP_EXTRA_INDEX_URL=.../cu124` ile aynı manifestten profile göre güvenli geçiş sağlanır.
 - Test (`pytest`, `pytest-asyncio`, `pytest-cov`) ve kalite (`black`, `flake8`, `mypy`) araçları aynı dosyada tanımlanarak yeniden üretilebilir kurulum kolaylaştırılır.
 
-**Operasyonel Notlar (satır 10–44)**
+**Operasyonel Notlar (satır 10–42)**
 
-- Dosya içi yorumlar GPU/CPU senaryoları için kurulum davranışını açıklar; CUDA 12.4 (cu124) yönlendirmesi `docker-compose.yml` ile hizalıdır.
+- Dosya içi yorumlar CPU/GPU profile ayrımını açıkça dokümante eder; cu124 geçişi artık statik satır yerine env tabanlıdır.
 - `requests` yerine `httpx` standardizasyonu ve opsiyonel NVML notları, kod tabanındaki mevcut kullanım biçimiyle uyumludur.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| ENV-01 | Conda ortamı için lockfile/pin (exact build hash) bulunmuyor; `>=` tabanlı pip bağımlılıkları zamanla farklı sürüm kombinasyonları üretebilir | 30–95 | Orta |
-| ENV-02 | CUDA wheel index'i varsayılan olarak aktif; GPU olmayan ortamlarda kullanıcı yorum satırındaki manuel adıma bağlı kalıyor (otomatik profile ayrımı yok) | 20–28 | Düşük |
+| ENV-01 | Bağımlılıklar `=` / `~=` ile daraltıldı ve sürüm drift riski azaltıldı; ancak tam lockfile (hash tabanlı) henüz yok | 6–10, 30–83 | Düşük |
+| ENV-02 | CUDA wheel index varsayılanı kaldırıldı; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU profile ayrımı tanımlandı | 23–27, 39–42 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
