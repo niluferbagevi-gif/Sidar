@@ -175,47 +175,73 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 ```
 sidar_project/
 ├── agent/
-│   ├── __init__.py                 # Agent public API dışa aktarımları
-│   ├── definitions.py              # Sistem promptu + araç sözleşmeleri
-│   ├── sidar_agent.py              # Ana ReAct ajan döngüsü ve tool dispatch
-│   └── auto_handle.py              # Örüntü tabanlı hızlı komut yönlendirme
+│   ├── __init__.py
+│   ├── auto_handle.py
+│   ├── definitions.py
+│   └── sidar_agent.py
 ├── core/
-│   ├── __init__.py                 # Core public API + sürüm bilgisi
-│   ├── llm_client.py               # Ollama/Gemini istemci katmanı (async stream)
-│   ├── memory.py                   # Oturum belleği, kalıcılık, şifreleme
-│   └── rag.py                      # Hibrit RAG (ChromaDB + BM25 + keyword)
+│   ├── __init__.py
+│   ├── llm_client.py
+│   ├── memory.py
+│   └── rag.py
 ├── managers/
-│   ├── __init__.py                 # Manager export yüzeyi
-│   ├── code_manager.py             # Dosya işlemleri + Docker sandbox çalıştırma
-│   ├── github_manager.py           # GitHub repo/branch/PR/dosya işlemleri
-│   ├── package_info.py             # PyPI/npm/GitHub sürüm sorguları
-│   ├── security.py                 # OpenClaw erişim kontrolü
-│   ├── system_health.py            # CPU/RAM/GPU telemetri ve optimizasyon
-│   ├── todo_manager.py             # TodoWrite/TodoRead uyumlu görev yönetimi
-│   └── web_search.py               # Çoklu motor web arama ve URL çekme
+│   ├── __init__.py
+│   ├── code_manager.py
+│   ├── github_manager.py
+│   ├── package_info.py
+│   ├── security.py
+│   ├── system_health.py
+│   ├── todo_manager.py
+│   └── web_search.py
 ├── tests/
-│   ├── __init__.py                 # Test paket işaretleyicisi
-│   └── test_sidar.py               # Entegre async regresyon testleri
+│   ├── __init__.py
+│   ├── test_agent_init_improvements.py
+│   ├── test_agent_subtask.py
+│   ├── test_auto_handle_improvements.py
+│   ├── test_cli_banner.py
+│   ├── test_code_manager_improvements.py
+│   ├── test_config_env_helpers.py
+│   ├── test_core_init_improvements.py
+│   ├── test_definitions_prompt.py
+│   ├── test_github_manager_improvements.py
+│   ├── test_github_upload_improvements.py
+│   ├── test_llm_client_improvements.py
+│   ├── test_managers_init_improvements.py
+│   ├── test_memory_improvements.py
+│   ├── test_package_info_improvements.py
+│   ├── test_rag_improvements.py
+│   ├── test_security_improvements.py
+│   ├── test_sidar.py
+│   ├── test_sidar_improvements.py
+│   ├── test_system_health_improvements.py
+│   ├── test_todo_manager_improvements.py
+│   ├── test_web_search_improvements.py
+│   ├── test_web_server_improvements.py
+│   └── test_web_ui_security_improvements.py
 ├── web_ui/
-│   └── index.html                  # Tek dosya Web UI (SSE, oturum, modal, tema)
-├── .env.example                    # Örnek ortam değişkenleri
-├── .gitignore                      # Repo hijyeni için ignore kuralları
-├── .note                           # WSL/Conda odaklı çalışma notları (taslak)
-├── CLAUDE.md                       # Claude Code uyumluluk notları
-├── SIDAR.md                        # Proje-geneli ajan çalışma kuralları
-├── DUZELTME_GECMISI.md             # Kapatılan bulgular için tarihsel arşiv
-├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
-├── README.md                       # Kurulum/kullanım dokümantasyonu
-├── config.py                       # Merkezi konfigürasyon ve donanım tespiti
-├── main.py                         # Etkileşimli launcher (Wizard + quick start)
-├── cli.py                          # Asıl terminal tabanlı CLI giriş noktası
-├── web_server.py                   # FastAPI web/sse sunucusu
-├── github_upload.py                # Etkileşimli GitHub upload yardımcı aracı
-├── Dockerfile                      # Uygulama container build tanımı
-├── docker-compose.yml              # CPU/GPU × CLI/Web servis orkestrasyonu
-├── environment.yml                 # Conda bağımlılık manifesti
-└── install_sidar.sh                # Ubuntu/WSL otomatik kurulum betiği
+│   └── index.html
+├── .env.example
+├── .gitignore
+├── .note
+├── CLAUDE.md
+├── DUZELTME_GECMISI.md
+├── Dockerfile
+├── PROJE_RAPORU copy.md
+├── PROJE_RAPORU.md
+├── README.md
+├── SIDAR.md
+├── cli.py
+├── config.py
+├── docker-compose.yml
+├── environment.yml
+├── github_upload.py
+├── install_sidar.sh
+├── main.py
+└── web_server.py
 ```
+
+> Not (2026-03-05): Bu bölüm `git ls-files` çıktısına göre 59 izlenen dosya baz alınarak güncellenmiştir.
+
 
 ---
 
