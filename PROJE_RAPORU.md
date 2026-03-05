@@ -74,7 +74,7 @@
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
-    - [13.5.30 `CLAUDE.md` — Skor: 89/100 ✅](#13530-claudemd-skor-89100)
+    - [13.5.30 `CLAUDE.md` — Skor: 94/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
@@ -690,7 +690,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ✅ Varsayılan akışta sistem yükseltmesi ve uzaktan script çalıştırma kapatıldı; her ikisi de açık opt-in env bayrağı gerektirecek şekilde güvenli hale getirildi. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Kurulum güvenlik modeli (`ALLOW_*` opt-in), `.env` anahtar adları ve güvenli erişim örnekleri güncel runtime davranışıyla hizalandı. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ✅ Araç adları ortamdan bağımsızlaştırıldı, pahalı komutlardan kaçınma ilkesi netleştirildi ve branch kuralı ekip akışlarıyla uyumlu esnek yapıya çekildi. → Detay: §13.5.29
-- **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
+- **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ✅ Birebir araç adı iddiaları yerine ortamdan bağımsız “yakın karşılık” rehberine çevrildi; opsiyonel yeteneklerin koşullu olduğu açıkça belirtildi. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
@@ -2025,16 +2025,16 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13530-claudemd-skor-89100"></a>
-#### 13.5.30 `CLAUDE.md` — Skor: 89/100 ✅
+<a id="13530-claudemd-skor-94100"></a>
+#### 13.5.30 `CLAUDE.md` — Skor: 94/100 ✅
 
 **Sorumluluk:** Claude Code uyumluluk rehberi — Sidar araçlarının Claude karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
 
 **İçerik ve Kapsam (satır 1–37)**
 
-- `todo_*`, `glob_search`, `grep_files`, `run_shell`, `read/write/patch_file` gibi araçların Claude eşdeğerleri tablomsu biçimde listelenir.
-- `SIDAR.md` ve `CLAUDE.md` birlikte okuma/hiyerarşi davranışı dokümante edilir.
-- `ACCESS_LEVEL` temelli yetkilendirme farkı belirtilerek yerel ajan ile Claude Code izin modeli ayrıştırılır.
+- Görev, arama, shell, dosya I/O ve web araçları için birebir zorunluluk yerine “yakın karşılık” prensibiyle uyumluluk eşlemesi sunulur.
+- `SIDAR.md` ve `CLAUDE.md` hiyerarşisi ile kapsam önceliği açık biçimde dokümante edilir.
+- `ACCESS_LEVEL` temelli izin modeli (`full/sandbox/restricted`) açıkça belirtilerek yerel çalışma sınırları netleştirilir.
 
 **Operasyonel Güçlü Yanlar**
 
@@ -2045,8 +2045,8 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| CLD-01 | Araç eşlemesi metin tabanlı ve manuel; yeni araç/alias eklendiğinde belgenin güncellenmemesi uyumluluk drift’i üretebilir | 8–18 | Orta |
-| CLD-02 | `github_smart_pr` gibi eşdeğer ifadeler her dağıtımda mevcut olmayabilir; opsiyonel yeteneklerin “her zaman var” algısı yanlış beklenti doğurabilir | 18, 35–37 | Düşük |
+| CLD-01 | Araç eşlemesi birebir zorunluluk dilinden çıkarılıp ortamdan bağımsız “yakın karşılık” rehberine çevrildi; drift etkisi azaltıldı | 8–18 | ✅ Kapalı |
+| CLD-02 | Opsiyonel yeteneklerin dağıtıma bağlı olduğu açıkça belirtildi; “her zaman var” beklentisi kaldırıldı | 19, 41–44 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
