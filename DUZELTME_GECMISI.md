@@ -19,6 +19,17 @@
 
 ---
 
+### ✅ §13.5.1A `cli.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Eski sürümlerde `main.py`'de bulunan karmaşık asenkron döngü yapısının `cli.py`'ye taşınması ve banner UI/UX tasarım kararlarının kesinleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CLI-01 | ✅ Kapandı | Sürekli `asyncio.run()` çağrılarak yaratılan `RuntimeError` çakışma riski, tüm döngünün tek bir `_interactive_loop_async` fonksiyonuna sarılmasıyla kesin olarak çözüldü. |
+| CLI-02 | ✅ Kapandı | Uzun sürüm/branch metinlerinin ASCII çerçeveyi bozması sorunu "hata" statüsünden çıkarıldı. `_make_banner` içindeki `ver_field[:9] + "…"` algoritması bilinçli bir UI stabilite kararı olarak kabul edildi ve bulgu kapatıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

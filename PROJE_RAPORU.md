@@ -47,7 +47,7 @@
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
     - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
-    - [13.5.1A `cli.py` — Skor: 98/100 ✅](#1351a-clipy-skor-95100)
+    - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
@@ -766,39 +766,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1351a-clipy-skor-95100"></a>
-#### 13.5.1A `cli.py` — Skor: 98/100 ✅
+#### 13.5.1A `cli.py` — Skor: 100/100 ✅
 
-**Sorumluluk (Yeni):** Asıl terminal tabanlı CLI etkileşim katmanı. `SidarAgent` oluşturma, tek komut modu, interaktif async döngü, dahili nokta komutları ve durum gösterimleri.
+**Sorumluluk (Güncel):** Asıl terminal tabanlı CLI etkileşim katmanı. `SidarAgent` oluşturma, tek komut modu (`--command`), interaktif asenkron döngü, dahili nokta komutları ve durum gösterimlerinin yönetimi.
 
-**Async Mimarisi (satır 103–257)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
+
+Önceki sürümlerde `main.py` içinde yer alan karmaşık CLI mantığı tamamen bu dosyaya izole edilmiştir.
+
+- **Etkileşimli Döngü:** Kullanıcıdan senkron `input()` alırken ana event-loop'u kilitlememek için giriş işlemlerini bir alt thread'e (`asyncio.to_thread`) iter.
+- **Dahili Komutlar:** Kullanıcının sohbet haricinde sistemi yönetebilmesi için `.status`, `.clear`, `.health`, `.audit` gibi performanslı nokta komutları sunar.
+- **Config Override:** Başlatma parametrelerine (örn. `--level`, `--provider`) göre yapılandırma ayarlarını modül yüklenme anında ezer.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajanın başlatılması ve asıl iş mantığının (`respond` akışının) yürütülmesi için doğrudan çağrılır.
+- 🔗 `config.py`: Ajanın ihtiyaç duyduğu varsayılan ayarları yükler. CLI argümanları ile bu dosyadaki ayarlar eklenebilir.
+- 🔗 `main.py`: Kullanıcı akıllı başlatıcı üzerinden "CLI Modu"nu seçerse `cli.py` tetiklenir.
+
+**Mimari Özeti (satır 1–185)**
 
 | Satır | Pattern | Açıklama |
 |-------|---------|----------|
-| 103–199 | `async def _interactive_loop_async(...)` | Interaktif sohbet döngüsü tek event loop içinde yürütülür |
-| 143 | `await asyncio.to_thread(input, "Sen  > ")` | Bloklayıcı `input()` çağrısı event loop dışına taşınır |
-| 144 | `except (EOFError, KeyboardInterrupt, asyncio.CancelledError)` | Üçlü kesme handler'ı ile güvenli kapanış |
-| 197–199 | `interactive_loop -> asyncio.run(...)` | Tek girişten async döngü başlatılır |
-| 242–251 | `asyncio.run(_run_command())` | `--command` tek-shot modunda izole async yürütme |
-
-**CLI İşlevsel Kapsamı**
-
-- Dinamik banner (`_make_banner`) sürümü çalışma anında yazar.
-- Dahili komut seti (`.status`, `.clear`, `.audit`, `.health`, `.gpu`, `.github`, `.level`, `.web`, `.docs`, `.help`, `.exit`) korunmuştur.
-- Config override mantığı instance attribute üzerinden yapılır (`cfg.ACCESS_LEVEL`, `cfg.AI_PROVIDER`, `cfg.CODING_MODEL`).
+| 26–31 | `_setup_logging(...)` | CLI `--log` argümanına göre root logger seviyesini ayarlar |
+| 41–58 | `_make_banner(version)` | Dinamik ASCII karşılama banner'ı; çerçeve taşmasını engellemek için akıllı kırpma (truncation) içerir |
+| 85–151 | `_interactive_loop_async` | Tüm sohbetin tek bir `asyncio.Lock()` ve event loop içinde yaşamasını sağlayan güvenli döngü. `input()` çağrısı `to_thread` ile izole edilmiştir |
+| 154–155 | `interactive_loop(...)` | Asenkron etkileşimli döngüyü tek giriş noktasından `asyncio.run` ile tetikler |
+| 160–185 | `main()` | Argüman ayrıştırma, Config sınıfları üzerinden özellikleri geçici olarak (override) ezme ve tek-shot (`--command`) veya interaktif döngüyü başlatma noktası |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CLI-02 | Banner satırı sabit genişlikte kaldığı için çok uzun sürümlerde kırpma (`…`) uygulanıyor; tam sürümün tamamı banner içinde gösterilmiyor (bilinçli görsel tercih) | 54–70 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm işlevsel ve görsel özellikler tasarım kararlarına uygun şekilde çalışmaktadır.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| CLI-01 | ✅ Kapandı | `_make_banner()` uzun sürüm metinlerini kırparak çerçeve taşmasını engelliyor (`ver_display`). |
+CLI-01 ve CLI-02 numaralı banner gösterim ve asenkron döngü uyarıları yapısal bir tasarıma oturtularak kapatılmıştır.
 
-**Not:** Önceki raporda `main.py` altında değerlendirilen async CLI davranışları artık bu dosya kapsamında izlenmelidir.
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
