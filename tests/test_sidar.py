@@ -103,18 +103,24 @@ def test_toolcall_pydantic_validation():
 # 3. ASENKRON WEB ARAMA (FALLBACK) TESTİ
 # ─────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_web_search_fallback(test_config):
-    """WebSearchManager'ın API anahtarı yokken otomatik olarak düşüş yaşadığını test eder."""
+def test_web_search_status_without_engines_is_deterministic(monkeypatch, test_config):
+    """DDG kurulu olmasa da olmasa da deterministik 'motor yok' durumunu doğrular."""
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     web = WebSearchManager(test_config)
-    
-    # Tavily ve Google key bilerek boş bırakıldı, DuckDuckGo veya uyarı dönmeli
+
     assert web.tavily_key == ""
     assert web.google_key == ""
-    
-    status = web.status()
-    # DDg kuruluysa DuckDuckGo yazmalı, değilse motor yok uyarısı vermeli
-    assert "DuckDuckGo" in status or "motor yok" in status.lower()
+    assert web._ddg_available is False
+    assert web.status() == "WebSearch: Kurulu veya yapılandırılmış motor yok."
+
+
+def test_web_search_status_with_ddg_available_is_deterministic(monkeypatch, test_config):
+    """DDG mevcut senaryosunu çevreden bağımsız doğrular."""
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
+    web = WebSearchManager(test_config)
+
+    assert web._ddg_available is True
+    assert "DuckDuckGo" in web.status()
 
 
 # ─────────────────────────────────────────────

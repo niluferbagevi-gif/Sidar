@@ -64,7 +64,7 @@
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
-    - [13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅](#13520-teststestsidarpy-skor-93100)
+    - [13.5.20 `tests/test_sidar.py` — Skor: 94/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 89/100 ✅](#13521-webuiindexhtml-skor-89100)
     - [13.5.22 `github_upload.py` — Skor: 83/100 ✅](#13522-githubuploadpy-skor-83100)
     - [13.5.23 `Dockerfile` — Skor: 90/100 ✅](#13523-dockerfile-skor-90100)
@@ -1696,29 +1696,27 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13520-teststestsidarpy-skor-93100"></a>
-#### 13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅
+<a id="13520-teststestsidarpy-skor-94100"></a>
+#### 13.5.20 `tests/test_sidar.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Entegre test omurgası — ajan, RAG, bellek, manager katmanları, güvenlik kontrolleri ve web server yardımcılarının davranışını tek dosyada regresyon seti olarak doğrular.
 
-**Kapsam ve Organizasyon (satır 52–940+)**
+**Bu Turdaki İyileştirmeler**
 
-- Testler konu başlıklarına göre numaralı bloklara ayrılmış (manager temel testleri, Pydantic şema, async web arama fallback, RAG chunking, session lifecycle, dispatcher, rate limiter, güvenlik, config vb.).
-- `test_config` fixture’ı geçici dizinlerle izole çalışma alanı kurar; yan etkileri azaltır.
-- `@pytest.mark.asyncio` ile async akışlar (`agent.respond`, rate limiter, async manager çağrıları) doğrudan doğrulanır.
-
-**Güçlü Yönler (örnek kümeler)**
-
-- Güvenlik: path traversal/symlink ve branch regex doğrulamaları için doğrudan testler mevcut.
-- RAG/Memory: chunking, eşzamanlı ekleme, oturum karantina/sıralama/başlık güncelleme senaryoları kapsanmış.
-- Web/Rate limiting: `_get_client_ip` ve `_is_rate_limited` için eşzamanlılık/izolasyon testleri bulunuyor.
+- `web_search` durum testi çevresel DDG kurulumuna bağlı ikili beklenti yerine deterministik mock izolasyonuna geçirildi (`_check_ddg` monkeypatch).
+- Aynı senaryo iki ayrı testle doğrulanıyor: DDG yok (`motor yok`) ve DDG var (`DuckDuckGo`) yolları bağımsız ve öngörülebilir hale geldi.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| TST-01 | Bazı testler çevresel koşullara duyarlı (`web_search` durum çıktısında DDG kurulu değilse alternatif beklenti gibi); deterministiklik için daha sıkı mock izolasyonu faydalı olabilir | 106–118 | Düşük |
 | TST-02 | Tek dosyada çok geniş kapsam (unit+integration karışık) bakım maliyetini artırıyor; alt modüllere bölmek hata ayıklamayı hızlandırabilir | 1–940+ | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| TST-01 | ✅ Kapandı | `web_search` durum doğrulaması artık monkeypatch ile çevresel bağımlılıktan arındırıldı. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
