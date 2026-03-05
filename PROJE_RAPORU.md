@@ -720,6 +720,22 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 
 **Sorumluluk (Güncel):** Etkileşimli **akıllı başlatıcı (Ultimate Launcher)**. Web/CLI mod seçimi, sağlayıcı ve erişim seviyesi seçimi, ön kontroller (preflight) ve hedef script'i alt süreçte çalıştırma.
 
+**Dosyanın İşlevi ve Sistemdeki Rolü**
+
+`main.py`, SİDAR projesinin dış dünyaya açılan ana kapısıdır. Kullanıcıyı uzun komut satırı argümanları ezberlemekten kurtararak ANSI renkli, etkileşimli bir **Sihirbaz (Wizard)** sunar.
+
+- **Ön Kontrol (Preflight):** Asıl programı başlatmadan önce Python sürümünü, `.env` dosyasının varlığını, API anahtarlarını ve Ollama servisinin ayakta olup olmadığını kontrol eder.
+- **Gözlem ve Loglama:** Seçilen hedef programı bir alt süreç (child process) olarak başlatır. Olası çökmeleri izler, anlık çıktıları (`stdout`/`stderr`) doğrudan terminale yansıtır ve istenirse RAM'i şişirmeden bir log dosyasına yazar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+Bu dosya projenin başlatıcı motoru olduğu için aşağıdaki dosyalarla doğrudan ilişki kurar:
+
+- 🔗 `config.py`: Arayüzdeki varsayılan değerleri (port, host, varsayılan model vb.) okumak için içe aktarılır. Eğer dosya bozuksa veya yoksa `main.py` içindeki `DummyConfig` devreye girerek çöküşü engeller.
+- 🔗 `web_server.py`: Kullanıcı menüden "Web Arayüzü Sunucusu"nu seçerse, argümanlar derlenir ve bu dosya `subprocess` ile başlatılır.
+- 🔗 `cli.py`: Kullanıcı menüden "CLI Terminal Arayüzü"nü seçerse, bu dosya başlatılır.
+- 🔗 `.env`: Sistem gereksinimleri (preflight aşaması) kontrol edilirken bu dosyanın varlığı teyit edilir.
+
 **Mimari Özeti (satır 1–279)**
 
 | Satır | Pattern | Açıklama |
@@ -736,14 +752,14 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 
 **Açık Bulgular**
 
-Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm mimari riskler giderilmiştir.
+Bu dosya için aktif açık bulgu bulunmamaktadır. Mimari riskler ve bellek şişme sorunları tamamen giderilmiştir.
 
 **Kapanan Bulgular (Bu Tur)**
 
 | ID | Durum | Not |
 |----|------|-----|
 | M-01 | ✅ Kapandı | Child-process gözlemlenebilirliği için canlı stdout/stderr aynalama ve opsiyonel dosya loglama eklendi (`--capture-output`, `--child-log`). |
-| M-02 | ✅ Kapandı | Loglama işlemi bellekte liste tutmak yerine (RAM şişmesi riski) doğrudan diske yazma (on-the-fly streaming) metoduna geçirilerek optimize edildi. |
+| M-02 | ✅ Kapandı | Loglama işlemi bellekte liste tutmak yerine (RAM şişmesi riski) doğrudan diske yazma (on-the-fly streaming) metoduna geçirilerek tamamen optimize edildi. Eski `cli.py` atıfları da rapor maddesinden temizlendi. |
 
 ---
 
