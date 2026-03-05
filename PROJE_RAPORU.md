@@ -53,7 +53,7 @@
     - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
-    - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
+    - [13.5.7 `core/llm_client.py` — Skor: 100/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
@@ -1032,50 +1032,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1357-corellmclientpy-skor-91100"></a>
-#### 13.5.7 `core/llm_client.py` — Skor: 96/100 ✅
+#### 13.5.7 `core/llm_client.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** LLM sağlayıcı adaptörü — Ollama ve Gemini çağrılarını tek bir async API (`chat`) altında birleştirir; stream/non-stream modları ve JSON yanıt zorlama davranışını yönetir.
+**Sorumluluk (Güncel):** SİDAR'ın yapay zeka sağlayıcılarıyla (Ollama ve Google Gemini) kurduğu asenkron (async) HTTP iletişimini, veri akışını (streaming) ve native JSON şema zorlamalarını (structured output) yöneten istemci katmanı.
 
-**Mimari ve Sağlayıcı Seçimi (satır 36–61)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `chat()` giriş noktasında opsiyonel `system_prompt` mesaj listesine prepend edilir.
-- Sağlayıcı seçimi (`ollama` / `gemini`) tek yerde yapılır; bilinmeyen değerler için açık `ValueError` fırlatılır.
-- Bu ayrım, üst katmandaki ajan kodunun sağlayıcı-agnostic kalmasına yardımcı olur.
+Bu dosya, SİDAR ajanının "dış dünya" (LLM API'leri) ile bağlantı kurduğu yerdir.
 
-**Ollama Akışı ve Structured Output (satır 67–181)**
+- **Kayıpsız Veri Akışı (Lossless Streaming):** Modelin ürettiği kelimeleri anlık olarak kullanıcıya iletir. TCP paket sınırlarında parçalanan JSON veya UTF-8 karakterlerini bozmadan yakalayan özel bir bellek tamponu (buffer) kullanır.
+- **Yapısal Çıktı Zorlaması (Structured Output):** `json_mode=True` parametresi ile, Ollama ve Gemini API'lerine native JSON format zorlaması (`format: {"type": "object"...}`) ekler. Bu sayede modeller markdown veya düz metin üretemez, Pydantic ayrıştırıcısının işi garantiye alınır.
+- **GPU Hızlandırma Yönlendirmesi:** Ollama kullanılırken `USE_GPU=True` ise `num_gpu=-1` parametresini göndererek modelin tüm katmanlarını otomatik olarak VRAM'e yükler.
 
-- `json_mode=True` iken `payload["format"]` ile `{thought, tool, argument}` şeması zorlanır; ReAct döngüsünde format kaymasını azaltır.
-- Stream modunda `aiter_bytes()` + UTF-8 incremental decoder kullanımı, paket sınırında bölünmüş multibyte karakterleri güvenle birleştirir.
-- `ConnectError` ve genel istisnalarda standart JSON hata zarfı üretilip stream modunda `_fallback_stream()` ile tek-elemanlı akış döndürülür.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Gemini Akışı ve Geçmiş Dönüşümü (satır 186–265)**
+- 🔗 `agent/sidar_agent.py`: Ajan, her ReAct adımında buradaki `chat(...)` fonksiyonunu çağırır ve dönen `AsyncIterator`'u dinler.
+- 🔗 `config.py`: Model isimleri, URL'ler, timeout süreleri ve Gemini API anahtarları bu dosyadan okunur.
 
-- `google-generativeai` importu runtime’da yapılarak opsiyonel bağımlılık modeli korunur.
-- Sistem mesajı `system_instruction` alanına taşınır; kalan mesajlar Gemini `history` formatına dönüştürülür.
-- Stream modunda `send_message_async(..., stream=True)` üzerinden dönen akış `_stream_gemini_generator` ile yukarı katmana iletilir.
+**Mimari Özeti (satır 1–254)**
 
-**Yardımcı Sağlık Fonksiyonları (satır 274–292)**
-
-- `list_ollama_models()` ve `is_ollama_available()` küçük timeout’larla erişilebilirlik kontrolü sağlar.
-- Hata durumunda fail-safe dönüş (`[]` / `False`) kullanılarak UI tarafında sert çökme engellenir.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–56 | `chat(...)` | İsteği Ollama veya Gemini alt sınıflarına yönlendiren asenkron ana proxy (router) |
+| 62–104 | `_ollama_chat` | `num_gpu=-1` donanım hızlandırmasını ve katı Pydantic `ToolCall` JSON şemasını API payload'una ekler |
+| 106–157 | `_stream_ollama_response` | TCP sınırlarında kopan JSON'ları ve UTF-8 baytlarını onaran `incrementaldecoder` ve akıllı satır tamponu (buffer) algoritması |
+| 163–229 | `_gemini_chat` | Google Generative AI entegrasyonu; geçmiş mesajları Gemini formatına çevirir ve `application/json` MIME tipini zorlar |
+| 238–254 | Availability Checks | Hızlı kontrol için Ollama API `/tags` uç noktasına `httpx.AsyncClient` ile ping atar |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| L-03 | Ollama/Gemini stream parse katmanı metin odaklıdır; sağlayıcıların farklı event şemalarında (ör. yeni alan isimleri) adaptör güncellemesi gerekebilir | 129–273 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Streaming sırasındaki token atlama (chunk loss) sorunları ve JSON format kaymaları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| L-01 | ✅ Kapandı | `_stream_ollama_response` sonundaki kalan `buffer` için ek parse adımı eklendi; newline ile bitmeyen son JSON satırı da işleniyor. |
-| L-02 | ✅ Kapandı | `_stream_gemini_generator` içinde `chunk.text` doğrudan erişimi `getattr(chunk, "text", "")` ile güvenli hale getirildi. |
+LLM-01 ve LLM-02 numaralı "TCP Paket Sınırı Veri Kaybı" ve "Native JSON Entegrasyon Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

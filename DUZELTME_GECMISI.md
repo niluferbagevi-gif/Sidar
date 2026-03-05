@@ -86,6 +86,17 @@
 
 ---
 
+### ✅ §13.5.7 `core/llm_client.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM streaming (veri akışı) sırasında TCP paketlerinin JSON objelerini ortadan ikiye bölmesi sebebiyle yaşanan sessiz token/kelime kayıplarının ve model halüsinasyonlarının (JSON dışına çıkma) önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| LLM-01 | ✅ Kapandı | TCP Paket Sınırı Token Kaybı: Ollama stream akışında kullanılan `aiter_lines()` metodunun uzun satırları veya çok baytlı (multi-byte) Türkçe UTF-8 karakterlerini böldüğü tespit edildi. Kod, `aiter_bytes()` ve `codecs.getincrementaldecoder("utf-8")` ikilisi kullanılarak manuel bir satır (newline) tamponuna (buffer) geçirildi. JSON ayrıştırma hataları yüzünden kaybolan kelime sorunu tamamen çözüldü. |
+| LLM-02 | ✅ Kapandı | Native JSON Entegrasyonu: Modelleri (özellikle Llama 3) JSON formatında tutmak için sadece sistem promptu yetersiz kalıyordu. Ollama'nın native JSON şema desteği (`format: { "type": "object", "properties": ... }`) ve Gemini'nin `response_mime_type: "application/json"` özelliği API istek gövdesine eklendi. Modellerin markdown uydurma ihtimali donanımsal/API seviyesinde engellendi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
