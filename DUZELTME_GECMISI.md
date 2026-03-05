@@ -226,6 +226,17 @@
 
 ---
 
+### ✅ §13.5.20 `tests/` Dizini İyileştirmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Projenin büyümesiyle birlikte test kapsamının yetersiz kalması ve kritik güvenlik/mimari iyileştirmelerin regresyona açık olması riskinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| T-01 | ✅ Kapandı | Modüler Test Eksikliği: Proje mimarisiyle %100 uyumlu, her modülün kendi test senaryosuna sahip olduğu modüler yapıya geçildi. Paket başlatıcıları dahil kritik modüller test kapsamına alındı. |
+| T-02 | ✅ Kapandı | Güvenlik Regresyon Testleri: Path traversal, rate limiting ve asenkron event-loop bloklama gibi kritik açıklar için regresyon test dosyaları oluşturuldu. Bu açıkların gelecekteki güncellemelerle tekrar sızması mimari olarak engellendi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

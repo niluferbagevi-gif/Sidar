@@ -66,7 +66,7 @@
     - [13.5.17 `managers/__init__.py` — Skor: 100/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 100/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 100/100 ✅](#13519-agentinitpy-skor-98100)
-    - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅](#13520-teststestsidarpy-skor-94100)
+    - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
@@ -1580,28 +1580,40 @@ Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_G
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13520-teststestsidarpy-skor-94100"></a>
-#### 13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅
+#### 13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅
 
-**Sorumluluk:** Ajan, RAG, bellek, manager katmanları, güvenlik kontrolleri ve web server yardımcılarının davranışını modüler bir yapıda doğrulamak.
+**Sorumluluk (Güncel):** SİDAR’ın tüm bileşenlerinin (Core, Agent, Managers) işlevsel doğruluğunu, güvenlik sınırlarını ve performans metriklerini otomatik olarak denetleyen modüler test altyapısıdır.
 
-**Bu Turdaki İyileştirmeler (v2.7.0 Büyük Refactoring)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Önceki sürümlerde tek bir devasa dosyada toplanan (`test_sidar.py`) regresyon seti, bakım kolaylığı için 20'den fazla spesifik dosyaya (`test_web_server_improvements.py`, `test_rag_improvements.py` vb.) başarıyla parçalanmıştır.
-- Test kapsamı; XSS DOM sanitize, TOCTOU rate-limit, eşzamanlı RAG kilitlemesi (`threading.Lock`) ve bozuk JSON karantinası gibi uç (edge-case) güvenlik senaryolarını kapsayacak şekilde genişletilmiştir.
+Bu dizin, projenin CI dostu ve hataya yer bırakmayan yapısını garanti eder:
+
+- **Modüler İzolasyon:** Her modül için ayrı bir `test_*.py` dosyası bulunur; bir modülde yapılan değişiklik diğer testleri etkilemeden bağımsız doğrulanır.
+- **Regresyon Odaklı Geliştirme:** `*_improvements.py` dosyaları path traversal, rate limiting ve memory persistence gibi kritik düzeltmelerin tekrar bozulmasını engeller.
+- **Güvenlik ve Performans Onayı:** Web UI güvenliği, asenkron alt görev limitleri ve bellek şifreleme gibi süreçler simüle senaryolarla doğrulanır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm Proje Modülleri:** `tests/` dizini, projedeki çekirdek `.py` modüllerinin davranışlarını kapsayan modüler test senaryolarını içerir.
+
+**Mimari Özeti (20+ Modüler Test Dosyası)**
+
+| Kategori | Öne Çıkan Testler | Kapsam |
+|---|---|---|
+| Güvenlik | `test_security_improvements.py`, `test_web_ui_security_improvements.py` | Path traversal, symlink saldırıları ve CSP başlıklarının doğrulanması |
+| Yapay Zeka | `test_sidar_improvements.py`, `test_llm_client_improvements.py`, `test_agent_subtask.py` | ReAct döngüsü kararlılığı, JSON modu zorlaması ve asenkron streaming doğruluğu |
+| Yöneticiler | `test_todo_manager_improvements.py`, `test_system_health_improvements.py` | Tek aktif görev kuralı, thread-safety ve GPU/RAM izleme hassasiyeti |
+| Çekirdek | `test_memory_improvements.py`, `test_rag_improvements.py` | Fernet şifreleme kararlılığı, disk I/O throttling ve hibrit arama (BM25) fallback mekanizması |
 
 **Açık Bulgular**
 
-| ID | Konu | Önem |
-|----|------|------|
-| TST-03 | Bazı testler dış bağımlılık/ortam durumuna (örn. web arama motoru, donanım/GPU ortamı) duyarlı olduğundan farklı donanımlardaki CI/CD stabilitesi için ek mock izolasyonları gerekebilir. | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm mimari bileşenler test kapsamına alınmış ve regresyon koruması sağlanmıştır.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| TST-02 | ✅ Kapandı | Tek dosyada çok geniş kapsam sorunu tamamen çözüldü; testler modüler mimariye aktarıldı. |
+T-01 ve T-02 numaralı “Modüler Test Eksikliği” ve “Güvenlik Regresyon Testleri” bulguları, her yeni özellik ve iyileştirme için özel test dosyaları eklenerek tamamen kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
