@@ -75,6 +75,17 @@
 
 ---
 
+### ✅ §13.5.6 `agent/auto_handle.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Otomatik komut işleyicinin (AutoHandle) karmaşık cümlelerde veya çok adımlı görevlerde (Chain of Thought) sistem işleyişini bozmasının ve yanlış araçları tetiklemesinin (False Positive) engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AH-01 | ✅ Kapandı | Aşırı Hevesli Regex (False Positive): Sistemde "göster", "kontrol et" gibi genel bağlamlı kelimeler yüzünden alakasız araçların tetiklenmesi sorunu, regex kalıplarının sıkılaştırılmasıyla (örn. "dosyayı göster", "sözdizimini doğrula" şeklinde bağlam zorunluluğu getirilerek) çözüldü. Dizin çıkarma mantığı (`_extract_dir_path`) dosya uzantılarını yok sayacak şekilde izole edildi. |
+| AH-02 | ✅ Kapandı | Çok Adımlı Görev Kırılması: Kullanıcının "Dosyayı oku ve ardından testlerini yaz" şeklindeki isteklerinde, AutoHandle'ın sadece ilk kısmı (okuma) yapıp süreci bitirmesi büyük bir hataydı. Koda `_MULTI_STEP_RE` sabiti eklenerek "ardından", "sonrasında", "1. ... 2." gibi bağlaçlar yakalandı ve bu tür isteklerin dokunulmadan doğrudan asıl yapay zeka ajanına (ReAct) iletilmesi sağlandı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

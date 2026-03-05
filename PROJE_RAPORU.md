@@ -52,7 +52,7 @@
     - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
-    - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
+    - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
@@ -989,43 +989,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1356-agentautohandlepy-skor-89100"></a>
-#### 13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅
+#### 13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Hızlı yol komut yönlendirici — doğal dildeki sık/tek-adımlı istekleri regex kalıplarıyla ilgili manager araçlarına bağlar; uygun değilse ReAct döngüsüne fallback yapar.
+**Sorumluluk (Güncel):** Doğal dille ifade edilen "tek adımlı" basit komutları (örn. "dosyayı oku", "GPU durumunu göster", "belleği temizle") LLM'e gitmeden yakalayarak sıfır token maliyeti ve milisaniyelik tepki süresiyle doğrudan ilgili araca yönlendiren Akıllı Yönlendirici (Intent Router).
 
-**Akış Kontrolü ve Fallback (satır 50–149)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `_MULTI_STEP_RE` ile "ardından / sonrasında / önce...sonra / numaralı adımlar" gibi çok adımlı niyetler erken tespit edilip `(False, "")` döndürülür; zincirli işleri AutoHandle yerine `sidar_agent.py` ReAct akışına bırakır.
-- `handle()` içinde senkron ve asenkron alt işleyiciler sıralı çağrılır; ilk eşleşmede erken dönüş (`return result`) yapıldığı için deterministik ve düşük gecikmeli bir kısa yol sağlar.
+SİDAR'ın hızını ve verimliliğini artıran ilk filtredir.
 
-**Kapsam ve Yetenek Dağılımı (satır 153–504)**
+- **Maliyet Düşürücü (Cost-Saver):** Kullanıcının sadece bilgi almak için sorduğu "Aktif PR'ları listele" veya "FastAPI paket bilgisi" gibi komutlarda API çağrısı yapılmasını engeller.
+- **Akıllı Devir (Smart Delegation):** `_MULTI_STEP_RE` yapısı sayesinde "önce", "sonra", "ardından" gibi zincirleme komutları algılar ve "Ben tek adımlık bir ön-işlemciyim, bu karmaşık görev senin işin" diyerek görevi ReAct ajana bırakır.
+- **Regex Daraltması:** Cümle içindeki bağlamı kavrayacak özel kalıplar içerir; böylece örneğin "Sistemin GPU durumunu göster" komutunun yanlışlıkla dosya okuma (`read_file`) aracını tetiklemesi engellenir.
 
-- Yerel dosya/sağlık/GitHub komutları için senkron manager çağrıları; web/paket sorguları için `await` tabanlı çağrılar ayrıştırılmış.
-- PR listesi/detay, docs add/search/list gibi operasyonlar da AutoHandle içinde kapsanarak kullanıcıya doğal dilde hızlı tepki veriliyor.
-- `memory.get_last_file()` fallback'i (`_try_read_file`, `_try_validate_file`) kısa komutlarda kullanılabilirliği artırıyor.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Regex ve Yardımcılar (satır 510–544)**
+- 🔗 `agent/sidar_agent.py`: Ajan, kullanıcıdan girdiyi aldığında ilk iş olarak `auto.handle(user_input)` metodunu çağırır. Eğer `True` dönerse ReAct döngüsünü tamamen atlar.
+- 🔗 `managers/*`: İşlenen komuta göre CodeManager, WebSearchManager, GitHubManager vb. sistemlere doğrudan komut gönderir.
 
-- `_extract_path`, `_extract_dir_path`, `_extract_url` yardımcıları ile doğal dil metinden yol/URL ayrıştırması yapılıyor.
-- Dizin ve dosya ayrımında uzantı kontrolü eklenmiş; traversal benzeri ham metinler doğrudan burada çalıştırılmıyor, yalnızca manager katmanına parametre olarak iletiliyor.
+**Mimari Özeti (satır 1–460)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 46–51 | `_MULTI_STEP_RE` | Zincirleme/çok adımlı komutları tespit ederek ReAct döngüsüne düşmesini sağlayan güvenlik regex'i |
+| 53–134 | `handle(...)` | Tüm araç testlerini (`try_*`) sırasıyla çalıştıran ana asenkron giriş noktası |
+| 138–301 | Senkron Araç İşleyicileri | Dosya okuma, denetim (`audit`), sistem sağlığı (`health`) ve senkron GitHub işlemlerinin regex kalıpları |
+| 305–419 | Asenkron Araç İşleyicileri | Web araması, URL çekme, NPM/PyPI paket sorguları ve RAG arama (`to_thread` ile) fonksiyonları |
+| 423–458 | Path & URL Çıkarıcılar | Doğal dil metni içinden `file.py`, `./src` veya `https://...` gibi parametreleri temiz şekilde (regex ile) çıkartan yardımcılar |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| A-03 | Regex tabanlı hızlı yönlendirme doğası gereği bağlamdan bağımsızdır; nadir ifadelerde yanlış-pozitif/negatif olasılığı tamamen sıfırlanamaz | 48–544 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Aşırı eşleşme (over-matching) hataları ve event-loop bloklamaları tamamen çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| A-01 | ✅ Kapandı | `_try_docs_search` asenkronlaştırıldı ve `await asyncio.to_thread(self.docs.search, ...)` ile bloklayıcı arama event loop dışına taşındı. |
-| A-02 | ✅ Kapandı | `_try_github_info` regex'i bilgi/özet/durum/detay niyeti şartına daraltıldı; geniş eşleşme kaynaklı yanlış-pozitifler azaltıldı. |
+AH-01 ve AH-02 numaralı "Aşırı Hevesli Regex (False Positive)" ve "Çok Adımlı Görev Kırılması" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
