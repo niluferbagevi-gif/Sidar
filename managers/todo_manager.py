@@ -59,6 +59,18 @@ class TodoManager:
         self._lock = threading.RLock()
         logger.info("TodoManager başlatıldı.")
 
+
+    def _ensure_single_in_progress(self, preferred_task_id: int) -> int:
+        """Tek bir in_progress görev kalacak şekilde diğerlerini pending'e çeker."""
+        demoted = 0
+        for task in self._tasks:
+            if task.id == preferred_task_id:
+                continue
+            if task.status == STATUS_IN_PROGRESS:
+                task.update_status(STATUS_PENDING)
+                demoted += 1
+        return demoted
+
     # ─────────────────────────────────────────────
     #  GÖREV EKLEME
     # ─────────────────────────────────────────────
@@ -81,13 +93,21 @@ class TodoManager:
         if status not in VALID_STATUSES:
             return f"⚠ Geçersiz durum: '{status}'. Geçerli değerler: {', '.join(VALID_STATUSES)}"
 
+        demoted = 0
         with self._lock:
             task = Task(id=self._next_id, content=content, status=status)
             self._tasks.append(task)
             self._next_id += 1
             task_id = task.id
+            if status == STATUS_IN_PROGRESS:
+                demoted = self._ensure_single_in_progress(task_id)
 
         logger.debug("Görev eklendi: #%d — %s", task_id, content[:50])
+        if demoted:
+            return (
+                f"✅ Görev eklendi (#{task_id}): {content}" + "\n"
+                f"ℹ Aynı anda tek aktif görev kuralı nedeniyle {demoted} görev pending'e çekildi."
+            )
         return f"✅ Görev eklendi (#{task_id}): {content}"
 
     def set_tasks(self, tasks_data: list) -> str:
@@ -107,6 +127,7 @@ class TodoManager:
             self._tasks.clear()
             self._next_id = 1
             added = 0
+            latest_in_progress_id: Optional[int] = None
             for item in tasks_data:
                 if not isinstance(item, dict):
                     continue
@@ -117,7 +138,18 @@ class TodoManager:
                     self._tasks.append(task)
                     self._next_id += 1
                     added += 1
+                    if status == STATUS_IN_PROGRESS:
+                        latest_in_progress_id = task.id
 
+            demoted = 0
+            if latest_in_progress_id is not None:
+                demoted = self._ensure_single_in_progress(latest_in_progress_id)
+
+        if demoted:
+            return (
+                f"✅ Görev listesi güncellendi: {added} görev ayarlandı." + "\n"
+                f"ℹ Aynı anda tek aktif görev kuralı nedeniyle {demoted} görev pending'e çekildi."
+            )
         return f"✅ Görev listesi güncellendi: {added} görev ayarlandı."
 
     # ─────────────────────────────────────────────
@@ -143,12 +175,22 @@ class TodoManager:
                 if task.id == task_id:
                     old_status = task.status
                     task.update_status(new_status)
+                    demoted = 0
+                    if new_status == STATUS_IN_PROGRESS:
+                        demoted = self._ensure_single_in_progress(task_id)
                     logger.debug("Görev #%d: %s → %s", task_id, old_status, new_status)
-                    return (
+                    msg = (
                         f"{STATUS_ICONS[new_status]} Görev #{task_id} güncellendi: "
-                        f"{old_status} → {new_status}\n"
+                        f"{old_status} → {new_status}" + "\n"
                         f"   {task.content}"
                     )
+                    if demoted:
+                        msg += (
+                            "\n"
+                            "ℹ Aynı anda tek aktif görev kuralı nedeniyle "
+                            f"{demoted} görev pending'e çekildi."
+                        )
+                    return msg
 
         return f"⚠ Görev bulunamadı: #{task_id}"
 
