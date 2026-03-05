@@ -24,7 +24,7 @@ LEVEL_NAMES = {
 }
 
 # Tehlikeli yol kalıpları — path traversal saldırılarına karşı ek koruma
-_DANGEROUS_PATH_RE = re.compile(r"\.\.[/\\]|^/etc/|^/proc/|^/sys/", re.IGNORECASE)
+_DANGEROUS_PATH_RE = re.compile(r"\.\.[/\\]|^/etc/|^/proc/|^/sys/|^[a-zA-Z]:[/\\](windows|program files)", re.IGNORECASE)
 
 
 class SecurityManager:
@@ -39,8 +39,9 @@ class SecurityManager:
     """
 
     def __init__(self, access_level: str, base_dir: Path) -> None:
-        self.level: int = LEVEL_NAMES.get(access_level.lower(), SANDBOX)
-        self.level_name: str = access_level.lower()
+        normalized_level = self._normalize_level_name(access_level)
+        self.level: int = LEVEL_NAMES[normalized_level]
+        self.level_name: str = normalized_level
         self.base_dir: Path = base_dir.resolve()
         self.temp_dir: Path = (base_dir / "temp").resolve()
         self.temp_dir.mkdir(exist_ok=True)
@@ -49,6 +50,18 @@ class SecurityManager:
     # ─────────────────────────────────────────────
     #  YARDIMCI — YOL GÜVENLİĞİ
     # ─────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_level_name(access_level: str) -> str:
+        """Bilinmeyen seviyeleri güvenli varsayılan SANDBOX'a normalize eder."""
+        level = (access_level or "").strip().lower()
+        if level not in LEVEL_NAMES:
+            logger.warning(
+                "SecurityManager: bilinmeyen access level '%s' — SANDBOX varsayılanı kullanılacak.",
+                access_level,
+            )
+            return "sandbox"
+        return level
 
     @staticmethod
     def _has_dangerous_pattern(path_str: str) -> bool:
@@ -88,6 +101,7 @@ class SecurityManager:
         Returns:
             True → yol güvenli ve base altında
         """
+        base = base.resolve()
         if self._has_dangerous_pattern(path_str):
             logger.warning("SecurityManager: tehlikeli yol kalıbı reddedildi: %s", path_str)
             return False
@@ -132,6 +146,9 @@ class SecurityManager:
             True → yazma izni var
         """
         if self.level == RESTRICTED:
+            return False
+
+        if not path or not path.strip():
             return False
 
         # Tehlikeli kalıp erken ret
