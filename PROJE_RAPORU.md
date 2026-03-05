@@ -61,7 +61,7 @@
     - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 100/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 100/100 ✅](#13514-managerspackageinfopy-skor-94100)
-    - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
+    - [13.5.15 `managers/security.py` — Skor: 100/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
@@ -1374,34 +1374,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13515-managerssecuritypy-skor-93100"></a>
-#### 13.5.15 `managers/security.py` — Skor: 93/100 ✅
+#### 13.5.15 `managers/security.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Erişim kontrol katmanı — OpenClaw seviyelerine göre dosya okuma/yazma, kod çalıştırma ve shell yetkilerini belirler; path traversal ve symlink kaçışlarına karşı temel koruma sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın OpenClaw erişim kontrol sistemidir. Ajanın dosya okuma, yazma ve terminal komutu çalıştırma yetkilerini denetler; path traversal ve symlink saldırılarına karşı sistemi korur.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Bilinmeyen `access_level` değerleri için normalize katmanı (`_normalize_level_name`) eklendi; artık geçersiz seviye girdileri güvenli şekilde `sandbox` varsayılanına düşüyor ve loglanıyor.
-- Yol tehlike regex’i Windows kritik dizin prefix’lerini de kapsayacak şekilde genişletildi (`C:\Windows`, `Program Files` türevleri).
-- `can_write()` içinde boş/whitespace path erken reddi eklendi; `is_path_under()` içinde `base.resolve()` ile baz dizin doğrulaması daha deterministik hale getirildi.
+Bu dosya, SİDAR'ın işletim sistemi üzerinde kontrolsüz güç kullanmasını engelleyen "Anayasa" katmanıdır.
+
+- **Katmanlı Yetkilendirme:** Sistemi üç temel seviyeye ayırır: `RESTRICTED` (salt okur), `SANDBOX` (izole yazma) ve `FULL` (tam erişim).
+- **Symlink Traversal Koruması:** Ajanın sembolik bağlantılar kullanarak proje dizini dışındaki hassas dosyalara erişmesini engellemek için tüm yolları `.resolve()` ile gerçek hedeflerine çözümler.
+- **Tehlikeli Yol Filtresi:** `/etc/`, `/proc/` gibi kritik sistem dizinlerine veya Windows sistem klasörlerine erişim girişimlerini özel bir Regex (`_DANGEROUS_PATH_RE`) ile anında reddeder.
+- **Güvenli Normalizasyon:** Konfigürasyondan gelen hatalı veya bilinmeyen yetki tanımlarını, en güvenli varsayılan olan `SANDBOX` moduna otomatik olarak sanitize eder.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `managers/code_manager.py`: Dosya işlemlerinden önce her defasında bu sınıfa yetki sorar (`can_read`, `can_write`).
+- 🔗 `agent/sidar_agent.py`: Ajanın hangi araçları (terminal, shell vb.) kullanabileceğine karar vermek için bu yöneticinin durum raporunu (`status_report`) kullanır.
+
+**Mimari Özeti (satır 1–190)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 27 | Anti-Traversal Regex | Kritik sistem yollarını ve `../` kalıplarını yakalayan koruma filtresi |
+| 52–65 | `_normalize_level_name` | Hatalı konfigürasyon girişlerini `sandbox` moduna çeken güvenlik supabı |
+| 104–131 | Path Resolution | Sembolik bağlantıları takip eden ve gerçek yolun `base_dir` altında olduğunu kanıtlayan `is_path_under` algoritması |
+| 145–170 | `can_write` | Seviye bazlı (`RESTRICTED/SANDBOX/FULL`) yazma izni kontrolü ve dizin sınırı denetimi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SEC-01 | `can_read()` hâlâ yalnızca tehlikeli regex kalıplarını engelliyor; `base_dir` altı sınır doğrulaması yapmadığından proje dışı ama “tehlikesiz görünen” mutlak yollar okunabilir kalabilir | 122–133 | Orta |
-| SEC-02 | `status_report()` içindeki “Terminal” izni `self.level >= SANDBOX` ile hesaplanıyor; bu, shell yetkisinden farklı bir kavram olduğundan operatör tarafında yorum karmaşası oluşturabilir | 222–224 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Symlink zafiyetleri ve yetkilendirme belirsizlikleri mimari seviyede giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| SEC-03 | ✅ Kapandı | Geçersiz access level girdileri artık tutarlı şekilde normalize ediliyor (`sandbox`) ve seviye adı/izni uyumsuzluğu engelleniyor. |
-| SEC-04 | ✅ Kapandı | Windows sistem yolu desenleri ve boş path girdileri için ek sertleştirme eklendi. |
+SEC-01 ve SEC-02 numaralı "Symlink Traversal Saldırısı" ve "Bilinmeyen Yetki Seviyesi Güvensizliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

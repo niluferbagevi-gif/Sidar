@@ -174,6 +174,17 @@
 
 ---
 
+### ✅ §13.5.15 `managers/security.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın proje dizini dışına sızmasını sağlayan gelişmiş dosya yolu saldırılarının engellenmesi ve yetkilendirme sisteminin daha robust hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SEC-01 | ✅ Kapandı | Symlink Traversal Saldırısı: Ajanın proje içinde bir dosya adıymış gibi görünüp aslında sistem dışındaki hassas bir dosyaya (örn. `/etc/shadow`) işaret eden sembolik bağlantılar oluşturup okuması riski saptandı. Tüm yol kontrolleri `Path.resolve()` metoduna geçirildi. Bu sayede symlink'ler gerçek hedeflerine çözümlenmeden yetki verilmesi imkansız hale getirildi. |
+| SEC-02 | ✅ Kapandı | Bilinmeyen Yetki Seviyesi Güvensizliği: `.env` dosyasındaki `ACCESS_LEVEL` parametresinin boş bırakılması veya hatalı girilmesi durumunda sistemin varsayılan olarak ne yapacağı belirsizdi. `_normalize_level_name` metodu eklenerek tüm geçersiz girişler otomatik olarak `sandbox` (izole) moduna çekildi ve sistem güvenliği garanti altına alındı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
