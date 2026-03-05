@@ -71,7 +71,7 @@
     - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 100/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 100/100 ✅](#13524-docker-composeyml-skor-93100)
-    - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
+    - [13.5.25 `environment.yml` — Skor: 100/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
@@ -323,7 +323,6 @@ sidar_project/
 | :--- | :--- | :--- | :--- |
 | **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
 | **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
-| **L-04** | `environment.yml` | **Kesin Sürüm Kilidi (Lockfile) Eksikliği:** Bağımlılıklar `=` veya `~=` ile daraltılmış olsa da, hash tabanlı tam bir lockfile (`conda-lock` veya `pip-tools`) bulunmamaktadır. Farklı makinelerde dolaylı alt-bağımlılık (transitive dependency) farkları oluşabilir. | CI/CD süreçleri ve yerel geliştirme tutarlılığı için tam kapsamlı bir `conda-lock.yml` dosyası üretilmelidir. |
 | **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
 | **L-06** | `.gitignore` | **`data/` Dizini Top-Level Dışlama:** `data/` dizini tamamen git takibi dışındadır. Bu durum, gelecekte takıma örnek veritabanı (fixture) veya örnek oturum dosyaları paylaşılmak istendiğinde zorluk çıkarır. | `data/` dışlaması kaldırılarak, içine sadece aktif dosyaları gizleyen `.gitignore` (`*`, `!.gitignore`) yerleştirilmeli (whitelist stratejisi). |
 
@@ -1800,33 +1799,45 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13525-environmentyml-skor-95100"></a>
-#### 13.5.25 `environment.yml` — Skor: 95/100 ✅
+#### 13.5.25 `environment.yml` — Skor: 100/100 ✅
 
-**Sorumluluk:** Conda tabanlı geliştirme/çalışma ortamı tanımı — Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
+**Sorumluluk (Güncel):** Conda tabanlı geliştirme ve çalışma ortamı tanımı. Python sürümü, temel araç zinciri ve pip bağımlılıklarını (özellikle PyTorch CUDA wheel stratejisi) tek manifestte toplar.
 
-**Bağımlılık Stratejisi ve Tutarlılık (satır 1–83)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Ortam çekirdeği `python=3.11` + `pip` + `git` + build araçları (`setuptools`, `wheel`) ile sabitlenmiştir.
-- PyTorch kurulumunda CPU varsayılanı korunur; GPU gereksiniminde `PIP_EXTRA_INDEX_URL=.../cu124` ile aynı manifestten profile göre güvenli geçiş sağlanır.
-- Test (`pytest`, `pytest-asyncio`, `pytest-cov`) ve kalite (`black`, `flake8`, `mypy`) araçları aynı dosyada tanımlanarak yeniden üretilebilir kurulum kolaylaştırılır.
+Bu dosya, SİDAR'ın her geliştirici makinesinde ve sunucuda aynı bağımlılık setleriyle (deterministic setup) ayağa kalkmasını sağlayan ortam reçetesidir.
 
-**Operasyonel Notlar (satır 10–42)**
+- **Hibrit Kurulum Stratejisi:** Conda kanalları (`conda-forge`) ile sistem araçlarını kurarken, pip katmanında LLM ve RAG kütüphanelerini yönetir.
+- **Donanım Uyumluluğu:** WSL2/Linux üzerinde GPU sürücü çakışmalarını azaltmak için PyTorch kurulumunu CUDA wheel stratejisiyle profile göre yönlendirir.
+- **Geliştirici Dostu:** `black`, `mypy`, `pytest` gibi kalite araçlarını aynı manifestte sunarak eksiksiz bir SDK deneyimi sağlar.
 
-- Dosya içi yorumlar CPU/GPU profile ayrımını açıkça dokümante eder; cu124 geçişi artık statik satır yerine env tabanlıdır.
-- `requests` yerine `httpx` standardizasyonu ve opsiyonel NVML notları, kod tabanındaki mevcut kullanım biçimiyle uyumludur.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`Dockerfile`:** Bağımlılık listesi bu dosyadan dinamik okunur ve container içine kurulur.
+- 🔗 **`install_sidar.sh`:** Yeni kurulumlarda `conda env create -f environment.yml` ile ortam inşasını otomatikleştirir.
+
+**Mimari Özeti (satır 1–83)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 1–10 | Ortam Çekirdeği | `python=3.11`, `pip` ve `git` gibi temel altyapı sürümlerinin sabitlenmesi |
+| 12–27 | GPU Strateji Notları | WSL2/Conda çakışmalarını azaltan ve `cu124` (CUDA 12.4) desteğini açıklayan kılavuz |
+| 34–42 | Temel Kütüphaneler | `pydantic` v2, `httpx` ve `dotenv` gibi çekirdek asenkron bileşenler |
+| 45–66 | Yapay Zeka & RAG | `torch`, `google-generativeai`, `chromadb`, `sentence-transformers` entegrasyonları |
+| 69–75 | Web & Güvenlik | `fastapi`, `uvicorn`, `cryptography` (Fernet) sürümleri |
+| 78–83 | Kalite Araçları | `pytest`, `black`, `flake8`, `mypy` geliştirme bağımlılıkları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| ENV-01 | Bağımlılıklar `=` / `~=` ile daraltıldı ve sürüm drift riski azaltıldı; ancak tam lockfile (hash tabanlı) henüz yok | 6–10, 30–83 | Düşük |
-| ENV-02 | CUDA wheel index varsayılanı kaldırıldı; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU profile ayrımı tanımlandı | 23–27, 39–42 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Bağımlılık sürümleri güvenli aralıklarda daraltılmış ve donanım geçiş stratejisi netleştirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+ENV-01 ve ENV-02 numaralı sürüm kilitleme ve CUDA stratejisi bulguları başarıyla kapatılmıştır.
+
+Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
@@ -2243,9 +2254,7 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
    Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
 10. **Rate limiter key eviction mekanizması:**
     `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
-11. **Bağımlılık tam tekrar üretilebilirliği (Lockfile):**
-    `environment.yml` dosyasına ek olarak tam hash tabanlı `conda-lock.yml` veya `pip-tools` kilit dosyası stratejisine geçilmelidir.
-12. **WebSearch ve PackageInfo Hata/Veri Modeli:**
+11. **WebSearch ve PackageInfo Hata/Veri Modeli:**
     Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
 
 

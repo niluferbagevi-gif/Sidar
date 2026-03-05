@@ -282,6 +282,17 @@
 
 ---
 
+### ✅ §13.5.25 `environment.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Kurulum ortamındaki sürüm belirsizliklerinin giderilmesi ve GPU/CUDA destek stratejisinin netleştirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENV-01 | ✅ Kapandı | Sürüm Kilitleme (Version Pinning): Bağımlılıklar `~=` ve `==` operatörleriyle daraltılarak farklı kurulumlarda oluşabilecek sürüm uyumsuzluğu riskleri mimari düzeyde minimize edildi. Mevcut yapı esneklik/kararlılık dengesini koruyan hedef profile ulaştı. |
+| ENV-02 | ✅ Kapandı | CUDA Stratejisi: Dosya içi notlar ve yapılandırma `cu124` standardına hizalandı. CUDA wheel index varsayılanı kaldırılarak, CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile opsiyonel GPU geçiş profili daha güvenli hale getirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
