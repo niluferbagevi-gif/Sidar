@@ -61,7 +61,7 @@
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
-    - [13.5.17 `managers/__init__.py` — Skor: 96/100 ✅](#13517-managersinitpy-skor-96100)
+    - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 97/100 ✅](#13518-coreinitpy-skor-97100)
     - [13.5.19 `agent/__init__.py` — Skor: 96/100 ✅](#13519-agentinitpy-skor-96100)
     - [13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅](#13520-teststestsidarpy-skor-93100)
@@ -1606,26 +1606,27 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13517-managersinitpy-skor-96100"></a>
-#### 13.5.17 `managers/__init__.py` — Skor: 96/100 ✅
+<a id="13517-managersinitpy-skor-98100"></a>
+#### 13.5.17 `managers/__init__.py` — Skor: 98/100 ✅
 
 **Sorumluluk:** Manager paketinin public export katmanı — üst modüllerin `from managers import ...` kullanımında erişilecek sınıfları merkezi olarak tanımlar.
 
-**Modül Organizasyonu (satır 2–8)**
+**Bu Turdaki İyileştirmeler**
 
-- `CodeManager`, `SystemHealthManager`, `GitHubManager`, `SecurityManager`, `WebSearchManager`, `PackageInfoManager`, `TodoManager` tek noktadan içe aktarılır.
-- Paket tüketicisi için import ergonomisi artar; alt modül yolunu bilmeden doğrudan manager sınıfı alınabilir.
-
-**Public API Sözleşmesi (satır 10–18)**
-
-- `__all__` listesi export edilecek sembolleri açıkça sınırlar.
-- Geçmişte görülen `TodoManager` export eksikliği bu dosya üzerinden kapatılmıştır; mevcut durumda manager katmanı tutarlıdır.
+- Export sözleşmesi tek kaynağa indirildi: `_EXPORTED_MANAGERS` tuple'ı hem import görünürlüğünü hem de `__all__` üretimini besliyor.
+- `__all__` artık manuel string listesi yerine sınıf adlarından türetiliyor (`[cls.__name__ for cls in _EXPORTED_MANAGERS]`), böylece duplicate/unutma kaynaklı drift riski azaltıldı.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| MGR-01 | `__all__` manuel yönetiliyor; yeni manager eklemelerinde unutulursa paket API’si ile gerçek modül içeriği arasında drift oluşabilir | 10–18 | Düşük |
+| MGR-02 | Yeni bir manager import edilip `_EXPORTED_MANAGERS` tuple’ına eklenmezse public API dışında kalır; ancak artık tek noktadan yönetildiği için risk düşüktür | 11–21 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| MGR-01 | ✅ Kapandı | `__all__` manuel string listesi kaldırıldı; export listesi sınıf tuple’ından türetiliyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
