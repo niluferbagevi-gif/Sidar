@@ -97,6 +97,17 @@
 
 ---
 
+### ✅ §13.5.8 `core/memory.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Eski tek dosyalı bellek sisteminin yerine çoklu oturum yapısının getirilmesi, güvenlik açıklarının kapatılması ve disk darboğazlarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| MEM-01 | ✅ Kapandı | Disk I/O Darboğazı (Throttling): Eski yapıda ajan her token ürettiğinde diske senkron yazma yapılıyordu. `_save_interval_seconds = 0.5` ve `_dirty` bayrağı eklenerek ardışık kayıt istekleri birleştirildi (debounced). SSD aşınması ve sunucu kilitlenmeleri önlendi. |
+| MEM-02 | ✅ Kapandı | Bozuk Dosya & Şifreleme Eksikliği: Sohbet geçmişlerinin düz metin saklanması riski Fernet (AES-128-CBC) ile giderildi. Ayrıca elektrik kesintisi vb. nedenlerle JSON yapısı bozulan dosyaların tüm sistemi çökertmesi hatası, dosyaların `.json.broken` olarak karantinaya alındığı `_cleanup_broken_files` mekanizması ile çözüldü. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

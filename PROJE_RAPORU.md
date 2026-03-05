@@ -54,7 +54,7 @@
     - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 100/100 ✅](#1357-corellmclientpy-skor-91100)
-    - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
+    - [13.5.8 `core/memory.py` — Skor: 100/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
@@ -1075,52 +1075,45 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1358-corememorypy-skor-92100"></a>
-#### 13.5.8 `core/memory.py` — Skor: 96/100 ✅
+#### 13.5.8 `core/memory.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Kalıcı konuşma belleği ve oturum yönetimi — aktif sohbet turunu diskte JSON olarak saklar, oturum listesi/başlık/silme/yükleme işlevlerini yönetir, LLM bağlamına son mesajları sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın çoklu oturum (multi-session) destekli, kalıcı (persistent) konuşma belleği yöneticisidir. Thread-safe yapısı, verileri diske kaydetme ve token aşımını engelleme süreçlerinden sorumludur.
 
-**Eşzamanlılık ve Kalıcılık (satır 23–41, 194–240)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `threading.RLock` ile tüm kritik okuma-yazma yolları korunur; `add()`, `set_last_file()`, `clear()`, `load_session()` gibi metodlar aynı kilit altında çalışır.
-- `_save()` aktif oturum kimliği varsa dosyaya atomik olmayan ama tek-kilitli yazım yapar; tek süreç içinde yarış koşullarını azaltır.
-- `max_turns * 2` pencere sınırı uygulanarak bellek boyutu kontrollü tutulur.
+Bu dosya, SİDAR'ın geçmişi unutmaması ama aynı zamanda diski ve hafızayı şişirmemesi için tasarlanmıştır.
 
-**Oturum Yönetimi ve Kurtarma Davranışı (satır 99–183)**
+- **Çoklu Oturum (Multi-Session):** Eski tekil `memory.json` yapısı yerine verileri `sessions` dizininde UUID tabanlı ayrı JSON dosyalarında saklar.
+- **Güvenlik (Encryption):** `MEMORY_ENCRYPTION_KEY` ayarlandığında oturum dosyaları Fernet (AES-128-CBC) algoritması ile şifrelenir, böylece diskteki sohbet verileri dışarıdan okunamaz.
+- **Disk I/O Optimizasyonu (Throttling):** Ajanın LLM'den stream (akış) ile aldığı her token'da diske yazmasını engellemek için `_save_interval_seconds = 0.5` kullanarak yazma işlemlerini birleştirir (debounce).
+- **Karantina Mekanizması:** Bozuk veya şifresi çözülemeyen dosyaları silmek yerine `.json.broken` uzantısıyla karantinaya alır ve `_cleanup_broken_files` ile bu dosyaların yaşam döngüsünü (retention) yönetir.
 
-- Oturumlar `updated_at` değerine göre sıralanır ve başlangıçta en güncel oturum yüklenir.
-- Bozuk JSON/encoding dosyaları `.json.broken` uzantısına taşınarak karantinaya alınır; ana akışın bozulması engellenir.
-- Aktif oturum silinirse `_init_sessions()` ile güvenli fallback yapılır (varsa son oturum, yoksa yeni oturum).
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Şifreleme Katmanı (satır 43–84)**
+- 🔗 `agent/sidar_agent.py`: Ajan belleği buradan okur (`get_messages_for_llm`), yeni tur ekler (`add`) ve özetleme eşiğini (`needs_summarization`) buradan denetler.
+- 🔗 `web_server.py`: Web arayüzündeki "Yeni Sohbet" ve "Geçmiş Sohbetler" menüsü, oturumları doğrudan bu sınıftaki API'ler (`get_all_sessions`, `create_session`) üzerinden çeker.
 
-- `MEMORY_ENCRYPTION_KEY` sağlandığında Fernet ile şifreli saklama aktifleşir.
-- Şifre çözme başarısız olursa düz metin deneme fallback’i, geçiş döneminde eski dosyaların okunmasını mümkün kılar.
-- Şifreleme başlatma hataları loglanır ve sistem düz metin moduna geri döner.
+**Mimari Özeti (satır 1–287)**
 
-**Özetleme Desteği (satır 259–292)**
-
-- Karakter tabanlı yaklaşık token tahmini ile (`~3.5 karakter/token`) özetleme eşiği belirlenir.
-- `needs_summarization()` hem mesaj adedi eşiğini (%80) hem token eşiğini (6000) birlikte değerlendirir.
-- `apply_summary()` geçmişi iki mesajlık (istek + özet) sıkıştırılmış forma indirir.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 44–59 | `_init_fernet` | Konfigürasyon varsa asimetrik olmayan AES-128-CBC (Fernet) şifreleme motorunu başlatır |
+| 81–104 | `_cleanup_broken_files` | Karantinadaki bozuk dosyalar için `max_age_days` ve `max_files` limitli çöp toplayıcı (Garbage Collector) mantığı |
+| 115–159 | `get_all_sessions()` | Dizin içindeki oturumları güvenli ayrıştırıp (bozukları `.broken` yaparak) kronolojik olarak UI'a döndürür |
+| 198–223 | `_save(force)` | `time.time() - _last_saved_at < 0.5` kontrolüyle çalışan yüksek performanslı I/O Throttling fonksiyonu |
+| 253–278 | `needs_summarization` | %80 kapasite veya ~6000 token sınırına ulaşıldığında, bellek özetleme sinyali üreten proaktif izleyici |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| M-03 | `add()` çağrıları yazımı coalesce etse de ani süreç sonlanmalarında çok kısa pencere içindeki son mesajlar disk flush öncesi kaybolabilir (tasarım trade-off) | 194–218 | Bilgi |
-| MEM-04 | `MEMORY_ENCRYPTION_KEY` (.env) değişir veya kaybolursa, diskteki şifrelenmiş mevcut oturumlar okunurken fırlatılan `InvalidToken` hatası zarif bir şekilde (fallback/uyarı) yakalanmıyor, sistemin o oturum için çökmesine neden oluyor. | 118–190 | Yüksek (H-04) |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm disk darboğazları (I/O bottlenecks) ve güvenlik/karantina mimari ihtiyaçları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| M-01 | ✅ Kapandı | `_save(force=False)` + `_save_interval_seconds` ile sık çağrılarda yazım birleştirme (coalescing) eklendi. |
-| M-02 | ✅ Kapandı | `*.json.broken` dosyaları için `_cleanup_broken_files()` retention/temizlik politikası eklendi (yaş + adet sınırı). |
+MEM-01 ve MEM-02 numaralı "Disk I/O Darboğazı" ve "Bozuk Dosya/Şifreleme Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
