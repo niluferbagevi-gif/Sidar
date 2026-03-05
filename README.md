@@ -187,10 +187,13 @@ cp .env.example .env
 ### Ollama Kurulumu
 
 ```bash
-# https://ollama.ai
+# Resmi Linux kurulumu: https://ollama.com/download/linux
 ollama pull qwen2.5-coder:7b
 ollama serve
 ```
+
+> Güvenlik notu: `install_sidar.sh` varsayılan olarak uzaktan kurulum scripti çalıştırmaz.
+> Otomatik kurulum gerekiyorsa bilinçli opt-in ile çalıştırın: `ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh`.
 
 ### Docker ile
 
@@ -200,6 +203,15 @@ docker compose up --build sidar-web
 
 # GPU modu (NVIDIA)
 docker compose up --build sidar-web-gpu
+```
+
+### Otomatik Kurulum Betiği (Ubuntu/WSL)
+
+```bash
+./install_sidar.sh
+
+# İsteğe bağlı (riskli adımları bilinçli olarak açmak için):
+ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 ```
 
 ---
@@ -219,7 +231,7 @@ Tarayıcıda açılır: **http://localhost:7860**
 python web_server.py --host 0.0.0.0 --port 8080
 
 # Erişim seviyesi ile
-python web_server.py --level full
+python web_server.py --level sandbox
 
 # Gemini sağlayıcısı ile
 python web_server.py --provider gemini --port 7860
@@ -411,17 +423,21 @@ GITHUB_TOKEN=
 GITHUB_REPO=kullanici/depo
 
 # Web Sunucu
-WEB_HOST=127.0.0.1
+WEB_HOST=0.0.0.0
 WEB_PORT=7860
 
 # Bellek & Oturum
 MAX_MEMORY_TURNS=20
-MEMORY_FILE=data/sessions/memory.json
+MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
+
+# Zaman Aşımı
+OLLAMA_TIMEOUT=45
+REACT_TIMEOUT=90
 
 # Web Arama
 TAVILY_API_KEY=                 # Tavily kullanılacaksa (öncelikli)
-GOOGLE_API_KEY=                 # Google Custom Search kullanılacaksa
-GOOGLE_CSE_ID=
+GOOGLE_SEARCH_API_KEY=          # Google Custom Search kullanılacaksa
+GOOGLE_SEARCH_CX=
 WEB_SEARCH_MAX_RESULTS=5
 WEB_FETCH_TIMEOUT=15
 WEB_FETCH_MAX_CHARS=4000
