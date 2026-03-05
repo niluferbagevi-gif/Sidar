@@ -325,6 +325,17 @@
 
 ---
 
+### ✅ §13.5.29 `SIDAR.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın talimat dosyasındaki araç isimlerinin ve çalışma yöntemlerinin güncel kod tabanıyla senkronize edilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SDR-01 | ✅ Kapandı | Araç Yönerge Güncellemesi: Eski/pahalı arama ifadeleri güncel `rg` ve plan/todo terminolojisi ile hizalandı; ajanın ortamdan bağımsız ve hedefli çalışma disiplini güçlendirildi. |
+| SDR-02 | ✅ Kapandı | Esnek Branch Standartları: Tek bir önek zorunluluğu kaldırılarak branch adlandırma ekip standartlarına uyumlu esnek modele taşındı; Git operasyonlarındaki katı bloklar giderildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

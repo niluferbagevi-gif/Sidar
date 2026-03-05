@@ -75,7 +75,7 @@
     - [13.5.26 `.env.example` — Skor: 100/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 100/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 100/100 ✅](#13528-readmemd-skor-92100)
-    - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
+    - [13.5.29 `SIDAR.md` — Skor: 100/100 ✅](#13529-sidarmd-skor-94100)
     - [13.5.30 `CLAUDE.md` — Skor: 94/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
@@ -1981,33 +1981,43 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13529-sidarmd-skor-94100"></a>
-#### 13.5.29 `SIDAR.md` — Skor: 94/100 ✅
+#### 13.5.29 `SIDAR.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Proje kökü için ajan çalışma sözleşmesi — dosya okuma/yazma sırası, güvenlik sınırları, Git/GitHub akışı ve yanıt biçimini belirleyen kalıcı talimat dosyasıdır.
+**Sorumluluk (Güncel):** SİDAR ajanı için proje bazlı çalışma sözleşmesi ve operasyonel protokoldür. Ajanın dosya okuma/yazma önceliklerini, güvenlik sınırlarını, Git akışını ve yanıt biçimini standardize eden ana talimat dosyasıdır.
 
-**Talimat Kapsamı (satır 1–61)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Araç kullanım öncelikleri ortamdan bağımsız/pratik komutlarla (`read_mcp_resource`, `exec_command`, `rg`) ve plan/todo yaklaşımıyla tanımlanır.
-- OpenClaw erişim seviyeleri (`full/sandbox/restricted`) özetlenir.
-- Git akışında ekip standardına uyumlu branch adlandırma ve PR/commit beklentileri belirtilir.
+Bu dosya, ajanın nasıl çalışması gerektiğini belirleyen etik ve teknik bir anayasadır.
 
-**Operasyonel Güçlü Yanlar**
+- **Hiyerarşik Planlama:** Karmaşık görevlere başlamadan önce plan yapılmasını ve plan/todo adımlarının izlenmesini zorunlu kılar.
+- **Verimli Araç Kullanımı:** Geniş aramalar için önce `rg`/hedef tespiti, sonra hedefli düzenleme prensibini dayatır.
+- **Git Standartları:** Commit mesajları, branch adlandırma ve PR disiplinini netleştirerek geçmiş kalitesini korur.
 
-- Ajan davranışını proje genelinde standardize ederek tutarsız adım sıralarını azaltır.
-- Güvenlik ve çıktı formatı kurallarını tek yerde topladığı için bakım ve onboarding açısından netlik sağlar.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`agent/sidar_agent.py`:** Ajan, oturumlarda bu dosyayı okuyup talimatları davranışına kalibre eder.
+- 🔗 **`CLAUDE.md`:** Hiyerarşik ilişkide `SIDAR.md` genel kuralları, `CLAUDE.md` ise araç eşlemelerini tamamlar.
+
+**Mimari Özeti (satır 1–61)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Öncelikler | Plan → Oku → Yaz | Ajanın çalışma döngüsünü belirleyen temel akış şeması |
+| Güvenlik | OpenClaw Limits | Erişim seviyelerine göre yetki sınırlarının hatırlatılması |
+| Araçlar | `rg`, todo, patch | Hangi aracın hangi senaryoda verimli olduğunun teknik yönlendirmesi |
+| Git Akışı | Branch & PR | Dallanma ve PR oluşturma süreçlerinde disiplin kuralları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SDR-01 | Araç yönergeleri ortamdan bağımsız ifadelerle güncellendi (`rg`, plan/todo mekanizması, genel git doğrulama); araç-seti drift riski azaltıldı | 8–23 | ✅ Kapalı |
-| SDR-02 | Branch adlandırma kuralı tek önek zorunluluğundan çıkarılıp ekip standardına uyumlu esnek biçime getirildi | 34 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm araç yönergeleri güncel mimariyle (`v2.7.0`) tam uyumlu hale getirilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+SDR-01 ve SDR-02 numaralı Araç Yönerge Drifti ve Katı Branch Kuralı bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
