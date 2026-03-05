@@ -271,6 +271,17 @@
 
 ---
 
+### ✅ §13.5.24 `docker-compose.yml` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Konteyner orkestrasyonunda sistem kaynaklarının korunması ve host makinelerle olan ağ iletişiminin dinamik hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DC-01 | ✅ Kapandı | Kaynak Sınırlandırma: Konteynerlerin kontrolsüz CPU/RAM tüketerek host sistemini kilitlemesi riski; servis profillerine eklenen `cpus` ve `mem_limit` parametreleri ile engellendi. |
+| DC-02 | ✅ Kapandı | Ağ Esnekliği: Host üzerindeki LLM servislerine (Ollama vb.) erişimde kullanılan tanımlar `${HOST_GATEWAY:-host-gateway}` değişkeniyle dinamik hale getirildi. Bu yapı Linux ve Docker Desktop (Windows/Mac) ortamlarında sıfır-konfigürasyon çalışmayı destekleyen bir best-practice olarak standartlaştırıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

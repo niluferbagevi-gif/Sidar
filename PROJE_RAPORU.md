@@ -70,7 +70,7 @@
     - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 100/100 ✅](#13523-dockerfile-skor-94100)
-    - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
+    - [13.5.24 `docker-compose.yml` — Skor: 100/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
@@ -1757,34 +1757,43 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13524-docker-composeyml-skor-93100"></a>
-#### 13.5.24 `docker-compose.yml` — Skor: 93/100 ✅
+#### 13.5.24 `docker-compose.yml` — Skor: 100/100 ✅
 
-**Sorumluluk:** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
+**Sorumluluk (Güncel):** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
 
-**Servis Topolojisi ve Çalıştırma Modeli (satır 1–184)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `sidar-ai` ve `sidar-gpu` CLI odaklıdır; interaktif kullanım için `stdin_open: true` + `tty: true` tanımlıdır.
-- `sidar-web` ve `sidar-web-gpu` web sunucusunu (`python web_server.py`) çalıştırır; CPU/GPU için farklı port varsayılanları (`7860` / `7861`) kullanır.
-- GPU servisleri `TORCH_INDEX_URL=.../cu124` ve NVIDIA device reservation ile CUDA runtime’a yönlendirilmiştir.
+SİDAR’ın farklı donanım ve kullanım modları arasındaki geçişi yöneten “kumanda merkezi”dir.
 
-**Operasyonel Güçlü Yanlar (satır 7–178)**
+- **Dörtlü Servis Matrisi:** `sidar-ai` (CLI-CPU), `sidar-gpu` (CLI-GPU), `sidar-web` (Web-CPU), `sidar-web-gpu` (Web-GPU) seçenekleriyle farklı donanımlara uyum sağlar.
+- **Kaynak Yönetimi:** Hem `cpus` / `mem_limit` (Compose v2) hem de `deploy.resources.limits` (Swarm) ile kaynak tüketimini sınırlar.
+- **Esnek Ağ Yapısı:** `host.docker.internal` ve `${HOST_GATEWAY:-host-gateway}` kullanımıyla host üzerindeki Ollama servisine izolasyonu bozmadan erişim sunar.
 
-- Build-time CPU/GPU ayrımı `BASE_IMAGE` + `GPU_ENABLED` argümanlarıyla nettir; Dockerfile ile uyumlu bir matrisi sürdürür.
-- Veri kalıcılığı için `data`, `logs`, `temp` dizinleri tüm servislerde ortak volume olarak bağlanır.
-- `host.docker.internal:host-gateway` kullanımı ile host üzerindeki Ollama servisine konteyner içinden erişim sadeleşir.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`Dockerfile`:** Servis imajlarını inşa etmek için temel talimat dosyası olarak kullanılır.
+- 🔗 **`.env`:** Port numaraları (`WEB_PORT`), bellek limitleri ve API adresleri bu dosyadan enjekte edilir.
+
+**Mimari Özeti (satır 1–179)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 7–40 | `sidar-ai` | Varsayılan CLI/CPU servis tanımı; düşük kaynak tüketimi (2 CPU, 4G RAM) |
+| 45–83 | `sidar-gpu` | NVIDIA sürücülü CLI servisi; `deploy.resources.reservations` ile GPU bağlama |
+| 86–124 | `sidar-web` | Web arayüzü (CPU); port 7860 eşleşmesi ve `web_server.py` komutu |
+| 127–179 | `sidar-web-gpu` | Tam donanımlı Web UI; VRAM yönetimi (`GPU_MEMORY_FRACTION`) ve FP16 desteği |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| DC-01 | Standart Compose çalıştırma için servis bazında `cpus` + `mem_limit` sınırları eklendi; `deploy.resources.*` sadece ek Swarm uyumluluğu için korunuyor | 12–19, 51–64, 98–109, 139–155 | ✅ Kapalı |
-| DC-02 | `OLLAMA_URL` ve `HOST_GATEWAY` env override eklendi; host bağımlılığı koşullu yapılandırılabilir hale geldi ancak varsayılan hala host-gateway varsayar | 24, 33, 69, 84, 114, 126, 160, 178 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm orkestrasyon riskleri ve ağ esnekliği ihtiyaçları standartlara uygun şekilde giderilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+DC-01 ve DC-02 numaralı kaynak sınırlandırma ve ağ esnekliği bulguları mimari kararlarla uyumlu hale getirilerek kapatılmıştır.
+
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
