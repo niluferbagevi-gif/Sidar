@@ -14,12 +14,15 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import threading
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -89,19 +92,25 @@ class DocumentStore:
     def __init__(
         self,
         store_dir: Path,
-        top_k: int = 3,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        top_k: Optional[int] = None,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
         use_gpu: bool = False,
         gpu_device: int = 0,
         mixed_precision: bool = False,
+        cfg: Optional[Config] = None,
     ) -> None:
+        self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self.index_file    = self.store_dir / "index.json"
-        self.default_top_k = top_k
-        self._chunk_size   = chunk_size
-        self._chunk_overlap = chunk_overlap
+        self.default_top_k = top_k if top_k is not None else getattr(self.cfg, "RAG_TOP_K", 3)
+        self._chunk_size = chunk_size if chunk_size is not None else getattr(self.cfg, "RAG_CHUNK_SIZE", 1000)
+        self._chunk_overlap = (
+            chunk_overlap
+            if chunk_overlap is not None
+            else getattr(self.cfg, "RAG_CHUNK_OVERLAP", 200)
+        )
 
         # GPU embedding ayarları
         self._use_gpu          = use_gpu
@@ -129,6 +138,17 @@ class DocumentStore:
         if self._chroma_available:
             self._init_chroma()
 
+    def _apply_hf_runtime_env(self) -> None:
+        """HF model yükleme davranışını Config üzerinden ortama uygula."""
+        hf_token = getattr(self.cfg, "HF_TOKEN", "")
+        if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
+            os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+
+        if getattr(self.cfg, "HF_HUB_OFFLINE", False):
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ & AYARLAR
     # ─────────────────────────────────────────────
@@ -145,6 +165,9 @@ class DocumentStore:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
         try:
             import chromadb
+
+            # Embedding modeli başlatılmadan önce HF runtime değişkenlerini uygula.
+            self._apply_hf_runtime_env()
 
             # Veritabanını data/rag/chroma_db içinde tut
             db_path = self.store_dir / "chroma_db"
@@ -261,6 +284,26 @@ class DocumentStore:
 
         return _split(text, 0)
 
+    def _chunk_text(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+    ) -> List[str]:
+        """Chunking ayarlarını Config'den çözerek recursive parçalama yap."""
+        chunk_size = chunk_size or getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
+        chunk_overlap = chunk_overlap or getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+
+        prev_chunk_size = self._chunk_size
+        prev_chunk_overlap = self._chunk_overlap
+        self._chunk_size = chunk_size
+        self._chunk_overlap = chunk_overlap
+        try:
+            return self._recursive_chunk_text(text)
+        finally:
+            self._chunk_size = prev_chunk_size
+            self._chunk_overlap = prev_chunk_overlap
+
     def add_document(
         self,
         title: str,
@@ -298,7 +341,7 @@ class DocumentStore:
         if self._chroma_available and self.collection:
             try:
                 # Metni önce parçala (lock dışında — sadece saf hesaplama)
-                chunks = self._recursive_chunk_text(content)
+                chunks = self._chunk_text(content)
                 ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
                 metadatas = [
                     {
@@ -476,7 +519,7 @@ class DocumentStore:
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────
 
-    def search(self, query: str, top_k: int = None, mode: str = "auto") -> Tuple[bool, str]:
+    def search(self, query: str, top_k: Optional[int] = None, mode: str = "auto") -> Tuple[bool, str]:
         """
         Sorguya göre en ilgili belgeleri bul.
 
@@ -489,7 +532,7 @@ class DocumentStore:
         top_k verilmezse __init__'teki default_top_k kullanılır.
         """
         if top_k is None:
-            top_k = self.default_top_k
+            top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
         if not self._index:
             return False, (
                 "⚠ Belge deposu boş. "

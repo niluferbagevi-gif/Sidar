@@ -2716,6 +2716,20 @@ Bu turda, sistemin ana karar mekanizması olan `sidar_agent.py` içerisindeki ç
 
 **Session 20 çıktısı:** Ajanın derinlemesine araştırma (subtask) yapma kapasitesi tamamen özelleştirilebilir hale gelmiş ve kendi iç ayarlarını okurken yanlış dosya konumu algılamasının önüne geçilmiştir. Çekirdek ajan mimarisi %100 esnek hale getirilmiştir.
 
+
+<a id="session-22-rag-veritabani-ve-offline-mode-optimizasyonu"></a>
+## 31. Session 22 — 2026-03-06 RAG Veritabanı ve Offline Mod Optimizasyonu
+
+Bu turda vektör arama ve belge depolama sistemi olan `core/rag.py` dosyasının, merkezi yapılandırmayla olan mimari kopuklukları (hardcoded veriler) giderilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S22-01 | `core/rag.py` | ✅ Kritik Çözüm | Offline mod (`HF_HUB_OFFLINE`) ve gizli token (`HF_TOKEN`) değişkenleri başlatma bloğunda işletim sistemi çevresine (`os.environ`) enjekte edildi. Sistem air-gapped ortamlarda model indirme denemesi yapmadan çalışacak. |
+| S22-02 | `core/rag.py` | ✅ Kusursuz | Metinleri vektörlere ayırırken kullanılan statik değerler `RAG_CHUNK_SIZE` ve `RAG_CHUNK_OVERLAP` ayarlarına bağlandı; chunking artık merkezi Config ile yönetiliyor. |
+| S22-03 | `core/rag.py` | ✅ Kusursuz | Arama fonksiyonunda `top_k` varsayılanı `RAG_TOP_K` üzerinden çözülerek LLM'e giden bağlam miktarı `.env` ile kontrol edilebilir hale getirildi. |
+
+**Session 22 çıktısı:** Projenin retrieval katmanı %100 konfigürasyon uyumlu hale getirildi; kurumsal/offline çalışma ortamlarında model indirme kaynaklı çökme riskleri azaltıldı.
+
 <a id="ozet"></a>
 ### Özet
 
