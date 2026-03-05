@@ -106,6 +106,7 @@
 - [25. Session 16 — 2026-03-06 Konfigürasyon ve Rate Limit Merkezileştirmesi](#session-16-konfigurasyon-ve-rate-limit-merkezilestirmesi)
 - [26. Session 17 — 2026-03-06 Başlatıcı (main.py) Uyum ve Hata Giderme](#session-17-baslatici-mainpy-uyum-ve-hata-giderme)
 - [27. Session 18 — 2026-03-06 Web Sunucusu Güvenlik ve CORS İyileştirmeleri](#session-18-web-sunucusu-guvenlik-ve-cors-iyilestirmeleri)
+- [28. Session 19 — 2026-03-06 CLI Terminal Arayüzü Modernizasyonu](#session-19-cli-terminal-arayuzu-modernizasyonu)
   - [Özet](#ozet)
 
 ---
@@ -806,6 +807,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm işlevsel ve görsel ö
 **Kapanan Bulgular (2026-03-05)**
 
 CLI-01 ve CLI-02 numaralı banner gösterim ve asenkron döngü uyarıları yapısal bir tasarıma oturtularak kapatılmıştır.
+
+✅ Terminal arayüzü eski asenkron başlatma yöntemlerinden temizlenerek `asyncio.run()` ile modernleştirildi. Sabit (hardcoded) model isimleri kaldırılarak `config.py` ile hizalandı ve uzun diyaloglar için `.clear` hafıza temizleme komutu eklendi.
 
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2683,16 +2686,30 @@ Bu turda, asenkron web sunucusunun (`web_server.py`) ağ sınırları, CORS ayar
 
 **Session 18 çıktısı:** Web arayüzünün sömürüye (exploit) ve çökertilmeye açık yönleri kapatılarak ağ güvenliği, erişilebilirlik ve çalışma kararlılığı üretim seviyesinde güçlendirilmiştir.
 
+
+<a id="session-19-cli-terminal-arayuzu-modernizasyonu"></a>
+## 28. Session 19 — 2026-03-06 CLI Terminal Arayüzü Modernizasyonu
+
+Bu turda projenin komut satırı arayüzü (`cli.py`), modern asenkron standartlara ve merkezi konfigürasyon yapısına tam uyumlu hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S19-01 | `cli.py` | ✅ Kusursuz | Eski `asyncio.get_event_loop()` yapısı terk edilerek, event-loop çakışmalarını önleyen modern `asyncio.run()` mimarisine geçildi. |
+| S19-02 | `cli.py` | ✅ Kusursuz | Argüman varsayılanları (fallback) hardcoded metinlerden kurtarılarak tamamen `config.py` üzerine devredildi. Banner ekranı dinamikleştirildi. |
+| S19-03 | `cli.py` | ✅ Eklendi | Uzun oturumlarda bağlam (context) şişmesini önlemek için interaktif döngüye `.clear` (hafıza temizleme) komutu eklendi. |
+
+**Session 19 çıktısı:** Terminal arayüzü, çökme risklerinden arındırılmış, dışarıdan gelen parametreleri doğru şekilde uygulayan ve bellek yönetimine izin veren modern bir yapıya kavuşmuştur.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 42 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02 + S18-01–S18-03) |
+| Tespit edilen bulgu | 45 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02 + S18-01–S18-03 + S19-01–S19-03) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 64 |
+| Kümülatif toplam kapalı | 67 |
 | Aktif açık sorun | **2** |
 
 ---

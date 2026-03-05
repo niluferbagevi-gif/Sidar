@@ -793,7 +793,7 @@ class SidarAgent:
             return "⚠ Alt görev açıklaması belirtilmedi."
 
         max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5) or 5)
-        max_steps = max(1, min(max_steps, 10))  # güvenli sınır: [1, 10]
+        max_steps = max(1, max_steps)  # yalnızca alt sınır: en az 1 adım
         messages: list = [{"role": "user", "content": task}]
         mini_system = (
             "Sen bağımsız bir alt ajansın. Verilen görevi tamamla.\n"
@@ -1059,29 +1059,29 @@ class SidarAgent:
             f"  Debug Modu   : {self.cfg.DEBUG_MODE}",
             f"  Bellek Şifre : {enc_status}",
             "",
-            "## 1. AI_PROVIDER  [config.py satır 225]",
+            "## 1. AI_PROVIDER",
             f"  Değer    : {self.cfg.AI_PROVIDER.upper()}",
             "  Seçenekler: 'ollama' (yerel) | 'gemini' (bulut)",
             "  Değiştirmek için: .env → AI_PROVIDER=gemini",
             "",
-            "## 2. USE_GPU / GPU_MEMORY_FRACTION  [config.py satır 243, 257]",
+            "## 2. USE_GPU / GPU_MEMORY_FRACTION",
             f"  USE_GPU              : {self.cfg.USE_GPU}",
             f"  GPU                  : {gpu_line}",
             f"  GPU_MEMORY_FRACTION  : {getattr(self.cfg, 'GPU_MEMORY_FRACTION', 0.8)} "
             "(VRAM'in bu oranı ayrılır; geçerli aralık 0.1–1.0)",
             "",
-            "## 3. OLLAMA_URL / CODING_MODEL / TEXT_MODEL  [config.py satır 230–233]",
+            "## 3. OLLAMA_URL / CODING_MODEL / TEXT_MODEL",
             f"  OLLAMA_URL   : {self.cfg.OLLAMA_URL}",
             f"  CODING_MODEL : {self.cfg.CODING_MODEL}",
             f"  TEXT_MODEL   : {self.cfg.TEXT_MODEL}",
             f"  OLLAMA_TIMEOUT: {getattr(self.cfg, 'OLLAMA_TIMEOUT', 30)}s",
             "",
-            "## 4. MAX_REACT_STEPS / REACT_TIMEOUT  [config.py satır 273–274]",
+            "## 4. MAX_REACT_STEPS / REACT_TIMEOUT",
             f"  MAX_REACT_STEPS: {self.cfg.MAX_REACT_STEPS}",
             f"  REACT_TIMEOUT  : {getattr(self.cfg, 'REACT_TIMEOUT', 60)}s",
             "  Not: Karmaşık görevlerde bu değerlerin artırılması gerekebilir.",
             "",
-            "## 5. RAG_TOP_K / RAG_CHUNK_SIZE / RAG_CHUNK_OVERLAP  [config.py satır 290–292]",
+            "## 5. RAG_TOP_K / RAG_CHUNK_SIZE / RAG_CHUNK_OVERLAP",
             f"  RAG_TOP_K        : {getattr(self.cfg, 'RAG_TOP_K', 3)}  (en iyi N sonuç getirilir)",
             f"  RAG_CHUNK_SIZE   : {getattr(self.cfg, 'RAG_CHUNK_SIZE', 1000)} karakter",
             f"  RAG_CHUNK_OVERLAP: {getattr(self.cfg, 'RAG_CHUNK_OVERLAP', 200)} karakter",
