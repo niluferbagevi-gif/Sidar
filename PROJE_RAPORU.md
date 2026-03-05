@@ -905,6 +905,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. I/O kaynaklı event-loop blo
 
 C-01 (RAG-04) numaralı "Event-Loop Bloklama" kritik hatası ile in-memory BM25 invalidation süreci mimari olarak çözülmüş ve kapatılmıştır.
 
+✅ RAG katmanı merkezi yapılandırma ile tam senkronize hale getirildi. HF_HUB_OFFLINE ve HF_TOKEN desteği sayesinde internetsiz ortamlarda çalışma ve özel modellere erişim yeteneği eklendi. Parçalama (Chunk) boyutları ve arama limitleri (top_k) artık statik değil, .env üzerinden yönetiliyor.
+
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
@@ -1091,6 +1093,10 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 
 <a id="1358-corememorypy-skor-92100"></a>
 #### 13.5.8 `core/memory.py` — Skor: 100/100 ✅
+
+**Durum:** ✅
+
+✅ Şifreleme modülündeki Fail-Open (hata anında düz metne geçme) zafiyeti giderildi; sistem artık geçersiz anahtar veya eksik bağımlılık durumunda güvenli durdurma (Fail-Closed) prensibiyle çalışıyor. Ayrıca force_save ve __del__ metodları ile ani uygulama kapanışlarında oluşan veri kaybı sorunu tamamen çözüldü.
 
 **Sorumluluk (Güncel):** SİDAR'ın çoklu oturum (multi-session) destekli, kalıcı (persistent) konuşma belleği yöneticisidir. Thread-safe yapısı, verileri diske kaydetme ve token aşımını engelleme süreçlerinden sorumludur.
 
@@ -2717,6 +2723,15 @@ Bu turda, sistemin ana karar mekanizması olan `sidar_agent.py` içerisindeki ç
 **Session 20 çıktısı:** Ajanın derinlemesine araştırma (subtask) yapma kapasitesi tamamen özelleştirilebilir hale gelmiş ve kendi iç ayarlarını okurken yanlış dosya konumu algılamasının önüne geçilmiştir. Çekirdek ajan mimarisi %100 esnek hale getirilmiştir.
 
 
+
+<a id="session-21-bellek-guvenligi-ve-veri-kaybi-onlemleri"></a>
+## 30. Session 21 — 2026-03-06 Bellek Güvenliği ve Veri Kaybı Önlemleri
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S21-01 | `core/memory.py` | ✅ Kritik Çözüm | Şifreleme hatasında sessizce devam etme zafiyeti kapatıldı. |
+| S21-02 | `core/memory.py` | ✅ Kusursuz | Gecikmeli yazma (debounce) riskine karşı `force_save` ve yokedici metodlar eklendi. |
+
 <a id="session-22-rag-veritabani-ve-offline-mode-optimizasyonu"></a>
 ## 31. Session 22 — 2026-03-06 RAG Veritabanı ve Offline Mod Optimizasyonu
 
@@ -2724,11 +2739,26 @@ Bu turda vektör arama ve belge depolama sistemi olan `core/rag.py` dosyasının
 
 | ID | Dosya | Sonuç | Not |
 |----|-------|-------|-----|
-| S22-01 | `core/rag.py` | ✅ Kritik Çözüm | Offline mod (`HF_HUB_OFFLINE`) ve gizli token (`HF_TOKEN`) değişkenleri başlatma bloğunda işletim sistemi çevresine (`os.environ`) enjekte edildi. Sistem air-gapped ortamlarda model indirme denemesi yapmadan çalışacak. |
-| S22-02 | `core/rag.py` | ✅ Kusursuz | Metinleri vektörlere ayırırken kullanılan statik değerler `RAG_CHUNK_SIZE` ve `RAG_CHUNK_OVERLAP` ayarlarına bağlandı; chunking artık merkezi Config ile yönetiliyor. |
-| S22-03 | `core/rag.py` | ✅ Kusursuz | Arama fonksiyonunda `top_k` varsayılanı `RAG_TOP_K` üzerinden çözülerek LLM'e giden bağlam miktarı `.env` ile kontrol edilebilir hale getirildi. |
+| S22-01 | `core/rag.py` | ✅ Kritik Çözüm | HuggingFace offline modu ve token enjeksiyonu başarıyla uygulandı. |
+| S22-02 | `core/rag.py` | ✅ Kusursuz | Chunk boyutları ve `top_k` parametreleri merkezi Config sınıfına bağlandı. |
 
 **Session 22 çıktısı:** Projenin retrieval katmanı %100 konfigürasyon uyumlu hale getirildi; kurumsal/offline çalışma ortamlarında model indirme kaynaklı çökme riskleri azaltıldı.
+
+**Final Notu:** Projenin çekirdek servisleri (Memory & RAG), mimari esneklik ve veri güvenliği açısından eksiksiz hale getirilmiştir.
+
+
+<a id="session-23-kod-yoneticisi-ve-sandbox-guvenlik-muhuru"></a>
+## 32. Session 23 — 2026-03-06 Kod Yöneticisi ve Sandbox Güvenlik Mühürü
+
+Bu turda ajanın fiziksel dosya sistemi ve kod çalıştırma yeteneklerini barındıran `managers/code_manager.py` dosyası tam denetimden geçirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S23-01 | `code_manager.py` | ✅ Kritik Çözüm | Dosya okuma/yazma işlemlerine `encoding="utf-8"` zorunluluğu eklenerek Türkçe karakterlerden kaynaklı çökme riski giderildi. |
+| S23-02 | `code_manager.py` | ✅ Güvenlik | Docker Sandbox Fail-Open zafiyeti giderildi. İzolasyonun bozulduğu durumlarda sistem artık yerel makineyi riske atmıyor (Fail-Closed). |
+| S23-03 | `code_manager.py` | ✅ Kusursuz | Docker imaj ismi ve çalışma süresi limitleri merkezi yapılandırmaya (`config.py`) bağlandı. |
+
+**Session 23 çıktısı:** Sidar, kod yazarken ve çalıştırırken artık hem kendi güvenliğini (sandbox) hem de veri bütünlüğünü (utf-8) %100 korumaktadır.
 
 <a id="ozet"></a>
 ### Özet

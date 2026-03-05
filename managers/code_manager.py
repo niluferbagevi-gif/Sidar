@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .security import SecurityManager
+from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +34,19 @@ class CodeManager:
     SUPPORTED_EXTENSIONS = {".py", ".js", ".ts", ".json", ".yaml", ".yml", ".md", ".txt", ".sh"}
 
     def __init__(self, security: SecurityManager, base_dir: Path,
-                 docker_image: str = "python:3.11-alpine",
-                 docker_exec_timeout: int = 10) -> None:
+                 docker_image: Optional[str] = None,
+                 docker_exec_timeout: Optional[int] = None) -> None:
         self.security = security
         self.base_dir = base_dir.resolve()
-        self.docker_image = docker_image          # Config'den veya varsayılan değer
-        self.docker_exec_timeout = docker_exec_timeout  # Docker sandbox timeout (sn)
+        self.docker_image = (
+            docker_image
+            or os.getenv("DOCKER_IMAGE", "")
+            or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+        )
+        self.docker_exec_timeout = (
+            int(docker_exec_timeout) if docker_exec_timeout is not None
+            else int(os.getenv("DOCKER_EXEC_TIMEOUT", "10"))
+        )
         self._lock = threading.RLock()
 
         # Metrikler
@@ -116,7 +123,8 @@ class CodeManager:
                 return False, f"Belirtilen yol bir dizin: {path}"
 
             with self._lock:
-                content = target.read_text(encoding="utf-8", errors="replace")
+                with open(target, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
                 self._files_read += 1
 
             logger.debug("Dosya okundu: %s (%d karakter)", path, len(content))
@@ -166,7 +174,8 @@ class CodeManager:
             target.parent.mkdir(parents=True, exist_ok=True)
 
             with self._lock:
-                target.write_text(content, encoding="utf-8")
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(content)
                 self._files_written += 1
 
             logger.info("Dosya yazıldı: %s", path)
@@ -223,7 +232,12 @@ class CodeManager:
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
 
         if not self.docker_available:
-            logger.info("Docker yok — subprocess (yerel Python) moduna geçiliyor.")
+            if self.security.level == SANDBOX:
+                return False, (
+                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
+                    "yerel (unsafe) çalıştırma engellendi."
+                )
+            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
             return self.execute_code_local(code)
 
         try:
@@ -279,7 +293,13 @@ class CodeManager:
                  f"Lütfen terminalde 'docker pull {self.docker_image}' komutunu çalıştırın."
              )
         except Exception as exc:
-            return False, f"Docker çalıştırma hatası: {exc}"
+            if self.security.level == SANDBOX:
+                return False, (
+                    "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
+                    f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}"
+                )
+            logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", exc)
+            return self.execute_code_local(code)
 
     def execute_code_local(self, code: str) -> Tuple[bool, str]:
         """
@@ -302,7 +322,7 @@ class CodeManager:
                 [sys.executable, tmp_path],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=self.docker_exec_timeout,
                 cwd=str(self.base_dir),
             )
 
@@ -321,7 +341,10 @@ class CodeManager:
                 Path(tmp_path).unlink(missing_ok=True)
             except Exception:
                 pass
-            return False, "⚠ Zaman aşımı! Kod 10 saniyeden uzun sürdü (sonsuz döngü koruması)."
+            return False, (
+                f"⚠ Zaman aşımı! Kod {self.docker_exec_timeout} saniyeden uzun sürdü "
+                "(sonsuz döngü koruması)."
+            )
         except Exception as exc:
             return False, f"Subprocess çalıştırma hatası: {exc}"
 
