@@ -557,24 +557,22 @@ container = self.docker_client.containers.run(
 <a id="11-guvenlik-degerlendirmesi"></a>
 ## 11. Güvenlik Değerlendirmesi
 
-> Son güncelleme: 2026-03-01 (ANALIZ_RAPORU_2026_03_01.md doğrulama sonuçları dahil edildi)
+> Son güncelleme: 2026-03-05 (v2.7.0 kod tabanı güncel durum analizi)
 
-| Alan | Durum | Seviye |
-|------|-------|--------|
-| Erişim Kontrolü (OpenClaw) | ✅ 3 katmanlı (`restricted/sandbox/full`) | İyi |
-| Kod Çalıştırma İzolasyonu | ✅ Docker sandbox — `network_disabled`, `mem_limit=128m`, `cpu_quota=50000`, 10sn timeout | Çok İyi |
-| Rate Limiting | ✅ 3 katman TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s, GET I/O 30 req/60s | İyi |
-| Bellek Şifreleme | ❌ JSON düz metin (`data/sessions/`) | Düşük |
-| Prompt Injection | ⚠️ Sistem prompt güçlü ama dinamik filtre yok | Orta |
-| Web Fetch Sandbox | ⚠️ HTML temizleniyor ama URL sınırlaması yok | Orta |
-| Gizli Yönetim | ✅ `.env` + `.gitignore` | İyi |
-| Binary Dosya Güvenliği | ✅ `SAFE_EXTENSIONLESS` whitelist — uzantısız binary dosyalar engelleniyor (§3.35) | İyi |
-| CORS | ✅ Dinamik port — `cfg.WEB_PORT` kullanıyor (U-05 düzeltildi) | İyi |
-| favicon.ico | ✅ 204 ile sessizce geçiştiriliyor | İyi |
-| Symlink Traversal | ✅ `Path.resolve()` ile önleniyor | İyi |
-| Git URL Ayrıştırma | ✅ `removesuffix(".git")` — düzeltildi (U-13) | İyi |
-| Dal Adı Güvenliği | ✅ `_BRANCH_RE` regex ile validate ediliyor (U-10 düzeltildi) | İyi |
-| Docker Image Konfigürasyonu | ✅ `DOCKER_PYTHON_IMAGE` ile konfigüre edilebilir; N-02 kapatıldı | İyi |
+| Alan | Durum & Alınan Önlem | Güvenlik Seviyesi |
+|------|----------------------|-------------------|
+| **Erişim Kontrolü (OpenClaw)** | ✅ 3 katmanlı (`restricted / sandbox / full`) yetki modeli aktiftir. | İyi |
+| **Kod Çalıştırma İzolasyonu** | ✅ Docker sandbox — `network_disabled`, `mem_limit=128m`, `cpu_quota=50000`, 10sn timeout zorunludur. | Çok İyi |
+| **Rate Limiting (DDoS Koruması)** | ✅ 3 katmanlı TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s, GET I/O 30 req/60s. | İyi |
+| **Bellek Şifreleme (Fernet)** | ✅ `MEMORY_ENCRYPTION_KEY` ile diskteki sohbet dosyaları uçtan uca şifrelenmektedir. *(Önceki sürümlerdeki düz metin JSON riski kapatıldı)* | İyi |
+| **Komut Enjeksiyonu (Shell Injection)** | ✅ Alt süreçler (`subprocess`) varsayılan olarak `shell=False` ve `shlex.split()` kullanılarak tokenize edilir. Özel operatörler açık onaya bağlıdır. | İyi |
+| **Web UI XSS Koruması** | ⚠️ LLM çıktıları DOM'a basılmadan önce regex tabanlı `sanitizeRenderedHtml` filtresinden geçer (Custom allowlist/denylist). Daha standart bir kütüphaneye geçiş önerilir. | Orta |
+| **Path Traversal (Dizin Aşma)** | ⚠️ Symlink ve Windows riskli path kalıpları engellenmiştir. Ancak `can_read` mekanizması blacklist tabanlıdır, katı kök dizin sınırı eksiktir. | Orta |
+| **Prompt Injection** | ⚠️ Sistem promptu güçlü direktiflerle korunmaktadır, ancak kullanıcıdan gelen metne yönelik dinamik bir ön filtreleme yoktur. | Orta |
+| **CORS Politikası** | ✅ Dinamik port üzerinden yalnızca `localhost` / `127.0.0.1` orijinlerine izin verecek şekilde daraltılmıştır. | Çok İyi |
+| **Kurulum Betiği (Install Script)** | ✅ Uzaktan script yürütme (`curl | sh`) ve paket güncellemeleri varsayılan olarak kapalıdır, bilinçli `ALLOW_*` onayı gerektirir. | İyi |
+| **Dal Adı & Git Güvenliği** | ✅ `_BRANCH_RE` regex ile dal (branch) adları sıkı bir şekilde valide edilir; Git URL enjeksiyonları ayrıştırılarak önlenir. | İyi |
+| **Binary Dosya Güvenliği** | ✅ `SAFE_EXTENSIONLESS` whitelist ile uzantısız zararlı binary dosyaların okunması/yazılması engellenmektedir. | İyi |
 
 ---
 
