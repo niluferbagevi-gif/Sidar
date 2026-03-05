@@ -368,6 +368,17 @@
 
 ---
 
+### ✅ §13.5.33 `PROJE_RAPORU.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Teknik denetim raporunun sürdürülebilirliğini artırmak ve bilgi yüküne bağlı drift risklerini azaltmak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| RPR-01 | ✅ Kapandı | Dosya Boyutu Optimizasyonu: Kapanmış bulguların tarihsel detayları ana rapordan ayrıştırılarak `DUZELTME_GECMISI.md` arşivine taşındı. Ana raporun aktif mimari ve güncel sorunlara odaklanmasıyla bakım maliyeti azaltıldı. |
+| RPR-02 | ✅ Kapandı | İçerik Kayması (Drift) Koruması: Özet tablolar ile detay analizler arasındaki tutarlılık, detay bölümlerinin tek doğruluk kaynağı olarak konumlandırılması ve özetlerin bu bölümlere referans vermesiyle güçlendirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

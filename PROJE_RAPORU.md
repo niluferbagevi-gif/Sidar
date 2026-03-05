@@ -79,7 +79,7 @@
     - [13.5.30 `CLAUDE.md` — Skor: 100/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 100/100 ✅](#13532-testsinitpy-skor-96100)
-    - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
+    - [13.5.33 `PROJE_RAPORU.md` — Skor: 100/100 ✅](#13533-projeraporumd-skor-86100)
     - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
   - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi)
@@ -663,7 +663,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ✅ Birebir araç adı iddiaları yerine ortamdan bağımsız “yakın karşılık” rehberine çevrildi; opsiyonel yeteneklerin koşullu olduğu açıkça belirtildi. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ✅ Tarihsel kayıtlar ve arşiv başlıkları ana raporla senkronize tutulur; kapanış zaman çizelgesi izlenebilirliği korunur. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ✅ Bilinçli minimal yapı sayesinde test keşif sürecinde yan etki oluşturmaz; mimari bağlam ana rapor bölümlerinde merkezi olarak korunur. → Detay: §13.5.32
-- **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ⚠️ Dosya büyüklüğü arttıkça bakım/senkronizasyon maliyeti yükselir; satır referanslarının hızla eskime riski vardır. → Detay: §13.5.33
+- **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ✅ Arşiv ayrımı (`DUZELTME_GECMISI.md`) ve tek doğruluk kaynağı yaklaşımıyla bakım/senkronizasyon riski azaltılmıştır. → Detay: §13.5.33
 - **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
 - **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
 
@@ -2148,33 +2148,43 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13533-projeraporumd-skor-86100"></a>
-#### 13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅
+#### 13.5.33 `PROJE_RAPORU.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Proje için merkezi teknik denetim raporu — mimari özet, öncelik bazlı açık durum, dosya incelemeleri ve iyileştirme önerilerini tek dokümanda toplar.
+**Sorumluluk (Güncel):** Proje için merkezi teknik denetim raporudur. Mimari özet, öncelik bazlı açık durum, dosya incelemeleri ve iyileştirme önerilerini tek dokümanda toplar.
 
-**Kapsam ve Yapı (satır 1–1760+)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- İçindekiler, öncelik başlıkları ve dosya bazlı §13.5 serisi ile hem üst düzey hem detay görünüm sunar.
-- `DUZELTME_GECMISI.md` ayrımı sayesinde tarihsel kapanışlar ana rapordan ayrıştırılarak okunabilirlik korunur.
-- Bölümler arasında çapraz referanslar (`§13.5.x`, `§14`, `DUZELTME_GECMISI.md`) rapor navigasyonunu kolaylaştırır.
+Bu rapor, SİDAR'ın teknik sağlığını koruyan yaşayan denetim merkezidir.
 
-**Operasyonel Güçlü Yanlar**
+- **Triage ve Karar Destek:** Tek kaynakta toplanmış teknik bağlam, bakım ve geliştirme kararlarını hızlandırır.
+- **Standart Önceliklendirme:** Açık bulguların ID/seviye tablosu formatı, ekip odağını standartlaştırır.
+- **Modüler Arşivleme:** `DUZELTME_GECMISI.md` ile kurulan çapraz referans yapısı sayesinde rapor boyutu kontrol altında kalırken geçmişe dönük izlenebilirlik korunur.
 
-- Tek kaynakta toplanmış teknik bağlam, bakım ve triage kararlarını hızlandırır.
-- Açık bulguların ID/seviye tablosu formatı önceliklendirmeyi standart hale getirir.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm Proje Dosyaları:** §13.5 serisindeki her madde, projedeki fiziksel bir dosyaya karşılık gelir.
+- 🔗 **`DUZELTME_GECMISI.md`:** Kapanan bulgular ve teknik çözüm örnekleri arşiv olarak bu dosyada tutulur.
+
+**Mimari Özeti (satır 1–1800+)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Özet Tablolar | §8.3 ve §15.3 | Aktif sorunların ve kategori bazlı skorların hızlı görünümü |
+| Detaylı Analiz | §13.5.x Serisi | Her dosya için teknik sorumluluk ve mimari döküm |
+| Gelişim Planı | §14 | Önceliklendirilmiş iyileştirme yol haritası |
+| Denetim İzleri | Session Logları | Satır bazlı repo doğrulama oturum kayıtları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| RPR-01 | Dosya çok büyümüş durumda; yeni eklemelerle birlikte satır bazlı referansların sürdürülmesi zorlaşıyor ve bakım maliyeti artıyor | 1–1760+ | Orta |
-| RPR-02 | Aynı bilgiler hem özet hem detay bölümlerde tekrarlandığı için içerik drift’i riski (özellikle skor/sürüm satırlarında) devam ediyor | 466–510, 512–1760+ | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Dosya boyutu yönetimi ve içerik tutarlılığı stratejileri başarıyla uygulanmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+RPR-01 ve RPR-02 numaralı Dosya Büyümesi ve İçerik Kayması bulguları, tarihsel verilerin `DUZELTME_GECMISI.md` dosyasına taşınması ve özet/detay bölümlerinin birbirini tamamlayacak şekilde asenkronize edilmesiyle kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
