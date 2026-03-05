@@ -32,11 +32,11 @@ RESET = "\033[0m"
 class DummyConfig:
     AI_PROVIDER = "ollama"
     ACCESS_LEVEL = "full"
-    WEB_HOST = "127.0.0.1"
-    WEB_PORT = 8000
-    CODING_MODEL = "llama3"
+    WEB_HOST = "0.0.0.0"
+    WEB_PORT = 7860
+    CODING_MODEL = "qwen2.5-coder:7b"
     GEMINI_API_KEY = ""
-    OLLAMA_URL = "http://localhost:11434"
+    OLLAMA_URL = "http://localhost:11434/api"
     BASE_DIR = "."
 
 try:
@@ -240,18 +240,18 @@ def run_wizard() -> int:
     print("-" * 50)
 
     log_options = {
-        "1": ("INFO (Standart)", "INFO"),
-        "2": ("DEBUG (Detaylı Geliştirici Logları)", "DEBUG"),
-        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "WARNING")
+        "1": ("INFO (Standart)", "info"),
+        "2": ("DEBUG (Detaylı Geliştirici Logları)", "debug"),
+        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "warning")
     }
     log_level = ask_choice("4. Log seviyesini seçin:", log_options, "1")
 
     extra_args = {}
     if provider == "ollama" and mode == "cli":
-        extra_args["model"] = ask_text("\nKullanılacak Ollama modeli", getattr(cfg, "CODING_MODEL", "llama3"))
+        extra_args["model"] = ask_text("\nKullanılacak Ollama modeli", getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"))
     elif mode == "web":
-        extra_args["host"] = ask_text("\nWeb Sunucu Host IP'si", getattr(cfg, "WEB_HOST", "127.0.0.1"))
-        extra_args["port"] = ask_text("Web Sunucu Portu", str(getattr(cfg, "WEB_PORT", 8000)))
+        extra_args["host"] = ask_text("\nWeb Sunucu Host IP'si", getattr(cfg, "WEB_HOST", "0.0.0.0"))
+        extra_args["port"] = ask_text("Web Sunucu Portu", str(getattr(cfg, "WEB_PORT", 7860)))
 
     preflight(provider)
 
@@ -298,7 +298,7 @@ def main() -> None:
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")
     parser.add_argument("--port", help="Hızlı web başlat için port numarası")
-    parser.add_argument("--log", default="INFO", help="Log seviyesi (INFO, DEBUG, WARNING)")
+    parser.add_argument("--log", default="info", help="Log seviyesi (info, debug, warning)")
     parser.add_argument(
         "--capture-output",
         action="store_true",
@@ -319,12 +319,12 @@ def main() -> None:
     level = args.level or getattr(cfg, "ACCESS_LEVEL", "full").lower()
     
     extra_args = {
-        "model": args.model or getattr(cfg, "CODING_MODEL", "llama3"),
-        "host": args.host or getattr(cfg, "WEB_HOST", "127.0.0.1"),
-        "port": args.port or str(getattr(cfg, "WEB_PORT", 8000))
+        "model": args.model or getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"),
+        "host": args.host or getattr(cfg, "WEB_HOST", "0.0.0.0"),
+        "port": args.port or str(getattr(cfg, "WEB_PORT", 7860))
     }
 
-    cmd = build_command(args.quick, provider, level, args.log, extra_args)
+    cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
     sys.exit(execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log))
 
 

@@ -103,6 +103,7 @@
 - [22. Session 13 — 2026-03-04 Harici Geri Bildirim Teyidi](#session-13-2026-03-04-harici-geri-bildirim-teyidi)
 - [23. Session 14 — 2026-03-06 Dokümantasyon ve README Hizalaması](#session-14-dokumantasyon-ve-readme-hizalamasi)
 - [24. Session 15 — 2026-03-06 Altyapı ve Sandbox İzolasyon Güncellemesi](#session-15-altyapi-ve-sandbox-izolasyon-guncellemesi)
+- [25. Session 16 — 2026-03-06 Konfigürasyon ve Rate Limit Merkezileştirmesi](#session-16-konfigurasyon-ve-rate-limit-merkezilestirmesi)
   - [Özet](#ozet)
 
 ---
@@ -940,6 +941,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm asenkron mimari riskler
 
 WS-01, WS-02 ve WS-03 numaralı event-loop bloklama, lock başlatma (Deprecation) ve rate-limit race condition bulguları başarıyla çözülmüş ve kapatılmıştır.
 
+✅ Rate Limiting (hız sınırı) parametreleri hardcoded yapıdan kurtarılarak tamamen `config.py` ve `.env` üzerinden dinamik yönetilebilir hale getirildi.
+
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
@@ -1153,6 +1156,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm tip dönüşüm (castin
 **Kapanan Bulgular (2026-03-05)**
 
 CONF-01 ve CONF-02 numaralı "Tip Dönüşümü (Boolean Parsing)" ve "Güvenli Varsayılan (Fallback) Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+✅ Ajan alt görev sınırları (`SUBTASK_MAX_STEPS`), API Hız Sınırları ve HuggingFace çevrimdışı ayarları merkezi konfigürasyona başarıyla dahil edildi.
 
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2632,16 +2637,29 @@ Bu turda, Docker altyapısı ve ortam bağımlılıkları canlı ortama (product
 
 **Session 15 çıktısı:** Konteynerleştirme mimarisindeki potansiyel çökme ve Sandbox erişim sorunları tamamen giderilmiş, altyapı en iyi pratiklere (best practices) %100 uyumlu hale getirilmiştir.
 
+
+<a id="session-16-konfigurasyon-ve-rate-limit-merkezilestirmesi"></a>
+## 25. Session 16 — 2026-03-06 Konfigürasyon ve Rate Limit Merkezileştirmesi
+
+Bu turda, kod içerisine sabitlenmiş (hardcoded) operasyonel limitler temizlenmiş ve tüm ortam değişkenleri merkezi yapılandırma modülüne bağlanmıştır.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S16-01 | `config.py` / `.env.example` | ✅ Kusursuz | `SUBTASK_MAX_STEPS`, `HF_TOKEN`, `HF_HUB_OFFLINE` ve Rate Limit değişkenleri merkezi Config sınıfına eklendi. |
+| S16-02 | `web_server.py` | ✅ Kusursuz | API Hız Sınırları (`_RATE_LIMIT`, vb.) artık `cfg.RATE_LIMIT_*` üzerinden dinamik olarak okunuyor. Hardcoded değerler silindi. |
+
+**Session 16 çıktısı:** Projenin ortam değişkenleri (environment variables) ile yönetilebilirliği %100 oranına ulaştırıldı. Sunucu yöneticileri artık kod değiştirmeden API hız sınırlarını ve alt ajan limitlerini doğrudan `.env` üzerinden ayarlayabilir duruma geldi.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 35 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03) |
+| Tespit edilen bulgu | 37 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 57 |
+| Kümülatif toplam kapalı | 59 |
 | Aktif açık sorun | **2** |
 
 ---
