@@ -2,11 +2,22 @@
 
 > Bu dosya `PROJE_RAPORU.md` içinden ayrılmıştır.  
 > **Ana rapor:** [PROJE_RAPORU.md](PROJE_RAPORU.md) — §3 referansı buraya yönlendirilmiştir.  
-> Son güncelleme: **2026-03-04** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
+> Son güncelleme: **2026-03-05** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
 
 ---
 
 <a id="sec-3-1-3-76"></a>
+
+### ✅ §13.5.1 `main.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** `main.py` dosyasındaki alt süreç (child process) loglama mantığında RAM şişmesine sebep olabilecek mimari sorunların giderilmesi ve `cli.py` çakışmalarının düzeltilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| M-01 | ✅ Kapandı | Child-process gözlemlenebilirliği için canlı stdout/stderr aynalama ve opsiyonel dosya loglama eklendi (`--capture-output`, `--child-log`). |
+| M-02 | ✅ Kapandı | Loglama işlemi bellekte liste tutmak yerine (RAM şişmesi riski) doğrudan diske yazma (on-the-fly streaming) metoduna geçirilerek tamamen optimize edildi. Eski `cli.py` çakışma notları temizlendi. |
+
+---
 
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
