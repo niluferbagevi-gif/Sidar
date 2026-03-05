@@ -104,6 +104,7 @@
 - [23. Session 14 — 2026-03-06 Dokümantasyon ve README Hizalaması](#session-14-dokumantasyon-ve-readme-hizalamasi)
 - [24. Session 15 — 2026-03-06 Altyapı ve Sandbox İzolasyon Güncellemesi](#session-15-altyapi-ve-sandbox-izolasyon-guncellemesi)
 - [25. Session 16 — 2026-03-06 Konfigürasyon ve Rate Limit Merkezileştirmesi](#session-16-konfigurasyon-ve-rate-limit-merkezilestirmesi)
+- [26. Session 17 — 2026-03-06 Başlatıcı (main.py) Uyum ve Hata Giderme](#session-17-baslatici-mainpy-uyum-ve-hata-giderme)
   - [Özet](#ozet)
 
 ---
@@ -758,6 +759,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm mimari riskler ve belle
 **Kapanan Bulgular (2026-03-05)**
 
 M-01 ve M-02 numaralı mimari iyileştirme ve bellek şişmesi bulguları başarıyla giderilmiş ve kapatılmıştır.
+
+✅ Uvicorn'un çökmesine neden olan büyük harfli log seviyesi (`INFO`) argümanı hatası küçük harfe zorlanarak (`.lower()`) giderildi. Ayrıca başlatıcı sihirbazındaki varsayılan port, host ve model fallback değerleri merkezi `config.py` (`7860`, `0.0.0.0`, `qwen2.5-coder:7b`) ile %100 senkronize edildi.
 
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2650,16 +2653,29 @@ Bu turda, kod içerisine sabitlenmiş (hardcoded) operasyonel limitler temizlenm
 
 **Session 16 çıktısı:** Projenin ortam değişkenleri (environment variables) ile yönetilebilirliği %100 oranına ulaştırıldı. Sunucu yöneticileri artık kod değiştirmeden API hız sınırlarını ve alt ajan limitlerini doğrudan `.env` üzerinden ayarlayabilir duruma geldi.
 
+
+<a id="session-17-baslatici-mainpy-uyum-ve-hata-giderme"></a>
+## 26. Session 17 — 2026-03-06 Başlatıcı (main.py) Uyum ve Hata Giderme
+
+Bu turda uygulamanın ana giriş kapısı olan `main.py` başlatıcısı, merkezi yapılandırma standartlarıyla tam uyumlu hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S17-01 | `main.py` | ✅ Kusursuz | Uvicorn'un çökmesine sebep olan log level (`INFO` -> `info`) harf duyarlılığı hatası çözüldü. |
+| S17-02 | `main.py` | ✅ Kusursuz | `DummyConfig` ve sihirbaz içi statik değerler (8000 -> 7860, 127.0.0.1 -> 0.0.0.0, llama3 -> qwen2.5-coder:7b) güncel mimariyle hizalandı. |
+
+**Session 17 çıktısı:** Başlatıcı sihirbazı (Wizard) ve CLI argümanlarının yanlış varsayılan değerlerle (eski port veya modelle) sistemi ayağa kaldırma veya Uvicorn ValueError nedeniyle çökme riski tamamen ortadan kaldırılmıştır.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 37 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02) |
+| Tespit edilen bulgu | 39 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 59 |
+| Kümülatif toplam kapalı | 61 |
 | Aktif açık sorun | **2** |
 
 ---
