@@ -313,11 +313,20 @@ sidar_project/
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="7-dusuk-oncelikli-sorunlar"></a>
-## 7. Düşük Öncelikli Sorunlar
+## 7. Düşük Öncelikli Sorunlar (Low Priority / Technical Debt)
 
-> ✅ **2026-03-03 güncel taramasında (Session 8) tespit edilen P-01–P-07 aynı oturumda giderilmiştir** — bkz. [§17](#17-session-8-satir-satir-inceleme-2026-03-03).
->
-> Geçmişte tespit edilen (N-03, N-04, O-01, O-04, O-06 dahil) tüm düşük öncelikli sorunlar da giderilmiştir — detaylar için bkz. §3 ve 📄 [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76).
+> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (P serisi) düzeltmeler tamamlanmış olsa da, v2.7.0 sürümündeki mimari kararlardan kaynaklanan, sistemin çalışmasını doğrudan engellemeyen ancak teknik borç (technical debt) ve uç durum (edge-case) riski taşıyan düşük öncelikli sorunlar aşağıda listelenmiştir.
+
+| ID | Modül / Dosya | Hata/Risk Açıklaması | Çözüm Önerisi |
+| :--- | :--- | :--- | :--- |
+| **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
+| **L-02** | `web_ui/index.html` | **Custom HTML Sanitize Katmanı:** `marked.parse(...)` çıktısı DOM'a basılmadan önce regex tabanlı özel bir `sanitizeRenderedHtml` fonksiyonundan geçmektedir. Çok karmaşık XSS vektörlerinde bu yöntem yetersiz kalabilir. | İstemci tarafında `DOMPurify` gibi savaş testinden geçmiş (battle-tested) standart bir sanitize kütüphanesine geçilmelidir. |
+| **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
+| **L-04** | `environment.yml` | **Kesin Sürüm Kilidi (Lockfile) Eksikliği:** Bağımlılıklar `=` veya `~=` ile daraltılmış olsa da, hash tabanlı tam bir lockfile (`conda-lock` veya `pip-tools`) bulunmamaktadır. Farklı makinelerde dolaylı alt-bağımlılık (transitive dependency) farkları oluşabilir. | CI/CD süreçleri ve yerel geliştirme tutarlılığı için tam kapsamlı bir `conda-lock.yml` dosyası üretilmelidir. |
+| **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
+| **L-06** | `.gitignore` | **`data/` Dizini Top-Level Dışlama:** `data/` dizini tamamen git takibi dışındadır. Bu durum, gelecekte takıma örnek veritabanı (fixture) veya örnek oturum dosyaları paylaşılmak istendiğinde zorluk çıkarır. | `data/` dışlaması kaldırılarak, içine sadece aktif dosyaları gizleyen `.gitignore` (`*`, `!.gitignore`) yerleştirilmeli (whitelist stratejisi). |
+
+*(Geçmişteki N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
