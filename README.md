@@ -18,7 +18,7 @@
 
 ## Proje Hakkında
 
-**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; 25 araç üzerinden LLM destekli kararlar alır.
+**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **44+ çekirdek araç** üzerinden LLM destekli kararlar alır.
 
 ### Karakter Profili
 
@@ -79,7 +79,10 @@
 - Depo bilgisi ve istatistikleri
 - Son commit listesi
 - Uzak dosya okuma (`github_read`)
-- Branch listeleme ve kod arama
+- Uzak dosya yazma/commit (`github_write`)
+- Branch listeleme + branch oluşturma (`github_list_files`, `github_create_branch`)
+- PR açma/yönetimi (`github_create_pr`, `github_smart_pr`, `github_list_prs`, `github_get_pr`, `github_comment_pr`, `github_close_pr`, `github_pr_files`)
+- Depo içinde kod arama (`github_search_code`)
 - Çalışma zamanında aktif depo değiştirme (`/set-repo`)
 
 ### Web & Araştırma (WebSearchManager)
@@ -108,7 +111,7 @@
 ### Web Arayüzü (v2.7.0)
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
-- **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (23 araç)
+- **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)
 - **Talimat Dosyası Uyumu**: `SIDAR.md` ve `CLAUDE.md` dosyaları proje genelinde otomatik taranır; alt klasör talimatları üst klasörleri override edecek şekilde bağlama eklenir
 - **Hazır Şablon Dosyaları**: Proje kökünde varsayılan `SIDAR.md` ve `CLAUDE.md` dosyaları gelir; doğrudan düzenleyip kendi kurallarınızı yazabilirsiniz
 - **Mobil Uyum**: 768px altında hamburger menüsü + sidebar overlay
@@ -119,7 +122,7 @@
 - Dosya ekleme (200 KB limit, metin/kod dosyaları)
 - Dinamik model ismi gösterimi (`/status` üzerinden)
 - Dal seçimi — gerçek `git checkout` ile backend'e bağlı
-- Rate limiting (20 istek/dakika/IP, yalnızca `/chat`)
+- Katmanlı rate limiting: `/chat` için 20, mutasyon (POST/DELETE) için 60, Git/Dosya I/O GET uçları için 30 istek/dakika/IP
 
 ---
 
@@ -149,7 +152,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ---
 
-## Araç Listesi (25 Araç)
+## Araç Listesi (44+ Çekirdek Araç)
 
 | Araç | Açıklama | Argüman |
 |------|----------|---------|
@@ -157,13 +160,28 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `read_file` | Dosya oku | dosya_yolu |
 | `write_file` | Dosya yaz (tamamını) | `path\|\|\|content` |
 | `patch_file` | Dosya yamala (fark) | `path\|\|\|eski\|\|\|yeni` |
+| `glob_search` | Glob deseni ile dosya ara | `desen[\|\|\|dizin]` |
+| `grep_files` | Regex ile içerik ara | `regex[\|\|\|path[\|\|\|filtre[\|\|\|bağlam]]]` |
 | `execute_code` | Python REPL (Docker sandbox) | python_kodu |
+| `run_shell` (`bash`) | Kabuk komutu çalıştır | komut |
 | `audit` | Proje denetimi | `.` |
 | `health` | Sistem sağlık raporu | — |
 | `gpu_optimize` | GPU bellek temizle | — |
+| `get_config` | Runtime konfigürasyonunu getir | — |
 | `github_commits` | Son commit listesi | sayı |
 | `github_info` | Depo bilgisi | — |
 | `github_read` | Uzak depodaki dosyayı oku | dosya_yolu |
+| `github_list_files` | Uzak dizin içeriği listele | `path[\|\|\|branch]` |
+| `github_write` | Uzak depoya dosya yaz/commit | `path\|\|\|content\|\|\|commit[\|\|\|branch]` |
+| `github_create_branch` | Yeni branch oluştur | `branch[\|\|\|source]` |
+| `github_create_pr` | PR oluştur | `title\|\|\|body\|\|\|head[\|\|\|base]` |
+| `github_smart_pr` | Diff analizli akıllı PR aç | `[head[\|\|\|base[\|\|\|notes]]]` |
+| `github_list_prs` | PR listesini getir | `state[\|\|\|limit]` |
+| `github_get_pr` | PR detayını getir | pr_no |
+| `github_comment_pr` | PR'a yorum ekle | `pr_no\|\|\|comment` |
+| `github_close_pr` | PR kapat | pr_no |
+| `github_pr_files` | PR dosya değişikliklerini listele | pr_no |
+| `github_search_code` | Depoda kod ara | sorgu |
 | `web_search` | Tavily/Google/DDG ile ara | sorgu |
 | `fetch_url` | URL içeriğini çek | url |
 | `search_docs` | Kütüphane dokümanı ara | `lib konu` |
@@ -175,8 +193,14 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `gh_latest` | En güncel release | `owner/repo` |
 | `docs_search` | Belge deposunda ara | sorgu |
 | `docs_add` | URL'den belge ekle | `başlık\|url` |
+| `docs_add_file` | Yerel dosyayı RAG'a ekle | `dosya_yolu` veya `başlık\|dosya_yolu` |
 | `docs_list` | Belgeleri listele | — |
 | `docs_delete` | Belge sil | doc_id |
+| `todo_write` | Görev listesi oluştur/güncelle | `görev:::durum\|\|\|...` |
+| `todo_read` | Görev listesini oku | — |
+| `todo_update` | Görev durumunu güncelle | `id\|\|\|durum` |
+| `subtask` (`agent`) | Alt ajan görevi çalıştır | alt_görev |
+| `parallel` | Birden çok alt görevi paralel yürüt | `görev1\|\|\|görev2...` |
 | `final_answer` | Kullanıcıya yanıt ver | yanıt_metni |
 
 ---
@@ -386,7 +410,8 @@ sidar_project/
 │   ├── github_manager.py   # GitHub API entegrasyonu (binary koruma, branch)
 │   ├── security.py         # OpenClaw 3 seviyeli erişim kontrol sistemi
 │   ├── web_search.py       # Tavily + Google + DuckDuckGo (async, çoklu motor)
-│   └── package_info.py     # PyPI + npm + GitHub Releases (async)
+│   ├── package_info.py     # PyPI + npm + GitHub Releases (async)
+│   └── todo_manager.py     # Görev listesi yönetimi (pending/in_progress/completed)
 ├── tests/
 │   ├── __init__.py
 │   └── test_sidar.py       # 11 test sınıfı (GPU + Chunking + Pydantic testleri dahil)
@@ -439,6 +464,7 @@ pytest tests/ -v --cov=. --cov-report=term-missing
 AI_PROVIDER=ollama              # ollama | gemini
 CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
+TEXT_MODEL=gemma2:9b
 GEMINI_API_KEY=                 # Gemini kullanılacaksa
 
 # Güvenlik
@@ -457,7 +483,7 @@ MAX_MEMORY_TURNS=20
 MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
 
 # Zaman Aşımı
-OLLAMA_TIMEOUT=45
+OLLAMA_TIMEOUT=30
 REACT_TIMEOUT=60
 
 # Web Arama
