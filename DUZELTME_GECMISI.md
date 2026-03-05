@@ -303,6 +303,28 @@
 
 ---
 
+### ✅ §13.5.27 `install_sidar.sh` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Kurulum scriptinin sistem üzerinde kontrolsüz değişiklik yapmasının engellenmesi ve güvenlik açıklarının kapatılması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| INS-01 | ✅ Kapandı | Sürüm Senkronizasyonu: Dosya başlığındaki sürüm etiketi proje genel sürümü `2.7.0` ile hizalandı. |
+| INS-02 | ✅ Kapandı | Güvensiz Script Yürütme: Ollama kurulumunda uzaktan script çalıştırma varsayılan akıştan çıkarıldı; yalnızca açık opt-in (`ALLOW_OLLAMA_INSTALL_SCRIPT=1`) ile etkinleşecek güvenli modele taşındı. |
+| INS-03 | ✅ Kapandı | Otomatik Sistem Yükseltme: `apt upgrade -y` adımı kontrolsüz çalışmadan çıkarıldı; yalnızca kullanıcı onayıyla (`ALLOW_APT_UPGRADE=1`) çalışan opt-in modele geçirildi. |
+
+---
+
+### ✅ §13.5.28 `README.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dokümantasyonun `v2.7.0` kod tabanındaki büyük mimari değişiklikleri ve yeni araçları yansıtacak şekilde güncellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| RM-06 | ✅ Kapandı | `v2.7.0` Özellik Entegrasyonu: README.md yalnızca sürüm etiketiyle değil, içerik düzeyinde de güncellendi. TodoManager (Görev Yönetimi), Sonsuz Hafıza (Vector Archive) ve Fernet şifreleme için özel başlıklar ve kullanım notları eklenerek dokümantasyon teknik borcu kapatıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

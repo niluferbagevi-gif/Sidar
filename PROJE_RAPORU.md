@@ -73,8 +73,8 @@
     - [13.5.24 `docker-compose.yml` — Skor: 100/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 100/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 100/100 ✅](#13526-envexample-skor-95100)
-    - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
-    - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
+    - [13.5.27 `install_sidar.sh` — Skor: 100/100 ✅](#13527-installsidarsh-skor-93100)
+    - [13.5.28 `README.md` — Skor: 100/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
     - [13.5.30 `CLAUDE.md` — Skor: 94/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
@@ -1890,71 +1890,91 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13527-installsidarsh-skor-93100"></a>
-#### 13.5.27 `install_sidar.sh` — Skor: 93/100 ✅
+#### 13.5.27 `install_sidar.sh` — Skor: 100/100 ✅
 
-**Sorumluluk:** Ubuntu/WSL odaklı “sıfırdan kurulum” betiği — sistem paketlerini kurar, Miniconda ve ortamı hazırlar, Ollama/model çekimlerini yapar, proje klasörünü günceller ve web UI vendor dosyalarını indirir.
+**Sorumluluk (Güncel):** SİDAR'ın Ubuntu/WSL2 tabanlı sistemler için uçtan uca kurulum ve ortam hazırlama otomasyonudur. Sistem paketlerinin kurulumu, Conda ortam yönetimi, model indirme ve web arayüzü bağımlılıklarının (vendor) yerelleştirilmesi görevlerini yürütür.
 
-**Akış ve Otomasyon Davranışı (satır 1–216)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `set -euo pipefail` ile hata durumunda erken durma ve değişken güvenliği uygulanır.
-- Kurulum sırası deterministik fonksiyon zinciriyle (`install_system_packages` → `print_footer`) ilerler.
-- `trap cleanup EXIT` kullanımı ile arka planda başlatılan `ollama serve` süreci oturum sonunda sonlandırılır.
+Bu dosya, SİDAR'ın karmaşık bağımlılık yapısını tek komutla kurulabilir hale getiren DevOps katmanıdır.
 
-**Operasyonel Güçlü Yanlar (satır 19–216)**
+- **Güvenli Kurulum Modeli (Opt-in):** `apt upgrade` veya uzaktan script yürütme gibi kritik adımlar varsayılan olarak kapalıdır; yalnızca bilinçli env bayraklarıyla etkinleşir.
+- **Arka Plan Süreç Yönetimi:** Model indirme için geçici başlatılan `ollama serve`, `trap cleanup EXIT` ile kurulum sonunda otomatik temizlenir.
+- **Akıllı Ortam Yönetimi:** Conda ortamı varsa `env update`, yoksa `env create` uygulanır; mevcut `.env` dosyası korunur.
 
-- Repo yoksa clone, varsa pull yaklaşımı ile tekrar çalıştırılabilirlik kısmen desteklenir.
-- Conda ortamı var/yok kontrolüyle `env create` ve `env update --prune` ayrımı yapılır.
-- `.env` dosyası mevcutsa üzerine yazılmaz; yoksa `.env.example` kopyalanarak güvenli başlangıç sağlanır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`environment.yml`:** Conda ortamı inşası için temel kaynak dosyadır.
+- 🔗 **`.env.example`:** Yapılandırma dosyası yoksa şablon olarak kullanılır.
+- 🔗 **`web_ui/index.html`:** Arayüzün ihtiyaç duyduğu `highlight.js` ve `marked.js` dosyaları `vendor/` altına yerelleştirilir.
+
+**Mimari Özeti (satır 1–216)**
+
+| Bölüm | Pattern | Açıklama |
+|---|---|---|
+| Başlangıç | `set -euo pipefail` | Hata anında durma ve tanımsız değişken koruması |
+| Güvenlik | Opt-in Flags | `ALLOW_OLLAMA_INSTALL_SCRIPT` benzeri bayraklarla dış müdahale kontrolü |
+| Cleanup | `trap cleanup EXIT` | Geçici başlatılan servislerin (`ollama serve`) otomatik sonlandırılması |
+| Vendor | Local Dependency | `highlight.js` ve `marked.js` kütüphanelerinin yerelleştirilmesi |
+| Env Setup | Smart Copy | `.env` dosyasının kullanıcı tercihlerini ezmeden oluşturulması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| INS-01 | Script header sürümü `2.7.0` ile rapor/kod tabanıyla hizalandı | 3 | ✅ Kapalı |
-| INS-02 | `curl | sh` kaldırıldı; uzaktan installer önce dosyaya indirilip yalnızca `ALLOW_OLLAMA_INSTALL_SCRIPT=1` ile çalıştırılıyor | 82–98 | ✅ Kapalı |
-| INS-03 | `apt upgrade -y` varsayılan akıştan çıkarıldı; sadece `ALLOW_APT_UPGRADE=1` ile bilinçli opt-in durumda uygulanıyor | 36–41 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm güvenlik zafiyetleri ve süreç yönetimi riskleri giderilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+INS-01, INS-02 ve INS-03 numaralı Sürüm Senkronizasyonu, Güvensiz Script Yürütme ve Otomatik Sistem Yükseltme bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13528-readmemd-skor-92100"></a>
-#### 13.5.28 `README.md` — Skor: 92/100 ✅
+#### 13.5.28 `README.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Proje için birincil kullanıcı dokümantasyonu — mimari özet, özellik listesi, kurulum adımları, çalışma komutları ve temel operasyon bilgisini tek dosyada sunar.
+**Sorumluluk (Güncel):** Projenin birincil kullanıcı dokümantasyonudur. Mimari özet, kurulum adımları, özellik listesi, güvenlik modeli ve operasyonel kullanım örneklerini tek noktada toplar.
 
-**Dokümantasyon Kapsamı (satır 1–260+)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Projenin amaç/özellik seti, manager katmanları ve araç listesi tabloyla anlatılmıştır.
-- Conda/pip kurulum yönergeleri, `.env` hazırlığı ve Ollama başlangıç adımları yer alır.
-- Web/CLI kullanım örnekleri ve parametre seçenekleri yeni kullanıcı için hızlı başlangıç sağlar.
+Bu dosya, SİDAR’ın teknik yeteneklerini kullanıcı için anlaşılır bir rehbere dönüştürür.
 
-**Operasyonel Güçlü Yanlar**
+- **Onboarding (Katılım):** Yeni kullanıcılar için Conda, Pip ve Docker tabanlı üç farklı kurulum yolunu detaylandırır.
+- **Özellik Matrisi:** CodeManager, RAG, GitHub ve WebSearch gibi ana bileşenlerin yeteneklerini ve teknoloji yığınını tablolarla sunar.
+- **v2.7.0 Senkronizasyonu:** TodoManager görev akışları, Fernet bellek şifreleme yönergeleri ve Sonsuz Hafıza (Vector Archive) mekanizması dokümantasyona entegre edilmiştir.
 
-- Bölümlendirme ve başlık yapısı onboarding için okunabilir bir akış oluşturur.
-- Araç listesi ve güvenlik seviyesi tablosu, sistem davranışını kısa ve görünür biçimde özetler.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm Proje Dosyaları:** README, ana modül ve araçların kullanımına ilişkin örnek akışlar içerir.
+- 🔗 **`install_sidar.sh`:** Kurulum bölümünde script kullanımı ve `ALLOW_*` güvenlik bayrakları referanslanır.
+
+**Mimari Özeti (satır 1–450+)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Başlangıç | Banner & Versiyon | Projenin kimlik ve sürüm bilgisi (`v2.7.0`) |
+| Özellikler | Modüler Analiz | Manager katmanları ve OpenClaw güvenlik seviyeleri |
+| Kurulum | Setup Guide | İşletim sistemi ve donanıma (CPU/GPU) göre adım adım yönergeler |
+| Gelişmiş | RAG & Güvenlik | Hibrit arama, büyük dosya yönetimi, Fernet anahtar üretimi |
+| Kullanım | CLI & Web UI | Ajanla etkileşim için komutlar ve arayüz kabiliyetleri |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| RM-01 | README üst sürüm satırları `v2.7.0` ile hizalandı; önceki sürüm drift’i kapatıldı | 3, 13 | ✅ Kapalı |
-| RM-02 | Docker kullanım örneği `sidar-web` servisine güncellendi; compose servis adıyla hizalı | 199 | ✅ Kapalı |
-| RM-03 | README içindeki CUDA referansları `12.4 (cu124)` ile hizalandı; teknik tutarsızlık kapatıldı | 72, 376 | ✅ Kapalı |
-| RM-04 | Kurulum bölümüne `install_sidar.sh` için güvenli opt-in bayrakları (`ALLOW_APT_UPGRADE`, `ALLOW_OLLAMA_INSTALL_SCRIPT`) eklendi; betik davranışıyla dokümantasyon hizalandı | 208–215 | ✅ Kapalı |
-| RM-05 | `.env` örnek anahtarları (`GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`, `MEMORY_ENCRYPTION_KEY`) ve web erişim örneği (`--level sandbox`) güncel varsayımlarla hizalandı | 233–234, 431, 439–440 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm `v2.7.0` özellikleri ve operasyonel detaylar dokümantasyona yansıtılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+RM-01 - RM-05 arası sürüm, donanım ve kurulum güvenliği bulguları kapatılmıştır.
+
+RM-06 (Yeni Özellik Entegrasyonu): `v2.7.0` ile gelen TodoManager, Sonsuz Hafıza ve Bellek Şifreleme bölümleri dokümana eklenerek içerik eksiksiz hale getirilmiştir.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 

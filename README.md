@@ -123,6 +123,32 @@
 
 ---
 
+## v2.7.0 Öne Çıkan Yetenekler
+
+### ✅ TodoManager ile Görev Takibi
+
+- Ajan görevleri `TodoManager` üzerinden durum bazlı (`pending`, `in_progress`, `done`) yönetir.
+- Aynı anda tek aktif iş kuralı uygulanır; odak kaybı ve çoklu görev karmaşası azaltılır.
+- Web UI ve CLI akışlarında görevler kullanıcıya şeffaf şekilde raporlanır.
+
+### ✅ Sonsuz Hafıza (Vector Archive)
+
+- Uzun sohbetlerde eski bağlam, tamamen silinmek yerine vektör arşive (ChromaDB) aktarılır.
+- Gerektiğinde benzerlik tabanlı geri çağırma ile geçmiş bilgi yeniden bağlama alınır.
+- Bu model, bağlam penceresi baskısını azaltırken bilgi sürekliliğini korur.
+
+### ✅ Bellek Şifreleme (Fernet)
+
+- `MEMORY_ENCRYPTION_KEY` tanımlandığında oturum dosyaları diskte şifrelenir.
+- Hassas ortamlarda varsayılan JSON saklama yerine şifreli depolama önerilir.
+- Anahtar üretimi için örnek komut:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+---
+
 ## Araç Listesi (25 Araç)
 
 | Araç | Açıklama | Argüman |
@@ -432,7 +458,7 @@ MEMORY_ENCRYPTION_KEY=          # Opsiyonel (Fernet key)
 
 # Zaman Aşımı
 OLLAMA_TIMEOUT=45
-REACT_TIMEOUT=90
+REACT_TIMEOUT=60
 
 # Web Arama
 TAVILY_API_KEY=                 # Tavily kullanılacaksa (öncelikli)
@@ -484,4 +510,4 @@ mypy . --ignore-missing-imports
 
 ## Lisans
 
-Bu proje LotusAI ekosisteminin bir parçasıdır.  
+Bu proje LotusAI ekosisteminin bir parçasıdır.
