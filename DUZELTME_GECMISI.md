@@ -41,6 +41,17 @@
 
 ---
 
+### ✅ §13.5.3 `core/rag.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** RAG modülündeki senkron disk/index işlemlerinin çok kullanıcılı asenkron web sunucusunu (FastAPI) dondurma (Event-Loop Starvation) riskinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| C-01 (RAG-04) | ✅ Kapandı | `_ensure_bm25_index` işleminin senkron çalışması nedeniyle oluşan kritik darboğaz (starvation), doğrudan `rag.py` içinde değil, çağıran katmanlarda çözüldü. SİDAR mimarisine uygun olarak, `sidar_agent.py` ve `web_server.py` dosyalarındaki tüm RAG arama (`search`), ekleme (`add_document`) ve silme işlemleri `await asyncio.to_thread(...)` ile arka plan thread'lerine itildi. Ana event-loop'un dondurulması kesin olarak engellendi. |
+| RAG-03 | ✅ Kapandı | BM25 in-memory önbelleğinin (cache) dışarıdan diskteki dosya değiştiğinde manuel invalidate gerektirmesi durumu bir hata değil, performans/bellek trade-off'u (kabul edilmiş sistem tasarımı) olarak değerlendirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

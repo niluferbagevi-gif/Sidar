@@ -49,7 +49,7 @@
     - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
-    - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
+    - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
     - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
@@ -858,96 +858,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1353-coreragpy-skor-88100"></a>
-#### 13.5.3 `core/rag.py` — Skor: 93/100 ✅
+#### 13.5.3 `core/rag.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Belge deposu — ChromaDB vektör arama, BM25, keyword fallback, chunking, GPU embedding, web API erişim noktaları.
+**Sorumluluk (Güncel):** SİDAR'ın yerel bilgi bankası ve RAG (Retrieval-Augmented Generation) altyapısı. ChromaDB tabanlı vektör (anlamsal) arama, BM25 kelime skorlama ve akıllı metin parçalama (chunking) motorudur.
 
-**Hibrit Arama Mimarisi (satır 472–515)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-`mode` parametresi ile motor seçimi:
+Ajanın büyük belgeleri doğrudan okuyup (token limitlerini tüketip) çökmesini engellemek ve geçmiş sohbetleri "Sonsuz Hafıza" olarak saklamak için kullanılır.
 
-| Mode | Motor | Fallback |
-|------|-------|---------|
-| `"auto"` | ChromaDB → BM25 → Keyword (cascade) | Her katman başarısız olursa bir sonrakine geçer |
-| `"vector"` | Yalnızca ChromaDB | Yoksa hata mesajı |
-| `"bm25"` | Yalnızca BM25 | Yoksa hata mesajı |
-| `"keyword"` | Yalnızca keyword | Her zaman çalışır |
+- **Hibrit Arama (Cascade):** Kullanıcı bir soru sorduğunda önce ChromaDB (Vektör Arama) ile anlamsal yakınlık aranır. Eğer ChromaDB devrede değilse veya sonuç bulunamazsa sistem sırasıyla BM25'e (Kelime Sıklığı) ve ardından en basit Anahtar Kelime aramasına (Fallback) geçer.
+- **Akıllı Parçalama (Recursive Chunking):** Eklenen belgeler veya kodlar doğrudan indekslenmez; kod bloklarını (`class`, `def`) ve paragrafları bölmeden, bağlamın kaybolmasını engellemek için örtüşmeli (overlap) şekilde parçalanır (LangChain benzeri mantık).
+- **GPU Verimliliği:** `USE_GPU=True` ve `GPU_MIXED_PRECISION=True` yapılandırmasıyla sentence-transformers modeli doğrudan CUDA üzerinde (FP16 bellek tasarrufuyla) çalışır.
 
-**GPU-Farkında Embedding (`_build_embedding_function`, satır 27–76)**
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-- `USE_GPU=True` → `SentenceTransformerEmbeddingFunction("all-MiniLM-L6-v2", device="cuda:N")`
-- `GPU_MIXED_PRECISION=True` → `torch.autocast(device_type="cuda", dtype=torch.float16)` ile FP16 encode
-- Başlatma hatası (CUDA yoksa, paket eksikse) → `None` döner, ChromaDB CPU varsayılanına geçer; istisnalar yutulmaz, `logger.warning` ile loglanır
-- ⚠️ FP16 desteği `ef.__call__` monkey-patch ile uygulanıyor (satır 58–64); ChromaDB iç API değişimine karşı kırılgan (düşük öncelikli)
+- 🔗 `agent/sidar_agent.py`: Ajan, hem RAG araçları (`docs_search`, `docs_add`) kullanırken hem de eski sohbetleri özetleyip vektör veritabanına arşivlerken (`_summarize_memory`) buraya başvurur.
+- 🔗 `web_server.py`: Arayüzdeki "Belge Deposu" modalı, dosya ekleme/silme ve arama endpoint'leri için doğrudan `DocumentStore` API'lerini kullanır.
 
-**`threading.Lock` — Atomik Delete + Upsert (satır 112, 310–318)**
+**Mimari Özeti (satır 1–656)**
 
-```python
-self._write_lock = threading.Lock()
-# add_document içinde:
-with self._write_lock:
-    self.collection.delete(where={"parent_id": parent_id})
-    if chunks:
-        self.collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
-```
-
-Aynı `parent_id` için eş zamanlı yazma çakışması önlenir. `asyncio.to_thread` çağrıları farklı thread'lerde çalıştığından senkron `threading.Lock` doğru tercihtir.
-
-**Recursive Chunking (`_recursive_chunk_text`, satır 193–257)**
-
-LangChain `RecursiveCharacterTextSplitter` mantığını simüle eden özyinelemeli bölme:
-- Ayırıcı öncelik sırası: `"\nclass "` → `"\ndef "` → `"\n\n"` → `"\n"` → `" "` → `""` (karakter)
-- Overlap mekanizması (satır 247–248): yeni chunk önceki chunk'ın son `_chunk_overlap` karakterini alarak bağlam sürekliliği sağlar
-- Hiçbir ayırıcı ile bölünemeyenler zorla `_chunk_size` ile kesilir
-
-**`parent_id` Tabanlı Atomik Update (satır 273, 312)**
-
-```python
-parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
-# Güncelleme: önce eski parçaları sil, sonra yenilerini ekle
-self.collection.delete(where={"parent_id": parent_id})
-```
-
-Aynı başlık+kaynak için tekrar ekleme yapıldığında ChromaDB'de yinelenen vektörler birikmez.
-
-**ChromaDB `n_results` Güvenlik Kontrolü (satır 521–524)**
-
-```python
-collection_size = self.collection.count()
-n_results = min(top_k * 2, max(collection_size, 1))
-```
-
-`n_results > koleksiyon boyutu` durumunda ChromaDB `InvalidArgumentError` fırlatır; bu kontrol hatayı önler.
-
-**`seen_parents` Çeşitlilik Filtresi (satır 535–560)**
-
-Aynı dokümanın farklı chunk'ları arama sonuçlarına girdiğinde `seen_parents` seti ile tekrarlı sonuçlar filtrelenir; `top_k` kadar farklı kaynak belge sunulur.
-
-**Public API Erişim Noktaları**
-
-| İmza | Amaç |
-|------|------|
-| `get_index_info() → List[Dict]` (satır 409) | Web API için belge özet listesi |
-| `doc_count` property (satır 426–429) | Belge sayısı (`len(self._index)`) |
-| `add_document_from_url` async (satır 327) | `httpx.AsyncClient` ile doğrudan async — to_thread gerektirmez |
-| `add_document_from_file` sync (satır 353) | `sidar_agent.py`'de `asyncio.to_thread()` ile çağrılır |
-| `add_document` sync (satır 259) | `sidar_agent.py`'de `asyncio.to_thread()` ile çağrılır |
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 26–70 | `_build_embedding_function` | GPU ve FP16 (mixed precision) tabanlı sentence-transformers embedding başlatıcısı |
+| 189–251 | `_recursive_chunk_text(...)` | Uzun metinleri ve kodları mantıksal sınırlarından (`class/def/newline`) bölerek parçalayan özyinelemeli (recursive) algoritma |
+| 253–305 | `add_document(...)` | Dosyaları diske yedekler ve eşzamanlı çakışmaları engellemek için `threading.Lock` kullanarak ChromaDB'ye atomik chunk kaydı (upsert) yapar |
+| 307–327 | `add_document_from_url` | `httpx.AsyncClient` ile URL içeriklerini asenkron çeker, HTML etiketlerini (`_clean_html`) temizler ve belgeler |
+| 435–467 | `search(...)` | `mode="auto"` parametresiyle Vektör ➔ BM25 ➔ Keyword motorları arasında fallback (şelale) geçişi sağlar |
+| 512–554 | `_ensure_bm25_index` | Her arama öncesi BM25 indeksini in-memory olarak hazırlayan veya önbellekten (cache) döndüren skorlama katmanı |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| RAG-03 | BM25 cache doküman seti değişiminde invalidation ile güncelleniyor; içerik dosyaları dışarıdan doğrudan değişirse bir sonraki aramada manuel invalidate gerekebilir | 287–291, 431–455, 565–590 | Bilgi |
-| RAG-04 | BM25 cache rebuilding (`_ensure_bm25_index`) işlemi belge ekleme/silme anında tüm belgeleri senkron okuyarak baştan indeksler. Çok sayıda belge varken bu durum FastAPI event-loop'unu bloke ederek (Starvation) tüm bağlı kullanıcıları dondurur. | 180–250 | Kritik (C-01) |
+Bu dosya için aktif açık bulgu bulunmamaktadır. I/O kaynaklı event-loop bloklama riskleri çağıran katmanlarda (Thread havuzu ile) tamamen çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| RAG-01 | ✅ Kapandı | BM25 indeksi `_ensure_bm25_index()` ile cache'leniyor, belge ekleme/silmede `_invalidate_bm25_cache()` ile yenileniyor. |
-| RAG-02 | ✅ Kapandı | `agent._tool_docs_search` artık `await asyncio.to_thread(self.docs.search, ...)` kullanıyor; event loop bloklama riski azaltıldı. |
+C-01 (RAG-04) numaralı "Event-Loop Bloklama" kritik hatası ile in-memory BM25 invalidation süreci mimari olarak çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
