@@ -55,7 +55,7 @@
     - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
     - [13.5.7 `core/llm_client.py` — Skor: 100/100 ✅](#1357-corellmclientpy-skor-91100)
     - [13.5.8 `core/memory.py` — Skor: 100/100 ✅](#1358-corememorypy-skor-92100)
-    - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
+    - [13.5.9 `config.py` — Skor: 100/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
@@ -1119,38 +1119,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1359-configpy-skor-91100"></a>
-#### 13.5.9 `config.py` — Skor: 91/100 ✅
+#### 13.5.9 `config.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Merkez konfigürasyon omurgası — ortam değişkenlerini yükler, donanım/GPU tespiti yapar, loglama sistemini kurar ve tüm alt modüllerin kullandığı çalışma zamanı ayarlarını (`Config`) üretir.
+**Sorumluluk (Güncel):** SİDAR projesinin merkezi yapılandırma yöneticisi. Ortam değişkenlerini (`.env`) yükler, eksik değerler için "güvenli varsayılanlar" (safe defaults) atar ve çalışma anında GPU/CUDA donanım durumunu dinamik olarak tespit eder.
 
-**Yükleme Sırası ve Başlangıç Etkileri (satır 25–34, 196–197, 455–462)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `.env` dosyası modül importunda yüklenir; bulunamazsa varsayılanlarla devam edilir.
-- `HARDWARE = check_hardware()` çağrısı import anında bir kez çalışır; GPU/CPU/NVML tespiti bu aşamada tetiklenir.
-- Modül sonunda `Config.initialize_directories()` çağrılarak dizinler başlangıçta hazır hale getirilir.
+Bu dosya projenin statik bir ayar dosyasından öte, sistemin donanımını ve yeteneklerini analiz eden dinamik bir "başlangıç (bootstrap)" katmanıdır.
 
-**Son Güncelleme (13.5.9 iyileştirmesi)**
+- **Tip Güvenliği (Type Safety):** `.env` dosyasından gelen string değerleri (örn. `"True"`, `"False"`, `"10"`) güvenli bir şekilde `bool` ve `int` tiplerine dönüştürerek diğer modüllerde yaşanabilecek çalışma zamanı (runtime) çökmelerini engeller.
+- **Donanım Algılama (Hardware Awareness):** Sistemde GPU olup olmadığını (`USE_GPU`) ve kullanılabilir CUDA belleğini otomatik tespit eder. RAG ve Ollama/Gemini istemcileri bu parametreleri okuyarak kendilerini CPU veya GPU moduna ayarlar.
+- **Merkezi Parametre Yönetimi:** ReAct adım limitlerinden (`MAX_REACT_STEPS`), RAG parçalama boyutlarına (`RAG_CHUNK_SIZE`) kadar tüm hiperparametreleri tek bir kaynakta toplar.
 
-- `get_bool_env(...)` boş/yalnızca whitespace değerleri artık `False` olarak yanlış yorumlamıyor; bu durumda doğrudan verilen `default` değerine dönüyor.
-- Boolean parse öncesi `strip().lower()` kullanımıyla çevresel boşluk kaynaklı sürpriz davranışlar giderildi.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 Tüm Proje Dosyaları: Sistemin hemen hemen her modülü (`web_server.py`, `sidar_agent.py`, `llm_client.py` vb.) kendi ayarlarını çekmek için `from config import Config` çağrısı yapar.
+
+**Mimari Özeti (Tipik 1–345 satır)**
+
+| Satır (Yaklaşık) | Pattern | Açıklama |
+|------------------|---------|----------|
+| 1–50 | dotenv & Paths | Proje kök dizini (`BASE_DIR`) tespiti ve `.env` dosyasının güvenli şekilde yüklenmesi |
+| 225 | Provider Selection | `AI_PROVIDER` (Ollama/Gemini) merkezi seçimi |
+| 230–233 | Model Config | `OLLAMA_URL`, `CODING_MODEL` ve `TEXT_MODEL` tanımlamaları |
+| 243–257 | GPU Detection | Donanım (CUDA/PyTorch) tespiti, `USE_GPU` flag'i ve `GPU_MEMORY_FRACTION` (VRAM) sınırlandırması |
+| 273–274 | ReAct Limits | Sonsuz döngüleri engellemek için `MAX_REACT_STEPS` ve `REACT_TIMEOUT` ayarları |
+| 290–292 | RAG Hyperparams | `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP` vektör arama kalibrasyonları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
-| C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm tip dönüşüm (casting) hataları ve donanım algılama blokajları giderilmiştir.
 
-**Kapanan Bulgu (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| C-03 | ✅ Kapandı | `get_bool_env` boş/whitespace env değerlerinde artık `default` döndürüyor; yanlış boolean parse riski azaltıldı. |
+CONF-01 ve CONF-02 numaralı "Tip Dönüşümü (Boolean Parsing)" ve "Güvenli Varsayılan (Fallback) Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

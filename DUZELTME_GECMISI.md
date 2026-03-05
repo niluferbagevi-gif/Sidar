@@ -108,6 +108,17 @@
 
 ---
 
+### ✅ §13.5.9 `config.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ortam değişkenlerinden (`.env`) gelen string verilerin yanlış yorumlanması sebebiyle oluşan gizli hataların (silent bugs) ve çökme risklerinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CONF-01 | ✅ Kapandı | Tip Dönüşüm Hataları (Boolean Parsing): Python'un yerleşik `bool("False")` çağrısının `True` dönmesi sebebiyle, `.env` dosyasında kapalı olan özelliklerin (örn. `DEBUG_MODE=False`) yanlışlıkla aktif olması sorunu giderildi. Koda string değerleri (`true/false/1/0`) doğru yorumlayan özel bir `_parse_bool` (veya eşdeğeri) tip dönüştürücü mantığı eklendi. |
+| CONF-02 | ✅ Kapandı | Güvenli Varsayılan (Fallback) Eksikliği: `.env` dosyasının yanlışlıkla silinmesi veya eksik parametre içermesi durumunda sistemin `KeyError` vererek çökmesi engellendi. Tüm kritik `os.getenv` çağrılarına güvenli ve mantıklı varsayılan değerler (safe defaults) atandı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
