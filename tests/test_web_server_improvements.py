@@ -27,3 +27,22 @@ def test_rate_limiter_uses_config_values():
     assert "_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS" in src
     assert "_RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO" in src
     assert "_RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW" in src
+
+
+def test_rate_limiter_get_io_uses_prefix_match_for_dynamic_routes():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "is_io_route = any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS)" in src
+    assert '"/github-repos"' in src
+    assert '"/sessions"' in src
+    assert '"/rag/"' in src
+
+
+def test_cors_allows_localhost_ports_via_regex():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "allow_origin_regex=" in src
+    assert "localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0" in src
+
+
+def test_uvicorn_log_level_is_lowercased():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "log_level=args.log.lower()" in src
