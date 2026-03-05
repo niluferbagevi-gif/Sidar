@@ -206,6 +206,16 @@
 
 ---
 
+### ✅ §13.5.18 `core/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Çekirdek modül eklemelerinde veya isim değişikliklerinde `__all__` listesinin eski kalması sonucu oluşan çalışma zamanı (runtime) hatalarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CORE-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik stringlerden oluşması nedeniyle yaşanan senkronizasyon sorunu, `_EXPORTED_CORE` tuple yapısı ve list comprehension (`[cls.__name__ for cls in ...]`) kullanımıyla dinamik hale getirilerek çözüldü. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

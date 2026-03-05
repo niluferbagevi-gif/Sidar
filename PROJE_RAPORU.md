@@ -64,7 +64,7 @@
     - [13.5.15 `managers/security.py` — Skor: 100/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 100/100 ✅](#13517-managersinitpy-skor-98100)
-    - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
+    - [13.5.18 `core/__init__.py` — Skor: 100/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
@@ -1499,31 +1499,42 @@ Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_G
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13518-coreinitpy-skor-99100"></a>
-#### 13.5.18 `core/__init__.py` — Skor: 99/100 ✅
+#### 13.5.18 `core/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Core paketinin dışa aktarma katmanı — bellek, LLM istemcisi ve RAG depo sınıflarını tek import yüzeyinde toplar.
+**Sorumluluk (Güncel):** Projenin çekirdek mantığını yürüten sınıfları (`LLMClient`, `ConversationMemory`, `DocumentStore`) tek bir paket altında toplar ve bu sınıfların dışarıya kontrollü aktarılmasını sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Export sözleşmesi tek kaynakta toplandı: `_EXPORTED_CORE_SYMBOLS` tuple’ı ile dışa açılacak semboller merkezileştirildi.
-- `__all__` artık manuel string listesinden değil, sembol adlarından türetiliyor (`[sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]`).
+Bu dosya, SİDAR'ın beynini oluşturan alt sistemlerin giriş kapısıdır.
+
+- **Merkezi Çekirdek Arayüzü:** Ajan veya sunucu katmanının, çekirdek özelliklere erişirken üç farklı dosya yoluyla uğraşması yerine `from core import ...` şeklinde standart bir yol izlemesine imkan tanır.
+- **Bakım Kolaylığı (Dinamik `__all__`):** Sınıf listesi `_EXPORTED_CORE` adlı tek bir "doğruluk kaynağında" (Source of Truth) tutulur. Yeni bir çekirdek modül eklendiğinde `__all__` listesini manuel güncelleme zorunluluğu yoktur; sistem otomatik olarak yeni sınıfı export listesine dahil eder.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `core/llm_client.py`, `core/memory.py`, `core/rag.py`: Bu dosyadaki ana sınıflar burada birleştirilir.
+- 🔗 `agent/sidar_agent.py`: Ajan, LLM iletişimi ve hafıza yönetimi için gerekli araçları bu dosya üzerinden içe aktarır.
+- 🔗 `web_server.py`: Web sunucusu, oturum ve belge yönetimi için çekirdek sınıflara buradan erişir.
+
+**Mimari Özeti (satır 1–15)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–4 | Modül İthalatı | Çekirdek modüllerin (`LLMClient`, `Memory`, `RAG`) göreceli (relative) importu |
+| 8–12 | `_EXPORTED_CORE` | Aktif sınıfları referans olarak tutan ve hata riskini azaltan merkezi tuple yapısı |
+| 15 | Dinamik `__all__` | `cls.__name__` yöntemiyle üretilen, `from core import *` kullanımını güvenli kılan dinamik liste |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CORE-02 | Yeni bir core sembolü import edilip `_EXPORTED_CORE_SYMBOLS` listesine eklenmezse public API dışında kalabilir; tek-nokta yönetim sayesinde risk düşüktür | 16–22 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Mimari tutarlılık ve export güvenliği en üst seviyededir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| CORE-01 | ✅ Kapandı | `__all__` manuel bakım yerine sembol tuple’ından türetiliyor, drift riski azaltıldı. |
+CORE-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu, dinamik sınıflama yapısına geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
