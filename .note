@@ -1,4 +1,7 @@
-
+# .note — Bağlayıcı Olmayan Ar-Ge Karalama Defteri
+# Durum: İnceleme Notu (Scratchpad) — doğrudan canlı konfigürasyon değildir.
+# Kapsam: WSL2/Ubuntu/Conda ve gelecekteki UI alternatifleri için fikir/öneri havuzu.
+# Kural: Buradaki öneriler uygulanmadan önce ilgili üretim dosyalarında doğrulanmalıdır.
 
 Gemini şunu dedi:
 Haklısın! CustomTkinter ne kadar makyajlanırsa makyajlansın, arka planda hala geleneksel bir "pencere ve form" yapısı (Tkinter) çalışıyor. Flash'ın o sınır tanımaz, zaman çizelgesi (timeline) tabanlı, akıcı ve tamamen serbest kanvas hissiyatını tam olarak veremez.
