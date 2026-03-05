@@ -22,7 +22,7 @@
   - [Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi)
 - [8. Dosyalar Arası Uyumsuzluk Tablosu](#8-dosyalar-arasi-uyumsuzluk-tablosu)
   - [8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti](#8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti)
-  - [8.3 Özet Tablo — Tüm Açık Sorunlar (2026-03-03 Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
+  - [8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
 - [9. Bağımlılık Analizi](#9-bagimlilik-analizi)
   - [`environment.yml` — Güncel Durum Tablosu](#environmentyml-guncel-durum-tablosu)
 - [10. Güçlü Yönler](#10-guclu-yonler)
@@ -375,29 +375,18 @@ sidar_project/
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel"></a>
-### 8.3 Özet Tablo — Tüm Açık Sorunlar (2026-03-03 Güncel)
+### 8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)
 
-| ID | Önem | Konum | Açıklama | Durum |
-|----|------|-------|----------|-------|
-| [N-01](DUZELTME_GECMISI.md#n-01) | 🟡 ORTA | `core/__init__.py:10` | `__version__ = "2.6.1"` — kod v2.7.0 | ✅ Kapalı |
-| [N-02](DUZELTME_GECMISI.md#n-02) | 🔴 YÜKSEK | `.env.example:125` | `DOCKER_IMAGE` vs `DOCKER_PYTHON_IMAGE` | ✅ Kapalı |
-| [N-03](DUZELTME_GECMISI.md#n-03) | 🟢 DÜŞÜK | `web_server.py:321` | `agent.docs._index` private erişim — /metrics | ✅ Kapalı |
-| [N-04](DUZELTME_GECMISI.md#n-04) | 🟢 DÜŞÜK | `environment.yml:11` | `packaging>=23.0` conda bölümünde | ✅ Kapalı |
-| [O-01](DUZELTME_GECMISI.md#o-01) | 🟢 DÜŞÜK | 4 modül docstring | `Sürüm: 2.6.1` — v2.7.0 ile uyumsuz | ✅ Kapalı |
-| [O-02](DUZELTME_GECMISI.md#o-02) | 🟡 ORTA | `web_server.py:325` | `_index` private erişim — /metrics | ✅ Kapalı |
-| [O-03](DUZELTME_GECMISI.md#o-03) | 🟡 ORTA | `web_server.py:590` | `_repo.get_pulls()` — /github-prs | ✅ Kapalı |
-| [O-04](DUZELTME_GECMISI.md#o-04) | 🟢 DÜŞÜK | `sidar_agent.py:626` | `_repo.default_branch` — smart_pr | ✅ Kapalı |
-| [O-05](DUZELTME_GECMISI.md#o-05) | 🟡 ORTA | `web_server.py:92` | RAG GET endpoint'leri rate limit dışı | ✅ Kapalı |
-| [O-06](DUZELTME_GECMISI.md#o-06) | 🟢 DÜŞÜK | `core/rag.py:399` | `add_document_from_file` çift chunking | ✅ Kapalı |
-| <a id="p-01"></a>[P-01](#p-01) | 🟢 DÜŞÜK | `Dockerfile:25` | `LABEL version="2.6.1"` — proje v2.7.0 | ✅ Kapalı |
-| <a id="p-02"></a>[P-02](#p-02) | 🟢 DÜŞÜK | `PROJE_RAPORU.md:121` | "PyTorch CUDA 12.1 wheel" — gerçekte cu124 | ✅ Kapalı |
-| <a id="p-03"></a>[P-03](#p-03) | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `DOCKER_EXEC_TIMEOUT` belgelenmemiş | ✅ Kapalı |
-| <a id="p-04"></a>[P-04](#p-04) | 🟢 DÜŞÜK | `environment.yml:17` | Comment "CUDA 12.1" — gerçekte cu124 | ✅ Kapalı |
-| <a id="p-05"></a>[P-05](#p-05) | 🟢 DÜŞÜK | `config.py:167` | WSL2 uyarısında cu121 URL önerisi — proje cu124 | ✅ Kapalı |
-| <a id="p-06"></a>[P-06](#p-06) | 🟢 DÜŞÜK | `managers/__init__.py` | `TodoManager` `__all__`'dan eksik | ✅ Kapalı |
-| <a id="p-07"></a>[P-07](#p-07) | 🟢 DÜŞÜK | `.env.example` (eksik satır) | `RAG_FILE_THRESHOLD` belgelenmemiş | ✅ Kapalı |
+> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, kod tabanındaki son büyük güncellemelerin rapora yansıtılamamasından kaynaklı yeni **Drift (Uyumsuzluk)** sorunları tespit edilmiştir.
 
-**Toplam Açık:** 0 sorun ✅ | **Toplam Kapalı:** 52 (P-01–P-07 bu turda — Session 8, 2026-03-03 — kapatıldı)
+| ID | Tür (Önem) | Konum | Açıklama | Durum |
+|----|------------|-------|----------|-------|
+| **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Rapor, tüm testlerin `test_sidar.py` içinde olduğunu iddia etmektedir. Ancak güncel kod tabanında testler `tests/` dizini altında 20'den fazla dosyaya (modüler olarak) bölünmüştür. Rapor geride kalmıştır. | ⚠️ Açık |
+| **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesindeki minimum sürümler (`fastapi 0.104+`, `pytest 7.4+`) ile `environment.yml` içindeki kilitli güncel sürümler (`fastapi~=0.115.0`, `pytest~=8.3.3`) birbirini tutmamaktadır. | ⚠️ Açık |
+| **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | **Araç Listesi (Prompt) Sapması:** Sistem promptundaki statik araç listesi dokümantasyonu ile `sidar_agent.py` içindeki dinamik `dispatch` tablosu arasında manuel eşleme yapılmaktadır, bu durum sürekli bir drift riski oluşturmaktadır. | ⚠️ Açık |
+| **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | **Tarihsel Sapma:** Dosyanın içindeki son güncelleme tarihi (2026-03-02), ana rapordaki kapanış oturumları (2026-03-05) ile senkronize değildir. | ⚠️ Açık |
+
+*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. Toplam Aktif Uyumsuzluk: 4)*
 
 ---
 
