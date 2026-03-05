@@ -62,7 +62,7 @@
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
-    - [13.5.18 `core/__init__.py` — Skor: 97/100 ✅](#13518-coreinitpy-skor-97100)
+    - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 96/100 ✅](#13519-agentinitpy-skor-96100)
     - [13.5.20 `tests/test_sidar.py` — Skor: 93/100 ✅](#13520-teststestsidarpy-skor-93100)
     - [13.5.21 `web_ui/index.html` — Skor: 89/100 ✅](#13521-webuiindexhtml-skor-89100)
@@ -1636,22 +1636,27 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13518-coreinitpy-skor-97100"></a>
-#### 13.5.18 `core/__init__.py` — Skor: 97/100 ✅
+<a id="13518-coreinitpy-skor-99100"></a>
+#### 13.5.18 `core/__init__.py` — Skor: 99/100 ✅
 
 **Sorumluluk:** Core paketinin dışa aktarma katmanı — bellek, LLM istemcisi ve RAG depo sınıflarını tek import yüzeyinde toplar.
 
-**Paket Sözleşmesi (satır 10–16)**
+**Bu Turdaki İyileştirmeler**
 
-- `__version__` değeri paket sürümünü merkezi noktadan sunar.
-- `ConversationMemory`, `LLMClient`, `DocumentStore` sembollerinin `core` seviyesinden import edilmesini sağlar.
-- `__all__` ile export sınırı açıkça tanımlanmıştır.
+- Export sözleşmesi tek kaynakta toplandı: `_EXPORTED_CORE_SYMBOLS` tuple’ı ile dışa açılacak semboller merkezileştirildi.
+- `__all__` artık manuel string listesinden değil, sembol adlarından türetiliyor (`[sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]`).
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| CORE-01 | `__all__` manuel yönetildiği için yeni core modülleri eklendiğinde liste güncellenmezse public API ile gerçek içerik arasında drift oluşabilir | 16 | Düşük |
+| CORE-02 | Yeni bir core sembolü import edilip `_EXPORTED_CORE_SYMBOLS` listesine eklenmezse public API dışında kalabilir; tek-nokta yönetim sayesinde risk düşüktür | 16–22 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| CORE-01 | ✅ Kapandı | `__all__` manuel bakım yerine sembol tuple’ından türetiliyor, drift riski azaltıldı. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 

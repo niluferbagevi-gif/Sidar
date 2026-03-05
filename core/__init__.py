@@ -9,8 +9,15 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 
 __version__ = "2.7.0"
 
-from .memory import ConversationMemory
 from .llm_client import LLMClient
+from .memory import ConversationMemory
 from .rag import DocumentStore
 
-__all__ = ["ConversationMemory", "LLMClient", "DocumentStore", "__version__"]  
+# Tek kaynak: core dışına açılacak sınıf sembolleri burada tutulur.
+_EXPORTED_CORE_SYMBOLS = (
+    ConversationMemory,
+    LLMClient,
+    DocumentStore,
+)
+
+__all__ = [sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]
