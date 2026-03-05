@@ -19,3 +19,11 @@ def test_rate_limiter_has_bucket_pruning():
     src = Path("web_server.py").read_text(encoding="utf-8")
     assert "def _prune_rate_buckets" in src
     assert "_prune_rate_buckets(now)" in src
+
+
+def test_rate_limiter_uses_config_values():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "_RATE_LIMIT           = cfg.RATE_LIMIT_CHAT" in src
+    assert "_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS" in src
+    assert "_RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO" in src
+    assert "_RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW" in src
