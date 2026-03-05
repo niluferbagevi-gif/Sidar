@@ -2241,6 +2241,36 @@ function escHtml(str) {
   return d.innerHTML;
 }
 
+
+function sanitizeRenderedHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+
+  const blockedTags = new Set(['script', 'iframe', 'object', 'embed', 'form', 'meta', 'link']);
+  template.content.querySelectorAll('*').forEach(node => {
+    const tag = node.tagName.toLowerCase();
+    if (blockedTags.has(tag)) {
+      node.remove();
+      return;
+    }
+
+    for (const attr of [...node.attributes]) {
+      const name = attr.name.toLowerCase();
+      const value = (attr.value || '').trim().toLowerCase();
+      if (name.startsWith('on')) {
+        node.removeAttribute(attr.name);
+        continue;
+      }
+      const isUrlAttr = name === 'href' || name === 'src' || name === 'xlink:href';
+      if (isUrlAttr && (value.startsWith('javascript:') || value.startsWith('data:text/html'))) {
+        node.removeAttribute(attr.name);
+      }
+    }
+  });
+
+  return template.innerHTML;
+}
+
 function scrollBottom() {
   const msgs = document.getElementById('messages');
   msgs.scrollTop = msgs.scrollHeight;
@@ -2321,7 +2351,7 @@ function finalizeMsg(id, rawText) {
   const body   = el.querySelector('.msg-body');
   const cursor = document.getElementById(`${id}-cur`);
   if (cursor) cursor.remove();
-  body.innerHTML = marked.parse(rawText || '*(yanıt alınamadı)*');
+  body.innerHTML = sanitizeRenderedHtml(marked.parse(rawText || '*(yanıt alınamadı)*'));
   body.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
 
   // Kod bloklarına kopyala butonu ekle

@@ -65,7 +65,7 @@
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/test_sidar.py` — Skor: 94/100 ✅](#13520-teststestsidarpy-skor-94100)
-    - [13.5.21 `web_ui/index.html` — Skor: 89/100 ✅](#13521-webuiindexhtml-skor-89100)
+    - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 83/100 ✅](#13522-githubuploadpy-skor-83100)
     - [13.5.23 `Dockerfile` — Skor: 90/100 ✅](#13523-dockerfile-skor-90100)
     - [13.5.24 `docker-compose.yml` — Skor: 88/100 ✅](#13524-docker-composeyml-skor-88100)
@@ -1726,29 +1726,28 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13521-webuiindexhtml-skor-89100"></a>
-#### 13.5.21 `web_ui/index.html` — Skor: 89/100 ✅
+<a id="13521-webuiindexhtml-skor-92100"></a>
+#### 13.5.21 `web_ui/index.html` — Skor: 92/100 ✅
 
 **Sorumluluk:** Web arayüzünün tek dosya istemci katmanı — tema, sohbet akışı, SSE yanıt işleme, oturum yönetimi, branch/repo modal etkileşimleri, dosya ekleme ve yardımcı UI panellerini yönetir.
 
-**Ön Yüz Mimarisi (satır 1–1814+)**
+**Bu Turdaki İyileştirmeler**
 
-- HTML + geniş kapsamlı CSS + inline JavaScript tek dosyada toplanmıştır.
-- Vendor-first yaklaşımı (`/vendor/*`) ile highlight.js ve marked yerelden yüklenir; eksikte CDN fallback devreye girer.
-- Tema (`localStorage`), mobil/sidebar düzeni ve çoklu panel geçişleri istemci tarafında yönetilir.
-
-**İşlevsel Kapsam (satır 1818–2545+)**
-
-- `/chat` SSE akışı okunur; chunk’lar buffer ile ayrıştırılıp mesaj kartları güncellenir.
-- Oturum (`/sessions`), repo (`/set-repo`) ve branch (`/set-branch`) akışları için modal/önbellek (`_cachedRepos`, `_cachedBranches`) mantığı bulunur.
-- Kod bloklarında highlight + “Kopyala” butonu ve dosya ekleme önizleme gibi UX iyileştirmeleri vardır.
+- `marked.parse(...)` çıktısı doğrudan DOM’a basılmadan önce `sanitizeRenderedHtml(...)` ile temizleniyor.
+- Sanitizer katmanı; `script/iframe/object/embed/form/meta/link` etiketlerini kaldırıyor, `on*` event attribute’larını siliyor ve `javascript:` / `data:text/html` URL şemalarını engelliyor.
+- Böylece model çıktısındaki ham HTML için XSS yüzeyi önemli ölçüde daraltıldı.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| UI-01 | `marked.parse(rawText)` çıktısı doğrudan `body.innerHTML` ile DOM’a basılıyor; sanitize katmanı olmadığı için model çıktısındaki ham HTML/XSS payload yüzeyi artar | 2324 | Orta |
-| UI-02 | HTML/CSS/JS’nin tek dosyada birleşik olması (2000+ satır) bakım ve modüler test edilebilirlik maliyetini yükseltir | 1–2545+ | Düşük |
+| UI-02 | Sanitizer katmanı custom/allowlist tabanlıdır; çok kompleks HTML payload varyasyonlarında DOMPurify benzeri battle-tested bir kütüphane kadar kapsamlı olmayabilir | 2244–2271 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| UI-01 | ✅ Kapandı | `marked.parse` çıktısı artık sanitize edilmeden `innerHTML`’e basılmıyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
