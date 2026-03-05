@@ -57,7 +57,7 @@
     - [13.5.8 `core/memory.py` — Skor: 100/100 ✅](#1358-corememorypy-skor-92100)
     - [13.5.9 `config.py` — Skor: 100/100 ✅](#1359-configpy-skor-91100)
     - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
-    - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
+    - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
@@ -1205,33 +1205,44 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13511-managersgithubmanagerpy-skor-93100"></a>
-#### 13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅
+#### 13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın GitHub API (PyGithub) entegrasyonu. Uzak depo (repo) analizi, PR (Pull Request) yönetimi, dal (branch) işlemleri ve güvenli uzak dosya okuma görevlerini yürütür.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `create_or_update_file()` içinde dosya yok kararı artık 404/not-found odaklı yapılır; diğer gerçek API/izin hataları “dosya oluştur” yoluna düşürülmeden doğrudan raporlanır.
-- `list_repos(owner=...)` akışı exception-driven fallback yerine hesap tipini (`account.type`) okuyarak organizasyon/kullanıcı repo tipi seçer.
-- Bu sayede hata maskelenmesi azalır ve owner repo listelemede kontrol akışı daha öngörülebilir hale gelir.
+Bu dosya ajanın sadece yerel diskte değil, bulutta (GitHub) da çalışabilmesini sağlar.
+
+- **Güvenli Dosya Okuma (Binary Protection):** Ajan uzak bir depodan (örneğin bir resim veya derlenmiş binary) dosya okumak istediğinde, sistem dosyanın uzantısını `SAFE_TEXT_EXTENSIONS` ve `SAFE_EXTENSIONLESS` whitelist'lerine göre filtreler. Uygun değilse okumayı reddederek LLM'i uyarır, böylece bağlam penceresinin anlamsız karakterlerle dolmasını önler.
+- **Injection Koruması:** Branch oluşturma işlemlerinde (`create_branch`), kullanıcı/ajan tarafından sağlanan dal adları katı bir Regex (`_BRANCH_RE`) kontrolünden geçirilir.
+- **Zengin Veri Sağlayıcı:** PR listeleme, commit geçmişi okuma, kod içinde arama yapma (`search_code`) gibi işlevleriyle ajana doğrudan mühendislik bağlamı sağlar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajanın kullandığı `github_read`, `github_pr_create`, `github_pr_list` gibi araçlar bu sınıfı tetikler.
+- 🔗 `web_server.py`: Web arayüzündeki "GitHub" paneli, repoları ve PR listesini doğrudan bu modülün `get_pull_requests_detailed` metodu üzerinden çeker.
+
+**Mimari Özeti (satır 1–450)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 31–38 | Güvenlik (Whitelist) | Yalnızca okunmasına izin verilen metin ve konfigürasyon dosyası (`.py`, `Makefile` vb.) uzantıları |
+| 52–71 | Modern Authentication | Deprecated `login_or_token` yerine güncel ve güvenli `Auth.Token(...)` kullanımı |
+| 141–187 | Uzak Dosya Okuma | `read_remote_file` metodu içinde whitelist kontrolü ve `UnicodeDecodeError` yakalayan Binary Guard (İkili Dosya Koruması) |
+| 245–271 | Branch Yönetimi | `create_branch` metodunda shell-injection ve geçersiz dal adı engellemesi |
+| 412–443 | API Endpoint Desteği | Web sunucusu (FastAPI) için PR verilerini ham formatta (`get_pull_requests_detailed`) dışa aktaran yapısal metot |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GH-03 | `account.type` bilgisi API yanıtına bağlıdır; beklenmeyen/boş tiplerde varsayılan `owner` stratejisi bazı özel hesaplarda eksik sonuç döndürebilir | 115–119 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm binary okuma ve injection zafiyetleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| GH-01 | ✅ Kapandı | Geniş `except` ile “dosya yok” fallback’i kaldırıldı; yalnızca not-found senaryosunda create akışı çalışıyor. |
-| GH-02 | ✅ Kapandı | `list_repos(owner=...)` artık exception tabanlı organizasyon→kullanıcı fallback’i yerine hesap tipi tabanlı seçim yapıyor. |
+GH-01 ve GH-02 numaralı "Binary Dosya Okuma Çökmesi" ve "Deprecated Authentication" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
