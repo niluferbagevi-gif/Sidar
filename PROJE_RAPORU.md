@@ -26,14 +26,16 @@
 - [9. Bağımlılık Analizi](#9-bagimlilik-analizi)
   - [`environment.yml` — Güncel Durum Tablosu](#environmentyml-guncel-durum-tablosu)
 - [10. Güçlü Yönler](#10-guclu-yonler)
-  - [10.1 Mimari — Önceki Versiyona Kıyasla İyileşmeler](#101-mimari-onceki-versiyona-kiyasla-iyilesmeler)
-  - [10.2 Docker REPL Sandbox (Yeni)](#102-docker-repl-sandbox-yeni)
-  - [10.3 Çoklu Oturum Sistemi (Yeni)](#103-coklu-oturum-sistemi-yeni)
-  - [10.4 GPU Hızlandırma Altyapısı (Yeni)](#104-gpu-hizlandirma-altyapisi-yeni)
-  - [10.5 Web Arayüzü — Özellikler (v2.6.1 ile güncellendi)](#105-web-arayuzu-ozellikler-v261-ile-guncellendi)
-  - [10.6 Rate Limiting (Yeni)](#106-rate-limiting-yeni)
-  - [10.7 Recursive Character Chunking (Yeni)](#107-recursive-character-chunking-yeni)
-  - [10.8 LLM Stream — Buffer Güvenliği](#108-llm-stream-buffer-guvenligi)
+  - [10.1 Mimari — Temel İyileştirmeler](#101-mimari-onceki-versiyona-kiyasla-iyilesmeler)
+  - [10.2 Docker REPL Sandbox](#102-docker-repl-sandbox-yeni)
+  - [10.3 Çoklu Oturum Sistemi ve Bellek Şifrelemesi (YENİ)](#103-coklu-oturum-sistemi-yeni)
+  - [10.4 Sonsuz Hafıza ve Hibrit RAG (YENİ)](#104-gpu-hizlandirma-altyapisi-yeni)
+  - [10.5 Akıllı Hızlandırma: Direct Route & Parallel Araçlar (YENİ)](#105-web-arayuzu-ozellikler-v261-ile-guncellendi)
+  - [10.6 Web Arayüzü — İleri Özellikler](#106-rate-limiting-yeni)
+  - [10.7 Görev Yönetimi (TodoManager) (YENİ)](#107-recursive-character-chunking-yeni)
+  - [10.8 Rate Limiting & Güvenlik](#108-llm-stream-buffer-guvenligi)
+  - [10.9 Recursive Character Chunking](#109-recursive-character-chunking)
+  - [10.10 LLM Stream — Buffer Güvenliği](#1010-llm-stream-buffer-guvenligi)
 - [11. Güvenlik Değerlendirmesi](#11-guvenlik-degerlendirmesi)
 - [12. Test Kapsamı](#12-test-kapsami)
   - [Mevcut Test Yapısı (test_sidar.py)](#mevcut-test-yapisi-testsidarpy)
@@ -449,147 +451,103 @@ sidar_project/
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="101-mimari-onceki-versiyona-kiyasla-iyilesmeler"></a>
-### 10.1 Mimari — Önceki Versiyona Kıyasla İyileşmeler
+### 10.1 Mimari — Temel İyileştirmeler
 
 - ✅ **Dispatcher tablosu:** genişleyen araç seti için `if/elif` zinciri yerine merkezi `dict` dispatch + ayrı `_tool_*` metodları kullanılıyor
 - ✅ **Thread pool kullanımı:** Disk I/O (`asyncio.to_thread`), Docker REPL (`asyncio.to_thread`), DDG araması (`asyncio.to_thread`) event loop'u bloke etmiyor
 - ✅ **Async lock yönetimi:** `_agent_lock = asyncio.Lock()` (web_server), `agent._lock = asyncio.Lock()` (sidar_agent) doğru event loop'ta yaşıyor
-- ✅ **Tekil `asyncio.run()` çağrısı:** CLI'da tüm döngü tek bir `asyncio.run(_interactive_loop_async(agent))` içinde
+- ✅ **Akıllı Launcher:** `main.py` etkileşimli bir sihirbaz olarak yapılandırılmış, asıl CLI döngüsü `cli.py` içinde tek bir `asyncio.run` içinde izole edilmiştir
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="102-docker-repl-sandbox-yeni"></a>
-### 10.2 Docker REPL Sandbox (Yeni)
+### 10.2 Docker REPL Sandbox
 
 ```python
-# code_manager.py — Docker izolasyon parametreleri
 container = self.docker_client.containers.run(
-    image=self.docker_image,   # cfg.DOCKER_PYTHON_IMAGE (varsayılan: python:3.11-alpine)
+    image=self.docker_image,   # python:3.11-alpine varsayılanı
     command=["python", "-c", code],
     detach=True,
     network_disabled=True,    # Dış ağa erişim yok
     mem_limit="128m",         # 128 MB RAM limiti
     cpu_quota=50000,          # %50 CPU limiti
-    working_dir="/tmp",
 )
 ```
 
-- ✅ Ağ izolasyonu: `network_disabled=True`
-- ✅ Bellek sınırı: 128 MB
-- ✅ CPU sınırı: %50
-- ✅ 10 saniye zaman aşımı koruması
-- ✅ Container otomatik temizleniyor (`container.remove(force=True)`)
+- ✅ 10 saniye zaman aşımı koruması ve otomatik temizleme (`force=True`)
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="103-coklu-oturum-sistemi-yeni"></a>
-### 10.3 Çoklu Oturum Sistemi (Yeni)
+### 10.3 Çoklu Oturum Sistemi ve Bellek Şifrelemesi (YENİ)
 
-`core/memory.py` artık UUID tabanlı, `data/sessions/*.json` şeklinde ayrı dosyalarda saklanan çoklu sohbet oturum yönetimini desteklemektedir:
-
-- ✅ `create_session()`, `load_session()`, `delete_session()`, `update_title()` API'si
-- ✅ En son güncellenen oturum başlangıçta otomatik yükleniyor
-- ✅ Web UI'da sidebar ile oturum geçişi
-- ✅ FastAPI session endpoint'leri (`GET /sessions`, `POST /sessions/new`, `DELETE /sessions/{id}`)
-- ✅ Oturum başlığı ilk mesajdan otomatik üretiliyor
+- ✅ **Kalıcılık:** UUID tabanlı, `data/sessions/*.json` dosyalarında çoklu sohbet oturumu yönetimi
+- ✅ **Fernet Şifreleme:** `.env` içinde `MEMORY_ENCRYPTION_KEY` verildiğinde sohbet dosyaları diske `cryptography` ile şifrelenerek yazılır
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="104-gpu-hizlandirma-altyapisi-yeni"></a>
-### 10.4 GPU Hızlandırma Altyapısı (Yeni)
+### 10.4 Sonsuz Hafıza ve Hibrit RAG (YENİ)
 
-```python
-# config.py — Donanım tespiti
-HARDWARE = check_hardware()   # Modül yükleme anında bir kez çalışır
-
-# HardwareInfo alanları
-has_cuda, gpu_name, gpu_count, cpu_count, cuda_version, driver_version
-
-# GPU parametreleri Config'de
-USE_GPU, GPU_INFO, GPU_DEVICE, MULTI_GPU, GPU_MEMORY_FRACTION, GPU_MIXED_PRECISION
-```
-
-- ✅ WSL2 tespiti: `/proc/sys/kernel/osrelease` kontrolü
-- ✅ VRAM fraksiyonu: `torch.cuda.set_per_process_memory_fraction()`
-- ✅ pynvml — WSL2'de graceful fallback (hata vermez, loglar)
-- ✅ nvidia-smi subprocess fallback — driver version almak için
+- ✅ **Vector Archive:** Hafıza sınırına yaklaşıldığında eski konuşmalar silinmeden önce ChromaDB'ye otomatik arşivlenir
+- ✅ **Otomatik RAG Yönlendirmesi:** `RAG_FILE_THRESHOLD` aşılan büyük dosyalarda model, doğrudan tam metin yerine verimli RAG indekslemesine yönlendirilir
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="105-web-arayuzu-ozellikler-v261-ile-guncellendi"></a>
-### 10.5 Web Arayüzü — Özellikler (v2.6.1 ile güncellendi)
+### 10.5 Akıllı Hızlandırma: Direct Route & Parallel Araçlar (YENİ)
 
-- ✅ Sidebar ile oturum geçmişi
-- ✅ Koyu/Açık tema (localStorage tabanlı)
-- ✅ Klavye kısayolları (`Ctrl+K`, `Ctrl+L`, `Ctrl+T`, `Esc`)
-- ✅ Streaming durdur butonu (AbortController)
-- ✅ Kod bloğu kopyala butonu (hover ile görünür)
-- ✅ Dosya ekleme (200 KB limit, metin/kod dosyaları)
-- ✅ Mesaj düzenleme ve kopyala aksiyonları
-- ✅ Oturum arama/filtreleme
-- ✅ **[v2.6.1]** Model ismi dinamik (`/status` üzerinden)
-- ✅ **[v2.6.1]** Dal seçimi gerçek `git checkout` ile backend'e bağlı
-- ✅ **[v2.6.1]** Sistem Durumu'nda `pkg_status` sunucudan alınıyor
-- ✅ **[v2.6.1]** Oturum dışa aktarma — MD ve JSON indirme
-- ✅ **[v2.6.1]** ReAct araç görselleştirmesi — her tool çağrısı badge olarak gösteriliyor (23 araç, Türkçe etiket)
-- ✅ **[v2.6.1]** Mobil hamburger menüsü (768px altı sidebar toggle + overlay)
+- ✅ **Direct Tool Route:** Basit istekler ağır ReAct döngüsüne girmeden doğrudan ilgili araca yönlendirilir
+- ✅ **Paralel Çalıştırma (`_tool_parallel`):** Yalnızca okuma yapan güvenli araçlar `asyncio.gather` ile eşzamanlı çalıştırılabilir
+- ✅ **mtime Cache:** `SIDAR.md` ve `CLAUDE.md` gibi sistem talimat dosyalarındaki değişiklikler anlık algılanarak bellek güncellenir
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="106-rate-limiting-yeni"></a>
-### 10.6 Rate Limiting (Yeni)
+### 10.6 Web Arayüzü — İleri Özellikler
 
-```python
-# web_server.py — In-memory rate limiting (çok katmanlı)
-_RATE_LIMIT           = 20  # /chat
-_RATE_LIMIT_MUTATIONS = 60  # POST/DELETE mutasyon endpoint'leri
-_RATE_LIMIT_GET_IO    = 30  # GET I/O endpoint'leri
-_RATE_WINDOW          = 60  # saniye
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path == "/chat":
-        ...
-    elif request.method in ("POST", "DELETE"):
-        ...
-    elif request.method == "GET" and request.url.path in _RATE_GET_IO_PATHS:
-        ...
-    return await call_next(request)
-```
+- ✅ **Canlı Aktivite Paneli:** LLM akışındaki `THOUGHT:` ve `TOOL:` sentinelleri ile ajanın düşünce/araç adımları gerçek zamanlı gösterilir
+- ✅ **RAG Modalı:** Arayüz üzerinden belge ekleme/silme, URL ekleme ve vektörel arama işlemleri yapılabilir
+- ✅ **Oturum dışa aktarma ve operasyonel UX:** JSON/Markdown dışa aktarma, dal/repo yönetimi ve klavye kısayolları
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="107-recursive-character-chunking-yeni"></a>
-### 10.7 Recursive Character Chunking (Yeni)
+### 10.7 Görev Yönetimi (TodoManager) (YENİ)
 
-`core/rag.py:_recursive_chunk_text()` metodu LangChain'in `RecursiveCharacterTextSplitter` mantığını simüle etmektedir:
-
-- ✅ Öncelik sırası: `\nclass ` → `\ndef ` → `\n\n` → `\n` → ` ` → `""`
-- ✅ Overlap mekanizması: bir önceki chunk'ın sonundan `chunk_overlap` karakter alınır
-- ✅ Büyük parçalar özyinelemeli bölünür
-- ✅ Config üzerinden özelleştirilebilir
+- ✅ **TodoWrite / TodoRead / TodoUpdate:** Claude Code çalışma standardına uyumlu çok adımlı görev planlama ve ilerleme takibi
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="108-llm-stream-buffer-guvenligi"></a>
-### 10.8 LLM Stream — Buffer Güvenliği
+### 10.8 Rate Limiting & Güvenlik
 
-```python
-# llm_client.py:_stream_ollama_response
-# TCP paket sınırlarında JSON bölünmesini önlemek için:
-async for raw_bytes in resp.aiter_bytes():
-    buffer += raw_bytes.decode("utf-8", errors="replace")
-    while "\n" in buffer:
-        line, buffer = buffer.split("\n", 1)
-        # Tamamlanmamış satır buffer'da bekletilir
-```
+- ✅ **Çok katmanlı limit:** `/chat` (20 req/60s), mutasyon endpoint'leri (60 req/60s), I/O endpoint'leri (30 req/60s)
+- ✅ **TOCTOU koruması:** Asenkron lock ile eşzamanlı yoğun isteklerde olası bypass senaryoları engellenir
+- ✅ **Path Traversal ve uzantı whitelist:** `SecurityManager` filtreleri ile dosya işlemlerinde sıkı sınırlar
+
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="109-recursive-character-chunking"></a>
+### 10.9 Recursive Character Chunking
+
+- ✅ LangChain mantığına benzer `_recursive_chunk_text` akışıyla `class/def`, paragraf ve cümle sınırları önceliklendirilir
+
+
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="1010-llm-stream-buffer-guvenligi"></a>
+### 10.10 LLM Stream — Buffer Güvenliği
+
+- ✅ Multibyte UTF-8 parçalanması ve eksik JSON satırlarının TCP paket sınırlarında güvenli şekilde tamponlanması uygulanır
 
 ---
 
