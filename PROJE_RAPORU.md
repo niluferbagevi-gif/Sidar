@@ -68,7 +68,7 @@
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
-    - [13.5.24 `docker-compose.yml` — Skor: 88/100 ✅](#13524-docker-composeyml-skor-88100)
+    - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 91/100 ✅](#13525-environmentyml-skor-91100)
     - [13.5.26 `.env.example` — Skor: 90/100 ✅](#13526-envexample-skor-90100)
     - [13.5.27 `install_sidar.sh` — Skor: 85/100 ✅](#13527-installsidarsh-skor-85100)
@@ -684,7 +684,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
-- **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ⚠️ `deploy.resources` limitleri standart Compose akışında her zaman uygulanmayabilir; ayrıca `host.docker.internal` bağımlılığı platformlar arası taşınabilirlik farkı üretebilir. → Detay: §13.5.24
+- **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
@@ -1821,18 +1821,18 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13524-docker-composeyml-skor-88100"></a>
-#### 13.5.24 `docker-compose.yml` — Skor: 88/100 ✅
+<a id="13524-docker-composeyml-skor-93100"></a>
+#### 13.5.24 `docker-compose.yml` — Skor: 93/100 ✅
 
 **Sorumluluk:** Konteyner orkestrasyon tanımı — CLI/Web ve CPU/GPU olmak üzere dört servis profili için build argümanlarını, runtime environment değişkenlerini, volume/port eşleştirmelerini ve host entegrasyonunu tanımlar.
 
-**Servis Topolojisi ve Çalıştırma Modeli (satır 1–176)**
+**Servis Topolojisi ve Çalıştırma Modeli (satır 1–184)**
 
 - `sidar-ai` ve `sidar-gpu` CLI odaklıdır; interaktif kullanım için `stdin_open: true` + `tty: true` tanımlıdır.
 - `sidar-web` ve `sidar-web-gpu` web sunucusunu (`python web_server.py`) çalıştırır; CPU/GPU için farklı port varsayılanları (`7860` / `7861`) kullanır.
 - GPU servisleri `TORCH_INDEX_URL=.../cu124` ve NVIDIA device reservation ile CUDA runtime’a yönlendirilmiştir.
 
-**Operasyonel Güçlü Yanlar (satır 7–167)**
+**Operasyonel Güçlü Yanlar (satır 7–178)**
 
 - Build-time CPU/GPU ayrımı `BASE_IMAGE` + `GPU_ENABLED` argümanlarıyla nettir; Dockerfile ile uyumlu bir matrisi sürdürür.
 - Veri kalıcılığı için `data`, `logs`, `temp` dizinleri tüm servislerde ortak volume olarak bağlanır.
@@ -1842,8 +1842,8 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| DC-01 | `deploy.resources.*` sınırları klasik `docker compose up` akışında çoğunlukla uygulanmaz (Swarm odaklıdır); kaynak limiti beklentisi yalancı güven oluşturabilir | 13–16, 47–56, 98–101, 139–148 | Orta |
-| DC-02 | Host erişimi için `host.docker.internal` bağımlılığı Linux/engine kombinasyonlarında farklı davranabilir; çevresel taşınabilirlikte platform farkı riski bulunur | 29–30, 74–75, 123–124, 175–176 | Düşük |
+| DC-01 | Standart Compose çalıştırma için servis bazında `cpus` + `mem_limit` sınırları eklendi; `deploy.resources.*` sadece ek Swarm uyumluluğu için korunuyor | 12–19, 51–64, 98–109, 139–155 | ✅ Kapalı |
+| DC-02 | `OLLAMA_URL` ve `HOST_GATEWAY` env override eklendi; host bağımlılığı koşullu yapılandırılabilir hale geldi ancak varsayılan hala host-gateway varsayar | 24, 33, 69, 84, 114, 126, 160, 178 | Düşük |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
