@@ -13,6 +13,8 @@ PROJECT_DIR="$HOME/$PROJECT_NAME"
 MINICONDA_DIR="$HOME/miniconda3"
 MINICONDA_SH="$MINICONDA_DIR/miniconda.sh"
 OLLAMA_PID=""
+ALLOW_APT_UPGRADE="${ALLOW_APT_UPGRADE:-0}"
+ALLOW_OLLAMA_INSTALL_SCRIPT="${ALLOW_OLLAMA_INSTALL_SCRIPT:-0}"
 
 cleanup() {
   if [[ -n "${OLLAMA_PID}" ]] && kill -0 "${OLLAMA_PID}" >/dev/null 2>&1; then
@@ -28,8 +30,16 @@ print_header() {
 }
 
 install_system_packages() {
-  echo -e "\n📦 1. Sistem güncelleniyor ve temel Linux paketleri kuruluyor..."
-  sudo apt update && sudo apt upgrade -y
+  echo -e "\n📦 1. Sistem paket indeksleri güncelleniyor ve temel paketler kuruluyor..."
+  sudo apt update
+
+  if [[ "$ALLOW_APT_UPGRADE" == "1" ]]; then
+    echo "⚠️ ALLOW_APT_UPGRADE=1 olduğu için sistem yükseltmesi uygulanıyor..."
+    sudo apt upgrade -y
+  else
+    echo "ℹ️ Sistem yükseltmesi varsayılan olarak kapalı (ALLOW_APT_UPGRADE=1 ile açabilirsiniz)."
+  fi
+
   sudo apt install -y curl wget git build-essential software-properties-common zstd
   sudo apt install -y portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
 }
@@ -68,9 +78,21 @@ install_miniconda() {
 install_ollama() {
   echo -e "\n🦙 3. Ollama kuruluyor..."
   if ! ollama -v >/dev/null 2>&1; then
-    echo "⚠️ Ollama bulunamadı veya kurulumu bozuk. Yeniden indiriliyor..."
+    echo "⚠️ Ollama bulunamadı veya kurulumu bozuk."
+    if [[ "$ALLOW_OLLAMA_INSTALL_SCRIPT" != "1" ]]; then
+      echo "❌ Güvenlik nedeniyle otomatik uzaktan script çalıştırma kapalı."
+      echo "   Önce manuel kurulum yapın: https://ollama.com/download/linux"
+      echo "   Otomatik kurulum için bilinçli onay: ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh"
+      exit 1
+    fi
+
+    local installer="/tmp/ollama_install.sh"
+    echo "ℹ️ Kurulum scripti indiriliyor: $installer"
+    curl -fsSL https://ollama.com/install.sh -o "$installer"
+    chmod 700 "$installer"
     sudo rm -f /usr/local/bin/ollama
-    curl -fsSL https://ollama.com/install.sh | sh
+    sh "$installer"
+    rm -f "$installer"
     echo "✅ Ollama başarıyla kuruldu."
   else
     echo "✅ Ollama zaten kurulu ve çalışıyor."
@@ -139,6 +161,10 @@ print_footer() {
   echo ""
   echo "Hızlı sağlık kontrolü:"
   echo "  curl http://localhost:7860/status"
+  echo ""
+  echo "Güvenlik notu:"
+  echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
+  echo "  - Otomatik Ollama script kurulumu varsayılan kapalıdır (ALLOW_OLLAMA_INSTALL_SCRIPT=1 ile açılır)."
   echo "============================================================"
 }
 
@@ -185,4 +211,4 @@ setup_conda_env
 pull_models
 setup_env_file
 download_vendor_libs
-print_footer  
+print_footer

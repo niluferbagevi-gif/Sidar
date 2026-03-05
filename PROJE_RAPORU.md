@@ -71,7 +71,7 @@
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
-    - [13.5.27 `install_sidar.sh` — Skor: 85/100 ✅](#13527-installsidarsh-skor-85100)
+    - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 84/100 ✅](#13528-readmemd-skor-84100)
     - [13.5.29 `SIDAR.md` — Skor: 88/100 ✅](#13529-sidarmd-skor-88100)
     - [13.5.30 `CLAUDE.md` — Skor: 89/100 ✅](#13530-claudemd-skor-89100)
@@ -687,7 +687,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ✅ Donanım-özel varsayımlar nötrlendi; güvenli başlangıç için `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` varsayılanlarıyla daha taşınabilir bir profil sağlandı. → Detay: §13.5.26
-- **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ⚠️ Betik yüksek ayrıcalıklı ve ağ bağımlı adımları ardışık/etkileşimsiz çalıştırdığı için idempotency ve güvenlik onayı açısından dikkat gerektirir. → Detay: §13.5.27
+- **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ✅ Varsayılan akışta sistem yükseltmesi ve uzaktan script çalıştırma kapatıldı; her ikisi de açık opt-in env bayrağı gerektirecek şekilde güvenli hale getirildi. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Sürüm/komut örnekleri (`main.py --quick`, `python cli.py`, `sidar-web`, CUDA 12.4) güncel runtime davranışıyla hizalanmıştır. → Detay: §13.5.28
 - **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
@@ -1921,18 +1921,18 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13527-installsidarsh-skor-85100"></a>
-#### 13.5.27 `install_sidar.sh` — Skor: 85/100 ✅
+<a id="13527-installsidarsh-skor-93100"></a>
+#### 13.5.27 `install_sidar.sh` — Skor: 93/100 ✅
 
 **Sorumluluk:** Ubuntu/WSL odaklı “sıfırdan kurulum” betiği — sistem paketlerini kurar, Miniconda ve ortamı hazırlar, Ollama/model çekimlerini yapar, proje klasörünü günceller ve web UI vendor dosyalarını indirir.
 
-**Akış ve Otomasyon Davranışı (satır 1–203)**
+**Akış ve Otomasyon Davranışı (satır 1–216)**
 
 - `set -euo pipefail` ile hata durumunda erken durma ve değişken güvenliği uygulanır.
 - Kurulum sırası deterministik fonksiyon zinciriyle (`install_system_packages` → `print_footer`) ilerler.
 - `trap cleanup EXIT` kullanımı ile arka planda başlatılan `ollama serve` süreci oturum sonunda sonlandırılır.
 
-**Operasyonel Güçlü Yanlar (satır 17–196)**
+**Operasyonel Güçlü Yanlar (satır 19–216)**
 
 - Repo yoksa clone, varsa pull yaklaşımı ile tekrar çalıştırılabilirlik kısmen desteklenir.
 - Conda ortamı var/yok kontrolüyle `env create` ve `env update --prune` ayrımı yapılır.
@@ -1943,8 +1943,8 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | INS-01 | Script header sürümü `2.7.0` ile rapor/kod tabanıyla hizalandı | 3 | ✅ Kapalı |
-| INS-02 | `curl ... | sh` ile uzaktan script çalıştırma (Ollama install) tedarik zinciri ve bütünlük doğrulama riskini artırır | 74 | Orta |
-| INS-03 | `sudo apt upgrade -y` ve geniş paket kurulumları kullanıcı onayı olmadan sistem genelinde değişiklik yapar; CI/üretim makinelerinde öngörülemeyen yan etki doğurabilir | 32–34 | Orta |
+| INS-02 | `curl | sh` kaldırıldı; uzaktan installer önce dosyaya indirilip yalnızca `ALLOW_OLLAMA_INSTALL_SCRIPT=1` ile çalıştırılıyor | 82–98 | ✅ Kapalı |
+| INS-03 | `apt upgrade -y` varsayılan akıştan çıkarıldı; sadece `ALLOW_APT_UPGRADE=1` ile bilinçli opt-in durumda uygulanıyor | 36–41 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
