@@ -56,11 +56,17 @@ class ConversationMemory:
             fernet = Fernet(token)
             logger.info("✅ Bellek şifrelemesi etkin (Fernet/AES-128-CBC).")
             return fernet
+        except ImportError as exc:
+            raise ImportError(
+                "⚠️ MEMORY_ENCRYPTION_KEY ayarlanmış ancak 'cryptography' kütüphanesi "
+                "bulunamadı! Lütfen 'pip install cryptography' ile yükleyin veya "
+                "şifreleme istemiyorsanız .env'den anahtarı silin."
+            ) from exc
         except Exception as exc:
-            logger.warning(
-                "⚠️ Bellek şifreleme başlatılamadı: %s — Düz metin kullanılacak.", exc
-            )
-            return None
+            raise ValueError(
+                "⚠️ Şifreleme anahtarı geçersiz veya başlatılamadı. "
+                f"Güvenlik riski nedeniyle sistem durduruldu: {exc}"
+            ) from exc
 
     def _read_session_file(self, file_path: Path) -> dict:
         """Oturum dosyasını okur; şifreli ise çözer, düz metin ise doğrudan parse eder."""
@@ -338,7 +344,33 @@ class ConversationMemory:
         with self._lock:
             self._turns.clear()
             self._last_file = None
-            self._save(force=True)
+            self._dirty = True
+        self.force_save()
+
+    def force_save(self) -> None:
+        """Bekleyen tüm değişiklikleri anında diske yazar (flush)."""
+        with self._lock:
+            if not self.active_session_id or not self._dirty:
+                return
+            now = time.time()
+            data = {
+                "id": self.active_session_id,
+                "title": self.active_title,
+                "updated_at": now,
+                "last_file": self._last_file,
+                "turns": self._turns,
+            }
+            file_path = self.sessions_dir / f"{self.active_session_id}.json"
+            self._write_session_file(file_path, data)
+            self._last_saved_at = now
+            self._dirty = False
+
+    def __del__(self) -> None:
+        """Nesne yok edilirken bekleyen değişiklikleri diske yazmayı dener."""
+        try:
+            self.force_save()
+        except Exception:
+            pass
 
     def __len__(self) -> int:
         with self._lock:

@@ -21,3 +21,27 @@ def test_memory_add_still_calls_save_for_persistence_flow():
     fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "add")
     fn_src = ast.get_source_segment(src, fn) or ""
     assert "self._save()" in fn_src
+
+def test_memory_has_force_save_and_destructor_flush_hooks():
+    src = Path("core/memory.py").read_text(encoding="utf-8")
+    assert "def force_save(self)" in src
+    assert "def __del__(self)" in src
+    assert "self.force_save()" in src
+
+
+def test_memory_clear_marks_dirty_and_flushes_immediately():
+    src = Path("core/memory.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "ConversationMemory")
+    fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "clear")
+    fn_src = ast.get_source_segment(src, fn) or ""
+    assert "self._dirty = True" in fn_src
+    assert "self.force_save()" in fn_src
+
+
+def test_memory_fail_closed_encryption_behavior_present():
+    src = Path("core/memory.py").read_text(encoding="utf-8")
+    assert "except ImportError as exc:" in src
+    assert "raise ImportError(" in src
+    assert "raise ValueError(" in src
+    assert "Düz metin kullanılacak" not in src

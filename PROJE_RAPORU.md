@@ -107,6 +107,7 @@
 - [26. Session 17 — 2026-03-06 Başlatıcı (main.py) Uyum ve Hata Giderme](#session-17-baslatici-mainpy-uyum-ve-hata-giderme)
 - [27. Session 18 — 2026-03-06 Web Sunucusu Güvenlik ve CORS İyileştirmeleri](#session-18-web-sunucusu-guvenlik-ve-cors-iyilestirmeleri)
 - [28. Session 19 — 2026-03-06 CLI Terminal Arayüzü Modernizasyonu](#session-19-cli-terminal-arayuzu-modernizasyonu)
+- [29. Session 20 — 2026-03-06 Çekirdek Ajan ve Limit Optimizasyonu](#session-20-cekirdek-ajan-ve-limit-optimizasyonu)
   - [Özet](#ozet)
 
 ---
@@ -857,6 +858,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Pydantic entegrasyonu, asenk
 **Kapanan Bulgular (2026-03-05)**
 
 AG-02 ve H-03 (AG-03) numaralı alt görev sınırlandırmaları ve Sonsuz Hafıza context taşması (token limit) hataları başarıyla giderilmiş ve bulgular kapatılmıştır.
+
+✅ Alt görev (subtask) döngülerindeki sabit (hardcoded) sınırlandırmalar kaldırılarak tamamen `config.py` (`SUBTASK_MAX_STEPS`) ile senkronize edildi. Ayrıca `get_config` aracının çıktı formatında yer alan ve LLM halüsinasyonlarına (yanılgılara) sebep olabilecek eski satır numarası referansları temizlendi.
 
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2700,16 +2703,29 @@ Bu turda projenin komut satırı arayüzü (`cli.py`), modern asenkron standartl
 
 **Session 19 çıktısı:** Terminal arayüzü, çökme risklerinden arındırılmış, dışarıdan gelen parametreleri doğru şekilde uygulayan ve bellek yönetimine izin veren modern bir yapıya kavuşmuştur.
 
+
+<a id="session-20-cekirdek-ajan-ve-limit-optimizasyonu"></a>
+## 29. Session 20 — 2026-03-06 Çekirdek Ajan ve Limit Optimizasyonu
+
+Bu turda, sistemin ana karar mekanizması olan `sidar_agent.py` içerisindeki çalışma sınırları esnetilmiş ve prompt (yönlendirme) temizliği yapılmıştır.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S20-01 | `agent/sidar_agent.py` | ✅ Kusursuz | `_tool_subtask` içindeki maksimum adım sayısı sabit 10 (`min(max_steps, 10)`) limitinden kurtarılarak merkezi `.env` yapılandırmasına bağlandı. |
+| S20-02 | `agent/sidar_agent.py` | ✅ Kusursuz | `_tool_get_config` aracının LLM'e sunduğu sistem değişkenleri listesindeki yanlış referanslı satır numaraları temizlendi. |
+
+**Session 20 çıktısı:** Ajanın derinlemesine araştırma (subtask) yapma kapasitesi tamamen özelleştirilebilir hale gelmiş ve kendi iç ayarlarını okurken yanlış dosya konumu algılamasının önüne geçilmiştir. Çekirdek ajan mimarisi %100 esnek hale getirilmiştir.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 45 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02 + S18-01–S18-03 + S19-01–S19-03) |
+| Tespit edilen bulgu | 47 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03 + S16-01–S16-02 + S17-01–S17-02 + S18-01–S18-03 + S19-01–S19-03 + S20-01–S20-02) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 67 |
+| Kümülatif toplam kapalı | 69 |
 | Aktif açık sorun | **2** |
 
 ---
