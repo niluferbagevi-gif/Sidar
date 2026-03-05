@@ -76,7 +76,7 @@
     - [13.5.27 `install_sidar.sh` — Skor: 100/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 100/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 100/100 ✅](#13529-sidarmd-skor-94100)
-    - [13.5.30 `CLAUDE.md` — Skor: 94/100 ✅](#13530-claudemd-skor-94100)
+    - [13.5.30 `CLAUDE.md` — Skor: 100/100 ✅](#13530-claudemd-skor-94100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 86/100 ✅](#13533-projeraporumd-skor-86100)
@@ -2024,33 +2024,43 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13530-claudemd-skor-94100"></a>
-#### 13.5.30 `CLAUDE.md` — Skor: 94/100 ✅
+#### 13.5.30 `CLAUDE.md` — Skor: 100/100 ✅
 
-**Sorumluluk:** Claude Code uyumluluk rehberi — Sidar araçlarının Claude karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
+**Sorumluluk (Güncel):** Claude Code uyumluluk rehberidir. Sidar araçlarının Claude ekosistemindeki karşılıklarını, talimat dosyası hiyerarşisini ve erişim seviyesi farklarını açıklayan yardımcı sözleşme belgesidir.
 
-**İçerik ve Kapsam (satır 1–37)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Görev, arama, shell, dosya I/O ve web araçları için birebir zorunluluk yerine “yakın karşılık” prensibiyle uyumluluk eşlemesi sunulur.
-- `SIDAR.md` ve `CLAUDE.md` hiyerarşisi ile kapsam önceliği açık biçimde dokümante edilir.
-- `ACCESS_LEVEL` temelli izin modeli (`full/sandbox/restricted`) açıkça belirtilerek yerel çalışma sınırları netleştirilir.
+Bu dosya, farklı yapay zeka ajanları arasında zihinsel model geçişini kolaylaştırır.
 
-**Operasyonel Güçlü Yanlar**
+- **Esnek Eşleme Prensibi:** Araçları birebir adlandırmak yerine görev/arama/kod yürütme gibi işlevsel kategoriler üzerinden en yakın karşılığı önerir.
+- **Hiyerarşik Düzen:** `SIDAR.md` dosyasının ana sözleşme, `CLAUDE.md` dosyasının ekosistem uyum notu olduğunu netleştirir.
+- **Güvenlik Hatırlatıcısı:** OpenClaw (`ACCESS_LEVEL`) modelini Claude terminolojisiyle ilişkilendirerek yetki sınırlarını görünür kılar.
 
-- Ekiplerin farklı ajan ekosistemleri arasında zihinsel model geçişini kolaylaştırır.
-- Talimat dosyası öncelik sırası açık yazıldığı için davranış çatışmalarını azaltır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`SIDAR.md`:** Ana kuralların bulunduğu üst talimat dosyası olarak referans verilir.
+- 🔗 **`.env`:** Erişim seviyelerinin (`ACCESS_LEVEL`) belirlendiği konfigürasyon ile bağlantılıdır.
+
+**Mimari Özeti (satır 1–37)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| Referans Eşleme | Yakın Karşılıklar | `todo_*`, `rg`, `exec_command` gibi araçların kavramsal karşılıkları |
+| Hiyerarşi | Öncelik Sırası | Talimat dosyalarının kapsam/üstünlük ilişkisi |
+| İzinler | Güvenlik Seviyeleri | `full`, `sandbox`, `restricted` modlarının teknik yetki özeti |
+| Bakım | Sürdürülebilirlik | Dosyanın nasıl güncel tutulacağına dair metodolojik ilkeler |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CLD-01 | Araç eşlemesi birebir zorunluluk dilinden çıkarılıp ortamdan bağımsız “yakın karşılık” rehberine çevrildi; drift etkisi azaltıldı | 8–18 | ✅ Kapalı |
-| CLD-02 | Opsiyonel yeteneklerin dağıtıma bağlı olduğu açıkça belirtildi; “her zaman var” beklentisi kaldırıldı | 19, 41–44 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Dokümantasyon dili güncel ve sürdürülebilir bir yapıya kavuşturulmuştur.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+CLD-01 ve CLD-02 numaralı Araç Eşleme Dili ve Opsiyonel Yetenek Belirsizliği bulguları başarıyla çözülmüş ve kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 

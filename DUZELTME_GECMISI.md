@@ -336,6 +336,17 @@
 
 ---
 
+### ✅ §13.5.30 `CLAUDE.md` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Claude Code uyumluluk rehberindeki katı ve eskimiş ifadelerin, projenin esnek ve gelişen araç setiyle uyumlu hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CLD-01 | ✅ Kapandı | Araç Eşleme Esnekliği: Mutlak araç adı garantisi veren ifadeler kaldırılarak, çalışma ortamına göre en yakın karşılık seçimini öneren rehber dili benimsendi. |
+| CLD-02 | ✅ Kapandı | Opsiyonel Yetenek Netliği: PR otomasyonu gibi her dağıtımda bulunmayabilecek yeteneklerin opsiyonel olduğu açıkça belirtilerek kullanıcı beklentisi netleştirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
