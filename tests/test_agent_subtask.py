@@ -13,10 +13,15 @@ def _load_subtask_source() -> str:
 def test_subtask_uses_configurable_max_steps_and_bounds():
     src = _load_subtask_source()
     assert 'getattr(self.cfg, "SUBTASK_MAX_STEPS", 5)' in src
-    assert 'max(1, min(max_steps, 10))' in src
+    assert 'max(1, max_steps)' in src
 
 
 def test_subtask_validates_toolcall_schema():
     src = _load_subtask_source()
     assert "ToolCall.model_validate(action)" in src
     assert "except ValidationError" in src
+
+
+def test_get_config_avoids_stale_line_number_references():
+    src = Path("agent/sidar_agent.py").read_text(encoding="utf-8")
+    assert "[config.py satır" not in src
