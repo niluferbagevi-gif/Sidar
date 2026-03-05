@@ -59,7 +59,7 @@
     - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
-    - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
+    - [13.5.13 `managers/web_search.py` — Skor: 100/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
@@ -1290,33 +1290,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13513-managerswebsearchpy-skor-93100"></a>
-#### 13.5.13 `managers/web_search.py` — Skor: 93/100 ✅
+#### 13.5.13 `managers/web_search.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Web araştırma yöneticisi — çoklu arama motoru (Tavily, Google CSE, DuckDuckGo) üzerinden asenkron sorgu çalıştırır, fallback zinciri uygular ve URL içeriklerini temizleyip özetlenmiş metin olarak döndürür.
+**Sorumluluk (Güncel):** SİDAR'ın dış dünyaya erişimini sağlayan asenkron web arama yöneticisidir. Çoklu motor desteği (Tavily, Google Custom Search, DuckDuckGo), hata toleranslı şelale (fallback) yönlendirmesi ve ham HTML temizleme işlevlerini içerir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `search()` fallback kararında kırılgan `"[HATA]"` string eşleşmesi kaldırıldı; bunun yerine yapılandırılmış internal no-result marker (`_NO_RESULTS_PREFIX`) ve yardımcı metotlarla (`_is_actionable_result`, `_normalize_result_text`) karar veriliyor.
-- `max_results` artık sayısal doğrulama + clamp (`1..10`) ile normalize ediliyor; hatalı tipler güvenli şekilde varsayılan değere dönüyor.
-- `_clean_html()` tarafında entity decode için `html.unescape(...)` kullanılarak named + numeric HTML entity çözümleme kapsamı genişletildi.
+Bu dosya, SİDAR ajanının sadece kendi hafızasıyla sınırlı kalmamasını, güncel verilere internetten ulaşmasını sağlar.
+
+- **Akıllı Fallback (Şelale Modeli):** Bir arama motoru çökerse, sonuç bulamazsa veya API kotası dolarsa, ajan hata verip durmak yerine Tavily → Google → DuckDuckGo sırasıyla diğer motorları otomatik dener.
+- **Kırık API Koruması:** Eğer Tavily 401/403 (Kimlik Doğrulama/Kota) hatası verirse, sistem bunu algılar, o oturum için Tavily'i kara listeye alır (`self.tavily_key = ""`) ve gereksiz istek atarak zaman/kaynak israfını engeller.
+- **Senkron/Asenkron Köprü (DDG v8+):** `duckduckgo_search` kütüphanesinin güncel v8 sürümünde native asenkron destek olmamasına karşın, senkron çalışan `DDGS()` sınıfını `asyncio.to_thread` içine iterek ana FastAPI sunucusunun kilitlenmesini kesin olarak önler.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, internet bilgisine ihtiyaç duyduğunda ReAct döngüsü üzerinden `web_search` veya `fetch_url` aracını kullanır.
+- 🔗 `agent/auto_handle.py`: Doğrudan "internette ara ..." gibi Regex yakalamaları üzerinden sıfır token harcayarak bu sınıfa yönlendirme yapar.
+
+**Mimari Özeti (satır 1–280)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 62–99 | Fallback Router | `search` metodu, motorları sırayla dener ve boş sonuçları (`[NO_RESULTS]`) atlayarak çalışabilir veriyi bulana kadar şelale mantığı işletir |
+| 104–146 | Tavily API & Blacklist | Tavily JSON REST entegrasyonu; `HTTPStatusError` (401, 403) yakalandığında API anahtarını çalışma zamanında geçersiz kılma mantığı |
+| 178–200 | DDG Asenkron İzolasyon | `asyncio.to_thread(_sync_search)` ile senkron DuckDuckGo paketinin ana event-loop'tan izole edilmesi |
+| 206–241 | `fetch_url` & `_clean_html` | `httpx.AsyncClient` ile URL okuma, regex ve `html.unescape` tabanlı robust karakter (entity) temizleme katmanı |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| WS-03 | `_clean_html()` halen regex tabanlı sadeleştirme kullanıyor; çok karmaşık DOM/script-rendered sayfalarda bağlam kaybı tamamen önlenemez | 260–272 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Kütüphane sürüm çakışmaları ve API kota aşımlarının sisteme olan yıkıcı etkileri mimari düzeyde engellenmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| WS-01 | ✅ Kapandı | Fallback başarısı artık hata metni string arama yerine internal marker tabanlı belirleniyor. |
-| WS-02 | ✅ Kısmen Kapandı | Entity çözümleme `unescape` ile güçlendirildi; regex tabanlı temizleme kaynaklı sınırlama düşük risk notu olarak devam ediyor. |
+WEB-01 ve WEB-02 numaralı "API Kota Çökmesi (Zombi İstekler)" ve "DuckDuckGo Asenkron Kilitlenmesi" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

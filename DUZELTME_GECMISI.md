@@ -152,6 +152,17 @@
 
 ---
 
+### ✅ §13.5.13 `managers/web_search.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış arama motoru API'lerinin (Tavily, DDG) limitleri veya sürüm değişiklikleri nedeniyle ajan döngüsünün kesintiye uğramasını, boş sonuçlar dönmesini ve sistemin kilitlenmesini önlemek.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WEB-01 | ✅ Kapandı | API Kota Çökmesi (Zombi İstekler): Tavily motorunda API kredisi bittiğinde dönen 401/403 HTTP hatalarının sistemi durdurması sorunu çözüldü. Bu tür hatalar alındığında `self.tavily_key = ""` ile anahtar o oturum için temizlenir ve sistem otomatik olarak Google veya DuckDuckGo'ya (Fallback) yönlenerek kesintisiz çalışmayı sürdürür. Ayrıca bir motor "sonuç bulamadı" döndüğünde (`[NO_RESULTS]`) arama pes etmeyip diğer motorlara şelale modeliyle devredilir. |
+| WEB-02 | ✅ Kapandı | DuckDuckGo Asenkron Kilitlenmesi: `duckduckgo_search` kütüphanesinin v8 ve sonrasında `AsyncDDGS` yapısının uyumsuzluk/bloklama yaratması nedeniyle ana sunucunun donma riski vardı. Bu modül tamamen revize edilerek, standart senkron `DDGS()` sınıfı `asyncio.to_thread()` sarmalayıcısı ile iş parçacığı havuzuna (thread pool) alındı ve event-loop sağlığı garanti edildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
