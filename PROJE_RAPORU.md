@@ -38,8 +38,8 @@
   - [10.10 LLM Stream — Buffer Güvenliği](#1010-llm-stream-buffer-guvenligi)
 - [11. Güvenlik Değerlendirmesi](#11-guvenlik-degerlendirmesi)
 - [12. Test Kapsamı](#12-test-kapsami)
-  - [Mevcut Test Yapısı (test_sidar.py)](#mevcut-test-yapisi-testsidarpy)
-  - [✅ Test Kapsamı — Tüm Eksikler Giderildi](#test-kapsami-tum-eksikler-giderildi)
+  - [12.1 Modüler Test Mimarisi (tests/ Dizini)](#121-moduler-test-mimarisi-tests-dizini)
+  - [12.2 Öne Çıkan Güvenlik ve Edge-Case Testleri](#122-one-cikan-guvenlik-ve-edge-case-testleri)
 - [13. Dosya Bazlı Detaylı İnceleme](#13-dosya-bazli-detayli-inceleme)
   - [13.1 Çekirdek Dosyalar — Güncel Durum](#131-cekirdek-dosyalar-guncel-durum)
   - [13.2 Yönetici (manager) Katmanı — Güncel Durum](#132-yonetici-manager-katmani-guncel-durum)
@@ -383,12 +383,12 @@ sidar_project/
 
 | ID | Tür (Önem) | Konum | Açıklama | Durum |
 |----|------------|-------|----------|-------|
-| **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Rapor, tüm testlerin `test_sidar.py` içinde olduğunu iddia etmektedir. Ancak güncel kod tabanında testler `tests/` dizini altında 20'den fazla dosyaya (modüler olarak) bölünmüştür. Rapor geride kalmıştır. | ⚠️ Açık |
+| **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
 | **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesindeki minimum sürümler (`fastapi 0.104+`, `pytest 7.4+`) ile `environment.yml` içindeki kilitli güncel sürümler (`fastapi~=0.115.0`, `pytest~=8.3.3`) birbirini tutmamaktadır. | ⚠️ Açık |
 | **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | **Araç Listesi (Prompt) Sapması:** Sistem promptundaki statik araç listesi dokümantasyonu ile `sidar_agent.py` içindeki dinamik `dispatch` tablosu arasında manuel eşleme yapılmaktadır, bu durum sürekli bir drift riski oluşturmaktadır. | ⚠️ Açık |
 | **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | **Tarihsel Sapma:** Dosyanın içindeki son güncelleme tarihi (2026-03-02), ana rapordaki kapanış oturumları (2026-03-05) ile senkronize değildir. | ⚠️ Açık |
 
-*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. Toplam Aktif Uyumsuzluk: 4)*
+*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16 kapatılmıştır. Toplam Aktif Uyumsuzluk: 3)*
 
 ---
 
@@ -582,72 +582,38 @@ container = self.docker_client.containers.run(
 <a id="12-test-kapsami"></a>
 ## 12. Test Kapsamı
 
-
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="mevcut-test-yapisi-testsidarpy"></a>
-### Mevcut Test Yapısı (test_sidar.py)
-
-| Test | Kapsadığı Alan | Async? | Durum |
-|------|---------------|--------|-------|
-| `test_code_manager_read_write` | Dosya yazma/okuma (sandbox) | Hayır | ✅ Çalışıyor |
-| `test_code_manager_validation` | Python AST doğrulama | Hayır | ✅ Çalışıyor |
-| `test_toolcall_pydantic_validation` | Pydantic v2 ToolCall şeması | Hayır | ✅ Çalışıyor |
-| `test_web_search_fallback` | Motor seçimi ve durum | **Evet** | ✅ Çalışıyor |
-| `test_rag_document_chunking` | Chunking + retrieve | Hayır | ✅ Çalışıyor |
-| `test_agent_initialization` | SidarAgent başlatma | **Evet** | ✅ Çalışıyor |
-| `test_hardware_info_fields` | HardwareInfo dataclass | Hayır | ✅ Çalışıyor |
-| `test_config_gpu_fields` | Config GPU alanları | Hayır | ✅ Çalışıyor |
-| `test_system_health_manager_cpu_only` | CPU-only rapor | Hayır | ✅ Çalışıyor |
-| `test_system_health_gpu_info_structure` | GPU bilgi yapısı | Hayır | ✅ Çalışıyor |
-| `test_rag_gpu_params` | DocumentStore GPU parametreleri | Hayır | ✅ Çalışıyor |
+> ✅ **v2.7.0 Güncel Durumu:** Önceki sürümlerdeki (TST-02) “tüm testlerin tek bir dosyada (`test_sidar.py`) toplanması” teknik borcu çözülmüştür. Test mimarisi modüler hale getirilmiş ve 20+ spesifik dosyaya bölünerek birim (unit), entegrasyon ve güvenlik testleri izole edilmiştir. Testler `pytest` ve `pytest-asyncio` ile koşulmaktadır.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="test-kapsami-tum-eksikler-giderildi"></a>
-### ✅ Test Kapsamı — Tüm Eksikler Giderildi
+<a id="121-moduler-test-mimarisi-tests-dizini"></a>
+### 12.1 Modüler Test Mimarisi (tests/ Dizini)
 
-> Toplam: **64 test fonksiyonu** · Son güncelleme: 2026-03-04
+Güncel test seti, projenin farklı katmanlarını hedefleyen spesifik dosyalara ayrılmıştır:
 
-| Alan | Öncelik | Test Grubu | Durum |
-|------|---------|-----------|-------|
-| ConversationMemory session lifecycle | 🔴 YÜKSEK | `#9` — 6 test | ✅ |
-| `sidar_agent.py` greedy regex JSON parse doğruluğu | 🔴 YÜKSEK | `#14` — 4 test | ✅ |
-| `llm_client.py` UTF-8 multibyte buffer güvenliği | 🔴 YÜKSEK | `#15` — 3 test | ✅ |
-| `auto_handle.py` health=None null guard | 🔴 YÜKSEK | `#16` — 2 test | ✅ |
-| AutoHandle async metod testleri | 🟡 ORTA | `#12` — 2 test | ✅ |
-| `_execute_tool` dispatcher — bilinmeyen araç | 🟡 ORTA | `#10` — 2 test | ✅ |
-| web_server rate limiter (TOCTOU senaryosu) | 🟡 ORTA | `#17` — 3 test | ✅ |
-| `rag.py` concurrent delete+upsert | 🟡 ORTA | `#18` — 2 test | ✅ |
-| `github_manager.py` uzantısız dosya bypass | 🟡 ORTA | `#19` — 3 test | ✅ |
-| `memory.py` bozuk JSON karantina davranışı | 🟡 ORTA | `#13` — 1 test | ✅ |
-| Recursive chunking sınır koşulları | 🟢 DÜŞÜK | `#11` — 2 test | ✅ |
-| `package_info.py` version sort pre-release | 🟢 DÜŞÜK | `#20` — 4 test | ✅ |
+| Kategori | Test Dosyaları | Kapsadığı Odak Alanları |
+| :--- | :--- | :--- |
+| **Agent & Prompt** | `test_agent_init_improvements.py`<br>`test_agent_subtask.py`<br>`test_auto_handle_improvements.py`<br>`test_definitions_prompt.py` | Ajan başlatma, ReAct/subtask akışı, prompt tutarlılığı ve hızlı komut yönlendirme senaryoları. |
+| **Core (Çekirdek)** | `test_core_init_improvements.py`<br>`test_llm_client_improvements.py`<br>`test_memory_improvements.py`<br>`test_rag_improvements.py` | LLM istemcileri, stream buffering, Fernet şifreli bellek, hibrit RAG ve recursive chunking davranışı. |
+| **Managers (Yöneticiler)** | `test_code_manager_improvements.py`<br>`test_github_manager_improvements.py`<br>`test_github_upload_improvements.py`<br>`test_system_health_improvements.py`<br>`test_web_search_improvements.py`<br>`test_todo_manager_improvements.py`<br>`test_package_info_improvements.py` | Docker sandbox, Git/GitHub akışı, sistem sağlık metrikleri, web arama fallback zinciri, Todo iş akışları ve paket/sürüm doğrulama. |
+| **Güvenlik & Web** | `test_security_improvements.py`<br>`test_web_server_improvements.py`<br>`test_web_ui_security_improvements.py` | Erişim modeli, path traversal/symlink kontrolleri, SSE/rate-limit davranışı, UI XSS sanitize kontrolleri. |
+| **Altyapı & Export** | `test_config_env_helpers.py`<br>`test_cli_banner.py`<br>`test_managers_init_improvements.py` | Çevre değişkeni parsing, banner davranışı, modül export (`__all__`) tutarlılığı. |
+| **Regresyon (Legacy + Geniş Entegrasyon)** | `test_sidar.py`<br>`test_sidar_improvements.py` | Geriye dönük davranış uyumluluğu ve çoklu bileşenleri kapsayan regresyon senaryoları. |
 
-**Test grupları özeti:**
 
-| Grup | Kapsam | Test sayısı |
-|------|--------|-------------|
-| `#1`  | CodeManager okuma/yazma/doğrulama | 2 |
-| `#2`  | Pydantic ToolCall doğrulama | 1 |
-| `#3`  | WebSearch fallback | 1 |
-| `#4`  | RAG document chunking | 1 |
-| `#5`  | Agent başlatma | 1 |
-| `#6`  | GPU/Donanım bilgisi | 4 |
-| `#9`  | Session lifecycle (oluştur/ekle/yükle/sil/sırala/güncelle) | 6 |
-| `#10` | Dispatcher (bilinmeyen/bilinen araç) | 2 |
-| `#11` | Chunking sınır koşulları (küçük/büyük metin) | 2 |
-| `#12` | AutoHandle pattern tespiti | 2 |
-| `#13` | Bozuk JSON karantina | 1 |
-| `#14` | JSON parse doğruluğu (JSONDecoder) | 4 |
-| `#15` | UTF-8 multibyte buffer güvenliği | 3 |
-| `#16` | AutoHandle health=None null guard | 2 |
-| `#17` | Rate limiter TOCTOU senaryosu | 3 |
-| `#18` | RAG concurrent delete+upsert | 2 |
-| `#19` | GitHub Manager uzantı/token | 3 |
-| `#20` | PackageInfo version sort + is_prerelease | 4 |
-| **Toplam** | | **64** |
+<div align="right"><a href="#top">⬆️ Up</a></div>
+
+<a id="122-one-cikan-guvenlik-ve-edge-case-testleri"></a>
+### 12.2 Öne Çıkan Güvenlik ve Edge-Case Testleri
+
+Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağıdaki sınır durumları da doğrulanmaktadır:
+
+- **`test_web_ui_security_improvements.py`:** `index.html` içindeki sanitize katmanının zararlı etiket ve XSS payload’larına karşı davranışı test edilir.
+- **`test_memory_improvements.py`:** Geçersiz şifreleme anahtarı/bozuk session dosyası senaryolarında sistemin çökmeden güvenli fallback/karantina davranışı doğrulanır.
+- **`test_rag_improvements.py`:** Eşzamanlı delete+upsert senaryolarında indeks bütünlüğü ve lock davranışı kontrol edilir.
+- **`test_todo_manager_improvements.py`:** Çok adımlı görev akışlarında durum geçişlerinin (`pending/in_progress/completed`) tutarlılığı doğrulanır.
+- **`test_web_server_improvements.py`:** Rate limiting katmanının TOCTOU/eşzamanlı istek koşullarındaki davranışı sınanır.
 
 ---
 
