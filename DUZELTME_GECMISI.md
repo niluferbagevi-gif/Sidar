@@ -293,6 +293,16 @@
 
 ---
 
+### ✅ §13.5.26 `.env.example` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Örnek yapılandırma dosyası ile gerçek kod arasındaki isimlendirme farklarının (drift) giderilmesi ve gizli kalmış tuning parametrelerinin kullanıcıya açılması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| ENVX-03 | ✅ Kapandı | Yapılandırma Senkronizasyonu (Drift): Örnek dosyadaki anahtar adları `config.py` ile birebir hizalandı (`CODING_MODEL`, `TEXT_MODEL`). Ayrıca kodda tanımlı ancak örnekte eksik kalan RAG, ReAct ve Web Search tuning değişkenleri tamamlanarak dosya eksiksiz hale getirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

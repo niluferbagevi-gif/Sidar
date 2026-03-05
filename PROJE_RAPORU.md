@@ -72,7 +72,7 @@
     - [13.5.23 `Dockerfile` — Skor: 100/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 100/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 100/100 ✅](#13525-environmentyml-skor-95100)
-    - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
+    - [13.5.26 `.env.example` — Skor: 100/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
     - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
@@ -1844,33 +1844,46 @@ Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13526-envexample-skor-95100"></a>
-#### 13.5.26 `.env.example` — Skor: 95/100 ✅
+#### 13.5.26 `.env.example` — Skor: 100/100 ✅
 
-**Sorumluluk:** Varsayılan çalışma konfigürasyonu şablonu — sağlayıcı seçimi, model/timeout ayarları, erişim seviyesi, GPU ve web parametreleri, RAG limitleri, loglama ve Docker sandbox değişkenlerini tek dosyada dokümante eder.
+**Sorumluluk (Güncel):** Projenin merkezi yapılandırma şablonudur. AI sağlayıcıları, güvenlik seviyeleri, GPU yönetimi, RAG parametreleri, bellek şifreleme ve Docker sandbox ayarlarını tek bir standartta belgeler.
 
-**Kapsam ve Yapı (satır 1–129)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Dosya, `AI_PROVIDER`, `OLLAMA_*`, `GEMINI_*`, `ACCESS_LEVEL`, `GITHUB_*` gibi çekirdek entegrasyon değişkenlerini açık başlıklarla gruplar.
-- GPU, HuggingFace, RAG, web ve loglama blokları hem varsayılan değer hem de kısa operasyon notu içerir.
-- Son bölümde `DOCKER_PYTHON_IMAGE` ve `DOCKER_EXEC_TIMEOUT` ile sandbox çalıştırma davranışı dış konfigürasyona taşınmıştır.
+SİDAR’ın taşınabilirliğini sağlayan temel dokümantasyon dosyasıdır.
 
-**Operasyonel Güçlü Yanlar (satır 10–129)**
+- **Zero-Config Başlangıç:** Yeni bir geliştiricinin projeyi hızlıca ayağa kaldırması için gerekli anahtar-değer çiftlerini açıklamalı sunar.
+- **Güvenlik Rehberliği:** `MEMORY_ENCRYPTION_KEY` gibi hassas parametrelerin üretimi için teknik yönergeler içerir.
+- **Sertleştirilmiş Varsayılanlar:** `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` gibi güvenli/uyumlu başlangıç profilleri sağlar.
 
-- Değişkenlerin yanında açıklama satırları bulunduğundan yeni kurulumlarda anlamlandırma maliyeti düşüktür.
-- `MEMORY_ENCRYPTION_KEY` üretim yönergesi ve `RAG_FILE_THRESHOLD` gibi yeni parametrelerin belgelenmesi runtime davranışıyla tutarlıdır.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`config.py`:** Değişkenler `os.getenv(...)` ile bu dosyadaki anahtar adlarına göre okunur.
+- 🔗 **`install_sidar.sh`:** Kurulum sırasında `.env` yoksa bu dosya örnek olarak kopyalanır.
+
+**Mimari Özeti (satır 1–145)**
+
+| Bölüm | İçerik | Açıklama |
+|---|---|---|
+| AI CORE | `AI_PROVIDER`, `OLLAMA_URL` | Ana sağlayıcı ve iletişim protokol ayarları |
+| SECURITY | `ACCESS_LEVEL`, `GITHUB_TOKEN` | OpenClaw yetki seviyeleri ve API anahtarları |
+| HARDWARE | `USE_GPU`, `GPU_MEMORY_FRACTION` | Donanım hızlandırma ve VRAM optimizasyon sınırları |
+| RAG & TUNING | `RAG_CHUNK_SIZE`, `MAX_REACT_STEPS` | Vektör arama ve ReAct ince ayar parametreleri |
+| SANDBOX | `DOCKER_EXEC_TIMEOUT` | İzole kod çalıştırma güvenlik sınırları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| ENVX-01 | Donanım/ortam notları genelleştirildi ve timeout/GPU varsayımları nötrlendi; platform bağımlı başlangıç riski azaltıldı | 6–8, 16–18, 36–38, 76–77 | ✅ Kapalı |
-| ENVX-02 | Varsayılan erişim seviyesi `sandbox` yapıldı; yüksek yetki (`full`) yalnızca bilinçli opt-in olarak bırakıldı | 26–30 | ✅ Kapalı |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Değişken isimleri `config.py` ile tam senkronize hale getirilmiş ve tüm ince ayar parametreleri (RAG, Web, ReAct) dokümante edilmiştir.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+ENVX-01 ve ENVX-02 numaralı donanım nötrleme ve güvenlik varsayılanları başarıyla uygulanmıştır.
+
+ENVX-03 (Drift Çözümü): `OLLAMA_CODING_MODEL` gibi hatalı değişken isimleri `config.py` ile %100 uyumlu hale getirilmiş ve eksik RAG/Tuning parametreleri eklenmiştir.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 
