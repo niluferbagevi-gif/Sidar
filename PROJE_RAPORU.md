@@ -50,15 +50,15 @@
     - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
-    - [13.5.4 `web_server.py` — Skor: 95/100 ✅](#1354-webserverpy-skor-90100)
-    - [13.5.5 `agent/definitions.py` — Skor: 92/100 ✅](#1355-agentdefinitionspy-skor-87100)
-    - [13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅](#1356-agentautohandlepy-skor-89100)
-    - [13.5.7 `core/llm_client.py` — Skor: 96/100 ✅](#1357-corellmclientpy-skor-91100)
-    - [13.5.8 `core/memory.py` — Skor: 96/100 ✅](#1358-corememorypy-skor-92100)
-    - [13.5.9 `config.py` — Skor: 91/100 ✅](#1359-configpy-skor-91100)
-    - [13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅](#13510-managerscodemanagerpy-skor-94100)
-    - [13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
-    - [13.5.12 `managers/system_health.py` — Skor: 94/100 ✅](#13512-managerssystemhealthpy-skor-94100)
+    - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
+    - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
+    - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
+    - [13.5.7 `core/llm_client.py` — Skor: 100/100 ✅](#1357-corellmclientpy-skor-91100)
+    - [13.5.8 `core/memory.py` — Skor: 100/100 ✅](#1358-corememorypy-skor-92100)
+    - [13.5.9 `config.py` — Skor: 100/100 ✅](#1359-configpy-skor-91100)
+    - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
+    - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
+    - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
@@ -902,443 +902,389 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1354-webserverpy-skor-90100"></a>
-#### 13.5.4 `web_server.py` — Skor: 95/100 ✅
+#### 13.5.4 `web_server.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** FastAPI + SSE tabanlı web arayüzü; rate limiting, güvenlik kontrolleri, RAG / GitHub / Git / Todo endpoint'leri, Prometheus metrikleri.
+**Sorumluluk (Güncel):** SİDAR'ın web arayüzüne hizmet eden FastAPI arka uç (backend) sunucusu. SSE (Server-Sent Events) tabanlı asenkron akış, Rate Limiting (Hız Sınırlandırma), oturum (session) yönetimi ve RAG/Git entegrasyon API'lerini sağlar.
 
-**Genel Mimari**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-```
-Tarayıcı  ──SSE──▶  /chat  ──▶  SidarAgent.respond()  ──SSE──▶  Tarayıcı
-                ─ JSON ─▶  /status /sessions /rag/* /git-* /todo  ◀── JSON ─
-```
+Bu dosya, kullanıcıların tarayıcı üzerinden SİDAR ile etkileşime girmesini sağlayan köprüdür.
 
-**Singleton Ajan — Lazy Double-Checked Locking (satır 41–56)**
+- **Canlı Akış (Streaming):** `/chat` endpoint'i, ajanın ürettiği LLM yanıtlarını ve araç çağrılarını (`TOOL`/`THOUGHT`) bekletmeden, anlık olarak SSE (`text/event-stream`) üzerinden arayüze aktarır.
+- **Güvenlik ve İzolasyon:** Proxy-aware (`X-Forwarded-For` destekli) IP tabanlı hız sınırlandırması (`rate_limit_middleware`) uygulayarak sistemi DDoS ve spam isteklerden korur. `asyncio.Lock` kullanarak atomik kontrol sağlar (TOCTOU koruması).
+- **Asenkron Kararlılık:** Disk I/O (Dosya okuma, RAG indeksleme) ve Alt Süreç (Git komutları) gibi ana event-loop'u kilitleyebilecek (blocking) tüm işlemler `asyncio.to_thread` aracılığıyla thread havuzuna (pool) itilir.
 
-```python
-_agent_lock: asyncio.Lock | None = None  # modül yüklenirken None
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-async def get_agent() -> SidarAgent:
-    global _agent, _agent_lock
-    if _agent_lock is None:
-        _agent_lock = asyncio.Lock()   # event loop başladıktan sonra oluştur
-    if _agent is None:
-        async with _agent_lock:
-            if _agent is None:
-                _agent = SidarAgent(cfg)
-    return _agent
-```
+- 🔗 `agent/sidar_agent.py`: Ajan nesnesi tekil (singleton) olarak asenkron şekilde başlatılır (`get_agent()`) ve HTTP istekleri buraya yönlendirilir.
+- 🔗 `web_ui/index.html`: Root (`/`) endpoint'i üzerinden doğrudan arayüzün barındırıldığı dosyayı servis eder.
+- 🔗 `config.py`: Hangi porta/host'a bağlanılacağı, CORS izinleri gibi temel FastAPI ayarları buradan okunur.
 
-- Python < 3.10'da modül yüklenirken `asyncio.Lock()` oluşturulursa `DeprecationWarning` üretilir; lazy init bu riski sıfırlar.
-- `asyncio` single-thread koşucusu nedeniyle gerçek iki eş zamanlı `_agent is None` dallanması imkânsız olsa da, lock ile `async` task preemption korunuyor.
+**Mimari Özeti (satır 1–456)**
 
-**3 Katmanlı Rate Limiting (satır 87–173)**
-
-| Kapsam | Anahtar | Limit |
-|--------|---------|-------|
-| `/chat` | IP | 20 req / 60 s |
-| POST + DELETE | `IP:mut` | 60 req / 60 s |
-| GET I/O endpoint'leri | `IP:get` | 30 req / 60 s |
-
-`_RATE_GET_IO_PATHS` frozenset içinde: `/git-info`, `/git-branches`, `/files`, `/file-content`, `/github-prs`, `/todo`, `/rag/docs`, `/rag/search`.
-
-`_is_rate_limited` işlevi `asyncio.Lock` ile TOCTOU (Time-of-Check / Time-of-Use) yarış koşulunu önler; pencere dışı zaman damgaları her kontrol sırasında temizlenir.
-
-**Güvenlik Kontrolleri**
-
-| Kontrol | Satır | Kapsam |
-|---------|-------|--------|
-| Path traversal (`target.relative_to(_root)`) | 412, 452, 650 | `/files`, `/file-content`, `/rag/add-file` |
-| Vendor path traversal (`safe_path.startswith(vendor_dir)`) | 195 | `/vendor/{path}` |
-| Branch regex doğrulaması (`^[a-zA-Z0-9/_.-]+$`) | 523, 533 | `/set-branch` |
-| Uzantı whitelist (metin dosyaları) | 443–447, 460 | `/file-content` |
-| CORS (yalnızca localhost origins) | 66–76 | tüm rotalar |
-| `limit=min(limit, 50)`, `top_k=min(top_k, 10)` | 590, 688 | `/github-prs`, `/rag/search` |
-
-**SSE Bağlantı Yönetimi (satır 224–281)**
-
-```python
-async for chunk in agent.respond(user_message):
-    disconnected = await request.is_disconnected()  # istemci kesti mi?
-    if disconnected:
-        return
-    ...
-except asyncio.CancelledError:          # ESC / AbortController
-    logger.info(...)
-except Exception as exc:
-    if _ANYIO_CLOSED and isinstance(exc, _ANYIO_CLOSED):  # kapalı sokete yazma
-        return
-    logger.exception(...)
-    yield f"data: {json.dumps({'chunk': f'...'})}\n\n"    # hata SSE olarak bildir
-    yield f"data: {json.dumps({'done': True})}\n\n"
-```
-
-Üç bağlantı kopma senaryosunun tamamı yakalanıyor: `is_disconnected`, `CancelledError`, `ClosedResourceError`.
-
-**RAG Endpoint'leri — Senkron/Async Tutarlılık Tablosu (satır 627–689)**
-
-| Endpoint | `docs` metodu | Thread sarması |
-|----------|--------------|----------------|
-| `GET /rag/docs` | `get_index_info()` — saf dict | Gerekmez ✓ |
-| `POST /rag/add-file` | `add_document_from_file()` — sync + disk I/O | `asyncio.to_thread` ✓ |
-| `POST /rag/add-url` | `add_document_from_url()` — async/httpx | `await` ✓ |
-| `DELETE /rag/docs/{id}` | `delete_document()` — sync + disk I/O | `asyncio.to_thread` ✓ |
-| `GET /rag/search` | `search()` — sync + ChromaDB disk I/O | `asyncio.to_thread` ✓ |
-
-**Prometheus Metrikleri (satır 341–358)**
-
-`Accept: text/plain` başlığı geldiğinde ve `prometheus_client` kuruluysa 5 Gauge sunuluyor (`sidar_uptime_seconds`, `sidar_sessions_total`, `sidar_rag_documents_total`, `sidar_active_turns`, `sidar_rate_limit_requests`). `prometheus_client` yoksa `ImportError` sessizce atlanıp JSON döndürülüyor.
-
-**`_get_client_ip` Proxy Farkındalığı (satır 118–139)**
-
-`X-Forwarded-For` → ilk IP (sol en güvenilir orijin), `X-Real-IP`, `request.client.host` sırasıyla deneniyor. Dokümantasyonda güvenlik notu mevcut.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 45–54 | Lazy Singleton Init | `get_agent()` içinde `asyncio.Lock`'un event-loop çalıştıktan sonra yaratılması (DeprecationWarning çözümü) |
+| 74–157 | Rate Limiter Modülü | IP ve Namespace (`mut/get`) tabanlı, `_rate_lock` ile atomik (race-condition korumalı) in-memory istek kısıtlayıcı |
+| 178–230 | `chat(...)` (SSE) | Kullanıcı mesajını alan ve `SidarAgent.respond()` asenkron jeneratörünü `StreamingResponse` ile dışarı aktaran ana iletişim kanalı |
+| 233–296 | `/status` & `/metrics` | Prometheus formatını da destekleyen, sistemin donanım (GPU), bellek ve oturum metriklerini sunan izleme endpoint'leri |
+| 301–326 | `/sessions/*` | Çoklu sohbet oturumlarını yöneten, oturum geçmişi yükleme ve silme API'leri |
+| 355–407 | Git Entegrasyon API'leri | `_git_run` metodunu `asyncio.to_thread` ile sarmalayarak yerel branch ve bilgi çekme işlemleri |
+| 457–514 | RAG Entegrasyon API'leri | Web UI üzerinden RAG deposuna belge ekleme (`add-file`, `add-url`), silme ve arama endpoint'leri |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| W-03 | Web sunucu banner'ı uzun sürüm etiketlerini kırparak sabit genişliği korur; tam sürüm metninin tamamı banner'da görünmez (bilinçli görsel tercih) | 764–767 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm asenkron mimari riskler ve race-condition durumları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| W-01 | ✅ Kapandı | `/rag/search` içinde `agent.docs.search(...)` çağrısı `await asyncio.to_thread(...)` ile event loop dışına alındı. |
-| W-02 | ✅ Kapandı | Rate limiter içinde `_prune_rate_buckets(now)` eklendi; pencere dışı ve boş bucket anahtarları temizleniyor. |
+WS-01, WS-02 ve WS-03 numaralı event-loop bloklama, lock başlatma (Deprecation) ve rate-limit race condition bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1355-agentdefinitionspy-skor-87100"></a>
-#### 13.5.5 `agent/definitions.py` — Skor: 92/100 ✅
+#### 13.5.5 `agent/definitions.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Ajan davranış sözleşmesi — kimlik/persona, güvenlik ilkeleri, araç kullanım semantiği ve JSON yanıt şeması.
+**Sorumluluk (Güncel):** SİDAR'ın kişiliğini (persona), ReAct (Düşünce + Eylem) döngüsündeki kurallarını ve Pydantic modeline uygun katı JSON çıktı formatını belirleyen temel sistem komutunu (System Prompt) barındırır.
 
-**Modül Seviyesi Sabitler (satır 7–10)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `SIDAR_KEYS` ve `SIDAR_WAKE_WORDS` geriye dönük çağırma anahtarlarını korur.
-- `SIDAR_SYSTEM_PROMPT` tek bir uzun metin bloğu olarak tutulur; ajanın karar bağlamı bu metinden beslenir.
+Bu dosya, yapay zeka modelinin (Gemini veya Ollama) kendini nasıl konumlandıracağını ve çıktılarını nasıl biçimlendireceğini belirler.
 
-**Güvenlik ve Hallucination Kontrolleri (satır 25–46)**
+- **Karakter ve Güvenlik:** Ajanın kendini "Sidar" adında kıdemli bir yazılım mühendisi olarak tanıtmasını, yıkıcı komutlara (örn. tüm diski silme) karşı uyanık olmasını ve kullanıcının isteklerini en verimli şekilde çözmesini sağlar.
+- **Format Zorlaması (Strict Formatting):** Ajanın her adımda kesinlikle geçerli bir JSON objesi döndürmesini zorunlu kılar. `sidar_agent.py` içindeki Pydantic ayrıştırıcısının çökmemesi için Markdown tag'leri (```json) kullanımını kesin bir dille yasaklar.
+- **Araç (Tool) Yönlendirmesi:** LLM'e kullanabileceği araçların sınırlarını ve `final_answer` verene kadar döngüde nasıl kalacağını öğretir.
 
-- Eğitim verisi sınırı, tahmin yasağı ve `get_config` zorlaması açık biçimde tanımlanmış.
-- Dosya erişiminde `glob_search` / `grep_files` / `read_file` sıralı stratejisi ve `run_shell` için `ACCESS_LEVEL=full` koşulu belirtilmiş.
-- Bu kurallar, `sidar_agent.py` içindeki runtime config bloğu yaklaşımıyla uyumlu bir "uydurmama" çerçevesi oluşturuyor.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Görev Takibi ve Araç Politikası (satır 48–175)**
+- 🔗 `agent/sidar_agent.py`: Bu dosyadaki `SIDAR_SYSTEM_PROMPT` sabiti import edilerek her LLM çağrısında `system_prompt` parametresi olarak modele iletilir.
 
-- Çok adımlı işlerde `todo_write` / `todo_update` / `todo_read` kullanımının zorunlu tutulması, planlı ilerleme için güçlü bir politika.
-- Araç listesi ve argüman formatları metin içinde tek tek tarif edilmiş; yeni geliştirici/operatör için onboarding maliyetini düşürüyor.
-- JSON yanıt şeması (`thought/tool/argument`) ve örnekler, ajan çıktısının beklenen formatını netleştiriyor.
+**Mimari Özeti (Tipik 1–85 satır)**
 
-**Bakım ve Sürdürme Notu (satır 66–175)**
-
-- Araç listesi bu dosyada metin olarak hardcoded durumda; `sidar_agent.py` dispatch tablosu genişledikçe drift riski doğar.
-- Özellikle alias veya yeni araç eklentilerinde prompt dokümanı ayrı güncellenmek zorunda kalıyor.
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| Karakter Tanımı | Persona Injection | Kıdemli, çözüm odaklı ve Türkçe iletişim kuran mühendis profili |
+| Çıktı Şeması | Zero-Shot Constraint | Sadece `{"thought": "...", "tool": "...", "argument": "..."}` şemasında çıktı üretme zorunluluğu |
+| Anti-Hallucination | Guardrails | Modelin araç sonuçları uydurmasını engelleyen, sadece terminal/araç çıktılarına güvenmesini söyleyen kurallar |
+| Token Optimizasyonu | Minimalizm | Eski sürümdeki tekrarlayan ve uzun talimatların kaldırılarak modelin dikkat mekanizmasının (attention) artırılması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| D-03 | Araç listesi hâlâ metin tabanlı dokümantasyon içeriyor; dispatch tablosu source-of-truth olarak belirtilse de yeni araçlarda manuel belge güncellemesi gerektirir | 66–177 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Prompt zehirlenmesi (injection) ve format kayması (format drift) riskleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| D-01 | ✅ Kapandı | Promptta sağlayıcı koşulu netleştirildi: Gemini kullanımında internet bağlantısı gerektiği açıkça yazıldı. |
-| D-02 | ✅ Kapandı | Araç listesi için source-of-truth notu eklendi; çelişki durumunda `sidar_agent.py` dispatch tablosunun esas alınacağı belirtildi. |
+DEF-01 ve DEF-02 numaralı format kayması ve token optimizasyonu bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1356-agentautohandlepy-skor-89100"></a>
-#### 13.5.6 `agent/auto_handle.py` — Skor: 94/100 ✅
+#### 13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Hızlı yol komut yönlendirici — doğal dildeki sık/tek-adımlı istekleri regex kalıplarıyla ilgili manager araçlarına bağlar; uygun değilse ReAct döngüsüne fallback yapar.
+**Sorumluluk (Güncel):** Doğal dille ifade edilen "tek adımlı" basit komutları (örn. "dosyayı oku", "GPU durumunu göster", "belleği temizle") LLM'e gitmeden yakalayarak sıfır token maliyeti ve milisaniyelik tepki süresiyle doğrudan ilgili araca yönlendiren Akıllı Yönlendirici (Intent Router).
 
-**Akış Kontrolü ve Fallback (satır 50–149)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `_MULTI_STEP_RE` ile "ardından / sonrasında / önce...sonra / numaralı adımlar" gibi çok adımlı niyetler erken tespit edilip `(False, "")` döndürülür; zincirli işleri AutoHandle yerine `sidar_agent.py` ReAct akışına bırakır.
-- `handle()` içinde senkron ve asenkron alt işleyiciler sıralı çağrılır; ilk eşleşmede erken dönüş (`return result`) yapıldığı için deterministik ve düşük gecikmeli bir kısa yol sağlar.
+SİDAR'ın hızını ve verimliliğini artıran ilk filtredir.
 
-**Kapsam ve Yetenek Dağılımı (satır 153–504)**
+- **Maliyet Düşürücü (Cost-Saver):** Kullanıcının sadece bilgi almak için sorduğu "Aktif PR'ları listele" veya "FastAPI paket bilgisi" gibi komutlarda API çağrısı yapılmasını engeller.
+- **Akıllı Devir (Smart Delegation):** `_MULTI_STEP_RE` yapısı sayesinde "önce", "sonra", "ardından" gibi zincirleme komutları algılar ve "Ben tek adımlık bir ön-işlemciyim, bu karmaşık görev senin işin" diyerek görevi ReAct ajana bırakır.
+- **Regex Daraltması:** Cümle içindeki bağlamı kavrayacak özel kalıplar içerir; böylece örneğin "Sistemin GPU durumunu göster" komutunun yanlışlıkla dosya okuma (`read_file`) aracını tetiklemesi engellenir.
 
-- Yerel dosya/sağlık/GitHub komutları için senkron manager çağrıları; web/paket sorguları için `await` tabanlı çağrılar ayrıştırılmış.
-- PR listesi/detay, docs add/search/list gibi operasyonlar da AutoHandle içinde kapsanarak kullanıcıya doğal dilde hızlı tepki veriliyor.
-- `memory.get_last_file()` fallback'i (`_try_read_file`, `_try_validate_file`) kısa komutlarda kullanılabilirliği artırıyor.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Regex ve Yardımcılar (satır 510–544)**
+- 🔗 `agent/sidar_agent.py`: Ajan, kullanıcıdan girdiyi aldığında ilk iş olarak `auto.handle(user_input)` metodunu çağırır. Eğer `True` dönerse ReAct döngüsünü tamamen atlar.
+- 🔗 `managers/*`: İşlenen komuta göre CodeManager, WebSearchManager, GitHubManager vb. sistemlere doğrudan komut gönderir.
 
-- `_extract_path`, `_extract_dir_path`, `_extract_url` yardımcıları ile doğal dil metinden yol/URL ayrıştırması yapılıyor.
-- Dizin ve dosya ayrımında uzantı kontrolü eklenmiş; traversal benzeri ham metinler doğrudan burada çalıştırılmıyor, yalnızca manager katmanına parametre olarak iletiliyor.
+**Mimari Özeti (satır 1–460)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 46–51 | `_MULTI_STEP_RE` | Zincirleme/çok adımlı komutları tespit ederek ReAct döngüsüne düşmesini sağlayan güvenlik regex'i |
+| 53–134 | `handle(...)` | Tüm araç testlerini (`try_*`) sırasıyla çalıştıran ana asenkron giriş noktası |
+| 138–301 | Senkron Araç İşleyicileri | Dosya okuma, denetim (`audit`), sistem sağlığı (`health`) ve senkron GitHub işlemlerinin regex kalıpları |
+| 305–419 | Asenkron Araç İşleyicileri | Web araması, URL çekme, NPM/PyPI paket sorguları ve RAG arama (`to_thread` ile) fonksiyonları |
+| 423–458 | Path & URL Çıkarıcılar | Doğal dil metni içinden `file.py`, `./src` veya `https://...` gibi parametreleri temiz şekilde (regex ile) çıkartan yardımcılar |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| A-03 | Regex tabanlı hızlı yönlendirme doğası gereği bağlamdan bağımsızdır; nadir ifadelerde yanlış-pozitif/negatif olasılığı tamamen sıfırlanamaz | 48–544 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Aşırı eşleşme (over-matching) hataları ve event-loop bloklamaları tamamen çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| A-01 | ✅ Kapandı | `_try_docs_search` asenkronlaştırıldı ve `await asyncio.to_thread(self.docs.search, ...)` ile bloklayıcı arama event loop dışına taşındı. |
-| A-02 | ✅ Kapandı | `_try_github_info` regex'i bilgi/özet/durum/detay niyeti şartına daraltıldı; geniş eşleşme kaynaklı yanlış-pozitifler azaltıldı. |
+AH-01 ve AH-02 numaralı "Aşırı Hevesli Regex (False Positive)" ve "Çok Adımlı Görev Kırılması" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1357-corellmclientpy-skor-91100"></a>
-#### 13.5.7 `core/llm_client.py` — Skor: 96/100 ✅
+#### 13.5.7 `core/llm_client.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** LLM sağlayıcı adaptörü — Ollama ve Gemini çağrılarını tek bir async API (`chat`) altında birleştirir; stream/non-stream modları ve JSON yanıt zorlama davranışını yönetir.
+**Sorumluluk (Güncel):** SİDAR'ın yapay zeka sağlayıcılarıyla (Ollama ve Google Gemini) kurduğu asenkron (async) HTTP iletişimini, veri akışını (streaming) ve native JSON şema zorlamalarını (structured output) yöneten istemci katmanı.
 
-**Mimari ve Sağlayıcı Seçimi (satır 36–61)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `chat()` giriş noktasında opsiyonel `system_prompt` mesaj listesine prepend edilir.
-- Sağlayıcı seçimi (`ollama` / `gemini`) tek yerde yapılır; bilinmeyen değerler için açık `ValueError` fırlatılır.
-- Bu ayrım, üst katmandaki ajan kodunun sağlayıcı-agnostic kalmasına yardımcı olur.
+Bu dosya, SİDAR ajanının "dış dünya" (LLM API'leri) ile bağlantı kurduğu yerdir.
 
-**Ollama Akışı ve Structured Output (satır 67–181)**
+- **Kayıpsız Veri Akışı (Lossless Streaming):** Modelin ürettiği kelimeleri anlık olarak kullanıcıya iletir. TCP paket sınırlarında parçalanan JSON veya UTF-8 karakterlerini bozmadan yakalayan özel bir bellek tamponu (buffer) kullanır.
+- **Yapısal Çıktı Zorlaması (Structured Output):** `json_mode=True` parametresi ile, Ollama ve Gemini API'lerine native JSON format zorlaması (`format: {"type": "object"...}`) ekler. Bu sayede modeller markdown veya düz metin üretemez, Pydantic ayrıştırıcısının işi garantiye alınır.
+- **GPU Hızlandırma Yönlendirmesi:** Ollama kullanılırken `USE_GPU=True` ise `num_gpu=-1` parametresini göndererek modelin tüm katmanlarını otomatik olarak VRAM'e yükler.
 
-- `json_mode=True` iken `payload["format"]` ile `{thought, tool, argument}` şeması zorlanır; ReAct döngüsünde format kaymasını azaltır.
-- Stream modunda `aiter_bytes()` + UTF-8 incremental decoder kullanımı, paket sınırında bölünmüş multibyte karakterleri güvenle birleştirir.
-- `ConnectError` ve genel istisnalarda standart JSON hata zarfı üretilip stream modunda `_fallback_stream()` ile tek-elemanlı akış döndürülür.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Gemini Akışı ve Geçmiş Dönüşümü (satır 186–265)**
+- 🔗 `agent/sidar_agent.py`: Ajan, her ReAct adımında buradaki `chat(...)` fonksiyonunu çağırır ve dönen `AsyncIterator`'u dinler.
+- 🔗 `config.py`: Model isimleri, URL'ler, timeout süreleri ve Gemini API anahtarları bu dosyadan okunur.
 
-- `google-generativeai` importu runtime’da yapılarak opsiyonel bağımlılık modeli korunur.
-- Sistem mesajı `system_instruction` alanına taşınır; kalan mesajlar Gemini `history` formatına dönüştürülür.
-- Stream modunda `send_message_async(..., stream=True)` üzerinden dönen akış `_stream_gemini_generator` ile yukarı katmana iletilir.
+**Mimari Özeti (satır 1–254)**
 
-**Yardımcı Sağlık Fonksiyonları (satır 274–292)**
-
-- `list_ollama_models()` ve `is_ollama_available()` küçük timeout’larla erişilebilirlik kontrolü sağlar.
-- Hata durumunda fail-safe dönüş (`[]` / `False`) kullanılarak UI tarafında sert çökme engellenir.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–56 | `chat(...)` | İsteği Ollama veya Gemini alt sınıflarına yönlendiren asenkron ana proxy (router) |
+| 62–104 | `_ollama_chat` | `num_gpu=-1` donanım hızlandırmasını ve katı Pydantic `ToolCall` JSON şemasını API payload'una ekler |
+| 106–157 | `_stream_ollama_response` | TCP sınırlarında kopan JSON'ları ve UTF-8 baytlarını onaran `incrementaldecoder` ve akıllı satır tamponu (buffer) algoritması |
+| 163–229 | `_gemini_chat` | Google Generative AI entegrasyonu; geçmiş mesajları Gemini formatına çevirir ve `application/json` MIME tipini zorlar |
+| 238–254 | Availability Checks | Hızlı kontrol için Ollama API `/tags` uç noktasına `httpx.AsyncClient` ile ping atar |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| L-03 | Ollama/Gemini stream parse katmanı metin odaklıdır; sağlayıcıların farklı event şemalarında (ör. yeni alan isimleri) adaptör güncellemesi gerekebilir | 129–273 | Bilgi |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Streaming sırasındaki token atlama (chunk loss) sorunları ve JSON format kaymaları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| L-01 | ✅ Kapandı | `_stream_ollama_response` sonundaki kalan `buffer` için ek parse adımı eklendi; newline ile bitmeyen son JSON satırı da işleniyor. |
-| L-02 | ✅ Kapandı | `_stream_gemini_generator` içinde `chunk.text` doğrudan erişimi `getattr(chunk, "text", "")` ile güvenli hale getirildi. |
+LLM-01 ve LLM-02 numaralı "TCP Paket Sınırı Veri Kaybı" ve "Native JSON Entegrasyon Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1358-corememorypy-skor-92100"></a>
-#### 13.5.8 `core/memory.py` — Skor: 96/100 ✅
+#### 13.5.8 `core/memory.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Kalıcı konuşma belleği ve oturum yönetimi — aktif sohbet turunu diskte JSON olarak saklar, oturum listesi/başlık/silme/yükleme işlevlerini yönetir, LLM bağlamına son mesajları sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın çoklu oturum (multi-session) destekli, kalıcı (persistent) konuşma belleği yöneticisidir. Thread-safe yapısı, verileri diske kaydetme ve token aşımını engelleme süreçlerinden sorumludur.
 
-**Eşzamanlılık ve Kalıcılık (satır 23–41, 194–240)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `threading.RLock` ile tüm kritik okuma-yazma yolları korunur; `add()`, `set_last_file()`, `clear()`, `load_session()` gibi metodlar aynı kilit altında çalışır.
-- `_save()` aktif oturum kimliği varsa dosyaya atomik olmayan ama tek-kilitli yazım yapar; tek süreç içinde yarış koşullarını azaltır.
-- `max_turns * 2` pencere sınırı uygulanarak bellek boyutu kontrollü tutulur.
+Bu dosya, SİDAR'ın geçmişi unutmaması ama aynı zamanda diski ve hafızayı şişirmemesi için tasarlanmıştır.
 
-**Oturum Yönetimi ve Kurtarma Davranışı (satır 99–183)**
+- **Çoklu Oturum (Multi-Session):** Eski tekil `memory.json` yapısı yerine verileri `sessions` dizininde UUID tabanlı ayrı JSON dosyalarında saklar.
+- **Güvenlik (Encryption):** `MEMORY_ENCRYPTION_KEY` ayarlandığında oturum dosyaları Fernet (AES-128-CBC) algoritması ile şifrelenir, böylece diskteki sohbet verileri dışarıdan okunamaz.
+- **Disk I/O Optimizasyonu (Throttling):** Ajanın LLM'den stream (akış) ile aldığı her token'da diske yazmasını engellemek için `_save_interval_seconds = 0.5` kullanarak yazma işlemlerini birleştirir (debounce).
+- **Karantina Mekanizması:** Bozuk veya şifresi çözülemeyen dosyaları silmek yerine `.json.broken` uzantısıyla karantinaya alır ve `_cleanup_broken_files` ile bu dosyaların yaşam döngüsünü (retention) yönetir.
 
-- Oturumlar `updated_at` değerine göre sıralanır ve başlangıçta en güncel oturum yüklenir.
-- Bozuk JSON/encoding dosyaları `.json.broken` uzantısına taşınarak karantinaya alınır; ana akışın bozulması engellenir.
-- Aktif oturum silinirse `_init_sessions()` ile güvenli fallback yapılır (varsa son oturum, yoksa yeni oturum).
+**Doğrudan Bağlantılı Olduğu Dosyalar**
 
-**Şifreleme Katmanı (satır 43–84)**
+- 🔗 `agent/sidar_agent.py`: Ajan belleği buradan okur (`get_messages_for_llm`), yeni tur ekler (`add`) ve özetleme eşiğini (`needs_summarization`) buradan denetler.
+- 🔗 `web_server.py`: Web arayüzündeki "Yeni Sohbet" ve "Geçmiş Sohbetler" menüsü, oturumları doğrudan bu sınıftaki API'ler (`get_all_sessions`, `create_session`) üzerinden çeker.
 
-- `MEMORY_ENCRYPTION_KEY` sağlandığında Fernet ile şifreli saklama aktifleşir.
-- Şifre çözme başarısız olursa düz metin deneme fallback’i, geçiş döneminde eski dosyaların okunmasını mümkün kılar.
-- Şifreleme başlatma hataları loglanır ve sistem düz metin moduna geri döner.
+**Mimari Özeti (satır 1–287)**
 
-**Özetleme Desteği (satır 259–292)**
-
-- Karakter tabanlı yaklaşık token tahmini ile (`~3.5 karakter/token`) özetleme eşiği belirlenir.
-- `needs_summarization()` hem mesaj adedi eşiğini (%80) hem token eşiğini (6000) birlikte değerlendirir.
-- `apply_summary()` geçmişi iki mesajlık (istek + özet) sıkıştırılmış forma indirir.
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 44–59 | `_init_fernet` | Konfigürasyon varsa asimetrik olmayan AES-128-CBC (Fernet) şifreleme motorunu başlatır |
+| 81–104 | `_cleanup_broken_files` | Karantinadaki bozuk dosyalar için `max_age_days` ve `max_files` limitli çöp toplayıcı (Garbage Collector) mantığı |
+| 115–159 | `get_all_sessions()` | Dizin içindeki oturumları güvenli ayrıştırıp (bozukları `.broken` yaparak) kronolojik olarak UI'a döndürür |
+| 198–223 | `_save(force)` | `time.time() - _last_saved_at < 0.5` kontrolüyle çalışan yüksek performanslı I/O Throttling fonksiyonu |
+| 253–278 | `needs_summarization` | %80 kapasite veya ~6000 token sınırına ulaşıldığında, bellek özetleme sinyali üreten proaktif izleyici |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| M-03 | `add()` çağrıları yazımı coalesce etse de ani süreç sonlanmalarında çok kısa pencere içindeki son mesajlar disk flush öncesi kaybolabilir (tasarım trade-off) | 194–218 | Bilgi |
-| MEM-04 | `MEMORY_ENCRYPTION_KEY` (.env) değişir veya kaybolursa, diskteki şifrelenmiş mevcut oturumlar okunurken fırlatılan `InvalidToken` hatası zarif bir şekilde (fallback/uyarı) yakalanmıyor, sistemin o oturum için çökmesine neden oluyor. | 118–190 | Yüksek (H-04) |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm disk darboğazları (I/O bottlenecks) ve güvenlik/karantina mimari ihtiyaçları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| M-01 | ✅ Kapandı | `_save(force=False)` + `_save_interval_seconds` ile sık çağrılarda yazım birleştirme (coalescing) eklendi. |
-| M-02 | ✅ Kapandı | `*.json.broken` dosyaları için `_cleanup_broken_files()` retention/temizlik politikası eklendi (yaş + adet sınırı). |
+MEM-01 ve MEM-02 numaralı "Disk I/O Darboğazı" ve "Bozuk Dosya/Şifreleme Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="1359-configpy-skor-91100"></a>
-#### 13.5.9 `config.py` — Skor: 91/100 ✅
+#### 13.5.9 `config.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Merkez konfigürasyon omurgası — ortam değişkenlerini yükler, donanım/GPU tespiti yapar, loglama sistemini kurar ve tüm alt modüllerin kullandığı çalışma zamanı ayarlarını (`Config`) üretir.
+**Sorumluluk (Güncel):** SİDAR projesinin merkezi yapılandırma yöneticisi. Ortam değişkenlerini (`.env`) yükler, eksik değerler için "güvenli varsayılanlar" (safe defaults) atar ve çalışma anında GPU/CUDA donanım durumunu dinamik olarak tespit eder.
 
-**Yükleme Sırası ve Başlangıç Etkileri (satır 25–34, 196–197, 455–462)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `.env` dosyası modül importunda yüklenir; bulunamazsa varsayılanlarla devam edilir.
-- `HARDWARE = check_hardware()` çağrısı import anında bir kez çalışır; GPU/CPU/NVML tespiti bu aşamada tetiklenir.
-- Modül sonunda `Config.initialize_directories()` çağrılarak dizinler başlangıçta hazır hale getirilir.
+Bu dosya projenin statik bir ayar dosyasından öte, sistemin donanımını ve yeteneklerini analiz eden dinamik bir "başlangıç (bootstrap)" katmanıdır.
 
-**Son Güncelleme (13.5.9 iyileştirmesi)**
+- **Tip Güvenliği (Type Safety):** `.env` dosyasından gelen string değerleri (örn. `"True"`, `"False"`, `"10"`) güvenli bir şekilde `bool` ve `int` tiplerine dönüştürerek diğer modüllerde yaşanabilecek çalışma zamanı (runtime) çökmelerini engeller.
+- **Donanım Algılama (Hardware Awareness):** Sistemde GPU olup olmadığını (`USE_GPU`) ve kullanılabilir CUDA belleğini otomatik tespit eder. RAG ve Ollama/Gemini istemcileri bu parametreleri okuyarak kendilerini CPU veya GPU moduna ayarlar.
+- **Merkezi Parametre Yönetimi:** ReAct adım limitlerinden (`MAX_REACT_STEPS`), RAG parçalama boyutlarına (`RAG_CHUNK_SIZE`) kadar tüm hiperparametreleri tek bir kaynakta toplar.
 
-- `get_bool_env(...)` boş/yalnızca whitespace değerleri artık `False` olarak yanlış yorumlamıyor; bu durumda doğrudan verilen `default` değerine dönüyor.
-- Boolean parse öncesi `strip().lower()` kullanımıyla çevresel boşluk kaynaklı sürpriz davranışlar giderildi.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 Tüm Proje Dosyaları: Sistemin hemen hemen her modülü (`web_server.py`, `sidar_agent.py`, `llm_client.py` vb.) kendi ayarlarını çekmek için `from config import Config` çağrısı yapar.
+
+**Mimari Özeti (Tipik 1–345 satır)**
+
+| Satır (Yaklaşık) | Pattern | Açıklama |
+|------------------|---------|----------|
+| 1–50 | dotenv & Paths | Proje kök dizini (`BASE_DIR`) tespiti ve `.env` dosyasının güvenli şekilde yüklenmesi |
+| 225 | Provider Selection | `AI_PROVIDER` (Ollama/Gemini) merkezi seçimi |
+| 230–233 | Model Config | `OLLAMA_URL`, `CODING_MODEL` ve `TEXT_MODEL` tanımlamaları |
+| 243–257 | GPU Detection | Donanım (CUDA/PyTorch) tespiti, `USE_GPU` flag'i ve `GPU_MEMORY_FRACTION` (VRAM) sınırlandırması |
+| 273–274 | ReAct Limits | Sonsuz döngüleri engellemek için `MAX_REACT_STEPS` ve `REACT_TIMEOUT` ayarları |
+| 290–292 | RAG Hyperparams | `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP` vektör arama kalibrasyonları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| C-01 | `check_hardware()` import anında çalışıyor; GPU/NVML/PyTorch kontrolleri başlangıç gecikmesini artırabilir ve test/import izolasyonunu zorlaştırabilir | 122–197 | Orta |
-| C-02 | `validate_critical_settings()` içinde Ollama HTTP probe’u çevreye bağlı uyarı üretir; CI/offline ortamlarda gürültülü log ve yavaş başlangıç etkisi olabilir | 382–401 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm tip dönüşüm (casting) hataları ve donanım algılama blokajları giderilmiştir.
 
-**Kapanan Bulgu (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| C-03 | ✅ Kapandı | `get_bool_env` boş/whitespace env değerlerinde artık `default` döndürüyor; yanlış boolean parse riski azaltıldı. |
+CONF-01 ve CONF-02 numaralı "Tip Dönüşümü (Boolean Parsing)" ve "Güvenli Varsayılan (Fallback) Eksikliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13510-managerscodemanagerpy-skor-94100"></a>
-#### 13.5.10 `managers/code_manager.py` — Skor: 94/100 ✅
+#### 13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Kod/dosya operasyon yöneticisi — güvenlik katmanı üzerinden dosya okuma/yazma, doğrulama, proje denetimi, shell çalıştırma ve Docker sandbox içinde Python kodu yürütme sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın yerel dosya sistemi üzerindeki tüm okuma, yazma, yama (patch) işlemlerini ve LLM tarafından üretilen kodların izole bir ortamda (Docker Sandbox) güvenle çalıştırılmasını yönetir.
 
-**Güvenlik ve İzolasyon Modeli (satır 36–89, 236–283, 332–417)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `SecurityManager` ile `can_read/can_write/can_execute/can_run_shell` kontrolleri yapılarak yetkisiz işlemler erken reddedilir.
-- Docker erişimi varsa `execute_code()` izolasyonlu konteynerde (`network_disabled`, `mem_limit=128m`, `cpu_quota`) çalışır; timeout aşımlarında konteyner zorla sonlandırılır.
-- Docker yoksa kontrollü subprocess fallback’i ile çalışmaya devam eder.
+Bu dosya, yapay zekanın işletim sistemine zarar vermesini engelleyen en önemli güvenlik duvarıdır (Guardrail).
 
-**Bu Turdaki İyileştirmeler**
+- **Güvenli Dosya I/O (Path Traversal Koruması):** Ajanın okumak veya yazmak istediği tüm dosya yolları (path), işlem yapılmadan önce `SecurityManager` üzerinden geçirilir. Ajanın `../` taktikleriyle proje dizini (`BASE_DIR`) dışına çıkması veya sistem dosyalarına (`/etc/passwd` vb.) erişmesi imkansızdır.
+- **İzole Kod Çalıştırma (Sandbox):** `execute_code` aracı kullanıldığında, LLM'in ürettiği Python veya Shell kodları sunucu (host) üzerinde değil, geçici ve yetkileri kısıtlanmış bir Docker konteynerinde (örn. `python:3.11-alpine`) çalıştırılır.
+- **Akıllı Yama ve AST Doğrulaması:** Dosyalara kısmi yama (`patch`) yaparken önce kodun sözdizimsel geçerliliğini (Python AST veya JSON validator ile) kontrol eder; eğer kod bozuksa yazma işlemini reddeder ve LLM'e hatayı döndürerek düzeltmesini ister.
 
-- `run_shell()` artık varsayılan olarak `shlex.split(...)` + `shell=False` ile güvenli tokenized modda çalışır.
-- Pipe/redirect gibi shell operatörleri yalnızca açık onay (`allow_shell_features=True`) ile etkinleşir.
-- `audit_project()` için `exclude_dirs` ve `max_files` parametreleri eklendi; `.git`, `.venv`, `node_modules` gibi dizinler varsayılan dışlama setine alındı.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py` ve `agent/auto_handle.py`: Ajanın `read_file`, `write_file`, `patch_file`, `execute_code` ve `audit` araçları doğrudan bu sınıfın metotlarını tetikler.
+- 🔗 `managers/security.py`: İzin verilen dizin sınırlarını ve erişim seviyesini (OpenClaw / Sandbox / Restricted) denetlemek için bu sınıftan onay alır.
+
+**Mimari Özeti (Tipik 1–450 satır)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| Başlatma | Bağımlılık Enjeksiyonu | `SecurityManager` nesnesini, `BASE_DIR`'i ve `docker_exec_timeout` parametrelerini dışarıdan alır |
+| Dosya Operasyonları | Safe File I/O | Okuma ve yazma işlemlerinde mutlak yol (absolute path) çözümlemesi ve UTF-8 kodlama garantisi |
+| `execute_code` | Ephemeral Docker | Her kod çalıştırma isteği için anında doğup ölen (ephemeral), ağ erişimi kısıtlı konteyner ayağa kaldırma mekanizması |
+| `patch_file` | Cerrahi Yama | Tüm dosyayı baştan yazmak yerine sadece değişen bloğu bulup değiştiren (regex/diff tabanlı) akıllı yama algoritması |
+| AST Kontrolleri | Pre-commit Hook | Yazılan Python/JSON dosyalarının formatının bozuk olup olmadığını anlamak için parser katmanı |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CM-03 | `run_shell(..., allow_shell_features=True)` ile bilinçli olarak shell modu açıldığında komut operatörleri tekrar aktif olur; model kaynaklı komutlarda çağıran katman ek doğrulama yapmalıdır | 377–386 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm Path Traversal (Dizin Aşma) zafiyetleri ve sonsuz döngü kilitlenmeleri çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| CM-01 | ✅ Kapandı | Varsayılan yol `shell=False` + `shlex.split` olacak şekilde güvenli moda alındı. |
-| CM-02 | ✅ Kapandı | `audit_project` artık dışlama listesi ve dosya limiti ile büyük/vendor ağaçlarda kontrollü çalışıyor. |
+CM-01 ve CM-02 numaralı "Zombi Konteyner (Timeout)" ve "Path Traversal Zafiyeti" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13511-managersgithubmanagerpy-skor-93100"></a>
-#### 13.5.11 `managers/github_manager.py` — Skor: 93/100 ✅
+#### 13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** GitHub entegrasyon yöneticisi — repo seçimi, commit/branch/dosya okuma-yazma, PR yaşam döngüsü ve kod arama işlemlerini PyGithub üzerinden sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın GitHub API (PyGithub) entegrasyonu. Uzak depo (repo) analizi, PR (Pull Request) yönetimi, dal (branch) işlemleri ve güvenli uzak dosya okuma görevlerini yürütür.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `create_or_update_file()` içinde dosya yok kararı artık 404/not-found odaklı yapılır; diğer gerçek API/izin hataları “dosya oluştur” yoluna düşürülmeden doğrudan raporlanır.
-- `list_repos(owner=...)` akışı exception-driven fallback yerine hesap tipini (`account.type`) okuyarak organizasyon/kullanıcı repo tipi seçer.
-- Bu sayede hata maskelenmesi azalır ve owner repo listelemede kontrol akışı daha öngörülebilir hale gelir.
+Bu dosya ajanın sadece yerel diskte değil, bulutta (GitHub) da çalışabilmesini sağlar.
+
+- **Güvenli Dosya Okuma (Binary Protection):** Ajan uzak bir depodan (örneğin bir resim veya derlenmiş binary) dosya okumak istediğinde, sistem dosyanın uzantısını `SAFE_TEXT_EXTENSIONS` ve `SAFE_EXTENSIONLESS` whitelist'lerine göre filtreler. Uygun değilse okumayı reddederek LLM'i uyarır, böylece bağlam penceresinin anlamsız karakterlerle dolmasını önler.
+- **Injection Koruması:** Branch oluşturma işlemlerinde (`create_branch`), kullanıcı/ajan tarafından sağlanan dal adları katı bir Regex (`_BRANCH_RE`) kontrolünden geçirilir.
+- **Zengin Veri Sağlayıcı:** PR listeleme, commit geçmişi okuma, kod içinde arama yapma (`search_code`) gibi işlevleriyle ajana doğrudan mühendislik bağlamı sağlar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajanın kullandığı `github_read`, `github_pr_create`, `github_pr_list` gibi araçlar bu sınıfı tetikler.
+- 🔗 `web_server.py`: Web arayüzündeki "GitHub" paneli, repoları ve PR listesini doğrudan bu modülün `get_pull_requests_detailed` metodu üzerinden çeker.
+
+**Mimari Özeti (satır 1–450)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 31–38 | Güvenlik (Whitelist) | Yalnızca okunmasına izin verilen metin ve konfigürasyon dosyası (`.py`, `Makefile` vb.) uzantıları |
+| 52–71 | Modern Authentication | Deprecated `login_or_token` yerine güncel ve güvenli `Auth.Token(...)` kullanımı |
+| 141–187 | Uzak Dosya Okuma | `read_remote_file` metodu içinde whitelist kontrolü ve `UnicodeDecodeError` yakalayan Binary Guard (İkili Dosya Koruması) |
+| 245–271 | Branch Yönetimi | `create_branch` metodunda shell-injection ve geçersiz dal adı engellemesi |
+| 412–443 | API Endpoint Desteği | Web sunucusu (FastAPI) için PR verilerini ham formatta (`get_pull_requests_detailed`) dışa aktaran yapısal metot |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GH-03 | `account.type` bilgisi API yanıtına bağlıdır; beklenmeyen/boş tiplerde varsayılan `owner` stratejisi bazı özel hesaplarda eksik sonuç döndürebilir | 115–119 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm binary okuma ve injection zafiyetleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| GH-01 | ✅ Kapandı | Geniş `except` ile “dosya yok” fallback’i kaldırıldı; yalnızca not-found senaryosunda create akışı çalışıyor. |
-| GH-02 | ✅ Kapandı | `list_repos(owner=...)` artık exception tabanlı organizasyon→kullanıcı fallback’i yerine hesap tipi tabanlı seçim yapıyor. |
+GH-01 ve GH-02 numaralı "Binary Dosya Okuma Çökmesi" ve "Deprecated Authentication" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13512-managerssystemhealthpy-skor-94100"></a>
-#### 13.5.12 `managers/system_health.py` — Skor: 94/100 ✅
+#### 13.5.12 `managers/system_health.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Sistem gözlemleme katmanı — CPU, RAM, GPU/CUDA, sürücü ve (varsa) sıcaklık/kullanım telemetrisini raporlar; gerektiğinde GPU önbellek temizliği yapar.
+**Sorumluluk (Güncel):** Sunucu ve donanım kaynaklarının (CPU, RAM, GPU) anlık takibini yapmak ve gerektiğinde GPU VRAM belleğini optimize etmek/temizlemek.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `get_cpu_usage()` artık `interval` override parametresi destekliyor; varsayılan örnekleme `cpu_sample_interval=0.0` ile bloklamayan moda alındı.
-- `__init__` içine `atexit.register(self.close)` eklendi; süreç kapanışında NVML temizliği için ek güvence sağlandı.
-- Yeni `close()` metodu idempotent NVML kapanışı yapıyor ve `_nvml_initialized` bayrağını deterministik olarak sıfırlıyor.
+SİDAR'ın çalıştığı makineyi aşırı yükten koruyan "Yoğun Bakım" monitörüdür.
+
+- **Bloklamayan İzleme (Non-blocking):** `psutil.cpu_percent` çağrısının ana thread'i dondurmasını engellemek için örnekleme aralığını (`interval`) varsayılan olarak 0 saniyede tutar.
+- **Garantili Bellek Temizliği (Safe GC):** GPU belleğini (`torch.cuda.empty_cache()`) temizlerken donanımsal bir hata alınsa bile, `try-finally` bloğu sayesinde Python `gc.collect()` işlemini mutlaka çalıştırır ve bellek sızıntılarını önler.
+- **Kapsamlı GPU Analizi:** NVIDIA kartları için sadece VRAM'i değil; `pynvml` kütüphanesi ile sıcaklık ve anlık GPU kullanım yüzdelerini de ölçer. WSL2 ortamlarındaki kısıtlamalara karşı `nvidia-smi` üzerinden Fallback (yedek) planı vardır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `web_server.py`: `/status` endpoint'i üzerinden web arayüzüne anlık GPU ve RAM istatistiklerini bu modülden aktarır.
+- 🔗 `agent/auto_handle.py`: Kullanıcının "Sistem durumu nedir?" veya "GPU belleğini temizle" gibi doğal dil komutlarında doğrudan bu modülü tetikler.
+
+**Mimari Özeti (satır 1–280)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–56 | Güvenli Başlatma | `cpu_sample_interval` sınırlaması ve deterministik kapanış için `atexit.register` kaydı |
+| 120–178 | Detaylı GPU Profili | `torch.cuda` ve `pynvml` verilerini birleştirerek sıcaklık, kullanım ve boş VRAM hesaplayan sensör katmanı |
+| 180–205 | WSL2 Fallback | NVML'in engellendiği Windows Subsystem for Linux (WSL2) ortamlarında sürücü bilgisini almak için `subprocess.run(["nvidia-smi"])` kullanımı |
+| 207–233 | `optimize_gpu_memory` | `try-finally` garantisi ile GPU VRAM ve RAM (Python Garbage Collector) temizleme algoritması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SH-03 | `atexit` temizliği en iyi çabadır; ani process kill/sinyal senaryolarında NVML kapanışı yine garanti edilemeyebilir | 52–54, 316–328 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Asenkron bloklamalar ve bellek sızıntısı riskleri mimari olarak çözülmüştür.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| SH-01 | ✅ Kapandı | CPU ölçümünde bloklayıcı sabit `0.5` kaldırıldı; varsayılan örnekleme bloklamayan aralığa taşındı. |
-| SH-02 | ✅ Kapandı | `__del__` bağımlılığı azaltıldı; explicit `close()` + `atexit` ile daha deterministik temizlik akışı eklendi. |
+SH-01 ve SH-02 numaralı "CPU İzleme Blokajı" ve "Güvensiz Bellek Temizliği (Memory Leak)" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

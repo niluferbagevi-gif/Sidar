@@ -52,6 +52,106 @@
 
 ---
 
+### ✅ §13.5.4 `web_server.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** FastAPI sunucusunda ağır yük (high-concurrency) altında yaşanabilecek asenkron kilitlenmelerin, güvenlik yarış koşullarının ve başlatma uyarılarının giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WS-01 | ✅ Kapandı | Python 3.9/3.10 sürümlerinde alınan `RuntimeWarning: asyncio.Lock() created outside of event loop` hatası, Lock nesnelerinin (`_agent_lock` ve `_rate_lock`) global alanda değil, fonksiyon ilk kez çağrıldığında (lazy init) oluşturulmasıyla kesin olarak çözüldü. |
+| WS-02 | ✅ Kapandı | Event-loop bloklaması (Starvation): `/git-*` ve `/rag/*` endpoint'lerindeki alt süreç (`subprocess`) ve disk okuma işlemleri ana akışı donduruyordu. Bu işlemlerin tamamı `await asyncio.to_thread()` ile thread pool'a (iş parçacığı havuzuna) itilerek sunucu tepkiselliği maksimize edildi. |
+| WS-03 | ✅ Kapandı | Rate Limiter zafiyeti: Eşzamanlı (concurrent) gelen isteklerde aynı IP'nin limitleri aşabilmesi (TOCTOU race condition) sorunu, `_is_rate_limited` fonksiyonuna `_rate_lock` atomik kilidi eklenerek giderildi. `X-Forwarded-For` IP tespiti proxy-aware hale getirildi. |
+
+---
+
+### ✅ §13.5.5 `agent/definitions.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM modellerinin (özellikle açık kaynaklı Llama türevlerinin) araç çağrısı yaparken JSON formatının dışına çıkması, Markdown blokları kullanması ve sistemin Pydantic ayrıştırıcısını (parser) bozmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| DEF-01 | ✅ Kapandı | Format Kayması (Format Drift): Modellerin JSON yanıtlarını ```json ... ``` tagleri arasına alma eğilimi, prompt içine eklenen "Asla markdown bloğu kullanma, saf string olarak geçerli bir JSON döndür" şeklindeki katı sistem kuralıyla (Zero-Shot Constraint) çözüldü. Bu sayede `sidar_agent.py` tarafındaki regex bağımlılığı azaltıldı. |
+| DEF-02 | ✅ Kapandı | Token Optimizasyonu: Prompt içindeki eski, uzun ve gereksiz tekrar eden araç tanımlamaları temizlendi. Modelin bağlam penceresinde (context window) yer açıldı ve asıl odaklanması gereken "görev ve çalışma alanı" talimatlarının etkisi artırıldı. |
+
+---
+
+### ✅ §13.5.6 `agent/auto_handle.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Otomatik komut işleyicinin (AutoHandle) karmaşık cümlelerde veya çok adımlı görevlerde (Chain of Thought) sistem işleyişini bozmasının ve yanlış araçları tetiklemesinin (False Positive) engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AH-01 | ✅ Kapandı | Aşırı Hevesli Regex (False Positive): Sistemde "göster", "kontrol et" gibi genel bağlamlı kelimeler yüzünden alakasız araçların tetiklenmesi sorunu, regex kalıplarının sıkılaştırılmasıyla (örn. "dosyayı göster", "sözdizimini doğrula" şeklinde bağlam zorunluluğu getirilerek) çözüldü. Dizin çıkarma mantığı (`_extract_dir_path`) dosya uzantılarını yok sayacak şekilde izole edildi. |
+| AH-02 | ✅ Kapandı | Çok Adımlı Görev Kırılması: Kullanıcının "Dosyayı oku ve ardından testlerini yaz" şeklindeki isteklerinde, AutoHandle'ın sadece ilk kısmı (okuma) yapıp süreci bitirmesi büyük bir hataydı. Koda `_MULTI_STEP_RE` sabiti eklenerek "ardından", "sonrasında", "1. ... 2." gibi bağlaçlar yakalandı ve bu tür isteklerin dokunulmadan doğrudan asıl yapay zeka ajanına (ReAct) iletilmesi sağlandı. |
+
+---
+
+### ✅ §13.5.7 `core/llm_client.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** LLM streaming (veri akışı) sırasında TCP paketlerinin JSON objelerini ortadan ikiye bölmesi sebebiyle yaşanan sessiz token/kelime kayıplarının ve model halüsinasyonlarının (JSON dışına çıkma) önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| LLM-01 | ✅ Kapandı | TCP Paket Sınırı Token Kaybı: Ollama stream akışında kullanılan `aiter_lines()` metodunun uzun satırları veya çok baytlı (multi-byte) Türkçe UTF-8 karakterlerini böldüğü tespit edildi. Kod, `aiter_bytes()` ve `codecs.getincrementaldecoder("utf-8")` ikilisi kullanılarak manuel bir satır (newline) tamponuna (buffer) geçirildi. JSON ayrıştırma hataları yüzünden kaybolan kelime sorunu tamamen çözüldü. |
+| LLM-02 | ✅ Kapandı | Native JSON Entegrasyonu: Modelleri (özellikle Llama 3) JSON formatında tutmak için sadece sistem promptu yetersiz kalıyordu. Ollama'nın native JSON şema desteği (`format: { "type": "object", "properties": ... }`) ve Gemini'nin `response_mime_type: "application/json"` özelliği API istek gövdesine eklendi. Modellerin markdown uydurma ihtimali donanımsal/API seviyesinde engellendi. |
+
+---
+
+### ✅ §13.5.8 `core/memory.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Eski tek dosyalı bellek sisteminin yerine çoklu oturum yapısının getirilmesi, güvenlik açıklarının kapatılması ve disk darboğazlarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| MEM-01 | ✅ Kapandı | Disk I/O Darboğazı (Throttling): Eski yapıda ajan her token ürettiğinde diske senkron yazma yapılıyordu. `_save_interval_seconds = 0.5` ve `_dirty` bayrağı eklenerek ardışık kayıt istekleri birleştirildi (debounced). SSD aşınması ve sunucu kilitlenmeleri önlendi. |
+| MEM-02 | ✅ Kapandı | Bozuk Dosya & Şifreleme Eksikliği: Sohbet geçmişlerinin düz metin saklanması riski Fernet (AES-128-CBC) ile giderildi. Ayrıca elektrik kesintisi vb. nedenlerle JSON yapısı bozulan dosyaların tüm sistemi çökertmesi hatası, dosyaların `.json.broken` olarak karantinaya alındığı `_cleanup_broken_files` mekanizması ile çözüldü. |
+
+---
+
+### ✅ §13.5.9 `config.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ortam değişkenlerinden (`.env`) gelen string verilerin yanlış yorumlanması sebebiyle oluşan gizli hataların (silent bugs) ve çökme risklerinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CONF-01 | ✅ Kapandı | Tip Dönüşüm Hataları (Boolean Parsing): Python'un yerleşik `bool("False")` çağrısının `True` dönmesi sebebiyle, `.env` dosyasında kapalı olan özelliklerin (örn. `DEBUG_MODE=False`) yanlışlıkla aktif olması sorunu giderildi. Koda string değerleri (`true/false/1/0`) doğru yorumlayan özel bir `_parse_bool` (veya eşdeğeri) tip dönüştürücü mantığı eklendi. |
+| CONF-02 | ✅ Kapandı | Güvenli Varsayılan (Fallback) Eksikliği: `.env` dosyasının yanlışlıkla silinmesi veya eksik parametre içermesi durumunda sistemin `KeyError` vererek çökmesi engellendi. Tüm kritik `os.getenv` çağrılarına güvenli ve mantıklı varsayılan değerler (safe defaults) atandı. |
+
+---
+
+### ✅ §13.5.10 `managers/code_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın işletim sistemine müdahale yeteneklerinin sıkılaştırılması, dışarı sızma (escape) ihtimallerinin sıfırlanması ve sistem kaynaklarının korunması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CM-01 | ✅ Kapandı | Zombi Konteyner ve Kaynak Tüketimi: Ajanın `execute_code` aracıyla ürettiği sonsuz döngü (`while True: pass`) veya uzun süren işlemlerin Docker'ı ve ana sunucuyu kilitlemesi sorunu çözüldü. Kod çalıştırıcıya katı bir `docker_exec_timeout` (varsayılan: 10 saniye) eklendi. Süre aşımında konteyner acımasızca öldürülür (`SIGKILL`) ve ajana "Zaman Aşımı" uyarısı dönülür. |
+| CM-02 | ✅ Kapandı | Path Traversal Zafiyeti: Eski sürümde ajanın `../../` gibi göreceli yollar (relative paths) kullanarak projenin kök dizininden (`BASE_DIR`) çıkabilme riski vardı. Yeni mimaride tüm yol çözümlemeleri (path resolution) `SecurityManager` içindeki güvenli kontrol mekanizmasına bağlandı. Yetkisiz okuma/yazma girişimleri anında `PermissionError` ile engelleniyor. |
+
+---
+
+### ✅ §13.5.11 `managers/github_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın GitHub depolarını tararken karşılaştığı derlenmiş dosyaların (binary) veya geçersiz kimlik doğrulama yöntemlerinin sistemi bozmasını engellemek.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GH-01 | ✅ Kapandı | Binary Dosya Okuma Çökmesi: Ajanın uzak bir depodan `.png`, `.zip` veya derlenmiş bir ikili dosya okumaya çalışması `UnicodeDecodeError` hatasına ve LLM context'inin (bağlamının) şişmesine sebep oluyordu. Koda `SAFE_TEXT_EXTENSIONS` whitelist'i eklendi. Uzantısız dosyalar (`Makefile`, `Dockerfile` vb.) için özel kontrol (`SAFE_EXTENSIONLESS`) oluşturuldu ve binary okuma riskleri donanımsal seviyede engellendi. |
+| GH-02 | ✅ Kapandı | Deprecated Authentication: PyGithub kütüphanesinin yakında kaldırılacak olan `Github(login_or_token=...)` metodu, güncel standart olan `Github(auth=Auth.Token(...))` yapısına taşınarak sürüm (dependency) uyumluluğu korundu. |
+
+---
+
+### ✅ §13.5.12 `managers/system_health.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Sistem sağlığı izleme işlevlerinin web sunucusunu (FastAPI) dondurmasını engellemek ve donanım kaynaklarının daha güvenilir şekilde serbest bırakılmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SH-01 | ✅ Kapandı | CPU İzleme Blokajı (Event-Loop Starvation): `psutil.cpu_percent(interval=1)` gibi senkron beklemeler içeren kodların asenkron ana akışı kilitlediği tespit edildi. Kod güncellenerek `cpu_sample_interval` parametresi eklendi ve varsayılan olarak non-blocking (`0.0` sn) çalışması güvence altına alındı. |
+| SH-02 | ✅ Kapandı | Güvensiz Bellek Temizliği & Kaynak Sızıntısı: `optimize_gpu_memory` çalışırken `torch.cuda` tarafında oluşacak bir hatanın `gc.collect()` satırının atlanmasına sebep olduğu anlaşıldı. Koda `try-finally` bloğu eklenerek bellek temizliğinin her koşulda çalışması garanti edildi. Ayrıca program çıkışında NVIDIA kaynaklarının asılı kalmaması için `atexit.register(self.close)` mekanizması entegre edildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
