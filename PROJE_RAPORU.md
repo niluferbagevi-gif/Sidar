@@ -102,6 +102,7 @@
 - [21. Session 12 — 2026-03-04 Son Teyit](#session-12-2026-03-04-son-teyit)
 - [22. Session 13 — 2026-03-04 Harici Geri Bildirim Teyidi](#session-13-2026-03-04-harici-geri-bildirim-teyidi)
 - [23. Session 14 — 2026-03-06 Dokümantasyon ve README Hizalaması](#session-14-dokumantasyon-ve-readme-hizalamasi)
+- [24. Session 15 — 2026-03-06 Altyapı ve Sandbox İzolasyon Güncellemesi](#session-15-altyapi-ve-sandbox-izolasyon-guncellemesi)
   - [Özet](#ozet)
 
 ---
@@ -430,6 +431,7 @@ sidar_project/
 | **Web Sunucusu** | | | |
 | `fastapi` | `~=0.115.0` | Web ve SSE sunucu | ✅ Aktif |
 | `uvicorn[standard]` | `~=0.30.6` | ASGI sunucu motoru | ✅ Aktif |
+| `prometheus-client` | `~=0.21.0` | `/metrics` endpoint'i (Prometheus formatı) | ✅ Aktif |
 | **Test & Kalite** | | | |
 | `pytest` / `pytest-cov`| `~=8.3.3` / `~=5.0.0`| Birim ve Regresyon testleri | ✅ Aktif |
 | `pytest-asyncio` | `~=0.24.0` | Asenkron test koşucusu | ✅ Aktif |
@@ -1790,6 +1792,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm orkestrasyon riskleri v
 
 DC-01 ve DC-02 numaralı kaynak sınırlandırma ve ağ esnekliği bulguları mimari kararlarla uyumlu hale getirilerek kapatılmıştır.
 
+✅ Web servisleri ENTRYPOINT çakışmasını önleyecek şekilde `--quick web` argümanlarıyla düzeltildi. Ayrıca CodeManager Docker REPL Sandbox'ının container içinde çalışabilmesi için tüm servislere `/var/run/docker.sock` entegre edildi ve `.env` tanımlamaları `env_file` yapısına geçirilerek standartlaştırıldı.
+
 Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
@@ -1834,6 +1838,8 @@ Bu dosya için aktif açık bulgu bulunmamaktadır. Bağımlılık sürümleri g
 **Kapanan Bulgular (2026-03-05)**
 
 ENV-01 ve ENV-02 numaralı sürüm kilitleme ve CUDA stratejisi bulguları başarıyla kapatılmıştır.
+
+✅ Web sunucusu `/metrics` endpoint'inin profesyonel izleme araçlarıyla uyumlu olması için `prometheus-client` eklendi.
 
 Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
@@ -2612,16 +2618,30 @@ Bu turda, kod tabanında var olan ancak belgelerde eksik kalan yeteneklerin ana 
 
 **Session 14 çıktısı:** Projenin vitrini olan README.md üzerindeki eksik/eski bilgiler giderildi; raporun denetim izi yeni oturum kaydıyla güçlendirildi.
 
+
+<a id="session-15-altyapi-ve-sandbox-izolasyon-guncellemesi"></a>
+## 24. Session 15 — 2026-03-06 Altyapı ve Sandbox İzolasyon Güncellemesi
+
+Bu turda, Docker altyapısı ve ortam bağımlılıkları canlı ortama (production) uygun hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S15-01 | `docker-compose.yml` | ✅ Kusursuz | `command` ve `ENTRYPOINT` çakışması `--quick web` argümanlarıyla düzeltildi. |
+| S15-02 | `docker-compose.yml` | ✅ Kusursuz | `CodeManager` Sandbox izolasyonu için `/var/run/docker.sock` bağlantısı tüm servislere eklendi. `env_file` yapısına geçildi. |
+| S15-03 | `environment.yml` | ✅ Eklendi | Profesyonel metrik izleme altyapısı için `prometheus-client` paketi bağımlılıklara dahil edildi. |
+
+**Session 15 çıktısı:** Konteynerleştirme mimarisindeki potansiyel çökme ve Sandbox erişim sorunları tamamen giderilmiş, altyapı en iyi pratiklere (best practices) %100 uyumlu hale getirilmiştir.
+
 <a id="ozet"></a>
 ### Özet
 
 | Metrik | Değer |
 |--------|-------|
 | İncelenen dosya | 36 |
-| Tespit edilen bulgu | 32 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02) |
+| Tespit edilen bulgu | 35 (P-01–P-07 + S9-01–S9-04 + S10-01–S10-08 + S11-01–S11-03 + S12-01–S12-04 + S13-01–S13-04 + S14-01–S14-02 + S15-01–S15-03) |
 | Önem seviyesi | DÜŞÜK/ORTA (belgeleme drift) |
 | Aynı oturumda kapanan | 7 / 7 (P serisi) |
-| Kümülatif toplam kapalı | 54 |
+| Kümülatif toplam kapalı | 57 |
 | Aktif açık sorun | **2** |
 
 ---

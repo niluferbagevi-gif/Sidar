@@ -85,10 +85,10 @@ app.add_middleware(
 # ─────────────────────────────────────────────
 
 _rate_data: dict[str, list[float]] = defaultdict(list)
-_RATE_LIMIT           = 20   # /chat — LLM çağrısı başına limit
-_RATE_LIMIT_MUTATIONS = 60   # Diğer POST/DELETE — mutasyon endpoint'leri
-_RATE_LIMIT_GET_IO    = 30   # GET I/O endpoint'leri (git, dosya, vb.)
-_RATE_WINDOW          = 60   # saniye cinsinden pencere (tüm limitler için)
+_RATE_LIMIT           = cfg.RATE_LIMIT_CHAT       # /chat — LLM çağrısı başına limit
+_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS  # Diğer POST/DELETE — mutasyon endpoint'leri
+_RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO     # GET I/O endpoint'leri (git, dosya, vb.)
+_RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW     # saniye cinsinden pencere (tüm limitler için)
 _RATE_GET_IO_PATHS    = frozenset(["/git-info", "/git-branches", "/files", "/file-content", "/github-prs", "/todo", "/rag/docs", "/rag/search"])
 _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 

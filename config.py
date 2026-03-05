@@ -242,6 +242,10 @@ class Config:
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
     GITHUB_REPO:  str = os.getenv("GITHUB_REPO", "")
 
+    # ─── HuggingFace ─────────────────────────────────────────
+    HF_TOKEN:       str = os.getenv("HF_TOKEN", "")
+    HF_HUB_OFFLINE: bool = get_bool_env("HF_HUB_OFFLINE", False)
+
     # ─── Donanım & GPU ───────────────────────────────────────
     USE_GPU:       bool  = HARDWARE.has_cuda
     GPU_INFO:      str   = HARDWARE.gpu_name
@@ -273,8 +277,15 @@ class Config:
     LOG_BACKUP_COUNT:  int = _LOG_BACKUP_CNT
 
     # ─── ReAct Döngüsü ───────────────────────────────────────
-    MAX_REACT_STEPS: int = get_int_env("MAX_REACT_STEPS", 10)
-    REACT_TIMEOUT:   int = get_int_env("REACT_TIMEOUT", 60)
+    MAX_REACT_STEPS:   int = get_int_env("MAX_REACT_STEPS", 10)
+    REACT_TIMEOUT:     int = get_int_env("REACT_TIMEOUT", 60)
+    SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
+
+    # ─── API Rate Limiting ───────────────────────────────────
+    RATE_LIMIT_WINDOW:    int = get_int_env("RATE_LIMIT_WINDOW", 60)
+    RATE_LIMIT_CHAT:      int = get_int_env("RATE_LIMIT_CHAT", 20)
+    RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
+    RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")
@@ -311,6 +322,7 @@ class Config:
     # ─── Web Arayüzü ─────────────────────────────────────────
     WEB_HOST: str = os.getenv("WEB_HOST", "0.0.0.0")
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
+    WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
@@ -423,6 +435,13 @@ class Config:
             "gpu_mixed_precision": cls.GPU_MIXED_PRECISION,
             "cpu_count":          cls.CPU_COUNT,
             "debug_mode":         cls.DEBUG_MODE,
+            "web_port":           cls.WEB_PORT,
+            "web_gpu_port":       cls.WEB_GPU_PORT,
+            "hf_hub_offline":     cls.HF_HUB_OFFLINE,
+            "rate_limit_window":  cls.RATE_LIMIT_WINDOW,
+            "rate_limit_chat":    cls.RATE_LIMIT_CHAT,
+            "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
+            "rate_limit_get_io":  cls.RATE_LIMIT_GET_IO,
         }
 
     @classmethod
