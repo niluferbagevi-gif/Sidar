@@ -65,7 +65,7 @@
     - [13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 100/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 100/100 ✅](#13518-coreinitpy-skor-99100)
-    - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
+    - [13.5.19 `agent/__init__.py` — Skor: 100/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
@@ -1540,31 +1540,41 @@ Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_G
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13519-agentinitpy-skor-98100"></a>
-#### 13.5.19 `agent/__init__.py` — Skor: 98/100 ✅
+#### 13.5.19 `agent/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Agent paketinin public export katmanı — `SidarAgent` ve prompt/anahtar sabitlerini üst katmanlara sade bir import arayüzüyle sunar.
+**Sorumluluk (Güncel):** Agent paketindeki ana ajan sınıfını (`SidarAgent`) ve kritik sabitleri (`SIDAR_SYSTEM_PROMPT`, `SIDAR_KEYS`, `SIDAR_WAKE_WORDS`) tek bir noktada toplar ve dışa aktarılmasını (export) yönetir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Agent export sözleşmesi tek kaynakta toplandı: `_EXPORTED_AGENT_SYMBOLS` map’i üzerinden public semboller merkezi olarak yönetiliyor.
-- `__all__` artık manuel liste yerine mapping anahtarlarından türetiliyor (`list(_EXPORTED_AGENT_SYMBOLS.keys())`), böylece export drift riski azaltıldı.
+Bu dosya, SİDAR'ın uygulama katmanı ile ajan mantığı arasındaki ana dağıtım merkezidir.
+
+- **Temiz Paket Arayüzü:** Uygulamanın başlatıcı modülleri (`main.py`, `cli.py`), ajanın iç yapısındaki dosya hiyerarşisini bilmek zorunda kalmadan `from agent import SidarAgent` şeklinde doğrudan ithalat yapabilir.
+- **Dinamik Senkronizasyon:** Export edilecek semboller `_EXPORTED_AGENT_SYMBOLS` sözlüğünde tanımlanır ve `__all__` listesi bu sözlüğün anahtarlarından otomatik olarak üretilir. Bu yapı, yeni bir sabit veya sınıf eklendiğinde export listesinin güncellenmesinin unutulması riskini ortadan kaldırır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py` ve `agent/definitions.py`: Bu dosyalardaki ana bileşenler burada birleştirilir.
+- 🔗 `main.py` ve `cli.py`: Başlatıcılar, ajanı ve sistem komutlarını (system prompts) bu dosya üzerinden içe aktarır.
+
+**Mimari Özeti (satır 1–13)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–3 | Modül İthalatı | Ajan sınıfının ve tanımların (`definitions`) paket içinden göreceli (relative) importu |
+| 6–11 | `_EXPORTED_AGENT_SYMBOLS` | Dışa aktarılacak sembolleri (Ajan + Sabitler) eşleyen merkezi sözlük yapısı |
+| 13 | Dinamik `__all__` | Sözlük anahtarlarından (`.keys()`) anlık üretilen ve `from agent import *` güvenliğini sağlayan export listesi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| AGPK-02 | Yeni sembol import edilip `_EXPORTED_AGENT_SYMBOLS` içine eklenmezse public API dışında kalır; yine de tek noktadan yönetim riski düşürür | 5–12 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm export tutarsızlıkları ve manuel liste yönetimi riskleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| AGPK-01 | ✅ Kapandı | `__all__` manuel liste yerine merkezi export mapping’inden türetiliyor. |
+AGT-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu, sözlük tabanlı dinamik yapıya geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

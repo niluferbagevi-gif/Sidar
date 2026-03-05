@@ -216,6 +216,16 @@
 
 ---
 
+### ✅ §13.5.19 `agent/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajan modülündeki sabitlerin (`WAKE_WORDS`, `KEYS` vb.) isim değişikliklerinde veya yeni eklemelerde `__all__` listesinin güncel kalmasını garanti altına almak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AGT-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik olarak tutulması yerine `_EXPORTED_AGENT_SYMBOLS.keys()` üzerinden dinamik olarak oluşturulması sağlandı. Bu sayede paket arayüzündeki sembollerin bütünlüğü mimari olarak koruma altına alındı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
