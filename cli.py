@@ -76,6 +76,8 @@ HELP_TEXT = """
 Komutlar:
   .status     — Sistem durumunu göster
   .clear      — Konuşma belleğini temizle
+  /clear      — Konuşma belleğini temizle (alias)
+  /reset      — Konuşma belleğini temizle (alias)
   .audit      — Proje denetimini çalıştır
   .health     — Sistem sağlık raporu
   .gpu        — GPU belleğini optimize et
@@ -160,7 +162,7 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
         elif user_input.lower() == ".status":
             print(agent.status())
             continue
-        elif user_input.lower() == ".clear":
+        elif user_input.lower() in (".clear", "/clear", "/reset"):
             print(agent.clear_memory())
             continue
         elif user_input.lower() == ".audit":
@@ -206,6 +208,8 @@ def interactive_loop(agent: SidarAgent) -> None:
 
 
 def main() -> None:
+    cfg_defaults = Config()
+
     parser = argparse.ArgumentParser(
         description="Sidar — Yazılım Mühendisi AI Asistanı (CLI)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -215,11 +219,25 @@ def main() -> None:
     parser.add_argument(
         "--level",
         choices=["restricted", "sandbox", "full"],
+        default=getattr(cfg_defaults, "ACCESS_LEVEL", "full"),
         help="Erişim seviyesini geçici olarak ayarla",
     )
-    parser.add_argument("--provider", choices=["ollama", "gemini"], help="AI sağlayıcısı")
-    parser.add_argument("--model", help="Ollama model adı")
-    parser.add_argument("--log", default="INFO", help="Log seviyesi (DEBUG/INFO/WARNING)")
+    parser.add_argument(
+        "--provider",
+        choices=["ollama", "gemini"],
+        default=getattr(cfg_defaults, "AI_PROVIDER", "ollama"),
+        help="AI sağlayıcısı",
+    )
+    parser.add_argument(
+        "--model",
+        default=getattr(cfg_defaults, "CODING_MODEL", "qwen2.5-coder:7b"),
+        help="Ollama model adı",
+    )
+    parser.add_argument(
+        "--log",
+        default=getattr(cfg_defaults, "LOG_LEVEL", "INFO"),
+        help="Log seviyesi (DEBUG/INFO/WARNING)",
+    )
     args = parser.parse_args()
 
     _setup_logging(args.log)
