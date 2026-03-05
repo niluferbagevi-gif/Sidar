@@ -85,5 +85,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD sh -c 'if ps -p 1 -o args= | grep -Eq "python(3)? .*web_server.py"; then curl -fsS http://localhost:7860/status > /dev/null; else ps -p 1 -o args= | grep -Eq "python(3)? .* (main.py|cli.py)( |$)"; fi'
 
 # Varsayılan başlatma (CLI)
-# Web için: docker run ... python web_server.py
+# Web için (ENTRYPOINT argümanı olarak): docker run ... --quick web --host 0.0.0.0 --port 7860
 ENTRYPOINT ["python", "main.py"] 
