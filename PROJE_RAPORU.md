@@ -46,7 +46,7 @@
   - [13.3 Test ve Dokümantasyon Uyum Özeti](#133-test-ve-dokumantasyon-uyum-ozeti)
   - [13.4 Açık Durum](#134-acik-durum)
   - [13.5 Dosya Bazlı Teknik Detaylar](#135-dosya-bazli-teknik-detaylar)
-    - [13.5.1 `main.py` — Skor: 96/100 ✅](#1351-mainpy-skor-100100)
+    - [13.5.1 `main.py` — Skor: 99/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.1A `cli.py` — Skor: 98/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 97/100 ✅](#1352-agentsidaragentpy-skor-95100)
     - [13.5.3 `core/rag.py` — Skor: 93/100 ✅](#1353-coreragpy-skor-88100)
@@ -720,18 +720,19 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 
 **Sorumluluk (Güncel):** Etkileşimli **akıllı başlatıcı (Ultimate Launcher)**. Web/CLI mod seçimi, sağlayıcı ve erişim seviyesi seçimi, ön kontroller (preflight) ve hedef script'i alt süreçte çalıştırma.
 
-**Mimari Özeti (satır 1–344)**
+**Mimari Özeti (satır 1–279)**
 
 | Satır | Pattern | Açıklama |
 |-------|---------|----------|
-| 1–8 | Modül başlığı | Dosyanın launcher rolü (`python main.py`, `--quick`) açıkça tanımlı |
-| 102–133 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
-| 136–144 | `target_script = "web_server.py" if mode == "web" else "cli.py"` | Asıl çalışma script'i kullanıcı seçimine göre dinamik belirlenir |
-| 148–150 | `_format_cmd(cmd)` | Komut görüntüleme için shell-safe quote üretimi |
-| 153–207 | `_run_with_streaming(...)` | Child stdout/stderr canlı okunur; istenirse tek log dosyasına yazılır |
-| 220–265 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
-| 268–291 | `execute_command(...)` | Normal passthrough + opsiyonel canlı capture/loglama akışı |
-| 294–344 | `--quick`, `--capture-output`, `--child-log` | Sihirbaz atlanarak parametre + gözlemlenebilirlik bayraklarıyla doğrudan başlatma |
+| 1–10 | Modül başlığı | Dosyanın launcher rolü (`python main.py`, `--quick`) açıkça tanımlı |
+| 28–41 | `DummyConfig` Fallback | `config.py` bulunamaması/yüklenememesi durumunda çökmeyi engelleyen, varsayılan ayarları sağlayan güvenli başlangıç katmanı |
+| 94–118 | `preflight(provider)` | Python sürümü, `.env`, Gemini key ve Ollama `/api/tags` erişimi ön doğrulanır |
+| 121–127 | `build_command(...)` | Asıl çalışma script'i (`web_server.py` veya `cli.py`) ve parametreleri kullanıcı seçimine göre dinamik belirlenir |
+| 130–132 | `_format_cmd(cmd)` | Komut görüntüleme için shell-safe quote üretimi |
+| 135–177 | `_run_with_streaming(...)` | Child stdout/stderr thread'ler (`_stream_pipe`) ile canlı okunur; istenirse tek log dosyasına yazılır |
+| 180–221 | `run_wizard()` | ANSI renkli etkileşimli menü akışı (mode/provider/level/log + ek alanlar) |
+| 224–240 | `execute_command(...)` | Normal passthrough + opsiyonel canlı capture/loglama akışı |
+| 242–276 | `main()` | `--quick`, `--capture-output`, `--child-log` sihirbaz atlanarak parametre + gözlemlenebilirlik bayraklarıyla doğrudan başlatma |
 
 **Önemli Not:** Önceki rapordaki `asyncio.run(...)` tabanlı interaktif döngü ve `.help/.status/...` CLI komutları artık `main.py` içinde değil, **`cli.py`** dosyasındadır.
 
@@ -739,7 +740,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| M-02 | `capture/log` modu uzun süreli süreçlerde tüm stdout/stderr'i bellekte de tutar (`stdout_lines`/`stderr_lines`); çok büyük loglarda ek bellek tüketimi yaratabilir | 167–174, 197–207 | Düşük |
+| M-02 | `capture/log` modu uzun süreli süreçlerde tüm stdout/stderr'i bellekte de tutar (`stdout_lines`/`stderr_lines`); çok büyük loglarda ek bellek tüketimi yaratabilir | 142–177 | Düşük |
 
 **Kapanan Bulgular (Bu Tur)**
 
