@@ -114,16 +114,16 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 | Katman | Teknoloji |
 |--------|-----------|
 | **Dil / Framework** | Python 3.11, asyncio, Pydantic v2 |
-| **Web Arayüzü** | FastAPI 0.104+, Uvicorn, SSE |
+| **Web Arayüzü** | FastAPI 0.115+, Uvicorn, SSE |
 | **LLM Sağlayıcı** | Ollama (yerel) / Google Gemini (bulut) |
-| **Vektör DB** | ChromaDB 0.4+, BM25, sentence-transformers |
-| **Sistem İzleme** | psutil, pynvml, PyTorch CUDA |
-| **GitHub Entegrasyonu** | PyGithub 2.1+ |
+| **Vektör DB & RAG** | ChromaDB 0.5+, BM25, sentence-transformers |
+| **Sistem & İzleme** | psutil, pynvml, PyTorch CUDA, opsiyonel Prometheus (`/metrics`) |
+| **GitHub Entegrasyonu** | PyGithub 2.4+ |
 | **Web Arama** | httpx, DuckDuckGo, Tavily, Google Custom Search |
-| **Test** | pytest 7.4+, pytest-asyncio 0.21+, pytest-cov |
+| **Test** | pytest 8.3+, pytest-asyncio 0.24+, pytest-cov |
 | **Container** | Docker, docker-compose |
-| **Kod Çalıştırma** | Docker izolasyonu (python:3.11-alpine) |
-| **Bellek** | Çoklu oturum (session) JSON tabanlı kalıcı depolama |
+| **Kod Çalıştırma** | Docker izolasyonu (`python:3.11-alpine` varsayılan; compose/Dockerfile profili: `python:3.11-slim`) |
+| **Bellek & Güvenlik** | Çoklu oturum (JSON), opsiyonel Fernet şifreleme (`MEMORY_ENCRYPTION_KEY`, `cryptography`) |
 
 **v2.5.0 → v2.6.0 Major Değişiklikler:**
 - GPU hızlandırma desteği eklendi (RTX 3070 Ti / Ampere)
@@ -147,19 +147,22 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 - **YENİ:** ReAct araç görselleştirmesi (her tool çağrısı badge olarak gösteriliyor)
 - **YENİ:** Mobil hamburger menüsü (768px altında sidebar toggle + overlay)
 
-**v2.6.1 → v2.7.0 Büyük Özellik Güncellemeleri (2026-03-02):**
-- **YENİ:** Canlı Aktivite Paneli (`#activity-panel`) — streaming sırasında araç çağrıları ve düşünce süreçleri gerçek zamanlı gösterilir
-- **YENİ:** THOUGHT sentinel (`\x00THOUGHT:<text>\x00`) — ajan düşünce süreçleri SSE üzerinden UI'ya iletilir
+**v2.6.1 → v2.7.0 Büyük Özellik Güncellemeleri (Güncel):**
+- **YENİ:** Sonsuz Hafıza (Vector Archive) — eski sohbetler özetlenmeden önce RAG/Chroma deposuna arşivlenir.
+- **YENİ:** Akıllı Başlatıcı + CLI ayrımı — `main.py` etkileşimli wizard/launcher katmanı; asıl terminal döngüsü `cli.py` dosyasına ayrıldı.
+- **YENİ:** Bellek Şifrelemesi — `MEMORY_ENCRYPTION_KEY` ile yerel oturum dosyaları Fernet (`cryptography`) üzerinden şifrelenebilir.
+- **YENİ:** Claude Code uyumluluk/hızlandırma paketi:
+  - `_try_direct_tool_route`: basit istekleri ReAct döngüsüne girmeden tek adımda araca yönlendirebilir.
+  - `_tool_parallel`: güvenli okuma araçlarını eşzamanlı çalıştırır.
+  - mtime cache: `SIDAR.md` / `CLAUDE.md` değişimlerini algılayıp talimat önbelleğini otomatik yeniler.
+- **YENİ:** Canlı Aktivite Paneli (`#activity-panel`) + THOUGHT sentinel (`\x00THOUGHT:<text>\x00`) ile gerçek zamanlı süreç görünürlüğü.
 - **YENİ:** Hibrit RAG Büyük Dosya Yönetimi:
-  - `docs_add_file` aracı: yerel dosyaları RAG deposuna ekler
-  - `_tool_read_file` büyük dosya tespiti: `RAG_FILE_THRESHOLD` (20 000 karakter) aşıldığında otomatik RAG önerisi
-  - `DocumentStore.add_document_from_file()` ve `get_index_info()` public metotları eklendi
-  - `RAG_FILE_THRESHOLD: int` config ayarı eklendi
-- **YENİ:** 5 yeni RAG yönetim endpoint'i: `GET /rag/docs`, `POST /rag/add-file`, `POST /rag/add-url`, `DELETE /rag/docs/{id}`, `GET /rag/search`
-- **YENİ:** Web UI RAG Belge Deposu modalı (3 sekme: Belgeler / Ekle / Arama)
+  - `docs_add_file` aracı ve `RAG_FILE_THRESHOLD` ile büyük dosyalarda otomatik RAG önerisi
+  - 5 yeni RAG endpoint'i: `GET /rag/docs`, `POST /rag/add-file`, `POST /rag/add-url`, `DELETE /rag/docs/{id}`, `GET /rag/search`
+  - Web UI RAG Belge Deposu modalı (Belgeler / Ekle / Arama)
 - **YENİ:** `managers/todo_manager.py` — Claude Code TodoWrite/TodoRead uyumlu görev takip yöneticisi
-- **DÜZELTME:** CORS konfigürasyonu sadece localhost origin'lerini kabul edecek şekilde daraltıldı
-- **DÜZELTME:** Git injection koruması — `_BRANCH_RE` regex doğrulaması eklendi
+- **DÜZELTME:** CORS konfigürasyonu localhost origin'leriyle sınırlandı
+- **DÜZELTME:** Git injection koruması (`_BRANCH_RE` regex) eklendi
 
 ---
 
@@ -171,48 +174,74 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 
 ```
 sidar_project/
+sidar_project/
 ├── agent/
-│   ├── __init__.py                 # Agent public API dışa aktarımları
-│   ├── definitions.py              # Sistem promptu + araç sözleşmeleri
-│   ├── sidar_agent.py              # Ana ReAct ajan döngüsü ve tool dispatch
-│   └── auto_handle.py              # Örüntü tabanlı hızlı komut yönlendirme
+│   ├── __init__.py                                 # Agent public API dışa aktarımları
+│   ├── definitions.py                              # Sistem promptu + araç sözleşmeleri
+│   ├── sidar_agent.py                              # Ana ReAct ajan döngüsü ve tool dispatch
+│   └── auto_handle.py                              # Örüntü tabanlı hızlı komut yönlendirme
 ├── core/
-│   ├── __init__.py                 # Core public API + sürüm bilgisi
-│   ├── llm_client.py               # Ollama/Gemini istemci katmanı (async stream)
-│   ├── memory.py                   # Oturum belleği, kalıcılık, şifreleme
-│   └── rag.py                      # Hibrit RAG (ChromaDB + BM25 + keyword)
+│   ├── __init__.py                                 # Core public API + sürüm bilgisi
+│   ├── llm_client.py                               # Ollama/Gemini istemci katmanı (async stream)
+│   ├── memory.py                                   # Oturum belleği, kalıcılık, şifreleme
+│   └── rag.py                                      # Hibrit RAG (ChromaDB + BM25 + keyword)
 ├── managers/
-│   ├── __init__.py                 # Manager export yüzeyi
-│   ├── code_manager.py             # Dosya işlemleri + Docker sandbox çalıştırma
-│   ├── github_manager.py           # GitHub repo/branch/PR/dosya işlemleri
-│   ├── package_info.py             # PyPI/npm/GitHub sürüm sorguları
-│   ├── security.py                 # OpenClaw erişim kontrolü
-│   ├── system_health.py            # CPU/RAM/GPU telemetri ve optimizasyon
-│   ├── todo_manager.py             # TodoWrite/TodoRead uyumlu görev yönetimi
-│   └── web_search.py               # Çoklu motor web arama ve URL çekme
+│   ├── __init__.py                                 # Manager export yüzeyi
+│   ├── code_manager.py                             # Dosya işlemleri + Docker sandbox çalıştırma
+│   ├── github_manager.py                           # GitHub repo/branch/PR/dosya işlemleri
+│   ├── package_info.py                             # PyPI/npm/GitHub sürüm sorguları
+│   ├── security.py                                 # OpenClaw erişim kontrolü
+│   ├── system_health.py                            # CPU/RAM/GPU telemetri ve optimizasyon
+│   ├── todo_manager.py                             # TodoWrite/TodoRead uyumlu görev yönetimi
+│   └── web_search.py                               # Çoklu motor web arama ve URL çekme
 ├── tests/
-│   ├── __init__.py                 # Test paket işaretleyicisi
-│   └── test_sidar.py               # Entegre async regresyon testleri
+│   ├── __init__.py                                 # Test paket işaretleyicisi
+│   ├── test_sidar.py                               # Entegre async regresyon testleri
+│   ├── test_agent_init_improvements.py             # Agent başlatma birim testleri
+│   ├── test_agent_subtask.py                       # Subtask / Agent aracı birim testleri
+│   ├── test_auto_handle_improvements.py            # Auto-handle regex/yönlendirme testleri
+│   ├── test_cli_banner.py                          # CLI banner dinamik sürüm testleri
+│   ├── test_code_manager_improvements.py           # Kod yöneticisi ve izolasyon testleri
+│   ├── test_config_env_helpers.py                  # Çevre değişkeni ve config okuma testleri
+│   ├── test_core_init_improvements.py              # Core export (Dışa aktarım) tutarlılık testleri
+│   ├── test_definitions_prompt.py                  # Prompt ve system yönergeleri testleri
+│   ├── test_github_manager_improvements.py         # GitHub API entegrasyon testleri
+│   ├── test_github_upload_improvements.py          # GitHub Upload senaryo testleri
+│   ├── test_llm_client_improvements.py             # Ollama/Gemini istemci katmanı testleri
+│   ├── test_managers_init_improvements.py          # Managers export tutarlılık testleri
+│   ├── test_memory_improvements.py                 # Oturum/Kalıcı bellek yönetimi testleri
+│   ├── test_package_info_improvements.py           # Paket bilgisi ve sürüm kontrolü testleri
+│   ├── test_rag_improvements.py                    # RAG hibrit arama ve chunking testleri
+│   ├── test_security_improvements.py               # OpenClaw erişim modeli testleri
+│   ├── test_sidar_improvements.py                  # Agent genel iyileştirme testleri
+│   ├── test_system_health_improvements.py          # Sistem izleme/GPU telemetri testleri
+│   ├── test_todo_manager_improvements.py           # Todo takip yöneticisi testleri
+│   ├── test_web_search_improvements.py             # Web arama motoru fallback testleri
+│   ├── test_web_server_improvements.py             # FastAPI / SSE endpoint testleri
+│   └── test_web_ui_security_improvements.py        # UI sanitize/XSS yüzeyi testleri
 ├── web_ui/
-│   └── index.html                  # Tek dosya Web UI (SSE, oturum, modal, tema)
-├── .env.example                    # Örnek ortam değişkenleri
-├── .gitignore                      # Repo hijyeni için ignore kuralları
-├── .note                           # WSL/Conda odaklı çalışma notları (taslak)
-├── CLAUDE.md                       # Claude Code uyumluluk notları
-├── SIDAR.md                        # Proje-geneli ajan çalışma kuralları
-├── DUZELTME_GECMISI.md             # Kapatılan bulgular için tarihsel arşiv
-├── PROJE_RAPORU.md                 # Ana teknik analiz raporu
-├── README.md                       # Kurulum/kullanım dokümantasyonu
-├── config.py                       # Merkezi konfigürasyon ve donanım tespiti
-├── main.py                         # Etkileşimli launcher (Wizard + quick start)
-├── cli.py                          # Asıl terminal tabanlı CLI giriş noktası
-├── web_server.py                   # FastAPI web/sse sunucusu
-├── github_upload.py                # Etkileşimli GitHub upload yardımcı aracı
-├── Dockerfile                      # Uygulama container build tanımı
-├── docker-compose.yml              # CPU/GPU × CLI/Web servis orkestrasyonu
-├── environment.yml                 # Conda bağımlılık manifesti
-└── install_sidar.sh                # Ubuntu/WSL otomatik kurulum betiği
+│   └── index.html                                  # Tek dosya Web UI (SSE, oturum, modal, tema)
+├── .env.example                                    # Örnek ortam değişkenleri
+├── .gitignore                                      # Repo hijyeni için ignore kuralları
+├── .note                                           # WSL/Conda odaklı çalışma notları (taslak)
+├── CLAUDE.md                                       # Claude Code uyumluluk notları
+├── SIDAR.md                                        # Proje-geneli ajan çalışma kuralları
+├── DUZELTME_GECMISI.md                             # Kapatılan bulgular için tarihsel arşiv
+├── PROJE_RAPORU.md                                 # Ana teknik analiz raporu
+├── README.md                                       # Kurulum/kullanım dokümantasyonu
+├── config.py                                       # Merkezi konfigürasyon ve donanım tespiti
+├── main.py                                         # Etkileşimli launcher (Wizard + quick start)
+├── cli.py                                          # Asıl terminal tabanlı CLI giriş noktası
+├── web_server.py                                   # FastAPI web/sse sunucusu
+├── github_upload.py                                # Etkileşimli GitHub upload yardımcı aracı
+├── Dockerfile                                      # Uygulama container build tanımı
+├── docker-compose.yml                              # CPU/GPU × CLI/Web servis orkestrasyonu
+├── environment.yml                                 # Conda bağımlılık manifesti
+└── install_sidar.sh                                # Ubuntu/WSL otomatik kurulum betiği
 ```
+
+> Not (2026-03-05): Bu bölüm `git ls-files` çıktısına göre 59 izlenen dosya baz alınarak güncellenmiştir.
+
 
 ---
 
