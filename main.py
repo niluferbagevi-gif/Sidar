@@ -151,17 +151,19 @@ def _format_cmd(cmd: List[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
-def _stream_pipe(pipe, collector: List[str], prefix: str, color: str, mirror: bool) -> None:
-    """Child process pipe akışını satır satır okuyup toplayan yardımcı thread."""
+def _stream_pipe(pipe, file_obj, prefix: str, color: str, mirror: bool) -> None:
+    """Child process pipe akışını satır satır okuyup belleği şişirmeden dosyaya yazar."""
     for line in iter(pipe.readline, ""):
-        collector.append(line)
+        if file_obj:
+            file_obj.write(f"[{prefix.strip('[]')}] {line}")
+            file_obj.flush()
         if mirror:
             print(f"{color}{prefix}{RESET} {line}", end="")
     pipe.close()
 
 
 def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
-    """Child process çıktısını canlı izleyerek (stdout/stderr) isteğe bağlı log dosyasına yazar."""
+    """Child process çıktısını canlı izleyerek (stdout/stderr) bellek dostu şekilde loglar."""
     process = subprocess.Popen(
         cmd,
         cwd=os.path.dirname(__file__) or ".",
@@ -171,20 +173,26 @@ def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
         bufsize=1,
     )
 
-    stdout_lines: List[str] = []
-    stderr_lines: List[str] = []
-
     assert process.stdout is not None
     assert process.stderr is not None
 
+    f = None
+    log_path = None
+    if child_log_path:
+        log_path = Path(child_log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(log_path, "w", encoding="utf-8")
+        f.write(f"$ {_format_cmd(cmd)}\n\n")
+        f.flush()
+
     t_out = threading.Thread(
         target=_stream_pipe,
-        args=(process.stdout, stdout_lines, "[Child stdout]", CYAN, True),
+        args=(process.stdout, f, "[stdout]", CYAN, True),
         daemon=True,
     )
     t_err = threading.Thread(
         target=_stream_pipe,
-        args=(process.stderr, stderr_lines, "[Child stderr]", YELLOW, True),
+        args=(process.stderr, f, "[stderr]", YELLOW, True),
         daemon=True,
     )
     t_out.start()
@@ -194,16 +202,9 @@ def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
     t_out.join()
     t_err.join()
 
-    if child_log_path:
-        log_path = Path(child_log_path)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(
-            f"$ {_format_cmd(cmd)}\n\n"
-            f"[stdout]\n{''.join(stdout_lines)}\n"
-            f"[stderr]\n{''.join(stderr_lines)}\n"
-            f"[exit_code]\n{return_code}\n",
-            encoding="utf-8",
-        )
+    if f:
+        f.write(f"\n[exit_code]\n{return_code}\n")
+        f.close()
         print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
 
     return return_code
