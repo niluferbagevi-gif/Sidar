@@ -185,6 +185,17 @@
 
 ---
 
+### ✅ §13.5.16 `managers/todo_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Görev yönetim sistemindeki veri yarışı (race condition) risklerinin giderilmesi ve ajanın aynı anda birden fazla işle meşgul olup hata yapmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TODO-01 | ✅ Kapandı | Race Condition (Veri Yarışı): Web UI ve CLI'ın aynı anda görev eklemeye çalışması durumunda ID'lerin çakışması riski saptandı. Tüm kritik list operasyonları `threading.RLock()` ile sarmalanarak thread-safe (iş parçacığı güvenli) hale getirildi. |
+| TODO-02 | ✅ Kapandı | Odağın Dağılması: Ajanın 5-6 farklı görevi aynı anda "Devam Ediyor" (`in_progress`) yapması, bağlamın (context) karışmasına sebep oluyordu. `_ensure_single_in_progress` mekanizması eklenerek "Bir işe başlandığında diğerleri otomatik beklemeye alınır" kuralı sisteme dayatıldı. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

@@ -62,7 +62,7 @@
     - [13.5.13 `managers/web_search.py` — Skor: 100/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 100/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 100/100 ✅](#13515-managerssecuritypy-skor-93100)
-    - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
+    - [13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
@@ -1417,32 +1417,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13516-managerstodomanagerpy-skor-94100"></a>
-#### 13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅
+#### 13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Görev planlama yöneticisi — ajanın çok adımlı işleri takip etmesi için `pending / in_progress / completed` durumlu görev listesi sağlar; Claude Code TodoWrite/TodoRead modeline uyumlu API sunar.
+**Sorumluluk (Güncel):** SİDAR'ın görev takip ve iş akış yönetimi modülüdür. Claude Code standartlarındaki Todo araçlarına eşdeğer işlevsellik sunarak, ajanın hedeflerini atomik parçalara bölmesini ve durum takibi yapmasını sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Tek aktif görev kuralı artık gerçekten enforce ediliyor: `_ensure_single_in_progress(...)` ile bir görev `in_progress` yapıldığında diğer aktif görevler otomatik `pending` durumuna çekiliyor.
-- Bu kural hem `set_tasks()` toplu yükleme akışında hem de `add_task(..., status=in_progress)` / `update_task(..., in_progress)` yollarında uygulanıyor.
-- Kural devreye girdiğinde kullanıcı mesajına kaç görevin `pending`e çekildiği bilgisi ekleniyor.
+Bu dosya, SİDAR'ın uzun soluklu projelerde "ne yapacağını" unutmasını engelleyen hafıza katmanıdır.
+
+- **Odağı Koruma (Single In-Progress Rule):** Ajanın aynı anda birden fazla işe başlamasını engelleyerek "multitasking" kilitlenmelerini önler. Bir görev `in_progress` yapıldığında, diğer tüm aktif görevler otomatik olarak `pending` durumuna çekilir.
+- **Thread-Safe Mimari:** Web arayüzü ve CLI üzerinden gelen eş zamanlı isteklerin veri yapısını bozmaması için `threading.RLock` ile korunmaktadır.
+- **Yapısal Raporlama:** Görevleri duruma göre (Bekleyen, Devam Eden, Tamamlanan) gruplayarak hem LLM'e hem de son kullanıcıya temiz bir görsel rapor sunar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, planlama aşamasında `todo_add`, `todo_update` ve `todo_list` araçları üzerinden bu sınıfı yönetir.
+- 🔗 `web_server.py`: Arayüzdeki "Görev Listesi" paneli, verileri doğrudan bu modülün `get_tasks` metodu üzerinden anlık olarak çeker.
+
+**Mimari Özeti (satır 1–252)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–42 | Task Dataclass | Görev verisini (ID, içerik, zaman damgası) standardize eden hafif veri modeli |
+| 59–68 | Odak Yönetimi | Birden fazla aktif görev oluşmasını engelleyen `_ensure_single_in_progress` mantığı |
+| 74–134 | Görev Manipülasyonu | `threading.Lock` koruması altında atomik görev ekleme ve toplu güncelleme işlemleri |
+| 174–216 | Gruplanmış Listeleme | Görevleri kategorize ederek terminal dostu (ikonlu) rapor üreten `list_tasks` fonksiyonu |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 266–281 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Eş zamanlı erişim riskleri ve görev karmaşası sorunları tamamen giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| TD-01 | ✅ Kapandı | `set_tasks`, `add_task` ve `update_task` yollarında tek `in_progress` kuralı otomatik uygulanıyor. |
+TODO-01 ve TODO-02 numaralı "Race Condition" ve "Odağın Dağılması" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
