@@ -60,7 +60,7 @@
     - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
     - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
-    - [13.5.16 `managers/todo_manager.py` — Skor: 92/100 ✅](#13516-managerstodomanagerpy-skor-92100)
+    - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 96/100 ✅](#13517-managersinitpy-skor-96100)
     - [13.5.18 `core/__init__.py` — Skor: 97/100 ✅](#13518-coreinitpy-skor-97100)
     - [13.5.19 `agent/__init__.py` — Skor: 96/100 ✅](#13519-agentinitpy-skor-96100)
@@ -1575,35 +1575,28 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13516-managerstodomanagerpy-skor-92100"></a>
-#### 13.5.16 `managers/todo_manager.py` — Skor: 92/100 ✅
+<a id="13516-managerstodomanagerpy-skor-94100"></a>
+#### 13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅
 
 **Sorumluluk:** Görev planlama yöneticisi — ajanın çok adımlı işleri takip etmesi için `pending / in_progress / completed` durumlu görev listesi sağlar; Claude Code TodoWrite/TodoRead modeline uyumlu API sunar.
 
-**Veri Modeli ve Eşzamanlılık (satır 14–60)**
+**Bu Turdaki İyileştirmeler**
 
-- `Task` dataclass ile görev kimliği, içerik ve zaman damgaları tutulur.
-- `threading.RLock` ile tüm mutasyon/okuma yolları korunur; eşzamanlı çağrılarda liste bütünlüğü korunur.
-- Durum sabitleri ve ikon haritası kullanıcıya tutarlı metin çıktısı sağlar.
-
-**İşlevsel Kapsam (satır 66–235)**
-
-- `add_task`, `set_tasks`, `update_task` ve kısa yol metodları (`mark_in_progress`, `mark_completed`) temel CRUD akışını kapsar.
-- `list_tasks()` durum bazlı gruplama yaparak insan okunur rapor üretir.
-- `clear_completed()` ve `clear_all()` bakım/temizlik işlemleri için pratik yardımcılar sunar.
-
-**UI/REST Entegrasyon Noktaları (satır 240–267)**
-
-- `get_tasks()` JSON-uyumlu dict listesi döndürerek endpoint katmanına uygun veri sağlar.
-- `get_active_count()` aktif görev metriklerini hızlıca üretir.
-- `__len__` ve `__repr__` gözlemlenebilirlik/debug kolaylığı sağlar.
+- Tek aktif görev kuralı artık gerçekten enforce ediliyor: `_ensure_single_in_progress(...)` ile bir görev `in_progress` yapıldığında diğer aktif görevler otomatik `pending` durumuna çekiliyor.
+- Bu kural hem `set_tasks()` toplu yükleme akışında hem de `add_task(..., status=in_progress)` / `update_task(..., in_progress)` yollarında uygulanıyor.
+- Kural devreye girdiğinde kullanıcı mesajına kaç görevin `pending`e çekildiği bilgisi ekleniyor.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| TD-01 | `set_tasks()` toplu yüklemede aynı anda birden fazla `in_progress` görevi engellemiyor; sınıf dokümanındaki “aynı anda yalnızca bir aktif görev” beklentisiyle çelişebilir | 93–121 | Düşük |
-| TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 240–255 | Düşük |
+| TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 266–281 | Düşük |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| TD-01 | ✅ Kapandı | `set_tasks`, `add_task` ve `update_task` yollarında tek `in_progress` kuralı otomatik uygulanıyor. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
