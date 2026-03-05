@@ -66,7 +66,7 @@
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/test_sidar.py` — Skor: 94/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
-    - [13.5.22 `github_upload.py` — Skor: 83/100 ✅](#13522-githubuploadpy-skor-83100)
+    - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 90/100 ✅](#13523-dockerfile-skor-90100)
     - [13.5.24 `docker-compose.yml` — Skor: 88/100 ✅](#13524-docker-composeyml-skor-88100)
     - [13.5.25 `environment.yml` — Skor: 91/100 ✅](#13525-environmentyml-skor-91100)
@@ -1757,30 +1757,28 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13522-githubuploadpy-skor-83100"></a>
-#### 13.5.22 `github_upload.py` — Skor: 83/100 ✅
+<a id="13522-githubuploadpy-skor-90100"></a>
+#### 13.5.22 `github_upload.py` — Skor: 90/100 ✅
 
 **Sorumluluk:** Komut satırı GitHub yükleme otomasyon aracı — yerel projeyi git init/remote/commit/push adımlarıyla etkileşimli şekilde GitHub’a yedeklemeyi hedefler.
 
-**Akış Özeti (satır 55–170)**
+**Bu Turdaki İyileştirmeler**
 
-- Git kurulum ve kullanıcı kimliği (`git config user.name/email`) kontrolü yapar.
-- Repo yoksa `git init` ve `main` branch hazırlığı uygular.
-- `origin` yoksa kullanıcıdan URL alıp remote ekler, ardından `git add`, `commit`, `push` zincirini çalıştırır.
-- Push çakışmalarında `git pull ... --allow-unrelated-histories --no-edit -X ours` ile otomatik birleştirme deneyip yeniden push dener.
-
-**Riskli Noktalar ve Dayanıklılık (satır 27–50, 117, 131, 144)**
-
-- `run_command()` tüm komutları `shell=True` ile çalıştırır; kullanıcı girdisi içeren komutlarda güvenlik/kaçış riski yükselir.
-- Commit mesajı ve repo URL’si doğrudan komut string’ine gömülür; özel karakterler shell davranışını etkileyebilir.
-- Çakışma çözümünde `-X ours` stratejisi uzak değişiklikleri baskılayarak beklenmeyen içerik kaybına yol açabilir.
+- Komut yürütme katmanı `shell=True` yerine güvenli argüman listesi + `shell=False` modeline geçirildi.
+- `repo_url` ve `commit_msg` gibi kullanıcı girdileri artık string komut birleştirmesi yerine ayrı argümanlar olarak `subprocess.run(...)` çağrısına aktarılıyor.
+- Temel repo URL doğrulaması (`_is_valid_repo_url`) eklendi; boş/geçersiz URL durumunda işlem erken ve güvenli şekilde sonlandırılıyor.
 
 **Açık Bulgular**
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| GHU-01 | `subprocess.run(..., shell=True)` + string komut yaklaşımı kullanıcı girdisiyle birleştiğinde komut enjeksiyon/kaçış riski taşır | 30–33, 117, 131 | Orta |
-| GHU-02 | Otomatik merge’de `-X ours` kullanımı uzak taraf değişikliklerini bastırabilir; senkronizasyon başarısı sağlansa da veri kaybı riski vardır | 144–151 | Orta |
+| GHU-02 | Otomatik merge’de `-X ours` kullanımı uzak taraf değişikliklerini bastırabilir; senkronizasyon başarısı sağlansa da veri kaybı riski vardır | 186–193 | Orta |
+
+**Kapanan Bulgular (Bu Tur)**
+
+| ID | Durum | Not |
+|----|------|-----|
+| GHU-01 | ✅ Kapandı | `subprocess` çalıştırmaları artık shell-free argüman listesi ile yapılıyor; enjeksiyon/kaçış yüzeyi azaltıldı. |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
