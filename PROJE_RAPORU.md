@@ -264,7 +264,9 @@ sidar_project/
 <a id="4-mevcut-kritik-hatalar"></a>
 ## 4. Mevcut Kritik Hatalar
 
-> ✅ 2026-03-02 güncel taramasında kritik hata tespit edilmemiştir. Geçmişte tespit edilen tüm kritik hatalar giderilmiştir — bkz. [§3](#3-onceki-rapordan-bu-yana-duzeltilen-hatalar).
+> ✅ 2026-03-05 satır-satır repo doğrulamasında aktif **kritik** hata tespit edilmemiştir; geçmiş kritik bulgular kapalıdır — bkz. [§3](#3-onceki-rapordan-bu-yana-duzeltilen-hatalar).
+>
+> ℹ️ **Eksik/güncelleme notu:** Önceki metin yalnızca `2026-03-02` taramasını referanslıyordu. Bu bölüm, bu turdaki tam dosya doğrulamasını da kapsayacak şekilde güncellenmiştir.
 
 ---
 
