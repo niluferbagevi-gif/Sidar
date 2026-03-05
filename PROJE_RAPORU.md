@@ -67,7 +67,7 @@
     - [13.5.20 `tests/test_sidar.py` — Skor: 94/100 ✅](#13520-teststestsidarpy-skor-94100)
     - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
     - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
-    - [13.5.23 `Dockerfile` — Skor: 90/100 ✅](#13523-dockerfile-skor-90100)
+    - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 88/100 ✅](#13524-docker-composeyml-skor-88100)
     - [13.5.25 `environment.yml` — Skor: 91/100 ✅](#13525-environmentyml-skor-91100)
     - [13.5.26 `.env.example` — Skor: 90/100 ✅](#13526-envexample-skor-90100)
@@ -683,7 +683,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (64) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
 - **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
 - **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
-- **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck'te `ps aux | grep` fallback'inin yalancı-pozitif riski ise takip notu olarak korunuyor. → Detay: §13.5.23
+- **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ⚠️ `deploy.resources` limitleri standart Compose akışında her zaman uygulanmayabilir; ayrıca `host.docker.internal` bağımlılığı platformlar arası taşınabilirlik farkı üretebilir. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ⚠️ Lockfile/exact pin bulunmadığından tekrar üretilebilirlik zamanla sürüm kaymasına açık kalır; ayrıca GPU olmayan kurulumlarda kullanıcıdan manuel wheel-index ayarı beklenir. → Detay: §13.5.25
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ⚠️ Donanıma özgü öneri değerler (örn. WSL2/RTX odaklı timeout ve GPU varsayılanları) farklı ortamlarda doğrudan kopyalandığında hatalı beklenti oluşturabilir. → Detay: §13.5.26
@@ -1788,8 +1788,8 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13523-dockerfile-skor-90100"></a>
-#### 13.5.23 `Dockerfile` — Skor: 90/100 ✅
+<a id="13523-dockerfile-skor-94100"></a>
+#### 13.5.23 `Dockerfile` — Skor: 94/100 ✅
 
 **Sorumluluk:** Uygulamanın container paketleme tanımı — CPU/GPU taban imaj seçimi, bağımlılık kurulumu, çalışma zamanı env ayarları, sağlık kontrolü ve varsayılan giriş komutunu yönetir.
 
@@ -1810,7 +1810,7 @@ except Exception as exc:
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
 | DF-01 | Üst açıklama yorumundaki sürüm metni `2.7.0` ile metadata label hizasına çekildi | 3, 25 | ✅ Kapalı |
-| DF-02 | Healthcheck fallback'i `ps aux | grep "[p]ython"` yaklaşımını kullanıyor; web endpoint çalışmasa bile herhangi bir python süreci varsa sağlık geçebilir | 87–88 | Orta |
+| DF-02 | Healthcheck fallback'i PID 1 komutuna göre deterministik hale getirildi; web modunda `/status` zorunlu, CLI modunda yalnızca `main.py/cli.py` kabul ediliyor | 87–88 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 
@@ -2319,7 +2319,7 @@ except Exception as exc:
    Tehlikeli shell komutları için allowlist/denylist + kritik yol yazma işlemlerinde kullanıcı onayı (özellikle web UI) uygulanmalı.
 
 9. **Kurulum ve healthcheck güvenliği:**
-   `install_sidar.sh` içindeki `curl|sh` ve otomatik `apt upgrade -y` adımları güvenlik/şeffaflık açısından yeniden tasarlanmalı; `Dockerfile` healthcheck daha deterministik endpoint odaklı hale getirilmeli.
+   `install_sidar.sh` içindeki `curl|sh` ve otomatik `apt upgrade -y` adımları güvenlik/şeffaflık açısından yeniden tasarlanmalı.
 
 10. **Bağımlılık tekrar üretilebilirliği (lock/pin stratejisi):**
     `environment.yml` için sürüm sabitleme/lock dosyası yaklaşımı netleştirilmeli; CI ve yerel kurulumlar arasında sürüm drift’i azaltılmalı.
