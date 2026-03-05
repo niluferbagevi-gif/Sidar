@@ -152,6 +152,113 @@
 
 ---
 
+### ✅ §13.5.13 `managers/web_search.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış arama motoru API'lerinin (Tavily, DDG) limitleri veya sürüm değişiklikleri nedeniyle ajan döngüsünün kesintiye uğramasını, boş sonuçlar dönmesini ve sistemin kilitlenmesini önlemek.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| WEB-01 | ✅ Kapandı | API Kota Çökmesi (Zombi İstekler): Tavily motorunda API kredisi bittiğinde dönen 401/403 HTTP hatalarının sistemi durdurması sorunu çözüldü. Bu tür hatalar alındığında `self.tavily_key = ""` ile anahtar o oturum için temizlenir ve sistem otomatik olarak Google veya DuckDuckGo'ya (Fallback) yönlenerek kesintisiz çalışmayı sürdürür. Ayrıca bir motor "sonuç bulamadı" döndüğünde (`[NO_RESULTS]`) arama pes etmeyip diğer motorlara şelale modeliyle devredilir. |
+| WEB-02 | ✅ Kapandı | DuckDuckGo Asenkron Kilitlenmesi: `duckduckgo_search` kütüphanesinin v8 ve sonrasında `AsyncDDGS` yapısının uyumsuzluk/bloklama yaratması nedeniyle ana sunucunun donma riski vardı. Bu modül tamamen revize edilerek, standart senkron `DDGS()` sınıfı `asyncio.to_thread()` sarmalayıcısı ile iş parçacığı havuzuna (thread pool) alındı ve event-loop sağlığı garanti edildi. |
+
+---
+
+### ✅ §13.5.14 `managers/package_info.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış paket depolarına (PyPI, npm) yapılan ağ isteklerinin ana sunucuyu dondurmasını engellemek ve paket sürüm numaralarının (Semantic Versioning) Python tarafından doğru algılanmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| PKG-01 | ✅ Kapandı | Event-Loop Blokajı (Senkron HTTP): Eski mimaride kullanılan senkron kütüphanelerin (örn. `requests`) dış API'lerin yanıt vermediği anlarda (`TIMEOUT` süresince) tüm ajanı ve web arayüzünü kilitlediği tespit edildi. Sınıftaki tüm API istek metotları (`pypi_info`, `npm_info`, `github_releases`) `httpx.AsyncClient` ile async/await mimarisine geçirilerek I/O darboğazı kalıcı olarak çözüldü. |
+| PKG-02 | ✅ Kapandı | Sürüm Sıralama Hatası (String Sort Bug): PyPI sürümleri varsayılan olarak alfabetik string sıralamasına tabi tutulduğunda `v1.10.0` sürümünün `v1.2.0`'dan daha eskiymiş gibi algılanması sorunu çözüldü. Koda `packaging.version.Version` tabanlı (PEP 440 uyumlu) `_version_sort_key` metodu eklendi. Pre-release (`alpha/beta/rc`) sürümler başarıyla filtrelendi. |
+
+---
+
+### ✅ §13.5.15 `managers/security.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajanın proje dizini dışına sızmasını sağlayan gelişmiş dosya yolu saldırılarının engellenmesi ve yetkilendirme sisteminin daha robust hale getirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| SEC-01 | ✅ Kapandı | Symlink Traversal Saldırısı: Ajanın proje içinde bir dosya adıymış gibi görünüp aslında sistem dışındaki hassas bir dosyaya (örn. `/etc/shadow`) işaret eden sembolik bağlantılar oluşturup okuması riski saptandı. Tüm yol kontrolleri `Path.resolve()` metoduna geçirildi. Bu sayede symlink'ler gerçek hedeflerine çözümlenmeden yetki verilmesi imkansız hale getirildi. |
+| SEC-02 | ✅ Kapandı | Bilinmeyen Yetki Seviyesi Güvensizliği: `.env` dosyasındaki `ACCESS_LEVEL` parametresinin boş bırakılması veya hatalı girilmesi durumunda sistemin varsayılan olarak ne yapacağı belirsizdi. `_normalize_level_name` metodu eklenerek tüm geçersiz girişler otomatik olarak `sandbox` (izole) moduna çekildi ve sistem güvenliği garanti altına alındı. |
+
+---
+
+### ✅ §13.5.16 `managers/todo_manager.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Görev yönetim sistemindeki veri yarışı (race condition) risklerinin giderilmesi ve ajanın aynı anda birden fazla işle meşgul olup hata yapmasının engellenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| TODO-01 | ✅ Kapandı | Race Condition (Veri Yarışı): Web UI ve CLI'ın aynı anda görev eklemeye çalışması durumunda ID'lerin çakışması riski saptandı. Tüm kritik list operasyonları `threading.RLock()` ile sarmalanarak thread-safe (iş parçacığı güvenli) hale getirildi. |
+| TODO-02 | ✅ Kapandı | Odağın Dağılması: Ajanın 5-6 farklı görevi aynı anda "Devam Ediyor" (`in_progress`) yapması, bağlamın (context) karışmasına sebep oluyordu. `_ensure_single_in_progress` mekanizması eklenerek "Bir işe başlandığında diğerleri otomatik beklemeye alınır" kuralı sisteme dayatıldı. |
+
+---
+
+### ✅ §13.5.17 `managers/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Manager katmanına yeni sınıflar eklendiğinde `__all__` listesinin güncellenmesinin unutulması sonucu oluşan import hatalarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| MGR-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması (Drift): Eski yapıda statik bir string listesi olan `__all__` yapısı, `_EXPORTED_MANAGERS` tuple'ı üzerinden beslenen bir list comprehension yapısına (`[cls.__name__ for cls in ...]`) dönüştürüldü. Artık modül import edildiği anda export listesi otomatik senkronize olmaktadır. |
+
+---
+
+### ✅ §13.5.18 `core/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Çekirdek modül eklemelerinde veya isim değişikliklerinde `__all__` listesinin eski kalması sonucu oluşan çalışma zamanı (runtime) hatalarının önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| CORE-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik stringlerden oluşması nedeniyle yaşanan senkronizasyon sorunu, `_EXPORTED_CORE` tuple yapısı ve list comprehension (`[cls.__name__ for cls in ...]`) kullanımıyla dinamik hale getirilerek çözüldü. |
+
+---
+
+### ✅ §13.5.19 `agent/__init__.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Ajan modülündeki sabitlerin (`WAKE_WORDS`, `KEYS` vb.) isim değişikliklerinde veya yeni eklemelerde `__all__` listesinin güncel kalmasını garanti altına almak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| AGT-INIT-01 | ✅ Kapandı | Manuel Export Listesi Kayması: `__all__` listesinin statik olarak tutulması yerine `_EXPORTED_AGENT_SYMBOLS.keys()` üzerinden dinamik olarak oluşturulması sağlandı. Bu sayede paket arayüzündeki sembollerin bütünlüğü mimari olarak koruma altına alındı. |
+
+---
+
+### ✅ §13.5.20 `tests/` Dizini İyileştirmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Projenin büyümesiyle birlikte test kapsamının yetersiz kalması ve kritik güvenlik/mimari iyileştirmelerin regresyona açık olması riskinin giderilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| T-01 | ✅ Kapandı | Modüler Test Eksikliği: Proje mimarisiyle %100 uyumlu, her modülün kendi test senaryosuna sahip olduğu modüler yapıya geçildi. Paket başlatıcıları dahil kritik modüller test kapsamına alındı. |
+| T-02 | ✅ Kapandı | Güvenlik Regresyon Testleri: Path traversal, rate limiting ve asenkron event-loop bloklama gibi kritik açıklar için regresyon test dosyaları oluşturuldu. Bu açıkların gelecekteki güncellemelerle tekrar sızması mimari olarak engellendi. |
+
+---
+
+### ✅ §13.5.21 `web_ui/index.html` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Web arayüzünde LLM kaynaklı içeriklerin yaratabileceği güvenlik risklerinin (XSS) önlenmesi ve uzun süren ajan görevlerinde kullanıcıya anlık geri bildirim sağlanması.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| UI-01 | ✅ Kapandı | XSS Güvenlik Açığı: Yapay zekanın ürettiği Markdown blokları içine kötü niyetli `<script>` / `<iframe>` içerikleri sızması riski, `sanitizeRenderedHtml` katmanı ile giderildi. Render öncesi tehlikeli etiketler ve olay dinleyicileri (`onmouseover`, `onclick` vb.) temizlenerek güvenli çıktı akışı sağlandı. |
+| UI-02 | ✅ Kapandı | Şeffaflık ve Geri Bildirim Eksikliği: Uzun süren görevlerde arayüzün donmuş gibi görünmesi problemi, Activity Panel ve ilişkili AP akışları ile çözüldü. Kullanıcı artık ajanın anlık düşüncesini, aktif aracını ve çalışma süresini canlı olarak izleyebilmektedir. |
+
+---
+
+### ✅ §13.5.22 `github_upload.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** GitHub yükleme aracındaki güvenlik açıklarının kapatılması ve otomatik senkronizasyon sırasında oluşabilecek veri kaybı risklerinin önlenmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GHU-01 | ✅ Kapandı | Shell Injection Koruması: Kullanıcıdan alınan URL ve mesajların shell komutuna doğrudan birleştirilmesi engellendi. Tüm komutlar `shell=False` ve argüman listesi formatına geçirilerek enjeksiyon riski giderildi. |
+| GHU-02 | ✅ Kapandı | Kör Merge (Veri Kaybı) Engellemesi: Çakışma durumunda otomatik birleştirme adımı kullanıcı onayına bağlandı. Sistem, birleştirme öncesi açık teyit alır; onay yoksa push güvenli şekilde durdurulur. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

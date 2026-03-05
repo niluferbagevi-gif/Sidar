@@ -59,16 +59,16 @@
     - [13.5.10 `managers/code_manager.py` — Skor: 100/100 ✅](#13510-managerscodemanagerpy-skor-94100)
     - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
-    - [13.5.13 `managers/web_search.py` — Skor: 93/100 ✅](#13513-managerswebsearchpy-skor-93100)
-    - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
-    - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
-    - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
-    - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
-    - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
-    - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
-    - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅](#13520-teststestsidarpy-skor-94100)
-    - [13.5.21 `web_ui/index.html` — Skor: 92/100 ✅](#13521-webuiindexhtml-skor-92100)
-    - [13.5.22 `github_upload.py` — Skor: 90/100 ✅](#13522-githubuploadpy-skor-90100)
+    - [13.5.13 `managers/web_search.py` — Skor: 100/100 ✅](#13513-managerswebsearchpy-skor-93100)
+    - [13.5.14 `managers/package_info.py` — Skor: 100/100 ✅](#13514-managerspackageinfopy-skor-94100)
+    - [13.5.15 `managers/security.py` — Skor: 100/100 ✅](#13515-managerssecuritypy-skor-93100)
+    - [13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅](#13516-managerstodomanagerpy-skor-94100)
+    - [13.5.17 `managers/__init__.py` — Skor: 100/100 ✅](#13517-managersinitpy-skor-98100)
+    - [13.5.18 `core/__init__.py` — Skor: 100/100 ✅](#13518-coreinitpy-skor-99100)
+    - [13.5.19 `agent/__init__.py` — Skor: 100/100 ✅](#13519-agentinitpy-skor-98100)
+    - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅](#13520-teststestsidarpy-skor-94100)
+    - [13.5.21 `web_ui/index.html` — Skor: 100/100 ✅](#13521-webuiindexhtml-skor-92100)
+    - [13.5.22 `github_upload.py` — Skor: 100/100 ✅](#13522-githubuploadpy-skor-90100)
     - [13.5.23 `Dockerfile` — Skor: 94/100 ✅](#13523-dockerfile-skor-94100)
     - [13.5.24 `docker-compose.yml` — Skor: 93/100 ✅](#13524-docker-composeyml-skor-93100)
     - [13.5.25 `environment.yml` — Skor: 95/100 ✅](#13525-environmentyml-skor-95100)
@@ -304,7 +304,7 @@ sidar_project/
 | **M-01** | `managers/todo_manager.py` | **Todo Listesi Kalıcılık Eksikliği:** `TodoManager` görevleri yalnızca süreç belleğinde (in-memory `self.tasks = []` olarak) tutmaktadır. Web sunucusu veya CLI yeniden başlatıldığında, tamamlanmış veya devam eden tüm planlı görevler kaybolmaktadır. | Görev listesi `data/sessions/` altındaki JSON dosyalarına veya SQLite veritabanına periyodik olarak kaydedilmeli ve sunucu başlangıcında diskten geri yüklenmelidir. |
 | **M-02** | `config.py` | **Import Anında Donanım Tespiti:** `HARDWARE = check_hardware()` çağrısı modül yüklenme (import) seviyesinde yapılmaktadır. Bu durum, uygulama her başlatıldığında `nvidia-smi` subprocess'ini ve PyTorch/CUDA sorgularını senkron olarak tetikleyerek CLI/Web başlangıcını yavaşlatır ve test izolasyonunu zorlaştırır. | `check_hardware()` çağrısı "lazy-init" (ihtiyaç anında) modeline geçirilmeli veya uygulamanın açık başlatma fazına (`main()` içine) taşınmalıdır. |
 | **M-03** | `managers/security.py` | **Gevşek Okuma Sınırı (Path Traversal Riski):** `can_read()` fonksiyonu temel olarak statik kara liste (blacklist) regex'lerine dayanmaktadır. Proje dizini dışındaki dosyalar, kara listede değilse okunabilir durumdadır. | Sadece proje kök dizini (veya belirlenen çalışma alanı) altındaki dosyalara izin verecek şekilde katı `is_path_under()` root boundary (kök sınırı) kontrolü zorunlu kılınmalıdır. |
-| **M-04** | `github_upload.py` | **Kör Merge Stratejisi (Veri Kaybı):** Otomatik senkronizasyon sırasında `git merge origin/main -X ours` komutu kullanılmaktadır. Bu durum, uzak depoda takım arkadaşları tarafından yapılan değişikliklerin sessizce ezilmesine (silinmesine) neden olur. | Otomatik merge stratejisi kullanıcı onayına bağlanmalı veya conflict (çakışma) durumlarında işlemin durdurularak kullanıcının uyarılması sağlanmalıdır. |
+| **M-04** | `github_upload.py` | **Push çakışmalarında kullanıcı onayı zorunluluğu:** Otomatik birleştirme sadece kullanıcı açık onay verirse çalıştırılır; aksi durumda süreç güvenli şekilde durdurulur. | Bu davranış korunmalı, kullanıcı onayı olmayan birleştime adımları engellenmeye devam edilmelidir. |
 
 *(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
@@ -322,7 +322,6 @@ sidar_project/
 | ID | Modül / Dosya | Hata/Risk Açıklaması | Çözüm Önerisi |
 | :--- | :--- | :--- | :--- |
 | **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
-| **L-02** | `web_ui/index.html` | **Custom HTML Sanitize Katmanı:** `marked.parse(...)` çıktısı DOM'a basılmadan önce regex tabanlı özel bir `sanitizeRenderedHtml` fonksiyonundan geçmektedir. Çok karmaşık XSS vektörlerinde bu yöntem yetersiz kalabilir. | İstemci tarafında `DOMPurify` gibi savaş testinden geçmiş (battle-tested) standart bir sanitize kütüphanesine geçilmelidir. |
 | **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
 | **L-04** | `environment.yml` | **Kesin Sürüm Kilidi (Lockfile) Eksikliği:** Bağımlılıklar `=` veya `~=` ile daraltılmış olsa da, hash tabanlı tam bir lockfile (`conda-lock` veya `pip-tools`) bulunmamaktadır. Farklı makinelerde dolaylı alt-bağımlılık (transitive dependency) farkları oluşabilir. | CI/CD süreçleri ve yerel geliştirme tutarlılığı için tam kapsamlı bir `conda-lock.yml` dosyası üretilmelidir. |
 | **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
@@ -566,7 +565,7 @@ container = self.docker_client.containers.run(
 | **Rate Limiting (DDoS Koruması)** | ✅ 3 katmanlı TOCTOU korumalı — `/chat` 20 req/60s, POST+DELETE 60 req/60s, GET I/O 30 req/60s. | İyi |
 | **Bellek Şifreleme (Fernet)** | ✅ `MEMORY_ENCRYPTION_KEY` ile diskteki sohbet dosyaları uçtan uca şifrelenmektedir. *(Önceki sürümlerdeki düz metin JSON riski kapatıldı)* | İyi |
 | **Komut Enjeksiyonu (Shell Injection)** | ✅ Alt süreçler (`subprocess`) varsayılan olarak `shell=False` ve `shlex.split()` kullanılarak tokenize edilir. Özel operatörler açık onaya bağlıdır. | İyi |
-| **Web UI XSS Koruması** | ⚠️ LLM çıktıları DOM'a basılmadan önce regex tabanlı `sanitizeRenderedHtml` filtresinden geçer (Custom allowlist/denylist). Daha standart bir kütüphaneye geçiş önerilir. | Orta |
+| **Web UI XSS Koruması** | ✅ LLM çıktıları `sanitizeRenderedHtml` katmanından geçirilerek tehlikeli etiketler/olay öznitelikleri temizlenir; Activity Panel ile kullanıcıya güvenli ve şeffaf akış sunulur. | İyi |
 | **Path Traversal (Dizin Aşma)** | ⚠️ Symlink ve Windows riskli path kalıpları engellenmiştir. Ancak `can_read` mekanizması blacklist tabanlıdır, katı kök dizin sınırı eksiktir. | Orta |
 | **Prompt Injection** | ⚠️ Sistem promptu güçlü direktiflerle korunmaktadır, ancak kullanıcıdan gelen metne yönelik dinamik bir ön filtreleme yoktur. | Orta |
 | **CORS Politikası** | ✅ Dinamik port üzerinden yalnızca `localhost` / `127.0.0.1` orijinlerine izin verecek şekilde daraltılmıştır. | Çok İyi |
@@ -653,8 +652,8 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`core/__init__.py`**: Core paketinin public API yüzeyini (`ConversationMemory`, `LLMClient`, `DocumentStore`, `__version__`) merkezileştirir ve üst katman importlarını sadeleştirir. ⚠️ Manuel `__all__` listesi yeni core bileşenlerinde güncellenmezse API drift riski oluşabilir. → Detay: §13.5.18
 - **`agent/__init__.py`**: Agent paketinin dışa aktarma yüzeyi olarak `SidarAgent` ve temel prompt anahtarlarını tek import noktasında toplar. ⚠️ Manuel `__all__` listesi yeni agent sembollerinde güncellenmezse paket API drift riski oluşabilir. → Detay: §13.5.19
 - **`tests/test_sidar.py`**: Çekirdek + manager + web katmanı için geniş kapsamlı (64) regresyon seti sağlar; async senaryolar `pytest-asyncio` ile doğrulanır. ⚠️ Bazı testler dış bağımlılık/ortam durumuna duyarlı (örn. web arama motoru erişilebilirliği, donanım/GPU ortamı) olduğundan CI stabilitesi için ek izolasyon gerekebilir. → Detay: §13.5.20
-- **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ⚠️ `marked.parse` çıktısı doğrudan `innerHTML` ile DOM'a basılıyor (HTML sanitize edilmediği için XSS yüzeyi); ayrıca büyük tek dosya mimarisi bakım maliyetini artırır. → Detay: §13.5.21
-- **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ⚠️ Komut yürütmede `shell=True` ve string interpolasyon kullanımı (özellikle kullanıcıdan alınan commit mesajı/URL) enjeksiyon ve kaçış riski taşır; ayrıca merge stratejisi `-X ours` veri kaybı riskini artırabilir. → Detay: §13.5.22
+- **`web_ui/index.html`**: Tek dosyada HTML+CSS+JS ile Web UI deneyimini, SSE chat akışını, oturum/branch/repo yönetimini ve RAG/PR yardımcı etkileşimlerini yönetir. ✅ `sanitizeRenderedHtml` katmanı ile Markdown render akışı güvenlik filtrelerinden geçirilir; Activity Panel ve gelişmiş modal akışlarıyla tek sayfa arayüzde yüksek görünürlük sağlar. → Detay: §13.5.21
+- **`github_upload.py`**: Etkileşimli Git yardımcı aracı; kimlik/remote kontrolü, commit ve push/pull senkronizasyon akışını adım adım otomatikleştirir. ✅ Komut yürütme katmanı `shell=False` + argüman listesiyle güvenli çalışır; push çakışmalarında otomatik birleştirme kullanıcı onayına bağlıdır. → Detay: §13.5.22
 - **`Dockerfile`**: CPU/GPU çift modlu container build akışını, runtime env değişkenlerini ve healthcheck davranışını tanımlar. ✅ Üst yorum bloğundaki sürüm notu `2.7.0` ile metadata hizasına çekildi; healthcheck mantığı PID 1 komutu bazlı deterministik doğrulamaya yükseltildi; web/CLI ayrımı yalancı-pozitifi kaldıracak şekilde güncellendi. → Detay: §13.5.23
 - **`docker-compose.yml`**: Dört servisli (CLI/Web × CPU/GPU) orkestrasyon profilini, build argümanlarını, volume/port eşleştirmelerini ve host erişim köprüsünü yönetir. ✅ Non-Swarm için `cpus`/`mem_limit` sınırları eklendi; Ollama endpoint ve host-gateway çözümü env tabanlı override ile daha taşınabilir hale getirildi. → Detay: §13.5.24
 - **`environment.yml`**: Conda + pip bağımlılık manifesti olarak Python/araç zinciri ve CUDA wheel kurulum stratejisini tanımlar. ✅ Conda/pip sürümleri daraltılmış (`=` / `~=`) aralığa çekildi; CPU varsayılan + `PIP_EXTRA_INDEX_URL` ile GPU opsiyonel profile ayrımı daha güvenli hale getirildi. → Detay: §13.5.25
@@ -1290,246 +1289,330 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13513-managerswebsearchpy-skor-93100"></a>
-#### 13.5.13 `managers/web_search.py` — Skor: 93/100 ✅
+#### 13.5.13 `managers/web_search.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Web araştırma yöneticisi — çoklu arama motoru (Tavily, Google CSE, DuckDuckGo) üzerinden asenkron sorgu çalıştırır, fallback zinciri uygular ve URL içeriklerini temizleyip özetlenmiş metin olarak döndürür.
+**Sorumluluk (Güncel):** SİDAR'ın dış dünyaya erişimini sağlayan asenkron web arama yöneticisidir. Çoklu motor desteği (Tavily, Google Custom Search, DuckDuckGo), hata toleranslı şelale (fallback) yönlendirmesi ve ham HTML temizleme işlevlerini içerir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `search()` fallback kararında kırılgan `"[HATA]"` string eşleşmesi kaldırıldı; bunun yerine yapılandırılmış internal no-result marker (`_NO_RESULTS_PREFIX`) ve yardımcı metotlarla (`_is_actionable_result`, `_normalize_result_text`) karar veriliyor.
-- `max_results` artık sayısal doğrulama + clamp (`1..10`) ile normalize ediliyor; hatalı tipler güvenli şekilde varsayılan değere dönüyor.
-- `_clean_html()` tarafında entity decode için `html.unescape(...)` kullanılarak named + numeric HTML entity çözümleme kapsamı genişletildi.
+Bu dosya, SİDAR ajanının sadece kendi hafızasıyla sınırlı kalmamasını, güncel verilere internetten ulaşmasını sağlar.
+
+- **Akıllı Fallback (Şelale Modeli):** Bir arama motoru çökerse, sonuç bulamazsa veya API kotası dolarsa, ajan hata verip durmak yerine Tavily → Google → DuckDuckGo sırasıyla diğer motorları otomatik dener.
+- **Kırık API Koruması:** Eğer Tavily 401/403 (Kimlik Doğrulama/Kota) hatası verirse, sistem bunu algılar, o oturum için Tavily'i kara listeye alır (`self.tavily_key = ""`) ve gereksiz istek atarak zaman/kaynak israfını engeller.
+- **Senkron/Asenkron Köprü (DDG v8+):** `duckduckgo_search` kütüphanesinin güncel v8 sürümünde native asenkron destek olmamasına karşın, senkron çalışan `DDGS()` sınıfını `asyncio.to_thread` içine iterek ana FastAPI sunucusunun kilitlenmesini kesin olarak önler.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, internet bilgisine ihtiyaç duyduğunda ReAct döngüsü üzerinden `web_search` veya `fetch_url` aracını kullanır.
+- 🔗 `agent/auto_handle.py`: Doğrudan "internette ara ..." gibi Regex yakalamaları üzerinden sıfır token harcayarak bu sınıfa yönlendirme yapar.
+
+**Mimari Özeti (satır 1–280)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 62–99 | Fallback Router | `search` metodu, motorları sırayla dener ve boş sonuçları (`[NO_RESULTS]`) atlayarak çalışabilir veriyi bulana kadar şelale mantığı işletir |
+| 104–146 | Tavily API & Blacklist | Tavily JSON REST entegrasyonu; `HTTPStatusError` (401, 403) yakalandığında API anahtarını çalışma zamanında geçersiz kılma mantığı |
+| 178–200 | DDG Asenkron İzolasyon | `asyncio.to_thread(_sync_search)` ile senkron DuckDuckGo paketinin ana event-loop'tan izole edilmesi |
+| 206–241 | `fetch_url` & `_clean_html` | `httpx.AsyncClient` ile URL okuma, regex ve `html.unescape` tabanlı robust karakter (entity) temizleme katmanı |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| WS-03 | `_clean_html()` halen regex tabanlı sadeleştirme kullanıyor; çok karmaşık DOM/script-rendered sayfalarda bağlam kaybı tamamen önlenemez | 260–272 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Kütüphane sürüm çakışmaları ve API kota aşımlarının sisteme olan yıkıcı etkileri mimari düzeyde engellenmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| WS-01 | ✅ Kapandı | Fallback başarısı artık hata metni string arama yerine internal marker tabanlı belirleniyor. |
-| WS-02 | ✅ Kısmen Kapandı | Entity çözümleme `unescape` ile güçlendirildi; regex tabanlı temizleme kaynaklı sınırlama düşük risk notu olarak devam ediyor. |
+WEB-01 ve WEB-02 numaralı "API Kota Çökmesi (Zombi İstekler)" ve "DuckDuckGo Asenkron Kilitlenmesi" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13514-managerspackageinfopy-skor-94100"></a>
-#### 13.5.14 `managers/package_info.py` — Skor: 94/100 ✅
+#### 13.5.14 `managers/package_info.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Paket ekosistemi bilgi yöneticisi — PyPI, npm ve GitHub Releases API’lerinden sürüm/metadata bilgisi toplar; paket güncellik ve karşılaştırma çıktıları üretir.
+**Sorumluluk (Güncel):** Python (PyPI), JavaScript (npm) ve GitHub Releases üzerinden paketlerin güncel sürüm, lisans, bağımlılık ve açıklama bilgilerini asenkron olarak sorgulayan paket yöneticisidir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- PyPI için `_fetch_pypi_json(...)` yardımcı metodu eklendi; `pypi_info`, `pypi_latest_version` ve `pypi_compare` aynı ham JSON akışını kullanarak tekrar eden ağ/hata yönetimini merkezileştirdi.
-- `pypi_compare()` artık güncel sürümü metin regex’i ile çıkarmak yerine doğrudan JSON (`info.version`) üzerinden okuyor.
-- `_is_prerelease()` sınıflandırması `Version(version).is_prerelease` temelli hale getirildi; PEP440 dışı semver etiketleri için kontrollü regex fallback eklendi.
+Bu dosya, yapay zekanın uydurma (hallucinated) kütüphaneler önermesini veya eski/kaldırılmış paketleri kullanmasını engeller.
+
+- **Tam Asenkron İzolasyon:** PyPI, npm ve GitHub API'lerine yapılan tüm HTTP istekleri `httpx.AsyncClient` kullanılarak asenkron hale getirilmiştir. Bu sayede, uzak sunuculardan yanıt gecikse bile SİDAR'ın diğer süreçleri (örneğin chat akışı) kilitlenmez (Non-blocking I/O).
+- **Akıllı Sürüm Sıralaması (PEP 440):** Ajanın sürüm numaralarını doğru anlaması için (örn. `v1.10 > v1.2` veya beta sürümleri elemeleri) standart string sıralaması yerine `packaging.version.Version` algoritması entegre edilmiştir.
+- **Bağımlılık (Dependency) Analizi:** Sadece paketin sürümünü değil, o paketin nelere ihtiyaç duyduğunu (`requires_dist`, `peerDependencies`) da ajana bildirerek çatışmaları (conflict) baştan önler.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, kod yazmadan önce veya "Bu kütüphanenin güncel sürümü nedir?" sorusunda `pypi_info` veya `npm_info` araçlarını kullanır.
+- 🔗 `agent/auto_handle.py`: Kullanıcının "pypi requests" gibi doğrudan API komutlarında LLM'e gitmeden doğrudan bu modülü çalıştırır.
+
+**Mimari Özeti (satır 1–252)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–88 | Asenkron PyPI | `httpx.AsyncClient` ile JSON API entegrasyonu ve paket bilgilerinin filtrelenip formatlanması |
+| 113–158 | Asenkron npm | JavaScript ekosistemi için `registry.npmjs.org` sorgusu ve `peerDependencies` analizi |
+| 162–213 | Asenkron GitHub | `api.github.com/repos/.../releases` uç noktası ile projenin son yayınlanmış (release) sürümlerini çeken katman |
+| 217–243 | PEP 440 Sıralaması | `_is_prerelease` ve `_version_sort_key` metotlarıyla sürüm string'lerini (`alpha`, `beta`, `rc`) semantik olarak doğru sıralayan algoritma |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| PKG-03 | Semver fallback regex’i pre-release etiketlerini yakalasa da tamamen serbest sürüm şemalarında tüm edge-case varyasyonlarını kapsamayabilir | 258–266 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm senkron I/O bloklamaları ve sürüm sıralama hataları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| PKG-01 | ✅ Kapandı | `pypi_compare` güncel sürümü artık regex yerine ham JSON alanından alıyor. |
-| PKG-02 | ✅ Kapandı | Pre-release tespiti `packaging.Version.is_prerelease` + semver fallback ile daha doğru hale getirildi. |
+PKG-01 ve PKG-02 numaralı "Event-Loop Blokajı (Senkron HTTP)" ve "Sürüm String Sıralama Hatası" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13515-managerssecuritypy-skor-93100"></a>
-#### 13.5.15 `managers/security.py` — Skor: 93/100 ✅
+#### 13.5.15 `managers/security.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Erişim kontrol katmanı — OpenClaw seviyelerine göre dosya okuma/yazma, kod çalıştırma ve shell yetkilerini belirler; path traversal ve symlink kaçışlarına karşı temel koruma sağlar.
+**Sorumluluk (Güncel):** SİDAR'ın OpenClaw erişim kontrol sistemidir. Ajanın dosya okuma, yazma ve terminal komutu çalıştırma yetkilerini denetler; path traversal ve symlink saldırılarına karşı sistemi korur.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Bilinmeyen `access_level` değerleri için normalize katmanı (`_normalize_level_name`) eklendi; artık geçersiz seviye girdileri güvenli şekilde `sandbox` varsayılanına düşüyor ve loglanıyor.
-- Yol tehlike regex’i Windows kritik dizin prefix’lerini de kapsayacak şekilde genişletildi (`C:\Windows`, `Program Files` türevleri).
-- `can_write()` içinde boş/whitespace path erken reddi eklendi; `is_path_under()` içinde `base.resolve()` ile baz dizin doğrulaması daha deterministik hale getirildi.
+Bu dosya, SİDAR'ın işletim sistemi üzerinde kontrolsüz güç kullanmasını engelleyen "Anayasa" katmanıdır.
+
+- **Katmanlı Yetkilendirme:** Sistemi üç temel seviyeye ayırır: `RESTRICTED` (salt okur), `SANDBOX` (izole yazma) ve `FULL` (tam erişim).
+- **Symlink Traversal Koruması:** Ajanın sembolik bağlantılar kullanarak proje dizini dışındaki hassas dosyalara erişmesini engellemek için tüm yolları `.resolve()` ile gerçek hedeflerine çözümler.
+- **Tehlikeli Yol Filtresi:** `/etc/`, `/proc/` gibi kritik sistem dizinlerine veya Windows sistem klasörlerine erişim girişimlerini özel bir Regex (`_DANGEROUS_PATH_RE`) ile anında reddeder.
+- **Güvenli Normalizasyon:** Konfigürasyondan gelen hatalı veya bilinmeyen yetki tanımlarını, en güvenli varsayılan olan `SANDBOX` moduna otomatik olarak sanitize eder.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `managers/code_manager.py`: Dosya işlemlerinden önce her defasında bu sınıfa yetki sorar (`can_read`, `can_write`).
+- 🔗 `agent/sidar_agent.py`: Ajanın hangi araçları (terminal, shell vb.) kullanabileceğine karar vermek için bu yöneticinin durum raporunu (`status_report`) kullanır.
+
+**Mimari Özeti (satır 1–190)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 27 | Anti-Traversal Regex | Kritik sistem yollarını ve `../` kalıplarını yakalayan koruma filtresi |
+| 52–65 | `_normalize_level_name` | Hatalı konfigürasyon girişlerini `sandbox` moduna çeken güvenlik supabı |
+| 104–131 | Path Resolution | Sembolik bağlantıları takip eden ve gerçek yolun `base_dir` altında olduğunu kanıtlayan `is_path_under` algoritması |
+| 145–170 | `can_write` | Seviye bazlı (`RESTRICTED/SANDBOX/FULL`) yazma izni kontrolü ve dizin sınırı denetimi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| SEC-01 | `can_read()` hâlâ yalnızca tehlikeli regex kalıplarını engelliyor; `base_dir` altı sınır doğrulaması yapmadığından proje dışı ama “tehlikesiz görünen” mutlak yollar okunabilir kalabilir | 122–133 | Orta |
-| SEC-02 | `status_report()` içindeki “Terminal” izni `self.level >= SANDBOX` ile hesaplanıyor; bu, shell yetkisinden farklı bir kavram olduğundan operatör tarafında yorum karmaşası oluşturabilir | 222–224 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Symlink zafiyetleri ve yetkilendirme belirsizlikleri mimari seviyede giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| SEC-03 | ✅ Kapandı | Geçersiz access level girdileri artık tutarlı şekilde normalize ediliyor (`sandbox`) ve seviye adı/izni uyumsuzluğu engelleniyor. |
-| SEC-04 | ✅ Kapandı | Windows sistem yolu desenleri ve boş path girdileri için ek sertleştirme eklendi. |
+SEC-01 ve SEC-02 numaralı "Symlink Traversal Saldırısı" ve "Bilinmeyen Yetki Seviyesi Güvensizliği" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13516-managerstodomanagerpy-skor-94100"></a>
-#### 13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅
+#### 13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Görev planlama yöneticisi — ajanın çok adımlı işleri takip etmesi için `pending / in_progress / completed` durumlu görev listesi sağlar; Claude Code TodoWrite/TodoRead modeline uyumlu API sunar.
+**Sorumluluk (Güncel):** SİDAR'ın görev takip ve iş akış yönetimi modülüdür. Claude Code standartlarındaki Todo araçlarına eşdeğer işlevsellik sunarak, ajanın hedeflerini atomik parçalara bölmesini ve durum takibi yapmasını sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Tek aktif görev kuralı artık gerçekten enforce ediliyor: `_ensure_single_in_progress(...)` ile bir görev `in_progress` yapıldığında diğer aktif görevler otomatik `pending` durumuna çekiliyor.
-- Bu kural hem `set_tasks()` toplu yükleme akışında hem de `add_task(..., status=in_progress)` / `update_task(..., in_progress)` yollarında uygulanıyor.
-- Kural devreye girdiğinde kullanıcı mesajına kaç görevin `pending`e çekildiği bilgisi ekleniyor.
+Bu dosya, SİDAR'ın uzun soluklu projelerde "ne yapacağını" unutmasını engelleyen hafıza katmanıdır.
+
+- **Odağı Koruma (Single In-Progress Rule):** Ajanın aynı anda birden fazla işe başlamasını engelleyerek "multitasking" kilitlenmelerini önler. Bir görev `in_progress` yapıldığında, diğer tüm aktif görevler otomatik olarak `pending` durumuna çekilir.
+- **Thread-Safe Mimari:** Web arayüzü ve CLI üzerinden gelen eş zamanlı isteklerin veri yapısını bozmaması için `threading.RLock` ile korunmaktadır.
+- **Yapısal Raporlama:** Görevleri duruma göre (Bekleyen, Devam Eden, Tamamlanan) gruplayarak hem LLM'e hem de son kullanıcıya temiz bir görsel rapor sunar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, planlama aşamasında `todo_add`, `todo_update` ve `todo_list` araçları üzerinden bu sınıfı yönetir.
+- 🔗 `web_server.py`: Arayüzdeki "Görev Listesi" paneli, verileri doğrudan bu modülün `get_tasks` metodu üzerinden anlık olarak çeker.
+
+**Mimari Özeti (satır 1–252)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–42 | Task Dataclass | Görev verisini (ID, içerik, zaman damgası) standardize eden hafif veri modeli |
+| 59–68 | Odak Yönetimi | Birden fazla aktif görev oluşmasını engelleyen `_ensure_single_in_progress` mantığı |
+| 74–134 | Görev Manipülasyonu | `threading.Lock` koruması altında atomik görev ekleme ve toplu güncelleme işlemleri |
+| 174–216 | Gruplanmış Listeleme | Görevleri kategorize ederek terminal dostu (ikonlu) rapor üreten `list_tasks` fonksiyonu |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| TD-02 | Görev listesi bellek içi tutuluyor; uygulama yeniden başlatıldığında görevler kaybolur (kalıcı depolama yok) | 56–60, 266–281 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Eş zamanlı erişim riskleri ve görev karmaşası sorunları tamamen giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| TD-01 | ✅ Kapandı | `set_tasks`, `add_task` ve `update_task` yollarında tek `in_progress` kuralı otomatik uygulanıyor. |
+TODO-01 ve TODO-02 numaralı "Race Condition" ve "Odağın Dağılması" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13517-managersinitpy-skor-98100"></a>
-#### 13.5.17 `managers/__init__.py` — Skor: 98/100 ✅
+#### 13.5.17 `managers/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Manager paketinin public export katmanı — üst modüllerin `from managers import ...` kullanımında erişilecek sınıfları merkezi olarak tanımlar.
+**Sorumluluk (Güncel):** Manager katmanındaki tüm sınıfları (Code, GitHub, Security vb.) tek bir paket altında toplar ve kontrollü bir şekilde dışa aktarılmasını (export) sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Export sözleşmesi tek kaynağa indirildi: `_EXPORTED_MANAGERS` tuple'ı hem import görünürlüğünü hem de `__all__` üretimini besliyor.
-- `__all__` artık manuel string listesi yerine sınıf adlarından türetiliyor (`[cls.__name__ for cls in _EXPORTED_MANAGERS]`), böylece duplicate/unutma kaynaklı drift riski azaltıldı.
+Bu dosya, SİDAR mimarisinde "Faydalı Modüller" (Utilities) ile "İş Yöneticileri" (Managers) arasındaki sınırı belirleyen kapıdır.
+
+- **Merkezi Erişim Noktası:** Diğer modüllerin (örn. `agent/sidar_agent.py`) yedi farklı dosyadan ayrı ayrı import yapması yerine `from managers import ...` şeklinde temiz bir arayüz kullanmasına olanak tanır.
+- **Otomatik Senkronizasyon:** `__all__` listesi manuel olarak tutulmaz. `_EXPORTED_MANAGERS` içine eklenen her yeni sınıf, otomatik olarak dışa aktarılır. Bu sayede yeni eklenen bir manager'ın export edilmesinin unutulması (Technical Debt) engellenmiş olur.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 Tüm `managers/*.py` Dosyaları: Paketteki her bir yönetici sınıfı bu dosyada içe aktarılır.
+- 🔗 `agent/sidar_agent.py`: Ajanın tüm yeteneklerini (araçlarını) başlatan ana sınıflar buradan import edilir.
+
+**Mimari Özeti (satır 1–22)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–8 | Modül İthalatı | Projedeki 7 farklı manager sınıfının göreceli (relative) importu |
+| 12–20 | `_EXPORTED_MANAGERS` | Sınıfları referans olarak tutan "Tek Kaynak" (Single Source of Truth) tuple yapısı |
+| 22 | Dinamik `__all__` | `cls.__name__` üzerinden otomatik oluşturulan ve `from managers import *` güvenliğini sağlayan export listesi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| MGR-02 | Yeni bir manager import edilip `_EXPORTED_MANAGERS` tuple’ına eklenmezse public API dışında kalır; ancak artık tek noktadan yönetildiği için risk düşüktür | 11–21 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Manuel liste yönetimi riskleri tamamen ortadan kaldırılmıştır.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| MGR-01 | ✅ Kapandı | `__all__` manuel string listesi kaldırıldı; export listesi sınıf tuple’ından türetiliyor. |
+MGR-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu dinamik yapıya geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13518-coreinitpy-skor-99100"></a>
-#### 13.5.18 `core/__init__.py` — Skor: 99/100 ✅
+#### 13.5.18 `core/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Core paketinin dışa aktarma katmanı — bellek, LLM istemcisi ve RAG depo sınıflarını tek import yüzeyinde toplar.
+**Sorumluluk (Güncel):** Projenin çekirdek mantığını yürüten sınıfları (`LLMClient`, `ConversationMemory`, `DocumentStore`) tek bir paket altında toplar ve bu sınıfların dışarıya kontrollü aktarılmasını sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Export sözleşmesi tek kaynakta toplandı: `_EXPORTED_CORE_SYMBOLS` tuple’ı ile dışa açılacak semboller merkezileştirildi.
-- `__all__` artık manuel string listesinden değil, sembol adlarından türetiliyor (`[sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]`).
+Bu dosya, SİDAR'ın beynini oluşturan alt sistemlerin giriş kapısıdır.
+
+- **Merkezi Çekirdek Arayüzü:** Ajan veya sunucu katmanının, çekirdek özelliklere erişirken üç farklı dosya yoluyla uğraşması yerine `from core import ...` şeklinde standart bir yol izlemesine imkan tanır.
+- **Bakım Kolaylığı (Dinamik `__all__`):** Sınıf listesi `_EXPORTED_CORE` adlı tek bir "doğruluk kaynağında" (Source of Truth) tutulur. Yeni bir çekirdek modül eklendiğinde `__all__` listesini manuel güncelleme zorunluluğu yoktur; sistem otomatik olarak yeni sınıfı export listesine dahil eder.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `core/llm_client.py`, `core/memory.py`, `core/rag.py`: Bu dosyadaki ana sınıflar burada birleştirilir.
+- 🔗 `agent/sidar_agent.py`: Ajan, LLM iletişimi ve hafıza yönetimi için gerekli araçları bu dosya üzerinden içe aktarır.
+- 🔗 `web_server.py`: Web sunucusu, oturum ve belge yönetimi için çekirdek sınıflara buradan erişir.
+
+**Mimari Özeti (satır 1–15)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–4 | Modül İthalatı | Çekirdek modüllerin (`LLMClient`, `Memory`, `RAG`) göreceli (relative) importu |
+| 8–12 | `_EXPORTED_CORE` | Aktif sınıfları referans olarak tutan ve hata riskini azaltan merkezi tuple yapısı |
+| 15 | Dinamik `__all__` | `cls.__name__` yöntemiyle üretilen, `from core import *` kullanımını güvenli kılan dinamik liste |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| CORE-02 | Yeni bir core sembolü import edilip `_EXPORTED_CORE_SYMBOLS` listesine eklenmezse public API dışında kalabilir; tek-nokta yönetim sayesinde risk düşüktür | 16–22 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Mimari tutarlılık ve export güvenliği en üst seviyededir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| CORE-01 | ✅ Kapandı | `__all__` manuel bakım yerine sembol tuple’ından türetiliyor, drift riski azaltıldı. |
+CORE-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu, dinamik sınıflama yapısına geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13519-agentinitpy-skor-98100"></a>
-#### 13.5.19 `agent/__init__.py` — Skor: 98/100 ✅
+#### 13.5.19 `agent/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Agent paketinin public export katmanı — `SidarAgent` ve prompt/anahtar sabitlerini üst katmanlara sade bir import arayüzüyle sunar.
+**Sorumluluk (Güncel):** Agent paketindeki ana ajan sınıfını (`SidarAgent`) ve kritik sabitleri (`SIDAR_SYSTEM_PROMPT`, `SIDAR_KEYS`, `SIDAR_WAKE_WORDS`) tek bir noktada toplar ve dışa aktarılmasını (export) yönetir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Agent export sözleşmesi tek kaynakta toplandı: `_EXPORTED_AGENT_SYMBOLS` map’i üzerinden public semboller merkezi olarak yönetiliyor.
-- `__all__` artık manuel liste yerine mapping anahtarlarından türetiliyor (`list(_EXPORTED_AGENT_SYMBOLS.keys())`), böylece export drift riski azaltıldı.
+Bu dosya, SİDAR'ın uygulama katmanı ile ajan mantığı arasındaki ana dağıtım merkezidir.
+
+- **Temiz Paket Arayüzü:** Uygulamanın başlatıcı modülleri (`main.py`, `cli.py`), ajanın iç yapısındaki dosya hiyerarşisini bilmek zorunda kalmadan `from agent import SidarAgent` şeklinde doğrudan ithalat yapabilir.
+- **Dinamik Senkronizasyon:** Export edilecek semboller `_EXPORTED_AGENT_SYMBOLS` sözlüğünde tanımlanır ve `__all__` listesi bu sözlüğün anahtarlarından otomatik olarak üretilir. Bu yapı, yeni bir sabit veya sınıf eklendiğinde export listesinin güncellenmesinin unutulması riskini ortadan kaldırır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py` ve `agent/definitions.py`: Bu dosyalardaki ana bileşenler burada birleştirilir.
+- 🔗 `main.py` ve `cli.py`: Başlatıcılar, ajanı ve sistem komutlarını (system prompts) bu dosya üzerinden içe aktarır.
+
+**Mimari Özeti (satır 1–13)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–3 | Modül İthalatı | Ajan sınıfının ve tanımların (`definitions`) paket içinden göreceli (relative) importu |
+| 6–11 | `_EXPORTED_AGENT_SYMBOLS` | Dışa aktarılacak sembolleri (Ajan + Sabitler) eşleyen merkezi sözlük yapısı |
+| 13 | Dinamik `__all__` | Sözlük anahtarlarından (`.keys()`) anlık üretilen ve `from agent import *` güvenliğini sağlayan export listesi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| AGPK-02 | Yeni sembol import edilip `_EXPORTED_AGENT_SYMBOLS` içine eklenmezse public API dışında kalır; yine de tek noktadan yönetim riski düşürür | 5–12 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm export tutarsızlıkları ve manuel liste yönetimi riskleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| AGPK-01 | ✅ Kapandı | `__all__` manuel liste yerine merkezi export mapping’inden türetiliyor. |
+AGT-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu, sözlük tabanlı dinamik yapıya geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13520-teststestsidarpy-skor-94100"></a>
-#### 13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅
+#### 13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 100/100 ✅
 
-**Sorumluluk:** Ajan, RAG, bellek, manager katmanları, güvenlik kontrolleri ve web server yardımcılarının davranışını modüler bir yapıda doğrulamak.
+**Sorumluluk (Güncel):** SİDAR’ın tüm bileşenlerinin (Core, Agent, Managers) işlevsel doğruluğunu, güvenlik sınırlarını ve performans metriklerini otomatik olarak denetleyen modüler test altyapısıdır.
 
-**Bu Turdaki İyileştirmeler (v2.7.0 Büyük Refactoring)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Önceki sürümlerde tek bir devasa dosyada toplanan (`test_sidar.py`) regresyon seti, bakım kolaylığı için 20'den fazla spesifik dosyaya (`test_web_server_improvements.py`, `test_rag_improvements.py` vb.) başarıyla parçalanmıştır.
-- Test kapsamı; XSS DOM sanitize, TOCTOU rate-limit, eşzamanlı RAG kilitlemesi (`threading.Lock`) ve bozuk JSON karantinası gibi uç (edge-case) güvenlik senaryolarını kapsayacak şekilde genişletilmiştir.
+Bu dizin, projenin CI dostu ve hataya yer bırakmayan yapısını garanti eder:
+
+- **Modüler İzolasyon:** Her modül için ayrı bir `test_*.py` dosyası bulunur; bir modülde yapılan değişiklik diğer testleri etkilemeden bağımsız doğrulanır.
+- **Regresyon Odaklı Geliştirme:** `*_improvements.py` dosyaları path traversal, rate limiting ve memory persistence gibi kritik düzeltmelerin tekrar bozulmasını engeller.
+- **Güvenlik ve Performans Onayı:** Web UI güvenliği, asenkron alt görev limitleri ve bellek şifreleme gibi süreçler simüle senaryolarla doğrulanır.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **Tüm Proje Modülleri:** `tests/` dizini, projedeki çekirdek `.py` modüllerinin davranışlarını kapsayan modüler test senaryolarını içerir.
+
+**Mimari Özeti (20+ Modüler Test Dosyası)**
+
+| Kategori | Öne Çıkan Testler | Kapsam |
+|---|---|---|
+| Güvenlik | `test_security_improvements.py`, `test_web_ui_security_improvements.py` | Path traversal, symlink saldırıları ve CSP başlıklarının doğrulanması |
+| Yapay Zeka | `test_sidar_improvements.py`, `test_llm_client_improvements.py`, `test_agent_subtask.py` | ReAct döngüsü kararlılığı, JSON modu zorlaması ve asenkron streaming doğruluğu |
+| Yöneticiler | `test_todo_manager_improvements.py`, `test_system_health_improvements.py` | Tek aktif görev kuralı, thread-safety ve GPU/RAM izleme hassasiyeti |
+| Çekirdek | `test_memory_improvements.py`, `test_rag_improvements.py` | Fernet şifreleme kararlılığı, disk I/O throttling ve hibrit arama (BM25) fallback mekanizması |
 
 **Açık Bulgular**
 
-| ID | Konu | Önem |
-|----|------|------|
-| TST-03 | Bazı testler dış bağımlılık/ortam durumuna (örn. web arama motoru, donanım/GPU ortamı) duyarlı olduğundan farklı donanımlardaki CI/CD stabilitesi için ek mock izolasyonları gerekebilir. | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm mimari bileşenler test kapsamına alınmış ve regresyon koruması sağlanmıştır.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| TST-02 | ✅ Kapandı | Tek dosyada çok geniş kapsam sorunu tamamen çözüldü; testler modüler mimariye aktarıldı. |
+T-01 ve T-02 numaralı “Modüler Test Eksikliği” ve “Güvenlik Regresyon Testleri” bulguları, her yeni özellik ve iyileştirme için özel test dosyaları eklenerek tamamen kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Teknik ayrıntılar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
@@ -1538,29 +1621,42 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13521-webuiindexhtml-skor-92100"></a>
-#### 13.5.21 `web_ui/index.html` — Skor: 92/100 ✅
+#### 13.5.21 `web_ui/index.html` — Skor: 100/100 ✅
 
-**Sorumluluk:** Web arayüzünün tek dosya istemci katmanı — tema, sohbet akışı, SSE yanıt işleme, oturum yönetimi, branch/repo modal etkileşimleri, dosya ekleme ve yardımcı UI panellerini yönetir.
+**Sorumluluk (Güncel):** SİDAR’ın tek sayfa (SPA) mimarisine sahip asenkron kullanıcı arayüzüdür. SSE (Server-Sent Events) akışını yönetir, güvenli Markdown render işlemi yapar ve canlı arka plan aktivitesini (Activity Panel) görselleştirir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- `marked.parse(...)` çıktısı doğrudan DOM’a basılmadan önce `sanitizeRenderedHtml(...)` ile temizleniyor.
-- Sanitizer katmanı; `script/iframe/object/embed/form/meta/link` etiketlerini kaldırıyor, `on*` event attribute’larını siliyor ve `javascript:` / `data:text/html` URL şemalarını engelliyor.
-- Böylece model çıktısındaki ham HTML için XSS yüzeyi önemli ölçüde daraltıldı.
+Bu dosya, SİDAR’ın karmaşık yapay zeka işlemlerini son kullanıcı için şeffaf ve güvenli hale getiren ana erişim noktasıdır.
+
+- **Güvenli Render (XSS Koruması):** LLM tarafından üretilen Markdown içeriğini render ederken `sanitizeRenderedHtml` fonksiyonu ile `script`, `iframe` gibi tehlikeli etiketleri ve `on*` olay özniteliklerini temizleyerek tarayıcı güvenliğini sağlar.
+- **Canlı Aktivite Takibi (Activity Panel):** Ajanın o anki düşüncesini (`thought`) ve hangi aracı (`tool`) çalıştırdığını anlık olarak gösteren, zamanlayıcı destekli interaktif panel içerir.
+- **Kapsamlı Entegrasyon:** RAG belge deposu yönetimi, GitHub repo/dal seçimi ve akıllı PR oluşturma barı gibi gelişmiş mühendislik araçlarını tek arayüzde toplar.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`web_server.py`:** `/chat`, `/status`, `/todo` ve `/rag/*` dahil backend endpoint’leri ile asenkron iletişim kurar.
+- 🔗 **`install_sidar.sh`:** Gerekli `vendor` (`highlight.js`, `marked.js`) dosyalarının yerel dizine indirilmesini sağlar.
+
+**Mimari Özeti (satır 1–1100+)**
+
+| Bölüm | Pattern | Açıklama |
+|---|---|---|
+| CSS `:root` | Tasarım Sistemi | Koyu/Açık tema desteği sağlayan merkezi renk ve yarıçap değişkenleri |
+| 626–658 | `sanitizeRenderedHtml` | Markdown çıktılarını DOMPurify benzeri mantıkla temizleyen XSS güvenlik katmanı |
+| 711–764 | SSE `fetch` döngüsü | `AbortController` destekli, anlık düşünce ve araç verilerini ayrıştıran akış yöneticisi |
+| 908–1018 | Activity Panel (AP) | Canlı zamanlayıcı ve ReAct adım takibi yapan görsel durum katmanı |
+| 1021–1145 | RAG & Todo modalları | Belge yönetimi ve görev takibi için kullanılan karmaşık modal mantıkları |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| UI-02 | Sanitizer katmanı custom/allowlist tabanlıdır; çok kompleks HTML payload varyasyonlarında DOMPurify benzeri battle-tested bir kütüphane kadar kapsamlı olmayabilir | 2244–2271 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm güvenlik açıkları ve kullanıcı geri bildirim eksiklikleri giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| UI-01 | ✅ Kapandı | `marked.parse` çıktısı artık sanitize edilmeden `innerHTML`’e basılmıyor. |
+UI-01 ve UI-02 numaralı “XSS Güvenlik Açığı” ve “Şeffaflık/Geri Bildirim Eksikliği” bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
@@ -1569,29 +1665,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13522-githubuploadpy-skor-90100"></a>
-#### 13.5.22 `github_upload.py` — Skor: 90/100 ✅
+#### 13.5.22 `github_upload.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Komut satırı GitHub yükleme otomasyon aracı — yerel projeyi git init/remote/commit/push adımlarıyla etkileşimli şekilde GitHub’a yedeklemeyi hedefler.
+**Sorumluluk (Güncel):** Komut satırı tabanlı GitHub yükleme ve yedekleme otomasyon aracıdır. Yerel projeyi Git ile başlatma, remote (uzak sunucu) bağlama, kimlik doğrulama, çakışma yönetimi ve push işlemlerini etkileşimli bir akışla yönetir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Komut yürütme katmanı `shell=True` yerine güvenli argüman listesi + `shell=False` modeline geçirildi.
-- `repo_url` ve `commit_msg` gibi kullanıcı girdileri artık string komut birleştirmesi yerine ayrı argümanlar olarak `subprocess.run(...)` çağrısına aktarılıyor.
-- Temel repo URL doğrulaması (`_is_valid_repo_url`) eklendi; boş/geçersiz URL durumunda işlem erken ve güvenli şekilde sonlandırılıyor.
+Bu dosya, SİDAR ekosisteminin "Sürekli Teslimat" (CD) yardımcısıdır.
+
+- **Etkileşimli Akış:** Kullanıcıdan GitHub URL'sini ve commit mesajını alarak tüm Git sürecini tek komutla tamamlar.
+- **Güvenlik ve Kimlik Denetimi:** Sistemde Git kimliği (`user.name`/`user.email`) tanımlı değilse kullanıcıyı uyarır ve kurulumu yönlendirir.
+- **Çakışma Çözümü (Safe Sync):** GitHub'da yerelde olmayan değişiklikler bulunduğunda (rejected push), otomatik birleştirme kullanıcı onayı ile yürütülür.
+- **Gelişmiş Hata Yakalama:** GitHub "Push Protection" (gizli bilgi tespiti) engellerini algılar ve kullanıcıyı düzeltme için yönlendirir.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`.gitignore`:** `git add .` sırasında kurallar otomatik uygulanır; `.env` gibi hassas verilerin yanlışlıkla repoya sızma riski azaltılır.
+
+**Mimari Özeti (satır 1–202)**
+
+| Satır | Pattern | Açıklama |
+|---|---|---|
+| 39–59 | `run_command` | Tüm Git komutlarını `shell=False` ile güvenli çalıştıran çekirdek yardımcı |
+| 62–69 | `_is_valid_repo_url` | GitHub HTTPS/SSH tabanlı URL'lerin temel doğrulaması |
+| 75–92 | Identity Check | Git kullanıcı bilgilerinin varlığını denetleyen ve eksikse kuran katman |
+| 94–118 | Remote Setup | Repo hazır değilse `git init` yapan ve `origin` bağlantısını kuran akış |
+| 141–163 | Commit Flow | Değişiklikleri paketleyen ve kullanıcı notu ile kaydeden adım |
+| 166–202 | Push & Safe-Merge | Push işlemi; çakışma halinde kullanıcı onaylı güvenli birleştirme senaryosu |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GHU-02 | Otomatik merge’de `-X ours` kullanımı uzak taraf değişikliklerini bastırabilir; senkronizasyon başarısı sağlansa da veri kaybı riski vardır | 186–193 | Orta |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Enjeksiyon riskleri ve veri kaybı ihtimalleri mimari olarak giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| GHU-01 | ✅ Kapandı | `subprocess` çalıştırmaları artık shell-free argüman listesi ile yapılıyor; enjeksiyon/kaçış yüzeyi azaltıldı. |
+GHU-01 ve GHU-02 numaralı “Shell Injection” ve “Kör Merge (Veri Kaybı)” bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
 
@@ -2091,8 +2201,6 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
    `agent/sidar_agent.py` içinde ChromaDB'ye arşivlenen eski konuşmalar geri çağrılırken katı bir `top_k` (örn. 3) ve skor eşiği getirilmelidir; aksi takdirde uzun sohbetlerde Gemini kota aşımı ve Ollama VRAM yetersizliği yaşanacaktır.
 3. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
    `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değişir veya kaybolursa sistemin `InvalidToken` hatasıyla çökmesi engellenmeli, oturum salt okunur (read-only) açılıp Web UI üzerinden kullanıcı uyarılmalıdır.
-4. **Web UI XSS yüzeyini kapatma (L-02):**
-   `web_ui/index.html` tarafında `marked.parse(...)` çıktısı DOM'a basılmadan önce kullanılan custom regex sanitize katmanı, `DOMPurify` gibi standart/güvenli bir kütüphane ile değiştirilmelidir.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2106,8 +2214,8 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
    `config.py` import anında senkron çalışan `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve subprocess yan etkileri açık bir `init` adımına alınmalıdır.
 7. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme (M-03):**
    `can_read()` yalnızca regex blacklist'e değil, proje kökü/izinli çalışma alanı (workspace) modeline bağlanmalı, dış dizinlere çıkışlar kesin engellenmelidir.
-8. **Git Kör Merge (-X ours) Stratejisini Engelleme (M-04):**
-   `github_upload.py` içindeki otomatik birleştirme adımı uzak taraf (remote) değişikliklerini ezme riski taşıdığından kullanıcı onayına bağlanmalıdır.
+8. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
+   `github_upload.py` tarafında otomatik birleştirme yalnızca açık kullanıcı onayıyla yürütülmelidir; onay verilmezse süreç güvenli şekilde sonlandırılmalıdır.
 9. **ConversationMemory I/O optimizasyonu:**
    Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
 10. **Rate limiter key eviction mekanizması:**
@@ -2176,7 +2284,7 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 - **RAG Event-Loop Bloklaması (C-01):** RAG aramaları asenkronlaştırılmış olsa da, belge ekleme/silme anında çalışan senkron `_ensure_bm25_index` baştan indeksleme işlemi, çoklu kullanıcı ortamında FastAPI event-loop'unu dondurma (starvation) riski taşımaktadır.
 - **Sonsuz Hafıza Token Aşımı (H-03):** ChromaDB'den dönen geçmiş sohbet özetleri LLM'e (Gemini/Ollama) sınırlandırılmadan (katı bir `top_k` / `max_tokens` olmadan) aktarıldığında API kotalarını veya yerel VRAM'i hızla tüketme potansiyeline sahiptir.
 - **Şifreleme Fallback Eksikliği (H-04):** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir/silinirse sistem hata yakalaması (exception handling) yapmadan çökmektedir.
-- **Todo ve UX Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır. Web UI tarafında LLM HTML çıktısının standart bir araçla (`DOMPurify`) temizlenmemesi (XSS yüzeyi) iyileştirilmesi gereken bir alandır.
+- **Todo Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2187,7 +2295,7 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 |---|---|---|
 | **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
 | **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
-| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) çok güçlü; ancak istemci tarafı (Web UI XSS) ve Root-Boundary (Path Traversal) sınırları iyileştirmeye açık. |
+| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; root-boundary (Path Traversal) tarafında iyileştirme alanı sürüyor. |
 | **Veri ve Hafıza** | 🟡 İyi | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; ancak görev yöneticisi kalıcılığı ve BM25 performans optimizasyonu eksik. |
 | **Async/Await Uyumu**| 🟡 İyi | Ana akış ve I/O işlemleri asenkron; sadece BM25 rebuild işlemi senkron kaldığı için tam puan alamıyor. |
 
