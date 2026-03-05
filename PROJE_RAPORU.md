@@ -63,7 +63,7 @@
     - [13.5.14 `managers/package_info.py` — Skor: 100/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 100/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 100/100 ✅](#13516-managerstodomanagerpy-skor-94100)
-    - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
+    - [13.5.17 `managers/__init__.py` — Skor: 100/100 ✅](#13517-managersinitpy-skor-98100)
     - [13.5.18 `core/__init__.py` — Skor: 99/100 ✅](#13518-coreinitpy-skor-99100)
     - [13.5.19 `agent/__init__.py` — Skor: 98/100 ✅](#13519-agentinitpy-skor-98100)
     - [13.5.20 `tests/` Dizini ve Modüler Test Mimarisi — Skor: 98/100 ✅](#13520-teststestsidarpy-skor-94100)
@@ -1459,31 +1459,41 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13517-managersinitpy-skor-98100"></a>
-#### 13.5.17 `managers/__init__.py` — Skor: 98/100 ✅
+#### 13.5.17 `managers/__init__.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Manager paketinin public export katmanı — üst modüllerin `from managers import ...` kullanımında erişilecek sınıfları merkezi olarak tanımlar.
+**Sorumluluk (Güncel):** Manager katmanındaki tüm sınıfları (Code, GitHub, Security vb.) tek bir paket altında toplar ve kontrollü bir şekilde dışa aktarılmasını (export) sağlar.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Export sözleşmesi tek kaynağa indirildi: `_EXPORTED_MANAGERS` tuple'ı hem import görünürlüğünü hem de `__all__` üretimini besliyor.
-- `__all__` artık manuel string listesi yerine sınıf adlarından türetiliyor (`[cls.__name__ for cls in _EXPORTED_MANAGERS]`), böylece duplicate/unutma kaynaklı drift riski azaltıldı.
+Bu dosya, SİDAR mimarisinde "Faydalı Modüller" (Utilities) ile "İş Yöneticileri" (Managers) arasındaki sınırı belirleyen kapıdır.
+
+- **Merkezi Erişim Noktası:** Diğer modüllerin (örn. `agent/sidar_agent.py`) yedi farklı dosyadan ayrı ayrı import yapması yerine `from managers import ...` şeklinde temiz bir arayüz kullanmasına olanak tanır.
+- **Otomatik Senkronizasyon:** `__all__` listesi manuel olarak tutulmaz. `_EXPORTED_MANAGERS` içine eklenen her yeni sınıf, otomatik olarak dışa aktarılır. Bu sayede yeni eklenen bir manager'ın export edilmesinin unutulması (Technical Debt) engellenmiş olur.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 Tüm `managers/*.py` Dosyaları: Paketteki her bir yönetici sınıfı bu dosyada içe aktarılır.
+- 🔗 `agent/sidar_agent.py`: Ajanın tüm yeteneklerini (araçlarını) başlatan ana sınıflar buradan import edilir.
+
+**Mimari Özeti (satır 1–22)**
+
+| Satır | Pattern | Açıklama |
+|-------|---------|----------|
+| 2–8 | Modül İthalatı | Projedeki 7 farklı manager sınıfının göreceli (relative) importu |
+| 12–20 | `_EXPORTED_MANAGERS` | Sınıfları referans olarak tutan "Tek Kaynak" (Single Source of Truth) tuple yapısı |
+| 22 | Dinamik `__all__` | `cls.__name__` üzerinden otomatik oluşturulan ve `from managers import *` güvenliğini sağlayan export listesi |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| MGR-02 | Yeni bir manager import edilip `_EXPORTED_MANAGERS` tuple’ına eklenmezse public API dışında kalır; ancak artık tek noktadan yönetildiği için risk düşüktür | 11–21 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Manuel liste yönetimi riskleri tamamen ortadan kaldırılmıştır.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| MGR-01 | ✅ Kapandı | `__all__` manuel string listesi kaldırıldı; export listesi sınıf tuple’ından türetiliyor. |
+MGR-INIT-01 numaralı "Manuel Export Listesi Kayması" bulgusu dinamik yapıya geçilerek kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
