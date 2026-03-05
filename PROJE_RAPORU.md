@@ -125,6 +125,12 @@ SİDAR, ReAct (Reason + Act) döngüsü mimarisi üzerine kurulu, Türkçe dilli
 | **Kod Çalıştırma** | Docker izolasyonu (python:3.11-alpine) |
 | **Bellek** | Çoklu oturum (session) JSON tabanlı kalıcı depolama |
 
+**2026-03-05 Güncellik Kontrol Notu (1. madde için):**
+- ⚠️ Üst bilgi satırındaki "Toplam Dosya: 36 izlenen dosya" ifadesi güncel değil; repo şu anda **59 izlenen dosya** içeriyor.
+- ⚠️ "~18.4k satır" ifadesi güncel değil; UTF-8 metin dosyalarında toplam içerik yaklaşık **21.9k satıra** ulaştı.
+- ℹ️ Test ekosistemi satırında verilen alt sınırlar (`pytest 7.4+`, `pytest-asyncio 0.21+`) teknik olarak doğru olsa da, manifestte güncel hedefler `pytest~=8.3.3` ve `pytest-asyncio~=0.24.0` seviyesinde.
+- ℹ️ Kod çalıştırma satırı yalnızca `python:3.11-alpine` bilgisini içeriyor; güncel yapı hem `python:3.11-alpine` (CodeManager varsayılanı) hem de `python:3.11-slim` (Dockerfile/compose varsayılanı) kullanabildiği için bu çift profilin not edilmesi daha doğru olur.
+
 **v2.5.0 → v2.6.0 Major Değişiklikler:**
 - GPU hızlandırma desteği eklendi (RTX 3070 Ti / Ampere)
 - FP16 mixed precision embedding desteği
