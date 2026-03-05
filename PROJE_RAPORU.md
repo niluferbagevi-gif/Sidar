@@ -73,7 +73,7 @@
     - [13.5.26 `.env.example` — Skor: 95/100 ✅](#13526-envexample-skor-95100)
     - [13.5.27 `install_sidar.sh` — Skor: 93/100 ✅](#13527-installsidarsh-skor-93100)
     - [13.5.28 `README.md` — Skor: 92/100 ✅](#13528-readmemd-skor-92100)
-    - [13.5.29 `SIDAR.md` — Skor: 88/100 ✅](#13529-sidarmd-skor-88100)
+    - [13.5.29 `SIDAR.md` — Skor: 94/100 ✅](#13529-sidarmd-skor-94100)
     - [13.5.30 `CLAUDE.md` — Skor: 89/100 ✅](#13530-claudemd-skor-89100)
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 87/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 96/100 ✅](#13532-testsinitpy-skor-96100)
@@ -689,7 +689,7 @@ async for raw_bytes in resp.aiter_bytes():
 - **`.env.example`**: Uygulama çalışma parametrelerinin şablonunu sunar (AI sağlayıcısı, GPU, web, RAG, loglama, Docker sandbox). ✅ Donanım-özel varsayımlar nötrlendi; güvenli başlangıç için `ACCESS_LEVEL=sandbox` ve `USE_GPU=false` varsayılanlarıyla daha taşınabilir bir profil sağlandı. → Detay: §13.5.26
 - **`install_sidar.sh`**: Ubuntu/WSL için uçtan uca kurulum otomasyonu sağlar (sistem paketleri, Miniconda, Ollama, repo, model indirme, `.env` hazırlığı). ✅ Varsayılan akışta sistem yükseltmesi ve uzaktan script çalıştırma kapatıldı; her ikisi de açık opt-in env bayrağı gerektirecek şekilde güvenli hale getirildi. → Detay: §13.5.27
 - **`README.md`**: Projenin kurulum/kullanım giriş noktasıdır; özellik özeti, komut örnekleri ve operasyon notlarıyla kullanıcı onboarding akışını taşır. ✅ Kurulum güvenlik modeli (`ALLOW_*` opt-in), `.env` anahtar adları ve güvenli erişim örnekleri güncel runtime davranışıyla hizalandı. → Detay: §13.5.28
-- **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ⚠️ Talimatların bir kısmı mevcut araç isimleri/çalışma ortamı ile birebir örtüşmezse ajan davranışında yönlendirme sapması oluşabilir. → Detay: §13.5.29
+- **`SIDAR.md`**: Ajanın proje-geneli çalışma talimatlarını ve araç kullanım önceliklerini tanımlar. ✅ Araç adları ortamdan bağımsızlaştırıldı, pahalı komutlardan kaçınma ilkesi netleştirildi ve branch kuralı ekip akışlarıyla uyumlu esnek yapıya çekildi. → Detay: §13.5.29
 - **`CLAUDE.md`**: Claude Code uyumluluğu için araç eşlemesi ve talimat hiyerarşisini açıklar. ⚠️ Eşdeğer araç isimleri gerçek runtime yetenekleriyle güncel tutulmazsa beklenti-uygulama farkı ve yönlendirme hatası oluşabilir. → Detay: §13.5.30
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ⚠️ Üst bilgi tarihleri ana raporla senkron tutulmazsa kapanış zaman çizelgesinde belirsizlik oluşabilir. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ⚠️ İçerik tek satırlık docstring ile sınırlı olduğundan test toplama davranışıyla ilgili ek bağlam sağlamaz. → Detay: §13.5.32
@@ -1992,16 +1992,16 @@ except Exception as exc:
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="13529-sidarmd-skor-88100"></a>
-#### 13.5.29 `SIDAR.md` — Skor: 88/100 ✅
+<a id="13529-sidarmd-skor-94100"></a>
+#### 13.5.29 `SIDAR.md` — Skor: 94/100 ✅
 
 **Sorumluluk:** Proje kökü için ajan çalışma sözleşmesi — dosya okuma/yazma sırası, güvenlik sınırları, Git/GitHub akışı ve yanıt biçimini belirleyen kalıcı talimat dosyasıdır.
 
 **Talimat Kapsamı (satır 1–61)**
 
-- Araç kullanım öncelikleri (`read_file` → `glob_search` → `grep_files`) ve görev takibi yaklaşımı tanımlanır.
+- Araç kullanım öncelikleri ortamdan bağımsız/pratik komutlarla (`read_mcp_resource`, `exec_command`, `rg`) ve plan/todo yaklaşımıyla tanımlanır.
 - OpenClaw erişim seviyeleri (`full/sandbox/restricted`) özetlenir.
-- Git akışında branch adlandırma (`claude/` öneki) ve PR/commit beklentileri belirtilir.
+- Git akışında ekip standardına uyumlu branch adlandırma ve PR/commit beklentileri belirtilir.
 
 **Operasyonel Güçlü Yanlar**
 
@@ -2012,8 +2012,8 @@ except Exception as exc:
 
 | ID | Konu | Satır | Önem |
 |----|------|-------|------|
-| SDR-01 | Bazı araç adları (`grep_files`, `glob_search`, `todo_write`) çalışma ortamına göre birebir mevcut olmayabilir; talimat-gerçek araç seti drift riski oluşur | 11–24 | Orta |
-| SDR-02 | `Branch adı claude/ ile başlamalı` kuralı mevcut ekip Git akışıyla çakışabilir; otomasyon/CI kural setiyle uyumsuzluk riski taşır | 39 | Düşük |
+| SDR-01 | Araç yönergeleri ortamdan bağımsız ifadelerle güncellendi (`rg`, plan/todo mekanizması, genel git doğrulama); araç-seti drift riski azaltıldı | 8–23 | ✅ Kapalı |
+| SDR-02 | Branch adlandırma kuralı tek önek zorunluluğundan çıkarılıp ekip standardına uyumlu esnek biçime getirildi | 34 | ✅ Kapalı |
 
 **Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
 

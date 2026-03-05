@@ -5,22 +5,22 @@ Sidar, bu dosyayı her konuşma turunda yeniden okur — değişiklikler anında
 
 ## Temel Çalışma Kuralları
 
-- Önce ilgili dosyaları oku (`read_file`, `glob_search`, `grep_files`), sonra değişiklik yap.
+- Önce ilgili dosyaları oku (ör. `read_mcp_resource`, `exec_command` + `rg`), sonra değişiklik yap.
 - Kodu değiştirmeden önce mevcut yapıyı anla; gereksiz refactor yapma.
 - Her değişikliği hedef odaklı tut: yalnızca isteneni uygula, fazlasını ekleme.
-- Mümkün olan her adımda `todo_write` ile görev listesi tut; ilerledikçe güncelle.
+- Mümkün olduğunda plan/todo adımlarını güncel tut; ilerledikçe durumları güncelle.
 - İşlem tamamlandığında Türkçe, net ve kısa bir durum özeti ver.
 
-## Araç Kullanım Öncelikleri (Claude Code Uyumlu)
+## Araç Kullanım Öncelikleri (Ortamdan Bağımsız)
 
-- **Dosya okuma**: `read_file` → `glob_search` → `grep_files` sırasıyla kullan.
-- **Dosya yazma**: `write_file` (yeni dosya) veya `patch_file` (mevcut dosyayı güncelle).
-- **Kabuk komutları**: `run_shell` / `bash` / `shell` — yalnızca FULL modda çalışır.
-- **Dizin listeleme**: `list_dir` veya `ls` alias'ı.
-- **Dosya arama**: `glob_search` (desen ile) veya `grep_files` (içerik ile).
-- **Görev takibi**: `todo_write` (güncelle), `todo_read` (listele), `todo_update` (durum değiştir).
-- **GitHub işlemleri**: önce `github_info` veya `github_list_files` ile durumu doğrula.
-- **Web araştırma**: `web_search` → `fetch_url` sırasıyla kullan; spekülatif URL üretme.
+- **Dosya okuma**: Önce ilgili dosyayı doğrudan oku; geniş arama için `rg` kullan (ör. `rg -n`, `rg --files`).
+- **Dosya yazma**: Mevcut düzenleme yöntemini kullan; gereksiz toplu yeniden yazımdan kaçın.
+- **Kabuk komutları**: Komutları en az yetki ve en dar kapsamla çalıştır; önce güvenli/okuma odaklı komutları tercih et.
+- **Dizin listeleme**: Büyük depolarda pahalı taramalardan kaçın; hedefli listeleme ve `rg --files` tercih et.
+- **Dosya arama**: Desen ve içerik araması için `rg` kullan; `ls -R` / `grep -R` gibi pahalı yaklaşımlardan kaçın.
+- **Görev takibi**: Kullanılan plan/todo mekanizmasında adımları `pending/in_progress/completed` şeklinde net tut.
+- **GitHub işlemleri**: Yazma işlemlerinden önce repo/branch durumunu doğrula (`git status`, uzak repo bilgisi vb.).
+- **Web araştırma**: Önce yerel kaynakları ve mevcut repo dosyalarını kullan; gerekli değilse dış kaynağa çıkma.
 
 ## Güvenlik (OpenClaw)
 
@@ -31,8 +31,8 @@ Sidar, bu dosyayı her konuşma turunda yeniden okur — değişiklikler anında
 
 ## Git & GitHub
 
-- Branch adı `claude/` önekiyle başlamalıdır.
-- `github_smart_pr` aracı git diff analiz ederek otomatik PR başlığı ve açıklaması üretir.
+- Branch adı ekip kuralına uygun olmalı; tek bir zorunlu önek dayatılmaz (örn. `feature/`, `fix/`, `chore/`).
+- PR başlığı ve açıklaması yapılan değişikliği, motivasyonu ve test sonuçlarını açıkça yansıtmalıdır.
 - Commit mesajları açıklayıcı ve kısa olmalı; "neden" odaklı yazılmalı.
 
 ## Kod Kalitesi
@@ -45,6 +45,6 @@ Sidar, bu dosyayı her konuşma turunda yeniden okur — değişiklikler anında
 ## Yanıt Formatı
 
 - Kısa ve net; gereksiz uzatma.
-- Teknik bilgi verirken `dosya:satır_no` formatını kullan.
+- Teknik bilgi verirken dosya ve satır referansı ver (örn. `dosya:satır`).
 - Görev listesi varsa her adımı tamamladıktan hemen sonra `completed` olarak işaretle.
-- Sonuçları Markdown ile biçimlendir; kod bloklarında dil belirt. 
+- Sonuçları Markdown ile biçimlendir; kod bloklarında dil belirt.
