@@ -379,6 +379,17 @@
 
 ---
 
+### ✅ §13.5.34 `.gitignore` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Repo hijyeninin artırılması, yeni kurulumlarda dizin bulunamadı hatalarının önlenmesi ve modern geliştirme araçlarıyla uyumun güçlendirilmesi.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| GIT-01 | ✅ Kapandı | Whitelist Stratejisi: `data/` dizininin tamamen ignore edilmesi yerine içerik dışlama + yapı koruma modeline geçildi (`data/*` + `!data/.gitkeep`). Böylece klasör yapısı repoda korunurken ham veriler dışarıda bırakıldı. |
+| GIT-02 | ✅ Kapandı | Artifact Kapsamı: Modern geçici çıktılar (`.ipynb_checkpoints/`, `.ruff_cache/`) ignore listesine eklenerek repo temizliği ve sürdürülebilirlik iyileştirildi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---

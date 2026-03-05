@@ -80,7 +80,7 @@
     - [13.5.31 `DUZELTME_GECMISI.md` — Skor: 100/100 ✅](#13531-duzeltmegecmisimd-skor-87100)
     - [13.5.32 `tests/__init__.py` — Skor: 100/100 ✅](#13532-testsinitpy-skor-96100)
     - [13.5.33 `PROJE_RAPORU.md` — Skor: 100/100 ✅](#13533-projeraporumd-skor-86100)
-    - [13.5.34 `.gitignore` — Skor: 92/100 ✅](#13534-gitignore-skor-92100)
+    - [13.5.34 `.gitignore` — Skor: 100/100 ✅](#13534-gitignore-skor-92100)
     - [13.5.35 `.note` — Skor: 80/100 ✅](#13535-note-skor-80100)
   - [13.6 Son Kontrol ve Dosyalar Arası Uyum Doğrulaması](#136-son-kontrol-ve-dosyalar-arasi-uyum-dogrulamasi)
   - [13.6.1 Harici Yorum Teyidi (Çapraz Kontrol)](#1361-harici-yorum-teyidi-capraz-kontrol)
@@ -324,7 +324,6 @@ sidar_project/
 | **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
 | **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
 | **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
-| **L-06** | `.gitignore` | **`data/` Dizini Top-Level Dışlama:** `data/` dizini tamamen git takibi dışındadır. Bu durum, gelecekte takıma örnek veritabanı (fixture) veya örnek oturum dosyaları paylaşılmak istendiğinde zorluk çıkarır. | `data/` dışlaması kaldırılarak, içine sadece aktif dosyaları gizleyen `.gitignore` (`*`, `!.gitignore`) yerleştirilmeli (whitelist stratejisi). |
 
 *(Geçmişteki N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
@@ -664,7 +663,7 @@ Yeniden yapılandırılan test setinde yalnızca “happy path” değil, aşağ
 - **`DUZELTME_GECMISI.md`**: Kapatılan hata/iyileştirme kayıtlarının arşiv dosyasıdır; ana rapordaki tarihsel referanslar bu dosyaya yönlenir. ✅ Tarihsel kayıtlar ve arşiv başlıkları ana raporla senkronize tutulur; kapanış zaman çizelgesi izlenebilirliği korunur. → Detay: §13.5.31
 - **`tests/__init__.py`**: Test paketini işaretleyen minimal modüldür; test dizininin paket olarak algılanmasını ve import düzenini sade tutmayı destekler. ✅ Bilinçli minimal yapı sayesinde test keşif sürecinde yan etki oluşturmaz; mimari bağlam ana rapor bölümlerinde merkezi olarak korunur. → Detay: §13.5.32
 - **`PROJE_RAPORU.md`**: Projenin güncel teknik durumunu ve dosya bazlı denetim sonuçlarını merkezileştiren ana rapordur. ✅ Arşiv ayrımı (`DUZELTME_GECMISI.md`) ve tek doğruluk kaynağı yaklaşımıyla bakım/senkronizasyon riski azaltılmıştır. → Detay: §13.5.33
-- **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ⚠️ Yeni üretilen artefact klasörleri bu dosyaya eklenmezse depo temizliği ve gizli veri riski oluşabilir. → Detay: §13.5.34
+- **`.gitignore`**: Yerel çalışma çıktılarının ve hassas/üretilmiş dosyaların repoya sızmasını engelleyen kaynak kontrol filtresidir. ✅ Whitelist stratejisi (`data/.gitkeep`) ve modern artefact kurallarıyla depo hijyeni güçlendirilmiştir. → Detay: §13.5.34
 - **`.note`**: WSL/Ubuntu/Conda odaklı ortam notları ve öneri patch taslaklarını içeren çalışma notu dosyasıdır. ⚠️ Bu tür serbest metin notlar doğrulanmadan uygulanırsa güncel mimariyle çelişen öneriler teknik drift yaratabilir. → Detay: §13.5.35
 
 
@@ -2191,33 +2190,41 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13534-gitignore-skor-92100"></a>
-#### 13.5.34 `.gitignore` — Skor: 92/100 ✅
+#### 13.5.34 `.gitignore` — Skor: 100/100 ✅
 
-**Sorumluluk:** Git takip filtresi — Python cache dosyaları, sanal ortamlar, `.env`, log/temp çıktıları, yerel RAG verisi ve IDE artefact’larını repodan hariç tutarak depo hijyenini korur.
+**Sorumluluk (Güncel):** Git takip filtresidir. Python önbelleği, sanal ortamlar, hassas API anahtarları, çalışma zamanı logları ve yerel RAG verilerinin repoya sızmasını engelleyerek depo hijyenini korur.
 
-**Kapsam Özeti (satır 1–42)**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- Python (`__pycache__`, `*.pyc`), test cache (`.pytest_cache`, `.coverage`, `htmlcov`) ve mypy cache dışlanır.
-- Çalışma zamanı çıktıları (`logs/`, `temp/`, `data/`) ve hassas yapılandırma (`.env`) repoya dahil edilmez.
-- `web_ui/vendor/` klasörü install betiğiyle indirildiği için takip dışı tutulmuştur.
+Bu dosya, SİDAR projesinin taşınabilirliğini ve güvenliğini sağlayan ilk savunma hattıdır.
 
-**Operasyonel Güçlü Yanlar**
+- **Hassas Veri Koruması:** `.env` ve benzeri gizli yapılandırmaların repoya sızmasını engeller.
+- **Dizin Yapısı Koruması (Whitelist):** `data/` dizininin yapısını koruyup içeriği dışlayan strateji ile yeni kurulumlarda dizin eksikliği riskini azaltır.
+- **Vendor İzolasyonu:** `web_ui/vendor/` gibi kurulumda üretilen bağımlılık dosyalarının repoyu şişirmesini engeller.
 
-- Günlük geliştirme çıktılarının repoya karışmasını önemli ölçüde engeller.
-- Ortam bağımlı/gizli dosyaları dışlayarak güvenlik ve taşınabilirlik açısından doğru temel sunar.
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 **`github_upload.py`:** GitHub yükleme akışında `git add` adımı bu ignore kurallarını doğrudan uygular.
+
+**Mimari Özeti (satır 1–45)**
+
+| Bölüm | Kapsam | Açıklama |
+|---|---|---|
+| Python | `__pycache__/`, `*.pyc` | Derlenmiş dosya ve çalışma zamanı kalıntılarının dışlanması |
+| Hassas | `.env`, `data/sessions` | Kimlik bilgileri ve kullanıcı verilerinin korunması |
+| Çıktılar | `logs/`, `temp/`, `data/rag` | Dinamik log ve vektör veritabanı çıktılarının dışlanması |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| GIT-01 | `data/` top-level olarak tamamen ignore edildiği için bazı durumlarda paylaşılmak istenen örnek veri/fixture dosyaları yanlışlıkla commit edilemeyebilir (whitelist stratejisi gerekebilir) | 23 | Düşük |
-| GIT-02 | Yeni üretilen artefact türleri (örn. farklı tool cache klasörleri) için ignore listesi düzenli güncellenmezse zamanla repo kirliliği tekrar oluşabilir | 1–42 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Depo hijyeni ve whitelist stratejisi başarıyla uygulanmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+**Kapanan Bulgular (2026-03-05)**
+
+GIT-01 ve GIT-02 numaralı Blanket Ignore ve Artifact Eksikliği bulguları, `data/` dizininde whitelist yaklaşımı (`.gitkeep`) ve modern araç çıktıları için ek ignore kurallarıyla kapatılmıştır.
+
+Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
-
 
 
 

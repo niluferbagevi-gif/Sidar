@@ -20,8 +20,9 @@ logs/
 # Temp
 temp/
 
-# RAG data (local only)
-data/
+# Data (whitelist strategy: keep folder shape, ignore contents)
+data/*
+!data/.gitkeep
 
 # Local documentation (keep in local workspace, do not push to GitHub)
 docs/
@@ -45,4 +46,7 @@ htmlcov/
 .pytest_cache/
 
 # mypy
-.mypy_cache/  
+.mypy_cache/
+# Notebook / modern tool artifacts
+.ipynb_checkpoints/
+.ruff_cache/
