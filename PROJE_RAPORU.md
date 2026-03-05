@@ -2312,9 +2312,7 @@ except Exception as exc:
 <a id="15-genel-degerlendirme"></a>
 ## 15. Genel Değerlendirme
 
-> Bu bölüm tarihsel v2.6.x skor tabloları yerine **v2.7.0 güncel durum özetini** sunar.
-> Ayrıntılı tarihsel V/U/N/O doğrulama kayıtları için:
-> 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+> Bu bölüm, SİDAR projesinin **v2.7.0 kod tabanının en güncel (2026-03-05) durum özetini** ve nihai mimari analizini sunar.
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2322,11 +2320,10 @@ except Exception as exc:
 <a id="151-guncel-durum-ozeti-v270"></a>
 ### 15.1 Tarihsel Gelişim ve Sürüm Özeti
 
-- **[2026-02-26 | v2.5.0 analizi]** İlk kapsamlı denetim fazında temel ReAct akışı, araç çağrıları ve doğrulama eksikleri (regex tabanlı yanlış eşleşme riskleri dahil) görünür hale gelmiştir.
+- **[2026-02-26 | v2.5.0 analizi]** İlk kapsamlı denetim fazında temel ReAct akışı, araç çağrıları ve doğrulama eksikleri görünür hale gelmiştir.
 - **[2026-03-01 | v2.6.x olgunlaşma]** Web katmanı, çoklu oturum yönetimi, Docker tabanlı REPL izolasyonu ve GPU/CUDA odaklı altyapı projeye entegre edilmiştir.
-- **[2026-03-02 | N/O serisi kapanışları]** N-01…N-06 ve O-01…O-06 bulguları kapanarak ayrıntıları arşive taşınmıştır (`DUZELTME_GECMISI.md`).
 - **[2026-03-03 | Session 8]** P-01…P-07 maddeleri aynı oturumda kapatılmış ve rapor/konfigürasyon hizası güçlendirilmiştir.
-- **[2026-03-04 | yeniden satır bazlı teyit]** Kod tabanındaki 36 izlenen dosya ve ~18.4k satır metin içeriği yeniden kontrol edilmiştir; sürüm/konfigürasyon/CUDA hizası v2.7.0 ile tutarlı görünmektedir.
+- **[2026-03-05 | Mimari Atılım & Teyit]** v2.7.0 özellikleri (Sonsuz Hafıza, Fernet Şifreleme, Modüler Test Mimarisi) devreye alınmış; projedeki izlenen dosya sayısı testlerin bölünmesiyle **~60'a** ulaşmış ve kod tabanı uçtan uca tekrar denetlenmiştir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2334,38 +2331,36 @@ except Exception as exc:
 ### 15.2 Mimari ve Kod Kalitesi Değerlendirmesi (Mevcut Durum)
 
 **Güçlü Yönler (Kod ile Teyitli)**
-- **Asenkron dayanıklılık:** Çok sayıda I/O ve araç çağrısı `asyncio.to_thread(...)` ile event-loop dışına alınmıştır (özellikle ajan tarafında dosya/shell/git işlemleri).
-- **Yapısal çıktı güvenliği:** `ToolCall.model_validate_json` + `json.JSONDecoder().raw_decode` birleşimiyle hatalı/pars edilemeyen LLM çıktıları daha kontrollü yönetilmektedir.
-- **Çok katmanlı güvenlik:** Path traversal engelleri, IP tabanlı rate-limit (TOCTOU kilidi ile) ve Docker izolasyonu bir arada uygulanmaktadır.
-- **Sürüm/ortam tutarlılığı:** `core/__init__.py`, `config.py`, `agent/sidar_agent.py` ve `Dockerfile` sürüm etiketleri 2.7.0 ile hizalıdır; `DOCKER_EXEC_TIMEOUT` ve `RAG_FILE_THRESHOLD` gibi anahtarlar `.env.example`/`config.py` arasında eşleşmektedir.
+- **Modüler Test ve Kalite:** Önceki monolitik yapı kırılarak 20'den fazla spesifik dosyaya bölünmüş, regresyon, birim ve XSS güvenlik testlerini barındıran modern bir test süiti oluşturulmuştur.
+- **Gelişmiş Bellek Yönetimi:** Oturumların Fernet (`cryptography`) ile diskte şifrelenmesi ve eski sohbetlerin ChromaDB'ye "Sonsuz Hafıza (Vector Archive)" olarak aktarılması projenin vizyonunu genişletmiştir.
+- **Akıllı Yönlendirme:** `auto_handle` ve `direct_route` gibi hafif katmanlar, tek adımlı görevleri ReAct döngüsüne girmeden çözerek maliyet ve gecikmeyi düşürmektedir.
+- **Asenkron Dayanıklılık & Güvenlik:** Ağ ve I/O işlemleri `asyncio.to_thread(...)` ile güvenle sarılmış, path traversal engelleri, rate-limit TOCTOU kilidi ve izole Docker sandbox mimarisi başarıyla entegre edilmiştir.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
-- **Event-loop bloklama riski:** `/rag/search` ve ajan içindeki `docs_search` yolu, `docs.search(...)` çağrısını doğrudan senkron yapıyor; yüksek eşzamanlılıkta gecikme üretebilir.
-- **Rate-limit bucket temizliği:** `_rate_data` içinde pencere dışı timestamp’ler temizlense de boş kalan IP anahtarları sözlükten düşürülmüyor; uzun uptime senaryosunda bellek büyümesi riski bulunuyor.
-- **Frontend XSS yüzeyi:** LLM çıktısı `marked.parse(...)` sonucu doğrudan `innerHTML`’e basılıyor; ayrıca Todo panelinde `t.content` HTML-escape edilmeden render ediliyor.
-- **Todo kalıcılığı:** `TodoManager` görevleri yalnızca process belleğinde tutuyor; servis yeniden başladığında görev listesi sıfırlanıyor.
+- **RAG Event-Loop Bloklaması (C-01):** RAG aramaları asenkronlaştırılmış olsa da, belge ekleme/silme anında çalışan senkron `_ensure_bm25_index` baştan indeksleme işlemi, çoklu kullanıcı ortamında FastAPI event-loop'unu dondurma (starvation) riski taşımaktadır.
+- **Sonsuz Hafıza Token Aşımı (H-03):** ChromaDB'den dönen geçmiş sohbet özetleri LLM'e (Gemini/Ollama) sınırlandırılmadan (katı bir `top_k` / `max_tokens` olmadan) aktarıldığında API kotalarını veya yerel VRAM'i hızla tüketme potansiyeline sahiptir.
+- **Şifreleme Fallback Eksikliği (H-04):** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir/silinirse sistem hata yakalaması (exception handling) yapmadan çökmektedir.
+- **Todo ve UX Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır. Web UI tarafında LLM HTML çıktısının standart bir araçla (`DOMPurify`) temizlenmemesi (XSS yüzeyi) iyileştirilmesi gereken bir alandır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="153-arsiv-ve-izlenebilirlik-notu"></a>
 ### 15.3 Kategori Bazlı Güncel Durum Tablosu (v2.7.0)
 
-| Kategori | Durum (2026-03-04) | Değerlendirme |
+| Kategori | Durum (2026-03-05) | Değerlendirme |
 |---|---|---|
-| Mimari Tasarım | 🟢 Çok İyi | ReAct döngüsü, araç delegasyonu ve modüler katman ayrımı net. |
-| Async/Await Uyumu | 🟡 İyi (Eksikler Var) | Ana akış asenkron; ancak RAG arama yollarında senkron çağrı izleri sürüyor. |
-| Güvenlik | 🟡 Orta-İyi | Backend kontrolleri güçlü; frontend sanitize katmanı hâlâ iyileştirme alanı. |
-| Hata Yönetimi | 🟢 Çok İyi | Akış ve JSON ayrıştırma hataları kontrollü ele alınıyor. |
-| Test Kapsamı | 🟢 Güçlü | `tests/test_sidar.py` içinde güncelde 64 test fonksiyonu mevcut; ortam bağımlılığı nedeniyle tam koşu bu ortamda tamamlanamadı. |
-| Veri ve Hafıza | 🟡 İyi | JSON tabanlı bellek çalışıyor; Todo kalıcılığı ve RAG/BM25 performans optimizasyonu öneriliyor. |
-| Dokümantasyon İzlenebilirliği | 🟢 Güçlü | Rapor ↔ düzeltme geçmişi anchor zinciri ve tarihsel etiketleme korunuyor. |
+| **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
+| **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
+| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) çok güçlü; ancak istemci tarafı (Web UI XSS) ve Root-Boundary (Path Traversal) sınırları iyileştirmeye açık. |
+| **Veri ve Hafıza** | 🟡 İyi | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; ancak görev yöneticisi kalıcılığı ve BM25 performans optimizasyonu eksik. |
+| **Async/Await Uyumu**| 🟡 İyi | Ana akış ve I/O işlemleri asenkron; sadece BM25 rebuild işlemi senkron kaldığı için tam puan alamıyor. |
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="154-sonuc-ve-proje-gelecegi"></a>
 ### 15.4 Sonuç ve Proje Geleceği
 
-SİDAR v2.7.0, “Yapay Zeka Destekli Yazılım Mühendisi” hedefini taşıyabilecek olgun bir temel mimariye sahiptir. Kritik sürüm/konfigürasyon uyumsuzlukları kapatılmış, güvenlik ve operasyon tarafında önemli kontroller devrededir. Bununla birlikte üretim sertliği için bir sonraki odak; RAG arama yolunun tam non-blocking hale getirilmesi, frontend sanitize katmanının güçlendirilmesi, rate-limit belleğinin evict edilmesi ve TodoManager için kalıcı depolama desteğinin eklenmesi olmalıdır.
+SİDAR v2.7.0, otonom çalışma yeteneği, sonsuz hafıza mimarisi, izole kod çalıştırma (Docker) ve modüler test altyapısıyla **"Yapay Zeka Destekli Yazılım Mühendisi"** hedefini üretim (production) seviyesine taşımaya çok yaklaşmış olgun bir sistemdir. Bir sonraki gelişim fazında (v2.8.x hedefi); sistem kararlılığını riske atan RAG indeksleme bloklamasının (C-01) arka plana alınması, şifre anahtarı yönetimi ile token aşım (H-03, H-04) zafiyetlerinin kapatılması ve görevlerin (Todo) diske kalıcı yazılması odak noktası olmalıdır.
 
 ---
 
