@@ -81,11 +81,11 @@ USER sidar
 # Web arayüzü portu
 EXPOSE 7860
 
-# Sağlık kontrolü — HTTP servis yanıtını doğrular (web_server.py modu)
-# Web modu: curl ile /status endpoint'i kontrol edilir
-# CLI modu: python sürecini kontrol et (fallback)
+# Sağlık kontrolü — çalışma moduna göre deterministik kontrol yapar.
+# Web modu: PID 1 komutu web_server.py ise /status endpoint'i zorunlu olarak doğrulanır.
+# CLI modu: PID 1'in main.py/cli.py olması beklenir; rastgele python süreçleri kabul edilmez.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -sf http://localhost:7860/status > /dev/null 2>&1 || ps aux | grep "[p]ython" || exit 1
+  CMD sh -c 'if ps -p 1 -o args= | grep -Eq "python(3)? .*web_server.py"; then curl -fsS http://localhost:7860/status > /dev/null; else ps -p 1 -o args= | grep -Eq "python(3)? .* (main.py|cli.py)( |$)"; fi'
 
 # Varsayılan başlatma (CLI)
 # Web için: docker run ... python web_server.py
