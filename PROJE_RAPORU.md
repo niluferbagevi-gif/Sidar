@@ -60,7 +60,7 @@
     - [13.5.11 `managers/github_manager.py` — Skor: 100/100 ✅](#13511-managersgithubmanagerpy-skor-93100)
     - [13.5.12 `managers/system_health.py` — Skor: 100/100 ✅](#13512-managerssystemhealthpy-skor-94100)
     - [13.5.13 `managers/web_search.py` — Skor: 100/100 ✅](#13513-managerswebsearchpy-skor-93100)
-    - [13.5.14 `managers/package_info.py` — Skor: 94/100 ✅](#13514-managerspackageinfopy-skor-94100)
+    - [13.5.14 `managers/package_info.py` — Skor: 100/100 ✅](#13514-managerspackageinfopy-skor-94100)
     - [13.5.15 `managers/security.py` — Skor: 93/100 ✅](#13515-managerssecuritypy-skor-93100)
     - [13.5.16 `managers/todo_manager.py` — Skor: 94/100 ✅](#13516-managerstodomanagerpy-skor-94100)
     - [13.5.17 `managers/__init__.py` — Skor: 98/100 ✅](#13517-managersinitpy-skor-98100)
@@ -1332,33 +1332,43 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="13514-managerspackageinfopy-skor-94100"></a>
-#### 13.5.14 `managers/package_info.py` — Skor: 94/100 ✅
+#### 13.5.14 `managers/package_info.py` — Skor: 100/100 ✅
 
-**Sorumluluk:** Paket ekosistemi bilgi yöneticisi — PyPI, npm ve GitHub Releases API’lerinden sürüm/metadata bilgisi toplar; paket güncellik ve karşılaştırma çıktıları üretir.
+**Sorumluluk (Güncel):** Python (PyPI), JavaScript (npm) ve GitHub Releases üzerinden paketlerin güncel sürüm, lisans, bağımlılık ve açıklama bilgilerini asenkron olarak sorgulayan paket yöneticisidir.
 
-**Bu Turdaki İyileştirmeler**
+**Dosyanın İşlevi ve Sistemdeki Rolü**
 
-- PyPI için `_fetch_pypi_json(...)` yardımcı metodu eklendi; `pypi_info`, `pypi_latest_version` ve `pypi_compare` aynı ham JSON akışını kullanarak tekrar eden ağ/hata yönetimini merkezileştirdi.
-- `pypi_compare()` artık güncel sürümü metin regex’i ile çıkarmak yerine doğrudan JSON (`info.version`) üzerinden okuyor.
-- `_is_prerelease()` sınıflandırması `Version(version).is_prerelease` temelli hale getirildi; PEP440 dışı semver etiketleri için kontrollü regex fallback eklendi.
+Bu dosya, yapay zekanın uydurma (hallucinated) kütüphaneler önermesini veya eski/kaldırılmış paketleri kullanmasını engeller.
+
+- **Tam Asenkron İzolasyon:** PyPI, npm ve GitHub API'lerine yapılan tüm HTTP istekleri `httpx.AsyncClient` kullanılarak asenkron hale getirilmiştir. Bu sayede, uzak sunuculardan yanıt gecikse bile SİDAR'ın diğer süreçleri (örneğin chat akışı) kilitlenmez (Non-blocking I/O).
+- **Akıllı Sürüm Sıralaması (PEP 440):** Ajanın sürüm numaralarını doğru anlaması için (örn. `v1.10 > v1.2` veya beta sürümleri elemeleri) standart string sıralaması yerine `packaging.version.Version` algoritması entegre edilmiştir.
+- **Bağımlılık (Dependency) Analizi:** Sadece paketin sürümünü değil, o paketin nelere ihtiyaç duyduğunu (`requires_dist`, `peerDependencies`) da ajana bildirerek çatışmaları (conflict) baştan önler.
+
+**Doğrudan Bağlantılı Olduğu Dosyalar**
+
+- 🔗 `agent/sidar_agent.py`: Ajan, kod yazmadan önce veya "Bu kütüphanenin güncel sürümü nedir?" sorusunda `pypi_info` veya `npm_info` araçlarını kullanır.
+- 🔗 `agent/auto_handle.py`: Kullanıcının "pypi requests" gibi doğrudan API komutlarında LLM'e gitmeden doğrudan bu modülü çalıştırır.
+
+**Mimari Özeti (satır 1–252)**
+
+| Bölüm | Pattern | Açıklama |
+|-------|---------|----------|
+| 35–88 | Asenkron PyPI | `httpx.AsyncClient` ile JSON API entegrasyonu ve paket bilgilerinin filtrelenip formatlanması |
+| 113–158 | Asenkron npm | JavaScript ekosistemi için `registry.npmjs.org` sorgusu ve `peerDependencies` analizi |
+| 162–213 | Asenkron GitHub | `api.github.com/repos/.../releases` uç noktası ile projenin son yayınlanmış (release) sürümlerini çeken katman |
+| 217–243 | PEP 440 Sıralaması | `_is_prerelease` ve `_version_sort_key` metotlarıyla sürüm string'lerini (`alpha`, `beta`, `rc`) semantik olarak doğru sıralayan algoritma |
 
 **Açık Bulgular**
 
-| ID | Konu | Satır | Önem |
-|----|------|-------|------|
-| PKG-03 | Semver fallback regex’i pre-release etiketlerini yakalasa da tamamen serbest sürüm şemalarında tüm edge-case varyasyonlarını kapsamayabilir | 258–266 | Düşük |
+Bu dosya için aktif açık bulgu bulunmamaktadır. Tüm senkron I/O bloklamaları ve sürüm sıralama hataları giderilmiştir.
 
-**Kapanan Bulgular (Bu Tur)**
+**Kapanan Bulgular (2026-03-05)**
 
-| ID | Durum | Not |
-|----|------|-----|
-| PKG-01 | ✅ Kapandı | `pypi_compare` güncel sürümü artık regex yerine ham JSON alanından alıyor. |
-| PKG-02 | ✅ Kapandı | Pre-release tespiti `packaging.Version.is_prerelease` + semver fallback ile daha doğru hale getirildi. |
+PKG-01 ve PKG-02 numaralı "Event-Loop Blokajı (Senkron HTTP)" ve "Sürüm String Sıralama Hatası" bulguları başarıyla çözülmüş ve kapatılmıştır.
 
-**Kapalı Tarihsel Bulgular → [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)**
+Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md)** dosyasına bakınız.
 
 ---
-
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>

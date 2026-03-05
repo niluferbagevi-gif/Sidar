@@ -163,6 +163,17 @@
 
 ---
 
+### ✅ §13.5.14 `managers/package_info.py` Düzeltmeleri (Tarih: 2026-03-05)
+
+**Bağlam:** Dış paket depolarına (PyPI, npm) yapılan ağ isteklerinin ana sunucuyu dondurmasını engellemek ve paket sürüm numaralarının (Semantic Versioning) Python tarafından doğru algılanmasını sağlamak.
+
+| ID | Durum | Çözüm Notu |
+|----|------|------------|
+| PKG-01 | ✅ Kapandı | Event-Loop Blokajı (Senkron HTTP): Eski mimaride kullanılan senkron kütüphanelerin (örn. `requests`) dış API'lerin yanıt vermediği anlarda (`TIMEOUT` süresince) tüm ajanı ve web arayüzünü kilitlediği tespit edildi. Sınıftaki tüm API istek metotları (`pypi_info`, `npm_info`, `github_releases`) `httpx.AsyncClient` ile async/await mimarisine geçirilerek I/O darboğazı kalıcı olarak çözüldü. |
+| PKG-02 | ✅ Kapandı | Sürüm Sıralama Hatası (String Sort Bug): PyPI sürümleri varsayılan olarak alfabetik string sıralamasına tabi tutulduğunda `v1.10.0` sürümünün `v1.2.0`'dan daha eskiymiş gibi algılanması sorunu çözüldü. Koda `packaging.version.Version` tabanlı (PEP 440 uyumlu) `_version_sort_key` metodu eklendi. Pre-release (`alpha/beta/rc`) sürümler başarıyla filtrelendi. |
+
+---
+
 > ✅ v2.5.0 raporundaki 8 temel sorun + v2.6.0 raporundaki 7 web UI / backend sorunu + 5 kritik hata + 9 yüksek öncelikli sorun + 10 orta öncelikli sorun + 8 düşük öncelikli sorun + 7 ek sorun giderilmiştir (toplam 54 düzeltme).
 
 ---
