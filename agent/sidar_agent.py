@@ -121,6 +121,7 @@ class SidarAgent:
             use_gpu=getattr(self.cfg, "USE_GPU", False),
             gpu_device=getattr(self.cfg, "GPU_DEVICE", 0),
             mixed_precision=getattr(self.cfg, "GPU_MIXED_PRECISION", False),
+            cfg=self.cfg,
         )
 
         self.todo = TodoManager()
