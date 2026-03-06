@@ -13,3 +13,13 @@ def test_nvml_cleanup_has_explicit_close_and_atexit_registration():
     assert "atexit.register(self.close)" in src
     assert "def close(self) -> None:" in src
     assert "self._nvml_initialized = False" in src
+
+def test_system_health_ollama_timeout_and_prometheus_hooks_present():
+    src = Path("managers/system_health.py").read_text(encoding="utf-8")
+    assert "def check_ollama(self) -> bool:" in src
+    assert "getattr(self.cfg, \"OLLAMA_URL\", \"http://localhost:11434/api\")" in src
+    assert "getattr(self.cfg, \"OLLAMA_TIMEOUT\", 5)" in src
+    assert "requests.get(f\"{base_url.rstrip('/')}/tags\", timeout=timeout)" in src
+    assert "def update_prometheus_metrics(self, metrics_dict: Dict[str, float]) -> None:" in src
+    assert "sidar_system_cpu_percent" in src
+    assert "self.update_prometheus_metrics({" in src

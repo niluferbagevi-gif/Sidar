@@ -99,7 +99,7 @@ class SidarAgent:
             docker_image=getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
             docker_exec_timeout=getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", 10),
         )
-        self.health = SystemHealthManager(self.cfg.USE_GPU)
+        self.health = SystemHealthManager(self.cfg.USE_GPU, cfg=self.cfg)
         self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
         
         self.memory = ConversationMemory(

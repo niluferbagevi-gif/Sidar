@@ -2774,6 +2774,20 @@ Bu turda GitHub entegrasyonundan sorumlu `managers/github_manager.py` dosyası, 
 
 **Session 24 çıktısı:** GitHub entegrasyonu, kurumsal düzeydeki büyük repolarla çalışabilecek kadar ölçeklenebilir ve güvenli hale getirilmiştir.
 
+
+<a id="session-25-sistem-sagligi-ve-servis-izleme-optimizasyonu"></a>
+## 34. Session 25 — 2026-03-06 Sistem Sağlığı ve Servis İzleme Optimizasyonu
+
+Bu turda ajanın donanım farkındalığını yöneten `managers/system_health.py` dosyası, ağ kararlılığı ve merkezi yapılandırma açısından denetlenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S25-01 | `system_health.py` | ✅ Kritik Çözüm | Ollama servis kontrolüne `OLLAMA_TIMEOUT` sınırı eklendi. Servis donmalarının ajanı kilitlemesi engellendi. |
+| S25-02 | `system_health.py` | ✅ Kusursuz | Servis kontrol URL'leri statik yapıdan kurtarılarak merkezi `config.py` (`OLLAMA_URL`) değerlerine bağlandı. |
+| S25-03 | `system_health.py` | ✅ İyileştirme | Donanım metriklerinin (CPU/RAM/GPU) `/metrics` endpoint'i üzerinden izlenebilmesi için altyapı hazırlığı yapıldı. |
+
+**Session 25 çıktısı:** Sidar'ın kendi sağlık durumunu raporlama yeteneği, dış servislerin (Ollama) durumundan bağımsız olarak kesintisiz çalışacak hale getirilmiştir.
+
 <a id="ozet"></a>
 ### Özet
 
