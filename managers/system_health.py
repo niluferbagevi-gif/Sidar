@@ -18,6 +18,8 @@ import subprocess
 import threading
 from typing import Dict, List, Optional
 
+from config import Config
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,9 @@ class SystemHealthManager:
         self,
         use_gpu: bool = True,
         cpu_sample_interval: float = 0.0,
+        cfg: Optional[Config] = None,
     ) -> None:
+        self.cfg = cfg or Config()
         self.use_gpu = use_gpu
         self._lock = threading.RLock()
         # Varsayılan 0.0 ile bloklamayan örnekleme (psutil.cpu_percent(interval=0.0))
@@ -52,6 +56,9 @@ class SystemHealthManager:
 
         # __del__ her zaman deterministik çalışmayabileceği için, çıkışta da temizlik dene.
         atexit.register(self.close)
+
+        # Prometheus gauge cache (opsiyonel; prometheus_client yoksa None kalır).
+        self._prometheus_gauges: Optional[Dict[str, object]] = None
 
     # ─────────────────────────────────────────────
     #  BAŞLANGIÇ KONTROLLERI
@@ -262,6 +269,63 @@ class SystemHealthManager:
         lines.append("Python GC çalıştırıldı. ✓")
         return "\n".join(lines)
 
+    def check_ollama(self) -> bool:
+        """Ollama servisinin erişilebilirliğini timeout ile doğrula."""
+        try:
+            import requests
+            base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
+            timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))
+            resp = requests.get(f"{base_url.rstrip('/')}/tags", timeout=timeout)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def update_prometheus_metrics(self, metrics_dict: Dict[str, float]) -> None:
+        """SystemHealth verilerini mevcut Prometheus Gauge nesnelerine aktar."""
+        if not metrics_dict:
+            return
+        if self._prometheus_gauges is None:
+            try:
+                from prometheus_client import Gauge
+                self._prometheus_gauges = {
+                    "cpu_percent": Gauge(
+                        "sidar_system_cpu_percent",
+                        "SystemHealth CPU kullanım yüzdesi",
+                    ),
+                    "ram_percent": Gauge(
+                        "sidar_system_ram_percent",
+                        "SystemHealth RAM kullanım yüzdesi",
+                    ),
+                    "gpu_util_percent": Gauge(
+                        "sidar_system_gpu_util_percent",
+                        "SystemHealth GPU kullanım yüzdesi",
+                    ),
+                    "gpu_temp_c": Gauge(
+                        "sidar_system_gpu_temp_celsius",
+                        "SystemHealth GPU sıcaklığı (C)",
+                    ),
+                }
+            except Exception:
+                self._prometheus_gauges = {}
+
+        if not self._prometheus_gauges:
+            return
+
+        map_keys = {
+            "cpu_percent": "cpu_percent",
+            "ram_percent": "ram_percent",
+            "gpu_utilization_pct": "gpu_util_percent",
+            "gpu_temperature_c": "gpu_temp_c",
+        }
+        for src_key, gauge_key in map_keys.items():
+            val = metrics_dict.get(src_key)
+            if val is None:
+                continue
+            try:
+                self._prometheus_gauges[gauge_key].set(float(val))
+            except Exception:
+                continue
+
     # ─────────────────────────────────────────────
     #  TAM RAPOR
     # ─────────────────────────────────────────────
@@ -289,6 +353,10 @@ class SystemHealthManager:
                 f"(%{mem['percent']:.0f} kullanımda)"
             )
 
+        # Ollama
+        ollama_up = self.check_ollama()
+        lines.append(f"  Ollama    : {'Çevrimiçi' if ollama_up else 'Çevrimdışı'}")
+
         # GPU
         gpu = self.get_gpu_info()
         if gpu.get("available"):
@@ -310,6 +378,17 @@ class SystemHealthManager:
                 lines.append(line)
         else:
             lines.append(f"  GPU       : {gpu.get('reason', gpu.get('error', 'Yok'))}")
+
+        ram_percent = mem.get("percent") if mem else None
+        gpu_devices = gpu.get("devices", []) if isinstance(gpu, dict) else []
+        gpu_temp = gpu_devices[0].get("temperature_c") if gpu_devices else None
+        gpu_util = gpu_devices[0].get("utilization_pct") if gpu_devices else None
+        self.update_prometheus_metrics({
+            "cpu_percent": cpu if cpu is not None else 0.0,
+            "ram_percent": ram_percent if ram_percent is not None else 0.0,
+            "gpu_utilization_pct": gpu_util if gpu_util is not None else 0.0,
+            "gpu_temperature_c": gpu_temp if gpu_temp is not None else 0.0,
+        })
 
         return "\n".join(lines)
 
