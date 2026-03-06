@@ -1,4 +1,3 @@
-
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
 # Sürüm: 2.7.0  (GPU & CPU destekli çift mod)
@@ -32,6 +31,7 @@ LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 ARG MEMORY_ENCRYPTION_KEY=""
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PORT=7860 \
     PIP_NO_CACHE_DIR=1 \
     ACCESS_LEVEL=sandbox \
     USE_GPU=${GPU_ENABLED} \
@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     build-essential \
     curl \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # GPU modunda PyTorch CUDA wheel URL'i (CPU için default)
@@ -69,12 +70,22 @@ pkgs = next((item['pip'] for item in deps['dependencies'] if isinstance(item, di
 print('\n'.join(pkgs))" > requirements.txt && \
     pip install -r requirements.txt
 
+# Opsiyonel RAG embedding model pre-cache (offline/tekrarlı build hızlandırma)
+# Örn: docker build --build-arg PRECACHE_RAG_MODEL=true -t sidar-ai .
+ARG PRECACHE_RAG_MODEL=false
+ARG RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
+RUN if [ "$PRECACHE_RAG_MODEL" = "true" ]; then \
+      python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${RAG_EMBEDDING_MODEL}')"; \
+    else \
+      echo "RAG model pre-cache atlandı"; \
+    fi
+
 # Uygulama kodlarını kopyala
 COPY . .
 
 # Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
-RUN useradd -m sidar && mkdir -p /app/logs /app/data /app/temp && chown -R sidar:sidar /app
-USER sidar
+RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
+USER sidaruser
 
 # Web arayüzü portu
 EXPOSE 7860
