@@ -2808,6 +2808,20 @@ Bu turda projenin görsel katmanı olan `web_ui/index.html`, backend tarafındak
 
 **Session 26 çıktısı:** Sidar'ın web arayüzü artık sadece bir kabuk değil, backend ile gerçek zamanlı akan, donanım kaynaklarını izleyen ve hata durumlarında kullanıcıyı yönlendiren profesyonel bir kontrol paneline dönüşmüştür.
 
+
+<a id="session-27-llm-istemcisi-ve-baglanti-dayanikliligi"></a>
+## 36. Session 27 — 2026-03-06 LLM İstemcisi ve Bağlantı Dayanıklılığı
+
+Bu turda projenin yapay zeka modelleriyle konuştuğu ana köprü olan `core/llm_client.py` dosyası optimize edilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S27-01 | `llm_client.py` | ✅ Kritik Çözüm | Ollama için HTTPX zaman aşımı (timeout) 5sn'den 120sn'ye çıkarıldı. Büyük modellerin yüklenme süresindeki çökme riski giderildi. |
+| S27-02 | `llm_client.py` | ✅ Kusursuz | Ajanın ReAct döngüsü için hayati olan JSON Modu (`json_mode`) hem Ollama hem Gemini için API seviyesinde zorunlu hale getirildi. |
+| S27-03 | `llm_client.py` | ✅ Güvenlik | Gemini güvenlik filtreleri (Safety Settings), teknik kodlama asistanlığı sırasında oluşabilecek yanlış engellemeleri (false-positive) önlemek için optimize edildi. |
+
+**Session 27 çıktısı:** Sidar'ın dış zeka kaynaklarıyla (Ollama/Gemini) olan iletişimi artık çok daha dirençli, hızlı ve ajanın ReAct mantığına tam uyumlu hale getirilmiştir.
+
 <a id="ozet"></a>
 ### Özet
 

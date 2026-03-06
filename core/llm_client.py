@@ -60,6 +60,24 @@ class LLMClient:
         else:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
 
+    def _build_ollama_timeout(self) -> httpx.Timeout:
+        """Ollama istekleri için merkezi timeout profili."""
+        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
+        return httpx.Timeout(timeout_seconds, connect=10.0)
+
+    @staticmethod
+    def _ensure_json_text(text: str, provider: str) -> str:
+        """json_mode çağrılarında düz metin sızıntısını güvenli JSON'a çevir."""
+        try:
+            json.loads(text)
+            return text
+        except Exception:
+            return json.dumps({
+                "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
+                "tool": "final_answer",
+                "argument": text or "[UYARI] Sağlayıcı boş içerik döndürdü.",
+            })
+
     # ─────────────────────────────────────────────
     #  OLLAMA (ASYNC)
     # ─────────────────────────────────────────────
@@ -103,7 +121,7 @@ class LLMClient:
                 "additionalProperties": False,
             }
         
-        timeout = getattr(self.config, "OLLAMA_TIMEOUT", 60)
+        timeout = self._build_ollama_timeout()
         
         try:
             # STREAM MODU
@@ -115,7 +133,8 @@ class LLMClient:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                return data.get("message", {}).get("content", "")
+                content = data.get("message", {}).get("content", "")
+                return self._ensure_json_text(content, "Ollama") if json_mode else content
 
         except httpx.ConnectError:
             logger.error("Ollama bağlantı hatası.")
@@ -220,14 +239,34 @@ class LLMClient:
             else:
                 chat_messages.append(m)
 
-        gen_config = {"temperature": temperature}
-        if json_mode:
-            gen_config["response_mime_type"] = "application/json"
+        gen_config = {
+            "temperature": 0.2 if json_mode else temperature,
+            "response_mime_type": "application/json" if json_mode else "text/plain",
+        }
+
+        safety_settings = None
+        try:
+            from google.generativeai.types import HarmBlockThreshold, HarmCategory
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            }
+        except Exception:
+            # Sürüm uyumsuzluğu durumunda güvenli fallback (SDK string mapping)
+            safety_settings = {
+                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+            }
 
         model = genai.GenerativeModel(
             model_name=self.config.GEMINI_MODEL,
             system_instruction=system_text or None,
             generation_config=gen_config,
+            safety_settings=safety_settings,
         )
 
         # Gemini history formatı
@@ -256,7 +295,8 @@ class LLMClient:
                 return self._stream_gemini_generator(response_stream)
             else:
                 response = await chat_session.send_message_async(prompt)
-                return response.text
+                text = getattr(response, "text", "") or ""
+                return self._ensure_json_text(text, "Gemini") if json_mode else text
 
         except Exception as exc:
             logger.error("Gemini hata: %s", exc)
