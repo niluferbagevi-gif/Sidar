@@ -2794,6 +2794,20 @@ Bu turda ajanın donanım farkındalığını yöneten `managers/system_health.p
 
 **Session 25 çıktısı:** Sidar'ın kendi sağlık durumunu raporlama yeteneği, dış servislerin (Ollama) durumundan bağımsız olarak kesintisiz çalışacak hale getirilmiştir.
 
+
+<a id="session-26-web-arayuzu-ve-sse-akisi-entegrasyonu"></a>
+## 35. Session 26 — 2026-03-06 Web Arayüzü ve SSE Akışı Entegrasyonu
+
+Bu turda projenin görsel katmanı olan `web_ui/index.html`, backend tarafındaki mimari güncellemelerle (Port 7860 & SSE) uyumlu hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S26-01 | `index.html` | ✅ Kritik Çözüm | Arka planda 7860 portuna geçilmesiyle oluşan bağlantı kopukluğu dinamik URL yapısıyla çözüldü. |
+| S26-02 | `index.html` | ✅ İyileştirme | Standart JSON yanıtları yerine SSE (Server-Sent Events) akışını okuyabilen stream mimarisine geçildi. |
+| S26-03 | `index.html` | ✅ UX/Güvenlik | Hız sınırı (Rate Limit) hataları için kullanıcı bilgilendirme mesajları (Status 429 handling) eklendi. |
+
+**Session 26 çıktısı:** Sidar'ın web arayüzü artık sadece bir kabuk değil, backend ile gerçek zamanlı akan, donanım kaynaklarını izleyen ve hata durumlarında kullanıcıyı yönlendiren profesyonel bir kontrol paneline dönüşmüştür.
+
 <a id="ozet"></a>
 ### Özet
 

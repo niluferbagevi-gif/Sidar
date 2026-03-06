@@ -310,6 +310,10 @@ async def status():
 
     enc_status = "Etkin (Fernet)" if getattr(a.cfg, "MEMORY_ENCRYPTION_KEY", "") else "Devre Dışı"
 
+    ollama_t0 = time.monotonic()
+    ollama_online = a.health.check_ollama()
+    ollama_latency_ms = int((time.monotonic() - ollama_t0) * 1000)
+
     return JSONResponse({
         "version": a.VERSION,
         "provider": a.cfg.AI_PROVIDER,
@@ -327,6 +331,8 @@ async def status():
         "gpu_count": getattr(a.cfg, "GPU_COUNT", 0),
         "cuda_version": getattr(a.cfg, "CUDA_VERSION", "N/A"),
         "gpu_devices": gpu_info.get("devices", []),
+        "ollama_online": ollama_online,
+        "ollama_latency_ms": ollama_latency_ms,
     })
 
 @app.get("/metrics")
