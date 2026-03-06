@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime
+from urllib.parse import quote
 
 from config import Config
 
@@ -140,7 +141,7 @@ def sanitize_staging_area():
             print(f"  - {path} ({reason})")
 
 
-def build_push_target(current_branch: str) -> str:
+def build_push_target() -> str:
     """HTTPS origin varsa token ile anlık push URL'i üretir."""
     success, remote_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
     if not success or not remote_url:
@@ -151,10 +152,26 @@ def build_push_target(current_branch: str) -> str:
         if not GITHUB_TOKEN:
             print(f"{Colors.FAIL}❌ config.py/.env üzerinden GITHUB_TOKEN bulunamadı. Push işlemi durduruldu.{Colors.ENDC}")
             sys.exit(1)
+
         repo_path = remote_url.replace("https://github.com/", "", 1)
-        return f"https://{GITHUB_TOKEN}@github.com/{repo_path}"
+        safe_token = quote(GITHUB_TOKEN, safe="")
+        return f"https://{safe_token}@github.com/{repo_path}"
 
     return "origin"
+
+
+def print_push_permission_help(err_msg: str):
+    """403/permission hatalarında aksiyon odaklı rehber gösterir."""
+    lowered = err_msg.lower()
+    if "403" not in lowered and "permission" not in lowered and "access denied" not in lowered:
+        return
+
+    print(f"{Colors.FAIL}❌ Push yetki hatası (403/permission denied) tespit edildi.{Colors.ENDC}")
+    print(f"{Colors.WARNING}Çözüm adımları:{Colors.ENDC}")
+    print("  1. .env içinde GITHUB_TOKEN değerinin güncel olduğundan emin olun.")
+    print("  2. Token izinlerini kontrol edin: Private repo için 'repo', public repo için 'public_repo'.")
+    print("  3. Fine-grained token kullanıyorsanız bu depoda 'Contents: Read and write' yetkisi verin.")
+    print("  4. Repo sahibi/organizasyon izinlerinin bu kullanıcıya push yetkisi verdiğini doğrulayın.")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -253,7 +270,7 @@ def main():
     current_branch = branch if branch else "main"
 
     # 8. GitHub'a Gönder (Push)
-    push_target = build_push_target(current_branch)
+    push_target = build_push_target()
     print(f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}")
 
     push_success, err_msg = run_command(["git", "push", "-u", push_target, current_branch], show_output=False)
@@ -332,9 +349,11 @@ def main():
                     "Veri kaybını önlemek için push durduruldu."
                     f"{Colors.ENDC}"
                 )
+        elif "403" in err_msg or "Permission to" in err_msg or "denied" in err_msg:
+            print_push_permission_help(err_msg)
+            print(f"{Colors.WARNING}Ham hata çıktısı:\n{err_msg}{Colors.ENDC}")
         else:
             print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
-
 
 if __name__ == "__main__":
     try:

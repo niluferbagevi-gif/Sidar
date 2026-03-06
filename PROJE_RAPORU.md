@@ -2990,6 +2990,19 @@ Bu turda projenin kod dağıtımını sağlayan `github_upload.py` betiği, veri
 
 **Session 39 çıktısı:** Sidar'ın kod tabanı artık dış depolara aktarımda daha güvenli hale getirildi; API anahtarları ve özel veriler için sızıntı koruması güçlendirildi.
 
+
+<a id="session-40-github-upload-push-yetki-teshisi"></a>
+## 49. Session 40 — 2026-03-06 GitHub Upload Push Yetki Teşhisi
+
+Bu turda `github_upload.py` üzerinde görülen 403 push hatası için teşhis ve yönlendirme davranışı iyileştirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S40-01 | `github_upload.py` | ✅ Kritik Çözüm | HTTPS push URL üretiminde token URL-encode edilerek özel karakter kaynaklı kimlik doğrulama kırılmaları engellendi. |
+| S40-02 | `github_upload.py` | ✅ Kullanılabilirlik | `403/permission denied` durumları için açık ve adım adım çözüm rehberi eklendi; hata artık "bilinmeyen" olarak raporlanmıyor. |
+
+**Session 40 çıktısı:** Push yetki hatalarında kök neden analizi hızlandı; token/izin kaynaklı problemler için operatör yönlendirmesi netleştirildi.
+
 <a id="ozet"></a>
 ### Özet
 
