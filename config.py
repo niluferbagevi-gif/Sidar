@@ -227,7 +227,7 @@ class Config:
     # ─── AI Sağlayıcı ────────────────────────────────────────
     AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini"
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL:   str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL:   str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
