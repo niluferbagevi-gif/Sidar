@@ -2962,6 +2962,34 @@ Bu turda ajanın her konuşmada referans aldığı `SIDAR.md` dosyası, backend 
 
 **Session 37 çıktısı:** Sidar, güncel sistem sınırları ve güvenlik protokolleriyle hizalı şekilde daha tutarlı ve teknik olarak doğru davranacak şekilde yönlendirildi.
 
+
+<a id="session-38-kurulum-otomasyonu-ve-v270-muhuru"></a>
+## 47. Session 38 — 2026-03-06 Kurulum Otomasyonu ve v2.7.0 Mühürü
+
+Bu turda projenin "tek tıkla kurulum" betiği olan `install_sidar.sh`, mimari değişikliklerle senkronize edilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S38-01 | `install_sidar.sh` | ✅ Kritik Çözüm | Erişim portu referansları 7860 standardı ile hizalandı ve final bilgilendirmesi sadeleştirildi. |
+| S38-02 | `install_sidar.sh` | ✅ Kusursuz | Varsayılan model hazırlığı `qwen2.5-coder:7b` odağında senkronize edildi; model indirme akışı güvenli kontrolle güncellendi. |
+| S38-03 | `install_sidar.sh` | ✅ Altyapı | `sessions/`, `chroma_db/`, `logs/`, `models/` dizinlerinin kurulumda otomatik hazırlanması sağlandı. |
+
+**Session 38 çıktısı:** Sidar, artık yeni bir sisteme hızlıca ve merkezi yapılandırma standartlarıyla uyumlu biçimde kurulabilir duruma getirildi.
+
+
+<a id="session-39-github-upload-ve-dagitim-guvenligi-muhuru"></a>
+## 48. Session 39 — 2026-03-06 GitHub Upload ve Dağıtım Güvenliği Mühürü
+
+Bu turda projenin kod dağıtımını sağlayan `github_upload.py` betiği, veri sızıntısı risklerine karşı denetlenmiş ve güncellenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S39-01 | `github_upload.py` | ✅ Kritik Çözüm | `.env`, `sessions/`, `chroma_db/`, `logs/`, `models/` gibi hassas yolların yanlışlıkla GitHub'a yüklenmesini önleyen sert engelleme listesi (Hard Blacklist) eklendi. |
+| S39-02 | `github_upload.py` | ✅ Kararlılık | UTF-8 okuma ve binary/encoding hatasında stage dışı bırakma mantığı eklenerek yükleme sırasında oluşan çökmeler azaltıldı. |
+| S39-03 | `github_upload.py` | ✅ Entegrasyon | `GITHUB_TOKEN` kullanımı merkezi `config.py` değerine bağlandı ve varsayılan commit mesajları sürüm numarasıyla senkronize edildi. |
+
+**Session 39 çıktısı:** Sidar'ın kod tabanı artık dış depolara aktarımda daha güvenli hale getirildi; API anahtarları ve özel veriler için sızıntı koruması güçlendirildi.
+
 <a id="ozet"></a>
 ### Özet
 
