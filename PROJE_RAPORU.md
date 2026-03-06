@@ -292,8 +292,8 @@ sidar_project/
 
 | ID | Modül | Hata Açıklaması | Çözüm Önerisi |
 | :--- | :--- | :--- | :--- |
-| **H-03** | `agent/sidar_agent.py` | **Sonsuz Hafıza Context Taşması:** `_summarize_memory` ile ChromaDB'ye arşivlenen geçmiş konuşmalar, boyut sınırı olmaksızın her yeni mesajda RAG üzerinden LLM'e gönderilmektedir. Uzun sohbetlerde bu durum token aşımına, maliyet artışına (Gemini) veya VRAM yetersizliğine (Ollama) yol açmaktadır. | Arşivden getirilen geçmiş fragmanları için katı bir `top_k` (örn: en alakalı 3 sonuç) ve `min_score` (örn: >0.75) eşiği konulmalı, `agent_system_prompt`'a eklenen metin sınırlandırılmalıdır. |
-| **H-04** | `core/memory.py` | **Şifreleme Anahtarı (Fernet) Zafiyeti:** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir veya kaybolursa, diskteki mevcut JSON sohbet geçmişleri çözülemediği için `cryptography.fernet.InvalidToken` hatası fırlatılarak sistemin o oturum için çökmesine neden olur. Veri kaybı riski mevcuttur. | `_load_sessions` metodunda şifre çözme işlemi `try-except` bloğuna alınmalı, hata durumunda oturumun bozulmasını engellemek için kullanıcı UI üzerinden uyarılmalı veya geçici bir salt-okunur modda başlatılmalıdır. |
+| **H-03** | `agent/sidar_agent.py` | ✅ **KAPATILDI:** Memory archive bağlamı `top_k`, `min_score` ve `max_chars` sınırlarıyla filtrelenerek prompt taşması riski giderildi. | İzleme: eşik değerleri (`MEMORY_ARCHIVE_*`) üretim trafiğine göre ayarlanabilir. |
+| **H-04** | `core/memory.py` | ✅ **KAPATILDI:** Şifre çözme/okuma akışında hata yakalama ve dayanıklı geri dönüş uygulanarak InvalidToken kaynaklı çökme riski giderildi. | İzleme: anahtar rotasyonu senaryoları için kullanıcı bilgilendirmesi sürdürülsün. |
 
 *(Önceki sürümlerden kalan H-01 ve H-02 numaralı SSE ve XSS hataları v2.6.1 ile çözülmüştür. Detaylar için DUZELTME_GECMISI.md dosyasına bakınız.)*
 
@@ -309,9 +309,9 @@ sidar_project/
 
 | ID | Modül / Dosya | Hata Açıklaması | Çözüm Önerisi |
 | :--- | :--- | :--- | :--- |
-| **M-01** | `managers/todo_manager.py` | **Todo Listesi Kalıcılık Eksikliği:** `TodoManager` görevleri yalnızca süreç belleğinde (in-memory `self.tasks = []` olarak) tutmaktadır. Web sunucusu veya CLI yeniden başlatıldığında, tamamlanmış veya devam eden tüm planlı görevler kaybolmaktadır. | Görev listesi `data/sessions/` altındaki JSON dosyalarına veya SQLite veritabanına periyodik olarak kaydedilmeli ve sunucu başlangıcında diskten geri yüklenmelidir. |
-| **M-02** | `config.py` | **Import Anında Donanım Tespiti:** `HARDWARE = check_hardware()` çağrısı modül yüklenme (import) seviyesinde yapılmaktadır. Bu durum, uygulama her başlatıldığında `nvidia-smi` subprocess'ini ve PyTorch/CUDA sorgularını senkron olarak tetikleyerek CLI/Web başlangıcını yavaşlatır ve test izolasyonunu zorlaştırır. | `check_hardware()` çağrısı "lazy-init" (ihtiyaç anında) modeline geçirilmeli veya uygulamanın açık başlatma fazına (`main()` içine) taşınmalıdır. |
-| **M-03** | `managers/security.py` | **Gevşek Okuma Sınırı (Path Traversal Riski):** `can_read()` fonksiyonu temel olarak statik kara liste (blacklist) regex'lerine dayanmaktadır. Proje dizini dışındaki dosyalar, kara listede değilse okunabilir durumdadır. | Sadece proje kök dizini (veya belirlenen çalışma alanı) altındaki dosyalara izin verecek şekilde katı `is_path_under()` root boundary (kök sınırı) kontrolü zorunlu kılınmalıdır. |
+| **M-01** | `managers/todo_manager.py` | ✅ **KAPATILDI:** `todos.json` kalıcılığı ve UTF-8 güvenli kayıt/geri yükleme mekanizması eklendi. | İzleme: dosya bozulması senaryoları için otomatik kurtarma metrikleri izlenebilir. |
+| **M-02** | `config.py` | ✅ **KAPATILDI:** Donanım tespiti import anından çıkarılıp lazy-init akışına taşındı; `Config` ilk kullanımında yükleniyor. | İzleme: ilk kullanım gecikmesi sadece GPU açık senaryolarda oluşur. |
+| **M-03** | `managers/security.py` | ✅ **KAPATILDI:** `can_read()` içinde kök dizin sınırı (`is_path_under`) zorunlu kılınarak path traversal yüzeyi daraltıldı. | İzleme: gerektiğinde allowlist tabanlı alt dizin politikası eklenebilir. |
 | **M-04** | `github_upload.py` | **Push çakışmalarında kullanıcı onayı zorunluluğu:** Otomatik birleştirme sadece kullanıcı açık onay verirse çalıştırılır; aksi durumda süreç güvenli şekilde durdurulur. | Bu davranış korunmalı, kullanıcı onayı olmayan birleştime adımları engellenmeye devam edilmelidir. |
 
 *(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
@@ -2357,32 +2357,22 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <a id="oncelik-1-yuksek-etki-kisa-vadede-olmazsa-olmaz"></a>
 ### Öncelik 1 — Yüksek Etki (Kısa Vadede, Olmazsa Olmaz)
 
-1. **Sonsuz Hafıza Context Aşımını Engelleme (H-03):**
-   `agent/sidar_agent.py` içinde ChromaDB'ye arşivlenen eski konuşmalar geri çağrılırken katı bir `top_k` (örn. 3) ve skor eşiği getirilmelidir; aksi takdirde uzun sohbetlerde Gemini kota aşımı ve Ollama VRAM yetersizliği yaşanacaktır.
-2. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
-   `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değişir veya kaybolursa sistemin `InvalidToken` hatasıyla çökmesi engellenmeli, oturum salt okunur (read-only) açılıp Web UI üzerinden kullanıcı uyarılmalıdır.
-
+1. **Yüksek öncelikli aktif açık bulunmuyor:**
+   H-03 ve H-04 bulguları kapatılmıştır; bu başlık altında güncel kritik/yüksek teknik borç kalmamıştır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="oncelik-2-orta-etki-guvenlik-operasyon-bakim"></a>
 ### Öncelik 2 — Orta Etki (Güvenlik / Operasyon / Bakım)
 
-5. **TodoManager kalıcılığı (M-01):**
-   Görevler yalnızca process-memory yerine JSON veya SQLite ile kalıcı tutulmalı; servis yeniden başlatıldığında görev listesinin sıfırlanması önlenmelidir.
-6. **Donanım tespitini lazy/cached hale getirme (M-02):**
-   `config.py` import anında senkron çalışan `check_hardware()` etkisi azaltılmalı; başlangıç gecikmesi ve subprocess yan etkileri açık bir `init` adımına alınmalıdır.
-7. **SecurityManager okuma sınırlarını kök dizin bazında sertleştirme (M-03):**
-   `can_read()` yalnızca regex blacklist'e değil, proje kökü/izinli çalışma alanı (workspace) modeline bağlanmalı, dış dizinlere çıkışlar kesin engellenmelidir.
-8. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
+5. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
    `github_upload.py` tarafında otomatik birleştirme yalnızca açık kullanıcı onayıyla yürütülmelidir; onay verilmezse süreç güvenli şekilde sonlandırılmalıdır.
-9. **ConversationMemory I/O optimizasyonu:**
+6. **ConversationMemory I/O optimizasyonu:**
    Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
-10. **Rate limiter key eviction mekanizması:**
-    `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
-11. **WebSearch ve PackageInfo Hata/Veri Modeli:**
-    Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
-
+7. **Rate limiter key eviction mekanizması:**
+   `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
+8. **WebSearch ve PackageInfo Hata/Veri Modeli:**
+   Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2439,9 +2429,7 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 - **Asenkron Dayanıklılık & Güvenlik:** Ağ ve I/O işlemleri `asyncio.to_thread(...)` ile güvenle sarılmış, path traversal engelleri, rate-limit TOCTOU kilidi ve izole Docker sandbox mimarisi başarıyla entegre edilmiştir.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
-- **Sonsuz Hafıza Token Aşımı (H-03):** ChromaDB'den dönen geçmiş sohbet özetleri LLM'e (Gemini/Ollama) sınırlandırılmadan (katı bir `top_k` / `max_tokens` olmadan) aktarıldığında API kotalarını veya yerel VRAM'i hızla tüketme potansiyeline sahiptir.
-- **Şifreleme Fallback Eksikliği (H-04):** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir/silinirse sistem hata yakalaması (exception handling) yapmadan çökmektedir.
-- **Todo Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır.
+- **Git Push Çakışma Onay Süreci (M-04):** Otomatik birleştirme adımlarında kullanıcı onayı zorunluluğu doğru bir güvenlik freni sağlasa da, operasyonel akışta hâlâ manuel karar ihtiyacı doğurmaktadır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2452,7 +2440,7 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 |---|---|---|
 | **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
 | **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
-| **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; root-boundary (Path Traversal) tarafında iyileştirme alanı sürüyor. |
+| **Güvenlik** | 🟢 Çok İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; `can_read` için kök dizin sınırı da zorunlu hale getirilerek path traversal riski önemli ölçüde azaltıldı. |
 | **Veri ve Hafıza** | 🟢 Mükemmel | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; BM25 tarafında inkremental cache + arka plan ön-oluşturma ve thread-safe kilit mimarisi ile performans/kararlılık güçlendirildi. |
 | **Async/Await Uyumu**| 🟢 Mükemmel | Ana akış ve I/O işlemleri asenkron; URL ingest ve BM25 prebuild süreçleri event-loop dışına taşınarak bloklama riski giderildi. |
 
@@ -2461,7 +2449,7 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <a id="154-sonuc-ve-proje-gelecegi"></a>
 ### 15.4 Sonuç ve Proje Geleceği
 
-SİDAR v2.7.0, otonom çalışma yeteneği, sonsuz hafıza mimarisi, izole kod çalıştırma (Docker) ve modüler test altyapısıyla **"Yapay Zeka Destekli Yazılım Mühendisi"** hedefini üretim (production) seviyesine taşımaya çok yaklaşmış olgun bir sistemdir. Bir sonraki gelişim fazında (v2.8.x hedefi); şifre anahtarı yönetimi ile token aşım (H-03, H-04) zafiyetlerinin kapatılması ve görevlerin (Todo) diske kalıcı yazılması odak noktası olmalıdır.
+SİDAR v2.7.0, otonom çalışma yeteneği, sonsuz hafıza mimarisi, izole kod çalıştırma (Docker) ve modüler test altyapısıyla **"Yapay Zeka Destekli Yazılım Mühendisi"** hedefini üretim (production) seviyesine taşımaya çok yaklaşmış olgun bir sistemdir. Bir sonraki gelişim fazında (v2.8.x hedefi); kalan operasyonel iyileştirmeler (özellikle Git push çakışma akışlarında kullanıcı deneyimi ve otomasyon dengesi) odak noktası olmalıdır.
 
 ---
 

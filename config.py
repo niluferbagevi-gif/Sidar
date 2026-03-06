@@ -196,9 +196,6 @@ def check_hardware() -> HardwareInfo:
     return info
 
 
-# Modül yüklendiğinde bir kez çalışır
-HARDWARE = check_hardware()
-
 
 # ═══════════════════════════════════════════════════════════════
 # ANA YAPILANDIRMA SINIFI
@@ -247,12 +244,14 @@ class Config:
     HF_HUB_OFFLINE: bool = get_bool_env("HF_HUB_OFFLINE", False)
 
     # ─── Donanım & GPU ───────────────────────────────────────
-    USE_GPU:       bool  = HARDWARE.has_cuda
-    GPU_INFO:      str   = HARDWARE.gpu_name
-    GPU_COUNT:     int   = HARDWARE.gpu_count
-    CPU_COUNT:     int   = HARDWARE.cpu_count
-    CUDA_VERSION:  str   = HARDWARE.cuda_version
-    DRIVER_VERSION: str  = HARDWARE.driver_version
+    USE_GPU:       bool  = get_bool_env("USE_GPU", True)
+    GPU_INFO:      str   = "Devre Dışı / CPU Modu"
+    GPU_COUNT:     int   = 0
+    CPU_COUNT:     int   = os.cpu_count() or 1
+    CUDA_VERSION:  str   = "N/A"
+    DRIVER_VERSION: str  = "N/A"
+
+    _hardware_loaded: bool = False
 
     # Birden fazla GPU varsa hangi device kullanılsın (0-indexed)
     GPU_DEVICE: int = get_int_env("GPU_DEVICE", 0)
@@ -332,6 +331,34 @@ class Config:
     #  METOTLAR
     # ─────────────────────────────────────────────────────────
 
+    def __init__(self) -> None:
+        # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
+        self.__class__._ensure_hardware_info_loaded()
+
+    @classmethod
+    def _ensure_hardware_info_loaded(cls) -> None:
+        """Donanım bilgisini lazy-load ederek import yan etkisini azalt."""
+        if cls._hardware_loaded:
+            return
+
+        if not cls.USE_GPU:
+            cls.GPU_INFO = "Devre Dışı / CPU Modu"
+            cls.GPU_COUNT = 0
+            cls.CUDA_VERSION = "N/A"
+            cls.DRIVER_VERSION = "N/A"
+            cls.CPU_COUNT = os.cpu_count() or 1
+            cls._hardware_loaded = True
+            return
+
+        hw = check_hardware()
+        cls.USE_GPU = bool(hw.has_cuda)
+        cls.GPU_INFO = hw.gpu_name
+        cls.GPU_COUNT = hw.gpu_count
+        cls.CPU_COUNT = hw.cpu_count or (os.cpu_count() or 1)
+        cls.CUDA_VERSION = hw.cuda_version
+        cls.DRIVER_VERSION = hw.driver_version
+        cls._hardware_loaded = True
+
     @classmethod
     def initialize_directories(cls) -> bool:
         """Gerekli tüm dizinleri oluşturur."""
@@ -366,6 +393,7 @@ class Config:
     def validate_critical_settings(cls) -> bool:
         """Kritik yapılandırmaları doğrular; uyarıları loglar."""
         is_valid = True
+        cls._ensure_hardware_info_loaded()
         cls.initialize_directories()
 
         if cls.AI_PROVIDER == "gemini" and not cls.GEMINI_API_KEY:
@@ -424,6 +452,7 @@ class Config:
     @classmethod
     def get_system_info(cls) -> Dict[str, Any]:
         """Özet sistem bilgisini sözlük olarak döndürür."""
+        cls._ensure_hardware_info_loaded()
         return {
             "project":            cls.PROJECT_NAME,
             "version":            cls.VERSION,
