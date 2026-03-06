@@ -2934,6 +2934,20 @@ Bu turda projenin dağıtım birimi olan `Dockerfile`, asistanın otonom yetenek
 
 **Session 35 çıktısı:** Sidar konteyner imajı, sandbox yetenekleri ve üretim çalışma güvenliği açısından daha uyumlu ve dayanıklı hale getirildi.
 
+
+<a id="session-36-teknik-rehber-ve-blueprint-modernizasyonu"></a>
+## 45. Session 36 — 2026-03-06 Teknik Rehber ve Blueprint Modernizasyonu
+
+Bu turda projenin geliştirme standartlarını belirleyen `CLAUDE.md` dosyası, mevcut Sürüm 2.7.0 standartlarına göre yeniden düzenlenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S36-01 | `CLAUDE.md` | ✅ Kritik Çözüm | Rehbere gerçek derleme/çalıştırma komutları (main, quick web/cli, docker compose) eklendi. |
+| S36-02 | `CLAUDE.md` | ✅ Mimari | Asenkron kodlama, UTF-8 zorunluluğu, fail-closed güvenlik ve port 7860 standartları net biçimde işlendi. |
+| S36-03 | `CLAUDE.md` | ✅ Senkronizasyon | Test komutları ve nokta önekli sistem komutları (`.status`, `.health`, `.clear`) geliştirici rehberine alındı. |
+
+**Session 36 çıktısı:** Sidar projesi teknik dokümantasyon açısından güncel çalışma modeliyle senkron, daha okunabilir ve sürdürülebilir bir geliştirici rehberine kavuştu.
+
 <a id="ozet"></a>
 ### Özet
 
