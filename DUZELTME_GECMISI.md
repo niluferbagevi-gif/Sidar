@@ -2,7 +2,7 @@
 
 > Bu dosya `PROJE_RAPORU.md` içinden ayrılmıştır.  
 > **Ana rapor:** [PROJE_RAPORU.md](PROJE_RAPORU.md) — §3 referansı buraya yönlendirilmiştir.  
-> Son güncelleme: **2026-03-05** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
+> Son güncelleme: **2026-03-06** | Kapsam: v2.5.0 → v2.7.0 arası tüm düzeltmeler
 
 ---
 
