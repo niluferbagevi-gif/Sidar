@@ -389,9 +389,9 @@ sidar_project/
 | **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
 | **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesi güncellenerek `environment.yml` içindeki kilitli güncel sürümlerle hizalandı (`fastapi~=0.115.0`, `pytest~=8.3.3`). | ✅ Kapalı |
 | **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | ✅ **KAPATILDI:** Statik araç listesi prompttan kaldırıldı; araç envanteri `sidar_agent.py` içinde dinamik `self._tools` + docstring tabanlı üretim ile hizalandı. | ✅ Kapalı |
-| **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | **Tarihsel Sapma:** Dosyanın içindeki son güncelleme tarihi (2026-03-02), ana rapordaki kapanış oturumları (2026-03-05) ile senkronize değildir. | ⚠️ Açık |
+| **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | ✅ **KAPATILDI:** Dosyanın son güncelleme tarihi ana raporla senkronize edilerek `2026-03-06` olarak hizalandı. | ✅ Kapalı |
 
-*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16 ve U-17 kapatılmıştır. Toplam Aktif Uyumsuzluk: 2)*
+*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16, U-17, U-18 ve U-19 kapatılmıştır. Toplam Aktif Uyumsuzluk: 0)*
 
 ---
 
