@@ -684,7 +684,10 @@ class DocumentStore:
                 if doc_id in cached_tokens:
                     continue
                 doc_file = self.store_dir / f"{doc_id}.txt"
-                text = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
+                try:
+                    text = doc_file.read_text(encoding="utf-8")
+                except FileNotFoundError:
+                    text = ""
                 cached_tokens[doc_id] = text.lower().split()
 
             self._bm25_doc_ids = doc_ids
@@ -707,7 +710,10 @@ class DocumentStore:
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
-            content = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
+            try:
+                content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                content = ""
             meta = index_snapshot.get(doc_id, {})
             snippet = self._extract_snippet(content, query)
 
@@ -727,9 +733,10 @@ class DocumentStore:
 
         for doc_id, meta in list(self._index.items()):
             doc_file = self.store_dir / f"{doc_id}.txt"
-            text = (
-                doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
-            ).lower()
+            try:
+                text = doc_file.read_text(encoding="utf-8").lower()
+            except FileNotFoundError:
+                text = ""
             title_lower = meta["title"].lower()
             tags_lower = " ".join(meta.get("tags", [])).lower()
 
@@ -745,7 +752,10 @@ class DocumentStore:
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
-            content = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
+            try:
+                content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                content = ""
             meta = self._index.get(doc_id, {})
             snippet = self._extract_snippet(content, query)
             
