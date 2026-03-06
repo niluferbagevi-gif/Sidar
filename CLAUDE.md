@@ -1,38 +1,39 @@
-# CLAUDE.md
+# CLAUDE.md — Sidar Geliştirici Rehberi
 
-Bu dosya, Sidar ile Claude Code benzeri çalışma biçimleri arasında uyum kurmak için
-**rehber** niteliğinde notlar içerir. Mutlak araç adı garantisi vermez.
+Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlarını özetler.
 
-## Uyumluluk Notları (Referans Eşleme)
+## 🛠 Temel Komutlar
 
-Aşağıdaki eşlemeler birebir zorunlu değildir; çalışma ortamındaki araç setine göre
-**en yakın karşılık** seçilmelidir.
+### Kurulum ve Başlatma
+- **Sistemi Başlat (Ana):** `python main.py`
+- **Hızlı Web Başlatma:** `python main.py --quick web --host 0.0.0.0 --port 7860`
+- **Hızlı CLI Başlatma:** `python main.py --quick cli`
+- **Doğrudan Web Sunucu:** `python web_server.py --host 0.0.0.0 --port 7860`
+- **Docker ile Ayağa Kaldır:** `docker compose up --build`
 
-- Görev takibi (`todo_*`) → Claude Code `Todo*` akışı
-- Desen/içerik arama (`rg`, dosya tarama araçları) → `Glob` / `Grep`
-- Kabuk komutu yürütme (`exec_command` vb.) → `Bash`
-- Dosya okuma/yazma/düzenleme araçları → `Read` / `Write` / `Edit`
-- Web arama/URL çekme araçları → `WebSearch` / `WebFetch`
-- PR oluşturma araçları (varsa) → akıllı PR akışı
+### Test ve Denetim
+- **Tüm Testleri Çalıştır:** `pytest`
+- **Belirli Testi Çalıştır:** `pytest tests/test_sidar.py`
+- **Kapsam Analizi:** `pytest --cov=.`
 
-> Not: Opsiyonel yetenekler (ör. PR otomasyonu) her dağıtımda bulunmayabilir.
+## 💻 Kodlama Standartları
 
-## Hiyerarşi
+- **Asenkron Mimari:** Ağ ve I/O odaklı işlemler event-loop'u bloklamayacak şekilde `async/await` + `asyncio.to_thread` prensibiyle yazılmalıdır.
+- **Veri Güvenliği:** Dosya işlemlerinde UTF-8 (`encoding="utf-8"`) kullanılmalı; Türkçe karakterler korunmalıdır.
+- **Güvenlik:** Sandbox fail-closed yaklaşımı esastır. Güvenli yürütme koşulları sağlanamazsa işlem reddedilmelidir.
+- **Yapılandırma:** Statik/hardcoded değerler yerine merkezi `config.py` / `.env` alanları kullanılmalıdır.
+- **Port Standardı:** Varsayılan API/Web portu **7860**'tır.
 
-- `SIDAR.md` → proje-geneli ana çalışma sözleşmesi
-- `CLAUDE.md` → Claude ekosistemiyle zihinsel model eşleme notları
-- Daha alt klasördeki talimat dosyaları, kapsam dahilinde daha yüksek önceliklidir.
+## 🤖 Ajan ve Komut Davranışı
 
-## İzin ve Güvenlik Modeli
+- Sidar çoklu yönetici ve araç katmanlarıyla çalışır (dosya, paket, web, GitHub, RAG, sağlık).
+- Nokta önekli sistem komutları desteklenir: `.status`, `.health`, `.clear`, `.audit`, `.gpu`.
+- Geniş/kritik değişikliklerde görev takibi (`todo_*`) ve doğrulama testleri birlikte yürütülmelidir.
 
-- Sidar'da yetkiler `.env` içindeki `ACCESS_LEVEL` üzerinden belirlenir.
-- `full` → yazma + shell dahil geniş yetki
-- `sandbox` → sınırlı yazma, kısıtlı çalıştırma
-- `restricted` → yalnızca okuma/analiz
+## 🔐 Erişim ve Güvenlik Seviyeleri
 
-## Bakım İlkesi
+- `restricted`: yalnızca okuma/analiz.
+- `sandbox`: sınırlı yazma + izole kod yürütme.
+- `full`: geniş yazma + shell/otomasyon yetkileri.
 
-- Bu dosyada yalnızca **genel eşleme prensipleri** tutulmalı.
-- Ortama özel kesin araç adları/prosedürler `SIDAR.md` içinde tutulmalı.
-- Yeni araç eklendiğinde bu dosyada "zorunlu birebir eşleme" dili yerine
-  "yakın karşılık" dili korunmalı.
+Güvenlik kontrollerinde proje kökü dışına taşma, traversal/symlink riskleri ve hassas yollar (`.env`, `sessions/`, `.git/`) engellenmelidir.
