@@ -2822,6 +2822,20 @@ Bu turda projenin yapay zeka modelleriyle konuştuğu ana köprü olan `core/llm
 
 **Session 27 çıktısı:** Sidar'ın dış zeka kaynaklarıyla (Ollama/Gemini) olan iletişimi artık çok daha dirençli, hızlı ve ajanın ReAct mantığına tam uyumlu hale getirilmiştir.
 
+
+<a id="session-28-gorev-yoneticisi-ve-veri-butunlugu-optimizasyonu"></a>
+## 37. Session 28 — 2026-03-06 Görev Yöneticisi ve Veri Bütünlüğü Optimizasyonu
+
+Bu turda ajanın iş listelerini yöneten `managers/todo_manager.py` dosyası, çapraz platform uyumluluğu ve veri güvenliği açısından optimize edilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S28-01 | `todo_manager.py` | ✅ Kritik Çözüm | JSON kaydetme işlemlerine `encoding="utf-8"` ve `ensure_ascii=False` eklenerek Türkçe karakter bozulmaları önlendi. |
+| S28-02 | `todo_manager.py` | ✅ Kusursuz | Görev dosyası konumu merkezi `config.py` altındaki `BASE_DIR` yapısına entegre edildi. |
+| S28-03 | `todo_manager.py` | ✅ Performans | Listeleme fonksiyonuna limit ve statü filtresi eklenerek LLM bağlam penceresi korunmuş oldu. |
+
+**Session 28 çıktısı:** Sidar'ın planlama ve takip yeteneği (Todo), artık büyük veri setlerinde bile bozulmadan ve sistemi yavaşlatmadan çalışacak kararlılığa ulaşmıştır.
+
 <a id="ozet"></a>
 ### Özet
 

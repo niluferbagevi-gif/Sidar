@@ -124,7 +124,7 @@ class SidarAgent:
             cfg=self.cfg,
         )
 
-        self.todo = TodoManager()
+        self.todo = TodoManager(self.cfg)
         self._instructions_cache: Optional[str] = None
         self._instructions_mtimes: Dict[str, float] = {}
 
