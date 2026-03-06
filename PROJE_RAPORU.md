@@ -1,3 +1,4 @@
+
 <a id="top"></a>
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
@@ -325,13 +326,11 @@ sidar_project/
 <a id="7-dusuk-oncelikli-sorunlar"></a>
 ## 7. Düşük Öncelikli Sorunlar (Low Priority / Technical Debt)
 
-> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (P serisi) düzeltmeler tamamlanmış olsa da, v2.7.0 sürümündeki mimari kararlardan kaynaklanan, sistemin çalışmasını doğrudan engellemeyen ancak teknik borç (technical debt) ve uç durum (edge-case) riski taşıyan düşük öncelikli sorunlar aşağıda listelenmiştir.
+> ✅ **2026-03-06 Güncel Taraması:** L-01, L-03 ve L-05 maddeleri kapatılmıştır. Bu başlık altında **aktif düşük öncelikli açık bulgu bulunmamaktadır**.
 
-| ID | Modül / Dosya | Hata/Risk Açıklaması | Çözüm Önerisi |
+| ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| **L-01** | `agent/definitions.py` | **Araç Listesi Senkronizasyonu (Drift Riski):** Sistem promptunda yer alan kullanılabilecek araçlar (tool list) metin olarak (hardcoded) yazılmıştır. `sidar_agent.py` içindeki gerçek `dispatch` tablosuna yeni bir araç eklendiğinde bu dosyanın manuel güncellenmesi unutulabilir. | Araç tanımları ve açıklamaları doğrudan ajan başlatılırken `dispatch` tablosundan (veya modül docstring'lerinden) dinamik olarak oluşturulup prompt'a eklenmelidir. |
-| **L-03** | `managers/web_search.py` | **Regex Tabanlı HTML Temizleme:** Web'den çekilen içerikler (`_clean_html`) regex ile temizlenmektedir. Çok karmaşık DOM yapısına sahip veya script-rendered sayfalarda önemli metin bağlamları (context) kaybolabilir. | HTML ayrıştırma işlemi için `BeautifulSoup` veya `lxml` gibi yapısal DOM parser kütüphaneleri kullanılmalıdır. |
-| **L-05** | `cli.py` &<br>`web_server.py` | **Sürüm Banner Kırpılması:** `_make_banner()` fonksiyonu, CLI ve Web sunucu başlatılırken ekrana basılan çerçevede uzun sürüm veya branch metinlerini (`...` ile) kırpmaktadır. Tam sürüm bilgisi ekranda her zaman okunamayabilir. | Sabit genişlikli banner tasarımı yerine, dinamik terminal genişliğine uyum sağlayan veya sürüm bilgisini çerçevenin altına net basan bir tasarıma geçilmelidir. |
+| — | — | ✅ Açık düşük öncelikli bulgu yok | Kapanan L-serisi maddeler dinamik araç listesi, BeautifulSoup tabanlı temizleme ve banner iyileştirmeleriyle giderildi. |
 
 *(Geçmişteki N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
@@ -390,7 +389,7 @@ sidar_project/
 |----|------------|-------|----------|-------|
 | **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
 | **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesi güncellenerek `environment.yml` içindeki kilitli güncel sürümlerle hizalandı (`fastapi~=0.115.0`, `pytest~=8.3.3`). | ✅ Kapalı |
-| **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | **Araç Listesi (Prompt) Sapması:** Sistem promptundaki statik araç listesi dokümantasyonu ile `sidar_agent.py` içindeki dinamik `dispatch` tablosu arasında manuel eşleme yapılmaktadır, bu durum sürekli bir drift riski oluşturmaktadır. | ⚠️ Açık |
+| **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | ✅ **KAPATILDI:** Statik araç listesi prompttan kaldırıldı; araç envanteri `sidar_agent.py` içinde dinamik `self._tools` + docstring tabanlı üretim ile hizalandı. | ✅ Kapalı |
 | **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | **Tarihsel Sapma:** Dosyanın içindeki son güncelleme tarihi (2026-03-02), ana rapordaki kapanış oturumları (2026-03-05) ile senkronize değildir. | ⚠️ Açık |
 
 *(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16 ve U-17 kapatılmıştır. Toplam Aktif Uyumsuzluk: 2)*
@@ -2379,15 +2378,10 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <a id="oncelik-3-dusuk-etki-dx-dokumantasyon-ux"></a>
 ### Öncelik 3 — Düşük Etki (DX / Dokümantasyon / UX)
 
-13. **Ajan sözleşmesi/talimat drift'ini azaltma (L-01):**
-    `agent/definitions.py` içindeki manuel araç listesi ve `SIDAR.md` yönergeleri, güncel capability setiyle (`sidar_agent.py` dispatch tablosu) dinamik olarak hizalanmalı/üretilmelidir.
-14. **`docs/` altında dokümantasyon ayrıştırması:**
+13. **`docs/` altında dokümantasyon ayrıştırması:**
     `README.md` üzerindeki bilgi yükünü hafifletmek için "Kullanıcı Rehberi", "Geliştirici Rehberi" ve "Claude Code Uyumluluk Rehberi" ayrı dokümanlara bölünmelidir.
-15. **Banner ve CLI/Web UX İyileştirmeleri:**
-    CLI ve Web banner'ı dinamik terminal genişliğine göre uyarlanmalı, Web UI tarafında otomatik oturum başlıklandırma performansı artırılmalıdır.
-16. **CI/CD Entegrasyonu:**
+14. **CI/CD Entegrasyonu:**
     Yazılmış olan 20+ test modülü, GitHub Actions (veya benzeri bir runner) üzerinde otomatikleştirilerek her PR'da donanım-bağımsız çalıştırılacak bir pipeline kurulmalıdır.
-
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
