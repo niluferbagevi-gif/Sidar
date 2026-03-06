@@ -156,23 +156,26 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_read(self, path: Optional[str] = None) -> bool:
-        """
-        Her erişim seviyesinde okuma serbesttir.
+        """Dosyanın okunup okunamayacağını kontrol eder."""
+        if not path:
+            return True
 
-        Args:
-            path: Kontrol edilecek yol (ileride yol bazlı ACL için ayrılmıştır;
-                  şu an kullanılmamaktadır — tehlikeli kalıp yoksa True döner).
-        """
-        if path:
-            if self._has_dangerous_pattern(path):
-                logger.warning("SecurityManager: okuma — tehlikeli yol reddedildi: %s", path)
-                return False
-            resolved = self._resolve_safe(path)
-            if resolved is None:
-                return False
-            if self._is_blocked_path(str(resolved)):
-                logger.warning("SecurityManager: okuma — hassas yol reddedildi: %s", path)
-                return False
+        if self._has_dangerous_pattern(path):
+            logger.warning("SecurityManager: okuma — tehlikeli yol reddedildi: %s", path)
+            return False
+
+        resolved = self._resolve_safe(path)
+        if resolved is None:
+            return False
+
+        if self._is_blocked_path(str(resolved)):
+            logger.warning("SecurityManager: okuma — hassas yol reddedildi: %s", path)
+            return False
+
+        if not self.is_path_under(str(resolved), self.base_dir):
+            logger.warning("SecurityManager: okuma — kök dizin dışı yol reddedildi: %s", resolved)
+            return False
+
         return True
 
     # ─────────────────────────────────────────────
