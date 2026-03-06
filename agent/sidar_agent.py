@@ -639,9 +639,19 @@ class SidarAgent:
         _, diff_stat = await asyncio.to_thread(
             self.code.run_shell, "git diff --stat HEAD"
         )
+        _, diff_full = await asyncio.to_thread(
+            self.code.run_shell, "git diff --no-color HEAD"
+        )
         _, commit_log = await asyncio.to_thread(
             self.code.run_shell, f"git log {base}..HEAD --oneline 2>/dev/null || git log --oneline -10"
         )
+
+        max_diff_chars = 10000
+        if len(diff_full) > max_diff_chars:
+            diff_full = (
+                diff_full[:max_diff_chars]
+                + "\n\n[...Diff çok büyük olduğu için geri kalanı kırpıldı...]"
+            )
 
         # Değişiklik yoksa uyar
         if not git_status.strip() and not diff_stat.strip() and not commit_log.strip():
