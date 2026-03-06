@@ -9,7 +9,7 @@ import re
 import asyncio
 import time
 from pathlib import Path
-from typing import Optional, AsyncIterator, Dict
+from typing import Optional, AsyncIterator, Dict, List
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -235,7 +235,9 @@ class SidarAgent:
         """
         messages = self.memory.get_messages_for_llm()
         context = self._build_context()
-        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + context
+        archive_context = await self._get_memory_archive_context(user_input)
+        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + context + archive_context
+
 
         _last_tool: str = ""          # Son çağrılan araç adı
         _last_tool_result: str = ""   # Son araç sonucu (tekrar tespitinde kullanılır)
@@ -1167,6 +1169,79 @@ class SidarAgent:
         }
         handler = dispatch.get(tool_name)
         return await handler(tool_arg) if handler else None
+
+    async def _get_memory_archive_context(self, user_input: str) -> str:
+        """Sonsuz hafıza arşivinden sınırlı ve alakalı bağlamı çek."""
+        top_k = max(1, int(getattr(self.cfg, "MEMORY_ARCHIVE_TOP_K", 3)))
+        min_score = float(getattr(self.cfg, "MEMORY_ARCHIVE_MIN_SCORE", 0.35))
+        max_chars = max(300, int(getattr(self.cfg, "MEMORY_ARCHIVE_MAX_CHARS", 1500)))
+        return await asyncio.to_thread(
+            self._get_memory_archive_context_sync,
+            user_input,
+            top_k,
+            min_score,
+            max_chars,
+        )
+
+    def _get_memory_archive_context_sync(
+        self,
+        user_input: str,
+        top_k: int,
+        min_score: float,
+        max_chars: int,
+    ) -> str:
+        """ChromaDB'den memory_archive kaynaklı en alakalı özetleri getir."""
+        if not getattr(self.docs, "collection", None):
+            return ""
+
+        try:
+            # Alaka eşiği uygulayabilmek için distances dahil explicit query kullanılır.
+            results = self.docs.collection.query(
+                query_texts=[user_input],
+                n_results=min(top_k * 3, 20),
+                where={"source": "memory_archive"},
+                include=["documents", "metadatas", "distances"],
+            )
+        except Exception as exc:
+            logger.warning("Arşiv belleği sorgusu başarısız: %s", exc)
+            return ""
+
+        docs: List[str] = results.get("documents", [[]])[0] if results else []
+        metas: List[Dict] = results.get("metadatas", [[]])[0] if results else []
+        distances = results.get("distances", [[]])[0] if results else []
+
+        selected: List[str] = []
+        used_chars = 0
+        for idx, doc_text in enumerate(docs):
+            meta = metas[idx] if idx < len(metas) and metas[idx] else {}
+            if meta.get("source") != "memory_archive":
+                continue
+
+            distance = distances[idx] if idx < len(distances) else None
+            relevance = 1.0 - float(distance) if distance is not None else 1.0
+            if relevance < min_score:
+                continue
+
+            snippet = (doc_text or "").replace("\n", " ").strip()
+            if not snippet:
+                continue
+            if len(snippet) > 500:
+                snippet = snippet[:500] + "..."
+
+            title = str(meta.get("title", "Sohbet Arşivi"))
+            block = f"- ({relevance:.2f}) {title}: {snippet}"
+
+            if used_chars + len(block) > max_chars:
+                break
+            selected.append(block)
+            used_chars += len(block)
+            if len(selected) >= top_k:
+                break
+
+        if not selected:
+            return ""
+
+        return "\n\n[Geçmiş Sohbet Arşivinden İlgili Notlar]\n" + "\n".join(selected) + "\n"
 
     # ─────────────────────────────────────────────
     #  BAĞLAM OLUŞTURMA
