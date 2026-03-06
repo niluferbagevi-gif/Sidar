@@ -2367,10 +2367,8 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <a id="oncelik-2-orta-etki-guvenlik-operasyon-bakim"></a>
 ### Öncelik 2 — Orta Etki (Güvenlik / Operasyon / Bakım)
 
-5. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
-   `github_upload.py` tarafında otomatik birleştirme yalnızca açık kullanıcı onayıyla yürütülmelidir; onay verilmezse süreç güvenli şekilde sonlandırılmalıdır.
-8. **WebSearch ve PackageInfo Hata/Veri Modeli:**
-   Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
+5. **M-04 Durumu (KAPATILDI — Safe Sync Tasarım Kararı):**
+   `github_upload.py` tarafındaki kullanıcı onaylı otomatik birleştirme akışı teknik borç olarak değil, veri kaybını önleyen kasıtlı güvenlik prensibi olarak kabul edilmiştir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2381,6 +2379,8 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
     `README.md` üzerindeki bilgi yükünü hafifletmek için "Kullanıcı Rehberi", "Geliştirici Rehberi" ve "Claude Code Uyumluluk Rehberi" ayrı dokümanlara bölünmelidir.
 14. **CI/CD Entegrasyonu:**
     Yazılmış olan 20+ test modülü, GitHub Actions (veya benzeri bir runner) üzerinde otomatikleştirilerek her PR'da donanım-bağımsız çalıştırılacak bir pipeline kurulmalıdır.
+15. **WebSearch Hata/Veri Modeli (Düşük Etki Teknik Borç):**
+    Arama motoru başarısızlıklarının `"[HATA]"` stringi ile ifade edilmesi yerine, uzun vadede yapısal (JSON/Object) bir hata modeliyle standartlaştırma önerilir.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2424,8 +2424,8 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 - **Kurumsal / Offline Uyum:** `HF_HUB_OFFLINE` desteği ve yerel embedding akışı sayesinde sistem, dış ağa bağımlılık olmadan air-gapped ortamlarda da çalışabilecek şekilde tasarlanmıştır.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
-- **Git Push Çakışma Onay Süreci (M-04):** Otomatik birleştirme adımlarında kullanıcı onayı zorunluluğu doğru bir güvenlik freni sağlasa da, operasyonel akışta hâlâ manuel karar ihtiyacı doğurmaktadır.
-- **WebSearch Hata/Veri Modeli Borcu:** Arama motoru başarısızlıklarının bir bölümünde durum hâlâ salt metin içindeki `[HATA]` string'i ile yönetilmektedir; uzun vadede yapısal nesne tabanlı hata modeli daha dayanıklı olacaktır.
+- **Git Push Çakışma ve Safe-Sync (M-04):** Otomatik birleştirme adımlarındaki kullanıcı onayı zorunluluğu teknik borç olmaktan çıkarılmış, veri kaybını önleyen kasıtlı bir güvenlik prensibi (Safe Sync) olarak kabul edilmiştir.
+- **WebSearch Hata/Veri Modeli Borcu:** Arama motoru başarısızlıklarının bir bölümünde durum hâlâ salt metin içindeki `[HATA]` string'i ile yönetilmektedir; uzun vadede yapısal nesne tabanlı hata modeli daha dayanıklı olacaktır (öncelik: düşük etki).
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
