@@ -2948,6 +2948,20 @@ Bu turda projenin geliştirme standartlarını belirleyen `CLAUDE.md` dosyası, 
 
 **Session 36 çıktısı:** Sidar projesi teknik dokümantasyon açısından güncel çalışma modeliyle senkron, daha okunabilir ve sürdürülebilir bir geliştirici rehberine kavuştu.
 
+
+<a id="session-37-ajan-calisma-kurallari-ve-zihinsel-hizalama"></a>
+## 46. Session 37 — 2026-03-06 Ajan Çalışma Kuralları ve Zihinsel Hizalama
+
+Bu turda ajanın her konuşmada referans aldığı `SIDAR.md` dosyası, backend tarafındaki mimari değişikliklerle tam uyumlu hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S37-01 | `SIDAR.md` | ✅ Kritik Çözüm | Runtime port referansı merkezi standartla hizalandı (`7860`). |
+| S37-02 | `SIDAR.md` | ✅ Veri Güvenliği | UTF-8 kodlama zorunluluğu, erişim seviyesi modeli ve fail-closed güvenlik davranışı açıkça tanımlandı. |
+| S37-03 | `SIDAR.md` | ✅ Senkronizasyon | Nokta önekli sistem komutları (`.status`, `.health`, `.clear`, `.audit`, `.gpu`) çalışma kurallarına eklendi. |
+
+**Session 37 çıktısı:** Sidar, güncel sistem sınırları ve güvenlik protokolleriyle hizalı şekilde daha tutarlı ve teknik olarak doğru davranacak şekilde yönlendirildi.
+
 <a id="ozet"></a>
 ### Özet
 
