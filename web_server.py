@@ -780,11 +780,15 @@ def main() -> None:
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
     version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"
-    version_display = version_label if len(version_label) <= 12 else f"{version_label[:11]}…"
-    print(f"\n  ╔══════════════════════════════════════╗")
-    print(f"  ║  SİDAR Web Arayüzü — {version_display:<12}   ║")
+
+    print()
+    print("  ╔══════════════════════════════════════╗")
+    print("  ║  SİDAR Web Arayüzü                   ║")
     print(f"  ║  http://{display_host}:{args.port:<27}║")
-    print(f"  ╚══════════════════════════════════════╝\n")
+    print("  ╚══════════════════════════════════════╝")
+    print(f"     Sürüm: {version_label}")
+    print()
+
 
     uvicorn.run(
         app,

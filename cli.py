@@ -52,24 +52,22 @@ def _setup_logging(level: str) -> None:
 
 
 def _make_banner(version: str) -> str:
-    """Sürüm numarasını dinamik olarak içeren ASCII banner'ı oluşturur."""
+    """Sürüm numarasını kırpmadan çerçevenin altına basan ASCII banner'ı oluşturur."""
     ver_field = f"v{version}" if version else "v?"
-    # Banner satırı sabit genişlikte kaldığı için uzun sürüm metnini kırp.
-    # Satır iç genişliği 10 karakterdir; çerçeve taşmasını bu şekilde önleriz.
-    ver_display = ver_field if len(ver_field) <= 10 else f"{ver_field[:9]}…"
-    ver_padded = ver_display.ljust(10)
-    return (
-        "\n"
-        " ╔══════════════════════════════════════════════╗\n"
-        " ║  ███████╗██╗██████╗  █████╗ ██████╗          ║\n"
-        " ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║\n"
-        " ║  ███████╗██║██║  ██║███████║██████╔╝         ║\n"
-        " ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║\n"
-        " ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║\n"
-        " ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║\n"
-        f" ║  Yazılım Mimarı & Baş Mühendis AI  {ver_padded}║\n"
-        " ╚══════════════════════════════════════════════╝\n"
-    )
+    lines = [
+        "",
+        " ╔══════════════════════════════════════════════╗",
+        " ║  ███████╗██╗██████╗  █████╗ ██████╗          ║",
+        " ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║",
+        " ║  ███████╗██║██║  ██║███████║██████╔╝         ║",
+        " ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║",
+        " ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║",
+        " ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║",
+        " ║  Yazılım Mimarı & Baş Mühendis AI            ║",
+        " ╚══════════════════════════════════════════════╝",
+        f"    Sürüm: {ver_field}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 HELP_TEXT = """

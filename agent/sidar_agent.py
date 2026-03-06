@@ -133,6 +133,61 @@ class SidarAgent:
             self.web, self.pkg, self.docs, cfg=self.cfg,
         )
 
+        # Dinamik araç tablosu (tek source-of-truth)
+        self._tools = {
+            "list_dir":               self._tool_list_dir,
+            "read_file":              self._tool_read_file,
+            "write_file":             self._tool_write_file,
+            "patch_file":             self._tool_patch_file,
+            "execute_code":           self._tool_execute_code,
+            "audit":                  self._tool_audit,
+            "health":                 self._tool_health,
+            "gpu_optimize":           self._tool_gpu_optimize,
+            "github_commits":         self._tool_github_commits,
+            "github_info":            self._tool_github_info,
+            "github_read":            self._tool_github_read,
+            "github_list_files":      self._tool_github_list_files,
+            "github_write":           self._tool_github_write,
+            "github_create_branch":   self._tool_github_create_branch,
+            "github_create_pr":       self._tool_github_create_pr,
+            "github_search_code":     self._tool_github_search_code,
+            "github_list_prs":        self._tool_github_list_prs,
+            "github_get_pr":          self._tool_github_get_pr,
+            "github_comment_pr":      self._tool_github_comment_pr,
+            "github_close_pr":        self._tool_github_close_pr,
+            "github_pr_files":        self._tool_github_pr_files,
+            "github_smart_pr":        self._tool_github_smart_pr,
+            "web_search":             self._tool_web_search,
+            "fetch_url":              self._tool_fetch_url,
+            "search_docs":            self._tool_search_docs,
+            "search_stackoverflow":   self._tool_search_stackoverflow,
+            "pypi":                   self._tool_pypi,
+            "pypi_compare":           self._tool_pypi_compare,
+            "npm":                    self._tool_npm,
+            "gh_releases":            self._tool_gh_releases,
+            "gh_latest":              self._tool_gh_latest,
+            "docs_search":            self._tool_docs_search,
+            "docs_add":               self._tool_docs_add,
+            "docs_add_file":          self._tool_docs_add_file,
+            "docs_list":              self._tool_docs_list,
+            "docs_delete":            self._tool_docs_delete,
+            "run_shell":              self._tool_run_shell,
+            "bash":                   self._tool_run_shell,
+            "shell":                  self._tool_run_shell,
+            "glob_search":            self._tool_glob_search,
+            "grep_files":             self._tool_grep_files,
+            "grep":                   self._tool_grep_files,
+            "ls":                     self._tool_list_dir,
+            "todo_write":             self._tool_todo_write,
+            "todo_read":              self._tool_todo_read,
+            "todo_update":            self._tool_todo_update,
+            "get_config":             self._tool_get_config,
+            "print_config_summary":   self._tool_get_config,
+            "subtask":                self._tool_subtask,
+            "agent":                  self._tool_subtask,
+            "parallel":               self._tool_parallel,
+        }
+
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
             self.VERSION,
@@ -236,7 +291,8 @@ class SidarAgent:
         messages = self.memory.get_messages_for_llm()
         context = self._build_context()
         archive_context = await self._get_memory_archive_context(user_input)
-        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + context + archive_context
+        tool_list_context = self._build_tool_list()
+        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + tool_list_context + "\n\n" + context + archive_context
 
 
         _last_tool: str = ""          # Son çağrılan araç adı
@@ -401,11 +457,13 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def _tool_list_dir(self, a: str) -> str:
+        """Yerel bir dizinin içeriğini listeler."""
         # Dizin listeleme disk I/O içerir — event loop'u bloke etmemek için thread'e itilir
         _, result = await asyncio.to_thread(self.code.list_directory, a or ".")
         return result
 
     async def _tool_read_file(self, a: str) -> str:
+        """Yerel bir dosyayı satır numaralarıyla okur."""
         if not a: return "Dosya yolu belirtilmedi."
         # Disk okuma event loop'u bloke eder — thread'e itilir
         ok, result = await asyncio.to_thread(self.code.read_file, a)
@@ -425,6 +483,7 @@ class SidarAgent:
         return result
 
     async def _tool_write_file(self, a: str) -> str:
+        """Bir dosyayı verilen içerikle tamamen yazar (overwrite)."""
         parts = a.split("|||", 1)
         if len(parts) < 2: return "⚠ Hatalı format. Kullanım: path|||content"
         # Disk yazma event loop'u bloke eder — thread'e itilir
@@ -432,6 +491,7 @@ class SidarAgent:
         return result
 
     async def _tool_patch_file(self, a: str) -> str:
+        """Dosyada eski metni yenisiyle değiştirerek yama uygular."""
         parts = a.split("|||")
         if len(parts) < 3: return "⚠ Hatalı patch formatı. Kullanım: path|||eski_kod|||yeni_kod"
         # Disk okuma+yazma event loop'u bloke eder — thread'e itilir
@@ -439,6 +499,7 @@ class SidarAgent:
         return result
 
     async def _tool_execute_code(self, a: str) -> str:
+        """Python kodunu izole ortamda çalıştırır."""
         if not a: return "⚠ Çalıştırılacak kod belirtilmedi."
         # execute_code içinde time.sleep(0.5) döngüsü var — event loop'u dondurur.
         # asyncio.to_thread ile ayrı bir thread'de çalıştırılır; web sunucusu kilitlenmez.
@@ -446,13 +507,16 @@ class SidarAgent:
         return result
 
     async def _tool_audit(self, a: str) -> str:
+        """Projeyi hızlı statik denetimden geçirir."""
         # Tüm .py dosyalarını tararken ağır disk I/O yapılır — thread'e itilir
         return await asyncio.to_thread(self.code.audit_project, a or ".")
 
     async def _tool_health(self, _: str) -> str:
+        """Sistem sağlık raporunu döndürür."""
         return self.health.full_report()
 
     async def _tool_gpu_optimize(self, _: str) -> str:
+        """GPU bellek temizleme/optimizasyon rutini çalıştırır."""
         return self.health.optimize_gpu_memory()
 
     async def _tool_github_commits(self, a: str) -> str:
@@ -1107,67 +1171,27 @@ class SidarAgent:
         ]
         return "\n".join(lines)
 
+    def _build_tool_list(self) -> str:
+        """Ajanın kullanabileceği araçların dinamik markdown listesini üretir."""
+        lines = [
+            "## MEVCUT ARAÇLAR",
+            "Aşağıda kullanabileceğin araçlar ve argüman formatları listelenmiştir:",
+            "",
+        ]
+        seen_funcs = set()
+        for name, func in self._tools.items():
+            if func in seen_funcs:
+                continue
+            seen_funcs.add(func)
+            doc = func.__doc__ or "Açıklama belirtilmemiş."
+            doc_first_line = doc.strip().split("\n")[0]
+            lines.append(f"- {name:<23}: {doc_first_line}")
+        return "\n".join(lines)
+
     async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
         """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
         tool_arg = str(tool_arg).strip()
-        dispatch = {
-            "list_dir":               self._tool_list_dir,
-            "read_file":              self._tool_read_file,
-            "write_file":             self._tool_write_file,
-            "patch_file":             self._tool_patch_file,
-            "execute_code":           self._tool_execute_code,
-            "audit":                  self._tool_audit,
-            "health":                 self._tool_health,
-            "gpu_optimize":           self._tool_gpu_optimize,
-            "github_commits":         self._tool_github_commits,
-            "github_info":            self._tool_github_info,
-            "github_read":            self._tool_github_read,
-            "github_list_files":      self._tool_github_list_files,
-            "github_write":           self._tool_github_write,
-            "github_create_branch":   self._tool_github_create_branch,
-            "github_create_pr":       self._tool_github_create_pr,
-            "github_search_code":     self._tool_github_search_code,
-            # PR Yönetimi
-            "github_list_prs":        self._tool_github_list_prs,
-            "github_get_pr":          self._tool_github_get_pr,
-            "github_comment_pr":      self._tool_github_comment_pr,
-            "github_close_pr":        self._tool_github_close_pr,
-            "github_pr_files":        self._tool_github_pr_files,
-            "github_smart_pr":        self._tool_github_smart_pr,
-            "web_search":             self._tool_web_search,
-            "fetch_url":              self._tool_fetch_url,
-            "search_docs":            self._tool_search_docs,
-            "search_stackoverflow":   self._tool_search_stackoverflow,
-            "pypi":                   self._tool_pypi,
-            "pypi_compare":           self._tool_pypi_compare,
-            "npm":                    self._tool_npm,
-            "gh_releases":            self._tool_gh_releases,
-            "gh_latest":              self._tool_gh_latest,
-            "docs_search":            self._tool_docs_search,
-            "docs_add":               self._tool_docs_add,
-            "docs_add_file":          self._tool_docs_add_file,
-            "docs_list":              self._tool_docs_list,
-            "docs_delete":            self._tool_docs_delete,
-            # Kabuk & Arama (Claude Code uyumlu)
-            "run_shell":              self._tool_run_shell,
-            "bash":                   self._tool_run_shell,     # alias
-            "shell":                  self._tool_run_shell,     # alias
-            "glob_search":            self._tool_glob_search,
-            "grep_files":             self._tool_grep_files,
-            "grep":                   self._tool_grep_files,    # alias
-            "ls":                     self._tool_list_dir,      # alias
-            # Görev Takibi
-            "todo_write":             self._tool_todo_write,
-            "todo_read":              self._tool_todo_read,
-            "todo_update":            self._tool_todo_update,
-            "get_config":             self._tool_get_config,
-            "print_config_summary":   self._tool_get_config,   # alias — gereksiz LLM turu önleme
-            # Alt Görev & Paralel (Claude Code Agent tool eşdeğeri)
-            "subtask":                self._tool_subtask,
-            "agent":                  self._tool_subtask,      # alias — Claude Code uyumu
-            "parallel":               self._tool_parallel,
-        }
-        handler = dispatch.get(tool_name)
+        handler = self._tools.get(tool_name)
         return await handler(tool_arg) if handler else None
 
     async def _get_memory_archive_context(self, user_input: str) -> str:
