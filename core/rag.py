@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import threading
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -335,7 +336,7 @@ class DocumentStore:
             "parent_id": parent_id,
         }
         self._save_index()
-        self._invalidate_bm25_cache()
+        self._update_bm25_cache_on_add(doc_id, content)
 
         # 3. ChromaDB'ye parçalayarak (Chunking) ekle
         if self._chroma_available and self.collection:
@@ -392,7 +393,9 @@ class DocumentStore:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
                 title = m.group(1).strip() if m else url.split("/")[-1] or url
 
-            doc_id = self.add_document(title, content, source=url, tags=tags)
+            doc_id = await asyncio.to_thread(
+                self.add_document, title, content, url, tags
+            )
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
 
         except Exception as exc:
@@ -500,7 +503,7 @@ class DocumentStore:
         title = self._index[doc_id].get("title", doc_id)
         del self._index[doc_id]
         self._save_index()
-        self._invalidate_bm25_cache()
+        self._update_bm25_cache_on_delete(doc_id)
 
         return f"✓ Belge silindi: [{doc_id}] {title}"
 
@@ -619,23 +622,64 @@ class DocumentStore:
         self._bm25_corpus_tokens = []
         self._bm25_index = None
 
-    def _ensure_bm25_index(self) -> None:
-        """BM25 indeksini yalnızca gerektiğinde oluştur/güncelle."""
+    def _rebuild_bm25_from_cache(self) -> None:
+        """Bellekteki token cache'inden BM25 indeksini üret."""
         from rank_bm25 import BM25Okapi
 
+        self._bm25_index = (
+            BM25Okapi(self._bm25_corpus_tokens) if self._bm25_corpus_tokens else None
+        )
+
+    def _update_bm25_cache_on_add(self, doc_id: str, content: str) -> None:
+        """Yeni belgeyi BM25 cache'ine inkremental olarak ekle."""
+        tokens = content.lower().split()
+        if doc_id in self._bm25_doc_ids:
+            idx = self._bm25_doc_ids.index(doc_id)
+            self._bm25_corpus_tokens[idx] = tokens
+        else:
+            self._bm25_doc_ids.append(doc_id)
+            self._bm25_corpus_tokens.append(tokens)
+        self._rebuild_bm25_from_cache()
+
+    def _update_bm25_cache_on_delete(self, doc_id: str) -> None:
+        """Silinen belgeyi BM25 cache'inden inkremental olarak kaldır."""
+        if doc_id in self._bm25_doc_ids:
+            idx = self._bm25_doc_ids.index(doc_id)
+            del self._bm25_doc_ids[idx]
+            del self._bm25_corpus_tokens[idx]
+        self._rebuild_bm25_from_cache()
+
+    def prebuild_bm25_index(self) -> None:
+        """BM25 indeksini arka planda hazırla (web tarafı için)."""
+        if not self._bm25_available:
+            return
+        try:
+            self._ensure_bm25_index()
+        except Exception as exc:
+            logger.warning("BM25 arka plan önbellekleme hatası: %s", exc)
+
+    def _ensure_bm25_index(self) -> None:
+        """BM25 indeksini yalnızca gerektiğinde oluştur/güncelle."""
         doc_ids = list(self._index.keys())
         if self._bm25_index is not None and doc_ids == self._bm25_doc_ids:
             return
 
-        corpus_tokens: List[List[str]] = []
+        cached_tokens = {
+            cached_doc_id: self._bm25_corpus_tokens[idx]
+            for idx, cached_doc_id in enumerate(self._bm25_doc_ids)
+        }
+
+        # Yalnızca cache'te olmayan belgeleri diskten oku.
         for doc_id in doc_ids:
+            if doc_id in cached_tokens:
+                continue
             doc_file = self.store_dir / f"{doc_id}.txt"
             text = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
-            corpus_tokens.append(text.lower().split())
+            cached_tokens[doc_id] = text.lower().split()
 
         self._bm25_doc_ids = doc_ids
-        self._bm25_corpus_tokens = corpus_tokens
-        self._bm25_index = BM25Okapi(corpus_tokens) if corpus_tokens else None
+        self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
+        self._rebuild_bm25_from_cache()
 
     def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
         self._ensure_bm25_index()
