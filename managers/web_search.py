@@ -8,11 +8,11 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 
 import asyncio
 import logging
-import re
 from html import unescape
 from typing import Optional, Tuple
 
 import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -25,25 +25,41 @@ class WebSearchManager:
 
     MAX_RESULTS = 5
     FETCH_TIMEOUT = 15  # saniye
-    FETCH_MAX_CHARS = 4000
+    FETCH_MAX_CHARS = 12000
 
     _NO_RESULTS_PREFIX = "[NO_RESULTS]"
 
     def __init__(self, config=None) -> None:
+        self.cfg = config
         if config is not None:
             self.engine = getattr(config, "SEARCH_ENGINE", "auto").lower()
             self.tavily_key = getattr(config, "TAVILY_API_KEY", "")
             self.google_key = getattr(config, "GOOGLE_SEARCH_API_KEY", "")
             self.google_cx = getattr(config, "GOOGLE_SEARCH_CX", "")
-            
+
             self.MAX_RESULTS = getattr(config, "WEB_SEARCH_MAX_RESULTS", self.MAX_RESULTS)
             self.FETCH_TIMEOUT = getattr(config, "WEB_FETCH_TIMEOUT", self.FETCH_TIMEOUT)
-            self.FETCH_MAX_CHARS = getattr(config, "WEB_FETCH_MAX_CHARS", self.FETCH_MAX_CHARS)
+            self.FETCH_MAX_CHARS = getattr(
+                config,
+                "WEB_SCRAPE_MAX_CHARS",
+                getattr(config, "WEB_FETCH_MAX_CHARS", self.FETCH_MAX_CHARS),
+            )
         else:
             self.engine = "auto"
             self.tavily_key = ""
             self.google_key = ""
             self.google_cx = ""
+
+        self.headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/119.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
+        self.timeout = httpx.Timeout(float(self.FETCH_TIMEOUT), connect=5.0)
 
         self._ddg_available = self._check_ddg()
 
@@ -52,8 +68,8 @@ class WebSearchManager:
             # v8 uyumlu import (AsyncDDGS yerine standart DDGS)
             from duckduckgo_search import DDGS  # noqa: F401
             return True
-        except ImportError as e:
-            logger.debug(f"DDG Import hatası: {e}")
+        except ImportError as exc:
+            logger.debug("DDG Import hatası: %s", exc)
             return False
 
     def is_available(self) -> bool:
@@ -62,13 +78,16 @@ class WebSearchManager:
 
     def status(self) -> str:
         engines = []
-        if self.tavily_key: engines.append("Tavily")
-        if self.google_key and self.google_cx: engines.append("Google")
-        if self._ddg_available: engines.append("DuckDuckGo")
-        
+        if self.tavily_key:
+            engines.append("Tavily")
+        if self.google_key and self.google_cx:
+            engines.append("Google")
+        if self._ddg_available:
+            engines.append("DuckDuckGo")
+
         if not engines:
             return "WebSearch: Kurulu veya yapılandırılmış motor yok."
-            
+
         return f"WebSearch: Aktif (Mod: {self.engine.upper()}) | {', '.join(engines)}"
 
     # ─────────────────────────────────────────────
@@ -108,16 +127,16 @@ class WebSearchManager:
             ok, res = await self._search_tavily(query, n)
             if self._is_actionable_result(ok, res):
                 return True, self._normalize_result_text(res)
-        
+
         if self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
             if self._is_actionable_result(ok, res):
                 return True, self._normalize_result_text(res)
-        
+
         if self._ddg_available:
             ok, res = await self._search_duckduckgo(query, n)
             return ok, self._normalize_result_text(res)
-        
+
         return False, "⚠ Web arama yapılamadı. API anahtarları veya duckduckgo-search paketi eksik."
 
     # ─────────────────────────────────────────────
@@ -131,10 +150,10 @@ class WebSearchManager:
             "query": query,
             "search_depth": "basic",
             "include_answer": False,
-            "max_results": n
+            "max_results": n,
         }
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, headers=self.headers) as client:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
@@ -149,7 +168,8 @@ class WebSearchManager:
                 body = r.get("content", "")[:300].rstrip()
                 href = r.get("url", "")
                 lines.append(f"{i}. **{title}**")
-                if body: lines.append(f"   {body}")
+                if body:
+                    lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
             return True, "\n".join(lines)
@@ -174,10 +194,10 @@ class WebSearchManager:
             "key": self.google_key,
             "cx": self.google_cx,
             "q": query,
-            "num": min(n, 10)
+            "num": min(n, 10),
         }
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, headers=self.headers) as client:
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
@@ -192,7 +212,8 @@ class WebSearchManager:
                 body = r.get("snippet", "")[:300].rstrip()
                 href = r.get("link", "")
                 lines.append(f"{i}. **{title}**")
-                if body: lines.append(f"   {body}")
+                if body:
+                    lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
             return True, "\n".join(lines)
@@ -204,7 +225,7 @@ class WebSearchManager:
         try:
             from duckduckgo_search import DDGS
 
-            # v8 güncellemesi için DDGS'yi asenkron thread'de çalıştırıyoruz
+            # DDGS senkron olduğu için event loop'u bloklamamak adına thread'de çalıştır.
             def _sync_search():
                 with DDGS() as ddgs:
                     return list(ddgs.text(query, max_results=n))
@@ -220,7 +241,8 @@ class WebSearchManager:
                 body = (r.get("body") or "")[:300].rstrip()
                 href = r.get("href", "")
                 lines.append(f"{i}. **{title}**")
-                if body: lines.append(f"   {body}")
+                if body:
+                    lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
             return True, "\n".join(lines)
@@ -232,43 +254,52 @@ class WebSearchManager:
     #  URL İÇERİĞİ ÇEKME (ASYNC)
     # ─────────────────────────────────────────────
 
-    async def fetch_url(self, url: str) -> Tuple[bool, str]:
+    async def scrape_url(self, url: str) -> str:
+        """Web sayfası içeriğini temizleyip bağlam güvenli şekilde döndürür."""
         try:
-            async with httpx.AsyncClient(timeout=self.FETCH_TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; SidarBot/1.0)"}
-                )
+            async with httpx.AsyncClient(
+                headers=self.headers,
+                timeout=self.timeout,
+                follow_redirects=True,
+            ) as client:
+                resp = await client.get(url)
                 resp.raise_for_status()
-                
-                text = self._clean_html(resp.text)
-                truncated = text[: self.FETCH_MAX_CHARS]
-                suffix = f"\n... ({len(text) - self.FETCH_MAX_CHARS} karakter daha)" if len(text) > self.FETCH_MAX_CHARS else ""
-                
-                return True, f"[URL: {url}]\n\n{truncated}{suffix}"
-                
+                resp.encoding = "utf-8"
+
+            text = self._clean_html(resp.text)
+            text = self._truncate_content(text)
+            return text
         except httpx.TimeoutException:
-            return False, f"[HATA] URL zaman aşımı: {url}"
+            return f"Hata: Sayfa içeriği çekilemedi - zaman aşımı ({url})"
         except httpx.RequestError as exc:
-            return False, f"[HATA] URL bağlantı/istek hatası: {url} - {exc}"
+            return f"Hata: Sayfa içeriği çekilemedi - bağlantı/istek hatası ({exc})"
         except httpx.HTTPStatusError as exc:
-            return False, f"[HATA] HTTP Hata Kodu {exc.response.status_code}: {url}"
+            return f"Hata: Sayfa içeriği çekilemedi - HTTP {exc.response.status_code}"
         except Exception as exc:
             logger.error("URL çekme hatası: %s", exc)
-            return False, f"[HATA] URL çekme: {exc}"
+            return f"Hata: Sayfa içeriği çekilemedi - {exc}"
+
+    async def fetch_url(self, url: str) -> Tuple[bool, str]:
+        """Geriye dönük uyumluluk: fetch_url araç çağrısını yeni scrape akışına yönlendirir."""
+        text = await self.scrape_url(url)
+        if text.startswith("Hata: Sayfa içeriği çekilemedi"):
+            return False, text
+        return True, f"[URL: {url}]\n\n{text}"
+
+    def _truncate_content(self, text: str) -> str:
+        max_len = max(1000, int(self.FETCH_MAX_CHARS))
+        if len(text) <= max_len:
+            return text
+        return text[:max_len] + "... [İçerik çok uzun olduğu için kesildi]"
 
     @staticmethod
     def _clean_html(html: str) -> str:
-        clean = re.sub(
-            r"<(script|style)[^>]*>.*?</(script|style)>",
-            "",
-            html,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        clean = re.sub(r"<[^>]+>", " ", clean)
-        # HTML entity decode (named + numeric)
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        clean = soup.get_text(separator=" ", strip=True)
         clean = unescape(clean)
-        clean = re.sub(r"\s+", " ", clean)
+        clean = " ".join(clean.split())
         return clean.strip()
 
     # ─────────────────────────────────────────────
@@ -279,8 +310,11 @@ class WebSearchManager:
         base = f"{library} {topic} documentation".strip()
         # Tavily veya Google varsa site: filtresi ekle; DDG'de OR operatörü güvenilmez
         if self.tavily_key or (self.google_key and self.google_cx):
-            q = (base + " site:docs.python.org OR site:pypi.org"
-                 " OR site:readthedocs.io OR site:github.com")
+            q = (
+                base
+                + " site:docs.python.org OR site:pypi.org"
+                " OR site:readthedocs.io OR site:github.com"
+            )
         else:
             # DDG: site: filtresi yerine hedef odaklı arama terimi kullan
             q = f"{library} {topic} official docs reference".strip()
@@ -293,7 +327,6 @@ class WebSearchManager:
         else:
             q = f"stackoverflow {query}"
         return await self.search(q, max_results=5)
-
 
     @classmethod
     def _mark_no_results(cls, text: str) -> str:
@@ -317,7 +350,4 @@ class WebSearchManager:
             engines.append("Google")
         if self._ddg_available:
             engines.append("DuckDuckGo")
-        return (
-            f"<WebSearchManager engine={self.engine} "
-            f"available={[e for e in engines]}>"
-        )  
+        return f"<WebSearchManager engine={self.engine} available={[e for e in engines]}>"
