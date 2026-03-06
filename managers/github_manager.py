@@ -44,9 +44,10 @@ class GitHubManager:
         "readme", "authors", "contributors", "notice",
     }
 
-    def __init__(self, token: str, repo_name: str = "") -> None:
+    def __init__(self, token: str, repo_name: str = "", require_token: bool = False) -> None:
         self.token = token
         self.repo_name = repo_name
+        self.require_token = require_token
         self._gh = None
         self._repo = None
         self._available = False
@@ -58,6 +59,11 @@ class GitHubManager:
 
     def _init_client(self) -> None:
         if not self.token:
+            if self.require_token or self.repo_name:
+                raise ValueError(
+                    "HATA: GitHub araçları aktif ancak GITHUB_TOKEN bulunamadı. "
+                    "Lütfen .env dosyasını kontrol edin."
+                )
             logger.warning("GitHub token ayarlanmamış. GitHub özellikleri devre dışı.")
             return
         try:
@@ -152,15 +158,16 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Depo bilgisi alınamadı: {exc}"
 
-    def list_commits(self, n: int = 10, branch: Optional[str] = None) -> Tuple[bool, str]:
-        """Son n commit'i listele."""
+    def list_commits(self, limit: int = 30, branch: Optional[str] = None) -> Tuple[bool, str]:
+        """Son commit'leri limitli şekilde listele."""
         if not self._repo:
             return False, "Aktif depo yok."
         try:
             kwargs = {}
             if branch:
                 kwargs["sha"] = branch
-            commits = list(self._repo.get_commits(**kwargs)[:n])
+            limit = max(1, min(int(limit), 100))
+            commits = list(self._repo.get_commits(**kwargs)[:limit])
             lines = [f"[Son {len(commits)} Commit — {self._repo.full_name}]"]
             for c in commits:
                 sha = c.sha[:7]
@@ -227,12 +234,13 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Uzak dosya okunamadı ({file_path}): {exc}"
 
-    def list_branches(self) -> Tuple[bool, str]:
-        """Depo dallarını listele."""
+    def list_branches(self, limit: int = 30) -> Tuple[bool, str]:
+        """Depo dallarını limitli şekilde listele."""
         if not self._repo:
             return False, "Aktif depo yok."
         try:
-            branches = list(self._repo.get_branches())
+            limit = max(1, min(int(limit), 100))
+            branches = list(self._repo.get_branches()[:limit])
             lines = [f"[Branch Listesi — {self._repo.full_name}]"]
             for b in branches:
                 prefix = "* " if b.name == self._repo.default_branch else "  "
@@ -363,7 +371,7 @@ class GitHubManager:
     def list_pull_requests(
         self,
         state: str = "open",
-        limit: int = 10,
+        limit: int = 30,
     ) -> Tuple[bool, str]:
         """Pull Request listesi döndür. state: open / closed / all"""
         if not self._repo:
@@ -371,6 +379,7 @@ class GitHubManager:
         try:
             valid_states = {"open", "closed", "all"}
             state = state.lower() if state.lower() in valid_states else "open"
+            limit = max(1, min(int(limit), 100))
             pulls = list(self._repo.get_pulls(state=state, sort="updated")[:limit])
             if not pulls:
                 return True, f"[PR Listesi — {self._repo.full_name}]\n  (Hiç {state} PR bulunamadı)"
