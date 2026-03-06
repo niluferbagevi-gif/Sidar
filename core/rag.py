@@ -322,54 +322,57 @@ class DocumentStore:
         parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
         tags = tags or []
 
-        # 1. Dosya sistemine TAM metni kaydet (Okuma ve BM25 için referans)
-        doc_file = self.store_dir / f"{doc_id}.txt"
-        doc_file.write_text(content, encoding="utf-8")
+        # Metni önce parçala (kilit dışında — saf hesaplama)
+        chunks = self._chunk_text(content)
+        ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
+        metadatas = [
+            {
+                "source": source,
+                "title": title,
+                "tags": ",".join(tags),
+                "parent_id": parent_id,
+                "chunk_index": i,
+            }
+            for i in range(len(chunks))
+        ]
 
-        # 2. JSON Index güncelle
-        self._index[doc_id] = {
-            "title": title,
-            "source": source,
-            "tags": tags,
-            "size": len(content),
-            "preview": content[:300],
-            "parent_id": parent_id,
-        }
-        self._save_index()
-        self._update_bm25_cache_on_add(doc_id, content)
+        with self._write_lock:
+            # 1. Dosya sistemine TAM metni kaydet (Okuma ve BM25 için referans)
+            doc_file = self.store_dir / f"{doc_id}.txt"
+            doc_file.write_text(content, encoding="utf-8")
 
-        # 3. ChromaDB'ye parçalayarak (Chunking) ekle
-        if self._chroma_available and self.collection:
-            try:
-                # Metni önce parçala (lock dışında — sadece saf hesaplama)
-                chunks = self._chunk_text(content)
-                ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-                metadatas = [
-                    {
-                        "source": source,
-                        "title": title,
-                        "tags": ",".join(tags),
-                        "parent_id": parent_id,
-                        "chunk_index": i
-                    }
-                    for i in range(len(chunks))
-                ]
+            # 2. JSON Index güncelle
+            self._index[doc_id] = {
+                "title": title,
+                "source": source,
+                "tags": tags,
+                "size": len(content),
+                "preview": content[:300],
+                "parent_id": parent_id,
+            }
+            self._save_index()
+            self._update_bm25_cache_on_add(doc_id, content)
 
-                # delete + upsert atomik olmalı: aynı doc_id için eş zamanlı
-                # çağrılar çakışmasın diye _write_lock ile korunuyor.
-                with self._write_lock:
+            # 3. ChromaDB'ye parçalayarak (Chunking) ekle
+            if self._chroma_available and self.collection:
+                try:
                     # Önce aynı başlık+kaynak için eski parçaları temizle (Update senaryosu)
                     self.collection.delete(where={"parent_id": parent_id})
                     if chunks:
                         self.collection.upsert(
                             ids=ids,
                             documents=chunks,
-                            metadatas=metadatas
+                            metadatas=metadatas,
                         )
-                if chunks:
-                    logger.info("ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi.", doc_id, parent_id, len(chunks))
-            except Exception as exc:
-                logger.error("ChromaDB belge ekleme hatası: %s", exc)
+                    if chunks:
+                        logger.info(
+                            "ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi.",
+                            doc_id,
+                            parent_id,
+                            len(chunks),
+                        )
+                except Exception as exc:
+                    logger.error("ChromaDB belge ekleme hatası: %s", exc)
 
         logger.info("RAG belge eklendi: [%s] %s (%d karakter)", doc_id, title, len(content))
         return doc_id
@@ -485,25 +488,31 @@ class DocumentStore:
         if doc_id not in self._index:
             return f"✗ Belge bulunamadı: {doc_id}"
 
-        # 1. Dosya sil
-        doc_file = self.store_dir / f"{doc_id}.txt"
-        if doc_file.exists():
-            doc_file.unlink()
+        with self._write_lock:
+            # Kilit beklenirken belge silinmiş olabilir.
+            if doc_id not in self._index:
+                return f"✗ Belge zaten silinmiş: {doc_id}"
 
-        # 2. ChromaDB'den sil (Tüm parçaları)
-        if self._chroma_available and self.collection:
-            try:
-                # Parent ID'ye göre silme (Where filtresi)
-                parent_id = self._index[doc_id].get("parent_id", doc_id)
-                self.collection.delete(where={"parent_id": parent_id})
-            except Exception as exc:
-                logger.error("ChromaDB silme hatası: %s", exc)
+            title = self._index[doc_id].get("title", doc_id)
 
-        # 3. Index'ten sil
-        title = self._index[doc_id].get("title", doc_id)
-        del self._index[doc_id]
-        self._save_index()
-        self._update_bm25_cache_on_delete(doc_id)
+            # 1. Dosya sil
+            doc_file = self.store_dir / f"{doc_id}.txt"
+            if doc_file.exists():
+                doc_file.unlink()
+
+            # 2. ChromaDB'den sil (Tüm parçaları)
+            if self._chroma_available and self.collection:
+                try:
+                    # Parent ID'ye göre silme (Where filtresi)
+                    parent_id = self._index[doc_id].get("parent_id", doc_id)
+                    self.collection.delete(where={"parent_id": parent_id})
+                except Exception as exc:
+                    logger.error("ChromaDB silme hatası: %s", exc)
+
+            # 3. Index'ten ve BM25'ten sil
+            del self._index[doc_id]
+            self._save_index()
+            self._update_bm25_cache_on_delete(doc_id)
 
         return f"✓ Belge silindi: [{doc_id}] {title}"
 
@@ -713,7 +722,7 @@ class DocumentStore:
         keywords = query.lower().split()
         scored = []
 
-        for doc_id, meta in self._index.items():
+        for doc_id, meta in list(self._index.items()):
             doc_file = self.store_dir / f"{doc_id}.txt"
             text = (
                 doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
