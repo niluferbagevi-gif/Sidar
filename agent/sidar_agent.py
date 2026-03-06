@@ -92,7 +92,7 @@ class SidarAgent:
         self._lock = None  # Asenkron Lock, respond çağrıldığında yaratılacak
 
         # Alt sistemler — temel (Senkron/Yerel)
-        self.security = SecurityManager(self.cfg.ACCESS_LEVEL, self.cfg.BASE_DIR)
+        self.security = SecurityManager(cfg=self.cfg)
         self.code = CodeManager(
             self.security,
             self.cfg.BASE_DIR,

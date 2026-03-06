@@ -2878,6 +2878,20 @@ Bu turda kullanıcı girdilerini LLM öncesi süzgeçten geçiren `agent/auto_ha
 
 **Session 31 çıktısı:** Sidar'ın komut tanıma katmanı artık daha hızlı tepki vermekte, olası bloklamalarda zaman aşımıyla güvenli şekilde toparlanmakta ve sistemin diğer parçalarıyla tam uyumlu çalışmaktadır.
 
+
+<a id="session-32-guvenlik-kalkani-ve-erisim-kontrol-revizyonu"></a>
+## 41. Session 32 — 2026-03-06 Güvenlik Kalkanı ve Erişim Kontrol Revizyonu
+
+Bu turda projenin dosya ve yetki güvenliğini sağlayan `managers/security.py` dosyası, yeni hassas dizin yapısına göre güncellenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S32-01 | `security.py` | ✅ Kritik Çözüm | `.env`, `sessions/`, `.git/` ve `__pycache__` yolları engellenerek hassas verilerin sızma riski azaltıldı. |
+| S32-02 | `security.py` | ✅ Entegrasyon | SecurityManager başlatması merkezi config ile uyumlu hale getirildi (`cfg` destekli BASE_DIR/ACCESS_LEVEL). |
+| S32-03 | `security.py` | ✅ Güvenlik | Yeni `is_safe_path` API'siyle çözümleme hatalarında fail-closed davranışı (`False`) standartlaştırıldı. |
+
+**Session 32 çıktısı:** Sidar, hassas çalışma alanlarını daha sıkı koruyan ve config ile tutarlı çalışan bir güvenlik katmanına sahip oldu.
+
 <a id="ozet"></a>
 ### Özet
 
