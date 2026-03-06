@@ -294,7 +294,9 @@ class Config:
     GOOGLE_SEARCH_CX:     str = os.getenv("GOOGLE_SEARCH_CX", "")
     WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
     WEB_FETCH_TIMEOUT:     int = get_int_env("WEB_FETCH_TIMEOUT", 15)
-    WEB_FETCH_MAX_CHARS:   int = get_int_env("WEB_FETCH_MAX_CHARS", 4000)
+    WEB_FETCH_MAX_CHARS:   int = get_int_env("WEB_FETCH_MAX_CHARS", 12000)
+    # Yeni ad (tercih edilen): scrape/okuma karakter limiti
+    WEB_SCRAPE_MAX_CHARS:  int = get_int_env("WEB_SCRAPE_MAX_CHARS", WEB_FETCH_MAX_CHARS)
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
