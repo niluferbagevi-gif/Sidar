@@ -3,11 +3,15 @@ Sidar Project - Görev Takip Yöneticisi
 Claude Code'daki TodoWrite/TodoRead araçlarına eşdeğer görev listesi yönetimi.
 """
 
+import json
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import List, Optional
+
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +57,53 @@ class TodoManager:
     - Aynı anda yalnızca bir "in_progress" göreve uyarı
     """
 
-    def __init__(self) -> None:
+    def __init__(self, cfg: Optional[Config] = None) -> None:
+        self.cfg = cfg or Config()
+        base_dir = Path(getattr(self.cfg, "BASE_DIR", "."))
+        self.todo_path = base_dir / "todos.json"
         self._tasks: List[Task] = []
         self._next_id: int = 1
         self._lock = threading.RLock()
-        logger.info("TodoManager başlatıldı.")
+        self._load()
+        logger.info("TodoManager başlatıldı. Yol=%s", self.todo_path)
+
+    def _load(self) -> None:
+        """todo_path üzerinden görevleri UTF-8 ile yükle."""
+        with self._lock:
+            try:
+                if not self.todo_path.exists():
+                    self.todo_path.parent.mkdir(parents=True, exist_ok=True)
+                    return
+                with open(self.todo_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if not isinstance(raw, list):
+                    return
+                tasks: List[Task] = []
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    status = item.get("status", STATUS_PENDING)
+                    if status not in VALID_STATUSES:
+                        status = STATUS_PENDING
+                    tasks.append(Task(
+                        id=int(item.get("id", len(tasks) + 1)),
+                        content=str(item.get("content", "")).strip(),
+                        status=status,
+                        created_at=float(item.get("created_at", time.time())),
+                        updated_at=float(item.get("updated_at", time.time())),
+                    ))
+                self._tasks = [t for t in tasks if t.content]
+                self._next_id = (max((t.id for t in self._tasks), default=0) + 1)
+            except Exception as exc:
+                logger.warning("TodoManager yükleme hatası: %s", exc)
+
+    def _save(self) -> None:
+        """Görevleri UTF-8/JSON olarak kalıcı kaydet."""
+        with self._lock:
+            self.todo_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = [asdict(t) for t in self._tasks]
+            with open(self.todo_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
     def _ensure_single_in_progress(self, preferred_task_id: int) -> int:
@@ -70,6 +116,15 @@ class TodoManager:
                 task.update_status(STATUS_PENDING)
                 demoted += 1
         return demoted
+
+
+    def _normalize_limit(self, limit: int, default: int = 50) -> int:
+        """Limit değerini güvenli şekilde 1..200 aralığına normalize et."""
+        try:
+            normalized = int(limit)
+        except (TypeError, ValueError):
+            normalized = default
+        return max(1, min(normalized, 200))
 
     # ─────────────────────────────────────────────
     #  GÖREV EKLEME
@@ -101,6 +156,7 @@ class TodoManager:
             task_id = task.id
             if status == STATUS_IN_PROGRESS:
                 demoted = self._ensure_single_in_progress(task_id)
+            self._save()
 
         logger.debug("Görev eklendi: #%d — %s", task_id, content[:50])
         if demoted:
@@ -144,6 +200,7 @@ class TodoManager:
             demoted = 0
             if latest_in_progress_id is not None:
                 demoted = self._ensure_single_in_progress(latest_in_progress_id)
+            self._save()
 
         if demoted:
             return (
@@ -178,6 +235,7 @@ class TodoManager:
                     demoted = 0
                     if new_status == STATUS_IN_PROGRESS:
                         demoted = self._ensure_single_in_progress(task_id)
+                    self._save()
                     logger.debug("Görev #%d: %s → %s", task_id, old_status, new_status)
                     msg = (
                         f"{STATUS_ICONS[new_status]} Görev #{task_id} güncellendi: "
@@ -206,7 +264,7 @@ class TodoManager:
     #  GÖREV LİSTESİ
     # ─────────────────────────────────────────────
 
-    def list_tasks(self, filter_status: Optional[str] = None) -> str:
+    def list_tasks(self, filter_status: Optional[str] = None, limit: int = 50) -> str:
         """
         Görev listesini okunabilir formatta döndür.
 
@@ -226,6 +284,9 @@ class TodoManager:
             tasks = [t for t in tasks if t.status == filter_status]
             if not tasks:
                 return f"📋 '{filter_status}' durumunda görev yok."
+
+        limit = self._normalize_limit(limit)
+        tasks = tasks[:limit]
 
         # Duruma göre grupla
         pending = [t for t in tasks if t.status == STATUS_PENDING]
@@ -265,6 +326,8 @@ class TodoManager:
             before = len(self._tasks)
             self._tasks = [t for t in self._tasks if t.status != STATUS_COMPLETED]
             removed = before - len(self._tasks)
+            if removed:
+                self._save()
         return f"🗑 {removed} tamamlanmış görev silindi."
 
     def clear_all(self) -> str:
@@ -273,28 +336,37 @@ class TodoManager:
             count = len(self._tasks)
             self._tasks.clear()
             self._next_id = 1
+            self._save()
         return f"🗑 Tüm görevler temizlendi ({count} görev silindi)."
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR
     # ─────────────────────────────────────────────
 
-    def get_tasks(self) -> list:
+    def get_tasks(self, status: Optional[str] = None, limit: int = 50) -> list:
         """
         Görev listesini dict listesi olarak döndürür.
         REST endpoint ve UI entegrasyonu için kullanılır.
         """
         with self._lock:
-            return [
-                {
-                    "id": t.id,
-                    "content": t.content,
-                    "status": t.status,
-                    "created_at": int(t.created_at),
-                    "updated_at": int(t.updated_at),
-                }
-                for t in self._tasks
-            ]
+            tasks = list(self._tasks)
+
+        if status and status in VALID_STATUSES:
+            tasks = [t for t in tasks if t.status == status]
+
+        limit = self._normalize_limit(limit)
+        tasks = tasks[:limit]
+
+        return [
+            {
+                "id": t.id,
+                "content": t.content,
+                "status": t.status,
+                "created_at": int(t.created_at),
+                "updated_at": int(t.updated_at),
+            }
+            for t in tasks
+        ]
 
     def get_active_count(self) -> int:
         """Aktif (in_progress + pending) görev sayısını döndürür."""
