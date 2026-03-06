@@ -669,43 +669,46 @@ class DocumentStore:
 
     def _ensure_bm25_index(self) -> None:
         """BM25 indeksini yalnızca gerektiğinde oluştur/güncelle."""
-        doc_ids = list(self._index.keys())
-        if self._bm25_index is not None and doc_ids == self._bm25_doc_ids:
-            return
+        with self._write_lock:
+            doc_ids = list(self._index.keys())
+            if self._bm25_index is not None and doc_ids == self._bm25_doc_ids:
+                return
 
-        cached_tokens = {
-            cached_doc_id: self._bm25_corpus_tokens[idx]
-            for idx, cached_doc_id in enumerate(self._bm25_doc_ids)
-        }
+            cached_tokens = {
+                cached_doc_id: self._bm25_corpus_tokens[idx]
+                for idx, cached_doc_id in enumerate(self._bm25_doc_ids)
+            }
 
-        # Yalnızca cache'te olmayan belgeleri diskten oku.
-        for doc_id in doc_ids:
-            if doc_id in cached_tokens:
-                continue
-            doc_file = self.store_dir / f"{doc_id}.txt"
-            text = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
-            cached_tokens[doc_id] = text.lower().split()
+            # Yalnızca cache'te olmayan belgeleri diskten oku.
+            for doc_id in doc_ids:
+                if doc_id in cached_tokens:
+                    continue
+                doc_file = self.store_dir / f"{doc_id}.txt"
+                text = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
+                cached_tokens[doc_id] = text.lower().split()
 
-        self._bm25_doc_ids = doc_ids
-        self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
-        self._rebuild_bm25_from_cache()
+            self._bm25_doc_ids = doc_ids
+            self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
+            self._rebuild_bm25_from_cache()
 
     def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
         self._ensure_bm25_index()
 
-        if self._bm25_index is None or not self._bm25_doc_ids:
-            return False, f"'{query}' için BM25 sonucu üretilemedi (boş corpus)."
+        with self._write_lock:
+            if self._bm25_index is None or not self._bm25_doc_ids:
+                return False, f"'{query}' için BM25 sonucu üretilemedi (boş corpus)."
 
-        scores = self._bm25_index.get_scores(query.lower().split())
-        ranked = sorted(zip(self._bm25_doc_ids, scores), key=lambda x: x[1], reverse=True)
-        ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
+            scores = self._bm25_index.get_scores(query.lower().split())
+            ranked = sorted(zip(self._bm25_doc_ids, scores), key=lambda x: x[1], reverse=True)
+            ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
+            index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id, _ in ranked}
 
         # BM25 sonuçlarını yapıya çevir
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
             content = doc_file.read_text(encoding="utf-8") if doc_file.exists() else ""
-            meta = self._index.get(doc_id, {})
+            meta = index_snapshot.get(doc_id, {})
             snippet = self._extract_snippet(content, query)
 
             results.append({
