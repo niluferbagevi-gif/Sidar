@@ -15,6 +15,7 @@ MINICONDA_SH="$MINICONDA_DIR/miniconda.sh"
 OLLAMA_PID=""
 ALLOW_APT_UPGRADE="${ALLOW_APT_UPGRADE:-0}"
 ALLOW_OLLAMA_INSTALL_SCRIPT="${ALLOW_OLLAMA_INSTALL_SCRIPT:-0}"
+DOCKER_COMPOSE_CMD=""
 
 cleanup() {
   if [[ -n "${OLLAMA_PID}" ]] && kill -0 "${OLLAMA_PID}" >/dev/null 2>&1; then
@@ -22,6 +23,16 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+detect_docker_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+  else
+    DOCKER_COMPOSE_CMD=""
+  fi
+}
 
 print_header() {
   echo "============================================================"
@@ -110,6 +121,12 @@ clone_or_update_repo() {
   cd "$PROJECT_DIR"
 }
 
+prepare_runtime_dirs() {
+  echo -e "\n📂 4.5. Gerekli çalışma dizinleri oluşturuluyor..."
+  mkdir -p "$PROJECT_DIR/sessions" "$PROJECT_DIR/chroma_db" "$PROJECT_DIR/logs" "$PROJECT_DIR/models"
+  echo "✅ sessions/, chroma_db/, logs/ ve models/ dizinleri hazır."
+}
+
 setup_conda_env() {
   echo -e "\n⚙️  5. Conda ortamı ($ENV_NAME) environment.yml dosyasından kuruluyor..."
   if conda info --envs | awk '{print $1}' | grep -qx "$ENV_NAME"; then
@@ -121,7 +138,12 @@ setup_conda_env() {
 }
 
 pull_models() {
-  echo -e "\n🧠 6. Gerekli yapay zeka modelleri indiriliyor (İnternet hızınıza göre sürebilir)..."
+  echo -e "\n🧠 6. Yapay zeka modelleri hazırlanıyor..."
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "⚠️ Ollama bulunamadı, model indirme adımı atlandı."
+    return 0
+  fi
+
   ollama serve >/dev/null 2>&1 &
   OLLAMA_PID=$!
 
@@ -138,19 +160,25 @@ pull_models() {
   done
   echo "   ✅ Ollama hazır (${i}s)."
 
-  echo "-> nomic-embed-text (RAG embed) indiriliyor..."
-  ollama pull nomic-embed-text
   echo "-> qwen2.5-coder:7b (SİDAR varsayılan model) indiriliyor..."
   ollama pull qwen2.5-coder:7b
-  echo "-> gemma2:9b (Genel Metin Modeli) indiriliyor..."
-  ollama pull gemma2:9b
+  echo "-> nomic-embed-text (RAG embed) indiriliyor..."
+  ollama pull nomic-embed-text
 }
 
 print_footer() {
   echo "============================================================"
-  echo "🎉 BÜTÜN KURULUM EKSİKSİZ TAMAMLANDI!"
+  echo "🚀 SİDAR v2.7.0 Kurulumu Tamamlandı!"
   echo "============================================================"
   echo "Lütfen yeni ayarların yüklenmesi için terminali kapatıp YENİDEN AÇIN."
+  echo ""
+  echo "🌐 Web Arayüzü: http://localhost:7860"
+  echo "💻 Terminal Modu: python main.py --mode cli"
+  if [[ -n "$DOCKER_COMPOSE_CMD" ]]; then
+    echo "🐳 Docker Compose: $DOCKER_COMPOSE_CMD"
+  else
+    echo "⚠️ Docker Compose bulunamadı (docker compose / docker-compose)."
+  fi
   echo ""
   echo "Sonrasında SİDAR'ı çalıştırmak için sırasıyla şunları yazın:"
   echo "  1. cd ~/$PROJECT_NAME"
@@ -202,11 +230,13 @@ download_vendor_libs() {
 }
 
 print_header
+detect_docker_compose
 install_system_packages
 install_google_chrome
 install_miniconda
 install_ollama
 clone_or_update_repo
+prepare_runtime_dirs
 setup_conda_env
 pull_models
 setup_env_file

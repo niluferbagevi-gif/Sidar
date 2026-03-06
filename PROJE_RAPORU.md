@@ -2962,6 +2962,20 @@ Bu turda ajanın her konuşmada referans aldığı `SIDAR.md` dosyası, backend 
 
 **Session 37 çıktısı:** Sidar, güncel sistem sınırları ve güvenlik protokolleriyle hizalı şekilde daha tutarlı ve teknik olarak doğru davranacak şekilde yönlendirildi.
 
+
+<a id="session-38-kurulum-otomasyonu-ve-v270-muhuru"></a>
+## 47. Session 38 — 2026-03-06 Kurulum Otomasyonu ve v2.7.0 Mühürü
+
+Bu turda projenin "tek tıkla kurulum" betiği olan `install_sidar.sh`, mimari değişikliklerle senkronize edilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S38-01 | `install_sidar.sh` | ✅ Kritik Çözüm | Erişim portu referansları 7860 standardı ile hizalandı ve final bilgilendirmesi sadeleştirildi. |
+| S38-02 | `install_sidar.sh` | ✅ Kusursuz | Varsayılan model hazırlığı `qwen2.5-coder:7b` odağında senkronize edildi; model indirme akışı güvenli kontrolle güncellendi. |
+| S38-03 | `install_sidar.sh` | ✅ Altyapı | `sessions/`, `chroma_db/`, `logs/`, `models/` dizinlerinin kurulumda otomatik hazırlanması sağlandı. |
+
+**Session 38 çıktısı:** Sidar, artık yeni bir sisteme hızlıca ve merkezi yapılandırma standartlarıyla uyumlu biçimde kurulabilir duruma getirildi.
+
 <a id="ozet"></a>
 ### Özet
 
