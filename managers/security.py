@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from config import Config
+
 logger = logging.getLogger(__name__)
 
 # Erişim seviyesi sabitleri
@@ -26,6 +28,13 @@ LEVEL_NAMES = {
 # Tehlikeli yol kalıpları — path traversal saldırılarına karşı ek koruma
 _DANGEROUS_PATH_RE = re.compile(r"\.\.[/\\]|^/etc/|^/proc/|^/sys/|^[a-zA-Z]:[/\\](windows|program files)", re.IGNORECASE)
 
+_BLOCKED_PATTERNS = [
+    re.compile(r"(^|[/\\])\.env$", re.IGNORECASE),
+    re.compile(r"(^|[/\\])sessions([/\\]|$)", re.IGNORECASE),
+    re.compile(r"(^|[/\\])\.git([/\\]|$)", re.IGNORECASE),
+    re.compile(r"(^|[/\\])__pycache__([/\\]|$)", re.IGNORECASE),
+]
+
 
 class SecurityManager:
     """
@@ -38,12 +47,21 @@ class SecurityManager:
       3. Sembolik bağlantı (symlink) koruması — resolve() ile gerçek yol doğrulama
     """
 
-    def __init__(self, access_level: str, base_dir: Path) -> None:
-        normalized_level = self._normalize_level_name(access_level)
+    def __init__(
+        self,
+        access_level: Optional[str] = None,
+        base_dir: Optional[Path] = None,
+        cfg: Optional[Config] = None,
+    ) -> None:
+        self.cfg = cfg or Config()
+        raw_level = access_level if access_level is not None else getattr(self.cfg, "ACCESS_LEVEL", "sandbox")
+        raw_base_dir = base_dir if base_dir is not None else getattr(self.cfg, "BASE_DIR", Path("."))
+
+        normalized_level = self._normalize_level_name(raw_level)
         self.level: int = LEVEL_NAMES[normalized_level]
         self.level_name: str = normalized_level
-        self.base_dir: Path = base_dir.resolve()
-        self.temp_dir: Path = (base_dir / "temp").resolve()
+        self.base_dir: Path = Path(raw_base_dir).resolve()
+        self.temp_dir: Path = (self.base_dir / "temp").resolve()
         self.temp_dir.mkdir(exist_ok=True)
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
 
@@ -114,6 +132,24 @@ class SecurityManager:
         except ValueError:
             return False
 
+    @staticmethod
+    def _is_blocked_path(path_str: str) -> bool:
+        return any(pattern.search(path_str) for pattern in _BLOCKED_PATTERNS)
+
+    def is_safe_path(self, path_str: str) -> bool:
+        """Path traversal + base_dir + hassas yol desenleri doğrulaması."""
+        try:
+            if self._has_dangerous_pattern(path_str):
+                return False
+            resolved = Path(path_str).resolve()
+            resolved_str = str(resolved)
+            if self._is_blocked_path(resolved_str):
+                return False
+            resolved.relative_to(self.base_dir)
+            return True
+        except Exception:
+            return False
+
     # ─────────────────────────────────────────────
     #  OKUMA YETKİSİ
     # ─────────────────────────────────────────────
@@ -126,9 +162,16 @@ class SecurityManager:
             path: Kontrol edilecek yol (ileride yol bazlı ACL için ayrılmıştır;
                   şu an kullanılmamaktadır — tehlikeli kalıp yoksa True döner).
         """
-        if path and self._has_dangerous_pattern(path):
-            logger.warning("SecurityManager: okuma — tehlikeli yol reddedildi: %s", path)
-            return False
+        if path:
+            if self._has_dangerous_pattern(path):
+                logger.warning("SecurityManager: okuma — tehlikeli yol reddedildi: %s", path)
+                return False
+            resolved = self._resolve_safe(path)
+            if resolved is None:
+                return False
+            if self._is_blocked_path(str(resolved)):
+                logger.warning("SecurityManager: okuma — hassas yol reddedildi: %s", path)
+                return False
         return True
 
     # ─────────────────────────────────────────────
@@ -158,6 +201,10 @@ class SecurityManager:
 
         resolved = self._resolve_safe(path)
         if resolved is None:
+            return False
+
+        if self._is_blocked_path(str(resolved)):
+            logger.warning("SecurityManager: yazma — hassas yol reddedildi: %s", path)
             return False
 
         if self.level == SANDBOX:
