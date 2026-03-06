@@ -2420,9 +2420,12 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 - **Gelişmiş Bellek Yönetimi:** Oturumların Fernet (`cryptography`) ile diskte şifrelenmesi ve eski sohbetlerin ChromaDB'ye "Sonsuz Hafıza (Vector Archive)" olarak aktarılması projenin vizyonunu genişletmiştir.
 - **Akıllı Yönlendirme:** `auto_handle` ve `direct_route` gibi hafif katmanlar, tek adımlı görevleri ReAct döngüsüne girmeden çözerek maliyet ve gecikmeyi düşürmektedir.
 - **Asenkron Dayanıklılık & Güvenlik:** Ağ ve I/O işlemleri `asyncio.to_thread(...)` ile güvenle sarılmış, path traversal engelleri, rate-limit TOCTOU kilidi ve izole Docker sandbox mimarisi başarıyla entegre edilmiştir.
+- **Hata Toleranslı Ayrıştırma (Resilience):** LLM'in ürettiği bozuk formatlı JSON ve gömülü kod blokları `json.JSONDecoder().raw_decode` mimarisiyle çökmeden yakalanıp işlenerek ajan kararlılığı artırılmıştır.
+- **Kurumsal / Offline Uyum:** `HF_HUB_OFFLINE` desteği ve yerel embedding akışı sayesinde sistem, dış ağa bağımlılık olmadan air-gapped ortamlarda da çalışabilecek şekilde tasarlanmıştır.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
 - **Git Push Çakışma Onay Süreci (M-04):** Otomatik birleştirme adımlarında kullanıcı onayı zorunluluğu doğru bir güvenlik freni sağlasa da, operasyonel akışta hâlâ manuel karar ihtiyacı doğurmaktadır.
+- **WebSearch Hata/Veri Modeli Borcu:** Arama motoru başarısızlıklarının bir bölümünde durum hâlâ salt metin içindeki `[HATA]` string'i ile yönetilmektedir; uzun vadede yapısal nesne tabanlı hata modeli daha dayanıklı olacaktır.
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
@@ -2433,7 +2436,7 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 |---|---|---|
 | **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
 | **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
-| **Güvenlik** | 🟢 Çok İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; `can_read` için kök dizin sınırı da zorunlu hale getirilerek path traversal riski önemli ölçüde azaltıldı. |
+| **Güvenlik** | 🟢 Çok İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; `can_read` için kök dizin sınırı da zorunlu hale getirilerek path traversal riski önemli ölçüde azaltıldı. Ayrıca GitHub dağıtım akışında `.env`, `sessions/`, `chroma_db/` gibi hassas yolları `.gitignore` bağımsız engelleyen Hard Blacklist katmanı aktiftir. |
 | **Veri ve Hafıza** | 🟢 Mükemmel | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; BM25 tarafında inkremental cache + arka plan ön-oluşturma ve thread-safe kilit mimarisi ile performans/kararlılık güçlendirildi. |
 | **Async/Await Uyumu**| 🟢 Mükemmel | Ana akış ve I/O işlemleri asenkron; URL ingest ve BM25 prebuild süreçleri event-loop dışına taşınarak bloklama riski giderildi. |
 
