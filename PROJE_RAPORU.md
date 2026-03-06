@@ -2976,6 +2976,20 @@ Bu turda projenin "tek tıkla kurulum" betiği olan `install_sidar.sh`, mimari d
 
 **Session 38 çıktısı:** Sidar, artık yeni bir sisteme hızlıca ve merkezi yapılandırma standartlarıyla uyumlu biçimde kurulabilir duruma getirildi.
 
+
+<a id="session-39-github-upload-ve-dagitim-guvenligi-muhuru"></a>
+## 48. Session 39 — 2026-03-06 GitHub Upload ve Dağıtım Güvenliği Mühürü
+
+Bu turda projenin kod dağıtımını sağlayan `github_upload.py` betiği, veri sızıntısı risklerine karşı denetlenmiş ve güncellenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S39-01 | `github_upload.py` | ✅ Kritik Çözüm | `.env`, `sessions/`, `chroma_db/`, `logs/`, `models/` gibi hassas yolların yanlışlıkla GitHub'a yüklenmesini önleyen sert engelleme listesi (Hard Blacklist) eklendi. |
+| S39-02 | `github_upload.py` | ✅ Kararlılık | UTF-8 okuma ve binary/encoding hatasında stage dışı bırakma mantığı eklenerek yükleme sırasında oluşan çökmeler azaltıldı. |
+| S39-03 | `github_upload.py` | ✅ Entegrasyon | `GITHUB_TOKEN` kullanımı merkezi `config.py` değerine bağlandı ve varsayılan commit mesajları sürüm numarasıyla senkronize edildi. |
+
+**Session 39 çıktısı:** Sidar'ın kod tabanı artık dış depolara aktarımda daha güvenli hale getirildi; API anahtarları ve özel veriler için sızıntı koruması güçlendirildi.
+
 <a id="ozet"></a>
 ### Özet
 
