@@ -49,7 +49,7 @@
     - [13.5.1 `main.py` — Skor: 100/100 ✅](#1351-mainpy-skor-100100)
     - [13.5.1A `cli.py` — Skor: 100/100 ✅](#1351a-clipy-skor-95100)
     - [13.5.2 `agent/sidar_agent.py` — Skor: 100/100 ✅](#1352-agentsidaragentpy-skor-95100)
-    - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-88100)
+    - [13.5.3 `core/rag.py` — Skor: 100/100 ✅](#1353-coreragpy-skor-100100)
     - [13.5.4 `web_server.py` — Skor: 100/100 ✅](#1354-webserverpy-skor-90100)
     - [13.5.5 `agent/definitions.py` — Skor: 100/100 ✅](#1355-agentdefinitionspy-skor-87100)
     - [13.5.6 `agent/auto_handle.py` — Skor: 100/100 ✅](#1356-agentautohandlepy-skor-89100)
@@ -260,7 +260,8 @@ sidar_project/
 <a id="3-onceki-rapordan-bu-yana-duzeltilen-hatalar"></a>
 ## 3. Önceki Rapordan Bu Yana Düzeltilen Hatalar
 
-> ✅ **v2.5.0 → v2.7.0** arası toplam **76 düzeltme** uygulanmıştır ([§3.1–§3.76](DUZELTME_GECMISI.md#sec-3-1-3-76)).
+> ✅ **v2.5.0 → v2.7.0** arası toplam **77 düzeltme** uygulanmıştır ([§3.1–§3.76](DUZELTME_GECMISI.md#sec-3-1-3-76) + C-01 kapanışı).
+> ✅ **C-01 (Event-Loop Bloklama + BM25 Thread-Safety):** `asyncio.to_thread`, `BackgroundTasks`, inkremental BM25 cache ve kapsamlı `threading.Lock` kullanımıyla tamamen giderilmiştir.
 > Tüm düzeltme detayları okunabilirliği korumak amacıyla ayrı dosyaya taşınmıştır:
 >
 > 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.md#sec-3-1-3-76)** — tam düzeltme geçmişi (§3.1–§3.76)
@@ -273,13 +274,13 @@ sidar_project/
 <a id="4-mevcut-kritik-hatalar"></a>
 ## 4. Mevcut Kritik Hatalar
 
-> ⚠️ **2026-03-05 Güncel Taraması:** v2.7.0 itibarıyla önceki sürümlerden kalan yapısal hatalar çözülmüş olsa da, asenkron web mimarisi (FastAPI) ile senkron RAG işlemlerinin kesişiminden doğan yeni bir kritik risk tespit edilmiştir.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif kritik hata bulunmamaktadır**. C-01 dahil önceki kritik bulgular kapatılmıştır.
 
-| ID | Modül / Dosya | Hata Açıklaması | Kritiklik Etkisi |
+| ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| **C-01** | `core/rag.py` &<br>`web_server.py` | **Event-Loop Bloklama (BM25 Cache Rebuild):**<br>`_ensure_bm25_index` metodu belge eklendiğinde/silindiğinde tüm RAG deposunu diskten **senkron (blocking)** olarak okuyarak BM25 matrisini baştan hesaplar. Bu işlem büyük belge setlerinde saniyeler sürebilir. Bu esnada FastAPI ana event-loop'u kilitlenir (Event-Loop Starvation) ve tüm aktif SSE sohbet akışları ile API istekleri donar. | Çok kullanıcılı web ortamında servisin geçici olarak erişilemez hale gelmesine (Denial of Service) neden olur. Çözüm olarak BM25 rebuild işleminin `asyncio.to_thread` ile tamamen arka plana itilmesi veya inkremental bir indekslemeye geçilmesi zorunludur. |
+| — | — | ✅ Açık kritik yok | Kritik bulguların kapanış geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
 
-*(Geçmişteki diğer kritik sorunlar tamamen giderilmiştir; detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
+*(Geçmişteki kritik sorunlar tamamen giderilmiştir; detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
@@ -868,7 +869,7 @@ Bu düzeltmelere ait ayrıntılı teknik notlar ve tarihsel kayıtlar için lüt
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
-<a id="1353-coreragpy-skor-88100"></a>
+<a id="1353-coreragpy-skor-100100"></a>
 #### 13.5.3 `core/rag.py` — Skor: 100/100 ✅
 
 **Sorumluluk (Güncel):** SİDAR'ın yerel bilgi bankası ve RAG (Retrieval-Augmented Generation) altyapısı. ChromaDB tabanlı vektör (anlamsal) arama, BM25 kelime skorlama ve akıllı metin parçalama (chunking) motorudur.
@@ -2356,11 +2357,9 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 <a id="oncelik-1-yuksek-etki-kisa-vadede-olmazsa-olmaz"></a>
 ### Öncelik 1 — Yüksek Etki (Kısa Vadede, Olmazsa Olmaz)
 
-1. **Event-loop bloklama risklerini kapatma (C-01):**
-   `core/rag.py` içinde BM25 indeksinin her sorguda/belge eklemede senkron (`_ensure_bm25_index`) olarak yeniden inşası FastAPI event-loop'unu dondurmaktadır. Bu işlem `asyncio.to_thread` ile arka plana itilmeli veya inkremental güncellemeyle çözülmelidir.
-2. **Sonsuz Hafıza Context Aşımını Engelleme (H-03):**
+1. **Sonsuz Hafıza Context Aşımını Engelleme (H-03):**
    `agent/sidar_agent.py` içinde ChromaDB'ye arşivlenen eski konuşmalar geri çağrılırken katı bir `top_k` (örn. 3) ve skor eşiği getirilmelidir; aksi takdirde uzun sohbetlerde Gemini kota aşımı ve Ollama VRAM yetersizliği yaşanacaktır.
-3. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
+2. **Şifreleme Anahtarı (Fernet) Kurtarma Mekanizması (H-04):**
    `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değişir veya kaybolursa sistemin `InvalidToken` hatasıyla çökmesi engellenmeli, oturum salt okunur (read-only) açılıp Web UI üzerinden kullanıcı uyarılmalıdır.
 
 
@@ -2440,7 +2439,6 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 - **Asenkron Dayanıklılık & Güvenlik:** Ağ ve I/O işlemleri `asyncio.to_thread(...)` ile güvenle sarılmış, path traversal engelleri, rate-limit TOCTOU kilidi ve izole Docker sandbox mimarisi başarıyla entegre edilmiştir.
 
 **Kritik Teknik Borçlar (Açık İyileştirme Alanları)**
-- **RAG Event-Loop Bloklaması (C-01):** RAG aramaları asenkronlaştırılmış olsa da, belge ekleme/silme anında çalışan senkron `_ensure_bm25_index` baştan indeksleme işlemi, çoklu kullanıcı ortamında FastAPI event-loop'unu dondurma (starvation) riski taşımaktadır.
 - **Sonsuz Hafıza Token Aşımı (H-03):** ChromaDB'den dönen geçmiş sohbet özetleri LLM'e (Gemini/Ollama) sınırlandırılmadan (katı bir `top_k` / `max_tokens` olmadan) aktarıldığında API kotalarını veya yerel VRAM'i hızla tüketme potansiyeline sahiptir.
 - **Şifreleme Fallback Eksikliği (H-04):** `.env` dosyasındaki `MEMORY_ENCRYPTION_KEY` değiştirilir/silinirse sistem hata yakalaması (exception handling) yapmadan çökmektedir.
 - **Todo Kalıcılığı:** `TodoManager` görevleri sadece process belleğinde yaşamaktadır, kalıcı diske yazılmamaktadır.
@@ -2455,15 +2453,15 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 | **Mimari Tasarım** | 🟢 Çok İyi | ReAct döngüsü, Manager delegasyonu, izole Launcher (`main.py`) ve CLI ayrımı çok başarılı. |
 | **Test Kapsamı** | 🟢 Mükemmel | Testler monolitik yapıdan kurtarılarak `tests/` dizini altında 20+ modüle parçalandı; güvenlik ve regresyon kapsamı harika. |
 | **Güvenlik** | 🟡 İyi | Backend (OpenClaw, Docker, Rate-limit, Fernet) ve istemci tarafı XSS korumaları güçlü; root-boundary (Path Traversal) tarafında iyileştirme alanı sürüyor. |
-| **Veri ve Hafıza** | 🟡 İyi | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; ancak görev yöneticisi kalıcılığı ve BM25 performans optimizasyonu eksik. |
-| **Async/Await Uyumu**| 🟡 İyi | Ana akış ve I/O işlemleri asenkron; sadece BM25 rebuild işlemi senkron kaldığı için tam puan alamıyor. |
+| **Veri ve Hafıza** | 🟢 Mükemmel | Çoklu oturum, Vector Archive ve Fernet şifreleme aktif; BM25 tarafında inkremental cache + arka plan ön-oluşturma ve thread-safe kilit mimarisi ile performans/kararlılık güçlendirildi. |
+| **Async/Await Uyumu**| 🟢 Mükemmel | Ana akış ve I/O işlemleri asenkron; URL ingest ve BM25 prebuild süreçleri event-loop dışına taşınarak bloklama riski giderildi. |
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
 
 <a id="154-sonuc-ve-proje-gelecegi"></a>
 ### 15.4 Sonuç ve Proje Geleceği
 
-SİDAR v2.7.0, otonom çalışma yeteneği, sonsuz hafıza mimarisi, izole kod çalıştırma (Docker) ve modüler test altyapısıyla **"Yapay Zeka Destekli Yazılım Mühendisi"** hedefini üretim (production) seviyesine taşımaya çok yaklaşmış olgun bir sistemdir. Bir sonraki gelişim fazında (v2.8.x hedefi); sistem kararlılığını riske atan RAG indeksleme bloklamasının (C-01) arka plana alınması, şifre anahtarı yönetimi ile token aşım (H-03, H-04) zafiyetlerinin kapatılması ve görevlerin (Todo) diske kalıcı yazılması odak noktası olmalıdır.
+SİDAR v2.7.0, otonom çalışma yeteneği, sonsuz hafıza mimarisi, izole kod çalıştırma (Docker) ve modüler test altyapısıyla **"Yapay Zeka Destekli Yazılım Mühendisi"** hedefini üretim (production) seviyesine taşımaya çok yaklaşmış olgun bir sistemdir. Bir sonraki gelişim fazında (v2.8.x hedefi); şifre anahtarı yönetimi ile token aşım (H-03, H-04) zafiyetlerinin kapatılması ve görevlerin (Todo) diske kalıcı yazılması odak noktası olmalıdır.
 
 ---
 
