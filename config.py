@@ -280,6 +280,7 @@ class Config:
     MAX_REACT_STEPS:   int = get_int_env("MAX_REACT_STEPS", 10)
     REACT_TIMEOUT:     int = get_int_env("REACT_TIMEOUT", 60)
     SUBTASK_MAX_STEPS: int = get_int_env("SUBTASK_MAX_STEPS", 5)
+    AUTO_HANDLE_TIMEOUT: int = get_int_env("AUTO_HANDLE_TIMEOUT", 12)
 
     # ─── API Rate Limiting ───────────────────────────────────
     RATE_LIMIT_WINDOW:    int = get_int_env("RATE_LIMIT_WINDOW", 60)

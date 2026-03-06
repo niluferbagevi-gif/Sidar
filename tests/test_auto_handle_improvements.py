@@ -19,3 +19,17 @@ def test_docs_search_is_async_and_uses_to_thread():
 def test_github_info_regex_requires_info_intent_keywords():
     src = _get_class_fn_src("agent/auto_handle.py", "AutoHandle", "_try_github_info")
     assert "bilgi|info|özet|durum|detay" in src
+
+
+def test_auto_handle_adds_dot_command_support_and_async_blocking_wrapper():
+    src = Path("agent/auto_handle.py").read_text(encoding="utf-8")
+    assert "_DOT_CMD_RE = re.compile" in src
+    assert "async def _try_dot_command" in src
+    assert "await self._run_blocking(self.health.full_report)" in src
+    assert "await self._run_blocking(self.health.optimize_gpu_memory)" in src
+    assert 'await self._run_blocking(self.code.audit_project, ".")' in src
+
+
+def test_auto_handle_clear_regex_accepts_dot_clear():
+    src = _get_class_fn_src("agent/auto_handle.py", "AutoHandle", "_try_clear_memory")
+    assert r"^\.clear\b" in src

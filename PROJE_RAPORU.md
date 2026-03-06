@@ -2864,6 +2864,20 @@ Bu turda ajanın karakterini ve araç kullanım kurallarını belirleyen `agent/
 
 **Session 30 çıktısı:** Sidar, artık kendi güncel yeteneklerinin ve sistem sınırlarının tam olarak farkındadır; kullanıcıya doğru teknik bilgi sağlama kapasitesi belirgin şekilde artırılmıştır.
 
+
+<a id="session-31-otonom-hata-ve-komut-isleyici-optimizasyonu"></a>
+## 40. Session 31 — 2026-03-06 Otonom Hata ve Komut İşleyici Optimizasyonu
+
+Bu turda kullanıcı girdilerini LLM öncesi süzgeçten geçiren `agent/auto_handle.py` dosyası, mimari bütünlük açısından revize edilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S31-01 | `auto_handle.py` | ✅ Kararlılık | Sağlık, GPU ve denetim gibi bloklayıcı işlemler `asyncio.to_thread` + timeout ile event-loop bloklamadan çalışacak hale getirildi. |
+| S31-02 | `auto_handle.py` | ✅ Kusursuz | Komut desenleri `.status`, `.health`, `.clear`, `.audit`, `.gpu` nokta önekli CLI standardı ile senkronize edildi. |
+| S31-03 | `auto_handle.py` | ✅ Entegrasyon | AutoHandle, merkezi config'ten `AUTO_HANDLE_TIMEOUT` alacak ve ajan üzerinden `cfg` ile başlatılacak şekilde güncellendi. |
+
+**Session 31 çıktısı:** Sidar'ın komut tanıma katmanı artık daha hızlı tepki vermekte, olası bloklamalarda zaman aşımıyla güvenli şekilde toparlanmakta ve sistemin diğer parçalarıyla tam uyumlu çalışmaktadır.
+
 <a id="ozet"></a>
 ### Özet
 

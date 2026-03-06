@@ -130,7 +130,7 @@ class SidarAgent:
 
         self.auto = AutoHandle(
             self.code, self.health, self.github, self.memory,
-            self.web, self.pkg, self.docs,
+            self.web, self.pkg, self.docs, cfg=self.cfg,
         )
 
         logger.info(

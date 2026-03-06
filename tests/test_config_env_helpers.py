@@ -11,6 +11,7 @@ def test_get_bool_env_handles_empty_and_whitespace_values():
 def test_config_exposes_subtask_rate_limit_and_hf_fields():
     src = Path("config.py").read_text(encoding="utf-8")
     assert "SUBTASK_MAX_STEPS" in src
+    assert "AUTO_HANDLE_TIMEOUT" in src
     assert "RATE_LIMIT_WINDOW" in src
     assert "RATE_LIMIT_CHAT" in src
     assert "RATE_LIMIT_MUTATIONS" in src
@@ -25,3 +26,4 @@ def test_env_example_matches_ollama_timeout_default_and_new_limits():
     assert "SUBTASK_MAX_STEPS=5" in src
     assert "RATE_LIMIT_WINDOW=60" in src
     assert "RATE_LIMIT_CHAT=20" in src
+    assert "AUTO_HANDLE_TIMEOUT=12" in src
