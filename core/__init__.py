@@ -13,6 +13,10 @@ from .llm_client import LLMClient
 from .memory import ConversationMemory
 from .rag import DocumentStore
 
+# Geriye dönük/kolaylaştırıcı alias'lar
+MemoryManager = ConversationMemory
+RAGManager = DocumentStore
+
 # Tek kaynak: core dışına açılacak sınıf sembolleri burada tutulur.
 _EXPORTED_CORE_SYMBOLS = (
     ConversationMemory,
@@ -21,3 +25,4 @@ _EXPORTED_CORE_SYMBOLS = (
 )
 
 __all__ = [sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]
+__all__ += ["MemoryManager", "RAGManager"]

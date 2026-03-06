@@ -2906,6 +2906,20 @@ Bu turda ajanın dış kütüphane verilerini sorgulamasını sağlayan `manager
 
 **Session 33 çıktısı:** Sidar'ın paket araştırma yeteneği daha hızlı ve kararlı hale geldi; dış servis hız sınırlarına karşı daha dirençli bir sorgulama modeli oluşturuldu.
 
+
+<a id="session-34-paket-hiyerarsisi-ve-init-optimizasyonu"></a>
+## 43. Session 34 — 2026-03-06 Paket Hiyerarşisi ve __init__ Optimizasyonu
+
+Bu turda projenin alt paketleri (`agent`, `core`, `managers`) taranmış ve modül erişim yolları standartlaştırılmıştır.
+
+| ID | Paket | Sonuç | Not |
+|----|-------|-------|-----|
+| S34-01 | `agent/` | ✅ Güncellendi | `AutoHandle` ve geriye dönük `AutoHandler` alias'ı paket dışına açıldı. |
+| S34-02 | `core/` | ✅ Güncellendi | `ConversationMemory`/`DocumentStore` için `MemoryManager` ve `RAGManager` alias'ları eklendi. |
+| S34-03 | `managers/` | ✅ Kritik Çözüm | Manager paket export yapısı doğrulandı; merkezi `__all__` yaklaşımı korunarak modül yüzeyi netleştirildi. |
+
+**Session 34 çıktısı:** Projenin iç import yapısı sadeleşti, paket seviyesinde public API görünürlüğü artırıldı ve modüler mimarinin sürdürülebilirliği güçlendirildi.
+
 <a id="ozet"></a>
 ### Özet
 
