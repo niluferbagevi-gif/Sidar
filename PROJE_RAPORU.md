@@ -432,6 +432,7 @@ sidar_project/
 | **Ajan Araçları** | | | |
 | `PyGithub` | `~=2.4.0` | GitHub API (Manager) | ✅ Aktif |
 | `duckduckgo-search` | `~=6.2.13` | Web arama motoru | ✅ Aktif |
+| `beautifulsoup4` | `~=4.12.3` | Web HTML içeriği ayrıştırma | ✅ Aktif |
 | **Web Sunucusu** | | | |
 | `fastapi` | `~=0.115.0` | Web ve SSE sunucu | ✅ Aktif |
 | `uvicorn[standard]` | `~=0.30.6` | ASGI sunucu motoru | ✅ Aktif |
