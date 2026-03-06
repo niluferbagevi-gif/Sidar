@@ -9,6 +9,22 @@ import subprocess
 import sys
 from datetime import datetime
 
+from config import Config
+
+
+cfg = Config()
+
+# ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
+FORBIDDEN_PATHS = [
+    ".env",
+    "sessions/",
+    "chroma_db/",
+    "__pycache__/",
+    ".git/",
+    "logs/",
+    "models/",
+]
+
 
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
@@ -61,6 +77,61 @@ def _is_valid_repo_url(url: str) -> bool:
     )
 
 
+def _normalize_path(path: str) -> str:
+    """Yol formatını güvenlik kontrolleri için normalize eder."""
+    return path.replace("\\", "/").lstrip("./")
+
+
+def is_forbidden_path(path: str) -> bool:
+    """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
+    normalized = _normalize_path(path)
+    return any(
+        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
+        for forbidden in FORBIDDEN_PATHS
+    )
+
+
+def get_file_content(path: str):
+    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
+    if is_forbidden_path(path):
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return file.read()
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
+def collect_safe_files():
+    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
+    success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
+    if not success:
+        return [], []
+
+    safe_files = []
+    blocked_files = []
+
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        if os.path.isdir(file_path):
+            continue
+
+        if is_forbidden_path(file_path):
+            blocked_files.append(file_path)
+            continue
+
+        if get_file_content(file_path) is None:
+            blocked_files.append(file_path)
+            continue
+
+        safe_files.append(file_path)
+
+    return safe_files, blocked_files
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -68,6 +139,11 @@ def main():
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
     print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
+
+    # 0. Merkezi yapılandırmadan token kontrolü
+    if not cfg.GITHUB_TOKEN:
+        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
+        sys.exit(1)
 
     # 1. Git kurulu mu?
     success, _ = run_command(["git", "--version"], show_output=False)
@@ -110,9 +186,18 @@ def main():
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    # 4. Değişiklikleri Ekle (.gitignore kuralları sayesinde .env otomatik atlanır)
+    # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
-    run_command(["git", "add", "."], show_output=False)
+    run_command(["git", "reset"], show_output=False)
+    safe_files, blocked_files = collect_safe_files()
+
+    if safe_files:
+        run_command(["git", "add", "--"] + safe_files, show_output=False)
+
+    if blocked_files:
+        print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
+        for blocked in blocked_files:
+            print(f"  - {blocked}")
 
     # 5. Durum Kontrolü (Değişen dosya var mı?)
     _, status = run_command(["git", "status", "--porcelain"], show_output=False)
@@ -121,7 +206,10 @@ def main():
         sys.exit(0)
 
     # 6. Commit (Kaydetme) Mesajı
-    default_msg = f"Sistem Güncellemesi: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    default_msg = (
+        f"🚀 Sidar {cfg.VERSION} - Otomatik Dağıtım "
+        f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+    )
     print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
     commit_msg = input(
         f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
