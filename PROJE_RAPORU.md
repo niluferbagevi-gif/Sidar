@@ -2369,10 +2369,6 @@ Teknik ayrıntılar için lütfen 📄 **[DUZELTME_GECMISI.md](DUZELTME_GECMISI.
 
 5. **Git push çakışmalarında güvenli onay akışını sürdürme (M-04):**
    `github_upload.py` tarafında otomatik birleştirme yalnızca açık kullanıcı onayıyla yürütülmelidir; onay verilmezse süreç güvenli şekilde sonlandırılmalıdır.
-6. **ConversationMemory I/O optimizasyonu:**
-   Her mesajda tam dosya rewrite maliyeti azaltılmalı ve `.json.broken` karantina dosyaları için otomatik temizleme/retention politikası geliştirilmelidir.
-7. **Rate limiter key eviction mekanizması:**
-   `_rate_data` anahtarları süre dolunca sözlükten tamamen temizlenmeli; uzun ömürlü servislerde IP sözlüğünün belleği şişirmesi engellenmelidir.
 8. **WebSearch ve PackageInfo Hata/Veri Modeli:**
    Web araması başarısızlıkları `"[HATA]"` stringi yerine yapısal nesnelerle yönetilmeli; PyPI paket sürümleri metin (regex) üzerinden değil, doğrudan API JSON'u üzerinden doğrulanmalıdır.
 
