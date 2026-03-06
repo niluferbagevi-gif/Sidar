@@ -7,7 +7,7 @@ import asyncio
 import re
 from typing import Optional, Tuple
 
-from managers.code_manager import CodeManager 
+from managers.code_manager import CodeManager
 from managers.system_health import SystemHealthManager
 from managers.github_manager import GitHubManager
 from managers.web_search import WebSearchManager
@@ -33,6 +33,7 @@ class AutoHandle:
         web: WebSearchManager,
         pkg: PackageInfoManager,
         docs: DocumentStore,
+        cfg=None,
     ) -> None:
         self.code = code
         self.health = health
@@ -41,6 +42,8 @@ class AutoHandle:
         self.web = web
         self.pkg = pkg
         self.docs = docs
+        self.cfg = cfg
+        self.command_timeout = float(getattr(cfg, "AUTO_HANDLE_TIMEOUT", 12)) if cfg else 12.0
 
     # ─────────────────────────────────────────────
     #  ANA GİRİŞ NOKTASI (ASYNC)
@@ -54,6 +57,8 @@ class AutoHandle:
         re.IGNORECASE | re.DOTALL,
     )
 
+    _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu)\b", re.IGNORECASE)
+
     async def handle(self, text: str) -> Tuple[bool, str]:
         """
         text: kullanıcı mesajı
@@ -63,6 +68,11 @@ class AutoHandle:
             (False, "")    — LLM'e ilet
         """
         t = text.lower().strip()
+
+        # Nokta önekli kısayol komutları (CLI standardı): .status, .health, .clear vb.
+        result = await self._try_dot_command(text, t)
+        if result[0]:
+            return result
 
         # Çok adımlı komutlar (ardından, önce...sonra, 1. ... 2. ...) direkt ReAct'a gider.
         # AutoHandle tek adım döndürdüğü için zincirli istekleri kırar.
@@ -79,13 +89,13 @@ class AutoHandle:
         result = self._try_read_file(t, text)
         if result[0]: return result
 
-        result = self._try_audit(t)
+        result = await self._try_audit(t)
         if result[0]: return result
 
-        result = self._try_health(t)
+        result = await self._try_health(t)
         if result[0]: return result
 
-        result = self._try_gpu_optimize(t)
+        result = await self._try_gpu_optimize(t)
         if result[0]: return result
 
         result = self._try_validate_file(t, text)
@@ -147,6 +157,29 @@ class AutoHandle:
 
         return False, ""
 
+    async def _try_dot_command(self, raw: str, t: str) -> Tuple[bool, str]:
+        """CLI ile uyumlu nokta-komut kısayollarını işler."""
+        m = self._DOT_CMD_RE.match(raw.strip())
+        if not m:
+            return False, ""
+        cmd = m.group(1).lower()
+        if cmd in ("status", "health"):
+            return await self._try_health(f".{cmd}")
+        if cmd == "clear":
+            return self._try_clear_memory(".clear")
+        if cmd == "audit":
+            return await self._try_audit(".audit")
+        if cmd == "gpu":
+            return await self._try_gpu_optimize(".gpu")
+        return False, ""
+
+    async def _run_blocking(self, func, *args):
+        """Senkron manager çağrılarını event-loop'u bloklamadan çalıştır."""
+        return await asyncio.wait_for(
+            asyncio.to_thread(func, *args),
+            timeout=self.command_timeout,
+        )
+
     # ─────────────────────────────────────────────
     #  TEMEL ARAÇ İŞLEYİCİLERİ (SENKRON)
     # ─────────────────────────────────────────────
@@ -186,30 +219,48 @@ class AutoHandle:
             return True, f"✗ {content}"
         return False, ""
 
-    def _try_audit(self, t: str) -> Tuple[bool, str]:
-        if re.search(r"denetle|sistemi\s+tara|audit|teknik\s+rapor|kod.*kontrol", t):
-            return True, self.code.audit_project(".")
+    async def _try_audit(self, t: str) -> Tuple[bool, str]:
+        if re.search(r"^\.audit\b|denetle|sistemi\s+tara|audit|teknik\s+rapor|kod.*kontrol", t):
+            try:
+                result = await self._run_blocking(self.code.audit_project, ".")
+                return True, result
+            except asyncio.TimeoutError:
+                return True, "⚠ Denetim işlemi zaman aşımına uğradı."
+            except Exception as exc:
+                return True, f"⚠ Denetim sırasında hata oluştu: {exc}"
         return False, ""
 
-    def _try_health(self, t: str) -> Tuple[bool, str]:
+    async def _try_health(self, t: str) -> Tuple[bool, str]:
         # "GPU durumunu göster" ve "CPU/RAM göster" ifadelerini de yakalamak için
         # "göster" bağlamını buraya ekledik — ancak yalnızca donanım keyword'leri ile birlikte.
         if re.search(
-            r"sistem.*sağlık|donanım\s+(durumu|rapor|göster)|hardware"
+            r"^\.(status|health)\b|sistem.*sağlık|donanım\s+(durumu|rapor|göster)|hardware"
             r"|sağlık.*rapor|cpu.*durumu|ram.*durumu|gpu.*durum"
             r"|sistem.*rapor|memory.*report",
             t,
         ):
             if not self.health:
                 return True, "⚠ Sistem sağlık monitörü başlatılamadı."
-            return True, self.health.full_report()
+            try:
+                result = await self._run_blocking(self.health.full_report)
+                return True, result
+            except asyncio.TimeoutError:
+                return True, "⚠ Sağlık raporu zaman aşımına uğradı."
+            except Exception as exc:
+                return True, f"⚠ Sağlık raporu alınamadı: {exc}"
         return False, ""
 
-    def _try_gpu_optimize(self, t: str) -> Tuple[bool, str]:
-        if re.search(r"gpu.*(optimize|temizle|boşalt|clear)|vram", t):
+    async def _try_gpu_optimize(self, t: str) -> Tuple[bool, str]:
+        if re.search(r"^\.gpu\b|gpu.*(optimize|temizle|boşalt|clear)|vram", t):
             if not self.health:
                 return True, "⚠ Sistem sağlık monitörü başlatılamadı."
-            return True, self.health.optimize_gpu_memory()
+            try:
+                result = await self._run_blocking(self.health.optimize_gpu_memory)
+                return True, result
+            except asyncio.TimeoutError:
+                return True, "⚠ GPU optimizasyonu zaman aşımına uğradı."
+            except Exception as exc:
+                return True, f"⚠ GPU optimizasyonu başarısız: {exc}"
         return False, ""
 
     def _try_validate_file(self, t: str, raw: str) -> Tuple[bool, str]:
@@ -344,9 +395,9 @@ class AutoHandle:
         return False, ""
 
     def _try_clear_memory(self, t: str) -> Tuple[bool, str]:
-        """'belleği temizle', 'sohbeti sıfırla' gibi doğal dil komutlarını işler."""
+        """'.clear' veya doğal dil temizleme komutlarını işler."""
         if re.search(
-            r"bell[eə][ğg]i?\s+(temizle|sıfırla|sil|resetle)"
+            r"^\.clear\b|bell[eə][ğg]i?\s+(temizle|sıfırla|sil|resetle)"
             r"|sohbet[i]?\s+(temizle|sıfırla|sil|resetle)"
             r"|konuşma[yı]?\s+(temizle|sıfırla|sil|resetle)"
             r"|hafıza[yı]?\s+(temizle|sıfırla|sil|resetle)",
