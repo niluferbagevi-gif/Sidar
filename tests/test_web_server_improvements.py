@@ -46,3 +46,10 @@ def test_cors_allows_localhost_ports_via_regex():
 def test_uvicorn_log_level_is_lowercased():
     src = Path("web_server.py").read_text(encoding="utf-8")
     assert "log_level=args.log.lower()" in src
+
+
+def test_status_endpoint_includes_ollama_health_fields():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "ollama_online = a.health.check_ollama()" in src
+    assert "\"ollama_online\": ollama_online" in src
+    assert "\"ollama_latency_ms\": ollama_latency_ms" in src

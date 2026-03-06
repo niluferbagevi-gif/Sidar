@@ -155,6 +155,45 @@
       gap: 8px;
     }
 
+    .health-strip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 4px;
+      flex-wrap: wrap;
+    }
+    .health-pill {
+      font-size: 11px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border2);
+      color: var(--text-dim);
+      background: var(--bg3);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .health-pill.ok { color: var(--green); border-color: rgba(52,211,153,.45); }
+    .health-pill.warn { color: var(--yellow); border-color: rgba(251,191,36,.45); }
+
+    .ui-notice {
+      position: fixed;
+      top: 64px;
+      right: 20px;
+      z-index: 1200;
+      min-width: 240px;
+      max-width: 420px;
+      border: 1px solid var(--border2);
+      background: var(--bg2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.35);
+      display: none;
+      font-size: 12px;
+    }
+    .ui-notice.warn { border-color: rgba(251,191,36,.55); color: var(--yellow); }
+    .ui-notice.err  { border-color: rgba(248,113,113,.55); color: var(--red); }
+
     .btn-ghost {
       padding: 5px 12px;
       border: 1px solid var(--border2);
@@ -1555,6 +1594,11 @@
       </nav>
     </div>
     <div class="topbar-right">
+      <div class="health-strip" id="health-strip" title="Canlı sistem telemetrisi">
+        <span class="health-pill" id="pill-ollama">🧠 Ollama: …</span>
+        <span class="health-pill" id="pill-gpu">🎮 GPU: …</span>
+        <span class="health-pill" id="pill-vram">💾 VRAM: …</span>
+      </div>
       <button id="todo-indicator" onclick="toggleTodoPanel()" title="Aktif görevleri göster">
         <span id="todo-indicator-dot"></span>
         <span id="todo-indicator-text">0 görev</span>
@@ -1735,6 +1779,8 @@
 
     </div></div></div>
 
+<div id="ui-notice" class="ui-notice"></div>
+
 <div class="modal-bg" id="repo-modal" onclick="modalBgClose(event,'repo-modal')">
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -1826,6 +1872,23 @@ let attachedFileContent = null;
 let attachedFileName    = null;
 let allSessions = [];
 let _cachedRepos = null;
+const API_URL = window.location.origin;
+
+function apiUrl(path) {
+  return `${API_URL}${path}`;
+}
+
+function showUiNotice(message, level = 'warn') {
+  const box = document.getElementById('ui-notice');
+  if (!box) return;
+  box.className = `ui-notice ${level}`;
+  box.textContent = message;
+  box.style.display = 'block';
+  clearTimeout(showUiNotice._timer);
+  showUiNotice._timer = setTimeout(() => {
+    box.style.display = 'none';
+  }, 4200);
+}
 
 /* ─── Tema ───────────────────────────────────────────────── */
 function toggleTheme() {
@@ -1844,10 +1907,52 @@ function applyStoredTheme() {
   if (btn) btn.textContent = saved === 'dark' ? '🌙' : '☀';
 }
 
+async function refreshHealthStrip() {
+  try {
+    const data = await (await fetch(apiUrl('/status'))).json();
+    const ollama = document.getElementById('pill-ollama');
+    const gpu = document.getElementById('pill-gpu');
+    const vram = document.getElementById('pill-vram');
+
+    if (ollama) {
+      const isOn = !!data.ollama_online;
+      ollama.className = `health-pill ${isOn ? 'ok' : 'warn'}`;
+      ollama.textContent = `🧠 Ollama: ${isOn ? 'Online' : 'Offline'} · ${data.ollama_latency_ms ?? '—'}ms`;
+    }
+
+    const devices = data.gpu_devices || [];
+    if (gpu) {
+      const ok = !!(data.gpu_enabled && devices.length);
+      gpu.className = `health-pill ${ok ? 'ok' : 'warn'}`;
+      const util = ok && devices[0].utilization_pct !== undefined ? `${devices[0].utilization_pct}%` : 'CPU';
+      gpu.textContent = `🎮 GPU: ${util}`;
+    }
+
+    if (vram) {
+      const d = devices[0] || null;
+      if (d && d.total_vram_gb !== undefined) {
+        const used = Number(d.allocated_gb || 0).toFixed(1);
+        const total = Number(d.total_vram_gb || 0).toFixed(1);
+        vram.className = 'health-pill ok';
+        vram.textContent = `💾 VRAM: ${used}/${total} GB`;
+      } else {
+        vram.className = 'health-pill warn';
+        vram.textContent = '💾 VRAM: N/A';
+      }
+    }
+  } catch {
+    const ollama = document.getElementById('pill-ollama');
+    if (ollama) {
+      ollama.className = 'health-pill warn';
+      ollama.textContent = '🧠 Ollama: erişilemiyor';
+    }
+  }
+}
+
 /* ─── Model bilgisi yükleme ─────────────────────────────── */
 async function loadModelInfo() {
   try {
-    const data = await (await fetch('/status')).json();
+    const data = await (await fetch(apiUrl('/status'))).json();
     const provider = (data.provider || 'ollama').toLowerCase();
     const model    = data.model || '—';
     const display  = provider === 'gemini' ? `Gemini · ${model}` : model;
@@ -1865,7 +1970,7 @@ async function loadModelInfo() {
 /* ─── Git bilgisi yükleme ───────────────────────────────── */
 async function loadGitInfo() {
   try {
-    const data = await (await fetch('/git-info')).json();
+    const data = await (await fetch(apiUrl('/git-info'))).json();
     const branch = data.branch || 'main';
     const repo   = data.repo   || '';
 
@@ -1914,11 +2019,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   loadGitInfo();
   loadModelInfo();
+  refreshHealthStrip();
+  setInterval(refreshHealthStrip, 8000);
 });
 
 async function loadSessions() {
   try {
-    const res = await fetch('/sessions');
+    const res = await fetch(apiUrl('/sessions'));
     const data = await res.json();
     currentSessionId = data.active_session;
     allSessions = data.sessions || [];
@@ -2180,13 +2287,20 @@ async function sendText(text) {
 
   try {
     resetTimeout();
-    const response = await fetch('/chat', {
+    const response = await fetch(apiUrl('/chat'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text }),
       signal: activeController.signal
     });
 
+    if (response.status === 429) {
+      const errPayload = await response.json().catch(() => ({}));
+      const msg = errPayload.error || 'Çok fazla istek attınız. Lütfen kısa süre bekleyin.';
+      showUiNotice(msg, 'warn');
+      finalizeMsg(msgId, `[Hız Sınırı] ${msg}`);
+      return;
+    }
     if (!response.ok) {
       finalizeMsg(msgId, `[HTTP Hatası] Sunucu ${response.status} kodu döndürdü.`);
       return;
@@ -2713,7 +2827,7 @@ async function openStatus() {
   const grid = document.getElementById('stat-grid');
   grid.innerHTML = '<div class="stat-row"><span class="stat-label">Yükleniyor…</span></div>';
   try {
-    const data = await (await fetch('/status')).json();
+    const data = await (await fetch(apiUrl('/status'))).json();
     const row = (label, value, cls='') =>
       `<div class="stat-row">
         <span class="stat-label">${label}</span>
@@ -2755,6 +2869,7 @@ async function openStatus() {
       row('Web Arama', data.web_search ? '✓ Aktif'         : '✗ Kurulu değil', data.web_search ? 'ok' : 'warn'),
       row('RAG',       data.rag_status),
       row('Paket Bilgi', data.pkg_status),
+      row('Ollama', data.ollama_online ? `Çevrimiçi (${data.ollama_latency_ms ?? '—'} ms)` : 'Çevrimdışı', data.ollama_online ? 'ok' : 'warn'),
       data.enc_status ? row('Bellek Şifreleme', data.enc_status,
         data.enc_status.startsWith('Etkin') ? 'ok' : 'warn') : '',
       gpuRows,
