@@ -2850,6 +2850,20 @@ Bu turda ajanın internet erişim yeteneklerini barındıran `managers/web_searc
 
 **Session 29 çıktısı:** Sidar'ın internetten bilgi toplama hızı artırılmış, bot engellerine karşı daha dirençli hale getirilmiş ve bağlam yönetimi sayesinde daha stabil yanıtlar üretmesi sağlanmıştır.
 
+
+<a id="session-30-ajan-tanimlari-ve-prompt-modernizasyonu"></a>
+## 39. Session 30 — 2026-03-06 Ajan Tanımları ve Prompt Modernizasyonu
+
+Bu turda ajanın karakterini ve araç kullanım kurallarını belirleyen `agent/definitions.py` dosyası, backend mimarisiyle tam uyumlu hale getirilmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S30-01 | `definitions.py` | ✅ Kritik Çözüm | Port 7860 ve güncel model bilgileri (`qwen2.5-coder:7b`, `gemini-2.5-flash`) prompt seviyesinde netleştirildi. |
+| S30-02 | `definitions.py` | ✅ Kusursuz | GitHub ve Web Search araç limitleri (commit/PR sayfalama, 12.000 karakter kırpma) ajana açıkça tanıtıldı. |
+| S30-03 | `definitions.py` | ✅ İyileştirme | UTF-8 farkındalığı, Türkçe karakter güveni ve sandbox fail-closed davranışı çalışma ilkelerine eklendi. |
+
+**Session 30 çıktısı:** Sidar, artık kendi güncel yeteneklerinin ve sistem sınırlarının tam olarak farkındadır; kullanıcıya doğru teknik bilgi sağlama kapasitesi belirgin şekilde artırılmıştır.
+
 <a id="ozet"></a>
 ### Özet
 
