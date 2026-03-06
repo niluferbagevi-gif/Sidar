@@ -1,17 +1,17 @@
 """
 Sidar Project - Paket Bilgi Yöneticisi
 PyPI, npm Registry ve GitHub Releases entegrasyonu (Asenkron).
-Sürüm: 2.7.0
 
 Gerçek zamanlı paket sürüm kontrolü, changelog ve bağımlılık sorguları.
 """
 
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
 import httpx
-from packaging.version import Version, InvalidVersion
+from packaging.version import InvalidVersion, Version
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,72 @@ class PackageInfoManager:
     paket bilgisi sorgular. (Tamamen asenkron mimari).
     """
 
-    # Varsayılan değer (Config verilmezse kullanılır)
+    # Varsayılan değerler (Config verilmezse kullanılır)
     TIMEOUT = 12  # saniye
+    CACHE_TTL_SECONDS = 1800  # 30 dakika
 
     def __init__(self, config=None) -> None:
+        self.cfg = config
         if config is not None:
             self.TIMEOUT = getattr(config, "PACKAGE_INFO_TIMEOUT", self.TIMEOUT)
+        self.timeout = httpx.Timeout(float(self.TIMEOUT), connect=5.0)
+        version = getattr(config, "VERSION", "2.7.0") if config is not None else "2.7.0"
+        self.headers = {
+            "User-Agent": f"SidarAI/{version} (Software Engineer Assistant)",
+            "Accept": "application/json",
+        }
+        cache_ttl_seconds = (
+            getattr(config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS)
+            if config is not None
+            else self.CACHE_TTL_SECONDS
+        )
+        self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))
+        self._cache: Dict[str, Tuple[Dict, datetime]] = {}
+
+    # ─────────────────────────────────────────────
+    #  YARDIMCILAR (CACHE + HTTP)
+    # ─────────────────────────────────────────────
+
+    def _cache_get(self, key: str) -> Tuple[bool, Dict]:
+        cached = self._cache.get(key)
+        if not cached:
+            return False, {}
+        value, ts = cached
+        if datetime.now() - ts < self.cache_ttl:
+            return True, value
+        self._cache.pop(key, None)
+        return False, {}
+
+    def _cache_set(self, key: str, value: Dict) -> None:
+        self._cache[key] = (value, datetime.now())
+
+    async def _get_json(self, url: str, cache_key: str = "") -> Tuple[bool, Dict, str]:
+        if cache_key:
+            hit, data = self._cache_get(cache_key)
+            if hit:
+                return True, data, ""
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers=self.headers,
+            ) as client:
+                resp = await client.get(url)
+            if resp.status_code == 404:
+                return False, {}, "not_found"
+            resp.raise_for_status()
+            data = resp.json()
+            if cache_key:
+                self._cache_set(cache_key, data)
+            return True, data, ""
+        except httpx.TimeoutException:
+            return False, {}, "timeout"
+        except httpx.RequestError as exc:
+            return False, {}, f"request:{exc}"
+        except Exception as exc:
+            logger.error("Paket bilgi API hatası: %s", exc)
+            return False, {}, f"unexpected:{exc}"
 
     # ─────────────────────────────────────────────
     #  PyPI (ASYNC)
@@ -36,20 +96,16 @@ class PackageInfoManager:
     async def _fetch_pypi_json(self, package: str) -> Tuple[bool, Dict, str]:
         """PyPI JSON verisini ham olarak döndürür."""
         url = f"https://pypi.org/pypi/{package}/json"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url)
-            if resp.status_code == 404:
-                return False, {}, f"✗ PyPI'de '{package}' paketi bulunamadı."
-            resp.raise_for_status()
-            return True, resp.json(), ""
-        except httpx.TimeoutException:
+        ok, data, err = await self._get_json(url, cache_key=f"pypi:{package.lower()}")
+        if ok:
+            return True, data, ""
+        if err == "not_found":
+            return False, {}, f"✗ PyPI'de '{package}' paketi bulunamadı."
+        if err == "timeout":
             return False, {}, f"[HATA] PyPI zaman aşımı: {package}"
-        except httpx.RequestError as exc:
-            return False, {}, f"[HATA] PyPI bağlantı hatası: {exc}"
-        except Exception as exc:
-            logger.error("PyPI sorgu hatası: %s", exc)
-            return False, {}, f"[HATA] PyPI: {exc}"
+        if err.startswith("request:"):
+            return False, {}, f"[HATA] PyPI bağlantı hatası: {err.split(':', 1)[1]}"
+        return False, {}, f"[HATA] PyPI: {err}"
 
     async def pypi_info(self, package: str) -> Tuple[bool, str]:
         """
@@ -132,54 +188,47 @@ class PackageInfoManager:
         npm Registry'den paket bilgisi çek (Asenkron).
         """
         url = f"https://registry.npmjs.org/{package}/latest"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url)
-                
-            if resp.status_code == 404:
+        ok, data, err = await self._get_json(url, cache_key=f"npm:{package.lower()}")
+        if not ok:
+            if err == "not_found":
                 return False, f"✗ npm'de '{package}' paketi bulunamadı."
-            resp.raise_for_status()
-            data = resp.json()
+            if err == "timeout":
+                return False, f"[HATA] npm zaman aşımı: {package}"
+            if err.startswith("request:"):
+                return False, f"[HATA] npm bağlantı hatası: {err.split(':', 1)[1]}"
+            return False, f"[HATA] npm: {err}"
 
-            author = data.get("author", {})
-            author_str = (
-                author.get("name", str(author))
-                if isinstance(author, dict)
-                else str(author)
-            )
+        author = data.get("author", {})
+        author_str = (
+            author.get("name", str(author))
+            if isinstance(author, dict)
+            else str(author)
+        )
 
-            lines = [
-                f"[npm: {package}]",
-                f"  Güncel sürüm : {data.get('version', '?')}",
-                f"  Yazar        : {author_str[:80]}",
-                f"  Lisans       : {data.get('license', '?')}",
-                f"  Özet         : {(data.get('description') or '')[:150]}",
-                f"  Ana dosya    : {data.get('main', '?')}",
-            ]
+        lines = [
+            f"[npm: {package}]",
+            f"  Güncel sürüm : {data.get('version', '?')}",
+            f"  Yazar        : {author_str[:80]}",
+            f"  Lisans       : {data.get('license', '?')}",
+            f"  Özet         : {(data.get('description') or '')[:150]}",
+            f"  Ana dosya    : {data.get('main', '?')}",
+        ]
 
-            deps = data.get("dependencies", {})
-            if deps:
-                dep_list = [f"{k}@{v}" for k, v in list(deps.items())[:8]]
-                lines.append(f"  Bağımlılıklar: {', '.join(dep_list)}")
+        deps = data.get("dependencies", {})
+        if deps:
+            dep_list = [f"{k}@{v}" for k, v in list(deps.items())[:8]]
+            lines.append(f"  Bağımlılıklar: {', '.join(dep_list)}")
 
-            peer_deps = data.get("peerDependencies", {})
-            if peer_deps:
-                peer_list = [f"{k}@{v}" for k, v in list(peer_deps.items())[:5]]
-                lines.append(f"  Peer deps    : {', '.join(peer_list)}")
+        peer_deps = data.get("peerDependencies", {})
+        if peer_deps:
+            peer_list = [f"{k}@{v}" for k, v in list(peer_deps.items())[:5]]
+            lines.append(f"  Peer deps    : {', '.join(peer_list)}")
 
-            engines = data.get("engines", {})
-            if engines:
-                lines.append(f"  Engine gerek : {engines}")
+        engines = data.get("engines", {})
+        if engines:
+            lines.append(f"  Engine gerek : {engines}")
 
-            return True, "\n".join(lines)
-
-        except httpx.TimeoutException:
-            return False, f"[HATA] npm zaman aşımı: {package}"
-        except httpx.RequestError as exc:
-            return False, f"[HATA] npm bağlantı hatası: {exc}"
-        except Exception as exc:
-            logger.error("npm sorgu hatası: %s", exc)
-            return False, f"[HATA] npm: {exc}"
+        return True, "\n".join(lines)
 
     # ─────────────────────────────────────────────
     #  GITHUB RELEASES (ASYNC)
@@ -190,60 +239,46 @@ class PackageInfoManager:
         GitHub Releases API ile sürümleri listele (Asenkron).
         """
         url = f"https://api.github.com/repos/{repo}/releases"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(
-                    url,
-                    headers={"Accept": "application/vnd.github+json"}
-                )
-                
-            if resp.status_code == 404:
+        ok, data, err = await self._get_json(url, cache_key=f"ghrel:{repo.lower()}:{limit}")
+        if not ok:
+            if err == "not_found":
                 return False, f"✗ GitHub deposu bulunamadı: {repo}"
-            resp.raise_for_status()
-            releases = resp.json()[:limit]
+            if err == "timeout":
+                return False, f"[HATA] GitHub API zaman aşımı: {repo}"
+            return False, f"[HATA] GitHub Releases: {err}"
 
-            if not releases:
-                return True, f"[GitHub Releases: {repo}]\n  Henüz release yok."
+        releases = data[:limit] if isinstance(data, list) else []
 
-            lines = [f"[GitHub Releases: {repo}]", ""]
-            for r in releases:
-                tag = r.get("tag_name", "?")
-                name = r.get("name") or tag
-                date = (r.get("published_at") or "?")[:10]
-                prerelease = " (pre-release)" if r.get("prerelease") else ""
-                body = (r.get("body") or "").strip()[:300].replace("\n", " ")
-                lines.append(f"  {tag} — {name} [{date}]{prerelease}")
-                if body:
-                    lines.append(f"    {body}")
-                lines.append("")
+        if not releases:
+            return True, f"[GitHub Releases: {repo}]\n  Henüz release yok."
 
-            return True, "\n".join(lines)
+        lines = [f"[GitHub Releases: {repo}]", ""]
+        for r in releases:
+            tag = r.get("tag_name", "?")
+            name = r.get("name") or tag
+            date = (r.get("published_at") or "?")[:10]
+            prerelease = " (pre-release)" if r.get("prerelease") else ""
+            body = (r.get("body") or "").strip()[:300].replace("\n", " ")
+            lines.append(f"  {tag} — {name} [{date}]{prerelease}")
+            if body:
+                lines.append(f"    {body}")
+            lines.append("")
 
-        except httpx.TimeoutException:
-            return False, f"[HATA] GitHub API zaman aşımı: {repo}"
-        except Exception as exc:
-            logger.error("GitHub releases hatası: %s", exc)
-            return False, f"[HATA] GitHub Releases: {exc}"
+        return True, "\n".join(lines)
 
     async def github_latest_release(self, repo: str) -> Tuple[bool, str]:
         """Sadece en güncel release tag'ini döndür (Asenkron)."""
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-        try:
-            async with httpx.AsyncClient(timeout=self.TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(
-                    url,
-                    headers={"Accept": "application/vnd.github+json"}
-                )
-                
-            if resp.status_code == 404:
+        ok, data, err = await self._get_json(url, cache_key=f"ghlatest:{repo.lower()}")
+        if not ok:
+            if err == "not_found":
                 return False, f"✗ '{repo}' için release bulunamadı."
-            resp.raise_for_status()
-            data = resp.json()
-            tag = data.get("tag_name", "?")
-            date = (data.get("published_at") or "?")[:10]
-            return True, f"{repo} — En güncel: {tag} [{date}]"
-        except Exception as exc:
-            return False, f"[HATA] GitHub: {exc}"
+            if err == "timeout":
+                return False, f"[HATA] GitHub API zaman aşımı: {repo}"
+            return False, f"[HATA] GitHub: {err}"
+        tag = data.get("tag_name", "?")
+        date = (data.get("published_at") or "?")[:10]
+        return True, f"{repo} — En güncel: {tag} [{date}]"
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR
@@ -277,4 +312,4 @@ class PackageInfoManager:
         return "PackageInfo: PyPI + npm + GitHub Releases — Aktif (Asenkron)"
 
     def __repr__(self) -> str:
-        return f"<PackageInfoManager timeout={self.TIMEOUT}s>"  
+        return f"<PackageInfoManager timeout={self.TIMEOUT}s cache_ttl={int(self.cache_ttl.total_seconds())}s>"

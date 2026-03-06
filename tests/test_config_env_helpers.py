@@ -18,6 +18,7 @@ def test_config_exposes_subtask_rate_limit_and_hf_fields():
     assert "RATE_LIMIT_GET_IO" in src
     assert "HF_TOKEN" in src
     assert "HF_HUB_OFFLINE" in src
+    assert "PACKAGE_INFO_CACHE_TTL" in src
 
 
 def test_env_example_matches_ollama_timeout_default_and_new_limits():
@@ -27,3 +28,4 @@ def test_env_example_matches_ollama_timeout_default_and_new_limits():
     assert "RATE_LIMIT_WINDOW=60" in src
     assert "RATE_LIMIT_CHAT=20" in src
     assert "AUTO_HANDLE_TIMEOUT=12" in src
+    assert "PACKAGE_INFO_CACHE_TTL=1800" in src

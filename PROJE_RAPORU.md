@@ -2892,6 +2892,20 @@ Bu turda projenin dosya ve yetki güvenliğini sağlayan `managers/security.py` 
 
 **Session 32 çıktısı:** Sidar, hassas çalışma alanlarını daha sıkı koruyan ve config ile tutarlı çalışan bir güvenlik katmanına sahip oldu.
 
+
+<a id="session-33-paket-bilgi-yoneticisi-ve-cache-optimizasyonu"></a>
+## 42. Session 33 — 2026-03-06 Paket Bilgi Yöneticisi ve Cache Optimizasyonu
+
+Bu turda ajanın dış kütüphane verilerini sorgulamasını sağlayan `managers/package_info.py` dosyası, ağ kararlılığı ve performans açısından mühürlenmiştir.
+
+| ID | Dosya | Sonuç | Not |
+|----|-------|-------|-----|
+| S33-01 | `package_info.py` | ✅ Kararlılık | API isteklerinde merkezi timeout nesnesi (`httpx.Timeout`) ve profesyonel `User-Agent` başlığı standart hale getirildi. |
+| S33-02 | `package_info.py` | ✅ Performans | PyPI/npm/GitHub paket sorguları için TTL tabanlı önbellek katmanı eklenerek gereksiz ağ trafiği azaltıldı. |
+| S33-03 | `package_info.py` | ✅ Entegrasyon | Timeout/cache ayarları merkezi `config.py` (`PACKAGE_INFO_TIMEOUT`, `PACKAGE_INFO_CACHE_TTL`) ile senkronize edildi. |
+
+**Session 33 çıktısı:** Sidar'ın paket araştırma yeteneği daha hızlı ve kararlı hale geldi; dış servis hız sınırlarına karşı daha dirençli bir sorgulama modeli oluşturuldu.
+
 <a id="ozet"></a>
 ### Özet
 
