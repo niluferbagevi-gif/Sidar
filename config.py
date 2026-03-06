@@ -301,6 +301,7 @@ class Config:
 
     # ─── Paket Bilgi ─────────────────────────────────────────
     PACKAGE_INFO_TIMEOUT: int = get_int_env("PACKAGE_INFO_TIMEOUT", 12)
+    PACKAGE_INFO_CACHE_TTL: int = get_int_env("PACKAGE_INFO_CACHE_TTL", 1800)
 
     # ─── RAG — Belge Deposu ──────────────────────────────────
     RAG_DIR:            Path = BASE_DIR / os.getenv("RAG_DIR", "data/rag")
