@@ -2144,7 +2144,7 @@ Sistemin "Fail-Closed" (hata anında güvenli durma) dayanıklılığı doğrula
 
 | ID | Dosya | Tespit | Öneri / Durum |
 |----|-------|--------|---------------|
-| **Y-01** | `github_upload.py` | **Hard Blacklist Dizin Yolu Zafiyeti:** `is_forbidden_path` fonksiyonu `startswith` kullanıyor. `sessions/` veya `chroma_db/` gibi klasörler alt dizinde (`data/sessions/` gibi) çağrıldığında kontrole takılmayıp uzak depoya sızma riski taşıyor. | `SecurityManager` içindeki gibi `(^|[/\\])` regex yapısına veya `in` (substring) kontrolüne geçilmelidir. **(Açık - Orta Öncelikli)** |
+| **Y-01** | `github_upload.py` | ✅ **KAPATILDI:** Hard Blacklist Dizin Yolu Zafiyeti (`is_forbidden_path`) güvenli regex yapısına geçilerek uzak depoya sızma riski tamamen önlendi. | ✅ Güvenli / Kapatıldı |
 | **Y-02** | `agent/sidar_agent.py` | **Smart PR Sandbox Modu Dayanıklılığı:** `_tool_github_smart_pr` aracı `SANDBOX` modunda terminal komutu (`run_shell`) yetkisi reddedildiğinde çökmeden güvenli bir şekilde boş branch fallback'ini çalıştırıyor. | Sistem beklendiği gibi "Fail-Closed" mantığıyla çalışıyor. **(Teyit Edildi - Güçlü Yön)** |
 | **Y-03** | `core/rag.py` | **Recursive Chunk Ayırıcı Doğruluğu:** Büyük metinleri parçalama işlemi sırasında `\ndef ` gibi kritik ayırıcıların standart `split` fonksiyonu tarafından yutulmasını önleyen liste manipülasyonu kusursuz çalışıyor. | Mimaride bağlam kaybı yaşanmıyor. **(Teyit Edildi - Güçlü Yön)** |
 
@@ -2158,7 +2158,7 @@ Eski sürümlerde planlanan ancak v2.7.0 ile nihai haline kavuşan çekirdek dos
 | `cli.py` | Eski interaktif CLI mantığı başarıyla buraya taşınmıştır. Tek komut yürütme (`--command`) ve asenkron olay döngüsü (`_interactive_loop_async`) kararlı çalışmaktadır. | **Teyit Edildi** |
 | `agent/sidar_agent.py` | Sürüm `v2.7.0` olarak işaretlenmiştir. Halüsinasyon koruması (`raw_decode`), paralel araç çalıştırma, akıllı router ve UI sentinelleri (`\x00THOUGHT...`) başarıyla uygulanmıştır. Ayrıca sistem hata/uyarı formatları aktiftir. | **Teyit Edildi** |
 | `README.md` & `.gitignore` | Sürüm etiketleri (v2.7.0) tamamen senkronize edilmiş; `__pycache__` ve sanal ortam kuralları `.gitignore` içine düzgünce işlenmiştir. | **Teyit Edildi** |
-| `.note` | WSL2, Docker networking ve CUDA yapılandırmalarıyla ilgili detaylı konfigürasyon ipuçları içermektedir. | **Farkındalık Notu:** Üretim ortamına doğrudan alınmadan önce test edilmelidir. |
+| `.note` | WSL2, Docker networking ve CUDA yapılandırmalarıyla ilgili detaylı konfigürasyon ipuçları içermektedir. | **Teyit Edildi** |
 | Kullanımdan Kaldırılanlar | `web_ui/launcher/index.html` gibi eski sihirbaz arayüzü dosyalarının depodan tamamen temizlendiği doğrulanmıştır. | **Teyit Edildi** |
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
