@@ -61,7 +61,6 @@
 - [13. Olası İyileştirmeler](#13-olası-iyileştirmeler)
 - [14. Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)](#14-sonraki-versiyon-için-geliştirme-önerileri-v28)
   - [14.1 Çekirdek Mimari](#141-çekirdek-mimari)
-  - [14.2 LLM ve Ajan Katmanı](#142-llm-ve-ajan-katmanı)
   - [14.3 RAG ve Bellek](#143-rag-ve-bellek)
   - [14.4 Web Arayüzü ve API](#144-web-arayüzü-ve-api)
   - [14.5 GitHub Entegrasyonu](#145-github-entegrasyonu)
@@ -1080,28 +1079,13 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.2 LLM ve Ajan Katmanı
+### 14.2 LLM ve Ajan Katmanı (✅ Tamamı Çözüldü - v2.8.0)
 
-#### 14.2.1 Çoklu LLM Sağlayıcı Genişletmesi
-**Mevcut durum:** Ollama ve Gemini destekleniyor.
-**Öneri:** `LLMClient` soyut temel sınıfa dönüştürülmeli; yeni sağlayıcılar `OllamaClient`, `GeminiClient`, `OpenAIClient` şeklinde alt sınıf olarak eklenebilmeli.
-**Eklentiler:** Anthropic Claude API, OpenAI GPT-4o, Azure OpenAI, LM Studio (yerel REST).
+> **Not:** Bu bölümdeki tüm mimari hedefler (Çoklu LLM Soyutlaması, Araçların Pydantic Şemalarıyla Dışsallaştırılması ve Asenkron Paralel ReAct adımları) v2.8.0 güncellemesi ile başarıyla tamamlanmış ve `CHANGELOG.md` dosyasına eklenmiştir.
 
-#### 14.2.2 Araç Tanımlarının Dışsallaştırılması
-**Mevcut durum:** Araç tablosu `sidar_agent.py` içindeki `_tools` dict'inde hardcoded.
-**Öneri:** Her araç `@tool(name, description, allowed_levels)` dekoratörü ile tanımlanmalı; araç kataloğu otomatik oluşturulmalı. `definitions.py`'deki sistem istemindeki araç listesi de otomatik güncellenebilir.
-**Etki:** Yeni araç ekleme sürtünmesini sıfıra indirir.
-
-#### 14.2.3 Paralel ReAct Adımları
-**Mevcut durum:** `parallel` aracı araçları eşzamanlı çalıştırıyor ancak LLM bunu her zaman doğru kullanmıyor.
-**Öneri:** Bağımsız alt görevleri LLM yerine ajan katmanı tespit edip otomatik olarak `asyncio.gather` ile paralel çalıştırmalı. Örneğin `read_file(a)` ve `read_file(b)` aynı anda çalışabilir.
-
-#### 14.2.4 Yapısal Araç Şeması (MCP Uyumu)
-**Mevcut durum:** Araç argümanı tek bir `str` — karmaşık araç çağrıları için JSON string kullanılıyor.
-**Öneri:** Her araç için Pydantic `BaseModel` giriş şeması; LLM JSON Schema ile yönlendirilmeli. Bu Model Context Protocol (MCP) standardıyla uyumlu hale getirir.
+[⬆ İçindekilere Dön](#içindekiler)
 
 ---
-
 ### 14.3 RAG ve Bellek
 
 #### 14.3.1 Hibrit Sıralama (RRF)
