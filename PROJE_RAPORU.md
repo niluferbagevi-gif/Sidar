@@ -5,7 +5,7 @@
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** 36 izlenen dosya, ~18.4k satır metin içerik
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](DUZELTME_GECMISI.md) yamaları: 2026-03-03**
 
 ---
 
@@ -19,7 +19,6 @@
 - [5. Yüksek Öncelikli Sorunlar](#5-yuksek-oncelikli-sorunlar)
 - [6. Orta Öncelikli Sorunlar](#6-orta-oncelikli-sorunlar)
 - [7. Düşük Öncelikli Sorunlar](#7-dusuk-oncelikli-sorunlar)
-  - [Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi)
 - [8. Dosyalar Arası Uyumsuzluk Tablosu](#8-dosyalar-arasi-uyumsuzluk-tablosu)
   - [8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti](#8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti)
   - [8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
@@ -309,30 +308,13 @@ sidar_project/
 <a id="7-dusuk-oncelikli-sorunlar"></a>
 ## 7. Düşük Öncelikli Sorunlar (Low Priority / Technical Debt)
 
-> ✅ **2026-03-06 Güncel Taraması:** L-01, L-03 ve L-05 maddeleri kapatılmıştır. Bu başlık altında **aktif düşük öncelikli açık bulgu bulunmamaktadır**.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif düşük öncelikli hata bulunmamaktadır**. L-01, L-03 ve L-05 maddeleri kapatılmıştır.
 
 | ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| — | — | ✅ Açık düşük öncelikli bulgu yok | Kapanan L-serisi maddeler dinamik araç listesi, BeautifulSoup tabanlı temizleme ve banner iyileştirmeleriyle giderildi. |
+| — | — | ✅ Açık düşük öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
 
-*(Geçmişteki N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
-
-
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi"></a>
-### Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)
-
-
-| ID | Konum | Açıklama | Giderim |
-|----|-------|----------|---------|
-| <a id="p-01"></a>[P-01](#p-01) | `Dockerfile:25` | `LABEL version="2.6.1"` — v2.7.0 ile uyumsuz | `"2.7.0"` yazıldı |
-| <a id="p-02"></a>[P-02](#p-02) | `PROJE_RAPORU.md:121` | `environment.yml` açıklamasında "CUDA 12.1" — gerçekte cu124 | "CUDA 12.4 (cu124)" düzeltildi |
-| <a id="p-03"></a>[P-03](#p-03) | `.env.example` | `DOCKER_EXEC_TIMEOUT` değişkeni belgelenmemiş | Son bölüme eklendi (varsayılan=10) |
-| <a id="p-04"></a>[P-04](#p-04) | `environment.yml:17` | Comment: "CUDA 12.1 tam desteklidir" — gerçekte cu124 kullanılıyor | "CUDA 12.4 (cu124)" düzeltildi |
-| <a id="p-05"></a>[P-05](#p-05) | `config.py:167` | WSL2 uyarısında `cu121` wheel URL'i öneriliyor — proje cu124 kullanıyor | `cu124` URL ile güncellendi |
-| <a id="p-06"></a>[P-06](#p-06) | `managers/__init__.py` | `TodoManager` `__all__`'da yok — diğer tüm manager'lar dışa aktarılıyor | `__all__`'a eklendi |
-| <a id="p-07"></a>[P-07](#p-07) | `.env.example` | `RAG_FILE_THRESHOLD` değişkeni belgelenmemiş | RAG bölümüne eklendi (varsayılan=20000) |
+*(Geçmişteki L-serisi ile N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
