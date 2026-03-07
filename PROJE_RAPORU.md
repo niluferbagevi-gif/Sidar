@@ -1,6 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
+> **Son Güncelleme:** 2026-03-07 (Audit düzeltmeleri — branch: claude/review-files-report-5uVFR)
 > **Proje Sürümü:** 2.7.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir.
 
@@ -15,16 +16,17 @@
   - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-517-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
   - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-801-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1458-satır)
-  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-600-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-789-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1455-satır)
+  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi](#38-corellm_clientpy--llm-istemcisi-340-satır)
-  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-380-satır)
-  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-858-satır)
+  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-189-satır)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi](#38-corellm_clientpy--llm-istemcisi-513-satır)
+  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-384-satır)
+  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-851-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-280-satır)
   - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-746-satır)
-  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-550-satır)
+  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-560-satır)
   - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-420-satır)
   - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-352-satır)
   - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
@@ -119,9 +121,10 @@ sidar_project/
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── sidar_agent.py         # Ana ajan (1458 satır, 40+ araç)
+│   ├── sidar_agent.py         # Ana ajan (1455 satır, 40+ araç)
 │   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici
-│   └── definitions.py        # Sistem istemi ve ajan kimliği
+│   ├── definitions.py         # Sistem istemi ve ajan kimliği
+│   └── tooling.py             # Araç kayıt + Pydantic şema yöneticisi (189 satır)
 │
 ├── core/
 │   ├── __init__.py
@@ -142,8 +145,15 @@ sidar_project/
 ├── web_ui/
 │   └── index.html             # Vanilla JS tek sayfa uygulama (3399 satır)
 │
-├── tests/                     # 25 test modülü
+├── tests/                     # 32 test modülü
 │   ├── test_sidar.py
+│   ├── test_tooling_registry.py
+│   ├── test_parallel_react_improvements.py
+│   ├── test_github_upload_improvements.py
+│   ├── test_core_init_improvements.py
+│   ├── test_managers_init_improvements.py
+│   ├── test_claude_md_improvements.py
+│   ├── test_sidar_md_improvements.py
 │   └── test_*_improvements.py
 │
 ├── data/                      # RAG ve bellek verileri
@@ -253,7 +263,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (801 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (789 satır)
 
 **Amaç:** SSE (Server-Sent Events) destekli asenkron chat web arayüzü.
 
@@ -292,7 +302,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.5 `agent/sidar_agent.py` — Ana Ajan (1458 satır)
+### 3.5 `agent/sidar_agent.py` — Ana Ajan (1455 satır)
 
 **Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
 
@@ -341,7 +351,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (600 satır)
+### 3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)
 
 **Amaç:** Kullanıcı mesajındaki ortak kalıpları regex ile tanıyarak LLM döngüsüne girmeden cevap verir.
 
@@ -390,7 +400,57 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (340 satır)
+### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (189 satır)
+
+**Amaç:** Araçların Pydantic şemalarını ve `build_tool_dispatch()` fonksiyonu aracılığıyla araç dispatch tablosunu merkezi olarak yönetir.
+
+**Kritik Bileşenler:**
+
+| Bileşen | Açıklama |
+|---------|----------|
+| `WriteFileSchema` | `path` + `content` alanlarına sahip yazma şeması |
+| `PatchFileSchema` | `path` + `old_text` + `new_text` alanlarına sahip yama şeması |
+| `GithubListFilesSchema` | `path` + opsiyonel `branch` alanları |
+| `GithubWriteSchema` | `path`, `content`, `commit_message`, opsiyonel `branch` |
+| `GithubCreateBranchSchema` | `branch_name` + opsiyonel `from_branch` |
+| `GithubCreatePRSchema` | `title`, `body`, `head`, opsiyonel `base` |
+| `GithubListPRsSchema` | `state` (varsayılan: `"open"`) + `limit` (varsayılan: 10) |
+| `TOOL_ARG_SCHEMAS` | Araç adını şema sınıfına eşleyen sözlük |
+| `parse_tool_argument()` | JSON öncelikli, `|||` sınırlı legacy format fallback ile argüman ayrıştırma |
+| `build_tool_dispatch()` | `SidarAgent` instance'ından araç adı → metod sözlüğü üretir |
+
+**`parse_tool_argument()` İki Aşamalı Ayrıştırma Mantığı:**
+1. **JSON öncelik:** `json.loads(text)` başarılıysa `schema.model_validate(dict)` ile Pydantic doğrulaması yapılır.
+2. **Legacy format fallback:** `|||` ayırıcısı ile bölünmüş eski string formatı desteklenir. Bu, eski LLM çıktılarıyla geriye dönük uyumluluğu korur.
+
+**`build_tool_dispatch()` Araç Tablosu (44 araç + alias'lar):**
+
+| Araç Adı | Alias | Metod |
+|----------|-------|-------|
+| `list_dir` | `ls` | `_tool_list_dir` |
+| `read_file` | — | `_tool_read_file` |
+| `write_file` | — | `_tool_write_file` |
+| `patch_file` | — | `_tool_patch_file` |
+| `execute_code` | — | `_tool_execute_code` |
+| `run_shell` | `bash`, `shell` | `_tool_run_shell` |
+| `glob_search` | — | `_tool_glob_search` |
+| `grep_files` | `grep` | `_tool_grep_files` |
+| `github_*` (13 araç) | — | `_tool_github_*` |
+| `web_search`, `fetch_url`, `search_docs`, `search_stackoverflow` | — | `_tool_*` |
+| `pypi`, `pypi_compare`, `npm`, `gh_releases`, `gh_latest` | — | `_tool_*` |
+| `docs_search`, `docs_add`, `docs_add_file`, `docs_list`, `docs_delete` | — | `_tool_*` |
+| `health`, `gpu_optimize`, `audit` | — | `_tool_*` |
+| `todo_write`, `todo_read`, `todo_update` | — | `_tool_*` |
+| `get_config` | `print_config_summary` | `_tool_get_config` |
+| `subtask` | `agent` | `_tool_subtask` |
+
+> **Not:** `parallel` aracı bu dispatch tablosunda yer almaz; `sidar_agent.py` içinde ReAct döngüsünde doğrudan `asyncio.gather` ile işlenir.
+
+**Mimari Değer:** `tooling.py` sayesinde araç ekleme/değiştirme işlemleri `sidar_agent.py` içine dağılmaz; tek bir yerden yönetilir. Şema eklemek için yalnızca `TOOL_ARG_SCHEMAS` sözlüğüne yeni giriş yapılması yeterlidir.
+
+---
+
+### 3.8 `core/llm_client.py` — LLM İstemcisi (513 satır)
 
 **Amaç:** Ollama ve Gemini için asenkron chat arayüzü.
 
@@ -414,7 +474,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.9 `core/memory.py` — Konuşma Belleği (380 satır)
+### 3.9 `core/memory.py` — Konuşma Belleği (384 satır)
 
 **Amaç:** Çok oturumlu, kalıcı, thread-safe ve opsiyonel şifreli bellek yönetimi.
 
@@ -440,7 +500,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.10 `core/rag.py` — RAG Motoru (858 satır)
+### 3.10 `core/rag.py` — RAG Motoru (851 satır)
 
 **Amaç:** ChromaDB (vektör) + BM25 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu.
 
@@ -508,7 +568,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.13 `managers/github_manager.py` — GitHub Yöneticisi (550 satır)
+### 3.13 `managers/github_manager.py` — GitHub Yöneticisi (560 satır)
 
 **Amaç:** PyGithub üzerinden GitHub API entegrasyonu.
 
@@ -708,37 +768,45 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projede **25 test modülü** bulunmaktadır:
+Projede **32 test modülü** bulunmaktadır (toplam ~1.836 satır):
 
-| Test Dosyası | Kapsam |
-|-------------|--------|
-| `test_sidar.py` | Genel entegrasyon testleri |
-| `test_sidar_improvements.py` | Ajan iyileştirme testleri |
-| `test_auto_handle_improvements.py` | AutoHandle regex ve mantık testleri |
-| `test_agent_init_improvements.py` | Ajan başlatma testleri |
-| `test_agent_subtask.py` | Alt görev (subtask) testleri |
-| `test_llm_client_improvements.py` | LLM istemci testleri |
-| `test_memory_improvements.py` | Bellek yönetimi testleri |
-| `test_rag_improvements.py` | RAG motor testleri |
-| `test_security_improvements.py` | Güvenlik kontrolü testleri |
-| `test_code_manager_improvements.py` | Kod yöneticisi testleri |
-| `test_github_manager_improvements.py` | GitHub entegrasyon testleri |
-| `test_system_health_improvements.py` | Sağlık monitör testleri |
-| `test_web_search_improvements.py` | Web arama testleri |
-| `test_package_info_improvements.py` | Paket bilgi testleri |
-| `test_todo_manager_improvements.py` | Görev yöneticisi testleri |
-| `test_config_env_helpers.py` | Config yardımcı fonksiyon testleri |
-| `test_web_server_improvements.py` | Web sunucu endpoint testleri |
-| `test_web_ui_runtime_improvements.py` | Web UI çalışma zamanı testleri |
-| `test_web_ui_security_improvements.py` | Web UI güvenlik testleri |
-| `test_cli_banner.py` | CLI banner testleri |
-| `test_cli_runtime_improvements.py` | CLI çalışma zamanı testleri |
-| `test_main_launcher_improvements.py` | Başlatıcı testleri |
-| `test_dockerfile_runtime_improvements.py` | Dockerfile çalışma zamanı testleri |
-| `test_definitions_prompt.py` | Sistem istemi testleri |
-| `test_*_md_improvements.py` | Dokümantasyon testleri |
+| Test Dosyası | Satır | Kapsam |
+|-------------|-------|--------|
+| `test_sidar.py` | 1.052 | Genel entegrasyon testleri (en kapsamlı) |
+| `test_sidar_improvements.py` | 7 | Ajan iyileştirme testleri |
+| `test_auto_handle_improvements.py` | 34 | AutoHandle regex ve mantık testleri |
+| `test_agent_init_improvements.py` | 15 | Ajan başlatma testleri |
+| `test_agent_subtask.py` | 26 | Alt görev (subtask) testleri |
+| `test_parallel_react_improvements.py` | 18 | `parallel` araç ve asyncio.gather testleri |
+| `test_llm_client_improvements.py` | 38 | LLM istemci testleri |
+| `test_memory_improvements.py` | 46 | Bellek yönetimi testleri |
+| `test_rag_improvements.py` | 33 | RAG motor testleri |
+| `test_security_improvements.py` | 36 | Güvenlik kontrolü testleri |
+| `test_code_manager_improvements.py` | 31 | Kod yöneticisi testleri |
+| `test_github_manager_improvements.py` | 30 | GitHub entegrasyon testleri |
+| `test_github_upload_improvements.py` | 14 | GitHub yükleme aracı testleri |
+| `test_system_health_improvements.py` | 24 | Sağlık monitör testleri |
+| `test_web_search_improvements.py` | 36 | Web arama testleri |
+| `test_package_info_improvements.py` | 25 | Paket bilgi testleri |
+| `test_todo_manager_improvements.py` | 34 | Görev yöneticisi testleri |
+| `test_tooling_registry.py` | 34 | `tooling.py` şema ve dispatch testleri |
+| `test_config_env_helpers.py` | 30 | Config yardımcı fonksiyon testleri |
+| `test_web_server_improvements.py` | 54 | Web sunucu endpoint testleri |
+| `test_web_ui_runtime_improvements.py` | 16 | Web UI çalışma zamanı testleri |
+| `test_web_ui_security_improvements.py` | 9 | Web UI güvenlik testleri |
+| `test_cli_banner.py` | 29 | CLI banner testleri |
+| `test_cli_runtime_improvements.py` | 17 | CLI çalışma zamanı testleri |
+| `test_main_launcher_improvements.py` | 34 | Başlatıcı testleri |
+| `test_dockerfile_runtime_improvements.py` | 22 | Dockerfile çalışma zamanı testleri |
+| `test_definitions_prompt.py` | 26 | Sistem istemi testleri |
+| `test_core_init_improvements.py` | 14 | `core/__init__.py` export testleri |
+| `test_managers_init_improvements.py` | 7 | `managers/__init__.py` export testleri |
+| `test_claude_md_improvements.py` | 23 | `CLAUDE.md` içerik testleri |
+| `test_sidar_md_improvements.py` | 22 | `SIDAR.md` içerik testleri |
 
 **Test çalıştırma:** `pytest` veya `pytest --cov=.`
+
+> **Uyarı:** Test dosyalarının büyük çoğunluğu unit test niteliğindedir (mock ve stub kullanır). Gerçek LLM, Docker ve ChromaDB gerektiren entegrasyon testleri `test_sidar.py` içinde bulunmakla birlikte sınırlıdır. Bkz. §14.7.
 
 ---
 
@@ -772,27 +840,32 @@ Projede **25 test modülü** bulunmaktadır:
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-| Dosya | Satır |
-|-------|-------|
-| `web_ui/index.html` | 3.399 |
-| `agent/sidar_agent.py` | 1.458 |
-| `core/rag.py` | 858 |
-| `web_server.py` | 801 |
-| `managers/code_manager.py` | 746 |
-| `agent/auto_handle.py` | 600 |
-| `managers/github_manager.py` | 550 |
-| `config.py` | 517 |
-| `managers/system_health.py` | 420 |
-| `managers/todo_manager.py` | 380 |
-| `core/memory.py` | 380 |
-| `managers/web_search.py` | 352 |
-| `core/llm_client.py` | 340 |
-| `managers/package_info.py` | 314 |
-| `github_upload.py` | 294 |
-| `main.py` | 331 |
-| `cli.py` | 274 |
-| `agent/definitions.py` | 165 |
-| **Toplam (kaynak)** | **~11.180** |
+| Dosya | Satır | Not |
+|-------|-------|-----|
+| `web_ui/index.html` | 3.399 | |
+| `agent/sidar_agent.py` | 1.455 | |
+| `core/rag.py` | 851 | |
+| `web_server.py` | 789 | |
+| `managers/code_manager.py` | 746 | |
+| `agent/auto_handle.py` | 601 | |
+| `managers/github_manager.py` | 560 | |
+| `core/llm_client.py` | 513 | |
+| `config.py` | 517 | |
+| `managers/system_health.py` | 420 | |
+| `managers/todo_manager.py` | 380 | |
+| `core/memory.py` | 384 | |
+| `managers/web_search.py` | 352 | |
+| `managers/package_info.py` | 314 | |
+| `github_upload.py` | 294 | |
+| `main.py` | 332 | |
+| `cli.py` | 275 | |
+| `agent/tooling.py` | 189 | Önceki raporda eksikti |
+| `agent/definitions.py` | 164 | |
+| `core/__init__.py` | 27 | |
+| `managers/__init__.py` | 21 | |
+| `agent/__init__.py` | 19 | |
+| **Toplam (Python kaynak)** | **~8.203** | HTML hariç |
+| **Toplam (HTML dahil)** | **~11.602** | |
 
 ---
 
@@ -818,9 +891,10 @@ managers/package_info.py  ←── (yalnızca dış: httpx, packaging)
 managers/todo_manager.py  ←── config.py
 
 agent/definitions.py  ←── (bağımlılık YOK — salt metin sabiti)
+agent/tooling.py      ←── pydantic (dış) — iç modül bağımlılığı YOK
 agent/auto_handle.py  ←── managers/*, core/memory.py, core/rag.py
 agent/sidar_agent.py  ←── config.py, core/*, managers/*, agent/auto_handle.py,
-                            agent/definitions.py
+                            agent/definitions.py, agent/tooling.py
 
 cli.py         ←── config.py, agent/sidar_agent.py
 web_server.py  ←── config.py, agent/sidar_agent.py, core/*, managers/*
@@ -921,7 +995,7 @@ Aşağıda v2.7.0 itibarıyla proje mimarisinde açık kalan ve ileriki sürüml
 
 | # | Dosya | Sorun | Durum |
 |---|-------|-------|-------|
-| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ⏳ **Devam Ediyor** |
+| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ✅ **Çözüldü** (v2.8.0 - Dinamik AsyncDDGS kontrolü eklendi, sürüm environment.yml içinde ==6.2.13 olarak sabitlendi ve asyncio.wait_for ile timeout koruması sağlandı) |
 | 11 | `web_ui/index.html` | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. | ⏳ **Devam Ediyor** (v2.8 modülarizasyon planında) |
 
 ## 12. `.env` Tam Değişken Referansı
@@ -1175,7 +1249,7 @@ FastAPI `StaticFiles` middleware ile servis edilebilir.
 ### 14.7 Test ve Kalite
 
 #### 14.7.1 Entegrasyon Test Altyapısı
-**Mevcut durum:** 25 test modülü var ancak çoğu unit test; gerçek LLM ve Docker gerektiren testler yok.
+**Mevcut durum:** 32 test modülü var (~1.836 satır) ancak çoğu unit test; gerçek LLM ve Docker gerektiren testler yok.
 **Öneri:** `pytest-asyncio` ile asenkron test; `httpx.AsyncClient` ile web API testleri; `testcontainers-python` ile geçici ChromaDB ve Docker ortamı.
 
 #### 14.7.2 Test Coverage Hedefi
@@ -1214,18 +1288,20 @@ FastAPI `StaticFiles` middleware ile servis edilebilir.
 
 ### 14.9 Versiyon 2.8 İçin Önerilen Öncelik Sırası
 
-| Sıra | Özellik | Etki | Çaba |
-|------|---------|------|------|
-| 1 | Thread-safe chunking (§14.1.4) | Yüksek | Düşük |
-| 2 | Async lock ile talimat cache (§14.1.3) | Yüksek | Düşük |
-| 3 | Gerçek token sayacı — tiktoken (§14.1.2) | Yüksek | Orta |
-| 4 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük |
-| 5 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük |
-| 6 | Kalıcı rate limiting (§14.1.1) | Orta | Orta |
-| 7 | RRF ile hibrit sıralama (§14.3.1) | Orta | Orta |
-| 8 | JWT / API key auth (§14.4.4) | Orta | Orta |
-| 9 | Issue yönetimi (§14.5.2) | Orta | Yüksek |
-| 10 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek |
+> **v2.7.0 Durum Notu:** §14.1.1–14.1.4 maddeleri v2.7.0'da tamamlandı. Aşağıdaki tablo yalnızca **açık** (henüz uygulanmamış) maddeleri içerir.
+
+| Sıra | Özellik | Etki | Çaba | Durum |
+|------|---------|------|------|-------|
+| 1 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük | ⏳ Açık |
+| 2 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük | ⏳ Açık |
+| 3 | RRF ile hibrit sıralama (§14.3.1) | Orta | Orta | ⏳ Açık |
+| 4 | JWT / API key auth (§14.4.4) | Orta | Orta | ⏳ Açık |
+| 5 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ⏳ Açık |
+| 6 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ⏳ Açık |
+| 7 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek | ⏳ Açık |
+| 8 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ⏳ Açık |
+| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
+| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
 
 ---
 
