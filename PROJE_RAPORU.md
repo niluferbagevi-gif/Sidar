@@ -20,8 +20,6 @@
 - [6. Orta Öncelikli Sorunlar](#6-orta-oncelikli-sorunlar)
 - [7. Düşük Öncelikli Sorunlar](#7-dusuk-oncelikli-sorunlar)
 - [8. Dosyalar Arası Uyumsuzluk Tablosu](#8-dosyalar-arasi-uyumsuzluk-tablosu)
-  - [8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti](#8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti)
-  - [8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
 - [9. Bağımlılık Analizi](#9-bagimlilik-analizi)
   - [`environment.yml` — Güncel Durum Tablosu](#environmentyml-guncel-durum-tablosu)
 - [10. Güçlü Yönler](#10-guclu-yonler)
@@ -325,41 +323,16 @@ sidar_project/
 <a id="8-dosyalar-arasi-uyumsuzluk-tablosu"></a>
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-01–O-06 dahil tüm bulgular kapatılmıştır. Bu başlık altında kapanmış detaylar düzeltme geçmişine taşınmıştır.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında rapor ile kod arasında **aktif uyumsuzluk (drift) bulunmamaktadır**. U-16, U-17, U-18 ve U-19 dahil tüm sapma bulguları kapatılmıştır.
 
+| ID | Tür (Önem) | Konum | Durum |
+| :--- | :--- | :--- | :--- |
+| — | — | — | ✅ Açık uyumsuzluk yok |
 
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti"></a>
-### 8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti
-
-> ✅ Önceki sürümlerden gelen (§8.1–§8.4; U-01–U-15, V-01–V-03, N-01–N-04) taramalar ve 2026-03-02 tarihli O-01–O-06 ikinci tur doğrulama bulgularının tamamı kapatılmıştır.
-> Ayrıntılar ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşınmıştır:
->
-> 📄 **[DUZELTME_GECMISI.md → §8.1–§8.4 bölümü](DUZELTME_GECMISI.md#sec-8-1-8-4)**
->
-> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06)**
+*(Geçmişteki U-01–U-19, V-01–V-03, N-01–N-04 ve O-01–O-06 numaralı tüm dosyalar arası uyumsuzluklar tamamen giderilmiştir. Kapatılan bulguların detayları ve çapraz doğrulamalar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
-
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel"></a>
-### 8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)
-
-> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, kod tabanındaki son büyük güncellemelerin rapora yansıtılamamasından kaynaklı yeni **Drift (Uyumsuzluk)** sorunları tespit edilmiştir.
-
-| ID | Tür (Önem) | Konum | Açıklama | Durum |
-|----|------------|-------|----------|-------|
-| **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
-| **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesi güncellenerek `environment.yml` içindeki kilitli güncel sürümlerle hizalandı (`fastapi~=0.115.0`, `pytest~=8.3.3`). | ✅ Kapalı |
-| **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | ✅ **KAPATILDI:** Statik araç listesi prompttan kaldırıldı; araç envanteri `sidar_agent.py` içinde dinamik `self._tools` + docstring tabanlı üretim ile hizalandı. | ✅ Kapalı |
-| **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | ✅ **KAPATILDI:** Dosyanın son güncelleme tarihi ana raporla senkronize edilerek `2026-03-06` olarak hizalandı. | ✅ Kapalı |
-
-*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16, U-17, U-18 ve U-19 kapatılmıştır. Toplam Aktif Uyumsuzluk: 0)*
-
----
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2177,7 +2150,7 @@ Bu rapor, SİDAR'ın teknik sağlığını koruyan yaşayan denetim merkezidir.
 
 | Bölüm | İçerik | Açıklama |
 |---|---|---|
-| Özet Tablolar | §8.3 ve §15.3 | Aktif sorunların ve kategori bazlı skorların hızlı görünümü |
+| Özet Tablolar | §8 ve §15.3 | Aktif sorunların ve kategori bazlı skorların hızlı görünümü |
 | Detaylı Analiz | §13.5.x Serisi | Her dosya için teknik sorumluluk ve mimari döküm |
 | Gelişim Planı | §14 | Önceliklendirilmiş iyileştirme yol haritası |
 | Denetim İzleri | Session Logları | Satır bazlı repo doğrulama oturum kayıtları |
