@@ -702,4 +702,275 @@ Projede **25 test modülü** bulunmaktadır:
 
 ---
 
+## 9. Modül Bağımlılık Haritası
+
+Aşağıdaki tablo her modülün hangi iç modülleri import ettiğini gösterir. Okun yönü bağımlılık yönüdür.
+
+```
+config.py          ←── (bağımlılık YOK — temel taş)
+
+core/llm_client.py ←── config.py
+core/memory.py     ←── config.py
+core/rag.py        ←── config.py
+
+managers/security.py      ←── config.py
+managers/code_manager.py  ←── managers/security.py, config.py
+managers/github_manager.py←── (yalnızca dış: PyGithub)
+managers/system_health.py ←── config.py
+managers/web_search.py    ←── config.py
+managers/package_info.py  ←── (yalnızca dış: httpx, packaging)
+managers/todo_manager.py  ←── config.py
+
+agent/definitions.py  ←── (bağımlılık YOK — salt metin sabiti)
+agent/auto_handle.py  ←── managers/*, core/memory.py, core/rag.py
+agent/sidar_agent.py  ←── config.py, core/*, managers/*, agent/auto_handle.py,
+                            agent/definitions.py
+
+cli.py         ←── config.py, agent/sidar_agent.py
+web_server.py  ←── config.py, agent/sidar_agent.py, core/*, managers/*
+main.py        ←── config.py (DummyConfig fallback'i de var)
+github_upload.py ←── (bağımlılık YOK — bağımsız araç)
+```
+
+**Döngüsel bağımlılık:** Tespit edilmedi. `config.py` bağımlılık ağacının kökü; hiçbir iç modülü import etmez.
+
+---
+
+## 10. Veri Akış Diyagramı
+
+### 10.1 Bir Chat Mesajının Ömrü
+
+```
+[Kullanıcı]
+    │ metin gönderir
+    ▼
+[Web: POST /chat]  veya  [CLI: _interactive_loop_async]
+    │
+    ▼
+[SidarAgent.respond(text, stream=True)]
+    │
+    ├─► [ConversationMemory.add("user", text)]
+    │         └─► disk: data/sessions/<id>.json  (şifreli opsiyonel)
+    │
+    ├─► [AutoHandle.handle(text)]
+    │         ├─► regex eşleşirse → doğrudan yanıt (LLM çağrısı YOK)
+    │         └─► eşleşmezse → (False, "")
+    │
+    ├─► [SIDAR.md + CLAUDE.md okuma] (mtime cache'den)
+    │
+    └─► [LLMClient.chat(messages, json_mode=True)]  ← ReAct döngüsü başlar
+              │
+              ▼
+        {thought, tool, argument}  ← Pydantic doğrulama
+              │
+              ├─► tool == "final_answer"  → akış → kullanıcı
+              │
+              └─► diğer araç
+                      │
+                      ▼
+                  [_tools[tool](argument)]
+                      │
+                      ├── read_file   → CodeManager → SecurityManager → disk
+                      ├── web_search  → WebSearchManager → httpx → Tavily/Google/DDG
+                      ├── docs_search → DocumentStore → ChromaDB / BM25 / Keyword
+                      ├── github_*    → GitHubManager → PyGithub → GitHub API
+                      ├── execute_code→ CodeManager → Docker → python:3.11-alpine
+                      └── health      → SystemHealthManager → psutil / pynvml / torch
+                              │
+                              ▼
+                        sonuç belleğe eklenir
+                              │
+                              ▼
+                        LLMClient.chat (bir sonraki adım)
+                              │
+                        [MAX_REACT_STEPS'e ulaşıldı?]
+                              ├── HAYIR → döngü devam
+                              └── EVET  → zorla final_answer
+```
+
+### 10.2 Bellek Yazma Yolu
+
+```
+add(role, content)
+    → _save_interval_seconds (0.5 sn) debounce
+        → JSON serileştirme
+            → [MEMORY_ENCRYPTION_KEY varsa] Fernet.encrypt()
+                → data/sessions/<uuid>.json
+```
+
+### 10.3 RAG Belge Ekleme Yolu
+
+```
+add_document(title, content, source)
+    → _chunk_text()  ← recursive chunking
+        → _write_lock alınır
+            → store_dir/<doc_id>.txt  (tam metin)
+            → index.json güncellenir
+            → BM25 cache güncellenir (inkremental)
+            → ChromaDB.upsert(chunks)  ← cosine space
+        → _write_lock bırakılır
+```
+
+---
+
+## 11. Mevcut Sorunlar ve Dikkat Noktaları
+
+Kod inceleme sürecinde tespit edilen sorunlar önem sırasına göre listelenmiştir.
+
+### 11.1 Yüksek Öncelikli
+
+| # | Dosya | Satır | Sorun |
+|---|-------|-------|-------|
+| 1 | `core/rag.py` | 295–306 | `_chunk_text()` geçici olarak `self._chunk_size` ve `self._chunk_overlap`'i değiştiriyor. Bu değişiklik `_write_lock` dışında yapılıyor; eşzamanlı `add_document` çağrılarında race condition riski var. |
+| 2 | `core/rag.py` | 700–727 | `_bm25_search()` içinde `_ensure_bm25_index()` lock alıp bırakıyor, ardından skor hesaplaması lock içinde yapılıyor. Lock tutma süresi uzun; diğer yazma operasyonları bu süre boyunca beklemek zorunda kalıyor. |
+| 3 | `agent/sidar_agent.py` | 128–129 | `_instructions_cache` ve `_instructions_mtimes` dict'leri asenkron ortamda lock korumasız. Eşzamanlı iki `respond()` çağrısı (web servisi) aynı anda mtime'ı okuyup yazabilir. |
+
+### 11.2 Orta Öncelikli
+
+| # | Dosya | Satır | Sorun |
+|---|-------|-------|-------|
+| 4 | `web_server.py` | 83–92 | Rate limiting salt in-memory `defaultdict`. Sunucu yeniden başlatıldığında tüm sayaçlar sıfırlanır; kısa kesintilerle limit aşılabilir. |
+| 5 | `core/memory.py` | — | `_estimate_tokens()` 3.5 karakter/token heuristic kullanıyor. Kod ağırlıklı konuşmalarda (Python snippet'leri) bu oran ~2'ye düşer; özetleme gecikebilir. |
+| 6 | `docker-compose.yml` | — | Tüm servisler `/var/run/docker.sock` bind mount yapıyor. Bu, konteyner içinden Docker daemon'a tam erişim demektir; container escape riski var. Yalnızca REPL servisleri için sınırlandırılmalı. |
+| 7 | `managers/github_manager.py` | 296–299 | `list_commits(n)` en fazla 30 commit çekebiliyor ancak kullanıcı daha büyük değer verebilir. Hata mesajı yok; sessizce 30'a kesilir. |
+
+### 11.3 Düşük Öncelikli / Teknik Borç
+
+| # | Dosya | Satır | Sorun |
+|---|-------|-------|-------|
+| 8 | `agent/auto_handle.py` | 54–58 | `_MULTI_STEP_RE` yalnızca Türkçe kalıpları kapsıyor. İngilizce çok adımlı istekler ("first ... then ...", "step 1: ...") ReAct yerine AutoHandle'a düşebilir. |
+| 9 | `core/rag.py` | 246 | `range(0, len(text_part), self._chunk_size - self._chunk_overlap)` ifadesinde `chunk_size == chunk_overlap` olması durumunda `ZeroDivisionError` riski; ancak Config varsayılanlarıyla (1000/200) bu durum oluşmuyor. |
+| 10 | `managers/web_search.py` | — | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. |
+| 11 | `web_ui/index.html` | — | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. |
+| 12 | `config.py` | 513 | `Config.initialize_directories()` modül import anında çağrılıyor. Test ortamında istenmeyen dizin oluşturabilir; `pytest` fixture'larında `tmp_path` ile override gerekebilir. |
+
+---
+
+## 12. `.env` Tam Değişken Referansı
+
+Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
+
+### 12.1 AI Sağlayıcı
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `AI_PROVIDER` | `ollama` | `ollama` veya `gemini` |
+| `GEMINI_API_KEY` | `""` | Gemini modu için zorunlu |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Kullanılacak Gemini model adı |
+| `OLLAMA_URL` | `http://localhost:11434/api` | Ollama API adresi |
+| `OLLAMA_TIMEOUT` | `30` | Ollama istek zaman aşımı (sn) |
+| `CODING_MODEL` | `qwen2.5-coder:7b` | Ollama — kod görevleri modeli |
+| `TEXT_MODEL` | `gemma2:9b` | Ollama — metin görevleri modeli |
+
+### 12.2 Güvenlik ve Erişim
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `ACCESS_LEVEL` | `full` | `restricted` / `sandbox` / `full` |
+| `MEMORY_ENCRYPTION_KEY` | `""` | Fernet anahtarı — boşsa şifreleme kapalı |
+
+### 12.3 GPU / Donanım
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `USE_GPU` | `true` | GPU kullanımını açar/kapar |
+| `GPU_DEVICE` | `0` | Çoklu GPU'da hedef cihaz indeksi |
+| `GPU_MEMORY_FRACTION` | `0.8` | VRAM fraksiyonu (0.1–1.0) |
+| `GPU_MIXED_PRECISION` | `false` | FP16 mixed precision |
+| `MULTI_GPU` | `false` | Dağıtık çoklu GPU modu |
+
+### 12.4 Web Arayüzü
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `WEB_HOST` | `0.0.0.0` | Web sunucu bind adresi |
+| `WEB_PORT` | `7860` | CPU mod web portu |
+| `WEB_GPU_PORT` | `7861` | GPU mod web portu |
+
+### 12.5 Web Arama
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `SEARCH_ENGINE` | `auto` | `auto` / `tavily` / `google` / `duckduckgo` |
+| `TAVILY_API_KEY` | `""` | Tavily API anahtarı |
+| `GOOGLE_SEARCH_API_KEY` | `""` | Google Custom Search API anahtarı |
+| `GOOGLE_SEARCH_CX` | `""` | Google Custom Search Engine ID |
+| `WEB_SEARCH_MAX_RESULTS` | `5` | Maksimum arama sonucu sayısı |
+| `WEB_FETCH_TIMEOUT` | `15` | URL çekme zaman aşımı (sn) |
+| `WEB_SCRAPE_MAX_CHARS` | `12000` | URL içerik karakter limiti |
+
+### 12.6 RAG
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `RAG_DIR` | `data/rag` | Belge deposu dizini |
+| `RAG_TOP_K` | `3` | Arama sonucu sayısı |
+| `RAG_CHUNK_SIZE` | `1000` | Chunking karakter büyüklüğü |
+| `RAG_CHUNK_OVERLAP` | `200` | Chunk örtüşme miktarı |
+| `RAG_FILE_THRESHOLD` | `20000` | RAG deposuna ekleme önerisi eşiği (karakter) |
+
+### 12.7 Hafıza ve ReAct
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `MAX_MEMORY_TURNS` | `20` | Bellekte tutulan max konuşma turu |
+| `MAX_REACT_STEPS` | `10` | ReAct döngüsü max adım sayısı |
+| `REACT_TIMEOUT` | `60` | ReAct tek adım zaman aşımı (sn) |
+| `SUBTASK_MAX_STEPS` | `5` | Alt ajan max adım sayısı |
+| `AUTO_HANDLE_TIMEOUT` | `12` | AutoHandle araç zaman aşımı (sn) |
+
+### 12.8 Loglama
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `LOG_FILE` | `logs/sidar_system.log` | Log dosya yolu |
+| `LOG_MAX_BYTES` | `10485760` | Log dosya maksimum boyutu (10 MB) |
+| `LOG_BACKUP_COUNT` | `5` | Tutulan log yedek sayısı |
+| `DEBUG_MODE` | `false` | Açıksa Config özeti konsola yazdırılır |
+
+### 12.9 Rate Limiting
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `RATE_LIMIT_WINDOW` | `60` | Pencere süresi (sn) |
+| `RATE_LIMIT_CHAT` | `20` | Chat endpoint limit (istek/pencere) |
+| `RATE_LIMIT_MUTATIONS` | `60` | Yazma endpoint limit |
+| `RATE_LIMIT_GET_IO` | `30` | Okuma endpoint limit |
+
+### 12.10 Çeşitli
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `RESPONSE_LANGUAGE` | `tr` | LLM yanıt dili |
+| `HF_TOKEN` | `""` | HuggingFace token (özel modeller) |
+| `HF_HUB_OFFLINE` | `false` | HF Hub çevrimdışı mod |
+| `GITHUB_TOKEN` | `""` | GitHub API token |
+| `GITHUB_REPO` | `""` | Varsayılan GitHub repo (`owner/repo`) |
+| `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
+| `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
+| `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
+| `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
+
+---
+
+## 13. Olası İyileştirmeler
+
+Kod tabanından çıkan teknik borç ve iyileştirme önerileri:
+
+| Öncelik | Alan | Öneri |
+|---------|------|-------|
+| Yüksek | `rag.py` | `_chunk_text()` içindeki geçici attribute değişikliği parametre olarak geçirilmeli; `self._chunk_size/_overlap` dokunulmamalı |
+| Yüksek | `sidar_agent.py` | `_instructions_cache` ve `_instructions_mtimes` `asyncio.Lock` ile korunmalı |
+| Yüksek | `docker-compose.yml` | Docker socket mount yalnızca REPL gerektiren servislerle sınırlandırılmalı |
+| Orta | `web_server.py` | Rate limiting Redis veya `cachetools` ile kalıcı hale getirilmeli |
+| Orta | `core/memory.py` | Token tahmini için `tiktoken` gibi gerçek bir tokenizer kullanılmalı |
+| Orta | `auto_handle.py` | `_MULTI_STEP_RE`'ye İngilizce çok adımlı kalıplar eklenmeli |
+| Orta | `github_manager.py` | `list_commits(n)` için `n > 30` uyarısı eklenmeli |
+| Düşük | `web_ui/index.html` | JS ve CSS ayrı dosyalara bölünmeli (`app.js`, `style.css`) |
+| Düşük | `config.py` | Test ortamı için `initialize_directories()` çağrısı `__main__` guard arkasına alınmalı |
+| Düşük | `rag.py` | `chunk_size == chunk_overlap` kenar durumu için koruyucu kontrol eklenmeli |
+
+---
+
 *Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmıştır.*
