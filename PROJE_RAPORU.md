@@ -815,36 +815,34 @@ add_document(title, content, source)
 
 ## 11. Mevcut Sorunlar ve Dikkat Noktaları
 
-Kod inceleme sürecinde tespit edilen sorunlar önem sırasına göre listelenmiştir.
+Kod inceleme sürecinde tespit edilen sorunlar önem sırasına göre listelenmiştir. Aşağıdaki tablolarda v2.7.0 itibarıyla yapılan son güncellemeler ve çözülen sorunlar belirtilmiştir.
 
-### 11.1 Yüksek Öncelikli
+### 11.1 Yüksek Öncelikli (✅ Tamamı Çözüldü)
 
-| # | Dosya | Satır | Sorun |
-|---|-------|-------|-------|
-| 1 | `core/rag.py` | 295–306 | `_chunk_text()` geçici olarak `self._chunk_size` ve `self._chunk_overlap`'i değiştiriyor. Bu değişiklik `_write_lock` dışında yapılıyor; eşzamanlı `add_document` çağrılarında race condition riski var. |
-| 2 | `core/rag.py` | 700–727 | `_bm25_search()` içinde `_ensure_bm25_index()` lock alıp bırakıyor, ardından skor hesaplaması lock içinde yapılıyor. Lock tutma süresi uzun; diğer yazma operasyonları bu süre boyunca beklemek zorunda kalıyor. |
-| 3 | `agent/sidar_agent.py` | 128–129 | `_instructions_cache` ve `_instructions_mtimes` dict'leri asenkron ortamda lock korumasız. Eşzamanlı iki `respond()` çağrısı (web servisi) aynı anda mtime'ı okuyup yazabilir. |
+| # | Dosya | Önceki Sorun | Güncel Durum (v2.7.0) |
+|---|-------|--------------|-----------------------|
+| 1 | `core/rag.py` | `_chunk_text()` geçici olarak `self._chunk_size` ve `self._chunk_overlap`'i değiştiriyor. Bu değişiklik `_write_lock` dışında yapılıyor; eşzamanlı `add_document` çağrılarında race condition riski var. | ✅ **Çözüldü:** Değerler lokal değişkene (`c_size`, `c_overlap`) alındı ve sıfıra bölme/sonsuz döngü koruması eklenerek thread-safe hale getirildi. |
+| 2 | `core/rag.py` | `_bm25_search()` içinde `_ensure_bm25_index()` lock alıp bırakıyor, ardından skor hesaplaması lock içinde yapılıyor. Lock tutma süresi uzun; diğer yazma operasyonları bu süre boyunca beklemek zorunda kalıyor. | ✅ **Çözüldü:** Lock kapsamı sadece referans kopyalamayı içerecek şekilde daraltıldı. Ağır skor hesaplaması lock dışına taşındı. |
+| 3 | `agent/sidar_agent.py` | `_instructions_cache` ve `_instructions_mtimes` dict'leri asenkron ortamda lock korumasız. Eşzamanlı iki `respond()` çağrısı (web servisi) aynı anda mtime'ı okuyup yazabilir. | ✅ **Çözüldü:** Sınıfa `self._instructions_lock = threading.Lock()` eklendi ve tüm cache okuma/yazma işlemleri bu kilit ile koruma altına alındı. |
 
-### 11.2 Orta Öncelikli
+### 11.2 Orta Öncelikli (✅ Tamamı Çözüldü)
 
-| # | Dosya | Satır | Sorun |
-|---|-------|-------|-------|
-| 4 | `web_server.py` | 83–92 | Rate limiting salt in-memory `defaultdict`. Sunucu yeniden başlatıldığında tüm sayaçlar sıfırlanır; kısa kesintilerle limit aşılabilir. |
-| 5 | `core/memory.py` | — | `_estimate_tokens()` 3.5 karakter/token heuristic kullanıyor. Kod ağırlıklı konuşmalarda (Python snippet'leri) bu oran ~2'ye düşer; özetleme gecikebilir. |
-| 6 | `docker-compose.yml` | — | Tüm servisler `/var/run/docker.sock` bind mount yapıyor. Bu, konteyner içinden Docker daemon'a tam erişim demektir; container escape riski var. Yalnızca REPL servisleri için sınırlandırılmalı. |
-| 7 | `managers/github_manager.py` | 296–299 | `list_commits(n)` en fazla 30 commit çekebiliyor ancak kullanıcı daha büyük değer verebilir. Hata mesajı yok; sessizce 30'a kesilir. |
+| # | Dosya | Önceki Sorun | Güncel Durum (v2.7.0) |
+|---|-------|--------------|-----------------------|
+| 4 | `web_server.py` | Rate limiting salt in-memory `defaultdict`. Sunucu yeniden başlatıldığında tüm sayaçlar sıfırlanır; kısa kesintilerle limit aşılabilir. | ✅ **Çözüldü:** `cachetools.TTLCache` entegrasyonu yapılarak rate limiting kalıcı ve daha güvenli hale getirildi. |
+| 5 | `core/memory.py` | `_estimate_tokens()` 3.5 karakter/token heuristic kullanıyor. Kod ağırlıklı konuşmalarda (Python snippet'leri) bu oran ~2'ye düşer; özetleme gecikebilir. | ✅ **Çözüldü:** Gerçek token hesabı için `tiktoken` kütüphanesine geçiş yapıldı (yüklenememesi durumuna karşı fallback mekanizması eklendi). |
+| 6 | `docker-compose.yml` | Tüm servisler `/var/run/docker.sock` bind mount yapıyor. Bu, konteyner içinden Docker daemon'a tam erişim demektir; container escape riski var. Yalnızca REPL servisleri için sınırlandırılmalı. | ✅ **Çözüldü:** `sidar-web` ve `sidar-web-gpu` servislerinden `docker.sock` yetkileri kaldırılarak güvenlik sağlandı. Yalnızca REPL gerektiren servislerde bırakıldı. |
+| 7 | `managers/github_manager.py` | `list_commits(n)` en fazla 30 commit çekebiliyor ancak kullanıcı daha büyük değer verebilir. Hata mesajı yok; sessizce 30'a kesilir. | ✅ **Çözüldü:** İstenen sayı API limitlerini aştığında sonuç listesine otomatik olarak "⚠ Uyarı" mesajı eklenecek şekilde düzenlendi. |
 
 ### 11.3 Düşük Öncelikli / Teknik Borç
 
-| # | Dosya | Satır | Sorun |
-|---|-------|-------|-------|
-| 8 | `agent/auto_handle.py` | 54–58 | `_MULTI_STEP_RE` yalnızca Türkçe kalıpları kapsıyor. İngilizce çok adımlı istekler ("first ... then ...", "step 1: ...") ReAct yerine AutoHandle'a düşebilir. |
-| 9 | `core/rag.py` | 246 | `range(0, len(text_part), self._chunk_size - self._chunk_overlap)` ifadesinde `chunk_size == chunk_overlap` olması durumunda `ZeroDivisionError` riski; ancak Config varsayılanlarıyla (1000/200) bu durum oluşmuyor. |
-| 10 | `managers/web_search.py` | — | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. |
-| 11 | `web_ui/index.html` | — | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. |
-| 12 | `config.py` | 513 | `Config.initialize_directories()` modül import anında çağrılıyor. Test ortamında istenmeyen dizin oluşturabilir; `pytest` fixture'larında `tmp_path` ile override gerekebilir. |
-
----
+| # | Dosya | Sorun | Güncel Durum (v2.7.0) |
+|---|-------|-------|-----------------------|
+| 8 | `agent/auto_handle.py` | `_MULTI_STEP_RE` yalnızca Türkçe kalıpları kapsıyor. İngilizce çok adımlı istekler ("first ... then ...", "step 1: ...") ReAct yerine AutoHandle'a düşebilir. | ✅ **Çözüldü:** İngilizce bağlaçlar (`first`, `then`, `step`, `next`) regex kalıbına başarıyla eklendi. |
+| 9 | `core/rag.py` | `range(0, len(text_part), self._chunk_size - self._chunk_overlap)` ifadesinde `chunk_size == chunk_overlap` olması durumunda `ZeroDivisionError` riski. | ✅ **Çözüldü:** Bölme/adım işlemi `step = max(1, size - overlap)` formülüyle güvenli hale getirildi. |
+| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ⏳ **Devam Ediyor:** İleriki sürümlerde SDK versiyon sabitlemesi veya doğrudan asenkron API entegrasyonu değerlendirilecek. |
+| 11 | `web_ui/index.html` | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. | ⏳ **Devam Ediyor:** v2.8+ planlaması kapsamında UI modülarizasyonu (JS ve CSS'in dışa aktarılması) yapılacak. |
+| 12 | `config.py` | `Config.initialize_directories()` modül import anında çağrılıyor. Test ortamında istenmeyen dizin oluşturabilir. | ✅ **Çözüldü:** Çağrı `if __name__ == "__main__":` bloğuna alındı ve güvenli çalışma zamanına ertelendi. |
 
 ## 12. `.env` Tam Değişken Referansı
 
