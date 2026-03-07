@@ -27,6 +27,17 @@ from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
 from agent.auto_handle import AutoHandle
 from agent.definitions import SIDAR_SYSTEM_PROMPT
+from agent.tooling import (
+    GithubCreateBranchSchema,
+    GithubCreatePRSchema,
+    GithubListFilesSchema,
+    GithubListPRsSchema,
+    GithubWriteSchema,
+    PatchFileSchema,
+    WriteFileSchema,
+    build_tool_dispatch,
+    parse_tool_argument,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,59 +147,8 @@ class SidarAgent:
         )
 
         # Dinamik araç tablosu (tek source-of-truth)
-        self._tools = {
-            "list_dir":               self._tool_list_dir,
-            "read_file":              self._tool_read_file,
-            "write_file":             self._tool_write_file,
-            "patch_file":             self._tool_patch_file,
-            "execute_code":           self._tool_execute_code,
-            "audit":                  self._tool_audit,
-            "health":                 self._tool_health,
-            "gpu_optimize":           self._tool_gpu_optimize,
-            "github_commits":         self._tool_github_commits,
-            "github_info":            self._tool_github_info,
-            "github_read":            self._tool_github_read,
-            "github_list_files":      self._tool_github_list_files,
-            "github_write":           self._tool_github_write,
-            "github_create_branch":   self._tool_github_create_branch,
-            "github_create_pr":       self._tool_github_create_pr,
-            "github_search_code":     self._tool_github_search_code,
-            "github_list_prs":        self._tool_github_list_prs,
-            "github_get_pr":          self._tool_github_get_pr,
-            "github_comment_pr":      self._tool_github_comment_pr,
-            "github_close_pr":        self._tool_github_close_pr,
-            "github_pr_files":        self._tool_github_pr_files,
-            "github_smart_pr":        self._tool_github_smart_pr,
-            "web_search":             self._tool_web_search,
-            "fetch_url":              self._tool_fetch_url,
-            "search_docs":            self._tool_search_docs,
-            "search_stackoverflow":   self._tool_search_stackoverflow,
-            "pypi":                   self._tool_pypi,
-            "pypi_compare":           self._tool_pypi_compare,
-            "npm":                    self._tool_npm,
-            "gh_releases":            self._tool_gh_releases,
-            "gh_latest":              self._tool_gh_latest,
-            "docs_search":            self._tool_docs_search,
-            "docs_add":               self._tool_docs_add,
-            "docs_add_file":          self._tool_docs_add_file,
-            "docs_list":              self._tool_docs_list,
-            "docs_delete":            self._tool_docs_delete,
-            "run_shell":              self._tool_run_shell,
-            "bash":                   self._tool_run_shell,
-            "shell":                  self._tool_run_shell,
-            "glob_search":            self._tool_glob_search,
-            "grep_files":             self._tool_grep_files,
-            "grep":                   self._tool_grep_files,
-            "ls":                     self._tool_list_dir,
-            "todo_write":             self._tool_todo_write,
-            "todo_read":              self._tool_todo_read,
-            "todo_update":            self._tool_todo_update,
-            "get_config":             self._tool_get_config,
-            "print_config_summary":   self._tool_get_config,
-            "subtask":                self._tool_subtask,
-            "agent":                  self._tool_subtask,
-            "parallel":               self._tool_parallel,
-        }
+        self._tools = build_tool_dispatch(self)
+
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -484,20 +444,30 @@ class SidarAgent:
                 )
         return result
 
-    async def _tool_write_file(self, a: str) -> str:
+    async def _tool_write_file(self, a: str | WriteFileSchema) -> str:
         """Bir dosyayı verilen içerikle tamamen yazar (overwrite)."""
-        parts = a.split("|||", 1)
-        if len(parts) < 2: return "⚠ Hatalı format. Kullanım: path|||content"
-        # Disk yazma event loop'u bloke eder — thread'e itilir
-        _, result = await asyncio.to_thread(self.code.write_file, parts[0].strip(), parts[1])
+        if isinstance(a, WriteFileSchema):
+            path = a.path.strip()
+            content = a.content
+        else:
+            parts = a.split("|||", 1)
+            if len(parts) < 2:
+                return "⚠ Hatalı format. Kullanım: path|||content"
+            path = parts[0].strip()
+            content = parts[1]
+        _, result = await asyncio.to_thread(self.code.write_file, path, content)
         return result
 
-    async def _tool_patch_file(self, a: str) -> str:
+    async def _tool_patch_file(self, a: str | PatchFileSchema) -> str:
         """Dosyada eski metni yenisiyle değiştirerek yama uygular."""
-        parts = a.split("|||")
-        if len(parts) < 3: return "⚠ Hatalı patch formatı. Kullanım: path|||eski_kod|||yeni_kod"
-        # Disk okuma+yazma event loop'u bloke eder — thread'e itilir
-        _, result = await asyncio.to_thread(self.code.patch_file, parts[0].strip(), parts[1], parts[2])
+        if isinstance(a, PatchFileSchema):
+            path, old_text, new_text = a.path.strip(), a.old_text, a.new_text
+        else:
+            parts = a.split("|||")
+            if len(parts) < 3:
+                return "⚠ Hatalı patch formatı. Kullanım: path|||eski_kod|||yeni_kod"
+            path, old_text, new_text = parts[0].strip(), parts[1], parts[2]
+        _, result = await asyncio.to_thread(self.code.patch_file, path, old_text, new_text)
         return result
 
     async def _tool_execute_code(self, a: str) -> str:
@@ -536,49 +506,61 @@ class SidarAgent:
         _, result = self.github.read_remote_file(a)
         return result
 
-    async def _tool_github_list_files(self, a: str) -> str:
+    async def _tool_github_list_files(self, a: str | GithubListFilesSchema) -> str:
         """GitHub deposundaki dizin içeriğini listele. Argüman: 'path[|||branch]'"""
-        parts = a.split("|||")
-        path = parts[0].strip() if parts else ""
-        branch = parts[1].strip() if len(parts) > 1 else None
+        if isinstance(a, GithubListFilesSchema):
+            path, branch = a.path, a.branch
+        else:
+            parts = a.split("|||")
+            path = parts[0].strip() if parts else ""
+            branch = parts[1].strip() if len(parts) > 1 else None
         _, result = self.github.list_files(path, branch)
         return result
 
-    async def _tool_github_write(self, a: str) -> str:
+    async def _tool_github_write(self, a: str | GithubWriteSchema) -> str:
         """GitHub'a dosya yaz/güncelle. Argüman: 'path|||content|||commit_message[|||branch]'"""
-        parts = a.split("|||")
-        if len(parts) < 3:
-            return "⚠ Hatalı format. Kullanım: path|||içerik|||commit_mesajı[|||branch]"
-        path = parts[0].strip()
-        content = parts[1]
-        message = parts[2].strip()
-        branch = parts[3].strip() if len(parts) > 3 else None
+        if isinstance(a, GithubWriteSchema):
+            path, content, message, branch = a.path.strip(), a.content, a.commit_message.strip(), a.branch
+        else:
+            parts = a.split("|||")
+            if len(parts) < 3:
+                return "⚠ Hatalı format. Kullanım: path|||içerik|||commit_mesajı[|||branch]"
+            path = parts[0].strip()
+            content = parts[1]
+            message = parts[2].strip()
+            branch = parts[3].strip() if len(parts) > 3 else None
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_or_update_file(path, content, message, branch)
         return result
 
-    async def _tool_github_create_branch(self, a: str) -> str:
+    async def _tool_github_create_branch(self, a: str | GithubCreateBranchSchema) -> str:
         """GitHub'da yeni dal oluştur. Argüman: 'branch_adı[|||kaynak_branch]'"""
-        if not a:
-            return "⚠ Dal adı belirtilmedi."
-        parts = a.split("|||")
-        branch_name = parts[0].strip()
-        from_branch = parts[1].strip() if len(parts) > 1 else None
+        if isinstance(a, GithubCreateBranchSchema):
+            branch_name, from_branch = a.branch_name, a.from_branch
+        else:
+            if not a:
+                return "⚠ Dal adı belirtilmedi."
+            parts = a.split("|||")
+            branch_name = parts[0].strip()
+            from_branch = parts[1].strip() if len(parts) > 1 else None
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_branch(branch_name, from_branch)
         return result
 
-    async def _tool_github_create_pr(self, a: str) -> str:
+    async def _tool_github_create_pr(self, a: str | GithubCreatePRSchema) -> str:
         """GitHub Pull Request oluştur. Argüman: 'başlık|||açıklama|||head_branch[|||base_branch]'"""
-        parts = a.split("|||")
-        if len(parts) < 3:
-            return "⚠ Hatalı format. Kullanım: başlık|||açıklama|||head_branch[|||base_branch]"
-        title = parts[0].strip()
-        body = parts[1]
-        head = parts[2].strip()
-        base = parts[3].strip() if len(parts) > 3 else None
+        if isinstance(a, GithubCreatePRSchema):
+            title, body, head, base = a.title.strip(), a.body, a.head.strip(), a.base
+        else:
+            parts = a.split("|||")
+            if len(parts) < 3:
+                return "⚠ Hatalı format. Kullanım: başlık|||açıklama|||head_branch[|||base_branch]"
+            title = parts[0].strip()
+            body = parts[1]
+            head = parts[2].strip()
+            base = parts[3].strip() if len(parts) > 3 else None
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_pull_request(title, body, head, base)
@@ -593,14 +575,17 @@ class SidarAgent:
         _, result = self.github.search_code(a)
         return result
 
-    async def _tool_github_list_prs(self, a: str) -> str:
+    async def _tool_github_list_prs(self, a: str | GithubListPRsSchema) -> str:
         """Pull Request listesi. Argüman: 'state[|||limit]' (state: open/closed/all)"""
-        parts = a.split("|||")
-        state = parts[0].strip() if parts[0].strip() else "open"
-        try:
-            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-        except ValueError:
-            limit = 10
+        if isinstance(a, GithubListPRsSchema):
+            state, limit = a.state, a.limit
+        else:
+            parts = a.split("|||")
+            state = parts[0].strip() if parts[0].strip() else "open"
+            try:
+                limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
+            except ValueError:
+                limit = 10
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.list_pull_requests(state=state, limit=limit)
@@ -1192,9 +1177,15 @@ class SidarAgent:
 
     async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
         """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
-        tool_arg = str(tool_arg).strip()
+        raw_arg = str(tool_arg).strip()
         handler = self._tools.get(tool_name)
-        return await handler(tool_arg) if handler else None
+        if not handler:
+            return None
+        try:
+            parsed_arg = parse_tool_argument(tool_name, raw_arg)
+        except Exception:
+            parsed_arg = raw_arg
+        return await handler(parsed_arg)
 
     async def _get_memory_archive_context(self, user_input: str) -> str:
         """Sonsuz hafıza arşivinden sınırlı ve alakalı bağlamı çek."""
