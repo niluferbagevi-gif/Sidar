@@ -995,7 +995,7 @@ Aşağıda v2.7.0 itibarıyla proje mimarisinde açık kalan ve ileriki sürüml
 
 | # | Dosya | Sorun | Durum |
 |---|-------|-------|-------|
-| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ⏳ **Devam Ediyor** |
+| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ✅ **Çözüldü** (v2.8.0 - Dinamik AsyncDDGS kontrolü eklendi, sürüm environment.yml içinde ==6.2.13 olarak sabitlendi ve asyncio.wait_for ile timeout koruması sağlandı) |
 | 11 | `web_ui/index.html` | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. | ⏳ **Devam Ediyor** (v2.8 modülarizasyon planında) |
 
 ## 12. `.env` Tam Değişken Referansı
