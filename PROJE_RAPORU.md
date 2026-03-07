@@ -276,12 +276,13 @@ sidar_project/
 <a id="5-yuksek-oncelikli-sorunlar"></a>
 ## 5. Yüksek Öncelikli Sorunlar (High Priority)
 
-| ID | Modül | Hata Açıklaması | Çözüm Önerisi |
-| :--- | :--- | :--- | :--- |
-| **H-03** | `agent/sidar_agent.py` | ✅ **KAPATILDI:** Memory archive bağlamı `top_k`, `min_score` ve `max_chars` sınırlarıyla filtrelenerek prompt taşması riski giderildi. | İzleme: eşik değerleri (`MEMORY_ARCHIVE_*`) üretim trafiğine göre ayarlanabilir. |
-| **H-04** | `core/memory.py` | ✅ **KAPATILDI:** Şifre çözme/okuma akışında hata yakalama ve dayanıklı geri dönüş uygulanarak InvalidToken kaynaklı çökme riski giderildi. | İzleme: anahtar rotasyonu senaryoları için kullanıcı bilgilendirmesi sürdürülsün. |
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif yüksek öncelikli hata bulunmamaktadır**. H-03 ve H-04 dahil önceki bulgular kapatılmıştır.
 
-*(Önceki sürümlerden kalan H-01 ve H-02 numaralı SSE ve XSS hataları v2.6.1 ile çözülmüştür. Detaylar için DUZELTME_GECMISI.md dosyasına bakınız.)*
+| ID | Modül / Dosya | Durum | Not |
+| :--- | :--- | :--- | :--- |
+| — | — | ✅ Açık yüksek öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
+
+*(Geçmişteki yüksek öncelikli sorunlar (H-01, H-02, H-03 ve H-04) tamamen giderilmiştir; detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
