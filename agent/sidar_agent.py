@@ -281,49 +281,99 @@ class SidarAgent:
             # 2. JSON Ayrıştırma ve Yapısal Doğrulama (Pydantic)
             try:
                 raw_text = llm_response_accumulated.strip()
-
-                # JSONDecoder ile ilk geçerli JSON nesnesini bul (greedy regex yerine)
-                # Bu yaklaşım: birden fazla JSON bloğu veya gömülü kod olsa bile doğru olanı seçer
+                # JSONDecoder ile ilk geçerli JSON payload'u bul (object veya array)
                 _decoder = json.JSONDecoder()
-                json_match = None
-                _idx = raw_text.find('{')
-                while _idx != -1:
+                payload = None
+                for idx, ch in enumerate(raw_text):
+                    if ch not in "[{":
+                        continue
                     try:
-                        json_match, _ = _decoder.raw_decode(raw_text, _idx)
+                        payload, _ = _decoder.raw_decode(raw_text, idx)
                         break
                     except json.JSONDecodeError:
-                        _idx = raw_text.find('{', _idx + 1)
+                        continue
 
-                if json_match is None:
-                    raise ValueError("Yanıtın içerisinde süslü parantezlerle ( { ... } ) çevrili bir JSON objesi bulunamadı.")
+                if payload is None:
+                    raise ValueError("Yanıtın içerisinde geçerli bir JSON payload ( { ... } veya [ ... ] ) bulunamadı.")
 
-                # LLM bazen {"response": "..."} veya {"answer": "..."} formatı kullanıyor.
-                # Ayrıca {"project": "...", "version": "..."} gibi veri objeleri de döndürebilir.
-                # Bunları gracefully final_answer ToolCall'a normalize et.
-                if "tool" not in json_match:
-                    thought = json_match.pop("thought", "LLM doğrudan yanıt verdi.")
-                    # Bilinen alias varsa değerini al
-                    for alias in ("response", "answer", "result", "output", "content"):
-                        if alias in json_match:
+                action_list: List[ToolCall] = []
+                if isinstance(payload, list):
+                    if not payload:
+                        raise ValueError("Boş JSON liste döndürüldü.")
+                    action_list = [ToolCall.model_validate(item) for item in payload]
+                else:
+                    json_match = payload
+                    # LLM bazen {"response": "..."} veya {"answer": "..."} formatı kullanıyor.
+                    if "tool" not in json_match:
+                        thought = json_match.pop("thought", "LLM doğrudan yanıt verdi.")
+                        for alias in ("response", "answer", "result", "output", "content"):
+                            if alias in json_match:
+                                json_match = {
+                                    "thought": thought,
+                                    "tool": "final_answer",
+                                    "argument": str(json_match[alias]),
+                                }
+                                break
+                        else:
+                            summary = "\n".join(f"- **{k}:** {v}" for k, v in json_match.items())
                             json_match = {
                                 "thought": thought,
                                 "tool": "final_answer",
-                                "argument": str(json_match[alias]),
+                                "argument": summary,
                             }
-                            break
-                    else:
-                        # Alias yok → LLM veri objesi döndürdü (config değerleri vb.)
-                        # Tüm key-value çiftlerini okunabilir özet olarak sun.
-                        summary = "\n".join(f"- **{k}:** {v}" for k, v in json_match.items())
-                        json_match = {
-                            "thought": thought,
-                            "tool": "final_answer",
-                            "argument": summary,
-                        }
+                    action_list = [ToolCall.model_validate(json_match)]
 
-                # Pydantic ile doğrulama (Eksik veya hatalı tip varsa ValidationError fırlatır)
-                action_data = ToolCall.model_validate(json_match)
-                
+                # Çoklu ToolCall (JSON array) desteği: yalnızca güvenli okuma araçlarını paralel çalıştır.
+                if len(action_list) > 1:
+                    if any(a.tool == "final_answer" for a in action_list):
+                        messages = messages + [
+                            {"role": "assistant", "content": llm_response_accumulated},
+                            {"role": "user", "content": _FMT_SYS_ERR.format(msg="ToolCall listesinde final_answer yalnızca tek başına kullanılabilir.")},
+                        ]
+                        continue
+
+                    unsafe = [a.tool for a in action_list if a.tool not in self._AUTO_PARALLEL_SAFE]
+                    if unsafe:
+                        messages = messages + [
+                            {"role": "assistant", "content": llm_response_accumulated},
+                            {"role": "user", "content": _FMT_SYS_ERR.format(msg=f"JSON liste paralel yürütmede yalnızca okuma araçları desteklenir. Desteklenmeyen: {', '.join(sorted(set(unsafe)))}")},
+                        ]
+                        continue
+
+                    thought_summary = " | ".join(str(a.thought) for a in action_list)[:300].replace("\x00", " ")
+                    yield f"\x00THOUGHT:{thought_summary}\x00"
+                    for a in action_list:
+                        yield f"\x00TOOL:{a.tool}\x00"
+
+                    batch_results = await asyncio.gather(
+                        *[self._execute_tool(a.tool, a.argument) for a in action_list],
+                        return_exceptions=True,
+                    )
+
+                    lines = [f"[Paralel Araç Çalıştırma — {len(action_list)} adım]", ""]
+                    had_error = False
+                    for action, result in zip(action_list, batch_results):
+                        if isinstance(result, Exception) or result is None:
+                            had_error = True
+                            lines.append(f"❌ **{action.tool}**: {result}")
+                        else:
+                            snippet = str(result)[:700]
+                            suffix = "..." if len(str(result)) > 700 else ""
+                            lines.append(f"✓ **{action.tool}**:\n{snippet}{suffix}")
+                        lines.append("")
+                    tool_result = "\n".join(lines)
+
+                    _last_tool = "parallel_batch"
+                    _last_tool_result = tool_result[:2000]
+                    messages = messages + [
+                        {"role": "assistant", "content": llm_response_accumulated},
+                        {"role": "user", "content": _FMT_TOOL_OK.format(name="parallel_batch", result=tool_result)},
+                    ]
+                    if had_error:
+                        messages = messages + [{"role": "user", "content": _FMT_SYS_WARN.format(msg="Paralel adımlardan bazıları başarısız oldu; güvenli biçimde devam et veya final_answer üret.")}]
+                    continue
+
+                action_data = action_list[0]
                 tool_name = action_data.tool
                 tool_arg = action_data.argument
 
@@ -935,60 +985,13 @@ class SidarAgent:
         return f"[Alt Görev] Maksimum adım sayısına ({max_steps}) ulaşıldı veya görev tamamlanamadı."
 
     # Yalnızca okuma/sorgulama araçları paralel çalışabilir.
-    _PARALLEL_SAFE = frozenset({
+    _AUTO_PARALLEL_SAFE = frozenset({
         "list_dir", "ls", "read_file", "glob_search", "grep_files", "grep",
         "github_info", "github_read", "github_list_files", "github_commits",
         "github_search_code", "health", "audit", "todo_read", "get_config",
         "web_search", "pypi", "npm", "docs_search", "docs_list",
         "search_stackoverflow", "fetch_url",
     })
-
-    async def _tool_parallel(self, a: str) -> str:
-        """
-        Birden fazla okuma/sorgulama aracını eşzamanlı çalıştırır.
-        Claude Code'daki paralel araç çağrısı eşdeğeri.
-        Format: 'araç1:argüman1|||araç2:argüman2|||...'
-        Yalnızca güvenli (okuma) araçlar desteklenir.
-        """
-        if not a.strip():
-            return "⚠ Araç listesi belirtilmedi."
-
-        parts = [p.strip() for p in a.split("|||") if p.strip()]
-        if not parts:
-            return "⚠ Geçerli araç formatı bulunamadı."
-
-        tasks: list[tuple[str, str]] = []
-        for part in parts:
-            tool_name, _, tool_arg = part.partition(":")
-            tool_name = tool_name.strip()
-            if not tool_name:
-                continue
-            if tool_name not in self._PARALLEL_SAFE:
-                return (
-                    f"⚠ '{tool_name}' paralel çalıştırma için güvensiz. "
-                    f"İzinli araçlar: {', '.join(sorted(self._PARALLEL_SAFE))}"
-                )
-            tasks.append((tool_name, tool_arg.strip()))
-
-        if not tasks:
-            return "⚠ Çalıştırılacak geçerli araç bulunamadı."
-
-        results = await asyncio.gather(
-            *[self._execute_tool(name, arg) for name, arg in tasks],
-            return_exceptions=True,
-        )
-
-        lines = [f"[Paralel Çalıştırma — {len(tasks)} araç]", ""]
-        for (name, _), result in zip(tasks, results):
-            if isinstance(result, Exception):
-                lines.append(f"❌ **{name}**: {result}")
-            else:
-                snippet = str(result)[:600]
-                suffix  = "..." if result and len(str(result)) > 600 else ""
-                lines.append(f"✓ **{name}**:\n{snippet}{suffix}")
-            lines.append("")
-
-        return "\n".join(lines)
 
     # ── Kabuk Komutları (Shell) ─────────────────────────────────────────
 
