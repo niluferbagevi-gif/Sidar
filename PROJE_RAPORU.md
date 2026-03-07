@@ -8,23 +8,80 @@
 
 <a id="içindekiler"></a>
 ## İçindekiler
-1. [Proje Genel Bakışı](#1-proje-genel-bakışı)
-2. [Proje Dosya Yapısı](#2-proje-dosya-yapısı)
-3. [Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-4. [Mimari Değerlendirme](#4-mimari-değerlendirme)
-5. [Güvenlik Analizi](#5-güvenlik-analizi)
-6. [Test Kapsamı](#6-test-kapsamı)
-7. [Temel Bağımlılıklar](#7-temel-bağımlılıklar)
-8. [Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
-9. [Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
-10. [Veri Akış Diyagramı](#10-veri-akış-diyagramı)
-11. [Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
-12. [.env Tam Değişken Referansı](#12-env-tam-değişken-referansı)
-13. [Olası İyileştirmeler](#13-olası-iyileştirmeler)
-14. [Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)](#14-sonraki-versiyon-için-geliştirme-önerileri-v28)
-15. [Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
-16. [Hata Yönetimi ve Loglama Stratejisi](#16-hata-yönetimi-ve-loglama-stratejisi)
-17. [Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
+- [1. Proje Genel Bakışı](#1-proje-genel-bakışı)
+  - [Temel Özellikler](#temel-özellikler)
+- [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
+- [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
+  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-517-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
+  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-801-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1458-satır)
+  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-600-satır)
+  - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi](#38-corellm_clientpy--llm-istemcisi-340-satır)
+  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-380-satır)
+  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-858-satır)
+  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-280-satır)
+  - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-746-satır)
+  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-550-satır)
+  - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-420-satır)
+  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-352-satır)
+  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
+  - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-380-satır)
+  - [3.18 `web_ui/index.html` — Web Arayüzü](#318-web_uiindexhtml--web-arayüzü-3399-satır)
+  - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
+  - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
+- [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
+  - [4.1 Güçlü Yönler](#41-güçlü-yönler)
+  - [4.2 Kısıtlamalar](#42-kısıtlamalar)
+- [5. Güvenlik Analizi](#5-güvenlik-analizi)
+  - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
+  - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
+- [6. Test Kapsamı](#6-test-kapsamı)
+- [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
+- [8. Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
+- [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
+- [10. Veri Akış Diyagramı](#10-veri-akış-diyagramı)
+  - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
+  - [10.2 Bellek Yazma Yolu](#102-bellek-yazma-yolu)
+  - [10.3 RAG Belge Ekleme Yolu](#103-rag-belge-ekleme-yolu)
+- [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
+- [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
+  - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
+  - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
+  - [12.3 GPU / Donanım](#123-gpu--donanım)
+  - [12.4 Web Arayüzü](#124-web-arayüzü)
+  - [12.5 Web Arama](#125-web-arama)
+  - [12.6 RAG](#126-rag)
+  - [12.7 Hafıza ve ReAct](#127-hafıza-ve-react)
+  - [12.8 Loglama](#128-loglama)
+  - [12.9 Rate Limiting](#129-rate-limiting)
+  - [12.10 Çeşitli](#1210-çeşitli)
+- [13. Olası İyileştirmeler](#13-olası-iyileştirmeler)
+- [14. Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)](#14-sonraki-versiyon-için-geliştirme-önerileri-v28)
+  - [14.1 Çekirdek Mimari](#141-çekirdek-mimari)
+  - [14.2 LLM ve Ajan Katmanı](#142-llm-ve-ajan-katmanı)
+  - [14.3 RAG ve Bellek](#143-rag-ve-bellek)
+  - [14.4 Web Arayüzü ve API](#144-web-arayüzü-ve-api)
+  - [14.5 GitHub Entegrasyonu](#145-github-entegrasyonu)
+  - [14.6 Güvenlik ve İzleme](#146-güvenlik-ve-izleme)
+  - [14.7 Test ve Kalite](#147-test-ve-kalite)
+  - [14.8 Operasyon ve Dağıtım](#148-operasyon-ve-dağıtım)
+  - [14.9 Versiyon 2.8 İçin Önerilen Öncelik Sırası](#149-versiyon-28-için-önerilen-öncelik-sırası)
+- [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
+  - [15.1 Çekirdek Özellikler (Her Zaman Zorunlu)](#151-çekirdek-özellikler-her-zaman-zorunlu)
+  - [15.2 Arama ve Web](#152-arama-ve-web)
+  - [15.3 RAG (Belge Deposu)](#153-rag-belge-deposu)
+  - [15.4 Sistem İzleme ve GPU](#154-sistem-izleme-ve-gpu)
+  - [15.5 Kod Yürütme](#155-kod-yürütme)
+  - [15.6 Özellik Profilleri](#156-özellik-profilleri)
+- [16. Hata Yönetimi ve Loglama Stratejisi](#16-hata-yönetimi-ve-loglama-stratejisi)
+  - [16.1 Hata Yönetimi Kalıpları](#161-hata-yönetimi-kalıpları)
+  - [16.2 Loglama Stratejisi](#162-loglama-stratejisi)
+  - [16.3 Asenkron Hata Yönetimi](#163-asenkron-hata-yönetimi)
+  - [16.4 Bozuk Veri Karantinası](#164-bozuk-veri-karantinası)
+- [17. Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
 
 ---
 
@@ -982,20 +1039,14 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Kod tabanından çıkan teknik borç ve iyileştirme önerileri:
+> **Not:** v2.7.0 öncesi tespit edilen tüm Yüksek ve Orta öncelikli iyileştirmeler (`rag.py`, `sidar_agent.py`, `docker-compose.yml`, `memory.py` vb.) başarıyla tamamlanmış ve kod tabanına entegre edilmiştir. Çözülen sorunlar tablodan kaldırılmıştır.
+
+İleriki aşamalar (v2.8+) için kod tabanından çıkan ve planlanan mimari iyileştirme önerileri:
 
 | Öncelik | Alan | Öneri |
 |---------|------|-------|
-| Yüksek | `rag.py` | `_chunk_text()` içindeki geçici attribute değişikliği parametre olarak geçirilmeli; `self._chunk_size/_overlap` dokunulmamalı |
-| Yüksek | `sidar_agent.py` | `_instructions_cache` ve `_instructions_mtimes` `asyncio.Lock` ile korunmalı |
-| Yüksek | `docker-compose.yml` | Docker socket mount yalnızca REPL gerektiren servislerle sınırlandırılmalı |
-| Orta | `web_server.py` | Rate limiting Redis veya `cachetools` ile kalıcı hale getirilmeli |
-| Orta | `core/memory.py` | Token tahmini için `tiktoken` gibi gerçek bir tokenizer kullanılmalı |
-| Orta | `auto_handle.py` | `_MULTI_STEP_RE`'ye İngilizce çok adımlı kalıplar eklenmeli |
-| Orta | `github_manager.py` | `list_commits(n)` için `n > 30` uyarısı eklenmeli |
-| Düşük | `web_ui/index.html` | JS ve CSS ayrı dosyalara bölünmeli (`app.js`, `style.css`) |
-| Düşük | `config.py` | Test ortamı için `initialize_directories()` çağrısı `__main__` guard arkasına alınmalı |
-| Düşük | `rag.py` | `chunk_size == chunk_overlap` kenar durumu için koruyucu kontrol eklenmeli |
+| Düşük | `managers/web_search.py` | DuckDuckGo senkron API'si (`DDGS`) asenkrona çevrilmeli veya versiyonu sabitlenmeli. |
+| Düşük | `web_ui/index.html` | 3.399 satırlık dosya modülarize edilerek JS ve CSS ayrı dosyalara bölünmeli (`app.js`, `style.css`). |
 
 ---
 
