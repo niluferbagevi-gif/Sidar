@@ -1060,25 +1060,23 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.1 Çekirdek Mimari
 
+> **Durum Güncellemesi (v2.7.0):** Bu başlık altında yer alan önceki kritik maddeler tamamlanmıştır. Ayrıntılı uygulama özeti için [CHANGELOG.md](./CHANGELOG.md) dosyasına bakın.
+
 #### 14.1.1 Kalıcı Rate Limiting
-**Mevcut durum:** `web_server.py` `defaultdict` in-memory sayaç kullanıyor — sunucu yeniden başlayınca sıfırlanıyor.
-**Öneri:** `Redis` veya `cachetools.TTLCache` tabanlı kalıcı pencere. Tek bir `RateLimiter` sınıfına taşınması halinde web_server ve CLI paylaşabilir.
-**Etki:** Orta. Yalnızca dışa açık deploy senaryolarında kritik.
+**Güncel durum:** ✅ `web_server.py` tarafında `TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)` kullanıma alınmıştır.
+**Not (v2.8+):** İhtiyaç halinde dağıtık ortamlar için Redis tabanlı merkezi rate limiter değerlendirilebilir.
 
 #### 14.1.2 Gerçek Token Sayacı
-**Mevcut durum:** `memory.py` 3.5 karakter/token heuristic kullanıyor. Kod snippet'leri ağırlıklı konuşmalarda bu oran ~2'ye düşer; özetleme geç tetiklenir.
-**Öneri:** `tiktoken` (OpenAI tokenizer — model bağımsız çalışır) veya `transformers.AutoTokenizer` ile model spesifik sayım. Config'e `TOKENIZER_MODEL` eklenmeli.
-**Etki:** Yüksek. Bellek taşması ve bağlam kesme hatalarını azaltır.
+**Güncel durum:** ✅ `core/memory.py` içinde `tiktoken` entegrasyonu aktif; paket yoksa güvenli fallback korunuyor.
+**Not (v2.8+):** Model-spesifik tokenizer seçimi (`TOKENIZER_MODEL`) opsiyonel olarak eklenebilir.
 
-#### 14.1.3 Asenkron Lock ile Talimat Cache Koruması
-**Mevcut durum:** `sidar_agent.py:128-129` `_instructions_cache` ve `_instructions_mtimes` dict'leri `asyncio.Lock` olmadan kullanılıyor.
-**Öneri:** `asyncio.Lock` ile sarmalama; `_load_instructions()` metoduna taşıma.
-**Etki:** Yüksek. Web servisinde eşzamanlı iki istek aynı anda cache'i bozabilir.
+#### 14.1.3 Talimat Cache Koruması
+**Güncel durum:** ✅ `agent/sidar_agent.py` içinde `_instructions_cache` / `_instructions_mtimes` akışı `threading.Lock` ile korunuyor.
+**Not:** Bu kod yolu senkron dosya I/O yaptığı için mevcut `threading.Lock` seçimi mimari olarak uygundur.
 
 #### 14.1.4 Thread-Safe Chunking
-**Mevcut durum:** `rag.py:295-306` `_chunk_text()` geçici olarak `self._chunk_size/_overlap` attribute'larını değiştiriyor.
-**Öneri:** Chunk boyutlarını yerel parametre olarak geçirme; `self` üzerinde hiçbir yan etki yok.
-**Etki:** Yüksek. Eşzamanlı belge eklemelerinde sessiz veri bozulması riski.
+**Güncel durum:** ✅ `core/rag.py` içinde chunking parametreleri yerel değişkenlerle yönetiliyor; `self` üstünde geçici mutasyon yok.
+**Not:** Zorunlu bölme adımında `step = max(1, size - overlap)` koruması ile `ZeroDivisionError` riski giderilmiştir.
 
 ---
 
