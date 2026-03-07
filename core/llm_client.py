@@ -1,11 +1,14 @@
 """
 Sidar Project - LLM İstemcisi
-Ollama ve Google Gemini API entegrasyonu (Asenkron).
+Ollama, Google Gemini ve OpenAI API entegrasyonu (Asenkron, OOP tabanlı).
 """
 
+from __future__ import annotations
+
+import codecs
 import json
 import logging
-import codecs
+from abc import ABC, abstractmethod
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
@@ -13,160 +16,137 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-class LLMClient:
-    """Ollama veya Gemini üzerinden asenkron LLM çağrıları yapar."""
+def _ensure_json_text(text: str, provider: str) -> str:
+    """json_mode çağrılarında düz metin sızıntısını güvenli JSON'a çevir."""
+    try:
+        json.loads(text)
+        return text
+    except Exception:
+        return json.dumps(
+            {
+                "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
+                "tool": "final_answer",
+                "argument": text or "[UYARI] Sağlayıcı boş içerik döndürdü.",
+            }
+        )
 
-    def __init__(self, provider: str, config) -> None:
-        """
-        provider: "ollama" | "gemini"
-        config  : Config nesnesi
-        """
-        self.provider = provider.lower()
+
+async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
+    """Hata durumlarında tek elemanlı asenkron akış döndürür."""
+    yield msg
+
+
+class BaseLLMClient(ABC):
+    """LLM sağlayıcıları için soyut istemci arayüzü."""
+
+    def __init__(self, config) -> None:
         self.config = config
 
+    @abstractmethod
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> Union[str, AsyncIterator[str]]:
+        """Sağlayıcıya özel chat çağrısı."""
+
+
+class OllamaClient(BaseLLMClient):
+    """Ollama sağlayıcısı istemcisi."""
+
     @property
-    def _ollama_base_url(self) -> str:
-        """Ollama API kök URL'sini normalize eder (sondaki '/api' varsa kaldırır)."""
+    def base_url(self) -> str:
         return self.config.OLLAMA_URL.removesuffix("/api")
 
-    # ─────────────────────────────────────────────
-    #  ANA ÇAĞRI NOKTASI
-    # ─────────────────────────────────────────────
+    def _build_timeout(self) -> httpx.Timeout:
+        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
+        return httpx.Timeout(timeout_seconds, connect=10.0)
 
     async def chat(
         self,
         messages: List[Dict[str, str]],
         model: Optional[str] = None,
-        system_prompt: Optional[str] = None,
         temperature: float = 0.3,
         stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
-        """
-        Sohbet tamamlama isteği gönder (Asenkron).
+        target_model = model or getattr(self.config, "CODING_MODEL", "qwen2.5-coder:7b")
+        url = f"{self.base_url}/api/chat"
 
-        Args:
-            stream   : True ise yanıt parça parça (AsyncIterator) döner.
-            json_mode: True ise modeli JSON çıktıya zorlar (ReAct döngüsü için).
-                       Özetleme gibi düz metin gereken çağrılarda False geçin.
-        """
-        if system_prompt:
-            messages = [{"role": "system", "content": system_prompt}] + list(messages)
-
-        if self.provider == "ollama":
-            return await self._ollama_chat(messages, model or self.config.CODING_MODEL, temperature, stream, json_mode)
-        elif self.provider == "gemini":
-            return await self._gemini_chat(messages, temperature, stream, json_mode)
-        else:
-            raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
-
-    def _build_ollama_timeout(self) -> httpx.Timeout:
-        """Ollama istekleri için merkezi timeout profili."""
-        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
-        return httpx.Timeout(timeout_seconds, connect=10.0)
-
-    @staticmethod
-    def _ensure_json_text(text: str, provider: str) -> str:
-        """json_mode çağrılarında düz metin sızıntısını güvenli JSON'a çevir."""
-        try:
-            json.loads(text)
-            return text
-        except Exception:
-            return json.dumps({
-                "thought": f"{provider} sağlayıcısı JSON dışı içerik döndürdü.",
-                "tool": "final_answer",
-                "argument": text or "[UYARI] Sağlayıcı boş içerik döndürdü.",
-            })
-
-    # ─────────────────────────────────────────────
-    #  OLLAMA (ASYNC)
-    # ─────────────────────────────────────────────
-
-    async def _ollama_chat(
-        self,
-        messages: List[Dict[str, str]],
-        model: str,
-        temperature: float,
-        stream: bool,
-        json_mode: bool = True,
-    ) -> Union[str, AsyncIterator[str]]:
-        url = f"{self._ollama_base_url}/api/chat"
-
-        # Ollama options: GPU katman sayısını ilet (USE_GPU=true ise)
         options: dict = {"temperature": temperature}
-        use_gpu = getattr(self.config, "USE_GPU", False)
-        if use_gpu:
-            # num_gpu=-1 → Ollama tüm model katmanlarını GPU'ya atar (0 = CPU-only).
-            # GPU_DEVICE, hangi cihazın kullanılacağını belirtir; katman sayısını değil.
+        if getattr(self.config, "USE_GPU", False):
             options["num_gpu"] = -1
 
         payload = {
-            "model": model,
+            "model": target_model,
             "messages": messages,
             "stream": stream,
             "options": options,
         }
-        # Structured output: Ollama ≥0.4 JSON şeması destekler.
-        # ToolCall şeması ile modeli SADECE {thought, tool, argument} üretmeye zorla.
-        # Bu hallucination ve yanlış formatlı çıktıların önüne geçer.
         if json_mode:
             payload["format"] = {
                 "type": "object",
                 "properties": {
-                    "thought":  {"type": "string"},
-                    "tool":     {"type": "string"},
+                    "thought": {"type": "string"},
+                    "tool": {"type": "string"},
                     "argument": {"type": "string"},
                 },
                 "required": ["thought", "tool", "argument"],
                 "additionalProperties": False,
             }
-        
-        timeout = self._build_ollama_timeout()
-        
-        try:
-            # STREAM MODU
-            if stream:
-                return self._stream_ollama_response(url, payload, timeout=timeout)
 
-            # NORMAL MOD
+        timeout = self._build_timeout()
+        try:
+            if stream:
+                return self._stream_response(url, payload, timeout=timeout)
+
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 content = data.get("message", {}).get("content", "")
-                return self._ensure_json_text(content, "Ollama") if json_mode else content
+                return _ensure_json_text(content, "Ollama") if json_mode else content
 
         except httpx.ConnectError:
             logger.error("Ollama bağlantı hatası.")
-            msg = json.dumps({"tool": "final_answer", "argument": "[HATA] Ollama'ya bağlanılamadı. 'ollama serve' açık mı?", "thought": "Hata oluştu."})
-            return self._fallback_stream(msg) if stream else msg
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] Ollama'ya bağlanılamadı. 'ollama serve' açık mı?",
+                    "thought": "Hata oluştu.",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
         except Exception as exc:
             logger.error("Ollama hata: %s", exc)
-            msg = json.dumps({"tool": "final_answer", "argument": f"[HATA] Ollama: {exc}", "thought": "Hata oluştu."})
-            return self._fallback_stream(msg) if stream else msg
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] Ollama: {exc}",
+                    "thought": "Hata oluştu.",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
 
-    async def _stream_ollama_response(self, url: str, payload: dict, timeout: int = 120) -> AsyncGenerator[str, None]:
-        """
-        Ollama stream yanıtını manuel buffer ile güvenli şekilde ayrıştırır.
-
-        Sorun (aiter_lines): TCP paket sınırlarında JSON objesi ikiye bölünebilir;
-        JSONDecodeError ile atlanan satır sessizce içerik kaybına yol açar.
-
-        Çözüm: aiter_bytes() ile ham veri okunur, '\\n' karakterine göre satırlara
-        bölünür. Tamamlanmamış satır buffer'da bekletilir, tam satır gelince ayrıştırılır.
-        """
+    async def _stream_response(
+        self,
+        url: str,
+        payload: dict,
+        timeout: httpx.Timeout,
+    ) -> AsyncGenerator[str, None]:
+        """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream("POST", url, json=payload) as resp:
                     resp.raise_for_status()
                     buffer = ""
-                    # UTF-8 incremental decoder, paketler arası bölünmüş multibyte
-                    # karakterleri güvenli şekilde birleştirir.
                     utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
                     async for raw_bytes in resp.aiter_bytes():
                         decoded = utf8_decoder.decode(raw_bytes, final=False)
                         buffer += decoded
-                        # Tamamlanmış satırları işle; son (henüz bitmemiş) satır buffer'da kalır
                         while "\n" in buffer:
                             line, buffer = buffer.split("\n", 1)
                             line = line.strip()
@@ -179,7 +159,7 @@ class LLMClient:
                                     yield chunk
                             except json.JSONDecodeError:
                                 continue
-                    # Stream bittiğinde decoder içinde kalan parçayı boşalt
+
                     trailing = utf8_decoder.decode(b"", final=True)
                     if trailing:
                         buffer += trailing
@@ -195,7 +175,7 @@ class LLMClient:
                                     yield chunk
                             except json.JSONDecodeError:
                                 continue
-                    # Akış newline ile bitmezse buffer'da kalan son JSON satırını da işle.
+
                     if buffer.strip():
                         try:
                             body = json.loads(buffer)
@@ -205,32 +185,70 @@ class LLMClient:
                         except json.JSONDecodeError:
                             pass
         except Exception as exc:
-            yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Akış kesildi: {exc}", "thought": "Hata"})
+            yield json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"\n[HATA] Akış kesildi: {exc}",
+                    "thought": "Hata",
+                }
+            )
 
-    # ─────────────────────────────────────────────
-    #  GEMINI (ASYNC)
-    # ─────────────────────────────────────────────
+    async def list_models(self) -> List[str]:
+        url = f"{self.base_url}/api/tags"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                models = resp.json().get("models", [])
+                return [m["name"] for m in models]
+        except Exception:
+            return []
 
-    async def _gemini_chat(
+    async def is_available(self) -> bool:
+        url = f"{self.base_url}/api/tags"
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.get(url)
+                return True
+        except Exception:
+            return False
+
+
+class GeminiClient(BaseLLMClient):
+    """Gemini sağlayıcısı istemcisi."""
+
+    async def chat(
         self,
         messages: List[Dict[str, str]],
-        temperature: float,
-        stream: bool,
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
         try:
             import google.generativeai as genai
         except ImportError:
-            msg = json.dumps({"tool": "final_answer", "argument": "[HATA] 'google-generativeai' kurulu değil.", "thought": "Paket eksik"})
-            return self._fallback_stream(msg) if stream else msg
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] 'google-generativeai' kurulu değil.",
+                    "thought": "Paket eksik",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
 
         if not self.config.GEMINI_API_KEY:
-            msg = json.dumps({"tool": "final_answer", "argument": "[HATA] GEMINI_API_KEY ayarlanmamış.", "thought": "Key eksik"})
-            return self._fallback_stream(msg) if stream else msg
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] GEMINI_API_KEY ayarlanmamış.",
+                    "thought": "Key eksik",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
 
         genai.configure(api_key=self.config.GEMINI_API_KEY)
 
-        # Sistem mesajını ayır
         system_text = ""
         chat_messages = []
         for m in messages:
@@ -244,9 +262,9 @@ class LLMClient:
             "response_mime_type": "application/json" if json_mode else "text/plain",
         }
 
-        safety_settings = None
         try:
             from google.generativeai.types import HarmBlockThreshold, HarmCategory
+
             safety_settings = {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -254,7 +272,6 @@ class LLMClient:
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
             }
         except Exception:
-            # Sürüm uyumsuzluğu durumunda güvenli fallback (SDK string mapping)
             safety_settings = {
                 "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
                 "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
@@ -262,14 +279,13 @@ class LLMClient:
                 "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
             }
 
-        model = genai.GenerativeModel(
-            model_name=self.config.GEMINI_MODEL,
+        gm = genai.GenerativeModel(
+            model_name=model or self.config.GEMINI_MODEL,
             system_instruction=system_text or None,
             generation_config=gen_config,
             safety_settings=safety_settings,
         )
 
-        # Gemini history formatı
         history = []
         last_user = None
         for m in chat_messages:
@@ -283,60 +299,216 @@ class LLMClient:
 
         if not last_user and chat_messages:
             last_user = chat_messages[-1]["content"]
-        
         prompt = last_user or "Merhaba"
 
         try:
-            chat_session = model.start_chat(history=history[:-1] if history else [])
-            
+            chat_session = gm.start_chat(history=history[:-1] if history else [])
             if stream:
-                # Gemini asenkron çağrısı: send_message_async
                 response_stream = await chat_session.send_message_async(prompt, stream=True)
                 return self._stream_gemini_generator(response_stream)
-            else:
-                response = await chat_session.send_message_async(prompt)
-                text = getattr(response, "text", "") or ""
-                return self._ensure_json_text(text, "Gemini") if json_mode else text
+
+            response = await chat_session.send_message_async(prompt)
+            text = getattr(response, "text", "") or ""
+            return _ensure_json_text(text, "Gemini") if json_mode else text
 
         except Exception as exc:
             logger.error("Gemini hata: %s", exc)
-            msg = json.dumps({"tool": "final_answer", "argument": f"[HATA] Gemini: {exc}", "thought": "Hata"})
-            return self._fallback_stream(msg) if stream else msg
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] Gemini: {exc}",
+                    "thought": "Hata",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
 
     async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
-        """Gemini stream yanıtını asenkron dönüştürür."""
         try:
             async for chunk in response_stream:
                 text = getattr(chunk, "text", "")
                 if text:
                     yield text
         except Exception as exc:
-            yield json.dumps({"tool": "final_answer", "argument": f"\n[HATA] Gemini akış hatası: {exc}", "thought": "Hata"})
+            yield json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"\n[HATA] Gemini akış hatası: {exc}",
+                    "thought": "Hata",
+                }
+            )
 
-    async def _fallback_stream(self, msg: str) -> AsyncGenerator[str, None]:
-        """Hata durumlarında tek elemanlı asenkron akış döndürür."""
-        yield msg
 
-    # ─────────────────────────────────────────────
-    #  YARDIMCILAR (ASYNC)
-    # ─────────────────────────────────────────────
+class OpenAIClient(BaseLLMClient):
+    """OpenAI Chat Completions istemcisi (opsiyonel sağlayıcı)."""
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> Union[str, AsyncIterator[str]]:
+        api_key = getattr(self.config, "OPENAI_API_KEY", "")
+        if not api_key:
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] OPENAI_API_KEY ayarlanmamış.",
+                    "thought": "Key eksik",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
+
+        model_name = model or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini")
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {"Authorization": f"Bearer {api_key}"}
+        timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
+
+        try:
+            if stream:
+                payload["stream"] = True
+                return self._stream_openai(payload, headers, timeout, json_mode)
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                content = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+                return _ensure_json_text(content, "OpenAI") if json_mode else content
+        except Exception as exc:
+            logger.error("OpenAI hata: %s", exc)
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] OpenAI: {exc}",
+                    "thought": "Hata",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
+
+    async def _stream_openai(
+        self,
+        payload: dict,
+        headers: dict,
+        timeout: httpx.Timeout,
+        json_mode: bool,
+    ) -> AsyncGenerator[str, None]:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.openai.com/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            body = json.loads(data)
+                            delta = body.get("choices", [{}])[0].get("delta", {})
+                            text = delta.get("content", "")
+                            if text:
+                                yield text
+                        except json.JSONDecodeError:
+                            continue
+        except Exception as exc:
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"\n[HATA] OpenAI akış hatası: {exc}",
+                    "thought": "Hata",
+                }
+            )
+            yield _ensure_json_text(msg, "OpenAI") if json_mode else msg
+
+
+class LLMClient:
+    """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
+
+    def __init__(self, provider: str, config) -> None:
+        self.provider = provider.lower()
+        self.config = config
+
+        if self.provider == "ollama":
+            self._client: BaseLLMClient = OllamaClient(config)
+        elif self.provider == "gemini":
+            self._client = GeminiClient(config)
+        elif self.provider == "openai":
+            self._client = OpenAIClient(config)
+        else:
+            raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
+
+    @property
+    def _ollama_base_url(self) -> str:
+        """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
+        if isinstance(self._client, OllamaClient):
+            return self._client.base_url
+        return self.config.OLLAMA_URL.removesuffix("/api")
+
+    def _build_ollama_timeout(self) -> httpx.Timeout:
+        """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
+        if isinstance(self._client, OllamaClient):
+            return self._client._build_timeout()
+        timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
+        return httpx.Timeout(timeout_seconds, connect=10.0)
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> Union[str, AsyncIterator[str]]:
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}] + list(messages)
+        return await self._client.chat(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            stream=stream,
+            json_mode=json_mode,
+        )
 
     async def list_ollama_models(self) -> List[str]:
-        url = f"{self._ollama_base_url}/api/tags"
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                models = resp.json().get("models", [])
-                return [m["name"] for m in models]
-        except Exception:
-            return []
+        if isinstance(self._client, OllamaClient):
+            return await self._client.list_models()
+        return []
 
     async def is_ollama_available(self) -> bool:
-        url = f"{self._ollama_base_url}/api/tags"
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                await client.get(url)
-                return True
-        except Exception:
-            return False  
+        if isinstance(self._client, OllamaClient):
+            return await self._client.is_available()
+        return False
+
+    async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
+        """Test/geri uyumluluk için Gemini stream dönüştürücüsünü dışa aç."""
+        if isinstance(self._client, GeminiClient):
+            async for chunk in self._client._stream_gemini_generator(response_stream):
+                yield chunk
+            return
+
+        async for chunk in GeminiClient(self.config)._stream_gemini_generator(response_stream):
+            yield chunk
