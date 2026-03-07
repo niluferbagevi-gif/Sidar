@@ -292,16 +292,13 @@ sidar_project/
 <a id="6-orta-oncelikli-sorunlar"></a>
 ## 6. Orta Öncelikli Sorunlar (Medium Priority)
 
-> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, v2.7.0 itibarıyla sistemin kararlılığını, güvenliğini ve operasyonel deneyimini etkileyen yeni orta öncelikli sorunlar tespit edilmiştir.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif orta öncelikli hata bulunmamaktadır**. M-01, M-02 ve M-03 bulguları kapatılmış, M-04 ise bir güvenlik prensibi (Safe Sync) olarak kabul edilip mimariye dahil edilmiştir.
 
-| ID | Modül / Dosya | Hata Açıklaması | Çözüm Önerisi |
+| ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| **M-01** | `managers/todo_manager.py` | ✅ **KAPATILDI:** `todos.json` kalıcılığı ve UTF-8 güvenli kayıt/geri yükleme mekanizması eklendi. | İzleme: dosya bozulması senaryoları için otomatik kurtarma metrikleri izlenebilir. |
-| **M-02** | `config.py` | ✅ **KAPATILDI:** Donanım tespiti import anından çıkarılıp lazy-init akışına taşındı; `Config` ilk kullanımında yükleniyor. | İzleme: ilk kullanım gecikmesi sadece GPU açık senaryolarda oluşur. |
-| **M-03** | `managers/security.py` | ✅ **KAPATILDI:** `can_read()` içinde kök dizin sınırı (`is_path_under`) zorunlu kılınarak path traversal yüzeyi daraltıldı. | İzleme: gerektiğinde allowlist tabanlı alt dizin politikası eklenebilir. |
-| **M-04** | `github_upload.py` | **Push çakışmalarında kullanıcı onayı zorunluluğu:** Otomatik birleştirme sadece kullanıcı açık onay verirse çalıştırılır; aksi durumda süreç güvenli şekilde durdurulur. | Bu davranış korunmalı, kullanıcı onayı olmayan birleştime adımları engellenmeye devam edilmelidir. |
+| — | — | ✅ Açık orta öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
 
-*(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
+*(Geçmişte tespit edilen M-01, M-02, M-03, M-04 ile N ve O serisi kodlu sorunlar tamamen giderilmiş veya tasarıma bağlanmıştır. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
