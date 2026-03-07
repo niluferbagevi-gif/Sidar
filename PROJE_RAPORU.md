@@ -1168,4 +1168,231 @@ FastAPI `StaticFiles` middleware ile servis edilebilir.
 
 ---
 
+## 15. Özellik-Gereksinim Matrisi
+
+Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılandırılmış olması gerektiğini gösterir.
+
+### 15.1 Çekirdek Özellikler (Her Zaman Zorunlu)
+
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
+|---------|----------------------|----------------|
+| CLI arayüzü | Python ≥ 3.10, `httpx`, `python-dotenv` | — |
+| Web arayüzü | `fastapi`, `uvicorn`, `httpx` | `WEB_PORT` (opsiyonel) |
+| Ollama LLM | `httpx` + **çalışan `ollama serve`** | `OLLAMA_URL`, `CODING_MODEL` |
+| Gemini LLM | `google-generativeai` | `GEMINI_API_KEY`, `GEMINI_MODEL` |
+| Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) |
+| Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` |
+| GitHub entegrasyonu | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO` |
+| Proje denetimi (`audit`) | — (stdlib: `ast`, `pathlib`) | — |
+
+### 15.2 Arama ve Web
+
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
+|---------|----------------------|----------------|
+| Tavily web arama | `httpx` | `TAVILY_API_KEY` |
+| Google Custom Search | `httpx` | `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX` |
+| DuckDuckGo (fallback) | `duckduckgo-search` | — |
+| URL içerik çekme | `httpx`, `beautifulsoup4` | `WEB_FETCH_TIMEOUT` (opsiyonel) |
+| PyPI sorgulama | `httpx`, `packaging` | — |
+| npm sorgulama | `httpx` | — |
+
+### 15.3 RAG (Belge Deposu)
+
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
+|---------|----------------------|----------------|
+| Keyword arama (fallback) | — (stdlib) | — |
+| BM25 arama | `rank_bm25` | — |
+| Vektör arama (CPU) | `chromadb` | `RAG_DIR` (opsiyonel) |
+| Vektör arama (GPU) | `chromadb`, `sentence-transformers`, `torch` (CUDA) | `USE_GPU=true`, `GPU_DEVICE` |
+| GPU FP16 embedding | yukarıdaki + `torch.amp` | `GPU_MIXED_PRECISION=true` |
+| HuggingFace model cache | `sentence-transformers` | `HF_TOKEN` (opsiyonel) |
+| HF çevrimdışı mod | — | `HF_HUB_OFFLINE=true` |
+
+### 15.4 Sistem İzleme ve GPU
+
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
+|---------|----------------------|----------------|
+| CPU/RAM izleme | `psutil` | — |
+| CUDA tespiti | `torch` | — |
+| GPU sıcaklık / kullanım | `pynvml` | — |
+| VRAM fraksiyonu ayarı | `torch` | `GPU_MEMORY_FRACTION` |
+| Mixed precision | `torch` ≥ 1.6 | `GPU_MIXED_PRECISION=true` |
+| WSL2 GPU erişimi | Windows NVIDIA sürücüsü + CUDA 12.x wheel | — |
+
+### 15.5 Kod Yürütme
+
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
+|---------|----------------------|----------------|
+| Docker REPL (izolasyon) | `docker` SDK + **çalışan Docker daemon** | `DOCKER_PYTHON_IMAGE` (opsiyonel) |
+| Subprocess REPL (fallback) | — (stdlib) | `ACCESS_LEVEL=sandbox\|full` |
+| Shell komutu (`run_shell`) | — (stdlib) | `ACCESS_LEVEL=full` |
+
+### 15.6 Özellik Profilleri
+
+Minimum kurulum senaryolarına göre gereken paket kümeleri:
+
+| Profil | Gerekli Paketler |
+|--------|-----------------|
+| **Minimal CLI** (Ollama + keyword RAG) | `httpx`, `python-dotenv`, `pydantic`, `beautifulsoup4`, `packaging` |
+| **Tam CLI** (+ BM25 + GitHub + web arama) | yukarıdaki + `rank_bm25`, `PyGithub`, `duckduckgo-search` |
+| **Web Sunucu** | yukarıdaki + `fastapi`, `uvicorn` |
+| **GPU RAG** | yukarıdaki + `chromadb`, `sentence-transformers`, `torch` (CUDA) |
+| **Gemini Modu** | yukarıdaki + `google-generativeai` |
+| **Tam Deploy** | tüm opsiyonel dahil + Docker + Redis (ileride) |
+
+---
+
+## 16. Hata Yönetimi ve Loglama Stratejisi
+
+### 16.1 Hata Yönetimi Kalıpları
+
+Kod tabanı boyunca üç farklı hata yönetimi deseni kullanılmaktadır:
+
+**1. Tuple Dönüş Deseni** (`Tuple[bool, str]`)
+Araçların ve manager metodlarının büyük çoğunluğu `(başarı, mesaj)` tuple'ı döndürür. İstisna dışarıya sızmaz; hata durumu dönüş değerinden okunur. Bu, ReAct döngüsünün araç hatasını kolayca işlemesini sağlar.
+```
+(True, "sonuç metni")   → başarı
+(False, "hata mesajı")  → hata
+```
+Kullanım yeri: `CodeManager`, `GitHubManager`, `WebSearchManager`, `DocumentStore`, `TodoManager`
+
+**2. Loglama + Sessiz Fallback**
+Opsiyonel bağımlılıklar (ChromaDB, BM25, psutil, pynvml, torch) yüklenemezse sistem çökmez; `logger.warning` ile kayıt alınır ve bir sonraki motora/moda geçilir.
+```
+ChromaDB başlatılamadı → _chroma_available = False → BM25'e düş
+BM25 yok              → _bm25_available = False   → Keyword'e düş
+```
+Kullanım yeri: `DocumentStore.__init__`, `SystemHealthManager.__init__`
+
+**3. Fail-Closed Güvenlik Deseni**
+Güvenlik kararlarında belirsizlik varsa operasyon reddedilir. Erişim seviyesi tanımsızsa `sandbox`'a normalize edilir. Fernet anahtarı geçersizse `ValueError` ile sistem başlatılmaz.
+```
+bilinmeyen seviye → sandbox (daha kısıtlayıcı)
+geçersiz şifreleme anahtarı → ValueError, sistem durur
+```
+Kullanım yeri: `SecurityManager`, `ConversationMemory`
+
+### 16.2 Loglama Stratejisi
+
+| Seviye | Ne Zaman Kullanılır | Örnekler |
+|--------|--------------------|---------|
+| `DEBUG` | Geliştirici detayları, başarılı rutin işlemler | Dizin hazır, VRAM fraksiyon atlandı |
+| `INFO` | Başarılı sistem olayları | GPU aktif, ChromaDB başlatıldı, belge eklendi |
+| `WARNING` | Düşürülmüş modda çalışma, eksik opsiyonel bağımlılık | PyTorch yok, Ollama'ya ulaşılamadı |
+| `ERROR` | Başarısız operasyon, kullanıcıya görünür hata | Dizin oluşturulamadı, ChromaDB hatası, geçersiz API key |
+
+**Logger İsimlendirme Tutarlılığı:**
+- `config.py` → `Sidar.Config`
+- Diğer tüm modüller → `logging.getLogger(__name__)` (modül adı)
+
+**RotatingFileHandler:** 10 MB / 5 yedek, UTF-8 — Türkçe log mesajları güvenle yazılır.
+
+### 16.3 Asenkron Hata Yönetimi
+
+`AutoHandle` içindeki her araç çağrısı `asyncio.wait_for()` ile `AUTO_HANDLE_TIMEOUT` (12 sn) içine alınmıştır. `TimeoutError` yakalanarak kullanıcıya anlamlı mesaj döndürülür; event loop bloklanmaz.
+
+ReAct döngüsünde araç exception'ı `_FMT_TOOL_ERR` formatına sarılarak belleğe yazılır ve LLM'e iletilir. LLM bir sonraki adımda farklı strateji deneyebilir.
+
+### 16.4 Bozuk Veri Karantinası
+
+`ConversationMemory` JSON okuma hatası veya şifre çözme başarısızlığı durumunda dosyayı `.json.broken` uzantısıyla yeniden adlandırır ve temiz bir oturum başlatır. 7 günden eski `.broken` dosyaları (en fazla 50 tutulur) otomatik temizlenir. Bu mekanizma disk üzerindeki kalıcı veri bozulmasının sistemi tamamen durdurmasını önler.
+
+---
+
+## 17. Yaygın Sorunlar ve Çözümleri
+
+Kodun incelenmesinden türetilen, gerçek kullanıcı senaryolarında karşılaşılması muhtemel sorunlar ve kodu okuyarak tespit edilen kökenleri.
+
+### 17.1 Ollama Bağlantı Sorunları
+
+**Belirti:** `⚠️ Ollama'ya ulaşılamadı` uyarısı; LLM yanıt vermiyor.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| `ollama serve` çalışmıyor | `config.py:437` httpx bağlantı hatası | `ollama serve` komutunu çalıştır |
+| `OLLAMA_URL` yanlış | `.env` veya varsayılan `http://localhost:11434/api` | URL'yi kontrol et, `/api` son ekini dahil et |
+| Timeout çok kısa | `OLLAMA_TIMEOUT=30` büyük modelde yetersiz | `.env`'de `OLLAMA_TIMEOUT=120` yap |
+| Model adı hatalı | `CODING_MODEL` / `TEXT_MODEL` | `ollama list` ile mevcut modelleri kontrol et |
+
+### 17.2 GPU / CUDA Sorunları
+
+**Belirti:** `CUDA bulunamadı — CPU modunda çalışılacak` veya embedding çok yavaş.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| PyTorch CUDA wheel kurulmamış | `config.py:174` | `pip install torch --index-url https://download.pytorch.org/whl/cu124` |
+| WSL2 + Windows sürücüsü eski | `config.py:130-131` WSL2 tespiti | NVIDIA Windows sürücüsünü güncelle |
+| `USE_GPU=false` ayarı | `config.py:133` | `.env`'de `USE_GPU=true` yap |
+| `GPU_MEMORY_FRACTION` aralık dışı | `config.py:151-157` | 0.1–1.0 arasında değer ver |
+
+### 17.3 ChromaDB / RAG Sorunları
+
+**Belirti:** Vektör arama çalışmıyor; `BM25'e düşülüyor` logu.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| `chromadb` kurulmamış | `rag.py:129` import kontrolü | `pip install chromadb` |
+| `sentence-transformers` yok | `rag.py:46` GPU embedding başlatma | `pip install sentence-transformers` |
+| `all-MiniLM-L6-v2` indirilmemiş | İlk belgede uzun bekleme | `PRECACHE_RAG_MODEL=true` ile Docker build, veya `HF_HUB_OFFLINE=false` |
+| ChromaDB versiyon uyumsuzluğu | `rag.py:201` başlatma hatası | `pip install chromadb --upgrade` |
+| `chunk_size < chunk_overlap` | `rag.py:246` mantık hatası | `RAG_CHUNK_OVERLAP < RAG_CHUNK_SIZE` olduğundan emin ol |
+
+### 17.4 Docker REPL Sorunları
+
+**Belirti:** `execute_code` çalışmıyor; subprocess fallback devreye giriyor.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| Docker daemon çalışmıyor | `code_manager.py:_init_docker` | `docker ps` ile kontrol et, daemon'ı başlat |
+| WSL2 socket yolu hatalı | `code_manager.py` WSL2 socket fallback | Docker Desktop'ı kur veya `DOCKER_HOST` ayarla |
+| `python:3.11-alpine` imajı yok | İlk çalıştırmada uzun bekleme | `docker pull python:3.11-alpine` önceden çek |
+| Zaman aşımı çok kısa | `DOCKER_EXEC_TIMEOUT=10` | Uzun hesaplamalar için artır |
+| `ACCESS_LEVEL=restricted` | `security.py` erişim kontrolü | Seviyeyi `sandbox` veya `full` yap |
+
+### 17.5 Bellek / Şifreleme Sorunları
+
+**Belirti:** `ValueError: MEMORY_ENCRYPTION_KEY geçersiz` veya oturum yüklenemiyor.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| Geçersiz Fernet anahtarı | `config.py:411-420` | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` ile yeni anahtar üret |
+| `cryptography` kurulmamış | `config.py:421-427` | `pip install cryptography` |
+| Eski şifresiz dosyalar | `memory.py` geçiş modu | Eski oturumlar `.broken` olarak işaretlenir; veri kaybı riski — yedekle |
+| `data/sessions/` izin sorunu | `memory.py` write hatası | Dizin yazma izinlerini kontrol et |
+
+### 17.6 GitHub Entegrasyon Sorunları
+
+**Belirti:** `⚠ GitHub token ayarlanmamış` veya repo bulunamadı.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| `GITHUB_TOKEN` boş | `github_manager.py:61` | GitHub Settings → Developer settings → Personal access tokens |
+| Token yetkileri yetersiz | PyGithub 403 hatası | Token'a `repo`, `read:org` scopelarını ekle |
+| `GITHUB_REPO` formatı hatalı | `github_manager.py:80` | `owner/repo-name` formatında yaz |
+| Binary dosya okuma girişimi | `github_manager.py:33` whitelist | Yalnızca metin uzantılı dosyalar okunabilir |
+| Commit limiti aşıldı | `github_manager.py:296` | Maksimum 30 commit; daha fazlası sessizce kesilir |
+
+### 17.7 Web Sunucu Sorunları
+
+**Belirti:** Rate limit hatası, CORS hatası veya SSE bağlantısı kopuyor.
+
+| Olası Neden | Nereden Anlaşılır | Çözüm |
+|-------------|-------------------|-------|
+| Rate limit aşıldı | `web_server.py:83` | `RATE_LIMIT_CHAT` değerini artır veya sunucuyu yeniden başlat |
+| CORS reddedildi | `web_server.py:66` | Yalnızca localhost kökeninden erişilebilir; proxy için CORS origins güncelle |
+| Port kullanımda | `uvicorn` bind hatası | `WEB_PORT` farklı bir değere ayarla |
+| SSE bağlantısı kopuyor | `anyio.ClosedResourceError` — zaten yönetiliyor | İstemci tarafı yeniden bağlanma mantığı ekle |
+
+### 17.8 `.env` Dosyası Sorunları
+
+**Belirti:** `⚠️ '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.`
+
+| Olası Neden | Çözüm |
+|-------------|-------|
+| `.env` dosyası yok | `.env.example`'ı kopyala: `cp .env.example .env` |
+| `.env` proje kökünde değil | `config.py:28` `BASE_DIR / ".env"` yolunu kullanır — dosyayı proje köküne taşı |
+| Boolean değer yanlış formatda | `get_bool_env` yalnızca `true/1/yes/on` kabul eder (büyük-küçük harf bağımsız) |
+
+---
+
 *Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmıştır.*
