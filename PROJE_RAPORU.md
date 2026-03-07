@@ -973,4 +973,199 @@ Kod tabanından çıkan teknik borç ve iyileştirme önerileri:
 
 ---
 
+## 14. Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)
+
+Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarılan somut geliştirme hedeflerini kapsar. Her madde bağımsız bir özellik olarak ele alınabilir.
+
+---
+
+### 14.1 Çekirdek Mimari
+
+#### 14.1.1 Kalıcı Rate Limiting
+**Mevcut durum:** `web_server.py` `defaultdict` in-memory sayaç kullanıyor — sunucu yeniden başlayınca sıfırlanıyor.
+**Öneri:** `Redis` veya `cachetools.TTLCache` tabanlı kalıcı pencere. Tek bir `RateLimiter` sınıfına taşınması halinde web_server ve CLI paylaşabilir.
+**Etki:** Orta. Yalnızca dışa açık deploy senaryolarında kritik.
+
+#### 14.1.2 Gerçek Token Sayacı
+**Mevcut durum:** `memory.py` 3.5 karakter/token heuristic kullanıyor. Kod snippet'leri ağırlıklı konuşmalarda bu oran ~2'ye düşer; özetleme geç tetiklenir.
+**Öneri:** `tiktoken` (OpenAI tokenizer — model bağımsız çalışır) veya `transformers.AutoTokenizer` ile model spesifik sayım. Config'e `TOKENIZER_MODEL` eklenmeli.
+**Etki:** Yüksek. Bellek taşması ve bağlam kesme hatalarını azaltır.
+
+#### 14.1.3 Asenkron Lock ile Talimat Cache Koruması
+**Mevcut durum:** `sidar_agent.py:128-129` `_instructions_cache` ve `_instructions_mtimes` dict'leri `asyncio.Lock` olmadan kullanılıyor.
+**Öneri:** `asyncio.Lock` ile sarmalama; `_load_instructions()` metoduna taşıma.
+**Etki:** Yüksek. Web servisinde eşzamanlı iki istek aynı anda cache'i bozabilir.
+
+#### 14.1.4 Thread-Safe Chunking
+**Mevcut durum:** `rag.py:295-306` `_chunk_text()` geçici olarak `self._chunk_size/_overlap` attribute'larını değiştiriyor.
+**Öneri:** Chunk boyutlarını yerel parametre olarak geçirme; `self` üzerinde hiçbir yan etki yok.
+**Etki:** Yüksek. Eşzamanlı belge eklemelerinde sessiz veri bozulması riski.
+
+---
+
+### 14.2 LLM ve Ajan Katmanı
+
+#### 14.2.1 Çoklu LLM Sağlayıcı Genişletmesi
+**Mevcut durum:** Ollama ve Gemini destekleniyor.
+**Öneri:** `LLMClient` soyut temel sınıfa dönüştürülmeli; yeni sağlayıcılar `OllamaClient`, `GeminiClient`, `OpenAIClient` şeklinde alt sınıf olarak eklenebilmeli.
+**Eklentiler:** Anthropic Claude API, OpenAI GPT-4o, Azure OpenAI, LM Studio (yerel REST).
+
+#### 14.2.2 Araç Tanımlarının Dışsallaştırılması
+**Mevcut durum:** Araç tablosu `sidar_agent.py` içindeki `_tools` dict'inde hardcoded.
+**Öneri:** Her araç `@tool(name, description, allowed_levels)` dekoratörü ile tanımlanmalı; araç kataloğu otomatik oluşturulmalı. `definitions.py`'deki sistem istemindeki araç listesi de otomatik güncellenebilir.
+**Etki:** Yeni araç ekleme sürtünmesini sıfıra indirir.
+
+#### 14.2.3 Paralel ReAct Adımları
+**Mevcut durum:** `parallel` aracı araçları eşzamanlı çalıştırıyor ancak LLM bunu her zaman doğru kullanmıyor.
+**Öneri:** Bağımsız alt görevleri LLM yerine ajan katmanı tespit edip otomatik olarak `asyncio.gather` ile paralel çalıştırmalı. Örneğin `read_file(a)` ve `read_file(b)` aynı anda çalışabilir.
+
+#### 14.2.4 Yapısal Araç Şeması (MCP Uyumu)
+**Mevcut durum:** Araç argümanı tek bir `str` — karmaşık araç çağrıları için JSON string kullanılıyor.
+**Öneri:** Her araç için Pydantic `BaseModel` giriş şeması; LLM JSON Schema ile yönlendirilmeli. Bu Model Context Protocol (MCP) standardıyla uyumlu hale getirir.
+
+---
+
+### 14.3 RAG ve Bellek
+
+#### 14.3.1 Hibrit Sıralama (RRF)
+**Mevcut durum:** `auto` modda ChromaDB → BM25 → Keyword kademeli fallback; kazanan motor tek başına sıralamayı belirliyor.
+**Öneri:** Reciprocal Rank Fusion (RRF) ile ChromaDB ve BM25 sonuçlarını birleştirme. Her iki motorun bulguları ağırlıklı olarak birleştirilir; tek motor yetersizliği azalır.
+
+#### 14.3.2 BM25 Corpus Ölçeklenebilirliği
+**Mevcut durum:** Tüm belgelerin token'ları RAM'de tutuluyor (`_bm25_corpus_tokens`). 10.000+ belge senaryosunda bellek basıncı oluşur.
+**Öneri:** SQLite FTS5 (tam metin arama) veya Whoosh ile disk tabanlı BM25 indeksi. Corpus RAM'de değil, disk üzerinde tutulur.
+
+#### 14.3.3 Çok Oturumlu RAG İzolasyonu
+**Mevcut durum:** Tüm oturumlar aynı ChromaDB koleksiyonunu (`sidar_knowledge_base`) paylaşıyor.
+**Öneri:** Oturum başına koleksiyon veya metadata filtresiyle (`session_id`) izolasyon. Kullanıcı A'nın eklediği belgeler kullanıcı B'nin aramasında çıkmamalı.
+
+#### 14.3.4 Bellek Özetleme Stratejisi Seçimi
+**Mevcut durum:** Özetleme tetiklendiğinde tüm geçmiş 2 mesaja indirgeniyor — bağlam kaybı riski yüksek.
+**Öneri:** Kayan pencere (sliding window): Son N tur tam korunur, öncesi özetlenir. Yapılandırılabilir `MEMORY_SUMMARY_KEEP_LAST` parametresi.
+
+---
+
+### 14.4 Web Arayüzü ve API
+
+#### 14.4.1 Web UI Modülarizasyonu
+**Mevcut durum:** `web_ui/index.html` tek 3399 satırlık dosya.
+**Öneri:** Dosya yapısı:
+```
+web_ui/
+├── index.html       (iskelet)
+├── app.js           (ana mantık)
+├── chat.js          (SSE ve mesaj render)
+├── sidebar.js       (oturum ve panel yönetimi)
+├── rag.js           (RAG arayüzü)
+└── style.css        (tema ve layout)
+```
+FastAPI `StaticFiles` middleware ile servis edilebilir.
+
+#### 14.4.2 WebSocket Desteği
+**Mevcut durum:** SSE (Server-Sent Events) tek yönlü akış; mesaj iptali için ayrı endpoint gerekiyor.
+**Öneri:** FastAPI WebSocket ile çift yönlü kanal. Kullanıcı mesajı iptal edebilir; sunucu anlık durum güncellemesi gönderebilir.
+
+#### 14.4.3 OpenAPI Şema Belgelendirmesi
+**Mevcut durum:** FastAPI otomatik `/docs` oluşturuyor ancak endpoint açıklamaları eksik.
+**Öneri:** Her endpoint için `summary`, `description`, `response_model` ve `responses` parametrelerinin doldurulması. Harici entegrasyon kolaylaşır.
+
+#### 14.4.4 Kimlik Doğrulama
+**Mevcut durum:** Web API yalnızca CORS ile korunuyor; token veya session auth yok.
+**Öneri:** JWT tabanlı basit auth veya API key header (`X-API-Key`). `.env` üzerinden `API_KEY` konfigürasyonu. Özellikle dış ağa açık deploy için zorunlu.
+
+---
+
+### 14.5 GitHub Entegrasyonu
+
+#### 14.5.1 Webhook Desteği
+**Mevcut durum:** GitHub durumu yalnızca istek üzerine sorgulanıyor (pull model).
+**Öneri:** GitHub Webhook alıcısı eklenebilir (push, PR, issue eventi). Yeni commit'te otomatik RAG güncelleme veya bildirim.
+
+#### 14.5.2 Issue Yönetimi
+**Mevcut durum:** `github_manager.py` PR işlemlerini destekliyor; issue yok.
+**Öneri:** `create_issue`, `list_issues`, `comment_issue`, `close_issue` metodları. Ajan `todo_write` ile oluşturduğu görevi doğrudan GitHub Issue'ya bağlayabilir.
+
+#### 14.5.3 Diff Analizi
+**Mevcut durum:** `get_pr_files()` değişen dosyaları döndürüyor ama diff içeriğini değil.
+**Öneri:** `PyGithub` `get_files()` üzerinden unified diff alınması. LLM kod inceleme yorumu yapabilir.
+
+---
+
+### 14.6 Güvenlik ve İzleme
+
+#### 14.6.1 Docker Socket Riski Azaltma
+**Mevcut durum:** Tüm docker-compose servisleri `/var/run/docker.sock` mount ediyor.
+**Öneri:** Yalnızca REPL gerektiren servisler için socket mount; diğerleri için kaldırılmalı. Alternatif olarak `dockerd` rootless mod veya `sysbox` kullanımı.
+
+#### 14.6.2 Denetim Logu (Audit Log)
+**Mevcut durum:** Araç çağrıları yalnızca `logger.info` ile loglanıyor; yapısal değil.
+**Öneri:** Ayrı `audit.jsonl` dosyasına yapısal kayıt: `{timestamp, session_id, tool, argument, access_level, result_ok}`. Güvenlik denetimleri için sorgulanabilir.
+
+#### 14.6.3 Sandbox Çıktı Boyutu Limiti
+**Mevcut durum:** Docker REPL'in çıktı boyutuna açık limit yok.
+**Öneri:** `execute_code()` sonucunu `MAX_OUTPUT_CHARS` (örn. 10.000 karakter) ile kırpma. Bellek dolması ve UI donması riski azalır.
+
+#### 14.6.4 Güvenlik Seviyesi Geçiş Logu
+**Mevcut durum:** `set_provider_mode()` ve erişim seviyesi değişiklikleri loglanıyor ancak oturum bazında takip yok.
+**Öneri:** Seviye değişikliklerini oturum belleğine de yazmak; `[GÜVENLIK] Erişim seviyesi full → sandbox olarak değiştirildi` şeklinde izlenebilir.
+
+---
+
+### 14.7 Test ve Kalite
+
+#### 14.7.1 Entegrasyon Test Altyapısı
+**Mevcut durum:** 25 test modülü var ancak çoğu unit test; gerçek LLM ve Docker gerektiren testler yok.
+**Öneri:** `pytest-asyncio` ile asenkron test; `httpx.AsyncClient` ile web API testleri; `testcontainers-python` ile geçici ChromaDB ve Docker ortamı.
+
+#### 14.7.2 Test Coverage Hedefi
+**Mevcut durum:** Kapsam hedefi tanımlanmamış.
+**Öneri:** CI'da `pytest --cov=. --cov-fail-under=70` eşiği. `security.py`, `memory.py`, `rag.py` %80+ hedef.
+
+#### 14.7.3 Linting ve Tip Kontrolü
+**Mevcut durum:** Tip anotasyonları var ancak `mypy` / `ruff` konfigürasyonu yok.
+**Öneri:** `pyproject.toml` içine `ruff` (format + lint) ve `mypy --strict` konfigürasyonu. Pre-commit hook ile her commit'te otomatik çalıştırma.
+
+#### 14.7.4 Performans Benchmark
+**Mevcut durum:** RAG arama süresi, LLM ilk token gecikmesi (TTFT) ölçülmüyor.
+**Öneri:** `pytest-benchmark` ile kritik yollar için baseline ölçümü: ChromaDB sorgu < 200ms, BM25 sorgu < 50ms, AutoHandle regex < 5ms.
+
+---
+
+### 14.8 Operasyon ve Dağıtım
+
+#### 14.8.1 Sağlık Endpoint Genişletmesi
+**Mevcut durum:** `/health` metin yanıtı döndürüyor.
+**Öneri:** Yapısal JSON: `{status, version, uptime, llm_available, rag_doc_count, memory_sessions, gpu_info}`. Kubernetes liveness/readiness probe uyumlu.
+
+#### 14.8.2 Çevre Başına Konfigürasyon
+**Mevcut durum:** Tek `.env` dosyası.
+**Öneri:** `.env.development`, `.env.production`, `.env.test` desteği; `python-dotenv`'in `dotenv_values` zinciri ile birleştirme. Docker build-arg ile `ENV_FILE` override.
+
+#### 14.8.3 Gözlemlenebilirlik (Observability)
+**Mevcut durum:** Yalnızca dosya logu var.
+**Öneri:** OpenTelemetry ile trace ID; her LLM çağrısı bir span olarak izlenir. Grafana/Jaeger entegrasyonu isteğe bağlı; telemetry sadece `OTEL_EXPORTER_ENDPOINT` ayarlıysa aktif olur.
+
+#### 14.8.4 Model Önbellekleme ve Soğuk Start
+**Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi var.
+**Öneri:** Web sunucu `startup` event'inde `DocumentStore.prebuild_bm25_index()` ve ChromaDB bağlantısı açılmalı. `PRECACHE_RAG_MODEL=true` Dockerfile argümanı zaten var; web_server.py'de de aktive edilmeli.
+
+---
+
+### 14.9 Versiyon 2.8 İçin Önerilen Öncelik Sırası
+
+| Sıra | Özellik | Etki | Çaba |
+|------|---------|------|------|
+| 1 | Thread-safe chunking (§14.1.4) | Yüksek | Düşük |
+| 2 | Async lock ile talimat cache (§14.1.3) | Yüksek | Düşük |
+| 3 | Gerçek token sayacı — tiktoken (§14.1.2) | Yüksek | Orta |
+| 4 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük |
+| 5 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük |
+| 6 | Kalıcı rate limiting (§14.1.1) | Orta | Orta |
+| 7 | RRF ile hibrit sıralama (§14.3.1) | Orta | Orta |
+| 8 | JWT / API key auth (§14.4.4) | Orta | Orta |
+| 9 | Issue yönetimi (§14.5.2) | Orta | Yüksek |
+| 10 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek |
+
+---
+
 *Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmıştır.*
