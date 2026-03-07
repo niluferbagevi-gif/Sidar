@@ -5,8 +5,9 @@ from pathlib import Path
 def test_rag_has_bm25_cache_and_invalidation_hooks():
     src = Path("core/rag.py").read_text(encoding="utf-8")
     assert "def _ensure_bm25_index" in src
-    assert "self._bm25_index = BM25Okapi(corpus_tokens) if corpus_tokens else None" in src
-    assert "self._invalidate_bm25_cache()" in src
+    assert "self._rebuild_bm25_from_cache()" in src
+    assert "bm25_idx_ref = self._bm25_index" in src
+    assert "doc_ids_ref = list(self._bm25_doc_ids)" in src
 
 
 def test_rag_reads_hf_and_rag_limits_from_config():

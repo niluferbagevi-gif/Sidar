@@ -244,6 +244,7 @@ def main() -> None:
     # doğrudan override et. os.environ üzerinden override ÇALIŞMAZ çünkü
     # Config sınıf attribute'ları module import anında bir kez değerlendirilir.
     cfg = Config()
+    cfg.initialize_directories()
     if args.level:
         cfg.ACCESS_LEVEL = args.level
     if args.provider:

@@ -53,7 +53,8 @@ class AutoHandle:
     # Bu ifadeler varsa AutoHandle tek adım döndüremez → ReAct'a bırak.
     _MULTI_STEP_RE = re.compile(
         r"\bardından\b|\bsonrasında\b|\bönce\b.{1,60}\bsonra\b"
-        r"|\b\d+\s*[\.\)]\s+\w|\bve\s+ardından\b|\bşunları\s+(yap|bul|göster|listele)\b",
+        r"|\b\d+\s*[\.\)]\s+\w|\bve\s+ardından\b|\bşunları\s+(yap|bul|göster|listele)\b"
+        r"|\bfirst\b.*\bthen\b|\bstep\s*\d|\bnext\b",
         re.IGNORECASE | re.DOTALL,
     )
 

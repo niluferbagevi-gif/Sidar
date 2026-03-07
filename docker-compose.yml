@@ -130,7 +130,6 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
@@ -185,7 +184,6 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./temp:/app/temp
-      - /var/run/docker.sock:/var/run/docker.sock
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"

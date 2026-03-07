@@ -42,6 +42,7 @@ class DummyConfig:
 try:
     from config import Config
     cfg = Config()
+    cfg.initialize_directories()
 except ImportError:
     print(f"{YELLOW}⚠ config.py bulunamadı, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()

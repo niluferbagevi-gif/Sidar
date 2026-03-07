@@ -15,10 +15,10 @@ def test_rag_search_uses_to_thread():
     assert "agent.docs.search" in fn_src
 
 
-def test_rate_limiter_has_bucket_pruning():
+def test_rate_limiter_uses_ttlcache_storage():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert "def _prune_rate_buckets" in src
-    assert "_prune_rate_buckets(now)" in src
+    assert "from cachetools import TTLCache" in src
+    assert "_rate_data = TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)" in src
 
 
 def test_rate_limiter_uses_config_values():
