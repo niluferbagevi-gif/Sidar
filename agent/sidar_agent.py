@@ -8,6 +8,7 @@ import json
 import re
 import asyncio
 import time
+import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
@@ -127,6 +128,7 @@ class SidarAgent:
         self.todo = TodoManager(self.cfg)
         self._instructions_cache: Optional[str] = None
         self._instructions_mtimes: Dict[str, float] = {}
+        self._instructions_lock = threading.Lock()
 
         self.auto = AutoHandle(
             self.code, self.health, self.github, self.memory,
@@ -1353,31 +1355,32 @@ class SidarAgent:
             except Exception:
                 pass
 
-        # Cache geçerli mi? Hem içerik hem mtime eşleşmeli
-        if self._instructions_cache is not None and current_mtimes == self._instructions_mtimes:
+        with self._instructions_lock:
+            # Cache geçerli mi? Hem içerik hem mtime eşleşmeli
+            if self._instructions_cache is not None and current_mtimes == self._instructions_mtimes:
+                return self._instructions_cache
+
+            # Değişiklik var veya ilk yükleme → yeniden oku
+            self._instructions_mtimes = current_mtimes
+
+            if not unique_files:
+                self._instructions_cache = ""
+                return ""
+
+            blocks = ["[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]"]
+            for path in unique_files:
+                try:
+                    rel = path.relative_to(root)
+                    content = path.read_text(encoding="utf-8", errors="replace").strip()
+                except Exception:
+                    continue
+                if not content:
+                    continue
+                blocks.append(f"\n## {rel}")
+                blocks.append(content)
+
+            self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
             return self._instructions_cache
-
-        # Değişiklik var veya ilk yükleme → yeniden oku
-        self._instructions_mtimes = current_mtimes
-
-        if not unique_files:
-            self._instructions_cache = ""
-            return ""
-
-        blocks = ["[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]"]
-        for path in unique_files:
-            try:
-                rel = path.relative_to(root)
-                content = path.read_text(encoding="utf-8", errors="replace").strip()
-            except Exception:
-                continue
-            if not content:
-                continue
-            blocks.append(f"\n## {rel}")
-            blocks.append(content)
-
-        self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
-        return self._instructions_cache
 
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)

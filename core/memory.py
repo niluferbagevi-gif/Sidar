@@ -301,9 +301,14 @@ class ConversationMemory:
     # ─────────────────────────────────────────────
 
     def _estimate_tokens(self) -> int:
-        """Kabaca token tahmini: UTF-8 Türkçe için ~3.5 karakter/token."""
-        total_chars = sum(len(t.get("content", "")) for t in self._turns)
-        return int(total_chars / 3.5)
+        """Mesaj geçmişinin token sayısını (mümkünse gerçek tokenizer ile) tahmin et."""
+        total_text = "".join(t.get("content", "") for t in self._turns)
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            return len(enc.encode(total_text))
+        except ImportError:
+            return int(len(total_text) / 3.5)
 
     def needs_summarization(self) -> bool:
         """

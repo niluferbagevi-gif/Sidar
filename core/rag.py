@@ -219,7 +219,7 @@ class DocumentStore:
     #  BELGE YÖNETİMİ & CHUNKING
     # ─────────────────────────────────────────────
 
-    def _recursive_chunk_text(self, text: str) -> List[str]:
+    def _recursive_chunk_text(self, text: str, size: int, overlap: int) -> List[str]:
         """
         Metni kod yapısına uygun ayırıcılarla (separators) mantıksal parçalara böler.
         LangChain'in RecursiveCharacterTextSplitter mantığını simüle eder.
@@ -230,20 +230,19 @@ class DocumentStore:
         # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
         separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
         
-        final_chunks = []
-        
         # Eğer metin zaten limitin altındaysa direkt döndür
-        if len(text) <= self._chunk_size:
+        if len(text) <= size:
             return [text]
 
         def _split(text_part: str, sep_idx: int) -> List[str]:
             """Recursive bölme fonksiyonu"""
-            if len(text_part) <= self._chunk_size:
+            if len(text_part) <= size:
                 return [text_part]
             
             if sep_idx >= len(separators):
                 # Hiçbir ayırıcı ile bölünemiyorsa zorla böl (character limit)
-                return [text_part[i:i+self._chunk_size] for i in range(0, len(text_part), self._chunk_size - self._chunk_overlap)]
+                step = max(1, size - overlap)
+                return [text_part[i:i + size] for i in range(0, len(text_part), step)]
 
             sep = separators[sep_idx]
             # Ayırıcıya göre böl (ayırıcı başta kalsın diye lookahead simülasyonu yapılabilir ama basit split yeterli)
@@ -261,7 +260,7 @@ class DocumentStore:
 
             for part in parts:
                 # Eğer parça tek başına bile çok büyükse, bir sonraki ayırıcı ile böl
-                if len(part) > self._chunk_size:
+                if len(part) > size:
                     if current_chunk:
                         new_chunks.append(current_chunk)
                         current_chunk = ""
@@ -270,10 +269,10 @@ class DocumentStore:
                     continue
 
                 # Mevcut parça ile limiti aşıyor mu?
-                if len(current_chunk) + len(part) > self._chunk_size:
+                if len(current_chunk) + len(part) > size:
                     new_chunks.append(current_chunk)
                     # Overlap mekanizması: Bir önceki chunk'ın sonundan biraz al
-                    overlap_len = min(len(current_chunk), self._chunk_overlap)
+                    overlap_len = min(len(current_chunk), overlap)
                     current_chunk = current_chunk[-overlap_len:] + part
                 else:
                     current_chunk += part
@@ -292,18 +291,9 @@ class DocumentStore:
         chunk_overlap: Optional[int] = None,
     ) -> List[str]:
         """Chunking ayarlarını Config'den çözerek recursive parçalama yap."""
-        chunk_size = chunk_size or getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
-        chunk_overlap = chunk_overlap or getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
-
-        prev_chunk_size = self._chunk_size
-        prev_chunk_overlap = self._chunk_overlap
-        self._chunk_size = chunk_size
-        self._chunk_overlap = chunk_overlap
-        try:
-            return self._recursive_chunk_text(text)
-        finally:
-            self._chunk_size = prev_chunk_size
-            self._chunk_overlap = prev_chunk_overlap
+        c_size = chunk_size or getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
+        c_overlap = chunk_overlap or getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+        return self._recursive_chunk_text(text, c_size, c_overlap)
 
     def add_document(
         self,
@@ -701,10 +691,13 @@ class DocumentStore:
             if self._bm25_index is None or not self._bm25_doc_ids:
                 return False, f"'{query}' için BM25 sonucu üretilemedi (boş corpus)."
 
-            scores = self._bm25_index.get_scores(query.lower().split())
-            ranked = sorted(zip(self._bm25_doc_ids, scores), key=lambda x: x[1], reverse=True)
-            ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
-            index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id, _ in ranked}
+            bm25_idx_ref = self._bm25_index
+            doc_ids_ref = list(self._bm25_doc_ids)
+            index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id in doc_ids_ref}
+
+        scores = bm25_idx_ref.get_scores(query.lower().split())
+        ranked = sorted(zip(doc_ids_ref, scores), key=lambda x: x[1], reverse=True)
+        ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
 
         # BM25 sonuçlarını yapıya çevir
         results = []

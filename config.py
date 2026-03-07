@@ -508,10 +508,11 @@ class Config:
 
 
 # ═══════════════════════════════════════════════════════════════
-# BAŞLANGIÇ  —  dizinler & özet
+# BAŞLANGIÇ
 # ═══════════════════════════════════════════════════════════════
-Config.initialize_directories()
 logger.info("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)
 
-if Config.DEBUG_MODE:
-    Config.print_config_summary() 
+if __name__ == "__main__":
+    Config.initialize_directories()
+    if Config.DEBUG_MODE:
+        Config.print_config_summary() 

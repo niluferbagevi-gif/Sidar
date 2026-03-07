@@ -14,7 +14,6 @@ import logging
 import re
 import subprocess
 import time
-from collections import defaultdict
 from pathlib import Path
 
 try:
@@ -24,6 +23,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
+from cachetools import TTLCache
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 
 cfg = Config()
+Config.initialize_directories()
 _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
@@ -79,7 +80,7 @@ app.add_middleware(
 #       /files /file-content                →  (GET I/O kapsamında)
 # ─────────────────────────────────────────────
 
-_rate_data: dict[str, list[float]] = defaultdict(list)
+_rate_data = TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)
 _RATE_LIMIT           = cfg.RATE_LIMIT_CHAT       # /chat — LLM çağrısı başına limit
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS  # Diğer POST/DELETE — mutasyon endpoint'leri
 _RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO     # GET I/O endpoint'leri (git, dosya, vb.)
@@ -93,20 +94,6 @@ _rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
-def _prune_rate_buckets(now: float) -> None:
-    """Pencere dışına çıkan kayıtları ve boş bucket anahtarlarını temizle."""
-    window_start = now - _RATE_WINDOW
-    stale_keys = []
-    for key, timestamps in _rate_data.items():
-        filtered = [t for t in timestamps if t > window_start]
-        if filtered:
-            _rate_data[key] = filtered
-        else:
-            stale_keys.append(key)
-    for key in stale_keys:
-        _rate_data.pop(key, None)
-
-
 async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
     """
     Atomik kontrol+yaz: asyncio.Lock ile TOCTOU yarış koşulunu önler.
@@ -117,15 +104,16 @@ async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
     if _rate_lock is None:
         _rate_lock = asyncio.Lock()  # event loop başladıktan sonra oluştur
     async with _rate_lock:
+        timestamps = _rate_data.get(key, [])
         now = time.monotonic()
-        _prune_rate_buckets(now)
+        valid_timestamps = [t for t in timestamps if now - t < _RATE_WINDOW]
 
-        key_events = _rate_data.get(key, [])
-        if len(key_events) >= limit:
+        if len(valid_timestamps) >= limit:
+            _rate_data[key] = valid_timestamps
             return True
 
-        key_events.append(now)
-        _rate_data[key] = key_events
+        valid_timestamps.append(now)
+        _rate_data[key] = valid_timestamps
         return False
 
 

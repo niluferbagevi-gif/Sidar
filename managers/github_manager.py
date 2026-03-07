@@ -166,9 +166,18 @@ class GitHubManager:
             kwargs = {}
             if branch:
                 kwargs["sha"] = branch
-            limit = max(1, min(int(limit), 100))
-            commits = list(self._repo.get_commits(**kwargs)[:limit])
-            lines = [f"[Son {len(commits)} Commit — {self._repo.full_name}]"]
+            requested_limit = int(limit)
+            actual_limit = max(1, min(requested_limit, 100))
+            commits = list(self._repo.get_commits(**kwargs)[:actual_limit])
+
+            warning = ""
+            if requested_limit > 100:
+                warning = (
+                    f"\n⚠ Uyarı: İstenen {requested_limit} commit sayısı, "
+                    f"API sınırları gereği {actual_limit} olarak kısıtlandı.\n"
+                )
+
+            lines = [f"[Son {len(commits)} Commit — {self._repo.full_name}]{warning}"]
             for c in commits:
                 sha = c.sha[:7]
                 msg = c.commit.message.splitlines()[0][:72]
@@ -178,6 +187,7 @@ class GitHubManager:
             return True, "\n".join(lines)
         except Exception as exc:
             return False, f"Commit listesi alınamadı: {exc}"
+
 
     def read_remote_file(self, file_path: str, ref: Optional[str] = None) -> Tuple[bool, str]:
         """Uzak depodaki bir dosyayı okur (Binary korumalı)."""
