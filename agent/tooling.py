@@ -187,5 +187,4 @@ def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:
         "print_config_summary":   agent._tool_get_config,
         "subtask":                agent._tool_subtask,
         "agent":                  agent._tool_subtask,
-        "parallel":               agent._tool_parallel,
     }
