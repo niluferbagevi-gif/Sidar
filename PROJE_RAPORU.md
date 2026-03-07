@@ -5,7 +5,7 @@
 **Analiz Eden:** Claude Sonnet 4.6 (Otomatik Denetim)
 **Versiyon:** SidarAgent v2.7.0 ✅ (tüm modüller ve docstring'ler v2.7.0 ile uyumlu)
 **Toplam Dosya:** 36 izlenen dosya, ~18.4k satır metin içerik
-**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi) yamaları: 2026-03-03**
+**Önceki Rapor:** 2026-02-26 (v2.5.0 analizi) / İlk v2.6.0 raporu: 2026-03-01 / [U-01–U-15](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [V-01–V-03](DUZELTME_GECMISI.md#sec-8-1-8-4) yamaları: 2026-03-01 / [N-01–N-04](DUZELTME_GECMISI.md#n-01) + [O-02](DUZELTME_GECMISI.md#o-02) yamaları: 2026-03-02 / [O-01–O-06](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06) yamaları: 2026-03-02 / **[P-01–P-07](DUZELTME_GECMISI.md) yamaları: 2026-03-03**
 
 ---
 
@@ -19,10 +19,7 @@
 - [5. Yüksek Öncelikli Sorunlar](#5-yuksek-oncelikli-sorunlar)
 - [6. Orta Öncelikli Sorunlar](#6-orta-oncelikli-sorunlar)
 - [7. Düşük Öncelikli Sorunlar](#7-dusuk-oncelikli-sorunlar)
-  - [Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)](#session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi)
 - [8. Dosyalar Arası Uyumsuzluk Tablosu](#8-dosyalar-arasi-uyumsuzluk-tablosu)
-  - [8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti](#8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti)
-  - [8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)](#83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel)
 - [9. Bağımlılık Analizi](#9-bagimlilik-analizi)
   - [`environment.yml` — Güncel Durum Tablosu](#environmentyml-guncel-durum-tablosu)
 - [10. Güçlü Yönler](#10-guclu-yonler)
@@ -276,12 +273,13 @@ sidar_project/
 <a id="5-yuksek-oncelikli-sorunlar"></a>
 ## 5. Yüksek Öncelikli Sorunlar (High Priority)
 
-| ID | Modül | Hata Açıklaması | Çözüm Önerisi |
-| :--- | :--- | :--- | :--- |
-| **H-03** | `agent/sidar_agent.py` | ✅ **KAPATILDI:** Memory archive bağlamı `top_k`, `min_score` ve `max_chars` sınırlarıyla filtrelenerek prompt taşması riski giderildi. | İzleme: eşik değerleri (`MEMORY_ARCHIVE_*`) üretim trafiğine göre ayarlanabilir. |
-| **H-04** | `core/memory.py` | ✅ **KAPATILDI:** Şifre çözme/okuma akışında hata yakalama ve dayanıklı geri dönüş uygulanarak InvalidToken kaynaklı çökme riski giderildi. | İzleme: anahtar rotasyonu senaryoları için kullanıcı bilgilendirmesi sürdürülsün. |
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif yüksek öncelikli hata bulunmamaktadır**. H-03 ve H-04 dahil önceki bulgular kapatılmıştır.
 
-*(Önceki sürümlerden kalan H-01 ve H-02 numaralı SSE ve XSS hataları v2.6.1 ile çözülmüştür. Detaylar için DUZELTME_GECMISI.md dosyasına bakınız.)*
+| ID | Modül / Dosya | Durum | Not |
+| :--- | :--- | :--- | :--- |
+| — | — | ✅ Açık yüksek öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
+
+*(Geçmişteki yüksek öncelikli sorunlar (H-01, H-02, H-03 ve H-04) tamamen giderilmiştir; detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
@@ -291,16 +289,13 @@ sidar_project/
 <a id="6-orta-oncelikli-sorunlar"></a>
 ## 6. Orta Öncelikli Sorunlar (Medium Priority)
 
-> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, v2.7.0 itibarıyla sistemin kararlılığını, güvenliğini ve operasyonel deneyimini etkileyen yeni orta öncelikli sorunlar tespit edilmiştir.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif orta öncelikli hata bulunmamaktadır**. M-01, M-02 ve M-03 bulguları kapatılmış, M-04 ise bir güvenlik prensibi (Safe Sync) olarak kabul edilip mimariye dahil edilmiştir.
 
-| ID | Modül / Dosya | Hata Açıklaması | Çözüm Önerisi |
+| ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| **M-01** | `managers/todo_manager.py` | ✅ **KAPATILDI:** `todos.json` kalıcılığı ve UTF-8 güvenli kayıt/geri yükleme mekanizması eklendi. | İzleme: dosya bozulması senaryoları için otomatik kurtarma metrikleri izlenebilir. |
-| **M-02** | `config.py` | ✅ **KAPATILDI:** Donanım tespiti import anından çıkarılıp lazy-init akışına taşındı; `Config` ilk kullanımında yükleniyor. | İzleme: ilk kullanım gecikmesi sadece GPU açık senaryolarda oluşur. |
-| **M-03** | `managers/security.py` | ✅ **KAPATILDI:** `can_read()` içinde kök dizin sınırı (`is_path_under`) zorunlu kılınarak path traversal yüzeyi daraltıldı. | İzleme: gerektiğinde allowlist tabanlı alt dizin politikası eklenebilir. |
-| **M-04** | `github_upload.py` | **Push çakışmalarında kullanıcı onayı zorunluluğu:** Otomatik birleştirme sadece kullanıcı açık onay verirse çalıştırılır; aksi durumda süreç güvenli şekilde durdurulur. | Bu davranış korunmalı, kullanıcı onayı olmayan birleştime adımları engellenmeye devam edilmelidir. |
+| — | — | ✅ Açık orta öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
 
-*(Geçmişte tespit edilen N-01, O-02, O-03, O-05 kodlu sorunlar tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
+*(Geçmişte tespit edilen M-01, M-02, M-03, M-04 ile N ve O serisi kodlu sorunlar tamamen giderilmiş veya tasarıma bağlanmıştır. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
@@ -311,30 +306,13 @@ sidar_project/
 <a id="7-dusuk-oncelikli-sorunlar"></a>
 ## 7. Düşük Öncelikli Sorunlar (Low Priority / Technical Debt)
 
-> ✅ **2026-03-06 Güncel Taraması:** L-01, L-03 ve L-05 maddeleri kapatılmıştır. Bu başlık altında **aktif düşük öncelikli açık bulgu bulunmamaktadır**.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında **aktif düşük öncelikli hata bulunmamaktadır**. L-01, L-03 ve L-05 maddeleri kapatılmıştır.
 
 | ID | Modül / Dosya | Durum | Not |
 | :--- | :--- | :--- | :--- |
-| — | — | ✅ Açık düşük öncelikli bulgu yok | Kapanan L-serisi maddeler dinamik araç listesi, BeautifulSoup tabanlı temizleme ve banner iyileştirmeleriyle giderildi. |
+| — | — | ✅ Açık düşük öncelikli yok | Kapanan bulguların geçmişi için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md). |
 
-*(Geçmişteki N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
-
-
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="session-8-p-01p-07-2026-03-03-ayni-oturumda-kapatildi"></a>
-### Session 8 — P-01–P-07 (2026-03-03, aynı oturumda kapatıldı)
-
-
-| ID | Konum | Açıklama | Giderim |
-|----|-------|----------|---------|
-| <a id="p-01"></a>[P-01](#p-01) | `Dockerfile:25` | `LABEL version="2.6.1"` — v2.7.0 ile uyumsuz | `"2.7.0"` yazıldı |
-| <a id="p-02"></a>[P-02](#p-02) | `PROJE_RAPORU.md:121` | `environment.yml` açıklamasında "CUDA 12.1" — gerçekte cu124 | "CUDA 12.4 (cu124)" düzeltildi |
-| <a id="p-03"></a>[P-03](#p-03) | `.env.example` | `DOCKER_EXEC_TIMEOUT` değişkeni belgelenmemiş | Son bölüme eklendi (varsayılan=10) |
-| <a id="p-04"></a>[P-04](#p-04) | `environment.yml:17` | Comment: "CUDA 12.1 tam desteklidir" — gerçekte cu124 kullanılıyor | "CUDA 12.4 (cu124)" düzeltildi |
-| <a id="p-05"></a>[P-05](#p-05) | `config.py:167` | WSL2 uyarısında `cu121` wheel URL'i öneriliyor — proje cu124 kullanıyor | `cu124` URL ile güncellendi |
-| <a id="p-06"></a>[P-06](#p-06) | `managers/__init__.py` | `TodoManager` `__all__`'da yok — diğer tüm manager'lar dışa aktarılıyor | `__all__`'a eklendi |
-| <a id="p-07"></a>[P-07](#p-07) | `.env.example` | `RAG_FILE_THRESHOLD` değişkeni belgelenmemiş | RAG bölümüne eklendi (varsayılan=20000) |
+*(Geçmişteki L-serisi ile N-03, N-04, O-01, O-04, O-06 ve P-01–P-07 numaralı bulgular tamamen giderilmiştir. Detaylar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
@@ -345,41 +323,16 @@ sidar_project/
 <a id="8-dosyalar-arasi-uyumsuzluk-tablosu"></a>
 ## 8. Dosyalar Arası Uyumsuzluk Tablosu
 
-> Son kontrol tarihi: **2026-03-02** — Önceki 35 uyumsuzluk + N-01–N-04 + O-01–O-06 dahil tüm bulgular kapatılmıştır. Bu başlık altında kapanmış detaylar düzeltme geçmişine taşınmıştır.
+> ✅ **2026-03-06 Güncel Taraması:** v2.7.0 kod tabanında rapor ile kod arasında **aktif uyumsuzluk (drift) bulunmamaktadır**. U-16, U-17, U-18 ve U-19 dahil tüm sapma bulguları kapatılmıştır.
 
+| ID | Tür (Önem) | Konum | Durum |
+| :--- | :--- | :--- | :--- |
+| — | — | — | ✅ Açık uyumsuzluk yok |
 
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="8182-kapatilan-uyumsuzluklar-ve-yeni-dogrulama-ozeti"></a>
-### 8.1–8.2 Kapatılan Uyumsuzluklar ve Yeni Doğrulama Özeti
-
-> ✅ Önceki sürümlerden gelen (§8.1–§8.4; U-01–U-15, V-01–V-03, N-01–N-04) taramalar ve 2026-03-02 tarihli O-01–O-06 ikinci tur doğrulama bulgularının tamamı kapatılmıştır.
-> Ayrıntılar ana raporun okunabilirliğini korumak amacıyla düzeltme geçmişine taşınmıştır:
->
-> 📄 **[DUZELTME_GECMISI.md → §8.1–§8.4 bölümü](DUZELTME_GECMISI.md#sec-8-1-8-4)**
->
-> 📄 **[DUZELTME_GECMISI.md → “§8.2/§18’den Taşınan Bulgular (O-01–O-06)”](DUZELTME_GECMISI.md#sec-8-2-18-o-01-o-06)**
+*(Geçmişteki U-01–U-19, V-01–V-03, N-01–N-04 ve O-01–O-06 numaralı tüm dosyalar arası uyumsuzluklar tamamen giderilmiştir. Kapatılan bulguların detayları ve çapraz doğrulamalar için bkz. [DUZELTME_GECMISI.md](DUZELTME_GECMISI.md))*
 
 ---
 
-
-<div align="right"><a href="#top">⬆️ Up</a></div>
-
-<a id="83-ozet-tablo-tum-acik-sorunlar-2026-03-03-guncel"></a>
-### 8.3 Özet Tablo — Tüm Açık Sorunlar (Güncel)
-
-> ⚠️ **2026-03-05 Güncel Taraması:** Önceki (N ve O serisi) bulgular kapatılmış olsa da, kod tabanındaki son büyük güncellemelerin rapora yansıtılamamasından kaynaklı yeni **Drift (Uyumsuzluk)** sorunları tespit edilmiştir.
-
-| ID | Tür (Önem) | Konum | Açıklama | Durum |
-|----|------------|-------|----------|-------|
-| **U-16** | 🔴 YÜKSEK | `PROJE_RAPORU.md` §12 ve §13.5.20 | **Test Mimarisi Sapması:** Testlerin tek dosyada toplu olduğu iddiası kaldırıldı; §12 modüler test mimarisine göre güncellendi. | ✅ Kapalı |
-| **U-17** | 🟡 ORTA | `environment.yml` vs Rapor §9 | **Bağımlılık Sürüm Sapması:** Raporun 9. maddesi güncellenerek `environment.yml` içindeki kilitli güncel sürümlerle hizalandı (`fastapi~=0.115.0`, `pytest~=8.3.3`). | ✅ Kapalı |
-| **U-18** | 🟡 ORTA | `agent/definitions.py` vs `sidar_agent.py` | ✅ **KAPATILDI:** Statik araç listesi prompttan kaldırıldı; araç envanteri `sidar_agent.py` içinde dinamik `self._tools` + docstring tabanlı üretim ile hizalandı. | ✅ Kapalı |
-| **U-19** | 🟢 DÜŞÜK | `DUZELTME_GECMISI.md` | ✅ **KAPATILDI:** Dosyanın son güncelleme tarihi ana raporla senkronize edilerek `2026-03-06` olarak hizalandı. | ✅ Kapalı |
-
-*(Geçmişteki N-01–N-04, O-01–O-06 ve P-01–P-07 uyumsuzlukları tamamen giderilmiştir. U-16, U-17, U-18 ve U-19 kapatılmıştır. Toplam Aktif Uyumsuzluk: 0)*
-
----
 
 
 <div align="right"><a href="#top">⬆️ Up</a></div>
@@ -2197,7 +2150,7 @@ Bu rapor, SİDAR'ın teknik sağlığını koruyan yaşayan denetim merkezidir.
 
 | Bölüm | İçerik | Açıklama |
 |---|---|---|
-| Özet Tablolar | §8.3 ve §15.3 | Aktif sorunların ve kategori bazlı skorların hızlı görünümü |
+| Özet Tablolar | §8 ve §15.3 | Aktif sorunların ve kategori bazlı skorların hızlı görünümü |
 | Detaylı Analiz | §13.5.x Serisi | Her dosya için teknik sorumluluk ve mimari döküm |
 | Gelişim Planı | §14 | Önceliklendirilmiş iyileştirme yol haritası |
 | Denetim İzleri | Session Logları | Satır bazlı repo doğrulama oturum kayıtları |

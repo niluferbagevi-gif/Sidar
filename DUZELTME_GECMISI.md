@@ -37,7 +37,7 @@
 | ID | Durum | Çözüm Notu |
 |----|------|------------|
 | AG-02 | ✅ Kapandı | `_tool_subtask` adım limitinin yapılandırılabilir olmasına rağmen üst sınırın 10 olarak sabitlenmesi bir hata değil, sonsuz özyinelemeyi (infinite recursion) ve bütçe aşımını engelleyen bilinçli bir güvenlik/mimari tasarımı (guardrail) olarak değerlendirildi. |
-| AG-03 (H-03) | ✅ Kapandı | ChromaDB'ye arşivlenen eski konuşmaların `_build_context` içinde körü körüne LLM'e geri yüklenmesi mantığı mimariden çıkarıldı. Sistem artık sadece RAG depo durumunu bildiriyor ve eski verilere ihtiyaç duyan LLM'in bilinçli olarak `docs_search` aracını kullanmasını zorunlu kılıyor. Bu sayede kritik Token Taşması/VRAM Şişmesi (H-03) riski tamamen ortadan kaldırıldı. |
+| AG-03 (H-03) | ✅ Kapandı | ChromaDB'ye arşivlenen eski konuşmaların `_build_context` içinde körü körüne LLM'e geri yüklenmesi mantığı mimariden çıkarıldı. Sistem artık sadece RAG depo durumunu bildiriyor ve eski verilere ihtiyaç duyan LLM'in bilinçli olarak `docs_search` aracını kullanmasını zorunlu kılıyor. Bu sayede kritik Token Taşması/VRAM Şişmesi (H-03) riski tamamen ortadan kaldırıldı. İzleme notu: eşik değerleri (`MEMORY_ARCHIVE_*`) üretim trafiğine göre ayarlanabilir. |
 
 ---
 
@@ -105,6 +105,7 @@
 |----|------|------------|
 | MEM-01 | ✅ Kapandı | Disk I/O Darboğazı (Throttling): Eski yapıda ajan her token ürettiğinde diske senkron yazma yapılıyordu. `_save_interval_seconds = 0.5` ve `_dirty` bayrağı eklenerek ardışık kayıt istekleri birleştirildi (debounced). SSD aşınması ve sunucu kilitlenmeleri önlendi. |
 | MEM-02 | ✅ Kapandı | Bozuk Dosya & Şifreleme Eksikliği: Sohbet geçmişlerinin düz metin saklanması riski Fernet (AES-128-CBC) ile giderildi. Ayrıca elektrik kesintisi vb. nedenlerle JSON yapısı bozulan dosyaların tüm sistemi çökertmesi hatası, dosyaların `.json.broken` olarak karantinaya alındığı `_cleanup_broken_files` mekanizması ile çözüldü. |
+| MEM-03 (H-04) | ✅ Kapandı | Şifre çözme/okuma akışında hata yakalama ve dayanıklı geri dönüş uygulanarak `InvalidToken` kaynaklı çökme riski giderildi. İzleme notu: anahtar rotasyonu senaryoları için kullanıcı bilgilendirmesi sürdürülsün. |
 
 ---
 
