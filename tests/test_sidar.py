@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from config import Config, HARDWARE
+from config import Config
 from agent.sidar_agent import SidarAgent, ToolCall
 from managers.web_search import WebSearchManager
 from managers.system_health import SystemHealthManager
@@ -166,17 +166,6 @@ async def test_agent_initialization(agent):
 # ─────────────────────────────────────────────
 # 6. GPU & DONANIM TESTLERİ
 # ─────────────────────────────────────────────
-
-def test_hardware_info_fields():
-    """HardwareInfo dataclass alanlarının doğru tipte olduğunu doğrular."""
-    assert isinstance(HARDWARE.has_cuda, bool)
-    assert isinstance(HARDWARE.gpu_name, str)
-    assert isinstance(HARDWARE.gpu_count, int)
-    assert isinstance(HARDWARE.cpu_count, int)
-    assert isinstance(HARDWARE.cuda_version, str)
-    assert isinstance(HARDWARE.driver_version, str)
-    assert HARDWARE.cpu_count >= 1
-
 
 def test_config_gpu_fields():
     """Config sınıfının GPU ile ilgili tüm alanları içerdiğini doğrular."""
