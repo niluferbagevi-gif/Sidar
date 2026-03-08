@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 import types
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -326,6 +327,40 @@ def test_direct_tool_route_guard_paths(monkeypatch):
     assert asyncio.run(a._try_direct_tool_route("x")) == "routed:list_dir:."
 
 
+def test_direct_tool_route_non_string_disallowed_and_exception_paths():
+    a = _make_agent_for_runtime()
+    a.cfg.TEXT_MODEL = "tm"
+
+    class _LLMNonString:
+        async def chat(self, **kwargs):
+            return {"tool": "list_dir"}
+
+    a.llm = _LLMNonString()
+    assert asyncio.run(a._try_direct_tool_route("x")) is None
+
+    class _LLMBlockedTool:
+        async def chat(self, **kwargs):
+            return '{"thought":"t","tool":"write_file","argument":"x"}'
+
+    a.llm = _LLMBlockedTool()
+    assert asyncio.run(a._try_direct_tool_route("x")) is None
+
+    class _LLMBroken:
+        async def chat(self, **kwargs):
+            raise RuntimeError("router failed")
+
+    a.llm = _LLMBroken()
+    assert asyncio.run(a._try_direct_tool_route("x")) is None
+
+
+def test_tool_call_validation_errors_are_reachable():
+    with pytest.raises(Exception):
+        SA_MOD.ToolCall.model_validate({"thought": "t", "tool": "x"})
+
+    with pytest.raises(Exception):
+        SA_MOD.ToolCall.model_validate_json('{"thought":"t","tool":"x"}')
+
+
 def test_build_context_and_instruction_file_cache(tmp_path):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
@@ -375,6 +410,17 @@ def test_build_context_and_instruction_file_cache(tmp_path):
     assert "[Proje Ayarları" in ctx
     assert "[Araç Durumu]" in ctx
     assert "[Proje Talimat Dosyaları" in ctx
+
+
+def test_load_instruction_files_empty_tree_returns_cached_empty(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+
+    assert a._load_instruction_files() == ""
+    assert a._load_instruction_files() == ""
 
 
 def test_react_loop_final_answer_and_invalid_json_paths():
@@ -446,3 +492,32 @@ def test_react_loop_tool_execution_and_loop_break(monkeypatch):
     assert any(x.startswith("\x00THOUGHT:") for x in out)
     assert any(x.startswith("\x00TOOL:list_dir") for x in out)
     assert out[-1] == "OK"
+
+
+def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
+    a = _make_agent_for_runtime()
+    seen = []
+
+    async def _audit(name, arg, ok):
+        seen.append((name, arg, ok))
+
+    a._log_audit = _audit
+
+    async def _handler(parsed_arg):
+        return f"handled:{parsed_arg}"
+
+    a._tools = {"ok": _handler}
+
+    def _raise_parse(_tool, _arg):
+        raise ValueError("parse")
+
+    monkeypatch.setattr(SA_MOD, "parse_tool_argument", _raise_parse)
+    assert asyncio.run(a._execute_tool("ok", "raw")) == "handled:raw"
+
+    async def _boom(_arg):
+        raise RuntimeError("boom")
+
+    a._tools = {"boom": _boom}
+    with pytest.raises(RuntimeError):
+        asyncio.run(a._execute_tool("boom", "x"))
+    assert seen[-1] == ("boom", "x", False)
