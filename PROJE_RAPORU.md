@@ -1064,14 +1064,27 @@ add_document(title, content, source)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.7.0 ve v2.8.0 sürümlerinde çözülen tüm yüksek ve orta öncelikli sorunların listesi için [CHANGELOG.md](./CHANGELOG.md) dosyasına bakın.
+> **Durum Güncellemesi (2026-03-08):** Önceki raporda bu bölüm altında yer alan #10 (DuckDuckGo async güvenliği) ve #11 (Web UI modülarizasyonu) maddeleri **çözüldü** durumundadır ve kalıcı sürüm kaydı için `CHANGELOG.md` dosyasına taşınmıştır.
 
-**v2.8.0 itibarıyla tüm teknik borçlar kapatılmıştır. Aşağıdaki tablo doğrulama sonuçlarını içerir:**
+### 11.1 Güncel Durum Özeti
 
-| # | Dosya | Sorun | Çözüm (Satır Satır Doğrulama) | Durum |
-|---|-------|-------|-------------------------------|-------|
-| 10 | `managers/web_search.py` | DDG senkron API event loop'u bloklıyor; versiyon pinlemesi eksik | **`environment.yml:61`** → `duckduckgo-search~=6.2.13` (pinlendi). **`web_search.py:229`** → `hasattr(duckduckgo_search, "AsyncDDGS")` ile dinamik yol seçimi. **`web_search.py:242,253`** → her iki yol `asyncio.wait_for(timeout=FETCH_TIMEOUT)` içinde. **`web_search.py:273`** → `except asyncio.TimeoutError` spesifik olarak `except Exception`'dan önce. | ✅ **Çözüldü** (v2.8.0) |
-| 11 | `web_ui/index.html` | 3.399 satır tek dosya; JS/CSS/HTML ayrılmamış; test edilebilirlik düşük | **`index.html`** → 436 satıra indirildi (iskelet + modal'lar). **`web_ui/style.css`** → 1.547 satır CSS. **`web_ui/chat.js`** → 644 satır SSE + render. **`web_ui/sidebar.js`** → 394 satır oturum yönetimi. **`web_ui/rag.js`** → 131 satır RAG UI. **`web_ui/app.js`** → 242 satır init + klavye. **`web_server.py:77`** → `app.mount("/static", StaticFiles(directory=web_ui_dir))` | ✅ **Çözüldü** (v2.8.0) |
+- **Açık yüksek/orta öncelikli teknik borç:** Yok.
+- **Kapanan maddeler:** `CHANGELOG.md` altında **v2.8.0 / Çözülen Teknik Borçlar ve Stabilite İyileştirmeleri** başlığında izlenebilir.
+- **Rapor yaklaşımı:** Bu bölüm yalnızca *aktif/açık* teknik borçları listeler; kapanan maddeler tekrar etmeyi önlemek için sürüm geçmişinde tutulur.
+
+### 11.2 Doğrulama Notları (Satır Bazlı)
+
+- **#10 — DuckDuckGo async güvenliği (çözüldü):**
+  - `environment.yml` içinde paket sürümü pinlenmiştir: `duckduckgo-search==6.2.13`.
+  - `managers/web_search.py` içinde `AsyncDDGS` dinamik kontrolü (`hasattr`) uygulanmıştır.
+  - Hem async hem thread fallback yolunda `asyncio.wait_for(..., timeout=self.FETCH_TIMEOUT)` koruması bulunmaktadır.
+  - `asyncio.TimeoutError`, genel istisnadan önce ayrı yakalanmaktadır.
+
+- **#11 — Web UI modülarizasyonu (çözüldü):**
+  - `web_ui/index.html` dosyası yalnızca iskelet + script/style referanslarını içerir.
+  - Modüller ayrı dosyalara bölünmüştür: `style.css`, `chat.js`, `sidebar.js`, `rag.js`, `app.js`.
+  - `web_server.py` içinde `/static` mount edilerek statik dosyalar güvenli biçimde sunulmaktadır.
+
 
 ## 12. `.env` Tam Değişken Referansı
 

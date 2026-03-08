@@ -1,5 +1,12 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.9.1] - 2026-03-08
+Bu sürüm dokümantasyon senkronizasyonu ve teknik borç kayıtlarının tekilleştirilmesine odaklanır.
+
+### ✅ Dokümantasyon ve İzlenebilirlik Güncellemeleri
+* **Teknik borç kayıtlarının normalize edilmesi (`PROJE_RAPORU.md`):** Raporun "11. Mevcut Sorunlar ve Teknik Borç" bölümü aktif/açık maddeleri gösterecek şekilde sadeleştirildi; kapanan #10 ve #11 maddeleri raporda tekrar listelenmek yerine sürüm geçmişine referanslandı.
+* **Satır bazlı yeniden doğrulama:** #10 için `duckduckgo-search==6.2.13` pinleme, `AsyncDDGS` dinamik kontrolü ve `asyncio.wait_for` timeout korumaları; #11 için modüler `web_ui/*` yapısı ve `web_server.py` içindeki `/static` mount doğrulandı.
+
 ## [v2.8.0] - 2026-03-08
 Bu sürümde kurumsal düzeyde AI Ajan (Agent) mimarisine, çoklu model desteğine ve Model Context Protocol (MCP) standartlarına geçiş yapılmıştır.
 
