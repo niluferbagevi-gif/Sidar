@@ -266,3 +266,258 @@ def test_llm_client_factory_and_compat_methods(llm_mod):
 
     with pytest.raises(ValueError):
         llm_mod.LLMClient("unknown", cfg)
+
+
+def test_ollama_helpers_gpu_and_stream_error_paths(llm_mod, monkeypatch):
+    config = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=3, USE_GPU=True, CODING_MODEL="m")
+    client = llm_mod.OllamaClient(config)
+
+    assert client.base_url == "http://localhost:11434"
+    timeout = client._build_timeout()
+    assert isinstance(timeout, llm_mod.httpx.Timeout)
+    assert timeout.timeout == 10
+
+    captured = {}
+
+    async def fake_stream(url, payload, timeout):
+        captured["payload"] = payload
+        yield "parca"
+
+    original_stream = client._stream_response
+    monkeypatch.setattr(client, "_stream_response", fake_stream)
+    stream_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True, json_mode=False))
+    got = asyncio.run(_collect(stream_iter))
+    monkeypatch.setattr(client, "_stream_response", original_stream)
+    assert got == ["parca"]
+    assert captured["payload"]["options"]["num_gpu"] == -1
+    assert "format" not in captured["payload"]
+
+    class _BadClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, json):
+            raise RuntimeError("stream failed")
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _BadClient)
+    errs = asyncio.run(
+        _collect(client._stream_response("http://localhost/api/chat", {"x": 1}, timeout=llm_mod.httpx.Timeout(10)))
+    )
+    assert "Akış kesildi" in json.loads(errs[0])["argument"]
+
+
+def test_ollama_list_models_and_is_available_fallbacks(llm_mod, monkeypatch):
+    config = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False)
+    client = llm_mod.OllamaClient(config)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"models": [{"name": "a"}, {"name": "b"}]}
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url):
+            return _Resp()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    assert asyncio.run(client.list_models()) == ["a", "b"]
+    assert asyncio.run(client.is_available()) is True
+
+    class _ClientErr(_Client):
+        async def get(self, url):
+            raise RuntimeError("down")
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _ClientErr)
+    assert asyncio.run(client.list_models()) == []
+    assert asyncio.run(client.is_available()) is False
+
+
+def test_gemini_chat_import_key_and_nonstream_paths(llm_mod):
+    cfg = SimpleNamespace(GEMINI_API_KEY="", GEMINI_MODEL="gemini-model", ENABLE_TRACING=False)
+    client = llm_mod.GeminiClient(cfg)
+
+    no_pkg = asyncio.run(client.chat([{"role": "user", "content": "x"}], stream=False))
+    assert "google-generativeai" in json.loads(no_pkg)["argument"]
+
+    no_pkg_stream = asyncio.run(client.chat([{"role": "user", "content": "x"}], stream=True))
+    got = asyncio.run(_collect(no_pkg_stream))
+    assert "google-generativeai" in json.loads(got[0])["argument"]
+
+
+def test_gemini_chat_with_stubbed_module_and_streaming(llm_mod, monkeypatch):
+    calls = {}
+
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        def __init__(self, history):
+            calls["history"] = history
+
+        async def send_message_async(self, prompt, stream=False):
+            calls.setdefault("prompts", []).append((prompt, stream))
+            if stream:
+                async def _gen():
+                    yield SimpleNamespace(text="s1")
+                    yield SimpleNamespace(text="")
+                    yield SimpleNamespace(text="s2")
+                return _gen()
+            return _Resp("plain")
+
+    class _Model:
+        def __init__(self, **kwargs):
+            calls["model_kwargs"] = kwargs
+
+        def start_chat(self, history):
+            return _Session(history)
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda api_key: calls.setdefault("api_key", api_key)
+    fake_genai.GenerativeModel = _Model
+
+    google_pkg = types.ModuleType("google")
+    monkeypatch.setitem(sys.modules, "google", google_pkg)
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    # force fallback safety_settings branch
+    monkeypatch.delitem(sys.modules, "google.generativeai.types", raising=False)
+
+    cfg = SimpleNamespace(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=False)
+    client = llm_mod.GeminiClient(cfg)
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "u2"},
+    ]
+
+    nonstream = asyncio.run(client.chat(messages, stream=False, json_mode=False))
+    assert nonstream == "plain"
+    assert calls["api_key"] == "k"
+    assert calls["model_kwargs"]["system_instruction"] == "sys"
+    assert calls["prompts"][0] == ("u2", False)
+
+    stream_iter = asyncio.run(client.chat(messages, stream=True, json_mode=False))
+    stream_chunks = asyncio.run(_collect(stream_iter))
+    assert stream_chunks == ["s1", "s2"]
+
+    class _SessionErr(_Session):
+        async def send_message_async(self, prompt, stream=False):
+            raise RuntimeError("gemini fail")
+
+    class _ModelErr(_Model):
+        def start_chat(self, history):
+            return _SessionErr(history)
+
+    fake_genai.GenerativeModel = _ModelErr
+    err_msg = asyncio.run(client.chat(messages, stream=False, json_mode=True))
+    assert "Gemini" in json.loads(err_msg)["argument"]
+
+
+def test_openai_chat_nonstream_error_stream_and_json_mode(llm_mod, monkeypatch):
+    config = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=60, OPENAI_MODEL="gpt-x")
+    client = llm_mod.OpenAIClient(config)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "raw-text"}}]}
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json, headers):
+            return _Resp()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    wrapped = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True))
+    assert json.loads(wrapped)["argument"] == "raw-text"
+
+    plain = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=False))
+    assert plain == "raw-text"
+
+    class _ClientErr(_Client):
+        async def post(self, url, json, headers):
+            raise RuntimeError("openai down")
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _ClientErr)
+    err = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False))
+    assert "OpenAI" in json.loads(err)["argument"]
+
+    stream_err_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True))
+    stream_err = asyncio.run(_collect(stream_err_iter))
+    assert "OpenAI" in json.loads(stream_err[0])["argument"]
+
+
+def test_openai_stream_error_and_llmclient_non_ollama_helpers(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=60)
+    client = llm_mod.OpenAIClient(cfg)
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        def stream(self, method, url, json, headers):
+            raise RuntimeError("stream down")
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(
+        _collect(client._stream_openai(payload={"stream": True}, headers={"a": "b"}, timeout=llm_mod.httpx.Timeout(10), json_mode=False))
+    )
+    assert "OpenAI akış hatası" in json.loads(out[0])["argument"]
+
+    gem_cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=7, GEMINI_API_KEY="")
+    fac = llm_mod.LLMClient("gemini", gem_cfg)
+    assert fac._ollama_base_url == "http://localhost:11434"
+    assert asyncio.run(fac.list_ollama_models()) == []
+    assert asyncio.run(fac.is_ollama_available()) is False
+
+    async def fake_chat(**kwargs):
+        msgs = kwargs["messages"]
+        assert msgs[0]["role"] == "system"
+        return "ok"
+
+    fac._client.chat = fake_chat
+    assert asyncio.run(fac.chat([{"role": "user", "content": "u"}], system_prompt="s")) == "ok"
+
+    class _WrapperResponse:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    chunks = asyncio.run(_collect(fac._stream_gemini_generator(_WrapperResponse())))
+    assert chunks == []
