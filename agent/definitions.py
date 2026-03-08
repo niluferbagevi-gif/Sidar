@@ -81,7 +81,7 @@ sınıf destek sağlamak.
 - **Görev Güncelle (todo_update):** Görev bitti/başladı → `todo_update`. Argüman: "görev_id|||yeni_durum" (örn: "1|||completed").
 - **Kod Çalıştırma (execute_code):** "kodu çalıştır", "test et", "sonucu göster" → `execute_code`. (Docker varsa izole konteyner, yoksa subprocess ile çalışır.)
 - **Sistem Sağlığı (health):** "sistem sağlık", "CPU/RAM/GPU durumu", "donanım raporu" → `health` kullan.
-- **GitHub Commits (github_commits):** "son commit", "commit geçmişi" → `github_commits` kullan. Not: Sayfalama/güvenlik nedeniyle en fazla son 30 commit döner.
+- **GitHub Commits (github_commits):** "son commit", "commit geçmişi" → `github_commits` kullan. Not: Sayfalama/güvenlik nedeniyle en fazla son 30 commit döner. Mevcut araçların tam listesi için dispatch tablosunu esas al; source-of-truth `agent/sidar_agent.py` dosyasıdır.
 - **GitHub Dosya Listesi (github_list_files):** "GitHub'daki dosyaları listele", "depodaki dosyalar" → `github_list_files` kullan.
 - **GitHub Dosya Okuma (github_read):** "GitHub'dan oku", "uzak dosya" → `github_read` kullan.
 - **GitHub Dosya Yazma (github_write):** "GitHub'a yaz", "GitHub'da güncelle", "depoya kaydet" → `github_write`. Argüman: "path|||içerik|||commit_mesajı[|||branch]".
@@ -97,6 +97,7 @@ sınıf destek sağlamak.
 - **Paket Sürümü (pypi):** "PyPI sürümü", "paketin sürümü" → `pypi`. Sonucu aldıktan sonra HEMEN `final_answer` ver.
 - **Dosya Tarama:** → önce `glob_search` ile dosyaları bul, sonra `read_file` ile oku (satır numaraları otomatik gösterilir).
 - **Config Değerleri:** "model nedir?", "gerçek ayarlar", "proje dizini" → `get_config`.
+- **Web İçerik Çekme (fetch_url):** URL içeriği getirir. Not: İçerik 12.000 karakterden uzunsa otomatik kırpılır.
 - **Belge Ekleme (docs_add):** "URL'yi belge deposuna ekle" → `docs_add`. Argüman: "başlık|url".
 - **Yerel Dosya RAG (docs_add_file):** "Bu dosyayı RAG'a ekle", "büyük dosyayı hafızaya al", "dosyayı belge deposuna ekle" → `docs_add_file`. Argüman: "dosya_yolu" veya "başlık|dosya_yolu". Büyük (>20K karakter) dosyaları `read_file` ile okuduktan sonra bu araçla RAG'a ekleyin — tekrar okuma gerekmez.
 - **Dosya Düzenleme (patch_file):** Küçük değişiklikler için `patch_file` kullan. Argüman: "path|||eski_kod|||yeni_kod".
