@@ -40,6 +40,7 @@ from agent.tooling import (
     GithubWriteSchema,
     PatchFileSchema,
     WriteFileSchema,
+    ScanProjectTodosSchema,
     build_tool_dispatch,
     parse_tool_argument,
 )
@@ -1158,6 +1159,16 @@ class SidarAgent:
         except ValueError:
             return "⚠ Görev ID sayısal olmalı."
         return self.todo.update_task(task_id, parts[1].strip())
+
+
+    async def _tool_scan_project_todos(self, a: str | ScanProjectTodosSchema) -> str:
+        """Projedeki TODO/FIXME etiketlerini tarar. Argüman: 'directory[|||ext1,ext2]'"""
+        arg = a if isinstance(a, ScanProjectTodosSchema) else parse_tool_argument("scan_project_todos", a)
+        directory = getattr(arg, "directory", None)
+        extensions = getattr(arg, "extensions", None)
+
+        # Tarama işlemi disk okuması yapacağı için event loop'u bloklamadan çalıştır
+        return await asyncio.to_thread(self.todo.scan_project_todos, directory, extensions)
 
     async def _tool_get_config(self, _: str) -> str:
         """Çalışma anındaki gerçek Config değerlerini döndürür (.env dahil).
