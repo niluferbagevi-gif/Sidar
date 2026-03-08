@@ -30,3 +30,11 @@ def test_code_manager_reads_docker_runtime_from_config_or_env():
     assert "os.getenv(\"DOCKER_PYTHON_IMAGE\", \"python:3.11-alpine\")" in src
     assert "os.getenv(\"DOCKER_EXEC_TIMEOUT\", \"10\")" in src
     assert "timeout=self.docker_exec_timeout" in src
+
+def test_code_manager_limits_output_size_for_sandbox_and_shell():
+    src = Path("managers/code_manager.py").read_text(encoding="utf-8")
+    assert "self.max_output_chars = 10000" in src
+    assert "ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı" in src
+    assert "if len(logs) > self.max_output_chars:" in src
+    assert "if len(output) > self.max_output_chars:" in src
+    assert "if len(combined) > self.max_output_chars:" in src
