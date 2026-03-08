@@ -122,6 +122,7 @@ services:
       - WEB_HOST=0.0.0.0
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
+      - API_KEY=${API_KEY:-}
 
     env_file:
       - .env
@@ -176,6 +177,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
+      - API_KEY=${API_KEY:-}
 
     env_file:
       - .env

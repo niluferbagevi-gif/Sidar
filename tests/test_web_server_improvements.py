@@ -53,3 +53,13 @@ def test_status_endpoint_includes_ollama_health_fields():
     assert "ollama_online = a.health.check_ollama()" in src
     assert "\"ollama_online\": ollama_online" in src
     assert "\"ollama_latency_ms\": ollama_latency_ms" in src
+
+def test_web_server_has_basic_auth_middleware_backed_by_api_key():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "import base64" in src
+    assert "import secrets" in src
+    assert "def basic_auth_middleware" in src
+    assert "api_key = getattr(cfg, \"API_KEY\", \"\")" in src
+    assert "secrets.compare_digest(password, api_key)" in src
+    assert "WWW-Authenticate" in src
+    assert 'Basic realm="Sidar Secure Web UI"' in src

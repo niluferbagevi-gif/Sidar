@@ -8,10 +8,12 @@ Başlatmak için:
 """
 
 import argparse
+import base64
 import asyncio
 import json
 import logging
 import re
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -63,6 +65,33 @@ async def get_agent() -> SidarAgent:
 # ─────────────────────────────────────────────
 
 app = FastAPI(title="Sidar Web UI", docs_url=None, redoc_url=None)
+
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    """API_KEY ayarlıysa HTTP Basic Auth ile tüm istekleri koru."""
+    api_key = getattr(cfg, "API_KEY", "")
+    if not api_key:
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+            _, password = decoded.split(":", 1)
+            if secrets.compare_digest(password, api_key):
+                return await call_next(request)
+        except Exception:
+            pass
+
+    return Response(
+        content="Yetkisiz Erişim. Lütfen API anahtarınızı şifre alanına girin.",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Sidar Secure Web UI"'},
+    )
 
 # CORS: localhost/loopback kökenlerine porttan bağımsız izin ver.
 app.add_middleware(
