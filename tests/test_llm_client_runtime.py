@@ -349,7 +349,18 @@ def test_ollama_list_models_and_is_available_fallbacks(llm_mod, monkeypatch):
     assert asyncio.run(client.is_available()) is False
 
 
-def test_gemini_chat_import_key_and_nonstream_paths(llm_mod):
+def test_gemini_chat_import_key_and_nonstream_paths(llm_mod, monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "google.generativeai":
+            raise ImportError("forced missing gemini sdk")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
     cfg = SimpleNamespace(GEMINI_API_KEY="", GEMINI_MODEL="gemini-model", ENABLE_TRACING=False)
     client = llm_mod.GeminiClient(cfg)
 
