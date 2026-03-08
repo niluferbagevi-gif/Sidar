@@ -21,10 +21,6 @@ import subprocess
 import time
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from agent.sidar_agent import SidarAgent
 
 try:
     import anyio
@@ -55,6 +51,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     BatchSpanProcessor = None
 
 from config import Config
+from agent.sidar_agent import SidarAgent
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +61,13 @@ logger = logging.getLogger(__name__)
 
 cfg = Config()
 Config.initialize_directories()
-_agent: "SidarAgent | None" = None
+_agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
 
 
-async def get_agent() -> "SidarAgent":
+async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur)."""
     global _agent, _agent_lock
     if _agent_lock is None:
@@ -78,7 +75,6 @@ async def get_agent() -> "SidarAgent":
     if _agent is None:
         async with _agent_lock:
             if _agent is None:
-                from agent.sidar_agent import SidarAgent
                 _agent = SidarAgent(cfg)
     return _agent
 
@@ -1064,8 +1060,6 @@ async def github_webhook(
 # ─────────────────────────────────────────────
 
 def main() -> None:
-    from agent.sidar_agent import SidarAgent
-
     parser = argparse.ArgumentParser(description="Sidar Web Arayüzü")
     parser.add_argument(
         "--host", default=cfg.WEB_HOST,
