@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.10.0 audit — SQLite FTS5 disk tabanlı BM25 geçişi; §14.3.2 tamamlandı; branch: claude/review-files-report-5uVFR)
+> **Son Güncelleme:** 2026-03-08 (v2.10.0 tam denetim — tüm 34 madde satır satır doğrulandı; §4.2/§13/§14.8.4 stale referanslar düzeltildi; branch: claude/review-files-report-5uVFR)
 > **Proje Sürümü:** 2.10.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir.
 
@@ -263,7 +263,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (794 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (795 satır)
 
 **Amaç:** SSE (Server-Sent Events) destekli asenkron chat web arayüzü.
 
@@ -511,7 +511,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.10 `core/rag.py` — RAG Motoru (785 satır)
+### 3.10 `core/rag.py` — RAG Motoru (787 satır)
 
 **Amaç:** ChromaDB (vektör) + BM25 SQLite FTS5 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu. v2.9.0 itibarıyla **RRF birleştirme** ve **oturum izolasyonu**, v2.10.0 itibarıyla **SQLite FTS5 disk tabanlı BM25** eklendi.
 
@@ -800,7 +800,7 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 |------|-------|
 | **Rate Limiting** | In-memory; sunucu yeniden başlarsa sıfırlanır, dağıtık ortamda çalışmaz |
 | **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
-| **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
+| **BM25 Bellek** | ~~RAM'de tutuluyordu~~ → v2.10.0'da SQLite FTS5 disk tabanlı geçiş tamamlandı; RAM tüketimi sıfıra indi (bkz. §14.3.2) |
 | **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
 
 ---
@@ -914,8 +914,8 @@ Projede **32 test modülü** bulunmaktadır (toplam ~1.836 satır):
 |-------|-------|-----|
 | `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
 | `agent/sidar_agent.py` | 1.463 | v2.9.0 — RAG araçlarına session_id eklendi |
-| `core/rag.py` | 785 | v2.10.0 — SQLite FTS5 BM25 geçişi (+8 satır, `_init_fts` eklendi) |
-| `web_server.py` | 801 | v2.9.0 — RAG endpoint'lerine session_id eklendi |
+| `core/rag.py` | 787 | v2.10.0 — SQLite FTS5 BM25 geçişi (`_init_fts` eklendi, deadlock fix) |
+| `web_server.py` | 795 | v2.9.0 — RAG endpoint'lerine session_id eklendi; v2.10.0 — prebuild referansı kaldırıldı |
 | `managers/code_manager.py` | 746 | |
 | `web_ui/chat.js` | 644 | v2.8.0 — index.html'den ayrıldı |
 | `agent/auto_handle.py` | 601 | |
@@ -1194,8 +1194,8 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 | Öncelik | Alan | Öneri |
 |---------|------|-------|
-| Düşük | `managers/web_search.py` | DuckDuckGo senkron API'si (`DDGS`) asenkrona çevrilmeli veya versiyonu sabitlenmeli. |
-| Düşük | `web_ui/index.html` | 3.399 satırlık dosya modülarize edilerek JS ve CSS ayrı dosyalara bölünmeli (`app.js`, `style.css`). |
+| ✅ Çözüldü (v2.8.0) | `managers/web_search.py` | ~~DuckDuckGo senkron API'si asenkrona çevrilmeli~~ → `AsyncDDGS` + `asyncio.wait_for` uygulandı; `duckduckgo-search~=6.2.13` pinlendi. |
+| ✅ Çözüldü (v2.8.0) | `web_ui/index.html` | ~~3.399 satırlık tek dosya~~ → `index.html` (436 satır) + `chat.js` / `sidebar.js` / `rag.js` / `app.js` / `style.css` olarak modülarize edildi. |
 
 ---
 
@@ -1392,7 +1392,7 @@ web_ui/
 
 #### 14.8.4 Model Önbellekleme ve Soğuk Start
 **Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi var.
-**Öneri:** Web sunucu `startup` event'inde `DocumentStore.prebuild_bm25_index()` ve ChromaDB bağlantısı açılmalı. `PRECACHE_RAG_MODEL=true` Dockerfile argümanı zaten var; web_server.py'de de aktive edilmeli.
+**Öneri:** Web sunucu `startup` event'inde ChromaDB bağlantısı ve embedding modeli önceden yüklenmeli. `PRECACHE_RAG_MODEL=true` Dockerfile argümanı zaten var; web_server.py'de `lifespan` event ile de aktive edilmeli. **Not:** `prebuild_bm25_index()` metodu v2.10.0'da SQLite FTS5 geçişiyle kaldırıldı; artık BM25 lazy init yerine `_init_fts()` üzerinden yapılmaktadır.
 
 ---
 
