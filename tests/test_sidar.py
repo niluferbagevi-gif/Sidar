@@ -403,6 +403,60 @@ async def test_execute_tool_known_does_not_return_none(agent):
     assert result is not None
 
 
+def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
+    """RRF: Aynı belgeleri iki motordan birleştirip tek sıralama üretir."""
+    docs = DocumentStore.__new__(DocumentStore)
+
+    monkeypatch.setattr(docs, "_fetch_chroma", lambda q, k: [
+        {"id": "doc_a", "title": "A", "source": "", "snippet": "sa", "score": 1.0},
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 1.0},
+    ])
+    monkeypatch.setattr(docs, "_fetch_bm25", lambda q, k: [
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 5.0},
+        {"id": "doc_c", "title": "C", "source": "", "snippet": "sc", "score": 4.0},
+    ])
+
+    captured = {}
+
+    def _format(results, query, source_name):
+        captured["ids"] = [r["id"] for r in results]
+        captured["source"] = source_name
+        return True, "ok"
+
+    monkeypatch.setattr(docs, "_format_results_from_struct", _format)
+
+    ok, _ = DocumentStore._rrf_search(docs, "test", 3)
+
+    assert ok is True
+    assert captured["source"] == "Hibrit RRF (ChromaDB + BM25)"
+    assert captured["ids"][0] == "doc_b"
+
+
+def test_rag_search_auto_prefers_rrf(monkeypatch):
+    """search(auto): Chroma+BM25 varken önce RRF yolunu kullanır."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t"}}
+    docs._chroma_available = True
+    docs._bm25_available = True
+    docs.collection = object()
+
+    calls = {"rrf": 0}
+
+    def _rrf(query, top_k):
+        calls["rrf"] += 1
+        return True, "rrf"
+
+    monkeypatch.setattr(docs, "_rrf_search", _rrf)
+
+    ok, text = DocumentStore.search(docs, "soru", mode="auto")
+
+    assert ok is True
+    assert text == "rrf"
+    assert calls["rrf"] == 1
+
+
 # ─────────────────────────────────────────────
 # 9. CHUNKING SINIR TESTLERİ
 # ─────────────────────────────────────────────

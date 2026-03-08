@@ -526,12 +526,10 @@ class DocumentStore:
         Sorguya göre en ilgili belgeleri bul.
 
         mode:
-          "auto"    → Öncelik sırasıyla: ChromaDB → BM25 → Keyword (varsayılan)
+          "auto"    → Öncelik sırasıyla: RRF (Chroma+BM25) → ChromaDB → BM25 → Keyword
           "vector"  → Yalnızca ChromaDB vektör arama
           "bm25"    → Yalnızca BM25 arama
           "keyword" → Yalnızca anahtar kelime eşleşmesi
-
-        top_k verilmezse __init__'teki default_top_k kullanılır.
         """
         if top_k is None:
             top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
@@ -554,66 +552,102 @@ class DocumentStore:
         if mode == "keyword":
             return self._keyword_search(query, top_k)
 
-        # Auto cascade (mode == "auto" veya bilinmeyen değer)
+        # Auto Mod: RRF Hibrit Sıralama (ChromaDB ve BM25 varsa güçlerini birleştir)
+        if self._chroma_available and self._bm25_available and self.collection:
+            try:
+                return self._rrf_search(query, top_k)
+            except Exception as exc:
+                logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
+
+        # Fallback 1: Sadece ChromaDB
         if self._chroma_available and self.collection:
             try:
                 return self._chroma_search(query, top_k)
             except Exception as exc:
                 logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
+        # Fallback 2: Sadece BM25
         if self._bm25_available:
             return self._bm25_search(query, top_k)
 
+        # Fallback 3: Sadece Keyword
         return self._keyword_search(query, top_k)
 
-    def _chroma_search(self, query: str, top_k: int) -> Tuple[bool, str]:
-        # Chunking nedeniyle top_k'yı biraz artır; aynı dokümanın farklı parçaları gelebilir.
-        # n_results koleksiyondaki toplam chunk sayısını aşamaz (ChromaDB InvalidArgumentError).
+    def _rrf_search(self, query: str, top_k: int) -> Tuple[bool, str]:
+        """ChromaDB ve BM25 sonuçlarını Reciprocal Rank Fusion (RRF) ile birleştirir."""
+        chroma_results = self._fetch_chroma(query, top_k)
+        bm25_results = self._fetch_bm25(query, top_k)
+
+        if not chroma_results and not bm25_results:
+            return self._keyword_search(query, top_k)
+
+        # RRF Hesaplama (k=60 literatürde standart değerdir)
+        k = 60
+        rrf_scores = {}
+        docs_map = {}
+
+        # ChromaDB sonuçlarını skorla
+        for rank, res in enumerate(chroma_results):
+            doc_id = res["id"]
+            docs_map[doc_id] = res
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+
+        # BM25 sonuçlarını skorla
+        for rank, res in enumerate(bm25_results):
+            doc_id = res["id"]
+            if doc_id not in docs_map:
+                docs_map[doc_id] = res
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+
+        # Nihai puana göre en iyi sonuçları seç
+        ranked_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+
+        final_results = []
+        for doc_id, score in ranked_docs:
+            doc_info = docs_map[doc_id]
+            doc_info["score"] = score
+            final_results.append(doc_info)
+
+        return self._format_results_from_struct(final_results, query, source_name="Hibrit RRF (ChromaDB + BM25)")
+
+    def _fetch_chroma(self, query: str, top_k: int) -> list:
+        """ChromaDB'den sonuçları ham liste olarak çeker."""
         try:
             collection_size = self.collection.count()
         except Exception:
             collection_size = top_k * 2
-        n_results = min(top_k * 2, max(collection_size, 1))
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=n_results,
-        )
-        
-        if not results["ids"] or not results["ids"][0]:
-            return False, f"'{query}' için anlamsal sonuç bulunamadı."
 
-        # Sonuçları işle
+        n_results = min(top_k * 2, max(collection_size, 1))
+        results = self.collection.query(query_texts=[query], n_results=n_results)
+
+        if not results["ids"] or not results["ids"][0]:
+            return []
+
         found_docs = []
         seen_parents = set()
-        
-        # results["documents"][0] -> bulunan chunk içeriği
-        # results["metadatas"][0] -> metadata
+
         for i, chunk_content in enumerate(results["documents"][0]):
             meta = results["metadatas"][0][i]
             parent_id = meta.get("parent_id")
-            
-            # Aynı dokümanın birden fazla parçası gelebilir, çeşitlilik için filtrele
-            # (veya en alakalı parçayı göster)
-            unique_key = parent_id
-            if unique_key in seen_parents and len(seen_parents) >= top_k:
+
+            if parent_id in seen_parents and len(seen_parents) >= top_k:
                 continue
-            
-            seen_parents.add(unique_key)
-            
-            # Chunk içeriğini snippet olarak kullan
+            seen_parents.add(parent_id)
+
             found_docs.append({
                 "id": parent_id,
                 "title": meta.get("title", "?"),
                 "source": meta.get("source", ""),
-                "snippet": chunk_content, # Chunk'ın kendisi en iyi snippet'tir
-                "score": 1.0 # Chroma sıralı döndürür
+                "snippet": chunk_content,
+                "score": 1.0,
             })
-            
             if len(found_docs) >= top_k:
                 break
-        
-        return self._format_results_from_struct(found_docs, query, source_name="Vektör Arama (ChromaDB + Chunking)")
+        return found_docs
 
+    def _chroma_search(self, query: str, top_k: int) -> Tuple[bool, str]:
+        results = self._fetch_chroma(query, top_k)
+        return self._format_results_from_struct(results, query, source_name="Vektör Arama (ChromaDB + Chunking)")
 
     def _invalidate_bm25_cache(self) -> None:
         """Belge seti değiştiğinde BM25 cache'i geçersiz kıl."""
@@ -684,13 +718,12 @@ class DocumentStore:
             self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
             self._rebuild_bm25_from_cache()
 
-    def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
+    def _fetch_bm25(self, query: str, top_k: int) -> list:
+        """BM25'ten sonuçları ham liste olarak çeker."""
         self._ensure_bm25_index()
-
         with self._write_lock:
             if self._bm25_index is None or not self._bm25_doc_ids:
-                return False, f"'{query}' için BM25 sonucu üretilemedi (boş corpus)."
-
+                return []
             bm25_idx_ref = self._bm25_index
             doc_ids_ref = list(self._bm25_doc_ids)
             index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id in doc_ids_ref}
@@ -699,7 +732,6 @@ class DocumentStore:
         ranked = sorted(zip(doc_ids_ref, scores), key=lambda x: x[1], reverse=True)
         ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
 
-        # BM25 sonuçlarını yapıya çevir
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
@@ -715,9 +747,12 @@ class DocumentStore:
                 "title": meta.get("title", "?"),
                 "source": meta.get("source", ""),
                 "snippet": snippet,
-                "score": score
+                "score": score,
             })
+        return results
 
+    def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
+        results = self._fetch_bm25(query, top_k)
         return self._format_results_from_struct(results, query, source_name="BM25")
 
     def _keyword_search(self, query: str, top_k: int) -> Tuple[bool, str]:
