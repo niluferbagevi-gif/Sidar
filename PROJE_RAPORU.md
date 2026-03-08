@@ -1248,8 +1248,13 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 - Her iki motordan gelen sonuçlar birleştirilip en iyi `top_k` döndürülür
 
 #### 14.3.2 BM25 Corpus Ölçeklenebilirliği
-**Mevcut durum:** ⏳ Tüm belgelerin token'ları RAM'de tutuluyor (`_bm25_corpus_tokens`). 10.000+ belge senaryosunda bellek basıncı oluşur.
-**Öneri:** SQLite FTS5 veya Whoosh ile disk tabanlı BM25 indeksi.
+**Güncel durum:** ✅ **Tamamlandı (SQLite FTS5, disk tabanlı BM25).**
+
+`rank_bm25` tabanlı RAM içi indeks kaldırıldı ve BM25 katmanı SQLite FTS5'e taşındı:
+- `_init_fts()` ile `bm25_fts.db` ve `bm25_index` (FTS5) sanal tablosu başlatılır
+- Belge ekleme/silme işlemleri FTS tablosuna senkron `INSERT/DELETE` ile işlenir
+- `_fetch_bm25()` artık `MATCH` + `bm25(...)` ile diskten arama yapar
+- Eski in-memory cache/prebuild akışı kaldırılmıştır
 
 #### 14.3.3 Çok Oturumlu RAG İzolasyonu
 **Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
@@ -1298,8 +1303,13 @@ web_ui/
 **Öneri:** Her endpoint için `summary`, `description`, `response_model` ve `responses` parametrelerinin doldurulması. Harici entegrasyon kolaylaşır.
 
 #### 14.4.4 Kimlik Doğrulama
-**Mevcut durum:** Web API yalnızca CORS ile korunuyor; token veya session auth yok.
-**Öneri:** JWT tabanlı basit auth veya API key header (`X-API-Key`). `.env` üzerinden `API_KEY` konfigürasyonu. Özellikle dış ağa açık deploy için zorunlu.
+**Güncel durum:** ✅ **Tamamlandı (API_KEY tabanlı HTTP Basic Auth).**
+
+Web katmanında opsiyonel kimlik doğrulama aktiftir:
+- `config.py` içinde `API_KEY` tanımlıdır
+- `web_server.py` içinde `basic_auth_middleware` ile tüm endpoint'ler korunur
+- `API_KEY` boş ise auth bypass, dolu ise Basic Auth zorunlu
+- `docker-compose.yml` web servislerine `API_KEY` environment olarak aktarılır
 
 ---
 
@@ -1310,28 +1320,47 @@ web_ui/
 **Öneri:** GitHub Webhook alıcısı eklenebilir (push, PR, issue eventi). Yeni commit'te otomatik RAG güncelleme veya bildirim.
 
 #### 14.5.2 Issue Yönetimi
-**Mevcut durum:** `github_manager.py` PR işlemlerini destekliyor; issue yok.
-**Öneri:** `create_issue`, `list_issues`, `comment_issue`, `close_issue` metodları. Ajan `todo_write` ile oluşturduğu görevi doğrudan GitHub Issue'ya bağlayabilir.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+GitHub issue yaşam döngüsü araçları eklendi:
+- `list_issues`, `create_issue`, `comment_issue`, `close_issue` (`managers/github_manager.py`)
+- Ajan araçları: `github_list_issues`, `github_create_issue`, `github_comment_issue`, `github_close_issue`
+- `agent/tooling.py` içinde ilgili Pydantic şemaları ve dispatch kayıtları mevcut
 
 #### 14.5.3 Diff Analizi
-**Mevcut durum:** `get_pr_files()` değişen dosyaları döndürüyor ama diff içeriğini değil.
-**Öneri:** `PyGithub` `get_files()` üzerinden unified diff alınması. LLM kod inceleme yorumu yapabilir.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+PR inceleme için unified diff erişimi eklendi:
+- `get_pull_request_diff(number)` ile dosya bazlı patch metni çekilir
+- Ajan aracı `github_pr_diff` üzerinden LLM'e doğrudan diff içeriği verilebilir
+- Böylece güvenlik/kod kalite odaklı otomatik review senaryoları mümkün hale gelmiştir
 
 ---
 
 ### 14.6 Güvenlik ve İzleme
 
 #### 14.6.1 Docker Socket Riski Azaltma
-**Mevcut durum:** Tüm docker-compose servisleri `/var/run/docker.sock` mount ediyor.
-**Öneri:** Yalnızca REPL gerektiren servisler için socket mount; diğerleri için kaldırılmalı. Alternatif olarak `dockerd` rootless mod veya `sysbox` kullanımı.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+`docker-compose.yml` içinde Docker socket mount yalnızca CLI/REPL servislerinde bırakıldı.
+Web servislerinden (`sidar-web`, `sidar-web-gpu`) kaldırılarak container escape riski azaltıldı.
 
 #### 14.6.2 Denetim Logu (Audit Log)
-**Mevcut durum:** Araç çağrıları yalnızca `logger.info` ile loglanıyor; yapısal değil.
-**Öneri:** Ayrı `audit.jsonl` dosyasına yapısal kayıt: `{timestamp, session_id, tool, argument, access_level, result_ok}`. Güvenlik denetimleri için sorgulanabilir.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+`SidarAgent._execute_tool` merkezi noktasında tüm araç çağrıları JSONL olarak loglanır:
+- Hedef dosya: `logs/audit.jsonl`
+- Alanlar: `timestamp`, `time_human`, `session_id`, `tool`, `argument`, `access_level`, `success`
+- Uzun argümanlar 2000 karaktere kırpılarak disk şişmesi önlenir
 
 #### 14.6.3 Sandbox Çıktı Boyutu Limiti
-**Mevcut durum:** Docker REPL'in çıktı boyutuna açık limit yok.
-**Öneri:** `execute_code()` sonucunu `MAX_OUTPUT_CHARS` (örn. 10.000 karakter) ile kırpma. Bellek dolması ve UI donması riski azalır.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+`CodeManager` içine `max_output_chars=10000` limiti eklendi:
+- Docker sandbox (`execute_code`) çıktısı kırpılır
+- Lokal subprocess (`execute_code_local`) çıktısı kırpılır
+- Shell komutu (`run_shell`) birleşik çıktısı kırpılır
+- Limit aşımlarında çıktı sonuna açık bir "ÇIKTI KIRPILDI" notu eklenir
 
 #### 14.6.4 Güvenlik Seviyesi Geçiş Logu
 **Mevcut durum:** `set_provider_mode()` ve erişim seviyesi değişiklikleri loglanıyor ancak oturum bazında takip yok.
@@ -1362,8 +1391,12 @@ web_ui/
 ### 14.8 Operasyon ve Dağıtım
 
 #### 14.8.1 Sağlık Endpoint Genişletmesi
-**Mevcut durum:** `/health` metin yanıtı döndürüyor.
-**Öneri:** Yapısal JSON: `{status, version, uptime, llm_available, rag_doc_count, memory_sessions, gpu_info}`. Kubernetes liveness/readiness probe uyumlu.
+**Güncel durum:** ✅ **Tamamlandı.**
+
+Yapısal sağlık özeti ve probe endpoint'i eklendi:
+- `SystemHealthManager.get_health_summary()` JSON özet döndürür
+- `GET /health` endpoint'i `uptime_seconds` alanı ile birlikte durum raporu üretir
+- `AI_PROVIDER=ollama` ve Ollama erişilemezse endpoint `503` + `status=degraded` döndürür
 
 #### 14.8.2 Çevre Başına Konfigürasyon
 **Mevcut durum:** Tek `.env` dosyası.
@@ -1374,14 +1407,15 @@ web_ui/
 **Öneri:** OpenTelemetry ile trace ID; her LLM çağrısı bir span olarak izlenir. Grafana/Jaeger entegrasyonu isteğe bağlı; telemetry sadece `OTEL_EXPORTER_ENDPOINT` ayarlıysa aktif olur.
 
 #### 14.8.4 Model Önbellekleme ve Soğuk Start
-**Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi var.
-**Öneri:** Web sunucu `startup` event'inde `DocumentStore.prebuild_bm25_index()` ve ChromaDB bağlantısı açılmalı. `PRECACHE_RAG_MODEL=true` Dockerfile argümanı zaten var; web_server.py'de de aktive edilmeli.
+**Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi olabilir.
+**Not:** BM25 artık SQLite FTS5 disk tabanlı olduğu için `prebuild_bm25_index()` akışı kaldırılmıştır.
+**Öneri:** `startup` event'inde yalnızca gerekli model/vektör bağlantılarının ısıtılması (prewarm) değerlendirilebilir.
 
 ---
 
 ### 14.9 Öncelik Durumu (Güncel — v2.9.0)
 
-> **Durum Notu:** v2.7.0–v2.9.0 arasında tüm yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
+> **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
 | Sıra | Özellik | Etki | Çaba | Durum |
 |------|---------|------|------|-------|
@@ -1391,14 +1425,16 @@ web_ui/
 | — | RAG oturum izolasyonu (§14.3.3) | Orta | Orta | ✅ **v2.9.0** |
 | — | Sliding window özetleme (§14.3.4) | Orta | Düşük | ✅ **v2.9.0** |
 | — | web_server.py RAG session_id bug (kritik düzeltme) | Yüksek | Düşük | ✅ **v2.9.0 audit** |
-| 1 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük | ⏳ Açık |
-| 2 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük | ⏳ Açık |
-| 3 | JWT / API key auth (§14.4.4) | Orta | Orta | ⏳ Açık |
-| 4 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ⏳ Açık |
-| 5 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ⏳ Açık |
-| 6 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ⏳ Açık |
-| 7 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
-| 8 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
+| 1 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük | ✅ Tamamlandı |
+| 2 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük | ✅ Tamamlandı |
+| 3 | API key auth (§14.4.4) | Orta | Orta | ✅ Tamamlandı |
+| 4 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ✅ Tamamlandı |
+| 5 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ✅ Tamamlandı |
+| 6 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ✅ Tamamlandı |
+| 7 | PR diff analizi (§14.5.3) | Orta | Orta | ✅ Tamamlandı |
+| 8 | Sağlık endpoint JSON (§14.8.1) | Orta | Düşük | ✅ Tamamlandı |
+| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
+| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
 
 ---
 
