@@ -350,6 +350,40 @@ def test_session_load_nonexistent(test_config):
     assert result is False
 
 
+def test_apply_summary_keeps_last_messages(test_config):
+    """ConversationMemory: Özetleme, son N mesajı koruyup başa özet bloğu ekler."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=4)
+    for i in range(8):
+        role = "user" if i % 2 == 0 else "assistant"
+        mem.add(role, f"mesaj-{i}")
+
+    mem.apply_summary("Kısa özet")
+
+    history = mem.get_history()
+    assert len(history) == 6
+    assert history[0]["content"] == "[Önceki konuşmaların özeti istendi]"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nKısa özet"
+    assert [t["content"] for t in history[2:]] == ["mesaj-4", "mesaj-5", "mesaj-6", "mesaj-7"]
+
+
+def test_apply_summary_keep_last_zero(test_config):
+    """ConversationMemory: keep_last=0 iken yalnızca özet blokları kalır."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=0)
+    for i in range(4):
+        mem.add("user", f"soru-{i}")
+
+    mem.apply_summary("Sadece özet")
+
+    history = mem.get_history()
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nSadece özet"
+
+
 # ─────────────────────────────────────────────
 # 8. ARAÇ DISPATCHER TESTLERİ
 # ─────────────────────────────────────────────
@@ -367,6 +401,97 @@ async def test_execute_tool_known_does_not_return_none(agent):
     # list_dir gerçek I/O yapar; BASE_DIR mevcut olduğundan sonuç döner
     result = await agent._execute_tool("list_dir", str(agent.cfg.BASE_DIR))
     assert result is not None
+
+
+def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
+    """RRF: Aynı belgeleri iki motordan birleştirip tek sıralama üretir."""
+    docs = DocumentStore.__new__(DocumentStore)
+
+    monkeypatch.setattr(docs, "_fetch_chroma", lambda q, k, s: [
+        {"id": "doc_a", "title": "A", "source": "", "snippet": "sa", "score": 1.0},
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 1.0},
+    ])
+    monkeypatch.setattr(docs, "_fetch_bm25", lambda q, k, s: [
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 5.0},
+        {"id": "doc_c", "title": "C", "source": "", "snippet": "sc", "score": 4.0},
+    ])
+
+    captured = {}
+
+    def _format(results, query, source_name):
+        captured["ids"] = [r["id"] for r in results]
+        captured["source"] = source_name
+        return True, "ok"
+
+    monkeypatch.setattr(docs, "_format_results_from_struct", _format)
+
+    ok, _ = DocumentStore._rrf_search(docs, "test", 3, "s1")
+
+    assert ok is True
+    assert captured["source"] == "Hibrit RRF (ChromaDB + BM25)"
+    assert captured["ids"][0] == "doc_b"
+
+
+def test_rag_search_auto_prefers_rrf(monkeypatch):
+    """search(auto): Chroma+BM25 varken önce RRF yolunu kullanır."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t"}}
+    docs._chroma_available = True
+    docs._bm25_available = True
+    docs.collection = object()
+
+    calls = {"rrf": 0}
+
+    def _rrf(query, top_k, session_id):
+        calls["rrf"] += 1
+        return True, "rrf"
+
+    monkeypatch.setattr(docs, "_rrf_search", _rrf)
+
+    ok, text = DocumentStore.search(docs, "soru", mode="auto")
+
+    assert ok is True
+    assert text == "rrf"
+    assert calls["rrf"] == 1
+
+
+def test_rag_index_info_filters_by_session(test_config):
+    """get_index_info(session_id): yalnızca ilgili oturum belgelerini döndürür."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    docs.add_document("A", "alpha", session_id="s1")
+    docs.add_document("B", "beta", session_id="s2")
+
+    s1_docs = docs.get_index_info(session_id="s1")
+    assert len(s1_docs) == 1
+    assert s1_docs[0]["session_id"] == "s1"
+
+
+def test_rag_list_documents_filters_by_session(test_config):
+    """list_documents(session_id): farklı oturum belgelerini dışarıda bırakır."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    docs.add_document("S1 Başlık", "alpha içerik", session_id="s1")
+    docs.add_document("S2 Başlık", "beta içerik", session_id="s2")
+
+    text = docs.list_documents(session_id="s1")
+    assert "S1 Başlık" in text
+    assert "S2 Başlık" not in text
+
+
+def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
+    """search(session_id): oturumda belge yoksa uyarı döndürür."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t", "session_id": "s1"}}
+    docs._chroma_available = False
+    docs._bm25_available = False
+    docs.collection = None
+
+    ok, msg = DocumentStore.search(docs, "soru", mode="auto", session_id="s2")
+    assert ok is False
+    assert "bu oturum" in msg.lower()
 
 
 # ─────────────────────────────────────────────
