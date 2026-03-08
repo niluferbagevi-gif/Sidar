@@ -403,6 +403,48 @@ async def test_execute_tool_known_does_not_return_none(agent):
     assert result is not None
 
 
+@pytest.mark.asyncio
+async def test_execute_tool_writes_audit_log_on_success(agent, monkeypatch):
+    """SidarAgent: başarılı araç çağrısı _log_audit ile success=True loglanır."""
+    captured = {}
+
+    async def _fake_log(tool_name, argument, success):
+        captured["tool_name"] = tool_name
+        captured["argument"] = argument
+        captured["success"] = success
+
+    async def _fake_tool(arg):
+        return "tamam"
+
+    monkeypatch.setattr(agent, "_log_audit", _fake_log)
+    monkeypatch.setitem(agent._tools, "dummy_tool", _fake_tool)
+
+    result = await agent._execute_tool("dummy_tool", "abc")
+
+    assert result == "tamam"
+    assert captured == {"tool_name": "dummy_tool", "argument": "abc", "success": True}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_writes_audit_log_on_tool_error_pattern(agent, monkeypatch):
+    """SidarAgent: ⚠/✗/[HATA] ile başlayan sonuçlar başarısız loglanır."""
+    captured = {}
+
+    async def _fake_log(tool_name, argument, success):
+        captured["success"] = success
+
+    async def _fake_tool(arg):
+        return "⚠ doğrulama hatası"
+
+    monkeypatch.setattr(agent, "_log_audit", _fake_log)
+    monkeypatch.setitem(agent._tools, "dummy_tool_err", _fake_tool)
+
+    result = await agent._execute_tool("dummy_tool_err", "xyz")
+
+    assert result.startswith("⚠")
+    assert captured["success"] is False
+
+
 def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
     """RRF: Aynı belgeleri iki motordan birleştirip tek sıralama üretir."""
     docs = DocumentStore.__new__(DocumentStore)

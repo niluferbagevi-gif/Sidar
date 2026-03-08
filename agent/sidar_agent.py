@@ -1247,7 +1247,7 @@ class SidarAgent:
         return "\n".join(lines)
 
     async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
-        """Dispatch tablosu aracılığıyla araç handler'ını çağırır."""
+        """Dispatch tablosu aracılığıyla araç handler'ını çağırır ve denetim logu tutar."""
         raw_arg = str(tool_arg).strip()
         handler = self._tools.get(tool_name)
         if not handler:
@@ -1256,7 +1256,49 @@ class SidarAgent:
             parsed_arg = parse_tool_argument(tool_name, raw_arg)
         except Exception:
             parsed_arg = raw_arg
-        return await handler(parsed_arg)
+
+        try:
+            result = await handler(parsed_arg)
+            # Eğer dönen sonuç bilinen bir hata kalıbıyla başlıyorsa başarısız (False) kabul edelim
+            success = True
+            if isinstance(result, str) and (
+                result.startswith("⚠") or result.startswith("✗") or result.startswith("[HATA]")
+            ):
+                success = False
+
+            # Log kaydını arka planda asenkron olarak yaz
+            await self._log_audit(tool_name, raw_arg, success)
+            return result
+        except Exception as exc:
+            # Python tarafında bir hata fırlatılırsa
+            await self._log_audit(tool_name, raw_arg, False)
+            raise exc
+
+    async def _log_audit(self, tool_name: str, argument: str, success: bool) -> None:
+        """Çalıştırılan araçları logs/audit.jsonl dosyasına yapısal olarak kaydeder."""
+        log_dir = Path(self.cfg.BASE_DIR) / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        audit_file = log_dir / "audit.jsonl"
+
+        # Eğer argüman çok uzunsa log dosyasını şişirmemek için kırp
+        safe_arg = argument[:2000] + ("..." if len(argument) > 2000 else "")
+
+        entry = {
+            "timestamp": time.time(),
+            "time_human": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "session_id": self.memory.active_session_id or "global",
+            "tool": tool_name,
+            "argument": safe_arg,
+            "access_level": getattr(self.security, "level_name", "unknown"),
+            "success": success,
+        }
+
+        def _write():
+            with open(audit_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        # Disk I/O işleminin asenkron event loop'u dondurmasını engelle
+        await asyncio.to_thread(_write)
 
     async def _get_memory_archive_context(self, user_input: str) -> str:
         """Sonsuz hafıza arşivinden sınırlı ve alakalı bağlamı çek."""
