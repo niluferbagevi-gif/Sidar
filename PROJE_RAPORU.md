@@ -1215,42 +1215,10 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 ---
 ### 14.3 RAG ve Bellek
 
-#### 14.3.1 Hibrit Sıralama (RRF)
-**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
-
-`_rrf_search()` metodu eklendi. `auto` modda her iki motor (ChromaDB + BM25) mevcutsa RRF öncelikli çalışır:
-- `_fetch_chroma()` → session filtreli ChromaDB sonuçları
-- `_fetch_bm25()` → session filtreli BM25 sonuçları
-- RRF puanı: `score(doc) = Σ 1/(k+rank)`, k=60 (TREC standardı)
-- Her iki motordan gelen sonuçlar birleştirilip en iyi `top_k` döndürülür
-
-#### 14.3.2 BM25 Corpus Ölçeklenebilirliği
-**Güncel durum:** ✅ **Tamamlandı (SQLite FTS5, disk tabanlı BM25).**
-
-`rank_bm25` tabanlı RAM içi indeks kaldırıldı ve BM25 katmanı SQLite FTS5'e taşındı:
-- `_init_fts()` ile `bm25_fts.db` ve `bm25_index` (FTS5) sanal tablosu başlatılır
-- Belge ekleme/silme işlemleri FTS tablosuna senkron `INSERT/DELETE` ile işlenir
-- `_fetch_bm25()` artık `MATCH` + `bm25(...)` ile diskten arama yapar
-- Eski in-memory cache/prebuild akışı kaldırılmıştır
-
-#### 14.3.3 Çok Oturumlu RAG İzolasyonu
-**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
-
-`session_id` metadata alanı tüm RAG metodlarına eklendi:
-- ChromaDB `where={"session_id": session_id}` filtresi
-- BM25 Python düzeyinde `valid_doc_ids` seti ile filtreleme
-- Keyword arama `meta.get("session_id")` kontrolü
-- `delete_document()` izolasyon yetki kontrolü
-- `sidar_agent.py` tüm RAG araçlarında `self.memory.active_session_id` geçiriliyor
-- `web_server.py` tüm RAG endpoint'lerinde `agent.memory.active_session_id` geçiriliyor
-
-#### 14.3.4 Bellek Özetleme Stratejisi Seçimi
-**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
-
-`apply_summary()` kayan pencere (sliding window) ile güncellendi:
-- Son `keep_last` (varsayılan: 4) mesaj tam korunur
-- Eski mesajlar özet çiftiyle değiştirilir: `[özet_user, özet_assistant] + son_mesajlar`
-- `MEMORY_SUMMARY_KEEP_LAST` env değişkeniyle yapılandırılabilir (bkz. §12.7)
+> **Not:** Bu başlık altında daha önce listelenen RAG ve bellek iyileştirmelerinin tamamı uygulanmıştır.
+> (RRF hibrit sıralama, SQLite FTS5 disk tabanlı BM25, çok oturumlu RAG izolasyonu ve sliding-window bellek özetleme stratejisi.)
+>
+> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.9.0** bölümüne bakın.
 
 ---
 
