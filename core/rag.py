@@ -216,7 +216,7 @@ class DocumentStore:
                         tokenize='unicode61 remove_diacritics 1'
                     );
                 """)
-                # Eski verileri migrate et (eğer FTS5 boşsa ve önceden eklenmiş belgeler varsa)
+                # Eski verileri migrate et (FTS5 boşsa ve önceden eklenmiş belgeler varsa)
                 cursor = self.fts_conn.execute("SELECT count(*) as c FROM bm25_index")
                 if cursor.fetchone()["c"] == 0 and self._index:
                     logger.info("Mevcut belgeler SQLite FTS5 disk motoruna aktarılıyor...")
@@ -594,25 +594,27 @@ class DocumentStore:
         return self._format_results_from_struct(results, query, source_name="Vektör Arama (ChromaDB + Chunking)")
 
     def _update_bm25_cache_on_add(self, doc_id: str, content: str) -> None:
-        """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet."""
+        """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet.
+        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
+        """
         if not self._bm25_available:
             return
         session_id = self._index.get(doc_id, {}).get("session_id", "global")
-        with self._write_lock:
-            self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
-            self.fts_conn.execute(
-                "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
-                (doc_id, session_id, content)
-            )
-            self.fts_conn.commit()
+        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
+        self.fts_conn.execute(
+            "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
+            (doc_id, session_id, content)
+        )
+        self.fts_conn.commit()
 
     def _update_bm25_cache_on_delete(self, doc_id: str) -> None:
-        """Silinen belgeyi SQLite FTS5'ten kaldır."""
+        """Silinen belgeyi SQLite FTS5'ten kaldır.
+        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
+        """
         if not self._bm25_available:
             return
-        with self._write_lock:
-            self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
-            self.fts_conn.commit()
+        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
+        self.fts_conn.commit()
 
     def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list:
         """Diskteki FTS5 veritabanından milisaniyelik BM25 araması yap."""
@@ -646,6 +648,7 @@ class DocumentStore:
             doc_id = row["doc_id"]
             # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı). Bunu pozitife çeviriyoruz.
             score = abs(row["score"])
+
 
             meta = self._index.get(doc_id, {})
             doc_file = self.store_dir / f"{doc_id}.txt"
@@ -778,7 +781,7 @@ class DocumentStore:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         if self._bm25_available:
-            engines.append("BM25")
+            engines.append("BM25 (SQLite FTS5)")
         if not engines:
             engines.append("Anahtar Kelime")
 
