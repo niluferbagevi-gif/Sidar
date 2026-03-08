@@ -35,3 +35,14 @@ def test_security_manager_supports_config_based_initialization_and_safe_path_api
 def test_sidar_agent_uses_config_driven_security_manager_init():
     src = Path("agent/sidar_agent.py").read_text(encoding="utf-8", errors="replace")
     assert "self.security = SecurityManager(cfg=self.cfg)" in src
+
+def test_security_manager_dynamic_level_change():
+    src = Path("managers/security.py").read_text(encoding="utf-8")
+    assert "def set_level(" in src
+    assert "self.level = LEVEL_NAMES[normalized]" in src
+
+
+def test_agent_dynamic_level_logs_to_memory():
+    src = Path("agent/sidar_agent.py").read_text(encoding="utf-8")
+    assert "def set_access_level(" in src
+    assert "[GÜVENLİK BİLDİRİMİ]" in src

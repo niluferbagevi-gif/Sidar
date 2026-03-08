@@ -69,7 +69,7 @@ def test_web_server_has_basic_auth_middleware_backed_by_api_key():
 
 def test_health_endpoint_uses_structured_summary_and_503_on_ollama_down():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert '@app.get("/health")' in src
+    assert '"/health"' in src
     assert "health_data = agent.health.get_health_summary()" in src
     assert 'health_data["uptime_seconds"] = int(time.monotonic() - _start_time)' in src
     assert 'if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:' in src
@@ -92,3 +92,22 @@ def test_web_server_has_websocket_chat_endpoint_with_cancel_support():
     assert '@app.websocket("/ws/chat")' in src
     assert 'action == "cancel"' in src
     assert 'active_task.cancel()' in src
+
+def test_web_server_openapi_docs_enabled():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert 'docs_url="/docs"' in src
+    assert 'redoc_url="/redoc"' in src
+    assert 'summary="Ajan Durumunu Getir"' in src
+
+
+def test_web_server_has_github_webhook_endpoint_with_hmac():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert '"/api/webhook"' in src
+    assert "x_hub_signature_256" in src
+    assert "hmac.compare_digest" in src
+
+
+def test_web_server_has_set_level_endpoint():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert '"/set-level"' in src
+    assert "agent.set_access_level" in src
