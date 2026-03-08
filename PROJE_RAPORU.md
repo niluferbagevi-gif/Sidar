@@ -1,9 +1,9 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.10.2 kalite altyapısı güncellemesi — pyproject.toml ile Ruff + Mypy standartları eklendi)
-> **Proje Sürümü:** 2.10.2
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 11.170 satır; Web UI: 3.516 satır.
+> **Son Güncelleme:** 2026-03-08 (v2.10.7 — satır sayıları, test sayımı ve eksik bulgular güncellendi; tüm "çözüldü" iddiaları kod üzerinde doğrulandı)
+> **Proje Sürümü:** 2.10.7
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 12.715 satır; Web UI: 3.528 satır.
 
 ---
 
@@ -13,25 +13,25 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-528-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
-  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-951-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1630-satır)
+  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-544-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-332-satır)
+  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-288-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1108-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1659-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-264-satır)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI)](#38-corellm_clientpy--llm-istemcisi-570-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-394-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-787-satır)
-  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-280-satır)
+  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-290-satır)
   - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-766-satır)
   - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-644-satır)
   - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-436-satır)
   - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-379-satır)
   - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.516 satır)](#318-web_ui--web-arayüzü-v280--modüler-yapı)
+  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.528 satır)](#318-web_ui--web-arayüzü-v280--modüler-yapı)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
   - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
@@ -83,6 +83,10 @@
   - [16.3 Asenkron Hata Yönetimi](#163-asenkron-hata-yönetimi)
   - [16.4 Bozuk Veri Karantinası](#164-bozuk-veri-karantinası)
 - [17. Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
+- [18. Doğrulanmış Çözüm Özeti](#18-doğrulanmış-çözüm-özeti-2026-03-08-audit-2)
+  - [18.1 Doğrulanan Maddeler](#181-önceki-raporda-çözüldü-olarak-işaretlenmiş-ve-doğrulanan-maddeler)
+  - [18.2 Audit #2 Düzeltmeleri](#182-rapor-düzeltme-özeti--audit-2-2026-03-08-sürüm-v2100)
+  - [18.3 Audit #3 Düzeltmeleri ve Yeni Bulgular](#183-rapor-düzeltme-özeti--audit-3-2026-03-08-güncel)
 
 ---
 
@@ -143,15 +147,15 @@ sidar_project/
 │   ├── package_info.py        # PyPI + npm + GitHub Releases
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
-├── web_ui/                    # Modüler Web UI (toplam 3516 satır)
+├── web_ui/                    # Modüler Web UI (toplam 3.528 satır)
 │   ├── index.html             # HTML iskeleti (461 satır)
 │   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
-│   ├── chat.js                # WebSocket streaming, mesaj render (654 satır)
+│   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
 │   ├── sidebar.js             # Oturum yönetimi (394 satır)
 │   ├── rag.js                 # RAG belge UI (131 satır)
 │   └── app.js                 # Uygulama başlatma, tema (339 satır)
 │
-├── tests/                     # 32 test modülü
+├── tests/                     # 39 test modülü
 │   ├── test_sidar.py
 │   ├── test_tooling_registry.py
 │   ├── test_parallel_react_improvements.py
@@ -175,7 +179,7 @@ sidar_project/
 
 ---
 
-### 3.1 `config.py` — Merkezi Yapılandırma (528 satır)
+### 3.1 `config.py` — Merkezi Yapılandırma (544 satır)
 
 **Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler ve donanım tespiti yapar.
 
@@ -208,7 +212,7 @@ sidar_project/
 
 ---
 
-### 3.2 `main.py` — Akıllı Başlatıcı (331 satır)
+### 3.2 `main.py` — Akıllı Başlatıcı (332 satır)
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
 
@@ -238,7 +242,7 @@ python main.py --quick web --capture-output --child-log logs/child.log
 
 ---
 
-### 3.3 `cli.py` — CLI Arayüzü (274 satır)
+### 3.3 `cli.py` — CLI Arayüzü (288 satır)
 
 **Amaç:** Terminal tabanlı etkileşimli REPL döngüsü.
 
@@ -269,7 +273,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (951 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.108 satır)
 
 **Amaç:** WebSocket destekli asenkron ve çift yönlü chat web arayüzü.
 
@@ -327,7 +331,7 @@ app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
 ---
 
-### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.630 satır)
+### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.659 satır)
 
 **Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
 
@@ -597,7 +601,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.11 `managers/security.py` — Güvenlik Yöneticisi (280 satır)
+### 3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)
 
 **Amaç:** OpenClaw erişim kontrol sistemi — 3 katmanlı güvenlik.
 
@@ -773,11 +777,11 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 |-------|-------|-----------|
 | `index.html` | 461 | HTML iskeleti, modal'lar, script yükleme noktaları |
 | `style.css` | 1.547 | CSS custom properties, tema (dark/light), tüm bileşen stilleri |
-| `chat.js` | 654 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
+| `chat.js` | 656 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
 | `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
 | `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
 | `app.js` | 339 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
-| **Toplam** | **3.516** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
+| **Toplam** | **3.528** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
 
 **Yükleme Sırası (index.html → script tags):**
 ```html
@@ -906,7 +910,7 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
+Projede **39 test modülü** bulunmaktadır (toplam ~2.362 satır):
 
 | Test Dosyası | Satır | Kapsam |
 |-------------|-------|--------|
@@ -943,6 +947,12 @@ Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
 | `test_managers_init_improvements.py` | 7 | `managers/__init__.py` export testleri |
 | `test_claude_md_improvements.py` | 23 | `CLAUDE.md` içerik testleri |
 | `test_sidar_md_improvements.py` | 22 | `SIDAR.md` içerik testleri |
+| `test_benchmark.py` | — | Performans baseline'ları (ChromaDB <200ms, BM25 <50ms, regex <5ms) |
+| `test_coverage_policy.py` | — | Coverage eşik zorunluluk testleri |
+| `test_quality_tooling_config.py` | — | Ruff/Mypy kalite altyapısı testleri |
+| `test_config_env_profiles.py` | — | Ortam başına konfigürasyon testleri |
+| `test_github_webhook.py` | — | GitHub webhook HMAC doğrulama testleri |
+| `test_security_level_transition.py` | — | Güvenlik seviyesi geçiş logu testleri |
 
 **Test çalıştırma:** `pytest` veya `pytest --cov=.`
 
@@ -985,15 +995,15 @@ Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
 | Dosya | Satır | Not |
 |-------|-------|-----|
 | `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
-| `agent/sidar_agent.py` | **1.630** | v2.10.0 — OpenTelemetry `react_step`/`tool_execution` span entegrasyonu eklendi |
+| `agent/sidar_agent.py` | **1.659** | v2.10.0 — OpenTelemetry `react_step`/`tool_execution` span entegrasyonu eklendi |
+| `web_server.py` | **1.108** | v2.10.1 — SSE yerine WebSocket chat + `cancel` destekli akış eklendi |
 | `core/rag.py` | **787** | v2.9.0 — RRF + oturum izolasyonu + SQLite FTS5 |
-| `web_server.py` | **957** | v2.10.1 — SSE yerine WebSocket chat + `cancel` destekli akış eklendi |
 | `managers/code_manager.py` | **766** | |
-| `web_ui/chat.js` | **654** | v2.10.1 — WebSocket istemcisi + yeniden bağlanma + cancel akışı eklendi |
+| `web_ui/chat.js` | **656** | v2.10.1 — WebSocket istemcisi + yeniden bağlanma + cancel akışı eklendi |
 | `managers/github_manager.py` | **644** | v2.9.0 — Issue yönetimi + PR diff + list_repos |
 | `agent/auto_handle.py` | 601 | |
 | `core/llm_client.py` | **570** | v2.10.0 — Ollama/Gemini çağrılarında TTFT + toplam süre span metrikleri eklendi |
-| `config.py` | **528** | v2.10.0 — `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, `REDIS_URL` eklendi |
+| `config.py` | **544** | v2.10.0 — `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, `REDIS_URL` eklendi |
 | `managers/system_health.py` | **436** | v2.9.0 — Prometheus metrics, get_gpu_info genişletme |
 | `managers/todo_manager.py` | **451** | v2.9.0 — scan_project_todos, set_tasks, _ensure_single_in_progress |
 | `core/memory.py` | 394 | v2.9.0 — Sliding window özetleme |
@@ -1002,18 +1012,19 @@ Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
 | `main.py` | 332 | |
 | `managers/package_info.py` | 314 | |
 | `github_upload.py` | 294 | |
-| `cli.py` | 275 | |
+| `managers/security.py` | **290** | |
+| `cli.py` | **288** | |
 | `agent/tooling.py` | **264** | v2.9.0 — 6 yeni şema (Issue, PR diff, scan_todos) |
 | `web_ui/app.js` | **339** | v2.8.0/v2.9.0 — genişletildi |
-| `agent/definitions.py` | 164 | |
+| `agent/definitions.py` | 165 | |
 | `web_ui/index.html` | **461** | v2.9.0 — drag-drop yükleme ve yeni UI bileşenleri |
 | `web_ui/rag.js` | 131 | v2.8.0 — index.html'den ayrıldı |
 | `core/__init__.py` | 27 | |
 | `managers/__init__.py` | 21 | |
 | `agent/__init__.py` | 19 | |
-| **Toplam (Python kaynak)** | **~11.170** | `wc -l` ile doğrulandı (2026-03-08) |
-| **Toplam (Web UI: HTML+JS+CSS)** | **~3.516** | `wc -l` ile doğrulandı (2026-03-08) |
-| **Genel Toplam** | **~14.686** | Python + Web UI |
+| **Toplam (Python kaynak)** | **~12.715** | `wc -l` ile doğrulandı (2026-03-08) |
+| **Toplam (Web UI: HTML+JS+CSS)** | **~3.528** | `wc -l` ile doğrulandı (2026-03-08) |
+| **Genel Toplam** | **~16.243** | Python + Web UI |
 
 ---
 
@@ -1137,9 +1148,17 @@ add_document(title, content, source)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.8.0 sürümü itibarıyla projede bilinen tüm yüksek/orta öncelikli sorunlar ve teknik borçlar kapatılmıştır.
+> **Not:** v2.8.0 sürümü itibarıyla projede bilinen yüksek/orta öncelikli sorunların büyük bölümü kapatılmıştır.
 >
 > Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
+
+### 11.1 Açık Teknik Borç (2026-03-08 Audit)
+
+| # | Sorun | Dosya | Etki | Öncelik |
+|---|-------|-------|------|---------|
+| 1 | **`/file-content` endpoint boyut limiti yok** | `web_server.py:596-626` | `target.read_text()` ile tüm dosya belleğe okunur; çok büyük dosyalarda (GB düzeyinde) bellek tüketimi ve DoS riski oluşur | Orta |
+
+**Öneri (sıra #1):** `/file-content` endpoint'ine `MAX_FILE_CONTENT_BYTES` (ör. 1 MB = 1_048_576 bayt) sınırı eklenmeli; aşıldığında `413 Request Entity Too Large` döndürülmelidir. `target.stat().st_size` ile dosya boyutu önce kontrol edilip yalnızca limiti aşmayan dosyalar `read_text()` ile okunmalıdır.
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1691,24 +1710,74 @@ Bu bölüm, 2026-03-08 tarihli ikinci kapsamlı kod incelemesinde satır satır 
 | Coverage zorunluluğu (global %70 + kritik modüller %80) | ✅ `run_tests.sh` içinde iki aşamalı `pytest --cov` kapısı tanımlı | `run_tests.sh` |
 | Performans benchmark baseline'ları | ✅ `tests/test_benchmark.py` ile ChromaDB/BM25/regex hedef eşikleri doğrulanıyor | `tests/test_benchmark.py` |
 
-### 18.2 Rapor Düzeltme Özeti (Satır Sayıları)
+### 18.2 Rapor Düzeltme Özeti — Audit #2 (2026-03-08, Sürüm v2.10.0)
 
-| Dosya | Rapordaki (Eski) | Gerçek (wc -l) | Fark |
-|-------|-----------------|----------------|------|
-| `agent/sidar_agent.py` | 1.455/1.463 | **1.630** | +167–175 |
-| `web_server.py` | 794/801 | **951** | +150–157 |
-| `core/rag.py` | 777/851 | **787** | Rapor tutarsız; gerçek: 787 |
-| `managers/code_manager.py` | 746 | **766** | +20 |
-| `managers/github_manager.py` | 560 | **644** | +84 |
-| `managers/system_health.py` | 420 | **436** | +16 |
-| `managers/todo_manager.py` | 380 | **451** | +71 |
-| `agent/tooling.py` | 189 | **264** | +75 |
-| `core/llm_client.py` | 445/513 | **570** | +57–125 |
-| `config.py` | 480/517/520 | **528** | +8–48 |
-| `web_ui/app.js` | 242 | **339** | +97 |
-| `web_ui/index.html` | 436 | **461** | +25 |
-| Web UI toplam | 3.394/3.399 | **3.516** | +117–122 |
+*Bu tablo, önceki raporun taşıdığı hatalı satır sayılarının o audit'te nasıl düzeltildiğini gösterir (tarihsel kayıt).*
+
+| Dosya | Rapordaki (Eski) | Audit #2 Sonrası Düzeltme |
+|-------|-----------------|--------------------------|
+| `agent/sidar_agent.py` | 1.455/1.463 | 1.630 |
+| `web_server.py` | 794/801 | 951 |
+| `core/rag.py` | 777/851 | 787 |
+| `managers/code_manager.py` | 746 | 766 |
+| `managers/github_manager.py` | 560 | 644 |
+| `managers/system_health.py` | 420 | 436 |
+| `managers/todo_manager.py` | 380 | 451 |
+| `agent/tooling.py` | 189 | 264 |
+| `core/llm_client.py` | 445/513 | 570 |
+| `config.py` | 480/517/520 | 528 |
+| `web_ui/app.js` | 242 | 339 |
+| `web_ui/index.html` | 436 | 461 |
+| Web UI toplam | 3.394/3.399 | 3.516 |
 
 ---
 
-*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; 2026-03-08 tarihinde v2.10.0 operasyonel güncellemesi (OpenTelemetry + Redis rate limiting) ile güncellenmiştir.*
+### 18.3 Rapor Düzeltme Özeti — Audit #3 (2026-03-08, Güncel)
+
+Bu bölüm, 2026-03-08 tarihli üçüncü kapsamlı audit'te tespit edilen ve düzeltilen hataları özetler. `wc -l` ile tüm dosyalar yeniden ölçüldü; "çözüldü" işaretli tüm maddeler doğrulandı.
+
+#### 18.3.1 Satır Sayısı Düzeltmeleri
+
+| Dosya | Audit #2'deki Değer | Gerçek (Audit #3) | Fark |
+|-------|--------------------|--------------------|------|
+| `web_server.py` | 951/957 | **1.108** | +151–157 |
+| `agent/sidar_agent.py` | 1.630 | **1.659** | +29 |
+| `cli.py` | 274/275 | **288** | +13–14 |
+| `config.py` | 528 | **544** | +16 |
+| `managers/security.py` | 280 | **290** | +10 |
+| `web_ui/chat.js` | 654 | **656** | +2 |
+| Web UI toplam | 3.516 | **3.528** | +12 |
+| Toplam Python | ~11.170 | **~12.715** | +1.545 |
+| Genel Toplam | ~14.686 | **~16.243** | +1.557 |
+
+#### 18.3.2 Test Sayısı Düzeltmesi
+
+| Metrik | Önceki Değer | Gerçek Değer |
+|--------|-------------|--------------|
+| Test modülü sayısı | 34 | **39** |
+| Test toplam satır | ~2.157 | **~2.362** |
+
+Eksik listelenen test dosyaları: `test_benchmark.py`, `test_coverage_policy.py`, `test_quality_tooling_config.py`, `test_config_env_profiles.py`, `test_github_webhook.py`, `test_security_level_transition.py`
+
+#### 18.3.3 Doğrulanan "Çözüldü" İddiaları
+
+| Madde | Doğrulama Yöntemi | Sonuç |
+|-------|------------------|-------|
+| CLI `asyncio.Lock` fix | `cli.py:114` — `_interactive_loop_async()` + `cli.py:213` — tek `asyncio.run()` | ✅ Onaylandı |
+| WebSocket altyapısı | `web_server.py:322` — `@app.websocket("/ws/chat")` aktif | ✅ Onaylandı |
+| Sandbox çıktı limiti | `code_manager.py:50` — `max_output_chars = 10000` | ✅ Onaylandı |
+| Redis rate limiting | `web_server.py:33` — `from redis.asyncio import Redis` + fallback mekanizması | ✅ Onaylandı |
+| SIDAR_ENV konfigürasyonu | `config.py:31` — `sidar_env = os.getenv("SIDAR_ENV")` + override yükleme | ✅ Onaylandı |
+| Coverage eşikleri | `run_tests.sh:7` — `--cov-fail-under=70` + `run_tests.sh:15` — `--cov-fail-under=80` | ✅ Onaylandı |
+| audit.jsonl denetim logu | `sidar_agent.py:1343-1346` — `logs/audit.jsonl` yazım metodu | ✅ Onaylandı |
+| DuckDuckGo timeout | `web_search.py` — `asyncio.wait_for` + `AsyncDDGS` dinamik kontrol | ✅ Onaylandı |
+
+#### 18.3.4 Yeni Açık Bulgu (Audit #3)
+
+| Bulgu | Konum | Detay | Öncelik |
+|-------|-------|-------|---------|
+| `/file-content` boyut limiti yok | `web_server.py:622-624` | `target.read_text()` tüm dosyayı belleğe alır; GB'lık dosyalarda DoS riski | Orta |
+
+---
+
+*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2 ve #3) güncellenerek doğrulanmıştır.*
