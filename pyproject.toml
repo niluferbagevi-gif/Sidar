@@ -63,3 +63,11 @@ module = [
   "prometheus_client.*",
 ]
 ignore_missing_imports = true
+
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=. --cov-report=term-missing --cov-fail-under=70"
+testpaths = [
+  "tests",
+]

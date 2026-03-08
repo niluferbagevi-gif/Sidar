@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.10.2 kalite altyapısı güncellemesi — pyproject.toml ile Ruff + Mypy standartları eklendi)
-> **Proje Sürümü:** 2.10.2
+> **Son Güncelleme:** 2026-03-08 (v2.10.3 kalite ve belgelendirme güncellemesi — coverage barajı + OpenAPI şema dokümantasyonu eklendi)
+> **Proje Sürümü:** 2.10.3
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 11.170 satır; Web UI: 3.516 satır.
 
 ---
@@ -1308,8 +1308,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 **Uygulama notu:** `/ws/chat` endpointi istemciden `message` ve `action=cancel` payloadlarını alır; sunucu `chunk/thought/tool_call/done` olayları ile gerçek zamanlı güncelleme döner.
 
 #### 14.4.3 OpenAPI Şema Belgelendirmesi
-**Mevcut durum:** FastAPI otomatik `/docs` oluşturuyor ancak endpoint açıklamaları eksik.
-**Öneri:** Her endpoint için `summary`, `description`, `response_model` ve `responses` parametrelerinin doldurulması. Harici entegrasyon kolaylaşır.
+**Güncel durum (v2.10.3):** ✅ Tamamlandı. Pydantic şemaları ile endpoint dönüş tipleri (`response_model`), `summary` ve `description` alanları kritik rotalara entegre edildi.
+**Uygulama notu:** `/docs` endpointi açıldı; `StatusResponse`, `HealthSummaryResponse`, `SessionListResponse`, `GenericSuccessResponse` modelleri Swagger UI'da görünür hale getirildi.
 
 ---
 
@@ -1344,8 +1344,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > dosyasındaki ilgili bölümlere bakın.
 
 #### 14.7.2 Test Coverage Hedefi
-**Mevcut durum:** Kapsam hedefi tanımlanmamış.
-**Öneri:** CI'da `pytest --cov=. --cov-fail-under=70` eşiği. `security.py`, `memory.py`, `rag.py` %80+ hedef.
+**Güncel durum (v2.10.3):** ✅ Tamamlandı. `pyproject.toml` içine `pytest-cov` addopts eklendi ve global coverage eşiği `--cov-fail-under=70` olarak zorunlu hale getirildi.
+**Uygulama notu:** Testler artık varsayılan olarak `--cov=. --cov-report=term-missing` ile çalışır ve kapsam %70 altına düşerse pipeline başarısız olur.
 
 #### 14.7.3 Linting ve Tip Kontrolü
 **Güncel durum (v2.10.2):** ✅ Tamamlandı. Kök dizine `pyproject.toml` eklendi; `ruff` lint/format kuralları ve `mypy --strict` tabanlı tip denetimi merkezi olarak tanımlandı.
@@ -1378,7 +1378,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.2)
+### 14.9 Öncelik Durumu (Güncel — v2.10.3)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1401,6 +1401,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ✅ Tamamlandı |
 | 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ✅ Tamamlandı |
 | 11 | Linting + mypy strict altyapısı (§14.7.3) | Orta | Düşük | ✅ Tamamlandı |
+| 12 | Test coverage barajı + OpenAPI şema belgelendirmesi (§14.7.2, §14.4.3) | Orta | Orta | ✅ Tamamlandı |
 
 ---
 

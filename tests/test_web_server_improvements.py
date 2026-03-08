@@ -69,7 +69,7 @@ def test_web_server_has_basic_auth_middleware_backed_by_api_key():
 
 def test_health_endpoint_uses_structured_summary_and_503_on_ollama_down():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert '@app.get("/health")' in src
+    assert '@app.get("/health",' in src
     assert "health_data = agent.health.get_health_summary()" in src
     assert 'health_data["uptime_seconds"] = int(time.monotonic() - _start_time)' in src
     assert 'if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:' in src
@@ -92,3 +92,14 @@ def test_web_server_has_websocket_chat_endpoint_with_cancel_support():
     assert '@app.websocket("/ws/chat")' in src
     assert 'action == "cancel"' in src
     assert 'active_task.cancel()' in src
+
+
+def test_web_server_openapi_docs_and_response_models_are_declared():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert 'app = FastAPI(title="Sidar Web UI", docs_url="/docs", redoc_url=None)' in src
+    assert 'class StatusResponse(BaseModel):' in src
+    assert 'class HealthSummaryResponse(BaseModel):' in src
+    assert '@app.get("/status", response_model=StatusResponse' in src
+    assert '@app.get("/health", response_model=HealthSummaryResponse' in src
+    assert '@app.get("/sessions", response_model=SessionListResponse' in src
+    assert '@app.delete("/sessions/{session_id}", response_model=GenericSuccessResponse' in src

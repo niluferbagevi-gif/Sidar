@@ -19,6 +19,7 @@ import subprocess
 import time
 import tempfile
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 try:
     import anyio
@@ -32,6 +33,7 @@ from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, ConfigDict
 
 try:
     from opentelemetry import trace
@@ -81,7 +83,50 @@ async def get_agent() -> SidarAgent:
 #  FASTAPI UYGULAMASI
 # ─────────────────────────────────────────────
 
-app = FastAPI(title="Sidar Web UI", docs_url=None, redoc_url=None)
+app = FastAPI(title="Sidar Web UI", docs_url="/docs", redoc_url=None)
+
+
+# ─────────────────────────────────────────────
+#  OPENAPI ŞEMALARI (Pydantic Models)
+# ─────────────────────────────────────────────
+class StatusResponse(BaseModel):
+    version: str
+    provider: str
+    model: str
+    access_level: str
+    memory_count: int
+    github: bool
+    web_search: bool
+    rag_status: Dict[str, Any] | str
+    pkg_status: Dict[str, Any] | str
+    enc_status: str
+    gpu_enabled: bool
+    gpu_info: str
+    gpu_count: int
+    cuda_version: str
+    gpu_devices: List[Any]
+    ollama_online: bool
+    ollama_latency_ms: int
+
+
+class HealthSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str = Field(..., description="Sistem genel durumu (healthy/degraded/down)")
+    uptime_seconds: int
+    ollama_online: bool
+    gpu_available: bool
+
+
+class GenericSuccessResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class SessionListResponse(BaseModel):
+    active_session: Optional[str]
+    sessions: List[Dict[str, Any]]
 
 
 @app.middleware("http")
@@ -387,7 +432,7 @@ async def websocket_chat(websocket: WebSocket):
             active_task.cancel()
 
 
-@app.get("/status")
+@app.get("/status", response_model=StatusResponse, summary="Sistem Durumunu Getir", description="Ajanın donanım, LLM sağlayıcısı ve yetki seviyesi gibi anlık durum bilgilerini döndürür.")
 async def status():
     """Ajan durum bilgisini JSON olarak döndür."""
     a = await get_agent()
@@ -425,7 +470,7 @@ async def status():
         "ollama_latency_ms": ollama_latency_ms,
     })
 
-@app.get("/health")
+@app.get("/health", response_model=HealthSummaryResponse, summary="Sağlık Kontrolü (Liveness Probe)", description="Kubernetes ve Docker monitör sistemleri için yapısal sağlık kontrolü.")
 async def health_check():
     """
     Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
@@ -493,7 +538,7 @@ async def metrics(request: Request):
 #  ÇOKLU SOHBET (SESSIONS) ROTALARI
 # ─────────────────────────────────────────────
 
-@app.get("/sessions")
+@app.get("/sessions", response_model=SessionListResponse, summary="Sohbet Oturumlarını Listele")
 async def get_sessions():
     """Tüm oturumların listesini döndürür."""
     agent = await get_agent()
@@ -517,7 +562,7 @@ async def new_session():
     session_id = agent.memory.create_session("Yeni Sohbet")
     return JSONResponse({"success": True, "session_id": session_id})
 
-@app.delete("/sessions/{session_id}")
+@app.delete("/sessions/{session_id}", response_model=GenericSuccessResponse, summary="Oturum Sil")
 async def delete_session(session_id: str):
     """Belirli bir oturumu siler."""
     agent = await get_agent()
