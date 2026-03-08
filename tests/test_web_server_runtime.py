@@ -559,3 +559,240 @@ def test_websocket_chat_generate_response_cancelled_error_branch():
     asyncio.run(mod.websocket_chat(ws))
     # CancelledError branch generate_response içinde swallow edilir; done/json gönderimi olmayabilir
     assert isinstance(ws.sent, list)
+
+def test_tracing_setup_dependency_and_enabled_paths(monkeypatch):
+    mod = _load_web_server()
+
+    warns = []
+    infos = []
+    monkeypatch.setattr(mod.logger, "warning", lambda msg, *args: warns.append(msg % args if args else msg))
+    monkeypatch.setattr(mod.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+
+    mod.cfg.ENABLE_TRACING = True
+    mod.trace = object()
+    mod.OTLPSpanExporter = None
+    mod.FastAPIInstrumentor = object()
+    mod.TracerProvider = object()
+    mod.Resource = object()
+    mod.BatchSpanProcessor = object()
+    mod._setup_tracing()
+    assert any("OpenTelemetry" in w for w in warns)
+
+    class _Res:
+        @staticmethod
+        def create(data):
+            return {"resource": data}
+
+    class _Provider:
+        def __init__(self, resource):
+            self.resource = resource
+            self.spans = []
+
+        def add_span_processor(self, proc):
+            self.spans.append(proc)
+
+    class _Exporter:
+        def __init__(self, endpoint, insecure):
+            self.endpoint = endpoint
+            self.insecure = insecure
+
+    class _Batch:
+        def __init__(self, exporter):
+            self.exporter = exporter
+
+    class _Instr:
+        called = False
+
+        @classmethod
+        def instrument_app(cls, app):
+            cls.called = app is not None
+
+    class _Trace:
+        provider = None
+
+        @classmethod
+        def set_tracer_provider(cls, provider):
+            cls.provider = provider
+
+    warns.clear()
+    mod.Resource = _Res
+    mod.TracerProvider = _Provider
+    mod.OTLPSpanExporter = _Exporter
+    mod.BatchSpanProcessor = _Batch
+    mod.FastAPIInstrumentor = _Instr
+    mod.trace = _Trace
+    mod.cfg.OTEL_EXPORTER_ENDPOINT = "http://otel:4317"
+    mod._setup_tracing()
+
+    assert _Trace.provider is not None
+    assert _Instr.called is True
+    assert any("OpenTelemetry aktif" in i for i in infos)
+
+
+def test_rate_limit_middlewares_and_redis_paths(monkeypatch):
+    mod = _load_web_server()
+
+    class _Redis:
+        def __init__(self):
+            self.count = 0
+            self.exp = None
+
+        async def incr(self, _key):
+            self.count += 1
+            return self.count
+
+        async def expire(self, _key, ttl):
+            self.exp = ttl
+
+    redis = _Redis()
+    mod._redis_client = redis
+    blocked = asyncio.run(mod._redis_is_rate_limited("ns", "k", 2, 60))
+    assert blocked is False
+    assert redis.exp == 62
+
+    blocked2 = asyncio.run(mod._redis_is_rate_limited("ns", "k", 1, 60))
+    assert blocked2 is True
+
+    async def _raise(*_a, **_k):
+        raise RuntimeError("redis down")
+
+    redis.incr = _raise
+    fallback_calls = []
+
+    async def _local(key, limit, window):
+        fallback_calls.append((key, limit, window))
+        return True
+
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _local)
+    blocked3 = asyncio.run(mod._redis_is_rate_limited("ns", "k", 3, 120))
+    assert blocked3 is True
+    assert fallback_calls
+
+    async def _next(_request):
+        return _FakeResponse(status_code=200)
+
+    async def _always_limit(*_a, **_k):
+        return True
+
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _always_limit)
+    ddos_resp = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path="/api/x"), _next))
+    assert ddos_resp.status_code == 429
+
+    bypass = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path="/health"), _next))
+    assert bypass.status_code == 200
+
+    ws_limited = asyncio.run(mod.rate_limit_middleware(_FakeRequest(path="/ws/chat", method="GET"), _next))
+    assert ws_limited.status_code == 429
+
+    io_limited = asyncio.run(mod.rate_limit_middleware(_FakeRequest(path="/git-info", method="GET"), _next))
+    assert io_limited.status_code == 429
+
+    post_limited = asyncio.run(mod.rate_limit_middleware(_FakeRequest(path="/set-level", method="POST"), _next))
+    assert post_limited.status_code == 429
+
+
+def test_vendor_index_and_file_content_guard_paths(tmp_path, monkeypatch):
+    mod = _load_web_server()
+    monkeypatch.setattr(mod, "WEB_DIR", tmp_path)
+
+    (tmp_path / "vendor").mkdir(parents=True)
+    (tmp_path / "vendor" / "ok.js").write_text("console.log(1)", encoding="utf-8")
+
+    good = asyncio.run(mod.serve_vendor("ok.js"))
+    assert isinstance(good, _FakeFileResponse)
+    assert good.status_code == 200
+
+    bad = asyncio.run(mod.serve_vendor("../secret.txt"))
+    assert bad.status_code == 403
+
+    missing = asyncio.run(mod.serve_vendor("missing.js"))
+    assert missing.status_code == 404
+
+    idx_missing = asyncio.run(mod.index())
+    assert isinstance(idx_missing, _FakeHTMLResponse)
+    assert idx_missing.status_code == 500
+
+    (tmp_path / "index.html").write_text("<h1>ok</h1>", encoding="utf-8")
+    idx_ok = asyncio.run(mod.index())
+    assert "<h1>ok</h1>" in idx_ok
+
+    outside = asyncio.run(mod.file_content("../etc/passwd"))
+    assert outside.status_code == 403
+
+    not_found = asyncio.run(mod.file_content("nope.txt"))
+    assert not_found.status_code == 404
+
+    is_dir = asyncio.run(mod.file_content("tests"))
+    assert is_dir.status_code == 400
+
+    tmp_unsupported = Path("tests") / "_tmp_unsupported.bin"
+    tmp_unsupported.write_bytes(b"x")
+    unsupported = asyncio.run(mod.file_content(str(tmp_unsupported)))
+    assert unsupported.status_code == 415
+    tmp_unsupported.unlink(missing_ok=True)
+
+    ok_txt_path = Path("README.md")
+    ok_file = asyncio.run(mod.file_content(str(ok_txt_path)))
+    assert ok_file.status_code == 200
+    assert "content" in ok_file.content
+
+
+def test_github_repo_pr_and_rag_url_endpoints_error_paths():
+    mod = _load_web_server()
+
+    class _GH:
+        repo_name = "owner/repo"
+
+        def is_available(self):
+            return False
+
+        def list_repos(self, owner, limit):
+            return False, []
+
+        def get_pull_requests_detailed(self, state, limit):
+            return False, [], "err"
+
+        def get_pull_request(self, number):
+            return False, "missing"
+
+        def set_repo(self, name):
+            return False, f"bad:{name}"
+
+    agent = types.SimpleNamespace(
+        github=_GH(),
+        memory=types.SimpleNamespace(active_session_id="s1"),
+        docs=types.SimpleNamespace(add_document_from_url=None, get_index_info=lambda session_id: [], delete_document=lambda *_: "x"),
+    )
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    repos = asyncio.run(mod.github_repos(owner="", q=""))
+    assert repos.status_code == 400
+
+    prs = asyncio.run(mod.github_prs())
+    assert prs.status_code == 503
+
+    pr_detail = asyncio.run(mod.github_pr_detail(1))
+    assert pr_detail.status_code == 503
+
+    bad_set = asyncio.run(mod.set_repo(_FakeRequest(json_body={})))
+    assert bad_set.status_code == 400
+
+    set_resp = asyncio.run(mod.set_repo(_FakeRequest(json_body={"repo": "a/b"})))
+    assert set_resp.status_code == 200
+    assert set_resp.content["success"] is False
+
+    url_bad = asyncio.run(mod.rag_add_url(_FakeRequest(json_body={"url": ""})))
+    assert url_bad.status_code == 400
+
+    class _Docs:
+        async def add_document_from_url(self, url, title, session_id):
+            return True, f"ok:{url}:{title}:{session_id}"
+
+    agent.docs = _Docs()
+    url_ok = asyncio.run(mod.rag_add_url(_FakeRequest(json_body={"url": "http://x", "title": "t"})))
+    assert url_ok.status_code == 200
+    assert url_ok.content["success"] is True
