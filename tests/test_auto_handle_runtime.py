@@ -300,3 +300,16 @@ def test_handle_multistep_and_unknown_dot_command_paths():
 
     handled2, msg2 = asyncio.run(auto._try_dot_command(".unknown", ".unknown"))
     assert handled2 is False and msg2 == ""
+
+
+def test_auto_handle_git_log_git_branch_and_todo_phrases():
+    auto = _make_auto(github_available=True)
+
+    handled, msg = auto._try_github_commits("git log son commitleri göster")
+    assert handled is True and "commits" in msg
+
+    handled, msg = auto._try_github_list_files("github repo branch dosya listesini göster")
+    assert handled is True and msg == "files"
+
+    handled2, msg2 = asyncio.run(auto.handle("yapılacaklar"))
+    assert handled2 is False and msg2 == ""
