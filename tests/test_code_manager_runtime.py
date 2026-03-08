@@ -221,3 +221,189 @@ def test_validation_audit_status_and_repr(manager_factory, tmp_path):
 
     assert "CodeManager:" in mgr.status()
     assert "<CodeManager" in repr(mgr)
+
+def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
+    sec = DummySecurity(tmp_path)
+    original_init = CM_MOD.CodeManager._init_docker
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    mgr = CM_MOD.CodeManager(sec, tmp_path)
+
+    # ImportError branch
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("no docker sdk")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    original_init(mgr)
+    assert mgr.docker_available is False
+
+    # WSL socket fallback branch: from_env fails, second socket succeeds
+    class _DockerClient:
+        def __init__(self, base_url=None):
+            self.base_url = base_url
+
+        def ping(self):
+            if self.base_url == "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock":
+                return True
+            raise RuntimeError("socket down")
+
+    class _DockerModule:
+        DockerClient = _DockerClient
+
+        @staticmethod
+        def from_env():
+            raise RuntimeError("daemon down")
+
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    monkeypatch.setitem(sys.modules, "docker", _DockerModule)
+    mgr.docker_available = False
+    mgr.docker_client = None
+    original_init(mgr)
+    assert mgr.docker_available is True
+    assert mgr.docker_client.base_url.endswith("backend.sock")
+
+
+def test_read_write_permission_and_directory_error_paths(manager_factory, monkeypatch, tmp_path):
+    mgr = manager_factory(can_read=True, can_write=True)
+
+    # read_file directory path
+    ok, msg = mgr.read_file(str(tmp_path), line_numbers=False)
+    assert ok is False
+    assert "bir dizin" in msg
+
+    # read_file permission error
+    import builtins
+    real_open = builtins.open
+
+    def deny_read(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(builtins, "open", deny_read)
+    target = tmp_path / "a.txt"
+    target.write_text("x", encoding="utf-8")
+    ok, msg = mgr.read_file(str(target), line_numbers=False)
+    assert ok is False
+    assert "Erişim reddedildi" in msg
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    # write_file permission error
+    def deny_write(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(builtins, "open", deny_write)
+    ok, msg = mgr.write_file(str(tmp_path / "w.txt"), "data", validate=False)
+    assert ok is False
+    assert "Yazma erişimi reddedildi" in msg
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    # write_file to directory path (generic exception branch)
+    ok, msg = mgr.write_file(str(tmp_path), "x", validate=False)
+    assert ok is False
+    assert "Yazma hatası" in msg
+
+
+def test_patch_file_target_not_found_and_ambiguous(manager_factory, tmp_path):
+    mgr = manager_factory(can_read=True, can_write=True)
+    f = tmp_path / "p.py"
+    f.write_text("a = 1\na = 1\n", encoding="utf-8")
+
+    ok, msg = mgr.patch_file(str(f), "missing", "x")
+    assert ok is False
+    assert "bulunamadı" in msg
+
+    ok, msg = mgr.patch_file(str(f), "a = 1", "a = 2")
+    assert ok is False
+    assert "kez geçiyor" in msg
+
+
+def test_execute_code_docker_happy_path_and_image_not_found(manager_factory, monkeypatch):
+    mgr = manager_factory(can_execute=True, level=FULL)
+    mgr.docker_available = True
+
+    class _Container:
+        def __init__(self, logs=b"hello"):
+            self.status = "running"
+            self._logs = logs
+            self.killed = False
+            self.removed = False
+            self.reload_count = 0
+
+        def reload(self):
+            self.reload_count += 1
+            self.status = "exited"
+
+        def kill(self):
+            self.killed = True
+
+        def remove(self, force=False):
+            self.removed = True
+
+        def logs(self, stdout=True, stderr=True):
+            return self._logs
+
+    container = _Container()
+
+    class _Containers:
+        def run(self, **kwargs):
+            assert kwargs["network_disabled"] is True
+            assert kwargs["working_dir"] == "/tmp"
+            return container
+
+    class _DockerErrors:
+        class ImageNotFound(Exception):
+            pass
+
+    class _DockerModule:
+        errors = _DockerErrors
+
+    monkeypatch.setitem(sys.modules, "docker", _DockerModule)
+
+    mgr.docker_client = SimpleNamespace(containers=_Containers())
+    ok, msg = mgr.execute_code("print('x')")
+    assert ok is True
+    assert "Docker Sandbox" in msg
+    assert container.removed is True
+
+    # ImageNotFound branch
+    class _ContainersErr:
+        def run(self, **kwargs):
+            raise _DockerErrors.ImageNotFound("missing")
+
+    mgr.docker_client = SimpleNamespace(containers=_ContainersErr())
+    ok, msg = mgr.execute_code("print('x')")
+    assert ok is False
+    assert "imajı bulunamadı" in msg
+
+
+def test_run_shell_timeout_parse_error_and_output_truncation(manager_factory, monkeypatch):
+    mgr = manager_factory(can_shell=True)
+    mgr.max_output_chars = 20
+
+    # parse error via shlex
+    monkeypatch.setattr(CM_MOD.shlex, "split", lambda _cmd: (_ for _ in ()).throw(ValueError("bad split")))
+    ok, msg = mgr.run_shell('echo "unterminated')
+    assert ok is False
+    assert "ayrıştırılamadı" in msg
+
+    # timeout branch
+    def raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="x", timeout=60)
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", raise_timeout)
+    ok, msg = mgr.run_shell("echo hi", allow_shell_features=True)
+    assert ok is False
+    assert "Zaman aşımı" in msg
+
+    # long output gets truncated
+    def long_output(*args, **kwargs):
+        return SimpleNamespace(returncode=0, stdout="a" * 200, stderr="")
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", long_output)
+    monkeypatch.setattr(CM_MOD.shlex, "split", lambda cmd: ["echo", "hi"])
+    ok, msg = mgr.run_shell("echo hi")
+    assert ok is True
+    assert "ÇIKTI KIRPILDI" in msg
