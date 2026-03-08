@@ -8,6 +8,7 @@ Başlatmak için:
 """
 
 import argparse
+from collections import defaultdict
 import base64
 import asyncio
 import json
@@ -94,6 +95,40 @@ async def basic_auth_middleware(request: Request, call_next):
         status_code=401,
         headers={"WWW-Authenticate": 'Basic realm="Sidar Secure Web UI"'},
     )
+
+
+# --- YENİ EKLENEN BLOK: IP Tabanlı Hız Sınırlandırması (Rate Limit) ---
+# Sunucu güvenliği için dakikada maksimum 120 isteğe (saniyede ort. 2 istek) izin ver
+_rate_limits = defaultdict(list)
+RATE_LIMIT_MAX_REQUESTS = 120
+RATE_LIMIT_WINDOW_SEC = 60
+
+
+@app.middleware("http")
+async def ddos_rate_limit_middleware(request: Request, call_next):
+    # Statik arayüz dosyaları (CSS/JS) ve Health Check ucunu limitten muaf tut
+    if request.url.path.startswith("/ui/") or request.url.path.startswith("/static/") or request.url.path == "/health":
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    now = time.time()
+
+    # Bu IP'nin zaman penceresi dolmuş (1 dakikadan eski) isteklerini temizle
+    _rate_limits[client_ip] = [t for t in _rate_limits[client_ip] if now - t < RATE_LIMIT_WINDOW_SEC]
+
+    # Limit aşıldıysa 429 Too Many Requests döndür ve işlemi kes
+    if len(_rate_limits[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. Lütfen 1 dakika bekleyip tekrar deneyin."
+            }
+        )
+
+    # İsteği logla ve yola (işleme) devam et
+    _rate_limits[client_ip].append(now)
+    return await call_next(request)
+# ------------------------------------------------------------------------
 
 # CORS: localhost/loopback kökenlerine porttan bağımsız izin ver.
 app.add_middleware(
