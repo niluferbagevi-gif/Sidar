@@ -14,4 +14,7 @@ python -m pytest -v \
   --cov-report=term-missing \
   --cov-fail-under=80
 
+# 3) Kritik yol performans baseline testleri (pytest-benchmark)
+python -m pytest -v tests/test_benchmark.py
+
 echo "✅ Testler Tamamlandı!"
