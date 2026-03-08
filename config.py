@@ -240,6 +240,7 @@ class Config:
     # ─── GitHub ──────────────────────────────────────────────
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
     GITHUB_REPO:  str = os.getenv("GITHUB_REPO", "")
+    GITHUB_WEBHOOK_SECRET: str = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
     # ─── HuggingFace ─────────────────────────────────────────
     HF_TOKEN:       str = os.getenv("HF_TOKEN", "")

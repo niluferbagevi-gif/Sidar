@@ -1,5 +1,13 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.6] - 2026-03-08
+Bu sürümde GitHub entegrasyonu pull modelden webhook tabanlı push modele genişletildi.
+
+### ✅ GitHub Webhook Desteği
+* **Webhook alıcısı (`web_server.py`):** Push, Pull Request ve Issue event'lerini dinleyen `POST /api/webhook` endpoint'i eklendi.
+* **HMAC doğrulaması (`web_server.py`, `config.py`):** `X-Hub-Signature-256` başlığı `GITHUB_WEBHOOK_SECRET` ile doğrulanır; geçersiz imza istekleri `401` ile reddedilir.
+* **Ajan belleği bildirimi (`web_server.py`):** Doğrulanan webhook event'leri `[GITHUB BİLDİRİMİ]` formatında konuşma belleğine asenkron olarak yazılır.
+
 ## [v2.10.5] - 2026-03-08
 Bu sürümde güvenlik seviyesi geçişleri ajanın kalıcı sohbet belleğine işlenecek şekilde geliştirildi.
 

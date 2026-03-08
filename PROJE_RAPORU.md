@@ -1246,6 +1246,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `HF_HUB_OFFLINE` | `false` | HF Hub çevrimdışı mod |
 | `GITHUB_TOKEN` | `""` | GitHub API token |
 | `GITHUB_REPO` | `""` | Varsayılan GitHub repo (`owner/repo`) |
+| `GITHUB_WEBHOOK_SECRET` | `""` | GitHub webhook HMAC doğrulama gizli anahtarı |
 | `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
 | `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
 | `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
@@ -1321,8 +1322,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > dosyasındaki ilgili bölümlere bakın.
 
 #### 14.5.1 Webhook Desteği
-**Mevcut durum:** GitHub durumu yalnızca istek üzerine sorgulanıyor (pull model).
-**Öneri:** GitHub Webhook alıcısı eklenebilir (push, PR, issue eventi). Yeni commit'te otomatik RAG güncelleme veya bildirim.
+**Güncel durum (v2.10.6):** ✅ Tamamlandı. `POST /api/webhook` endpoint'i ile GitHub push/pull_request/issues event'leri alınır; `X-Hub-Signature-256` HMAC doğrulaması uygulanır ve geçerli bildirimler ajanın belleğine asenkron olarak yazılır.
+**Uygulama notu:** `GITHUB_WEBHOOK_SECRET` ayarlıysa imza zorunludur; geçersiz/missing imza `401` döner. Olay özeti `[GITHUB BİLDİRİMİ]` olarak session bağlamına işlenir.
 
 ---
 
@@ -1379,7 +1380,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.5)
+### 14.9 Öncelik Durumu (Güncel — v2.10.6)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1406,6 +1407,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 13 | Performans benchmark baseline'ları (§14.7.4) | Orta | Orta | ✅ Tamamlandı |
 | 14 | OpenAPI Şema Belgelendirmesi (§14.4.3) | Orta | Düşük | ✅ Tamamlandı |
 | 15 | Güvenlik Seviyesi Geçiş Logu (§14.6.4) | Orta | Düşük | ✅ Tamamlandı |
+| 16 | Webhook Desteği (§14.5.1) | Orta | Orta | ✅ Tamamlandı |
 
 ---
 
@@ -1437,7 +1439,7 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 | Gemini LLM | `google-generativeai` | `GEMINI_API_KEY`, `GEMINI_MODEL` |
 | Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) |
 | Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` |
-| GitHub entegrasyonu | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO` |
+| GitHub entegrasyonu | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET` |
 | Proje denetimi (`audit`) | — (stdlib: `ast`, `pathlib`) | — |
 
 ### 15.2 Arama ve Web
