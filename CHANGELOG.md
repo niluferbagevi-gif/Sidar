@@ -1,5 +1,11 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.4] - 2026-03-08
+Bu sürümde Web API dokümantasyonu OpenAPI/Swagger standardına yükseltilmiştir.
+
+### ✅ Web API Dokümantasyon İyileştirmeleri
+* **OpenAPI Şema Belgelendirmesi (`web_server.py`):** FastAPI `/docs` ve `/redoc` arayüzleri aktif edildi. Kritik API uç noktalarına (`/status`, `/health`, `/sessions`, `/rag/search`, `/rag/add-file`, `/clear`) `summary`, `description` ve `responses` detayları eklendi.
+
 ## [v2.10.3] - 2026-03-08
 Bu sürümde test kalite kapıları ve performans baseline ölçümleri CI/test akışına entegre edilmiştir.
 
