@@ -641,9 +641,10 @@ async def set_repo(request: Request):
 
 @app.get("/rag/docs")
 async def rag_list_docs():
-    """RAG deposundaki tüm belgeleri listeler."""
+    """RAG deposundaki aktif oturuma ait belgeleri listeler."""
     agent = await get_agent()
-    docs = agent.docs.get_index_info()
+    session_id = agent.memory.active_session_id or "global"
+    docs = agent.docs.get_index_info(session_id=session_id)
     return JSONResponse({"success": True, "docs": docs, "count": len(docs)})
 
 
@@ -667,7 +668,10 @@ async def rag_add_file(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({"success": False, "error": "Güvenlik: proje dışına çıkılamaz."}, status_code=403)
 
     agent = await get_agent()
-    ok, msg = await asyncio.to_thread(agent.docs.add_document_from_file, str(target), title or target.name)
+    session_id = agent.memory.active_session_id or "global"
+    ok, msg = await asyncio.to_thread(
+        agent.docs.add_document_from_file, str(target), title or target.name, None, session_id
+    )
     if ok:
         background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
     return JSONResponse({"success": ok, "message": msg})
@@ -683,7 +687,8 @@ async def rag_add_url(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({"success": False, "error": "URL boş."}, status_code=400)
 
     agent = await get_agent()
-    ok, msg = await agent.docs.add_document_from_url(url, title=title)
+    session_id = agent.memory.active_session_id or "global"
+    ok, msg = await agent.docs.add_document_from_url(url, title=title, session_id=session_id)
     if ok:
         background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
     return JSONResponse({"success": ok, "message": msg})
@@ -691,9 +696,10 @@ async def rag_add_url(request: Request, background_tasks: BackgroundTasks):
 
 @app.delete("/rag/docs/{doc_id}")
 async def rag_delete_doc(doc_id: str, background_tasks: BackgroundTasks):
-    """RAG deposundan belge siler."""
+    """RAG deposundan belge siler (oturum izolasyonuna uygun)."""
     agent = await get_agent()
-    msg = await asyncio.to_thread(agent.docs.delete_document, doc_id)
+    session_id = agent.memory.active_session_id or "global"
+    msg = await asyncio.to_thread(agent.docs.delete_document, doc_id, session_id)
     success = msg.startswith("✓")
     if success:
         background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
@@ -702,12 +708,13 @@ async def rag_delete_doc(doc_id: str, background_tasks: BackgroundTasks):
 
 @app.get("/rag/search")
 async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
-    """RAG deposunda arama yapar."""
+    """RAG deposunda aktif oturuma ait belgelerde arama yapar."""
     if not q.strip():
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
+    session_id = agent.memory.active_session_id or "global"
     ok, result = await asyncio.to_thread(
-        agent.docs.search, q.strip(), min(top_k, 10), mode
+        agent.docs.search, q.strip(), min(top_k, 10), mode, session_id
     )
     return JSONResponse({"success": ok, "result": result})
 

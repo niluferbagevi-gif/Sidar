@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.8.0 audit — Madde #10 ve #11 satır satır doğrulama; branch: claude/review-files-report-5uVFR)
-> **Proje Sürümü:** 2.8.0
+> **Son Güncelleme:** 2026-03-08 (v2.9.0 audit — RRF, RAG İzolasyonu, Sliding Window; web_server RAG session_id bug düzeltmesi; branch: claude/review-files-report-5uVFR)
+> **Proje Sürümü:** 2.9.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir.
 
 ---
@@ -481,7 +481,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.9 `core/memory.py` — Konuşma Belleği (384 satır)
+### 3.9 `core/memory.py` — Konuşma Belleği (394 satır)
 
 **Amaç:** Çok oturumlu, kalıcı, thread-safe ve opsiyonel şifreli bellek yönetimi.
 
@@ -489,6 +489,7 @@ kullanıcı mesajı
 - Her oturum `data/sessions/<uuid>.json` dosyasında saklanır
 - `threading.RLock` ile tüm okuma/yazma işlemleri korunur
 - Bozuk dosyalar `.json.broken` uzantısıyla karantinaya alınır (7 gün / 50 dosya retention)
+- `active_session_id: Optional[str]` özelliği ile mevcut oturum RAG izolasyonuna aktarılır
 
 **Fernet Şifrelemesi:**
 - `MEMORY_ENCRYPTION_KEY` ayarlandığında oturum dosyaları AES-128-CBC ile şifrelenir
@@ -499,26 +500,44 @@ kullanıcı mesajı
 - `_save_interval_seconds = 0.5` ile kısa aralıklı `add()` çağrıları birleştirilir
 - `force_save()` ile anında disk yazımı (clear, session değişimi, başlık güncelleme)
 
-**Özetleme Desteği:**
+**Özetleme Desteği (v2.9.0 — §14.3.4 Sliding Window):**
 - `needs_summarization()`: bellek penceresinin %80'i dolu VEYA tahminî token > 6000 ise True
-- `apply_summary(text)`: tüm geçmiş 2 mesaja (user + assistant özet) indirgenir
+- `apply_summary(text)`: v2.9.0 öncesi tüm geçmiş 2 mesaja indirgeniyor; v2.9.0 itibarıyla **kayan pencere** uygulandı:
+  - Son `keep_last` mesaj (varsayılan: 4) tam olarak korunur
+  - Daha eski mesajlar özet çiftiyle değiştirilir: `[özet_user, özet_assistant, *son_mesajlar]`
+  - `MEMORY_SUMMARY_KEEP_LAST` env değişkeni ile yapılandırılabilir
 
 **Token Tahmini:** `_estimate_tokens()` — UTF-8 Türkçe için ~3.5 karakter/token heuristic kullanır.
 
 ---
 
-### 3.10 `core/rag.py` — RAG Motoru (851 satır)
+### 3.10 `core/rag.py` — RAG Motoru (777 satır)
 
-**Amaç:** ChromaDB (vektör) + BM25 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu.
+**Amaç:** ChromaDB (vektör) + BM25 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu. v2.9.0 itibarıyla **RRF birleştirme** ve **oturum izolasyonu** eklendi.
 
-**Arama Modları:**
+**Arama Modları (v2.9.0 — §14.3.1 RRF + §14.3.3 İzolasyon):**
 
 | Mod | Motor | Açıklama |
 |-----|-------|----------|
-| `auto` | ChromaDB → BM25 → Keyword | Kademeli fallback |
-| `vector` | ChromaDB (cosine similarity) | Anlamsal arama |
-| `bm25` | rank_bm25 | TF-IDF benzeri kelime sıklığı |
-| `keyword` | Regex | Başlık ×5, etiket ×3, içerik ×1 ağırlıkla skor |
+| `auto` | **RRF (ChromaDB + BM25)** → ChromaDB → BM25 → Keyword | v2.9.0: Her iki motor mevcutsa RRF öncelikli |
+| `vector` | ChromaDB (cosine similarity + `session_id` where filtresi) | Anlamsal arama |
+| `bm25` | rank_bm25 (Python'da `session_id` filtresi) | TF-IDF benzeri kelime sıklığı |
+| `keyword` | Regex (`session_id` kontrolü) | Başlık ×5, etiket ×3, içerik ×1 ağırlıkla skor |
+
+**RRF Algoritması (`_rrf_search`):**
+```python
+# Her iki motordan sonuç alınır; rank tabanlı birleştirme
+rrf_score(doc) = Σ  1 / (k + rank_i)   (k=60, TREC'19 standardı)
+```
+ChromaDB ve BM25 sonuçları `_fetch_chroma()` / `_fetch_bm25()` ayrı metodlarıyla alınır; skorlar birleştirilerek `top_k` sonuç döndürülür.
+
+**Oturum İzolasyonu (`session_id` — §14.3.3):**
+- `add_document()`: her belgeye `session_id` metadata alanı eklenir
+- `_fetch_chroma()`: `where={"session_id": session_id}` ChromaDB filtresi
+- `_fetch_bm25()`: Python düzeyinde `valid_doc_ids` seti ile oturum filtresi
+- `_keyword_search()`: `meta.get("session_id")` kontrolü
+- `delete_document()`: farklı oturumun belgesini silmeye karşı yetki kontrolü
+- `get_index_info()`: `session_id=None` → tüm belgeler; `session_id=<id>` → oturuma özgü
 
 **Chunking Motoru:**
 `_recursive_chunk_text()` LangChain'in `RecursiveCharacterTextSplitter` mantığını simüle eder. Öncelik sırası: `\nclass ` → `\ndef ` → `\n\n` → `\n` → ` ` → karakter. Overlap mekanizması bağlam sürekliliğini korur.
@@ -530,10 +549,10 @@ kullanıcı mesajı
 Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden yüklenmez; yalnızca değişen kayıt güncellenir. `_ensure_bm25_index()` lazy build ile gereksiz CPU kullanımını önler.
 
 **Belge Yönetimi:**
-- `add_document()`: dosya sistemi + index.json + ChromaDB chunked upsert (thread-safe `_write_lock`)
-- `add_document_from_url()`: httpx asenkron HTTP çekme + HTML temizleme + ekleme
-- `add_document_from_file()`: uzantı whitelist kontrolü (.py, .md, .json, .yaml, vb.)
-- `delete_document()`: dosya + ChromaDB (parent_id ile tüm chunk'lar) + BM25 cache
+- `add_document(session_id)`: dosya sistemi + index.json + ChromaDB chunked upsert (thread-safe `_write_lock`)
+- `add_document_from_url(session_id)`: httpx asenkron HTTP çekme + HTML temizleme + ekleme
+- `add_document_from_file(session_id)`: uzantı whitelist kontrolü (.py, .md, .json, .yaml, vb.)
+- `delete_document(session_id)`: izolasyon yetki kontrolü sonrası dosya + ChromaDB + BM25 cache
 
 ---
 
@@ -894,19 +913,19 @@ Projede **32 test modülü** bulunmaktadır (toplam ~1.836 satır):
 | Dosya | Satır | Not |
 |-------|-------|-----|
 | `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
-| `agent/sidar_agent.py` | 1.455 | |
-| `core/rag.py` | 851 | |
-| `web_server.py` | 794 | v2.8.0 — StaticFiles eklendi |
+| `agent/sidar_agent.py` | 1.463 | v2.9.0 — RAG araçlarına session_id eklendi |
+| `core/rag.py` | 777 | v2.9.0 — RRF + izolasyon (refaktör ile 74 satır küçüldü) |
+| `web_server.py` | 801 | v2.9.0 — RAG endpoint'lerine session_id eklendi |
 | `managers/code_manager.py` | 746 | |
 | `web_ui/chat.js` | 644 | v2.8.0 — index.html'den ayrıldı |
 | `agent/auto_handle.py` | 601 | |
 | `managers/github_manager.py` | 560 | |
 | `core/llm_client.py` | 513 | |
-| `config.py` | 517 | |
+| `config.py` | 520 | v2.9.0 — MEMORY_SUMMARY_KEEP_LAST eklendi |
 | `managers/system_health.py` | 420 | |
 | `managers/todo_manager.py` | 380 | |
 | `web_ui/sidebar.js` | 394 | v2.8.0 — index.html'den ayrıldı |
-| `core/memory.py` | 384 | |
+| `core/memory.py` | 394 | v2.9.0 — Sliding window özetleme eklendi |
 | `managers/web_search.py` | 379 | v2.8.0 — AsyncDDGS + timeout eklendi |
 | `managers/package_info.py` | 314 | |
 | `github_upload.py` | 294 | |
@@ -920,8 +939,8 @@ Projede **32 test modülü** bulunmaktadır (toplam ~1.836 satır):
 | `core/__init__.py` | 27 | |
 | `managers/__init__.py` | 21 | |
 | `agent/__init__.py` | 19 | |
-| **Toplam (Python + JS/CSS/HTML)** | **~11.608** | v2.8.0 güncel |
-| **Toplam (Python kaynak)** | **~8.213** | JS/CSS/HTML hariç |
+| **Toplam (Python + JS/CSS/HTML)** | **~11.592** | v2.9.0 güncel |
+| **Toplam (Python kaynak)** | **~8.197** | JS/CSS/HTML hariç |
 
 ---
 
@@ -1124,6 +1143,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `MAX_MEMORY_TURNS` | `20` | Bellekte tutulan max konuşma turu |
+| `MEMORY_SUMMARY_KEEP_LAST` | `4` | Özetleme sırasında tam korunacak son mesaj sayısı (sliding window) |
 | `MAX_REACT_STEPS` | `10` | ReAct döngüsü max adım sayısı |
 | `REACT_TIMEOUT` | `60` | ReAct tek adım zaman aşımı (sn) |
 | `SUBTASK_MAX_STEPS` | `5` | Alt ajan max adım sayısı |
@@ -1219,20 +1239,36 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 ### 14.3 RAG ve Bellek
 
 #### 14.3.1 Hibrit Sıralama (RRF)
-**Mevcut durum:** `auto` modda ChromaDB → BM25 → Keyword kademeli fallback; kazanan motor tek başına sıralamayı belirliyor.
-**Öneri:** Reciprocal Rank Fusion (RRF) ile ChromaDB ve BM25 sonuçlarını birleştirme. Her iki motorun bulguları ağırlıklı olarak birleştirilir; tek motor yetersizliği azalır.
+**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
+
+`_rrf_search()` metodu eklendi. `auto` modda her iki motor (ChromaDB + BM25) mevcutsa RRF öncelikli çalışır:
+- `_fetch_chroma()` → session filtreli ChromaDB sonuçları
+- `_fetch_bm25()` → session filtreli BM25 sonuçları
+- RRF puanı: `score(doc) = Σ 1/(k+rank)`, k=60 (TREC standardı)
+- Her iki motordan gelen sonuçlar birleştirilip en iyi `top_k` döndürülür
 
 #### 14.3.2 BM25 Corpus Ölçeklenebilirliği
-**Mevcut durum:** Tüm belgelerin token'ları RAM'de tutuluyor (`_bm25_corpus_tokens`). 10.000+ belge senaryosunda bellek basıncı oluşur.
-**Öneri:** SQLite FTS5 (tam metin arama) veya Whoosh ile disk tabanlı BM25 indeksi. Corpus RAM'de değil, disk üzerinde tutulur.
+**Mevcut durum:** ⏳ Tüm belgelerin token'ları RAM'de tutuluyor (`_bm25_corpus_tokens`). 10.000+ belge senaryosunda bellek basıncı oluşur.
+**Öneri:** SQLite FTS5 veya Whoosh ile disk tabanlı BM25 indeksi.
 
 #### 14.3.3 Çok Oturumlu RAG İzolasyonu
-**Mevcut durum:** Tüm oturumlar aynı ChromaDB koleksiyonunu (`sidar_knowledge_base`) paylaşıyor.
-**Öneri:** Oturum başına koleksiyon veya metadata filtresiyle (`session_id`) izolasyon. Kullanıcı A'nın eklediği belgeler kullanıcı B'nin aramasında çıkmamalı.
+**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
+
+`session_id` metadata alanı tüm RAG metodlarına eklendi:
+- ChromaDB `where={"session_id": session_id}` filtresi
+- BM25 Python düzeyinde `valid_doc_ids` seti ile filtreleme
+- Keyword arama `meta.get("session_id")` kontrolü
+- `delete_document()` izolasyon yetki kontrolü
+- `sidar_agent.py` tüm RAG araçlarında `self.memory.active_session_id` geçiriliyor
+- `web_server.py` tüm RAG endpoint'lerinde `agent.memory.active_session_id` geçiriliyor
 
 #### 14.3.4 Bellek Özetleme Stratejisi Seçimi
-**Mevcut durum:** Özetleme tetiklendiğinde tüm geçmiş 2 mesaja indirgeniyor — bağlam kaybı riski yüksek.
-**Öneri:** Kayan pencere (sliding window): Son N tur tam korunur, öncesi özetlenir. Yapılandırılabilir `MEMORY_SUMMARY_KEEP_LAST` parametresi.
+**Güncel durum:** ✅ **v2.9.0'da tamamlandı.**
+
+`apply_summary()` kayan pencere (sliding window) ile güncellendi:
+- Son `keep_last` (varsayılan: 4) mesaj tam korunur
+- Eski mesajlar özet çiftiyle değiştirilir: `[özet_user, özet_assistant] + son_mesajlar`
+- `MEMORY_SUMMARY_KEEP_LAST` env değişkeniyle yapılandırılabilir (bkz. §12.7)
 
 ---
 
@@ -1343,22 +1379,26 @@ web_ui/
 
 ---
 
-### 14.9 Versiyon 2.8 İçin Önerilen Öncelik Sırası
+### 14.9 Öncelik Durumu (Güncel — v2.9.0)
 
-> **v2.7.0 Durum Notu:** §14.1.1–14.1.4 maddeleri v2.7.0'da tamamlandı. Aşağıdaki tablo yalnızca **açık** (henüz uygulanmamış) maddeleri içerir.
+> **Durum Notu:** v2.7.0–v2.9.0 arasında tüm yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
 | Sıra | Özellik | Etki | Çaba | Durum |
 |------|---------|------|------|-------|
+| — | §14.1.1–14.1.4 (tiktoken, cache lock, RRF thread-safe, rate limiting) | Yüksek | Düşük–Orta | ✅ **v2.7.0** |
+| — | DuckDuckGo güvenliği, Web UI modülarizasyonu (§10, §11, §14.4.1) | Yüksek | Düşük–Yüksek | ✅ **v2.8.0** |
+| — | RRF sıralama (§14.3.1) | Orta | Orta | ✅ **v2.9.0** |
+| — | RAG oturum izolasyonu (§14.3.3) | Orta | Orta | ✅ **v2.9.0** |
+| — | Sliding window özetleme (§14.3.4) | Orta | Düşük | ✅ **v2.9.0** |
+| — | web_server.py RAG session_id bug (kritik düzeltme) | Yüksek | Düşük | ✅ **v2.9.0 audit** |
 | 1 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük | ⏳ Açık |
 | 2 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük | ⏳ Açık |
-| 3 | RRF ile hibrit sıralama (§14.3.1) | Orta | Orta | ⏳ Açık |
-| 4 | JWT / API key auth (§14.4.4) | Orta | Orta | ⏳ Açık |
-| 5 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ⏳ Açık |
-| 6 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ⏳ Açık |
-| 7 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek | ✅ **v2.8.0'da tamamlandı** |
-| 8 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ⏳ Açık |
-| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
-| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
+| 3 | JWT / API key auth (§14.4.4) | Orta | Orta | ⏳ Açık |
+| 4 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ⏳ Açık |
+| 5 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ⏳ Açık |
+| 6 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ⏳ Açık |
+| 7 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
+| 8 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
 
 ---
 
