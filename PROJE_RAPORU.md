@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.10.1 gerçek zamanlı iletişim güncellemesi — WebSocket chat + cancel desteği eklendi; operasyonel bölümler güncellendi)
-> **Proje Sürümü:** 2.10.1
+> **Son Güncelleme:** 2026-03-08 (v2.10.2 kalite altyapısı güncellemesi — pyproject.toml ile Ruff + Mypy standartları eklendi)
+> **Proje Sürümü:** 2.10.2
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 11.170 satır; Web UI: 3.516 satır.
 
 ---
@@ -118,6 +118,7 @@ sidar_project/
 ├── Dockerfile                 # CPU + GPU çift mod Dockerfile
 ├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
 ├── environment.yml            # Conda/pip bağımlılıkları
+├── pyproject.toml             # Ruff + Mypy kalite standartları
 │
 ├── agent/
 │   ├── __init__.py
@@ -1347,8 +1348,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 **Öneri:** CI'da `pytest --cov=. --cov-fail-under=70` eşiği. `security.py`, `memory.py`, `rag.py` %80+ hedef.
 
 #### 14.7.3 Linting ve Tip Kontrolü
-**Mevcut durum:** Tip anotasyonları var ancak `mypy` / `ruff` konfigürasyonu yok.
-**Öneri:** `pyproject.toml` içine `ruff` (format + lint) ve `mypy --strict` konfigürasyonu. Pre-commit hook ile her commit'te otomatik çalıştırma.
+**Güncel durum (v2.10.2):** ✅ Tamamlandı. Kök dizine `pyproject.toml` eklendi; `ruff` lint/format kuralları ve `mypy --strict` tabanlı tip denetimi merkezi olarak tanımlandı.
+**Uygulama notu:** Opsiyonel/üçüncü taraf paketler için `mypy` override tanımları girildi; böylece çekirdek kodda sıkı tip denetimi korunurken dış bağımlılık kaynaklı gürültü azaltıldı.
 
 #### 14.7.4 Performans Benchmark
 **Mevcut durum:** RAG arama süresi, LLM ilk token gecikmesi (TTFT) ölçülmüyor.
@@ -1377,7 +1378,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.1)
+### 14.9 Öncelik Durumu (Güncel — v2.10.2)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1399,6 +1400,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 8 | Sağlık endpoint JSON (§14.8.1) | Orta | Düşük | ✅ Tamamlandı |
 | 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ✅ Tamamlandı |
 | 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ✅ Tamamlandı |
+| 11 | Linting + mypy strict altyapısı (§14.7.3) | Orta | Düşük | ✅ Tamamlandı |
 
 ---
 

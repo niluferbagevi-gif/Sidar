@@ -1,0 +1,65 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+  ".git",
+  ".venv",
+  "__pycache__",
+  "data",
+  "logs",
+  "temp",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "W",
+  "I",
+  "B",
+  "UP",
+  "ASYNC",
+]
+ignore = [
+  "E501",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_return_any = true
+show_error_codes = true
+pretty = true
+exclude = [
+  "^tests/",
+  "^data/",
+  "^logs/",
+  "^temp/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+  "google.generativeai",
+  "google.generativeai.*",
+  "chromadb",
+  "chromadb.*",
+  "sentence_transformers",
+  "sentence_transformers.*",
+  "duckduckgo_search",
+  "duckduckgo_search.*",
+  "github",
+  "github.*",
+  "opentelemetry",
+  "opentelemetry.*",
+  "redis",
+  "redis.*",
+  "prometheus_client",
+  "prometheus_client.*",
+]
+ignore_missing_imports = true
