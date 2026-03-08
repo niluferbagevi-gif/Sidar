@@ -1240,25 +1240,13 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.5 GitHub Entegrasyonu
 
+> **Not:** Bu başlık altındaki tamamlanan maddeler (14.5.2 Issue Yönetimi ve 14.5.3 Diff Analizi)
+> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
+> dosyasındaki ilgili bölümlere bakın.
+
 #### 14.5.1 Webhook Desteği
 **Mevcut durum:** GitHub durumu yalnızca istek üzerine sorgulanıyor (pull model).
 **Öneri:** GitHub Webhook alıcısı eklenebilir (push, PR, issue eventi). Yeni commit'te otomatik RAG güncelleme veya bildirim.
-
-#### 14.5.2 Issue Yönetimi
-**Güncel durum:** ✅ **Tamamlandı.**
-
-GitHub issue yaşam döngüsü araçları eklendi:
-- `list_issues`, `create_issue`, `comment_issue`, `close_issue` (`managers/github_manager.py`)
-- Ajan araçları: `github_list_issues`, `github_create_issue`, `github_comment_issue`, `github_close_issue`
-- `agent/tooling.py` içinde ilgili Pydantic şemaları ve dispatch kayıtları mevcut
-
-#### 14.5.3 Diff Analizi
-**Güncel durum:** ✅ **Tamamlandı.**
-
-PR inceleme için unified diff erişimi eklendi:
-- `get_pull_request_diff(number)` ile dosya bazlı patch metni çekilir
-- Ajan aracı `github_pr_diff` üzerinden LLM'e doğrudan diff içeriği verilebilir
-- Böylece güvenlik/kod kalite odaklı otomatik review senaryoları mümkün hale gelmiştir
 
 ---
 
