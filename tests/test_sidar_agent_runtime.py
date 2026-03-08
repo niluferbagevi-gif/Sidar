@@ -924,3 +924,28 @@ def test_execute_tool_tracing_span_attributes(monkeypatch):
     assert span.attrs["sidar.tool.name"] == "x"
     assert span.attrs["sidar.tool.success"] is True
     assert "sidar.tool.duration_ms" in span.attrs
+
+
+def test_react_loop_parallel_json_array_tools_path(monkeypatch):
+    a = _make_react_ready_agent(max_steps=1)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+    a._AUTO_PARALLEL_SAFE = {"list_dir", "health"}
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return _gen_once('[{"thought":"t1","tool":"list_dir","argument":"."},{"thought":"t2","tool":"health","argument":""}]')
+
+    async def _exec(tool, arg):
+        return f"{tool}:{arg or 'ok'}"
+
+    a.llm = _LLM()
+    monkeypatch.setattr(a, "_execute_tool", _exec)
+
+    out = asyncio.run(_collect(a._react_loop("paralel")))
+    assert any(x.startswith("\x00THOUGHT:") for x in out)
+    assert any(x == "\x00TOOL:list_dir\x00" for x in out)
+    assert any(x == "\x00TOOL:health\x00" for x in out)
+    assert out[-1].startswith("Üzgünüm")
