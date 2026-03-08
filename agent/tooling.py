@@ -1,7 +1,5 @@
 """Sidar araç kayıt/argüman şema yardımcıları."""
 
-from __future__ import annotations
-
 import json
 from typing import Any, Callable, Dict, List, Optional, Type
 
@@ -91,6 +89,10 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "github_pr_diff": GithubPRDiffSchema,
     "scan_project_todos": ScanProjectTodosSchema,
 }
+
+# Pydantic v2: Optional alanları olan modellerde forward reference çözümlemesi için model_rebuild() gerekir.
+for _schema in TOOL_ARG_SCHEMAS.values():
+    _schema.model_rebuild()
 
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:

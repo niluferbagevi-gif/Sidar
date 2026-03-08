@@ -286,7 +286,15 @@ class PackageInfoManager:
 
     @staticmethod
     def _is_prerelease(version: str) -> bool:
-        """Sürümün pre-release olup olmadığını kontrol et."""
+        """Sürümün pre-release olup olmadığını kontrol et.
+
+        Hem PEP 440 (alpha/beta/rc) hem de npm semver sayısal pre-release
+        formatlarını destekler (örn: 1.0.0-0, 2.0.0-42).
+        """
+        # npm semver sayısal pre-release: 1.0.0-0, 1.0.0-1, 2.0.0-42
+        # packaging kütüphanesi bunları post-release olarak yorumlar; önce biz kontrol ederiz.
+        if re.match(r"^\d+\.\d+\.\d+-\d+$", version):
+            return True
         try:
             return Version(version).is_prerelease
         except InvalidVersion:

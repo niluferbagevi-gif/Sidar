@@ -42,6 +42,8 @@ class ConversationMemory:
         self._save_interval_seconds = 0.5
         self._last_saved_at = 0.0
         self._dirty = False
+        # Son diske yazma anındaki tur sayısı; debounce sırasında yeni eklemeler kaçmaz
+        self._last_saved_turn_count: int = 0
 
         # Başlangıçta oturumları yükle veya yeni oluştur
         self._init_sessions()
@@ -180,6 +182,9 @@ class ConversationMemory:
             self._turns = []
             self._last_file = None
             self._save(force=True)
+            # Yeni oturum sonrası debounce sayacını sıfırla; aksi hâlde hemen ardından gelen
+            # add() çağrısı 0.5 saniyelik pencere nedeniyle kaydedilmeden atlayabilir.
+            self._last_saved_at = 0.0
             logger.info(f"Yeni oturum oluşturuldu: {session_id} - {title}")
         return session_id
 
@@ -238,7 +243,10 @@ class ConversationMemory:
             with self._lock:
                 now = time.time()
                 self._dirty = True
-                if not force and (now - self._last_saved_at) < self._save_interval_seconds:
+                # Debounce: henüz yeni tur eklenmemişse zaman aralığı dolana kadar bekle.
+                # Ancak kayıt edilmemiş yeni turlar varsa her zaman kaydet (veri kaybını önler).
+                has_new_turns = len(self._turns) != self._last_saved_turn_count
+                if not force and not has_new_turns and (now - self._last_saved_at) < self._save_interval_seconds:
                     return
 
                 data = {
@@ -251,6 +259,7 @@ class ConversationMemory:
                 file_path = self.sessions_dir / f"{self.active_session_id}.json"
                 self._write_session_file(file_path, data)
                 self._last_saved_at = now
+                self._last_saved_turn_count = len(self._turns)
                 self._dirty = False
         except Exception as exc:
             logger.error(f"Bellek kaydetme hatası: {exc}")
@@ -270,7 +279,6 @@ class ConversationMemory:
             # Pencere boyutunu koru
             if len(self._turns) > self.max_turns * 2:
                 self._turns = self._turns[-(self.max_turns * 2):]
-            
             self._save()
 
     def get_history(self, n_last: Optional[int] = None) -> List[Dict]:

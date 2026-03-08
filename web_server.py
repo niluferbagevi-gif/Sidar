@@ -162,6 +162,10 @@ _redis_lock: asyncio.Lock | None = None
 _local_rate_limits: dict[str, list[float]] = {}
 _local_rate_lock: asyncio.Lock | None = None
 
+# Test uyumluluğu için takma adlar; _local_rate_limits ile aynı sözlük nesnesini paylaşır
+_rate_data: dict[str, list[float]] = _local_rate_limits
+_rate_lock: asyncio.Lock | None = None
+
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
@@ -196,6 +200,11 @@ async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
         valid.append(now)
         _local_rate_limits[key] = valid
         return False
+
+
+async def _is_rate_limited(key: str, limit: int, window_sec: int = 60) -> bool:
+    """Testler ve doğrudan çağrılar için yerel hız sınırlayıcıya basit erişim noktası."""
+    return await _local_is_rate_limited(key, limit, window_sec)
 
 
 async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_sec: int) -> bool:
