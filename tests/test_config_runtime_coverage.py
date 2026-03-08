@@ -54,11 +54,13 @@ def test_env_helpers_and_wsl2_fallback(monkeypatch):
     monkeypatch.setenv("BAD_INT", "abc")
     monkeypatch.setenv("BAD_FLOAT", "xyz")
     monkeypatch.delenv("LIST_EMPTY", raising=False)
+    monkeypatch.setenv("LIST_SET", " a, b ,, c ")
 
     assert mod.get_bool_env("MISSING_BOOL", default=True) is True
     assert mod.get_int_env("BAD_INT", default=11) == 11
     assert mod.get_float_env("BAD_FLOAT", default=1.25) == 1.25
     assert mod.get_list_env("LIST_EMPTY", default=["fallback"]) == ["fallback"]
+    assert mod.get_list_env("LIST_SET") == ["a", "b", "c"]
 
     monkeypatch.setattr(Path, "read_text", lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
     assert mod._is_wsl2() is False
@@ -84,11 +86,40 @@ def test_check_hardware_handles_disabled_gpu_and_torch_importerror(monkeypatch):
     assert no_torch.gpu_name == "PyTorch Yok"
 
 
-def test_config_methods_cover_error_and_warning_paths(monkeypatch, tmp_path):
+def test_check_hardware_success_path_with_cuda_and_fraction_fallback(monkeypatch):
+    mod, _ = _load_config_module(monkeypatch, "config_under_test_hw_cuda")
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("GPU_MEMORY_FRACTION", "2.5")
+
+    class _Cuda:
+        def is_available(self):
+            return True
+
+        def device_count(self):
+            return 1
+
+        def get_device_name(self, idx):
+            return "MockGPU"
+
+        def set_per_process_memory_fraction(self, frac, device=0):
+            self.frac = (frac, device)
+
+    torch_stub = types.SimpleNamespace(cuda=_Cuda(), version=types.SimpleNamespace(cuda="12.1"))
+    monkeypatch.setitem(sys.modules, "torch", torch_stub)
+
+    hw = mod.check_hardware()
+    assert hw.has_cuda is True
+    assert hw.gpu_name == "MockGPU"
+    assert hw.gpu_count == 1
+    assert hw.cuda_version == "12.1"
+
+
+def test_config_methods_cover_error_and_warning_paths(monkeypatch):
     mod, _ = _load_config_module(monkeypatch, "config_under_test_methods")
     cfg = mod.Config
 
     cfg._hardware_loaded = False
+    cfg.USE_GPU = True
     monkeypatch.setattr(mod, "check_hardware", lambda: mod.HardwareInfo(True, "RTX", 2, 8, "12.4", "550"))
     cfg._ensure_hardware_info_loaded()
     assert (cfg.USE_GPU, cfg.GPU_INFO, cfg.GPU_COUNT, cfg.CPU_COUNT) == (True, "RTX", 2, 8)
@@ -118,6 +149,16 @@ def test_config_methods_cover_error_and_warning_paths(monkeypatch, tmp_path):
             raise ValueError("bad key")
 
     monkeypatch.setitem(sys.modules, "cryptography.fernet", types.SimpleNamespace(Fernet=_BadFernet))
+    assert cfg.validate_critical_settings() is False
+
+    orig_import = __import__
+
+    def _raise_crypto_import(name, *args, **kwargs):
+        if name == "cryptography.fernet":
+            raise ImportError("cryptography missing")
+        return orig_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _raise_crypto_import)
     assert cfg.validate_critical_settings() is False
 
     cfg.AI_PROVIDER = "ollama"
@@ -165,6 +206,19 @@ def test_print_summary_and_main_entrypoint(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Yapılandırma Özeti" in out
     assert "Gemini Modeli" in out
+
+    cfg.USE_GPU = True
+    cfg.AI_PROVIDER = "ollama"
+    cfg.GPU_INFO = "MockGPU"
+    cfg.CUDA_VERSION = "12.1"
+    cfg.GPU_COUNT = 1
+    cfg.GPU_DEVICE = 0
+    cfg.GPU_MIXED_PRECISION = True
+    cfg.DRIVER_VERSION = "555"
+    cfg.print_config_summary()
+    out2 = capsys.readouterr().out
+    assert "CODING Modeli" in out2
+    assert "Sürücü Sürümü" in out2
 
     monkeypatch.setenv("DEBUG_MODE", "true")
 
