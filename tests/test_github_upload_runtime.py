@@ -2,6 +2,7 @@ import importlib.util
 import subprocess
 import sys
 import types
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -10,22 +11,32 @@ class _Cfg:
     VERSION = "2.0"
 
 
+@contextmanager
+def _temporary_config_module(config_module):
+    prev = sys.modules.get("config")
+    sys.modules["config"] = config_module
+    try:
+        yield
+    finally:
+        if prev is None:
+            sys.modules.pop("config", None)
+        else:
+            sys.modules["config"] = prev
+
+
 def _load_module():
     cfg_mod = types.ModuleType("config")
     cfg_mod.Config = lambda: _Cfg()
-    sys.modules["config"] = cfg_mod
-
-    spec = importlib.util.spec_from_file_location("github_upload_under_test", Path("github_upload.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
-
-
-GU = _load_module()
+    with _temporary_config_module(cfg_mod):
+        spec = importlib.util.spec_from_file_location("github_upload_under_test", Path("github_upload.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod
 
 
 def test_helpers_path_validation_and_file_read(tmp_path):
+    GU = _load_module()
     assert GU._is_valid_repo_url("https://github.com/a/b") is True
     assert GU._is_valid_repo_url("git@github.com:a/b.git") is True
     assert GU._is_valid_repo_url("http://bad") is False
@@ -40,6 +51,7 @@ def test_helpers_path_validation_and_file_read(tmp_path):
 
 
 def test_run_command_success_and_failure(monkeypatch):
+    GU = _load_module()
     class _Res:
         stdout = "ok\n"
         stderr = ""
@@ -57,6 +69,7 @@ def test_run_command_success_and_failure(monkeypatch):
 
 
 def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
+    GU = _load_module()
     good = tmp_path / "a.txt"
     good.write_text("hi", encoding="utf-8")
     bad = tmp_path / "sessions" / "secret.txt"
@@ -72,6 +85,7 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
 
 
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
+    GU = _load_module()
     # no token path
     GU.cfg.GITHUB_TOKEN = ""
     try:
@@ -117,6 +131,7 @@ def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
 
 
 def test_main_push_conflict_branches(monkeypatch):
+    GU = _load_module()
     GU.cfg.GITHUB_TOKEN = "token"
 
     state = {"push_count": 0}

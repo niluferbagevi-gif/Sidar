@@ -2,7 +2,21 @@ import importlib.util
 import subprocess
 import sys
 import types
+from contextlib import contextmanager
 from pathlib import Path
+
+
+@contextmanager
+def _temporary_config_module(config_module):
+    prev = sys.modules.get("config")
+    sys.modules["config"] = config_module
+    try:
+        yield
+    finally:
+        if prev is None:
+            sys.modules.pop("config", None)
+        else:
+            sys.modules["config"] = prev
 
 
 def _load_main_module():
@@ -23,19 +37,16 @@ def _load_main_module():
             return None
 
     cfg_mod.Config = _Cfg
-    sys.modules["config"] = cfg_mod
-
-    spec = importlib.util.spec_from_file_location("main_under_test", Path("main.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
-
-
-MAIN = _load_main_module()
+    with _temporary_config_module(cfg_mod):
+        spec = importlib.util.spec_from_file_location("main_under_test", Path("main.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod
 
 
 def test_build_command_and_format_cmd():
+    MAIN = _load_main_module()
     cmd_web = MAIN.build_command("web", "ollama", "full", "info", {"host": "127.0.0.1", "port": "7860"})
     assert "web_server.py" in cmd_web
     assert "--host" in cmd_web and "7860" in cmd_web
@@ -49,6 +60,7 @@ def test_build_command_and_format_cmd():
 
 
 def test_confirm_ask_text_and_ask_choice(monkeypatch):
+    MAIN = _load_main_module()
     monkeypatch.setattr("builtins.input", lambda _p: "")
     assert MAIN.confirm("devam?") is True
 
@@ -65,6 +77,7 @@ def test_confirm_ask_text_and_ask_choice(monkeypatch):
 
 
 def test_preflight_ollama_and_gemini_paths(monkeypatch, tmp_path):
+    MAIN = _load_main_module()
     MAIN.cfg.BASE_DIR = str(tmp_path)
 
     class _Resp:
@@ -92,6 +105,7 @@ def test_preflight_ollama_and_gemini_paths(monkeypatch, tmp_path):
 
 
 def test_run_with_streaming_and_execute_command(monkeypatch, tmp_path):
+    MAIN = _load_main_module()
     class _Pipe:
         def __init__(self, lines):
             self._lines = iter(lines)
@@ -127,6 +141,7 @@ def test_run_with_streaming_and_execute_command(monkeypatch, tmp_path):
 
 
 def test_run_wizard_and_main_quick(monkeypatch):
+    MAIN = _load_main_module()
     monkeypatch.setattr(MAIN, "print_banner", lambda: None)
     monkeypatch.setattr(MAIN, "ask_choice", lambda *a, **k: "web" if "arayüz" in a[0] else "ollama")
 
