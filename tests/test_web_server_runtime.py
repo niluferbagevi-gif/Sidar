@@ -954,3 +954,63 @@ def test_list_files_metrics_rag_docs_todo_clear_and_github_repos_success(monkeyp
 
     files_not_dir = asyncio.run(mod.list_project_files("README.md"))
     assert files_not_dir.status_code == 400
+
+
+def test_webhook_pull_request_and_issues_branches_add_memory_records():
+    mod = _load_web_server()
+    calls = []
+
+    memory = types.SimpleNamespace(add=lambda role, text: calls.append((role, text)))
+    agent = types.SimpleNamespace(memory=memory)
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    mod.cfg.GITHUB_WEBHOOK_SECRET = ""
+
+    pr_payload = {
+        "action": "opened",
+        "pull_request": {"number": 12, "title": "Improve tests"},
+    }
+    pr_req = _FakeRequest(body_bytes=json.dumps(pr_payload).encode("utf-8"))
+    pr_res = asyncio.run(mod.github_webhook(pr_req, x_github_event="pull_request", x_hub_signature_256=""))
+    assert pr_res.status_code == 200
+
+    issues_payload = {
+        "action": "closed",
+        "issue": {"number": 3, "title": "Fix bug"},
+    }
+    is_req = _FakeRequest(body_bytes=json.dumps(issues_payload).encode("utf-8"))
+    is_res = asyncio.run(mod.github_webhook(is_req, x_github_event="issues", x_hub_signature_256=""))
+    assert is_res.status_code == 200
+
+    assert any("Pull Request #12" in text for role, text in calls if role == "user")
+    assert any("Issue #3" in text for role, text in calls if role == "user")
+
+
+def test_upload_rag_file_error_and_bad_add_path(monkeypatch):
+    mod = _load_web_server()
+
+    class _Docs:
+        def add_document_from_file(self, *args):
+            return False, "nope"
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(active_session_id="s1"), docs=_Docs())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    up = _FakeUploadFile("bad.txt", b"x")
+    resp = asyncio.run(mod.upload_rag_file(up))
+    assert resp.status_code == 400
+    assert resp.content["success"] is False
+    assert up.closed is True
+
+    monkeypatch.setattr(mod.shutil, "copyfileobj", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("disk")))
+    up2 = _FakeUploadFile("boom.txt", b"x")
+    resp2 = asyncio.run(mod.upload_rag_file(up2))
+    assert resp2.status_code == 500
+    assert up2.closed is True

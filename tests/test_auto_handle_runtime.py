@@ -270,3 +270,33 @@ def test_web_pkg_docs_and_helpers_paths():
     assert auto._extract_path('"a/b/config.py"') == "a/b/config.py"
     assert auto._extract_dir_path('klasör listele "src/utils"') == "src/utils"
     assert auto._extract_url("bak https://example.org/path?a=1") == "https://example.org/path?a=1"
+
+def test_dot_command_and_github_info_list_read_variants():
+    auto = _make_auto(github_available=True)
+
+    handled, msg = asyncio.run(auto._try_dot_command(".health", ".health"))
+    assert handled is True and "health" in msg
+
+    handled, msg = asyncio.run(auto._try_dot_command(".audit", ".audit"))
+    assert handled is True and "audit" in msg.lower()
+
+    handled, msg = asyncio.run(auto._try_dot_command(".clear", ".clear"))
+    assert handled is True and "temizlendi" in msg
+
+    handled, msg = auto._try_github_info("repo bilgi göster")
+    assert handled is True and msg == "repo-info"
+
+    handled, msg = auto._try_github_list_files("repodaki dosyaları listele")
+    assert handled is True and msg == "files"
+
+    handled, msg = auto._try_github_read("github dosya oku", 'github dosya oku "README.md"')
+    assert handled is True and msg == "remote:README.md"
+
+
+def test_handle_multistep_and_unknown_dot_command_paths():
+    auto = _make_auto(github_available=True)
+    handled, msg = asyncio.run(auto.handle("önce dosyaları listele sonra oku"))
+    assert handled is False and msg == ""
+
+    handled2, msg2 = asyncio.run(auto._try_dot_command(".unknown", ".unknown"))
+    assert handled2 is False and msg2 == ""
