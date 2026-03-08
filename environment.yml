@@ -58,7 +58,7 @@ dependencies:
       - PyGithub~=2.4.0
 
       # ── Web Arama ─────────────────────────────────────────────────────────
-      - duckduckgo-search~=6.2.13
+      - duckduckgo-search==6.2.13
       - beautifulsoup4~=4.12.3
 
       # ── RAG (Vektör & BM25) ───────────────────────────────────────────────

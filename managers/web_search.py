@@ -223,14 +223,37 @@ class WebSearchManager:
 
     async def _search_duckduckgo(self, query: str, n: int) -> Tuple[bool, str]:
         try:
-            from duckduckgo_search import DDGS
+            import duckduckgo_search
 
-            # DDGS senkron olduğu için event loop'u bloklamamak adına thread'de çalıştır.
-            def _sync_search():
-                with DDGS() as ddgs:
-                    return list(ddgs.text(query, max_results=n))
+            # Dinamik AsyncDDGS kontrolü (Gelecekteki versiyon değişikliklerine karşı koruma)
+            if hasattr(duckduckgo_search, "AsyncDDGS"):
+                from duckduckgo_search import AsyncDDGS
 
-            results = await asyncio.to_thread(_sync_search)
+                async def _async_search():
+                    async with AsyncDDGS() as ddgs:
+                        # Bazı versiyonlarda liste, bazılarında async generator döner
+                        res = await ddgs.text(query, max_results=n)
+                        # Eğer dönen nesne async generator ise
+                        if hasattr(res, "__aiter__"):
+                            return [r async for r in res]
+                        return list(res)
+
+                # Olası takılmalara karşı zaman aşımı koruması
+                results = await asyncio.wait_for(_async_search(), timeout=self.FETCH_TIMEOUT)
+
+            else:
+                # AsyncDDGS yoksa (Örn: DDG SDK v8+), standart DDGS'i güvenli thread'de çalıştır
+                from duckduckgo_search import DDGS
+
+                def _sync_search():
+                    with DDGS() as ddgs:
+                        return list(ddgs.text(query, max_results=n))
+
+                # Thread işlemini de timeout ile sınırlandır (Sessiz bloklanmaları önler)
+                results = await asyncio.wait_for(
+                    asyncio.to_thread(_sync_search),
+                    timeout=self.FETCH_TIMEOUT,
+                )
 
             if not results:
                 return True, self._mark_no_results(f"'{query}' için DuckDuckGo'da sonuç bulunamadı.")
@@ -246,6 +269,10 @@ class WebSearchManager:
                 lines.append(f"   → {href}\n")
 
             return True, "\n".join(lines)
+
+        except asyncio.TimeoutError:
+            logger.warning("DuckDuckGo araması zaman aşımına uğradı (%s sn).", self.FETCH_TIMEOUT)
+            return False, f"[HATA] DuckDuckGo: Zaman aşımı ({self.FETCH_TIMEOUT}sn)"
         except Exception as exc:
             logger.warning("DuckDuckGo hatası: %s", exc)
             return False, f"[HATA] DuckDuckGo: {exc}"
