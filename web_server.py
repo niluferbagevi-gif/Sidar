@@ -10,6 +10,8 @@ Başlatmak için:
 import argparse
 import base64
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import re
@@ -27,7 +29,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, Header, HTTPException
 from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -979,6 +981,69 @@ async def set_level_endpoint(request: Request):
             "current_level": agent.security.level_name,
         }
     )
+
+
+@app.post(
+    "/api/webhook",
+    summary="GitHub Webhook Alıcısı",
+    description="GitHub repository'sinden gelen Push, PR ve Issue olaylarını dinler ve doğrular.",
+    responses={
+        200: {"description": "Webhook başarıyla işlendi"},
+        401: {"description": "Geçersiz imza"},
+    },
+)
+async def github_webhook(
+    request: Request,
+    x_github_event: str = Header(default=""),
+    x_hub_signature_256: str = Header(default=""),
+):
+    """GitHub'dan gelen webhook tetiklemelerini karşılar."""
+    payload_body = await request.body()
+    secret = getattr(cfg, "GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
+
+    if secret:
+        if not x_hub_signature_256:
+            raise HTTPException(status_code=401, detail="X-Hub-Signature-256 başlığı eksik.")
+
+        expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_signature, x_hub_signature_256):
+            logger.warning("Geçersiz GitHub Webhook imzası algılandı!")
+            raise HTTPException(status_code=401, detail="Geçersiz imza.")
+
+    try:
+        data = json.loads(payload_body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
+
+    agent = await get_agent()
+    msg = ""
+
+    if x_github_event == "push":
+        pusher = data.get("pusher", {}).get("name", "Biri")
+        ref = data.get("ref", "")
+        branch = ref.split("/")[-1] if "/" in ref else ref
+        msg = f"[GITHUB BİLDİRİMİ] '{pusher}' adlı kullanıcı '{branch}' dalına yeni kod yükledi (push)."
+    elif x_github_event == "pull_request":
+        action = data.get("action")
+        pr_title = data.get("pull_request", {}).get("title", "")
+        pr_num = data.get("pull_request", {}).get("number", "")
+        msg = f"[GITHUB BİLDİRİMİ] Pull Request #{pr_num} durumu güncellendi ({action}): {pr_title}"
+    elif x_github_event == "issues":
+        action = data.get("action")
+        issue_title = data.get("issue", {}).get("title", "")
+        issue_num = data.get("issue", {}).get("number", "")
+        msg = f"[GITHUB BİLDİRİMİ] Issue #{issue_num} durumu güncellendi ({action}): {issue_title}"
+
+    if msg:
+        logger.info("Webhook işlendi: %s", msg)
+        await asyncio.to_thread(agent.memory.add, "user", msg)
+        await asyncio.to_thread(
+            agent.memory.add,
+            "assistant",
+            "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
+        )
+
+    return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
 
 
 # ─────────────────────────────────────────────
