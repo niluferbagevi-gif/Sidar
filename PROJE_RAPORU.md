@@ -1224,20 +1224,9 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.4 Web Arayüzü ve API
 
-#### 14.4.1 Web UI Modülarizasyonu
-**Güncel durum:** ✅ **v2.8.0'da tamamlandı.**
-
-Önerilen yapı tam olarak uygulandı:
-```
-web_ui/
-├── index.html    (436 satır — iskelet + modal'lar)
-├── app.js        (242 satır — init, tema, git bilgisi, klavye kısayolları)
-├── chat.js       (644 satır — SSE streaming, mesaj render, kod vurgulama)
-├── sidebar.js    (394 satır — oturum yönetimi, filtreleme)
-├── rag.js        (131 satır — RAG belge/arama UI)
-└── style.css    (1.547 satır — tüm CSS, tema değişkenleri)
-```
-`web_server.py:77`'de `app.mount("/static", StaticFiles(directory=web_ui_dir))` ile servis edilmektedir.
+> **Not:** Bu başlık altındaki tamamlanan maddeler (14.4.1 Web UI Modülarizasyonu ve 14.4.4 Kimlik Doğrulama)
+> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
+> dosyasındaki ilgili bölümlere bakın.
 
 #### 14.4.2 WebSocket Desteği
 **Mevcut durum:** SSE (Server-Sent Events) tek yönlü akış; mesaj iptali için ayrı endpoint gerekiyor.
@@ -1246,15 +1235,6 @@ web_ui/
 #### 14.4.3 OpenAPI Şema Belgelendirmesi
 **Mevcut durum:** FastAPI otomatik `/docs` oluşturuyor ancak endpoint açıklamaları eksik.
 **Öneri:** Her endpoint için `summary`, `description`, `response_model` ve `responses` parametrelerinin doldurulması. Harici entegrasyon kolaylaşır.
-
-#### 14.4.4 Kimlik Doğrulama
-**Güncel durum:** ✅ **Tamamlandı (API_KEY tabanlı HTTP Basic Auth).**
-
-Web katmanında opsiyonel kimlik doğrulama aktiftir:
-- `config.py` içinde `API_KEY` tanımlıdır
-- `web_server.py` içinde `basic_auth_middleware` ile tüm endpoint'ler korunur
-- `API_KEY` boş ise auth bypass, dolu ise Basic Auth zorunlu
-- `docker-compose.yml` web servislerine `API_KEY` environment olarak aktarılır
 
 ---
 
