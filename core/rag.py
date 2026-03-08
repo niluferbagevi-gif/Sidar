@@ -301,18 +301,12 @@ class DocumentStore:
         content: str,
         source: str = "",
         tags: Optional[List[str]] = None,
+        session_id: str = "global"
     ) -> str:
-        """
-        Belge ekle veya güncelle.
-        İçeriği parçalara (chunks) ayırarak ChromaDB'ye kaydeder.
-        """
-        # Her ekleme için benzersiz belge ID üret; aynı başlık/kaynak için
-        # vektör indeksinde tekil güncelleme yapabilmek adına ayrı bir parent_id kullanılır.
         doc_id = uuid.uuid4().hex[:12]
         parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
         tags = tags or []
 
-        # Metni önce parçala (kilit dışında — saf hesaplama)
         chunks = self._chunk_text(content)
         ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
         metadatas = [
@@ -322,16 +316,15 @@ class DocumentStore:
                 "tags": ",".join(tags),
                 "parent_id": parent_id,
                 "chunk_index": i,
+                "session_id": session_id,
             }
             for i in range(len(chunks))
         ]
 
         with self._write_lock:
-            # 1. Dosya sistemine TAM metni kaydet (Okuma ve BM25 için referans)
             doc_file = self.store_dir / f"{doc_id}.txt"
             doc_file.write_text(content, encoding="utf-8")
 
-            # 2. JSON Index güncelle
             self._index[doc_id] = {
                 "title": title,
                 "source": source,
@@ -339,14 +332,13 @@ class DocumentStore:
                 "size": len(content),
                 "preview": content[:300],
                 "parent_id": parent_id,
+                "session_id": session_id,
             }
             self._save_index()
             self._update_bm25_cache_on_add(doc_id, content)
 
-            # 3. ChromaDB'ye parçalayarak (Chunking) ekle
             if self._chroma_available and self.collection:
                 try:
-                    # Önce aynı başlık+kaynak için eski parçaları temizle (Update senaryosu)
                     self.collection.delete(where={"parent_id": parent_id})
                     if chunks:
                         self.collection.upsert(
@@ -356,106 +348,53 @@ class DocumentStore:
                         )
                     if chunks:
                         logger.info(
-                            "ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi.",
-                            doc_id,
-                            parent_id,
-                            len(chunks),
+                            "ChromaDB: %s belgesi (%s) %d parçaya ayrılarak eklendi. (Oturum: %s)",
+                            doc_id, parent_id, len(chunks), session_id
                         )
                 except Exception as exc:
                     logger.error("ChromaDB belge ekleme hatası: %s", exc)
 
-        logger.info("RAG belge eklendi: [%s] %s (%d karakter)", doc_id, title, len(content))
+        logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
         return doc_id
 
-    async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None) -> Tuple[bool, str]:
-        """URL'den içerik çekerek belge ekle (Asenkron — event loop bloklanmaz)."""
+    async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
         import httpx
-
         try:
-            async with httpx.AsyncClient(
-                timeout=15,
-                follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; SidarBot/1.0)"},
-            ) as client:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as client:
                 resp = await client.get(url)
             resp.raise_for_status()
             content = self._clean_html(resp.text)
 
             if not title:
-                # URL'den başlık türet
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
                 title = m.group(1).strip() if m else url.split("/")[-1] or url
 
-            doc_id = await asyncio.to_thread(
-                self.add_document, title, content, url, tags
-            )
+            doc_id = await asyncio.to_thread(self.add_document, title, content, url, tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
-
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
             return False, f"[HATA] URL belge eklenemedi: {exc}"
 
-    def add_document_from_file(
-        self,
-        path: str,
-        title: str = "",
-        tags: Optional[List[str]] = None,
-    ) -> Tuple[bool, str]:
-        """
-        Yerel dosyadan belge ekle.
-
-        Desteklenen formatlar: .py, .txt, .md, .json, .yaml, .yml,
-        .toml, .ini, .cfg, .html, .css, .js, .ts, .sh, .sql, .csv, .xml,
-        ve uzantısız metin dosyaları.
-
-        Args:
-            path : Okunacak yerel dosya yolu.
-            title: Belge başlığı (boşsa dosya adı kullanılır).
-            tags : Etiket listesi (opsiyonel).
-
-        Returns:
-            (başarı, mesaj)
-        """
-        _TEXT_EXTS = {
-            ".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml",
-            ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh",
-            ".sql", ".csv", ".xml", ".rst", ".env", ".example",
-            ".gitignore", ".dockerignore", "",
-        }
+    def add_document_from_file(self, path: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
+        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".env", ".example", ".gitignore", ".dockerignore", ""}
         try:
             file = Path(path).resolve()
-            if not file.exists():
-                return False, f"✗ Dosya bulunamadı: {path}"
-            if not file.is_file():
-                return False, f"✗ Belirtilen yol bir dosya değil: {path}"
-            if file.suffix.lower() not in _TEXT_EXTS:
-                return False, (
-                    f"✗ Desteklenmeyen dosya türü: {file.suffix} "
-                    f"(metin tabanlı dosyalar: .py, .md, .txt, .json vb.)"
-                )
+            if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
+            if not file.is_file(): return False, f"✗ Belirtilen yol bir dosya değil: {path}"
+            if file.suffix.lower() not in _TEXT_EXTS: return False, f"✗ Desteklenmeyen dosya türü: {file.suffix}"
 
             content = file.read_text(encoding="utf-8", errors="replace")
-            if not content.strip():
-                return False, f"✗ Dosya boş: {path}"
-
-            if not title:
-                title = file.name
+            if not content.strip(): return False, f"✗ Dosya boş: {path}"
+            if not title: title = file.name
 
             source = f"file://{file}"
-            doc_id = self.add_document(title, content, source=source, tags=tags or [])
-            return True, (
-                f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} "
-                f"({len(content):,} karakter)"
-            )
+            doc_id = self.add_document(title, content, source=source, tags=tags or [], session_id=session_id)
+            return True, f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} ({len(content):,} karakter)"
         except Exception as exc:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
             return False, f"[HATA] Dosya eklenemedi: {exc}"
 
-    def get_index_info(self) -> List[Dict]:
-        """
-        Belge dizininin özet listesini döndürür (web API için).
-        Her belge için: {id, title, source, size, preview} içerir.
-        """
+    def get_index_info(self, session_id: Optional[str] = None) -> List[Dict]:
         return [
             {
                 "id":      doc_id,
@@ -464,144 +403,64 @@ class DocumentStore:
                 "size":    meta.get("size", 0),
                 "preview": meta.get("preview", "")[:120],
                 "tags":    meta.get("tags", []),
+                "session_id": meta.get("session_id", "global"),
             }
             for doc_id, meta in self._index.items()
+            if session_id is None or meta.get("session_id", "global") == session_id
         ]
-
-    @property
-    def doc_count(self) -> int:
-        """Dizindeki belge sayısını döndürür."""
-        return len(self._index)
-
-    def delete_document(self, doc_id: str) -> str:
-        """Belgeyi tüm depolardan sil."""
-        if doc_id not in self._index:
-            return f"✗ Belge bulunamadı: {doc_id}"
-
-        with self._write_lock:
-            # Kilit beklenirken belge silinmiş olabilir.
-            if doc_id not in self._index:
-                return f"✗ Belge zaten silinmiş: {doc_id}"
-
-            title = self._index[doc_id].get("title", doc_id)
-
-            # 1. Dosya sil
-            doc_file = self.store_dir / f"{doc_id}.txt"
-            if doc_file.exists():
-                doc_file.unlink()
-
-            # 2. ChromaDB'den sil (Tüm parçaları)
-            if self._chroma_available and self.collection:
-                try:
-                    # Parent ID'ye göre silme (Where filtresi)
-                    parent_id = self._index[doc_id].get("parent_id", doc_id)
-                    self.collection.delete(where={"parent_id": parent_id})
-                except Exception as exc:
-                    logger.error("ChromaDB silme hatası: %s", exc)
-
-            # 3. Index'ten ve BM25'ten sil
-            del self._index[doc_id]
-            self._save_index()
-            self._update_bm25_cache_on_delete(doc_id)
-
-        return f"✓ Belge silindi: [{doc_id}] {title}"
-
-    def get_document(self, doc_id: str) -> Tuple[bool, str]:
-        """Belge ID ile tam içerik getir."""
-        if doc_id not in self._index:
-            return False, f"✗ Belge bulunamadı: {doc_id}"
-        doc_file = self.store_dir / f"{doc_id}.txt"
-        if not doc_file.exists():
-            return False, f"✗ Belge dosyası eksik: {doc_id}"
-        content = doc_file.read_text(encoding="utf-8")
-        meta = self._index[doc_id]
-        return True, f"[{doc_id}] {meta['title']}\nKaynak: {meta.get('source', '-')}\n\n{content}"
 
     # ─────────────────────────────────────────────
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────
 
-    def search(self, query: str, top_k: Optional[int] = None, mode: str = "auto") -> Tuple[bool, str]:
-        """
-        Sorguya göre en ilgili belgeleri bul.
+    def search(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
+        if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
 
-        mode:
-          "auto"    → Öncelik sırasıyla: RRF (Chroma+BM25) → ChromaDB → BM25 → Keyword
-          "vector"  → Yalnızca ChromaDB vektör arama
-          "bm25"    → Yalnızca BM25 arama
-          "keyword" → Yalnızca anahtar kelime eşleşmesi
-        """
-        if top_k is None:
-            top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
-        if not self._index:
-            return False, (
-                "⚠ Belge deposu boş. "
-                "Belge eklemek için: TOOL:docs_add:<başlık>|<url>"
-            )
+        session_docs = [k for k, v in self._index.items() if v.get("session_id", "global") == session_id]
+        if not session_docs:
+            return False, "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>"
 
         if mode == "vector":
-            if self._chroma_available and self.collection:
-                return self._chroma_search(query, top_k)
+            if self._chroma_available and self.collection: return self._chroma_search(query, top_k, session_id)
             return False, "Vektör arama kullanılamıyor — ChromaDB kurulu değil."
 
         if mode == "bm25":
-            if self._bm25_available:
-                return self._bm25_search(query, top_k)
+            if self._bm25_available: return self._bm25_search(query, top_k, session_id)
             return False, "BM25 kullanılamıyor — rank_bm25 kurulu değil."
 
-        if mode == "keyword":
-            return self._keyword_search(query, top_k)
+        if mode == "keyword": return self._keyword_search(query, top_k, session_id)
 
-        # Auto Mod: RRF Hibrit Sıralama (ChromaDB ve BM25 varsa güçlerini birleştir)
         if self._chroma_available and self._bm25_available and self.collection:
-            try:
-                return self._rrf_search(query, top_k)
-            except Exception as exc:
-                logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
+            try: return self._rrf_search(query, top_k, session_id)
+            except Exception as exc: logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
 
-        # Fallback 1: Sadece ChromaDB
         if self._chroma_available and self.collection:
-            try:
-                return self._chroma_search(query, top_k)
-            except Exception as exc:
-                logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
+            try: return self._chroma_search(query, top_k, session_id)
+            except Exception as exc: logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
-        # Fallback 2: Sadece BM25
-        if self._bm25_available:
-            return self._bm25_search(query, top_k)
+        if self._bm25_available: return self._bm25_search(query, top_k, session_id)
+        return self._keyword_search(query, top_k, session_id)
 
-        # Fallback 3: Sadece Keyword
-        return self._keyword_search(query, top_k)
+    def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+        chroma_results = self._fetch_chroma(query, top_k, session_id)
+        bm25_results = self._fetch_bm25(query, top_k, session_id)
 
-    def _rrf_search(self, query: str, top_k: int) -> Tuple[bool, str]:
-        """ChromaDB ve BM25 sonuçlarını Reciprocal Rank Fusion (RRF) ile birleştirir."""
-        chroma_results = self._fetch_chroma(query, top_k)
-        bm25_results = self._fetch_bm25(query, top_k)
+        if not chroma_results and not bm25_results: return self._keyword_search(query, top_k, session_id)
 
-        if not chroma_results and not bm25_results:
-            return self._keyword_search(query, top_k)
-
-        # RRF Hesaplama (k=60 literatürde standart değerdir)
         k = 60
-        rrf_scores = {}
-        docs_map = {}
+        rrf_scores, docs_map = {}, {}
 
-        # ChromaDB sonuçlarını skorla
         for rank, res in enumerate(chroma_results):
             doc_id = res["id"]
             docs_map[doc_id] = res
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
 
-        # BM25 sonuçlarını skorla
         for rank, res in enumerate(bm25_results):
             doc_id = res["id"]
-            if doc_id not in docs_map:
-                docs_map[doc_id] = res
+            if doc_id not in docs_map: docs_map[doc_id] = res
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
 
-        # Nihai puana göre en iyi sonuçları seç
         ranked_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
-
         final_results = []
         for doc_id, score in ranked_docs:
             doc_info = docs_map[doc_id]
@@ -610,43 +469,36 @@ class DocumentStore:
 
         return self._format_results_from_struct(final_results, query, source_name="Hibrit RRF (ChromaDB + BM25)")
 
-    def _fetch_chroma(self, query: str, top_k: int) -> list:
-        """ChromaDB'den sonuçları ham liste olarak çeker."""
-        try:
-            collection_size = self.collection.count()
-        except Exception:
-            collection_size = top_k * 2
+    def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list:
+        try: collection_size = self.collection.count()
+        except Exception: collection_size = top_k * 2
 
         n_results = min(top_k * 2, max(collection_size, 1))
-        results = self.collection.query(query_texts=[query], n_results=n_results)
 
-        if not results["ids"] or not results["ids"][0]:
-            return []
+        # Filtreleme ChromaDB düzeyinde Where parametresiyle yapılıyor
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where={"session_id": session_id}
+        )
 
-        found_docs = []
-        seen_parents = set()
+        if not results["ids"] or not results["ids"][0]: return []
 
+        found_docs, seen_parents = [], set()
         for i, chunk_content in enumerate(results["documents"][0]):
             meta = results["metadatas"][0][i]
             parent_id = meta.get("parent_id")
-
-            if parent_id in seen_parents and len(seen_parents) >= top_k:
-                continue
+            if parent_id in seen_parents and len(seen_parents) >= top_k: continue
             seen_parents.add(parent_id)
-
             found_docs.append({
-                "id": parent_id,
-                "title": meta.get("title", "?"),
-                "source": meta.get("source", ""),
-                "snippet": chunk_content,
-                "score": 1.0,
+                "id": parent_id, "title": meta.get("title", "?"),
+                "source": meta.get("source", ""), "snippet": chunk_content, "score": 1.0
             })
-            if len(found_docs) >= top_k:
-                break
+            if len(found_docs) >= top_k: break
         return found_docs
 
-    def _chroma_search(self, query: str, top_k: int) -> Tuple[bool, str]:
-        results = self._fetch_chroma(query, top_k)
+    def _chroma_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+        results = self._fetch_chroma(query, top_k, session_id)
         return self._format_results_from_struct(results, query, source_name="Vektör Arama (ChromaDB + Chunking)")
 
     def _invalidate_bm25_cache(self) -> None:
@@ -718,81 +570,66 @@ class DocumentStore:
             self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
             self._rebuild_bm25_from_cache()
 
-    def _fetch_bm25(self, query: str, top_k: int) -> list:
-        """BM25'ten sonuçları ham liste olarak çeker."""
+    def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list:
         self._ensure_bm25_index()
         with self._write_lock:
-            if self._bm25_index is None or not self._bm25_doc_ids:
-                return []
+            if self._bm25_index is None or not self._bm25_doc_ids: return []
             bm25_idx_ref = self._bm25_index
             doc_ids_ref = list(self._bm25_doc_ids)
             index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id in doc_ids_ref}
 
         scores = bm25_idx_ref.get_scores(query.lower().split())
-        ranked = sorted(zip(doc_ids_ref, scores), key=lambda x: x[1], reverse=True)
-        ranked = [(d, s) for d, s in ranked if s > 0][:top_k]
+
+        # Sadece bu session'a ait doc_id'leri filtrele
+        valid_doc_ids = {doc_id for doc_id, meta in index_snapshot.items() if meta.get("session_id", "global") == session_id}
+        ranked = [(d, s) for d, s in zip(doc_ids_ref, scores) if s > 0 and d in valid_doc_ids]
+        ranked = sorted(ranked, key=lambda x: x[1], reverse=True)[:top_k]
 
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                content = ""
-            meta = index_snapshot.get(doc_id, {})
+            try: content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError: content = ""
             snippet = self._extract_snippet(content, query)
-
             results.append({
-                "id": doc_id,
-                "title": meta.get("title", "?"),
-                "source": meta.get("source", ""),
-                "snippet": snippet,
-                "score": score,
+                "id": doc_id, "title": index_snapshot[doc_id].get("title", "?"),
+                "source": index_snapshot[doc_id].get("source", ""), "snippet": snippet, "score": score
             })
         return results
 
-    def _bm25_search(self, query: str, top_k: int) -> Tuple[bool, str]:
-        results = self._fetch_bm25(query, top_k)
+    def _bm25_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+        results = self._fetch_bm25(query, top_k, session_id)
         return self._format_results_from_struct(results, query, source_name="BM25")
 
-    def _keyword_search(self, query: str, top_k: int) -> Tuple[bool, str]:
+    def _keyword_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
         keywords = query.lower().split()
         scored = []
 
         for doc_id, meta in list(self._index.items()):
+            if meta.get("session_id", "global") != session_id: continue
+
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                text = doc_file.read_text(encoding="utf-8").lower()
-            except FileNotFoundError:
-                text = ""
+            try: text = doc_file.read_text(encoding="utf-8").lower()
+            except FileNotFoundError: text = ""
+
             title_lower = meta["title"].lower()
             tags_lower = " ".join(meta.get("tags", [])).lower()
 
-            score = sum(
-                text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3
-                for kw in keywords
-            )
-            if score > 0:
-                scored.append((doc_id, score))
+            score = sum(text.count(kw) + title_lower.count(kw) * 5 + tags_lower.count(kw) * 3 for kw in keywords)
+            if score > 0: scored.append((doc_id, score))
 
         ranked = sorted(scored, key=lambda x: x[1], reverse=True)[:top_k]
-        
+
         results = []
         for doc_id, score in ranked:
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try:
-                content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                content = ""
+            try: content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError: content = ""
             meta = self._index.get(doc_id, {})
             snippet = self._extract_snippet(content, query)
-            
             results.append({
-                "id": doc_id,
-                "title": meta.get("title", "?"),
-                "source": meta.get("source", ""),
-                "snippet": snippet,
-                "score": score
+                "id": doc_id, "title": meta.get("title", "?"),
+                "source": meta.get("source", ""), "snippet": snippet, "score": score
             })
 
         return self._format_results_from_struct(results, query, source_name="Kelime Eşleşmesi")
@@ -840,19 +677,17 @@ class DocumentStore:
     #  LİSTELEME & STATÜ
     # ─────────────────────────────────────────────
 
-    def list_documents(self) -> str:
-        if not self._index:
-            return "Belge deposu boş."
+    def list_documents(self, session_id: Optional[str] = None) -> str:
+        docs = {k: v for k, v in self._index.items() if session_id is None or v.get("session_id", "global") == session_id}
+        if not docs:
+            return "Belge deposu boş veya bu oturum için belge bulunamadı."
 
-        lines = [f"[Belge Deposu — {len(self._index)} belge]", ""]
-        for doc_id, meta in self._index.items():
+        lines = [f"[Belge Deposu — {len(docs)} belge]", ""]
+        for doc_id, meta in docs.items():
             tags = ", ".join(meta.get("tags", [])) or "-"
             size_kb = meta.get("size", 0) / 1024
             lines.append(f"  [{doc_id}] {meta['title']}")
-            lines.append(
-                f"    Kaynak: {meta.get('source', '-')} | "
-                f"Boyut: {size_kb:.1f} KB | Etiketler: {tags}"
-            )
+            lines.append(f"    Kaynak: {meta.get('source', '-')} | Boyut: {size_kb:.1f} KB | Etiketler: {tags}")
         return "\n".join(lines)
 
     # ─────────────────────────────────────────────
