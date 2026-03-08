@@ -255,7 +255,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 | `.health` | Sistem sağlık raporu |
 | `.gpu` | GPU belleği optimize et |
 | `.github` | GitHub bağlantı durumu |
-| `.level` | Erişim seviyesini göster |
+| `.level` / `.level <seviye>` | Erişim seviyesini göster / değiştir |
 | `.web` | Web arama durumu |
 | `.docs` | Belge deposunu listele |
 | `.help` | Yardım |
@@ -293,6 +293,7 @@ app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 | `/sessions/{id}` | POST | Oturum yükle / başlık güncelle |
 | `/sessions/{id}` | DELETE | Oturum sil |
 | `/clear` | POST | Aktif belleği temizle |
+| `/set-level` | POST | Erişim seviyesini runtime değiştir ve belleğe logla |
 | `/files` | GET | Proje dosyalarını listele |
 | `/file-content` | GET | Dosya içeriğini oku |
 | `/git-info` | GET | Git log/status |
@@ -1332,8 +1333,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki ilgili bölümlere bakın.
 
 #### 14.6.4 Güvenlik Seviyesi Geçiş Logu
-**Mevcut durum:** `set_provider_mode()` ve erişim seviyesi değişiklikleri loglanıyor ancak oturum bazında takip yok.
-**Öneri:** Seviye değişikliklerini oturum belleğine de yazmak; `[GÜVENLIK] Erişim seviyesi full → sandbox olarak değiştirildi` şeklinde izlenebilir.
+**Güncel durum (v2.10.5):** ✅ Tamamlandı. `SecurityManager.set_level()` ve `SidarAgent.set_access_level()` ile erişim seviyesi geçişleri çalışma zamanında uygulanır ve konuşma belleğine `[GÜVENLİK BİLDİRİMİ]` olarak kalıcı şekilde yazılır.
+**Uygulama notu:** Özellik CLI (`.level <seviye>`) ve Web API (`POST /set-level`) üzerinden tetiklenir; böylece LLM, güncel yetki seviyesini oturum bağlamında görür.
 
 ---
 
@@ -1378,7 +1379,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.4)
+### 14.9 Öncelik Durumu (Güncel — v2.10.5)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1404,6 +1405,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 12 | Test coverage hedefleri (§14.7.2) | Orta | Düşük | ✅ Tamamlandı |
 | 13 | Performans benchmark baseline'ları (§14.7.4) | Orta | Orta | ✅ Tamamlandı |
 | 14 | OpenAPI Şema Belgelendirmesi (§14.4.3) | Orta | Düşük | ✅ Tamamlandı |
+| 15 | Güvenlik Seviyesi Geçiş Logu (§14.6.4) | Orta | Düşük | ✅ Tamamlandı |
 
 ---
 

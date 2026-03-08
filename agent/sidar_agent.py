@@ -1615,6 +1615,35 @@ class SidarAgent:
         self.memory.clear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
+    def set_access_level(self, new_level: str) -> str:
+        """
+        Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
+        sohbet belleğine kalıcı olarak yazar.
+        """
+        old_level = self.security.level_name
+        changed = self.security.set_level(new_level)
+        if changed:
+            self.cfg.ACCESS_LEVEL = self.security.level_name
+            msg = (
+                "[GÜVENLİK BİLDİRİMİ] Sistem yöneticisi tarafından ajanın "
+                f"erişim seviyesi '{old_level}' modundan "
+                f"'{self.security.level_name}' moduna değiştirildi."
+            )
+            self.memory.add("user", msg)
+            self.memory.add(
+                "assistant",
+                (
+                    "Anlaşıldı, bundan sonraki işlemlerde "
+                    f"'{self.security.level_name}' seviyesinin güvenlik "
+                    "kurallarına ve yetkilerine göre hareket edeceğim."
+                ),
+            )
+            return (
+                f"✓ Erişim seviyesi '{self.security.level_name}' olarak güncellendi "
+                "ve sohbet belleğine işlendi."
+            )
+        return f"ℹ Erişim seviyesi zaten '{self.security.level_name}'."
+
     def status(self) -> str:
         lines = [
             f"[SidarAgent v{self.VERSION}]",
