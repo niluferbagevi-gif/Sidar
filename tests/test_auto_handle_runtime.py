@@ -6,14 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def _load_auto_handle_module():
-    if "agent" not in sys.modules:
-        pkg = types.ModuleType("agent")
-        pkg.__path__ = [str(Path("agent").resolve())]
-        sys.modules["agent"] = pkg
-
-    # Minimal stub modules for type imports used by auto_handle.py
-    mods = {
+def _load_auto_handle_class():
+    """Load AutoHandle with temporary import stubs, without polluting global sys.modules."""
+    stub_keys = {
         "managers.code_manager": types.ModuleType("managers.code_manager"),
         "managers.system_health": types.ModuleType("managers.system_health"),
         "managers.github_manager": types.ModuleType("managers.github_manager"),
@@ -22,26 +17,32 @@ def _load_auto_handle_module():
         "core.memory": types.ModuleType("core.memory"),
         "core.rag": types.ModuleType("core.rag"),
     }
-    mods["managers.code_manager"].CodeManager = object
-    mods["managers.system_health"].SystemHealthManager = object
-    mods["managers.github_manager"].GitHubManager = object
-    mods["managers.web_search"].WebSearchManager = object
-    mods["managers.package_info"].PackageInfoManager = object
-    mods["core.memory"].ConversationMemory = object
-    mods["core.rag"].DocumentStore = object
-    for k, v in mods.items():
-        sys.modules[k] = v
+    stub_keys["managers.code_manager"].CodeManager = object
+    stub_keys["managers.system_health"].SystemHealthManager = object
+    stub_keys["managers.github_manager"].GitHubManager = object
+    stub_keys["managers.web_search"].WebSearchManager = object
+    stub_keys["managers.package_info"].PackageInfoManager = object
+    stub_keys["core.memory"].ConversationMemory = object
+    stub_keys["core.rag"].DocumentStore = object
 
-    spec = importlib.util.spec_from_file_location("agent.auto_handle", Path("agent/auto_handle.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+    saved = {k: sys.modules.get(k) for k in stub_keys}
+    try:
+        for k, v in stub_keys.items():
+            sys.modules[k] = v
+        spec = importlib.util.spec_from_file_location("auto_handle_under_test", Path("agent/auto_handle.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod.AutoHandle
+    finally:
+        for k, old in saved.items():
+            if old is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = old
 
 
-AH_MOD = _load_auto_handle_module()
-AutoHandle = AH_MOD.AutoHandle
-
+AutoHandle = _load_auto_handle_class()
 
 
 class _Code:
