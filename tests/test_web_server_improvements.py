@@ -63,3 +63,12 @@ def test_web_server_has_basic_auth_middleware_backed_by_api_key():
     assert "secrets.compare_digest(password, api_key)" in src
     assert "WWW-Authenticate" in src
     assert 'Basic realm="Sidar Secure Web UI"' in src
+
+
+def test_health_endpoint_uses_structured_summary_and_503_on_ollama_down():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert '@app.get("/health")' in src
+    assert "health_data = agent.health.get_health_summary()" in src
+    assert 'health_data["uptime_seconds"] = int(time.monotonic() - _start_time)' in src
+    assert 'if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:' in src
+    assert "return JSONResponse(health_data, status_code=503)" in src

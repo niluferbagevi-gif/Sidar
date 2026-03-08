@@ -330,6 +330,22 @@ class SystemHealthManager:
     #  TAM RAPOR
     # ─────────────────────────────────────────────
 
+    def get_health_summary(self) -> dict:
+        """Kubernetes / Docker monitör sistemleri için yapısal (JSON) sağlık özeti."""
+        cpu = self.get_cpu_usage()
+        mem = self.get_memory_info()
+        gpu = self.get_gpu_info()
+
+        return {
+            "status": "healthy",
+            "cpu_percent": cpu if cpu is not None else 0.0,
+            "ram_percent": mem.get("percent", 0.0) if mem else 0.0,
+            "gpu_available": gpu.get("available", False),
+            "ollama_online": self.check_ollama(),
+            "python_version": platform.python_version(),
+            "os": platform.system(),
+        }
+
     def full_report(self) -> str:
         """Kapsamlı sistem sağlık raporu (metin)."""
         lines = ["[Sistem Sağlık Raporu]"]
