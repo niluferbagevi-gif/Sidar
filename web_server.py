@@ -27,6 +27,7 @@ from cachetools import TTLCache
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from config import Config
 from agent.sidar_agent import SidarAgent
@@ -70,6 +71,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+# Modüler Web UI statik dosyalarını sunmak için
+web_ui_dir = Path(__file__).parent / "web_ui"
+app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
 # ─────────────────────────────────────────────
 #  RATE LIMITING (basit in-memory)
