@@ -350,6 +350,40 @@ def test_session_load_nonexistent(test_config):
     assert result is False
 
 
+def test_apply_summary_keeps_last_messages(test_config):
+    """ConversationMemory: Özetleme, son N mesajı koruyup başa özet bloğu ekler."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=4)
+    for i in range(8):
+        role = "user" if i % 2 == 0 else "assistant"
+        mem.add(role, f"mesaj-{i}")
+
+    mem.apply_summary("Kısa özet")
+
+    history = mem.get_history()
+    assert len(history) == 6
+    assert history[0]["content"] == "[Önceki konuşmaların özeti istendi]"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nKısa özet"
+    assert [t["content"] for t in history[2:]] == ["mesaj-4", "mesaj-5", "mesaj-6", "mesaj-7"]
+
+
+def test_apply_summary_keep_last_zero(test_config):
+    """ConversationMemory: keep_last=0 iken yalnızca özet blokları kalır."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=0)
+    for i in range(4):
+        mem.add("user", f"soru-{i}")
+
+    mem.apply_summary("Sadece özet")
+
+    history = mem.get_history()
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nSadece özet"
+
+
 # ─────────────────────────────────────────────
 # 8. ARAÇ DISPATCHER TESTLERİ
 # ─────────────────────────────────────────────

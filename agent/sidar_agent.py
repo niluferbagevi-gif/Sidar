@@ -118,6 +118,7 @@ class SidarAgent:
             file_path=self.cfg.MEMORY_FILE,
             max_turns=self.cfg.MAX_MEMORY_TURNS,
             encryption_key=getattr(self.cfg, "MEMORY_ENCRYPTION_KEY", ""),
+            keep_last=getattr(self.cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
         )
         
         self.llm = LLMClient(self.cfg.AI_PROVIDER, self.cfg)

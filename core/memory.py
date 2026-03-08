@@ -21,11 +21,12 @@ class ConversationMemory:
     """
 
     def __init__(self, file_path: Path, max_turns: int = 20,
-                 encryption_key: str = "") -> None:
+                 encryption_key: str = "", keep_last: int = 4) -> None:
         # Eski memory.json yolunu alıp yerine 'sessions' klasörü oluşturuyoruz
         self.sessions_dir = file_path.parent / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.max_turns = max_turns
+        self.keep_last = keep_last
         self._lock = threading.RLock()
 
         # Opsiyonel Fernet şifreleme
@@ -322,23 +323,32 @@ class ConversationMemory:
 
     def apply_summary(self, summary_text: str) -> None:
         """
-        Tüm konuşma geçmişini özetle değiştir; belleği sıkıştırır.
+        Kayan pencere (sliding window) stratejisi:
+        Tüm geçmişi silmek yerine, son 'keep_last' kadar mesajı tam olarak korur,
+        daha eski olanları ise tek bir özet mesajına indirger.
         """
         with self._lock:
-            self._turns = [
+            kept_turns = self._turns[-self.keep_last:] if self.keep_last > 0 else []
+
+            summary_turns = [
                 {
                     "role": "user",
                     "content": "[Önceki konuşmaların özeti istendi]",
-                    "timestamp": time.time(),
+                    "timestamp": time.time() - 2,
                 },
                 {
                     "role": "assistant",
                     "content": f"[KONUŞMA ÖZETİ]\n{summary_text}",
-                    "timestamp": time.time(),
+                    "timestamp": time.time() - 1,
                 },
             ]
+
+            self._turns = summary_turns + kept_turns
             self._save(force=True)
-        logger.info("Konuşma belleği özetleme ile sıkıştırıldı.")
+        logger.info(
+            "Konuşma belleği özetleme ile sıkıştırıldı. Son %d mesaj korundu.",
+            len(kept_turns),
+        )
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR
