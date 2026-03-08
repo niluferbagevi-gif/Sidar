@@ -7,7 +7,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 1. Vektör Arama (ChromaDB): Anlamsal yakınlık (Semantic Search) - Chunking destekli
    → USE_GPU=true ise sentence-transformers CUDA üzerinde çalışır
    → GPU_MIXED_PRECISION=true ise FP16 ile bellek tasarrufu sağlanır
-2. BM25 (SQLite FTS5): Kelime sıklığı ve nadirlik tabanlı disk tabanlı arama
+2. BM25 (SQLite FTS5): Disk tabanlı kelime sıklığı ve nadirlik tabanlı arama
 3. Fallback: Basit anahtar kelime eşleşmesi
 """
 
@@ -646,8 +646,10 @@ class DocumentStore:
         results = []
         for row in rows:
             doc_id = row["doc_id"]
-            # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı).
+            # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı). Bunu pozitife çeviriyoruz.
             score = abs(row["score"])
+
+
             meta = self._index.get(doc_id, {})
             doc_file = self.store_dir / f"{doc_id}.txt"
             try:
