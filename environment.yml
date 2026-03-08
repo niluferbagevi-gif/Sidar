@@ -78,8 +78,8 @@ dependencies:
       - prometheus-client~=0.21.0  # /metrics endpoint'inde Prometheus format çıktısı için opsiyonel
 
       # ── Geliştirme & Test ─────────────────────────────────────────────────
-      - pytest~=8.3.3
-      - pytest-asyncio~=0.24.0
+      - pytest>=8.0.0
+      - pytest-asyncio>=0.23.0
       - pytest-cov~=5.0.0
       - black~=24.8.0
       - flake8~=7.1.1

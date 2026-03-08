@@ -1371,8 +1371,14 @@ Web servislerinden (`sidar-web`, `sidar-web-gpu`) kaldırılarak container escap
 ### 14.7 Test ve Kalite
 
 #### 14.7.1 Entegrasyon Test Altyapısı
-**Mevcut durum:** 32 test modülü var (~1.836 satır) ancak çoğu unit test; gerçek LLM ve Docker gerektiren testler yok.
-**Öneri:** `pytest-asyncio` ile asenkron test; `httpx.AsyncClient` ile web API testleri; `testcontainers-python` ile geçici ChromaDB ve Docker ortamı.
+**Güncel durum:** ✅ **Temel Pytest altyapısı tamamlandı.**
+
+- `environment.yml` içinde test bağımlılıkları (`pytest`, `pytest-asyncio`) tanımlı
+- Kök dizinde `pytest.ini` ile test keşfi (`testpaths = tests`) ve asenkron çalışma modu (`asyncio_mode = auto`) standartlaştırıldı
+- `run_tests.sh` ile tek komutluk test çalıştırma eklendi
+- Bellek özetleme/kayan pencere davranışı için `tests/test_core_memory.py` eklendi
+
+**Not:** Gerçek servis bağımlılıkları (LLM, Docker, harici API) için entegrasyon testleri hâlâ genişletme alanıdır.
 
 #### 14.7.2 Test Coverage Hedefi
 **Mevcut durum:** Kapsam hedefi tanımlanmamış.
