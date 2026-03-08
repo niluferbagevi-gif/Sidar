@@ -409,6 +409,62 @@ class DocumentStore:
             if session_id is None or meta.get("session_id", "global") == session_id
         ]
 
+    @property
+    def doc_count(self) -> int:
+        """Dizindeki belge sayısını döndürür."""
+        return len(self._index)
+
+    def delete_document(self, doc_id: str, session_id: str = "global") -> str:
+        """Belgeyi tüm depolardan sil (İzolasyon Korumalı)."""
+        if doc_id not in self._index:
+            return f"✗ Belge bulunamadı: {doc_id}"
+
+        # İzolasyon yetki kontrolü
+        meta = self._index[doc_id]
+        if meta.get("session_id", "global") != session_id and session_id != "global":
+            return f"✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
+
+        with self._write_lock:
+            if doc_id not in self._index:
+                return f"✗ Belge zaten silinmiş: {doc_id}"
+
+            title = self._index[doc_id].get("title", doc_id)
+
+            # 1. Dosya sil
+            doc_file = self.store_dir / f"{doc_id}.txt"
+            if doc_file.exists():
+                doc_file.unlink()
+
+            # 2. ChromaDB'den sil
+            if self._chroma_available and self.collection:
+                try:
+                    parent_id = self._index[doc_id].get("parent_id", doc_id)
+                    self.collection.delete(where={"parent_id": parent_id})
+                except Exception as exc:
+                    logger.error("ChromaDB silme hatası: %s", exc)
+
+            # 3. Index'ten ve BM25'ten sil
+            del self._index[doc_id]
+            self._save_index()
+            self._update_bm25_cache_on_delete(doc_id)
+
+        return f"✓ Belge silindi: [{doc_id}] {title}"
+
+    def get_document(self, doc_id: str, session_id: str = "global") -> Tuple[bool, str]:
+        """Belge ID ile tam içerik getir (İzolasyon Korumalı)."""
+        if doc_id not in self._index:
+            return False, f"✗ Belge bulunamadı: {doc_id}"
+
+        meta = self._index[doc_id]
+        if meta.get("session_id", "global") != session_id and session_id != "global":
+            return False, f"✗ HATA: Bu belgeye erişim yetkiniz yok (Farklı bir sohbete ait)."
+
+        doc_file = self.store_dir / f"{doc_id}.txt"
+        if not doc_file.exists():
+            return False, f"✗ Belge dosyası eksik: {doc_id}"
+        content = doc_file.read_text(encoding="utf-8")
+        return True, f"[{doc_id}] {meta['title']}\nKaynak: {meta.get('source', '-')}\n\n{content}"
+
     # ─────────────────────────────────────────────
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────

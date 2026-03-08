@@ -865,13 +865,16 @@ class SidarAgent:
         parts = a.split("|", 1)
         query = parts[0].strip()
         mode  = parts[1].strip() if len(parts) > 1 else "auto"
-        _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+        # Aktif oturum ID'sini al
+        session_id = self.memory.active_session_id or "global"
+        _, result = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
         return result
 
     async def _tool_docs_add(self, a: str) -> str:
         parts = a.split("|", 1)
         if len(parts) < 2: return "⚠ Kullanım: başlık|url"
-        _, result = await self.docs.add_document_from_url(parts[1].strip(), title=parts[0].strip())
+        session_id = self.memory.active_session_id or "global"
+        _, result = await self.docs.add_document_from_url(parts[1].strip(), title=parts[0].strip(), session_id=session_id)
         return result
 
     async def _tool_docs_add_file(self, a: str) -> str:
@@ -887,14 +890,18 @@ class SidarAgent:
             title = Path(path).name if path else ""
         if not path:
             return "⚠ Dosya yolu belirtilmedi. Kullanım: docs_add_file|dosya_yolu"
-        ok, result = await asyncio.to_thread(self.docs.add_document_from_file, path, title)
+        session_id = self.memory.active_session_id or "global"
+        # add_document_from_file parametreleri: path, title, tags, session_id
+        ok, result = await asyncio.to_thread(self.docs.add_document_from_file, path, title, None, session_id)
         return result
 
     async def _tool_docs_list(self, _: str) -> str:
-        return self.docs.list_documents()
+        session_id = self.memory.active_session_id or "global"
+        return self.docs.list_documents(session_id=session_id)
 
     async def _tool_docs_delete(self, a: str) -> str:
-        return self.docs.delete_document(a)
+        session_id = self.memory.active_session_id or "global"
+        return self.docs.delete_document(a, session_id=session_id)
 
     # ── Alt Görev / Paralel Araçlar (Claude Code Agent tool eşdeğeri) ─────
 
