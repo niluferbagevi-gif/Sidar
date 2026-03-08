@@ -35,3 +35,9 @@ def test_web_search_config_supports_scrape_limit_alias():
     src = Path("config.py").read_text(encoding="utf-8")
     assert "WEB_SCRAPE_MAX_CHARS" in src
     assert "WEB_FETCH_MAX_CHARS" in src
+
+def test_web_search_avoids_runtime_sidar_agent_import_to_prevent_circular_dependency():
+    src = Path("managers/web_search.py").read_text(encoding="utf-8")
+    assert "TYPE_CHECKING" in src
+    assert "if TYPE_CHECKING:" in src
+    assert "from agent.sidar_agent import SidarAgent" in src

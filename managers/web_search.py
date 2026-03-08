@@ -9,12 +9,15 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 import asyncio
 import logging
 from html import unescape
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 
 import httpx
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from agent.sidar_agent import SidarAgent
 
 
 class WebSearchManager:
