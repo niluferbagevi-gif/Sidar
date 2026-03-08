@@ -1438,6 +1438,18 @@ Yapısal sağlık özeti ve probe endpoint'i eklendi:
 
 ---
 
+### 14.10 Rapor Güncelleme Politikası (Önerilen Süreç)
+
+Bu proje için en sağlıklı yaklaşım, **her anlamlı geliştirme adımından hemen sonra raporu güncellemek** olacaktır.
+
+Önerilen pratik:
+- Kod değişikliği tamamlanınca ilgili alt başlıkta `Mevcut durum` → `Güncel durum` güncellemesi yapılır.
+- Değişiklik bir yol haritası maddesini kapatıyorsa, §14.9 öncelik tablosundaki durum da aynı commit içinde güncellenir.
+- Mümkünse her PR'da kısa bir “Rapor Etkisi” notu bulunur (hangi bölüm/başlık güncellendi).
+- Küçük refactor/format değişikliklerinde rapor güncellemesi zorunlu değildir; ancak davranış, güvenlik, API, performans veya mimari değiştiyse rapor güncellemesi zorunlu kabul edilir.
+
+Bu disiplin sayesinde rapor, geçmişi anlatan bir belge olmaktan çıkıp **canlı operasyonel durum panosu** gibi çalışır.
+
 ## 15. Özellik-Gereksinim Matrisi
 
 [⬆ İçindekilere Dön](#içindekiler)
