@@ -1,5 +1,12 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.3] - 2026-03-08
+Bu sürümde test kalite kapıları ve performans baseline ölçümleri CI/test akışına entegre edilmiştir.
+
+### ✅ Test ve Kalite İyileştirmeleri
+* **Test Coverage Hedefleri (`run_tests.sh`):** CI süreçleri için global `%70` (`--cov-fail-under=70`) ve kritik çekirdek modüller (`managers.security`, `core.memory`, `core.rag`) için `%80` (`--cov-fail-under=80`) kapsam zorunluluğu eklendi.
+* **Performans Benchmark (`tests/test_benchmark.py`):** Kritik RAG (ChromaDB, BM25) ve AutoHandle regex yolları için `pytest-benchmark` tabanlı otomatik hız testleri sisteme entegre edildi.
+
 ## [v2.9.0] - 2026-03-08
 Bu sürümde RAG motoru ve konuşma belleği katmanında izolasyon, sıralama kalitesi ve ölçeklenebilirlik odaklı iyileştirmeler tamamlanmıştır.
 

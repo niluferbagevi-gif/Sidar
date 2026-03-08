@@ -1344,16 +1344,16 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > dosyasındaki ilgili bölümlere bakın.
 
 #### 14.7.2 Test Coverage Hedefi
-**Mevcut durum:** Kapsam hedefi tanımlanmamış.
-**Öneri:** CI'da `pytest --cov=. --cov-fail-under=70` eşiği. `security.py`, `memory.py`, `rag.py` %80+ hedef.
+**Güncel durum (v2.10.3):** ✅ Tamamlandı. `run_tests.sh` içinde CI/test akışı için global `%70` kapsam eşiği (`--cov-fail-under=70`) ve kritik çekirdek modüller (`managers.security`, `core.memory`, `core.rag`) için `%80` kapsam eşiği (`--cov-fail-under=80`) zorunlu hale getirildi.
+**Uygulama notu:** Kapsam kapıları iki aşamada çalıştırılır: (1) tüm proje kapsamı, (2) kritik modüller için sıkılaştırılmış kapsam.
 
 #### 14.7.3 Linting ve Tip Kontrolü
 **Güncel durum (v2.10.2):** ✅ Tamamlandı. Kök dizine `pyproject.toml` eklendi; `ruff` lint/format kuralları ve `mypy --strict` tabanlı tip denetimi merkezi olarak tanımlandı.
 **Uygulama notu:** Opsiyonel/üçüncü taraf paketler için `mypy` override tanımları girildi; böylece çekirdek kodda sıkı tip denetimi korunurken dış bağımlılık kaynaklı gürültü azaltıldı.
 
 #### 14.7.4 Performans Benchmark
-**Mevcut durum:** RAG arama süresi, LLM ilk token gecikmesi (TTFT) ölçülmüyor.
-**Öneri:** `pytest-benchmark` ile kritik yollar için baseline ölçümü: ChromaDB sorgu < 200ms, BM25 sorgu < 50ms, AutoHandle regex < 5ms.
+**Güncel durum (v2.10.3):** ✅ Tamamlandı. `pytest-benchmark` testleri projeye eklendi; kritik yollar için baseline ölçümleri otomatikleştirildi.
+**Uygulama notu:** `tests/test_benchmark.py` içinde ChromaDB sorgu yolu `< 200ms`, BM25 sorgu yolu `< 50ms`, AutoHandle regex eşleşmesi `< 5ms` hedefleri doğrulanır ve `run_tests.sh` içinde benchmark adımı çalıştırılır.
 
 ---
 
@@ -1401,6 +1401,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ✅ Tamamlandı |
 | 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ✅ Tamamlandı |
 | 11 | Linting + mypy strict altyapısı (§14.7.3) | Orta | Düşük | ✅ Tamamlandı |
+| 12 | Test coverage hedefleri (§14.7.2) | Orta | Düşük | ✅ Tamamlandı |
+| 13 | Performans benchmark baseline'ları (§14.7.4) | Orta | Orta | ✅ Tamamlandı |
 
 ---
 
@@ -1680,6 +1682,8 @@ Bu bölüm, 2026-03-08 tarihli ikinci kapsamlı kod incelemesinde satır satır 
 | Prometheus metrikleri | ✅ `update_prometheus_metrics()` + lazy Gauge init | `system_health.py` |
 | OpenAI istemci | ✅ `OpenAIClient` + `response_format: json_object` | `llm_client.py` |
 | Drag-drop dosya yükleme | ✅ `/api/rag/upload` endpoint; temp dizin temizleme | `web_server.py` |
+| Coverage zorunluluğu (global %70 + kritik modüller %80) | ✅ `run_tests.sh` içinde iki aşamalı `pytest --cov` kapısı tanımlı | `run_tests.sh` |
+| Performans benchmark baseline'ları | ✅ `tests/test_benchmark.py` ile ChromaDB/BM25/regex hedef eşikleri doğrulanıyor | `tests/test_benchmark.py` |
 
 ### 18.2 Rapor Düzeltme Özeti (Satır Sayıları)
 
