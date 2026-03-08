@@ -796,3 +796,161 @@ def test_github_repo_pr_and_rag_url_endpoints_error_paths():
     url_ok = asyncio.run(mod.rag_add_url(_FakeRequest(json_body={"url": "http://x", "title": "t"})))
     assert url_ok.status_code == 200
     assert url_ok.content["success"] is True
+
+
+def test_git_info_branches_set_branch_and_main_paths(monkeypatch):
+    mod = _load_web_server()
+
+    def _git_run(cmd, cwd, stderr=None):
+        key = " ".join(cmd)
+        if "rev-parse --abbrev-ref HEAD" in key:
+            return "feature/runtime"
+        if "remote get-url origin" in key:
+            return "https://github.com/acme/sidar_project.git"
+        if "symbolic-ref" in key:
+            return "origin/main"
+        if "branch --format" in key:
+            return "main\nfeature/runtime"
+        return ""
+
+    monkeypatch.setattr(mod, "_git_run", _git_run)
+
+    info = asyncio.run(mod.git_info())
+    assert info.status_code == 200
+    assert info.content["branch"] == "feature/runtime"
+    assert info.content["repo"] == "acme/sidar_project"
+    assert info.content["default_branch"] == "main"
+
+    branches = asyncio.run(mod.git_branches())
+    assert branches.status_code == 200
+    assert "feature/runtime" in branches.content["branches"]
+    assert branches.content["current"] == "feature/runtime"
+
+    empty_git = lambda *_a, **_k: ""
+    monkeypatch.setattr(mod, "_git_run", empty_git)
+    info_fallback = asyncio.run(mod.git_info())
+    assert info_fallback.content["branch"] == "main"
+    assert info_fallback.content["repo"] == "sidar_project"
+
+    bad_name = asyncio.run(mod.set_branch(_FakeRequest(json_body={"branch": "bad branch"})))
+    assert bad_name.status_code == 400
+
+    empty_name = asyncio.run(mod.set_branch(_FakeRequest(json_body={})))
+    assert empty_name.status_code == 400
+
+    def _ok_checkout(*args, **kwargs):
+        return b""
+
+    monkeypatch.setattr(mod.subprocess, "check_output", _ok_checkout)
+    ok_set = asyncio.run(mod.set_branch(_FakeRequest(json_body={"branch": "feature/runtime"})))
+    assert ok_set.status_code == 200
+
+    def _fail_checkout(*args, **kwargs):
+        raise mod.subprocess.CalledProcessError(returncode=1, cmd=args[0], output=b"checkout failed")
+
+    monkeypatch.setattr(mod.subprocess, "check_output", _fail_checkout)
+    fail_set = asyncio.run(mod.set_branch(_FakeRequest(json_body={"branch": "feature/runtime"})))
+    assert fail_set.status_code == 400
+    assert "checkout failed" in fail_set.content["error"]
+
+    created = {"cfg": None, "uvicorn": None}
+
+    class _Agent:
+        VERSION = "9.9"
+
+        def __init__(self, cfg):
+            created["cfg"] = cfg
+
+    def _run(app, host, port, log_level):
+        created["uvicorn"] = (host, port, log_level)
+
+    monkeypatch.setattr(mod, "SidarAgent", _Agent)
+    monkeypatch.setattr(mod.uvicorn, "run", _run)
+    monkeypatch.setattr(sys, "argv", ["web_server.py", "--host", "0.0.0.0", "--port", "9999", "--level", "full", "--provider", "gemini", "--log", "DEBUG"])
+
+    mod.main()
+
+    assert created["cfg"].ACCESS_LEVEL == "full"
+    assert created["cfg"].AI_PROVIDER == "gemini"
+    assert created["uvicorn"] == ("0.0.0.0", 9999, "debug")
+
+
+def test_list_files_metrics_rag_docs_todo_clear_and_github_repos_success(monkeypatch):
+    mod = _load_web_server()
+
+    class _Memory:
+        active_session_id = "sess-42"
+
+        def __len__(self):
+            return 3
+
+        def get_all_sessions(self):
+            return [{"id": "sess-42"}, {"id": "sess-2"}]
+
+        def clear(self):
+            self.cleared = True
+
+    class _Docs:
+        doc_count = 5
+
+        def get_index_info(self, session_id):
+            return [{"id": "d1", "session": session_id}]
+
+    class _Todo:
+        def get_tasks(self):
+            return [{"status": "completed"}, {"status": "pending"}]
+
+    class _GH:
+        repo_name = "owner/current"
+
+        def list_repos(self, owner, limit):
+            return True, [
+                {"full_name": "owner/z-repo"},
+                {"full_name": "owner/a-repo"},
+                {"full_name": "other/skip"},
+            ]
+
+    cfg = types.SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False)
+    agent = types.SimpleNamespace(VERSION="1.2", cfg=cfg, memory=_Memory(), docs=_Docs(), todo=_Todo(), github=_GH())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    mod._local_rate_limits = {"k": [1.0, 2.0]}
+
+    metrics = asyncio.run(mod.metrics(_FakeRequest(headers={"Accept": "application/json"})))
+    assert metrics.status_code == 200
+    assert metrics.content["sessions_total"] == 2
+    assert metrics.content["rag_documents"] == 5
+
+    rag_docs = asyncio.run(mod.rag_list_docs())
+    assert rag_docs.status_code == 200
+    assert rag_docs.content["count"] == 1
+
+    todo = asyncio.run(mod.get_todo())
+    assert todo.status_code == 200
+    assert todo.content["active"] == 1
+
+    cleared = asyncio.run(mod.clear())
+    assert cleared.status_code == 200
+    assert cleared.content["result"] is True
+
+    repos = asyncio.run(mod.github_repos(owner="", q="a-repo"))
+    assert repos.status_code == 200
+    assert repos.content["owner"] == "owner"
+    assert repos.content["active_repo"] == "owner/current"
+    assert repos.content["repos"][0]["full_name"] == "owner/a-repo"
+
+    files_root = asyncio.run(mod.list_project_files(""))
+    assert files_root.status_code == 200
+    assert isinstance(files_root.content["items"], list)
+
+    files_outside = asyncio.run(mod.list_project_files("../"))
+    assert files_outside.status_code == 403
+
+    files_not_found = asyncio.run(mod.list_project_files("does_not_exist_dir"))
+    assert files_not_found.status_code == 404
+
+    files_not_dir = asyncio.run(mod.list_project_files("README.md"))
+    assert files_not_dir.status_code == 400
