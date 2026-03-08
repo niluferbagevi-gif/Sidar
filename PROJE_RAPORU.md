@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-07 (Audit düzeltmeleri — branch: claude/review-files-report-5uVFR)
-> **Proje Sürümü:** 2.7.0
+> **Son Güncelleme:** 2026-03-08 (v2.8.0 audit — Madde #10 ve #11 satır satır doğrulama; branch: claude/review-files-report-5uVFR)
+> **Proje Sürümü:** 2.8.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir.
 
 ---
@@ -16,7 +16,7 @@
   - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-517-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
   - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-789-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-794-satır)
   - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1455-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
@@ -263,15 +263,22 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (789 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (794 satır)
 
 **Amaç:** SSE (Server-Sent Events) destekli asenkron chat web arayüzü.
+
+**v2.8.0 Eklentisi:** `StaticFiles` middleware ile `web_ui/` dizininin `/static` yolu üzerinden servis edilmesi sağlandı. `index.html` ayrı rotası `/` → `FileResponse` ile korunuyor; statik JS/CSS dosyaları performanslı ve güvenli şekilde sunuluyor.
+
+```python
+app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
+```
 
 **Temel API Endpoint'leri:**
 
 | Endpoint | Metod | Açıklama |
 |----------|-------|----------|
 | `/` | GET | `index.html` servis et |
+| `/static/*` | GET | JS/CSS statik dosyaları (`web_ui/`) |
 | `/chat` | POST | SSE akışlı LLM yanıtı (rate limit: 20/dk) |
 | `/status` | GET | Sistem durumu JSON |
 | `/metrics` | GET | Uptime, istek sayacı |
@@ -295,7 +302,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 **Güvenlik Mekanizmaları:**
 - `CORSMiddleware`: Yalnızca `localhost/127.0.0.1/0.0.0.0` kökenlerine izin verir
-- Rate limiting: In-memory `defaultdict` ile 3 ayrı limit katmanı (chat/mutation/GET-IO)
+- Rate limiting: `TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)` ile 3 ayrı limit katmanı (chat/mutation/GET-IO)
 - `anyio.ClosedResourceError` ile kopuk SSE bağlantıları sessizce kapatılır
 
 **Singleton Ajan:** `get_agent()` fonksiyonu ile lazy-init; event loop başladıktan sonra `asyncio.Lock` oluşturulur.
@@ -604,7 +611,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (352 satır)
+### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (379 satır)
 
 **Amaç:** Tavily → Google → DuckDuckGo kademeli motor desteğiyle asenkron web araması.
 
@@ -616,7 +623,33 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 - `search_docs(library, topic)`: Resmi dokümantasyon araması
 - `search_stackoverflow(query)`: Stack Overflow araması
 
-**DuckDuckGo Uyumu:** v8 SDK uyumlu `DDGS` (sync) kullanılır; `asyncio.to_thread` ile event loop bloklanmaz.
+**v2.8.0 DuckDuckGo Güvenlik İyileştirmeleri (Madde #10 Çözümü):**
+
+`_search_duckduckgo()` içinde üç katmanlı güvenlik uygulandı:
+
+```python
+# 1. Dinamik AsyncDDGS kontrolü (versiyon değişikliği koruması)
+if hasattr(duckduckgo_search, "AsyncDDGS"):
+    results = await asyncio.wait_for(_async_search(), timeout=FETCH_TIMEOUT)
+else:
+    # AsyncDDGS yoksa (gelecek sürümler için) sync+thread fallback
+    results = await asyncio.wait_for(
+        asyncio.to_thread(_sync_search), timeout=FETCH_TIMEOUT)
+
+# 2. Timeout koruması — her iki yol da wait_for ile sınırlı
+# 3. Except sırası: asyncio.TimeoutError > Exception (Python best practice)
+except asyncio.TimeoutError:  # Spesifik önce
+    ...
+except Exception as exc:       # Genel sonra
+    ...
+```
+
+| Güvenlik Katmanı | Açıklama |
+|---|---|
+| Versiyon pinleme | `environment.yml`: `duckduckgo-search~=6.2.13` |
+| `AsyncDDGS` dinamik kontrol | `hasattr()` ile mevcut sürümde async yol, gelecek sürümlerde sync yol |
+| `asyncio.wait_for()` | Her iki arama yolu için `FETCH_TIMEOUT` sınırı (sessiz takılma engeli) |
+| `asyncio.TimeoutError` handler | Spesifik timeout mesajı + `logger.warning` |
 
 **Konfigürasyon:** `WEB_SEARCH_MAX_RESULTS` (5), `WEB_FETCH_TIMEOUT` (15sn), `WEB_SCRAPE_MAX_CHARS` (12000)
 
@@ -650,20 +683,38 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.18 `web_ui/index.html` — Web Arayüzü (3399 satır)
+### 3.18 `web_ui/` — Web Arayüzü (v2.8.0 — Modüler Yapı)
 
-**Amaç:** Vanilla JavaScript ile yazılmış tek sayfa uygulaması.
+> **v2.8.0 Mimari Değişikliği:** Daha önce 3.399 satırlık tek `index.html` dosyasında olan HTML + CSS + JavaScript ayrı modüllere bölündü. FastAPI `StaticFiles` middleware ile `/static/*` üzerinden servis edilmektedir.
+
+**Dosya Yapısı:**
+
+| Dosya | Satır | Sorumluluk |
+|-------|-------|-----------|
+| `index.html` | 436 | HTML iskeleti, modal'lar, script yükleme noktaları |
+| `style.css` | 1.547 | CSS custom properties, tema (dark/light), tüm bileşen stilleri |
+| `chat.js` | 644 | SSE streaming, mesaj render, kod vurgulama, dosya ekleme |
+| `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
+| `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
+| `app.js` | 242 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
+| **Toplam** | **3.394** | *(önceki tek dosyayla yakın satır, artık modüler)* |
+
+**Yükleme Sırası (index.html → script tags):**
+```html
+<script src="/static/chat.js"></script>    <!-- Önce: bağımlılık yok -->
+<script src="/static/sidebar.js"></script> <!-- Önce: bağımlılık yok -->
+<script src="/static/rag.js"></script>     <!-- Önce: bağımlılık yok -->
+<script src="/static/app.js"></script>     <!-- Son: diğer modüllere bağımlı -->
+```
 
 **Temel Özellikler:**
-- **SSE Chat:** `EventSource` ile gerçek zamanlı akış mesajları
-- **Markdown Render:** `marked.js` ile kod blokları, tablolar, başlıklar
-- **Kod Vurgulama:** `highlight.js` ile 180+ dil desteği
-- **Çok Oturum Yönetimi:** Sol panel sohbet listesi, başlık düzenleme, silme
-- **RAG Arayüzü:** Belge yükleme, arama, silme
-- **Görev Listesi:** Todo görüntüleme
-- **Git Paneli:** Commit geçmişi, branch listesi
-- **Dosya Gezgini:** Proje dosyalarını ağaç görünümde listeler
-- **Tema:** CSS custom properties ile karanlık/aydınlık mod uyumlu tasarım
+- **SSE Chat (`chat.js`):** `EventSource` ile gerçek zamanlı akış, düşünce/araç adımları görselleştirmesi
+- **Markdown Render (`chat.js`):** `marked.js` ile kod blokları, tablolar, başlıklar
+- **Kod Vurgulama (`chat.js`):** `highlight.js` ile 180+ dil desteği
+- **Oturum Yönetimi (`sidebar.js`):** Sol panel sohbet listesi, başlık düzenleme, silme, arama
+- **RAG Arayüzü (`rag.js`):** Belge yükleme (dosya/URL), arama, silme
+- **Uygulama Başlatma (`app.js`):** Git/model bilgisi yükleme, sağlık şeridi, klavye kısayolları
+- **Tema (`style.css`):** CSS `--bg`, `--accent` vb. custom properties ile karanlık/aydınlık mod
 
 ---
 
@@ -842,30 +893,35 @@ Projede **32 test modülü** bulunmaktadır (toplam ~1.836 satır):
 
 | Dosya | Satır | Not |
 |-------|-------|-----|
-| `web_ui/index.html` | 3.399 | |
+| `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
 | `agent/sidar_agent.py` | 1.455 | |
 | `core/rag.py` | 851 | |
-| `web_server.py` | 789 | |
+| `web_server.py` | 794 | v2.8.0 — StaticFiles eklendi |
 | `managers/code_manager.py` | 746 | |
+| `web_ui/chat.js` | 644 | v2.8.0 — index.html'den ayrıldı |
 | `agent/auto_handle.py` | 601 | |
 | `managers/github_manager.py` | 560 | |
 | `core/llm_client.py` | 513 | |
 | `config.py` | 517 | |
 | `managers/system_health.py` | 420 | |
 | `managers/todo_manager.py` | 380 | |
+| `web_ui/sidebar.js` | 394 | v2.8.0 — index.html'den ayrıldı |
 | `core/memory.py` | 384 | |
-| `managers/web_search.py` | 352 | |
+| `managers/web_search.py` | 379 | v2.8.0 — AsyncDDGS + timeout eklendi |
 | `managers/package_info.py` | 314 | |
 | `github_upload.py` | 294 | |
 | `main.py` | 332 | |
+| `web_ui/app.js` | 242 | v2.8.0 — index.html'den ayrıldı |
 | `cli.py` | 275 | |
-| `agent/tooling.py` | 189 | Önceki raporda eksikti |
+| `agent/tooling.py` | 189 | |
+| `web_ui/rag.js` | 131 | v2.8.0 — index.html'den ayrıldı |
 | `agent/definitions.py` | 164 | |
+| `web_ui/index.html` | 436 | v2.8.0 — 3.399'dan 436'ya indirildi |
 | `core/__init__.py` | 27 | |
 | `managers/__init__.py` | 21 | |
 | `agent/__init__.py` | 19 | |
-| **Toplam (Python kaynak)** | **~8.203** | HTML hariç |
-| **Toplam (HTML dahil)** | **~11.602** | |
+| **Toplam (Python + JS/CSS/HTML)** | **~11.608** | v2.8.0 güncel |
+| **Toplam (Python kaynak)** | **~8.213** | JS/CSS/HTML hariç |
 
 ---
 
@@ -989,14 +1045,14 @@ add_document(title, content, source)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.7.0 sürümünde çözülen tüm yüksek ve orta öncelikli güvenlik/performans sorunlarının detaylı listesi için lütfen [CHANGELOG.md](./CHANGELOG.md) dosyasına göz atın.
+> **Not:** v2.7.0 ve v2.8.0 sürümlerinde çözülen tüm yüksek ve orta öncelikli sorunların listesi için [CHANGELOG.md](./CHANGELOG.md) dosyasına bakın.
 
-Aşağıda v2.7.0 itibarıyla proje mimarisinde açık kalan ve ileriki sürümlerde çözülmesi planlanan teknik borçlar listelenmiştir:
+**v2.8.0 itibarıyla tüm teknik borçlar kapatılmıştır. Aşağıdaki tablo doğrulama sonuçlarını içerir:**
 
-| # | Dosya | Sorun | Durum |
-|---|-------|-------|-------|
-| 10 | `managers/web_search.py` | DuckDuckGo `DDGS` senkron API `asyncio.to_thread` ile çalıştırılıyor. DDG SDK'sının olası gelecek versiyon değişiklikleri sessiz hata üretebilir; versiyon pinlemesi eksik. | ✅ **Çözüldü** (v2.8.0 - Dinamik AsyncDDGS kontrolü eklendi, sürüm environment.yml içinde ==6.2.13 olarak sabitlendi ve asyncio.wait_for ile timeout koruması sağlandı) |
-| 11 | `web_ui/index.html` | 3.399 satırlık tek dosya. JS, CSS ve HTML birbirinden ayrılmamış; test edilebilirlik düşük. | ✅ **Çözüldü** (v2.8.0 - JS ve CSS dosyaları `app.js`, `style.css` gibi ayrı modüllere bölündü ve FastAPI `StaticFiles` ile entegre edildi) |
+| # | Dosya | Sorun | Çözüm (Satır Satır Doğrulama) | Durum |
+|---|-------|-------|-------------------------------|-------|
+| 10 | `managers/web_search.py` | DDG senkron API event loop'u bloklıyor; versiyon pinlemesi eksik | **`environment.yml:61`** → `duckduckgo-search~=6.2.13` (pinlendi). **`web_search.py:229`** → `hasattr(duckduckgo_search, "AsyncDDGS")` ile dinamik yol seçimi. **`web_search.py:242,253`** → her iki yol `asyncio.wait_for(timeout=FETCH_TIMEOUT)` içinde. **`web_search.py:273`** → `except asyncio.TimeoutError` spesifik olarak `except Exception`'dan önce. | ✅ **Çözüldü** (v2.8.0) |
+| 11 | `web_ui/index.html` | 3.399 satır tek dosya; JS/CSS/HTML ayrılmamış; test edilebilirlik düşük | **`index.html`** → 436 satıra indirildi (iskelet + modal'lar). **`web_ui/style.css`** → 1.547 satır CSS. **`web_ui/chat.js`** → 644 satır SSE + render. **`web_ui/sidebar.js`** → 394 satır oturum yönetimi. **`web_ui/rag.js`** → 131 satır RAG UI. **`web_ui/app.js`** → 242 satır init + klavye. **`web_server.py:77`** → `app.mount("/static", StaticFiles(directory=web_ui_dir))` | ✅ **Çözüldü** (v2.8.0) |
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1183,18 +1239,19 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 ### 14.4 Web Arayüzü ve API
 
 #### 14.4.1 Web UI Modülarizasyonu
-**Mevcut durum:** `web_ui/index.html` tek 3399 satırlık dosya.
-**Öneri:** Dosya yapısı:
+**Güncel durum:** ✅ **v2.8.0'da tamamlandı.**
+
+Önerilen yapı tam olarak uygulandı:
 ```
 web_ui/
-├── index.html       (iskelet)
-├── app.js           (ana mantık)
-├── chat.js          (SSE ve mesaj render)
-├── sidebar.js       (oturum ve panel yönetimi)
-├── rag.js           (RAG arayüzü)
-└── style.css        (tema ve layout)
+├── index.html    (436 satır — iskelet + modal'lar)
+├── app.js        (242 satır — init, tema, git bilgisi, klavye kısayolları)
+├── chat.js       (644 satır — SSE streaming, mesaj render, kod vurgulama)
+├── sidebar.js    (394 satır — oturum yönetimi, filtreleme)
+├── rag.js        (131 satır — RAG belge/arama UI)
+└── style.css    (1.547 satır — tüm CSS, tema değişkenleri)
 ```
-FastAPI `StaticFiles` middleware ile servis edilebilir.
+`web_server.py:77`'de `app.mount("/static", StaticFiles(directory=web_ui_dir))` ile servis edilmektedir.
 
 #### 14.4.2 WebSocket Desteği
 **Mevcut durum:** SSE (Server-Sent Events) tek yönlü akış; mesaj iptali için ayrı endpoint gerekiyor.
@@ -1298,7 +1355,7 @@ FastAPI `StaticFiles` middleware ile servis edilebilir.
 | 4 | JWT / API key auth (§14.4.4) | Orta | Orta | ⏳ Açık |
 | 5 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ⏳ Açık |
 | 6 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ⏳ Açık |
-| 7 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek | ⏳ Açık |
+| 7 | Web UI modülarizasyonu (§14.4.1) | Düşük | Yüksek | ✅ **v2.8.0'da tamamlandı** |
 | 8 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ⏳ Açık |
 | 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
 | 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
