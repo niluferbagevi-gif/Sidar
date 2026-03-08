@@ -7,7 +7,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 1. Vektör Arama (ChromaDB): Anlamsal yakınlık (Semantic Search) - Chunking destekli
    → USE_GPU=true ise sentence-transformers CUDA üzerinde çalışır
    → GPU_MIXED_PRECISION=true ise FP16 ile bellek tasarrufu sağlanır
-2. BM25 (rank_bm25): Kelime sıklığı ve nadirlik tabanlı arama
+2. BM25 (SQLite FTS5): Kelime sıklığı ve nadirlik tabanlı disk tabanlı arama
 3. Fallback: Basit anahtar kelime eşleşmesi
 """
 
@@ -125,19 +125,17 @@ class DocumentStore:
         self._index: Dict[str, Dict] = self._load_index()
 
         # Arama motorlarını başlat
-        self._bm25_available   = self._check_import("rank_bm25")
         self._chroma_available = self._check_import("chromadb")
 
         self.chroma_client = None
         self.collection    = None
 
-        # BM25 cache (her sorguda yeniden indeks kurmayı önler)
-        self._bm25_doc_ids: List[str] = []
-        self._bm25_corpus_tokens: List[List[str]] = []
-        self._bm25_index = None
-
         if self._chroma_available:
             self._init_chroma()
+
+        # BM25 (SQLite FTS5) Başlatma
+        self._bm25_available = True
+        self._init_fts()
 
     def _apply_hf_runtime_env(self) -> None:
         """HF model yükleme davranışını Config üzerinden ortama uygula."""
@@ -200,6 +198,44 @@ class DocumentStore:
         except Exception as exc:
             logger.error("ChromaDB başlatma hatası: %s", exc)
             self._chroma_available = False
+
+    def _init_fts(self) -> None:
+        """SQLite FTS5 sanal tablosunu başlatır (Disk tabanlı BM25)."""
+        import sqlite3
+        try:
+            db_path = self.store_dir / "bm25_fts.db"
+            self.fts_conn = sqlite3.connect(db_path, check_same_thread=False)
+            self.fts_conn.row_factory = sqlite3.Row
+            with self._write_lock:
+                # FTS5 eklentisi ile sanal tablo oluştur (Türkçe karakter destekli)
+                self.fts_conn.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS bm25_index USING fts5(
+                        doc_id UNINDEXED,
+                        session_id UNINDEXED,
+                        content,
+                        tokenize='unicode61 remove_diacritics 1'
+                    );
+                """)
+                # Eski verileri migrate et (FTS5 boşsa ve önceden eklenmiş belgeler varsa)
+                cursor = self.fts_conn.execute("SELECT count(*) as c FROM bm25_index")
+                if cursor.fetchone()["c"] == 0 and self._index:
+                    logger.info("Mevcut belgeler SQLite FTS5 disk motoruna aktarılıyor...")
+                    for doc_id, meta in self._index.items():
+                        doc_file = self.store_dir / f"{doc_id}.txt"
+                        try:
+                            content = doc_file.read_text(encoding="utf-8")
+                            session_id = meta.get("session_id", "global")
+                            self.fts_conn.execute(
+                                "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
+                                (doc_id, session_id, content)
+                            )
+                        except Exception:
+                            pass
+                self.fts_conn.commit()
+            logger.info("SQLite FTS5 (BM25) veritabanı disk üzerinde başarıyla başlatıldı.")
+        except Exception as exc:
+            logger.error("FTS5 başlatma hatası: %s", exc)
+            self._bm25_available = False
 
     def _load_index(self) -> Dict[str, Dict]:
         if self.index_file.exists():
@@ -482,7 +518,7 @@ class DocumentStore:
 
         if mode == "bm25":
             if self._bm25_available: return self._bm25_search(query, top_k, session_id)
-            return False, "BM25 kullanılamıyor — rank_bm25 kurulu değil."
+            return False, "BM25 kullanılamıyor — SQLite FTS5 başlatılamadı."
 
         if mode == "keyword": return self._keyword_search(query, top_k, session_id)
 
@@ -557,99 +593,71 @@ class DocumentStore:
         results = self._fetch_chroma(query, top_k, session_id)
         return self._format_results_from_struct(results, query, source_name="Vektör Arama (ChromaDB + Chunking)")
 
-    def _invalidate_bm25_cache(self) -> None:
-        """Belge seti değiştiğinde BM25 cache'i geçersiz kıl."""
-        self._bm25_doc_ids = []
-        self._bm25_corpus_tokens = []
-        self._bm25_index = None
-
-    def _rebuild_bm25_from_cache(self) -> None:
-        """Bellekteki token cache'inden BM25 indeksini üret."""
-        from rank_bm25 import BM25Okapi
-
-        self._bm25_index = (
-            BM25Okapi(self._bm25_corpus_tokens) if self._bm25_corpus_tokens else None
-        )
-
     def _update_bm25_cache_on_add(self, doc_id: str, content: str) -> None:
-        """Yeni belgeyi BM25 cache'ine inkremental olarak ekle."""
-        tokens = content.lower().split()
-        if doc_id in self._bm25_doc_ids:
-            idx = self._bm25_doc_ids.index(doc_id)
-            self._bm25_corpus_tokens[idx] = tokens
-        else:
-            self._bm25_doc_ids.append(doc_id)
-            self._bm25_corpus_tokens.append(tokens)
-        self._rebuild_bm25_from_cache()
-
-    def _update_bm25_cache_on_delete(self, doc_id: str) -> None:
-        """Silinen belgeyi BM25 cache'inden inkremental olarak kaldır."""
-        if doc_id in self._bm25_doc_ids:
-            idx = self._bm25_doc_ids.index(doc_id)
-            del self._bm25_doc_ids[idx]
-            del self._bm25_corpus_tokens[idx]
-        self._rebuild_bm25_from_cache()
-
-    def prebuild_bm25_index(self) -> None:
-        """BM25 indeksini arka planda hazırla (web tarafı için)."""
+        """Yeni belgeyi SQLite FTS5 disk tablosuna kaydet.
+        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
+        """
         if not self._bm25_available:
             return
-        try:
-            self._ensure_bm25_index()
-        except Exception as exc:
-            logger.warning("BM25 arka plan önbellekleme hatası: %s", exc)
+        session_id = self._index.get(doc_id, {}).get("session_id", "global")
+        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
+        self.fts_conn.execute(
+            "INSERT INTO bm25_index (doc_id, session_id, content) VALUES (?, ?, ?)",
+            (doc_id, session_id, content)
+        )
+        self.fts_conn.commit()
 
-    def _ensure_bm25_index(self) -> None:
-        """BM25 indeksini yalnızca gerektiğinde oluştur/güncelle."""
-        with self._write_lock:
-            doc_ids = list(self._index.keys())
-            if self._bm25_index is not None and doc_ids == self._bm25_doc_ids:
-                return
-
-            cached_tokens = {
-                cached_doc_id: self._bm25_corpus_tokens[idx]
-                for idx, cached_doc_id in enumerate(self._bm25_doc_ids)
-            }
-
-            # Yalnızca cache'te olmayan belgeleri diskten oku.
-            for doc_id in doc_ids:
-                if doc_id in cached_tokens:
-                    continue
-                doc_file = self.store_dir / f"{doc_id}.txt"
-                try:
-                    text = doc_file.read_text(encoding="utf-8")
-                except FileNotFoundError:
-                    text = ""
-                cached_tokens[doc_id] = text.lower().split()
-
-            self._bm25_doc_ids = doc_ids
-            self._bm25_corpus_tokens = [cached_tokens.get(doc_id, []) for doc_id in doc_ids]
-            self._rebuild_bm25_from_cache()
+    def _update_bm25_cache_on_delete(self, doc_id: str) -> None:
+        """Silinen belgeyi SQLite FTS5'ten kaldır.
+        Not: Bu metod zaten _write_lock tutan bir bloktan çağrılır — içeride kilit alınmaz.
+        """
+        if not self._bm25_available:
+            return
+        self.fts_conn.execute("DELETE FROM bm25_index WHERE doc_id = ?", (doc_id,))
+        self.fts_conn.commit()
 
     def _fetch_bm25(self, query: str, top_k: int, session_id: str) -> list:
-        self._ensure_bm25_index()
-        with self._write_lock:
-            if self._bm25_index is None or not self._bm25_doc_ids: return []
-            bm25_idx_ref = self._bm25_index
-            doc_ids_ref = list(self._bm25_doc_ids)
-            index_snapshot = {doc_id: self._index.get(doc_id, {}) for doc_id in doc_ids_ref}
+        """Diskteki FTS5 veritabanından milisaniyelik BM25 araması yap."""
+        if not self._bm25_available:
+            return []
 
-        scores = bm25_idx_ref.get_scores(query.lower().split())
+        words = [w for w in query.replace('"', '').replace("'", "").split() if w.isalnum()]
+        if not words:
+            return []
 
-        # Sadece bu session'a ait doc_id'leri filtrele
-        valid_doc_ids = {doc_id for doc_id, meta in index_snapshot.items() if meta.get("session_id", "global") == session_id}
-        ranked = [(d, s) for d, s in zip(doc_ids_ref, scores) if s > 0 and d in valid_doc_ids]
-        ranked = sorted(ranked, key=lambda x: x[1], reverse=True)[:top_k]
+        # Kelimelerden herhangi birini içerenleri bul (OR mantığı)
+        match_query = " OR ".join(words)
+
+        sql = """
+            SELECT doc_id, bm25(bm25_index) as score
+            FROM bm25_index
+            WHERE bm25_index MATCH ? AND session_id = ?
+            ORDER BY score
+            LIMIT ?
+        """
+
+        try:
+            cursor = self.fts_conn.execute(sql, (match_query, session_id, top_k))
+            rows = cursor.fetchall()
+        except Exception as exc:
+            logger.warning("FTS5 Arama Hatası: %s", exc)
+            return []
 
         results = []
-        for doc_id, score in ranked:
+        for row in rows:
+            doc_id = row["doc_id"]
+            # FTS5 bm25 fonksiyonu negatif değer döndürür (en negatif = en alakalı).
+            score = abs(row["score"])
+            meta = self._index.get(doc_id, {})
             doc_file = self.store_dir / f"{doc_id}.txt"
-            try: content = doc_file.read_text(encoding="utf-8")
-            except FileNotFoundError: content = ""
+            try:
+                content = doc_file.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                content = ""
             snippet = self._extract_snippet(content, query)
             results.append({
-                "id": doc_id, "title": index_snapshot[doc_id].get("title", "?"),
-                "source": index_snapshot[doc_id].get("source", ""), "snippet": snippet, "score": score
+                "id": doc_id, "title": meta.get("title", "?"),
+                "source": meta.get("source", ""), "snippet": snippet, "score": score
             })
         return results
 
@@ -771,7 +779,7 @@ class DocumentStore:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         if self._bm25_available:
-            engines.append("BM25")
+            engines.append("BM25 (SQLite FTS5)")
         if not engines:
             engines.append("Anahtar Kelime")
 
