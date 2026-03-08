@@ -1252,28 +1252,9 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.6 Güvenlik ve İzleme
 
-#### 14.6.1 Docker Socket Riski Azaltma
-**Güncel durum:** ✅ **Tamamlandı.**
-
-`docker-compose.yml` içinde Docker socket mount yalnızca CLI/REPL servislerinde bırakıldı.
-Web servislerinden (`sidar-web`, `sidar-web-gpu`) kaldırılarak container escape riski azaltıldı.
-
-#### 14.6.2 Denetim Logu (Audit Log)
-**Güncel durum:** ✅ **Tamamlandı.**
-
-`SidarAgent._execute_tool` merkezi noktasında tüm araç çağrıları JSONL olarak loglanır:
-- Hedef dosya: `logs/audit.jsonl`
-- Alanlar: `timestamp`, `time_human`, `session_id`, `tool`, `argument`, `access_level`, `success`
-- Uzun argümanlar 2000 karaktere kırpılarak disk şişmesi önlenir
-
-#### 14.6.3 Sandbox Çıktı Boyutu Limiti
-**Güncel durum:** ✅ **Tamamlandı.**
-
-`CodeManager` içine `max_output_chars=10000` limiti eklendi:
-- Docker sandbox (`execute_code`) çıktısı kırpılır
-- Lokal subprocess (`execute_code_local`) çıktısı kırpılır
-- Shell komutu (`run_shell`) birleşik çıktısı kırpılır
-- Limit aşımlarında çıktı sonuna açık bir "ÇIKTI KIRPILDI" notu eklenir
+> **Not:** Bu başlık altındaki tamamlanan maddeler (14.6.1 Docker Socket Riski Azaltma,
+> 14.6.2 Denetim Logu ve 14.6.3 Sandbox Çıktı Boyutu Limiti) kod tabanına entegre edilmiştir.
+> Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki ilgili bölümlere bakın.
 
 #### 14.6.4 Güvenlik Seviyesi Geçiş Logu
 **Mevcut durum:** `set_provider_mode()` ve erişim seviyesi değişiklikleri loglanıyor ancak oturum bazında takip yok.
