@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Dict, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WriteFileSchema(BaseModel):
@@ -67,6 +67,10 @@ class GithubCloseIssueSchema(BaseModel):
     number: int
 
 
+class GithubPRDiffSchema(BaseModel):
+    number: int = Field(description="Diff (fark) kodu alınacak PR numarası")
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -79,6 +83,7 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "github_create_issue": GithubCreateIssueSchema,
     "github_comment_issue": GithubCommentIssueSchema,
     "github_close_issue": GithubCloseIssueSchema,
+    "github_pr_diff": GithubPRDiffSchema,
 }
 
 
@@ -177,6 +182,11 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
             raise ValueError("Argüman formatı geçersiz")
         return GithubCloseIssueSchema(number=int(parts[0].strip()))
 
+    if schema is GithubPRDiffSchema:
+        if not parts or not parts[0].strip():
+            raise ValueError("Argüman formatı geçersiz")
+        return GithubPRDiffSchema(number=int(parts[0].strip()))
+
     return raw_arg
 
 
@@ -209,6 +219,7 @@ def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:
         "github_create_issue":   agent._tool_github_create_issue,
         "github_comment_issue":  agent._tool_github_comment_issue,
         "github_close_issue":    agent._tool_github_close_issue,
+        "github_pr_diff":       agent._tool_github_pr_diff,
         "web_search":             agent._tool_web_search,
         "fetch_url":              agent._tool_fetch_url,
         "search_docs":            agent._tool_search_docs,
