@@ -521,3 +521,271 @@ def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(a._execute_tool("boom", "x"))
     assert seen[-1] == ("boom", "x", False)
+
+
+def test_tool_handlers_runtime_matrix(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        BASE_DIR=".",
+        AI_PROVIDER="ollama",
+        OLLAMA_URL="http://localhost",
+        CODING_MODEL="cm",
+        TEXT_MODEL="tm",
+        MAX_REACT_STEPS=2,
+        REACT_TIMEOUT=10,
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=1000,
+        RAG_CHUNK_OVERLAP=100,
+        CPU_COUNT=2,
+        MAX_MEMORY_TURNS=5,
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="none",
+        CUDA_VERSION="N/A",
+        GITHUB_REPO="owner/repo",
+        GEMINI_MODEL="g",
+        VERSION="1.0",
+        PROJECT_NAME="Sidar",
+        DEBUG_MODE=False,
+    )
+
+    class FakeCode:
+        def list_directory(self, d): return True, f"dir:{d}"
+        def read_file(self, p): return True, f"read:{p}"
+        def write_file(self, p, c): return True, f"write:{p}:{len(c)}"
+        def patch_file(self, p, o, n): return True, f"patch:{p}:{o}->{n}"
+        def execute_code(self, c): return True, f"exec:{c}"
+        def audit_project(self, d): return f"audit:{d}"
+        def run_shell(self, c): return True, f"shell:{c}"
+        def glob_search(self, pattern, base): return True, f"glob:{pattern}:{base}"
+        def grep_files(self, pattern, path, glob, _rx, ctx): return True, f"grep:{pattern}:{path}:{glob}:{ctx}"
+        def get_metrics(self): return {"files_read": 1, "files_written": 1}
+
+    class FakeGitHub:
+        default_branch = "main"
+        def is_available(self): return True
+        def list_commits(self, n): return True, f"commits:{n}"
+        def get_repo_info(self): return True, "repo-info"
+        def read_remote_file(self, p): return True, f"gh-read:{p}"
+        def list_files(self, p, b): return True, f"gh-files:{p}:{b}"
+        def create_or_update_file(self, p, c, m, b): return True, f"gh-write:{p}:{m}:{b}"
+        def create_branch(self, b, f): return True, f"gh-branch:{b}:{f}"
+        def create_pull_request(self, t, b, h, base): return True, f"gh-pr:{t}:{h}:{base}"
+        def search_code(self, q): return True, f"gh-search:{q}"
+        def list_pull_requests(self, state, limit): return True, f"gh-prs:{state}:{limit}"
+        def get_pull_request(self, n): return True, f"gh-pr-get:{n}"
+        def add_pr_comment(self, n, c): return True, f"gh-pr-comment:{n}:{c}"
+        def close_pull_request(self, n): return True, f"gh-pr-close:{n}"
+        def get_pr_files(self, n): return True, f"gh-pr-files:{n}"
+        def list_issues(self, state, limit):
+            return True, [{"number": 1, "user": "u", "title": "t", "created_at": "d"}]
+        def create_issue(self, title, body): return True, f"gh-issue-create:{title}:{body}"
+        def comment_issue(self, number, body): return True, f"gh-issue-comment:{number}:{body}"
+        def close_issue(self, number): return True, f"gh-issue-close:{number}"
+        def get_pull_request_diff(self, number): return True, f"gh-pr-diff:{number}"
+
+    class FakeHealth:
+        def full_report(self): return "health-ok"
+        def optimize_gpu_memory(self): return "gpu-ok"
+
+    class FakeWeb:
+        def is_available(self): return True
+        def status(self): return "web-ok"
+        async def search(self, q): return True, f"web-search:{q}"
+        async def fetch_url(self, u): return True, f"web-fetch:{u}"
+        async def search_docs(self, lib, topic): return True, f"docs:{lib}:{topic}"
+        async def search_stackoverflow(self, q): return True, f"so:{q}"
+
+    class FakePkg:
+        def status(self): return "pkg-ok"
+        async def pypi_info(self, p): return True, f"pypi:{p}"
+        async def pypi_compare(self, p, v): return True, f"pypi-cmp:{p}:{v}"
+        async def npm_info(self, p): return True, f"npm:{p}"
+        async def github_releases(self, r): return True, f"rel:{r}"
+        async def github_latest_release(self, r): return True, f"latest:{r}"
+
+    class FakeDocs:
+        def status(self): return "docs-ok"
+        def search(self, q, _none, mode, session): return True, f"docs-search:{q}:{mode}:{session}"
+        async def add_document_from_url(self, url, title, session_id): return True, f"docs-add:{title}:{url}:{session_id}"
+        def add_document_from_file(self, path, title, _tags, session_id): return True, f"docs-add-file:{title}:{path}:{session_id}"
+        def list_documents(self, session_id): return f"docs-list:{session_id}"
+        def delete_document(self, doc_id, session_id): return f"docs-del:{doc_id}:{session_id}"
+
+    class FakeTodo:
+        def set_tasks(self, tasks): return f"todo-set:{len(tasks)}"
+        def list_tasks(self): return "todo-list"
+        def update_task(self, task_id, state): return f"todo-update:{task_id}:{state}"
+        def scan_project_todos(self, directory, extensions): return f"todo-scan:{directory}:{extensions}"
+
+    class FakeMemory:
+        active_session_id = "session-1"
+        def set_last_file(self, _f):
+            return None
+        def get_last_file(self):
+            return "README.md"
+
+    a.code = FakeCode()
+    a.github = FakeGitHub()
+    a.health = FakeHealth()
+    a.web = FakeWeb()
+    a.pkg = FakePkg()
+    a.docs = FakeDocs()
+    a.todo = FakeTodo()
+    a.memory = FakeMemory()
+    a.security = SimpleNamespace(level_name="sandbox")
+
+    def _parse(tool_name, raw):
+        if tool_name == "scan_project_todos":
+            return SimpleNamespace(directory="src", extensions=[".py"])
+        if tool_name == "github_list_issues":
+            return SimpleNamespace(state="open", limit=10)
+        if tool_name == "github_create_issue":
+            return SimpleNamespace(title="Bug", body="desc")
+        if tool_name == "github_comment_issue":
+            return SimpleNamespace(number=7, body="note")
+        if tool_name == "github_close_issue":
+            return SimpleNamespace(number=7)
+        if tool_name == "github_pr_diff":
+            return SimpleNamespace(number=3)
+        return raw
+
+    monkeypatch.setattr(SA_MOD, "parse_tool_argument", _parse)
+
+    async def _run():
+        assert await a._tool_list_dir(".") == "dir:."
+        assert await a._tool_read_file("f.py") == "read:f.py"
+        assert "belirtilmedi" in await a._tool_read_file("")
+        assert await a._tool_write_file("f.py|||print(1)") == "write:f.py:8"
+        assert "Hatalı format" in await a._tool_write_file("f.py")
+        assert await a._tool_patch_file("f.py|||old|||new") == "patch:f.py:old->new"
+        assert "Hatalı patch" in await a._tool_patch_file("f.py|||old")
+        assert await a._tool_execute_code("print(1)") == "exec:print(1)"
+        assert "belirtilmedi" in await a._tool_execute_code("")
+        assert await a._tool_audit(".") == "audit:."
+        assert await a._tool_health("") == "health-ok"
+        assert await a._tool_gpu_optimize("") == "gpu-ok"
+
+        assert await a._tool_run_shell("ls") == "shell:ls"
+        assert "belirtilmedi" in await a._tool_run_shell("")
+        assert await a._tool_glob_search("*.py|||.") == "glob:*.py:."
+        assert "belirtilmedi" in await a._tool_glob_search("   ")
+        assert await a._tool_grep_files("def|||.|||*.py|||2") == "grep:def:.:*.py:2"
+        assert "belirtilmedi" in await a._tool_grep_files("")
+
+        assert await a._tool_github_commits("4") == "commits:4"
+        assert await a._tool_github_commits("x") == "commits:10"
+        assert await a._tool_github_info("") == "repo-info"
+        assert await a._tool_github_read("README.md") == "gh-read:README.md"
+        assert "belirtilmedi" in await a._tool_github_read("")
+        assert await a._tool_github_list_files("src|||main") == "gh-files:src:main"
+        assert await a._tool_github_write("f.py|||c|||msg|||dev") == "gh-write:f.py:msg:dev"
+        assert "Hatalı format" in await a._tool_github_write("f.py|||c")
+        assert await a._tool_github_create_branch("feature|||main") == "gh-branch:feature:main"
+        assert "belirtilmedi" in await a._tool_github_create_branch("")
+        assert await a._tool_github_create_pr("Title|||Body|||feature|||main") == "gh-pr:Title:feature:main"
+        assert "Hatalı format" in await a._tool_github_create_pr("Title|||Body")
+        assert await a._tool_github_search_code("query") == "gh-search:query"
+        assert "belirtilmedi" in await a._tool_github_search_code("")
+        assert await a._tool_github_list_prs("open|||5") == "gh-prs:open:5"
+        assert await a._tool_github_get_pr("1") == "gh-pr-get:1"
+        assert "belirtilmedi" in await a._tool_github_get_pr("")
+        assert "Geçerli bir" in await a._tool_github_get_pr("abc")
+        assert await a._tool_github_comment_pr("1|||yorum") == "gh-pr-comment:1:yorum"
+        assert "Format:" in await a._tool_github_comment_pr("1")
+        assert "Geçerli bir" in await a._tool_github_comment_pr("x|||yorum")
+        assert "boş olamaz" in await a._tool_github_comment_pr("1|||   ")
+        assert await a._tool_github_close_pr("1") == "gh-pr-close:1"
+        assert "belirtilmedi" in await a._tool_github_close_pr("")
+        assert "Geçerli bir" in await a._tool_github_close_pr("abc")
+        assert await a._tool_github_pr_files("1") == "gh-pr-files:1"
+        assert "belirtilmedi" in await a._tool_github_pr_files("")
+        assert "Geçerli bir" in await a._tool_github_pr_files("abc")
+        assert "#1" in await a._tool_github_list_issues("open|||10")
+        assert await a._tool_github_create_issue("title|||body") == "gh-issue-create:Bug:desc"
+        assert await a._tool_github_comment_issue("1|||body") == "gh-issue-comment:7:note"
+        assert await a._tool_github_close_issue("1") == "gh-issue-close:7"
+        assert await a._tool_github_pr_diff("1") == "gh-pr-diff:3"
+
+        assert await a._tool_web_search("q") == "web-search:q"
+        assert "belirtilmedi" in await a._tool_web_search("")
+        assert await a._tool_fetch_url("http://x") == "web-fetch:http://x"
+        assert "belirtilmedi" in await a._tool_fetch_url("")
+        assert await a._tool_search_docs("lib topic") == "docs:lib:topic"
+        assert await a._tool_search_stackoverflow("error") == "so:error"
+        assert await a._tool_pypi("pytest") == "pypi:pytest"
+        assert await a._tool_pypi_compare("pytest|7") == "pypi-cmp:pytest:7"
+        assert "Kullanım" in await a._tool_pypi_compare("pytest")
+        assert await a._tool_npm("react") == "npm:react"
+        assert await a._tool_gh_releases("owner/repo") == "rel:owner/repo"
+        assert await a._tool_gh_latest("owner/repo") == "latest:owner/repo"
+
+        assert "docs-search:q:vector:session-1" == await a._tool_docs_search("q|vector")
+        assert await a._tool_docs_add("title|http://x") == "docs-add:title:http://x:session-1"
+        assert "Kullanım" in await a._tool_docs_add("title")
+        assert await a._tool_docs_add_file("title|a.py") == "docs-add-file:title:a.py:session-1"
+        assert await a._tool_docs_add_file("a.py") == "docs-add-file:a.py:a.py:session-1"
+        assert "belirtilmedi" in await a._tool_docs_add_file("")
+        assert await a._tool_docs_list("") == "docs-list:session-1"
+        assert await a._tool_docs_delete("doc-1") == "docs-del:doc-1:session-1"
+
+        assert await a._tool_todo_write("task:::pending|||task2:::completed") == "todo-set:2"
+        assert "belirtilmedi" in await a._tool_todo_write("  ")
+        assert await a._tool_todo_read("") == "todo-list"
+        assert await a._tool_todo_update("1|||done") == "todo-update:1:done"
+        assert "Format" in await a._tool_todo_update("1")
+        assert "sayısal" in await a._tool_todo_update("x|||done")
+        assert await a._tool_scan_project_todos("src|||.py") == "todo-scan:src:['.py']"
+
+        conf = await a._tool_get_config("")
+        assert "[Proje Kök Dizini]" in conf
+        assert "AI_PROVIDER" in conf
+
+    asyncio.run(_run())
+
+
+def test_smart_pr_and_subtask_runtime_paths():
+    a = _make_react_ready_agent(max_steps=1)
+    a.cfg.SUBTASK_MAX_STEPS = 2
+
+    class FakeGitHub:
+        default_branch = "main"
+        def is_available(self):
+            return True
+        def create_pull_request(self, title, body, head, base):
+            return True, f"pr:{title}:{head}:{base}:{'## Özet' in body}"
+
+    class FakeCode:
+        def run_shell(self, cmd):
+            if "show-current" in cmd:
+                return True, "feat/test"
+            if "status --short" in cmd:
+                return True, "M a.py"
+            if "diff --stat" in cmd:
+                return True, "a.py | 1 +"
+            if "diff --no-color" in cmd:
+                return True, "+print(1)"
+            if "log" in cmd:
+                return True, "abc feat"
+            return True, ""
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            if kwargs.get("json_mode") and "Pull Request" in kwargs.get("messages", [{}])[0].get("content", ""):
+                return '{"title":"Test PR", "body":"## Özet\\n- x\\n\\n## Test Planı\\n- [ ] y"}'
+            return '{"thought":"t", "tool":"final_answer", "argument":"Subtask done"}'
+
+    a.github = FakeGitHub()
+    a.code = FakeCode()
+    a.llm = _LLM()
+    a.memory = SimpleNamespace(active_session_id="s1")
+    a._tools = {}
+
+    pr_out = asyncio.run(a._tool_github_smart_pr("feat/test|||main|||notes"))
+    assert "Akıllı PR oluşturuldu" in pr_out
+    assert "Test PR" in pr_out
+
+    subtask_out = asyncio.run(a._tool_subtask("bir alt görev"))
+    assert "[Alt Görev Tamamlandı]" in subtask_out
+    assert "Subtask done" in subtask_out
+    assert "belirtilmedi" in asyncio.run(a._tool_subtask("  "))
