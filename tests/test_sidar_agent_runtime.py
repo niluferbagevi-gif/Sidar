@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+import threading
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,6 +34,13 @@ def _load_sidar_agent_module():
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
                 setattr(self, k, v)
+
+        @classmethod
+        def model_validate(cls, data):
+            for key in ("thought", "tool", "argument"):
+                if key not in data:
+                    raise ValidationError(key)
+            return cls(**data)
 
         @classmethod
         def model_validate_json(cls, raw):
@@ -154,6 +162,36 @@ def _make_agent_for_runtime():
         level_name="sandbox",
         set_level=lambda _lvl: False,
     )
+    return a
+
+
+def _make_react_ready_agent(max_steps=2):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        MAX_REACT_STEPS=max_steps,
+        TEXT_MODEL="tm",
+        CODING_MODEL="cm",
+        PROJECT_NAME="Sidar",
+        VERSION="1.0",
+        BASE_DIR=Path("."),
+        AI_PROVIDER="ollama",
+        OLLAMA_URL="http://localhost",
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="none",
+        CUDA_VERSION="N/A",
+        GITHUB_REPO="owner/repo",
+        GEMINI_MODEL="g",
+    )
+    a._tools = {"list_dir": object()}
+    a._AUTO_PARALLEL_SAFE = {"list_dir"}
+    a._build_context = lambda: "ctx"
+    a._build_tool_list = lambda: "tools"
+
+    async def _archive(_q):
+        return ""
+
+    a._get_memory_archive_context = _archive
     return a
 
 
@@ -286,3 +324,125 @@ def test_direct_tool_route_guard_paths(monkeypatch):
     a.llm = _LLM2()
     monkeypatch.setattr(a, "_execute_tool", _exec)
     assert asyncio.run(a._try_direct_tool_route("x")) == "routed:list_dir:."
+
+
+def test_build_context_and_instruction_file_cache(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        PROJECT_NAME="Sidar",
+        VERSION="2.0",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="ollama",
+        CODING_MODEL="code-m",
+        TEXT_MODEL="text-m",
+        OLLAMA_URL="http://localhost:11434",
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="none",
+        CUDA_VERSION="N/A",
+        GITHUB_REPO="owner/repo",
+        GEMINI_MODEL="gemini",
+    )
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 2})
+    a.github = SimpleNamespace(is_available=lambda: True)
+    a.web = SimpleNamespace(is_available=lambda: True)
+    a.docs = SimpleNamespace(status=lambda: "docs-ok")
+    class _Todo:
+        def __len__(self):
+            return 1
+
+        def list_tasks(self):
+            return "- t1"
+
+    a.todo = _Todo()
+    a.memory = SimpleNamespace(get_last_file=lambda: "README.md")
+    a.security = SimpleNamespace(level_name="sandbox")
+
+    (tmp_path / "SIDAR.md").write_text("main rules", encoding="utf-8")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "CLAUDE.md").write_text("sub rules", encoding="utf-8")
+
+    loaded = a._load_instruction_files()
+    assert "SIDAR.md" in loaded and "CLAUDE.md" in loaded
+    cached = a._load_instruction_files()
+    assert cached == loaded
+
+    ctx = a._build_context()
+    assert "[Proje Ayarları" in ctx
+    assert "[Araç Durumu]" in ctx
+    assert "[Proje Talimat Dosyaları" in ctx
+
+
+def test_react_loop_final_answer_and_invalid_json_paths():
+    a = _make_react_ready_agent(max_steps=1)
+
+    class _Mem:
+        def __init__(self):
+            self.added = []
+
+        def get_messages_for_llm(self):
+            return []
+
+        def add(self, role, text):
+            self.added.append((role, text))
+
+    a.memory = _Mem()
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self, text):
+            self.text = text
+
+        async def chat(self, **kwargs):
+            return _gen_once(self.text)
+
+    a.llm = _LLM('{"thought":"t","tool":"final_answer","argument":"DONE"}')
+    out = asyncio.run(_collect(a._react_loop("x")))
+    assert out == ["DONE"]
+    assert a.memory.added == [("assistant", "DONE")]
+
+    a2 = _make_react_ready_agent(max_steps=1)
+    a2.memory = _Mem()
+    a2.llm = _LLM("json değil")
+    out2 = asyncio.run(_collect(a2._react_loop("x")))
+    assert out2[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+
+def test_react_loop_tool_execution_and_loop_break(monkeypatch):
+    a = _make_react_ready_agent(max_steps=3)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    responses = [
+        '{"thought":"ilk","tool":"list_dir","argument":"."}',
+        '{"thought":"tekrar","tool":"list_dir","argument":"."}',
+        '{"thought":"bitti","tool":"final_answer","argument":"OK"}',
+    ]
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+
+        async def chat(self, **kwargs):
+            text = responses[self.i]
+            self.i += 1
+            return _gen_once(text)
+
+    async def _exec(tool, arg):
+        return f"res:{tool}:{arg}"
+
+    a.llm = _LLM()
+    monkeypatch.setattr(a, "_execute_tool", _exec)
+
+    out = asyncio.run(_collect(a._react_loop("listele")))
+    assert any(x.startswith("\x00THOUGHT:") for x in out)
+    assert any(x.startswith("\x00TOOL:list_dir") for x in out)
+    assert out[-1] == "OK"
