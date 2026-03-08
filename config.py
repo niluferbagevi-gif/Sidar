@@ -235,6 +235,7 @@ class Config:
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "full")
+    API_KEY: str = os.getenv("API_KEY", "")
 
     # ─── GitHub ──────────────────────────────────────────────
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
