@@ -789,3 +789,138 @@ def test_smart_pr_and_subtask_runtime_paths():
     assert "[Alt Görev Tamamlandı]" in subtask_out
     assert "Subtask done" in subtask_out
     assert "belirtilmedi" in asyncio.run(a._tool_subtask("  "))
+
+
+def test_github_tool_schema_argument_paths():
+    a = _make_agent_for_runtime()
+
+    class _GH:
+        def __init__(self):
+            self.repo_name = "owner/repo"
+
+        def is_available(self):
+            return True
+
+        def list_files(self, path, branch):
+            return True, f"files:{path}:{branch}"
+
+        def create_or_update_file(self, path, content, message, branch):
+            return True, f"write:{path}:{message}:{branch}:{len(content)}"
+
+        def create_branch(self, branch_name, from_branch):
+            return True, f"branch:{branch_name}:{from_branch}"
+
+        def create_pull_request(self, title, body, head, base):
+            return True, f"pr:{title}:{head}:{base}:{bool(body)}"
+
+        def list_issues(self, state, limit):
+            return True, [{"number": 2, "user": "u", "title": "issue", "created_at": "d"}]
+
+        def create_issue(self, title, body):
+            return True, f"issue-create:{title}:{body}"
+
+        def comment_issue(self, number, body):
+            return True, f"issue-comment:{number}:{body}"
+
+        def close_issue(self, number):
+            return True, f"issue-close:{number}"
+
+        def get_pull_request_diff(self, number):
+            return True, f"diff:{number}"
+
+    a.github = _GH()
+
+    list_arg = SA_MOD.GithubListFilesSchema()
+    list_arg.path = "src"
+    list_arg.branch = "main"
+    assert asyncio.run(a._tool_github_list_files(list_arg)) == "files:src:main"
+
+    write_arg = SA_MOD.GithubWriteSchema()
+    write_arg.path = "a.py"
+    write_arg.content = "print(1)"
+    write_arg.commit_message = "msg"
+    write_arg.branch = "dev"
+    assert asyncio.run(a._tool_github_write(write_arg)).startswith("write:a.py:msg:dev")
+
+    branch_arg = SA_MOD.GithubCreateBranchSchema()
+    branch_arg.branch_name = "feature/x"
+    branch_arg.from_branch = "main"
+    assert asyncio.run(a._tool_github_create_branch(branch_arg)) == "branch:feature/x:main"
+
+    pr_arg = SA_MOD.GithubCreatePRSchema()
+    pr_arg.title = "T"
+    pr_arg.body = "B"
+    pr_arg.head = "feature/x"
+    pr_arg.base = "main"
+    assert asyncio.run(a._tool_github_create_pr(pr_arg)) == "pr:T:feature/x:main:True"
+
+    issues_arg = SA_MOD.GithubListIssuesSchema()
+    issues_arg.state = "open"
+    issues_arg.limit = 5
+    assert "#2" in asyncio.run(a._tool_github_list_issues(issues_arg))
+
+    create_issue_arg = SA_MOD.GithubCreateIssueSchema()
+    create_issue_arg.title = "Bug"
+    create_issue_arg.body = "desc"
+    assert asyncio.run(a._tool_github_create_issue(create_issue_arg)) == "issue-create:Bug:desc"
+
+    comment_issue_arg = SA_MOD.GithubCommentIssueSchema()
+    comment_issue_arg.number = 11
+    comment_issue_arg.body = "note"
+    assert asyncio.run(a._tool_github_comment_issue(comment_issue_arg)) == "issue-comment:11:note"
+
+    close_issue_arg = SA_MOD.GithubCloseIssueSchema()
+    close_issue_arg.number = 11
+    assert asyncio.run(a._tool_github_close_issue(close_issue_arg)) == "issue-close:11"
+
+    diff_arg = SA_MOD.GithubPRDiffSchema()
+    diff_arg.number = 7
+    assert asyncio.run(a._tool_github_pr_diff(diff_arg)) == "diff:7"
+
+
+def test_execute_tool_tracing_span_attributes(monkeypatch):
+    a = _make_agent_for_runtime()
+    audit = []
+
+    async def _audit(name, arg, ok):
+        audit.append((name, arg, ok))
+
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+
+        def set_attribute(self, key, value):
+            self.attrs[key] = value
+
+    span = _Span()
+
+    class _Trace:
+        @staticmethod
+        def get_current_span():
+            return span
+
+    class _Cm:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _Tracer:
+        def start_as_current_span(self, _name):
+            return _Cm()
+
+    a._log_audit = _audit
+    a.tracer = _Tracer()
+    monkeypatch.setattr(SA_MOD, "trace", _Trace)
+
+    async def _handler(_arg):
+        return "ok"
+
+    a._tools = {"x": _handler}
+    out = asyncio.run(a._execute_tool("x", "arg"))
+    assert out == "ok"
+    assert audit == [("x", "arg", True)]
+    assert span.attrs["sidar.tool.name"] == "x"
+    assert span.attrs["sidar.tool.success"] is True
+    assert "sidar.tool.duration_ms" in span.attrs
