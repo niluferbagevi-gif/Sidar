@@ -89,6 +89,7 @@ Komutlar:
   .gpu        — GPU belleğini optimize et
   .github     — GitHub bağlantı durumu
   .level      — Mevcut erişim seviyesini göster
+  .level <seviye> — Erişim seviyesini değiştir (restricted/sandbox/full)
   .web        — Web arama durumu
   .docs       — Belge deposunu listele
   .help       — Bu yardım mesajını göster
@@ -183,8 +184,12 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
         elif user_input.lower() == ".github":
             print(agent.github.status())
             continue
-        elif user_input.lower() == ".level":
-            print(agent.security.status_report())
+        elif user_input.lower().startswith(".level"):
+            parts = user_input.strip().split(maxsplit=1)
+            if len(parts) > 1:
+                print(f"\nSidar > {agent.set_access_level(parts[1])}\n")
+            else:
+                print(agent.security.status_report())
             continue
         elif user_input.lower() == ".web":
             print(agent.web.status())

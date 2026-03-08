@@ -1,5 +1,12 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.5] - 2026-03-08
+Bu sürümde güvenlik seviyesi geçişleri ajanın kalıcı sohbet belleğine işlenecek şekilde geliştirildi.
+
+### ✅ Güvenlik Seviyesi Geçiş Logu
+* **Runtime seviye değişimi (`managers/security.py`, `agent/sidar_agent.py`):** `SecurityManager.set_level(...)` ve `SidarAgent.set_access_level(...)` eklendi; seviye değişimleri `[GÜVENLİK BİLDİRİMİ]` formatında konuşma belleğine kalıcı olarak yazılıyor.
+* **CLI ve Web entegrasyonu (`cli.py`, `web_server.py`):** CLI'da `.level <seviye>` komutu ile dinamik seviye değişimi desteklendi; Web API tarafına `POST /set-level` endpoint'i eklendi.
+
 ## [v2.10.4] - 2026-03-08
 Bu sürümde Web API dokümantasyonu OpenAPI/Swagger standardına yükseltilmiştir.
 

@@ -261,6 +261,16 @@ class SecurityManager:
         safe_name = Path(filename).name  # yalnızca dosya adı bileşeni
         return self.temp_dir / safe_name
 
+    def set_level(self, new_level: str) -> bool:
+        """Erişim seviyesini çalışma zamanında değiştirir."""
+        normalized = self._normalize_level_name(new_level)
+        if normalized == self.level_name:
+            return False
+        self.level = LEVEL_NAMES[normalized]
+        self.level_name = normalized
+        logger.info("SecurityManager erişim seviyesi güncellendi -> %s", self.level_name)
+        return True
+
     def status_report(self) -> str:
         """Erişim seviyesi ve izin özetini döndürür."""
         perms = []

@@ -954,6 +954,33 @@ async def clear():
     return JSONResponse({"result": True})
 
 
+@app.post(
+    "/set-level",
+    summary="Güvenlik Seviyesini Değiştir",
+    description=(
+        "Ajanın çalışma zamanındaki erişim seviyesini "
+        "(restricted, sandbox, full) değiştirir ve sohbet belleğine loglar."
+    ),
+    responses={200: {"description": "Seviye başarıyla değiştirildi"}},
+)
+async def set_level_endpoint(request: Request):
+    """Güvenlik seviyesini çalışma zamanında değiştirir."""
+    body = await request.json()
+    new_level = body.get("level", "").strip()
+    if not new_level:
+        return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
+
+    agent = await get_agent()
+    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
+    return JSONResponse(
+        {
+            "success": True,
+            "message": result_msg,
+            "current_level": agent.security.level_name,
+        }
+    )
+
+
 # ─────────────────────────────────────────────
 #  BAŞLATMA
 # ─────────────────────────────────────────────
