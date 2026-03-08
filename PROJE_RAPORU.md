@@ -1199,23 +1199,10 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.1 Çekirdek Mimari
 
-> **Durum Güncellemesi (v2.7.0):** Bu başlık altında yer alan önceki kritik maddeler tamamlanmıştır. Ayrıntılı uygulama özeti için [CHANGELOG.md](./CHANGELOG.md) dosyasına bakın.
-
-#### 14.1.1 Kalıcı Rate Limiting
-**Güncel durum:** ✅ `web_server.py` tarafında `TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)` kullanıma alınmıştır.
-**Not (v2.8+):** İhtiyaç halinde dağıtık ortamlar için Redis tabanlı merkezi rate limiter değerlendirilebilir.
-
-#### 14.1.2 Gerçek Token Sayacı
-**Güncel durum:** ✅ `core/memory.py` içinde `tiktoken` entegrasyonu aktif; paket yoksa güvenli fallback korunuyor.
-**Not (v2.8+):** Model-spesifik tokenizer seçimi (`TOKENIZER_MODEL`) opsiyonel olarak eklenebilir.
-
-#### 14.1.3 Talimat Cache Koruması
-**Güncel durum:** ✅ `agent/sidar_agent.py` içinde `_instructions_cache` / `_instructions_mtimes` akışı `threading.Lock` ile korunuyor.
-**Not:** Bu kod yolu senkron dosya I/O yaptığı için mevcut `threading.Lock` seçimi mimari olarak uygundur.
-
-#### 14.1.4 Thread-Safe Chunking
-**Güncel durum:** ✅ `core/rag.py` içinde chunking parametreleri yerel değişkenlerle yönetiliyor; `self` üstünde geçici mutasyon yok.
-**Not:** Zorunlu bölme adımında `step = max(1, size - overlap)` koruması ile `ZeroDivisionError` riski giderilmiştir.
+> **Not:** Bu başlık altında daha önce listelenen çekirdek mimari iyileştirmelerin tamamı uygulanmıştır.
+> (Kalıcı rate limiting, gerçek token sayacı, talimat cache koruması ve thread-safe chunking.)
+>
+> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.7.0** ve **v2.8.0** bölümlerine bakın.
 
 ---
 
