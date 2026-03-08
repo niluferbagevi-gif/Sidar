@@ -1366,8 +1366,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > dosyasındaki ilgili bölümlere bakın.
 
 #### 14.8.2 Çevre Başına Konfigürasyon
-**Mevcut durum:** Tek `.env` dosyası.
-**Öneri:** `.env.development`, `.env.production`, `.env.test` desteği; `python-dotenv`'in `dotenv_values` zinciri ile birleştirme. Docker build-arg ile `ENV_FILE` override.
+**Güncel durum (v2.10.7):** ✅ Tamamlandı. `config.py` içinde `SIDAR_ENV` değişkeniyle ortama özgü (`.env.development`, `.env.production`, `.env.test`) dosyaların temel `.env` üzerine `override=True` ile yüklenmesi sağlandı.
+**Uygulama notu:** Yükleme sırası: önce `.env`, ardından varsa `.env.<sidar_env>`; ortam dosyası yoksa temel ayarlarla devam edilir.
 
 #### 14.8.3 Gözlemlenebilirlik (Observability)
 **Güncel durum (v2.10.0):** ✅ Tamamlandı. OpenTelemetry ile FastAPI HTTP istekleri, ajan ReAct adımları, araç çalıştırmaları ve LLM çağrıları span bazında izlenmektedir.
@@ -1380,7 +1380,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.6)
+### 14.9 Öncelik Durumu (Güncel — v2.10.7)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1408,6 +1408,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 14 | OpenAPI Şema Belgelendirmesi (§14.4.3) | Orta | Düşük | ✅ Tamamlandı |
 | 15 | Güvenlik Seviyesi Geçiş Logu (§14.6.4) | Orta | Düşük | ✅ Tamamlandı |
 | 16 | Webhook Desteği (§14.5.1) | Orta | Orta | ✅ Tamamlandı |
+| 17 | Çevre Başına Konfigürasyon (§14.8.2) | Orta | Düşük | ✅ Tamamlandı |
 
 ---
 

@@ -26,12 +26,27 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # TEMEL DİZİN VE .ENV YÜKLEMESİ  (diğer her şeyden ÖNCE)
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
-ENV_PATH = BASE_DIR / ".env"
 
-if not ENV_PATH.exists():
+# 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
+sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
+
+# 2. Önce her zaman temel .env dosyasını yükle (varsa)
+base_env_path = BASE_DIR / ".env"
+if base_env_path.exists():
+    load_dotenv(dotenv_path=base_env_path)
+
+# 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
+if sidar_env:
+    specific_env_path = BASE_DIR / f".env.{sidar_env}"
+    if specific_env_path.exists():
+        load_dotenv(dotenv_path=specific_env_path, override=True)
+        print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
+    else:
+        print(f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak.")
+elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
-else:
-    load_dotenv(dotenv_path=ENV_PATH)
+
+ENV_PATH = base_env_path
 
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR

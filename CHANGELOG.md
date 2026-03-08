@@ -1,5 +1,11 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.7] - 2026-03-08
+Bu sürümde çoklu ortam (environment) yapılandırma desteği tamamlandı.
+
+### ✅ Çevre Başına Konfigürasyon
+* **Ortam bazlı dotenv yükleme (`config.py`):** `SIDAR_ENV` değişkeni ile `.env.development`, `.env.production`, `.env.test` gibi dosyalar temel `.env` üzerine `override=True` ile yüklenebilir hale getirildi.
+
 ## [v2.10.6] - 2026-03-08
 Bu sürümde GitHub entegrasyonu pull modelden webhook tabanlı push modele genişletildi.
 
