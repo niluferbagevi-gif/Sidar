@@ -8,7 +8,6 @@ Başlatmak için:
 """
 
 import argparse
-from collections import defaultdict
 import base64
 import asyncio
 import json
@@ -28,11 +27,26 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
-from cachetools import TTLCache
 from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File
+from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+except Exception:  # OpenTelemetry opsiyoneldir
+    trace = None
+    OTLPSpanExporter = None
+    FastAPIInstrumentor = None
+    TracerProvider = None
+    Resource = None
+    BatchSpanProcessor = None
 
 from config import Config
 from agent.sidar_agent import SidarAgent
@@ -97,38 +111,153 @@ async def basic_auth_middleware(request: Request, call_next):
     )
 
 
-# --- YENİ EKLENEN BLOK: IP Tabanlı Hız Sınırlandırması (Rate Limit) ---
-# Sunucu güvenliği için dakikada maksimum 120 isteğe (saniyede ort. 2 istek) izin ver
-_rate_limits = defaultdict(list)
+# ─────────────────────────────────────────────
+#  OBSERVABILITY (OpenTelemetry)
+# ─────────────────────────────────────────────
+def _setup_tracing() -> None:
+    if not getattr(cfg, "ENABLE_TRACING", False):
+        return
+    if not all([trace, OTLPSpanExporter, FastAPIInstrumentor, TracerProvider, Resource, BatchSpanProcessor]):
+        logger.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
+        return
+
+    resource = Resource.create({"service.name": "sidar-web"})
+    provider = TracerProvider(resource=resource)
+    exporter = OTLPSpanExporter(endpoint=cfg.OTEL_EXPORTER_ENDPOINT, insecure=True)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    FastAPIInstrumentor.instrument_app(app)
+    logger.info("✅ OpenTelemetry aktif: %s", cfg.OTEL_EXPORTER_ENDPOINT)
+
+
+_setup_tracing()
+
+# ─────────────────────────────────────────────
+#  RATE LIMITING (Redis + local fallback)
+# ─────────────────────────────────────────────
 RATE_LIMIT_MAX_REQUESTS = 120
 RATE_LIMIT_WINDOW_SEC = 60
+_RATE_LIMIT = cfg.RATE_LIMIT_CHAT
+_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS
+_RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO
+_RATE_WINDOW = cfg.RATE_LIMIT_WINDOW
+_RATE_GET_IO_PATHS = (
+    "/git-info", "/git-branches", "/files", "/file-content",
+    "/github-prs", "/github-repos", "/todo", "/rag/", "/sessions",
+)
+
+_redis_client: Redis | None = None
+_redis_lock: asyncio.Lock | None = None
+_local_rate_limits: dict[str, list[float]] = {}
+_local_rate_lock: asyncio.Lock | None = None
+
+_start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
+
+
+async def _get_redis() -> Redis | None:
+    global _redis_client, _redis_lock
+    if _redis_lock is None:
+        _redis_lock = asyncio.Lock()
+    if _redis_client is None:
+        async with _redis_lock:
+            if _redis_client is None:
+                try:
+                    client = Redis.from_url(cfg.REDIS_URL, encoding="utf-8", decode_responses=True)
+                    await client.ping()
+                    _redis_client = client
+                except Exception as exc:
+                    logger.warning("Redis bağlantısı kurulamadı (%s). Local rate limit fallback kullanılacak.", exc)
+                    _redis_client = None
+    return _redis_client
+
+
+async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
+    global _local_rate_lock
+    if _local_rate_lock is None:
+        _local_rate_lock = asyncio.Lock()
+    now = time.time()
+    async with _local_rate_lock:
+        timestamps = _local_rate_limits.get(key, [])
+        valid = [t for t in timestamps if now - t < window_sec]
+        if len(valid) >= limit:
+            _local_rate_limits[key] = valid
+            return True
+        valid.append(now)
+        _local_rate_limits[key] = valid
+        return False
+
+
+async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_sec: int) -> bool:
+    redis = await _get_redis()
+    bucket = int(time.time() // window_sec)
+    redis_key = f"sidar:rl:{namespace}:{key}:{bucket}"
+
+    if redis is None:
+        return await _local_is_rate_limited(redis_key, limit, window_sec)
+
+    try:
+        count = await redis.incr(redis_key)
+        if count == 1:
+            await redis.expire(redis_key, window_sec + 2)
+        return count > limit
+    except Exception as exc:
+        logger.warning("Redis rate limit komutu başarısız (%s). Local fallback kullanılacak.", exc)
+        return await _local_is_rate_limited(redis_key, limit, window_sec)
+
+
+def _get_client_ip(request: Request) -> str:
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        first_ip = xff.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+    xri = request.headers.get("X-Real-IP", "")
+    if xri:
+        return xri.strip()
+    return request.client.host if request.client else "unknown"
 
 
 @app.middleware("http")
 async def ddos_rate_limit_middleware(request: Request, call_next):
-    # Statik arayüz dosyaları (CSS/JS) ve Health Check ucunu limitten muaf tut
     if request.url.path.startswith("/ui/") or request.url.path.startswith("/static/") or request.url.path == "/health":
         return await call_next(request)
 
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    now = time.time()
-
-    # Bu IP'nin zaman penceresi dolmuş (1 dakikadan eski) isteklerini temizle
-    _rate_limits[client_ip] = [t for t in _rate_limits[client_ip] if now - t < RATE_LIMIT_WINDOW_SEC]
-
-    # Limit aşıldıysa 429 Too Many Requests döndür ve işlemi kes
-    if len(_rate_limits[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+    client_ip = _get_client_ip(request)
+    if await _redis_is_rate_limited("ddos", client_ip, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SEC):
         return JSONResponse(
             status_code=429,
-            content={
-                "error": "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. Lütfen 1 dakika bekleyip tekrar deneyin."
-            }
+            content={"error": "⚠ Rate Limit Aşıldı: Sunucuyu korumak için geçici olarak engellendiniz. Lütfen 1 dakika bekleyip tekrar deneyin."},
         )
 
-    # İsteği logla ve yola (işleme) devam et
-    _rate_limits[client_ip].append(now)
     return await call_next(request)
-# ------------------------------------------------------------------------
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = _get_client_ip(request)
+
+    if request.url.path == "/chat":
+        if await _redis_is_rate_limited("chat", client_ip, _RATE_LIMIT, _RATE_WINDOW):
+            return JSONResponse({"error": "Çok fazla istek. Lütfen bir dakika bekleyin."}, status_code=429)
+    elif request.method in ("POST", "DELETE"):
+        if await _redis_is_rate_limited("mut", client_ip, _RATE_LIMIT_MUTATIONS, _RATE_WINDOW):
+            return JSONResponse({"error": "Çok fazla işlem isteği. Lütfen bir dakika bekleyin."}, status_code=429)
+    elif request.method == "GET":
+        if any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS):
+            if await _redis_is_rate_limited("get", client_ip, _RATE_LIMIT_GET_IO, _RATE_WINDOW):
+                return JSONResponse({"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."}, status_code=429)
+
+    response = await call_next(request)
+    return response
+
+
+@app.on_event("shutdown")
+async def _close_redis_client() -> None:
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        _redis_client = None
+
 
 # CORS: localhost/loopback kökenlerine porttan bağımsız izin ver.
 app.add_middleware(
@@ -142,112 +271,8 @@ app.add_middleware(
 web_ui_dir = Path(__file__).parent / "web_ui"
 app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
-# ─────────────────────────────────────────────
-#  RATE LIMITING (basit in-memory)
-# Kapsam:
-#   /chat                                   → 20 istek/60 sn/IP  (LLM çağrısı, ağır)
-#   POST + DELETE                           → 60 istek/60 sn/IP  (mutasyon endpoint'leri)
-#   GET /git-info /git-branches             → 30 istek/60 sn/IP  (dosya sistemi / git I/O)
-#       /files /file-content                →  (GET I/O kapsamında)
-# ─────────────────────────────────────────────
-
-_rate_data = TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)
-_RATE_LIMIT           = cfg.RATE_LIMIT_CHAT       # /chat — LLM çağrısı başına limit
-_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS  # Diğer POST/DELETE — mutasyon endpoint'leri
-_RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO     # GET I/O endpoint'leri (git, dosya, vb.)
-_RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW     # saniye cinsinden pencere (tüm limitler için)
-_RATE_GET_IO_PATHS    = (
-    "/git-info", "/git-branches", "/files", "/file-content",
-    "/github-prs", "/github-repos", "/todo", "/rag/", "/sessions",
-)
-_rate_lock: asyncio.Lock | None = None  # _agent_lock ile tutarlı: lazy init
-
-_start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
-
-
-async def _is_rate_limited(key: str, limit: int = _RATE_LIMIT) -> bool:
-    """
-    Atomik kontrol+yaz: asyncio.Lock ile TOCTOU yarış koşulunu önler.
-    key: IP adresi veya 'IP:namespace' formatında bileşik anahtar
-    limit: pencere boyunca izin verilen maksimum istek sayısı
-    """
-    global _rate_lock
-    if _rate_lock is None:
-        _rate_lock = asyncio.Lock()  # event loop başladıktan sonra oluştur
-    async with _rate_lock:
-        timestamps = _rate_data.get(key, [])
-        now = time.monotonic()
-        valid_timestamps = [t for t in timestamps if now - t < _RATE_WINDOW]
-
-        if len(valid_timestamps) >= limit:
-            _rate_data[key] = valid_timestamps
-            return True
-
-        valid_timestamps.append(now)
-        _rate_data[key] = valid_timestamps
-        return False
-
-
-def _get_client_ip(request: Request) -> str:
-    """
-    İstemci IP adresini güvenle çeker.
-
-    Proxy/reverse-proxy ortamlarında X-Forwarded-For ve X-Real-IP başlıklarına
-    bakar; yoksa doğrudan bağlantı IP'sini kullanır.
-
-    Güvenlik notu: X-Forwarded-For başlığındaki yalnızca ilk (en soldan) IP
-    kullanılır — bu, istemcinin orijinal IP'sidir. Saldırganın başlığı
-    manipüle etme riskine karşı proxy zincirinin yalnızca güvenilen ağdan
-    geldiğinden emin olunmalıdır.
-    """
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        # "client, proxy1, proxy2" formatından yalnızca client IP'sini al
-        first_ip = xff.split(",")[0].strip()
-        if first_ip:
-            return first_ip
-    xri = request.headers.get("X-Real-IP", "")
-    if xri:
-        return xri.strip()
-    return request.client.host if request.client else "unknown"
-
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    """
-    IP tabanlı rate limiting middleware.
-    X-Forwarded-For / X-Real-IP başlıklarını proxy farkındalıklı okur.
-    """
-    client_ip = _get_client_ip(request)
-
-    if request.url.path == "/chat":
-        # /chat: LLM çağrısı — sıkı limit (20 req/60s)
-        if await _is_rate_limited(client_ip, _RATE_LIMIT):
-            return JSONResponse(
-                {"error": "Çok fazla istek. Lütfen bir dakika bekleyin."},
-                status_code=429,
-            )
-    elif request.method in ("POST", "DELETE"):
-        # Mutasyon endpoint'leri (oturum oluştur/sil, repo değiştir vb.)
-        # Gevşek limit (60 req/60s) — XSS/spam koruması
-        if await _is_rate_limited(f"{client_ip}:mut", _RATE_LIMIT_MUTATIONS):
-            return JSONResponse(
-                {"error": "Çok fazla işlem isteği. Lütfen bir dakika bekleyin."},
-                status_code=429,
-            )
-    elif request.method == "GET":
-        is_io_route = any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS)
-        if is_io_route:
-            # Dosya sistemi / Git I/O endpoint'leri — orta limit (30 req/60s)
-            if await _is_rate_limited(f"{client_ip}:get", _RATE_LIMIT_GET_IO):
-                return JSONResponse(
-                    {"error": "Çok fazla sorgu isteği. Lütfen bir dakika bekleyin."},
-                    status_code=429,
-                )
-
-    return await call_next(request)
-
 WEB_DIR = Path(__file__).parent / "web_ui"
+
 
 
 # ─────────────────────────────────────────────

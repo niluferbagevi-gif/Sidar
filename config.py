@@ -289,6 +289,11 @@ class Config:
     RATE_LIMIT_CHAT:      int = get_int_env("RATE_LIMIT_CHAT", 20)
     RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
     RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
+    REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+    # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
+    ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
+    OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://localhost:4317")
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")
@@ -478,6 +483,9 @@ class Config:
             "rate_limit_chat":    cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
             "rate_limit_get_io":  cls.RATE_LIMIT_GET_IO,
+            "redis_url":          cls.REDIS_URL,
+            "enable_tracing":     cls.ENABLE_TRACING,
+            "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
         }
 
     @classmethod

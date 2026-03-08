@@ -1,5 +1,12 @@
-
 services:
+
+  redis:
+    image: redis:alpine
+    container_name: sidar_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
 
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
@@ -67,6 +74,9 @@ services:
           cpus: '4.0'
           memory: 8G
 
+    depends_on:
+      - redis
+
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
@@ -114,6 +124,9 @@ services:
         limits:
           cpus: '2.0'
           memory: 4G
+
+    depends_on:
+      - redis
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -164,6 +177,9 @@ services:
           cpus: '4.0'
           memory: 8G
 
+    depends_on:
+      - redis
+
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
@@ -189,3 +205,5 @@ services:
 
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
+volumes:
+  redis_data:
