@@ -52,8 +52,17 @@ def _setup_logging(level: str) -> None:
 
 
 def _make_banner(version: str) -> str:
-    """Sürüm numarasını kırpmadan çerçevenin altına basan ASCII banner'ı oluşturur."""
+    """Sürüm numarasını çerçeve içine, gerekirse kırparak basan ASCII banner'ı oluşturur."""
     ver_field = f"v{version}" if version else "v?"
+    # İç alan: " ║  " (4) + 44 karakter + "║" (1) = 49 toplam
+    # "Yazılım Mimarı & Baş Mühendis AI " = 33 karakter → kalan 11 karakter versiyon için
+    _VER_AREA = 11
+    _PREFIX = "Yazılım Mimarı & Baş Mühendis AI "  # 33 karakter
+    if len(ver_field) <= _VER_AREA:
+        ver_str = ver_field.ljust(_VER_AREA)
+    else:
+        ver_str = ver_field[:_VER_AREA - 1] + "…"
+    subtitle_line = f" ║  {_PREFIX}{ver_str}║"
     lines = [
         "",
         " ╔══════════════════════════════════════════════╗",
@@ -63,9 +72,8 @@ def _make_banner(version: str) -> str:
         " ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║",
         " ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║",
         " ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║",
-        " ║  Yazılım Mimarı & Baş Mühendis AI            ║",
+        subtitle_line,
         " ╚══════════════════════════════════════════════╝",
-        f"    Sürüm: {ver_field}",
     ]
     return "\n".join(lines) + "\n"
 
