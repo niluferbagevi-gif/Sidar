@@ -1308,8 +1308,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 **Uygulama notu:** `/ws/chat` endpointi istemciden `message` ve `action=cancel` payloadlarını alır; sunucu `chunk/thought/tool_call/done` olayları ile gerçek zamanlı güncelleme döner.
 
 #### 14.4.3 OpenAPI Şema Belgelendirmesi
-**Mevcut durum:** FastAPI otomatik `/docs` oluşturuyor ancak endpoint açıklamaları eksik.
-**Öneri:** Her endpoint için `summary`, `description`, `response_model` ve `responses` parametrelerinin doldurulması. Harici entegrasyon kolaylaşır.
+**Güncel durum (v2.10.4):** ✅ Tamamlandı. FastAPI uygulamasında `/docs` ve `/redoc` yolları aktif edildi; kritik endpoint'lere `summary`, `description` ve `responses` alanları eklendi.
+**Uygulama notu:** `/status`, `/health`, `/sessions`, `/rag/search`, `/rag/add-file`, `/clear` ve ek olarak `/todo`, `/github-prs` endpoint'leri Swagger UI üzerinde açıklamalı görünecek şekilde güncellendi.
 
 ---
 
@@ -1378,7 +1378,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.10.2)
+### 14.9 Öncelik Durumu (Güncel — v2.10.4)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1403,6 +1403,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 11 | Linting + mypy strict altyapısı (§14.7.3) | Orta | Düşük | ✅ Tamamlandı |
 | 12 | Test coverage hedefleri (§14.7.2) | Orta | Düşük | ✅ Tamamlandı |
 | 13 | Performans benchmark baseline'ları (§14.7.4) | Orta | Orta | ✅ Tamamlandı |
+| 14 | OpenAPI Şema Belgelendirmesi (§14.4.3) | Orta | Düşük | ✅ Tamamlandı |
 
 ---
 

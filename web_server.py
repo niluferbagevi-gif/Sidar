@@ -81,7 +81,16 @@ async def get_agent() -> SidarAgent:
 #  FASTAPI UYGULAMASI
 # ─────────────────────────────────────────────
 
-app = FastAPI(title="Sidar Web UI", docs_url=None, redoc_url=None)
+app = FastAPI(
+    title="Sidar Web UI & REST API",
+    description=(
+        "Sidar AI Ajanı için Web Arayüzü ve REST API uç noktaları. "
+        "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
+    ),
+    version="2.10.4",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
 
 @app.middleware("http")
@@ -387,7 +396,12 @@ async def websocket_chat(websocket: WebSocket):
             active_task.cancel()
 
 
-@app.get("/status")
+@app.get(
+    "/status",
+    summary="Ajan Durumunu Getir",
+    description="Ajanın donanım, LLM bağlantı, bellek ve sağlayıcı durumlarını JSON olarak döndürür.",
+    responses={200: {"description": "Başarılı durum yanıtı"}},
+)
 async def status():
     """Ajan durum bilgisini JSON olarak döndür."""
     a = await get_agent()
@@ -425,7 +439,15 @@ async def status():
         "ollama_latency_ms": ollama_latency_ms,
     })
 
-@app.get("/health")
+@app.get(
+    "/health",
+    summary="Sağlık Kontrolü (Health Check)",
+    description="Liveness/readiness kontrolü için sistem sağlık bilgisini döndürür.",
+    responses={
+        200: {"description": "Sistem sağlıklı"},
+        503: {"description": "Sistemde kritik bir sorun var"},
+    },
+)
 async def health_check():
     """
     Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
@@ -493,7 +515,12 @@ async def metrics(request: Request):
 #  ÇOKLU SOHBET (SESSIONS) ROTALARI
 # ─────────────────────────────────────────────
 
-@app.get("/sessions")
+@app.get(
+    "/sessions",
+    summary="Tüm Oturumları Listele",
+    description="Kayıtlı sohbet oturumları listesini ve aktif oturum kimliğini döndürür.",
+    responses={200: {"description": "Oturum listesi başarıyla alındı"}},
+)
 async def get_sessions():
     """Tüm oturumların listesini döndürür."""
     agent = await get_agent()
@@ -707,7 +734,12 @@ async def github_repos(owner: str = "", q: str = ""):
     })
 
 
-@app.get("/github-prs")
+@app.get(
+    "/github-prs",
+    summary="GitHub PR Listesini Getir",
+    description="Yapılandırılmış repodan açık pull request listesini döndürür.",
+    responses={200: {"description": "PR listesi başarıyla alındı"}},
+)
 async def github_prs(state: str = "open", limit: int = 10):
     """
     Aktif GitHub deposundaki PR listesini döndürür.
@@ -763,7 +795,16 @@ async def rag_list_docs():
     return JSONResponse({"success": True, "docs": docs, "count": len(docs)})
 
 
-@app.post("/rag/add-file")
+@app.post(
+    "/rag/add-file",
+    summary="Yerel Dosyayı RAG'a Ekle",
+    description="Proje dizinindeki yerel bir dosyayı RAG vektör deposuna ekler.",
+    responses={
+        200: {"description": "Dosya başarıyla RAG deposuna eklendi"},
+        400: {"description": "Dosya yolu boş veya geçersiz"},
+        403: {"description": "Güvenlik: Proje dizini dışına çıkma girişimi"},
+    },
+)
 async def rag_add_file(request: Request):
     """
     Proje dizinindeki yerel bir dosyayı RAG deposuna ekler.
@@ -862,7 +903,15 @@ async def upload_rag_file(file: UploadFile = File(...)):
             except Exception:
                 pass
 
-@app.get("/rag/search")
+@app.get(
+    "/rag/search",
+    summary="RAG Deposunda Arama Yap",
+    description="RAG deposunda belirtilen sorguyu mode/top_k parametreleriyle arar.",
+    responses={
+        200: {"description": "Arama başarılı"},
+        400: {"description": "Sorgu parametresi eksik veya hatalı"},
+    },
+)
 async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     """RAG deposunda aktif oturuma ait belgelerde arama yapar."""
     if not q.strip():
@@ -875,7 +924,12 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
     return JSONResponse({"success": ok, "result": result})
 
 
-@app.get("/todo")
+@app.get(
+    "/todo",
+    summary="Görev Listesini Getir",
+    description="Aktif görev listesini ve özet sayaç bilgilerini döndürür.",
+    responses={200: {"description": "Görev listesi başarıyla alındı"}},
+)
 async def get_todo():
     """
     Aktif görev listesini JSON olarak döndürür.
@@ -887,7 +941,12 @@ async def get_todo():
     return JSONResponse({"tasks": tasks, "count": len(tasks), "active": active})
 
 
-@app.post("/clear")
+@app.post(
+    "/clear",
+    summary="Aktif Belleği Temizle",
+    description="Mevcut aktif konuşma belleğini tamamen temizler.",
+    responses={200: {"description": "Bellek başarıyla temizlendi"}},
+)
 async def clear():
     """Aktif konuşma belleğini temizle."""
     agent = await get_agent()
