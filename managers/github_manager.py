@@ -457,6 +457,65 @@ class GitHubManager:
         except Exception as exc:
             return False, f"PR kapatma hatası: {exc}"
 
+
+    def list_issues(self, state: str = "open", limit: int = 10) -> Tuple[bool, list]:
+        """Depodaki Issue'ları listeler (PR'ları filtreler)."""
+        if not self._repo:
+            return False, ["Aktif depo yok."]
+        try:
+            valid_states = {"open", "closed", "all"}
+            safe_state = state.lower() if state.lower() in valid_states else "open"
+            safe_limit = max(1, min(int(limit), 100))
+            issues = self._repo.get_issues(state=safe_state)
+            result = []
+            for issue in issues[:safe_limit]:
+                # GitHub API'sinde PR'lar da birer Issue'dur, onları filtrele
+                if issue.pull_request is not None:
+                    continue
+                result.append({
+                    "number": issue.number,
+                    "title": issue.title,
+                    "state": issue.state,
+                    "user": issue.user.login,
+                    "created_at": issue.created_at.isoformat(),
+                })
+            return True, result
+        except Exception as exc:
+            logger.error("Issue listeleme hatası: %s", exc)
+            return False, [f"Hata: {exc}"]
+
+    def create_issue(self, title: str, body: str) -> Tuple[bool, str]:
+        """Yeni bir Issue oluşturur."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            issue = self._repo.create_issue(title=title, body=body)
+            return True, f"✓ Issue oluşturuldu: #{issue.number} - {issue.title}"
+        except Exception as exc:
+            return False, f"✗ Issue oluşturulamadı: {exc}"
+
+    def comment_issue(self, number: int, body: str) -> Tuple[bool, str]:
+        """Var olan bir Issue'ya yorum ekler."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            issue = self._repo.get_issue(number=number)
+            issue.create_comment(body)
+            return True, f"✓ Issue #{number} için yorum eklendi."
+        except Exception as exc:
+            return False, f"✗ Yorum eklenemedi: {exc}"
+
+    def close_issue(self, number: int) -> Tuple[bool, str]:
+        """Bir Issue'yu kapatır."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            issue = self._repo.get_issue(number=number)
+            issue.edit(state="closed")
+            return True, f"✓ Issue #{number} başarıyla kapatıldı."
+        except Exception as exc:
+            return False, f"✗ Issue kapatılamadı: {exc}"
+
     def get_pr_files(self, number: int) -> Tuple[bool, str]:
         """PR'da değişen dosyaların listesini döndür."""
         if not self._repo:

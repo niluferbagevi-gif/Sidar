@@ -48,6 +48,25 @@ class GithubListPRsSchema(BaseModel):
     limit: int = 10
 
 
+class GithubListIssuesSchema(BaseModel):
+    state: str = "open"
+    limit: int = 10
+
+
+class GithubCreateIssueSchema(BaseModel):
+    title: str
+    body: str
+
+
+class GithubCommentIssueSchema(BaseModel):
+    number: int
+    body: str
+
+
+class GithubCloseIssueSchema(BaseModel):
+    number: int
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -56,6 +75,10 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "github_create_branch": GithubCreateBranchSchema,
     "github_create_pr": GithubCreatePRSchema,
     "github_list_prs": GithubListPRsSchema,
+    "github_list_issues": GithubListIssuesSchema,
+    "github_create_issue": GithubCreateIssueSchema,
+    "github_comment_issue": GithubCommentIssueSchema,
+    "github_close_issue": GithubCloseIssueSchema,
 }
 
 
@@ -131,6 +154,29 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
             limit = 10
         return GithubListPRsSchema(state=state, limit=limit)
 
+    if schema is GithubListIssuesSchema:
+        state = parts[0].strip() if parts and parts[0].strip() else "open"
+        try:
+            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
+        except ValueError:
+            limit = 10
+        return GithubListIssuesSchema(state=state, limit=limit)
+
+    if schema is GithubCreateIssueSchema:
+        if len(parts) < 2:
+            raise ValueError("Argüman formatı geçersiz")
+        return GithubCreateIssueSchema(title=parts[0].strip(), body=parts[1])
+
+    if schema is GithubCommentIssueSchema:
+        if len(parts) < 2:
+            raise ValueError("Argüman formatı geçersiz")
+        return GithubCommentIssueSchema(number=int(parts[0].strip()), body=parts[1])
+
+    if schema is GithubCloseIssueSchema:
+        if not parts or not parts[0].strip():
+            raise ValueError("Argüman formatı geçersiz")
+        return GithubCloseIssueSchema(number=int(parts[0].strip()))
+
     return raw_arg
 
 
@@ -159,6 +205,10 @@ def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:
         "github_close_pr":        agent._tool_github_close_pr,
         "github_pr_files":        agent._tool_github_pr_files,
         "github_smart_pr":        agent._tool_github_smart_pr,
+        "github_list_issues":    agent._tool_github_list_issues,
+        "github_create_issue":   agent._tool_github_create_issue,
+        "github_comment_issue":  agent._tool_github_comment_issue,
+        "github_close_issue":    agent._tool_github_close_issue,
         "web_search":             agent._tool_web_search,
         "fetch_url":              agent._tool_fetch_url,
         "search_docs":            agent._tool_search_docs,
