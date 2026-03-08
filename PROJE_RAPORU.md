@@ -13,25 +13,25 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-528-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
-  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-951-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1630-satır)
+  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-544-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-332-satır)
+  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-288-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1108-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1659-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-264-satır)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI)](#38-corellm_clientpy--llm-istemcisi-570-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-394-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-787-satır)
-  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-280-satır)
+  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-290-satır)
   - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-766-satır)
   - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-644-satır)
   - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-436-satır)
   - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-379-satır)
   - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.516 satır)](#318-web_ui--web-arayüzü-v280--modüler-yapı)
+  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.528 satır)](#318-web_ui--web-arayüzü-v280--modüler-yapı)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
   - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
@@ -147,15 +147,15 @@ sidar_project/
 │   ├── package_info.py        # PyPI + npm + GitHub Releases
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
-├── web_ui/                    # Modüler Web UI (toplam 3516 satır)
+├── web_ui/                    # Modüler Web UI (toplam 3.528 satır)
 │   ├── index.html             # HTML iskeleti (461 satır)
 │   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
-│   ├── chat.js                # WebSocket streaming, mesaj render (654 satır)
+│   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
 │   ├── sidebar.js             # Oturum yönetimi (394 satır)
 │   ├── rag.js                 # RAG belge UI (131 satır)
 │   └── app.js                 # Uygulama başlatma, tema (339 satır)
 │
-├── tests/                     # 32 test modülü
+├── tests/                     # 39 test modülü
 │   ├── test_sidar.py
 │   ├── test_tooling_registry.py
 │   ├── test_parallel_react_improvements.py
@@ -777,11 +777,11 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 |-------|-------|-----------|
 | `index.html` | 461 | HTML iskeleti, modal'lar, script yükleme noktaları |
 | `style.css` | 1.547 | CSS custom properties, tema (dark/light), tüm bileşen stilleri |
-| `chat.js` | 654 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
+| `chat.js` | 656 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
 | `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
 | `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
 | `app.js` | 339 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
-| **Toplam** | **3.516** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
+| **Toplam** | **3.528** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
 
 **Yükleme Sırası (index.html → script tags):**
 ```html
