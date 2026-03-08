@@ -1,6 +1,6 @@
 """
 Sidar Project - Web Arayüzü Sunucusu
-FastAPI + SSE (Server-Sent Events) ile asenkron (async) akış destekli chat arayüzü.
+FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat arayüzü.
 
 Başlatmak için:
     python web_server.py
@@ -27,10 +27,10 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File
+from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 try:
@@ -236,7 +236,7 @@ async def ddos_rate_limit_middleware(request: Request, call_next):
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = _get_client_ip(request)
 
-    if request.url.path == "/chat":
+    if request.url.path == "/ws/chat":
         if await _redis_is_rate_limited("chat", client_ip, _RATE_LIMIT, _RATE_WINDOW):
             return JSONResponse({"error": "Çok fazla istek. Lütfen bir dakika bekleyin."}, status_code=429)
     elif request.method in ("POST", "DELETE"):
@@ -308,77 +308,83 @@ async def index():
     return html_file.read_text(encoding="utf-8")
 
 
-@app.post("/chat")
-async def chat(request: Request):
+@app.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket):
     """
-    Kullanıcı mesajını SSE akışı olarak işler.
-    Agent artık asenkron (AsyncIterator) olduğu için doğrudan await edilebilir.
-    (Eski Thread/Queue yapısı tamamen kaldırılmıştır).
+    Çift yönlü WebSocket chat arayüzü.
+    Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
+    ve anlık iptal (cancel) isteklerini yönetir.
     """
-    body = await request.json()
-    user_message = body.get("message", "").strip()
+    await websocket.accept()
+    agent = await get_agent()
+    active_task: asyncio.Task | None = None
 
-    if not user_message:
-        return JSONResponse({"error": "Mesaj boş olamaz."}, status_code=400)
-
-    async def sse_generator():
-        """Asenkron SSE akışı: Ajan yanıtlarını dinler ve yayar."""
+    async def generate_response(msg: str) -> None:
         try:
-            agent = await get_agent()
-
-            # Eğer aktif bir başlık yoksa ve bu ilk mesajsa, basit bir başlık üretelim
             if len(agent.memory) == 0:
-                title = user_message[:30] + "..." if len(user_message) > 30 else user_message
+                title = msg[:30] + "..." if len(msg) > 30 else msg
                 agent.memory.update_title(title)
 
-            # Ajanın asenkron stream yanıtını bekle ve akıt
-            _TOOL_SENTINEL    = re.compile(r'^\x00TOOL:([^\x00]+)\x00$')
+            _TOOL_SENTINEL = re.compile(r'^\x00TOOL:([^\x00]+)\x00$')
             _THOUGHT_SENTINEL = re.compile(r'^\x00THOUGHT:([^\x00]+)\x00$')
-            async for chunk in agent.respond(user_message):
-                try:
-                    disconnected = await request.is_disconnected()
-                except Exception:
-                    disconnected = True  # Bağlantı durumu alınamazsa güvenli tarafta kal
-                if disconnected:
-                    logger.info("İstemci bağlantıyı kesti, stream durduruluyor.")
-                    return
-                m_tool    = _TOOL_SENTINEL.match(chunk)
+
+            async for chunk in agent.respond(msg):
+                m_tool = _TOOL_SENTINEL.match(chunk)
                 m_thought = _THOUGHT_SENTINEL.match(chunk)
+
                 if m_tool:
-                    yield f"data: {json.dumps({'tool_call': m_tool.group(1)})}\n\n"
+                    await websocket.send_json({'tool_call': m_tool.group(1)})
                 elif m_thought:
-                    yield f"data: {json.dumps({'thought': m_thought.group(1)})}\n\n"
+                    await websocket.send_json({'thought': m_thought.group(1)})
                 else:
-                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                    await websocket.send_json({'chunk': chunk})
 
-            # Akış başarıyla tamamlandı
-            yield f"data: {json.dumps({'done': True})}\n\n"
-
+            await websocket.send_json({'done': True})
         except asyncio.CancelledError:
-            # İstemci bağlantıyı kesti (ESC / AbortController) — beklenen durum.
-            logger.info("Stream iptal edildi (CancelledError): istemci bağlantıyı kesti.")
+            pass
         except Exception as exc:
-            # anyio.ClosedResourceError: kapalı sokete yazmaya çalışıldı — beklenen durum.
-            if _ANYIO_CLOSED and isinstance(exc, _ANYIO_CLOSED):
-                logger.info("Stream iptal edildi (ClosedResourceError): istemci bağlantıyı kesti.")
-                return
             logger.exception("Agent respond hatası: %s", exc)
             try:
-                err_chunk = json.dumps({"chunk": f"\n[Sistem Hatası] {exc}"})
-                yield f"data: {err_chunk}\n\n"
-                yield f"data: {json.dumps({'done': True})}\n\n"
+                await websocket.send_json({'chunk': f"\n[Sistem Hatası] {exc}", 'done': True})
             except Exception:
-                pass  # Hata yanıtı gönderilirken de bağlantı kopabilir
+                pass
 
-    return StreamingResponse(
-        sse_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",   # Nginx proxy'de buffering'i kapat
-        },
-    )
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+
+            action = payload.get("action")
+            user_message = payload.get("message", "").strip()
+
+            if action == "cancel" and active_task and not active_task.done():
+                active_task.cancel()
+                await websocket.send_json({
+                    "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
+                    "done": True,
+                })
+                continue
+
+            if not user_message:
+                continue
+
+            client_ip = websocket.client.host if websocket.client else "unknown"
+            if await _redis_is_rate_limited("chat_ws", client_ip, _RATE_LIMIT, _RATE_WINDOW):
+                await websocket.send_json({"chunk": "[Hız Sınırı] Çok fazla istek. Lütfen bir dakika bekleyin.", "done": True})
+                continue
+
+            if active_task and not active_task.done():
+                active_task.cancel()
+
+            active_task = asyncio.create_task(generate_response(user_message))
+
+    except WebSocketDisconnect:
+        logger.info("İstemci WebSocket bağlantısını kesti.")
+        if active_task and not active_task.done():
+            active_task.cancel()
 
 
 @app.get("/status")
@@ -448,7 +454,7 @@ async def metrics(request: Request):
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
     sessions  = agent.memory.get_all_sessions()
-    rl_total  = sum(len(v) for v in _rate_data.values())
+    rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     payload = {
         "version":                       agent.VERSION,
@@ -456,7 +462,7 @@ async def metrics(request: Request):
         "sessions_total":                len(sessions),
         "active_session_turns":          len(agent.memory),
         "rag_documents":                 rag_docs,
-        "rate_limit_buckets":            len(_rate_data),
+        "rate_limit_buckets":            len(_local_rate_limits),
         "rate_limit_requests_in_window": rl_total,
         "provider":                      agent.cfg.AI_PROVIDER,
         "gpu_enabled":                   agent.cfg.USE_GPU,

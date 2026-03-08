@@ -3,7 +3,6 @@ marked.setOptions({ breaks: true, gfm: true });
 /* ─── Değişkenler ───────────────────────────────────────── */
 let isStreaming    = false;
 let msgCounter     = 0;
-let activeController = null;
 let currentRepo    = 'niluferbagevi-gif/sidar_project';
 let currentBranch  = 'main';
 let defaultBranch  = 'main';   // Repo'nun varsayılan hedef branch'i (PR base)
@@ -13,6 +12,9 @@ let attachedFileName    = null;
 let allSessions = [];
 let _cachedRepos = null;
 const API_URL = window.location.origin;
+let chatSocket = null;
+let wsReconnectTimer = null;
+let currentStream = null;
 
 function apiUrl(path) {
   return `${API_URL}${path}`;
@@ -62,7 +64,58 @@ function quickTask(text) {
 
 /* ─── Streaming durdur ──────────────────────────────────── */
 function stopStreaming() {
-  if (activeController) activeController.abort();
+  if (!isStreaming) return;
+  if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+    chatSocket.send(JSON.stringify({ action: 'cancel' }));
+  }
+}
+
+function connectWebSocket() {
+  if (chatSocket && (chatSocket.readyState === WebSocket.OPEN || chatSocket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
+  chatSocket = new WebSocket(wsUrl);
+
+  chatSocket.onmessage = (event) => {
+    let data = null;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    if (!currentStream) return;
+
+    if (data.thought) {
+      apSetThought(data.thought);
+    }
+    if (data.tool_call) {
+      appendToolStep(currentStream.msgId, data.tool_call);
+    }
+    if (data.chunk !== undefined) {
+      currentStream.accumulated += data.chunk;
+      updateStreaming(currentStream.msgId, currentStream.accumulated);
+    }
+    if (data.done) {
+      finishStreaming();
+    }
+  };
+
+  chatSocket.onclose = () => {
+    if (currentStream) {
+      currentStream.accumulated += '\n\n*[Bağlantı kesildi. Yanıt tamamlanamadı.]*';
+      finishStreaming();
+    }
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+  };
+
+  chatSocket.onerror = () => {
+    showUiNotice('WebSocket bağlantı hatası oluştu.', 'warn');
+  };
 }
 
 /* ─── Dosya ekleme ──────────────────────────────────────── */
@@ -118,88 +171,45 @@ function sendMessage() {
 
 async function sendText(text) {
   if (isStreaming) return;
-  isStreaming = true;
+  if (!chatSocket || chatSocket.readyState !== WebSocket.OPEN) {
+    connectWebSocket();
+    showUiNotice('Sunucu bağlantısı hazırlanıyor, lütfen tekrar deneyin.', 'warn');
+    return;
+  }
 
+  isStreaming = true;
   const sendBtn = document.getElementById('send-btn');
   const stopBtn = document.getElementById('stop-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.display = 'none'; }
   if (stopBtn) stopBtn.style.display = 'flex';
 
-  apShow();   // Activity Panel'i aç
-
+  apShow();
   appendUser(text);
   const msgId = createSidarMsg();
-
-  let accumulated = '';
-  activeController = new AbortController();
-  let timeoutId = null;
-
-  const resetTimeout = () => {
-    if (timeoutId) clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => activeController.abort(), 60000);
-  };
+  currentStream = { msgId, accumulated: '' };
 
   try {
-    resetTimeout();
-    const response = await fetch(apiUrl('/chat'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
-      signal: activeController.signal
-    });
-
-    if (response.status === 429) {
-      const errPayload = await response.json().catch(() => ({}));
-      const msg = errPayload.error || 'Çok fazla istek attınız. Lütfen kısa süre bekleyin.';
-      showUiNotice(msg, 'warn');
-      finalizeMsg(msgId, `[Hız Sınırı] ${msg}`);
-      return;
-    }
-    if (!response.ok) {
-      finalizeMsg(msgId, `[HTTP Hatası] Sunucu ${response.status} kodu döndürdü.`);
-      return;
-    }
-
-    const reader  = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    let streamDone = false;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      resetTimeout();
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const parsed = JSON.parse(line.slice(6).trim());
-          if (parsed.done) { streamDone = true; break; }
-          if (parsed.thought)    { apSetThought(parsed.thought); }
-          if (parsed.tool_call)  { appendToolStep(msgId, parsed.tool_call); }
-          if (parsed.chunk !== undefined) { accumulated += parsed.chunk; updateStreaming(msgId, accumulated); }
-        } catch { /* skip */ }
-      }
-      if (streamDone) break;
-    }
+    chatSocket.send(JSON.stringify({ message: text }));
   } catch (err) {
-    if (err.name === 'AbortError') {
-      accumulated += accumulated ? '\n\n*[Yanıt durduruldu.]*' : '*[Yanıt durduruldu.]*';
-    } else {
-      accumulated += `\n\n[Bağlantı Hatası: ${err.message}]`;
-    }
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-    activeController = null;
-    finalizeMsg(msgId, accumulated);
-    isStreaming = false;
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
-    if (stopBtn) stopBtn.style.display = 'none';
-    apDone();    // Activity Panel'i tamamlandı moduna al
-    loadSessions();
+    currentStream.accumulated = `[Bağlantı Hatası: ${err.message}]`;
+    finishStreaming();
   }
+}
+
+function finishStreaming() {
+  if (!currentStream) return;
+  const sendBtn = document.getElementById('send-btn');
+  const stopBtn = document.getElementById('stop-btn');
+
+  finalizeMsg(currentStream.msgId, currentStream.accumulated);
+  currentStream = null;
+  isStreaming = false;
+
+  if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
+  if (stopBtn) stopBtn.style.display = 'none';
+
+  apDone();
+  loadSessions();
 }
 
 /* ─── Mesaj yardımcıları ────────────────────────────────── */
@@ -642,4 +652,4 @@ function stopTodoPoll() {
 }
 
 // Sayfa yüklendiğinde polling başlat
-window.addEventListener('load', () => { setTimeout(startTodoPoll, 1500); });
+window.addEventListener('load', () => { connectWebSocket(); setTimeout(startTodoPoll, 1500); });
