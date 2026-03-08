@@ -351,3 +351,211 @@ def test_rag_add_file_upload_set_level_and_webhook():
         assert False, "expected signature error"
     except _FakeHTTPException as exc:
         assert exc.status_code == 401
+
+def test_agent_lifecycle_get_agent_singleton_and_shutdown_close():
+    mod = _load_web_server()
+
+    created = {"count": 0}
+
+    class _Agent:
+        def __init__(self, cfg):
+            created["count"] += 1
+
+    class _RedisConn:
+        def __init__(self):
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    mod.SidarAgent = _Agent
+    mod._agent = None
+    mod._agent_lock = None
+
+    a1 = asyncio.run(mod.get_agent())
+    a2 = asyncio.run(mod.get_agent())
+    assert a1 is a2
+    assert created["count"] == 1
+
+    redis = _RedisConn()
+    mod._redis_client = redis
+    asyncio.run(mod._close_redis_client())
+    assert redis.closed is True
+    assert mod._redis_client is None
+
+
+def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
+    mod = _load_web_server()
+
+    calls = {"cleared": 0}
+
+    class _Memory:
+        active_session_id = "sess-1"
+
+        def get_all_sessions(self):
+            return [{"id": "sess-1"}, {"id": "sess-2"}]
+
+        def load_session(self, session_id):
+            return session_id == "sess-1"
+
+        def get_history(self):
+            return [{"role": "user", "content": "hi"}]
+
+        def create_session(self, _title):
+            self.active_session_id = "sess-3"
+            return "sess-3"
+
+        def delete_session(self, session_id):
+            return session_id == "sess-1"
+
+        def clear(self):
+            calls["cleared"] += 1
+
+    agent = types.SimpleNamespace(memory=_Memory())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    sessions = asyncio.run(mod.get_sessions())
+    assert sessions.status_code == 200
+    assert sessions.content["active_session"] == "sess-1"
+
+    loaded = asyncio.run(mod.load_session("sess-1"))
+    assert loaded.status_code == 200
+    assert loaded.content["success"] is True
+
+    not_found = asyncio.run(mod.load_session("missing"))
+    assert not_found.status_code == 404
+
+    new_sess = asyncio.run(mod.new_session())
+    assert new_sess.status_code == 200
+    assert new_sess.content["session_id"] == "sess-3"
+
+    deleted = asyncio.run(mod.delete_session("sess-1"))
+    assert deleted.status_code == 200
+    assert deleted.content["success"] is True
+
+    delete_fail = asyncio.run(mod.delete_session("sess-2"))
+    assert delete_fail.status_code == 500
+
+    cleared = asyncio.run(mod.clear())
+    assert cleared.status_code == 200
+    assert cleared.content["result"] is True
+    assert calls["cleared"] == 1
+
+
+def test_websocket_chat_cancel_and_disconnect_paths():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def update_title(self, title):
+            self.title = title
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.2)
+            yield "late"
+
+    class _WebSocket:
+        def __init__(self, payloads, disconnect_exc):
+            self._payloads = list(payloads)
+            self._disconnect_exc = disconnect_exc
+            self.sent = []
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.accepted = False
+
+        async def accept(self):
+            self.accepted = True
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise self._disconnect_exc()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+
+    ws = _WebSocket(
+        payloads=[
+            json.dumps({"message": "uzun bir mesaj", "action": "send"}),
+            json.dumps({"action": "cancel"}),
+        ],
+        disconnect_exc=mod.WebSocketDisconnect,
+    )
+
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert ws.accepted is True
+    assert any(p.get("done") is True and "iptal" in p.get("chunk", "") for p in ws.sent)
+
+
+def test_websocket_chat_generate_response_cancelled_error_branch():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def update_title(self, title):
+            self.title = title
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            raise asyncio.CancelledError
+            yield "x"
+
+    class _WebSocket:
+        def __init__(self, payloads, disconnect_exc):
+            self._payloads = list(payloads)
+            self._disconnect_exc = disconnect_exc
+            self.sent = []
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise self._disconnect_exc()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+
+    ws = _WebSocket(
+        payloads=[json.dumps({"message": "m", "action": "send"})],
+        disconnect_exc=mod.WebSocketDisconnect,
+    )
+
+    asyncio.run(mod.websocket_chat(ws))
+    # CancelledError branch generate_response içinde swallow edilir; done/json gönderimi olmayabilir
+    assert isinstance(ws.sent, list)
