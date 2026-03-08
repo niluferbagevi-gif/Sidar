@@ -1183,14 +1183,9 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.7.0 öncesi tespit edilen tüm Yüksek ve Orta öncelikli iyileştirmeler (`rag.py`, `sidar_agent.py`, `docker-compose.yml`, `memory.py` vb.) başarıyla tamamlanmış ve kod tabanına entegre edilmiştir. Çözülen sorunlar tablodan kaldırılmıştır.
-
-İleriki aşamalar (v2.8+) için kod tabanından çıkan ve planlanan mimari iyileştirme önerileri:
-
-| Öncelik | Alan | Öneri |
-|---------|------|-------|
-| Düşük | `managers/web_search.py` | DuckDuckGo senkron API'si (`DDGS`) asenkrona çevrilmeli veya versiyonu sabitlenmeli. |
-| Düşük | `web_ui/index.html` | 3.399 satırlık dosya modülarize edilerek JS ve CSS ayrı dosyalara bölünmeli (`app.js`, `style.css`). |
+> **Not:** v2.8.0 sürümü itibarıyla, bu bölümde daha önce listelenen tüm planlanmış mimari iyileştirmeler (DuckDuckGo asenkron API düzenlemesi, Web UI modülarizasyonu vb.) başarıyla tamamlanmış ve kod tabanına entegre edilmiştir.
+>
+> Çözülen sorunların ve yapılan geliştirmelerin detaylı dökümü için lütfen [CHANGELOG.md](./CHANGELOG.md) dosyasına başvurun. İleriki aşamalar (v2.9+) için yeni mimari iyileştirme hedefleri belirlendiğinde bu liste güncellenecektir.
 
 ---
 
