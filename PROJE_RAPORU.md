@@ -1264,15 +1264,9 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.7 Test ve Kalite
 
-#### 14.7.1 Entegrasyon Test Altyapısı
-**Güncel durum:** ✅ **Temel Pytest altyapısı tamamlandı.**
-
-- `environment.yml` içinde test bağımlılıkları (`pytest`, `pytest-asyncio`) tanımlı
-- Kök dizinde `pytest.ini` ile test keşfi (`testpaths = tests`) ve asenkron çalışma modu (`asyncio_mode = auto`) standartlaştırıldı
-- `run_tests.sh` ile tek komutluk test çalıştırma eklendi
-- Bellek özetleme/kayan pencere davranışı için `tests/test_core_memory.py` eklendi
-
-**Not:** Gerçek servis bağımlılıkları (LLM, Docker, harici API) için entegrasyon testleri hâlâ genişletme alanıdır.
+> **Not:** Bu başlık altındaki tamamlanan maddeler (14.7.1 Entegrasyon Test Altyapısı ve 14.7.5 Otonom TODO/FIXME Tarama)
+> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
+> dosyasındaki ilgili bölümlere bakın.
 
 #### 14.7.2 Test Coverage Hedefi
 **Mevcut durum:** Kapsam hedefi tanımlanmamış.
@@ -1285,14 +1279,6 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 #### 14.7.4 Performans Benchmark
 **Mevcut durum:** RAG arama süresi, LLM ilk token gecikmesi (TTFT) ölçülmüyor.
 **Öneri:** `pytest-benchmark` ile kritik yollar için baseline ölçümü: ChromaDB sorgu < 200ms, BM25 sorgu < 50ms, AutoHandle regex < 5ms.
-
-#### 14.7.5 Otonom TODO/FIXME Tarama
-**Güncel durum:** ✅ **Tamamlandı.**
-
-Ajan artık proje kaynak kodunu tarayarak TODO/FIXME etiketlerini otomatik bulabilir:
-- `TodoManager.scan_project_todos(...)` ile dizin + uzantı bazlı tarama
-- `scan_project_todos` aracı `agent/tooling.py` üzerinden şemalı olarak erişilebilir
-- Ajan aracı `_tool_scan_project_todos` disk taramasını `asyncio.to_thread` ile bloklamadan çalıştırır
 
 ---
 
