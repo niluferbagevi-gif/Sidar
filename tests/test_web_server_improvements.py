@@ -15,23 +15,25 @@ def test_rag_search_uses_to_thread():
     assert "agent.docs.search" in fn_src
 
 
-def test_rate_limiter_uses_ttlcache_storage():
+def test_rate_limiter_uses_redis_storage_with_local_fallback():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert "from cachetools import TTLCache" in src
-    assert "_rate_data = TTLCache(maxsize=10000, ttl=cfg.RATE_LIMIT_WINDOW)" in src
+    assert "from redis.asyncio import Redis" in src
+    assert "async def _redis_is_rate_limited" in src
+    assert "await redis.incr(redis_key)" in src
+    assert "Local rate limit fallback" in src
 
 
 def test_rate_limiter_uses_config_values():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert "_RATE_LIMIT           = cfg.RATE_LIMIT_CHAT" in src
+    assert "_RATE_LIMIT = cfg.RATE_LIMIT_CHAT" in src
     assert "_RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS" in src
-    assert "_RATE_LIMIT_GET_IO    = cfg.RATE_LIMIT_GET_IO" in src
-    assert "_RATE_WINDOW          = cfg.RATE_LIMIT_WINDOW" in src
+    assert "_RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO" in src
+    assert "_RATE_WINDOW = cfg.RATE_LIMIT_WINDOW" in src
 
 
 def test_rate_limiter_get_io_uses_prefix_match_for_dynamic_routes():
     src = Path("web_server.py").read_text(encoding="utf-8")
-    assert "is_io_route = any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS)" in src
+    assert "any(request.url.path.startswith(p) for p in _RATE_GET_IO_PATHS)" in src
     assert '"/github-repos"' in src
     assert '"/sessions"' in src
     assert '"/rag/"' in src

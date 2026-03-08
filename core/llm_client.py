@@ -8,10 +8,16 @@ from __future__ import annotations
 import codecs
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
+
+try:
+    from opentelemetry import trace
+except Exception:  # OpenTelemetry opsiyoneldir
+    trace = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +40,28 @@ def _ensure_json_text(text: str, provider: str) -> str:
 async def _fallback_stream(msg: str) -> AsyncGenerator[str, None]:
     """Hata durumlarında tek elemanlı asenkron akış döndürür."""
     yield msg
+
+
+def _get_tracer(config):
+    if trace and getattr(config, "ENABLE_TRACING", False):
+        return trace.get_tracer(__name__)
+    return None
+
+
+async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_at: float):
+    first_token_at = None
+    try:
+        async for chunk in stream_iter:
+            if first_token_at is None and chunk:
+                first_token_at = time.monotonic()
+            yield chunk
+        if span is not None:
+            span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+            if first_token_at is not None:
+                span.set_attribute("sidar.llm.ttft_ms", (first_token_at - started_at) * 1000)
+    finally:
+        if span is not None:
+            span.end()
 
 
 class BaseLLMClient(ABC):
@@ -99,15 +127,26 @@ class OllamaClient(BaseLLMClient):
             }
 
         timeout = self._build_timeout()
+        tracer = _get_tracer(self.config)
+        span_cm = tracer.start_as_current_span("llm.ollama.chat") if (tracer and not stream) else None
+        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.ollama.chat") if tracer and stream else None)
+        started_at = time.monotonic()
+        if span is not None:
+            span.set_attribute("sidar.llm.provider", "ollama")
+            span.set_attribute("sidar.llm.model", target_model)
+            span.set_attribute("sidar.llm.stream", stream)
         try:
             if stream:
-                return self._stream_response(url, payload, timeout=timeout)
+                stream_iter = self._stream_response(url, payload, timeout=timeout)
+                return _trace_stream_metrics(stream_iter, span, started_at)
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 content = data.get("message", {}).get("content", "")
+                if span is not None:
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
                 return _ensure_json_text(content, "Ollama") if json_mode else content
 
         except httpx.ConnectError:
@@ -130,6 +169,9 @@ class OllamaClient(BaseLLMClient):
                 }
             )
             return _fallback_stream(msg) if stream else msg
+        finally:
+            if span_cm:
+                span_cm.__exit__(None, None, None)
 
     async def _stream_response(
         self,
@@ -301,14 +343,26 @@ class GeminiClient(BaseLLMClient):
             last_user = chat_messages[-1]["content"]
         prompt = last_user or "Merhaba"
 
+        tracer = _get_tracer(self.config)
+        span_cm = tracer.start_as_current_span("llm.gemini.chat") if (tracer and not stream) else None
+        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.gemini.chat") if tracer and stream else None)
+        started_at = time.monotonic()
+        if span is not None:
+            span.set_attribute("sidar.llm.provider", "gemini")
+            span.set_attribute("sidar.llm.model", model or self.config.GEMINI_MODEL)
+            span.set_attribute("sidar.llm.stream", stream)
+
         try:
             chat_session = gm.start_chat(history=history[:-1] if history else [])
             if stream:
                 response_stream = await chat_session.send_message_async(prompt, stream=True)
-                return self._stream_gemini_generator(response_stream)
+                stream_iter = self._stream_gemini_generator(response_stream)
+                return _trace_stream_metrics(stream_iter, span, started_at)
 
             response = await chat_session.send_message_async(prompt)
             text = getattr(response, "text", "") or ""
+            if span is not None:
+                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
             return _ensure_json_text(text, "Gemini") if json_mode else text
 
         except Exception as exc:
@@ -321,6 +375,9 @@ class GeminiClient(BaseLLMClient):
                 }
             )
             return _fallback_stream(msg) if stream else msg
+        finally:
+            if span_cm:
+                span_cm.__exit__(None, None, None)
 
     async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
         try:

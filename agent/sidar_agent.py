@@ -12,6 +12,11 @@ import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
+try:
+    from opentelemetry import trace
+except Exception:  # OpenTelemetry opsiyoneldir
+    trace = None
+
 from pydantic import BaseModel, Field, ValidationError
 
 from config import Config
@@ -144,6 +149,7 @@ class SidarAgent:
         )
 
         self.todo = TodoManager(self.cfg)
+        self.tracer = trace.get_tracer(__name__) if trace and getattr(self.cfg, "ENABLE_TRACING", False) else None
         self._instructions_cache: Optional[str] = None
         self._instructions_mtimes: Dict[str, float] = {}
         self._instructions_lock = threading.Lock()
@@ -272,18 +278,40 @@ class SidarAgent:
             # ReAct döngüsü: düşünme/planlama/özetleme → TEXT_MODEL
             # Kod odaklı araçlara (execute_code, write_file, patch_file) CODING_MODEL
             # atanabilir; ancak döngü genelinde tutarlılık için TEXT_MODEL tercih edilir.
-            response_generator = await self.llm.chat(
-                messages=messages,
-                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                system_prompt=full_system,
-                temperature=0.3,
-                stream=True
-            )
+            if self.tracer:
+                with self.tracer.start_as_current_span("react_step") as react_span:
+                    react_span.set_attribute("sidar.react.step", step + 1)
+                    response_generator = await self.llm.chat(
+                        messages=messages,
+                        model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                        system_prompt=full_system,
+                        temperature=0.3,
+                        stream=True
+                    )
 
-            # LLM yanıtını biriktir
-            llm_response_accumulated = ""
-            async for chunk in response_generator:
-                llm_response_accumulated += chunk
+                    # LLM yanıtını biriktir
+                    llm_response_accumulated = ""
+                    first_chunk_at = None
+                    llm_call_started = time.monotonic()
+                    async for chunk in response_generator:
+                        if first_chunk_at is None and chunk:
+                            first_chunk_at = time.monotonic()
+                        llm_response_accumulated += chunk
+                    react_span.set_attribute("sidar.react.llm.total_ms", (time.monotonic() - llm_call_started) * 1000)
+                    if first_chunk_at is not None:
+                        react_span.set_attribute("sidar.react.llm.ttft_ms", (first_chunk_at - llm_call_started) * 1000)
+            else:
+                response_generator = await self.llm.chat(
+                    messages=messages,
+                    model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                    system_prompt=full_system,
+                    temperature=0.3,
+                    stream=True
+                )
+
+                llm_response_accumulated = ""
+                async for chunk in response_generator:
+                    llm_response_accumulated += chunk
 
             # 2. JSON Ayrıştırma ve Yapısal Doğrulama (Pydantic)
             try:
@@ -1281,6 +1309,10 @@ class SidarAgent:
             parsed_arg = raw_arg
 
         try:
+            span_cm = self.tracer.start_as_current_span("tool_execution") if self.tracer else None
+            if span_cm:
+                span_cm.__enter__()
+            tool_started = time.monotonic()
             result = await handler(parsed_arg)
             # Eğer dönen sonuç bilinen bir hata kalıbıyla başlıyorsa başarısız (False) kabul edelim
             success = True
@@ -1289,13 +1321,23 @@ class SidarAgent:
             ):
                 success = False
 
-            # Log kaydını arka planda asenkron olarak yaz
+            if self.tracer:
+                current_span = trace.get_current_span()
+                current_span.set_attribute("sidar.tool.name", tool_name)
+                current_span.set_attribute("sidar.tool.success", success)
+                current_span.set_attribute("sidar.tool.duration_ms", (time.monotonic() - tool_started) * 1000)
             await self._log_audit(tool_name, raw_arg, success)
             return result
         except Exception as exc:
-            # Python tarafında bir hata fırlatılırsa
+            if self.tracer:
+                current_span = trace.get_current_span()
+                current_span.set_attribute("sidar.tool.name", tool_name)
+                current_span.set_attribute("sidar.tool.success", False)
             await self._log_audit(tool_name, raw_arg, False)
             raise exc
+        finally:
+            if span_cm:
+                span_cm.__exit__(None, None, None)
 
     async def _log_audit(self, tool_name: str, argument: str, success: bool) -> None:
         """Çalıştırılan araçları logs/audit.jsonl dosyasına yapısal olarak kaydeder."""
