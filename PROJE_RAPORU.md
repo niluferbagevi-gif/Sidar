@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.9.0 audit #2 — Tüm dosyalar satır satır yeniden doğrulandı; satır sayıları, yeni araçlar ve özellikler güncellendi; branch: claude/verify-report-fixes-1xJsx)
-> **Proje Sürümü:** 2.9.0
+> **Son Güncelleme:** 2026-03-08 (v2.10.0 operasyonel güncelleme — OpenTelemetry gözlemlenebilirlik + Redis kalıcı rate limiting entegre edildi; satır sayıları güncellendi)
+> **Proje Sürümü:** 2.10.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 11.170 satır; Web UI: 3.516 satır.
 
 ---
@@ -13,15 +13,15 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-517-satır)
+  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-528-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-331-satır)
   - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-274-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-926-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1588-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-951-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1630-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-264-satır)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI)](#38-corellm_clientpy--llm-istemcisi-513-satır)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI)](#38-corellm_clientpy--llm-istemcisi-570-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-394-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-787-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-280-satır)
@@ -116,12 +116,12 @@ sidar_project/
 ├── config.py                  # Merkezi yapılandırma (v2.7.0)
 ├── github_upload.py           # GitHub otomatik yükleme aracı
 ├── Dockerfile                 # CPU + GPU çift mod Dockerfile
-├── docker-compose.yml         # 4 servis: cli/web × cpu/gpu
+├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
 ├── environment.yml            # Conda/pip bağımlılıkları
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── sidar_agent.py         # Ana ajan (1588 satır, 45+ araç)
+│   ├── sidar_agent.py         # Ana ajan (1630 satır, 45+ araç + tracing)
 │   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici
 │   ├── definitions.py         # Sistem istemi ve ajan kimliği
 │   └── tooling.py             # Araç kayıt + Pydantic şema yöneticisi (264 satır)
@@ -174,7 +174,7 @@ sidar_project/
 
 ---
 
-### 3.1 `config.py` — Merkezi Yapılandırma (517 satır)
+### 3.1 `config.py` — Merkezi Yapılandırma (528 satır)
 
 **Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler ve donanım tespiti yapar.
 
@@ -268,7 +268,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (926 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (951 satır)
 
 **Amaç:** SSE (Server-Sent Events) destekli asenkron chat web arayüzü.
 
@@ -325,7 +325,7 @@ app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
 ---
 
-### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.588 satır)
+### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.630 satır)
 
 **Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
 
@@ -482,7 +482,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (513 satır)
+### 3.8 `core/llm_client.py` — LLM İstemcisi (570 satır)
 
 **Amaç:** Ollama, Gemini ve OpenAI için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
 
@@ -822,8 +822,8 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 - **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
 - **Varsayılan:** `ACCESS_LEVEL=sandbox`
 
-#### `docker-compose.yml` (190 satır)
-4 servis tanımı:
+#### `docker-compose.yml` (209 satır)
+5 servis tanımı (Redis dahil):
 
 | Servis | Mod | CPU Limit | RAM Limit | Port |
 |--------|-----|-----------|-----------|------|
@@ -831,6 +831,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 | `sidar-gpu` | CLI + GPU | 4.0 | 8 GB | — |
 | `sidar-web` | Web + CPU | 2.0 | 4 GB | 7860 |
 | `sidar-web-gpu` | Web + GPU | 4.0 | 8 GB | 7861 |
+| `redis` | Rate-limit store | — | — | 6379 (internal) |
 
 Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 
@@ -852,12 +853,14 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **Bellek Güvenliği** | Fernet şifreleme, karantina mekanizması, RLock ile thread safety |
 | **Konfigürasyon** | Tek merkezi Config; hardcoded değer yok; lazy hardware init |
 | **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
+| **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
+| **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
 
 ### 4.2 Kısıtlamalar
 
 | Alan | Durum |
 |------|-------|
-| **Rate Limiting** | In-memory; sunucu yeniden başlarsa sıfırlanır, dağıtık ortamda çalışmaz |
+| **Rate Limiting Altyapısı** | Redis gerektirir; Redis erişilemezse local fallback devreye girer (dağıtık tutarlılık geçici olarak düşer) |
 | **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
 | **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
 | **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
@@ -967,6 +970,8 @@ Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
 | `pynvml` | Opsiyonel | GPU sıcaklık/kullanım |
 | `cryptography` | Opsiyonel | Fernet bellek şifreleme |
 | `docker` | Opsiyonel | REPL sandbox |
+| `redis` | Opsiyonel (önerilen) | Kalıcı / dağıtık rate limiting |
+| `opentelemetry-*` | Opsiyonel | Dağıtık tracing + span export (OTLP) |
 
 ---
 
@@ -977,15 +982,15 @@ Projede **34 test modülü** bulunmaktadır (toplam ~2.157 satır):
 | Dosya | Satır | Not |
 |-------|-------|-----|
 | `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
-| `agent/sidar_agent.py` | **1.588** | v2.9.0 — Issue araçları + scan_project_todos eklendi |
+| `agent/sidar_agent.py` | **1.630** | v2.10.0 — OpenTelemetry `react_step`/`tool_execution` span entegrasyonu eklendi |
 | `core/rag.py` | **787** | v2.9.0 — RRF + oturum izolasyonu + SQLite FTS5 |
-| `web_server.py` | **926** | v2.9.0 — HTTP Basic Auth, DDoS MW, drag-drop upload, yeni RAG endpoint'leri |
+| `web_server.py` | **951** | v2.10.0 — OpenTelemetry FastAPI instrumentor + Redis tabanlı kalıcı rate limiting eklendi |
 | `managers/code_manager.py` | **766** | |
 | `web_ui/chat.js` | 644 | v2.8.0 — index.html'den ayrıldı |
 | `managers/github_manager.py` | **644** | v2.9.0 — Issue yönetimi + PR diff + list_repos |
 | `agent/auto_handle.py` | 601 | |
-| `core/llm_client.py` | 513 | v2.9.0 — OpenAI client eklendi |
-| `config.py` | 520 | v2.9.0 — MEMORY_SUMMARY_KEEP_LAST, OpenAI ayarları |
+| `core/llm_client.py` | **570** | v2.10.0 — Ollama/Gemini çağrılarında TTFT + toplam süre span metrikleri eklendi |
+| `config.py` | **528** | v2.10.0 — `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, `REDIS_URL` eklendi |
 | `managers/system_health.py` | **436** | v2.9.0 — Prometheus metrics, get_gpu_info genişletme |
 | `managers/todo_manager.py` | **451** | v2.9.0 — scan_project_todos, set_tasks, _ensure_single_in_progress |
 | `core/memory.py` | 394 | v2.9.0 — Sliding window özetleme |
@@ -1227,6 +1232,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `RATE_LIMIT_CHAT` | `20` | Chat endpoint limit (istek/pencere) |
 | `RATE_LIMIT_MUTATIONS` | `60` | Yazma endpoint limit |
 | `RATE_LIMIT_GET_IO` | `30` | Okuma endpoint limit |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis bağlantı adresi (kalıcı/distro rate limiting) |
 
 ### 12.10 Çeşitli
 
@@ -1241,6 +1247,8 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
 | `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
+| `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
+| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
 
 ---
 
@@ -1283,7 +1291,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 > **Not:** Bu başlık altında daha önce listelenen RAG ve bellek iyileştirmelerinin tamamı uygulanmıştır.
 > (RRF hibrit sıralama, SQLite FTS5 disk tabanlı BM25, çok oturumlu RAG izolasyonu ve sliding-window bellek özetleme stratejisi.)
 >
-> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.9.0** bölümüne bakın.
+> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.10.0** ve önceki sürüm bölümlerine bakın.
 
 ---
 
@@ -1358,8 +1366,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 **Öneri:** `.env.development`, `.env.production`, `.env.test` desteği; `python-dotenv`'in `dotenv_values` zinciri ile birleştirme. Docker build-arg ile `ENV_FILE` override.
 
 #### 14.8.3 Gözlemlenebilirlik (Observability)
-**Mevcut durum:** Yalnızca dosya logu var.
-**Öneri:** OpenTelemetry ile trace ID; her LLM çağrısı bir span olarak izlenir. Grafana/Jaeger entegrasyonu isteğe bağlı; telemetry sadece `OTEL_EXPORTER_ENDPOINT` ayarlıysa aktif olur.
+**Güncel durum (v2.10.0):** ✅ Tamamlandı. OpenTelemetry ile FastAPI HTTP istekleri, ajan ReAct adımları, araç çalıştırmaları ve LLM çağrıları span bazında izlenmektedir.
+**Uygulama notu:** `ENABLE_TRACING=true` ve `OTEL_EXPORTER_ENDPOINT` ayarlıysa OTLP exporter üzerinden collector/Jaeger hattına telemetri gönderilir.
 
 #### 14.8.4 Model Önbellekleme ve Soğuk Start
 **Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi olabilir.
@@ -1368,7 +1376,7 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ---
 
-### 14.9 Öncelik Durumu (Güncel — v2.9.0)
+### 14.9 Öncelik Durumu (Güncel — v2.10.0)
 
 > **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
 
@@ -1388,8 +1396,8 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 | 6 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ✅ Tamamlandı |
 | 7 | PR diff analizi (§14.5.3) | Orta | Orta | ✅ Tamamlandı |
 | 8 | Sağlık endpoint JSON (§14.8.1) | Orta | Düşük | ✅ Tamamlandı |
-| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ⏳ Açık |
-| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ⏳ Opsiyonel |
+| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ✅ Tamamlandı |
+| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ✅ Tamamlandı |
 
 ---
 
@@ -1674,18 +1682,20 @@ Bu bölüm, 2026-03-08 tarihli ikinci kapsamlı kod incelemesinde satır satır 
 
 | Dosya | Rapordaki (Eski) | Gerçek (wc -l) | Fark |
 |-------|-----------------|----------------|------|
-| `agent/sidar_agent.py` | 1.455/1.463 | **1.588** | +125–133 |
-| `web_server.py` | 794/801 | **926** | +125–132 |
+| `agent/sidar_agent.py` | 1.455/1.463 | **1.630** | +167–175 |
+| `web_server.py` | 794/801 | **951** | +150–157 |
 | `core/rag.py` | 777/851 | **787** | Rapor tutarsız; gerçek: 787 |
 | `managers/code_manager.py` | 746 | **766** | +20 |
 | `managers/github_manager.py` | 560 | **644** | +84 |
 | `managers/system_health.py` | 420 | **436** | +16 |
 | `managers/todo_manager.py` | 380 | **451** | +71 |
 | `agent/tooling.py` | 189 | **264** | +75 |
+| `core/llm_client.py` | 445/513 | **570** | +57–125 |
+| `config.py` | 480/517/520 | **528** | +8–48 |
 | `web_ui/app.js` | 242 | **339** | +97 |
 | `web_ui/index.html` | 436 | **461** | +25 |
 | Web UI toplam | 3.394/3.399 | **3.516** | +117–122 |
 
 ---
 
-*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; 2026-03-08 tarihinde ikinci kapsamlı doğrulama geçirilmiştir (branch: claude/verify-report-fixes-1xJsx).*
+*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; 2026-03-08 tarihinde v2.10.0 operasyonel güncellemesi (OpenTelemetry + Redis rate limiting) ile güncellenmiştir.*
