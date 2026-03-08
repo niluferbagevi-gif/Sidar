@@ -23,3 +23,10 @@ def test_system_health_ollama_timeout_and_prometheus_hooks_present():
     assert "def update_prometheus_metrics(self, metrics_dict: Dict[str, float]) -> None:" in src
     assert "sidar_system_cpu_percent" in src
     assert "self.update_prometheus_metrics({" in src
+
+def test_system_health_exposes_structured_health_summary():
+    src = Path("managers/system_health.py").read_text(encoding="utf-8")
+    assert "def get_health_summary(self) -> dict:" in src
+    assert '"status": "healthy"' in src
+    assert '"ollama_online": self.check_ollama()' in src
+    assert '"python_version": platform.python_version()' in src

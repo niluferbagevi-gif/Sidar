@@ -357,6 +357,24 @@ async def status():
         "ollama_latency_ms": ollama_latency_ms,
     })
 
+@app.get("/health")
+async def health_check():
+    """
+    Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
+    (Liveness/Readiness probe endpointi)
+    """
+    agent = await get_agent()
+    health_data = agent.health.get_health_summary()
+    health_data["uptime_seconds"] = int(time.monotonic() - _start_time)
+
+    # Eğer ana yapay zeka servisi (Ollama) çöktüyse 503 HTTP kodu döndür
+    if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:
+        health_data["status"] = "degraded"
+        return JSONResponse(health_data, status_code=503)
+
+    return JSONResponse(health_data)
+
+
 @app.get("/metrics")
 async def metrics(request: Request):
     """
