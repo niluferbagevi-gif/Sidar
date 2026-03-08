@@ -33,3 +33,15 @@ def test_todo_manager_normalizes_invalid_limit_values():
     assert "def _normalize_limit(self, limit: int, default: int = 50) -> int:" in src
     assert "except (TypeError, ValueError):" in src
     assert "limit = self._normalize_limit(limit)" in src
+
+def test_todo_manager_can_scan_project_todo_fixme_markers():
+    src = Path("managers/todo_manager.py").read_text(encoding="utf-8")
+    assert "def scan_project_todos(self, directory: Optional[str] = None, extensions: Optional[List[str]] = None)" in src
+    assert "⚠ Güvenlik ihlali: Sadece proje dizini taranabilir." in src
+    assert "TODO:" in src and "FIXME:" in src
+
+
+def test_agent_exposes_scan_project_todos_tool():
+    src = Path("agent/sidar_agent.py").read_text(encoding="utf-8", errors="replace")
+    assert "def _tool_scan_project_todos" in src
+    assert "self.todo.scan_project_todos" in src

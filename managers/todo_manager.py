@@ -59,7 +59,8 @@ class TodoManager:
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
         self.cfg = cfg or Config()
-        base_dir = Path(getattr(self.cfg, "BASE_DIR", "."))
+        base_dir = Path(getattr(self.cfg, "BASE_DIR", ".")).resolve()
+        self.base_dir = base_dir
         self.todo_path = base_dir / "todos.json"
         self._tasks: List[Task] = []
         self._next_id: int = 1
@@ -379,3 +380,73 @@ class TodoManager:
 
     def __repr__(self) -> str:
         return f"<TodoManager tasks={len(self)}>" 
+
+    def scan_project_todos(self, directory: Optional[str] = None, extensions: Optional[List[str]] = None) -> str:
+        """Belirtilen dizindeki (veya projenin kökündeki) kod dosyalarını tarayarak TODO ve FIXME etiketlerini bulur."""
+        import os
+
+        try:
+            base_scan_dir = Path(directory).resolve() if directory else self.base_dir
+        except Exception:
+            return "⚠ Geçersiz dizin parametresi."
+
+        if not str(base_scan_dir).startswith(str(self.base_dir)):
+            return "⚠ Güvenlik ihlali: Sadece proje dizini taranabilir."
+
+        if not extensions:
+            extensions = [
+                ".py", ".js", ".ts", ".html", ".css", ".md", ".sh",
+                ".yaml", ".yml", ".json", ".c", ".cpp", ".java", ".go",
+            ]
+
+        # Kullanıcı girdisini normalize et
+        norm_exts = set()
+        for ext in extensions:
+            e = str(ext).strip().lower()
+            if not e:
+                continue
+            if not e.startswith('.'):
+                e = f'.{e}'
+            norm_exts.add(e)
+
+        if not norm_exts:
+            return "⚠ Taranacak geçerli dosya uzantısı bulunamadı."
+
+        found_items = []
+        # Tarama esnasında zaman kaybetmemek ve çöp veri almamak için gereksiz klasörleri atla
+        ignore_dirs = {
+            ".git", "node_modules", "venv", "__pycache__", "build", "dist",
+            ".idea", ".vscode", "logs", "sessions", "sidar_knowledge_base",
+        }
+
+        try:
+            for root, dirs, files in os.walk(base_scan_dir):
+                # Görmezden gelinecek klasörleri os.walk listesinden çıkar
+                dirs[:] = [d for d in dirs if d not in ignore_dirs]
+
+                for file in files:
+                    file_path = Path(root) / file
+                    if file_path.suffix.lower() not in norm_exts:
+                        continue
+
+                    try:
+                        content = file_path.read_text(encoding="utf-8", errors="ignore")
+                        lines = content.splitlines()
+                        for i, line in enumerate(lines, 1):
+                            # TODO veya FIXME kelimesini içeren satırları yakala
+                            if "TODO:" in line or "FIXME:" in line or "TODO " in line or "FIXME " in line:
+                                rel_path = file_path.relative_to(self.base_dir)
+                                found_items.append(f"[{rel_path} : Satır {i}] {line.strip()}")
+                    except Exception:
+                        pass
+
+            if not found_items:
+                return "Harika! Projedeki dosyalarda herhangi bir TODO veya FIXME etiketi bulunamadı."
+
+            result = [f"--- PROJEDEKİ TODO VE FIXME LİSTESİ ({len(found_items)} adet) ---"]
+            result.extend(found_items)
+            return "\n".join(result)
+
+        except Exception as exc:
+            logger.error("Proje TODO tarama hatası: %s", exc)
+            return f"⚠ Tarama sırasında hata oluştu: {exc}"

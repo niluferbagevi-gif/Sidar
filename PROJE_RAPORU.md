@@ -1386,6 +1386,14 @@ Web servislerinden (`sidar-web`, `sidar-web-gpu`) kaldırılarak container escap
 **Mevcut durum:** RAG arama süresi, LLM ilk token gecikmesi (TTFT) ölçülmüyor.
 **Öneri:** `pytest-benchmark` ile kritik yollar için baseline ölçümü: ChromaDB sorgu < 200ms, BM25 sorgu < 50ms, AutoHandle regex < 5ms.
 
+#### 14.7.5 Otonom TODO/FIXME Tarama
+**Güncel durum:** ✅ **Tamamlandı.**
+
+Ajan artık proje kaynak kodunu tarayarak TODO/FIXME etiketlerini otomatik bulabilir:
+- `TodoManager.scan_project_todos(...)` ile dizin + uzantı bazlı tarama
+- `scan_project_todos` aracı `agent/tooling.py` üzerinden şemalı olarak erişilebilir
+- Ajan aracı `_tool_scan_project_todos` disk taramasını `asyncio.to_thread` ile bloklamadan çalıştırır
+
 ---
 
 ### 14.8 Operasyon ve Dağıtım

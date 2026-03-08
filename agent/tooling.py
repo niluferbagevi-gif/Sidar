@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel, Field
 
@@ -71,6 +71,11 @@ class GithubPRDiffSchema(BaseModel):
     number: int = Field(description="Diff (fark) kodu alınacak PR numarası")
 
 
+class ScanProjectTodosSchema(BaseModel):
+    directory: Optional[str] = Field(default=None, description="Taranacak alt dizin (boş bırakılırsa tüm proje taranır)")
+    extensions: Optional[List[str]] = Field(default=None, description="Taranacak dosya uzantıları listesi (Örn: ['.py', '.js'])")
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -84,6 +89,7 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "github_comment_issue": GithubCommentIssueSchema,
     "github_close_issue": GithubCloseIssueSchema,
     "github_pr_diff": GithubPRDiffSchema,
+    "scan_project_todos": ScanProjectTodosSchema,
 }
 
 
@@ -187,6 +193,13 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
             raise ValueError("Argüman formatı geçersiz")
         return GithubPRDiffSchema(number=int(parts[0].strip()))
 
+    if schema is ScanProjectTodosSchema:
+        directory = parts[0].strip() if parts and parts[0].strip() else None
+        ext_list = None
+        if len(parts) > 1 and parts[1].strip():
+            ext_list = [e.strip() for e in parts[1].split(",") if e.strip()]
+        return ScanProjectTodosSchema(directory=directory, extensions=ext_list)
+
     return raw_arg
 
 
@@ -244,6 +257,7 @@ def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:
         "todo_write":             agent._tool_todo_write,
         "todo_read":              agent._tool_todo_read,
         "todo_update":            agent._tool_todo_update,
+        "scan_project_todos":    agent._tool_scan_project_todos,
         "get_config":             agent._tool_get_config,
         "print_config_summary":   agent._tool_get_config,
         "subtask":                agent._tool_subtask,

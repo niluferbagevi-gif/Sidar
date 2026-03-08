@@ -65,3 +65,12 @@ def test_pr_diff_tool_schema_and_legacy_parse_are_registered():
     parsed = tooling.parse_tool_argument("github_pr_diff", "42")
     assert isinstance(parsed, tooling.GithubPRDiffSchema)
     assert parsed.number == 42
+
+
+def test_scan_project_todos_schema_and_parse_registered():
+    assert "scan_project_todos" in tooling.TOOL_ARG_SCHEMAS
+
+    parsed = tooling.parse_tool_argument("scan_project_todos", "core|||.py,.md")
+    assert isinstance(parsed, tooling.ScanProjectTodosSchema)
+    assert parsed.directory == "core"
+    assert parsed.extensions == [".py", ".md"]
