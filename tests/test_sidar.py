@@ -407,11 +407,11 @@ def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
     """RRF: Aynı belgeleri iki motordan birleştirip tek sıralama üretir."""
     docs = DocumentStore.__new__(DocumentStore)
 
-    monkeypatch.setattr(docs, "_fetch_chroma", lambda q, k: [
+    monkeypatch.setattr(docs, "_fetch_chroma", lambda q, k, s: [
         {"id": "doc_a", "title": "A", "source": "", "snippet": "sa", "score": 1.0},
         {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 1.0},
     ])
-    monkeypatch.setattr(docs, "_fetch_bm25", lambda q, k: [
+    monkeypatch.setattr(docs, "_fetch_bm25", lambda q, k, s: [
         {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 5.0},
         {"id": "doc_c", "title": "C", "source": "", "snippet": "sc", "score": 4.0},
     ])
@@ -425,7 +425,7 @@ def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
 
     monkeypatch.setattr(docs, "_format_results_from_struct", _format)
 
-    ok, _ = DocumentStore._rrf_search(docs, "test", 3)
+    ok, _ = DocumentStore._rrf_search(docs, "test", 3, "s1")
 
     assert ok is True
     assert captured["source"] == "Hibrit RRF (ChromaDB + BM25)"
@@ -444,7 +444,7 @@ def test_rag_search_auto_prefers_rrf(monkeypatch):
 
     calls = {"rrf": 0}
 
-    def _rrf(query, top_k):
+    def _rrf(query, top_k, session_id):
         calls["rrf"] += 1
         return True, "rrf"
 
@@ -455,6 +455,43 @@ def test_rag_search_auto_prefers_rrf(monkeypatch):
     assert ok is True
     assert text == "rrf"
     assert calls["rrf"] == 1
+
+
+def test_rag_index_info_filters_by_session(test_config):
+    """get_index_info(session_id): yalnızca ilgili oturum belgelerini döndürür."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    docs.add_document("A", "alpha", session_id="s1")
+    docs.add_document("B", "beta", session_id="s2")
+
+    s1_docs = docs.get_index_info(session_id="s1")
+    assert len(s1_docs) == 1
+    assert s1_docs[0]["session_id"] == "s1"
+
+
+def test_rag_list_documents_filters_by_session(test_config):
+    """list_documents(session_id): farklı oturum belgelerini dışarıda bırakır."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    docs.add_document("S1 Başlık", "alpha içerik", session_id="s1")
+    docs.add_document("S2 Başlık", "beta içerik", session_id="s2")
+
+    text = docs.list_documents(session_id="s1")
+    assert "S1 Başlık" in text
+    assert "S2 Başlık" not in text
+
+
+def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
+    """search(session_id): oturumda belge yoksa uyarı döndürür."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t", "session_id": "s1"}}
+    docs._chroma_available = False
+    docs._bm25_available = False
+    docs.collection = None
+
+    ok, msg = DocumentStore.search(docs, "soru", mode="auto", session_id="s2")
+    assert ok is False
+    assert "bu oturum" in msg.lower()
 
 
 # ─────────────────────────────────────────────
