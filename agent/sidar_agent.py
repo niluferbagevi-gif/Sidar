@@ -28,9 +28,13 @@ from managers.todo_manager import TodoManager
 from agent.auto_handle import AutoHandle
 from agent.definitions import SIDAR_SYSTEM_PROMPT
 from agent.tooling import (
+    GithubCloseIssueSchema,
+    GithubCommentIssueSchema,
     GithubCreateBranchSchema,
+    GithubCreateIssueSchema,
     GithubCreatePRSchema,
     GithubListFilesSchema,
+    GithubListIssuesSchema,
     GithubListPRsSchema,
     GithubWriteSchema,
     PatchFileSchema,
@@ -697,6 +701,62 @@ class SidarAgent:
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.get_pr_files(number)
         return result
+
+
+    async def _tool_github_list_issues(self, a: str | GithubListIssuesSchema) -> str:
+        """Issue listesi. Argüman: 'state[|||limit]' (state: open/closed/all)"""
+        if isinstance(a, GithubListIssuesSchema):
+            state, limit = a.state, a.limit
+        else:
+            arg = parse_tool_argument("github_list_issues", a)
+            state = getattr(arg, "state", "open")
+            limit = getattr(arg, "limit", 10)
+
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+
+        ok, issues = await asyncio.to_thread(self.github.list_issues, state, limit)
+        if not ok:
+            return issues[0] if issues else "Hata: Issue'lar alınamadı."
+        if not issues:
+            return f"Repo'da {state} durumunda issue bulunmuyor."
+
+        lines = [f"--- {state.upper()} ISSUES ---"]
+        for item in issues:
+            lines.append(
+                f"#{item['number']} [{item['user']}] {item['title']} ({item['created_at']})"
+            )
+        return "\n".join(lines)
+
+    async def _tool_github_create_issue(self, a: str | GithubCreateIssueSchema) -> str:
+        """Yeni issue oluştur. Argüman: 'title|||body'"""
+        arg = a if isinstance(a, GithubCreateIssueSchema) else parse_tool_argument("github_create_issue", a)
+        if not getattr(arg, "title", None):
+            return "⚠ Kullanım hatası: title gerekli."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, msg = await asyncio.to_thread(self.github.create_issue, arg.title, arg.body)
+        return msg
+
+    async def _tool_github_comment_issue(self, a: str | GithubCommentIssueSchema) -> str:
+        """Issue'ya yorum ekle. Argüman: 'number|||body'"""
+        arg = a if isinstance(a, GithubCommentIssueSchema) else parse_tool_argument("github_comment_issue", a)
+        if not getattr(arg, "number", None):
+            return "⚠ Kullanım hatası: number gerekli."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, msg = await asyncio.to_thread(self.github.comment_issue, arg.number, arg.body)
+        return msg
+
+    async def _tool_github_close_issue(self, a: str | GithubCloseIssueSchema) -> str:
+        """Issue kapat. Argüman: issue numarası"""
+        arg = a if isinstance(a, GithubCloseIssueSchema) else parse_tool_argument("github_close_issue", a)
+        if not getattr(arg, "number", None):
+            return "⚠ Kullanım hatası: number gerekli."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, msg = await asyncio.to_thread(self.github.close_issue, arg.number)
+        return msg
 
     async def _tool_github_smart_pr(self, a: str) -> str:
         """
