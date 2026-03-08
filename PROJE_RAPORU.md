@@ -1064,14 +1064,9 @@ add_document(title, content, source)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.7.0 ve v2.8.0 sürümlerinde çözülen tüm yüksek ve orta öncelikli sorunların listesi için [CHANGELOG.md](./CHANGELOG.md) dosyasına bakın.
-
-**v2.8.0 itibarıyla tüm teknik borçlar kapatılmıştır. Aşağıdaki tablo doğrulama sonuçlarını içerir:**
-
-| # | Dosya | Sorun | Çözüm (Satır Satır Doğrulama) | Durum |
-|---|-------|-------|-------------------------------|-------|
-| 10 | `managers/web_search.py` | DDG senkron API event loop'u bloklıyor; versiyon pinlemesi eksik | **`environment.yml:61`** → `duckduckgo-search~=6.2.13` (pinlendi). **`web_search.py:229`** → `hasattr(duckduckgo_search, "AsyncDDGS")` ile dinamik yol seçimi. **`web_search.py:242,253`** → her iki yol `asyncio.wait_for(timeout=FETCH_TIMEOUT)` içinde. **`web_search.py:273`** → `except asyncio.TimeoutError` spesifik olarak `except Exception`'dan önce. | ✅ **Çözüldü** (v2.8.0) |
-| 11 | `web_ui/index.html` | 3.399 satır tek dosya; JS/CSS/HTML ayrılmamış; test edilebilirlik düşük | **`index.html`** → 436 satıra indirildi (iskelet + modal'lar). **`web_ui/style.css`** → 1.547 satır CSS. **`web_ui/chat.js`** → 644 satır SSE + render. **`web_ui/sidebar.js`** → 394 satır oturum yönetimi. **`web_ui/rag.js`** → 131 satır RAG UI. **`web_ui/app.js`** → 242 satır init + klavye. **`web_server.py:77`** → `app.mount("/static", StaticFiles(directory=web_ui_dir))` | ✅ **Çözüldü** (v2.8.0) |
+> **Not:** v2.8.0 sürümü itibarıyla projede bilinen tüm yüksek/orta öncelikli sorunlar ve teknik borçlar kapatılmıştır.
+>
+> Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
 
 ## 12. `.env` Tam Değişken Referansı
 
