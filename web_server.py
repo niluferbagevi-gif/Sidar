@@ -24,7 +24,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
 
 import uvicorn
 from cachetools import TTLCache
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -649,7 +649,7 @@ async def rag_list_docs():
 
 
 @app.post("/rag/add-file")
-async def rag_add_file(request: Request, background_tasks: BackgroundTasks):
+async def rag_add_file(request: Request):
     """
     Proje dizinindeki yerel bir dosyayı RAG deposuna ekler.
     Body: {"path": "relative/path/to/file.py", "title": "Opsiyonel başlık"}
@@ -672,13 +672,11 @@ async def rag_add_file(request: Request, background_tasks: BackgroundTasks):
     ok, msg = await asyncio.to_thread(
         agent.docs.add_document_from_file, str(target), title or target.name, None, session_id
     )
-    if ok:
-        background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
     return JSONResponse({"success": ok, "message": msg})
 
 
 @app.post("/rag/add-url")
-async def rag_add_url(request: Request, background_tasks: BackgroundTasks):
+async def rag_add_url(request: Request):
     """URL'den içerik çekerek RAG deposuna ekler."""
     body = await request.json()
     url   = body.get("url", "").strip()
@@ -689,20 +687,16 @@ async def rag_add_url(request: Request, background_tasks: BackgroundTasks):
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
     ok, msg = await agent.docs.add_document_from_url(url, title=title, session_id=session_id)
-    if ok:
-        background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
     return JSONResponse({"success": ok, "message": msg})
 
 
 @app.delete("/rag/docs/{doc_id}")
-async def rag_delete_doc(doc_id: str, background_tasks: BackgroundTasks):
+async def rag_delete_doc(doc_id: str):
     """RAG deposundan belge siler (oturum izolasyonuna uygun)."""
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
     msg = await asyncio.to_thread(agent.docs.delete_document, doc_id, session_id)
     success = msg.startswith("✓")
-    if success:
-        background_tasks.add_task(asyncio.to_thread, agent.docs.prebuild_bm25_index)
     return JSONResponse({"success": success, "message": msg})
 
 
