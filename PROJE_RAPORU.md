@@ -1284,13 +1284,9 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 
 ### 14.8 Operasyon ve Dağıtım
 
-#### 14.8.1 Sağlık Endpoint Genişletmesi
-**Güncel durum:** ✅ **Tamamlandı.**
-
-Yapısal sağlık özeti ve probe endpoint'i eklendi:
-- `SystemHealthManager.get_health_summary()` JSON özet döndürür
-- `GET /health` endpoint'i `uptime_seconds` alanı ile birlikte durum raporu üretir
-- `AI_PROVIDER=ollama` ve Ollama erişilemezse endpoint `503` + `status=degraded` döndürür
+> **Not:** Bu başlık altındaki tamamlanan madde (14.8.1 Sağlık Endpoint Genişletmesi)
+> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
+> dosyasındaki ilgili bölümlere bakın.
 
 #### 14.8.2 Çevre Başına Konfigürasyon
 **Mevcut durum:** Tek `.env` dosyası.
