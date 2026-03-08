@@ -60,6 +60,7 @@
         <span id="ap-toggle-dot"></span>
         <span id="ap-toggle-label">Çalışıyor</span>
       </button>
+      <button class="btn-icon" onclick="downloadChat()" title="Sohbeti Markdown Olarak İndir">💾</button>
       <button class="btn-icon" id="theme-btn" onclick="toggleTheme()" title="Tema değiştir">🌙</button>
       <button class="btn-icon" onclick="openShortcuts()" title="Klavye kısayolları">⌨</button>
       <button class="btn-ghost" onclick="openStatus()">
@@ -427,6 +428,30 @@
     <div class="todo-empty">Henüz görev yok</div>
   </div>
 </div>
+
+
+  <div id="drag-overlay" class="drag-overlay">
+    <div class="drag-content">
+      <div class="drag-icon">📄</div>
+      <h2>RAG Belleğine Eklemek İçin Bırakın</h2>
+      <p>Yalnızca metin içerikli dosyalar (.txt, .md, .py, vb.)</p>
+    </div>
+  </div>
+
+  <style>
+    /* Sürükle-Bırak CSS'i (Hızlıca çalışması için HTML'de tutuyoruz) */
+    .drag-overlay {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(5px);
+      z-index: 9999; display: none; align-items: center; justify-content: center;
+    }
+    .drag-overlay.active { display: flex; }
+    .drag-content {
+      text-align: center; color: white; border: 3px dashed #4CAF50;
+      padding: 40px; border-radius: 20px; background: rgba(25, 25, 25, 0.9);
+    }
+    .drag-icon { font-size: 64px; margin-bottom: 20px; }
+  </style>
 
 <script src="/static/chat.js"></script>
 <script src="/static/sidebar.js"></script>

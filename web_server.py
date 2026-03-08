@@ -13,9 +13,11 @@ import asyncio
 import json
 import logging
 import re
+import shutil
 import secrets
 import subprocess
 import time
+import tempfile
 from pathlib import Path
 
 try:
@@ -26,7 +28,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
 
 import uvicorn
 from cachetools import TTLCache
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -746,6 +748,53 @@ async def rag_delete_doc(doc_id: str):
     success = msg.startswith("✓")
     return JSONResponse({"success": success, "message": msg})
 
+
+
+
+@app.post("/api/rag/upload")
+async def upload_rag_file(file: UploadFile = File(...)):
+    """Web arayüzünden Sürükle-Bırak ile gelen dosyaları RAG deposuna ekler."""
+    agent = await get_agent()
+    session_id = agent.memory.active_session_id or "global"
+
+    temp_dir = None
+    try:
+        # Dosyayı orijinal adıyla güvenli bir geçici klasöre kaydet
+        temp_dir = Path(tempfile.mkdtemp())
+        original_name = file.filename or "uploaded_file.txt"
+        safe_filename = "".join(c for c in original_name if c.isalnum() or c in ".-_ ")
+        if not safe_filename:
+            safe_filename = "uploaded_file.txt"
+        tmp_path = temp_dir / safe_filename
+
+        with open(tmp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # RAG deposuna ekle (İzolasyon korumalı)
+        ok, msg = await asyncio.to_thread(
+            agent.docs.add_document_from_file,
+            str(tmp_path),
+            original_name,
+            None,
+            session_id,
+        )
+
+        if ok:
+            return JSONResponse({"success": True, "message": msg})
+        return JSONResponse({"success": False, "error": msg}, status_code=400)
+
+    except Exception as exc:
+        return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+        if temp_dir is not None:
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
 @app.get("/rag/search")
 async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):

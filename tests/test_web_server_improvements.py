@@ -72,3 +72,14 @@ def test_health_endpoint_uses_structured_summary_and_503_on_ollama_down():
     assert 'health_data["uptime_seconds"] = int(time.monotonic() - _start_time)' in src
     assert 'if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:' in src
     assert "return JSONResponse(health_data, status_code=503)" in src
+
+
+
+def test_web_server_supports_rag_file_upload_endpoint():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "import shutil" in src
+    assert "import tempfile" in src
+    assert "UploadFile, File" in src
+    assert "@app.post(\"/api/rag/upload\")" in src
+    assert "async def upload_rag_file(file: UploadFile = File(...))" in src
+    assert "agent.docs.add_document_from_file" in src

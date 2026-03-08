@@ -241,3 +241,100 @@ window.addEventListener('DOMContentLoaded', async () => {
   refreshHealthStrip();
   setInterval(refreshHealthStrip, 8000);
 });
+
+/* ─── Sürükle-Bırak RAG & Sohbet İndirme İşlemleri ───────────────────────── */
+
+// 1. Sürükle ve Bırak (Drag & Drop) Olay Yöneticileri
+function _dragOverlayEl() {
+  return document.getElementById('drag-overlay');
+}
+
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const overlay = _dragOverlayEl();
+  if (overlay) overlay.classList.add('active');
+});
+
+document.addEventListener('dragleave', (e) => {
+  const overlay = _dragOverlayEl();
+  if (!overlay) return;
+  if (e.target === overlay || e.target.id === 'drag-overlay') {
+    overlay.classList.remove('active');
+  }
+});
+
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const overlay = _dragOverlayEl();
+  if (overlay) overlay.classList.remove('active');
+
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    await uploadFileToRAG(file);
+  }
+});
+
+// Dosyayı sunucuya gönderme fonksiyonu
+async function uploadFileToRAG(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch(apiUrl('/api/rag/upload'), {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      alert(`✅ Başarılı: ${result.message}`);
+    } else {
+      alert(`❌ Hata: ${result.error}`);
+    }
+  } catch (error) {
+    alert(`Bağlantı Hatası: ${error.message}`);
+  }
+}
+
+// 2. Sohbet İndirme Fonksiyonu
+function downloadChat() {
+  const chatBox = document.getElementById('messages');
+  let mdContent = `# Sidar AI - Sohbet Geçmişi\n\n`;
+  const messages = chatBox ? chatBox.querySelectorAll('.message') : [];
+
+  if (messages.length === 0) {
+    alert('İndirilecek sohbet bulunmuyor.');
+    return;
+  }
+
+  messages.forEach(m => {
+    const isUser = m.classList.contains('user');
+    const role = isUser ? '👤 Siz' : '🤖 Sidar';
+
+    // Markdown'a çevrilmiş ham metni al
+    const textElem = m.querySelector('.markdown-body') || m.querySelector('.content');
+    const text = textElem ? textElem.innerText : m.textContent;
+
+    mdContent += `### ${role}
+${text}
+
+---
+
+`;
+  });
+
+  // Dosyayı oluştur ve tarayıcıya indir
+  const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.download = `sidar_sohbet_${dateStr}.md`;
+
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+window.downloadChat = downloadChat;
