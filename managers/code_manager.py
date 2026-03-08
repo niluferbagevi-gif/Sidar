@@ -47,6 +47,7 @@ class CodeManager:
             int(docker_exec_timeout) if docker_exec_timeout is not None
             else int(os.getenv("DOCKER_EXEC_TIMEOUT", "10"))
         )
+        self.max_output_chars = 10000
         self._lock = threading.RLock()
 
         # Metrikler
@@ -282,6 +283,12 @@ class CodeManager:
             # İşimiz bitti, konteyneri sil
             container.remove(force=True)
 
+            # Çıktı Boyutu Limiti (Güvenlik)
+            if len(logs) > self.max_output_chars:
+                logs = logs[:self.max_output_chars] + (
+                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                )
+
             if logs:
                 return True, f"REPL Çıktısı (Docker Sandbox):\n{logs}"
             else:
@@ -332,6 +339,13 @@ class CodeManager:
                 pass
 
             output = (result.stdout + result.stderr).strip()
+
+            # Çıktı Boyutu Limiti (Güvenlik)
+            if len(output) > self.max_output_chars:
+                output = output[:self.max_output_chars] + (
+                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                )
+
             if result.returncode != 0:
                 return False, f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(çıktı yok)'}"
             return True, f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(kod çalıştı, çıktı yok)'}"
@@ -425,6 +439,12 @@ class CodeManager:
                 output_parts.append(f"[stderr]\n{result.stderr.strip()}")
 
             combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
+
+            # Çıktı Boyutu Limiti (Güvenlik)
+            if len(combined) > self.max_output_chars:
+                combined = combined[:self.max_output_chars] + (
+                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                )
 
             if result.returncode != 0:
                 return False, (
