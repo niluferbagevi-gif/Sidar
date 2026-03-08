@@ -85,3 +85,10 @@ def test_web_server_supports_rag_file_upload_endpoint():
     assert "@app.post(\"/api/rag/upload\")" in src
     assert "async def upload_rag_file(file: UploadFile = File(...))" in src
     assert "agent.docs.add_document_from_file" in src
+
+def test_web_server_has_websocket_chat_endpoint_with_cancel_support():
+    src = Path("web_server.py").read_text(encoding="utf-8")
+    assert "from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect" in src
+    assert '@app.websocket("/ws/chat")' in src
+    assert 'action == "cancel"' in src
+    assert 'active_task.cancel()' in src

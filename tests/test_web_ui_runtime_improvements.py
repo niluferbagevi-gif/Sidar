@@ -1,12 +1,13 @@
 from pathlib import Path
 
 
-def test_web_ui_uses_dynamic_api_origin_and_chat_stream_handling():
+def test_web_ui_uses_websocket_chat_stream_and_cancel_handling():
     html = Path("web_ui/index.html").read_text(encoding="utf-8")
     js = Path("web_ui/chat.js").read_text(encoding="utf-8")
-    assert "fetch(apiUrl('/chat')" in js
-    assert "response.status === 429" in js
-    assert "showUiNotice(msg, 'warn')" in js
+    assert "/ws/chat" in js
+    assert "new WebSocket" in js
+    assert "action: 'cancel'" in js
+    assert "showUiNotice('Sunucu bağlantısı hazırlanıyor, lütfen tekrar deneyin.'" in js
     assert '/static/chat.js' in html
 
 
