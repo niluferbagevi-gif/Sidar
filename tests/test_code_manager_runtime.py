@@ -8,34 +8,39 @@ from types import SimpleNamespace
 import pytest
 
 
-if "dotenv" not in sys.modules:
-    sys.modules["dotenv"] = types.SimpleNamespace(load_dotenv=lambda *a, **k: None)
-if "config" not in sys.modules:
-    class _DummyConfig:
-        ACCESS_LEVEL = "full"
-        BASE_DIR = Path(".")
-
-    sys.modules["config"] = types.SimpleNamespace(Config=_DummyConfig)
-
-
 def _load_modules():
-    if "managers" not in sys.modules:
+    """Load security/code_manager with temporary config/dotenv stubs (no global pollution)."""
+    saved = {k: sys.modules.get(k) for k in ("dotenv", "config", "managers", "managers.security")}
+    try:
+        sys.modules["dotenv"] = types.SimpleNamespace(load_dotenv=lambda *a, **k: None)
+
+        class _DummyConfig:
+            ACCESS_LEVEL = "full"
+            BASE_DIR = Path(".")
+
+        sys.modules["config"] = types.SimpleNamespace(Config=_DummyConfig)
+
         pkg = types.ModuleType("managers")
         pkg.__path__ = [str(Path("managers").resolve())]
         sys.modules["managers"] = pkg
 
-    sec_spec = importlib.util.spec_from_file_location("managers.security", Path("managers/security.py"))
-    sec_mod = importlib.util.module_from_spec(sec_spec)
-    assert sec_spec and sec_spec.loader
-    sec_spec.loader.exec_module(sec_mod)
-    sys.modules["managers.security"] = sec_mod
+        sec_spec = importlib.util.spec_from_file_location("managers.security", Path("managers/security.py"))
+        sec_mod = importlib.util.module_from_spec(sec_spec)
+        assert sec_spec and sec_spec.loader
+        sec_spec.loader.exec_module(sec_mod)
+        sys.modules["managers.security"] = sec_mod
 
-    code_spec = importlib.util.spec_from_file_location("managers.code_manager", Path("managers/code_manager.py"))
-    code_mod = importlib.util.module_from_spec(code_spec)
-    assert code_spec and code_spec.loader
-    code_spec.loader.exec_module(code_mod)
-    sys.modules["managers.code_manager"] = code_mod
-    return code_mod, sec_mod
+        code_spec = importlib.util.spec_from_file_location("managers.code_manager", Path("managers/code_manager.py"))
+        code_mod = importlib.util.module_from_spec(code_spec)
+        assert code_spec and code_spec.loader
+        code_spec.loader.exec_module(code_mod)
+        return code_mod, sec_mod
+    finally:
+        for k, old in saved.items():
+            if old is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = old
 
 
 CM_MOD, SEC_MOD = _load_modules()
@@ -221,6 +226,7 @@ def test_validation_audit_status_and_repr(manager_factory, tmp_path):
 
     assert "CodeManager:" in mgr.status()
     assert "<CodeManager" in repr(mgr)
+
 
 def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
     sec = DummySecurity(tmp_path)
