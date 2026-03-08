@@ -56,3 +56,12 @@ def test_issue_tool_schemas_and_dispatch_are_registered():
     parsed_close = tooling.parse_tool_argument("github_close_issue", "42")
     assert isinstance(parsed_close, tooling.GithubCloseIssueSchema)
     assert parsed_close.number == 42
+
+
+
+def test_pr_diff_tool_schema_and_legacy_parse_are_registered():
+    assert "github_pr_diff" in tooling.TOOL_ARG_SCHEMAS
+
+    parsed = tooling.parse_tool_argument("github_pr_diff", "42")
+    assert isinstance(parsed, tooling.GithubPRDiffSchema)
+    assert parsed.number == 42

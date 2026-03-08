@@ -36,6 +36,7 @@ from agent.tooling import (
     GithubListFilesSchema,
     GithubListIssuesSchema,
     GithubListPRsSchema,
+    GithubPRDiffSchema,
     GithubWriteSchema,
     PatchFileSchema,
     WriteFileSchema,
@@ -757,6 +758,17 @@ class SidarAgent:
             return "⚠ GitHub token ayarlanmamış."
         _, msg = await asyncio.to_thread(self.github.close_issue, arg.number)
         return msg
+
+
+    async def _tool_github_pr_diff(self, a: str | GithubPRDiffSchema) -> str:
+        """PR diff içeriğini getir. Argüman: PR numarası"""
+        arg = a if isinstance(a, GithubPRDiffSchema) else parse_tool_argument("github_pr_diff", a)
+        if not getattr(arg, "number", None):
+            return "⚠ Kullanım hatası: number gerekli."
+        if not self.github.is_available():
+            return "⚠ GitHub token ayarlanmamış."
+        _, result = await asyncio.to_thread(self.github.get_pull_request_diff, arg.number)
+        return result
 
     async def _tool_github_smart_pr(self, a: str) -> str:
         """

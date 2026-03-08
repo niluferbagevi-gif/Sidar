@@ -516,6 +516,31 @@ class GitHubManager:
         except Exception as exc:
             return False, f"✗ Issue kapatılamadı: {exc}"
 
+
+    def get_pull_request_diff(self, number: int) -> Tuple[bool, str]:
+        """Bir PR'ın birleştirilmiş diff (patch) içeriğini döndürür."""
+        if not self._repo:
+            return False, "Aktif depo yok."
+        try:
+            pr = self._repo.get_pull(number)
+            diff_parts = [f"--- PR #{number} DIFF ({pr.title}) ---"]
+
+            for file in pr.get_files():
+                diff_parts.append(f"\nDosya: {file.filename} | Durum: {file.status}")
+                diff_parts.append("---------------------------------------------------")
+                if file.patch:
+                    diff_parts.append(file.patch)
+                else:
+                    diff_parts.append("(Bu dosya için Diff/Patch metni yok - ikili/binary dosya olabilir)")
+
+            if len(diff_parts) == 1:
+                return True, "Bu PR'da değiştirilmiş kod dosyası bulunmuyor."
+
+            return True, "\n".join(diff_parts)
+        except Exception as exc:
+            logger.error("PR Diff alınamadı: %s", exc)
+            return False, f"Diff alınamadı: {exc}"
+
     def get_pr_files(self, number: int) -> Tuple[bool, str]:
         """PR'da değişen dosyaların listesini döndür."""
         if not self._repo:
