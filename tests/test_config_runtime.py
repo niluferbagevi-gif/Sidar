@@ -168,6 +168,7 @@ def test_config_import_profile_and_missing_env_messages(monkeypatch):
     saved = sys.modules.get("dotenv")
     try:
         sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setattr(Path, "exists", lambda self: False)
         monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
 
         monkeypatch.setenv("SIDAR_ENV", "missing_profile")
@@ -325,6 +326,7 @@ def test_initialize_directories_error_and_system_info_and_summary_and_main(monke
     cfg_mod.Config.DEBUG_MODE = True
     cfg_mod.Config.initialize_directories = classmethod(lambda cls: True)
     printed = []
+    monkeypatch.setenv("DEBUG_MODE", "1")
     monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
     dotenv_mod = types.ModuleType("dotenv")
     dotenv_mod.load_dotenv = lambda *a, **k: None
