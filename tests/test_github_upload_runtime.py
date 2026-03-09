@@ -302,3 +302,75 @@ def test_main_exits_when_git_missing(monkeypatch):
         assert False
     except SystemExit as exc:
         assert exc.code == 1
+
+
+
+def test_github_upload_all_edge_cases(monkeypatch, tmp_path):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    # güvenli dosya filtresi
+    (tmp_path / "valid.py").write_text("print('hello')", encoding="utf-8")
+    (tmp_path / "sessions").mkdir()
+    (tmp_path / "sessions" / "x.txt").write_text("secret", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (True, "valid.py\nsessions/x.txt\n"))
+    safe, blocked = GU.collect_safe_files()
+    assert "valid.py" in safe
+    assert "sessions/x.txt" in blocked
+
+    # interaction + conflict accept
+    state = {"push": 0}
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, ""
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] in (["git", "reset"], ["git", "add"], ["git", "commit"]):
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M valid.py"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            state["push"] += 1
+            return (False, "rejected fetch first") if state["push"] == 1 else (True, "ok")
+        if args[:2] == ["git", "pull"]:
+            return True, "merge made"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["valid.py"], []))
+    answers = iter(["Test User", "test@example.com", "Test commit", "Y"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+    GU.main()
+    assert state["push"] == 2
+
+
+def test_github_upload_empty_commit_and_no_remote(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, ""
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: ([], []))
+    monkeypatch.setattr("builtins.input", lambda _p: "")
+
+    try:
+        GU.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 1

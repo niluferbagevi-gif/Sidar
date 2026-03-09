@@ -1,4 +1,3 @@
-
 import importlib.util
 import sys
 import types
@@ -104,3 +103,25 @@ def _load_security_runtime_module():
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = old
+
+
+
+def test_security_windows_pattern_rejections_runtime(tmp_path):
+    cfg = SimpleNamespace(BASE_DIR=tmp_path, ACCESS_LEVEL="full")
+    sec_mod = _load_security_runtime_module()
+    sec = sec_mod.SecurityManager(cfg=cfg)
+
+    assert sec.can_read(r"..\..\Windows") is False
+    assert sec.can_write(r"C:\Windows\System32\cmd.exe") is False
+    assert sec.is_safe_path(r"D:\Secret") is False
+
+
+def test_security_is_path_under_rejects_outside_resolved_target(tmp_path):
+    cfg = SimpleNamespace(BASE_DIR=tmp_path, ACCESS_LEVEL="sandbox")
+    sec_mod = _load_security_runtime_module()
+    sec = sec_mod.SecurityManager(cfg=cfg)
+
+    outside = (tmp_path.parent / "outside").resolve()
+    # Symlink benzeri bypass: resolve sonucu base dışında olursa reddedilmeli
+    sec._resolve_safe = lambda _p: outside  # type: ignore[assignment]
+    assert sec.is_path_under("symlink_like", sec.base_dir) is False
