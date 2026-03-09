@@ -1180,3 +1180,91 @@ def test_instruction_file_loader_stat_and_read_failures_and_summarize_short_hist
     b = _make_agent_for_runtime()
     b.memory = SimpleNamespace(get_history=lambda: [{"role": "u", "content": "x"}] * 3)
     asyncio.run(b._summarize_memory())
+
+
+def test_build_tool_list_deduplicates_handlers_and_uses_doc_fallback():
+    a = _make_agent_for_runtime()
+
+    async def shared(_arg):
+        """Paylaşılan araç."""
+        return "ok"
+
+    async def no_doc(_arg):
+        return "ok"
+
+    no_doc.__doc__ = None
+    a._tools = {"t1": shared, "t2": shared, "t3": no_doc}
+
+    tool_list = a._build_tool_list()
+    assert "MEVCUT ARAÇLAR" in tool_list
+    assert tool_list.count("Paylaşılan araç") == 1
+    assert "Açıklama belirtilmemiş" in tool_list
+
+
+def test_execute_tool_tracer_exception_sets_span_attributes(monkeypatch):
+    a = _make_agent_for_runtime()
+    calls = []
+
+    class _Span:
+        def set_attribute(self, key, value):
+            calls.append((key, value))
+
+    class _SpanCM:
+        def __enter__(self):
+            return _Span()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _Tracer:
+        def start_as_current_span(self, _name):
+            return _SpanCM()
+
+    async def _boom(_arg):
+        raise RuntimeError("boom")
+
+    async def _audit(_name, _arg, ok):
+        calls.append(("audit", ok))
+
+    monkeypatch.setattr(SA_MOD, "trace", SimpleNamespace(get_current_span=lambda: _Span()))
+    a.tracer = _Tracer()
+    a._log_audit = _audit
+    a._tools = {"x": _boom}
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(a._execute_tool("x", "arg"))
+
+    assert ("sidar.tool.name", "x") in calls
+    assert ("sidar.tool.success", False) in calls
+    assert ("audit", False) in calls
+
+
+def test_get_memory_archive_context_sync_filters_and_limits():
+    a = _make_agent_for_runtime()
+
+    class _Collection:
+        def query(self, **kwargs):
+            return {
+                "documents": [["", "uygun metin", "atla"]],
+                "metadatas": [[{"source": "memory_archive", "title": "boş"}, {"source": "memory_archive", "title": "başlık"}, {"source": "other"}]],
+                "distances": [[0.1, 0.2, 0.1]],
+            }
+
+    a.docs = SimpleNamespace(collection=_Collection())
+    txt = a._get_memory_archive_context_sync("q", top_k=2, min_score=0.5, max_chars=1000)
+    assert "Geçmiş Sohbet Arşivinden" in txt
+    assert "başlık" in txt
+    assert "atla" not in txt
+
+
+def test_get_memory_archive_context_sync_empty_and_query_error():
+    a = _make_agent_for_runtime()
+    a.docs = SimpleNamespace(collection=None)
+    assert a._get_memory_archive_context_sync("q", 1, 0.1, 300) == ""
+
+    class _BadCollection:
+        def query(self, **kwargs):
+            raise RuntimeError("db err")
+
+    a.docs = SimpleNamespace(collection=_BadCollection())
+    assert a._get_memory_archive_context_sync("q", 1, 0.1, 300) == ""
