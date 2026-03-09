@@ -125,3 +125,54 @@ def test_security_is_path_under_rejects_outside_resolved_target(tmp_path):
     # Symlink benzeri bypass: resolve sonucu base dışında olursa reddedilmeli
     sec._resolve_safe = lambda _p: outside  # type: ignore[assignment]
     assert sec.is_path_under("symlink_like", sec.base_dir) is False
+
+def test_security_uncovered_runtime_branches(tmp_path, monkeypatch):
+    sec_mod = _load_security_runtime_module()
+
+    # unknown level normalize -> sandbox
+    sec_unknown = sec_mod.SecurityManager(access_level="mystery", base_dir=tmp_path)
+    assert sec_unknown.level_name == "sandbox"
+
+    # _resolve_safe exception path
+    class _BadPath:
+        def resolve(self):
+            raise RuntimeError("resolve fail")
+
+    monkeypatch.setattr(sec_mod, "Path", lambda *_a, **_k: _BadPath())
+    assert sec_mod.SecurityManager._resolve_safe("x") is None
+
+    # restore module path class by reloading fresh module
+    sec_mod = _load_security_runtime_module()
+    sec = sec_mod.SecurityManager(access_level="sandbox", base_dir=tmp_path)
+
+    # is_path_under dangerous and resolve-none branches
+    assert sec.is_path_under("../etc/passwd", sec.base_dir) is False
+    monkeypatch.setattr(sec, "_resolve_safe", lambda _p: None)
+    assert sec.is_path_under("safe.txt", sec.base_dir) is False
+
+    # is_safe_path blocked pattern branch
+    blocked = tmp_path / ".git" / "config"
+    blocked.parent.mkdir(parents=True, exist_ok=True)
+    blocked.write_text("x", encoding="utf-8")
+    assert sec.is_safe_path(str(blocked)) is False
+
+    # can_read no path + resolve none + blocked path
+    assert sec.can_read(None) is True
+    monkeypatch.setattr(sec, "_resolve_safe", lambda _p: None)
+    assert sec.can_read("some.txt") is False
+
+    sec2 = sec_mod.SecurityManager(access_level="sandbox", base_dir=tmp_path)
+    sessions_file = tmp_path / "sessions" / "s.json"
+    sessions_file.parent.mkdir(parents=True, exist_ok=True)
+    sessions_file.write_text("{}", encoding="utf-8")
+    assert sec2.can_read(str(sessions_file)) is False
+
+    # can_write empty + resolve none + blocked path
+    assert sec2.can_write("") is False
+    monkeypatch.setattr(sec2, "_resolve_safe", lambda _p: None)
+    assert sec2.can_write(str(tmp_path / "temp" / "a.txt")) is False
+
+    sec3 = sec_mod.SecurityManager(access_level="full", base_dir=tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text("SECRET=1", encoding="utf-8")
+    assert sec3.can_write(str(env_file)) is False
