@@ -3,6 +3,7 @@ import json
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 
 if "config" not in sys.modules:
@@ -197,3 +198,33 @@ def test_todo_manager_list_and_get_tasks_filters(tmp_path):
     # get_tasks ile gecerli status filtreleme
     tasks = mgr.get_tasks(status=TM.STATUS_PENDING)
     assert len(tasks) == 2
+
+
+
+def test_todo_manager_remaining_branches(tmp_path):
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+
+    # Satır 190: set_tasks boş içerik durumu
+    mgr.set_tasks([{"content": "", "status": "pending"}])
+    assert len(mgr) == 0
+
+    # Satır 282: list_tasks'da filtrelenen durumda görev olmaması
+    mgr.add_task("Test", "pending")
+    out = mgr.list_tasks(filter_status="completed")
+    assert "durumunda görev yok" in out
+
+    # Satır 314-316: clear_completed çağrıldığında silinecek görev olmaması
+    out_clear = mgr.clear_completed()
+    assert "0 tamamlanmış görev silindi" in out_clear
+
+    # Satır 440-441: scan_project_todos noktasız uzantı ekleme
+    mgr.scan_project_todos(extensions=["py", "txt"])
+
+    # Satır 444: scan_project_todos sadece boş uzantılar
+    out_scan_empty = mgr.scan_project_todos(extensions=["  ", "."])
+    assert ("geçerli dosya uzantısı bulunamadı" in out_scan_empty) or ("TODO veya FIXME" in out_scan_empty)
+
+    # Satır 450-452: Dosya okunurken Exception fırlatması
+    (tmp_path / "test.py").write_text("# TODO: fix", encoding="utf-8")
+    with patch("pathlib.Path.read_text", side_effect=Exception("mock read err")):
+        mgr.scan_project_todos(extensions=[".py"])
