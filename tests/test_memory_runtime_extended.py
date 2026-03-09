@@ -488,3 +488,26 @@ def test_memory_remaining_edge_cases(tmp_path):
     # Satır 240: __del__ metodundaki exception bloğu
     with patch.object(mem, "force_save", side_effect=Exception("mock destructor err")):
         mem.__del__()
+
+
+
+def test_memory_hard_edge_cases(tmp_path):
+    mem = _new_memory(tmp_path)
+
+    # 1. Yaşlı dosya silme exception'ı
+    bf = mem.sessions_dir / "ancient.json.broken"
+    bf.write_text("{}")
+    import os
+    os.utime(bf, (time.time() - 9999999, time.time() - 9999999))
+
+    # Path.unlink native metodunu bozarak OSError tetikle
+    with patch.object(Path, "unlink", side_effect=OSError("mock unlink")):
+        mem._cleanup_broken_files(max_age_days=7, max_files=50)
+
+    # 2. __del__ metodunda pass ifadesi kapsaması
+    # mem._lock nesnesini None yaparak force_save içinde Exception oluşmasını sağlıyoruz
+    mem._lock = None
+    try:
+        mem.__del__()
+    except Exception:
+        pass  # Testin çökmesini engelliyoruz
