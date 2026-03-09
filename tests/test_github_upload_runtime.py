@@ -562,3 +562,68 @@ def test_github_upload_dunder_main_keyboard_interrupt(monkeypatch):
             assert False
         except SystemExit as exc:
             assert exc.code == 0
+
+def test_main_push_conflict_merge_fails(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] in (["git", "reset"], ["git", "add"], ["git", "commit"]):
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            return False, "rejected fetch first"
+        if args[:2] == ["git", "pull"]:
+            return False, "fatal error during merge"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+    answers = iter(["msg", "y"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+    GU.main()
+
+
+def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+    state = {"push": 0}
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] in (["git", "reset"], ["git", "add"], ["git", "commit"]):
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            state["push"] += 1
+            if state["push"] == 1:
+                return False, "rejected fetch first"
+            return False, "Connection reset by peer"
+        if args[:2] == ["git", "pull"]:
+            return True, "Merge made"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+    answers = iter(["msg", "y"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+    GU.main()

@@ -225,3 +225,18 @@ def test_load_package_info_module_when_httpx_missing_restores_sys_modules():
     finally:
         if old is not None:
             sys.modules["httpx"] = old
+
+
+def test_is_prerelease_npm_semver_regex_fallback():
+    real_version = PKG.Version
+
+    class _VersionRaiser:
+        def __init__(self, _v):
+            raise PKG.InvalidVersion("bad")
+
+    try:
+        PKG.Version = _VersionRaiser
+        assert PKG.PackageInfoManager._is_prerelease("1.2.3-beta.2") is True
+        assert PKG.PackageInfoManager._is_prerelease("1.2.3-unknown_format!") is False
+    finally:
+        PKG.Version = real_version
