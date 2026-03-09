@@ -422,3 +422,32 @@ def test_auto_handle_uncovered_branches_matrix(monkeypatch):
     # dir extraction absolute path and file-like rejection
     assert auto._extract_dir_path('klasör listele /tmp/workspace') == '/tmp/workspace'
     assert auto._extract_dir_path('klasör listele ./src/main.py') is None
+
+def test_auto_handle_uncovered_edge_cases_runtime(monkeypatch):
+    auto = _make_auto(github_available=True)
+
+    handled, resp = auto._try_read_file("dosyayı oku", "dosyayı oku bad.txt")
+    assert handled is True
+    assert resp.startswith("✗")
+
+    auto.memory.set_last_file("file.xyz")
+    handled, resp = auto._try_validate_file("sözdizimi kontrol et", "sözdizimi kontrol et")
+    assert handled is True
+    assert "desteklenmiyor" in resp
+
+    handled, resp = asyncio.run(auto._try_audit("audit"))
+    assert handled is True
+    assert "AUDIT:" in resp
+
+    async def _timeout(*_a, **_k):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(auto, "_run_blocking", _timeout)
+    handled, resp = asyncio.run(auto._try_audit("audit"))
+    assert handled is True
+    assert "zaman aşımı" in resp
+
+    assert auto._extract_dir_path("ls script.py") is None
+
+    handled, resp = asyncio.run(auto._try_dot_command(".bilinmeyen", ".bilinmeyen"))
+    assert handled is False and resp == ""

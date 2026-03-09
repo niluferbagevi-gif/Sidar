@@ -340,3 +340,52 @@ def test_initialize_directories_error_and_system_info_and_summary_and_main(monke
         else:
             sys.modules["dotenv"] = saved
     assert printed
+
+def test_config_remaining_edge_cases_runtime(monkeypatch, capsys):
+    monkeypatch.setenv("SIDAR_ENV", "invalid_env_name_123")
+    cfg_mod = _load_config_module()
+    out = capsys.readouterr().out
+    assert "Belirtilen ortam dosyası bulunamadı" in out
+
+    monkeypatch.setenv("TEST_WS", "   ")
+    assert cfg_mod.get_bool_env("TEST_WS", True) is True
+
+    monkeypatch.setenv("TEST_LIST", "")
+    assert cfg_mod.get_list_env("TEST_LIST", ["default"]) == ["default"]
+
+    # cryptography yokmuş gibi davran: ImportError yolu
+    real_import = builtins.__import__
+
+    def _import_without_crypto(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("cryptography"):
+            raise ImportError("no crypto")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_without_crypto)
+    cfg_mod.Config.AI_PROVIDER = "gemini"
+    cfg_mod.Config.GEMINI_API_KEY = "ok"
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = "x"
+    assert cfg_mod.Config.validate_critical_settings() is False
+
+    class _Resp:
+        status_code = 200
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(Client=_Client))
+    monkeypatch.setattr(builtins, "__import__", real_import)
+    cfg_mod.Config.AI_PROVIDER = "ollama"
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
+    cfg_mod.Config.OLLAMA_URL = "http://localhost:11434"
+    assert isinstance(cfg_mod.Config.validate_critical_settings(), bool)
