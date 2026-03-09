@@ -1054,3 +1054,217 @@ def test_metrics_text_plain_importerror_falls_back_to_json(monkeypatch):
     assert resp.status_code == 200
     assert isinstance(resp, _FakeJSONResponse)
     assert resp.content["provider"] == "ollama"
+
+
+def test_web_server_additional_uncovered_branches(monkeypatch):
+    mod = _load_web_server()
+
+    async def _next(_request):
+        return _FakeResponse("ok", status_code=200)
+
+    mod.cfg.API_KEY = "secret"
+    opt_req = _FakeRequest(method="OPTIONS", path="/status")
+    opt_resp = asyncio.run(mod.basic_auth_middleware(opt_req, _next))
+    assert opt_resp.status_code == 200
+
+    class _RedisFailFactory:
+        @classmethod
+        def from_url(cls, *_a, **_k):
+            raise RuntimeError("redis unavailable")
+
+    mod._redis_client = None
+    mod._redis_lock = None
+    monkeypatch.setattr(mod, "Redis", _RedisFailFactory)
+    assert asyncio.run(mod._get_redis()) is None
+
+    async def _local_rl(_key, _limit, _window):
+        return False
+
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _local_rl)
+    mod._redis_client = None
+    assert asyncio.run(mod._redis_is_rate_limited("ns", "k", 1, 10)) is False
+
+    not_limited = asyncio.run(mod.rate_limit_middleware(_FakeRequest(path="/status", method="GET"), _next))
+    assert not_limited.status_code == 200
+
+    fav = asyncio.run(mod.favicon())
+    assert fav.status_code == 204
+
+    class _Mem:
+        def __len__(self):
+            return 0
+
+        def update_title(self, _t):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Mem()
+
+        async def respond(self, _m):
+            yield "\x00TOOL:github_prs\x00"
+            yield "\x00THOUGHT:thinking\x00"
+            raise RuntimeError("stream-fail")
+
+    class _Ws:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="1.2.3.4")
+            self.sent = []
+            self._messages = [
+                "not-json",
+                json.dumps({"message": "  "}),
+                json.dumps({"message": "first", "action": "send"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._messages:
+                return self._messages.pop(0)
+            await asyncio.sleep(0.05)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _agent_getter():
+        return _Agent()
+
+    calls = {"n": 0}
+
+    async def _chat_rl(*_a, **_k):
+        calls["n"] += 1
+        return False
+
+    mod.get_agent = _agent_getter
+    mod._redis_is_rate_limited = _chat_rl
+    ws = _Ws()
+    asyncio.run(mod.websocket_chat(ws))
+    assert any("tool_call" in p for p in ws.sent)
+    assert any("thought" in p for p in ws.sent)
+    assert any("Sistem Hatası" in p.get("chunk", "") for p in ws.sent)
+
+    class _WsRate:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="1.2.3.4")
+            self.sent = []
+            self._messages = [json.dumps({"message": "limited", "action": "send"})]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._messages:
+                return self._messages.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _always_limit(*_a, **_k):
+        return True
+
+    mod._redis_is_rate_limited = _always_limit
+    ws_rate = _WsRate()
+    asyncio.run(mod.websocket_chat(ws_rate))
+    assert any("Hız Sınırı" in p.get("chunk", "") for p in ws_rate.sent)
+
+    agent, _calls = _make_agent(ai_provider="gemini", ollama_online=True)
+
+    class _GH:
+        repo_name = "o/r"
+
+        def is_available(self):
+            return True
+
+        def get_pull_requests_detailed(self, **_kwargs):
+            return False, [], "boom"
+
+        def get_pull_request(self, _num):
+            return False, "missing"
+
+        def set_repo(self, name):
+            return True, f"ok:{name}"
+
+    class _Docs:
+        def status(self):
+            return "ok"
+
+        def delete_document(self, _doc_id, _session_id):
+            return "✓ silindi"
+
+    agent.github = _GH()
+    agent.docs = _Docs()
+
+    async def _get_agent2():
+        return agent
+
+    mod.get_agent = _get_agent2
+    st = asyncio.run(mod.status())
+    assert st.content["model"] == "g-2"
+
+    hc = asyncio.run(mod.health_check())
+    assert hc.status_code == 200
+
+    prs_fail = asyncio.run(mod.github_prs())
+    assert prs_fail.status_code == 500
+    prd_fail = asyncio.run(mod.github_pr_detail(1))
+    assert prd_fail.status_code == 404
+
+    set_ok = asyncio.run(mod.set_repo(_FakeRequest(json_body={"repo": "owner/repo"})))
+    assert set_ok.content["success"] is True
+    assert mod.cfg.GITHUB_REPO == "owner/repo"
+
+    rag_missing = asyncio.run(mod.rag_add_file(_FakeRequest(json_body={})))
+    assert rag_missing.status_code == 400
+
+    rag_del = asyncio.run(mod.rag_delete_doc("d1"))
+    assert rag_del.status_code == 200
+    assert rag_del.content["success"] is True
+
+    bad_read = Path("tests") / "_tmp_err.txt"
+    bad_read.write_text("x", encoding="utf-8")
+    real_read = Path.read_text
+
+    def _boom_read(self, *a, **k):
+        if str(self).endswith("_tmp_err.txt"):
+            raise RuntimeError("no read")
+        return real_read(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", _boom_read)
+    bad_read_resp = asyncio.run(mod.file_content("tests/_tmp_err.txt"))
+    assert bad_read_resp.status_code == 500
+    bad_read.unlink(missing_ok=True)
+
+    assert mod._git_run(["bash", "-lc", "exit 1"], cwd=str(Path.cwd())) == ""
+
+    up = _FakeUploadFile("???", b"x")
+    monkeypatch.setattr(mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rm fail")))
+
+    async def _close_fail():
+        raise RuntimeError("close fail")
+
+    up.close = _close_fail
+    up_res = asyncio.run(mod.upload_rag_file(up))
+    assert up_res.status_code in (200, 400, 500)
+
+    mod.cfg.GITHUB_WEBHOOK_SECRET = "secret"
+    req_missing_sig = _FakeRequest(body_bytes=b"{}")
+    try:
+        asyncio.run(mod.github_webhook(req_missing_sig, x_github_event="push", x_hub_signature_256=""))
+        assert False, "expected 401"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 401
+
+    mod.cfg.GITHUB_WEBHOOK_SECRET = ""
+    bad_json = asyncio.run(mod.github_webhook(_FakeRequest(body_bytes=b"{"), x_github_event="push", x_hub_signature_256=""))
+    assert bad_json.status_code == 400
+
+    calls_mem = []
+    agent.memory = types.SimpleNamespace(add=lambda role, text: calls_mem.append((role, text)))
+    mod.get_agent = _get_agent2
+    push_payload = json.dumps({"pusher": {"name": "alice"}, "ref": "refs/heads/main"}).encode("utf-8")
+    push_ok = asyncio.run(mod.github_webhook(_FakeRequest(body_bytes=push_payload), x_github_event="push", x_hub_signature_256=""))
+    assert push_ok.status_code == 200
+    assert any("alice" in t for _r, t in calls_mem)
