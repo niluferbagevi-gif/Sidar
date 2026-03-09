@@ -1014,3 +1014,43 @@ def test_upload_rag_file_error_and_bad_add_path(monkeypatch):
     resp2 = asyncio.run(mod.upload_rag_file(up2))
     assert resp2.status_code == 500
     assert up2.closed is True
+
+
+def test_metrics_text_plain_importerror_falls_back_to_json(monkeypatch):
+    mod = _load_web_server()
+
+    cfg = types.SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False)
+    agent = types.SimpleNamespace(
+        VERSION="1",
+        cfg=cfg,
+        docs=types.SimpleNamespace(doc_count=1),
+        memory=types.SimpleNamespace(__len__=lambda self: 1, get_all_sessions=lambda: [{"id": "s1"}]),
+    )
+
+    class _Mem:
+        def __len__(self):
+            return 1
+
+        def get_all_sessions(self):
+            return [{"id": "s1"}]
+
+    agent.memory = _Mem()
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    import builtins as _bi
+    real_import = _bi.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "prometheus_client":
+            raise ImportError("no prometheus")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(_bi, "__import__", _fake_import)
+    resp = asyncio.run(mod.metrics(_FakeRequest(headers={"Accept": "text/plain"})))
+    assert resp.status_code == 200
+    assert isinstance(resp, _FakeJSONResponse)
+    assert resp.content["provider"] == "ollama"

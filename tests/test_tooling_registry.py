@@ -74,3 +74,36 @@ def test_scan_project_todos_schema_and_parse_registered():
     assert isinstance(parsed, tooling.ScanProjectTodosSchema)
     assert parsed.directory == "core"
     assert parsed.extensions == [".py", ".md"]
+
+def test_parse_tool_argument_legacy_error_and_default_fallbacks():
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("patch_file", "path|||old")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_write", "path|||content")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_create_pr", "title|||body")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_create_issue", "title")
+
+    prs = tooling.parse_tool_argument("github_list_prs", "closed|||x")
+    assert isinstance(prs, tooling.GithubListPRsSchema)
+    assert prs.state == "closed"
+    assert prs.limit == 10
+
+    issues = tooling.parse_tool_argument("github_list_issues", "|||bad")
+    assert isinstance(issues, tooling.GithubListIssuesSchema)
+    assert issues.state == "open"
+    assert issues.limit == 10
+
+    branch = tooling.parse_tool_argument("github_create_branch", "feature")
+    assert isinstance(branch, tooling.GithubCreateBranchSchema)
+    assert branch.branch_name == "feature"
+    assert branch.from_branch is None
+
+    todos = tooling.parse_tool_argument("scan_project_todos", "src|||.py, .md")
+    assert isinstance(todos, tooling.ScanProjectTodosSchema)
+    assert todos.directory == "src"
+    assert todos.extensions == [".py", ".md"]

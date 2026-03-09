@@ -949,3 +949,27 @@ def test_react_loop_parallel_json_array_tools_path(monkeypatch):
     assert any(x == "\x00TOOL:list_dir\x00" for x in out)
     assert any(x == "\x00TOOL:health\x00" for x in out)
     assert out[-1].startswith("Üzgünüm")
+
+
+def test_memory_archive_context_truncation_and_error_fallback():
+    a = _make_agent_for_runtime()
+
+    class _Collection:
+        def query(self, **kwargs):
+            return {
+                "documents": [["x" * 900, "short note"]],
+                "metadatas": [[{"source": "memory_archive", "title": "A"}, {"source": "memory_archive", "title": "B"}]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    a.docs = SimpleNamespace(collection=_Collection())
+    text = a._get_memory_archive_context_sync("q", top_k=3, min_score=0.1, max_chars=800)
+    assert "[Geçmiş Sohbet Arşivinden İlgili Notlar]" in text
+    assert "..." in text
+
+    class _BrokenCollection:
+        def query(self, **kwargs):
+            raise RuntimeError("db down")
+
+    a.docs = SimpleNamespace(collection=_BrokenCollection())
+    assert a._get_memory_archive_context_sync("q", top_k=1, min_score=0.1, max_chars=300) == ""
