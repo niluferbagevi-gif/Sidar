@@ -973,3 +973,57 @@ def test_memory_archive_context_truncation_and_error_fallback():
 
     a.docs = SimpleNamespace(collection=_BrokenCollection())
     assert a._get_memory_archive_context_sync("q", top_k=1, min_score=0.1, max_chars=300) == ""
+
+
+def test_summarize_memory_success_and_exception_paths(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _Mem:
+        def __init__(self):
+            self.summary = None
+
+        def get_history(self):
+            return [
+                {"role": "user", "content": "u1", "timestamp": 1},
+                {"role": "assistant", "content": "a1", "timestamp": 2},
+                {"role": "user", "content": "u2", "timestamp": 3},
+                {"role": "assistant", "content": "a2", "timestamp": 4},
+            ]
+
+        def apply_summary(self, s):
+            self.summary = s
+
+    a.memory = _Mem()
+
+    class _Docs:
+        def __init__(self):
+            self.called = 0
+
+        def add_document(self, **kwargs):
+            self.called += 1
+
+    docs = _Docs()
+    a.docs = docs
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return "özet"
+
+    a.llm = _LLM()
+    asyncio.run(a._summarize_memory())
+    assert docs.called == 1
+    assert a.memory.summary == "özet"
+
+    class _BrokenDocs:
+        def add_document(self, **kwargs):
+            raise RuntimeError("docs fail")
+
+    class _BrokenLLM:
+        async def chat(self, **kwargs):
+            raise RuntimeError("llm fail")
+
+    a.docs = _BrokenDocs()
+    a.llm = _BrokenLLM()
+    # sadece exception path'leri çalışsın, raise etmesin
+    asyncio.run(a._summarize_memory())

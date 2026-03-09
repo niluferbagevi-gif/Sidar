@@ -132,3 +132,26 @@ def test_config_summary_print(capsys):
     c.print_config_summary()
     out, _ = capsys.readouterr()
     assert "Yapılandırma Özeti" in out
+
+
+def test_config_env_overrides_for_existing_fields(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("TAVILY_API_KEY", "tv-key")
+    monkeypatch.setenv("OLLAMA_TIMEOUT", "150")
+    monkeypatch.setenv("REDIS_URL", "redis://test:6379")
+    monkeypatch.setenv("WEB_SEARCH_MAX_RESULTS", "15")
+    monkeypatch.setenv("WEB_FETCH_TIMEOUT", "21")
+    monkeypatch.setenv("RATE_LIMIT_CHAT", "99")
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+
+    cfg_mod = _load_config_module()
+    c = cfg_mod.Config()
+
+    assert c.GEMINI_API_KEY == "g-key"
+    assert c.TAVILY_API_KEY == "tv-key"
+    assert c.OLLAMA_TIMEOUT == 150
+    assert c.REDIS_URL == "redis://test:6379"
+    assert c.WEB_SEARCH_MAX_RESULTS == 15
+    assert c.WEB_FETCH_TIMEOUT == 21
+    assert c.RATE_LIMIT_CHAT == 99
+    assert c.HF_HUB_OFFLINE is True
