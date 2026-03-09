@@ -444,3 +444,133 @@ def test_execute_code_docker_exception_paths_for_sandbox_and_full(manager_factor
     ok, msg = mgr_full.execute_code("print('x')")
     assert ok is False
     assert msg == "local fallback"
+
+def test_code_manager_remaining_branches_matrix(manager_factory, monkeypatch, tmp_path):
+    mgr = manager_factory(can_read=False, can_write=False, can_execute=False, can_shell=False)
+
+    # read/write/execute guard branches
+    ok, msg = mgr.read_file(str(tmp_path / "x.txt"))
+    assert ok is False and "Okuma yetkisi" in msg
+
+    ok, msg = mgr.write_file(str(tmp_path / "x.py"), "print(1)")
+    assert ok is False and "Güvenli alternatif" in msg
+
+    ok, msg = mgr.execute_code_local("print('x')")
+    assert ok is False and "yetkisi yok" in msg
+
+    # explicit read_file missing + generic exception
+    mgr2 = manager_factory(can_read=True, can_write=True, can_shell=True)
+    ok, msg = mgr2.read_file(str(tmp_path / "missing.txt"))
+    assert ok is False and "bulunamadı" in msg
+
+    import builtins
+    real_open = builtins.open
+    monkeypatch.setattr(builtins, "open", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("open boom")))
+    f = tmp_path / "r.txt"
+    f.write_text("abc", encoding="utf-8")
+    ok, msg = mgr2.read_file(str(f), line_numbers=False)
+    assert ok is False and "Okuma hatası" in msg
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    # patch_file read fail branch
+    monkeypatch.setattr(mgr2, "read_file", lambda *a, **k: (False, "rfail"))
+    assert mgr2.patch_file("x.py", "a", "b") == (False, "rfail")
+
+    # docker timeout branch
+    mgr3 = manager_factory(can_execute=True, level=FULL)
+    mgr3.docker_available = True
+
+    class _Container:
+        status = "running"
+        def reload(self):
+            self.status = "running"
+        def kill(self):
+            return None
+        def remove(self, force=False):
+            return None
+
+    class _Containers:
+        def run(self, **kwargs):
+            return _Container()
+
+    class _DockerErrors:
+        class ImageNotFound(Exception):
+            pass
+
+    monkeypatch.setitem(sys.modules, "docker", types.SimpleNamespace(errors=_DockerErrors))
+    mgr3.docker_client = SimpleNamespace(containers=_Containers())
+    mgr3.docker_exec_timeout = 0
+    ok, msg = mgr3.execute_code("while True: pass")
+    assert ok is False and "Zaman aşımı" in msg
+
+    # execute_code_local generic exception branch
+    monkeypatch.setattr(CM_MOD.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("subprocess boom")))
+    ok, msg = mgr3.execute_code_local("print(1)")
+    assert ok is False and "Subprocess çalıştırma hatası" in msg
+
+    # run_shell empty command, stderr path, nonzero code, generic exception
+    ok, msg = mgr2.run_shell("   ")
+    assert ok is False and "belirtilmedi" in msg
+
+    monkeypatch.setattr(CM_MOD.shlex, "split", lambda c: ["echo", "x"])
+    monkeypatch.setattr(CM_MOD.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr="boom"))
+    ok, msg = mgr2.run_shell("echo x")
+    assert ok is False and "çıkış kodu" in msg and "[stderr]" in msg
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("shell boom")))
+    ok, msg = mgr2.run_shell("echo x", allow_shell_features=True)
+    assert ok is False and "Kabuk hatası" in msg
+
+    # glob branches
+    ok, msg = mgr2.glob_search("")
+    assert ok is False and "deseni" in msg
+    ok, msg = mgr2.glob_search("*.py", base_path=str(tmp_path / "none"))
+    assert ok is False and "bulunamadı" in msg
+    ok, msg = mgr2.glob_search("*.doesnotexist", base_path=str(tmp_path))
+    assert ok is True and "bulunamadı" in msg
+
+    # glob exception branch
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: (_ for _ in ()).throw(RuntimeError("glob boom")))
+    ok, msg = mgr2.glob_search("*.py", base_path=str(tmp_path))
+    assert ok is False and "Glob arama hatası" in msg
+
+    # grep branches
+    ok, msg = mgr2.grep_files("")
+    assert ok is False and "kalıbı" in msg
+    ok, msg = mgr2.grep_files("[")
+    assert ok is False and "Geçersiz regex" in msg
+    ok, msg = mgr2.grep_files("x", path=str(tmp_path / "nope"))
+    assert ok is False and "Yol bulunamadı" in msg
+
+    gfile = tmp_path / "g.txt"
+    gfile.write_text("a\na\na", encoding="utf-8")
+    ok, msg = mgr2.grep_files("a", path=str(gfile), max_results=1)
+    assert ok is True and "Maksimum eşleşme" in msg
+
+    # grep outer exception branch
+    real_resolve = Path.resolve
+    monkeypatch.setattr(Path, "resolve", lambda self: (_ for _ in ()).throw(RuntimeError("resolve boom")))
+    ok, msg = mgr2.grep_files("a", path=str(gfile))
+    assert ok is False and "Grep arama hatası" in msg
+    monkeypatch.setattr(Path, "resolve", real_resolve)
+
+    # list_directory branches + status docker on
+    ok, msg = mgr2.list_directory(str(tmp_path / "no_dir"))
+    assert ok is False and "bulunamadı" in msg
+    ok, msg = mgr2.list_directory(str(gfile))
+    assert ok is False and "dizin değil" in msg
+
+    monkeypatch.setattr(Path, "iterdir", lambda self: (_ for _ in ()).throw(RuntimeError("iter boom")))
+    ok, msg = mgr2.list_directory(str(tmp_path))
+    assert ok is False and "listeleme hatası" in msg
+
+    # audit non-py skip/max_files and clean message
+    p1 = tmp_path / "a.py"
+    p2 = tmp_path / "b.txt"
+    p1.write_text("x=1", encoding="utf-8")
+    p2.write_text("not py", encoding="utf-8")
+    rep = mgr2.audit_project(str(tmp_path), max_files=1)
+    assert "Dosya limiti" in rep
+
+    mgr2.docker_available = True
+    assert "Docker Sandbox Aktif" in mgr2.status()
