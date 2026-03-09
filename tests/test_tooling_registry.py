@@ -107,3 +107,47 @@ def test_parse_tool_argument_legacy_error_and_default_fallbacks():
     assert isinstance(todos, tooling.ScanProjectTodosSchema)
     assert todos.directory == "src"
     assert todos.extensions == [".py", ".md"]
+
+def test_parse_tool_argument_empty_and_legacy_edge_branches(monkeypatch):
+    # empty payload -> schema defaults/validation
+    list_files_empty = tooling.parse_tool_argument("github_list_files", "")
+    assert isinstance(list_files_empty, tooling.GithubListFilesSchema)
+    assert list_files_empty.path == ""
+    assert list_files_empty.branch is None
+
+    # write_file legacy invalid shape
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("write_file", "only_path")
+
+    # github_list_files legacy with branch
+    list_files = tooling.parse_tool_argument("github_list_files", "src|||dev")
+    assert isinstance(list_files, tooling.GithubListFilesSchema)
+    assert list_files.path == "src"
+    assert list_files.branch == "dev"
+
+    # github_write legacy valid path
+    gw = tooling.parse_tool_argument("github_write", "a.py|||print(1)|||msg|||dev")
+    assert isinstance(gw, tooling.GithubWriteSchema)
+    assert gw.commit_message == "msg"
+    assert gw.branch == "dev"
+
+    # github_create_branch blank name should fail
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_create_branch", "   ")
+
+    # github_comment_issue / close_issue / pr_diff invalid shapes should fail
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_comment_issue", "42")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_close_issue", "")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_pr_diff", "")
+
+    # fallback branch for mapped-but-unhandled schema
+    class _DummySchema(tooling.BaseModel):
+        value: str | None = None
+
+    monkeypatch.setitem(tooling.TOOL_ARG_SCHEMAS, "dummy_tool", _DummySchema)
+    assert tooling.parse_tool_argument("dummy_tool", "raw-payload") == "raw-payload"
