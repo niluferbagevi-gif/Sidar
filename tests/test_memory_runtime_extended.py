@@ -468,3 +468,23 @@ def test_memory_oserror_paths(tmp_path):
     mem.active_session_id = "other"
     with patch("pathlib.Path.unlink", side_effect=OSError("mock delete err")):
         mem.delete_session("valid")
+
+
+
+def test_memory_remaining_edge_cases(tmp_path):
+    mem = _new_memory(tmp_path)
+
+    # Satır 121-122: _cleanup_broken_files içindeki ikinci döngü (yaşı geçmiş dosya silinirken hata)
+    bf = mem.sessions_dir / "very_old.json.broken"
+    bf.write_text("{}")
+    import os
+    # Dosyayı çok eski yapıyoruz ki ikinci döngüye girsin
+    os.utime(bf, (time.time() - 999999, time.time() - 999999))
+
+    with patch("pathlib.Path.unlink", side_effect=OSError("mock unlink err")):
+        # max_files=50 diyerek listeyi kesmeden döngüye sokuyoruz
+        mem._cleanup_broken_files(max_age_days=7, max_files=50)
+
+    # Satır 240: __del__ metodundaki exception bloğu
+    with patch.object(mem, "force_save", side_effect=Exception("mock destructor err")):
+        mem.__del__()

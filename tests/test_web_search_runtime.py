@@ -779,3 +779,57 @@ def test_duckduckgo_general_exception_242(monkeypatch, web_search_mod, base_cfg)
     ok, text = asyncio.run(manager._search_duckduckgo("q", 5))
     assert ok is False
     assert "Random DDG Error" in text
+
+
+
+def test_web_search_remaining_exceptions_and_stackoverflow(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    mgr = web_search_mod.WebSearchManager(base_cfg)
+
+    # Satır 117: Tavily 500 Server Error (401/403 olmayan HTTP hatası)
+    async def mock_tavily_err(*args, **kwargs):
+        req = web_search_mod.httpx.Request("POST", "http://t")
+        resp = web_search_mod.httpx.Response(status_code=500)
+        raise web_search_mod.httpx.HTTPStatusError("500 Err", request=req, response=resp)
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "post", mock_tavily_err)
+    asyncio.run(mgr._search_tavily("q", 1))
+
+    # Satır 132: Google genel API Exception'ı
+    async def mock_google_err(*args, **kwargs):
+        raise Exception("Google generic error")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_google_err)
+    asyncio.run(mgr._search_google("q", 1))
+
+    # Satır 242: DuckDuckGo bekleme sırasında genel Exception
+    async def mock_ddg_err(*args, **kwargs):
+        raise Exception("DDG generic error")
+
+    monkeypatch.setattr(asyncio, "wait_for", mock_ddg_err)
+    asyncio.run(mgr._search_duckduckgo("q", 1))
+
+    # Satır 262: scrape_url HTTP RequestError (Timeout değil, URL çözülememe vs.)
+    async def mock_req_err(*args, **kwargs):
+        raise web_search_mod.httpx.RequestError("ReqErr")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_req_err)
+    asyncio.run(mgr.scrape_url("http://test"))
+
+    # Satır 296-301: search_stackoverflow her iki dal (if/else)
+    async def fake_search(q, max_results):
+        return True, q
+
+    monkeypatch.setattr(mgr, "search", fake_search)
+
+    # 1. Dal: Google/Tavily aktifken (site: filter)
+    _, q1 = asyncio.run(mgr.search_stackoverflow("python array"))
+    assert "site:stackoverflow.com" in q1
+
+    # 2. Dal: Sadece DuckDuckGo aktifken (düz arama)
+    mgr.tavily_key = ""
+    mgr.google_key = ""
+    _, q2 = asyncio.run(mgr.search_stackoverflow("python array"))
+    assert "stackoverflow python array" in q2
