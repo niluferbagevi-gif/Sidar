@@ -313,3 +313,21 @@ def test_auto_handle_git_log_git_branch_and_todo_phrases():
 
     handled2, msg2 = asyncio.run(auto.handle("yapılacaklar"))
     assert handled2 is False and msg2 == ""
+
+
+def test_auto_handle_extra_regex_phrases_do_not_crash():
+    auto = _make_auto(github_available=True)
+
+    phrases = [
+        "git status",
+        "git branch",
+        "todo list",
+        "yapılacaklar",
+        "internette ara python",
+        "repo info",
+    ]
+
+    for phrase in phrases:
+        handled, msg = asyncio.run(auto.handle(phrase))
+        assert isinstance(handled, bool)
+        assert isinstance(msg, str)
