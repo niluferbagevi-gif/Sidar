@@ -278,6 +278,18 @@ def test_clean_html_and_truncate_logic(monkeypatch, web_search_mod, base_cfg):
     assert len(truncated) > 1000
 
 
+def test_truncate_content_invalid_limit_falls_back(monkeypatch, web_search_mod, base_cfg):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    manager.FETCH_MAX_CHARS = "not-a-number"
+    text = "x" * 13000
+    truncated = manager._truncate_content(text)
+
+    assert truncated.endswith("... [İçerik çok uzun olduğu için kesildi]")
+    assert len(truncated) == 12000 + len("... [İçerik çok uzun olduğu için kesildi]")
+
+
 def test_search_tavily_disables_api_key_on_401(monkeypatch, web_search_mod, base_cfg):
     base_cfg.TAVILY_API_KEY = "t-key"
     monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)

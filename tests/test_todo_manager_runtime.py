@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -286,3 +287,20 @@ def test_todo_manager_ultimate_branches(tmp_path):
     with patch("pathlib.Path.read_text", side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "mock error")):
         scan_res = mgr2.scan_project_todos(extensions=[".py"])
         assert "test.py" not in scan_res
+
+def test_todo_manager_missing_branches_non_dict_empty_list_and_scan_outer_exception(tmp_path, monkeypatch):
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+
+    # line 190: non-dict item should be skipped via continue
+    msg = mgr.set_tasks(["not-a-dict", {"content": "ok", "status": TM.STATUS_PENDING}])
+    assert "1 görev" in msg
+    assert len(mgr.get_tasks()) == 1
+
+    # line 282: explicit empty list output
+    mgr.set_tasks([])
+    assert mgr.list_tasks() == "📋 Görev listesi boş."
+
+    # lines 450-452: outer scan exception handler
+    monkeypatch.setattr(os, "walk", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("walk fail")))
+    out = mgr.scan_project_todos(extensions=[".py"])
+    assert "Tarama sırasında hata oluştu" in out

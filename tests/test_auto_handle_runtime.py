@@ -331,3 +331,94 @@ def test_auto_handle_extra_regex_phrases_do_not_crash():
         handled, msg = asyncio.run(auto.handle(phrase))
         assert isinstance(handled, bool)
         assert isinstance(msg, str)
+
+def test_auto_handle_uncovered_branches_matrix(monkeypatch):
+    auto = _make_auto(github_available=True)
+
+    # dot gpu command path
+    handled, msg = asyncio.run(auto._try_dot_command('.gpu', '.gpu'))
+    assert handled is True and msg == 'gpu-ok'
+
+    # list directory with explicit dir extraction
+    handled, msg = auto._try_list_directory('kök dizin listele', 'kök dizin listele ./src')
+    assert handled is True and msg == 'LIST:./src'
+
+    # read file branch with no path and no memory
+    handled, msg = auto._try_read_file('dosya içeriğini göster', 'dosya içeriğini göster')
+    assert handled is True and 'Hangi dosyayı' in msg
+
+    # read file failure path
+    handled, msg = auto._try_read_file('dosya içeriğini göster', 'dosya içeriğini göster bad.txt')
+    assert handled is True and msg.startswith('✗')
+
+    # audit generic exception path
+    async def raise_audit(*_args, **_kwargs):
+        raise RuntimeError('audit fail')
+
+    monkeypatch.setattr(auto, '_run_blocking', raise_audit)
+    handled, msg = asyncio.run(auto._try_audit('audit'))
+    assert handled is True and 'hata oluştu' in msg
+
+    # health exception path
+    handled, msg = asyncio.run(auto._try_health('sistem sağlık raporu'))
+    assert handled is True and 'alınamadı' in msg
+
+    # gpu health-none and timeout/success path
+    auto_no_health = _make_auto(github_available=True, health=False)
+    handled, msg = asyncio.run(auto_no_health._try_gpu_optimize('gpu optimize et'))
+    assert handled is True and 'başlatılamadı' in msg
+
+    auto_gpu = _make_auto(github_available=True)
+
+    async def timeout_blocking(*_args, **_kwargs):
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(auto_gpu, '_run_blocking', timeout_blocking)
+    handled, msg = asyncio.run(auto_gpu._try_gpu_optimize('gpu optimize et'))
+    assert handled is True and 'zaman aşımı' in msg
+
+    # github unavailable branches
+    auto_gh_off = _make_auto(github_available=False)
+    assert auto_gh_off._try_github_info('repo bilgi')[1].startswith('⚠')
+    assert auto_gh_off._try_github_list_files('repo dosya listele')[1].startswith('⚠')
+    assert auto_gh_off._try_github_read('github dosya oku', 'github dosya oku x.py')[1].startswith('⚠')
+    assert auto_gh_off._try_github_list_prs('pr listele', '')[1].startswith('⚠')
+    assert asyncio.run(auto_gh_off._try_github_get_pr('pr #5 dosyaları', ''))[1].startswith('⚠')
+    assert asyncio.run(auto_gh_off._try_github_get_pr('pr #5', ''))[1].startswith('⚠')
+
+    # github read without path
+    auto_gh_on = _make_auto(github_available=True)
+    handled, msg = auto_gh_on._try_github_read('github dosya oku', 'github dosya oku')
+    assert handled is True and 'belirtin' in msg
+
+    # open state default in PR list
+    handled, msg = auto_gh_on._try_github_list_prs('pr listesi göster', '')
+    assert handled is True and msg == 'prs:open:10'
+
+    # security status explicit phrase
+    handled, msg = auto._try_security_status('erişim seviyesi nedir')
+    assert handled is True and msg == 'sec-status'
+
+    # web search empty query
+    handled, msg = asyncio.run(auto._try_web_search('google:   ', 'google:   '))
+    assert handled is True and 'sorgusu' in msg
+
+    # fetch url missing URL
+    handled, msg = asyncio.run(auto._try_fetch_url('url oku', 'url oku'))
+    assert handled is True and 'URL' in msg
+
+    # pypi info (no version) path
+    handled, msg = asyncio.run(auto._try_pypi('pypi fastapi', ''))
+    assert handled is True and msg == 'pypi:fastapi'
+
+    # docs search with mode extraction path
+    handled, msg = asyncio.run(auto._try_docs_search('depoda ara: cache mode:vector', ''))
+    assert handled is True and msg == 'dsearch:cache'
+
+    # docs add fallback URL parse path
+    handled, msg = asyncio.run(auto._try_docs_add('belge depo rag ekle', 'https://a.b/c "Başlık" belge deposuna ekle'))
+    assert handled is True and msg == 'dadd:https://a.b/c:Başlık'
+
+    # dir extraction absolute path and file-like rejection
+    assert auto._extract_dir_path('klasör listele /tmp/workspace') == '/tmp/workspace'
+    assert auto._extract_dir_path('klasör listele ./src/main.py') is None

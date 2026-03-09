@@ -317,7 +317,12 @@ class WebSearchManager:
         return True, f"[URL: {url}]\n\n{text}"
 
     def _truncate_content(self, text: str) -> str:
-        max_len = max(1000, int(self.FETCH_MAX_CHARS))
+        try:
+            configured_limit = int(self.FETCH_MAX_CHARS)
+        except (TypeError, ValueError):
+            configured_limit = self.FETCH_MAX_CHARS = 12000
+
+        max_len = max(1000, configured_limit)
         if len(text) <= max_len:
             return text
         return text[:max_len] + "... [İçerik çok uzun olduğu için kesildi]"

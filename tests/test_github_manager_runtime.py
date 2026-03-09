@@ -334,3 +334,159 @@ def test_read_remote_file_decode_and_list_repo_exception_paths():
     m2 = _manager(repo=None, gh=types.SimpleNamespace(get_user=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom"))), available=True, token="t")
     ok, repos = m2.list_repos(owner="org")
     assert ok is False and repos == []
+
+def test_github_manager_error_and_guard_branches_matrix(monkeypatch):
+    # __init__ require_token path
+    with __import__("pytest").raises(ValueError):
+        GM.GitHubManager(token="", repo_name="org/repo", require_token=True)
+
+    # _init_client import error and generic error branches
+    import builtins
+    real_import = builtins.__import__
+
+    def import_error(name, *args, **kwargs):
+        if name == "github":
+            raise ImportError("no pygithub")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_error)
+    m_imp = GM.GitHubManager(token="x", repo_name="", require_token=False)
+    assert m_imp.is_available() is False
+
+    class _GithubCtorBoom:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    fake_gh_mod = types.SimpleNamespace(Auth=types.SimpleNamespace(Token=lambda t: t), Github=_GithubCtorBoom)
+
+    def import_boom(name, *args, **kwargs):
+        if name == "github":
+            return fake_gh_mod
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_boom)
+    m_boom = GM.GitHubManager(token="x", repo_name="", require_token=False)
+    assert m_boom.is_available() is False
+    monkeypatch.setattr(builtins, "__import__", real_import)
+
+    # _load_repo when _gh absent + set_repo unavailable/fail branches
+    m = _manager(repo=None, gh=None, available=False, token="")
+    assert m._load_repo("org/repo") is False
+    ok, msg = m.set_repo("org/repo")
+    assert ok is False and "bağlantısı yok" in msg
+
+    m2 = _manager(repo=None, gh=types.SimpleNamespace(get_repo=lambda _: (_ for _ in ()).throw(RuntimeError("x"))), available=True, token="t")
+    ok, msg = m2.set_repo("org/repo")
+    assert ok is False and "Depo bulunamadı" in msg
+
+    # list_repos guard + error
+    m3 = _manager(repo=None, gh=None, available=True, token="t")
+    ok, repos = m3.list_repos(owner="org")
+    assert ok is False and repos == []
+
+    m4 = _manager(repo=None, gh=types.SimpleNamespace(get_user=lambda *_: (_ for _ in ()).throw(RuntimeError("err"))), available=True, token="t")
+    ok, repos = m4.list_repos(owner="org")
+    assert ok is False and repos == []
+
+    # no-repo guards
+    g = _manager(repo=None, gh=None, available=True, token="t")
+    assert g.get_repo_info()[0] is False
+    assert g.list_commits()[0] is False
+    assert g.read_remote_file("x")[0] is False
+    assert g.list_branches()[0] is False
+    assert g.list_files()[0] is False
+    assert g.create_or_update_file("a", "b", "m")[0] is False
+    assert g.create_branch("x")[0] is False
+    assert g.create_pull_request("t", "b", "h")[0] is False
+    assert g.list_pull_requests()[0] is False
+    assert g.get_pull_request(1)[0] is False
+    assert g.add_pr_comment(1, "x")[0] is False
+    assert g.close_pull_request(1)[0] is False
+    assert g.list_issues()[0] is False
+    assert g.create_issue("t", "b")[0] is False
+    assert g.comment_issue(1, "b")[0] is False
+    assert g.close_issue(1)[0] is False
+    assert g.get_pull_request_diff(1)[0] is False
+    assert g.get_pr_files(1)[0] is False
+    assert g.search_code("x")[0] is False
+    assert g.get_pull_requests_detailed()[0] is False
+
+    # method exception branches with raising repo
+    class _RepoErr:
+        full_name = "org/repo"
+        default_branch = "main"
+
+        def get_commits(self, **kwargs): raise RuntimeError("commits")
+        def get_contents(self, *args, **kwargs): raise RuntimeError("contents")
+        def get_branches(self): raise RuntimeError("branches")
+        def create_file(self, **kwargs): raise RuntimeError("create")
+        def get_branch(self, _): raise RuntimeError("branch")
+        def create_pull(self, **kwargs): raise RuntimeError("pr")
+        def get_pulls(self, *args, **kwargs): raise RuntimeError("prs")
+        def get_pull(self, *_): raise RuntimeError("pull")
+        def get_issues(self, *args, **kwargs): raise RuntimeError("issues")
+        def create_issue(self, *args, **kwargs): raise RuntimeError("issue create")
+        def get_issue(self, *args, **kwargs): raise RuntimeError("issue get")
+
+    er = _manager(repo=_RepoErr(), gh=types.SimpleNamespace(search_code=lambda *_: (_ for _ in ()).throw(RuntimeError("search"))), available=True, token="t")
+    assert er.list_commits()[0] is False
+    assert er.read_remote_file("x")[0] is False
+    assert er.list_branches()[0] is False
+    assert er.list_files()[0] is False
+    assert er.create_or_update_file("a", "b", "m")[0] is False
+    assert er.create_branch("feature/x")[0] is False
+    assert er.create_pull_request("t", "b", "h")[0] is False
+    assert er.list_pull_requests()[0] is False
+    assert er.get_pull_request(1)[0] is False
+    assert er.add_pr_comment(1, "x")[0] is False
+    assert er.close_pull_request(1)[0] is False
+    assert er.list_issues()[0] is False
+    assert er.create_issue("t", "b")[0] is False
+    assert er.comment_issue(1, "b")[0] is False
+    assert er.close_issue(1)[0] is False
+    assert er.get_pull_request_diff(1)[0] is False
+    assert er.get_pr_files(1)[0] is False
+    assert er.search_code("x")[0] is False
+
+    # list pull requests empty branch line 395
+    class _RepoEmptyPR(FakeRepo):
+        def get_pulls(self, state="open", sort=None):
+            if sort == "updated":
+                return []
+            return []
+
+    emp = _manager(repo=_RepoEmptyPR(), gh=types.SimpleNamespace(search_code=lambda *_: []), available=True, token="t")
+    ok, msg = emp.list_pull_requests(state="open", limit=5)
+    assert ok is True and "Hiç open PR" in msg
+
+    # diff branch with no patch and only header -> no code files
+    class _PRNoPatch:
+        title = "t"
+        body = "b"
+        user = types.SimpleNamespace(login="u")
+        head = types.SimpleNamespace(ref="h")
+        base = types.SimpleNamespace(ref="m")
+
+        def get_files(self):
+            return [types.SimpleNamespace(filename="README.bin", status="modified", additions=0, deletions=0, patch=None)]
+
+    class _RepoNoPatch(FakeRepo):
+        def get_pull(self, number):
+            return _PRNoPatch()
+
+    np = _manager(repo=_RepoNoPatch(), gh=types.SimpleNamespace(search_code=lambda *_: []), available=True, token="t")
+    ok, msg = np.get_pull_request_diff(1)
+    assert ok is True and ("binary" in msg or "değiştirilmiş kod dosyası" in msg)
+
+    # search no results branch
+    ok, msg = np.search_code("needle")
+    assert ok is True and "sonuç bulunamadı" in msg
+
+    # detailed PR exception branch
+    class _RepoBadDetailed(FakeRepo):
+        def get_pulls(self, *args, **kwargs):
+            raise RuntimeError("detailed fail")
+
+    bd = _manager(repo=_RepoBadDetailed(), gh=types.SimpleNamespace(search_code=lambda *_: []), available=True, token="t")
+    ok, prs, err = bd.get_pull_requests_detailed()
+    assert ok is False and prs == [] and "detailed fail" in err

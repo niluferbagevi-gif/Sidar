@@ -1,5 +1,6 @@
 import builtins
 import importlib.util
+import runpy
 import sys
 import types
 from pathlib import Path
@@ -155,3 +156,185 @@ def test_config_env_overrides_for_existing_fields(monkeypatch):
     assert c.WEB_FETCH_TIMEOUT == 21
     assert c.RATE_LIMIT_CHAT == 99
     assert c.HF_HUB_OFFLINE is True
+
+
+def test_config_import_profile_and_missing_env_messages(monkeypatch):
+    load_calls = []
+    printed = []
+
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: load_calls.append((a, k))
+
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+
+        monkeypatch.setenv("SIDAR_ENV", "missing_profile")
+        spec = importlib.util.spec_from_file_location("config_runtime_profile_under_test", Path("config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        assert any("bulunamadı" in p for p in printed)
+
+        printed.clear()
+        monkeypatch.delenv("SIDAR_ENV", raising=False)
+        spec2 = importlib.util.spec_from_file_location("config_runtime_missing_base_under_test", Path("config.py"))
+        mod2 = importlib.util.module_from_spec(spec2)
+        assert spec2 and spec2.loader
+        spec2.loader.exec_module(mod2)
+        assert any("'.env' dosyası bulunamadı" in p for p in printed)
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+
+
+def test_runtime_config_provider_and_validate_branches(monkeypatch):
+    cfg_mod = _load_config_module()
+
+    errors = []
+    warns = []
+    infos = []
+    monkeypatch.setattr(cfg_mod.logger, "error", lambda msg, *args: errors.append(msg % args if args else msg))
+    monkeypatch.setattr(cfg_mod.logger, "warning", lambda msg, *args: warns.append(msg % args if args else msg))
+    monkeypatch.setattr(cfg_mod.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+
+    cfg_mod.Config.set_provider_mode("online")
+    assert cfg_mod.Config.AI_PROVIDER == "gemini"
+    cfg_mod.Config.set_provider_mode("invalid")
+    assert any("Geçersiz sağlayıcı modu" in e for e in errors)
+
+    cfg_mod.Config._hardware_loaded = True
+    cfg_mod.Config.initialize_directories = classmethod(lambda cls: True)
+    cfg_mod.Config.AI_PROVIDER = "gemini"
+    cfg_mod.Config.GEMINI_API_KEY = ""
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
+    valid = cfg_mod.Config.validate_critical_settings()
+    assert valid is False
+
+    cfg_mod.Config.AI_PROVIDER = "ollama"
+    cfg_mod.Config.OLLAMA_URL = "http://localhost:11434"
+
+    class _Resp:
+        status_code = 503
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    httpx_mod = types.SimpleNamespace(Client=_Client)
+    monkeypatch.setitem(sys.modules, "httpx", httpx_mod)
+    cfg_mod.Config.GEMINI_API_KEY = "key"
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = "invalid"
+    valid2 = cfg_mod.Config.validate_critical_settings()
+    assert valid2 is False
+    assert any("Ollama yanıt kodu" in w for w in warns)
+
+    monkeypatch.delitem(sys.modules, "httpx", raising=False)
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
+    cfg_mod.Config.OLLAMA_URL = "http://invalid:11434/api"
+    valid3 = cfg_mod.Config.validate_critical_settings()
+    assert valid3 is True
+    assert any("ulaşılamadı" in w for w in warns)
+
+
+def test_check_hardware_general_exception_and_vram_set_exception(monkeypatch):
+    cfg_mod = _load_config_module()
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("GPU_MEMORY_FRACTION", "0.5")
+
+    class _CudaErr:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(_idx):
+            return "GPU"
+
+        @staticmethod
+        def set_per_process_memory_fraction(_frac, device=0):
+            raise RuntimeError("no-vram-set")
+
+    torch_mod = types.SimpleNamespace(cuda=_CudaErr(), version=types.SimpleNamespace(cuda="12"))
+    monkeypatch.setitem(sys.modules, "torch", torch_mod)
+    hw = cfg_mod.check_hardware()
+    assert hw.gpu_name == "GPU"
+
+    real_import = builtins.__import__
+
+    def _fail_torch(name, *args, **kwargs):
+        if name == "torch":
+            class _Boom(Exception):
+                pass
+            raise _Boom("torch boom")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fail_torch)
+    hw2 = cfg_mod.check_hardware()
+    assert hw2.gpu_name == "Tespit Edilemedi"
+
+
+def test_initialize_directories_error_and_system_info_and_summary_and_main(monkeypatch, capsys):
+    cfg_mod = _load_config_module()
+
+    class _BadDir:
+        name = "bad"
+
+        def mkdir(self, *a, **k):
+            raise OSError("nope")
+
+    cfg_mod.Config.REQUIRED_DIRS = [_BadDir()]
+    assert cfg_mod.Config.initialize_directories() is False
+
+    called = {"ensure": 0}
+    cfg_mod.Config._ensure_hardware_info_loaded = classmethod(lambda cls: called.__setitem__("ensure", called["ensure"] + 1))
+    info = cfg_mod.Config.get_system_info()
+    assert called["ensure"] == 1
+    assert "provider" in info
+
+    cfg_mod.Config.USE_GPU = True
+    cfg_mod.Config.GPU_INFO = "RTX"
+    cfg_mod.Config.CUDA_VERSION = "12.4"
+    cfg_mod.Config.GPU_COUNT = 2
+    cfg_mod.Config.GPU_DEVICE = 1
+    cfg_mod.Config.GPU_MIXED_PRECISION = True
+    cfg_mod.Config.DRIVER_VERSION = "550"
+    cfg_mod.Config.AI_PROVIDER = "gemini"
+    cfg_mod.Config.GEMINI_MODEL = "g-model"
+    cfg_mod.Config.print_config_summary()
+    out, _ = capsys.readouterr()
+    assert "Sürücü Sürümü" in out
+    assert "Gemini Modeli" in out
+
+    cfg_mod.Config.DEBUG_MODE = True
+    cfg_mod.Config.initialize_directories = classmethod(lambda cls: True)
+    printed = []
+    monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: None
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        runpy.run_path("config.py", run_name="__main__")
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+    assert printed

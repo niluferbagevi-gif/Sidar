@@ -146,3 +146,75 @@ def test_error_mapping_paths(monkeypatch):
     monkeypatch.setattr(mgr, "_get_json", req)
     ok, msg = asyncio.run(mgr.github_releases("x/y"))
     assert ok is False and "request:boom" in msg
+
+def test_get_json_success_sets_cache_and_fetch_pypi_error_mappings(monkeypatch):
+    mgr = PKG.PackageInfoManager(config=types.SimpleNamespace(PACKAGE_INFO_TIMEOUT=5, PACKAGE_INFO_CACHE_TTL=120, VERSION="x"))
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"info": {"version": "1.0.0"}}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            return _Resp()
+
+    monkeypatch.setattr(PKG.httpx, "AsyncClient", _Client)
+    ok, data, err = asyncio.run(mgr._get_json("https://pypi.org/pypi/x/json", cache_key="pypi:x"))
+    assert ok is True and data["info"]["version"] == "1.0.0" and err == ""
+    assert "pypi:x" in mgr._cache
+
+    async def timeout_get(*_a, **_k):
+        return False, {}, "timeout"
+
+    async def req_get(*_a, **_k):
+        return False, {}, "request:boom"
+
+    async def unk_get(*_a, **_k):
+        return False, {}, "unexpected:fail"
+
+    monkeypatch.setattr(mgr, "_get_json", timeout_get)
+    ok, _d, msg = asyncio.run(mgr._fetch_pypi_json("pkg"))
+    assert ok is False and "zaman aşımı" in msg
+
+    monkeypatch.setattr(mgr, "_get_json", req_get)
+    ok, _d, msg = asyncio.run(mgr._fetch_pypi_json("pkg"))
+    assert ok is False and "bağlantı hatası" in msg
+
+    monkeypatch.setattr(mgr, "_get_json", unk_get)
+    ok, _d, msg = asyncio.run(mgr._fetch_pypi_json("pkg"))
+    assert ok is False and msg.startswith("[HATA] PyPI:")
+
+
+def test_pypi_info_propagates_fetch_error_and_prerelease_invalid_semver_branch(monkeypatch):
+    mgr = PKG.PackageInfoManager(config=types.SimpleNamespace(PACKAGE_INFO_TIMEOUT=5, PACKAGE_INFO_CACHE_TTL=120, VERSION="x"))
+
+    async def fail_fetch(_pkg):
+        return False, {}, "fetch-error"
+
+    monkeypatch.setattr(mgr, "_fetch_pypi_json", fail_fetch)
+    ok, msg = asyncio.run(mgr.pypi_info("pkg"))
+    assert ok is False and msg == "fetch-error"
+
+    real_version = PKG.Version
+
+    class _VersionRaiser:
+        def __init__(self, _v):
+            raise PKG.InvalidVersion("bad")
+
+    monkeypatch.setattr(PKG, "Version", _VersionRaiser)
+    assert PKG.PackageInfoManager._is_prerelease("1.2.3-alpha.1") is True
+    monkeypatch.setattr(PKG, "Version", real_version)
