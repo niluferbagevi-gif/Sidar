@@ -1027,3 +1027,156 @@ def test_summarize_memory_success_and_exception_paths(monkeypatch):
     a.llm = _BrokenLLM()
     # sadece exception path'leri çalışsın, raise etmesin
     asyncio.run(a._summarize_memory())
+
+
+def test_subtask_non_string_empty_tool_and_validation_paths(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=4)
+
+    responses = [
+        123,
+        "metin ama json yok",
+        '{"thought":"t","tool":"","argument":"x"}',
+        '{"thought":"tamam","tool":"final_answer","argument":"bitti"}',
+    ]
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+
+        async def chat(self, **kwargs):
+            out = responses[self.i]
+            self.i += 1
+            return out
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_: None
+    out = asyncio.run(a._tool_subtask("alt görev"))
+    assert out.endswith("bitti")
+
+    class _LLMValidation:
+        async def chat(self, **kwargs):
+            return '{"thought":"eksik"}'
+
+    a2 = _make_agent_for_runtime()
+    a2.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=1)
+    a2.llm = _LLMValidation()
+    assert "tamamlanamadı" in asyncio.run(a2._tool_subtask("x"))
+
+
+def test_subtask_tool_missing_runtime_exception_and_fallback_message(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=3)
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+
+        async def chat(self, **kwargs):
+            seq = [
+                '{"thought":"t","tool":"bilinmeyen","argument":"x"}',
+                '{"thought":"t","tool":"list_dir","argument":"."}',
+                '{"thought":"t","tool":"final_answer","argument":"ok"}',
+            ]
+            out = seq[self.i]
+            self.i += 1
+            return out
+
+    async def _exec(tool, _arg):
+        if tool == "bilinmeyen":
+            return None
+        raise RuntimeError("tool crash")
+
+    a.llm = _LLM()
+    monkeypatch.setattr(a, "_execute_tool", _exec)
+    assert "tamamlanamadı" in asyncio.run(a._tool_subtask("işle"))
+
+
+def test_github_guard_branches_and_smart_pr_paths(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _GitHubOff:
+        def is_available(self):
+            return False
+
+    a.github = _GitHubOff()
+    assert "token" in asyncio.run(a._tool_github_write("a|||b|||c"))
+    assert "token" in asyncio.run(a._tool_github_create_branch("x"))
+    assert "token" in asyncio.run(a._tool_github_create_pr("t|||b|||h"))
+    assert "token" in asyncio.run(a._tool_github_search_code("q"))
+    assert "token" in asyncio.run(a._tool_github_list_prs("open|||x"))
+    assert "token" in asyncio.run(a._tool_github_get_pr("1"))
+    assert "token" in asyncio.run(a._tool_github_comment_pr("1|||x"))
+    assert "token" in asyncio.run(a._tool_github_close_pr("1"))
+    assert "token" in asyncio.run(a._tool_github_pr_files("1"))
+    assert "token" in asyncio.run(a._tool_github_list_issues("open|||2"))
+    assert "token" in asyncio.run(a._tool_github_create_issue("x"))
+    assert "number gerekli" in asyncio.run(a._tool_github_comment_issue("x"))
+    assert "number gerekli" in asyncio.run(a._tool_github_close_issue("x"))
+    assert "number gerekli" in asyncio.run(a._tool_github_pr_diff("x"))
+    assert "token" in asyncio.run(a._tool_github_smart_pr(""))
+
+    class _GitHubOn:
+        default_branch = property(lambda _self: (_ for _ in ()).throw(RuntimeError("no default")))
+
+        def is_available(self):
+            return True
+
+        def create_pull_request(self, title, body, head, base):
+            return False, f"fail:{title}:{head}:{base}:{len(body)}"
+
+    class _Code:
+        def __init__(self):
+            self.calls = 0
+
+        def run_shell(self, cmd):
+            self.calls += 1
+            if "show-current" in cmd:
+                return True, "feat/x\n"
+            if "status" in cmd:
+                return True, "M a.py"
+            if "diff --stat" in cmd:
+                return True, "a.py | 1 +"
+            if "diff --no-color" in cmd:
+                return True, "x" * 12050
+            return True, "c1"
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            raise RuntimeError("llm down")
+
+    a2 = _make_agent_for_runtime()
+    a2.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+    a2.github = _GitHubOn()
+    a2.code = _Code()
+    a2.llm = _LLM()
+    out = asyncio.run(a2._tool_github_smart_pr(""))
+    assert out.startswith("fail:feat")
+
+
+def test_instruction_file_loader_stat_and_read_failures_and_summarize_short_history(tmp_path, monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+
+    good = tmp_path / "SIDAR.md"
+    good.write_text("ok", encoding="utf-8")
+    bad = tmp_path / "CLAUDE.md"
+    bad.write_text("", encoding="utf-8")
+
+    real_read = Path.read_text
+
+    def _read(self, *args, **kwargs):
+        if self.name == "SIDAR.md":
+            raise OSError("read fail")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read)
+    assert a._load_instruction_files() == ""
+
+    b = _make_agent_for_runtime()
+    b.memory = SimpleNamespace(get_history=lambda: [{"role": "u", "content": "x"}] * 3)
+    asyncio.run(b._summarize_memory())
