@@ -224,3 +224,14 @@ def test_pypi_info_propagates_fetch_error_and_prerelease_invalid_semver_branch(m
     monkeypatch.setattr(PKG, "Version", _VersionRaiser)
     assert PKG.PackageInfoManager._is_prerelease("1.2.3-alpha.1") is True
     monkeypatch.setattr(PKG, "Version", real_version)
+
+
+def test_load_package_info_module_when_httpx_missing_restores_sys_modules():
+    old = sys.modules.pop("httpx", None)
+    try:
+        loaded = _load_package_info_module()
+        assert hasattr(loaded, "PackageInfoManager")
+        assert "httpx" not in sys.modules
+    finally:
+        if old is not None:
+            sys.modules["httpx"] = old

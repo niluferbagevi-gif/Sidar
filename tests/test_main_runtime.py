@@ -295,3 +295,19 @@ def test_main_non_quick_and_dunder_main_paths(monkeypatch):
             assert False
         except SystemExit as exc:
             assert isinstance(exc.code, int)
+
+
+def test_load_main_module_without_config_uses_dummy(monkeypatch):
+    real_import = builtins.__import__
+
+    def _import_without_config(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "config":
+            raise ImportError("config missing for test")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_without_config)
+    spec = importlib.util.spec_from_file_location("main_no_config", Path("main.py"))
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+    assert mod.cfg.AI_PROVIDER == "ollama"

@@ -67,6 +67,21 @@ def test_tooling_uncovered_parse_branches_runtime():
     assert parsed_write.path == "a.py"
     assert parsed_write.commit_message == "msg"
 
+    parsed_legacy_write = tooling.parse_tool_argument("write_file", "a.py|||print('x')")
+    assert parsed_legacy_write.path == "a.py"
+    assert "print" in parsed_legacy_write.content
+
+    parsed_patch = tooling.parse_tool_argument("patch_file", "a.py|||old|||new")
+    assert parsed_patch.old_text == "old"
+    assert parsed_patch.new_text == "new"
+
+    parsed_branch = tooling.parse_tool_argument("github_create_branch", "feature-x|||main")
+    assert parsed_branch.branch_name == "feature-x"
+    assert parsed_branch.from_branch == "main"
+
+    parsed_close_issue = tooling.parse_tool_argument("github_close_issue", "42")
+    assert parsed_close_issue.number == 42
+
     with pytest.raises(ValueError):
         tooling.parse_tool_argument("github_create_branch", "")
 
@@ -83,3 +98,14 @@ def test_tooling_uncovered_parse_branches_runtime():
 
     tooling.TOOL_ARG_SCHEMAS["dummy"] = _Dummy
     assert tooling.parse_tool_argument("dummy", "raw") == "raw"
+
+
+def test_load_tooling_module_restores_when_pydantic_missing(monkeypatch):
+    old = sys.modules.pop("pydantic", None)
+    try:
+        mod = _load_tooling_module()
+        assert hasattr(mod, "parse_tool_argument")
+        assert "pydantic" not in sys.modules
+    finally:
+        if old is not None:
+            sys.modules["pydantic"] = old
