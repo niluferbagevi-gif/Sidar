@@ -833,3 +833,61 @@ def test_web_search_remaining_exceptions_and_stackoverflow(monkeypatch, web_sear
     mgr.google_key = ""
     _, q2 = asyncio.run(mgr.search_stackoverflow("python array"))
     assert "stackoverflow python array" in q2
+
+
+
+def test_web_search_final_exceptions_and_so(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    # 1. Tavily HTTPStatusError 500
+    async def mock_tavily_err(*args, **kwargs):
+        req = web_search_mod.httpx.Request("POST", "http://t")
+        resp = web_search_mod.httpx.Response(status_code=500)
+        raise web_search_mod.httpx.HTTPStatusError("500 Err", request=req, response=resp)
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "post", mock_tavily_err)
+    _, msg1 = asyncio.run(manager._search_tavily("q", 1))
+    assert "[HATA] Tavily" in msg1
+
+    # 2. Google genel Exception
+    async def mock_google_err(*args, **kwargs):
+        raise Exception("Google generic error")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_google_err)
+    _, msg2 = asyncio.run(manager._search_google("q", 1))
+    assert "[HATA] Google" in msg2
+
+    # 3. DuckDuckGo wait_for Exception
+    async def mock_ddg_err(*args, **kwargs):
+        raise Exception("DDG generic error")
+
+    monkeypatch.setattr(asyncio, "wait_for", mock_ddg_err)
+    _, msg3 = asyncio.run(manager._search_duckduckgo("q", 1))
+    assert "[HATA] DuckDuckGo" in msg3
+
+    # 4. scrape_url Exception
+    async def mock_scrape_err(*args, **kwargs):
+        raise Exception("Scrape generic error")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_scrape_err)
+    msg4 = asyncio.run(manager.scrape_url("http://test"))
+    assert "Hata: Sayfa içeriği çekilemedi" in msg4
+
+    # 5. search_stackoverflow her iki dal
+    async def fake_search(q, max_results):
+        return True, q
+
+    monkeypatch.setattr(manager, "search", fake_search)
+
+    # a) API Anahtarları varken (site:stackoverflow.com)
+    _, so_q1 = asyncio.run(manager.search_stackoverflow("python"))
+    assert "site:stackoverflow.com" in so_q1
+
+    # b) API anahtarları yokken, sadece DuckDuckGo (stackoverflow prefix)
+    manager.tavily_key = ""
+    manager.google_key = ""
+    _, so_q2 = asyncio.run(manager.search_stackoverflow("python"))
+    assert "stackoverflow python" in so_q2

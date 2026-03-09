@@ -228,3 +228,28 @@ def test_todo_manager_remaining_branches(tmp_path):
     (tmp_path / "test.py").write_text("# TODO: fix", encoding="utf-8")
     with patch("pathlib.Path.read_text", side_effect=Exception("mock read err")):
         mgr.scan_project_todos(extensions=[".py"])
+
+
+
+def test_todo_manager_final_branches(tmp_path):
+    # 1. _load metodunda invalid status durumu
+    todo_path = tmp_path / "todos.json"
+    todo_path.write_text(json.dumps([{"content": "X", "status": "INVALID_STATUS"}]), encoding="utf-8")
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+    assert mgr.get_tasks()[0]["status"] == TM.STATUS_PENDING
+
+    # 2. list_tasks metodunda continue bloğu
+    mgr.add_task("Y", TM.STATUS_IN_PROGRESS)
+    out = mgr.list_tasks(filter_status="completed")
+    assert "durumunda görev yok" in out
+
+    # 3. clear_completed metodunda deleted > 0 durumu
+    mgr.add_task("Bitti", TM.STATUS_COMPLETED)
+    clear_msg = mgr.clear_completed()
+    assert "1 tamamlanmış görev silindi" in clear_msg
+
+    # 4. scan_project_todos içinde native UnicodeDecodeError
+    bad_file = tmp_path / "bad_encoding.py"
+    bad_file.write_bytes(b"\x80\x81\x82")  # Hatalı UTF-8 byte dizisi
+    scan_res = mgr.scan_project_todos(extensions=[".py"])
+    assert "bad_encoding.py" not in scan_res
