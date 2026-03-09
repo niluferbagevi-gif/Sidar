@@ -5,6 +5,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -891,3 +892,59 @@ def test_web_search_final_exceptions_and_so(monkeypatch, web_search_mod, base_cf
     manager.google_key = ""
     _, so_q2 = asyncio.run(manager.search_stackoverflow("python"))
     assert "stackoverflow python" in so_q2
+
+
+
+def test_web_search_ultimate_exceptions_and_so(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    # Tavily HTTP 500
+    def mock_raise_tavily(*args, **kwargs):
+        req = web_search_mod.httpx.Request("POST", "http://t")
+        resp = web_search_mod.httpx.Response(status_code=500)
+        raise web_search_mod.httpx.HTTPStatusError("500 Err", request=req, response=resp)
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "post", AsyncMock(side_effect=mock_raise_tavily))
+    _, msg1 = asyncio.run(manager._search_tavily("q", 1))
+    assert "500" in msg1 or "HATA" in msg1 or "Err" in msg1
+
+    # Google generic exception
+    monkeypatch.setattr(
+        web_search_mod.httpx.AsyncClient,
+        "get",
+        AsyncMock(side_effect=RuntimeError("Google Error")),
+    )
+    _, msg2 = asyncio.run(manager._search_google("q", 1))
+    assert "[HATA] Google" in msg2
+
+    # DDG generic exception via wait_for
+    monkeypatch.setattr(
+        asyncio,
+        "wait_for",
+        AsyncMock(side_effect=RuntimeError("DDG Error")),
+    )
+    _, msg3 = asyncio.run(manager._search_duckduckgo("q", 1))
+    assert "[HATA] DuckDuckGo" in msg3
+
+    # scrape_url RequestError
+    def mock_req_err(*args, **kwargs):
+        raise web_search_mod.httpx.RequestError("ReqErr")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", AsyncMock(side_effect=mock_req_err))
+    msg4 = asyncio.run(manager.scrape_url("http://test"))
+    assert "bağlantı/istek hatası" in msg4
+
+    # StackOverflow query dalları
+    monkeypatch.setattr(manager, "search", AsyncMock(return_value=(True, "mock res")))
+
+    asyncio.run(manager.search_stackoverflow("python"))
+    manager.search.assert_awaited_with("site:stackoverflow.com python", max_results=5)
+
+    manager.tavily_key = ""
+    manager.google_key = ""
+    manager.search.reset_mock()
+    asyncio.run(manager.search_stackoverflow("python"))
+    manager.search.assert_awaited_with("stackoverflow python", max_results=5)

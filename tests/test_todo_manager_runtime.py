@@ -253,3 +253,36 @@ def test_todo_manager_final_branches(tmp_path):
     bad_file.write_bytes(b"\x80\x81\x82")  # Hatalı UTF-8 byte dizisi
     scan_res = mgr.scan_project_todos(extensions=[".py"])
     assert "bad_encoding.py" not in scan_res
+
+
+
+def test_todo_manager_ultimate_branches(tmp_path):
+    # _load: geçersiz status -> pending normalizasyonu
+    todo_file = tmp_path / "todos.json"
+    todo_file.write_text(json.dumps([{"id": 1, "content": "X", "status": "GECERSIZ"}]), encoding="utf-8")
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+    assert mgr.get_tasks()[0]["status"] == TM.STATUS_PENDING
+
+    # filter_status=completed: sadece completed görev döner
+    todo_file.write_text(
+        json.dumps([
+            {"id": 1, "content": "Görev 1", "status": "pending"},
+            {"id": 2, "content": "Görev 2", "status": "completed"},
+        ]),
+        encoding="utf-8",
+    )
+    mgr2 = TM.TodoManager(cfg=Cfg(tmp_path))
+    out = mgr2.list_tasks(filter_status="completed")
+    assert "Görev 1" not in out
+    assert "Görev 2" in out
+
+    # clear_completed: deleted > 0 dalı
+    clear_msg = mgr2.clear_completed()
+    assert "1 tamamlanmış görev silindi" in clear_msg
+    assert len(mgr2.get_tasks()) == 1
+
+    # scan_project_todos: dosya okuma sırasında UnicodeDecodeError benzeri hata yutulur
+    (tmp_path / "test.py").write_text("# TODO: error", encoding="utf-8")
+    with patch("pathlib.Path.read_text", side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "mock error")):
+        scan_res = mgr2.scan_project_todos(extensions=[".py"])
+        assert "test.py" not in scan_res
