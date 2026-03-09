@@ -109,3 +109,17 @@ def test_load_tooling_module_restores_when_pydantic_missing(monkeypatch):
     finally:
         if old is not None:
             sys.modules["pydantic"] = old
+
+
+def test_tooling_legacy_parse_value_errors_and_extensions():
+    tooling = _load_tooling_module()
+
+    result_pr = tooling.parse_tool_argument("github_list_prs", "open|||not-a-number")
+    assert result_pr.limit == 10
+
+    result_issue = tooling.parse_tool_argument("github_list_issues", "closed|||invalid")
+    assert result_issue.limit == 10
+
+    result_scan = tooling.parse_tool_argument("scan_project_todos", "src|||.py, .js")
+    assert result_scan.directory == "src"
+    assert result_scan.extensions == [".py", ".js"]
