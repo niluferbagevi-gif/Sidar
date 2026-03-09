@@ -6,42 +6,48 @@ import sys
 
 
 def _load_package_info_module():
-    if "httpx" not in sys.modules:
-        class _Timeout:
-            def __init__(self, *args, **kwargs):
-                self.args = args
-                self.kwargs = kwargs
+    class _Timeout:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
 
-        class _TimeoutException(Exception):
+    class _TimeoutException(Exception):
+        pass
+
+    class _RequestError(Exception):
+        pass
+
+    class _AsyncClient:
+        def __init__(self, *args, **kwargs):
             pass
 
-        class _RequestError(Exception):
-            pass
+        async def __aenter__(self):
+            return self
 
-        class _AsyncClient:
-            def __init__(self, *args, **kwargs):
-                pass
+        async def __aexit__(self, *args):
+            return None
 
-            async def __aenter__(self):
-                return self
+        async def get(self, url):
+            return types.SimpleNamespace(status_code=200, json=lambda: {}, raise_for_status=lambda: None)
 
-            async def __aexit__(self, *args):
-                return None
-
-            async def get(self, url):
-                return types.SimpleNamespace(status_code=200, json=lambda: {}, raise_for_status=lambda: None)
-
+    old_httpx = sys.modules.get("httpx")
+    try:
         sys.modules["httpx"] = types.SimpleNamespace(
             Timeout=_Timeout,
             TimeoutException=_TimeoutException,
             RequestError=_RequestError,
             AsyncClient=_AsyncClient,
         )
-    spec = importlib.util.spec_from_file_location("package_info_under_test", Path("managers/package_info.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+        spec = importlib.util.spec_from_file_location("package_info_under_test", Path("managers/package_info.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if old_httpx is None:
+            sys.modules.pop("httpx", None)
+        else:
+            sys.modules["httpx"] = old_httpx
 
 
 PKG = _load_package_info_module()

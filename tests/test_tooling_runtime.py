@@ -3,6 +3,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _load_tooling_module():
     stub = types.ModuleType("pydantic")
@@ -54,11 +56,8 @@ def test_tooling_uncovered_parse_branches_runtime():
     assert parsed_empty.path == ""
     assert parsed_empty.branch is None
 
-    try:
+    with pytest.raises(ValueError):
         tooling.parse_tool_argument("write_file", "path_only")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
     parsed_list = tooling.parse_tool_argument("github_list_files", "src|||dev")
     assert parsed_list.path == "src"
@@ -68,22 +67,16 @@ def test_tooling_uncovered_parse_branches_runtime():
     assert parsed_write.path == "a.py"
     assert parsed_write.commit_message == "msg"
 
-    try:
+    with pytest.raises(ValueError):
         tooling.parse_tool_argument("github_create_branch", "")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
     for tool, arg in (
         ("github_comment_issue", "1"),
         ("github_close_issue", ""),
         ("github_pr_diff", "|||"),
     ):
-        try:
+        with pytest.raises(ValueError):
             tooling.parse_tool_argument(tool, arg)
-            assert False, f"expected ValueError for {tool}"
-        except ValueError:
-            pass
 
     class _Dummy(tooling.BaseModel):
         value: str = ""
