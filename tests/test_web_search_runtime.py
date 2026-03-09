@@ -818,7 +818,9 @@ def test_web_search_remaining_exceptions_and_stackoverflow(monkeypatch, web_sear
     asyncio.run(mgr._search_google("q", 1))
 
     # Satır 242: DuckDuckGo bekleme sırasında genel Exception
-    async def mock_ddg_err(*args, **kwargs):
+    async def mock_ddg_err(awaitable, *args, **kwargs):
+        if hasattr(awaitable, "close"):
+            awaitable.close()
         raise Exception("DDG generic error")
 
     monkeypatch.setattr(asyncio, "wait_for", mock_ddg_err)
@@ -874,7 +876,9 @@ def test_web_search_final_exceptions_and_so(monkeypatch, web_search_mod, base_cf
     assert "[HATA] Google" in msg2
 
     # 3. DuckDuckGo wait_for Exception
-    async def mock_ddg_err(*args, **kwargs):
+    async def mock_ddg_err(awaitable, *args, **kwargs):
+        if hasattr(awaitable, "close"):
+            awaitable.close()
         raise Exception("DDG generic error")
 
     monkeypatch.setattr(asyncio, "wait_for", mock_ddg_err)
