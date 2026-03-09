@@ -6,42 +6,38 @@ import sys
 
 
 def _load_package_info_module():
-    if "httpx" not in sys.modules:
-        class _Timeout:
-            def __init__(self, *args, **kwargs):
-                self.args = args
-                self.kwargs = kwargs
+    class _Timeout:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
 
-        class _TimeoutException(Exception):
-            pass
+    class _TimeoutException(Exception):
+        pass
 
-        class _RequestError(Exception):
-            pass
+    class _RequestError(Exception):
+        pass
 
-        class _AsyncClient:
-            def __init__(self, *args, **kwargs):
-                pass
+    class _AsyncClient:
+        pass
 
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                return None
-
-            async def get(self, url):
-                return types.SimpleNamespace(status_code=200, json=lambda: {}, raise_for_status=lambda: None)
-
+    old_httpx = sys.modules.get("httpx")
+    try:
         sys.modules["httpx"] = types.SimpleNamespace(
             Timeout=_Timeout,
             TimeoutException=_TimeoutException,
             RequestError=_RequestError,
             AsyncClient=_AsyncClient,
         )
-    spec = importlib.util.spec_from_file_location("package_info_under_test", Path("managers/package_info.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+        spec = importlib.util.spec_from_file_location("package_info_under_test", Path("managers/package_info.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if old_httpx is None:
+            sys.modules.pop("httpx", None)
+        else:
+            sys.modules["httpx"] = old_httpx
 
 
 PKG = _load_package_info_module()
@@ -218,3 +214,14 @@ def test_pypi_info_propagates_fetch_error_and_prerelease_invalid_semver_branch(m
     monkeypatch.setattr(PKG, "Version", _VersionRaiser)
     assert PKG.PackageInfoManager._is_prerelease("1.2.3-alpha.1") is True
     monkeypatch.setattr(PKG, "Version", real_version)
+
+
+def test_load_package_info_module_when_httpx_missing_restores_sys_modules():
+    old = sys.modules.pop("httpx", None)
+    try:
+        loaded = _load_package_info_module()
+        assert hasattr(loaded, "PackageInfoManager")
+        assert "httpx" not in sys.modules
+    finally:
+        if old is not None:
+            sys.modules["httpx"] = old

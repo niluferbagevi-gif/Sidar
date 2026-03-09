@@ -20,6 +20,7 @@ import secrets
 import subprocess
 import time
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 try:
@@ -83,6 +84,14 @@ async def get_agent() -> SidarAgent:
 #  FASTAPI UYGULAMASI
 # ─────────────────────────────────────────────
 
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    try:
+        yield
+    finally:
+        await _close_redis_client()
+
+
 app = FastAPI(
     title="Sidar Web UI & REST API",
     description=(
@@ -92,6 +101,7 @@ app = FastAPI(
     version="2.10.4",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=_app_lifespan,
 )
 
 
@@ -271,7 +281,6 @@ async def rate_limit_middleware(request: Request, call_next):
     return response
 
 
-@app.on_event("shutdown")
 async def _close_redis_client() -> None:
     global _redis_client
     if _redis_client is not None:

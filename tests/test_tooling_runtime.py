@@ -3,6 +3,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _load_tooling_module():
     stub = types.ModuleType("pydantic")
@@ -54,11 +56,8 @@ def test_tooling_uncovered_parse_branches_runtime():
     assert parsed_empty.path == ""
     assert parsed_empty.branch is None
 
-    try:
+    with pytest.raises(ValueError):
         tooling.parse_tool_argument("write_file", "path_only")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
     parsed_list = tooling.parse_tool_argument("github_list_files", "src|||dev")
     assert parsed_list.path == "src"
@@ -68,25 +67,45 @@ def test_tooling_uncovered_parse_branches_runtime():
     assert parsed_write.path == "a.py"
     assert parsed_write.commit_message == "msg"
 
-    try:
+    parsed_legacy_write = tooling.parse_tool_argument("write_file", "a.py|||print('x')")
+    assert parsed_legacy_write.path == "a.py"
+    assert "print" in parsed_legacy_write.content
+
+    parsed_patch = tooling.parse_tool_argument("patch_file", "a.py|||old|||new")
+    assert parsed_patch.old_text == "old"
+    assert parsed_patch.new_text == "new"
+
+    parsed_branch = tooling.parse_tool_argument("github_create_branch", "feature-x|||main")
+    assert parsed_branch.branch_name == "feature-x"
+    assert parsed_branch.from_branch == "main"
+
+    parsed_close_issue = tooling.parse_tool_argument("github_close_issue", "42")
+    assert parsed_close_issue.number == 42
+
+    with pytest.raises(ValueError):
         tooling.parse_tool_argument("github_create_branch", "")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
     for tool, arg in (
         ("github_comment_issue", "1"),
         ("github_close_issue", ""),
         ("github_pr_diff", "|||"),
     ):
-        try:
+        with pytest.raises(ValueError):
             tooling.parse_tool_argument(tool, arg)
-            assert False, f"expected ValueError for {tool}"
-        except ValueError:
-            pass
 
     class _Dummy(tooling.BaseModel):
         value: str = ""
 
     tooling.TOOL_ARG_SCHEMAS["dummy"] = _Dummy
     assert tooling.parse_tool_argument("dummy", "raw") == "raw"
+
+
+def test_load_tooling_module_restores_when_pydantic_missing(monkeypatch):
+    old = sys.modules.pop("pydantic", None)
+    try:
+        mod = _load_tooling_module()
+        assert hasattr(mod, "parse_tool_argument")
+        assert "pydantic" not in sys.modules
+    finally:
+        if old is not None:
+            sys.modules["pydantic"] = old
