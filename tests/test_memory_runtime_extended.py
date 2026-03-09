@@ -524,3 +524,11 @@ def test_memory_ultimate_edge_cases(tmp_path):
     mem.force_save = fake_force_save
     mem.__del__()
 
+
+
+
+def test_memory_del_exception(tmp_path):
+    mem = _new_memory(tmp_path)
+    mem._dirty = True
+    with patch.object(mem, "force_save", side_effect=Exception("Del Error")):
+        mem.__del__()

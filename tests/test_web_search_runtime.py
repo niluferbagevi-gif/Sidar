@@ -948,3 +948,47 @@ def test_web_search_ultimate_exceptions_and_so(monkeypatch, web_search_mod, base
     manager.search.reset_mock()
     asyncio.run(manager.search_stackoverflow("python"))
     manager.search.assert_awaited_with("stackoverflow python", max_results=5)
+
+
+
+def test_web_search_deep_exceptions(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    async def mock_err(*args, **kwargs):
+        raise Exception("Mock HTTP Error")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "post", mock_err)
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_err)
+
+    _, t_msg = asyncio.run(manager._search_tavily("q", 1))
+    _, g_msg = asyncio.run(manager._search_google("q", 1))
+    assert "Tavily" in t_msg and "Google" in g_msg
+
+    async def fake_wait_for(*args, **kwargs):
+        raise Exception("DDG error")
+
+    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+    _, d_msg = asyncio.run(manager._search_duckduckgo("q", 1))
+    assert "DuckDuckGo" in d_msg
+
+    async def mock_req_err(*args, **kwargs):
+        raise web_search_mod.httpx.RequestError("ReqErr")
+
+    monkeypatch.setattr(web_search_mod.httpx.AsyncClient, "get", mock_req_err)
+    s_msg = asyncio.run(manager.scrape_url("http://test"))
+    assert "hata" in s_msg.lower()
+
+    async def fake_search(q, max_results):
+        return True, q
+
+    monkeypatch.setattr(manager, "search", fake_search)
+    _, so_q1 = asyncio.run(manager.search_stackoverflow("python"))
+    assert "site:stackoverflow.com" in so_q1
+
+    manager.tavily_key = ""
+    manager.google_key = ""
+    _, so_q2 = asyncio.run(manager.search_stackoverflow("python"))
+    assert "stackoverflow" in so_q2
