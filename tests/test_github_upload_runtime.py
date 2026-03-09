@@ -244,3 +244,61 @@ def test_main_push_conflict_cancelled_by_user(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
 
     GU.main()
+
+
+
+def test_main_push_conflict_accepts_merge_and_retries_push(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+    state = {"push": 0, "pull": 0}
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:2] == ["git", "commit"]:
+            return True, "ok"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            state["push"] += 1
+            if state["push"] == 1:
+                return False, "rejected fetch first"
+            return True, "ok"
+        if args[:2] == ["git", "pull"]:
+            state["pull"] += 1
+            return True, "merge made"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+
+    answers = iter(["commit msg", "Y"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+    GU.main()
+    assert state["pull"] == 1
+    assert state["push"] == 2
+
+
+def test_main_exits_when_git_missing(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    monkeypatch.setattr(GU, "run_command", lambda args, show_output=False: (False, "missing") if args[:2] == ["git", "--version"] else (True, ""))
+
+    try:
+        GU.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 1

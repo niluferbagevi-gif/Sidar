@@ -516,8 +516,10 @@ def test_memory_hard_edge_cases(tmp_path):
 
 def test_memory_ultimate_edge_cases(tmp_path):
     mem = _new_memory(tmp_path)
-
-    # __del__ içinde force_save istisnası yalnızca _dirty=True ise anlamlı olarak çağrılır
     mem._dirty = True
-    with patch.object(mem, "force_save", side_effect=RuntimeError("Destructor Mock Error")):
-        mem.__del__()
+
+    def fake_force_save():
+        raise ValueError("Destructor Mock Error")
+
+    mem.force_save = fake_force_save
+    mem.__del__()
