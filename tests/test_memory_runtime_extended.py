@@ -326,6 +326,18 @@ def test_delete_session_oserror_returns_false(tmp_path):
 
 # ─── _save — debounce check (250), exception (264-265) ────────────────────────
 
+
+
+def test_save_returns_early_when_no_active_session(tmp_path):
+    """Covers line 240: _save exits immediately if active_session_id is falsy."""
+    mem = _new_memory(tmp_path)
+    mem.active_session_id = None
+    mem._dirty = False
+
+    mem._save(force=True)
+
+    assert mem._dirty is False
+
 def test_save_debounce_skips_when_interval_not_elapsed(tmp_path):
     """Covers line 250: debounce — no new turns and interval not elapsed → skip save."""
     mem = _new_memory(tmp_path)
