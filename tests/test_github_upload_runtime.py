@@ -145,6 +145,8 @@ def test_main_push_conflict_branches(monkeypatch):
             return True, "origin"
         if args[:2] == ["git", "reset"]:
             return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
         if args[:2] == ["git", "status"]:
             return True, "M a.txt"
         if args[:2] == ["git", "commit"]:
@@ -168,3 +170,77 @@ def test_main_push_conflict_branches(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _p: next(seq))
     GU.main()
     assert state["push_count"] == 2
+
+
+def test_main_prompts_for_missing_git_identity_and_sets_global_config(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+    seen = []
+
+    def _fake_run(args, show_output=False):
+        seen.append(tuple(args))
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, ""
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:2] == ["git", "commit"]:
+            return True, "ok"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            return True, "ok"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: ([], []))
+
+    answers = iter(["Dev User", "dev@example.com", "initial commit"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+    GU.main()
+
+    assert ("git", "config", "--global", "user.name", "Dev User") in seen
+    assert ("git", "config", "--global", "user.email", "dev@example.com") in seen
+
+
+def test_main_push_conflict_cancelled_by_user(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:2] == ["git", "commit"]:
+            return True, "ok"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            return False, "non-fast-forward"
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+    answers = iter(["commit msg", "n"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+    GU.main()

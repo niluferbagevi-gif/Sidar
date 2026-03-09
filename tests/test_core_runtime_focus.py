@@ -214,3 +214,40 @@ def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
     # delete path
     del_msg = store.delete_document(doc_id, session_id="s1")
     assert "silindi" in del_msg or "bulunamadı" in del_msg
+
+
+def test_document_store_handles_chroma_and_fts_runtime_exceptions(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module(tmp_path)
+    DocumentStore = rag_mod.DocumentStore
+
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+    store = DocumentStore(
+        tmp_path / "rag_store_err",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=60, RAG_CHUNK_OVERLAP=10, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    class _BrokenConn:
+        def execute(self, *args, **kwargs):
+            raise RuntimeError("db disconnected")
+
+    store._bm25_available = True
+    store.fts_conn = _BrokenConn()
+    assert store._fetch_bm25("python test", top_k=3, session_id="s1") == []
+
+    class _BrokenCollection:
+        def count(self):
+            return 10
+
+        def query(self, **kwargs):
+            raise RuntimeError("chroma unavailable")
+
+    store.collection = _BrokenCollection()
+    store._chroma_available = True
+    store._bm25_available = True
+    store._index = {"d1": {"session_id": "s1", "title": "Doc"}}
+    monkeypatch.setattr(store, "_rrf_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("rrf error")))
+    monkeypatch.setattr(store, "_chroma_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("chroma error")))
+    monkeypatch.setattr(store, "_bm25_search", lambda q, k, s: (True, "[RAG Arama: python] (Motor: BM25)"))
+    ok, out = store.search("python", mode="auto", session_id="s1")
+    assert ok is True
+    assert "BM25" in out
