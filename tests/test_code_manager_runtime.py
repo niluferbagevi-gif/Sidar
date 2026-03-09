@@ -413,3 +413,34 @@ def test_run_shell_timeout_parse_error_and_output_truncation(manager_factory, mo
     ok, msg = mgr.run_shell("echo hi")
     assert ok is True
     assert "ÇIKTI KIRPILDI" in msg
+
+
+def test_execute_code_docker_exception_paths_for_sandbox_and_full(manager_factory, monkeypatch):
+    mgr_sb = manager_factory(can_execute=True, level=SANDBOX)
+    mgr_sb.docker_available = True
+
+    class _ContainersBoom:
+        def run(self, **kwargs):
+            raise RuntimeError("container crashed")
+
+    class _DockerErrors:
+        class ImageNotFound(Exception):
+            pass
+
+    class _DockerModule:
+        errors = _DockerErrors
+
+    monkeypatch.setitem(sys.modules, "docker", _DockerModule)
+
+    mgr_sb.docker_client = SimpleNamespace(containers=_ContainersBoom())
+    ok, msg = mgr_sb.execute_code("print('x')")
+    assert ok is False
+    assert "güvenlik politikası" in msg
+
+    mgr_full = manager_factory(can_execute=True, level=FULL)
+    mgr_full.docker_available = True
+    mgr_full.docker_client = SimpleNamespace(containers=_ContainersBoom())
+    monkeypatch.setattr(mgr_full, "execute_code_local", lambda code: (False, "local fallback"))
+    ok, msg = mgr_full.execute_code("print('x')")
+    assert ok is False
+    assert msg == "local fallback"

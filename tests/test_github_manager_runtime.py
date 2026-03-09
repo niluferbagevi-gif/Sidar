@@ -271,3 +271,66 @@ def test_status_without_token_or_repo():
 
     m3 = _manager(repo=None, gh=None, available=True, token="x")
     assert m3.default_branch == "main"
+
+
+def test_list_repos_handles_owner_types_and_missing_fields():
+    class _RepoA:
+        full_name = "org/a"
+        default_branch = "main"
+        private = True
+
+    class _RepoB:
+        full_name = "org/b"
+        default_branch = "develop"
+
+    class _Account:
+        type = "Organization"
+
+        def get_repos(self, type="owner"):
+            assert type == "all"
+            return [_RepoA(), _RepoB()]
+
+    class _SelfUser:
+        def get_repos(self, visibility="all"):
+            assert visibility == "all"
+            return [_RepoB()]
+
+    class _GH:
+        def get_user(self, owner=None):
+            if owner:
+                return _Account()
+            return _SelfUser()
+
+    m = _manager(repo=None, gh=_GH(), available=True, token="t")
+
+    ok, repos = m.list_repos(owner="org", limit=10)
+    assert ok is True
+    assert repos[0]["full_name"] == "org/a"
+    assert repos[1]["private"] == "false"
+
+    ok, repos = m.list_repos(owner="", limit=1)
+    assert ok is True
+    assert repos == [{"full_name": "org/b", "default_branch": "develop", "private": "false"}]
+
+
+def test_read_remote_file_decode_and_list_repo_exception_paths():
+    m = _manager(repo=FakeRepo())
+
+    class _BadDecode:
+        name = "bad.txt"
+
+        @property
+        def decoded_content(self):
+            class _BytesLike:
+                def decode(self, *args, **kwargs):
+                    raise UnicodeDecodeError("utf-8", b"x", 0, 1, "bad")
+
+            return _BytesLike()
+
+    m._repo.get_contents = lambda *_a, **_k: _BadDecode()
+    ok, msg = m.read_remote_file("bad.txt")
+    assert ok is False and "UTF-8" in msg
+
+    m2 = _manager(repo=None, gh=types.SimpleNamespace(get_user=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom"))), available=True, token="t")
+    ok, repos = m2.list_repos(owner="org")
+    assert ok is False and repos == []
