@@ -532,3 +532,287 @@ def test_openai_stream_error_and_llmclient_non_ollama_helpers(llm_mod, monkeypat
 
     chunks = asyncio.run(_collect(fac._stream_gemini_generator(_WrapperResponse())))
     assert chunks == []
+
+def test_module_load_without_opentelemetry_sets_trace_none(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "opentelemetry":
+            raise ImportError("otel yok")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    mod = _load_llm_client_module()
+    assert mod.trace is None
+
+
+def test_get_tracer_and_ollama_generic_error_paths(llm_mod, monkeypatch):
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+            self.exited = False
+
+        def set_attribute(self, k, v):
+            self.attrs[k] = v
+
+        def end(self):
+            self.exited = True
+
+    class _CM:
+        def __init__(self, span):
+            self.span = span
+            self.closed = False
+
+        def __enter__(self):
+            return self.span
+
+        def __exit__(self, *args):
+            self.closed = True
+            return False
+
+    class _Tracer:
+        def __init__(self):
+            self.span = _Span()
+            self.cm = _CM(self.span)
+
+        def start_as_current_span(self, _name):
+            return self.cm
+
+        def start_span(self, _name):
+            return self.span
+
+    tr = _Tracer()
+
+    class _TraceMod:
+        @staticmethod
+        def get_tracer(_name):
+            return tr
+
+    monkeypatch.setattr(llm_mod, "trace", _TraceMod)
+    assert llm_mod._get_tracer(SimpleNamespace(ENABLE_TRACING=True)) is tr
+
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False, CODING_MODEL="m", ENABLE_TRACING=True)
+    c = llm_mod.OllamaClient(cfg)
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, json):
+            raise RuntimeError("ollama boom")
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(c.chat([{"role": "user", "content": "u"}], stream=False))
+    assert "Ollama" in json.loads(out)["argument"]
+    assert tr.span.attrs["sidar.llm.provider"] == "ollama"
+    assert tr.cm.closed is True
+
+    s_iter = asyncio.run(c.chat([{"role": "user", "content": "u"}], stream=True))
+    s_out = asyncio.run(_collect(s_iter))
+    assert "Akış kesildi" in json.loads(s_out[0])["argument"]
+
+
+def test_ollama_stream_trailing_decoder_and_jsondecode_continue(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False)
+    c = llm_mod.OllamaClient(cfg)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'\n'
+            yield b'{"message":{"content":"A"}}\n{bad}\n'
+            yield b'{"message":{"content":"B"}}'
+
+    class _SCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, method, url, json):
+            return _SCtx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(c._stream_response("u", {"x": 1}, timeout=llm_mod.httpx.Timeout(10))))
+    assert out == ["A", "B"]
+
+
+def test_gemini_missing_key_try_safety_and_trace_paths(llm_mod, monkeypatch):
+    calls = {}
+
+    class _Resp:
+        text = "ok"
+
+    class _Sess:
+        async def send_message_async(self, prompt, stream=False):
+            calls.setdefault("prompts", []).append((prompt, stream))
+            return _Resp()
+
+    class _Model:
+        def __init__(self, **kwargs):
+            calls["model_kwargs"] = kwargs
+
+        def start_chat(self, history):
+            calls["history"] = history
+            return _Sess()
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda api_key: calls.setdefault("api_key", api_key)
+    fake_genai.GenerativeModel = _Model
+
+    types_mod = types.ModuleType("google.generativeai.types")
+    types_mod.HarmBlockThreshold = types.SimpleNamespace(BLOCK_NONE="NONE")
+    types_mod.HarmCategory = types.SimpleNamespace(
+        HARM_CATEGORY_HARASSMENT="H",
+        HARM_CATEGORY_HATE_SPEECH="HS",
+        HARM_CATEGORY_SEXUALLY_EXPLICIT="S",
+        HARM_CATEGORY_DANGEROUS_CONTENT="D",
+    )
+
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google.generativeai.types", types_mod)
+
+    # missing key path
+    c1 = llm_mod.GeminiClient(SimpleNamespace(GEMINI_API_KEY="", GEMINI_MODEL="gm", ENABLE_TRACING=False))
+    msg = asyncio.run(c1.chat([{"role": "user", "content": "u"}], stream=False))
+    assert "GEMINI_API_KEY" in json.loads(msg)["argument"]
+
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+
+        def set_attribute(self, k, v):
+            self.attrs[k] = v
+
+    class _CM:
+        def __init__(self, span):
+            self.span = span
+            self.closed = False
+
+        def __enter__(self):
+            return self.span
+
+        def __exit__(self, *args):
+            self.closed = True
+            return False
+
+    class _Tracer:
+        def __init__(self):
+            self.span = _Span()
+            self.cm = _CM(self.span)
+
+        def start_as_current_span(self, _):
+            return self.cm
+
+        def start_span(self, _):
+            return self.span
+
+    tr = _Tracer()
+
+    class _TraceMod:
+        @staticmethod
+        def get_tracer(_):
+            return tr
+
+    monkeypatch.setattr(llm_mod, "trace", _TraceMod)
+
+    c2 = llm_mod.GeminiClient(SimpleNamespace(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=True))
+    # no user role -> last message fallback line 343
+    out = asyncio.run(c2.chat([{"role": "assistant", "content": "cevap"}], stream=False, json_mode=False))
+    assert out == "ok"
+    assert tr.span.attrs["sidar.llm.provider"] == "gemini"
+    assert tr.cm.closed is True
+
+
+def test_openai_stream_skips_non_data_and_invalid_json_and_factory_openai(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=60, OPENAI_MODEL="m", OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=11)
+    c = llm_mod.OpenAIClient(cfg)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield "event: ping"
+            yield "data: {bad}"
+            yield 'data: {"choices":[{"delta":{"content":"X"}}]}'
+            yield "data: [DONE]"
+
+    class _SCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, method, url, json, headers):
+            return _SCtx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(c._stream_openai(payload={"stream": True}, headers={"a": "b"}, timeout=llm_mod.httpx.Timeout(10), json_mode=True)))
+    assert out == ["X"]
+
+    fac = llm_mod.LLMClient("openai", cfg)
+    assert isinstance(fac._client, llm_mod.OpenAIClient)
+    t = fac._build_ollama_timeout()
+    assert isinstance(t, llm_mod.httpx.Timeout)
+
+
+def test_llmclient_ollama_helpers_and_stream_wrapper_fallback_branch(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12)
+    fac = llm_mod.LLMClient("ollama", cfg)
+
+    async def _lm():
+        return ["m1"]
+
+    async def _ok():
+        return True
+
+    monkeypatch.setattr(fac._client, "list_models", _lm)
+    monkeypatch.setattr(fac._client, "is_available", _ok)
+    assert asyncio.run(fac.list_ollama_models()) == ["m1"]
+    assert asyncio.run(fac.is_ollama_available()) is True
+
+    # non-gemini fallback branch in wrapper
+    class _S:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    openai_fac = llm_mod.LLMClient("openai", SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=10, OLLAMA_URL="http://x/api", OLLAMA_TIMEOUT=10))
+    chunks = asyncio.run(_collect(openai_fac._stream_gemini_generator(_S())))
+    assert chunks == []
