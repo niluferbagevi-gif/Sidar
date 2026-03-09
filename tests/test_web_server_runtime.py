@@ -60,9 +60,6 @@ class _FakeFastAPI:
     def websocket(self, *args, **kwargs):
         return self._route_decorator()
 
-    def on_event(self, *args, **kwargs):
-        return self._route_decorator()
-
     def add_middleware(self, *args, **kwargs):
         return None
 
@@ -187,6 +184,29 @@ def _load_web_server():
     spec.loader.exec_module(mod)
     return mod
 
+
+
+
+def _load_web_server_with_blocked_imports():
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _blocked(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "anyio" or name.startswith("opentelemetry"):
+            raise ImportError(f"blocked: {name}")
+        return real_import(name, globals, locals, fromlist, level)
+
+    _install_web_server_stubs()
+    spec = importlib.util.spec_from_file_location("web_server_under_test_blocked", Path("web_server.py"))
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    builtins.__import__ = _blocked
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        builtins.__import__ = real_import
+    return mod
 
 def _make_agent(ai_provider="ollama", ollama_online=True):
     calls = {"search": None, "add_level": None, "adds": []}
@@ -1268,3 +1288,31 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     push_ok = asyncio.run(mod.github_webhook(_FakeRequest(body_bytes=push_payload), x_github_event="push", x_hub_signature_256=""))
     assert push_ok.status_code == 200
     assert any("alice" in t for _r, t in calls_mem)
+
+def test_import_fallbacks_for_anyio_and_opentelemetry():
+    mod = _load_web_server_with_blocked_imports()
+    assert mod._ANYIO_CLOSED is None
+    assert mod.trace is None
+    assert mod.BatchSpanProcessor is None
+
+
+def test_lifespan_closes_redis_client():
+    mod = _load_web_server()
+
+    class _RedisClient:
+        def __init__(self):
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    client = _RedisClient()
+    mod._redis_client = client
+
+    async def _run():
+        async with mod._app_lifespan(mod.app):
+            pass
+
+    asyncio.run(_run())
+    assert client.closed is True
+    assert mod._redis_client is None

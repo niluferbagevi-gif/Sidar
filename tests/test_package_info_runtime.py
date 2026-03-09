@@ -18,17 +18,7 @@ def _load_package_info_module():
         pass
 
     class _AsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, url):
-            return types.SimpleNamespace(status_code=200, json=lambda: {}, raise_for_status=lambda: None)
+        pass
 
     old_httpx = sys.modules.get("httpx")
     try:
