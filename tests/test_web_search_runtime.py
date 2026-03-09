@@ -696,3 +696,86 @@ def test_class_helpers_and_fake_helper_classes_for_test_coverage(monkeypatch, we
     assert tags
     tags[0].decompose()
     assert "script" not in tag_soup.html
+
+
+def test_search_auto_fallback_all_paths(monkeypatch, web_search_mod, base_cfg):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: True)
+    base_cfg.SEARCH_ENGINE = "unknown_engine"  # direct bypass
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    async def fake_tavily(*_):
+        return False, "tavily fail"
+
+    async def fake_google(*_):
+        return True, manager._mark_no_results("google no results")
+
+    async def fake_ddg(*_):
+        return True, "ddg success"
+
+    monkeypatch.setattr(manager, "_search_tavily", fake_tavily)
+    monkeypatch.setattr(manager, "_search_google", fake_google)
+    monkeypatch.setattr(manager, "_search_duckduckgo", fake_ddg)
+
+    ok, text = asyncio.run(manager.search("q"))
+    assert ok is True
+    assert text == "ddg success"
+
+
+def test_search_docs_fallback_query(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.TAVILY_API_KEY = ""
+    base_cfg.GOOGLE_SEARCH_API_KEY = ""
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    captured = {}
+
+    async def fake_search(q, max_results=None):
+        captured["q"] = q
+        return True, "ok"
+
+    monkeypatch.setattr(manager, "search", fake_search)
+    asyncio.run(manager.search_docs("lib", "top"))
+    assert "official docs reference" in captured["q"]
+
+
+def test_scrape_url_requesterror_path(monkeypatch, web_search_mod, base_cfg):
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    class _ClientReqErr:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            raise web_search_mod.httpx.RequestError("req err")
+
+    monkeypatch.setattr(web_search_mod.httpx, "AsyncClient", _ClientReqErr)
+    text = asyncio.run(manager.scrape_url("http://err"))
+    assert "bağlantı/istek hatası" in text
+
+
+def test_duckduckgo_general_exception_242(monkeypatch, web_search_mod, base_cfg):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: True)
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    class DummyAsyncDDGS:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def text(self, query, max_results):
+            raise ValueError("Random DDG Error")
+
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", SimpleNamespace(AsyncDDGS=DummyAsyncDDGS))
+    ok, text = asyncio.run(manager._search_duckduckgo("q", 5))
+    assert ok is False
+    assert "Random DDG Error" in text

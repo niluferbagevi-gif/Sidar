@@ -146,3 +146,54 @@ def test_scan_project_todos_and_limit_normalization(tmp_path):
     mgr.set_tasks([{"content": "x", "status": TM.STATUS_PENDING}] * 5)
     assert len(mgr.get_tasks(limit=-10)) == 1
     assert "Toplam" in mgr.list_tasks(limit="bad")
+
+
+def test_todo_manager_load_edge_cases(tmp_path):
+    todo_path = tmp_path / "todos.json"
+
+    # 1. JSON valid ama liste degil (örn dict)
+    todo_path.write_text(json.dumps({"dict": "value"}), encoding="utf-8")
+    mgr1 = TM.TodoManager(cfg=Cfg(tmp_path))
+    assert len(mgr1) == 0
+
+    # 2. JSON bozuk (Exception yola dusurur)
+    todo_path.write_text("{bad json", encoding="utf-8")
+    mgr2 = TM.TodoManager(cfg=Cfg(tmp_path))
+    assert len(mgr2) == 0
+
+
+def test_todo_manager_scan_project_todos_edge_cases(tmp_path):
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+
+    # Dizin cozme (resolve) hatasi
+    class BadDir:
+        def __fspath__(self):
+            raise RuntimeError("fspath error")
+
+    assert "Geçersiz dizin parametresi" in mgr.scan_project_todos(directory=BadDir())
+
+    # extensions None fallback
+    (tmp_path / "test.py").write_text("# TODO: fix", encoding="utf-8")
+    scan1 = mgr.scan_project_todos(extensions=None)
+    assert "test.py" in scan1
+
+    # boss uzanti (empty string) in list
+    scan2 = mgr.scan_project_todos(extensions=["", "py"])
+    assert "test.py" in scan2
+
+
+def test_todo_manager_list_and_get_tasks_filters(tmp_path):
+    mgr = TM.TodoManager(cfg=Cfg(tmp_path))
+    mgr.set_tasks([
+        {"content": "P1", "status": TM.STATUS_PENDING},
+        {"content": "P2", "status": TM.STATUS_PENDING},
+    ])
+    # in_progress ve completed bos oldugu icin "if pending" bloguna girer
+    listed = mgr.list_tasks()
+    assert "Bekleyen:" in listed
+    assert "Devam Eden:" not in listed
+    assert "Tamamlanan:\n" not in listed
+
+    # get_tasks ile gecerli status filtreleme
+    tasks = mgr.get_tasks(status=TM.STATUS_PENDING)
+    assert len(tasks) == 2

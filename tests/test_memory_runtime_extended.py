@@ -437,3 +437,34 @@ def test_del_exception_in_force_save_does_not_propagate(tmp_path):
 
     # Should not raise
     mem.__del__()
+
+
+def test_memory_oserror_paths(tmp_path):
+    """Covers remaining OSError paths: unlink and rename."""
+    mem = _new_memory(tmp_path)
+    sessions_dir = mem.sessions_dir
+
+    # 1. _cleanup_broken_files -> old file ve cutoff unlink OSError
+    bf1 = sessions_dir / "old.json.broken"
+    bf1.write_text("{}")
+    import os
+    os.utime(bf1, (time.time() - (100 * 86400), time.time() - (100 * 86400)))
+
+    bf2 = sessions_dir / "new.json.broken"
+    bf2.write_text("{}")
+
+    with patch("pathlib.Path.unlink", side_effect=OSError("mock unlink err")):
+        mem._cleanup_broken_files(max_age_days=7, max_files=0)
+
+    # 2. get_all_sessions -> rename OSError
+    bad_json = sessions_dir / "bad.json"
+    bad_json.write_bytes(b"invalid json")
+    with patch("pathlib.Path.rename", side_effect=OSError("mock rename err")):
+        mem.get_all_sessions()
+
+    # 3. delete_session -> unlink OSError
+    valid_json = sessions_dir / "valid.json"
+    valid_json.write_text("{}")
+    mem.active_session_id = "other"
+    with patch("pathlib.Path.unlink", side_effect=OSError("mock delete err")):
+        mem.delete_session("valid")
