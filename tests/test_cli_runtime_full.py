@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import runpy
 import sys
 import types
 from contextlib import contextmanager
@@ -169,3 +170,104 @@ def test_interactive_loop_wrapper_and_main_paths(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["cli.py"])
     cli.main()
     assert called["loop"] >= 2
+
+
+def test_interactive_loop_gemini_gpu_and_error_paths(monkeypatch):
+    cli = _load_cli_module()
+
+    class _Cfg:
+        AI_PROVIDER = "gemini"
+        GEMINI_MODEL = "g-2"
+        CODING_MODEL = "qwen"
+        ACCESS_LEVEL = "sandbox"
+        USE_GPU = True
+        GPU_INFO = "RTX"
+        CUDA_VERSION = "12.4"
+        GPU_COUNT = 2
+
+    class _Simple:
+        def __init__(self, ok):
+            self._ok = ok
+
+        def is_available(self):
+            return self._ok
+
+        def status(self):
+            return "ok"
+
+    class _Agent:
+        VERSION = "2.0"
+        cfg = _Cfg()
+        github = _Simple(False)
+        web = _Simple(False)
+        pkg = types.SimpleNamespace(status=lambda: "pkg")
+        docs = types.SimpleNamespace(status=lambda: "docs", list_documents=lambda: "docs")
+        health = types.SimpleNamespace(full_report=lambda: "health", optimize_gpu_memory=lambda: "gpu")
+        security = types.SimpleNamespace(status_report=lambda: "SEC")
+        code = types.SimpleNamespace(audit_project=lambda _: "audit")
+
+        @staticmethod
+        def clear_memory():
+            return "cleared"
+
+        @staticmethod
+        def status():
+            return "agent-status"
+
+        @staticmethod
+        def set_access_level(level):
+            return f"set:{level}"
+
+        async def respond(self, _text):
+            raise RuntimeError("boom")
+            yield "x"
+
+    to_thread_calls = {"n": 0}
+
+    async def _fake_to_thread(fn, *a, **k):
+        to_thread_calls["n"] += 1
+        if to_thread_calls["n"] == 1:
+            return ""
+        if to_thread_calls["n"] == 2:
+            return "soru"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    logs = []
+    monkeypatch.setattr(cli.logging, "exception", lambda msg, *args: logs.append(msg % args if args else msg))
+
+    asyncio.run(cli._interactive_loop_async(_Agent()))
+    assert logs and "Ajan yanıt hatası" in logs[-1]
+
+
+def test_cli_dunder_main_invokes_main(monkeypatch):
+    cfg_mod = types.ModuleType("config")
+
+    class _Cfg:
+        ACCESS_LEVEL = "sandbox"
+        AI_PROVIDER = "ollama"
+        CODING_MODEL = "qwen"
+        LOG_LEVEL = "INFO"
+
+        @staticmethod
+        def initialize_directories():
+            return None
+
+    cfg_mod.Config = _Cfg
+
+    agent_mod = types.ModuleType("agent.sidar_agent")
+    agent_mod.SidarAgent = lambda cfg: types.SimpleNamespace(
+        status=lambda: "ok",
+        respond=lambda _cmd: (),
+    )
+    agent_pkg = types.ModuleType("agent")
+
+    with _temp_modules({"config": cfg_mod, "agent": agent_pkg, "agent.sidar_agent": agent_mod}):
+        monkeypatch.setattr(sys, "argv", ["cli.py", "--status"])
+        ran = {"printed": 0}
+        import builtins as _b
+        monkeypatch.setattr(_b, "print", lambda *a, **k: ran.__setitem__("printed", ran["printed"] + 1))
+        runpy.run_path("cli.py", run_name="__main__")
+
+    assert ran["printed"] >= 1
