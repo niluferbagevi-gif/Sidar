@@ -389,3 +389,43 @@ def test_config_remaining_edge_cases_runtime(monkeypatch, capsys):
     cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
     cfg_mod.Config.OLLAMA_URL = "http://localhost:11434"
     assert isinstance(cfg_mod.Config.validate_critical_settings(), bool)
+
+
+def test_config_ultimate_edge_cases(monkeypatch, capsys):
+    monkeypatch.setenv("SIDAR_ENV", "nonexistent_env_123")
+    cfg_mod = _load_config_module()
+    captured = capsys.readouterr()
+    assert "Belirtilen ortam dosyası bulunamadı" in captured.out
+
+    monkeypatch.setenv("TEST_EMPTY_LIST", " , , ")
+    assert cfg_mod.get_list_env("TEST_EMPTY_LIST", ["default"]) == []
+
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("GPU_MEMORY_FRACTION", "0.5")
+
+    class _Cuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(_idx):
+            return "MockGPU"
+
+        @staticmethod
+        def set_per_process_memory_fraction(*_a, **_k):
+            raise RuntimeError("CUDA mock exception")
+
+    class _Torch:
+        cuda = _Cuda()
+
+        class version:
+            cuda = "12"
+
+    monkeypatch.setitem(sys.modules, "torch", _Torch())
+    hw = cfg_mod.check_hardware()
+    assert hw.gpu_name == "MockGPU"

@@ -451,3 +451,17 @@ def test_auto_handle_uncovered_edge_cases_runtime(monkeypatch):
 
     handled, resp = asyncio.run(auto._try_dot_command(".bilinmeyen", ".bilinmeyen"))
     assert handled is False and resp == ""
+
+
+def test_auto_handle_read_file_failure():
+    auto = _make_auto(github_available=True)
+
+    class _ReadFailCode(_Code):
+        def read_file(self, _path):
+            return False, "Erişim reddedildi veya dosya yok"
+
+    auto.code = _ReadFailCode()
+    handled, resp = auto._try_read_file("dosyayı oku secret.txt", "dosyayı oku secret.txt")
+
+    assert handled is True
+    assert "Erişim reddedildi" in resp
