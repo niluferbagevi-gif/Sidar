@@ -1,4 +1,5 @@
 import importlib.util
+import runpy
 import subprocess
 import sys
 import types
@@ -374,3 +375,190 @@ def test_github_upload_empty_commit_and_no_remote(monkeypatch):
         assert False
     except SystemExit as exc:
         assert exc.code == 1
+
+
+def test_runtime_helper_error_branches(monkeypatch, tmp_path):
+    GU = _load_module()
+
+    # run_command: show_output=True + stderr branch
+    printed = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+
+    def _raise(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, args[0], output="out", stderr="err")
+
+    monkeypatch.setattr(GU.subprocess, "run", _raise)
+    ok, out = GU.run_command(["git", "status"], show_output=True)
+    assert ok is False and "err" in out
+    assert any("Git çıktısı" in p for p in printed)
+
+    # get_file_content: forbidden + decode/os errors
+    assert GU.get_file_content("sessions/secret.txt") is None
+
+    bin_file = tmp_path / "bad.bin"
+    bin_file.write_bytes(b"\xff\xfe")
+    assert GU.get_file_content(str(bin_file)) is None
+
+    monkeypatch.setattr("builtins.open", lambda *a, **k: (_ for _ in ()).throw(OSError("nope")))
+    assert GU.get_file_content("safe.txt") is None
+
+    # collect_safe_files: git ls-files failure
+    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "x"))
+    safe, blocked = GU.collect_safe_files()
+    assert safe == [] and blocked == []
+
+
+def test_collect_safe_files_skips_empty_dirs_and_unreadable(monkeypatch, tmp_path):
+    GU = _load_module()
+    (tmp_path / "ok.txt").write_text("hello", encoding="utf-8")
+    (tmp_path / "dir1").mkdir()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (True, "\ndir1\nok.txt\nblocked.txt\n"))
+    monkeypatch.setattr(GU, "get_file_content", lambda p: "hello" if p == "ok.txt" else None)
+
+    safe, blocked = GU.collect_safe_files()
+    assert safe == ["ok.txt"]
+    assert "blocked.txt" in blocked
+
+
+def test_main_branches_for_repo_init_blocked_no_status_and_commit_fail(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+    calls = []
+
+    def _fake_run(args, show_output=False):
+        calls.append(tuple(args))
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, ""
+        if args[:3] == ["git", "remote", "add"]:
+            return True, ""
+        if args[:2] == ["git", "init"]:
+            return True, ""
+        if args[:3] == ["git", "branch", "-M"]:
+            return True, ""
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, ""
+        if args[:2] == ["git", "commit"]:
+            return False, "commit fail"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda p: False)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], ["blocked.txt"]))
+    answers = iter(["https://github.com/a/b"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+    try:
+        GU.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    # commit-fail path
+    monkeypatch.setattr(GU.os.path, "exists", lambda p: True)
+
+    def _fake_run2(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:2] == ["git", "commit"]:
+            return False, "commit fail"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run2)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+    monkeypatch.setattr("builtins.input", lambda _p: "msg")
+    try:
+        GU.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 1
+
+
+def test_main_push_retry_failure_and_unknown_push_error(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _common(args):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "add"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "M a.txt"
+        if args[:2] == ["git", "commit"]:
+            return True, "ok"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        return None
+
+    # merge success but retry push rule-violations
+    state = {"push": 0}
+
+    def _fake_run(args, show_output=False):
+        base = _common(args)
+        if base is not None:
+            return base
+        if args[:2] == ["git", "push"]:
+            state["push"] += 1
+            if state["push"] == 1:
+                return False, "rejected fetch first"
+            return False, "rule violations"
+        if args[:2] == ["git", "pull"]:
+            return True, "merge made"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
+    answers = iter(["msg", "y"])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+    GU.main()
+
+    # merge fail prints pull command/error + unknown push error path
+    def _fake_run2(args, show_output=False):
+        base = _common(args)
+        if base is not None:
+            return base
+        if args[:2] == ["git", "push"]:
+            return False, "fatal push error"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run2)
+    monkeypatch.setattr("builtins.input", lambda _p: "msg")
+    GU.main()
+
+
+def test_github_upload_dunder_main_keyboard_interrupt(monkeypatch):
+    cfg_mod = types.ModuleType("config")
+    cfg_mod.Config = lambda: _Cfg()
+
+    with _temporary_config_module(cfg_mod):
+        monkeypatch.setattr("builtins.input", lambda _p: (_ for _ in ()).throw(KeyboardInterrupt))
+        try:
+            runpy.run_path("github_upload.py", run_name="__main__")
+            assert False
+        except SystemExit as exc:
+            assert exc.code == 0
