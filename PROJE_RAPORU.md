@@ -1240,6 +1240,8 @@ add_document(title, content, source)
 | 2 | `test_config_runtime_coverage.py` yeni sıfır bayt dosya | `tests/test_config_runtime_coverage.py` | Audit #6 sonrası (19:52) oluşturulmuş; içi boş; kaldırılmalı | Düşük | ⚠ **Açık** |
 | 3 | `ENABLE_MULTI_AGENT` `.env.example`'da yok | `.env.example` | `config.py:230`'da tanımlı özellik eksik belgelenmiş; kullanıcılar multi-agent modunu keşfedemiyor | Düşük | ⚠ **Açık** |
 | 4 | `ReviewerAgent` RFC'de belirtilmiş, implement edilmemiş | `RFC-MultiAgent.md`, `agent/roles/` | `RFC-MultiAgent.md`'de dördüncü role olarak tanımlanmış; kod tabanında yok | Düşük | ⚠ **Açık** (RFC Draft) |
+| 5 | `response_stream` parametresinde tip belirtimi yok | `core/llm_client.py:382, 716` | `_stream_gemini_generator(self, response_stream)` ve `_stream_anthropic(self, response_stream)` — parametre tipi belirtilmemiş | Düşük | ⚠ **Açık** |
+| 6 | Geniş `except Exception:` kullanımı (16+ örnek) | `managers/code_manager.py`, `core/memory.py:80`, `managers/security.py:108` | Spesifik exception türleri yerine bare `except Exception` — hata kaynağı bilgisi kaybolur, mypy strict modda uyarı üretir | Düşük | ⚠ **Açık** |
 
 
 ## 12. `.env` Tam Değişken Referansı
@@ -2106,7 +2108,7 @@ Audit #6'da onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 | Kategori | Sayı | Detay |
 |----------|------|-------|
 | **Onaylanan çözüldü** | 24 | Audit #6 ve önceki tüm maddeler doğrulandı |
-| **Süregelen açık sorun** | 1 | `test_config_runtime_coverage` uzantısız 0 baytlık dosya |
-| **Yeni tespit — açık** | 3 | 0 baytlık `.py` artifact, `ENABLE_MULTI_AGENT` belgesiz, `ReviewerAgent` eksik |
+| **Süregelen açık sorun** | 1 | `test_config_runtime_coverage` uzantısız 0 baytlık dosya (Audit #6'da "silindi" denilmişti) |
+| **Yeni tespit — açık** | 5 | 0 baytlık `.py` artifact, `ENABLE_MULTI_AGENT` belgesiz, `ReviewerAgent` eksik, `response_stream` tip eksik, geniş `except Exception` |
 | **Yeni belgelenen modül** | 7 | `base_agent.py`, `core/supervisor.py`, `core/contracts.py`, `roles/coder_agent.py`, `roles/researcher_agent.py`, `RFC-MultiAgent.md`, multi-agent test'leri |
 | **Satır sayısı güncellenen dosya** | 7 | `config.py`, `main.py`, `web_server.py`, `sidar_agent.py`, `llm_client.py`, `index.html`, `app.js` |
