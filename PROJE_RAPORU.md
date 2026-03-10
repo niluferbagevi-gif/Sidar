@@ -905,7 +905,7 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 |------|---------------|
 | **Asenkron Mimari** | `async/await` ve `asyncio.to_thread` tutarlı kullanımı; event loop hiçbir yerde bloklanmıyor |
 | **Güvenlik Derinliği** | 3 katmanlı erişim + path traversal + symlink + hassas yol koruması |
-| **Yapısal LLM Çıktısı** | Ollama Structured Output ile JSON schema zorlaması; Pydantic doğrulaması |
+| **Yapısal LLM Çıktısı** | Ollama, OpenAI ve Anthropic structured output ile JSON schema zorlaması; Pydantic doğrulaması |
 | **Hata Toleransı** | Her araç try/except; ChromaDB yoksa BM25'e, BM25 yoksa keyword'e fallback |
 | **Stream Güvenliği** | UTF-8 incremental decoder ile kırık TCP paketleri güvenle birleştirilir |
 | **Bellek Güvenliği** | Fernet şifreleme, karantina mekanizması, RLock ile thread safety |
@@ -913,6 +913,8 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
 | **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
 | **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
+| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher gibi uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
+| **Çoklu LLM Ekosistemi** | Ollama (yerel) bağımlılığının kırılarak Gemini, OpenAI ve Anthropic istemcilerinin polimorfik (`BaseLLMClient`) bir yapıyla tek çatı altında buluşturulması |
 | **Çift Yönlü İletişim** | WebSocket altyapısı ile gerçek zamanlı çift yönlü mesajlaşma ve `asyncio.Task` tabanlı anlık işlem iptali (`cancel`) |
 
 ### 4.2 Kısıtlamalar
@@ -923,6 +925,8 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
 | **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
 | **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
+| **Multi-Agent Bakım Yükü** | Özellik hâlâ `ENABLE_MULTI_AGENT` bayrağı ile deneysel/paralel çalışıyor; eski `sidar_agent` akışı ile yeni yapının bir süre daha birlikte bakımı gerekiyor |
+| **API Limit ve Maliyetleri** | Bulut LLM sağlayıcıları (OpenAI, Anthropic) yerel modellere kıyasla token maliyeti ve vendor API rate-limit yönetimi zorunluluğu getirir |
 
 ---
 
