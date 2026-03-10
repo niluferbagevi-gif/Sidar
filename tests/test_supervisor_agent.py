@@ -25,10 +25,16 @@ def test_supervisor_routes_research_to_researcher(monkeypatch):
     assert out.startswith("RESEARCH:")
 
 
-def test_supervisor_returns_legacy_fallback_for_code_intent():
+def test_supervisor_routes_review_intent_to_reviewer(monkeypatch):
     s = SupervisorAgent()
-    out = asyncio.run(s.run_task("Bu dosyayı patch et ve PR hazırla"))
-    assert out.startswith("[LEGACY_FALLBACK]")
+
+    async def fake_review_run_task(prompt: str) -> str:
+        return f"REVIEW:{prompt}"
+
+    monkeypatch.setattr(s.reviewer, "run_task", fake_review_run_task)
+
+    out = asyncio.run(s.run_task("GitHub issue ve pull request incele"))
+    assert out.startswith("REVIEW:")
 
 
 def test_supervisor_routes_code_intent_to_coder(monkeypatch):

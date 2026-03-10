@@ -227,7 +227,7 @@ class Config:
     PROJECT_NAME: str = "Sidar"
     VERSION: str      = "2.10.8"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
-    ENABLE_MULTI_AGENT: bool = get_bool_env("ENABLE_MULTI_AGENT", False)
+    ENABLE_MULTI_AGENT: bool = get_bool_env("ENABLE_MULTI_AGENT", True)
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR:    Path = BASE_DIR

@@ -1,0 +1,70 @@
+"""GitHub/PR/issue kalite kontrol odaklı uzman ajan."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Optional
+
+from config import Config
+from managers.github_manager import GitHubManager
+
+from agent.base_agent import BaseAgent
+
+
+class ReviewerAgent(BaseAgent):
+    """PR, issue ve repo gözden geçirme akışlarını yöneten uzman ajan."""
+
+    SYSTEM_PROMPT = (
+        "Sen bir reviewer ajansın. Kod yazmazsın; mevcut değişiklikleri, PR ve issue durumlarını "
+        "analiz eder, risk odaklı ve kısa bir kalite raporu üretirsin."
+    )
+
+    def __init__(self, cfg: Optional[Config] = None) -> None:
+        super().__init__(cfg=cfg, role_name="reviewer")
+        self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
+
+        self.register_tool("repo_info", self._tool_repo_info)
+        self.register_tool("list_prs", self._tool_list_prs)
+        self.register_tool("pr_diff", self._tool_pr_diff)
+        self.register_tool("list_issues", self._tool_list_issues)
+
+    async def _tool_repo_info(self, _arg: str) -> str:
+        ok, out = await asyncio.to_thread(self.github.get_repo_info)
+        return out if ok else f"[HATA] {out}"
+
+    async def _tool_list_prs(self, arg: str) -> str:
+        state = (arg.strip() or "open").lower()
+        ok, out = await asyncio.to_thread(self.github.list_pull_requests, state, 20)
+        return out if ok else f"[HATA] {out}"
+
+    async def _tool_pr_diff(self, arg: str) -> str:
+        number = int(arg.strip()) if arg.strip().isdigit() else 0
+        if number <= 0:
+            return "⚠ Kullanım: pr_diff|<pr_no>"
+        ok, out = await asyncio.to_thread(self.github.get_pull_request_diff, number)
+        return out if ok else f"[HATA] {out}"
+
+    async def _tool_list_issues(self, arg: str) -> str:
+        state = (arg.strip() or "open").lower()
+        ok, out = await asyncio.to_thread(self.github.list_issues, state, 20)
+        return str(out) if ok else f"[HATA] {out}"
+
+    async def run_task(self, task_prompt: str) -> str:
+        prompt = (task_prompt or "").strip()
+        if not prompt:
+            return "[UYARI] Boş reviewer görevi verildi."
+
+        lower = prompt.lower()
+        if lower.startswith("repo_info"):
+            return await self.call_tool("repo_info", "")
+        if lower.startswith("list_prs"):
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
+            return await self.call_tool("list_prs", arg)
+        if lower.startswith("pr_diff|"):
+            return await self.call_tool("pr_diff", prompt.split("|", 1)[1].strip())
+        if lower.startswith("list_issues"):
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
+            return await self.call_tool("list_issues", arg)
+
+        # Doğal dilde review niyeti varsa PR listesini döndürerek hızlı QA sinyali üret.
+        return await self.call_tool("list_prs", "open")
