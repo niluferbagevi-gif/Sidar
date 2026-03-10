@@ -1,5 +1,17 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v2.10.8] - 2026-03-10
+Bu sürümde RAG cold-start optimizasyonu tamamlandı ve Anthropic (Claude) sağlayıcı desteği eklendi.
+
+### ✅ RAG Soğuk Başlangıç İyileştirmesi
+* **Startup prewarm (`web_server.py`):** FastAPI lifespan başlangıcında `_prewarm_rag_embeddings()` görevi ile Chroma/embedding hazırlığı arka planda tetiklenir.
+* **Kullanıcı deneyimi:** İlk RAG çağrısındaki model yükleme gecikmesi sunucu başlangıcına taşındı.
+
+### ✅ Anthropic (Claude) Sağlayıcı Desteği
+* **Yeni istemci (`core/llm_client.py`):** `AnthropicClient` eklendi; non-stream ve stream chat akışları desteklenir.
+* **Yapılandırma (`config.py`, `.env.example`):** `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_TIMEOUT` değişkenleri eklendi.
+* **Başlatıcı/UI/bağımlılıklar:** CLI ve launcher provider seçeneklerine `anthropic` eklendi; Web UI model seçim listesi güncellendi; `requirements.txt` ve `environment.yml` dosyalarına `anthropic` paketi eklendi.
+
 ## [v2.10.7] - 2026-03-08
 Bu sürümde çoklu ortam (environment) yapılandırma desteği tamamlandı.
 

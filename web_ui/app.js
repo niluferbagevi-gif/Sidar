@@ -63,7 +63,11 @@ async function loadModelInfo() {
     const data = await (await fetch(apiUrl('/status'))).json();
     const provider = (data.provider || 'ollama').toLowerCase();
     const model    = data.model || '—';
-    const display  = provider === 'gemini' ? `Gemini · ${model}` : model;
+    const display = provider === 'gemini'
+      ? `Gemini · ${model}`
+      : provider === 'anthropic'
+        ? `Claude · ${model}`
+        : model;
 
     const sidebarLabel = document.getElementById('model-name-label');
     if (sidebarLabel) sidebarLabel.textContent = display;

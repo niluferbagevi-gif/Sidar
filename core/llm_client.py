@@ -1,6 +1,6 @@
 """
 Sidar Project - LLM İstemcisi
-Ollama, Google Gemini ve OpenAI API entegrasyonu (Asenkron, OOP tabanlı).
+Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP tabanlı).
 """
 
 from __future__ import annotations
@@ -501,6 +501,157 @@ class OpenAIClient(BaseLLMClient):
             yield _ensure_json_text(msg, "OpenAI") if json_mode else msg
 
 
+class AnthropicClient(BaseLLMClient):
+    """Anthropic Claude sağlayıcısı istemcisi."""
+
+    @staticmethod
+    def _split_system_and_messages(messages: List[Dict[str, str]]) -> tuple[str, List[Dict[str, str]]]:
+        system_parts: List[str] = []
+        conversation: List[Dict[str, str]] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                if content:
+                    system_parts.append(content)
+                continue
+            conversation.append({"role": role, "content": content})
+        return "\n\n".join(system_parts).strip(), conversation
+
+    def _build_timeout(self) -> int:
+        return max(10, int(getattr(self.config, "ANTHROPIC_TIMEOUT", 60)))
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> Union[str, AsyncIterator[str]]:
+        api_key = getattr(self.config, "ANTHROPIC_API_KEY", "")
+        if not api_key:
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": "[HATA] ANTHROPIC_API_KEY ayarlanmamış.",
+                    "thought": "Anthropic anahtarı eksik.",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
+
+        try:
+            from anthropic import AsyncAnthropic
+        except Exception as exc:
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] anthropic paketi kullanılamıyor: {exc}",
+                    "thought": "Anthropic istemcisi başlatılamadı.",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
+
+        model_name = model or getattr(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+        system_prompt, conversation = self._split_system_and_messages(messages)
+        if not conversation:
+            conversation = [{"role": "user", "content": "Merhaba"}]
+
+        if json_mode:
+            json_instruction = (
+                "Sadece geçerli JSON döndür. JSON şeması: "
+                '{"thought": string, "tool": string, "argument": string}. '
+                "Ek açıklama yazma."
+            )
+            system_prompt = f"{system_prompt}\n\n{json_instruction}".strip()
+
+        client = AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
+        tracer = _get_tracer(self.config)
+        span_cm = tracer.start_as_current_span("llm.anthropic.chat") if (tracer and not stream) else None
+        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.anthropic.chat") if tracer and stream else None)
+        started_at = time.monotonic()
+        if span is not None:
+            span.set_attribute("sidar.llm.provider", "anthropic")
+            span.set_attribute("sidar.llm.model", model_name)
+            span.set_attribute("sidar.llm.stream", stream)
+
+        try:
+            if stream:
+                stream_iter = self._stream_anthropic(
+                    client=client,
+                    model_name=model_name,
+                    messages=conversation,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                )
+                return _trace_stream_metrics(stream_iter, span, started_at)
+
+            response = await client.messages.create(
+                model=model_name,
+                max_tokens=4096,
+                temperature=temperature,
+                system=system_prompt or None,
+                messages=conversation,
+            )
+            text = "".join(
+                getattr(block, "text", "")
+                for block in getattr(response, "content", [])
+            )
+            if span is not None:
+                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                span.end()
+            return _ensure_json_text(text, "Anthropic") if json_mode else text
+        except Exception as exc:
+            if span is not None:
+                span.end()
+            logger.error("Anthropic hata: %s", exc)
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] Anthropic: {exc}",
+                    "thought": "Hata",
+                }
+            )
+            return _fallback_stream(msg) if stream else msg
+
+    async def _stream_anthropic(
+        self,
+        client,
+        model_name: str,
+        messages: List[Dict[str, str]],
+        system_prompt: str,
+        temperature: float,
+        json_mode: bool,
+    ) -> AsyncGenerator[str, None]:
+        try:
+            async with client.messages.stream(
+                model=model_name,
+                max_tokens=4096,
+                temperature=temperature,
+                system=system_prompt or None,
+                messages=messages,
+            ) as stream:
+                async for event in stream:
+                    if getattr(event, "type", "") != "content_block_delta":
+                        continue
+                    delta = getattr(event, "delta", None)
+                    if getattr(delta, "type", "") != "text_delta":
+                        continue
+                    text = getattr(delta, "text", "")
+                    if text:
+                        yield text
+        except Exception as exc:
+            msg = json.dumps(
+                {
+                    "tool": "final_answer",
+                    "argument": f"[HATA] Anthropic akış hatası: {exc}",
+                    "thought": "Hata",
+                }
+            )
+            yield _ensure_json_text(msg, "Anthropic") if json_mode else msg
+
+
 class LLMClient:
     """Factory sınıfı: sağlayıcıya göre doğru istemciyi seçer."""
 
@@ -514,6 +665,8 @@ class LLMClient:
             self._client = GeminiClient(config)
         elif self.provider == "openai":
             self._client = OpenAIClient(config)
+        elif self.provider == "anthropic":
+            self._client = AnthropicClient(config)
         else:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
 
