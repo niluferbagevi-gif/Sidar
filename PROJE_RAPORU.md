@@ -13,15 +13,18 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-544-satır)
+  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-570-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-332-satır)
   - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-288-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1108-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1659-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1173-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1698-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-264-satır)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI)](#38-corellm_clientpy--llm-istemcisi-570-satır)
+  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı](#37c-agentbase_agentpy--temel-ajan-sınıfı-34-satır)
+  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan](#37d-agentcoresupervisorpy--yönlendirici-supervisor-ajan-87-satır)
+  - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37e-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic)](#38-corellm_clientpy--llm-istemcisi-ollama--gemini--openai--anthropic-723-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-394-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-787-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-290-satır)
@@ -31,7 +34,7 @@
   - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-379-satır)
   - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.528 satır)](#318-web_ui--web-arayüzü-v280--modüler-yapı)
+  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.551 satır)](#318-web_ui--web-arayüzü-toplam-3551-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
   - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
@@ -192,7 +195,7 @@ sidar_project/
 
 ---
 
-### 3.1 `config.py` — Merkezi Yapılandırma (544 satır)
+### 3.1 `config.py` — Merkezi Yapılandırma (570 satır)
 
 **Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler ve donanım tespiti yapar.
 
@@ -286,7 +289,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.108 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)
 
 **Amaç:** WebSocket destekli asenkron ve çift yönlü chat web arayüzü.
 
@@ -344,7 +347,7 @@ app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
 ---
 
-### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.659 satır)
+### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)
 
 **Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
 
@@ -498,6 +501,39 @@ kullanıcı mesajı
 > **Not:** `parallel` aracı bu dispatch tablosunda yer almaz; `sidar_agent.py` içinde ReAct döngüsünde doğrudan `asyncio.gather` ile işlenir.
 
 **Mimari Değer:** `tooling.py` sayesinde araç ekleme/değiştirme işlemleri `sidar_agent.py` içine dağılmaz; tek bir yerden yönetilir. Şema eklemek için yalnızca `TOOL_ARG_SCHEMAS` sözlüğüne yeni giriş yapılması yeterlidir.
+
+---
+
+
+### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)
+
+**Amaç:** Multi-agent yapısındaki uzman ajanlar için ortak bir soyut temel sınıf (`BaseAgent`) sağlar.
+
+**Öne Çıkanlar:**
+- Ortak `cfg` ve `llm_client` bağımlılıklarının tek bir tabanda toplanması
+- Uzman roller arasında tutarlı arayüz
+- Gelecekte yeni role eklentileri için genişletilebilir iskelet
+
+---
+
+### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)
+
+**Amaç:** Kullanıcı niyetini analiz edip görevi uygun role yönlendiren orkestrasyon katmanı.
+
+**Öne Çıkanlar:**
+- Intent/role routing
+- TaskEnvelope/TaskResult sözleşmeleriyle uyumlu görev yönetimi
+- `ENABLE_MULTI_AGENT` açıkken Strangler Pattern üzerinden ana akışa entegre çalışma
+
+---
+
+### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+
+**Amaç:** Alan odaklı uzman ajanları kapsar.
+
+**Alt Roller:**
+- `coder_agent.py` — dosya/kod odaklı uzman ajan
+- `researcher_agent.py` — web + RAG odaklı uzman ajan
 
 ---
 
@@ -781,7 +817,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.18 `web_ui/` — Web Arayüzü (v2.8.0 — Modüler Yapı)
+### 3.18 `web_ui/` — Web Arayüzü (Toplam 3.551 satır)
 
 > **v2.8.0 Mimari Değişikliği:** Daha önce 3.399 satırlık tek `index.html` dosyasında olan HTML + CSS + JavaScript ayrı modüllere bölündü. FastAPI `StaticFiles` middleware ile `/static/*` üzerinden servis edilmektedir.
 
@@ -795,7 +831,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 | `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
 | `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
 | `app.js` | 339 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
-| **Toplam** | **3.528** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
+| **Toplam** | **3.551** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
 
 **Yükleme Sırası (index.html → script tags):**
 ```html
