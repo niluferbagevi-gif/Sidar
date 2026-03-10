@@ -463,3 +463,95 @@ def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkey
     store.collection = _BrokenCol()
     msg = store.delete_document(doc_id, session_id="global")
     assert "Belge silindi" in msg
+
+
+def test_ollama_stream_trailing_split_invalid_then_valid_hits_jsondecode_continue(monkeypatch):
+    """trailing while-loop içinde hem JSONDecodeError(218-219) hem valid content yolunu çalıştırır."""
+    llm_mod = _load_llm_client_module()
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return '\n{bad-json}\n{"message":{"content":"after-bad"}}\n'
+            return ""
+
+    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _Ctx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
+    assert out == ["after-bad"]
+
+
+def test_web_server_and_agent_error_surface_runtime_stubs(monkeypatch):
+    from tests.test_web_server_runtime import _load_web_server, _make_agent
+
+    ws_mod = _load_web_server()
+    fake_agent, _calls = _make_agent(ai_provider="ollama", ollama_online=False)
+
+    async def _fake_get_agent():
+        return fake_agent
+
+    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
+
+    # web server fonksiyon yolları
+    sess = asyncio.run(ws_mod.get_sessions())
+    assert getattr(sess, "status_code", 0) == 200
+    rag_res = asyncio.run(ws_mod.rag_search(q="", mode="auto", top_k=1))
+    assert getattr(rag_res, "status_code", 0) in (200, 400)
+
+    # agent tarafında bilinmeyen tool / parse fallback
+    from tests.test_sidar_agent_runtime import _make_agent_for_runtime, SA_MOD
+
+    ag = _make_agent_for_runtime()
+    ag._tools = {}
+    ok_unknown = asyncio.run(ag._execute_tool("olmayan_tool_xyz", {"x": 1}))
+    assert ok_unknown is None or "Bilinmeyen" in str(ok_unknown) or "Unknown" in str(ok_unknown)
+
+    ag.cfg.BASE_DIR = "."
+
+    async def _noop_audit(*_a, **_k):
+        return None
+
+    ag._log_audit = _noop_audit
+
+    def _bad_parse(_name, _arg):
+        raise RuntimeError("parse fail")
+
+    monkeypatch.setattr(SA_MOD, "parse_tool_argument", _bad_parse)
+
+    async def _ok_handler(_arg):
+        return "ok"
+
+    ag._tools = {"write_file": _ok_handler}
+    out = asyncio.run(ag._execute_tool("write_file", {"bad": 1}))
+    assert out == "ok"
