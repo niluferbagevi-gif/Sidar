@@ -77,6 +77,7 @@
   - [15.4 Sistem İzleme ve GPU](#154-sistem-izleme-ve-gpu)
   - [15.5 Kod Yürütme](#155-kod-yürütme)
   - [15.6 Özellik Profilleri](#156-özellik-profilleri)
+  - [15.7 v3.0 Vizyon Gereksinimleri (Planlanan)](#157-v30-vizyon-gereksinimleri-planlanan)
 - [16. Hata Yönetimi ve Loglama Stratejisi](#16-hata-yönetimi-ve-loglama-stratejisi)
   - [16.1 Hata Yönetimi Kalıpları](#161-hata-yönetimi-kalıpları)
   - [16.2 Loglama Stratejisi](#162-loglama-stratejisi)
@@ -1490,27 +1491,29 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 
 ### 15.1 Çekirdek Özellikler (Her Zaman Zorunlu)
 
-| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
-|---------|----------------------|----------------|
-| CLI arayüzü | Python ≥ 3.10, `httpx`, `python-dotenv` | — |
-| Web arayüzü | `fastapi`, `uvicorn`, `httpx` | `WEB_PORT` (opsiyonel) |
-| Ollama LLM | `httpx` + **çalışan `ollama serve`** | `OLLAMA_URL`, `CODING_MODEL` |
-| Gemini LLM | `google-generativeai` | `GEMINI_API_KEY`, `GEMINI_MODEL` |
-| Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) |
-| Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` |
-| GitHub entegrasyonu | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET` |
-| Proje denetimi (`audit`) | — (stdlib: `ast`, `pathlib`) | — |
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` | Gerçekleşme Durumu |
+|---------|----------------------|----------------|--------------------|
+| CLI arayüzü | Python ≥ 3.10, `httpx`, `python-dotenv` | — | ✅ Tamamlandı |
+| Web arayüzü | `fastapi`, `uvicorn`, `httpx` | `WEB_PORT` (opsiyonel) | ✅ Tamamlandı |
+| **Multi-LLM Soyutlama Katmanı** (Ollama + Gemini + OpenAI + Anthropic) | `httpx`, `google-generativeai`, `openai`, `anthropic` | `AI_PROVIDER`, sağlayıcıya göre `*_API_KEY` | ✅ Tamamlandı |
+| **Multi-Agent Orkestrasyonu (Supervisor)** | `agent/core/supervisor.py`, `agent/roles/*` | `ENABLE_MULTI_AGENT=false/true` | ✅ Tamamlandı *(Geriye uyumluluk geçiş aşamasında)* |
+| **Bağımsız Uzman Ajan Rolleri** (CoderAgent + ResearcherAgent) | `agent/base_agent.py`, `agent/roles/*` | `ENABLE_MULTI_AGENT=true` (aktif kullanım için) | ✅ Tamamlandı |
+| Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) | ✅ Tamamlandı |
+| Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` | ✅ Tamamlandı |
+| GitHub entegrasyonu | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET` | ✅ Tamamlandı |
+| Proje denetimi (`audit`) | — (stdlib: `ast`, `pathlib`) | — | ✅ Tamamlandı |
 
 ### 15.2 Arama ve Web
 
-| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
-|---------|----------------------|----------------|
-| Tavily web arama | `httpx` | `TAVILY_API_KEY` |
-| Google Custom Search | `httpx` | `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX` |
-| DuckDuckGo (fallback) | `duckduckgo-search` | — |
-| URL içerik çekme | `httpx`, `beautifulsoup4` | `WEB_FETCH_TIMEOUT` (opsiyonel) |
-| PyPI sorgulama | `httpx`, `packaging` | — |
-| npm sorgulama | `httpx` | — |
+| Özellik | Zorunlu Paket / Servis | Zorunlu `.env` | Gerçekleşme Durumu |
+|---------|----------------------|----------------|--------------------|
+| Tavily web arama | `httpx` | `TAVILY_API_KEY` | ✅ Tamamlandı |
+| Google Custom Search | `httpx` | `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX` | ✅ Tamamlandı |
+| DuckDuckGo (fallback) | `duckduckgo-search` | — | ✅ Tamamlandı |
+| URL içerik çekme | `httpx`, `beautifulsoup4` | `WEB_FETCH_TIMEOUT` (opsiyonel) | ✅ Tamamlandı |
+| PyPI sorgulama | `httpx`, `packaging` | — | ✅ Tamamlandı |
+| npm sorgulama | `httpx` | — | ✅ Tamamlandı |
+| **Gelişmiş Güvenlik ve Limitler** (Webhook HMAC + 1MB dosya limiti) | FastAPI middleware/endpoint güvenlik katmanları | `GITHUB_WEBHOOK_SECRET` | ✅ Tamamlandı |
 
 ### 15.3 RAG (Belge Deposu)
 
@@ -1547,14 +1550,23 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 
 Minimum kurulum senaryolarına göre gereken paket kümeleri:
 
-| Profil | Gerekli Paketler |
-|--------|-----------------|
-| **Minimal CLI** (Ollama + keyword RAG) | `httpx`, `python-dotenv`, `pydantic`, `beautifulsoup4`, `packaging` |
-| **Tam CLI** (+ BM25 + GitHub + web arama) | yukarıdaki + `rank_bm25`, `PyGithub`, `duckduckgo-search` |
-| **Web Sunucu** | yukarıdaki + `fastapi`, `uvicorn` |
-| **GPU RAG** | yukarıdaki + `chromadb`, `sentence-transformers`, `torch` (CUDA) |
-| **Gemini Modu** | yukarıdaki + `google-generativeai` |
-| **Tam Deploy** | tüm opsiyonel dahil + Docker + Redis (ileride) |
+| Profil | Gerekli Paketler | Gerçekleşme Durumu |
+|--------|-----------------|--------------------|
+| **Minimal CLI** (Ollama + keyword RAG) | `httpx`, `python-dotenv`, `pydantic`, `beautifulsoup4`, `packaging` | ✅ Aktif |
+| **Tam CLI** (+ BM25 + GitHub + web arama) | yukarıdaki + `rank_bm25`, `PyGithub`, `duckduckgo-search` | ✅ Aktif |
+| **Web Sunucu** | yukarıdaki + `fastapi`, `uvicorn` | ✅ Aktif |
+| **GPU RAG** | yukarıdaki + `chromadb`, `sentence-transformers`, `torch` (CUDA) | ✅ Aktif |
+| **Gemini Modu** | yukarıdaki + `google-generativeai` | ✅ Aktif |
+| **Çoklu Sağlayıcı Deploy** | tüm opsiyonel dahil + Docker + Redis + `openai` + `anthropic` | ✅ Aktif |
+
+
+### 15.7 v3.0 Vizyon Gereksinimleri (Planlanan)
+
+| Özellik | Hedef Gereksinim | Durum |
+|---------|------------------|-------|
+| **Reviewer (QA) Ajanı** | `agent/roles/reviewer_agent.py`, test/kalite geri bildirim döngüsü, Supervisor entegrasyonu | ⚠ Planlanıyor |
+| **Eski Mimarinin Kaldırılması** | Legacy `sidar_agent.py` akışının deprecate edilmesi, Supervisor-first tek omurga | ⚠ Planlanıyor |
+| **Gelişmiş Maliyet (Token) İzleme** | Sağlayıcı bazlı token/maliyet/rate-limit telemetrisi + dashboard | ⚠ Planlanıyor |
 
 ---
 
@@ -1838,7 +1850,7 @@ Bu bölüm, 2026-03-10 tarihli dördüncü kapsamlı audit'te tespit edilen tüm
 #### 18.4.2 Test Modülü Güncellemesi
 
 | Metrik | Audit #3 Değeri | Gerçek (Audit #4) |
-|--------|-----------------|-------------------|
+|--------|-----------------|--------------------|-------------------|
 | Test modülü sayısı (.py) | 39 | **63** |
 | Test toplam satır | ~2.362 | **~15.833** |
 | Yeni eklenen modül | — | **24** (`*_runtime.py` ve diğerleri) |
