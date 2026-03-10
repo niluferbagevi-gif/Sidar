@@ -218,14 +218,15 @@ conda activate sidar-ai
 ### pip ile
 
 ```bash
-pip install python-dotenv httpx psutil pynvml \
-            google-generativeai PyGithub duckduckgo-search \
-            rank-bm25 chromadb sentence-transformers \
-            fastapi uvicorn pydantic docker pywebview \
-            pytest pytest-asyncio pytest-cov
+# Runtime bağımlılıkları
+pip install -r requirements.txt
+
+# Geliştirme + test bağımlılıkları
+pip install -r requirements-dev.txt
 ```
 
-> **Not:** GPU desteği için `torch` ve `torchvision`'ı [PyTorch resmi sitesinden](https://pytorch.org/get-started/locally/) CUDA sürümünüze uygun wheel ile kurun.
+> **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
+> `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın.
 
 ### Çevre Değişkenleri
 
