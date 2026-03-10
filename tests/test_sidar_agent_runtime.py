@@ -1846,3 +1846,44 @@ def test_load_instruction_files_stat_error_is_swallowed(tmp_path, monkeypatch):
     monkeypatch.setattr(pathlib.Path, 'stat', _boom_stat)
     out = a._load_instruction_files()
     assert 'SIDAR.md' in out and 'kural' in out
+
+
+def test_react_loop_tool_result_none_feeds_error_and_continues(monkeypatch):
+    """_execute_tool None döndürdüğünde (bilinmeyen araç) hata mesajı
+    konuşmaya eklenmeli ve döngü devam etmelidir (satır 450-457)."""
+    a = _make_react_ready_agent(max_steps=3)
+
+    class _Mem:
+        def get_messages_for_llm(self):
+            return []
+
+        def add(self, *_):
+            pass
+
+    a.memory = _Mem()
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+            self.payloads = [
+                '{"thought":"deneme","tool":"bilinmeyen_arac","argument":"x"}',
+                '{"thought":"bitti","tool":"final_answer","argument":"tamam"}',
+            ]
+
+        async def chat(self, **kwargs):
+            text = self.payloads[self.i % len(self.payloads)]
+            self.i += 1
+            return _gen_once(text)
+
+    a.llm = _LLM()
+
+    async def _exec_none(tool, arg):
+        return None
+
+    monkeypatch.setattr(a, "_execute_tool", _exec_none)
+
+    out = asyncio.run(_collect(a._react_loop("test")))
+    assert out[-1] == "tamam"

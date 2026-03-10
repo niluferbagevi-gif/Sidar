@@ -265,10 +265,6 @@ class DocumentStore:
 
         # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
         separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
-        
-        # Eğer metin zaten limitin altındaysa direkt döndür
-        if len(text) <= size:
-            return [text]
 
         def _split(text_part: str, sep_idx: int) -> List[str]:
             """Recursive bölme fonksiyonu"""
