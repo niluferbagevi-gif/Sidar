@@ -1,9 +1,9 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-08 (v2.10.7 — satır sayıları, test sayımı ve eksik bulgular güncellendi; tüm "çözüldü" iddiaları kod üzerinde doğrulandı)
+> **Son Güncelleme:** 2026-03-10 (v2.10.7 — Audit #4: satır sayıları yeniden ölçüldü, 24 yeni test modülü belgelendi, .env.example eksik değişkenler tespit edildi; tüm "çözüldü" iddiaları kod üzerinde yeniden doğrulandı)
 > **Proje Sürümü:** 2.10.7
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python: 12.715 satır; Web UI: 3.528 satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: 10.393 satır; Test: 15.833 satır; Web UI: 3.528 satır.
 
 ---
 
@@ -87,6 +87,7 @@
   - [18.1 Doğrulanan Maddeler](#181-önceki-raporda-çözüldü-olarak-işaretlenmiş-ve-doğrulanan-maddeler)
   - [18.2 Audit #2 Düzeltmeleri](#182-rapor-düzeltme-özeti--audit-2-2026-03-08-sürüm-v2100)
   - [18.3 Audit #3 Düzeltmeleri ve Yeni Bulgular](#183-rapor-düzeltme-özeti--audit-3-2026-03-08-güncel)
+  - [18.4 Audit #4 Düzeltmeleri ve Yeni Bulgular](#184-rapor-düzeltme-özeti--audit-4-2026-03-10)
 
 ---
 
@@ -910,7 +911,11 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projede **39 test modülü** bulunmaktadır (toplam ~2.362 satır):
+Projede **63 test modülü** bulunmaktadır (toplam ~15.833 satır):
+
+> **⚠️ Audit #4 Güncellemesi (2026-03-10):** Son audit'te test modülü sayısı 39'dan 63'e yükselmiştir. Audit #3'ten bu yana 24 yeni `*_runtime.py` test modülü eklenmiştir. `test_config_runtime_coverage` (0 bayt boş dosya) artifact olarak tespit edilmiştir.
+
+**Orijinal (v2.10.7) Test Modülleri:**
 
 | Test Dosyası | Satır | Kapsam |
 |-------------|-------|--------|
@@ -935,9 +940,9 @@ Projede **39 test modülü** bulunmaktadır (toplam ~2.362 satır):
 | `test_tooling_registry.py` | 75 | `tooling.py` şema ve dispatch testleri (yeni Issue şemaları) |
 | `test_config_env_helpers.py` | 30 | Config yardımcı fonksiyon testleri |
 | `test_config_improvements.py` | 7 | Config doğrulama testleri |
-| `test_web_server_improvements.py` | 84 | Web sunucu endpoint testleri (DDoS, Basic Auth) |
-| `test_web_ui_runtime_improvements.py` | 32 | Web UI çalışma zamanı testleri |
-| `test_web_ui_security_improvements.py` | 9 | Web UI güvenlik testleri |
+| `test_web_server_improvements.py` | 112 | Web sunucu endpoint testleri (DDoS, Basic Auth) |
+| `test_web_ui_runtime_improvements.py` | 33 | Web UI çalışma zamanı testleri |
+| `test_web_ui_security_improvements.py` | 10 | Web UI güvenlik testleri |
 | `test_cli_banner.py` | 29 | CLI banner testleri |
 | `test_cli_runtime_improvements.py` | 17 | CLI çalışma zamanı testleri |
 | `test_main_launcher_improvements.py` | 34 | Başlatıcı testleri |
@@ -953,6 +958,37 @@ Projede **39 test modülü** bulunmaktadır (toplam ~2.362 satır):
 | `test_config_env_profiles.py` | — | Ortam başına konfigürasyon testleri |
 | `test_github_webhook.py` | — | GitHub webhook HMAC doğrulama testleri |
 | `test_security_level_transition.py` | — | Güvenlik seviyesi geçiş logu testleri |
+
+**Audit #4'te Tespit Edilen Yeni Test Modülleri (24 adet):**
+
+| Test Dosyası | Kapsam |
+|-------------|--------|
+| `test_auto_handle_runtime.py` | AutoHandle çalışma zamanı testleri |
+| `test_cli_runtime_full.py` | CLI tam çalışma zamanı testleri |
+| `test_code_manager_runtime.py` | CodeManager çalışma zamanı testleri |
+| `test_config_hardware_runtime.py` | Config donanım algılama çalışma zamanı |
+| `test_config_runtime.py` | Config çalışma zamanı testleri |
+| `test_core_runtime_focus.py` | Core modül odaklı çalışma zamanı |
+| `test_github_manager_runtime.py` | GitHubManager çalışma zamanı testleri |
+| `test_github_upload_runtime.py` | GitHub yükleme çalışma zamanı testleri |
+| `test_llm_client_runtime.py` | LLM istemci çalışma zamanı testleri |
+| `test_main_runtime.py` | main.py başlatıcı çalışma zamanı |
+| `test_memory_runtime_extended.py` | Bellek genişletilmiş çalışma zamanı |
+| `test_package_info_extended.py` | PackageInfo genişletilmiş testleri |
+| `test_package_info_runtime.py` | PackageInfo çalışma zamanı testleri |
+| `test_quick_100.py` | Hızlı %100 kapsam testleri |
+| `test_rag_runtime_extended.py` | RAG genişletilmiş çalışma zamanı |
+| `test_rag_ultimate_edge_cases.py` | RAG uç durum testleri |
+| `test_sidar_agent_runtime.py` | SidarAgent çalışma zamanı testleri |
+| `test_system_health_runtime.py` | SystemHealth çalışma zamanı testleri |
+| `test_targeted_coverage_additions.py` | Hedefli kapsam tamamlama testleri |
+| `test_todo_manager_runtime.py` | TodoManager çalışma zamanı testleri |
+| `test_tooling_runtime.py` | Tooling çalışma zamanı testleri |
+| `test_ultimate_coverage.py` | Nihai kapsam testleri |
+| `test_web_search_runtime.py` | WebSearch çalışma zamanı testleri |
+| `test_web_server_runtime.py` | WebServer çalışma zamanı testleri (1.470 satır) |
+
+> **Artifact Sorunu:** `test_config_runtime_coverage` (0 bayt boş dosya) pytest tarafından keşfedilir ancak test içermez; kaldırılabilir.
 
 **Test çalıştırma:** `pytest` veya `pytest --cov=.`
 
@@ -992,39 +1028,41 @@ Projede **39 test modülü** bulunmaktadır (toplam ~2.362 satır):
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-| Dosya | Satır | Not |
-|-------|-------|-----|
-| `web_ui/style.css` | 1.547 | v2.8.0 — index.html'den ayrıldı |
-| `agent/sidar_agent.py` | **1.659** | v2.10.0 — OpenTelemetry `react_step`/`tool_execution` span entegrasyonu eklendi |
-| `web_server.py` | **1.108** | v2.10.1 — SSE yerine WebSocket chat + `cancel` destekli akış eklendi |
-| `core/rag.py` | **787** | v2.9.0 — RRF + oturum izolasyonu + SQLite FTS5 |
-| `managers/code_manager.py` | **766** | |
-| `web_ui/chat.js` | **656** | v2.10.1 — WebSocket istemcisi + yeniden bağlanma + cancel akışı eklendi |
-| `managers/github_manager.py` | **644** | v2.9.0 — Issue yönetimi + PR diff + list_repos |
-| `agent/auto_handle.py` | 601 | |
-| `core/llm_client.py` | **570** | v2.10.0 — Ollama/Gemini çağrılarında TTFT + toplam süre span metrikleri eklendi |
-| `config.py` | **544** | v2.10.0 — `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, `REDIS_URL` eklendi |
-| `managers/system_health.py` | **436** | v2.9.0 — Prometheus metrics, get_gpu_info genişletme |
-| `managers/todo_manager.py` | **451** | v2.9.0 — scan_project_todos, set_tasks, _ensure_single_in_progress |
-| `core/memory.py` | 394 | v2.9.0 — Sliding window özetleme |
-| `web_ui/sidebar.js` | 394 | v2.8.0 — index.html'den ayrıldı |
-| `managers/web_search.py` | 379 | v2.8.0 — AsyncDDGS + timeout eklendi |
-| `main.py` | 332 | |
-| `managers/package_info.py` | 314 | |
-| `github_upload.py` | 294 | |
-| `managers/security.py` | **290** | |
-| `cli.py` | **288** | |
-| `agent/tooling.py` | **264** | v2.9.0 — 6 yeni şema (Issue, PR diff, scan_todos) |
-| `web_ui/app.js` | **339** | v2.8.0/v2.9.0 — genişletildi |
-| `agent/definitions.py` | 165 | |
-| `web_ui/index.html` | **461** | v2.9.0 — drag-drop yükleme ve yeni UI bileşenleri |
-| `web_ui/rag.js` | 131 | v2.8.0 — index.html'den ayrıldı |
-| `core/__init__.py` | 27 | |
-| `managers/__init__.py` | 21 | |
-| `agent/__init__.py` | 19 | |
-| **Toplam (Python kaynak)** | **~12.715** | `wc -l` ile doğrulandı (2026-03-08) |
-| **Toplam (Web UI: HTML+JS+CSS)** | **~3.528** | `wc -l` ile doğrulandı (2026-03-08) |
-| **Genel Toplam** | **~16.243** | Python + Web UI |
+> **⚠️ Audit #4 (2026-03-10):** Aşağıdaki tabloda Audit #3 raporundaki satır sayılarından sapan dosyalar **kalın+yıldız** ile işaretlenmiştir. Gerçek değerler `wc -l` ile doğrulanmıştır.
+
+| Dosya | Rapor (Audit#3) | **Gerçek (Audit#4)** | Fark | Not |
+|-------|-----------------|----------------------|------|-----|
+| `web_ui/style.css` | 1.547 | **1.547** | 0 | ✅ |
+| `agent/sidar_agent.py` | 1.659 | **1.659** | 0 | ✅ |
+| `web_server.py` | 1.108 | ⚠️ **1.126** | +18 | Yeni endpoint/kod eklendi |
+| `core/rag.py` | 787 | ⚠️ **783** | -4 | Küçük refactor |
+| `managers/code_manager.py` | 766 | **766** | 0 | ✅ |
+| `web_ui/chat.js` | 656 | **656** | 0 | ✅ |
+| `managers/github_manager.py` | 644 | **644** | 0 | ✅ |
+| `agent/auto_handle.py` | 601 | **601** | 0 | ✅ |
+| `core/llm_client.py` | 570 | **570** | 0 | ✅ |
+| `config.py` | 544 | **544** | 0 | ✅ |
+| `managers/system_health.py` | 436 | **436** | 0 | ✅ |
+| `managers/todo_manager.py` | 451 | **451** | 0 | ✅ |
+| `core/memory.py` | 394 | ⚠️ **402** | +8 | |
+| `web_ui/sidebar.js` | 394 | **394** | 0 | ✅ |
+| `managers/web_search.py` | 379 | ⚠️ **387** | +8 | |
+| `web_ui/app.js` | 339 | **339** | 0 | ✅ |
+| `main.py` | 332 | **332** | 0 | ✅ |
+| `managers/package_info.py` | 314 | ⚠️ **322** | +8 | |
+| `github_upload.py` | 294 | **294** | 0 | ✅ |
+| `managers/security.py` | 290 | **290** | 0 | ✅ |
+| `cli.py` | 288 | **288** | 0 | ✅ |
+| `agent/tooling.py` | 264 | ⚠️ **266** | +2 | |
+| `agent/definitions.py` | 165 | **165** | 0 | ✅ |
+| `web_ui/index.html` | 461 | **461** | 0 | ✅ |
+| `web_ui/rag.js` | 131 | **131** | 0 | ✅ |
+| `core/__init__.py` | 27 | **27** | 0 | ✅ |
+| `managers/__init__.py` | 21 | **21** | 0 | ✅ |
+| `agent/__init__.py` | 19 | **19** | 0 | ✅ |
+| **Toplam Python kaynak** | ~12.715 (tests dahil) | **~10.393** (tests hariç) / **~26.226** (tests dahil) | — | Test sayısı 39→63 modüle çıktı |
+| **Toplam (Web UI: HTML+JS+CSS)** | **~3.528** | **3.528** | 0 | ✅ `wc -l` doğrulandı |
+| **Genel Toplam** | ~16.243 | **~29.754** | +13.511 | 24 yeni test modülü nedeniyle |
 
 ---
 
@@ -1152,13 +1190,26 @@ add_document(title, content, source)
 >
 > Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
 
-### 11.1 Açık Teknik Borç (2026-03-08 Audit)
+### 11.1 Açık Teknik Borç (2026-03-10 Audit #4 — Güncel)
 
-| # | Sorun | Dosya | Etki | Öncelik |
-|---|-------|-------|------|---------|
-| 1 | **`/file-content` endpoint boyut limiti yok** | `web_server.py:596-626` | `target.read_text()` ile tüm dosya belleğe okunur; çok büyük dosyalarda (GB düzeyinde) bellek tüketimi ve DoS riski oluşur | Orta |
+| # | Sorun | Dosya | Etki | Öncelik | Durum |
+|---|-------|-------|------|---------|-------|
+| 1 | **`/file-content` endpoint boyut limiti yok** | `web_server.py:641` | `target.read_text()` ile tüm dosya belleğe okunur; çok büyük dosyalarda (GB düzeyinde) bellek tüketimi ve DoS riski oluşur | Orta | ⚠️ Audit#3'ten beri **açık** |
+| 2 | **`.env.example`'da eksik değişkenler** | `.env.example` | `GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` değişkenleri `config.py`'da var; `.env.example`'a eklenmemiş | Düşük | 🆕 Audit#4'te tespit edildi |
+| 3 | **`test_config_runtime_coverage` boş dosya** | `tests/test_config_runtime_coverage` | 0 bayt, içerik yok; pytest keşfeder ancak test bulamaz; artifact olarak kaldırılabilir | Düşük | 🆕 Audit#4'te tespit edildi |
+| 4 | **`duckduckgo-search` versiyon pin formatı uyumsuzluğu** | `environment.yml`, `requirements.txt` | Raporda `~=6.2.13` (tilde-eşitlik) yazıyor; gerçekte `==6.2.13` (tam eşitlik) — bu daha kısıtlayıcı; yükseltme gerektiğinde engel çıkabilir | Düşük | 🆕 Audit#4'te tespit edildi |
 
 **Öneri (sıra #1):** `/file-content` endpoint'ine `MAX_FILE_CONTENT_BYTES` (ör. 1 MB = 1_048_576 bayt) sınırı eklenmeli; aşıldığında `413 Request Entity Too Large` döndürülmelidir. `target.stat().st_size` ile dosya boyutu önce kontrol edilip yalnızca limiti aşmayan dosyalar `read_text()` ile okunmalıdır.
+
+**Öneri (sıra #2):** `.env.example`'a şu üç satır eklenmeli:
+```bash
+# Ortama özgü yapılandırma (development/production/test)
+SIDAR_ENV=
+# GitHub Webhook HMAC doğrulama gizli anahtarı
+GITHUB_WEBHOOK_SECRET=
+# Özetleme sırasında tam korunacak son mesaj sayısı (sliding window)
+MEMORY_SUMMARY_KEEP_LAST=4
+```
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1780,4 +1831,66 @@ Eksik listelenen test dosyaları: `test_benchmark.py`, `test_coverage_policy.py`
 
 ---
 
-*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2 ve #3) güncellenerek doğrulanmıştır.*
+### 18.4 Rapor Düzeltme Özeti — Audit #4 (2026-03-10)
+
+Bu bölüm, 2026-03-10 tarihli dördüncü kapsamlı audit'te tespit edilen tüm uyumsuzlukları ve doğrulama sonuçlarını özetler. Tüm kaynak dosyalar `wc -l` ile yeniden ölçülmüş; rapordaki her "çözüldü" iddiası kaynak kodda teyit edilmiştir.
+
+#### 18.4.1 Satır Sayısı Düzeltmeleri
+
+| Dosya | Audit #3'teki Değer | Gerçek (Audit #4) | Fark |
+|-------|---------------------|-------------------|------|
+| `web_server.py` | 1.108 | **1.126** | +18 |
+| `core/rag.py` | 787 | **783** | -4 |
+| `managers/web_search.py` | 379 | **387** | +8 |
+| `managers/package_info.py` | 314 | **322** | +8 |
+| `core/memory.py` | 394 | **402** | +8 |
+| `agent/tooling.py` | 264 | **266** | +2 |
+| Diğer tüm dosyalar | — | ✅ Audit #3 ile aynı | 0 |
+
+#### 18.4.2 Test Modülü Güncellemesi
+
+| Metrik | Audit #3 Değeri | Gerçek (Audit #4) |
+|--------|-----------------|-------------------|
+| Test modülü sayısı (.py) | 39 | **63** |
+| Test toplam satır | ~2.362 | **~15.833** |
+| Yeni eklenen modül | — | **24** (`*_runtime.py` ve diğerleri) |
+| `test_web_server_runtime.py` öne çıkan | — | **1.470 satır** (en büyük yeni dosya) |
+
+#### 18.4.3 Doğrulanan "Çözüldü" İddiaları (Audit #4)
+
+Audit #3'te onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
+
+| Madde | Konum | Sonuç |
+|-------|-------|-------|
+| CLI `asyncio.Lock` fix | `cli.py:114` — `_interactive_loop_async()` | ✅ Onaylandı |
+| WebSocket `/ws/chat` | `web_server.py:340` — `@app.websocket` | ✅ Onaylandı |
+| Sandbox çıktı limiti | `code_manager.py:50` — `max_output_chars = 10000` | ✅ Onaylandı |
+| Redis rate limiting + local fallback | `web_server.py:182-196` | ✅ Onaylandı |
+| SIDAR_ENV konfigürasyonu | `config.py:31-47` | ✅ Onaylandı |
+| Coverage eşikleri (%70 + %80) | `run_tests.sh:7,15` | ✅ Onaylandı |
+| audit.jsonl denetim logu | `sidar_agent.py:1342-1346` | ✅ Onaylandı |
+| DuckDuckGo timeout + AsyncDDGS dinamik kontrol | `web_search.py:232-279` | ✅ Onaylandı |
+| GitHub webhook HMAC (`X-Hub-Signature-256`) | `web_server.py:1013-1029` | ✅ Onaylandı |
+| Güvenlik seviyesi geçiş logu | `sidar_agent.py:1618,1628` | ✅ Onaylandı |
+| OpenTelemetry tracing | `web_server.py:138-154` | ✅ Onaylandı |
+| OpenAPI Swagger (`/docs` + `/redoc`) | `web_server.py:101-103` | ✅ Onaylandı |
+| Non-root Docker kullanıcısı (sidaruser uid=10001) | `Dockerfile:90-91` | ✅ Onaylandı |
+| Docker sağlık kontrolü (HEALTHCHECK) | `Dockerfile:99` | ✅ Onaylandı |
+| Prometheus metrikleri (lazy init) | `system_health.py:283-309` | ✅ Onaylandı |
+| RAG oturum izolasyonu (ChromaDB `where=` + SQLite `WHERE`) | `rag.py:567,630` | ✅ Onaylandı |
+| RRF hibrit sıralama (k=60) | `rag.py:532-558` | ✅ Onaylandı |
+| SQLite FTS5 disk tabanlı BM25 | `rag.py:202-238` | ✅ Onaylandı |
+| Sliding window özetleme | `memory.py:332-339` | ✅ Onaylandı |
+
+#### 18.4.4 Yeni Bulgular (Audit #4)
+
+| # | Bulgu | Konum | Detay | Öncelik |
+|---|-------|-------|-------|---------|
+| 1 | `/file-content` boyut limiti yok *(Audit#3'ten süregelen)* | `web_server.py:641` | `target.read_text()` boyut kontrolsüz; GB dosyalarda DoS riski | Orta |
+| 2 | `.env.example`'da eksik değişkenler | `.env.example` | `GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksik | Düşük |
+| 3 | Boş artifact dosyası | `tests/test_config_runtime_coverage` | 0 bayt boş dosya; test sayısı karıştırır; kaldırılabilir | Düşük |
+| 4 | DDG versiyon pin formatı uyumsuzluğu (belge ↔ kod) | `environment.yml`, `requirements.txt` | Raporda `~=6.2.13`; gerçekte `==6.2.13` | Düşük |
+
+---
+
+*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2, #3 ve 2026-03-10 Audit #4) güncellenerek doğrulanmıştır.*
