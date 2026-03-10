@@ -66,7 +66,33 @@ _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
+_rag_prewarm_task: asyncio.Task | None = None
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
+
+
+
+
+async def _prewarm_rag_embeddings() -> None:
+    """Sunucu açılışında RAG embedding fonksiyonunu arka planda ısıtır."""
+    try:
+        agent = await get_agent()
+        rag = getattr(agent, "rag", None)
+        if rag is None:
+            logger.info("RAG prewarm atlandı: rag motoru bulunamadı.")
+            return
+
+        if not getattr(rag, "_chroma_available", False):
+            logger.info("RAG prewarm atlandı: ChromaDB kullanılamıyor.")
+            return
+
+        # _init_chroma() ilk kurulumda embedding fonksiyonunu zaten üretir.
+        # Burada çağrıyı startup'ta tetikleyerek ilk RAG isteğindeki cold-start
+        # gecikmesini kullanıcı yerine sunucu açılışına taşırız.
+        logger.info("RAG prewarm başlatıldı (embedding fonksiyonu hazırlanıyor)...")
+        await asyncio.to_thread(rag._init_chroma)
+        logger.info("RAG prewarm tamamlandı.")
+    except Exception as exc:
+        logger.warning("RAG prewarm başarısız oldu: %s", exc)
 
 
 async def get_agent() -> SidarAgent:
@@ -87,9 +113,17 @@ async def get_agent() -> SidarAgent:
 
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
+    global _rag_prewarm_task
+    _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
     try:
         yield
     finally:
+        if _rag_prewarm_task and not _rag_prewarm_task.done():
+            _rag_prewarm_task.cancel()
+            try:
+                await _rag_prewarm_task
+            except asyncio.CancelledError:
+                pass
         await _close_redis_client()
 
 
