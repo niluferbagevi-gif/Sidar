@@ -101,6 +101,26 @@ def test_check_hardware_importerror_and_cpu_fallback(monkeypatch):
     assert info.cpu_count == 1
 
 
+def test_check_hardware_no_cuda_non_wsl_logs_cpu_mode(monkeypatch):
+    cfg_mod = _load_config_module()
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(cfg_mod, "_is_wsl2", lambda: False)
+
+    log_calls = []
+    monkeypatch.setattr(cfg_mod.logger, "info", lambda msg, *a: log_calls.append(msg % a if a else msg))
+
+    class _Cuda:
+        @staticmethod
+        def is_available():
+            return False
+
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=_Cuda(), version=types.SimpleNamespace(cuda=None)))
+
+    info = cfg_mod.check_hardware()
+    assert info.gpu_name == "CUDA Bulunamadı"
+    assert any("CPU modunda çalışılacak" in call for call in log_calls)
+
+
 def test_config_ensure_hardware_info_loaded_gpu_and_cpu_modes(monkeypatch):
     cfg_mod = _load_config_module()
     monkeypatch.setattr(cfg_mod.os, "cpu_count", lambda: None)
