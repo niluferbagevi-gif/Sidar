@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-10 (v2.10.7 — Audit #5: Audit #4'te tespit edilen 4 açık sorunun 3'ü doğrulandı çözülmüş; 1 sorun hâlâ açık; 3 yeni bulgu tespit edildi — OpenAI provider eksik kayıt, `web_server.py` ve `test_web_server_runtime.py` satır sayısı güncellemeleri)
+> **Son Güncelleme:** 2026-03-10 (v2.10.8 — Audit #6 kapanış: Audit #5'te açık kalan OpenAI provider entegrasyonu ve boş test artifact'ı kapatıldı; kod satır sayıları güncellendi)
 > **Proje Sürümü:** 2.10.7
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: 10.393 satır; Test: ~15.839 satır; Web UI: 3.528 satır.
 
@@ -88,7 +88,7 @@
   - [18.2 Audit #2 Düzeltmeleri](#182-rapor-düzeltme-özeti--audit-2-2026-03-08-sürüm-v2100)
   - [18.3 Audit #3 Düzeltmeleri ve Yeni Bulgular](#183-rapor-düzeltme-özeti--audit-3-2026-03-08-güncel)
   - [18.4 Audit #4 Düzeltmeleri ve Yeni Bulgular](#184-rapor-düzeltme-özeti--audit-4-2026-03-10)
-  - [18.5 Audit #5 Düzeltmeleri ve Yeni Bulgular](#185-rapor-düzeltme-özeti--audit-5-2026-03-10)
+  - [18.5 Audit #6 Kapanış Özeti](#185-rapor-düzeltme-özeti--audit-6-2026-03-10)
 
 ---
 
@@ -1029,42 +1029,16 @@ Projede **63 test modülü** bulunmaktadır (toplam ~15.833 satır):
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **⚠️ Audit #5 (2026-03-10):** Aşağıdaki tabloda Audit #4 raporundaki satır sayılarından sapan dosyalar **kalın+yıldız** ile işaretlenmiştir. Gerçek değerler `wc -l` ile doğrulanmıştır.
+> **✅ Audit #6 (2026-03-10):** Aşağıdaki kritik dosyalar, son OpenAI entegrasyonu sonrası `wc -l` ile yeniden doğrulanmıştır.
 
-| Dosya | Rapor (Audit#4) | **Gerçek (Audit#5)** | Fark | Not |
-|-------|-----------------|----------------------|------|-----|
-| `web_ui/style.css` | 1.547 | **1.547** | 0 | ✅ |
-| `agent/sidar_agent.py` | 1.659 | **1.659** | 0 | ✅ |
-| `web_server.py` | 1.126 | ⚠️ **1.139** | +13 | `/file-content` boyut limiti eklendi (Audit#5 düzeltmesi) |
-| `core/rag.py` | 783 | **783** | 0 | ✅ |
-| `managers/code_manager.py` | 766 | **766** | 0 | ✅ |
-| `web_ui/chat.js` | 656 | **656** | 0 | ✅ |
-| `managers/github_manager.py` | 644 | **644** | 0 | ✅ |
-| `agent/auto_handle.py` | 601 | **601** | 0 | ✅ |
-| `core/llm_client.py` | 570 | **570** | 0 | ✅ |
-| `config.py` | 544 | **544** | 0 | ✅ |
-| `managers/system_health.py` | 436 | **436** | 0 | ✅ |
-| `managers/todo_manager.py` | 451 | **451** | 0 | ✅ |
-| `core/memory.py` | 402 | **402** | 0 | ✅ |
-| `web_ui/sidebar.js` | 394 | **394** | 0 | ✅ |
-| `managers/web_search.py` | 387 | **387** | 0 | ✅ |
-| `web_ui/app.js` | 339 | **339** | 0 | ✅ |
-| `main.py` | 332 | **332** | 0 | ✅ |
-| `managers/package_info.py` | 322 | **322** | 0 | ✅ |
-| `github_upload.py` | 294 | **294** | 0 | ✅ |
-| `managers/security.py` | 290 | **290** | 0 | ✅ |
-| `cli.py` | 288 | **288** | 0 | ✅ |
-| `agent/tooling.py` | 266 | **266** | 0 | ✅ |
-| `agent/definitions.py` | 165 | **165** | 0 | ✅ |
-| `web_ui/index.html` | 461 | **461** | 0 | ✅ |
-| `web_ui/rag.js` | 131 | **131** | 0 | ✅ |
-| `core/__init__.py` | 27 | **27** | 0 | ✅ |
-| `managers/__init__.py` | 21 | **21** | 0 | ✅ |
-| `agent/__init__.py` | 19 | **19** | 0 | ✅ |
-| `tests/test_web_server_runtime.py` | 1.470 | ⚠️ **1.476** | +6 | Boyut limiti test senaryoları eklendi |
-| **Toplam Python kaynak** | ~10.393 (tests hariç) | **~10.406** (tests hariç) | +13 | `web_server.py` +13 satır |
-| **Toplam (Web UI: HTML+JS+CSS)** | **3.528** | **3.528** | 0 | ✅ `wc -l` doğrulandı |
-| **Test Toplam Satır** | ~15.833 | **~15.839** | +6 | `test_web_server_runtime.py` +6 satır |
+| Dosya | Audit #5 | **Gerçek (Audit #6)** | Fark | Not |
+|-------|----------|------------------------|------|-----|
+| `config.py` | 544 | **556** | +12 | OpenAI config attribute + doğrulama + özet model satırı |
+| `web_server.py` | 1.139 | **1.139** | 0 | `--provider` choices güncellemesi, toplam satır değişmedi |
+| `cli.py` | 288 | **288** | 0 | `--provider` choices güncellemesi, toplam satır değişmedi |
+| `main.py` | 332 | **337** | +5 | OpenAI preflight uyarısı + wizard provider seçeneği |
+| **Toplam Python kaynak** | **~10.406** (tests hariç) | **~10.423** (tests hariç) | +17 | `config.py` (+12) + `main.py` (+5) |
+
 
 ---
 
@@ -1192,21 +1166,18 @@ add_document(title, content, source)
 >
 > Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
 
-### 11.1 Açık Teknik Borç (2026-03-10 Audit #5 — Güncel)
+### 11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)
 
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
-| 1 | ~~`/file-content` endpoint boyut limiti yok~~ | ~~`web_server.py:641`~~ | ~~`target.read_text()` boyutsuz; DoS riski~~ | ~~Orta~~ | ✅ **Audit#5'te çözüldü** — `MAX_FILE_CONTENT_BYTES=1_048_576` eklendi |
-| 2 | ~~`.env.example`'da eksik değişkenler~~ | ~~`.env.example`~~ | ~~`GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksikti~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** — 3 değişken de `.env.example`'a eklendi |
-| 3 | **`test_config_runtime_coverage` boş dosya** | `tests/test_config_runtime_coverage` | 0 bayt, içerik yok; pytest keşfeder ancak test bulamaz; artifact olarak kaldırılabilir | Düşük | ⚠️ Audit#4'ten beri **açık** |
-| 4 | ~~`duckduckgo-search` versiyon pin formatı uyumsuzluğu~~ | ~~`environment.yml`, `requirements.txt`~~ | ~~Raporda `~=6.2.13`; gerçekte `==6.2.13`~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** — Her iki dosyada da `~=6.2.13` (tilde-eşitlik) kullanıldığı doğrulandı |
-| 5 | **OpenAI provider eksik kayıt** | `config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt` | `llm_client.py`'de OpenAI desteği var ancak: `OPENAI_API_KEY`/`OPENAI_MODEL`/`OPENAI_TIMEOUT` `config.py`'da class attribute yok; `.env.example`'da yok; `--provider` CLI seçeneklerinde `"openai"` yok; `requirements.txt` ve `environment.yml`'de `openai` paketi yok; Rapor §12.1'de OpenAI provider değişkenleri belgelenmemiş | Orta | 🆕 **Audit#5'te tespit edildi** |
+| 1 | ~~`/file-content` endpoint boyut limiti yok~~ | ~~`web_server.py:641`~~ | ~~`target.read_text()` boyutsuz; DoS riski~~ | ~~Orta~~ | ✅ **Audit#5'te çözüldü** |
+| 2 | ~~`.env.example`'da eksik değişkenler~~ | ~~`.env.example`~~ | ~~`GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksikti~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
+| 3 | ~~`test_config_runtime_coverage` boş dosya~~ | ~~`tests/test_config_runtime_coverage`~~ | ~~0 bayt artifact; test keşfini kirletiyordu~~ | ~~Düşük~~ | ✅ **Audit#6'da çözüldü** — dosya projeden silindi |
+| 4 | ~~`duckduckgo-search` versiyon pin formatı uyumsuzluğu~~ | ~~`environment.yml`, `requirements.txt`~~ | ~~Raporda `~=6.2.13`; gerçekte `==6.2.13`~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
+| 5 | ~~OpenAI provider eksik kayıt~~ | ~~`config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt`, `environment.yml`~~ | ~~OpenAI ayarları/argümanları/bağımlılıkları eksikti~~ | ~~Orta~~ | ✅ **Audit#6'da çözüldü** — OpenAI uçtan uca kayıt tamamlandı |
 
-**Öneri (sıra #5 — OpenAI entegrasyon bütünlüğü):**
-- `config.py`'ya `OPENAI_API_KEY`, `OPENAI_MODEL` (varsayılan: `gpt-4o-mini`), `OPENAI_TIMEOUT` (varsayılan: 60) class attribute'ları eklenmeli
-- `.env.example`'a OpenAI bölümü eklenmeli (`OPENAI_API_KEY=`, `OPENAI_MODEL=gpt-4o-mini`, `OPENAI_TIMEOUT=60`)
-- `web_server.py:1099`, `cli.py:238`, `main.py:297` içindeki `--provider` choices listesine `"openai"` eklenmeli
-- `requirements.txt` ve `environment.yml`'ye `openai` paketi opsiyonel olarak eklenmeli
+> **Audit #6 Sonucu:** Bu bölümde açık kalan teknik borç bulunmamaktadır.
+
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1896,28 +1867,30 @@ Audit #3'te onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 
 ---
 
-### 18.5 Rapor Düzeltme Özeti — Audit #5 (2026-03-10)
+### 18.5 Rapor Düzeltme Özeti — Audit #6 (2026-03-10)
 
-Bu bölüm, 2026-03-10 tarihli beşinci kapsamlı audit'te tespit edilen tüm uyumsuzlukları, Audit #4 sorunlarının çözüm durumunu ve yeni bulguları özetler. Tüm kaynak dosyalar `wc -l` ile yeniden ölçülmüş; rapordaki her "çözüldü" iddiası kaynak kodda teyit edilmiştir.
+Bu bölüm, 2026-03-10 tarihli Audit #6 kapanış güncellemesinde Audit #5'te açık kalan maddelerin çözüm durumunu özetler. Tüm kritik dosyalar `wc -l` ile yeniden ölçülmüş; rapordaki durumlar kodla eşitlenmiştir.
 
-#### 18.5.1 Audit #4 Açık Sorunlarının Çözüm Durumu
+#### 18.5.1 Audit #4/#5 Açık Sorunlarının Çözüm Durumu
 
 | # | Sorun (Audit #4) | Durum (Audit #5) | Doğrulama |
 |---|-----------------|-----------------|-----------|
 | 1 | `/file-content` endpoint boyut limiti yok | ✅ **ÇÖZÜLDÜ** | `web_server.py:69` — `MAX_FILE_CONTENT_BYTES = 1_048_576` tanımlandı; `web_server.py:641-651` — `st_size` kontrolü + 413 yanıtı eklendi |
 | 2 | `.env.example`'da `GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksik | ✅ **ÇÖZÜLDÜ** | `.env.example:38` — `GITHUB_WEBHOOK_SECRET=`; `.env.example:67` — `MEMORY_SUMMARY_KEEP_LAST=4`; `.env.example:71` — `SIDAR_ENV=development` |
-| 3 | `test_config_runtime_coverage` boş dosya (0 bayt) | ⚠️ **HÂLÂ AÇIK** | Dosya hâlâ 0 bayt; kaldırılabilir |
+| 3 | `test_config_runtime_coverage` boş dosya (0 bayt) | ✅ **ÇÖZÜLDÜ** | Dosya projeden silindi; test keşfi temizlendi |
 | 4 | `duckduckgo-search` versiyon pin formatı (`==` vs `~=`) | ✅ **ÇÖZÜLDÜ** | `requirements.txt:16` ve `environment.yml:62` — her ikisi de `~=6.2.13` kullanıyor |
 
-#### 18.5.2 Satır Sayısı Güncellemeleri (Audit #5)
+#### 18.5.2 Satır Sayısı Güncellemeleri (Audit #6)
 
-| Dosya | Audit #4'teki Değer | Gerçek (Audit #5) | Fark | Not |
-|-------|---------------------|-------------------|------|-----|
-| `web_server.py` | 1.126 | ⚠️ **1.139** | +13 | `/file-content` boyut limiti eklendi |
-| `tests/test_web_server_runtime.py` | 1.470 | ⚠️ **1.476** | +6 | Boyut limiti için yeni test senaryoları |
-| Diğer tüm dosyalar | — | ✅ Audit #4 ile aynı | 0 | |
+| Dosya | Audit #5 Değeri | Gerçek (Audit #6) | Fark | Not |
+|-------|------------------|-------------------|------|-----|
+| `config.py` | 544 | **556** | +12 | OpenAI ayar/validasyon/özet güncellemesi |
+| `web_server.py` | 1.139 | **1.139** | 0 | Provider seçeneği güncellendi, satır sayısı aynı |
+| `cli.py` | 288 | **288** | 0 | Provider seçeneği güncellendi, satır sayısı aynı |
+| `main.py` | 332 | **337** | +5 | OpenAI preflight + wizard provider seçeneği |
+| Diğer dosyalar | — | ✅ Audit #5 ile uyumlu | — | |
 
-#### 18.5.3 Doğrulanan "Çözüldü" İddiaları (Audit #5)
+#### 18.5.3 Doğrulanan "Çözüldü" İddiaları (Audit #6)
 
 Audit #4'te onaylanan tüm maddeler bu audit'te de doğrulanmıştır. Ek olarak:
 
@@ -1927,14 +1900,14 @@ Audit #4'te onaylanan tüm maddeler bu audit'te de doğrulanmıştır. Ek olarak
 | `.env.example` eksik değişkenler | `.env.example:38,67,71` | ✅ Üç değişken de eklendi |
 | DuckDuckGo pin formatı | `requirements.txt:16`, `environment.yml:62` | ✅ Her ikisi de `~=6.2.13` |
 
-#### 18.5.4 Yeni Bulgular (Audit #5)
+#### 18.5.4 Yeni Bulgular (Audit #5) — Audit #6 Durum Güncellemesi
 
-| # | Bulgu | Konum | Detay | Öncelik |
-|---|-------|-------|-------|---------|
-| 1 | **OpenAI provider eksik kayıt** | `config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt` | `llm_client.py:409-430` OpenAI'yi destekliyor (`AI_PROVIDER=openai`); ancak `OPENAI_API_KEY`/`OPENAI_MODEL`/`OPENAI_TIMEOUT` `config.py` class attribute olarak tanımlanmamış; `.env.example`'da yok; `--provider` CLI argümanı `"openai"` seçeneğini içermiyor (`cli.py:238`, `web_server.py:1099`, `main.py:297`); `requirements.txt` ve `environment.yml`'de `openai` paketi yok; Rapor §12.1 tablosunda OpenAI değişkenleri belgelenmemiş | Orta |
-| 2 | **Rapor §12.1'de `AI_PROVIDER` açıklaması eksik** | `PROJE_RAPORU.md:§12.1` | Tablo `"ollama" veya "gemini"` diyor; `"openai"` üçüncü geçerli değer olarak belgelenmemiş | Düşük |
-| 3 | **`WEB_FETCH_MAX_CHARS` raporda belgelenmemiş** | `PROJE_RAPORU.md:§12.5` | `config.py:321` ve `.env.example:117`'de `WEB_FETCH_MAX_CHARS` tanımlanmış (12000); rapor §12.5 tablosunda yalnızca `WEB_SCRAPE_MAX_CHARS` var; `WEB_FETCH_MAX_CHARS` eksik | Düşük |
+| # | Bulgu | Konum | Audit #6 Durumu |
+|---|-------|-------|------------------|
+| 1 | **OpenAI provider eksik kayıt** | `config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt`, `environment.yml` | ✅ **ÇÖZÜLDÜ** — OpenAI config alanları, provider seçenekleri ve bağımlılıklar eklendi; rapor §12.1 ile eşitlendi |
+| 2 | **Rapor §12.1'de `AI_PROVIDER` açıklaması eksik** | `PROJE_RAPORU.md:§12.1` | ✅ **ÇÖZÜLDÜ** — `openai` üçüncü geçerli değer olarak belgelendi |
+| 3 | **`WEB_FETCH_MAX_CHARS` raporda belgelenmemiş** | `PROJE_RAPORU.md:§12.5` | ✅ **ÇÖZÜLDÜ** — `WEB_FETCH_MAX_CHARS=12000` satırı tabloya eklendi |
 
 ---
 
-*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2, #3 ve 2026-03-10 Audit #4, #5) güncellenerek doğrulanmıştır.*
+*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2, #3 ve 2026-03-10 Audit #4, #5, #6) güncellenerek doğrulanmıştır.*
