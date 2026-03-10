@@ -1207,3 +1207,16 @@ def test_launcher_execute_command_logs_exit_code_on_failure(tmp_path):
     content = log_path.read_text(encoding="utf-8")
     assert "[exit_code]" in content
     assert "7" in content
+
+def test_rag_delete_document_coverage_native(test_config):
+    """RAG delete_document: bulunamayan belge ve cross-session yetki kontrollerini kapsar."""
+    st = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+
+    # Olmayan belgeyi silme -> early return
+    res_not_found = st.delete_document("olmayan_belge", session_id="global")
+    assert "Belge bulunamadı" in res_not_found
+
+    # Yetkisiz belge silme (farklı session) -> isolation guard
+    st._index["baskasinin_belgesi"] = {"session_id": "baska_bir_oturum"}
+    res_unauthorized = st.delete_document("baskasinin_belgesi", session_id="benim_oturum")
+    assert "yetkiniz yok" in res_unauthorized
