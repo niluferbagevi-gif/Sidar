@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-10 (v2.10.8 — **Audit #8:** Tüm dosyalar satır satır yeniden doğrulandı; Python kaynak toplam düzeltildi, RFC satır sayısı güncellendi, §18.6.5 çelişkisi giderildi, `.note` dosyası belgelendi, artifact dosyaları hâlâ mevcut)
+> **Son Güncelleme:** 2026-03-11 (v2.10.8 — **Audit #9:** Arkadaş yorumu kontrol listesi dosya bazında teyit edildi; modül davranışları raporla karşılaştırıldı; boş test artifact'leri ve planlanan ancak depoda olmayan modüller yeniden doğrulandı)
 > **Proje Sürümü:** 2.10.8
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~11.023 satır (tests hariç, tüm .py dahil); Test: ~15.974 satır; Web UI: 3.551 satır.
 
@@ -92,6 +92,7 @@
   - [18.5 Audit #6 Kapanış Özeti](#185-rapor-düzeltme-özeti--audit-6-2026-03-10)
   - [18.6 Audit #7 — Multi-Agent Mimarisi ve Güncel Bulgular](#186-rapor-düzeltme-özeti--audit-7-2026-03-10)
   - [18.7 Audit #8 — Tam Doğrulama ve Yeni Tespitler](#187-rapor-düzeltme-özeti--audit-8-2026-03-10)
+  - [18.8 Audit #9 — Arkadaş Yorumu Kontrolü ve Çapraz Teyit](#188-rapor-düzeltme-özeti--audit-9-2026-03-11)
 
 ---
 
@@ -2218,3 +2219,34 @@ Audit #7'de onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 | **Yeni tespit** | 1 | `.note` dosyası (311 satır) raporda belgelenmemiş |
 | **Rapor iç çelişkisi giderildi** | 1 | §18.6.5 "Eksik" → "Mevcut" düzeltmesi |
 | **Satır sayısı güncellenen alan** | 3 | RFC-MultiAgent.md (+103), Dockerfile (+2), Python toplam (+277) |
+
+---
+
+### 18.8 Rapor Düzeltme Özeti — Audit #9 (2026-03-11)
+
+Bu bölüm, dış gözden gelen kontrol listesi (arkadaş yorumu) ile depo gerçekliğinin çapraz teyidini içerir. Odak: ana modüller, manager katmanı, dokümantasyon, test artifact'leri ve RFC ile rapor tutarlılığı.
+
+#### 18.8.1 Arkadaş Yorumu ile Uyumlu Olarak Yeniden Teyit Edilen Bulgular
+
+- `config.py`: `ENABLE_MULTI_AGENT`, `AUTO_HANDLE_TIMEOUT`, kritik ayar doğrulamaları (`validate_critical_settings`) ve özet üretimi (`print_config_summary`) rapordaki anlatımla uyumlu.
+- `main.py`: `run_wizard`, banner, interaktif seçim yardımcıları ve `--quick` akışı rapordaki CLI/Hızlı Başlatma anlatımıyla uyumlu.
+- `agent/definitions.py` + `agent/tooling.py`: sistem prompt kuralları ile araç şemaları (`write_file`, `patch_file`, GitHub araçları dahil) rapordaki mimari özetle uyumlu.
+- `agent/auto_handle.py`: `cfg.AUTO_HANDLE_TIMEOUT` kullanımı ve regex tabanlı yönlendirme deseni rapordaki otomatik komut işleme bölümünü doğruluyor.
+- `agent/sidar_agent.py` + multi-agent dosyaları (`base_agent.py`, `core/supervisor.py`, `core/contracts.py`, `roles/coder_agent.py`, `roles/researcher_agent.py`): feature-flag tabanlı delegasyon akışı (Supervisor → uzman ajanlar) ve `TaskResult` sözleşmesi raporla uyumlu.
+- Yönetici modülleri (`code_manager.py`, `security.py`, `todo_manager.py`, `github_manager.py`, `package_info.py`, `system_health.py`, `web_search.py`): arkadaş yorumundaki fonksiyon kümeleri ile rapordaki karşılıkları büyük ölçüde tutarlı.
+
+#### 18.8.2 11 Mart 2026 Tarihli Yeni / Yeniden-Açık Notlar
+
+| # | Tespit | Durum | Not |
+|---|--------|-------|-----|
+| 1 | `tests/test_config_runtime_coverage` (uzantısız) ve `tests/test_config_runtime_coverage.py` dosyaları 0 bayt | ⚠ Açık | Audit #8 ile aynı; kaldırılmadı. |
+| 2 | Planlanan `memory_hub.py` ve `registry.py` modülleri depoda yok | ⚠ Açık | Arkadaş yorumundaki “eksik modül” kontrol önerisiyle tutarlı; RFC tasarımında bahsedilen bazı ileri faz öğeleri henüz kodda değil. |
+| 3 | `web_ui/index.html` satır sayısı 467 (raporda 461/467 geçişi olmuştu) | ℹ Bilgi | Güncel ölçüm 467 satır; raporun satır-sayısı tablolarında tek değer korunmalı. |
+| 4 | `SIDAR.md` ve `CLAUDE.md` kısa yönlendirme dokümanları; teknik detaylar asıl olarak `README.md` + `PROJE_RAPORU.md` içinde | ℹ Bilgi | Arkadaş yorumundaki “belge çapraz kontrolü” adımı için teyit edildi. |
+
+#### 18.8.3 Öneriler (11 Mart 2026)
+
+1. Boş test artifact dosyalarını kaldırın ve CI'da `find tests -size 0` benzeri bir kontrol ekleyin.
+2. Multi-agent roadmap için RFC'de “planlanan/uygulanmış” ayrımını netleştiren bir durum matrisi ekleyin (`memory_hub`, `registry`, `ReviewerAgent`).
+3. Satır sayısı metriklerini tek komutla üreten bir script (ör. `scripts/audit_metrics.sh`) ekleyip raporu bu çıktıya bağlayın; manuel çelişki riski azalır.
+
