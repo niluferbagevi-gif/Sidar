@@ -1050,6 +1050,11 @@ Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
 > **Artifact Sorunu (Audit #6):** `test_config_runtime_coverage` (uzantısız, 0 bayt) Audit #6'da silindiği belirtildi; **gerçekte hâlâ mevcut**.
 > **Yeni Artifact (Audit #7):** `test_config_runtime_coverage.py` (0 bayt, Audit #6 sonrası 19:52'de oluşturulmuş) — boş; pytest test sayısına dahil edilir ama test içermez; kaldırılmalıdır.
 
+**Öne Çıkan Yeni Test Kategorileri (v2.10.8):**
+- **Multi-Agent Mimari Testleri:** `test_supervisor_agent.py`, `test_coder_agent.py`, `test_researcher_agent.py`
+- **Yeni LLM Sağlayıcı Testleri:** `test_anthropic_provider_runtime.py`
+- **Güvenlik / Webhook Testleri:** `test_github_webhook.py`
+
 **Audit #7'de Tespit Edilen Yeni Test Modülleri (6 adet):**
 
 | Test Dosyası | Satır | Kapsam |
@@ -1082,6 +1087,8 @@ Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
 | `packaging` | ✓ | Sürüm karşılaştırması |
 | `duckduckgo-search` | Opsiyonel | DDG web araması |
 | `google-generativeai` | Opsiyonel | Gemini LLM |
+| `openai` | Opsiyonel | OpenAI API entegrasyonu |
+| `anthropic` | Opsiyonel | Claude API entegrasyonu |
 | `chromadb` | Opsiyonel | Vektör RAG |
 | `sentence-transformers` | Opsiyonel | GPU embedding |
 | `rank_bm25` | Opsiyonel | BM25 RAG |
