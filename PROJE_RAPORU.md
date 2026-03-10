@@ -1439,9 +1439,17 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.8.0 sürümü itibarıyla, bu bölümde daha önce listelenen tüm planlanmış mimari iyileştirmeler (DuckDuckGo asenkron API düzenlemesi, Web UI modülarizasyonu vb.) başarıyla tamamlanmış ve kod tabanına entegre edilmiştir.
->
-> Çözülen sorunların ve yapılan geliştirmelerin detaylı dökümü için lütfen [CHANGELOG.md](./CHANGELOG.md) dosyasına başvurun. İleriki aşamalar (v2.9+) için yeni mimari iyileştirme hedefleri belirlendiğinde bu liste güncellenecektir.
+Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme fırsatlarını listeler. Daha önce tamamlanan maddeler için [CHANGELOG.md](./CHANGELOG.md) referans alınmalıdır.
+
+| İyileştirme Alanı | Mevcut Durum | Önerilen Geliştirme |
+|---|---|---|
+| **Ajanlar Arası Doğrudan İletişim (P2P Multi-Agent)** | Görev dağıtımı ağırlıklı olarak Supervisor üzerinden akıyor | Rol ajanlarının (örn. Coder → Reviewer) Supervisor'a dönmeden doğrudan delegasyon yapabildiği P2P protokol |
+| **Kapsamlı Telemetri ve Maliyet Takibi (Observability)** | OpenTelemetry span'leri mevcut, ancak sağlayıcı bazlı birleşik maliyet dashboard'u sınırlı | OpenAI/Anthropic token maliyeti, gecikme (latency), hata oranı ve kota/rate-limit durumunu tek panelde izleyen Prometheus/Grafana + OTEL entegrasyonu |
+| **Gerçek Zamanlı Ajan Logları (WebSocket/SSE)** | Web UI sonuç odaklı akış veriyor | "Web'de arama yapılıyor", "Kod çalıştırılıyor" gibi ajan adım/log olaylarının Web UI'ya anlık stream edilmesi |
+| **Gelişmiş Sandbox (Mikro-VM)** | Kod çalıştırma izolasyonu Docker tabanlı | Firecracker/gVisor benzeri mikro-VM katmanı ile zero-trust çalıştırma sınırlarının güçlendirilmesi |
+| **Kurumsal Veritabanı Geçişi** | Oturum/bellek yerel dosyalar + ChromaDB ile yönetiliyor | Multi-user senaryolar için PostgreSQL tabanlı oturum/bellek katmanı ve migration stratejisi |
+
+> **Not:** `ReviewerAgent` rolü ve çoklu sağlayıcı hata/maliyet yönetimi gibi konular §11.2'de açık teknik borç olarak da izlenmektedir.
 
 ---
 
