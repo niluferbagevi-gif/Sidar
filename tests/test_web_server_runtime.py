@@ -1412,3 +1412,60 @@ def test_lifespan_closes_redis_client():
     asyncio.run(_run())
     assert client.closed is True
     assert mod._redis_client is None
+
+
+
+def test_websocket_chat_cancellederror_pass_branch_with_running_task():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(1)
+            yield 'never'
+
+    class _WebSocket:
+        def __init__(self):
+            self._payloads = [
+                json.dumps({'message': 'uzun', 'action': 'send'}),
+                json.dumps({'action': 'cancel'}),
+            ]
+            self.client = types.SimpleNamespace(host='127.0.0.1')
+            self.sent = []
+            self.calls = 0
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            self.calls += 1
+            if self.calls == 2:
+                await asyncio.sleep(0.05)
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+
+    ws = _WebSocket()
+    asyncio.run(mod.websocket_chat(ws))
+    assert any('iptal edildi' in p.get('chunk', '') for p in ws.sent)

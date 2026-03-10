@@ -1576,3 +1576,140 @@ def test_smart_pr_branch_not_found_and_no_changes_paths():
     a.code = _CodeNoChanges()
     out2 = asyncio.run(a._tool_github_smart_pr(''))
     assert 'commit edilmiş değişiklik bulunamadı' in out2
+
+
+
+def test_react_loop_tracer_branch_and_malformed_json_scan_continue(monkeypatch):
+    a = _make_react_ready_agent(max_steps=2)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+
+        def set_attribute(self, k, v):
+            self.attrs[k] = v
+
+    class _CM:
+        def __init__(self, span):
+            self.span = span
+
+        def __enter__(self):
+            return self.span
+
+        def __exit__(self, *args):
+            return False
+
+    class _Tracer:
+        def __init__(self):
+            self.spans = []
+
+        def start_as_current_span(self, _name):
+            s = _Span()
+            self.spans.append(s)
+            return _CM(s)
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+            self.payloads = [
+                'prefix { bozuk JSON',
+                '{"thought":"done","tool":"final_answer","argument":"ok"}',
+            ]
+
+        async def chat(self, **kwargs):
+            t = self.payloads[self.i]
+            self.i += 1
+            return _gen_once(t)
+
+    tr = _Tracer()
+    a.tracer = tr
+    a.llm = _LLM()
+    out = asyncio.run(_collect(a._react_loop('x')))
+    assert out[-1] == 'ok'
+    assert tr.spans and 'sidar.react.llm.total_ms' in tr.spans[0].attrs
+
+
+def test_github_smart_pr_default_branch_exception_falls_back_main(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm')
+
+    class _GH:
+        def is_available(self):
+            return True
+
+        @property
+        def default_branch(self):
+            raise RuntimeError('boom')
+
+        def create_pull_request(self, title, body, head, base):
+            return True, f'PR:{head}->{base}'
+
+    class _Code:
+        def run_shell(self, cmd):
+            if 'show-current' in cmd:
+                return True, 'feat/fallback\n'
+            if 'git status --short' in cmd:
+                return True, ' M file.py'
+            if 'git diff --stat HEAD' in cmd:
+                return True, 'file.py | 1 +'
+            if 'git diff --no-color HEAD' in cmd:
+                return True, 'diff --git a/file.py b/file.py'
+            if 'git log ' in cmd:
+                assert 'main..HEAD' in cmd
+                return True, 'abc test'
+            return True, ''
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return '{"title":"T","body":"B"}'
+
+    a.github = _GH()
+    a.code = _Code()
+    a.llm = _LLM()
+    out = asyncio.run(a._tool_github_smart_pr(''))
+    assert 'PR oluşturuldu' in out and 'main' in out
+
+
+def test_subtask_non_string_and_validationerror_feedback_then_success():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm', SUBTASK_MAX_STEPS=4)
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+            self.payloads = [
+                123,
+                'json yok',
+                '{"thought":"t","argument":"x"}',
+                '{"thought":"done","tool":"final_answer","argument":"bitti"}',
+            ]
+
+        async def chat(self, **kwargs):
+            t = self.payloads[self.i]
+            self.i += 1
+            return t
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_: None
+    out = asyncio.run(a._tool_subtask('alt görev'))
+    assert 'Alt Görev Tamamlandı' in out and 'bitti' in out
+
+
+def test_react_loop_plain_parse_error_valueerror_branch():
+    a = _make_react_ready_agent(max_steps=1)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return _gen_once('tamamen anlamsiz metin')
+
+    a.llm = _LLM()
+    out = asyncio.run(_collect(a._react_loop('x')))
+    assert out[-1].startswith('Üzgünüm, bu istek için güvenilir')

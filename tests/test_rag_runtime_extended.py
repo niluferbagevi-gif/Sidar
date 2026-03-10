@@ -289,3 +289,14 @@ def test_low_level_fetch_and_format_status_paths(tmp_path):
     st._chroma_available = False
     st._bm25_available = False
     assert "Anahtar Kelime" in st.status()
+
+
+
+def test_chunk_text_uses_instance_defaults_when_cfg_attrs_missing(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    st = mod.DocumentStore.__new__(mod.DocumentStore)
+    st.cfg = types.SimpleNamespace()
+    st._chunk_size = 7
+    st._chunk_overlap = 2
+    chunks = st._chunk_text('abcdefghijklmno', chunk_size=None, chunk_overlap=None)
+    assert isinstance(chunks, list) and chunks
