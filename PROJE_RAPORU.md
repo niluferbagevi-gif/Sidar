@@ -194,7 +194,7 @@ sidar_project/
 
 ---
 
-### 3.1 `config.py` — Merkezi Yapılandırma (570 satır)
+### 3.1 `config.py` — Merkezi Yapılandırma (570 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler ve donanım tespiti yapar.
 
@@ -228,7 +228,7 @@ sidar_project/
 
 ---
 
-### 3.2 `main.py` — Akıllı Başlatıcı (341 satır)
+### 3.2 `main.py` — Akıllı Başlatıcı (341 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
 
@@ -258,7 +258,7 @@ python main.py --quick web --capture-output --child-log logs/child.log
 
 ---
 
-### 3.3 `cli.py` — CLI Arayüzü (288 satır)
+### 3.3 `cli.py` — CLI Arayüzü (288 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Terminal tabanlı etkileşimli REPL döngüsü.
 
@@ -289,7 +289,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** WebSocket destekli asenkron ve çift yönlü chat web arayüzü.
 
@@ -347,7 +347,7 @@ app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
 
 ---
 
-### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)
+### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
 
@@ -397,7 +397,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)
+### 3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Kullanıcı mesajındaki ortak kalıpları regex ile tanıyarak LLM döngüsüne girmeden cevap verir.
 
@@ -425,7 +425,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)
+### 3.7 `agent/definitions.py` — Ajan Tanımları (165 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** `SIDAR_SYSTEM_PROMPT` sistem istemini barındırır.
 
@@ -446,7 +446,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)
+### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Araçların Pydantic şemalarını ve `build_tool_dispatch()` fonksiyonu aracılığıyla araç dispatch tablosunu merkezi olarak yönetir.
 
@@ -505,7 +505,7 @@ kullanıcı mesajı
 ---
 
 
-### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)
+### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Multi-agent yapısındaki uzman ajanlar için ortak bir soyut temel sınıf (`BaseAgent`) sağlar.
 
@@ -516,7 +516,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)
+### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Kullanıcı niyetini analiz edip görevi uygun role yönlendiren orkestrasyon katmanı.
 
@@ -527,7 +527,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Alan odaklı uzman ajanları kapsar.
 
@@ -537,7 +537,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)
+### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Ollama, Gemini, OpenAI ve Anthropic için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
 
@@ -576,7 +576,7 @@ BaseLLMClient (ABC)
 
 ---
 
-### 3.9 `core/memory.py` — Konuşma Belleği (402 satır)
+### 3.9 `core/memory.py` — Konuşma Belleği (402 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Çok oturumlu, kalıcı, thread-safe ve opsiyonel şifreli bellek yönetimi.
 
@@ -606,7 +606,7 @@ BaseLLMClient (ABC)
 
 ---
 
-### 3.10 `core/rag.py` — RAG Motoru (783 satır)
+### 3.10 `core/rag.py` — RAG Motoru (783 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** ChromaDB (vektör) + BM25 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu. v2.9.0 itibarıyla **RRF birleştirme** ve **oturum izolasyonu** eklendi.
 
@@ -651,7 +651,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)
+### 3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** OpenClaw erişim kontrol sistemi — 3 katmanlı güvenlik.
 
@@ -672,7 +672,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.12 `managers/code_manager.py` — Kod Yöneticisi (766 satır)
+### 3.12 `managers/code_manager.py` — Kod Yöneticisi (766 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Dosya okuma/yazma, sözdizimi doğrulama, proje denetimi ve Docker izole kod çalıştırma.
 
@@ -689,7 +689,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.13 `managers/github_manager.py` — GitHub Yöneticisi (644 satır)
+### 3.13 `managers/github_manager.py` — GitHub Yöneticisi (644 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** PyGithub üzerinden GitHub API entegrasyonu.
 
@@ -717,7 +717,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi (436 satır)
+### 3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi (436 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** CPU/RAM/GPU donanım izleme ve VRAM optimizasyonu.
 
@@ -740,7 +740,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)
+### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Tavily → Google → DuckDuckGo kademeli motor desteğiyle asenkron web araması.
 
@@ -784,7 +784,7 @@ except Exception as exc:       # Genel sonra
 
 ---
 
-### 3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)
+### 3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** PyPI, npm ve GitHub Releases gerçek zamanlı sorgusu.
 
@@ -798,7 +798,7 @@ except Exception as exc:       # Genel sonra
 
 ---
 
-### 3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır)
+### 3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Claude Code'daki `TodoWrite/TodoRead` araçlarına eşdeğer görev listesi.
 
@@ -817,7 +817,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.18 `web_ui/` — Web Arayüzü (Toplam 3.551 satır)
+### 3.18 `web_ui/` — Web Arayüzü (Toplam 3.551 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 > **v2.8.0 Mimari Değişikliği:** Daha önce 3.399 satırlık tek `index.html` dosyasında olan HTML + CSS + JavaScript ayrı modüllere bölündü. FastAPI `StaticFiles` middleware ile `/static/*` üzerinden servis edilmektedir.
 
@@ -852,7 +852,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)
+### 3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır) <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 **Amaç:** Projeyi otomatik olarak GitHub'a yükler/yedekler.
 
@@ -868,7 +868,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.20 Altyapı Dosyaları
+### 3.20 Altyapı Dosyaları <sub><sup>[⬆ İçindekilere Dön](#içindekiler)</sup></sub>
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
