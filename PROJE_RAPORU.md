@@ -1310,7 +1310,7 @@ add_document(title, content, source)
 
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
-| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=false` mevcut (Audit #8 teyit) |
+| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=false` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
 | 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
 | 3 | Eksik uzman ajan rolü (`ReviewerAgent`) | `RFC-MultiAgent.md`, `agent/roles/` | Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok | Düşük | ⚠ **Açık** (RFC Draft) |
 | 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
@@ -2088,6 +2088,8 @@ async def _try_multi_agent(self, user_input: str) -> Optional[str]:
 | `ENABLE_MULTI_AGENT` | `config.py:230` — `get_bool_env("ENABLE_MULTI_AGENT", False)` | ✅ **Mevcut** — `.env.example:81` (`ENABLE_MULTI_AGENT=false`) |
 
 > **Audit #8 Düzeltmesi (2026-03-10):** Bu bölümde daha önce "❌ Eksik" yazıyordu. Audit #8'de `.env.example` dosyası satır satır incelenmiş; `ENABLE_MULTI_AGENT=false` değerinin **satır 81**'de eklenmiş olduğu doğrulanmıştır. §11.2 zaten "ÇÖZÜLDÜ" olarak işaretlemişti — §18.6.5 ile çelişki bu düzeltmeyle giderilmiştir.
+>
+> **11 Mart 2026 Doğrulaması (Audit #7.1):** `ENABLE_MULTI_AGENT=false` değişkeni `.env.example` içinde hâlâ mevcuttur; bu başlık altındaki durum **✅ ÇÖZÜLDÜ** olarak korunmalıdır.
 
 ---
 
@@ -2131,7 +2133,7 @@ Audit #6'da onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 |----------|------|-------|
 | **Onaylanan çözüldü** | 24 | Audit #6 ve önceki tüm maddeler doğrulandı |
 | **Süregelen açık sorun** | 1 | `test_config_runtime_coverage` uzantısız 0 baytlık dosya |
-| **Yeni tespit — açık** | 3 | 0 baytlık `.py` artifact, `ENABLE_MULTI_AGENT` belgesiz (Audit #8'de düzeltildi ✅), `ReviewerAgent` eksik |
+| **Yeni tespit — açık** | 2 | 0 baytlık `.py` artifact, `ReviewerAgent` eksik |
 | **Yeni belgelenen modül** | 7 | `base_agent.py`, `core/supervisor.py`, `core/contracts.py`, `roles/coder_agent.py`, `roles/researcher_agent.py`, `RFC-MultiAgent.md`, multi-agent test'leri |
 | **Satır sayısı güncellenen dosya** | 7 | `config.py`, `main.py`, `web_server.py`, `sidar_agent.py`, `llm_client.py`, `index.html`, `app.js` |
 
