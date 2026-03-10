@@ -1220,39 +1220,39 @@ github_upload.py←── (bağımsız araç)
     │         ├─► regex eşleşirse → doğrudan yanıt (LLM çağrısı YOK)
     │         └─► eşleşmezse → (False, "")
     │
-    ├─► [SIDAR.md + CLAUDE.md okuma] (mtime cache'den)
+    ├─► [ENABLE_MULTI_AGENT ?]
+    │         ├─► HAYIR → Tekli ajan ReAct akışı (geriye uyumlu)
+    │         └─► EVET  → [SupervisorAgent.route(prompt)]
+    │                       │
+    │                       ├─► Kod görevi  → [CoderAgent]
+    │                       └─► Araştırma/RAG görevi → [ResearcherAgent]
+    │                                  │
+    │                                  ▼
+    │                        [LLMClient.chat(...)]  → sağlayıcı: Ollama / Gemini / OpenAI / Anthropic
+    │                                  │
+    │                                  ▼
+    │                        ReAct: {thought, tool, argument}
+    │                                  │
+    │                                  ▼
+    │                        [agent/tooling.py dispatch]
+    │                                  │
+    │                                  ├── read_file / write_file / patch_file → CodeManager → SecurityManager → disk
+    │                                  ├── web_search / fetch_url → WebSearchManager → httpx → Tavily/Google/DDG
+    │                                  ├── docs_search / docs_add → DocumentStore → ChromaDB / BM25 / Keyword
+    │                                  ├── github_*              → GitHubManager → PyGithub → GitHub API
+    │                                  ├── execute_code          → CodeManager → Docker → python:3.11-alpine
+    │                                  └── health                → SystemHealthManager → psutil / pynvml / torch
     │
-    └─► [LLMClient.chat(messages, json_mode=True)]  ← ReAct döngüsü başlar
+    └─► [Supervisor sonuç birleştirme]
               │
               ▼
-        {thought, tool, argument}  ← Pydantic doğrulama
-              │
-              ├─► tool == "final_answer"  → akış → kullanıcı
-              │
-              └─► diğer araç
-                      │
-                      ▼
-                  [_tools[tool](argument)]
-                      │
-                      ├── read_file   → CodeManager → SecurityManager → disk
-                      ├── web_search  → WebSearchManager → httpx → Tavily/Google/DDG
-                      ├── docs_search → DocumentStore → ChromaDB / BM25 / Keyword
-                      ├── github_*    → GitHubManager → PyGithub → GitHub API
-                      ├── execute_code→ CodeManager → Docker → python:3.11-alpine
-                      └── health      → SystemHealthManager → psutil / pynvml / torch
-                              │
-                              ▼
-                        sonuç belleğe eklenir
-                              │
-                              ▼
-                        LLMClient.chat (bir sonraki adım)
-                              │
-                        [MAX_REACT_STEPS'e ulaşıldı?]
-                              ├── HAYIR → döngü devam
-                              └── EVET  → zorla final_answer
+         nihai yanıt → kullanıcı
 ```
 
-### 10.2 Bellek Yazma Yolu
+### 10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)
+
+
+> **Not (v2.10.8):** Multi-Agent modunda Coder/Researcher ajanları aynı oturum belleğini (`core/memory.py`) paylaşır; rol bazlı alt görev çıktıları Supervisor üzerinden tek bir konuşma akışında birleştirilir.
 
 ```
 add(role, content)
@@ -1262,7 +1262,10 @@ add(role, content)
                 → data/sessions/<uuid>.json
 ```
 
-### 10.3 RAG Belge Ekleme Yolu
+### 10.3 RAG Belge Ekleme Yolu (Ortak Erişim)
+
+
+> **Not (v2.10.8):** Multi-Agent modunda hem CoderAgent hem ResearcherAgent, `docs_search/docs_add` benzeri araçlar üzerinden aynı RAG katmanına (`core/rag.py`, ChromaDB + BM25) erişebilir.
 
 ```
 add_document(title, content, source)
