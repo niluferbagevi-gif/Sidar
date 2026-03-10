@@ -218,6 +218,25 @@ def test_document_and_search_error_and_fallback_paths(tmp_path):
     assert st.search("q", mode="auto", session_id="s1") == (True, "kw")
 
 
+
+def test_delete_document_returns_not_found_for_unknown_doc(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    msg = store.delete_document("olmayan_id")
+    assert "Belge bulunamadı" in msg
+
+
+def test_delete_document_rejects_cross_session_deletion(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    doc_id = store.add_document("T", "icerik", session_id="A")
+    msg = store.delete_document(doc_id, session_id="B")
+
+    assert "erişim yetkiniz yok" in msg
+
+
 def test_chunk_text_none_argument_and_cfg_fallback(tmp_path):
     mod = _load_rag_module(tmp_path)
     st = _new_store(mod, tmp_path)

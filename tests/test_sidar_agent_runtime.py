@@ -1715,6 +1715,43 @@ def test_react_loop_plain_parse_error_valueerror_branch():
     assert out[-1].startswith('Üzgünüm, bu istek için güvenilir')
 
 
+def test_react_loop_malformed_json_feeds_back_parse_error_then_recovers():
+    a = _make_react_ready_agent(max_steps=2)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self):
+            self.calls = []
+            self.i = 0
+            self.payloads = [
+                'duz metin json degil',
+                '{"thought":"tamam","tool":"final_answer","argument":"ok"}',
+            ]
+
+        async def chat(self, **kwargs):
+            self.calls.append(kwargs)
+            out = self.payloads[self.i]
+            self.i += 1
+            return _gen_once(out)
+
+    llm = _LLM()
+    a.llm = llm
+
+    out = asyncio.run(_collect(a._react_loop('x')))
+
+    assert out[-1] == 'ok'
+    assert len(llm.calls) == 2
+    second_messages = llm.calls[1]["messages"]
+    assert any(
+        "Yanıtın geçerli bir JSON formatında değil veya bozuk" in m["content"]
+        for m in second_messages
+        if m["role"] == "user"
+    )
+
+
 
 def test_subtask_tool_result_message_path_is_reached(monkeypatch):
     a = _make_agent_for_runtime()
