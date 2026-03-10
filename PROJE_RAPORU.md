@@ -64,15 +64,12 @@
   - [12.9 Rate Limiting](#129-rate-limiting)
   - [12.10 Çeşitli](#1210-çeşitli)
 - [13. Olası İyileştirmeler](#13-olası-iyileştirmeler)
-- [14. Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)](#14-sonraki-versiyon-için-geliştirme-önerileri-v28)
-  - [14.1 Çekirdek Mimari](#141-çekirdek-mimari)
-  - [14.3 RAG ve Bellek](#143-rag-ve-bellek)
-  - [14.4 Web Arayüzü ve API](#144-web-arayüzü-ve-api)
-  - [14.5 GitHub Entegrasyonu](#145-github-entegrasyonu)
-  - [14.6 Güvenlik ve İzleme](#146-güvenlik-ve-izleme)
-  - [14.7 Test ve Kalite](#147-test-ve-kalite)
-  - [14.8 Operasyon ve Dağıtım](#148-operasyon-ve-dağıtım)
-  - [14.9 Versiyon 2.8 İçin Önerilen Öncelik Sırası](#149-versiyon-28-için-önerilen-öncelik-sırası)
+- [14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)](#14-geliştirme-yol-haritası-ve-v30-vizyonu-v211)
+  - [14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)](#141-eski-mimarinin-emekliye-ayrılması-deprecation)
+  - [14.2 Reviewer (QA) Ajanının Devreye Alınması](#142-reviewer-qa-ajanının-devreye-alınması)
+  - [14.3 Bütçe ve Token Yönetim Paneli (Dashboard)](#143-bütçe-ve-token-yönetim-paneli-dashboard)
+  - [14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı](#144-kalıcı-çoklu-kullanıcı-multi-user-altyapısı)
+  - [14.5 Test Kapsamının %95+ Seviyesine Zorlanması](#145-test-kapsamının-95-seviyesine-zorlanması)
 - [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
   - [15.1 Çekirdek Özellikler (Her Zaman Zorunlu)](#151-çekirdek-özellikler-her-zaman-zorunlu)
   - [15.2 Arama ve Web](#152-arama-ve-web)
@@ -1453,164 +1450,38 @@ Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme 
 
 ---
 
-## 14. Sonraki Versiyon İçin Geliştirme Önerileri (v2.8+)
+## 14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarılan somut geliştirme hedeflerini kapsar. Her madde bağımsız bir özellik olarak ele alınabilir.
+Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak stratejik adımları içerir.
+
+### 14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)
+- `ENABLE_MULTI_AGENT` geçiş bayrağına bağlı çift akışın (legacy `sidar_agent.py` + `Supervisor`) kademeli azaltılması.
+- Strangler Pattern tamamlanarak `Supervisor` tabanlı çoklu ajan mimarisinin varsayılan ve tek omurga haline getirilmesi.
+- Geçiş sürecinde geriye uyumluluk notları + deprecation takvimi yayınlanması.
+
+### 14.2 Reviewer (QA) Ajanının Devreye Alınması
+- Coder ve Researcher rollerine ek olarak `ReviewerAgent` rolünün üretim akışına eklenmesi.
+- Hedef: kod inceleme, test çalıştırma, regresyon tespiti ve kalite geri bildirimi döngüsünü otomatikleştirmek.
+- Önerilen akış: `Coder → Reviewer → (gerekirse tekrar Coder) → Supervisor final`.
+
+### 14.3 Bütçe ve Token Yönetim Paneli (Dashboard)
+- OpenAI ve Anthropic kullanımında token tüketimi, API maliyeti, hata oranı ve latency metriklerinin merkezileştirilmesi.
+- Web UI tarafında sağlayıcı bazlı canlı izleme paneli (grafik/uyarı eşikleri) eklenmesi.
+- OpenTelemetry + Prometheus/Grafana hattı üzerinden operasyonel görünürlük standardizasyonu.
+
+### 14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı
+- Tek kullanıcı odaklı dosya tabanlı oturum modelinden çoklu kullanıcıya uygun servis mimarisine geçiş.
+- Oturum, kimlik, bellek ve kota yönetiminin PostgreSQL + Redis destekli bir katmana taşınması.
+- Her kullanıcı için izolasyonlu bellek/anahtar yönetimi ve kurumsal denetim izleri.
+
+### 14.5 Test Kapsamının %95+ Seviyesine Zorlanması
+- Boş/iskelet test dosyalarının doldurulması (`test_config_runtime_coverage.py` vb.).
+- Kritik iş kuralları için branch + integration kapsamının artırılması.
+- CI hattında coverage eşiğinin `%95+` altına düştüğünde PR engelleyecek kalite kapısı uygulanması.
 
 ---
-
-### 14.1 Çekirdek Mimari
-
-> **Not:** Bu başlık altında daha önce listelenen çekirdek mimari iyileştirmelerin tamamı uygulanmıştır.
-> (Kalıcı rate limiting, gerçek token sayacı, talimat cache koruması ve thread-safe chunking.)
->
-> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.7.0** ve **v2.8.0** bölümlerine bakın.
-
----
-
-### 14.2 LLM ve Ajan Katmanı (✅ Tamamı Çözüldü - v2.8.0)
-
-> **Not:** Bu bölümdeki tüm mimari hedefler (Çoklu LLM Soyutlaması, Araçların Pydantic Şemalarıyla Dışsallaştırılması ve Asenkron Paralel ReAct adımları) v2.8.0 güncellemesi ile başarıyla tamamlanmış ve `CHANGELOG.md` dosyasına eklenmiştir.
-
-[⬆ İçindekilere Dön](#içindekiler)
-
----
-### 14.3 RAG ve Bellek
-
-> **Not:** Bu başlık altında daha önce listelenen RAG ve bellek iyileştirmelerinin tamamı uygulanmıştır.
-> (RRF hibrit sıralama, SQLite FTS5 disk tabanlı BM25, çok oturumlu RAG izolasyonu ve sliding-window bellek özetleme stratejisi.)
->
-> Uygulama ve sürüm bazlı doğrulama detayları için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki **v2.10.0** ve önceki sürüm bölümlerine bakın.
-
----
-
-### 14.4 Web Arayüzü ve API
-
-> **Not:** Bu başlık altındaki tamamlanan maddeler (14.4.1 Web UI Modülarizasyonu ve 14.4.4 Kimlik Doğrulama)
-> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
-> dosyasındaki ilgili bölümlere bakın.
-
-#### 14.4.2 WebSocket Desteği
-**Güncel durum (v2.10.1):** ✅ Tamamlandı. FastAPI WebSocket altyapısına geçildi; çift yönlü stream ve `asyncio.Task` üzerinden asenkron işlem iptal (`cancel`) yeteneği arayüze eklendi.
-**Uygulama notu:** `/ws/chat` endpointi istemciden `message` ve `action=cancel` payloadlarını alır; sunucu `chunk/thought/tool_call/done` olayları ile gerçek zamanlı güncelleme döner.
-
-#### 14.4.3 OpenAPI Şema Belgelendirmesi
-**Güncel durum (v2.10.4):** ✅ Tamamlandı. FastAPI uygulamasında `/docs` ve `/redoc` yolları aktif edildi; kritik endpoint'lere `summary`, `description` ve `responses` alanları eklendi.
-**Uygulama notu:** `/status`, `/health`, `/sessions`, `/rag/search`, `/rag/add-file`, `/clear` ve ek olarak `/todo`, `/github-prs` endpoint'leri Swagger UI üzerinde açıklamalı görünecek şekilde güncellendi.
-
----
-
-### 14.5 GitHub Entegrasyonu
-
-> **Not:** Bu başlık altındaki tamamlanan maddeler (14.5.2 Issue Yönetimi ve 14.5.3 Diff Analizi)
-> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
-> dosyasındaki ilgili bölümlere bakın.
-
-#### 14.5.1 Webhook Desteği
-**Güncel durum (v2.10.6):** ✅ Tamamlandı. `POST /api/webhook` endpoint'i ile GitHub push/pull_request/issues event'leri alınır; `X-Hub-Signature-256` HMAC doğrulaması uygulanır ve geçerli bildirimler ajanın belleğine asenkron olarak yazılır.
-**Uygulama notu:** `GITHUB_WEBHOOK_SECRET` ayarlıysa imza zorunludur; geçersiz/missing imza `401` döner. Olay özeti `[GITHUB BİLDİRİMİ]` olarak session bağlamına işlenir.
-
----
-
-### 14.6 Güvenlik ve İzleme
-
-> **Not:** Bu başlık altındaki tamamlanan maddeler (14.6.1 Docker Socket Riski Azaltma,
-> 14.6.2 Denetim Logu ve 14.6.3 Sandbox Çıktı Boyutu Limiti) kod tabanına entegre edilmiştir.
-> Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md) dosyasındaki ilgili bölümlere bakın.
-
-#### 14.6.4 Güvenlik Seviyesi Geçiş Logu
-**Güncel durum (v2.10.5):** ✅ Tamamlandı. `SecurityManager.set_level()` ve `SidarAgent.set_access_level()` ile erişim seviyesi geçişleri çalışma zamanında uygulanır ve konuşma belleğine `[GÜVENLİK BİLDİRİMİ]` olarak kalıcı şekilde yazılır.
-**Uygulama notu:** Özellik CLI (`.level <seviye>`) ve Web API (`POST /set-level`) üzerinden tetiklenir; böylece LLM, güncel yetki seviyesini oturum bağlamında görür.
-
----
-
-### 14.7 Test ve Kalite
-
-> **Not:** Bu başlık altındaki tamamlanan maddeler (14.7.1 Entegrasyon Test Altyapısı ve 14.7.5 Otonom TODO/FIXME Tarama)
-> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
-> dosyasındaki ilgili bölümlere bakın.
-
-#### 14.7.2 Test Coverage Hedefi
-**Güncel durum (v2.10.3):** ✅ Tamamlandı. `run_tests.sh` içinde CI/test akışı için global `%70` kapsam eşiği (`--cov-fail-under=70`) ve kritik çekirdek modüller (`managers.security`, `core.memory`, `core.rag`) için `%80` kapsam eşiği (`--cov-fail-under=80`) zorunlu hale getirildi.
-**Uygulama notu:** Kapsam kapıları iki aşamada çalıştırılır: (1) tüm proje kapsamı, (2) kritik modüller için sıkılaştırılmış kapsam.
-
-#### 14.7.3 Linting ve Tip Kontrolü
-**Güncel durum (v2.10.2):** ✅ Tamamlandı. Kök dizine `pyproject.toml` eklendi; `ruff` lint/format kuralları ve `mypy --strict` tabanlı tip denetimi merkezi olarak tanımlandı.
-**Uygulama notu:** Opsiyonel/üçüncü taraf paketler için `mypy` override tanımları girildi; böylece çekirdek kodda sıkı tip denetimi korunurken dış bağımlılık kaynaklı gürültü azaltıldı.
-
-#### 14.7.4 Performans Benchmark
-**Güncel durum (v2.10.3):** ✅ Tamamlandı. `pytest-benchmark` testleri projeye eklendi; kritik yollar için baseline ölçümleri otomatikleştirildi.
-**Uygulama notu:** `tests/test_benchmark.py` içinde ChromaDB sorgu yolu `< 200ms`, BM25 sorgu yolu `< 50ms`, AutoHandle regex eşleşmesi `< 5ms` hedefleri doğrulanır ve `run_tests.sh` içinde benchmark adımı çalıştırılır.
-
----
-
-### 14.8 Operasyon ve Dağıtım
-
-> **Not:** Bu başlık altındaki tamamlanan madde (14.8.1 Sağlık Endpoint Genişletmesi)
-> kod tabanına entegre edilmiştir. Ayrıntılı değişiklik geçmişi ve referans eşlemesi için [CHANGELOG.md](./CHANGELOG.md)
-> dosyasındaki ilgili bölümlere bakın.
-
-#### 14.8.2 Çevre Başına Konfigürasyon
-**Güncel durum (v2.10.7):** ✅ Tamamlandı. `config.py` içinde `SIDAR_ENV` değişkeniyle ortama özgü (`.env.development`, `.env.production`, `.env.test`) dosyaların temel `.env` üzerine `override=True` ile yüklenmesi sağlandı.
-**Uygulama notu:** Yükleme sırası: önce `.env`, ardından varsa `.env.<sidar_env>`; ortam dosyası yoksa temel ayarlarla devam edilir.
-
-#### 14.8.3 Gözlemlenebilirlik (Observability)
-**Güncel durum (v2.10.0):** ✅ Tamamlandı. OpenTelemetry ile FastAPI HTTP istekleri, ajan ReAct adımları, araç çalıştırmaları ve LLM çağrıları span bazında izlenmektedir.
-**Uygulama notu:** `ENABLE_TRACING=true` ve `OTEL_EXPORTER_ENDPOINT` ayarlıysa OTLP exporter üzerinden collector/Jaeger hattına telemetri gönderilir.
-
-#### 14.8.4 Model Önbellekleme ve Soğuk Start
-**Güncel durum (v2.10.8):** ✅ Tamamlandı. FastAPI lifespan başlangıcında RAG embedding prewarm tetikleniyor; ilk kullanıcı RAG isteğindeki cold-start gecikmesi startup aşamasına taşındı.
-**Not:** BM25 artık SQLite FTS5 disk tabanlı olduğu için `prebuild_bm25_index()` akışı kaldırılmıştır.
-**Uygulama:** `web_server.py` içinde `_prewarm_rag_embeddings()` görevi `_app_lifespan` ile arka planda başlatılır.
-
----
-
-### 14.9 Öncelik Durumu (Güncel — v2.10.7)
-
-> **Durum Notu:** Güvenlik, RAG ölçeklenebilirliği, GitHub issue/diff ve sağlık endpoint’i odaklı yüksek/orta öncelikli maddeler tamamlandı. Kalan açık maddeler düşük etki / opsiyonel kategorisindedir.
-
-| Sıra | Özellik | Etki | Çaba | Durum |
-|------|---------|------|------|-------|
-| — | §14.1.1–14.1.4 (tiktoken, cache lock, RRF thread-safe, rate limiting) | Yüksek | Düşük–Orta | ✅ **v2.7.0** |
-| — | DuckDuckGo güvenliği, Web UI modülarizasyonu (§10, §11, §14.4.1) | Yüksek | Düşük–Yüksek | ✅ **v2.8.0** |
-| — | RRF sıralama (§14.3.1) | Orta | Orta | ✅ **v2.9.0** |
-| — | RAG oturum izolasyonu (§14.3.3) | Orta | Orta | ✅ **v2.9.0** |
-| — | Sliding window özetleme (§14.3.4) | Orta | Düşük | ✅ **v2.9.0** |
-| — | web_server.py RAG session_id bug (kritik düzeltme) | Yüksek | Düşük | ✅ **v2.9.0 audit** |
-| 1 | Docker socket riski azaltma (§14.6.1) | Yüksek | Düşük | ✅ Tamamlandı |
-| 2 | Sandbox çıktı boyutu limiti (§14.6.3) | Orta | Düşük | ✅ Tamamlandı |
-| 3 | API key auth (§14.4.4) | Orta | Orta | ✅ Tamamlandı |
-| 4 | Issue yönetimi GitHub (§14.5.2) | Orta | Yüksek | ✅ Tamamlandı |
-| 5 | BM25 corpus ölçeklenebilirliği (§14.3.2) | Orta | Yüksek | ✅ Tamamlandı |
-| 6 | Denetim logu audit.jsonl (§14.6.2) | Düşük | Düşük | ✅ Tamamlandı |
-| 7 | PR diff analizi (§14.5.3) | Orta | Orta | ✅ Tamamlandı |
-| 8 | Sağlık endpoint JSON (§14.8.1) | Orta | Düşük | ✅ Tamamlandı |
-| 9 | OpenTelemetry gözlemlenebilirlik (§14.8.3) | Düşük | Yüksek | ✅ Tamamlandı |
-| 10 | Kalıcı rate limiting — Redis (§14.1.1 ek) | Düşük | Orta | ✅ Tamamlandı |
-| 11 | Linting + mypy strict altyapısı (§14.7.3) | Orta | Düşük | ✅ Tamamlandı |
-| 12 | Test coverage hedefleri (§14.7.2) | Orta | Düşük | ✅ Tamamlandı |
-| 13 | Performans benchmark baseline'ları (§14.7.4) | Orta | Orta | ✅ Tamamlandı |
-| 14 | OpenAPI Şema Belgelendirmesi (§14.4.3) | Orta | Düşük | ✅ Tamamlandı |
-| 15 | Güvenlik Seviyesi Geçiş Logu (§14.6.4) | Orta | Düşük | ✅ Tamamlandı |
-| 16 | Webhook Desteği (§14.5.1) | Orta | Orta | ✅ Tamamlandı |
-| 17 | Çevre Başına Konfigürasyon (§14.8.2) | Orta | Düşük | ✅ Tamamlandı |
-
----
-
-### 14.10 Rapor Güncelleme Politikası (Önerilen Süreç)
-
-Bu proje için en sağlıklı yaklaşım, **her anlamlı geliştirme adımından hemen sonra raporu güncellemek** olacaktır.
-
-Önerilen pratik:
-- Kod değişikliği tamamlanınca ilgili alt başlıkta `Mevcut durum` → `Güncel durum` güncellemesi yapılır.
-- Değişiklik bir yol haritası maddesini kapatıyorsa, §14.9 öncelik tablosundaki durum da aynı commit içinde güncellenir.
-- Mümkünse her PR'da kısa bir “Rapor Etkisi” notu bulunur (hangi bölüm/başlık güncellendi).
-- Küçük refactor/format değişikliklerinde rapor güncellemesi zorunlu değildir; ancak davranış, güvenlik, API, performans veya mimari değiştiyse rapor güncellemesi zorunlu kabul edilir.
-
-Bu disiplin sayesinde rapor, geçmişi anlatan bir belge olmaktan çıkıp **canlı operasyonel durum panosu** gibi çalışır.
-
 ## 15. Özellik-Gereksinim Matrisi
 
 [⬆ İçindekilere Dön](#içindekiler)
