@@ -1320,19 +1320,21 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `AI_PROVIDER` | `ollama` | `ollama`, `gemini`, `openai` veya `anthropic` |
+| `AI_PROVIDER` | `ollama` | Aktif LLM sağlayıcı seçimi: `ollama`, `gemini`, `openai` veya `anthropic` |
 | `GEMINI_API_KEY` | `""` | Gemini modu için zorunlu |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Kullanılacak Gemini model adı |
 | `OLLAMA_URL` | `http://localhost:11434/api` | Ollama API adresi |
 | `OLLAMA_TIMEOUT` | `30` | Ollama istek zaman aşımı (sn) |
 | `CODING_MODEL` | `qwen2.5-coder:7b` | Ollama — kod görevleri modeli |
 | `TEXT_MODEL` | `gemma2:9b` | Ollama — metin görevleri modeli |
-| `OPENAI_API_KEY` | `""` | OpenAI modu için zorunlu |
+| `OPENAI_API_KEY` | `""` | OpenAI (örn. GPT-4o ailesi) kullanımı için zorunlu API anahtarı |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model adı |
 | `OPENAI_TIMEOUT` | `60` | OpenAI istek zaman aşımı (sn) |
-| `ANTHROPIC_API_KEY` | `""` | Anthropic modu için zorunlu |
+| `ANTHROPIC_API_KEY` | `""` | Anthropic/Claude (örn. Claude 3.5 Sonnet) için zorunlu API anahtarı |
 | `ANTHROPIC_MODEL` | `claude-3-5-sonnet-latest` | Anthropic model adı |
 | `ANTHROPIC_TIMEOUT` | `60` | Anthropic istek zaman aşımı (sn) |
+
+> **Sağlayıcı Seçimi Notu:** Kod içinde ayrı bir `DEFAULT_LLM_PROVIDER` veya `ACTIVE_PROVIDER` değişkeni kullanılmamaktadır; aktif sağlayıcı doğrudan `AI_PROVIDER` ile belirlenir.
 
 ### 12.2 Güvenlik ve Erişim
 
