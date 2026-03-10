@@ -199,46 +199,30 @@ def _make_react_ready_agent(max_steps=2):
 def test_respond_empty_and_handled_short_path():
     a = _make_agent_for_runtime()
 
-    async def auto_handle(_):
-        return True, "quick"
+    async def fake_multi(_):
+        return "multi"
 
-    a.auto.handle = auto_handle
+    a._try_multi_agent = fake_multi
 
     out = asyncio.run(_collect(a.respond("   ")))
     assert out == ["⚠ Boş girdi."]
 
     out = asyncio.run(_collect(a.respond("merhaba")))
-    assert out == ["quick"]
+    assert out == ["multi"]
     assert a.memory.items[0] == ("user", "merhaba")
-    assert a.memory.items[1] == ("assistant", "quick")
+    assert a.memory.items[1] == ("assistant", "multi")
 
 
 def test_respond_react_and_summarize_path():
     a = _make_agent_for_runtime()
 
-    async def auto_handle(_):
-        return False, ""
+    async def fake_multi(_):
+        return "supervised"
 
-    async def direct(_):
-        return None
-
-    async def summarize():
-        a._summarized = True
-
-    async def react(_):
-        yield "c1"
-        yield "c2"
-
-    a.auto.handle = auto_handle
-    a._try_direct_tool_route = direct
-    a._summarize_memory = summarize
-    a._react_loop = react
-    a.memory.needs_summarization = lambda: True
+    a._try_multi_agent = fake_multi
 
     out = asyncio.run(_collect(a.respond("istek")))
-    assert out[0].startswith("\n[Sistem] Konuşma belleği arşivleniyor")
-    assert out[1:] == ["c1", "c2"]
-    assert getattr(a, "_summarized", False) is True
+    assert out == ["supervised"]
 
 
 def test_execute_tool_success_warning_and_unknown():

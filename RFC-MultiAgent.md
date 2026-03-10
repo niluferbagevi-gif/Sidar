@@ -21,6 +21,20 @@ Bu RFC, `sidar_agent.py` içinde tek bir ReAct döngüsüne yüklenen çok sayı
 
 ---
 
+## Durum Matrisi (Planlandı / Implement Edildi)
+
+| Bileşen | Durum | Not |
+|---|---|---|
+| `agent/core/contracts.py` | ✅ Implement edildi | TaskEnvelope ve TaskResult aktif. |
+| `agent/core/supervisor.py` | ✅ Implement edildi | Varsayılan yönlendirme ve coder→reviewer hattı var. |
+| `agent/roles/coder_agent.py` | ✅ Implement edildi | Kod odaklı araçlar aktif. |
+| `agent/roles/researcher_agent.py` | ✅ Implement edildi | Web/RAG akışı aktif. |
+| `agent/roles/reviewer_agent.py` | ✅ Implement edildi | PR/issue/repo review akışı eklendi. |
+| `agent/core/registry.py` | ✅ Implement edildi | Role kayıt/keşif merkezi eklendi. |
+| `agent/core/memory_hub.py` | ✅ Implement edildi | Global + role-local notlar eklendi. |
+| P2P role handoff | 🟡 Planlandı (kısmi) | İlk sürümde supervisor kontrollü delege; doğrudan role-to-role protokol bir sonraki faz. |
+| Legacy single-agent akışı | 🟡 Deprecation | `SidarAgent` varsayılan olarak supervisor yolunu kullanıyor. |
+
 ## 2) Problem Tanımı
 
 Tek ajan yaklaşımında:

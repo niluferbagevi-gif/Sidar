@@ -9,80 +9,68 @@ from config import Config
 
 from agent.base_agent import BaseAgent
 from agent.core.contracts import TaskEnvelope, TaskResult
+from agent.core.memory_hub import MemoryHub
+from agent.core.registry import AgentRegistry
 from agent.roles.coder_agent import CoderAgent
 from agent.roles.researcher_agent import ResearcherAgent
+from agent.roles.reviewer_agent import ReviewerAgent
 
 
 class SupervisorAgent(BaseAgent):
-    """İlk faz supervisor: araştırma ve kod görevlerini uzman ajanlara delege eder."""
+    """Supervisor merkezli orkestrasyon: coder -> reviewer zincirini destekler."""
 
-    SYSTEM_PROMPT = (
-        "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirir, "
-        "desteklenmeyen alanlarda legacy fallback sinyali üretirsin."
-    )
-
-    LEGACY_FALLBACK = "[LEGACY_FALLBACK]"
+    SYSTEM_PROMPT = "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="supervisor")
-        self.researcher = ResearcherAgent(self.cfg)
-        self.coder = CoderAgent(self.cfg)
+        self.registry = AgentRegistry()
+        self.memory_hub = MemoryHub()
+
+        self.registry.register("researcher", ResearcherAgent(self.cfg))
+        self.registry.register("coder", CoderAgent(self.cfg))
+        self.registry.register("reviewer", ReviewerAgent(self.cfg))
+
+        self.researcher = self.registry.get("researcher")
+        self.coder = self.registry.get("coder")
+        self.reviewer = self.registry.get("reviewer")
 
     @staticmethod
     def _intent(prompt: str) -> str:
         text = (prompt or "").lower()
-        research_tokens = (
-            "araştır", "web", "url", "kaynak", "docs", "doküman", "nedir", "yenilik"
-        )
-        code_tokens = (
-            "kod yaz", "dosya", "patch", "refactor", "test", "debug", "hata",
-            "package", "pypi", "npm", "grep", "glob", "audit"
-        )
-        review_tokens = ("github", "pr", "pull request", "issue")
-
-        if any(t in text for t in research_tokens):
+        if any(t in text for t in ("araştır", "web", "url", "kaynak", "docs", "doküman", "nedir", "yenilik")):
             return "research"
-        if any(t in text for t in code_tokens):
-            return "code"
-        if any(t in text for t in review_tokens):
+        if any(t in text for t in ("github", "pull request", "issue", "review", "incele")):
             return "review"
-        return "unknown"
+        return "code"
+
+    async def _delegate(self, receiver: str, goal: str, intent: str, parent_task_id: Optional[str] = None) -> TaskResult:
+        task_id = str(uuid.uuid4())
+        envelope = TaskEnvelope(
+            task_id=task_id,
+            sender="supervisor",
+            receiver=receiver,
+            goal=goal,
+            intent=intent,
+            parent_task_id=parent_task_id,
+        )
+        agent = self.registry.get(receiver)
+        summary = await agent.run_task(envelope.goal)
+        self.memory_hub.add_role_note(receiver, summary)
+        return TaskResult(task_id=task_id, status="done", summary=summary)
 
     async def run_task(self, task_prompt: str) -> str:
         intent = self._intent(task_prompt)
-        task_id = str(uuid.uuid4())
+        self.memory_hub.add_global(task_prompt)
 
         if intent == "research":
-            envelope = TaskEnvelope(
-                task_id=task_id,
-                sender="supervisor",
-                receiver="researcher",
-                goal=task_prompt,
-                intent="research",
-            )
-            summary = await self.researcher.run_task(envelope.goal)
-            result = TaskResult(
-                task_id=task_id,
-                status="done",
-                summary=summary,
-            )
+            result = await self._delegate("researcher", task_prompt, "research")
             return result.summary
 
-        if intent == "code":
-            envelope = TaskEnvelope(
-                task_id=task_id,
-                sender="supervisor",
-                receiver="coder",
-                goal=task_prompt,
-                intent="code",
-            )
-            summary = await self.coder.run_task(envelope.goal)
-            result = TaskResult(
-                task_id=task_id,
-                status="done" if not summary.startswith("[LEGACY_FALLBACK]") else "fallback",
-                summary=summary,
-            )
-            if result.status == "done":
-                return result.summary
+        if intent == "review":
+            result = await self._delegate("reviewer", task_prompt, "review")
+            return result.summary
 
-        return f"{self.LEGACY_FALLBACK} intent={intent}"
+        code_result = await self._delegate("coder", task_prompt, "code")
+        review_goal = f"list_prs|open\ncontext:{code_result.summary[:500]}"
+        review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)
+        return f"{code_result.summary}\n\n---\nReviewer QA Özeti:\n{review_result.summary}"

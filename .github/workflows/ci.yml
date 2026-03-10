@@ -23,5 +23,11 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      - name: Collect repository metrics
+        run: bash scripts/collect_repo_metrics.sh
+
+      - name: Check empty test artifacts
+        run: bash scripts/check_empty_test_artifacts.sh
+
       - name: Run test suite
         run: bash run_tests.sh

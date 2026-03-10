@@ -162,7 +162,7 @@ class SidarAgent:
         # Dinamik araç tablosu (tek source-of-truth)
         self._tools = build_tool_dispatch(self)
 
-        # Strangler Pattern: multi-agent supervisor (feature-flag ile kapalı)
+        # Varsayılan mimari: supervisor tabanlı multi-agent
         self._supervisor = None
 
         logger.info(
@@ -232,29 +232,15 @@ class SidarAgent:
             yield chunk
 
 
-    async def _try_multi_agent(self, user_input: str) -> Optional[str]:
-        """Feature flag açıksa görevi SupervisorAgent'a yönlendirir."""
-        if not getattr(self.cfg, "ENABLE_MULTI_AGENT", False):
-            return None
+    async def _try_multi_agent(self, user_input: str) -> str:
+        """Görevi varsayılan olarak SupervisorAgent'a yönlendirir."""
+        if getattr(self, "_supervisor", None) is None:
+            from agent.core.supervisor import SupervisorAgent
+            self._supervisor = SupervisorAgent(self.cfg)
 
-        if self._supervisor is None:
-            try:
-                from agent.core.supervisor import SupervisorAgent
-                self._supervisor = SupervisorAgent(self.cfg)
-            except Exception:
-                return None
-
-        try:
-            result = await self._supervisor.run_task(user_input)
-        except Exception:
-            return None
-
-        if not isinstance(result, str):
-            return None
-
-        if result.startswith("[LEGACY_FALLBACK]"):
-            return None
-
+        result = await self._supervisor.run_task(user_input)
+        if not isinstance(result, str) or not result.strip():
+            return "⚠ Supervisor geçerli bir çıktı üretemedi."
         return result
 
     async def _try_direct_tool_route(self, user_input: str) -> Optional[str]:
