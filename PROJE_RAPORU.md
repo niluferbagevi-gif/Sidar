@@ -14,25 +14,25 @@
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
   - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-570-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-332-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-341-satır)
   - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-288-satır)
   - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1173-satır)
   - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1698-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
-  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-264-satır)
+  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-266-satır)
   - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı](#37c-agentbase_agentpy--temel-ajan-sınıfı-34-satır)
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan](#37d-agentcoresupervisorpy--yönlendirici-supervisor-ajan-87-satır)
   - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37e-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic)](#38-corellm_clientpy--llm-istemcisi-ollama--gemini--openai--anthropic-723-satır)
-  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-394-satır)
-  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-787-satır)
+  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-402-satır)
+  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-783-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-290-satır)
   - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-766-satır)
   - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-644-satır)
   - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-436-satır)
-  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-379-satır)
-  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-314-satır)
+  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-387-satır)
+  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-322-satır)
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam 3.551 satır)](#318-web_ui--web-arayüzü-toplam-3551-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
@@ -221,6 +221,7 @@ sidar_project/
 - **Web Arama:** `SEARCH_ENGINE`, `TAVILY_API_KEY`, `GOOGLE_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS` (5)
 - **Docker REPL:** `DOCKER_PYTHON_IMAGE` (`python:3.11-alpine`), `DOCKER_EXEC_TIMEOUT` (10sn)
 - **Loglama:** `RotatingFileHandler` (10 MB / 5 yedek), UTF-8 zorunlu
+- **Mimari:** `ENABLE_MULTI_AGENT` (Multi-agent Supervisor modunu aktif eder)
 
 **Dikkat Noktaları:**
 - `_ensure_hardware_info_loaded()` ile lazy-load: import anında GPU yükleme yan etkisi yoktur.
@@ -229,7 +230,7 @@ sidar_project/
 
 ---
 
-### 3.2 `main.py` — Akıllı Başlatıcı (332 satır)
+### 3.2 `main.py` — Akıllı Başlatıcı (341 satır)
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
 
@@ -447,7 +448,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (264 satır)
+### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)
 
 **Amaç:** Araçların Pydantic şemalarını ve `build_tool_dispatch()` fonksiyonu aracılığıyla araç dispatch tablosunu merkezi olarak yönetir.
 
@@ -577,7 +578,7 @@ BaseLLMClient (ABC)
 
 ---
 
-### 3.9 `core/memory.py` — Konuşma Belleği (394 satır)
+### 3.9 `core/memory.py` — Konuşma Belleği (402 satır)
 
 **Amaç:** Çok oturumlu, kalıcı, thread-safe ve opsiyonel şifreli bellek yönetimi.
 
@@ -607,7 +608,7 @@ BaseLLMClient (ABC)
 
 ---
 
-### 3.10 `core/rag.py` — RAG Motoru (787 satır)
+### 3.10 `core/rag.py` — RAG Motoru (783 satır)
 
 **Amaç:** ChromaDB (vektör) + BM25 (kelime sıklığı) + Keyword (basit eşleşme) hibrit belge deposu. v2.9.0 itibarıyla **RRF birleştirme** ve **oturum izolasyonu** eklendi.
 
@@ -741,7 +742,7 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ---
 
-### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (379 satır)
+### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)
 
 **Amaç:** Tavily → Google → DuckDuckGo kademeli motor desteğiyle asenkron web araması.
 
@@ -785,7 +786,7 @@ except Exception as exc:       # Genel sonra
 
 ---
 
-### 3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (314 satır)
+### 3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)
 
 **Amaç:** PyPI, npm ve GitHub Releases gerçek zamanlı sorgusu.
 
@@ -826,12 +827,12 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 | Dosya | Satır | Sorumluluk |
 |-------|-------|-----------|
-| `index.html` | 461 | HTML iskeleti, modal'lar, script yükleme noktaları |
+| `index.html` | 467 | HTML iskeleti, modal'lar, script yükleme noktaları |
 | `style.css` | 1.547 | CSS custom properties, tema (dark/light), tüm bileşen stilleri |
 | `chat.js` | 656 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
 | `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
 | `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
-| `app.js` | 339 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
+| `app.js` | 356 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
 | **Toplam** | **3.551** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
 
 **Yükleme Sırası (index.html → script tags):**
