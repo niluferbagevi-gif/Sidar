@@ -215,6 +215,19 @@ def test_pypi_latest_version_failure(monkeypatch):
 
 # ─── pypi_compare — equal versions ──────────────────────────────────────────
 
+def test_pypi_compare_fetch_failure_returns_error(monkeypatch):
+    """Covers line 168: _fetch_pypi_json fails → returns propagated error."""
+    mgr = PackageInfoManager()
+
+    async def failing_fetch(pkg):
+        return False, {}, "timeout"
+
+    monkeypatch.setattr(mgr, "_fetch_pypi_json", failing_fetch)
+    ok, result = asyncio.run(mgr.pypi_compare("pkg", "2.0.0"))
+    assert ok is False
+    assert result == "timeout"
+
+
 def test_pypi_compare_equal_versions_shows_up_to_date(monkeypatch):
     """Covers line 175-176: current_version == latest → 'Güncel'."""
     mgr = PackageInfoManager()
