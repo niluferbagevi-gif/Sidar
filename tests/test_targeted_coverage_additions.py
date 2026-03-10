@@ -627,3 +627,271 @@ def test_web_server_blocked_anyio_import_and_health_route_path():
     ws_mod.get_agent = _fake_get_agent
     response = asyncio.run(ws_mod.health_check())
     assert getattr(response, "status_code", 0) in (200, 503)
+
+def test_rag_remaining_branches_for_fp16_chunk_delete_and_keyword(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+
+    # 65-66: fp16 wrapper (__call__ özel metot olduğundan doğrudan __call__ çağrılır)
+    ef_mod = types.ModuleType("chromadb.utils.embedding_functions")
+
+    class _EF:
+        def __call__(self, input):
+            return [f"ok:{len(input)}"]
+
+    ef_mod.SentenceTransformerEmbeddingFunction = lambda **kwargs: _EF()
+    torch_mod = types.ModuleType("torch")
+    torch_mod.cuda = types.SimpleNamespace(is_available=lambda: True)
+    torch_mod.float16 = "fp16"
+
+    class _Auto:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *args):
+            return False
+
+    torch_mod.autocast = lambda **kwargs: _Auto()
+    monkeypatch.setitem(__import__("sys").modules, "chromadb.utils.embedding_functions", ef_mod)
+    monkeypatch.setitem(__import__("sys").modules, "torch", torch_mod)
+    monkeypatch.setitem(__import__("sys").modules, "torch.amp", types.ModuleType("torch.amp"))
+
+    ef = mod._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
+    assert ef.__call__(["x"]) == ["ok:1"]
+
+    st = _new_store(mod, tmp_path)
+
+    # 276 ve 280-281: recursive splitter iç dalları
+    assert st._recursive_chunk_text("a b", size=1, overlap=0)
+    forced = st._recursive_chunk_text("aaaa", size=2, overlap=1)
+    assert all(len(part) <= 2 for part in forced)
+
+    # 465: kilit içinde doc önceden silinmiş dalı
+    doc_id = st.add_document("T", "body", session_id="s1")
+
+    class _RaceLock:
+        def __enter__(self_nonlocal):
+            st._index.pop(doc_id, None)
+            return self_nonlocal
+
+        def __exit__(self_nonlocal, *args):
+            return False
+
+    st._write_lock = _RaceLock()
+    assert "zaten silinmiş" in st.delete_document(doc_id)
+
+    # 693: keyword search sırasında dosya yoksa FileNotFoundError
+    st._index = {"miss": {"title": "X", "tags": [], "session_id": "s1", "source": ""}}
+    ok, out = st._keyword_search("x", top_k=1, session_id="s1")
+    assert ok is True and "Kelime Eşleşmesi" in out
+
+
+def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypatch):
+    from tests.test_web_server_runtime import _FakeRequest, _load_web_server, _make_agent
+
+    ws_mod = _load_web_server()
+    agent, _ = _make_agent()
+
+    async def _fake_get_agent():
+        return agent
+
+    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
+
+    # 191-192: redis ping başarılı kurulumu
+    ws_mod._redis_client = None
+    ws_mod._redis_lock = None
+    redis_client = asyncio.run(ws_mod._get_redis())
+    assert redis_client is not None
+
+    # 262: ddos middleware call_next devamı
+    req = _FakeRequest(method="GET", path="/api")
+    async def _next(_r):
+        return "OK"
+    res = asyncio.run(ws_mod.ddos_rate_limit_middleware(req, _next))
+    assert res == "OK"
+
+    # 409 ve 369-379: aktif task cancel + response hatasında hata json gönderimi
+    class _WS:
+        def __init__(self):
+            self.sent = []
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._i = 0
+
+        async def accept(self):
+            return None
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+            if payload.get("chunk") == "x":
+                raise RuntimeError("send failed")
+
+        async def receive_text(self):
+            self._i += 1
+            if self._i == 1:
+                return '{"message":"first"}'
+            if self._i == 2:
+                return '{"message":"second"}'
+            raise ws_mod.WebSocketDisconnect()
+
+    ws = _WS()
+
+    async def _limited(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(ws_mod, "_redis_is_rate_limited", _limited)
+
+    async def _respond(_msg):
+        yield "x"
+
+    agent.respond = _respond
+    asyncio.run(ws_mod.websocket_chat(ws))
+    assert isinstance(ws.sent, list)
+
+    # 520-527: prometheus import başarılı branch
+    prom = types.ModuleType("prometheus_client")
+
+    class _Gauge:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def set(self, _v):
+            return None
+
+    prom.CollectorRegistry = lambda: object()
+    prom.Gauge = _Gauge
+    prom.generate_latest = lambda _reg: b"m"
+    prom.CONTENT_TYPE_LATEST = "text/plain"
+    monkeypatch.setitem(__import__("sys").modules, "prometheus_client", prom)
+
+    metrics_res = asyncio.run(ws_mod.metrics(_FakeRequest(headers={"Accept": "text/plain"})))
+    assert getattr(metrics_res, "media_type", "") == "text/plain"
+
+    # 775 / 787: github pr endpoint success branch
+    agent.github = types.SimpleNamespace(
+        is_available=lambda: True,
+        repo_name="o/r",
+        get_pull_requests_detailed=lambda **_k: (True, [{"n": 1}], None),
+        get_pull_request=lambda _n: (True, {"number": _n}),
+    )
+    prs = asyncio.run(ws_mod.github_prs())
+    detail = asyncio.run(ws_mod.github_pr_detail(7))
+    assert prs.content["success"] is True and detail.content["success"] is True
+
+
+def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch):
+    from tests.test_sidar_agent_runtime import SA_MOD, _make_react_ready_agent, _make_agent_for_runtime
+
+    # 337: boş liste toolcall
+    a = _make_react_ready_agent(max_steps=1)
+
+    async def _chat_empty_list(**_kwargs):
+        async def _gen():
+            yield "[]"
+        return _gen()
+
+    a.llm = types.SimpleNamespace(chat=_chat_empty_list)
+    a.memory.get_messages_for_llm = lambda: []
+    out = asyncio.run(_collect(a._react_loop("u")))
+    assert any("Maksimum adım" in x for x in out)
+
+    # 418: final_answer boş argüman fallback
+    b = _make_react_ready_agent(max_steps=1)
+
+    async def _chat_empty_answer(**_kwargs):
+        async def _gen():
+            yield '{"thought":"t","tool":"final_answer","argument":"   "}'
+        return _gen()
+
+    b.llm = types.SimpleNamespace(chat=_chat_empty_answer)
+    b.memory.get_messages_for_llm = lambda: []
+    out2 = asyncio.run(_collect(b._react_loop("u")))
+    assert out2 == ["✓ İşlem tamamlandı."]
+
+    # 495-498: react döngüsünde beklenmeyen exception
+    c = _make_react_ready_agent(max_steps=1)
+
+    async def _chat_tool(**_kwargs):
+        async def _gen():
+            yield '{"thought":"t","tool":"list_dir","argument":"."}'
+        return _gen()
+
+    async def _boom_tool(_name, _arg):
+        raise RuntimeError("boom")
+
+    c.llm = types.SimpleNamespace(chat=_chat_tool)
+    c._execute_tool = _boom_tool
+    c.memory.get_messages_for_llm = lambda: []
+    out3 = asyncio.run(_collect(c._react_loop("u")))
+    assert any("beklenmeyen bir hata" in x for x in out3)
+
+    d = _make_agent_for_runtime()
+
+    # 535-536 ve 549: schema dalları
+    wf = SA_MOD.WriteFileSchema()
+    wf.path = "  a.txt  "
+    wf.content = "hello"
+    pf = SA_MOD.PatchFileSchema()
+    pf.path = " b.txt "
+    pf.old_text = "x"
+    pf.new_text = "y"
+
+    d.code = types.SimpleNamespace(
+        write_file=lambda path, content: (True, f"{path}:{content}"),
+        patch_file=lambda path, old, new: (True, f"{path}:{old}>{new}"),
+        grep_files=lambda *a, **k: (True, "grep-ok"),
+    )
+    assert asyncio.run(d._tool_write_file(wf)).startswith("a.txt")
+    assert asyncio.run(d._tool_patch_file(pf)).startswith("b.txt")
+
+    # 666: github_list_prs schema path
+    d.github = types.SimpleNamespace(is_available=lambda: True, list_pull_requests=lambda **k: (True, str(k)))
+    prs_arg = SA_MOD.GithubListPRsSchema()
+    prs_arg.state = "closed"
+    prs_arg.limit = 3
+    assert "closed" in asyncio.run(d._tool_github_list_prs(prs_arg))
+
+    # 1137-1138 / 1164 / 1169 / 1226 / 1466 / 1524-1525
+    assert asyncio.run(d._tool_grep_files("pat|||.|||*|||bad")) == "grep-ok"
+    d.todo = types.SimpleNamespace(set_tasks=lambda t: str(t))
+    todo_res = asyncio.run(d._tool_todo_write(" |||task only"))
+    assert "pending" in todo_res
+
+    d.cfg = types.SimpleNamespace(
+        PROJECT_NAME="P", VERSION="1", BASE_DIR=".", AI_PROVIDER="gemini", GEMINI_MODEL="g",
+        ACCESS_LEVEL="sandbox", USE_GPU=True, GPU_INFO="gpu", GPU_COUNT=1, CUDA_VERSION="12",
+        GITHUB_REPO="r", MEMORY_ENCRYPTION_KEY="",
+    )
+    d.security = types.SimpleNamespace(level_name="sandbox")
+    d.memory.get_last_file = lambda: None
+    d.github = types.SimpleNamespace(is_available=lambda: False)
+    d.web = types.SimpleNamespace(is_available=lambda: False)
+    d.docs = types.SimpleNamespace(status=lambda: "ok")
+    class _Todo:
+        def __len__(self):
+            return 0
+        def list_tasks(self):
+            return ""
+    d.todo = _Todo()
+    d._load_instruction_files = lambda: ""
+    d.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0, "commands_executed": 0})
+    ctx = d._build_context()
+    assert "Gemini Modeli" in ctx and "CUDA" in ctx
+
+    d._instructions_lock = __import__("threading").Lock()
+    d._instructions_cache = None
+    d._instructions_mtimes = {}
+
+    class _BadPath:
+        def is_file(self):
+            return True
+
+        def resolve(self):
+            return self
+
+        def stat(self):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(SA_MOD.Path, "rglob", lambda self, _p: [_BadPath()])
+    monkeypatch.setattr(SA_MOD.Path, "exists", lambda self: True)
+    monkeypatch.setattr(SA_MOD.Path, "is_dir", lambda self: True)
+    d.cfg.BASE_DIR = SA_MOD.Path(".")
+    assert d._load_instruction_files() == ""
