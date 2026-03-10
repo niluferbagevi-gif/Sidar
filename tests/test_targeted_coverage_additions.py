@@ -211,3 +211,101 @@ def test_github_manager_missing_branches():
 
     ok, diff = m.get_pull_request_diff(1)
     assert ok is True and "kod dosyası bulunmuyor" in diff
+
+
+def test_ollama_stream_trailing_block_with_custom_decoder(monkeypatch):
+    llm_mod = _load_llm_client_module()
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return '\n{"message":{"content":"trail"}}\n{bad-json}'
+            return ""
+
+    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _Ctx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
+    assert out == ["trail"]
+
+
+def test_web_search_auto_tavily_actionable_and_ddg_list_no_results(monkeypatch):
+    mod = _load_web_search_module(monkeypatch)
+    cfg = SimpleNamespace(
+        SEARCH_ENGINE="auto",
+        TAVILY_API_KEY="tk",
+        GOOGLE_SEARCH_API_KEY="",
+        GOOGLE_SEARCH_CX="",
+        WEB_SEARCH_MAX_RESULTS=5,
+        WEB_FETCH_TIMEOUT=10,
+        WEB_SCRAPE_MAX_CHARS=12000,
+    )
+    monkeypatch.setattr(mod.WebSearchManager, "_check_ddg", lambda self: True)
+    manager = mod.WebSearchManager(cfg)
+
+    async def tavily_ok(*_):
+        return True, "ACTION"
+
+    monkeypatch.setattr(manager, "_search_tavily", tavily_ok)
+    ok, text = asyncio.run(manager.search("q"))
+    assert ok is True and text == "ACTION"
+
+    class _AsyncDDGS:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def text(self, query, max_results):
+            if query == "none":
+                return []
+            return [{"title": "T", "body": "B", "href": "H"}]
+
+    monkeypatch.setitem(__import__("sys").modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=_AsyncDDGS))
+    ok1, txt1 = asyncio.run(manager._search_duckduckgo("have", 3))
+    assert ok1 is True and "DuckDuckGo" in txt1
+
+    ok2, txt2 = asyncio.run(manager._search_duckduckgo("none", 3))
+    assert ok2 is True and "sonuç bulunamadı" in txt2
+
+
+def test_github_manager_extensionless_not_in_safe_list_hits_guard():
+    class _Repo:
+        def get_contents(self, *_args, **_kwargs):
+            return types.SimpleNamespace(name="secret", decoded_content=b"x")
+
+    m = _manager(repo=_Repo(), gh=None, available=True, token="t")
+    ok, msg = m.read_remote_file("secret")
+    assert ok is False
+    assert "güvenli listede değil" in msg
