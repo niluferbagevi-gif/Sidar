@@ -100,13 +100,14 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-**Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM (Google Gemini) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
+**Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
 
 ### Temel Özellikler
-- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/index.html`)
-- **Çift LLM sağlayıcı:** Ollama (yerel) ve Gemini (bulut)
+- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
+- **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
+- **Multi-Agent Mimarisi:** Görevleri analiz edip ilgili uzmanlara (Coder, Researcher) dağıtan yönlendirici (Supervisor) altyapısı
 - **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
-- **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama
+- **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama (RRF destekli)
 - **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
 - **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
 - **Kalıcı bellek:** Fernet (AES-128-CBC) ile opsiyonel şifreli oturum depolama
