@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from tests.test_github_manager_runtime import GM, _manager
 from tests.test_llm_client_runtime import _collect, _load_llm_client_module
+from tests.test_sidar_agent_runtime import _make_react_ready_agent
 from tests.test_rag_runtime_extended import _load_rag_module, _new_store
 from tests.test_web_search_runtime import _load_web_search_module
 
@@ -258,6 +259,34 @@ def test_ollama_stream_trailing_block_with_custom_decoder(monkeypatch):
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
     out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
     assert out == ["trail"]
+
+
+def test_react_loop_handles_structurally_valid_but_schema_invalid_json():
+    agent = _make_react_ready_agent(max_steps=1)
+    agent.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return _gen_once('{"thought": "x", "tool": 123}')
+
+    agent.llm = _LLM()
+    out = asyncio.run(_collect(agent._react_loop("x")))
+    assert out[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+
+def test_recursive_chunk_text_flushes_current_chunk_before_splitting_large_part(tmp_path):
+    rag_mod = _load_rag_module(tmp_path)
+    store = _new_store(rag_mod, tmp_path)
+
+    text = "kisa metin. " + "BU_TEK_KELIME_ON_KARAKTERDEN_COK_DAHA_UZUN_BIR_KELIMEDIR_VE_BOSLUK_YOKTUR."
+    chunks = store._recursive_chunk_text(text, size=10, overlap=0)
+
+    assert chunks
+    assert "kisa metin." in chunks
+    assert any(chunk.startswith(" BU_TEK") for chunk in chunks)
 
 
 def test_web_search_auto_tavily_actionable_and_ddg_list_no_results(monkeypatch):
