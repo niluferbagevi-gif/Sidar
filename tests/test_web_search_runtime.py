@@ -937,11 +937,14 @@ def test_web_search_ultimate_exceptions_and_so(monkeypatch, web_search_mod, base
     assert "[HATA] Google" in msg2
 
     # DDG generic exception via wait_for
-    monkeypatch.setattr(
-        asyncio,
-        "wait_for",
-        AsyncMock(side_effect=RuntimeError("DDG Error")),
-    )
+    async def _raise_ddg_wait_for(awaitable, *args, **kwargs):
+        # wait_for tarafında hata fırlatırken oluşturulmuş coroutine'i kapat,
+        # aksi durumda Python "coroutine was never awaited" RuntimeWarning basar.
+        if hasattr(awaitable, "close"):
+            awaitable.close()
+        raise RuntimeError("DDG Error")
+
+    monkeypatch.setattr(asyncio, "wait_for", _raise_ddg_wait_for)
     _, msg3 = asyncio.run(manager._search_duckduckgo("q", 1))
     assert "[HATA] DuckDuckGo" in msg3
 
