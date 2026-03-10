@@ -1304,11 +1304,11 @@ add_document(title, content, source)
 
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
-| 1 | `test_config_runtime_coverage` uzantısız sıfır bayt dosya | `tests/test_config_runtime_coverage` | Audit #6'da "silindi" denildi; **hâlâ mevcut**. pytest discovery'yi kirletir | Düşük | ⚠ **Açık** |
-| 2 | `test_config_runtime_coverage.py` yeni sıfır bayt dosya | `tests/test_config_runtime_coverage.py` | Audit #6 sonrası (19:52) oluşturulmuş; içi boş; kaldırılmalı | Düşük | ⚠ **Açık** |
-| 3 | `ENABLE_MULTI_AGENT` `.env.example`'da yok | `.env.example` | `config.py:230`'da tanımlı özellik eksik belgelenmiş; kullanıcılar multi-agent modunu keşfedemiyor | Düşük | ⚠ **Açık** |
-| 4 | `ReviewerAgent` RFC'de belirtilmiş, implement edilmemiş | `RFC-MultiAgent.md`, `agent/roles/` | `RFC-MultiAgent.md`'de dördüncü role olarak tanımlanmış; kod tabanında yok | Düşük | ⚠ **Açık** (RFC Draft) |
-
+| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example` içine `ENABLE_MULTI_AGENT=false` eklendi |
+| 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
+| 3 | Eksik uzman ajan rolü (`ReviewerAgent`) | `RFC-MultiAgent.md`, `agent/roles/` | Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok | Düşük | ⚠ **Açık** (RFC Draft) |
+| 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
+| 5 | Boş test dosyaları (0 bayt artifact) | `tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage` | pytest keşfini kirletir; kalite metriklerini yanıltır | Düşük | ⚠ **Açık** |
 
 ## 12. `.env` Tam Değişken Referansı
 
