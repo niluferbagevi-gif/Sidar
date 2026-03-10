@@ -978,3 +978,128 @@ def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch)
     monkeypatch.setattr(SA_MOD.Path, "is_dir", lambda self: True)
     d.cfg.BASE_DIR = SA_MOD.Path(".")
     assert d._load_instruction_files() == ""
+
+
+def test_sidar_agent_opentelemetry_import_error_with_runtime_loader(monkeypatch):
+    import builtins
+    from tests.test_sidar_agent_runtime import _load_sidar_agent_module
+
+    real_import = builtins.__import__
+
+    def _blocked(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "opentelemetry" or name.startswith("opentelemetry."):
+            raise ImportError("blocked opentelemetry")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+    mod = _load_sidar_agent_module()
+    assert mod.trace is None
+
+
+def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    store._chroma_available = True
+    store._bm25_available = True
+    store.collection = object()
+    store._index = {"d1": {"session_id": "global", "title": "T", "tags": [], "source": ""}}
+
+    def _raise(*_a, **_k):
+        raise RuntimeError("simulated search error")
+
+    monkeypatch.setattr(store, "_rrf_search", _raise)
+    monkeypatch.setattr(store, "_chroma_search", _raise)
+    monkeypatch.setattr(store, "_bm25_search", lambda *_a, **_k: (True, "bm25 fallback ok"))
+
+    ok, result = store.search("test query", mode="auto")
+    assert ok is True
+    assert result == "bm25 fallback ok"
+
+
+def test_sidar_agent_direct_route_edge_cases_extra(monkeypatch):
+    from tests.test_sidar_agent_runtime import _make_agent_for_runtime
+
+    agent = _make_agent_for_runtime()
+    agent.cfg.TEXT_MODEL = "tm"
+    agent.llm = types.SimpleNamespace()
+
+    async def _chat_text(**_k):
+        return "duz metin"
+
+    monkeypatch.setattr(agent.llm, "chat", _chat_text, raising=False)
+    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
+
+    async def _chat_dict(**_k):
+        return {"tool": "none"}
+
+    monkeypatch.setattr(agent.llm, "chat", _chat_dict, raising=False)
+    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
+
+    async def _chat_disallowed(**_k):
+        return '{"thought":"","tool":"rm_rf","argument":""}'
+
+    monkeypatch.setattr(agent.llm, "chat", _chat_disallowed, raising=False)
+    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
+
+
+def test_sidar_agent_react_parallel_exception_path_extra():
+    from tests.test_sidar_agent_runtime import _make_react_ready_agent
+
+    agent = _make_react_ready_agent(max_steps=3)
+    agent.memory.get_messages_for_llm = lambda: []
+    agent._AUTO_PARALLEL_SAFE = {"list_dir", "read_file"}
+
+    calls = {"n": 0}
+
+    async def _chat(**_k):
+        calls["n"] += 1
+
+        async def _gen():
+            if calls["n"] == 1:
+                yield '[{"thought":"a","tool":"list_dir","argument":"."},{"thought":"b","tool":"read_file","argument":"x.txt"}]'
+            else:
+                yield '{"thought":"done","tool":"final_answer","argument":"sonuc"}'
+
+        return _gen()
+
+    async def _exec(tool_name, _arg):
+        if tool_name == "read_file":
+            raise ValueError("Kritik Arac Hatasi")
+        return "Arac Basarili"
+
+    agent.llm = types.SimpleNamespace(chat=_chat)
+    agent._execute_tool = _exec
+
+    out = asyncio.run(_collect(agent._react_loop("test_parallel")))
+    joined = "\n".join(out)
+    assert "sonuc" in joined
+    assert "\x00TOOL:list_dir\x00" in joined and "\x00TOOL:read_file\x00" in joined
+
+
+def test_web_server_anyio_closed_and_upload_close_extra(monkeypatch):
+    from tests.test_web_server_runtime import _FakeUploadFile, _load_web_server
+
+    mod = _load_web_server()
+
+    class _Docs:
+        def add_document_from_file(self, *_args):
+            return True, "ok"
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(active_session_id="s1"), docs=_Docs())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    up = _FakeUploadFile("test.txt", b"content")
+
+    async def _close_fail():
+        raise ValueError("close fail")
+
+    up.close = _close_fail
+    monkeypatch.setattr(mod.shutil, "copyfileobj", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(OSError("rm fail")))
+    resp = asyncio.run(mod.upload_rag_file(up))
+    assert resp.status_code == 200
