@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from tests.test_github_manager_runtime import GM, _manager
 from tests.test_llm_client_runtime import _collect, _load_llm_client_module
+from tests.test_rag_runtime_extended import _load_rag_module, _new_store
 from tests.test_web_search_runtime import _load_web_search_module
 
 
@@ -393,3 +394,72 @@ def test_ollama_stream_trailing_newline_message_content_branch(monkeypatch):
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
     out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
     assert out == ["tail-hit"]
+
+
+def test_ollama_stream_trailing_exact_buffer_hit(monkeypatch):
+    """chat(stream=True) ile sonda \n olmayan geçerli JSON'un trailing parse ile dönmesini doğrular."""
+    llm_mod = _load_llm_client_module()
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"message": {"content": "trailing_success"}}'
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _Ctx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    stream_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True, json_mode=False))
+    chunks = asyncio.run(_collect(stream_iter))
+    assert "trailing_success" in chunks
+
+
+def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+
+    # _init_fts genel exception yolu (236-238)
+    st = mod.DocumentStore.__new__(mod.DocumentStore)
+    st.store_dir = tmp_path
+    st._index = {}
+    import sqlite3
+    monkeypatch.setattr(sqlite3, "connect", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fts down")))
+    st._init_fts()
+    assert st._bm25_available is False
+
+    # _recursive_chunk_text force split yolu (280-281)
+    force_chunks = st._recursive_chunk_text("abcdefgh", size=2, overlap=1)
+    assert force_chunks and all(len(c) <= 2 for c in force_chunks)
+
+    # delete_document içinde Chroma delete exception yolu (476-480)
+    store = _new_store(mod, tmp_path)
+    doc_id = store.add_document("T", "icerik", session_id="global")
+
+    class _BrokenCol:
+        def delete(self, **kwargs):
+            raise RuntimeError("chroma delete fail")
+
+    store._chroma_available = True
+    store.collection = _BrokenCol()
+    msg = store.delete_document(doc_id, session_id="global")
+    assert "Belge silindi" in msg
