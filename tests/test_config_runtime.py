@@ -192,6 +192,39 @@ def test_config_import_profile_and_missing_env_messages(monkeypatch):
             sys.modules["dotenv"] = saved
 
 
+def test_config_import_profile_success_message_and_override_load(monkeypatch):
+    load_calls = []
+    printed = []
+
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: load_calls.append((a, k))
+
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        monkeypatch.setenv("SIDAR_ENV", "production")
+
+        def fake_exists(self):
+            path = str(self)
+            return path.endswith(".env") or path.endswith(".env.production")
+
+        monkeypatch.setattr(Path, "exists", fake_exists)
+
+        spec = importlib.util.spec_from_file_location("config_runtime_profile_success_under_test", Path("config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+
+        assert any("Ortama özgü yapılandırma yüklendi" in p for p in printed)
+        assert any(call[1].get("override") is True for call in load_calls)
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+
+
 def test_runtime_config_provider_and_validate_branches(monkeypatch):
     cfg_mod = _load_config_module()
 
