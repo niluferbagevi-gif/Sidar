@@ -637,6 +637,14 @@ async def file_content(path: str):
     if target.suffix.lower() not in _SAFE_EXTENSIONS:
         return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
 
+    _MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
+    file_size = target.stat().st_size
+    if file_size > _MAX_FILE_CONTENT_BYTES:
+        return JSONResponse(
+            {"error": f"Dosya çok büyük ({file_size} bayt). Limit: {_MAX_FILE_CONTENT_BYTES} bayt."},
+            status_code=413,
+        )
+
     try:
         content = target.read_text(encoding="utf-8", errors="replace")
         return JSONResponse({"path": path, "content": content, "size": len(content)})
