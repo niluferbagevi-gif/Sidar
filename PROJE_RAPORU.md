@@ -124,7 +124,7 @@ sidar_project/
 ├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── cli.py                     # CLI terminal arayüzü giriş noktası
 ├── web_server.py              # FastAPI web sunucusu (WebSocket streaming)
-├── config.py                  # Merkezi yapılandırma (v2.7.0)
+├── config.py                  # Merkezi yapılandırma (v2.10.8)
 ├── github_upload.py           # GitHub otomatik yükleme aracı
 ├── Dockerfile                 # CPU + GPU çift mod Dockerfile
 ├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
@@ -149,7 +149,7 @@ sidar_project/
 │
 ├── core/
 │   ├── __init__.py
-│   ├── llm_client.py          # Ollama + Gemini asenkron istemci
+│   ├── llm_client.py          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
 │   ├── memory.py              # Kalıcı çok oturumlu bellek
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
 │
@@ -163,7 +163,7 @@ sidar_project/
 │   ├── package_info.py        # PyPI + npm + GitHub Releases
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
-├── web_ui/                    # Modüler Web UI (toplam 3.528 satır)
+├── web_ui/                    # Modüler Web UI (toplam 3.551 satır)
 │   ├── index.html             # HTML iskeleti (461 satır)
 │   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
 │   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
@@ -171,7 +171,7 @@ sidar_project/
 │   ├── rag.js                 # RAG belge UI (131 satır)
 │   └── app.js                 # Uygulama başlatma, tema (339 satır)
 │
-├── tests/                     # 39 test modülü
+├── tests/                     # 69 test modülü
 │   ├── test_sidar.py
 │   ├── test_tooling_registry.py
 │   ├── test_parallel_react_improvements.py
