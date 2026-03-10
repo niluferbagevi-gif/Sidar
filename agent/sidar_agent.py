@@ -162,6 +162,8 @@ class SidarAgent:
         # Dinamik araç tablosu (tek source-of-truth)
         self._tools = build_tool_dispatch(self)
 
+        # Strangler Pattern: multi-agent supervisor (feature-flag ile kapalı)
+        self._supervisor = None
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -182,6 +184,17 @@ class SidarAgent:
         user_input = user_input.strip()
         if not user_input:
             yield "⚠ Boş girdi."
+            return
+
+        # Multi-agent supervisor (feature flag) — başarılıysa legacy döngüye girme.
+        multi_result = await self._try_multi_agent(user_input)
+        if multi_result is not None:
+            if self._lock is None:
+                self._lock = asyncio.Lock()
+            async with self._lock:
+                await asyncio.to_thread(self.memory.add, "user", user_input)
+                await asyncio.to_thread(self.memory.add, "assistant", multi_result)
+            yield multi_result
             return
 
         # Event loop içinde güvenli Lock oluşturma
@@ -217,6 +230,32 @@ class SidarAgent:
         # ReAct döngüsünü akıştır
         async for chunk in self._react_loop(user_input):
             yield chunk
+
+
+    async def _try_multi_agent(self, user_input: str) -> Optional[str]:
+        """Feature flag açıksa görevi SupervisorAgent'a yönlendirir."""
+        if not getattr(self.cfg, "ENABLE_MULTI_AGENT", False):
+            return None
+
+        if self._supervisor is None:
+            try:
+                from agent.core.supervisor import SupervisorAgent
+                self._supervisor = SupervisorAgent(self.cfg)
+            except Exception:
+                return None
+
+        try:
+            result = await self._supervisor.run_task(user_input)
+        except Exception:
+            return None
+
+        if not isinstance(result, str):
+            return None
+
+        if result.startswith("[LEGACY_FALLBACK]"):
+            return None
+
+        return result
 
     async def _try_direct_tool_route(self, user_input: str) -> Optional[str]:
         """
