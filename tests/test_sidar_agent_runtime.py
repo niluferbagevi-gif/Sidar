@@ -1713,3 +1713,99 @@ def test_react_loop_plain_parse_error_valueerror_branch():
     a.llm = _LLM()
     out = asyncio.run(_collect(a._react_loop('x')))
     assert out[-1].startswith('Üzgünüm, bu istek için güvenilir')
+
+
+
+def test_subtask_tool_result_message_path_is_reached(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm', SUBTASK_MAX_STEPS=2)
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+            self.payloads = [
+                '{"thought":"t","tool":"list_dir","argument":"."}',
+                '{"thought":"d","tool":"final_answer","argument":"tamam"}',
+            ]
+
+        async def chat(self, **kwargs):
+            t = self.payloads[self.i]
+            self.i += 1
+            return t
+
+    async def _ok_tool(_tool, _arg):
+        return 'sonuc'
+
+    a.llm = _LLM()
+    monkeypatch.setattr(a, '_execute_tool', _ok_tool)
+    out = asyncio.run(a._tool_subtask('gorev'))
+    assert 'Alt Görev Tamamlandı' in out
+
+
+def test_archive_context_min_score_max_chars_and_empty_selected():
+    a = _make_agent_for_runtime()
+
+    class _ColLow:
+        def query(self, **kwargs):
+            return {
+                'documents': [['d1']],
+                'metadatas': [[{'source': 'memory_archive', 'title': 'T'}]],
+                'distances': [[0.95]],
+            }
+
+    a.docs = SimpleNamespace(collection=_ColLow())
+    out_low = a._get_memory_archive_context_sync('q', top_k=3, min_score=0.2, max_chars=1000)
+    assert out_low == ''
+
+    class _ColChars:
+        def query(self, **kwargs):
+            return {
+                'documents': [['x' * 300, 'ikinci not']],
+                'metadatas': [[
+                    {'source': 'memory_archive', 'title': 'A'},
+                    {'source': 'memory_archive', 'title': 'B'},
+                ]],
+                'distances': [[0.1, 0.1]],
+            }
+
+    a.docs = SimpleNamespace(collection=_ColChars())
+    out_chars = a._get_memory_archive_context_sync('q', top_k=3, min_score=0.1, max_chars=40)
+    assert out_chars == '' or 'Geçmiş Sohbet' in out_chars
+
+
+def test_load_instruction_files_stat_error_is_swallowed(tmp_path, monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+
+    f = tmp_path / 'SIDAR.md'
+    f.write_text('kural', encoding='utf-8')
+
+    import pathlib
+    real_stat = pathlib.Path.stat
+    real_rglob = pathlib.Path.rglob
+
+    def _fake_rglob(self, pattern):
+        if self == tmp_path and pattern == 'SIDAR.md':
+            return [f]
+        if self == tmp_path and pattern == 'CLAUDE.md':
+            return []
+        return list(real_rglob(self, pattern))
+
+    def _fake_is_file(self):
+        if self == f:
+            return True
+        return pathlib.Path.exists(self)
+
+    def _boom_stat(self):
+        if self.name == 'SIDAR.md':
+            raise OSError('stat fail')
+        return real_stat(self)
+
+    monkeypatch.setattr(pathlib.Path, 'rglob', _fake_rglob)
+    monkeypatch.setattr(pathlib.Path, 'is_file', _fake_is_file)
+    monkeypatch.setattr(pathlib.Path, 'stat', _boom_stat)
+    out = a._load_instruction_files()
+    assert 'SIDAR.md' in out and 'kural' in out

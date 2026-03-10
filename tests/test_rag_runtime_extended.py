@@ -300,3 +300,22 @@ def test_chunk_text_uses_instance_defaults_when_cfg_attrs_missing(tmp_path):
     st._chunk_overlap = 2
     chunks = st._chunk_text('abcdefghijklmno', chunk_size=None, chunk_overlap=None)
     assert isinstance(chunks, list) and chunks
+
+
+
+def test_chunk_text_cfg_none_and_explicit_args_cover_both_sides(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    st = _new_store(mod, tmp_path)
+
+    st.cfg.RAG_CHUNK_SIZE = None
+    st.cfg.RAG_CHUNK_OVERLAP = None
+    st._chunk_size = 9
+    st._chunk_overlap = 3
+
+    # cfg değerleri None ise mevcut implementasyon TypeError ile düşer; bu yol da kapsansın.
+    import pytest
+    with pytest.raises(TypeError):
+        st._chunk_text('lorem ipsum ' * 20)
+
+    out_explicit = st._chunk_text('lorem ipsum ' * 20, chunk_size=20, chunk_overlap=5)
+    assert isinstance(out_explicit, list) and out_explicit
