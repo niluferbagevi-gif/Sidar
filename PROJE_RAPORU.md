@@ -1,9 +1,9 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-10 (v2.10.8 — Anthropic sağlayıcı entegrasyonu eklendi, RAG cold-start prewarm tamamlandı, Audit #6 kapanışı korunuyor)
-> **Proje Sürümü:** 2.10.7
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: 10.393 satır; Test: ~15.839 satır; Web UI: 3.528 satır.
+> **Son Güncelleme:** 2026-03-10 (v2.10.8 — **Audit #7:** Multi-agent mimari eklendi, satır sayıları güncellendi, yeni açık bulgular tespit edildi)
+> **Proje Sürümü:** 2.10.8
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~10.746 satır (tests hariç); Test: ~15.974 satır; Web UI: 3.551 satır.
 
 ---
 
@@ -89,6 +89,7 @@
   - [18.3 Audit #3 Düzeltmeleri ve Yeni Bulgular](#183-rapor-düzeltme-özeti--audit-3-2026-03-08-güncel)
   - [18.4 Audit #4 Düzeltmeleri ve Yeni Bulgular](#184-rapor-düzeltme-özeti--audit-4-2026-03-10)
   - [18.5 Audit #6 Kapanış Özeti](#185-rapor-düzeltme-özeti--audit-6-2026-03-10)
+  - [18.6 Audit #7 — Multi-Agent Mimarisi ve Güncel Bulgular](#186-rapor-düzeltme-özeti--audit-7-2026-03-10)
 
 ---
 
@@ -128,10 +129,19 @@ sidar_project/
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── sidar_agent.py         # Ana ajan (1630 satır, 45+ araç + tracing)
-│   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici
-│   ├── definitions.py         # Sistem istemi ve ajan kimliği
-│   └── tooling.py             # Araç kayıt + Pydantic şema yöneticisi (264 satır)
+│   ├── sidar_agent.py         # Ana ajan (1698 satır, 45+ araç + tracing + multi-agent)
+│   ├── base_agent.py          # BaseAgent soyut sınıfı (multi-agent iskeleti, 34 satır)
+│   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici (601 satır)
+│   ├── definitions.py         # Sistem istemi ve ajan kimliği (165 satır)
+│   ├── tooling.py             # Araç kayıt + Pydantic şema yöneticisi (266 satır)
+│   ├── core/
+│   │   ├── __init__.py        # SupervisorAgent, TaskEnvelope, TaskResult export
+│   │   ├── supervisor.py      # SupervisorAgent — role router + orchestrator (87 satır)
+│   │   └── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
+│   └── roles/
+│       ├── __init__.py        # CoderAgent, ResearcherAgent export
+│       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
+│       └── researcher_agent.py # Web + RAG odaklı uzman ajan (75 satır)
 │
 ├── core/
 │   ├── __init__.py
@@ -170,6 +180,7 @@ sidar_project/
 │
 ├── data/                      # RAG ve bellek verileri
 ├── CLAUDE.md                  # Geliştirici rehberi
+├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi (Draft, v2.11.x hedefi)
 └── .env.example               # Ortam değişkeni şablonu
 ```
 
@@ -490,7 +501,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (Anthropic dahil)
+### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)
 
 **Amaç:** Ollama, Gemini, OpenAI ve Anthropic için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
 
@@ -913,9 +924,11 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projede **63 test modülü** bulunmaktadır (toplam ~15.833 satır):
+Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
 
-> **⚠️ Audit #4 Güncellemesi (2026-03-10):** Son audit'te test modülü sayısı 39'dan 63'e yükselmiştir. Audit #3'ten bu yana 24 yeni `*_runtime.py` test modülü eklenmiştir. `test_config_runtime_coverage` (0 bayt boş dosya) artifact olarak tespit edilmiştir.
+> **⚠️ Audit #4 Güncellemesi (2026-03-10):** Son audit'te test modülü sayısı 39'dan 63'e yükselmiştir. Audit #3'ten bu yana 24 yeni `*_runtime.py` test modülü eklenmiştir.
+>
+> **⚠️ Audit #7 Güncellemesi (2026-03-10):** Test modülü sayısı 63'ten **69'a** yükselmiştir (6 yeni modül). `test_config_runtime_coverage` (uzantısız, 0 bayt) **hâlâ mevcut** — Audit #6'da silindiği belirtilmişti. Ek olarak `test_config_runtime_coverage.py` adıyla yeni bir 0 baytlık `.py` dosyası oluşturulmuştur.
 
 **Orijinal (v2.10.7) Test Modülleri:**
 
@@ -990,7 +1003,19 @@ Projede **63 test modülü** bulunmaktadır (toplam ~15.833 satır):
 | `test_web_search_runtime.py` | WebSearch çalışma zamanı testleri |
 | `test_web_server_runtime.py` | WebServer çalışma zamanı testleri (1.470 satır) |
 
-> **Artifact Sorunu:** `test_config_runtime_coverage` (0 bayt boş dosya) pytest tarafından keşfedilir ancak test içermez; kaldırılabilir.
+> **Artifact Sorunu (Audit #6):** `test_config_runtime_coverage` (uzantısız, 0 bayt) Audit #6'da silindiği belirtildi; **gerçekte hâlâ mevcut**.
+> **Yeni Artifact (Audit #7):** `test_config_runtime_coverage.py` (0 bayt, Audit #6 sonrası 19:52'de oluşturulmuş) — boş; pytest test sayısına dahil edilir ama test içermez; kaldırılmalıdır.
+
+**Audit #7'de Tespit Edilen Yeni Test Modülleri (6 adet):**
+
+| Test Dosyası | Satır | Kapsam |
+|-------------|-------|--------|
+| `test_supervisor_agent.py` | 42 | SupervisorAgent + TaskEnvelope/TaskResult sözleşme testleri |
+| `test_coder_agent.py` | 38 | CoderAgent araç seti ve doğal dil yorum testleri |
+| `test_researcher_agent.py` | 24 | ResearcherAgent araç seti ve web_search yönlendirme testleri |
+| `test_anthropic_provider_runtime.py` | 31 | AnthropicClient API key eksiklik + factory testi |
+| `test_config_runtime_coverage.py` | 0 | **BOŞ** — kaldırılmalı (Audit #7 artifact) |
+| `test_config_runtime_coverage` (uzantısız) | 0 | **BOŞ** — kaldırılmalı (Audit #6'dan süregelen) |
 
 **Test çalıştırma:** `pytest` veya `pytest --cov=.`
 
@@ -1031,14 +1056,42 @@ Projede **63 test modülü** bulunmaktadır (toplam ~15.833 satır):
 [⬆ İçindekilere Dön](#içindekiler)
 
 > **✅ Audit #6 (2026-03-10):** Aşağıdaki kritik dosyalar, son OpenAI entegrasyonu sonrası `wc -l` ile yeniden doğrulanmıştır.
+> **⚠ Audit #7 (2026-03-10):** Anthropic entegrasyonu + multi-agent mimari sonrası tüm dosyalar `wc -l` ile yeniden ölçülmüştür. Birçok dosyada ek satır artışı tespit edilmiştir.
 
-| Dosya | Audit #5 | **Gerçek (Audit #6)** | Fark | Not |
+| Dosya | Audit #6 | **Gerçek (Audit #7)** | Fark | Not |
 |-------|----------|------------------------|------|-----|
-| `config.py` | 544 | **556** | +12 | OpenAI config attribute + doğrulama + özet model satırı |
-| `web_server.py` | 1.139 | **1.139** | 0 | `--provider` choices güncellemesi, toplam satır değişmedi |
-| `cli.py` | 288 | **288** | 0 | `--provider` choices güncellemesi, toplam satır değişmedi |
-| `main.py` | 332 | **337** | +5 | OpenAI preflight uyarısı + wizard provider seçeneği |
-| **Toplam Python kaynak** | **~10.406** (tests hariç) | **~10.423** (tests hariç) | +17 | `config.py` (+12) + `main.py` (+5) |
+| `config.py` | 556 | **570** | +14 | Anthropic config + ENABLE_MULTI_AGENT alanı eklendi |
+| `main.py` | 337 | **341** | +4 | Anthropic preflight uyarısı + wizard seçeneği |
+| `cli.py` | 288 | **288** | 0 | Değişmedi ✓ |
+| `web_server.py` | 1.139 | **1.173** | +34 | Multi-agent feature + yeni endpoint'ler |
+| `agent/sidar_agent.py` | 1.659 | **1.698** | +39 | `_try_multi_agent()` Strangler Pattern eklendi |
+| `agent/auto_handle.py` | 601 | **601** | 0 | Değişmedi ✓ |
+| `agent/definitions.py` | 165 | **165** | 0 | Değişmedi ✓ |
+| `agent/tooling.py` | 266 | **266** | 0 | Değişmedi ✓ |
+| `core/llm_client.py` | 570 | **723** | +153 | `AnthropicClient` sınıfı eklendi (streaming dahil) |
+| `core/memory.py` | 402 | **402** | 0 | Değişmedi ✓ |
+| `core/rag.py` | 783 | **783** | 0 | Değişmedi ✓ |
+| `managers/security.py` | 290 | **290** | 0 | Değişmedi ✓ |
+| `managers/code_manager.py` | 766 | **766** | 0 | Değişmedi ✓ |
+| `managers/github_manager.py` | 644 | **644** | 0 | Değişmedi ✓ |
+| `managers/system_health.py` | 436 | **436** | 0 | Değişmedi ✓ |
+| `managers/web_search.py` | 387 | **387** | 0 | Değişmedi ✓ |
+| `managers/package_info.py` | 322 | **322** | 0 | Değişmedi ✓ |
+| `managers/todo_manager.py` | 451 | **451** | 0 | Değişmedi ✓ |
+| `github_upload.py` | 294 | **294** | 0 | Değişmedi ✓ |
+| **Yeni: `agent/base_agent.py`** | — | **34** | Yeni | BaseAgent soyut sınıfı |
+| **Yeni: `agent/core/supervisor.py`** | — | **87** | Yeni | SupervisorAgent |
+| **Yeni: `agent/core/contracts.py`** | — | **30** | Yeni | TaskEnvelope, TaskResult |
+| **Yeni: `agent/roles/coder_agent.py`** | — | **120** | Yeni | CoderAgent |
+| **Yeni: `agent/roles/researcher_agent.py`** | — | **75** | Yeni | ResearcherAgent |
+| `web_ui/index.html` | 461 | **467** | +6 | Güncel |
+| `web_ui/style.css` | 1.547 | **1.547** | 0 | Değişmedi ✓ |
+| `web_ui/chat.js` | 656 | **656** | 0 | Değişmedi ✓ |
+| `web_ui/sidebar.js` | 394 | **394** | 0 | Değişmedi ✓ |
+| `web_ui/rag.js` | 131 | **131** | 0 | Değişmedi ✓ |
+| `web_ui/app.js` | 339 | **356** | +17 | Güncel |
+| **Web UI Toplam** | **3.528** | **3.551** | +23 | |
+| **Toplam Python kaynak** | **~10.423** (tests hariç) | **~10.746** (tests hariç) | +323 | Multi-agent + Anthropic modülleri |
 
 
 ---
@@ -1177,7 +1230,16 @@ add_document(title, content, source)
 | 4 | ~~`duckduckgo-search` versiyon pin formatı uyumsuzluğu~~ | ~~`environment.yml`, `requirements.txt`~~ | ~~Raporda `~=6.2.13`; gerçekte `==6.2.13`~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
 | 5 | ~~OpenAI provider eksik kayıt~~ | ~~`config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt`, `environment.yml`~~ | ~~OpenAI ayarları/argümanları/bağımlılıkları eksikti~~ | ~~Orta~~ | ✅ **Audit#6'da çözüldü** — OpenAI uçtan uca kayıt tamamlandı |
 
-> **Audit #6 Sonucu:** Bu bölümde açık kalan teknik borç bulunmamaktadır.
+> **Audit #6 Sonucu:** O tarihte bu bölümde açık kalan teknik borç bulunmamaktaydı.
+
+### 11.2 Açık Teknik Borç (2026-03-10 Audit #7 — Güncel)
+
+| # | Sorun | Dosya | Etki | Öncelik | Durum |
+|---|-------|-------|------|---------|-------|
+| 1 | `test_config_runtime_coverage` uzantısız sıfır bayt dosya | `tests/test_config_runtime_coverage` | Audit #6'da "silindi" denildi; **hâlâ mevcut**. pytest discovery'yi kirletir | Düşük | ⚠ **Açık** |
+| 2 | `test_config_runtime_coverage.py` yeni sıfır bayt dosya | `tests/test_config_runtime_coverage.py` | Audit #6 sonrası (19:52) oluşturulmuş; içi boş; kaldırılmalı | Düşük | ⚠ **Açık** |
+| 3 | `ENABLE_MULTI_AGENT` `.env.example`'da yok | `.env.example` | `config.py:230`'da tanımlı özellik eksik belgelenmiş; kullanıcılar multi-agent modunu keşfedemiyor | Düşük | ⚠ **Açık** |
+| 4 | `ReviewerAgent` RFC'de belirtilmiş, implement edilmemiş | `RFC-MultiAgent.md`, `agent/roles/` | `RFC-MultiAgent.md`'de dördüncü role olarak tanımlanmış; kod tabanında yok | Düşük | ⚠ **Açık** (RFC Draft) |
 
 
 ## 12. `.env` Tam Değişken Referansı
@@ -1299,6 +1361,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
 | `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
 | `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
+| `ENABLE_MULTI_AGENT` | `false` | Multi-agent Supervisor modunu etkinleştirir (Strangler Pattern, varsayılan kapalı) |
 
 ---
 
@@ -1914,4 +1977,136 @@ Audit #4'te onaylanan tüm maddeler bu audit'te de doğrulanmıştır. Ek olarak
 
 ---
 
-*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2, #3 ve 2026-03-10 Audit #4, #5, #6) güncellenerek doğrulanmıştır.*
+*Bu rapor, projedeki tüm kaynak dosyaların satır satır incelenmesiyle 2026-03-07 tarihinde hazırlanmış; sonraki audit'lerde (2026-03-08 Audit #2, #3 ve 2026-03-10 Audit #4, #5, #6, #7) güncellenerek doğrulanmıştır.*
+
+---
+
+### 18.6 Rapor Düzeltme Özeti — Audit #7 (2026-03-10)
+
+Bu bölüm, 2026-03-10 tarihli yedinci kapsamlı audit'te tespit edilen tüm uyumsuzlukları, yeni modülleri ve açık bulguları özetler. Tüm kaynak dosyalar `wc -l` ile yeniden ölçülmüş; Audit #6'daki "çözüldü" iddiaları kaynak kodda teyit edilmiştir.
+
+---
+
+#### 18.6.1 Audit #6'dan Süregelen — Çözülmediği Tespit Edilen Madde
+
+| # | Sorun | Audit #6 İddiası | Gerçek Durum |
+|---|-------|-----------------|--------------|
+| 1 | `test_config_runtime_coverage` (uzantısız, 0 bayt) | "Dosya projeden silindi" | ❌ **Hâlâ mevcut** (`tests/test_config_runtime_coverage`, 0 bayt) |
+
+---
+
+#### 18.6.2 Satır Sayısı Düzeltmeleri (Audit #7)
+
+| Dosya | Audit #6 Değeri | Gerçek (Audit #7) | Fark | Sebep |
+|-------|----------------|-------------------|------|-------|
+| `config.py` | 556 | **570** | +14 | `ENABLE_MULTI_AGENT` + Anthropic validation + özet satırı |
+| `main.py` | 337 | **341** | +4 | Anthropic wizard seçeneği |
+| `web_server.py` | 1.139 | **1.173** | +34 | `_try_multi_agent`, yeni endpoint'ler |
+| `agent/sidar_agent.py` | 1.659 | **1.698** | +39 | `_try_multi_agent()` Strangler Pattern |
+| `core/llm_client.py` | 570 | **723** | +153 | `AnthropicClient` tam sınıf (streaming dahil) |
+| `web_ui/index.html` | 461 | **467** | +6 | UI güncellemeleri |
+| `web_ui/app.js` | 339 | **356** | +17 | Uygulama başlatma güncellemeleri |
+| **Web UI Toplam** | 3.528 | **3.551** | **+23** | |
+| Diğer tüm dosyalar | — | ✅ Audit #6 ile uyumlu | 0 | |
+
+---
+
+#### 18.6.3 Tamamen Belgelenmemiş Yeni Modüller — Multi-Agent Mimarisi
+
+Aşağıdaki dosyalar Audit #6 dahil hiçbir önceki raporda yer almamaktadır. Strangler Pattern ile `sidar_agent.py` üzerine `ENABLE_MULTI_AGENT` feature flag'i aracılığıyla entegre edilmiştir.
+
+| Dosya | Satır | Açıklama |
+|-------|-------|----------|
+| `agent/base_agent.py` | 34 | `BaseAgent` — tüm uzman ajanlar için ortak LLM + tool dispatch soyut sınıfı |
+| `agent/core/__init__.py` | 5 | `SupervisorAgent`, `TaskEnvelope`, `TaskResult` export |
+| `agent/core/supervisor.py` | 87 | `SupervisorAgent` — intent tespiti + role routing + orchestration |
+| `agent/core/contracts.py` | 30 | `TaskEnvelope` (görev zarfı) + `TaskResult` (yapısal sonuç) dataclass'ları |
+| `agent/roles/__init__.py` | 5 | `CoderAgent`, `ResearcherAgent` export |
+| `agent/roles/coder_agent.py` | 120 | `CoderAgent` — dosya/kod araçlarıyla çalışan uzman ajan |
+| `agent/roles/researcher_agent.py` | 75 | `ResearcherAgent` — web + RAG araçlarıyla çalışan uzman ajan |
+| `RFC-MultiAgent.md` | ~200 | Mimari tasarım RFC belgesi (Draft; `v2.11.x` hedefi) |
+
+**Entegrasyon Noktası (`sidar_agent.py`):**
+```python
+# Strangler Pattern: feature flag ile kapalı, geriye dönük uyumlu
+async def _try_multi_agent(self, user_input: str) -> Optional[str]:
+    if not getattr(self.cfg, "ENABLE_MULTI_AGENT", False):
+        return None
+    # SupervisorAgent lazy-init + route + [LEGACY_FALLBACK] kontrolü
+```
+
+**`ENABLE_MULTI_AGENT` Davranışı:**
+- `false` (varsayılan): Multi-agent devre dışı; ReAct döngüsü normale devam eder.
+- `true`: `SupervisorAgent` kullanıcı isteğini analiz eder; `research` → `ResearcherAgent`, `code` → `CoderAgent`, `unknown/review` → `[LEGACY_FALLBACK]` → klasik ReAct.
+
+**RFC'de Belirtilmiş Ancak Henüz İmplemente Edilmemiş:**
+- `ReviewerAgent` — GitHub/PR/Issue inceleme rolü RFC-MultiAgent.md'de tanımlanmış, `agent/roles/` içinde mevcut değil.
+
+---
+
+#### 18.6.4 Yeni Test Modülleri (Audit #7 — 6 adet)
+
+| Test Dosyası | Satır | Kapsam | Durum |
+|-------------|-------|--------|-------|
+| `test_supervisor_agent.py` | 42 | `SupervisorAgent` route mantığı + `TaskEnvelope`/`TaskResult` sözleşme testleri | ✅ İçerikli |
+| `test_coder_agent.py` | 38 | `CoderAgent` araç seti ve doğal dil yazma yorumu | ✅ İçerikli |
+| `test_researcher_agent.py` | 24 | `ResearcherAgent` araç seti ve web_search yönlendirmesi | ✅ İçerikli |
+| `test_anthropic_provider_runtime.py` | 31 | `AnthropicClient` API key eksikliği + `LLMClient` factory | ✅ İçerikli |
+| `test_config_runtime_coverage.py` | 0 | **BOŞ** — Audit #6 sonrası oluşturulmuş artifact | ⚠ Kaldırılmalı |
+| `test_config_runtime_coverage` (uzantısız) | 0 | **BOŞ** — Audit #6'dan süregelen artifact | ⚠ Kaldırılmalı |
+
+---
+
+#### 18.6.5 `.env.example` Eksik Değişken (Audit #7)
+
+| Değişken | `config.py` Referansı | `.env.example` Durumu |
+|----------|----------------------|----------------------|
+| `ENABLE_MULTI_AGENT` | `config.py:230` — `get_bool_env("ENABLE_MULTI_AGENT", False)` | ❌ **Eksik** |
+
+> **Not:** `ENABLE_MULTI_AGENT` varsayılan değeri `false` olduğundan sistemin işlevselliğini etkilemez; ancak özelliğin keşfedilebilirliği açısından `.env.example`'a eklenmesi önerilir.
+
+---
+
+#### 18.6.6 Doğrulanan "Çözüldü" İddiaları (Audit #7)
+
+Audit #6'da onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
+
+| Madde | Konum | Sonuç |
+|-------|-------|-------|
+| `/file-content` boyut limiti | `web_server.py:70` — `MAX_FILE_CONTENT_BYTES = 1_048_576`; `:676` — `st_size` kontrolü + 413 | ✅ Onaylandı |
+| `.env.example` — `GITHUB_WEBHOOK_SECRET` | `.env.example:48` | ✅ Onaylandı |
+| `.env.example` — `MEMORY_SUMMARY_KEEP_LAST` | `.env.example:77` | ✅ Onaylandı |
+| `.env.example` — `SIDAR_ENV` | `.env.example:81` | ✅ Onaylandı |
+| DuckDuckGo pin formatı `~=6.2.13` | `requirements.txt:18`, `environment.yml:64` | ✅ Onaylandı |
+| OpenAI uçtan uca entegrasyon | `config.py:245-247`, `cli.py:238`, `main.py:306`, `web_server.py:1133` | ✅ Onaylandı |
+| Anthropic uçtan uca entegrasyon | `config.py:248-250`, `core/llm_client.py:504-668`, `requirements.txt:16`, `environment.yml:58` | ✅ Onaylandı |
+| CLI `asyncio.Lock` fix | `cli.py:114` — `_interactive_loop_async()` + tek `asyncio.run()` | ✅ Onaylandı |
+| WebSocket `/ws/chat` | `web_server.py:340` | ✅ Onaylandı |
+| Sandbox çıktı limiti | `code_manager.py:50` — `max_output_chars = 10000` | ✅ Onaylandı |
+| Redis rate limiting + local fallback | `web_server.py:182-196` | ✅ Onaylandı |
+| SIDAR_ENV multi-env konfigürasyonu | `config.py:31-47` | ✅ Onaylandı |
+| Coverage eşikleri (%70 + %80) | `run_tests.sh:7,15` | ✅ Onaylandı |
+| audit.jsonl denetim logu | `sidar_agent.py:1382-1396` | ✅ Onaylandı |
+| Güvenlik seviyesi geçiş logu | `sidar_agent.py:1657-1684` | ✅ Onaylandı |
+| GitHub webhook HMAC | `web_server.py:1052-1071` | ✅ Onaylandı |
+| OpenTelemetry tracing | `web_server.py:115-154` | ✅ Onaylandı |
+| OpenAPI Swagger/ReDoc | `web_server.py:137-139` | ✅ Onaylandı |
+| RAG cold-start prewarm | `web_server.py:75`, `web_server.py:117` | ✅ Onaylandı |
+| Non-root Docker kullanıcısı | `Dockerfile:90-91` — `sidaruser` uid=10001 | ✅ Onaylandı |
+| Sliding window özetleme | `memory.py:332-339` | ✅ Onaylandı |
+| RRF hibrit sıralama | `rag.py:_rrf_search` k=60 | ✅ Onaylandı |
+| SQLite FTS5 disk tabanlı BM25 | `rag.py:_init_fts` | ✅ Onaylandı |
+| RAG oturum izolasyonu | `rag.py:_fetch_chroma`, `_fetch_bm25` | ✅ Onaylandı |
+| Prometheus metrikleri | `system_health.py:283-309` | ✅ Onaylandı |
+
+---
+
+#### 18.6.7 Audit #7 Özet
+
+| Kategori | Sayı | Detay |
+|----------|------|-------|
+| **Onaylanan çözüldü** | 24 | Audit #6 ve önceki tüm maddeler doğrulandı |
+| **Süregelen açık sorun** | 1 | `test_config_runtime_coverage` uzantısız 0 baytlık dosya |
+| **Yeni tespit — açık** | 3 | 0 baytlık `.py` artifact, `ENABLE_MULTI_AGENT` belgesiz, `ReviewerAgent` eksik |
+| **Yeni belgelenen modül** | 7 | `base_agent.py`, `core/supervisor.py`, `core/contracts.py`, `roles/coder_agent.py`, `roles/researcher_agent.py`, `RFC-MultiAgent.md`, multi-agent test'leri |
+| **Satır sayısı güncellenen dosya** | 7 | `config.py`, `main.py`, `web_server.py`, `sidar_agent.py`, `llm_client.py`, `index.html`, `app.js` |
