@@ -229,6 +229,24 @@ def test_validate_file_paths_and_formats():
     assert handled is True and "desteklenmiyor" in msg
 
 
+
+
+def test_validate_file_read_failure_explicit_case():
+    auto = _make_auto()
+
+    class _ValidateReadFailCode(_Code):
+        def read_file(self, _path):
+            return False, "Permission denied"
+
+    auto.code = _ValidateReadFailCode()
+    handled, msg = auto._try_validate_file(
+        "sözdizimi doğrula",
+        "app.py sözdizimi doğrula",
+    )
+
+    assert handled is True
+    assert msg == "✗ Dosya okunamadı: Permission denied"
+
 def test_github_variants_unavailable_and_pr_modes():
     auto = _make_auto(github_available=False)
     handled, msg = auto._try_github_commits("github commitleri listele")

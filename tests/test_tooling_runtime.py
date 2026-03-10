@@ -123,3 +123,12 @@ def test_tooling_legacy_parse_value_errors_and_extensions():
     result_scan = tooling.parse_tool_argument("scan_project_todos", "src|||.py, .js")
     assert result_scan.directory == "src"
     assert result_scan.extensions == [".py", ".js"]
+
+def test_tooling_rejects_whitespace_only_ids_for_branch_and_issue():
+    tooling = _load_tooling_module()
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_create_branch", "   |||main")
+
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("github_close_issue", "   ")
