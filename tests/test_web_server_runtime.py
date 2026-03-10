@@ -580,6 +580,102 @@ def test_websocket_chat_generate_response_cancelled_error_branch():
     # CancelledError branch generate_response içinde swallow edilir; done/json gönderimi olmayabilir
     assert isinstance(ws.sent, list)
 
+
+def test_websocket_chat_send_json_failure_is_swallowed():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            raise RuntimeError("respond boom")
+            yield "x"
+
+    class _WebSocket:
+        def __init__(self):
+            self._payloads = [json.dumps({"message": "m", "action": "send"})]
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            raise RuntimeError("socket closed")
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+    asyncio.run(mod.websocket_chat(_WebSocket()))
+
+
+def test_websocket_chat_cancels_previous_active_task_line():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.1)
+            yield "later"
+
+    class _WebSocket:
+        def __init__(self):
+            self._payloads = [
+                json.dumps({"message": "ilk", "action": "send"}),
+                json.dumps({"message": "ikinci", "action": "send"}),
+            ]
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+    ws = _WebSocket()
+    asyncio.run(mod.websocket_chat(ws))
+    assert isinstance(ws.sent, list)
+
 def test_tracing_setup_dependency_and_enabled_paths(monkeypatch):
     mod = _load_web_server()
 

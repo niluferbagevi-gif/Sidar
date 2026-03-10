@@ -460,6 +460,90 @@ def test_react_loop_final_answer_and_invalid_json_paths():
     assert out2[-1].startswith("Üzgünüm, bu istek için güvenilir")
 
 
+def test_react_loop_json_list_and_error_feedback_paths(monkeypatch):
+    a = _make_react_ready_agent(max_steps=1)
+
+    class _Mem:
+        def get_messages_for_llm(self):
+            return []
+
+        def add(self, *_args):
+            return None
+
+    a.memory = _Mem()
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self, text):
+            self.text = text
+
+        async def chat(self, **kwargs):
+            return _gen_once(self.text)
+
+    # Boş JSON liste -> ValueError yakalanır ve döngü max adım nedeniyle sonlanır
+    a.llm = _LLM("[]")
+    out = asyncio.run(_collect(a._react_loop("x")))
+    assert out[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+    # tool alanı yoksa final_answer özetine normalize edilir
+    b = _make_react_ready_agent(max_steps=1)
+    b.memory = _Mem()
+    b.llm = _LLM('{"thought":"t","argument":"x"}')
+    out2 = asyncio.run(_collect(b._react_loop("x")))
+    assert out2[-1] == "- **argument:** x"
+
+    # Geçersiz liste elemanı -> ValidationError branch
+    b2 = _make_react_ready_agent(max_steps=1)
+    b2.memory = _Mem()
+    b2.llm = _LLM('[{"thought":"t","argument":"x"}]')
+    out2b = asyncio.run(_collect(b2._react_loop("x")))
+    assert out2b[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+    # Paralel liste içinde final_answer olamaz
+    c = _make_react_ready_agent(max_steps=1)
+    c.memory = _Mem()
+    c.llm = _LLM('[{"thought":"t1","tool":"list_dir","argument":"."},{"thought":"t2","tool":"final_answer","argument":"x"}]')
+    out3 = asyncio.run(_collect(c._react_loop("x")))
+    assert out3[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+    # Paralel listede unsafe tool
+    d = _make_react_ready_agent(max_steps=1)
+    d.memory = _Mem()
+    d._AUTO_PARALLEL_SAFE = {"list_dir"}
+    d.llm = _LLM('[{"thought":"t1","tool":"list_dir","argument":"."},{"thought":"t2","tool":"write_file","argument":"x"}]')
+    out4 = asyncio.run(_collect(d._react_loop("x")))
+    assert out4[-1].startswith("Üzgünüm, bu istek için güvenilir")
+
+    # Paralel batch içinde exception sonucu had_error=True
+    e = _make_react_ready_agent(max_steps=2)
+    e.memory = _Mem()
+
+    class _LLMSeq:
+        def __init__(self):
+            self.i = 0
+            self.payloads = [
+                '[{"thought":"t1","tool":"list_dir","argument":"."},{"thought":"t2","tool":"list_dir","argument":"boom"}]',
+                '{"thought":"done","tool":"final_answer","argument":"OK"}',
+            ]
+
+        async def chat(self, **kwargs):
+            text = self.payloads[self.i]
+            self.i += 1
+            return _gen_once(text)
+
+    async def _exec(tool, arg):
+        if arg == "boom":
+            raise RuntimeError("tool fail")
+        return "fine"
+
+    e.llm = _LLMSeq()
+    monkeypatch.setattr(e, "_execute_tool", _exec)
+    out5 = asyncio.run(_collect(e._react_loop("x")))
+    assert "OK" in out5
+
+
 def test_react_loop_tool_execution_and_loop_break(monkeypatch):
     a = _make_react_ready_agent(max_steps=3)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -521,6 +605,104 @@ def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(a._execute_tool("boom", "x"))
     assert seen[-1] == ("boom", "x", False)
+
+
+def test_github_tool_early_return_and_subtask_branches(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.github = SimpleNamespace(
+        is_available=lambda: False,
+        list_issues=lambda _state, _limit: (False, []),
+    )
+
+    assert "token" in asyncio.run(a._tool_github_list_issues("open|||2"))
+    assert "title gerekli" in asyncio.run(a._tool_github_create_issue(SimpleNamespace(title="", body="b")))
+    assert "token" in asyncio.run(a._tool_github_comment_issue(SimpleNamespace(number=1, body="x")))
+    assert "token" in asyncio.run(a._tool_github_close_issue(SimpleNamespace(number=1)))
+    assert "token" in asyncio.run(a._tool_github_pr_diff(SimpleNamespace(number=1)))
+
+    a.github = SimpleNamespace(
+        is_available=lambda: True,
+        list_issues=lambda _state, _limit: (False, []),
+    )
+    assert "Issue'lar alınamadı" in asyncio.run(a._tool_github_list_issues("open|||2"))
+    a.github = SimpleNamespace(
+        is_available=lambda: True,
+        list_issues=lambda _state, _limit: (True, []),
+    )
+    assert "issue bulunmuyor" in asyncio.run(a._tool_github_list_issues("open|||2"))
+
+    # _run_subtask: _execute_tool exception -> generic except branch ve fallback dönüş
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return '{"thought":"t","tool":"list_dir","argument":"."}'
+
+    async def _boom(_tool, _arg):
+        raise RuntimeError("subtask fail")
+
+    a.llm = _LLM()
+    a._execute_tool = _boom
+    out = asyncio.run(a._tool_subtask("task"))
+    assert "Maksimum adım" in out
+
+
+def test_get_config_gpu_and_archive_context_filters(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        BASE_DIR=tmp_path,
+        USE_GPU=True,
+        GPU_INFO="RTX",
+        GPU_COUNT=2,
+        CUDA_VERSION="12.1",
+        MEMORY_ENCRYPTION_KEY="",
+        PROJECT_NAME="Sidar",
+        VERSION="1.0",
+        ACCESS_LEVEL="sandbox",
+        DEBUG_MODE=False,
+        AI_PROVIDER="ollama",
+        OLLAMA_URL="http://localhost",
+        CODING_MODEL="cm",
+        TEXT_MODEL="tm",
+        REACT_TIMEOUT=10,
+        MAX_REACT_STEPS=2,
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=100,
+        RAG_CHUNK_OVERLAP=10,
+        CPU_COUNT=2,
+        MAX_MEMORY_TURNS=5,
+        GITHUB_REPO="owner/repo",
+        GEMINI_MODEL="g",
+    )
+    a.security = SimpleNamespace(level_name="sandbox")
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0})
+    a.github = SimpleNamespace(is_available=lambda: False)
+    a.web = SimpleNamespace(is_available=lambda: False)
+    a.pkg = SimpleNamespace(status=lambda: "ok")
+    a.docs = SimpleNamespace(status=lambda: "ok", collection=None)
+    a.todo = SimpleNamespace(__len__=lambda self: 0, list_tasks=lambda: "")
+    a.memory = SimpleNamespace(get_last_file=lambda: "")
+    a._instructions_cache = ""
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+
+    cfg_text = asyncio.run(a._tool_get_config(""))
+    assert "RTX (2 GPU, CUDA 12.1)" in cfg_text
+
+    a.docs = SimpleNamespace(
+        collection=SimpleNamespace(
+            query=lambda **kwargs: {
+                "documents": [["good", "skip-low", ""]],
+                "metadatas": [[{"source": "memory_archive", "title": "T1"}, {"source": "memory_archive", "title": "T2"}, {"source": "memory_archive", "title": "T3"}]],
+                "distances": [[0.1, 0.9, 0.2]],
+            }
+        )
+    )
+    a.cfg.MEMORY_ARCHIVE_TOP_K = 1
+    a.cfg.MEMORY_ARCHIVE_MIN_SCORE = 0.5
+    a.cfg.MEMORY_ARCHIVE_MAX_CHARS = 320
+    ctx = asyncio.run(a._get_memory_archive_context("sorgu"))
+    assert "Geçmiş Sohbet" in ctx
 
 
 def test_tool_handlers_runtime_matrix(monkeypatch):

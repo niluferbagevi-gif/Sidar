@@ -218,6 +218,22 @@ def test_document_and_search_error_and_fallback_paths(tmp_path):
     assert st.search("q", mode="auto", session_id="s1") == (True, "kw")
 
 
+def test_chunk_text_none_argument_and_cfg_fallback(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    st = _new_store(mod, tmp_path)
+
+    # cfg'den fallback alınır
+    out = st._chunk_text("a" * 120, chunk_size=None, chunk_overlap=None)
+    assert isinstance(out, list) and out
+
+    # cfg değerleri yoksa instance default'larına fallback
+    st.cfg = types.SimpleNamespace()
+    st._chunk_size = 30
+    st._chunk_overlap = 5
+    out2 = st._chunk_text("b" * 80, chunk_size=None, chunk_overlap=None)
+    assert isinstance(out2, list) and out2
+
+
 def test_low_level_fetch_and_format_status_paths(tmp_path):
     mod = _load_rag_module(tmp_path)
     st = _new_store(mod, tmp_path)
