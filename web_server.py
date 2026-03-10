@@ -66,6 +66,7 @@ _agent: SidarAgent | None = None
 # Event loop başlamadan önce asyncio.Lock() oluşturmak Python <3.10'da
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
+MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
 
 async def get_agent() -> SidarAgent:
@@ -636,6 +637,18 @@ async def file_content(path: str):
         return JSONResponse({"error": "Belirtilen yol bir dizin."}, status_code=400)
     if target.suffix.lower() not in _SAFE_EXTENSIONS:
         return JSONResponse({"error": f"Desteklenmeyen dosya türü: {target.suffix}"}, status_code=415)
+
+    size_bytes = target.stat().st_size
+    if size_bytes > MAX_FILE_CONTENT_BYTES:
+        return JSONResponse(
+            {
+                "error": (
+                    f"Dosya boyutu limiti aşıldı: {size_bytes} bayt "
+                    f"(maksimum {MAX_FILE_CONTENT_BYTES} bayt)"
+                )
+            },
+            status_code=413,
+        )
 
     try:
         content = target.read_text(encoding="utf-8", errors="replace")

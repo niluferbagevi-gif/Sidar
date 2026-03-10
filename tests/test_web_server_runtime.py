@@ -852,6 +852,12 @@ def test_vendor_index_and_file_content_guard_paths(tmp_path, monkeypatch):
     assert ok_file.status_code == 200
     assert "content" in ok_file.content
 
+    tmp_large = Path("tests") / "_tmp_large.txt"
+    tmp_large.write_text("x" * (mod.MAX_FILE_CONTENT_BYTES + 1), encoding="utf-8")
+    too_large = asyncio.run(mod.file_content(str(tmp_large)))
+    assert too_large.status_code == 413
+    tmp_large.unlink(missing_ok=True)
+
 
 def test_github_repo_pr_and_rag_url_endpoints_error_paths():
     mod = _load_web_server()
