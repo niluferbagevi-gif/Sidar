@@ -951,6 +951,8 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | Git upload blacklist | ✓ Aktif | `github_upload.py:18` |
 | Bilinmeyen erişim seviyesi | ✓ Sandbox'a normalize | `security.py:75` |
 | Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `github_manager.py`, `web_server.py` |
+| GitHub Webhook İmzası | ✓ Aktif (HMAC-SHA256) | `web_server.py` — `/api/webhook` |
+| Büyük Dosya Okuma Limit | ✓ 1 MB sınırı | `web_server.py` — `/file-content` |
 
 ### 5.2 Güvenlik Seviyeleri Davranışı
 
