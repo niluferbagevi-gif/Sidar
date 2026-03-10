@@ -6,6 +6,8 @@ import types
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+
 
 class _Cfg:
     GITHUB_TOKEN = "token"
@@ -562,6 +564,23 @@ def test_github_upload_dunder_main_keyboard_interrupt(monkeypatch):
             assert False
         except SystemExit as exc:
             assert exc.code == 0
+
+
+def test_github_upload_dunder_main_keyboard_interrupt_prints_cancel(monkeypatch, capsys):
+    cfg_mod = types.ModuleType("config")
+    cfg_mod.Config = lambda: _Cfg()
+
+    def _raise_keyboard_interrupt(*_a, **_k):
+        raise KeyboardInterrupt
+
+    with _temporary_config_module(cfg_mod):
+        monkeypatch.setattr(subprocess, "run", _raise_keyboard_interrupt)
+        with pytest.raises(SystemExit) as excinfo:
+            runpy.run_path("github_upload.py", run_name="__main__")
+
+    assert excinfo.value.code == 0
+    out = capsys.readouterr().out
+    assert "İşlem kullanıcı tarafından iptal edildi" in out
 
 def test_main_push_conflict_merge_fails(monkeypatch):
     GU = _load_module()
