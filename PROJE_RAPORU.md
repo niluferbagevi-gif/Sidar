@@ -1141,8 +1141,9 @@ Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
 | `web_ui/sidebar.js` | 394 | **394** | 0 | Değişmedi ✓ |
 | `web_ui/rag.js` | 131 | **131** | 0 | Değişmedi ✓ |
 | `web_ui/app.js` | 339 | **356** | +17 | Güncel |
-| **Web UI Toplam** | **3.528** | **3.551** | +23 | |
+| **web_ui/ (Frontend Toplam)** | **3.528** | **3.551** | +23 | |
 | **Toplam Python kaynak** | **~10.423** (tests hariç) | **~10.746** (tests hariç) | +323 | Multi-agent + Anthropic modülleri |
+| **Toplam Proje Satır Sayısı** | — | **~26.720** (testler dahil) | — | 10.746 kaynak + 15.974 test + 3.551 frontend |
 
 
 ---
