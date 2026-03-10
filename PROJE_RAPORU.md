@@ -1576,7 +1576,7 @@ Minimum kurulum senaryolarına göre gereken paket kümeleri:
 
 ### 16.1 Hata Yönetimi Kalıpları
 
-Kod tabanı boyunca üç farklı hata yönetimi deseni kullanılmaktadır:
+Kod tabanı boyunca dört farklı hata yönetimi deseni kullanılmaktadır:
 
 **1. Tuple Dönüş Deseni** (`Tuple[bool, str]`)
 Araçların ve manager metodlarının büyük çoğunluğu `(başarı, mesaj)` tuple'ı döndürür. İstisna dışarıya sızmaz; hata durumu dönüş değerinden okunur. Bu, ReAct döngüsünün araç hatasını kolayca işlemesini sağlar.
@@ -1602,6 +1602,11 @@ geçersiz şifreleme anahtarı → ValueError, sistem durur
 ```
 Kullanım yeri: `SecurityManager`, `ConversationMemory`
 
+**4. Unified LLM API Hata Sarmalama Deseni**
+`core/llm_client.py`, sağlayıcıya özgü hataları (ör. `401 AuthenticationError`, `429 RateLimitError`, `ConnectionTimeout`) tek tip bir hata sözleşmesine (örn. `LLMAPIError`) dönüştürerek üst katmanlara iletir. Böylece kullanıcı mesajları ve log kayıtları OpenAI, Anthropic, Gemini ve Ollama için tutarlı kalır.
+
+Kullanım yeri: `core/llm_client.py`, `agent/sidar_agent.py`, `web_server.py`
+
 ### 16.2 Loglama Stratejisi
 
 | Seviye | Ne Zaman Kullanılır | Örnekler |
@@ -1617,11 +1622,15 @@ Kullanım yeri: `SecurityManager`, `ConversationMemory`
 
 **RotatingFileHandler:** 10 MB / 5 yedek, UTF-8 — Türkçe log mesajları güvenle yazılır.
 
+**Ajan Bazlı Bağlam (Contextual Logging):** Multi-Agent akışında log satırlarına ajan bağlamı (`[Supervisor]`, `[CoderAgent]`, `[ResearcherAgent]`) eklenerek hatanın hangi orkestrasyon adımında üretildiği izlenebilir hale getirilir.
+
 ### 16.3 Asenkron Hata Yönetimi
 
 `AutoHandle` içindeki her araç çağrısı `asyncio.wait_for()` ile `AUTO_HANDLE_TIMEOUT` (12 sn) içine alınmıştır. `TimeoutError` yakalanarak kullanıcıya anlamlı mesaj döndürülür; event loop bloklanmaz.
 
 ReAct döngüsünde araç exception'ı `_FMT_TOOL_ERR` formatına sarılarak belleğe yazılır ve LLM'e iletilir. LLM bir sonraki adımda farklı strateji deneyebilir.
+
+**Döngü ve Limit Koruması (Graceful Degradation):** ReAct/Multi-Agent adımlarında `MAX_REACT_STEPS` sınırına ulaşıldığında döngü kontrollü şekilde sonlandırılır; sistem sonsuz döngüye girmek yerine o ana kadar toplanan kısmi sonucu ve açıklayıcı hata/uyarı bağlamını kullanıcıya döndürür.
 
 ### 16.4 Bozuk Veri Karantinası
 
