@@ -574,3 +574,178 @@ def test_code_manager_remaining_branches_matrix(manager_factory, monkeypatch, tm
 
     mgr2.docker_available = True
     assert "Docker Sandbox Aktif" in mgr2.status()
+
+def test_code_manager_targeted_missing_lines(manager_factory, monkeypatch, tmp_path):
+    # line 233: execute_code permission guard
+    mgr_guard = manager_factory(can_execute=False)
+    ok, msg = mgr_guard.execute_code("print('x')")
+    assert ok is False and "Kod çalıştırma yetkisi yok" in msg
+
+    # lines 278, 288, 295: docker loop sleep + log truncation + empty-output branch
+    mgr_docker = manager_factory(can_execute=True, level=FULL)
+    mgr_docker.docker_available = True
+    mgr_docker.max_output_chars = 5
+
+    class _ContainerWithLongLog:
+        def __init__(self):
+            self.status = "running"
+            self.reload_calls = 0
+
+        def reload(self):
+            self.reload_calls += 1
+            if self.reload_calls >= 2:
+                self.status = "exited"
+
+        def kill(self):
+            return None
+
+        def remove(self, force=False):
+            return None
+
+        def logs(self, stdout=True, stderr=True):
+            return b"1234567890"
+
+    class _ContainerNoLog(_ContainerWithLongLog):
+        def logs(self, stdout=True, stderr=True):
+            return b""
+
+    class _Containers:
+        def __init__(self):
+            self._calls = 0
+
+        def run(self, **kwargs):
+            self._calls += 1
+            return _ContainerWithLongLog() if self._calls == 1 else _ContainerNoLog()
+
+    class _DockerErrors:
+        class ImageNotFound(Exception):
+            pass
+
+    monkeypatch.setitem(sys.modules, "docker", types.SimpleNamespace(errors=_DockerErrors))
+    monkeypatch.setattr(CM_MOD.time, "sleep", lambda _x: None)
+    mgr_docker.docker_client = SimpleNamespace(containers=_Containers())
+
+    ok, msg = mgr_docker.execute_code("print('x')")
+    assert ok is True and "ÇIKTI KIRPILDI" in msg
+
+    ok, msg = mgr_docker.execute_code("print('x')")
+    assert ok is True and "çıktı üretmedi" in msg
+
+    # lines 336-351: local success/nonzero paths
+    mgr_local = manager_factory(can_execute=True, level=FULL)
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="ok", stderr=""),
+    )
+    ok, msg = mgr_local.execute_code_local("print('ok')")
+    assert ok is True and "Subprocess" in msg
+
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr="boom"),
+    )
+    ok, msg = mgr_local.execute_code_local("raise SystemExit(1)")
+    assert ok is False and "boom" in msg
+
+    # lines 356-357: timeout cleanup unlink exception swallowed
+    def _raise_timeout(*_a, **_k):
+        raise subprocess.TimeoutExpired(cmd="py", timeout=1)
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", _raise_timeout)
+    monkeypatch.setattr(Path, "unlink", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("unlink err")))
+    ok, msg = mgr_local.execute_code_local("while True: pass")
+    assert ok is False and "Zaman aşımı" in msg
+
+    # lines 506-507: glob path outside base skipped by ValueError
+    mgr_glob = manager_factory(can_shell=True)
+    base = tmp_path / "globbase"
+    base.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("print(1)", encoding="utf-8")
+
+    def fake_glob(self, pattern):
+        if self == base.resolve():
+            return [outside.resolve()]
+        return []
+
+    monkeypatch.setattr(Path, "glob", fake_glob)
+    ok, msg = mgr_glob.glob_search("*.py", base_path=str(base))
+    assert ok is True and "Eşleşen dosya bulunamadı" in msg
+
+    # line 571: grep '**'/'/' special branch
+    d = tmp_path / "grepdir"
+    d.mkdir()
+    pyf = d / "a.py"
+    pyf.write_text("needle", encoding="utf-8")
+    ok, msg = mgr_glob.grep_files("needle", path=str(d), file_glob="**/*.py")
+    assert ok is True and "Grep sonuçları" in msg
+
+    # lines 584-585: read_text exception continues
+    def bad_read_text(self, *a, **k):
+        if self.name == "a.py":
+            raise RuntimeError("read fail")
+        return ""
+
+    monkeypatch.setattr(Path, "read_text", bad_read_text)
+    ok, msg = mgr_glob.grep_files("needle", path=str(d), file_glob="**/*.py")
+    assert ok is True and "Eşleşme bulunamadı" in msg
+
+    # lines 607-608: relative_to ValueError fallback rel=fp
+    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: "needle")
+    monkeypatch.setattr(Path, "relative_to", lambda self, other: (_ for _ in ()).throw(ValueError("no rel")))
+    ok, msg = mgr_glob.grep_files("needle", path=str(d), file_glob="**/*.py")
+    assert ok is True and "📄" in msg
+
+    # lines 648-649: list_directory file size formatting path
+    lf = tmp_path / "sz.txt"
+    lf.write_text("x" * 2048, encoding="utf-8")
+    ok, msg = mgr_glob.list_directory(str(tmp_path))
+    assert ok is True and "KB" in msg
+
+    # lines 675-676: validate_json decode error
+    ok, msg = mgr_glob.validate_json("{broken}")
+    assert ok is False and "JSON hatası" in msg
+
+    # lines 721-722: audit_project read error collection
+    ad = tmp_path / "audit"
+    ad.mkdir()
+    (ad / "x.py").write_text("x=1", encoding="utf-8")
+    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("cant read")))
+    rep = mgr_glob.audit_project(str(ad), max_files=5)
+    assert "Okunamadı" in rep
+
+
+def test_init_docker_all_sockets_fail_logs_warning(monkeypatch, tmp_path):
+    sec = DummySecurity(tmp_path)
+    original_init = CM_MOD.CodeManager._init_docker
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    mgr = CM_MOD.CodeManager(sec, tmp_path)
+
+    class _DockerClient:
+        def __init__(self, base_url=None):
+            self.base_url = base_url
+
+        def ping(self):
+            raise RuntimeError("down")
+
+    class _DockerModule:
+        DockerClient = _DockerClient
+
+        @staticmethod
+        def from_env():
+            raise RuntimeError("daemon down")
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "docker":
+            return _DockerModule
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    original_init(mgr)
+    assert mgr.docker_available is False
