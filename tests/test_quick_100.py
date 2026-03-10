@@ -1,93 +1,56 @@
 import asyncio
-import builtins
 import importlib.util
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
-def _load_module(module_name: str, file_path: str, stub_modules: dict[str, object] | None = None):
-    saved = {}
-    stub_modules = stub_modules or {}
+def _load_module(module_name: str, file_path: str, stubs: dict[str, object] | None = None):
+    stubs = stubs or {}
+    saved = {k: sys.modules.get(k) for k in stubs}
     try:
-        for key, value in stub_modules.items():
-            saved[key] = sys.modules.get(key)
-            sys.modules[key] = value
+        for k, v in stubs.items():
+            sys.modules[k] = v
         spec = importlib.util.spec_from_file_location(module_name, Path(file_path))
         mod = importlib.util.module_from_spec(spec)
         assert spec and spec.loader
         spec.loader.exec_module(mod)
         return mod
     finally:
-        for key in stub_modules:
-            if saved[key] is None:
-                sys.modules.pop(key, None)
+        for k in stubs:
+            if saved[k] is None:
+                sys.modules.pop(k, None)
             else:
-                sys.modules[key] = saved[key]
+                sys.modules[k] = saved[k]
 
 
-def test_config_env_fallback_and_hardware(monkeypatch):
+def test_config_vram_fraction_exception(monkeypatch):
     dotenv_mod = types.ModuleType("dotenv")
     dotenv_mod.load_dotenv = lambda *a, **k: None
-
-    printed = []
-    original_exists = Path.exists
-
-    def mock_exists(self):
-        if self.name.startswith(".env"):
-            return False
-        return original_exists(self)
-
-    monkeypatch.setattr(Path, "exists", mock_exists)
-    monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
-    monkeypatch.delenv("SIDAR_ENV", raising=False)
-
-    cfg_missing = _load_module("config_quick100_missing", "config.py", {"dotenv": dotenv_mod})
-    assert cfg_missing is not None
-    assert any("'.env' dosyası bulunamadı" in p for p in printed)
+    cfg = _load_module("config_quick100_vram", "config.py", {"dotenv": dotenv_mod})
 
     fake_torch = types.ModuleType("torch")
     fake_torch.cuda = types.SimpleNamespace(
-        is_available=lambda: False,
-        device_count=lambda: 0,
-        get_device_name=lambda _i: "",
-        set_per_process_memory_fraction=lambda *_a, **_k: None,
+        is_available=lambda: True,
+        device_count=lambda: 1,
+        get_device_name=lambda _i: "Test GPU",
+        set_per_process_memory_fraction=lambda *_a, **_k: (_ for _ in ()).throw(Exception("Simulated VRAM Error")),
     )
-    fake_torch.version = types.SimpleNamespace(cuda=None)
+    fake_torch.version = types.SimpleNamespace(cuda="12.x")
 
-    fake_pynvml = types.ModuleType("pynvml")
-    fake_pynvml.nvmlInit = lambda: None
-    fake_pynvml.nvmlSystemGetDriverVersion = lambda: "550.0"
-    fake_pynvml.nvmlShutdown = lambda: None
-
-    cfg_hw = _load_module("config_quick100_hw", "config.py", {"dotenv": dotenv_mod})
-    monkeypatch.setattr(cfg_hw, "get_bool_env", lambda *_a, **_k: True)
-
-    mp_saved = sys.modules.get("multiprocessing")
     torch_saved = sys.modules.get("torch")
-    nvml_saved = sys.modules.get("pynvml")
-    sys.modules["multiprocessing"] = types.SimpleNamespace(cpu_count=lambda: 16)
     sys.modules["torch"] = fake_torch
-    sys.modules["pynvml"] = fake_pynvml
     try:
-        hw = cfg_hw.check_hardware()
-        assert hw.driver_version == "550.0"
-        assert hw.cpu_count == 16
-        assert hw.gpu_name == "CUDA Bulunamadı"
+        with patch.object(cfg, "get_bool_env", return_value=True):
+            info = cfg.check_hardware()
+            assert info.has_cuda is True
+            assert info.gpu_name == "Test GPU"
     finally:
-        if mp_saved is None:
-            sys.modules.pop("multiprocessing", None)
-        else:
-            sys.modules["multiprocessing"] = mp_saved
         if torch_saved is None:
             sys.modules.pop("torch", None)
         else:
             sys.modules["torch"] = torch_saved
-        if nvml_saved is None:
-            sys.modules.pop("pynvml", None)
-        else:
-            sys.modules["pynvml"] = nvml_saved
 
 
 def test_tooling_missing_branches():
@@ -106,21 +69,15 @@ def test_tooling_missing_branches():
         def model_rebuild(cls):
             return None
 
-    def _field(default=None, **kwargs):
-        return default
-
     fake_pydantic.BaseModel = _BaseModel
-    fake_pydantic.Field = _field
+    fake_pydantic.Field = lambda default=None, **kwargs: default
 
-    tooling = _load_module("agent_tooling_quick100", "agent/tooling.py", {"pydantic": fake_pydantic})
+    tooling = _load_module("agent_tooling_quick100_missing", "agent/tooling.py", {"pydantic": fake_pydantic})
 
-    res_pr = tooling.parse_tool_argument("github_list_prs", "closed ||| 25")
-    assert res_pr.state == "closed"
-    assert res_pr.limit == 25
-
-    res_todo = tooling.parse_tool_argument("scan_project_todos", "src ||| .py, .js")
-    assert res_todo.directory == "src"
-    assert res_todo.extensions == [".py", ".js"]
+    with __import__("pytest").raises(ValueError):
+        tooling.parse_tool_argument("github_create_branch", " ||| main")
+    with __import__("pytest").raises(ValueError):
+        tooling.parse_tool_argument("github_close_issue", "|||1")
 
 
 def test_auto_handle_validate_unsupported():
@@ -140,7 +97,7 @@ def test_auto_handle_validate_unsupported():
     rag_mod.DocumentStore = type("DocumentStore", (), {})
 
     auto_mod = _load_module(
-        "agent_auto_handle_quick100",
+        "agent_auto_quick100_unsupported",
         "agent/auto_handle.py",
         {
             "managers.code_manager": code_mgr,
@@ -153,50 +110,38 @@ def test_auto_handle_validate_unsupported():
         },
     )
 
+    mock_memory = MagicMock()
+    mock_memory.get_last_file.return_value = "test.txt"
     mock_code = MagicMock()
-    mock_code.read_file.return_value = (True, "dummy content")
+    mock_code.read_file.return_value = (True, "dummy")
 
     ah = auto_mod.AutoHandle(
         code=mock_code,
         health=MagicMock(),
         github=MagicMock(),
-        memory=MagicMock(get_last_file=lambda: None),
+        memory=mock_memory,
         web=MagicMock(),
         pkg=MagicMock(),
         docs=MagicMock(),
     )
-
-    is_handled, msg = ah._try_validate_file("sözdizimi doğrula", "validate test.txt")
+    is_handled, msg = ah._try_validate_file("sözdizimi doğrula", "sözdizimi doğrula test.txt")
     assert is_handled is True
     assert "desteklenmiyor" in msg
 
 
-def test_package_info_npm_dict_author():
+def test_package_info_npm_string_author():
     fake_httpx = types.ModuleType("httpx")
     fake_httpx.Timeout = lambda *a, **k: None
     fake_httpx.AsyncClient = object
     fake_httpx.HTTPError = Exception
 
-    pkg_mod = _load_module(
-        "package_info_quick100",
-        "managers/package_info.py",
-        {"httpx": fake_httpx},
-    )
+    pkg_mod = _load_module("pkg_quick100_string_author", "managers/package_info.py", {"httpx": fake_httpx})
     pkg = pkg_mod.PackageInfoManager()
 
     async def mock_get_json(*args, **kwargs):
-        return (
-            True,
-            {
-                "version": "1.0.0",
-                "author": {"name": "Test Author", "email": "test@test.com"},
-                "description": "test package",
-            },
-            "",
-        )
+        return True, {"version": "1.0.0", "author": "String Author", "description": "x"}, ""
 
     pkg._get_json = mock_get_json
     ok, msg = asyncio.run(pkg.npm_info("test-pkg"))
-
     assert ok is True
-    assert "Test Author" in msg
+    assert "String Author" in msg
