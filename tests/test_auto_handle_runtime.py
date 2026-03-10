@@ -486,3 +486,22 @@ def test_auto_handle_read_file_failure():
 
     assert handled is True
     assert "Erişim reddedildi" in resp
+
+
+def test_auto_handle_dot_command_unreachable_fallback(monkeypatch):
+    """Coverage için: regex eşleşip tanınmayan bir komut döndüğünde fallback dalı çalışır."""
+    auto = _make_auto()
+
+    class _FakeMatch:
+        def group(self, _idx):
+            return "unknown_cmd"
+
+    class _FakeRegex:
+        def match(self, _x):
+            return _FakeMatch()
+
+    monkeypatch.setattr(auto, "_DOT_CMD_RE", _FakeRegex())
+    handled, msg = asyncio.run(auto._try_dot_command(".unknown_cmd", ".unknown_cmd"))
+
+    assert handled is False
+    assert msg == ""

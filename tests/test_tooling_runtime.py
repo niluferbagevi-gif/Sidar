@@ -134,4 +134,11 @@ def test_tooling_rejects_whitespace_only_ids_for_branch_and_issue():
         tooling.parse_tool_argument("github_create_branch", "   |||main")
 
     with pytest.raises(ValueError):
-        tooling.parse_tool_argument("github_close_issue", "   ")
+        tooling.parse_tool_argument("github_close_issue", "|||   ")
+
+def test_tooling_github_close_issue_empty_argument():
+    """GithubCloseIssueSchema için boş argümanda beklenen ValueError mesajını doğrular."""
+    tooling = _load_tooling_module()
+
+    with pytest.raises(ValueError, match="Argüman formatı geçersiz"):
+        tooling.parse_tool_argument("github_close_issue", "|||   ")
