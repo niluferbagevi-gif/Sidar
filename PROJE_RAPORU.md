@@ -1158,30 +1158,43 @@ Aşağıdaki tablo her modülün hangi iç modülleri import ettiğini gösterir
 config.py          ←── (bağımlılık YOK — temel taş)
 
 core/llm_client.py ←── config.py
+                     └─ dış sağlayıcılar: Ollama, Gemini, OpenAI, Anthropic (Claude)
 core/memory.py     ←── config.py
 core/rag.py        ←── config.py
 
-managers/security.py      ←── config.py
-managers/code_manager.py  ←── managers/security.py, config.py
-managers/github_manager.py←── (yalnızca dış: PyGithub)
-managers/system_health.py ←── config.py
-managers/web_search.py    ←── config.py
-managers/package_info.py  ←── (yalnızca dış: httpx, packaging)
-managers/todo_manager.py  ←── config.py
+managers/security.py       ←── config.py
+managers/code_manager.py   ←── managers/security.py, config.py
+managers/github_manager.py ←── (yalnızca dış: PyGithub)
+managers/system_health.py  ←── config.py
+managers/web_search.py     ←── config.py
+managers/package_info.py   ←── (yalnızca dış: httpx, packaging)
+managers/todo_manager.py   ←── config.py
 
-agent/definitions.py  ←── (bağımlılık YOK — salt metin sabiti)
-agent/tooling.py      ←── pydantic (dış) — iç modül bağımlılığı YOK
-agent/auto_handle.py  ←── managers/*, core/memory.py, core/rag.py
-agent/sidar_agent.py  ←── config.py, core/*, managers/*, agent/auto_handle.py,
-                            agent/definitions.py, agent/tooling.py
+agent/definitions.py       ←── (bağımlılık YOK — salt metin sabiti)
+agent/tooling.py           ←── pydantic (dış) — iç modül bağımlılığı YOK
+agent/base_agent.py        ←── config.py, core/llm_client.py, agent/tooling.py
+agent/roles/coder_agent.py ←── agent/base_agent.py, managers/code_manager.py, agent/tooling.py
+agent/roles/researcher_agent.py ←── agent/base_agent.py, managers/web_search.py, core/rag.py, agent/tooling.py
+agent/core/supervisor.py   ←── agent/roles/*, core/llm_client.py
+agent/auto_handle.py       ←── managers/*, core/memory.py, core/rag.py
+agent/sidar_agent.py       ←── config.py, core/*, managers/*, agent/auto_handle.py,
+                              agent/definitions.py, agent/tooling.py, agent/core/supervisor.py
 
-cli.py         ←── config.py, agent/sidar_agent.py
-web_server.py  ←── config.py, agent/sidar_agent.py, core/*, managers/*
-main.py        ←── config.py (DummyConfig fallback'i de var)
-github_upload.py ←── (bağımlılık YOK — bağımsız araç)
+main.py (Akıllı Başlatıcı)
+ ├── agent/sidar_agent.py (Eski Tekli Ajan - Geriye Uyumluluk)
+ └── agent/core/supervisor.py (Yeni Multi-Agent Yönlendirici)
+      ├── agent/roles/coder_agent.py (Kod Uzmanı)
+      └── agent/roles/researcher_agent.py (Araştırma Uzmanı)
+
+cli.py          ←── config.py, agent/sidar_agent.py
+web_server.py   ←── config.py, agent/sidar_agent.py, core/*, managers/*
+github_upload.py←── (bağımsız araç)
 ```
 
 **Döngüsel bağımlılık:** Tespit edilmedi. `config.py` bağımlılık ağacının kökü; hiçbir iç modülü import etmez.
+
+
+**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları araç dispatch için `agent/tooling.py` katmanını, konuşma/oturum durumu için `core/memory.py` katmanını ve bilgi erişimi için `core/rag.py` katmanını ortak kullanır.
 
 ---
 
