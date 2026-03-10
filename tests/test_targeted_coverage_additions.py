@@ -346,3 +346,50 @@ def test_ollama_stream_trailing_valid_json_without_newline(monkeypatch):
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
     out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
     assert out == ["son_kelime"]
+
+
+def test_ollama_stream_trailing_newline_message_content_branch(monkeypatch):
+    """_stream_response trailing-decoder while-loop içinde message.content dalını zorlar."""
+    llm_mod = _load_llm_client_module()
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return '\n{"message":{"content":"tail-hit"}}\n'
+            return ""
+
+    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _Ctx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
+    assert out == ["tail-hit"]

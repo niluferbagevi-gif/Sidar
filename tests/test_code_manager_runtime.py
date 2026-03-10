@@ -749,3 +749,20 @@ def test_init_docker_all_sockets_fail_logs_warning(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     original_init(mgr)
     assert mgr.docker_available is False
+
+
+def test_execute_code_local_unlink_swallow_and_truncate_branch(manager_factory, monkeypatch):
+    """execute_code_local içinde unlink hatası yutma (338-339) ve çıktı kırpma (345) yollarını doğrular."""
+    mgr = manager_factory(can_execute=True, level=FULL)
+    mgr.max_output_chars = 8
+
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="x" * 50, stderr=""),
+    )
+
+    monkeypatch.setattr(Path, "unlink", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("unlink failed")))
+    ok, msg = mgr.execute_code_local("print('x')")
+    assert ok is True
+    assert "ÇIKTI KIRPILDI" in msg
