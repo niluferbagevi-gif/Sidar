@@ -54,6 +54,7 @@ dependencies:
 
       # ── AI Sağlayıcıları ──────────────────────────────────────────────────
       - google-generativeai~=0.8.3
+      - openai~=1.51.2
 
       # ── GitHub Entegrasyonu ───────────────────────────────────────────────
       - PyGithub~=2.4.0

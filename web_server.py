@@ -1096,7 +1096,7 @@ def main() -> None:
         help="Erişim seviyesi (varsayılan: .env'deki değer)"
     )
     parser.add_argument(
-        "--provider", choices=["ollama", "gemini"],
+        "--provider", choices=["ollama", "gemini", "openai"],
         help="AI sağlayıcısı (varsayılan: .env'deki değer)"
     )
     parser.add_argument(
