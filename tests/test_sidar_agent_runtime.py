@@ -1268,3 +1268,129 @@ def test_get_memory_archive_context_sync_empty_and_query_error():
 
     a.docs = SimpleNamespace(collection=_BadCollection())
     assert a._get_memory_archive_context_sync("q", 1, 0.1, 300) == ""
+
+
+
+def test_react_loop_json_alias_output_and_summary_fallback(monkeypatch):
+    a = _make_react_ready_agent(max_steps=1)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLMOutputAlias:
+        async def chat(self, **kwargs):
+            return _gen_once('{"output":"benim_ozel_cevabim"}')
+
+    a.llm = _LLMOutputAlias()
+    out = asyncio.run(_collect(a._react_loop("x")))
+    assert out == ["benim_ozel_cevabim"]
+
+    a2 = _make_react_ready_agent(max_steps=1)
+    a2.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+
+    class _LLMUnknownKey:
+        async def chat(self, **kwargs):
+            return _gen_once('{"rastgele_anahtar":"bilinmeyen_deger"}')
+
+    a2.llm = _LLMUnknownKey()
+    out2 = asyncio.run(_collect(a2._react_loop("x")))
+    assert any("bilinmeyen_deger" in x for x in out2)
+
+
+def test_react_loop_parallel_had_error_warning_path(monkeypatch):
+    a = _make_react_ready_agent(max_steps=2)
+    a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
+    a._AUTO_PARALLEL_SAFE = {"list_dir", "health"}
+
+    responses = [
+        '[{"thought":"t1","tool":"list_dir","argument":"."},{"thought":"t2","tool":"health","argument":""}]',
+        '{"thought":"done","tool":"final_answer","argument":"OK"}',
+    ]
+
+    async def _gen_once(text):
+        yield text
+
+    class _LLM:
+        def __init__(self):
+            self.i = 0
+
+        async def chat(self, **kwargs):
+            t = responses[self.i]
+            self.i += 1
+            return _gen_once(t)
+
+    async def _exec(tool, arg):
+        if tool == "list_dir":
+            return "ok-list"
+        raise RuntimeError("parallel boom")
+
+    a.llm = _LLM()
+    monkeypatch.setattr(a, "_execute_tool", _exec)
+    out = asyncio.run(_collect(a._react_loop("x")))
+    assert out[-1] == "OK"
+
+
+def test_tool_read_file_large_content_and_get_config_listdir_oserror(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        RAG_FILE_THRESHOLD=5,
+        BASE_DIR=Path('.'),
+        PROJECT_NAME='Sidar', VERSION='1.0', ACCESS_LEVEL='sandbox', DEBUG_MODE=False,
+        AI_PROVIDER='ollama', USE_GPU=False, GPU_INFO='none', OLLAMA_URL='http://localhost',
+        CODING_MODEL='cm', TEXT_MODEL='tm', MAX_REACT_STEPS=2, MAX_MEMORY_TURNS=5,
+        CUDA_VERSION='N/A', CPU_COUNT=2, GITHUB_REPO='',
+    )
+
+    a.memory = SimpleNamespace(active_session_id='s', set_last_file=lambda *_: None)
+    a.security = SimpleNamespace(level_name='sandbox')
+
+    def _read_file(_path):
+        return True, 'x' * 20
+
+    a.code = SimpleNamespace(
+        read_file=_read_file,
+        get_metrics=lambda: {'files_read': 1, 'files_written': 0},
+    )
+
+    out = asyncio.run(a._tool_read_file('big.txt'))
+    assert 'docs_add_file|big.txt' in out
+
+    import os
+    monkeypatch.setattr(os, 'listdir', lambda *_: (_ for _ in ()).throw(OSError('denied')))
+    cfg_out = asyncio.run(a._tool_get_config(''))
+    assert '[Proje Kök Dizini]' in cfg_out
+
+
+def test_smart_pr_branch_not_found_and_no_changes_paths():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm')
+
+    class _GitHubOn:
+        default_branch = 'main'
+        def is_available(self):
+            return True
+        def create_pull_request(self, *args, **kwargs):
+            return True, 'pr'
+
+    a.github = _GitHubOn()
+
+    class _CodeNoBranch:
+        def run_shell(self, cmd):
+            if 'show-current' in cmd:
+                return True, ''
+            return True, ''
+
+    a.code = _CodeNoBranch()
+    out1 = asyncio.run(a._tool_github_smart_pr(''))
+    assert 'belirlenemedi' in out1
+
+    class _CodeNoChanges:
+        def run_shell(self, cmd):
+            if 'show-current' in cmd:
+                return True, 'feat/x\n'
+            return True, ''
+
+    a.code = _CodeNoChanges()
+    out2 = asyncio.run(a._tool_github_smart_pr(''))
+    assert 'commit edilmiş değişiklik bulunamadı' in out2
