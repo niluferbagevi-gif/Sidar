@@ -555,3 +555,75 @@ def test_web_server_and_agent_error_surface_runtime_stubs(monkeypatch):
     ag._tools = {"write_file": _ok_handler}
     out = asyncio.run(ag._execute_tool("write_file", {"bad": 1}))
     assert out == "ok"
+
+
+def test_ollama_stream_transient_json_error_then_success_in_trailing_loop(monkeypatch):
+    """Trailing parse döngüsünde ilk JSON decode hatası sonrası ikinci satırın başarıyla üretilmesini doğrular."""
+    llm_mod = _load_llm_client_module()
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    real_loads = llm_mod.json.loads
+    state = {"n": 0}
+
+    def flaky_loads(payload):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise llm_mod.json.JSONDecodeError("boom", payload, 0)
+        return real_loads(payload)
+
+    monkeypatch.setattr(llm_mod.json, "loads", flaky_loads)
+
+    class _Decoder:
+        def decode(self, _raw, final=False):
+            if final:
+                return '\n{"message":{"content":"first"}}\n{"message":{"content":"second"}}\n'
+            return ""
+
+    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            if False:
+                yield b""
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _Ctx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
+    assert out == ["second"]
+
+
+def test_web_server_blocked_anyio_import_and_health_route_path():
+    from tests.test_web_server_runtime import _load_web_server_with_blocked_imports, _make_agent
+
+    ws_mod = _load_web_server_with_blocked_imports()
+    agent, _calls = _make_agent(ai_provider="ollama", ollama_online=False)
+
+    async def _fake_get_agent():
+        return agent
+
+    ws_mod.get_agent = _fake_get_agent
+    response = asyncio.run(ws_mod.health_check())
+    assert getattr(response, "status_code", 0) in (200, 503)
