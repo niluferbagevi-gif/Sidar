@@ -261,7 +261,7 @@ def test_ollama_stream_trailing_block_with_custom_decoder(monkeypatch):
     assert out == ["trail"]
 
 
-def test_react_loop_handles_structurally_valid_but_schema_invalid_json():
+def test_react_loop_handles_json_array_items_that_fail_toolcall_validation():
     agent = _make_react_ready_agent(max_steps=1)
     agent.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
 
@@ -270,7 +270,9 @@ def test_react_loop_handles_structurally_valid_but_schema_invalid_json():
 
     class _LLM:
         async def chat(self, **kwargs):
-            return _gen_once('{"thought": "x", "tool": 123}')
+            # JSON parse başarılı; fakat liste öğesi ToolCall şemasına uymadığı için
+            # _react_loop içinde ValidationError dalına düşmelidir.
+            return _gen_once('[{"gecersiz_alan": "deger"}]')
 
     agent.llm = _LLM()
     out = asyncio.run(_collect(agent._react_loop("x")))
@@ -287,6 +289,18 @@ def test_recursive_chunk_text_flushes_current_chunk_before_splitting_large_part(
     assert chunks
     assert "kisa metin." in chunks
     assert any(chunk.startswith(" BU_TEK") for chunk in chunks)
+
+
+def test_recursive_chunk_text_flushes_before_large_newline_part_and_continues(tmp_path):
+    rag_mod = _load_rag_module(tmp_path)
+    store = _new_store(rag_mod, tmp_path)
+
+    text = "Kisa Metin\n" + ("A" * 2000)
+    chunks = store._recursive_chunk_text(text, size=1000, overlap=0)
+
+    assert chunks
+    assert chunks[0] == "Kisa Metin"
+    assert any(chunk.startswith("\nA") for chunk in chunks[1:])
 
 
 def test_web_search_auto_tavily_actionable_and_ddg_list_no_results(monkeypatch):
