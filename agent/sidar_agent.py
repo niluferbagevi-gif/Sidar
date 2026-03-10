@@ -108,7 +108,7 @@ class SidarAgent:
     Tamamen asenkron ağ istekleri, stream, yapısal veri ve sonsuz vektör hafıza uyumlu yapı.
     """
 
-    VERSION = "2.7.0"  # Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar
+    VERSION = "2.10.8"  # Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar
 
     def __init__(self, cfg: Config = None) -> None:
         self.cfg = cfg or Config()

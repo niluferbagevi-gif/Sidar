@@ -1,7 +1,7 @@
 
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: 2.7.0 (Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar)
+Sürüm: 2.10.8 (Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -220,12 +220,12 @@ def check_hardware() -> HardwareInfo:
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: 2.7.0
+    Sürüm: 2.10.8
     """
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "2.7.0"
+    VERSION: str      = "2.10.8"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = get_bool_env("ENABLE_MULTI_AGENT", False)
 
