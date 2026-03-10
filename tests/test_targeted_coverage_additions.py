@@ -709,7 +709,7 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
     res = asyncio.run(ws_mod.ddos_rate_limit_middleware(req, _next))
     assert res == "OK"
 
-    # 409 ve 369-379: aktif task cancel + response hatasında hata json gönderimi
+    # 369-371: websocket chunk ve done gönderimi
     class _WS:
         def __init__(self):
             self.sent = []
@@ -721,15 +721,12 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
 
         async def send_json(self, payload):
             self.sent.append(payload)
-            if payload.get("chunk") == "x":
-                raise RuntimeError("send failed")
 
         async def receive_text(self):
             self._i += 1
             if self._i == 1:
                 return '{"message":"first"}'
-            if self._i == 2:
-                return '{"message":"second"}'
+            await asyncio.sleep(0.05)
             raise ws_mod.WebSocketDisconnect()
 
     ws = _WS()
@@ -744,7 +741,8 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
 
     agent.respond = _respond
     asyncio.run(ws_mod.websocket_chat(ws))
-    assert isinstance(ws.sent, list)
+    assert any(p.get("chunk") == "x" for p in ws.sent)
+    assert any(p.get("done") is True for p in ws.sent)
 
     # 520-527: prometheus import başarılı branch
     prom = types.ModuleType("prometheus_client")
@@ -775,6 +773,91 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
     prs = asyncio.run(ws_mod.github_prs())
     detail = asyncio.run(ws_mod.github_pr_detail(7))
     assert prs.content["success"] is True and detail.content["success"] is True
+
+
+def test_web_server_upload_exception_and_finally_paths(monkeypatch):
+    from tests.test_web_server_runtime import _FakeUploadFile, _load_web_server
+
+    ws_mod = _load_web_server()
+
+    class _Docs:
+        def add_document_from_file(self, *_args):
+            return True, "ok"
+
+    agent = types.SimpleNamespace(
+        memory=types.SimpleNamespace(active_session_id="s1"),
+        docs=_Docs(),
+    )
+
+    async def _fake_get_agent():
+        return agent
+
+    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
+
+    # try/except: diske yazma hatası -> 500
+    monkeypatch.setattr(ws_mod.shutil, "copyfileobj", lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk fail")))
+    up1 = _FakeUploadFile("x.txt", b"1")
+    res1 = asyncio.run(ws_mod.upload_rag_file(up1))
+    assert res1.status_code == 500
+    assert "disk fail" in res1.content.get("error", "")
+    assert up1.closed is True
+
+    # finally: close/rmtree hataları yutulmalı, başarılı yanıt dönmeli
+    monkeypatch.setattr(ws_mod.shutil, "copyfileobj", lambda *_a, **_k: None)
+    monkeypatch.setattr(ws_mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rm fail")))
+    up2 = _FakeUploadFile("x2.txt", b"2")
+
+    async def _close_fail():
+        raise RuntimeError("close fail")
+
+    up2.close = _close_fail
+    res2 = asyncio.run(ws_mod.upload_rag_file(up2))
+    assert res2.status_code == 200
+    assert res2.content["success"] is True
+
+
+def test_websocket_error_send_fallback_pass_branch(monkeypatch):
+    from tests.test_web_server_runtime import _load_web_server, _make_agent
+
+    ws_mod = _load_web_server()
+    agent, _ = _make_agent()
+
+    async def _fake_get_agent():
+        return agent
+
+    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._i = 0
+            self.calls = 0
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            self._i += 1
+            if self._i == 1:
+                return '{"message":"boom"}'
+            await asyncio.sleep(0.05)
+            raise ws_mod.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            self.calls += 1
+            raise RuntimeError("send fail")
+
+    async def _rl(*_a, **_k):
+        return False
+
+    async def _respond(_msg):
+        yield "x"
+
+    monkeypatch.setattr(ws_mod, "_redis_is_rate_limited", _rl)
+    agent.respond = _respond
+    ws = _WS()
+    asyncio.run(ws_mod.websocket_chat(ws))
+    assert ws.calls >= 2
 
 
 def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch):
