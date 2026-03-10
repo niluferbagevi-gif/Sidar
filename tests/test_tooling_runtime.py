@@ -82,6 +82,9 @@ def test_tooling_uncovered_parse_branches_runtime():
     parsed_close_issue = tooling.parse_tool_argument("github_close_issue", "42")
     assert parsed_close_issue.number == 42
 
+    parsed_pr_diff = tooling.parse_tool_argument("github_pr_diff", "42")
+    assert parsed_pr_diff.number == 42
+
     with pytest.raises(ValueError):
         tooling.parse_tool_argument("github_create_branch", "")
 

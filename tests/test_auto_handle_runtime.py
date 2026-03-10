@@ -256,6 +256,9 @@ def test_github_variants_unavailable_and_pr_modes():
     handled, msg = auto2._try_github_commits("5 commit listele")
     assert handled is True and msg == "commits:5"
 
+    handled, msg = auto2._try_github_commits("son commitleri listele")
+    assert handled is True and msg == "commits:10"
+
     handled, msg = auto2._try_github_list_prs("kapalı pr listele", "kapalı pr listele")
     assert handled is True and msg == "prs:closed:10"
 
