@@ -70,9 +70,19 @@ async function loadModelInfo() {
 
     const inputLabel = document.getElementById('input-model-label');
     if (inputLabel) inputLabel.textContent = display;
+
+    const modelSelect = document.getElementById('model-select');
+    if (modelSelect) modelSelect.value = provider;
   } catch {
     // Sessizce geç
   }
+}
+
+function onModelSelectChange() {
+  const modelSelect = document.getElementById('model-select');
+  if (!modelSelect) return;
+  const provider = (modelSelect.value || '').toLowerCase();
+  showUiNotice(`Seçilen AI sağlayıcı: ${provider}. Değişikliği uygulamak için servisi --provider ${provider} ile başlatın.`, 'warn');
 }
 
 /* ─── Git bilgisi yükleme ───────────────────────────────── */
@@ -231,6 +241,9 @@ document.addEventListener('keydown', e => {
 
 
 window.addEventListener('DOMContentLoaded', async () => {
+  const modelSelect = document.getElementById('model-select');
+  if (modelSelect) modelSelect.addEventListener('change', onModelSelectChange);
+
   applyStoredTheme();
   await loadSessions();
   if (currentSessionId) {
