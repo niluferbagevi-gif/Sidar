@@ -29,3 +29,15 @@ def test_supervisor_returns_legacy_fallback_for_code_intent():
     s = SupervisorAgent()
     out = asyncio.run(s.run_task("Bu dosyayı patch et ve PR hazırla"))
     assert out.startswith("[LEGACY_FALLBACK]")
+
+
+def test_supervisor_routes_code_intent_to_coder(monkeypatch):
+    s = SupervisorAgent()
+
+    async def fake_coder_run_task(prompt: str) -> str:
+        return f"CODER:{prompt}"
+
+    monkeypatch.setattr(s.coder, "run_task", fake_coder_run_task)
+
+    out = asyncio.run(s.run_task("test.py isimli bir dosyaya 'print(hello)' yaz"))
+    assert out.startswith("CODER:")
