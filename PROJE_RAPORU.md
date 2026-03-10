@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-10 (v2.10.8 — Audit #6 kapanış: Audit #5'te açık kalan OpenAI provider entegrasyonu ve boş test artifact'ı kapatıldı; kod satır sayıları güncellendi)
+> **Son Güncelleme:** 2026-03-10 (v2.10.8 — Anthropic sağlayıcı entegrasyonu eklendi, RAG cold-start prewarm tamamlandı, Audit #6 kapanışı korunuyor)
 > **Proje Sürümü:** 2.10.7
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: 10.393 satır; Test: ~15.839 satır; Web UI: 3.528 satır.
 
@@ -197,7 +197,7 @@ sidar_project/
 
 **`Config` Sınıfı Parametre Grupları:**
 
-- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `OLLAMA_URL`, `CODING_MODEL`, `TEXT_MODEL`
+- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `OLLAMA_URL`, `CODING_MODEL`, `TEXT_MODEL`
 - **Güvenlik:** `ACCESS_LEVEL`, `MEMORY_ENCRYPTION_KEY`
 - **GPU/Donanım:** `USE_GPU`, `GPU_DEVICE`, `GPU_COUNT`, `CUDA_VERSION`, `GPU_MEMORY_FRACTION`, `GPU_MIXED_PRECISION`, `MULTI_GPU`
 - **ReAct:** `MAX_REACT_STEPS` (10), `REACT_TIMEOUT` (60), `SUBTASK_MAX_STEPS` (5), `AUTO_HANDLE_TIMEOUT` (12)
@@ -490,16 +490,17 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (570 satır)
+### 3.8 `core/llm_client.py` — LLM İstemcisi (Anthropic dahil)
 
-**Amaç:** Ollama, Gemini ve OpenAI için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
+**Amaç:** Ollama, Gemini, OpenAI ve Anthropic için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
 
 **Sınıf Hiyerarşisi:**
 ```
 BaseLLMClient (ABC)
 ├── OllamaClient
 ├── GeminiClient
-└── OpenAIClient          ← v2.9.0 yeni eklenti
+├── OpenAIClient          ← v2.9.0 yeni eklenti
+└── AnthropicClient       ← v2.10.8 yeni eklenti
 ```
 
 **`LLMClient.chat()` Parametreleri:**
@@ -1189,7 +1190,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `AI_PROVIDER` | `ollama` | `ollama`, `gemini` veya `openai` |
+| `AI_PROVIDER` | `ollama` | `ollama`, `gemini`, `openai` veya `anthropic` |
 | `GEMINI_API_KEY` | `""` | Gemini modu için zorunlu |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Kullanılacak Gemini model adı |
 | `OLLAMA_URL` | `http://localhost:11434/api` | Ollama API adresi |
@@ -1199,6 +1200,9 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `OPENAI_API_KEY` | `""` | OpenAI modu için zorunlu |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model adı |
 | `OPENAI_TIMEOUT` | `60` | OpenAI istek zaman aşımı (sn) |
+| `ANTHROPIC_API_KEY` | `""` | Anthropic modu için zorunlu |
+| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-latest` | Anthropic model adı |
+| `ANTHROPIC_TIMEOUT` | `60` | Anthropic istek zaman aşımı (sn) |
 
 ### 12.2 Güvenlik ve Erişim
 
@@ -1416,9 +1420,9 @@ Bu bölüm, mevcut kodun sınırlarından ve mimari boşluklarından çıkarıla
 **Uygulama notu:** `ENABLE_TRACING=true` ve `OTEL_EXPORTER_ENDPOINT` ayarlıysa OTLP exporter üzerinden collector/Jaeger hattına telemetri gönderilir.
 
 #### 14.8.4 Model Önbellekleme ve Soğuk Start
-**Mevcut durum:** ChromaDB embedding modeli ilk belgede yükleniyor; soğuk start gecikmesi olabilir.
+**Güncel durum (v2.10.8):** ✅ Tamamlandı. FastAPI lifespan başlangıcında RAG embedding prewarm tetikleniyor; ilk kullanıcı RAG isteğindeki cold-start gecikmesi startup aşamasına taşındı.
 **Not:** BM25 artık SQLite FTS5 disk tabanlı olduğu için `prebuild_bm25_index()` akışı kaldırılmıştır.
-**Öneri:** `startup` event'inde yalnızca gerekli model/vektör bağlantılarının ısıtılması (prewarm) değerlendirilebilir.
+**Uygulama:** `web_server.py` içinde `_prewarm_rag_embeddings()` görevi `_app_lifespan` ile arka planda başlatılır.
 
 ---
 

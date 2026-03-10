@@ -1,4 +1,3 @@
-
 """
 Sidar Project - Ultimate Launcher
 =================================
@@ -121,6 +120,9 @@ def preflight(provider: str) -> None:
     if provider == "openai" and not getattr(cfg, "OPENAI_API_KEY", None):
         print(f"{RED}⚠ Uyarı: OPENAI_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
 
+    if provider == "anthropic" and not getattr(cfg, "ANTHROPIC_API_KEY", None):
+        print(f"{RED}⚠ Uyarı: ANTHROPIC_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
+
     if provider == "ollama":
         try:
             import httpx
@@ -226,12 +228,13 @@ def run_wizard() -> int:
     mode = ask_choice("1. Hangi arayüzle başlatmak istiyorsunuz?", mode_options, "1")
     print("-" * 50)
 
-    default_provider_map = {"ollama": "1", "gemini": "2", "openai": "3"}
+    default_provider_map = {"ollama": "1", "gemini": "2", "openai": "3", "anthropic": "4"}
     default_provider = default_provider_map.get(getattr(cfg, "AI_PROVIDER", "ollama").lower(), "1")
     provider_options = {
         "1": ("Ollama (Yerel LLM)", "ollama"),
         "2": ("Gemini (Bulut LLM)", "gemini"),
-        "3": ("OpenAI (Bulut LLM)", "openai")
+        "3": ("OpenAI (Bulut LLM)", "openai"),
+        "4": ("Anthropic Claude (Bulut LLM)", "anthropic")
     }
     provider = ask_choice("2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider)
     print("-" * 50)
@@ -300,7 +303,7 @@ def execute_command(cmd: List[str], capture_output: bool = False, child_log_path
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat")
-    parser.add_argument("--provider", choices=["ollama", "gemini", "openai"], help="Hızlı başlat için AI sağlayıcı")
+    parser.add_argument("--provider", choices=["ollama", "gemini", "openai", "anthropic"], help="Hızlı başlat için AI sağlayıcı")
     parser.add_argument("--level", choices=["restricted", "sandbox", "full"], help="Hızlı başlat için erişim seviyesi")
     parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
     parser.add_argument("--host", help="Hızlı web başlat için host adresi")

@@ -238,12 +238,15 @@ class Config:
     REQUIRED_DIRS: List[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
 
     # ─── AI Sağlayıcı ────────────────────────────────────────
-    AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini" | "openai"
+    AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini" | "openai" | "anthropic"
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL:   str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL:   str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_TIMEOUT: int = get_int_env("OPENAI_TIMEOUT", 60)
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    ANTHROPIC_MODEL:   str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+    ANTHROPIC_TIMEOUT: int = get_int_env("ANTHROPIC_TIMEOUT", 60)
 
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
@@ -405,6 +408,7 @@ class Config:
         mode_map = {
             "online": "gemini", "gemini": "gemini",
             "local":  "ollama", "ollama": "ollama",
+            "anthropic": "anthropic",
         }
         m_lower = mode.lower()
         if m_lower in mode_map:
@@ -456,6 +460,13 @@ class Config:
         if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
             logger.error(
                 "❌ OpenAI modu seçili ama OPENAI_API_KEY ayarlanmamış!\n"
+                "   .env dosyasını kontrol edin."
+            )
+            is_valid = False
+
+        if cls.AI_PROVIDER == "anthropic" and not cls.ANTHROPIC_API_KEY:
+            logger.error(
+                "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY ayarlanmamış!\n"
                 "   .env dosyasını kontrol edin."
             )
             is_valid = False
@@ -538,8 +549,10 @@ class Config:
             print(f"  TEXT Modeli      : {cls.TEXT_MODEL}")
         elif cls.AI_PROVIDER == "gemini":
             print(f"  Gemini Modeli    : {cls.GEMINI_MODEL}")
-        else:
+        elif cls.AI_PROVIDER == "openai":
             print(f"  OpenAI Modeli    : {cls.OPENAI_MODEL}")
+        else:
+            print(f"  Anthropic Modeli : {cls.ANTHROPIC_MODEL}")
         print(f"  RAG Dizini       : {cls.RAG_DIR.relative_to(BASE_DIR)}")
         enc_status = "Etkin (Fernet)" if cls.MEMORY_ENCRYPTION_KEY else "Devre Dışı"
         print(f"  Bellek Şifreleme : {enc_status}")
