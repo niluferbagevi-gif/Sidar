@@ -1225,9 +1225,9 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `OLLAMA_TIMEOUT` | `30` | Ollama istek zaman aşımı (sn) |
 | `CODING_MODEL` | `qwen2.5-coder:7b` | Ollama — kod görevleri modeli |
 | `TEXT_MODEL` | `gemma2:9b` | Ollama — metin görevleri modeli |
-| `OPENAI_API_KEY` | `""` | OpenAI modu için zorunlu *(⚠️ config.py class attribute yok; llm_client.py `getattr` ile erişir; .env.example ve --provider arg'ında eksik)* |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model adı *(⚠️ config.py'da tanımlanmamış)* |
-| `OPENAI_TIMEOUT` | `60` | OpenAI istek zaman aşımı (sn) *(⚠️ config.py'da tanımlanmamış)* |
+| `OPENAI_API_KEY` | `""` | OpenAI modu için zorunlu |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model adı |
+| `OPENAI_TIMEOUT` | `60` | OpenAI istek zaman aşımı (sn) |
 
 ### 12.2 Güvenlik ve Erişim
 

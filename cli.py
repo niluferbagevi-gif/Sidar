@@ -235,7 +235,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=["ollama", "gemini"],
+        choices=["ollama", "gemini", "openai"],
         default=getattr(cfg_defaults, "AI_PROVIDER", "ollama"),
         help="AI sağlayıcısı",
     )
