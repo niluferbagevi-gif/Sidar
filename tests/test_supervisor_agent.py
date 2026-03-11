@@ -43,7 +43,11 @@ def test_supervisor_routes_code_intent_to_coder(monkeypatch):
     async def fake_coder_run_task(prompt: str) -> str:
         return f"CODER:{prompt}"
 
+    async def fake_reviewer_run_task(prompt: str) -> str:
+        return "[REVIEW:PASS] Kod uygun."
+
     monkeypatch.setattr(s.coder, "run_task", fake_coder_run_task)
+    monkeypatch.setattr(s.reviewer, "run_task", fake_reviewer_run_task)
 
     out = asyncio.run(s.run_task("test.py isimli bir dosyaya 'print(hello)' yaz"))
     assert out.startswith("CODER:")
