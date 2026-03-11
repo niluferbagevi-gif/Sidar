@@ -8,15 +8,27 @@ def test_pytest_ini_keeps_core_pytest_discovery_settings():
     assert "python_files = test_*.py" in src
 
 
-def test_run_tests_script_enforces_global_core_and_benchmark_checks():
+def test_run_tests_script_enforces_95pct_quality_gate_and_benchmarks():
     src = Path("run_tests.sh").read_text(encoding="utf-8")
     assert "--cov=." in src
-    assert "--cov-fail-under=70" in src
+    assert "COVERAGE_FAIL_UNDER" in src
+    assert "95" in src
     assert "--cov=managers.security" in src
     assert "--cov=core.memory" in src
     assert "--cov=core.rag" in src
-    assert "--cov-fail-under=80" in src
     assert "tests/test_benchmark.py" in src
+
+
+def test_coveragerc_has_fail_under_95():
+    src = Path(".coveragerc").read_text(encoding="utf-8")
+    assert "[report]" in src
+    assert "fail_under = 95" in src
+
+
+def test_ci_has_explicit_coverage_quality_gate_step():
+    src = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "Enforce coverage quality gate (95%)" in src
+    assert "--cov-fail-under=95" in src
 
 
 def test_environment_includes_benchmark_dependency():
