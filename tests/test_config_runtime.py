@@ -463,17 +463,9 @@ def test_config_ultimate_edge_cases(monkeypatch, capsys):
     hw = cfg_mod.check_hardware()
     assert hw.gpu_name == "MockGPU"
 
-def test_config_warns_when_multi_agent_disabled(monkeypatch):
+def test_config_enforces_supervisor_mode(monkeypatch):
     monkeypatch.setenv("ENABLE_MULTI_AGENT", "false")
     cfg_mod = _load_config_module()
 
-    warned = []
-
-    def _fake_warn(msg, category=None, stacklevel=1):
-        warned.append((msg, category))
-
-    monkeypatch.setattr(cfg_mod.warnings, "warn", _fake_warn)
-    cfg_mod.Config()
-
-    assert warned
-    assert warned[0][1] is DeprecationWarning
+    c = cfg_mod.Config()
+    assert c.ENABLE_MULTI_AGENT is True

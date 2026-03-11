@@ -2335,3 +2335,25 @@ Bu oturumda çoklu sağlayıcı maliyet görünürlüğü için metrik katmanı 
 4. **Test kapsamı artırıldı**
    - `tests/test_llm_metrics_runtime.py` içine maliyet ve budget sözleşmesi doğrulamaları eklendi.
    - `tests/test_web_ui_runtime_improvements.py` içine bütçe endpoint entegrasyonu testi eklendi.
+
+---
+
+### Session 2026-03-11 — Legacy ReAct Akışının Emekliye Ayrılması
+
+Bu oturumda mimari sadeleştirme kapsamında tekli ajan fallback yolu devreden çıkarılarak Supervisor-first mimariye geçiş tamamlandı:
+
+1. **`SidarAgent.respond` tek akışa indirildi**
+   - Girdi işleme artık doğrudan `SupervisorAgent` çağrısı ile yürütülüyor.
+   - Legacy `auto_handle/direct-route/ReAct` fallback zinciri yanıt akışından kaldırıldı.
+
+2. **`_try_multi_agent` davranışı zorunlu hale getirildi**
+   - Feature flag kontrolü kaldırıldı.
+   - Metot her zaman supervisor örneğini başlatıp görevi ona delege ediyor.
+
+3. **`Config` tarafında bayrak sadeleştirmesi**
+   - `ENABLE_MULTI_AGENT` artık çevresel değişkenle kapatılamıyor; sabit `True` olarak çalışıyor.
+   - Geçiş dönemi deprecation uyarısı kaldırıldı (legacy yol artık aktif değil).
+
+4. **Test güncellemeleri**
+   - `tests/test_sidar_agent_runtime.py` içinde `_try_multi_agent` için daima supervisor kullanan senaryolar güncellendi.
+   - `tests/test_config_runtime.py` içinde yapılandırmanın supervisor modunu zorunlu tuttuğunu doğrulayan test eklendi/güncellendi.
