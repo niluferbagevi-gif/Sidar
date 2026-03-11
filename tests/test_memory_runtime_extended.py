@@ -124,3 +124,22 @@ def test_memory_del_calls_force_save_and_swallows_exceptions(tmp_path):
 
     with patch.object(mem, "force_save", side_effect=Exception("save-fail")):
         mem.__del__()
+
+def test_estimate_tokens_importerror_fallback(tmp_path):
+    mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
+    content = "Bu bir test mesajıdır ve token fallback hesabı çalışmalıdır."
+    mem._turns = [{"role": "user", "content": content}]
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tiktoken":
+            raise ImportError("simulated missing tiktoken")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=_fake_import):
+        token_count = mem._estimate_tokens()
+
+    assert token_count == int(len(content) / 3.5)
