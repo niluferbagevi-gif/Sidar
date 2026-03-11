@@ -47,3 +47,24 @@ def test_supervisor_routes_code_intent_to_coder(monkeypatch):
 
     out = asyncio.run(s.run_task("test.py isimli bir dosyaya 'print(hello)' yaz"))
     assert out.startswith("CODER:")
+
+def test_supervisor_retries_coder_when_review_fails(monkeypatch):
+    s = SupervisorAgent()
+    calls = {"coder": 0}
+
+    async def fake_coder_run_task(prompt: str) -> str:
+        calls["coder"] += 1
+        return f"CODER_RUN_{calls['coder']}:{prompt}"
+
+    async def fake_review_run_task(prompt: str) -> str:
+        if "CODER_RUN_1" in prompt:
+            return "[REVIEW:FAIL] regresyon bulundu"
+        return "[REVIEW:PASS] kalite uygun"
+
+    monkeypatch.setattr(s.coder, "run_task", fake_coder_run_task)
+    monkeypatch.setattr(s.reviewer, "run_task", fake_review_run_task)
+
+    out = asyncio.run(s.run_task("özellik ekle"))
+
+    assert calls["coder"] == 2
+    assert "2. tur" in out

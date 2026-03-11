@@ -358,6 +358,9 @@ class Config:
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
+    # ─── Multi-Agent geçiş ayarları ─────────────────────────
+    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "bash run_tests.sh")
+
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
     # ─────────────────────────────────────────────────────────
@@ -365,6 +368,14 @@ class Config:
     def __init__(self) -> None:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
+
+        if not self.ENABLE_MULTI_AGENT:
+            msg = (
+                "ENABLE_MULTI_AGENT=false ayarı deprecated durumdadır; "
+                "legacy tekli ajan akışı v3.0 ile kaldırılacaktır."
+            )
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+            logger.warning(msg)
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:

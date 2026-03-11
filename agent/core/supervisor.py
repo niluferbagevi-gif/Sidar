@@ -17,7 +17,7 @@ from agent.roles.reviewer_agent import ReviewerAgent
 
 
 class SupervisorAgent(BaseAgent):
-    """Supervisor merkezli orkestrasyon: coder -> reviewer zincirini destekler."""
+    """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
 
     SYSTEM_PROMPT = "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."
 
@@ -42,6 +42,20 @@ class SupervisorAgent(BaseAgent):
         if any(t in text for t in ("github", "pull request", "issue", "review", "incele")):
             return "review"
         return "code"
+
+    @staticmethod
+    def _review_requires_revision(review_summary: str) -> bool:
+        text = (review_summary or "").lower()
+        revision_signals = (
+            "fail(",
+            "[test:fail",
+            "regresyon",
+            "hata",
+            "risk: yüksek",
+            "iyileştirme gerekli",
+            "düzelt",
+        )
+        return any(sig in text for sig in revision_signals)
 
     async def _delegate(self, receiver: str, goal: str, intent: str, parent_task_id: Optional[str] = None) -> TaskResult:
         task_id = str(uuid.uuid4())
@@ -71,6 +85,25 @@ class SupervisorAgent(BaseAgent):
             return result.summary
 
         code_result = await self._delegate("coder", task_prompt, "code")
-        review_goal = f"list_prs|open\ncontext:{code_result.summary[:500]}"
+        review_goal = f"review_code|{code_result.summary[:800]}"
         review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)
+
+        if self._review_requires_revision(review_result.summary):
+            revise_prompt = (
+                "Reviewer geri bildirimi sonrası düzeltme yap. "
+                f"Orijinal görev: {task_prompt}\n"
+                f"Reviewer notu: {review_result.summary[:800]}"
+            )
+            second_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
+            final_review = await self._delegate(
+                "reviewer",
+                f"review_code|{second_code.summary[:800]}",
+                "review",
+                parent_task_id=second_code.task_id,
+            )
+            return (
+                f"{second_code.summary}\n\n---\n"
+                f"Reviewer QA Özeti (2. tur):\n{final_review.summary}"
+            )
+
         return f"{code_result.summary}\n\n---\nReviewer QA Özeti:\n{review_result.summary}"

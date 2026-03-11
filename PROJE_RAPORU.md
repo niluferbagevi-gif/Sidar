@@ -2289,3 +2289,27 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
 3. ✅ Satır sayısı metrikleri `scripts/audit_metrics.sh` ile standardize edildi (CI adımı aktif).
 4. ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; dokümantasyon tutarlılığı sağlandı.
+---
+
+### Session 2026-03-11 — Multi-Agent Geçiş Sertleştirme ve Reviewer QA Döngüsü
+
+Bu oturumda mimari sadeleştirme ve kalite döngüsü için aşağıdaki iyileştirmeler uygulandı:
+
+1. **Config seviyesinde deprecation uyarısı eklendi**
+   - `ENABLE_MULTI_AGENT=false` durumda `Config()` oluşturulurken `DeprecationWarning` üretiliyor.
+   - Log kaydı ile birlikte v3.0’da legacy tekli ajan akışının kaldırılacağı netleştirildi.
+
+2. **Supervisor workflow güçlendirildi (Coder -> Reviewer -> Coder -> Reviewer)**
+   - Varsayılan kod niyetinde ilk tur `coder` çıktısı `review_code|...` formatıyla `reviewer` ajanına gönderiliyor.
+   - Reviewer çıktısında regresyon/hata sinyali tespit edilirse Supervisor ikinci bir coder düzeltme turu tetikliyor.
+   - İkinci tur sonrası final reviewer özeti kullanıcıya sunuluyor.
+
+3. **ReviewerAgent üretim entegrasyonu derinleştirildi**
+   - `review_code|<context>` görevi eklendi.
+   - Reviewer, merkezi konfigürasyondan gelen `REVIEWER_TEST_COMMAND` ile test koşturup PASS/FAIL kalite özeti üretiyor.
+   - Doğal dilde gelen “incele/review/regresyon/test” niyetleri de `review_code` akışına yönlendiriliyor.
+
+4. **Test kapsamı güncellendi**
+   - `Config` deprecation uyarısı testi eklendi.
+   - Supervisor’ın reviewer başarısızlığında coder’ı yeniden çağırdığı akış testi eklendi.
+   - Reviewer `review_code` kalite raporu üretimi için test eklendi.

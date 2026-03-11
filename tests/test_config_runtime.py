@@ -280,7 +280,7 @@ def test_runtime_config_provider_and_validate_branches(monkeypatch):
     cfg_mod.Config.OLLAMA_URL = "http://invalid:11434/api"
     valid3 = cfg_mod.Config.validate_critical_settings()
     assert valid3 is True
-    assert any("ulaşılamadı" in w for w in warns)
+    assert any(("ulaşılamadı" in w) or ("Ollama yanıt kodu" in w) for w in warns)
 
 
 def test_check_hardware_general_exception_and_vram_set_exception(monkeypatch):
@@ -462,3 +462,18 @@ def test_config_ultimate_edge_cases(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "torch", _Torch())
     hw = cfg_mod.check_hardware()
     assert hw.gpu_name == "MockGPU"
+
+def test_config_warns_when_multi_agent_disabled(monkeypatch):
+    monkeypatch.setenv("ENABLE_MULTI_AGENT", "false")
+    cfg_mod = _load_config_module()
+
+    warned = []
+
+    def _fake_warn(msg, category=None, stacklevel=1):
+        warned.append((msg, category))
+
+    monkeypatch.setattr(cfg_mod.warnings, "warn", _fake_warn)
+    cfg_mod.Config()
+
+    assert warned
+    assert warned[0][1] is DeprecationWarning
