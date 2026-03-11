@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v2.7.0** — ReAct mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v2.10.8** — ReAct mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║  Yazılım Mimarı & Baş Mühendis AI  v2.7.0  ║
+ ║  Yazılım Mimarı & Baş Mühendis AI  v2.10.8  ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -108,7 +108,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v2.7.0)
+### Web Arayüzü (v2.10.8)
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)
@@ -126,7 +126,7 @@
 
 ---
 
-## v2.7.0 Öne Çıkan Yetenekler
+## v2.10.8 Öne Çıkan Yetenekler
 
 ### ✅ TodoManager ile Görev Takibi
 
@@ -241,6 +241,8 @@ alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade
 ```
 
 SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
+
+Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki varsayılan URL'nin önüne geçirir.
 
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın.
@@ -544,6 +546,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v2.10.8** | Kurumsal/SaaS hazırlıkları: Alembic migration zinciri, PostgreSQL cutover runbook, multi-agent QA ve production-hardening iyileştirmeleri |
 | **v2.7.0** | Launcher/CLI ayrımı (`main.py` launcher, `cli.py` async terminal), canlı aktivite paneli, THOUGHT sentinel, hibrit RAG belge yönetimi ve ek doğrulama düzeltmeleri |
 | **v2.6.1** | Web UI düzeltmeleri: dışa aktarma, araç görselleştirme, mobil menü, dinamik model adı, gerçek git checkout, CancelledError düzeltmesi |
 | **v2.6.0** | GPU hızlandırma, Docker REPL sandbox, çoklu oturum, Recursive Chunking, Pydantic v2, rate limiting, WSL2 desteği |

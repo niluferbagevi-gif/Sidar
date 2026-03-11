@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+import os
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -14,9 +15,15 @@ target_metadata = None
 
 
 def _load_database_url() -> str | None:
-    value = context.get_x_argument(as_dictionary=True).get("database_url")
+    x_args = context.get_x_argument(as_dictionary=True)
+    value = (x_args.get("database_url") or "").strip()
     if value:
         return value
+
+    env_value = os.getenv("DATABASE_URL", "").strip()
+    if env_value:
+        return env_value
+
     return None
 
 

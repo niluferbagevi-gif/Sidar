@@ -26,8 +26,22 @@ Bu rehber, SİDAR'ın üretim ortamında PostgreSQL'e güvenli geçişi için mi
    sqlite3 data/sidar.db ".backup 'data/sidar.backup.db'"
    ```
 3. PostgreSQL şemasını Alembic ile oluşturun (adım 1).
-4. Dönüşüm/taşıma için geçici script veya ETL aracı kullanın.
-5. Satır sayısı doğrulaması yapın (`users`, `sessions`, `messages`, `auth_tokens`, `user_quotas`, `provider_usage_daily`).
+4. Dönüşüm/taşıma için `scripts/migrate_sqlite_to_pg.py` scriptini (veya kurumsal ETL aracınızı) kullanın.
+5. Önce `--dry-run` ile satır sayılarını doğrulayın, ardından gerçek taşıma çalıştırın.
+
+
+Örnek:
+```bash
+python scripts/migrate_sqlite_to_pg.py \
+  --sqlite-path data/sidar.db \
+  --postgres-dsn postgresql://user:pass@host:5432/sidar \
+  --dry-run
+
+python scripts/migrate_sqlite_to_pg.py \
+  --sqlite-path data/sidar.db \
+  --postgres-dsn postgresql://user:pass@host:5432/sidar
+```
+
 6. Uygulama `DATABASE_URL` ayarını PostgreSQL'e çevirin.
 7. Trafiği yeniden açın ve sağlık kontrollerini izleyin.
 
