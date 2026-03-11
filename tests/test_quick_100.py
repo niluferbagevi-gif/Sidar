@@ -12,7 +12,13 @@ def _require_runtime_imports():
 
 def test_config_validate_critical_settings_importerror_for_cryptography(monkeypatch):
     _require_runtime_imports()
-    from config import Config
+    import importlib
+    import config as config_mod
+
+    config_mod = importlib.reload(config_mod)
+    Config = config_mod.Config
+    if not hasattr(Config, "MEMORY_ENCRYPTION_KEY"):
+        Config.MEMORY_ENCRYPTION_KEY = None
 
     monkeypatch.setattr(Config, "MEMORY_ENCRYPTION_KEY", "invalid-key")
     monkeypatch.setattr(Config, "_ensure_hardware_info_loaded", lambda: None)
