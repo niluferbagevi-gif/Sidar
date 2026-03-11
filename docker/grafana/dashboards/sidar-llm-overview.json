@@ -1,0 +1,67 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "title": "Günlük Token Maliyeti (USD)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(increase(sidar_llm_cost_total_usd[1d]))",
+          "legendFormat": "Toplam",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 4}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "title": "Ajan Bazlı Hata Oranı (429 Rate Limit)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (provider) (increase(sidar_llm_failures_total{provider!=\"\"}[5m])) / clamp_min(sum by (provider) (increase(sidar_llm_calls_total{provider!=\"\"}[5m])), 1)",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "decimals": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "id": 3,
+      "title": "Aktif Kullanıcı Sayısı (LLM çağrısı yapan)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "count(count by (user_id) (sidar_llm_user_calls_total{user_id!=\"\"}))",
+          "legendFormat": "Aktif kullanıcı",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["sidar", "llm", "cost"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "SIDAR LLM Maliyet & Kullanım",
+  "uid": "sidar-llm-overview",
+  "version": 1,
+  "weekStart": ""
+}
