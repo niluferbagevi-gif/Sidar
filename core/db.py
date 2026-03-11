@@ -82,7 +82,8 @@ class Database:
 
         path = Path(raw_path)
         if not path.is_absolute():
-            path = self.cfg.BASE_DIR / path
+            base_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()))
+            path = base_dir / path
         path.parent.mkdir(parents=True, exist_ok=True)
         self._sqlite_path = path
 
@@ -213,6 +214,190 @@ class Database:
             for q in queries:
                 await conn.execute(q)
 
+
+    async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, username, role, created_at FROM users WHERE username=$1",
+                    username,
+                )
+                if row:
+                    return UserRecord(
+                        id=str(row["id"]),
+                        username=str(row["username"]),
+                        role=str(row["role"]),
+                        created_at=str(row["created_at"]),
+                    )
+            return await self.create_user(username=username, role=role)
+
+        assert self._sqlite_conn is not None
+
+        def _fetch() -> Optional[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "SELECT id, username, role, created_at FROM users WHERE username=?",
+                (username,),
+            )
+            return cur.fetchone()
+
+        row = await asyncio.to_thread(_fetch)
+        if row:
+            return UserRecord(
+                id=str(row["id"]),
+                username=str(row["username"]),
+                role=str(row["role"]),
+                created_at=str(row["created_at"]),
+            )
+        return await self.create_user(username=username, role=role)
+
+    async def list_sessions(self, user_id: str) -> list[SessionRecord]:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, user_id, title, created_at, updated_at
+                    FROM sessions
+                    WHERE user_id=$1
+                    ORDER BY updated_at DESC
+                    """,
+                    user_id,
+                )
+            return [
+                SessionRecord(
+                    id=str(r["id"]),
+                    user_id=str(r["user_id"]),
+                    title=str(r["title"]),
+                    created_at=str(r["created_at"]),
+                    updated_at=str(r["updated_at"]),
+                )
+                for r in rows
+            ]
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> list[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE user_id=? ORDER BY updated_at DESC",
+                (user_id,),
+            )
+            return cur.fetchall()
+
+        rows = await asyncio.to_thread(_run)
+        return [
+            SessionRecord(
+                id=str(r["id"]),
+                user_id=str(r["user_id"]),
+                title=str(r["title"]),
+                created_at=str(r["created_at"]),
+                updated_at=str(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
+    async def load_session(self, session_id: str, user_id: Optional[str] = None) -> Optional[SessionRecord]:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                if user_id:
+                    row = await conn.fetchrow(
+                        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1 AND user_id=$2",
+                        session_id,
+                        user_id,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=$1",
+                        session_id,
+                    )
+            if not row:
+                return None
+            return SessionRecord(
+                id=str(row["id"]),
+                user_id=str(row["user_id"]),
+                title=str(row["title"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> Optional[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            if user_id:
+                cur = self._sqlite_conn.execute(
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=? AND user_id=?",
+                    (session_id, user_id),
+                )
+            else:
+                cur = self._sqlite_conn.execute(
+                    "SELECT id, user_id, title, created_at, updated_at FROM sessions WHERE id=?",
+                    (session_id,),
+                )
+            return cur.fetchone()
+
+        row = await asyncio.to_thread(_run)
+        if not row:
+            return None
+        return SessionRecord(
+            id=str(row["id"]),
+            user_id=str(row["user_id"]),
+            title=str(row["title"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def update_session_title(self, session_id: str, title: str) -> bool:
+        now = _utc_now_iso()
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                result = await conn.execute(
+                    "UPDATE sessions SET title=$1, updated_at=$2 WHERE id=$3",
+                    title,
+                    now,
+                    session_id,
+                )
+            return result.endswith("1")
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> bool:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "UPDATE sessions SET title=?, updated_at=? WHERE id=?",
+                (title, now, session_id),
+            )
+            self._sqlite_conn.commit()
+            return cur.rowcount > 0
+
+        return await asyncio.to_thread(_run)
+
+    async def delete_session(self, session_id: str, user_id: Optional[str] = None) -> bool:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                if user_id:
+                    result = await conn.execute("DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id)
+                else:
+                    result = await conn.execute("DELETE FROM sessions WHERE id=$1", session_id)
+            return result.endswith("1")
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> bool:
+            assert self._sqlite_conn is not None
+            if user_id:
+                cur = self._sqlite_conn.execute("DELETE FROM sessions WHERE id=? AND user_id=?", (session_id, user_id))
+            else:
+                cur = self._sqlite_conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            self._sqlite_conn.commit()
+            return cur.rowcount > 0
+
+        return await asyncio.to_thread(_run)
     async def create_user(self, username: str, role: str = "user") -> UserRecord:
         user_id = str(uuid.uuid4())
         created_at = _utc_now_iso()

@@ -2385,3 +2385,29 @@ Bu oturumda çoklu kullanıcı geçişi için kalıcı veri katmanının temel a
 5. **İlk faz testleri eklendi (`tests/test_db_runtime.py`)**
    - SQLite fallback bağlantısı + şema kurulum + user/session/message CRUD akışı doğrulandı.
    - `DATABASE_URL` boşken proje içi varsayılan `data/sidar.db` yolunun seçildiği doğrulandı.
+
+---
+
+### Session 2026-03-11 — Multi-User Faz 2: Memory Katmanının DB'ye Taşınması
+
+Bu oturumda konuşma belleği JSON dosya tabanından veritabanı tabanına taşındı ve web katmanı uyumlandı:
+
+1. **`core/memory.py` refactor (DB-backed)**
+   - `ConversationMemory` artık kalıcılık için `core.db.Database` kullanıyor.
+   - Yeni async API'ler eklendi: `acreate_session`, `aload_session`, `adelete_session`, `aget_all_sessions`, `aadd`, `aget_history`, `aupdate_title`.
+   - Geriye dönük uyumluluk için sync metodlar korunarak async çekirdeğe yönlendirildi.
+
+2. **Varsayılan kullanıcı entegrasyonu**
+   - Başlangıçta `default_admin` kullanıcısı DB'de otomatik ensure ediliyor.
+   - Yeni oturumlar varsayılan olarak bu `user_id` ile oluşturuluyor.
+
+3. **`core/db.py` genişletmesi**
+   - Memory refactor için ek metotlar eklendi: `ensure_user`, `list_sessions`, `load_session`, `update_session_title`, `delete_session`.
+
+4. **Web sunucu uyumu (`web_server.py`)**
+   - Session ve metrics rotaları async bellek API'lerini kullanacak şekilde güncellendi.
+   - Geriye dönük test/stub uyumu için async metod yoksa sync fallback mantığı eklendi.
+
+5. **Test kapsamı**
+   - `tests/test_memory_db_runtime.py` eklendi (default user + async session/history akışları).
+   - `tests/test_core_memory.py`, `tests/test_web_server_runtime.py`, `tests/test_db_runtime.py` ile yeni davranış doğrulandı.

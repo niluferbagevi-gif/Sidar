@@ -1,316 +1,228 @@
-"""
-Sidar Project - Konuşma Belleği (Kalıcı)
-Çoklu tur konuşma geçmişini ve farklı sohbet oturumlarını yönetir, diske kaydeder.
-"""
+"""Sidar Project - Konuşma Belleği (DB tabanlı, çoklu kullanıcı hazırlığı)."""
 
-import json
-import time
-import uuid
-import threading
+from __future__ import annotations
+
+import asyncio
 import logging
+import threading
+import time
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
+from config import Config
+from core.db import Database
 
 logger = logging.getLogger(__name__)
 
+
 class ConversationMemory:
-    """
-    Thread-safe ve kalıcı (persistent) çoklu konuşma (session) belleği yöneticisi.
-    Verileri sessions dizininde ayrı JSON dosyalarında saklar.
-    MEMORY_ENCRYPTION_KEY ayarlandığında oturum dosyaları Fernet (AES-128-CBC) ile şifrelenir.
-    """
+    """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
+
+    DEFAULT_USERNAME = "default_admin"
 
     def __init__(self, file_path: Path, max_turns: int = 20,
                  encryption_key: str = "", keep_last: int = 4) -> None:
-        # Eski memory.json yolunu alıp yerine 'sessions' klasörü oluşturuyoruz
+        # Geriye dönük uyumluluk: bazı testler/senaryolar bu dizini bekliyor.
         self.sessions_dir = file_path.parent / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+
         self.max_turns = max_turns
         self.keep_last = keep_last
         self._lock = threading.RLock()
 
-        # Opsiyonel Fernet şifreleme
-        self._fernet = self._init_fernet(encryption_key)
+        self.cfg = Config()
+        # Bellek katmanı için varsayılan DB yolu, verilen file_path köküne bağlanır.
+        if not getattr(self.cfg, "DATABASE_URL", ""):
+            self.cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(file_path.parent / 'sidar_memory.db').as_posix()}"
+        elif str(getattr(self.cfg, "DATABASE_URL", "")).endswith("data/sidar.db"):
+            self.cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(file_path.parent / 'sidar_memory.db').as_posix()}"
+        self.cfg.BASE_DIR = file_path.parent
 
-        # Aktif oturum (seçili sohbet) bilgileri
+        self.db = Database(cfg=self.cfg)
+
         self.active_session_id: Optional[str] = None
         self.active_title: str = "Yeni Sohbet"
+        self.active_user_id: Optional[str] = None
         self._turns: List[Dict] = []
         self._last_file: Optional[str] = None
 
-        # Kaydetme optimizasyonu: kısa aralıkta gelen add() çağrılarını birleştir
-        self._save_interval_seconds = 0.5
-        self._last_saved_at = 0.0
         self._dirty = False
-        # Son diske yazma anındaki tur sayısı; debounce sırasında yeni eklemeler kaçmaz
-        self._last_saved_turn_count: int = 0
+        self._init_db_state()
 
-        # Başlangıçta oturumları yükle veya yeni oluştur
-        self._init_sessions()
+    # ─────────────────────────────────────────────
+    #  ASYNC ÇEKİRDEK
+    # ─────────────────────────────────────────────
 
-    @staticmethod
-    def _init_fernet(key: str):
-        """Fernet şifreleme nesnesini oluşturur; key boşsa None döner."""
-        if not key:
-            return None
+    def _run_coro_sync(self, coro):
         try:
-            from cryptography.fernet import Fernet
-            token = key.encode() if isinstance(key, str) else key
-            fernet = Fernet(token)
-            logger.info("✅ Bellek şifrelemesi etkin (Fernet/AES-128-CBC).")
-            return fernet
-        except ImportError as exc:
-            raise ImportError(
-                "⚠️ MEMORY_ENCRYPTION_KEY ayarlanmış ancak 'cryptography' kütüphanesi "
-                "bulunamadı! Lütfen 'pip install cryptography' ile yükleyin veya "
-                "şifreleme istemiyorsanız .env'den anahtarı silin."
-            ) from exc
-        except Exception as exc:
-            raise ValueError(
-                "⚠️ Şifreleme anahtarı geçersiz veya başlatılamadı. "
-                f"Güvenlik riski nedeniyle sistem durduruldu: {exc}"
-            ) from exc
+            asyncio.get_running_loop()
+            in_loop = True
+        except RuntimeError:
+            in_loop = False
 
-    def _read_session_file(self, file_path: Path) -> dict:
-        """Oturum dosyasını okur; şifreli ise çözer, düz metin ise doğrudan parse eder."""
-        raw = file_path.read_bytes()
-        if self._fernet:
+        if not in_loop:
+            return asyncio.run(coro)
+
+        box = {"result": None, "error": None}
+
+        def _runner():
             try:
-                content = self._fernet.decrypt(raw).decode("utf-8")
-            except Exception:
-                # Eski şifrelenmemiş (geçiş dönemi) dosya — düz metin dene
-                logger.warning(
-                    "⚠️ Oturum dosyası şifre çözümlenemedi, düz metin deneniyor: %s",
-                    file_path.name,
-                )
-                content = raw.decode("utf-8")
-        else:
-            content = raw.decode("utf-8")
-        return json.loads(content)
+                box["result"] = asyncio.run(coro)
+            except Exception as exc:  # pragma: no cover
+                box["error"] = exc
 
-    def _write_session_file(self, file_path: Path, data: dict) -> None:
-        """Oturum dosyasını yazar; şifreleme etkinse Fernet ile şifreler."""
-        json_bytes = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-        if self._fernet:
-            file_path.write_bytes(self._fernet.encrypt(json_bytes))
-        else:
-            file_path.write_bytes(json_bytes)
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+        t.join()
+        if box["error"]:
+            raise box["error"]
+        return box["result"]
 
-    def _cleanup_broken_files(self, max_age_days: int = 7, max_files: int = 50) -> None:
-        """Karantinadaki *.json.broken dosyaları için basit retention uygula."""
-        now = time.time()
-        broken_files = sorted(
-            self.sessions_dir.glob("*.json.broken"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+    async def _ainit_db(self) -> None:
+        await self.db.connect()
+        await self.db.init_schema()
+        user = await self.db.ensure_user(self.DEFAULT_USERNAME, role="admin")
+        self.active_user_id = user.id
 
-        # En yeni max_files adedi dışındakileri sil
-        for old_file in broken_files[max_files:]:
-            try:
-                old_file.unlink()
-            except OSError:
-                pass
-
-        # Yaşı geçmiş olanları sil
-        cutoff = now - (max_age_days * 86400)
-        for bf in broken_files[:max_files]:
-            try:
-                if bf.stat().st_mtime < cutoff:
-                    bf.unlink()
-            except OSError:
-                pass
-
-    def _init_sessions(self) -> None:
-        """Mevcut oturumları bul, yoksa yeni bir tane oluştur ve aktif yap."""
-        sessions = self.get_all_sessions()
+        sessions = await self.db.list_sessions(user.id)
         if sessions:
-            # En son güncellenen (en yeni) oturumu yükle
-            last_session = sessions[0]
-            self.load_session(last_session["id"])
+            await self.aload_session(sessions[0].id)
         else:
-            self.create_session("İlk Sohbet")
+            await self.acreate_session("İlk Sohbet")
 
-    # ─────────────────────────────────────────────
-    #  OTURUM (SESSION) YÖNETİMİ
-    # ─────────────────────────────────────────────
+    def _init_db_state(self) -> None:
+        self._run_coro_sync(self._ainit_db())
 
-    def get_all_sessions(self) -> List[Dict]:
-        """Tüm oturumları tarihe göre (en yeni en üstte) sıralı döndürür."""
-        sessions = []
-        with self._lock:
-            self._cleanup_broken_files()
-            for file_path in self.sessions_dir.glob("*.json"):
-                try:
-                    data = self._read_session_file(file_path)
-                    turns = data.get("turns", [])
-                    user_count = sum(1 for t in turns if t.get("role") == "user")
-                    asst_count = sum(1 for t in turns if t.get("role") == "assistant")
-                    sessions.append({
-                        "id": data.get("id", file_path.stem),
-                        "title": data.get("title", "İsimsiz Sohbet"),
-                        "updated_at": data.get("updated_at", 0),
-                        "msg_count": len(turns),
-                        "user_count": user_count,
-                        "asst_count": asst_count,
-                    })
-                except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                    logger.error("Bozuk oturum dosyası: %s — %s", file_path.name, exc)
-                    # Bozuk / şifre çözülemeyen dosyayı karantinaya al
-                    broken_path = file_path.with_suffix(".json.broken")
-                    try:
-                        file_path.rename(broken_path)
-                        logger.warning(
-                            "Bozuk dosya karantinaya alındı: %s → %s",
-                            file_path.name, broken_path.name,
-                        )
-                    except OSError as rename_exc:
-                        logger.warning("Karantina yeniden adlandırması başarısız: %s", rename_exc)
-                except Exception as exc:
-                    logger.error("Oturum okuma hatası (%s): %s", file_path.name, exc)
+    async def aget_all_sessions(self) -> List[Dict]:
+        if not self.active_user_id:
+            return []
+        rows = await self.db.list_sessions(self.active_user_id)
+        return [
+            {
+                "id": r.id,
+                "title": r.title,
+                "updated_at": r.updated_at,
+                "message_count": len(await self.db.get_session_messages(r.id)),
+            }
+            for r in rows
+        ]
 
-        # Güncellenme zamanına göre azalan (descending) sırala
-        sessions.sort(key=lambda x: x["updated_at"], reverse=True)
-        return sessions
+    async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
+        if not self.active_user_id:
+            user = await self.db.ensure_user(self.DEFAULT_USERNAME, role="admin")
+            self.active_user_id = user.id
 
-    def create_session(self, title: str = "Yeni Sohbet") -> str:
-        """Yeni bir sohbet oturumu oluşturur ve aktif hale getirir."""
-        session_id = str(uuid.uuid4())
-        with self._lock:
-            self.active_session_id = session_id
-            self.active_title = title
-            self._turns = []
-            self._last_file = None
-            self._save(force=True)
-            # Yeni oturum sonrası debounce sayacını sıfırla; aksi hâlde hemen ardından gelen
-            # add() çağrısı 0.5 saniyelik pencere nedeniyle kaydedilmeden atlayabilir.
-            self._last_saved_at = 0.0
-            logger.info(f"Yeni oturum oluşturuldu: {session_id} - {title}")
-        return session_id
+        row = await self.db.create_session(self.active_user_id, title)
+        self.active_session_id = row.id
+        self.active_title = row.title
+        self._turns = []
+        self._last_file = None
+        self._dirty = False
+        logger.info("Yeni oturum oluşturuldu: %s - %s", row.id, row.title)
+        return row.id
 
-    def load_session(self, session_id: str) -> bool:
-        """Belirtilen oturumu (sohbeti) belleğe yükler."""
-        file_path = self.sessions_dir / f"{session_id}.json"
-        if not file_path.exists():
-            logger.warning(f"Oturum bulunamadı: {session_id}")
+    async def aload_session(self, session_id: str) -> bool:
+        row = await self.db.load_session(session_id, self.active_user_id)
+        if not row:
+            logger.warning("Oturum bulunamadı: %s", session_id)
             return False
 
-        try:
-            with self._lock:
-                data = self._read_session_file(file_path)
-                self.active_session_id = session_id
-                self.active_title = data.get("title", "İsimsiz Sohbet")
-                self._turns = data.get("turns", [])
-                self._last_file = data.get("last_file")
-                logger.info(f"Oturum yüklendi: {session_id} ({len(self._turns)} mesaj)")
-            return True
-        except Exception as exc:
-            logger.error(f"Oturum yükleme hatası ({session_id}): {exc}")
+        messages = await self.db.get_session_messages(session_id)
+        with self._lock:
+            self.active_session_id = row.id
+            self.active_title = row.title
+            self._turns = [
+                {
+                    "role": m.role,
+                    "content": m.content,
+                    "timestamp": self._safe_ts(m.created_at),
+                    "tokens_used": m.tokens_used,
+                }
+                for m in messages
+            ]
+        logger.info("Oturum yüklendi: %s (%d mesaj)", session_id, len(self._turns))
+        return True
+
+    async def adelete_session(self, session_id: str) -> bool:
+        ok = await self.db.delete_session(session_id, self.active_user_id)
+        if not ok:
             return False
 
-    def delete_session(self, session_id: str) -> bool:
-        """Belirtilen oturumu siler."""
-        file_path = self.sessions_dir / f"{session_id}.json"
-        with self._lock:
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                    logger.info(f"Oturum silindi: {session_id}")
-                    # Eğer silinen oturum aktif oturumsa, başka birine geç veya yeni oluştur
-                    if self.active_session_id == session_id:
-                        self._init_sessions()
-                    return True
-                except OSError as exc:
-                    logger.error(f"Oturum silinirken hata: {exc}")
-        return False
-        
-    def update_title(self, new_title: str) -> None:
-        """Aktif oturumun başlığını günceller."""
-        with self._lock:
-            self.active_title = new_title
-            self._save(force=True)
+        if self.active_session_id == session_id:
+            sessions = await self.aget_all_sessions()
+            if sessions:
+                await self.aload_session(sessions[0]["id"])
+            else:
+                await self.acreate_session("Yeni Sohbet")
+        return True
 
-    # ─────────────────────────────────────────────
-    #  PERSISTENCE (Kalıcılık)
-    # ─────────────────────────────────────────────
-
-    def _save(self, force: bool = False) -> None:
-        """Aktif belleği (oturumu) diske kaydet."""
+    async def aupdate_title(self, new_title: str) -> None:
         if not self.active_session_id:
             return
-
-        try:
-            with self._lock:
-                now = time.time()
-                self._dirty = True
-                # Debounce: henüz yeni tur eklenmemişse zaman aralığı dolana kadar bekle.
-                # Ancak kayıt edilmemiş yeni turlar varsa her zaman kaydet (veri kaybını önler).
-                has_new_turns = len(self._turns) != self._last_saved_turn_count
-                if not force and not has_new_turns and (now - self._last_saved_at) < self._save_interval_seconds:
-                    return
-
-                data = {
-                    "id": self.active_session_id,
-                    "title": self.active_title,
-                    "updated_at": now,
-                    "last_file": self._last_file,
-                    "turns": self._turns
-                }
-                file_path = self.sessions_dir / f"{self.active_session_id}.json"
-                self._write_session_file(file_path, data)
-                self._last_saved_at = now
-                self._last_saved_turn_count = len(self._turns)
-                self._dirty = False
-        except Exception as exc:
-            logger.error(f"Bellek kaydetme hatası: {exc}")
-
-    # ─────────────────────────────────────────────
-    #  EKLEME & OKUMA
-    # ─────────────────────────────────────────────
-
-    def add(self, role: str, content: str) -> None:
-        """Yeni bir mesaj turu ekle ve kaydet."""
         with self._lock:
-            self._turns.append({
-                "role": role,
-                "content": content,
-                "timestamp": time.time(),
-            })
-            # Pencere boyutunu koru
+            self.active_title = new_title
+        await self.db.update_session_title(self.active_session_id, new_title)
+
+    async def aadd(self, role: str, content: str) -> None:
+        if not self.active_session_id:
+            await self.acreate_session("Yeni Sohbet")
+
+        now = time.time()
+        with self._lock:
+            self._turns.append({"role": role, "content": content, "timestamp": now})
             if len(self._turns) > self.max_turns * 2:
                 self._turns = self._turns[-(self.max_turns * 2):]
-            self._save()
+        await self.db.add_message(self.active_session_id, role, content, tokens_used=0)
+        self._dirty = False
 
-    def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
-        """Aktif sohbetin son n_last turunu döndür."""
+    async def aget_history(self, n_last: Optional[int] = None) -> List[Dict]:
         with self._lock:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
 
-    def get_messages_for_llm(self) -> List[Dict[str, str]]:
-        """LLM API çağrısı için mesaj listesi döndür."""
-        with self._lock:
-            return [{"role": t["role"], "content": t["content"]} for t in self._turns]
+    # ─────────────────────────────────────────────
+    #  SYNC UYUMLULUK KATMANI
+    # ─────────────────────────────────────────────
+
+    def get_all_sessions(self) -> List[Dict]:
+        return self._run_coro_sync(self.aget_all_sessions())
+
+    def create_session(self, title: str = "Yeni Sohbet") -> str:
+        return self._run_coro_sync(self.acreate_session(title))
+
+    def load_session(self, session_id: str) -> bool:
+        return self._run_coro_sync(self.aload_session(session_id))
+
+    def delete_session(self, session_id: str) -> bool:
+        return self._run_coro_sync(self.adelete_session(session_id))
+
+    def update_title(self, new_title: str) -> None:
+        self._run_coro_sync(self.aupdate_title(new_title))
+
+    def add(self, role: str, content: str) -> None:
+        self._run_coro_sync(self.aadd(role, content))
+
+    def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        return self._run_coro_sync(self.aget_history(n_last))
 
     # ─────────────────────────────────────────────
-    #  DOSYA TAKİBİ
+    #  MEVCUT API (değişmeden)
     # ─────────────────────────────────────────────
+
+    def get_messages_for_llm(self) -> List[Dict[str, str]]:
+        with self._lock:
+            return [{"role": t["role"], "content": t["content"]} for t in self._turns]
 
     def set_last_file(self, path: str) -> None:
         with self._lock:
             self._last_file = path
-            self._save(force=True)
+            self._dirty = True
 
     def get_last_file(self) -> Optional[str]:
         with self._lock:
             return self._last_file
 
-    # ─────────────────────────────────────────────
-    #  ÖZETLEME DESTEĞİ
-    # ─────────────────────────────────────────────
-
     def _estimate_tokens(self) -> int:
-        """Mesaj geçmişinin token sayısını (mümkünse gerçek tokenizer ile) tahmin et."""
         total_text = "".join(t.get("content", "") for t in self._turns)
         try:
             import tiktoken
@@ -320,76 +232,63 @@ class ConversationMemory:
             return int(len(total_text) / 3.5)
 
     def needs_summarization(self) -> bool:
-        """
-        Bellek penceresinin %80'i dolduğunda veya tahmini token sayısı
-        6000'i aştığında özetleme sinyali ver.
-        """
         with self._lock:
             threshold = int(self.max_turns * 2 * 0.8)
             token_est = self._estimate_tokens()
             return len(self._turns) >= threshold or token_est > 6000
 
     def apply_summary(self, summary_text: str) -> None:
-        """
-        Kayan pencere (sliding window) stratejisi:
-        Tüm geçmişi silmek yerine, son 'keep_last' kadar mesajı tam olarak korur,
-        daha eski olanları ise tek bir özet mesajına indirger.
-        """
         with self._lock:
             kept_turns = self._turns[-self.keep_last:] if self.keep_last > 0 else []
-
             summary_turns = [
-                {
-                    "role": "user",
-                    "content": "[Önceki konuşmaların özeti istendi]",
-                    "timestamp": time.time() - 2,
-                },
-                {
-                    "role": "assistant",
-                    "content": f"[KONUŞMA ÖZETİ]\n{summary_text}",
-                    "timestamp": time.time() - 1,
-                },
+                {"role": "user", "content": "[Önceki konuşmaların özeti istendi]", "timestamp": time.time() - 2},
+                {"role": "assistant", "content": f"[KONUŞMA ÖZETİ]\n{summary_text}", "timestamp": time.time() - 1},
             ]
+            compact_turns = summary_turns + kept_turns
+            self._turns = compact_turns
 
-            self._turns = summary_turns + kept_turns
-            self._save(force=True)
-        logger.info(
-            "Konuşma belleği özetleme ile sıkıştırıldı. Son %d mesaj korundu.",
-            len(kept_turns),
-        )
-
-    # ─────────────────────────────────────────────
-    #  YARDIMCILAR
-    # ─────────────────────────────────────────────
+        # Session'ı temizleyip özetlenmiş mesajları tekrar yaz
+        sid = self.active_session_id
+        uid = self.active_user_id
+        title = self.active_title
+        if sid and uid:
+            self._run_coro_sync(self.db.delete_session(sid, uid))
+            self.create_session(title)
+            for turn in compact_turns:
+                self.add(turn["role"], turn["content"])
 
     def clear(self) -> None:
-        """Aktif belleği temizle (dosyayı boşaltır ancak silmez)."""
         with self._lock:
             self._turns.clear()
             self._last_file = None
-            self._dirty = True
-        self.force_save()
+        sid = self.active_session_id
+        title = self.active_title
+        if sid:
+            self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))
+            self.create_session(title)
 
     def force_save(self) -> None:
-        """Bekleyen tüm değişiklikleri anında diske yazar (flush)."""
-        with self._lock:
-            if not self.active_session_id or not self._dirty:
-                return
-            now = time.time()
-            data = {
-                "id": self.active_session_id,
-                "title": self.active_title,
-                "updated_at": now,
-                "last_file": self._last_file,
-                "turns": self._turns,
-            }
-            file_path = self.sessions_dir / f"{self.active_session_id}.json"
-            self._write_session_file(file_path, data)
-            self._last_saved_at = now
-            self._dirty = False
+        # DB yazımı add/update sırasında anlık yapılıyor.
+        self._dirty = False
+
+    def _save(self, force: bool = False) -> None:
+        # Geriye dönük çağrılar için no-op.
+        if force:
+            self.force_save()
+
+    def _cleanup_broken_files(self, max_age_days: int = 7, max_files: int = 50) -> None:
+        # DB modunda legacy dosya karantinası kullanılmıyor.
+        return
+
+    @staticmethod
+    def _safe_ts(iso_text: str) -> float:
+        try:
+            from datetime import datetime
+            return datetime.fromisoformat(str(iso_text).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return time.time()
 
     def __del__(self) -> None:
-        """Nesne yok edilirken bekleyen değişiklikleri diske yazmayı dener."""
         try:
             self.force_save()
         except Exception:
@@ -400,4 +299,4 @@ class ConversationMemory:
             return len(self._turns)
 
     def __repr__(self) -> str:
-        return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>"  
+        return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>"
