@@ -1315,7 +1315,7 @@ add_document(title, content, source)
 | 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
 | 3 | Eksik uzman ajan rolü (`ReviewerAgent`) | `RFC-MultiAgent.md`, `agent/roles/` | Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok | Düşük | ⚠ **Açık** (RFC Draft) |
 | 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
-| 5 | Boş test dosyaları (0 bayt artifact) | `tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage` | pytest keşfini kirletir; kalite metriklerini yanıltır | Düşük | ⚠ **Açık** — Audit #8'de de hâlâ mevcut |
+| 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
 | 6 | `.note` dosyası (311 satır) raporda belgelenmemiş | `.note` | Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor | Düşük | ⚠ **Yeni** (Audit #8 tespiti) |
 
 ## 12. `.env` Tam Değişken Referansı
@@ -1488,7 +1488,7 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - Her kullanıcı için izolasyonlu bellek/anahtar yönetimi ve kurumsal denetim izleri.
 
 ### 14.5 Test Kapsamının %95+ Seviyesine Zorlanması
-- Boş/iskelet test dosyalarının doldurulması (`test_config_runtime_coverage.py` vb.).
+- Boş test artifact riskine karşı CI hattında `find tests -type f -size 0` kontrolünün kalıcı olarak çalıştırılması (aktif).
 - Kritik iş kuralları için branch + integration kapsamının artırılması.
 - CI hattında coverage eşiğinin `%95+` altına düştüğünde PR engelleyecek kalite kapısı uygulanması.
 
@@ -2266,11 +2266,11 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 | Kontrol | Komut/Referans | Sonuç |
 |---|---|---|
 | Test satır toplamı | `wc -l tests/*.py` | ✅ **15.974** |
-| `tests/` dosya adedi | `find tests -maxdepth 1 -type f | wc -l` | ✅ **70** |
-| Boş test artifact dosyaları | `find tests -maxdepth 1 -type f -size 0` | ⚠ `test_config_runtime_coverage`, `test_config_runtime_coverage.py` |
+| `tests/` dosya adedi | `find tests -maxdepth 1 -type f | wc -l` | ✅ **68** |
+| Boş test artifact dosyaları | `find tests -maxdepth 1 -type f -size 0` | ✅ Bulunamadı (çıktı boş) |
 | RFC satır sayısı | `wc -l RFC-MultiAgent.md` | ✅ **303** |
 | `.note` satır sayısı | `wc -l .note` | ✅ **311** |
-| Planlanan fakat eksik modüller | `test -f agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` | ⚠ Üçü de depoda yok |
+| Planlanan fakat eksik modüller | `test -f agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` | ✅ Üç modül de depoda mevcut |
 
 #### 18.9.2 Önceki Yorumlarla Nihai Uyum Durumu
 
@@ -2280,6 +2280,6 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 
 #### 18.9.3 Kapanış Aksiyonları (Öncelikli)
 
-1. `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyalarını kaldırın.
+1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
 2. RFC dokümanında “planlandı / implement edildi” matrisi ekleyin (`ReviewerAgent`, `memory_hub`, `registry`).
 3. Satır sayısı metriklerini CI’da tek komutla üreten bir script ile standardize edin.
