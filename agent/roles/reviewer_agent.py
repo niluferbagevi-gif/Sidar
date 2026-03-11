@@ -88,8 +88,25 @@ class ReviewerAgent(BaseAgent):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
             return await self.call_tool("list_issues", arg)
         if lower.startswith("run_tests"):
-            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "bash run_tests.sh"
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.cfg.REVIEWER_TEST_COMMAND
             return await self.call_tool("run_tests", arg)
+        if lower.startswith("review_code|"):
+            context = prompt.split("|", 1)[1].strip()
+            test_output = await self.call_tool("run_tests", self.cfg.REVIEWER_TEST_COMMAND)
+            status = "PASS"
+            risk = "düşük"
+            if "[test:fail" in test_output.lower() or "fail(" in test_output.lower():
+                status = "FAIL"
+                risk = "yüksek"
+            return (
+                f"[REVIEW:{status}]\n"
+                f"Risk: {risk}\n"
+                f"Kod Özeti: {context[:500] or '-'}\n\n"
+                f"Test Çıktısı:\n{test_output[:2000]}"
+            )
 
-        # Doğal dilde review niyeti varsa PR listesini döndürerek hızlı QA sinyali üret.
+        # Doğal dilde review niyeti varsa kalite turu + test çalıştır.
+        if any(k in lower for k in ("review", "incele", "regresyon", "test")):
+            return await self.run_task("review_code|Doğal dil inceleme isteği")
+
         return await self.call_tool("list_prs", "open")

@@ -23,3 +23,16 @@ def test_reviewer_agent_dispatches_run_tests_command(monkeypatch):
     a.tools["run_tests"] = fake_run_tests
     out = asyncio.run(a.run_task("run_tests|pytest -q tests/test_reviewer_agent.py"))
     assert out == "ran:pytest -q tests/test_reviewer_agent.py"
+
+def test_reviewer_agent_review_code_runs_tests_and_formats_output(monkeypatch):
+    a = ReviewerAgent()
+
+    async def fake_run_tests(arg: str) -> str:
+        assert arg == a.cfg.REVIEWER_TEST_COMMAND
+        return "[TEST:OK]"
+
+    a.tools["run_tests"] = fake_run_tests
+    out = asyncio.run(a.run_task("review_code|patched config warning"))
+
+    assert "[REVIEW:PASS]" in out
+    assert "patched config warning" in out
