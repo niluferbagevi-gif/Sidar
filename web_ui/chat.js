@@ -561,7 +561,7 @@ function apAddTool(toolName, label) {
 
 async function apRefreshTodos() {
   try {
-    const data = await (await fetch('/todo')).json();
+    const data = await (await fetchAPI('/todo')).json();
     const tasks = data.tasks || [];
     if (!tasks.length) return;
     const section = document.getElementById('ap-todo-section');
@@ -601,7 +601,7 @@ function closeTodoPanel() {
 
 async function fetchTodo() {
   try {
-    const data = await (await fetch('/todo')).json();
+    const data = await (await fetchAPI('/todo')).json();
     renderTodoPanel(data.tasks || []);
     updateTodoIndicator(data.active || 0);
   } catch { /* bağlantı yok — sessizce geç */ }

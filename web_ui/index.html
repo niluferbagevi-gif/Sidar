@@ -52,6 +52,10 @@
         <span class="health-pill" id="pill-vram">💾 VRAM: …</span>
         <span class="health-pill" id="pill-llm">💸 LLM: …</span>
       </div>
+      <div class="user-profile" id="user-profile" style="display:none;">
+        <span id="user-profile-name">@user</span>
+        <button class="btn-ghost" onclick="logoutUser()" title="Çıkış Yap">Çıkış Yap</button>
+      </div>
       <button id="todo-indicator" onclick="toggleTodoPanel()" title="Aktif görevleri göster">
         <span id="todo-indicator-dot"></span>
         <span id="todo-indicator-text">0 görev</span>
@@ -238,6 +242,29 @@
       </div>
 
     </div></div></div>
+
+
+<div id="auth-overlay" class="auth-overlay" style="display:none;">
+  <div class="auth-modal" onclick="event.stopPropagation()">
+    <h2>SİDAR Giriş</h2>
+    <p class="auth-subtitle">Devam etmek için giriş yapın veya yeni hesap oluşturun.</p>
+    <div class="auth-tabs">
+      <button id="auth-tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Giriş Yap</button>
+      <button id="auth-tab-register" class="auth-tab" onclick="switchAuthTab('register')">Kayıt Ol</button>
+    </div>
+    <form id="login-form" class="auth-form">
+      <input id="login-username" type="text" placeholder="Kullanıcı adı" required minlength="3" />
+      <input id="login-password" type="password" placeholder="Şifre" required minlength="6" />
+      <button type="submit" class="btn-modal-action">Giriş Yap</button>
+    </form>
+    <form id="register-form" class="auth-form" style="display:none;">
+      <input id="register-username" type="text" placeholder="Kullanıcı adı" required minlength="3" />
+      <input id="register-password" type="password" placeholder="Şifre" required minlength="6" />
+      <button type="submit" class="btn-modal-action">Kayıt Ol</button>
+    </form>
+    <div id="auth-error" class="auth-error"></div>
+  </div>
+</div>
 
 <div id="ui-notice" class="ui-notice"></div>
 

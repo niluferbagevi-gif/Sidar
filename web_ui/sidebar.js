@@ -1,7 +1,7 @@
 /* ─── Başlangıç ve Oturumlar (Sessions) ─────────────────── */
 async function loadSessions() {
   try {
-    const res = await fetch(apiUrl('/sessions'));
+    const res = await fetchAPI(apiUrl('/sessions'));
     const data = await res.json();
     currentSessionId = data.active_session;
     allSessions = data.sessions || [];
@@ -73,7 +73,7 @@ async function selectSession(id) {
 
 async function loadSessionHistory(id, switchToChat = false) {
   try {
-    const res = await fetch(`/sessions/${id}`);
+    const res = await fetchAPI(`/sessions/${id}`);
     const data = await res.json();
     
     if (data.success) {
@@ -100,7 +100,7 @@ async function loadSessionHistory(id, switchToChat = false) {
 
 async function createNewSession() {
   try {
-    const res = await fetch('/sessions/new', { method: 'POST' });
+    const res = await fetchAPI('/sessions/new', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
       currentSessionId = data.session_id;
@@ -120,7 +120,7 @@ async function deleteSession(id, event) {
   event.stopPropagation();
   if (!confirm('Bu sohbet kalıcı olarak silinecek. Emin misiniz?')) return;
   try {
-    const res = await fetch(`/sessions/${id}`, { method: 'DELETE' });
+    const res = await fetchAPI(`/sessions/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
       if (currentSessionId === id) {
@@ -164,7 +164,7 @@ async function openRepoModal() {
       '<div style="padding:14px;color:var(--text-dim);font-size:12px">Depolar yükleniyor…</div>';
     try {
       const ownerHint = (currentRepo || '').includes('/') ? currentRepo.split('/')[0] : '';
-      const data = await (await fetch(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
+      const data = await (await fetchAPI(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
       _cachedRepos = data.repos || [];
     } catch {
       _cachedRepos = [];
@@ -208,7 +208,7 @@ async function selectRepo(name) {
   if (!name || name === currentRepo) return;
 
   try {
-    const res = await fetch('/set-repo', {
+    const res = await fetchAPI('/set-repo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repo: name }),
@@ -247,7 +247,7 @@ async function openBranchModal() {
     document.getElementById('branch-list').innerHTML =
       '<div style="padding:14px;color:var(--text-dim);font-size:12px">Dallar yükleniyor…</div>';
     try {
-      const data      = await (await fetch('/git-branches')).json();
+      const data      = await (await fetchAPI('/git-branches')).json();
       _cachedBranches = data.branches || ['main'];
     } catch {
       _cachedBranches = [currentBranch || 'main'];
@@ -290,7 +290,7 @@ async function selectBranch(name) {
 
   // Backend'e git checkout isteği gönder
   try {
-    const res  = await fetch('/set-branch', {
+    const res  = await fetchAPI('/set-branch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ branch: name }),
@@ -355,7 +355,7 @@ function createSmartPR() {
 async function exportSession(format) {
   if (!currentSessionId) { alert('Aktif oturum yok.'); return; }
   try {
-    const data = await (await fetch(`/sessions/${currentSessionId}`)).json();
+    const data = await (await fetchAPI(`/sessions/${currentSessionId}`)).json();
     if (!data.success) { alert('Oturum verisi alınamadı.'); return; }
     const history = data.history || [];
     const title = (document.querySelector('.session-item.active .session-item-title')

@@ -1,3 +1,126 @@
+const AUTH_TOKEN_KEY = 'sidar_access_token';
+const AUTH_USER_KEY = 'sidar_user';
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || '';
+}
+
+function setAuthState(token, user) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+  if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+}
+
+function clearAuthState() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+}
+
+function getAuthUser() {
+  try { return JSON.parse(localStorage.getItem(AUTH_USER_KEY) || 'null'); } catch { return null; }
+}
+
+async function fetchAPI(url, options = {}) {
+  const opts = { ...options, headers: { ...(options.headers || {}) } };
+  const token = getAuthToken();
+  if (token && !opts.headers.Authorization) {
+    opts.headers.Authorization = `Bearer ${token}`;
+  }
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    showAuthOverlay('Oturum süresi doldu. Lütfen tekrar giriş yapın.');
+  }
+  return resp;
+}
+
+window.fetchAPI = fetchAPI;
+
+function switchAuthTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('auth-tab-login')?.classList.toggle('active', isLogin);
+  document.getElementById('auth-tab-register')?.classList.toggle('active', !isLogin);
+  const lf = document.getElementById('login-form');
+  const rf = document.getElementById('register-form');
+  if (lf) lf.style.display = isLogin ? '' : 'none';
+  if (rf) rf.style.display = isLogin ? 'none' : '';
+}
+
+function showAuthOverlay(msg = '') {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  const err = document.getElementById('auth-error');
+  if (err) err.textContent = msg || '';
+}
+
+function hideAuthOverlay() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function renderUserProfile() {
+  const user = getAuthUser();
+  const box = document.getElementById('user-profile');
+  const name = document.getElementById('user-profile-name');
+  if (!box || !name) return;
+  if (user && user.username) {
+    name.textContent = `@${user.username}`;
+    box.style.display = 'flex';
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+async function loginOrRegister(path, username, password) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.detail || data.error || 'Giriş başarısız');
+  }
+  setAuthState(data.access_token, data.user || { username });
+  hideAuthOverlay();
+  renderUserProfile();
+  await loadSessions();
+}
+
+function logoutUser() {
+  clearAuthState();
+  window.location.reload();
+}
+window.logoutUser = logoutUser;
+window.switchAuthTab = switchAuthTab;
+
+function bindAuthForms() {
+  const loginForm = document.getElementById('login-form');
+  const registerForm = document.getElementById('register-form');
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const u = document.getElementById('login-username')?.value?.trim() || '';
+      const p = document.getElementById('login-password')?.value || '';
+      try {
+        await loginOrRegister('/auth/login', u, p);
+      } catch (err) {
+        showAuthOverlay(err.message);
+      }
+    });
+  }
+  if (registerForm) {
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const u = document.getElementById('register-username')?.value?.trim() || '';
+      const p = document.getElementById('register-password')?.value || '';
+      try {
+        await loginOrRegister('/auth/register', u, p);
+      } catch (err) {
+        showAuthOverlay(err.message);
+      }
+    });
+  }
+}
+
 /* ─── Tema ───────────────────────────────────────────────── */
 function toggleTheme() {
   const html = document.documentElement;
@@ -17,7 +140,7 @@ function applyStoredTheme() {
 
 async function refreshHealthStrip() {
   try {
-    const data = await (await fetch(apiUrl('/status'))).json();
+    const data = await (await fetchAPI(apiUrl('/status'))).json();
     const ollama = document.getElementById('pill-ollama');
     const gpu = document.getElementById('pill-gpu');
     const vram = document.getElementById('pill-vram');
@@ -62,7 +185,7 @@ async function refreshHealthStrip() {
 
 async function refreshLlmBudgetStrip() {
   try {
-    const data = await (await fetch(apiUrl('/api/budget'))).json();
+    const data = await (await fetchAPI(apiUrl('/api/budget'))).json();
     const pill = document.getElementById('pill-llm');
     if (!pill) return;
 
@@ -99,7 +222,7 @@ async function refreshLlmBudgetStrip() {
 
 async function loadModelInfo() {
   try {
-    const data = await (await fetch(apiUrl('/status'))).json();
+    const data = await (await fetchAPI(apiUrl('/status'))).json();
     const provider = (data.provider || 'ollama').toLowerCase();
     const model    = data.model || '—';
     const display = provider === 'gemini'
@@ -131,7 +254,7 @@ function onModelSelectChange() {
 /* ─── Git bilgisi yükleme ───────────────────────────────── */
 async function loadGitInfo() {
   try {
-    const data = await (await fetch(apiUrl('/git-info'))).json();
+    const data = await (await fetchAPI(apiUrl('/git-info'))).json();
     const branch = data.branch || 'main';
     const repo   = data.repo   || '';
 
@@ -186,7 +309,7 @@ async function openStatus() {
   const grid = document.getElementById('stat-grid');
   grid.innerHTML = '<div class="stat-row"><span class="stat-label">Yükleniyor…</span></div>';
   try {
-    const data = await (await fetch(apiUrl('/status'))).json();
+    const data = await (await fetchAPI(apiUrl('/status'))).json();
     const row = (label, value, cls='') =>
       `<div class="stat-row">
         <span class="stat-label">${label}</span>
@@ -241,7 +364,7 @@ async function openStatus() {
 /* ─── Bellek temizle ────────────────────────────────────── */
 async function clearMemory() {
   if (!confirm('Geçerli konuşma belleği (ekrandaki mesajlar) temizlenecek. Devam edilsin mi?')) return;
-  try { await fetch('/clear', { method: 'POST' }); } catch { /* ignore */ }
+  try { await fetchAPI('/clear', { method: 'POST' }); } catch { /* ignore */ }
   document.getElementById('messages').innerHTML = '';
   showTaskPanel();
   loadSessions(); // Menüyü yenile
@@ -288,6 +411,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (modelSelect) modelSelect.addEventListener('change', onModelSelectChange);
 
   applyStoredTheme();
+  bindAuthForms();
+  renderUserProfile();
+  if (!getAuthToken()) {
+    showAuthOverlay();
+    return;
+  }
   await loadSessions();
   if (currentSessionId) {
     await loadSessionHistory(currentSessionId, false);
@@ -338,7 +467,7 @@ async function uploadFileToRAG(file) {
   formData.append('file', file);
 
   try {
-    const response = await fetch(apiUrl('/api/rag/upload'), {
+    const response = await fetchAPI(apiUrl('/api/rag/upload'), {
       method: 'POST',
       body: formData
     });
