@@ -27,7 +27,14 @@ jobs:
         run: bash scripts/collect_repo_metrics.sh
 
       - name: Check empty test artifacts
-        run: bash scripts/check_empty_test_artifacts.sh
+        run: |
+          empty_files=$(find tests -type f -size 0 -print)
+          if [ -n "$empty_files" ]; then
+            echo "❌ Empty test artifact(s) found:"
+            echo "$empty_files"
+            exit 1
+          fi
+          echo "✅ No empty test artifacts found"
 
       - name: Run test suite
         run: bash run_tests.sh
