@@ -1312,9 +1312,9 @@ add_document(title, content, source)
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
 | 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=true` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
-| 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
+| 2 | ~~Eski ve yeni mimarinin birlikte yaşaması (bakım yükü)~~ | ~~`agent/sidar_agent.py`, `agent/core/supervisor.py`~~ | ~~Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `SidarAgent.respond()` tek omurga olarak Supervisor akışını kullanıyor; legacy dallanma kaldırıldı |
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
-| 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | 🟡 **Kısmen Çözüldü** — token/latency/rate-limit metrik toplama + `/metrics/llm` dışa aktarımı eklendi |
+| 4 | ~~Çoklu API hata ve maliyet yönetimi~~ | ~~`core/llm_client.py`, `web_server.py`, `config.py`~~ | ~~OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `LLMAPIError` sözleşmesi + sağlayıcı bazlı retry/backoff + websocket yüzeyleme tamamlandı |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
 | 6 | ~~`.note` dosyası (311 satır) raporda belgelenmemiş~~ | ~~`.note`~~ | ~~Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — geçici Ar-Ge scratchpad dosyası depodan kaldırıldı |
 
@@ -1454,7 +1454,7 @@ Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme 
 | **Ajanlar Arası Doğrudan İletişim (P2P Multi-Agent)** | Görev dağıtımı ağırlıklı olarak Supervisor üzerinden akıyor | Rol ajanlarının (örn. Coder → Reviewer) Supervisor'a dönmeden doğrudan delegasyon yapabildiği P2P protokol |
 | **Kapsamlı Telemetri ve Maliyet Takibi (Observability)** | OpenTelemetry span'leri mevcut, ancak sağlayıcı bazlı birleşik maliyet dashboard'u sınırlı | OpenAI/Anthropic token maliyeti, gecikme (latency), hata oranı ve kota/rate-limit durumunu tek panelde izleyen Prometheus/Grafana + OTEL entegrasyonu |
 | **Gerçek Zamanlı Ajan Logları (WebSocket/SSE)** | Web UI sonuç odaklı akış veriyor | "Web'de arama yapılıyor", "Kod çalıştırılıyor" gibi ajan adım/log olaylarının Web UI'ya anlık stream edilmesi |
-| **Gelişmiş Sandbox (Mikro-VM)** | Kod çalıştırma izolasyonu Docker tabanlı | Firecracker/gVisor benzeri mikro-VM katmanı ile zero-trust çalıştırma sınırlarının güçlendirilmesi |
+| **Gelişmiş Sandbox (Mikro-VM)** | Docker izolasyonu + alternatif runtime altyapısı (`runsc`/`kata-runtime`) hazır | Bir sonraki adım: host seviyesinde gVisor/Kata kurulumunun CI/CD ve production rollout ile etkinleştirilmesi |
 | **Kurumsal Veritabanı Geçişi** | Oturum/bellek yerel dosyalar + ChromaDB ile yönetiliyor | Multi-user senaryolar için PostgreSQL tabanlı oturum/bellek katmanı ve migration stratejisi |
 
 > **Not:** Reviewer altyapısı depoda mevcuttur; §11.2'de ağırlıklı açık borç başlığı çoklu sağlayıcı hata/maliyet yönetimi ve mimari sadeleştirmedir.
@@ -1468,10 +1468,9 @@ Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme 
 Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak stratejik adımları içerir.
 
 ### 14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)
-- `ENABLE_MULTI_AGENT` geçiş bayrağına bağlı çift akışın (legacy `sidar_agent.py` + `Supervisor`) kademeli azaltılması.
-- Strangler Pattern tamamlanarak `Supervisor` tabanlı çoklu ajan mimarisinin varsayılan ve tek omurga haline getirilmesi.
-- Geçiş sürecinde geriye uyumluluk notları + deprecation takvimi yayınlanması.
-- `ENABLE_MULTI_AGENT=false` kullanımı için runtime Deprecation uyarısı üretimi (legacy fallback, tek omurgaya geçişi hızlandırır).
+- ✅ `SidarAgent` akışı Supervisor-first tek omurgaya taşındı; legacy ReAct/feature-flag çatallanması kaldırıldı.
+- ✅ Strangler Pattern kapanışı tamamlandı; multi-agent orkestrasyon tek giriş noktasıdır.
+- ℹ Deprecation notları geriye uyumluluk kayıtlarında tutulur; çalışma zamanı artık legacy fallback kullanmaz.
 
 ### 14.2 Reviewer (QA) Ajanının Olgunlaştırılması
 - `ReviewerAgent` temel rolü devrededir; bir sonraki adım kalite kapıları ve regresyon sinyallerini derinleştirmektir.
@@ -1485,12 +1484,9 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - `core/llm_client.py` içinde OpenAI/Anthropic token (prompt/completion), latency ve hata/rate-limit metrikleri toplanıp `web_server.py` üzerinden `/metrics/llm` ve `/api/budget` uçlarıyla dışa açılmalıdır/aktiftir (v2.10.8+).
 
 ### 14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı
-- Tek kullanıcı odaklı dosya tabanlı oturum modelinden çoklu kullanıcıya uygun servis mimarisine geçiş.
-- Oturum, kimlik, bellek ve kota yönetiminin PostgreSQL + Redis destekli bir katmana taşınması.
-- Her kullanıcı için izolasyonlu bellek/anahtar yönetimi ve kurumsal denetim izleri.
-- Oturum modeli `session_id`-merkezli yapıdan `user_id + session_id` ilişkili şemaya taşınmalı (çoklu cihaz ve denetim izi için).
-- PostgreSQL tarafında önerilen çekirdek tablolar: `users`, `sessions`, `messages`, `user_quotas`, `provider_usage_daily`.
-- Redis tarafında önerilen anahtarlar: `sidar:rl:{user_id}`, `sidar:budget:{user_id}`, `sidar:session:{session_id}:hot`.
+- ✅ Çoklu kullanıcı için DB tabanlı şema (`users`, `sessions`, `messages`, `user_quotas`, `provider_usage_daily`) devrede.
+- ✅ Şema versiyonlama altyapısı (`schema_versions`) eklendi; SQLite/PostgreSQL için hedef versiyona ilerleme adımı mevcut.
+- 🟡 Sonraki adım: resmi Alembic migration zinciri ve PostgreSQL production cutover playbook'u.
 
 ### 14.5 Test Kapsamının %95+ Seviyesine Zorlanması
 - Boş test artifact riskine karşı CI hattında `find tests -type f -size 0` kontrolünün kalıcı olarak çalıştırılması (aktif).
@@ -1579,9 +1575,9 @@ Minimum kurulum senaryolarına göre gereken paket kümeleri:
 
 | Özellik | Hedef Gereksinim | Durum |
 |---------|------------------|-------|
-| **Reviewer (QA) Ajanı** | `agent/roles/reviewer_agent.py`, test/kalite geri bildirim döngüsü, Supervisor entegrasyonu | ⚠ Planlanıyor |
-| **Eski Mimarinin Kaldırılması** | Legacy `sidar_agent.py` akışının deprecate edilmesi, Supervisor-first tek omurga | ⚠ Planlanıyor |
-| **Gelişmiş Maliyet (Token) İzleme** | Sağlayıcı bazlı token/maliyet/rate-limit telemetrisi + dashboard | ⚠ Planlanıyor |
+| **Reviewer (QA) Ajanı** | `agent/roles/reviewer_agent.py`, test/kalite geri bildirim döngüsü, Supervisor entegrasyonu | 🟡 Olgunlaştırma Aşaması |
+| **Eski Mimarinin Kaldırılması** | Legacy `sidar_agent.py` akışının deprecate edilmesi, Supervisor-first tek omurga | ✅ Tamamlandı |
+| **Gelişmiş Maliyet (Token) İzleme** | Sağlayıcı bazlı token/maliyet/rate-limit telemetrisi + dashboard | 🟡 Backend tamam, UI dashboard beklemede |
 
 ---
 
