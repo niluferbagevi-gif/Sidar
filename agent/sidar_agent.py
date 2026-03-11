@@ -9,7 +9,6 @@ import re
 import asyncio
 import time
 import threading
-import warnings
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
@@ -163,9 +162,8 @@ class SidarAgent:
         # Dinamik araç tablosu (tek source-of-truth)
         self._tools = build_tool_dispatch(self)
 
-        # Varsayılan mimari: supervisor tabanlı multi-agent
+        # Tek omurga: supervisor tabanlı multi-agent
         self._supervisor = None
-        self._multi_agent_deprecation_warned = False
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -188,65 +186,21 @@ class SidarAgent:
             yield "⚠ Boş girdi."
             return
 
-        # Multi-agent supervisor (feature flag) — başarılıysa legacy döngüye girme.
+        # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
-        if multi_result is not None:
-            if self._lock is None:
-                self._lock = asyncio.Lock()
-            async with self._lock:
-                await asyncio.to_thread(self.memory.add, "user", user_input)
-                await asyncio.to_thread(self.memory.add, "assistant", multi_result)
-            yield multi_result
-            return
 
-        # Event loop içinde güvenli Lock oluşturma
         if self._lock is None:
             self._lock = asyncio.Lock()
 
-        # Bellek yazma ve hızlı eşleme kilitli bölgede yapılır
-        # memory.add() → asyncio.to_thread: dosya I/O event loop'u bloke etmez
         async with self._lock:
             await asyncio.to_thread(self.memory.add, "user", user_input)
-            handled, quick_response = await self.auto.handle(user_input)
+            await asyncio.to_thread(self.memory.add, "assistant", multi_result)
 
-            # AutoHandle yakalayamadıysa hafif LLM router ile tek-adım araç dene
-            if not handled:
-                routed = await self._try_direct_tool_route(user_input)
-                if routed is not None:
-                    handled = True
-                    quick_response = routed
-
-            if handled:
-                await asyncio.to_thread(self.memory.add, "assistant", quick_response)
-
-        # Lock serbest bırakıldı
-        if handled:
-            yield quick_response
-            return
-
-        # Bellek eşiği dolmak üzereyse özetleme ve arşivleme tetikle
-        if self.memory.needs_summarization():
-            yield "\n[Sistem] Konuşma belleği arşivleniyor ve sıkıştırılıyor...\n"
-            await self._summarize_memory()
-
-        # ReAct döngüsünü akıştır
-        async for chunk in self._react_loop(user_input):
-            yield chunk
+        yield multi_result
 
 
-    async def _try_multi_agent(self, user_input: str) -> Optional[str]:
-        """Görevi mümkünse SupervisorAgent'a yönlendirir, legacy fallback'i korur."""
-        if not getattr(self.cfg, "ENABLE_MULTI_AGENT", True):
-            if not self._multi_agent_deprecation_warned:
-                msg = (
-                    "ENABLE_MULTI_AGENT=false kullanımı artık legacy/deprecated. "
-                    "v3.0 ile tek omurga Supervisor olacaktır."
-                )
-                warnings.warn(msg, DeprecationWarning, stacklevel=2)
-                logger.warning(msg)
-                self._multi_agent_deprecation_warned = True
-            return None
-
+    async def _try_multi_agent(self, user_input: str) -> str:
+        """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             from agent.core.supervisor import SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)

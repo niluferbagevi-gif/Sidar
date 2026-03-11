@@ -1872,28 +1872,23 @@ def test_react_loop_tool_result_none_feeds_error_and_continues(monkeypatch):
     out = asyncio.run(_collect(a._react_loop("test")))
     assert out[-1] == "tamam"
 
-def test_try_multi_agent_returns_none_when_disabled_and_warns_once(monkeypatch):
+def test_try_multi_agent_always_uses_supervisor(monkeypatch):
     mod = _load_sidar_agent_module()
 
+    class _Sup:
+        async def run_task(self, prompt: str) -> str:
+            return f"ok:{prompt}"
+
     a = SimpleNamespace(
-        cfg=SimpleNamespace(ENABLE_MULTI_AGENT=False),
-        _multi_agent_deprecation_warned=False,
-        _supervisor=None,
+        cfg=SimpleNamespace(),
+        _supervisor=_Sup(),
     )
 
-    warned = []
+    out1 = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev1"))
+    out2 = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev2"))
 
-    def _fake_warn(msg, category=None, stacklevel=1):
-        warned.append((msg, category))
-
-    monkeypatch.setattr(mod.warnings, "warn", _fake_warn)
-
-    out1 = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
-    out2 = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
-
-    assert out1 is None
-    assert out2 is None
-    assert len(warned) == 1
+    assert out1 == "ok:gorev1"
+    assert out2 == "ok:gorev2"
 
 
 def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
@@ -1904,8 +1899,7 @@ def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
             return f"ok:{prompt}"
 
     a = SimpleNamespace(
-        cfg=SimpleNamespace(ENABLE_MULTI_AGENT=True),
-        _multi_agent_deprecation_warned=False,
+        cfg=SimpleNamespace(),
         _supervisor=_Sup(),
     )
 

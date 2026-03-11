@@ -227,7 +227,7 @@ class Config:
     PROJECT_NAME: str = "Sidar"
     VERSION: str      = "2.10.8"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
-    ENABLE_MULTI_AGENT: bool = get_bool_env("ENABLE_MULTI_AGENT", True)
+    ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR:    Path = BASE_DIR
@@ -369,13 +369,6 @@ class Config:
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
 
-        if not self.ENABLE_MULTI_AGENT:
-            msg = (
-                "ENABLE_MULTI_AGENT=false ayarı deprecated durumdadır; "
-                "legacy tekli ajan akışı v3.0 ile kaldırılacaktır."
-            )
-            warnings.warn(msg, DeprecationWarning, stacklevel=2)
-            logger.warning(msg)
 
     @classmethod
     def _ensure_hardware_info_loaded(cls) -> None:
