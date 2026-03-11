@@ -1007,6 +1007,9 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | Symlink koruması | ✓ Aktif | `security.py:96` |
 | Hassas yol engelleme | ✓ Aktif | `security.py:32-37` |
 | Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
+| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `daily_llm_usage` |
+| Web UI Kurumsal Yetkilendirme | ✓ Aktif (admin erişimi kısıtlı) | `web_server.py` — `basic_auth_middleware`, admin panel endpoint kontrolleri |
+| Gelişmiş Sandbox (Runtime Hardening) | 🟡 Hazırlık tamamlandı | `scripts/install_host_sandbox.sh` — gVisor/Kata runtime hazırlıkları |
 | DDoS koruması | ✓ IP başına 120 istek/60 sn | `web_server.py` — `ddos_rate_limit_middleware` |
 | CORS kısıtlaması | ✓ Yalnızca localhost | `web_server.py:66` |
 | Rate limiting | ✓ 3 katman | `web_server.py` — `rate_limit_middleware` |
@@ -1026,6 +1029,8 @@ RESTRICTED → yalnızca okuma + analiz (yazma/çalıştırma/shell YOK)
 SANDBOX    → okuma + /temp yazma + Docker Python REPL
 FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 ```
+
+**QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, sistemin kendi kendine zararlı veya projenin mimarisini bozacak asenkron olmayan bir kod yazmasını engellemek için ReviewerAgent devreye girer. CoderAgent'ın ürettiği tüm sistem değişiklikleri, ReviewerAgent'ın statik güvenlik analizinden ve testlerinden geçmek zorundadır.
 
 ---
 
