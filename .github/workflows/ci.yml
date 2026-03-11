@@ -43,3 +43,7 @@ jobs:
 
       - name: Run test suite
         run: bash run_tests.sh
+
+      - name: Enforce coverage quality gate (95%)
+        run: |
+          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=95
