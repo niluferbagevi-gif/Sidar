@@ -189,3 +189,80 @@ def test_llm_metrics_record_ignores_runtime_error_when_no_running_loop(monkeypat
 
     collector.record(provider="openai", model="gpt-4o-mini", latency_ms=5, prompt_tokens=1, completion_tokens=1)
     assert collector.snapshot()["totals"]["calls"] == 1
+
+
+def test_web_server_lifespan_cancel_and_auth_paths(monkeypatch):
+    mod = _load_web_server()
+
+    # _app_lifespan finally içindeki CancelledError dalı
+    class _FakeTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def __await__(self):
+            raise asyncio.CancelledError
+            yield  # pragma: no cover
+
+    fake_task = _FakeTask()
+    def _fake_create_task(coro):
+        coro.close()
+        return fake_task
+
+    monkeypatch.setattr(mod.asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(mod, "_close_redis_client", lambda: asyncio.sleep(0))
+
+    async def _drive_lifespan():
+        async with mod._app_lifespan(mod.app):
+            return None
+
+    asyncio.run(_drive_lifespan())
+    assert fake_task.cancelled is True
+
+    # basic_auth_middleware: token doğrulanınca request.state.user set edilir
+    agent, _ = _make_agent()
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    req = _FakeRequest(method="GET", path="/secure", headers={"Authorization": "Bearer token-1"})
+
+    async def _next(request):
+        return mod.JSONResponse({"ok": True, "uid": request.state.user.id}, status_code=200)
+
+    resp = asyncio.run(mod.basic_auth_middleware(req, _next))
+    assert resp.status_code == 200
+    assert resp.content["uid"] == "u1"
+
+    # register_user: geçersiz payload 400
+    with pytest.raises(mod.HTTPException) as exc:
+        asyncio.run(mod.register_user({"username": "ab", "password": "123"}))
+    assert exc.value.status_code == 400
+
+    # _require_admin_user: admin olmayan için 403
+    with pytest.raises(mod.HTTPException) as exc2:
+        mod._require_admin_user(SimpleNamespace(role="user", username="alice"))
+    assert exc2.value.status_code == 403
+
+
+def test_web_server_prewarm_exception_logged(monkeypatch):
+    mod = _load_web_server()
+
+    async def _get_agent():
+        def _boom():
+            raise RuntimeError("init chroma failed")
+
+        return SimpleNamespace(rag=SimpleNamespace(_chroma_available=True, _init_chroma=_boom))
+
+    seen = {"warn": 0}
+    mod.get_agent = _get_agent
+    monkeypatch.setattr(mod.logger, "warning", lambda *a, **k: seen.__setitem__("warn", seen["warn"] + 1))
+
+    asyncio.run(mod._prewarm_rag_embeddings())
+    assert seen["warn"] == 1
