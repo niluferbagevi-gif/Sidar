@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, Dict, Optional
 
+from agent.core.contracts import DelegationRequest
+
 from config import Config
 from core.llm_client import LLMClient
 
@@ -29,6 +31,25 @@ class BaseAgent(ABC):
         if name not in self.tools:
             return f"[HATA] '{name}' aracı bu ajan için tanımlı değil."
         return await self.tools[name](arg)
+
+
+
+    def delegate_to(self, target_agent: str, payload: str, *, task_id: str = "", reason: str = "") -> DelegationRequest:
+        """Uzman ajanın başka bir uzmana P2P delegasyon isteği oluşturmasını sağlar."""
+        safe_task_id = task_id or f"p2p-{self.role_name}"
+        meta = {"reason": reason} if reason else {}
+        return DelegationRequest(
+            task_id=safe_task_id,
+            reply_to=self.role_name,
+            target_agent=target_agent,
+            payload=payload,
+            meta=meta,
+        )
+
+    @staticmethod
+    def is_delegation_message(result: object) -> bool:
+        return isinstance(result, DelegationRequest)
+
 
     @abstractmethod
     async def run_task(self, task_prompt: str) -> str:
