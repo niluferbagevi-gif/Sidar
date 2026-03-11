@@ -163,3 +163,160 @@ def test_web_server_auth_and_main_arg_overrides(monkeypatch):
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = value
+
+from agent.core.contracts import DelegationRequest, TaskResult
+from agent.core.supervisor import SupervisorAgent
+from agent.roles.researcher_agent import ResearcherAgent
+from agent.roles.reviewer_agent import ReviewerAgent
+
+
+def test_reviewer_and_researcher_wrappers_and_routing(monkeypatch):
+    reviewer = ReviewerAgent()
+
+    async def _fake_to_thread(fn, *args):
+        return fn(*args)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    reviewer.github.get_repo_info = lambda: (True, "repo")
+    reviewer.github.list_pull_requests = lambda state, lim: (True, f"prs:{state}:{lim}")
+    reviewer.github.get_pull_request_diff = lambda number: (True, f"diff:{number}")
+    reviewer.github.list_issues = lambda state, lim: (False, f"issues:{state}:{lim}")
+
+    assert asyncio.run(reviewer._tool_repo_info("")) == "repo"
+    assert asyncio.run(reviewer._tool_list_prs("")) == "prs:open:20"
+    assert asyncio.run(reviewer._tool_pr_diff("7")) == "diff:7"
+    assert asyncio.run(reviewer._tool_list_issues("closed")) == "[HATA] issues:closed:20"
+
+    reviewer.tools["repo_info"] = lambda _arg: asyncio.sleep(0, result="rinfo")
+    reviewer.tools["list_prs"] = lambda arg: asyncio.sleep(0, result=f"lprs:{arg}")
+    reviewer.tools["pr_diff"] = lambda arg: asyncio.sleep(0, result=f"pdiff:{arg}")
+    reviewer.tools["list_issues"] = lambda arg: asyncio.sleep(0, result=f"lissues:{arg}")
+
+    assert asyncio.run(reviewer.run_task("repo_info")) == "rinfo"
+    assert asyncio.run(reviewer.run_task("list_prs|closed")) == "lprs:closed"
+    assert asyncio.run(reviewer.run_task("pr_diff|3")) == "pdiff:3"
+    assert asyncio.run(reviewer.run_task("list_issues")) == "lissues:open"
+
+    researcher = ResearcherAgent()
+
+    async def _ok(tag, val):
+        return True, f"{tag}:{val}"
+
+    researcher.web.search = lambda arg: _ok("web", arg)
+    researcher.web.fetch_url = lambda arg: _ok("fetch", arg)
+    researcher.web.search_docs = lambda lib, topic: _ok("docs", f"{lib}/{topic}")
+    researcher.docs.search = lambda query, *_args: (True, f"rag:{query}")
+
+    assert asyncio.run(researcher._tool_web_search("python")) == "web:python"
+    assert asyncio.run(researcher._tool_fetch_url("https://example.com")) == "fetch:https://example.com"
+    assert asyncio.run(researcher._tool_search_docs("fastapi websockets")) == "docs:fastapi/websockets"
+    assert asyncio.run(researcher._tool_docs_search("limits")) == "rag:limits"
+
+
+
+def test_supervisor_delegate_routes_and_retry_cap(monkeypatch):
+    sup = object.__new__(SupervisorAgent)
+    sup.MAX_QA_RETRIES = 1
+    sup.events = SimpleNamespace(publish=lambda *_a, **_k: asyncio.sleep(0))
+    sup.memory_hub = SimpleNamespace(add_global=lambda *_a, **_k: None, add_role_note=lambda *_a, **_k: None)
+
+    route_calls = []
+
+    async def _route(req, **_kwargs):
+        route_calls.append(req)
+        return TaskResult(task_id="r", status="done", summary="p2p-ok")
+
+    async def _delegate(receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+        if receiver in ("researcher", "reviewer") and parent_task_id is None and sender == "supervisor":
+            req = DelegationRequest(task_id="p2p", reply_to=receiver, target_agent="coder", payload="fix")
+            return TaskResult(task_id=f"t-{receiver}", status="done", summary=req)
+        if receiver == "coder":
+            return TaskResult(task_id="c1", status="done", summary="kod özeti")
+        # review after code should force retry stop
+        return TaskResult(task_id="rv", status="done", summary="[TEST:FAIL] regresyon")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route
+
+    assert asyncio.run(sup.run_task("web araştır")) == "p2p-ok"
+    assert asyncio.run(sup.run_task("pull request incele")) == "p2p-ok"
+
+    out = asyncio.run(sup.run_task("kodu güncelle"))
+    assert "Maksimum QA retry limiti aşıldı" in out
+    assert route_calls
+
+
+
+def test_web_server_sink_and_prewarm_negative_paths(monkeypatch):
+    patched_modules = [
+        "fastapi",
+        "fastapi.middleware.cors",
+        "fastapi.responses",
+        "fastapi.staticfiles",
+        "redis.asyncio",
+        "uvicorn",
+        "config",
+        "agent",
+        "agent.core",
+        "core",
+        "core.llm_client",
+        "core.llm_metrics",
+        "agent.sidar_agent",
+        "agent.core.event_stream",
+    ]
+    previous = {name: sys.modules.get(name) for name in patched_modules}
+    try:
+        mod = _load_web_server()
+
+        class _Collector:
+            def __init__(self):
+                self._sidar_usage_sink_bound = False
+                self.sink = None
+
+            def set_usage_sink(self, sink):
+                self.sink = sink
+
+        collector = _Collector()
+        monkeypatch.setattr(mod, "get_llm_metrics_collector", lambda: collector)
+
+        class _DB:
+            async def record_provider_usage_daily(self, **_kwargs):
+                raise RuntimeError("db down")
+
+        agent = SimpleNamespace(memory=SimpleNamespace(db=_DB()))
+        mod._bind_llm_usage_sink(agent)
+        assert collector.sink is not None
+
+        monkeypatch.setattr(asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+        collector.sink(SimpleNamespace(user_id="u1", provider="p", total_tokens=3))
+
+        async def _agent_no_rag():
+            return SimpleNamespace(rag=None)
+
+        monkeypatch.setattr(mod, "get_agent", _agent_no_rag)
+        asyncio.run(mod._prewarm_rag_embeddings())
+
+        async def _agent_no_chroma():
+            return SimpleNamespace(rag=SimpleNamespace(_chroma_available=False))
+
+        monkeypatch.setattr(mod, "get_agent", _agent_no_chroma)
+        asyncio.run(mod._prewarm_rag_embeddings())
+
+        class _Rag:
+            _chroma_available = True
+
+            def _init_chroma(self):
+                raise RuntimeError("boom")
+
+        async def _agent_broken():
+            return SimpleNamespace(rag=_Rag())
+
+        monkeypatch.setattr(mod, "get_agent", _agent_broken)
+        asyncio.run(mod._prewarm_rag_embeddings())
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
