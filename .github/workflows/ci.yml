@@ -26,6 +26,11 @@ jobs:
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh
 
+      - name: Audit source line metrics (standardized)
+        run: |
+          bash scripts/audit_metrics.sh . markdown
+          bash scripts/audit_metrics.sh . json
+
       - name: Check empty test artifacts
         run: |
           empty_files=$(find tests -type f -size 0 -print)
