@@ -1,5 +1,6 @@
 const AUTH_TOKEN_KEY = 'sidar_access_token';
 const AUTH_USER_KEY = 'sidar_user';
+let isCurrentUserAdmin = false;
 
 function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';
@@ -67,7 +68,79 @@ function renderUserProfile() {
   } else {
     box.style.display = 'none';
   }
+  isCurrentUserAdmin = !!(user && (user.role === 'admin' || user.username === 'default_admin'));
+  const adminTab = document.getElementById('admin-nav-tab');
+  if (adminTab) adminTab.style.display = isCurrentUserAdmin ? '' : 'none';
 }
+
+async function syncCurrentUserFromAPI() {
+  if (!getAuthToken()) return null;
+  try {
+    const res = await fetchAPI('/auth/me');
+    if (!res.ok) return null;
+    const user = await res.json();
+    setAuthState(getAuthToken(), user);
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+function _fmtNumber(num) {
+  return Number(num || 0).toLocaleString('tr-TR');
+}
+
+function renderAdminStats(data) {
+  document.getElementById('admin-total-users').textContent = _fmtNumber(data.total_users);
+  document.getElementById('admin-total-requests').textContent = _fmtNumber(data.total_api_requests);
+  document.getElementById('admin-total-tokens').textContent = _fmtNumber(data.total_tokens_used);
+
+  const tbody = document.getElementById('admin-users-tbody');
+  const users = data.users || [];
+  if (!tbody) return;
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="admin-empty">Kullanıcı bulunamadı.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = users.map((u) => `
+    <tr>
+      <td>${escHtml(u.username || '-')}</td>
+      <td>${escHtml(u.role || 'user')}</td>
+      <td>${_fmtNumber(u.daily_token_limit)}</td>
+      <td>${_fmtNumber(u.daily_request_limit)}</td>
+      <td>${escHtml(u.created_at || '-')}</td>
+    </tr>
+  `).join('');
+}
+
+async function loadAdminStats() {
+  const tbody = document.getElementById('admin-users-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="admin-empty">Veri yükleniyor...</td></tr>';
+  const res = await fetchAPI('/admin/stats');
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.error || 'Admin istatistikleri alınamadı');
+  }
+  renderAdminStats(data);
+}
+
+window.showAdminPanel = async function showAdminPanel() {
+  if (!isCurrentUserAdmin) {
+    showUiNotice('Admin paneli sadece yetkili kullanıcılar içindir.', 'warn');
+    return;
+  }
+  document.getElementById('task-panel').style.display = 'none';
+  document.getElementById('chat-panel').style.display = 'none';
+  document.getElementById('admin-panel-container').style.display = 'flex';
+  document.querySelectorAll('.nav-tab').forEach((tab) => tab.classList.remove('active'));
+  document.getElementById('admin-nav-tab')?.classList.add('active');
+  try {
+    await loadAdminStats();
+  } catch (err) {
+    showUiNotice(err.message || 'Admin panel verisi alınamadı', 'warn');
+  }
+};
 
 async function loginOrRegister(path, username, password) {
   const res = await fetch(path, {
@@ -417,6 +490,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     showAuthOverlay();
     return;
   }
+  await syncCurrentUserFromAPI();
+  renderUserProfile();
   await loadSessions();
   if (currentSessionId) {
     await loadSessionHistory(currentSessionId, false);

@@ -55,3 +55,14 @@ def test_web_ui_has_auth_overlay_and_token_wrapper():
     assert "async function fetchAPI(url, options = {})" in js
     assert "Authorization = `Bearer ${token}`" in js
     assert "function logoutUser()" in js
+
+
+def test_web_ui_has_admin_panel_markup_and_loader_logic():
+    html = Path("web_ui/index.html").read_text(encoding="utf-8")
+    js = Path("web_ui/app.js").read_text(encoding="utf-8")
+
+    assert 'id="admin-panel-container"' in html
+    assert 'id="admin-users-tbody"' in html
+    assert 'id="admin-nav-tab"' in html
+    assert "window.showAdminPanel = async function showAdminPanel()" in js
+    assert "fetchAPI('/admin/stats')" in js

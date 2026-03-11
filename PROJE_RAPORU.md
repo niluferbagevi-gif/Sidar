@@ -2547,3 +2547,26 @@ Bu oturumda test kapsamı kalite kapısı kurumsal eşiklere yükseltildi:
 
 4. **Politika testleri güncellendi (`tests/test_coverage_policy.py`)**
    - Script/CI/coveragerc üzerinde %95 kalite kapısı doğrulayan testler eklendi/güncellendi.
+---
+
+### Session 2026-03-11 — Telemetri, Maliyet Yönetimi ve Dashboard Altyapısı
+
+**Durum: Tamamlandı ✅**
+
+Bu oturumda kullanıcı bazlı maliyet/telemetri izleme ve dashboard altyapısı üretim kullanımına uygun şekilde tamamlandı:
+
+1. **LLM telemetri ve kullanıcı kapsamı**
+   - LLM çağrıları kullanıcı kimliği ile etiketlenerek provider + user kırılımında izlenebilir hale getirildi.
+   - Runtime metrikleri Prometheus uyumlu metin formatında dışa açıldı.
+
+2. **Maliyet/kullanımın kalıcılaştırılması**
+   - Günlük provider kullanım değerleri (token/istek) DB tarafına yazılır hale getirildi.
+   - Kullanıcı kota durumunun API üzerinden okunabilmesi için gerekli servis katmanı tamamlandı.
+
+3. **Monitoring stack**
+   - `docker-compose.yml` içine Prometheus (`:9090`) ve Grafana (`:3000`) servisleri eklendi.
+   - Prometheus scrape konfigürasyonu `docker/prometheus/prometheus.yml` ile projeye dahil edildi.
+
+4. **Doğrulama**
+   - İlgili backend metrik/test paketleri çalıştırılarak regresyon kontrolü yapıldı.
+   - Sonuç: telemetri + monitoring altyapısı v3.0 hedefleri için hazır ve çalışır durumda.

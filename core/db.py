@@ -739,6 +739,100 @@ class Database:
             "request_limit_exceeded": q_reqs > 0 and u_reqs >= q_reqs,
         }
 
+    async def list_users_with_quotas(self) -> list[dict[str, Any]]:
+        """Tüm kullanıcıları kota bilgileriyle birlikte döndürür."""
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT u.id, u.username, u.role, u.created_at,
+                           COALESCE(q.daily_token_limit, 0) AS daily_token_limit,
+                           COALESCE(q.daily_request_limit, 0) AS daily_request_limit
+                    FROM users u
+                    LEFT JOIN user_quotas q ON q.user_id = u.id
+                    ORDER BY u.created_at ASC
+                    """
+                )
+                return [
+                    {
+                        "id": str(row["id"]),
+                        "username": str(row["username"]),
+                        "role": str(row["role"]),
+                        "created_at": str(row["created_at"]),
+                        "daily_token_limit": int(row["daily_token_limit"] or 0),
+                        "daily_request_limit": int(row["daily_request_limit"] or 0),
+                    }
+                    for row in rows
+                ]
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> list[dict[str, Any]]:
+            assert self._sqlite_conn is not None
+            rows = self._sqlite_conn.execute(
+                """
+                SELECT u.id, u.username, u.role, u.created_at,
+                       COALESCE(q.daily_token_limit, 0) AS daily_token_limit,
+                       COALESCE(q.daily_request_limit, 0) AS daily_request_limit
+                FROM users u
+                LEFT JOIN user_quotas q ON q.user_id = u.id
+                ORDER BY u.created_at ASC
+                """
+            ).fetchall()
+            return [
+                {
+                    "id": str(row["id"]),
+                    "username": str(row["username"]),
+                    "role": str(row["role"]),
+                    "created_at": str(row["created_at"]),
+                    "daily_token_limit": int(row["daily_token_limit"] or 0),
+                    "daily_request_limit": int(row["daily_request_limit"] or 0),
+                }
+                for row in rows
+            ]
+
+        return await asyncio.to_thread(_run)
+
+    async def get_admin_stats(self) -> dict[str, Any]:
+        users = await self.list_users_with_quotas()
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                totals = await conn.fetchrow(
+                    """
+                    SELECT
+                        COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
+                        COALESCE(SUM(requests_used), 0) AS total_api_requests
+                    FROM provider_usage_daily
+                    """
+                )
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run_totals() -> sqlite3.Row:
+                assert self._sqlite_conn is not None
+                row = self._sqlite_conn.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(tokens_used), 0) AS total_tokens_used,
+                        COALESCE(SUM(requests_used), 0) AS total_api_requests
+                    FROM provider_usage_daily
+                    """
+                ).fetchone()
+                assert row is not None
+                return row
+
+            totals = await asyncio.to_thread(_run_totals)
+
+        return {
+            "total_users": len(users),
+            "total_tokens_used": int(totals["total_tokens_used"] or 0),
+            "total_api_requests": int(totals["total_api_requests"] or 0),
+            "users": users,
+        }
+
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
         session_id = str(uuid.uuid4())
         now = _utc_now_iso()

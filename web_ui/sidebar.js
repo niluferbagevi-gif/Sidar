@@ -142,13 +142,17 @@ async function deleteSession(id, event) {
 function showTaskPanel() {
   document.getElementById('task-panel').style.display = 'flex';
   document.getElementById('chat-panel').style.display = 'none';
-  document.querySelectorAll('.nav-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.getElementById('admin-panel-container').style.display = 'none';
+  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab')[0]?.classList.add('active');
 }
 
 function showChatPanel() {
   document.getElementById('task-panel').style.display = 'none';
   document.getElementById('chat-panel').style.display = 'flex';
-  document.querySelectorAll('.nav-tab').forEach((t,i) => t.classList.toggle('active', i===1));
+  document.getElementById('admin-panel-container').style.display = 'none';
+  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab')[1]?.classList.add('active');
   document.getElementById('input-area').focus();
 }
 

@@ -244,6 +244,18 @@ def _get_request_user(request: Request):
     return user
 
 
+def _is_admin_user(user) -> bool:
+    role = str(getattr(user, "role", "") or "").strip().lower()
+    username = str(getattr(user, "username", "") or "").strip()
+    return role == "admin" or username == "default_admin"
+
+
+def _require_admin_user(user=Depends(_get_request_user)):
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
+    return user
+
+
 @app.post("/auth/register")
 async def register_user(payload: dict):
     username = str(payload.get("username", "")).strip()
@@ -277,6 +289,13 @@ async def login_user(payload: dict):
 @app.get("/auth/me")
 async def auth_me(request: Request, user=Depends(_get_request_user)):
     return JSONResponse({"id": user.id, "username": user.username, "role": user.role})
+
+
+@app.get("/admin/stats")
+async def admin_stats(_user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    stats = await agent.memory.db.get_admin_stats()
+    return JSONResponse(stats)
 
 
 # ─────────────────────────────────────────────
