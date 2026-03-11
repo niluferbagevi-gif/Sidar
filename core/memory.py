@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 class ConversationMemory:
     """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
 
-    DEFAULT_USERNAME = "default_admin"
 
     def __init__(self, file_path: Path, max_turns: int = 20,
                  encryption_key: str = "", keep_last: int = 4) -> None:
@@ -43,6 +42,7 @@ class ConversationMemory:
         self.active_session_id: Optional[str] = None
         self.active_title: str = "Yeni Sohbet"
         self.active_user_id: Optional[str] = None
+        self.active_username: Optional[str] = None
         self._turns: List[Dict] = []
         self._last_file: Optional[str] = None
 
@@ -81,8 +81,9 @@ class ConversationMemory:
     async def _ainit_db(self) -> None:
         await self.db.connect()
         await self.db.init_schema()
-        user = await self.db.ensure_user(self.DEFAULT_USERNAME, role="admin")
+        user = await self.db.ensure_user("default_admin", role="admin")
         self.active_user_id = user.id
+        self.active_username = user.username
 
         sessions = await self.db.list_sessions(user.id)
         if sessions:
@@ -109,8 +110,9 @@ class ConversationMemory:
 
     async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
         if not self.active_user_id:
-            user = await self.db.ensure_user(self.DEFAULT_USERNAME, role="admin")
+            user = await self.db.ensure_user("default_admin", role="admin")
             self.active_user_id = user.id
+            self.active_username = user.username
 
         row = await self.db.create_session(self.active_user_id, title)
         self.active_session_id = row.id
@@ -183,6 +185,19 @@ class ConversationMemory:
     # ─────────────────────────────────────────────
     #  SYNC UYUMLULUK KATMANI
     # ─────────────────────────────────────────────
+
+
+    async def aset_active_user(self, user_id: str, username: Optional[str] = None) -> None:
+        self.active_user_id = user_id
+        self.active_username = username
+        sessions = await self.db.list_sessions(user_id)
+        if sessions:
+            await self.aload_session(sessions[0].id)
+        else:
+            await self.acreate_session("Yeni Sohbet")
+
+    def set_active_user(self, user_id: str, username: Optional[str] = None) -> None:
+        self._run_coro_sync(self.aset_active_user(user_id, username))
 
     def get_all_sessions(self) -> List[Dict]:
         return self._run_coro_sync(self.aget_all_sessions())

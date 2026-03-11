@@ -8,7 +8,6 @@ Başlatmak için:
 """
 
 import argparse
-import base64
 import asyncio
 import contextlib
 import hashlib
@@ -31,7 +30,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends
 from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -145,29 +144,29 @@ app = FastAPI(
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
-    """API_KEY ayarlıysa HTTP Basic Auth ile tüm istekleri koru."""
-    api_key = getattr(cfg, "API_KEY", "")
-    if not api_key:
+    """Bearer token ile DB tabanlı kullanıcı doğrulama uygular."""
+    open_paths = {
+        "/", "/health", "/docs", "/redoc", "/openapi.json",
+        "/auth/login", "/auth/register",
+    }
+    if request.method == "OPTIONS" or request.url.path in open_paths or request.url.path.startswith("/static/"):
         return await call_next(request)
 
-    if request.method == "OPTIONS":
-        return await call_next(request)
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=401)
 
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Basic "):
-        try:
-            decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-            _, password = decoded.split(":", 1)
-            if secrets.compare_digest(password, api_key):
-                return await call_next(request)
-        except Exception:
-            pass
+    token = auth_header[7:].strip()
+    if not token:
+        return JSONResponse({"error": "Geçersiz token"}, status_code=401)
 
-    return Response(
-        content="Yetkisiz Erişim. Lütfen API anahtarınızı şifre alanına girin.",
-        status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Sidar Secure Web UI"'},
-    )
+    agent = await get_agent()
+    user = await agent.memory.db.get_user_by_token(token)
+    if not user:
+        return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
+
+    request.state.user = user
+    return await call_next(request)
 
 
 # ─────────────────────────────────────────────
@@ -190,6 +189,48 @@ def _setup_tracing() -> None:
 
 
 _setup_tracing()
+
+def _get_request_user(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Yetkisiz erişim")
+    return user
+
+
+@app.post("/auth/register")
+async def register_user(payload: dict):
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    if len(username) < 3 or len(password) < 6:
+        raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
+
+    agent = await get_agent()
+    try:
+        user = await agent.memory.db.register_user(username=username, password=password)
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
+
+    token = await agent.memory.db.create_auth_token(user.id)
+    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token.token})
+
+
+@app.post("/auth/login")
+async def login_user(payload: dict):
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    agent = await get_agent()
+    user = await agent.memory.db.authenticate_user(username=username, password=password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı")
+
+    token = await agent.memory.db.create_auth_token(user.id)
+    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token.token})
+
+
+@app.get("/auth/me")
+async def auth_me(request: Request, user=Depends(_get_request_user)):
+    return JSONResponse({"id": user.id, "username": user.username, "role": user.role})
+
 
 # ─────────────────────────────────────────────
 #  RATE LIMITING (Redis + local fallback)
@@ -621,41 +662,43 @@ async def llm_budget_metrics():
     description="Kayıtlı sohbet oturumları listesini ve aktif oturum kimliğini döndürür.",
     responses={200: {"description": "Oturum listesi başarıyla alındı"}},
 )
-async def get_sessions():
-    """Tüm oturumların listesini döndürür."""
+async def get_sessions(request: Request, user=Depends(_get_request_user)):
+    """Yalnızca oturum sahibine ait sohbetleri döndürür."""
     agent = await get_agent()
+    sessions = await agent.memory.db.list_sessions(user.id)
     return JSONResponse({
-        "active_session": agent.memory.active_session_id,
-        "sessions": (await agent.memory.aget_all_sessions()) if hasattr(agent.memory, "aget_all_sessions") else agent.memory.get_all_sessions()
+        "active_session": None,
+        "sessions": [
+            {"id": row.id, "title": row.title, "updated_at": row.updated_at, "message_count": len(await agent.memory.db.get_session_messages(row.id))}
+            for row in sessions
+        ]
     })
 
 @app.get("/sessions/{session_id}")
-async def load_session(session_id: str):
-    """Belirli bir oturumu yükler ve geçmişini döndürür."""
+async def load_session(session_id: str, request: Request, user=Depends(_get_request_user)):
+    """Belirli bir oturumu kullanıcı kimliğiyle doğrulayarak yükler."""
     agent = await get_agent()
-    loaded = await agent.memory.aload_session(session_id) if hasattr(agent.memory, "aload_session") else agent.memory.load_session(session_id)
-    if loaded:
-        history = await agent.memory.aget_history() if hasattr(agent.memory, "aget_history") else agent.memory.get_history()
-        return JSONResponse({"success": True, "history": history})
-    return JSONResponse({"success": False, "error": "Oturum bulunamadı."}, status_code=404)
+    session = await agent.memory.db.load_session(session_id, user.id)
+    if not session:
+        return JSONResponse({"success": False, "error": "Oturum bulunamadı."}, status_code=404)
+    messages = await agent.memory.db.get_session_messages(session_id)
+    history = [{"role": m.role, "content": m.content, "timestamp": agent.memory._safe_ts(m.created_at), "tokens_used": m.tokens_used} for m in messages]
+    return JSONResponse({"success": True, "history": history})
 
 @app.post("/sessions/new")
-async def new_session():
-    """Yeni bir oturum oluşturur."""
+async def new_session(request: Request, user=Depends(_get_request_user)):
+    """Aktif kullanıcı için yeni bir oturum oluşturur."""
     agent = await get_agent()
-    session_id = await agent.memory.acreate_session("Yeni Sohbet") if hasattr(agent.memory, "acreate_session") else agent.memory.create_session("Yeni Sohbet")
-    return JSONResponse({"success": True, "session_id": session_id})
+    session = await agent.memory.db.create_session(user.id, "Yeni Sohbet")
+    return JSONResponse({"success": True, "session_id": session.id})
 
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """Belirli bir oturumu siler."""
+async def delete_session(session_id: str, request: Request, user=Depends(_get_request_user)):
+    """Kullanıcıya ait belirli bir oturumu siler."""
     agent = await get_agent()
-    deleted = await agent.memory.adelete_session(session_id) if hasattr(agent.memory, "adelete_session") else agent.memory.delete_session(session_id)
+    deleted = await agent.memory.db.delete_session(session_id, user.id)
     if deleted:
-        return JSONResponse({
-            "success": True, 
-            "active_session": agent.memory.active_session_id
-        })
+        return JSONResponse({"success": True})
     return JSONResponse({"success": False, "error": "Silinemedi."}, status_code=500)
 
 @app.get("/files")

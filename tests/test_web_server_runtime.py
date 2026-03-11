@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import importlib.util
 import io
 import json
@@ -82,6 +81,7 @@ class _FakeRequest:
         self._json_body = json_body
         self._body = body_bytes
         self.client = types.SimpleNamespace(host=host)
+        self.state = types.SimpleNamespace()
 
     async def json(self):
         return self._json_body or {}
@@ -111,6 +111,7 @@ def _install_web_server_stubs():
     fastapi_mod.BackgroundTasks = object
     fastapi_mod.Header = lambda default="": default
     fastapi_mod.HTTPException = _FakeHTTPException
+    fastapi_mod.Depends = lambda fn: fn
 
     cors_mod = types.ModuleType("fastapi.middleware.cors")
     cors_mod.CORSMiddleware = object
@@ -164,6 +165,25 @@ def _install_web_server_stubs():
     agent_mod = types.ModuleType("agent.sidar_agent")
     agent_mod.SidarAgent = object
 
+    core_metrics_mod = types.ModuleType("core.llm_metrics")
+
+    class _Collector:
+        def snapshot(self):
+            return {"totals": {"calls": 0, "total_tokens": 0}}
+
+    core_metrics_mod.get_llm_metrics_collector = lambda: _Collector()
+
+    event_stream_mod = types.ModuleType("agent.core.event_stream")
+
+    class _EventBus:
+        def subscribe(self):
+            q = asyncio.Queue()
+            return "sub-1", q
+
+        def unsubscribe(self, _sub_id):
+            return None
+
+    event_stream_mod.get_agent_event_bus = lambda: _EventBus()
     sys.modules["fastapi"] = fastapi_mod
     sys.modules["fastapi.middleware.cors"] = cors_mod
     sys.modules["fastapi.responses"] = resp_mod
@@ -173,7 +193,13 @@ def _install_web_server_stubs():
     sys.modules["config"] = cfg_mod
     if "agent" not in sys.modules:
         sys.modules["agent"] = types.ModuleType("agent")
+    if "agent.core" not in sys.modules:
+        sys.modules["agent.core"] = types.ModuleType("agent.core")
+    if "core" not in sys.modules:
+        sys.modules["core"] = types.ModuleType("core")
     sys.modules["agent.sidar_agent"] = agent_mod
+    sys.modules["agent.core.event_stream"] = event_stream_mod
+    sys.modules["core.llm_metrics"] = core_metrics_mod
 
 
 def _load_web_server():
@@ -283,20 +309,29 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
 def test_basic_auth_middleware_flow():
     mod = _load_web_server()
 
+    class _Db:
+        async def get_user_by_token(self, token):
+            if token == "good-token":
+                return types.SimpleNamespace(id="u1", username="alice", role="user")
+            return None
+
+    async def _get_agent():
+        return types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+
+    mod.get_agent = _get_agent
+
     async def _next(_request):
         return _FakeResponse("ok", status_code=200)
 
-    req = _FakeRequest(path="/status")
-    resp = asyncio.run(mod.basic_auth_middleware(req, _next))
-    assert resp.status_code == 200
+    open_req = _FakeRequest(path="/health")
+    open_resp = asyncio.run(mod.basic_auth_middleware(open_req, _next))
+    assert open_resp.status_code == 200
 
-    mod.cfg.API_KEY = "secret"
-    bad = _FakeRequest(path="/status", headers={"Authorization": "Basic xxx"})
+    bad = _FakeRequest(path="/status", headers={"Authorization": "Bearer bad-token"})
     unauthorized = asyncio.run(mod.basic_auth_middleware(bad, _next))
     assert unauthorized.status_code == 401
 
-    good_token = base64.b64encode(b"user:secret").decode("utf-8")
-    good = _FakeRequest(path="/status", headers={"Authorization": f"Basic {good_token}"})
+    good = _FakeRequest(path="/status", headers={"Authorization": "Bearer good-token"})
     ok = asyncio.run(mod.basic_auth_middleware(good, _next))
     assert ok.status_code == 200
 
@@ -412,21 +447,29 @@ def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
     class _Memory:
         active_session_id = "sess-1"
 
-        def get_all_sessions(self):
-            return [{"id": "sess-1"}, {"id": "sess-2"}]
+        class _Db:
+            async def list_sessions(self, _user_id):
+                return [types.SimpleNamespace(id="sess-1", title="s1", updated_at="now")]
 
-        def load_session(self, session_id):
-            return session_id == "sess-1"
+            async def get_session_messages(self, _session_id):
+                return [types.SimpleNamespace(role="user", content="hi", created_at="2026-01-01T00:00:00+00:00", tokens_used=0)]
 
-        def get_history(self):
-            return [{"role": "user", "content": "hi"}]
+            async def load_session(self, session_id, _user_id):
+                if session_id == "sess-1":
+                    return types.SimpleNamespace(id="sess-1")
+                return None
 
-        def create_session(self, _title):
-            self.active_session_id = "sess-3"
-            return "sess-3"
+            async def create_session(self, _user_id, _title):
+                return types.SimpleNamespace(id="sess-3")
 
-        def delete_session(self, session_id):
-            return session_id == "sess-1"
+            async def delete_session(self, session_id, _user_id):
+                return session_id == "sess-1"
+
+        db = _Db()
+
+        @staticmethod
+        def _safe_ts(_text):
+            return 0.0
 
         def clear(self):
             calls["cleared"] += 1
@@ -438,26 +481,27 @@ def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
 
     mod.get_agent = _get_agent
 
-    sessions = asyncio.run(mod.get_sessions())
+    user = types.SimpleNamespace(id="u1", username="alice", role="user")
+    sessions = asyncio.run(mod.get_sessions(_FakeRequest(path="/sessions"), user=user))
     assert sessions.status_code == 200
-    assert sessions.content["active_session"] == "sess-1"
+    assert sessions.content["active_session"] is None
 
-    loaded = asyncio.run(mod.load_session("sess-1"))
+    loaded = asyncio.run(mod.load_session("sess-1", _FakeRequest(path="/sessions/sess-1"), user=user))
     assert loaded.status_code == 200
     assert loaded.content["success"] is True
 
-    not_found = asyncio.run(mod.load_session("missing"))
+    not_found = asyncio.run(mod.load_session("missing", _FakeRequest(path="/sessions/missing"), user=user))
     assert not_found.status_code == 404
 
-    new_sess = asyncio.run(mod.new_session())
+    new_sess = asyncio.run(mod.new_session(_FakeRequest(path="/sessions/new"), user=user))
     assert new_sess.status_code == 200
     assert new_sess.content["session_id"] == "sess-3"
 
-    deleted = asyncio.run(mod.delete_session("sess-1"))
+    deleted = asyncio.run(mod.delete_session("sess-1", _FakeRequest(path="/sessions/sess-1"), user=user))
     assert deleted.status_code == 200
     assert deleted.content["success"] is True
 
-    delete_fail = asyncio.run(mod.delete_session("sess-2"))
+    delete_fail = asyncio.run(mod.delete_session("sess-2", _FakeRequest(path="/sessions/sess-2"), user=user))
     assert delete_fail.status_code == 500
 
     cleared = asyncio.run(mod.clear())
