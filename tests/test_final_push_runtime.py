@@ -14,6 +14,7 @@ def _restore_real_core_package():
         sys.modules.pop("core", None)
     sys.modules.pop("core.llm_client", None)
     sys.modules.pop("core.llm_metrics", None)
+    sys.modules.pop("httpx", None)
 
 
 

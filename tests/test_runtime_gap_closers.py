@@ -427,9 +427,15 @@ def test_llm_metrics_sink_and_event_bus_queuefull_cleanup():
 
 
 def test_db_postgres_pool_error_and_main_preflight_warnings(monkeypatch):
+    import importlib
+
     sys.modules.setdefault("dotenv", SimpleNamespace(load_dotenv=lambda *_a, **_k: None))
     from core.db import Database
+
+    import config as config_mod
+    config_mod = importlib.reload(config_mod)
     import main as launcher_main
+    launcher_main = importlib.reload(launcher_main)
 
     class _AsyncPG:
         @staticmethod
@@ -446,6 +452,10 @@ def test_db_postgres_pool_error_and_main_preflight_warnings(monkeypatch):
     finally:
         sys.modules.pop("asyncpg", None)
 
+    if not hasattr(launcher_main.cfg, "OPENAI_API_KEY"):
+        launcher_main.cfg.OPENAI_API_KEY = ""
+    if not hasattr(launcher_main.cfg, "ANTHROPIC_API_KEY"):
+        launcher_main.cfg.ANTHROPIC_API_KEY = ""
     monkeypatch.setattr(launcher_main.cfg, "OPENAI_API_KEY", "")
     monkeypatch.setattr(launcher_main.cfg, "ANTHROPIC_API_KEY", "")
     launcher_main.preflight("openai")

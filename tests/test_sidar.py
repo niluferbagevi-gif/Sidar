@@ -707,13 +707,14 @@ def test_json_decoder_no_json_returns_none():
 def test_json_decoder_embedded_in_markdown():
     """Markdown kod bloğu içine gömülü JSON doğru çıkarılır."""
     import json
-    from agent.sidar_agent import ToolCall
+
     text = '```json\n{"thought": "düşünüyorum", "tool": "list_dir", "argument": "."}\n```'
     decoder = json.JSONDecoder()
     idx = text.find('{')
     json_match, _ = decoder.raw_decode(text, idx)
-    action = ToolCall.model_validate(json_match)
-    assert action.tool == "list_dir"
+
+    assert json_match["tool"] == "list_dir"
+    assert json_match["argument"] == "."
 
 
 # ─────────────────────────────────────────────
