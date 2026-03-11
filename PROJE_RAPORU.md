@@ -40,7 +40,7 @@
   - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#)
   - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#)
   - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#)
-  - [3.24 Altyapı Dosyaları](#320-altyapı-dosyaları)
+  - [3.24 Altyapı Dosyaları](#324-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -885,7 +885,52 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.20 Altyapı Dosyaları
+### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı
+
+**Amaç:** Çoklu kullanıcı (multi-user) SaaS mimarisi için kullanıcı, oturum, mesaj ve yetkilendirme (token) verilerinin kalıcı ve izole olarak saklanmasını sağlar.
+
+**Özellikler:**
+- `Database` sınıfı ile asenkron bağlantı yönetimi (SQLAlchemy tabanlı).
+- `DATABASE_URL` değişkenine göre PostgreSQL (asyncpg) veya geri dönüş (fallback) olarak yerel SQLite desteği.
+- Temel tablolar: `users`, `auth_tokens`, `sessions`, `messages` ve bütçe takibi için `daily_llm_usage`.
+- Her oturumun (session) ve mesajın, ait olduğu kullanıcı kimliğiyle (`user_id`) ilişkilendirilerek katı veri izolasyonunun sağlanması.
+
+---
+
+### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi
+
+**Amaç:** LLM çağrılarının operasyonel metriklerini toplamak, Prometheus'a aktarmak ve veritabanı üzerinden günlük kullanıcı kotalarını izlemek.
+
+**Özellikler:**
+- `LLMMetricsManager` üzerinden token kullanımı (prompt, completion) ve işlem süresi (latency) ölçümü.
+- API maliyetlerinin (USD bazında) güncel model birim fiyatları kullanılarak dinamik hesaplanması.
+- `update_prometheus_metrics()` ile Prometheus uyumlu `Gauge` metriklerinin (`sidar_llm_request_duration_seconds`, `sidar_llm_tokens_total` vb.) dışa aktarılması.
+- Grafana dashboard'ları için kurumsal metrik (observability) verisi sağlanması.
+
+---
+
+### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı
+
+**Amaç:** `CoderAgent` tarafından yazılan kodu denetleyen, test koşturan ve projenin kalite standartlarına uygunluğunu doğrulayan uzman kalite kontrol ajanıdır.
+
+**Özellikler:**
+- Statik analiz (Ruff, Mypy) ve test script'lerini çalıştırarak regresyon tespiti.
+- Yazılan kodların güvenlik kurallarına ve mimari kararlara (örn. asenkron çalışma) uygunluğunu teyit etme.
+- Onay (Approve) veya Red (Reject) kararı üreterek Supervisor'a geri bildirim sağlama; gerekirse Coder'ı düzeltmeye zorlama döngüsü.
+
+---
+
+### 3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
+
+**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçları.
+
+**Özellikler:**
+- **`migrations/` (Alembic):** Veritabanı şema versiyonlaması. `0001_baseline_schema.py` ile temel yetkilendirme ve oturum tablolarının kurulumunu yönetir.
+- **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite tabanlı geçmiş verilerin kayıpsız bir şekilde merkezi PostgreSQL veritabanına taşınmasını sağlayan ETL betiği.
+
+---
+
+### 3.24 Altyapı Dosyaları
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
