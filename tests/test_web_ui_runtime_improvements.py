@@ -29,7 +29,7 @@ def test_web_ui_supports_drag_drop_rag_and_markdown_download():
     assert '.drag-overlay.active' in html
 
     assert "document.addEventListener('drop', async (e) =>" in js
-    assert "fetch(apiUrl('/api/rag/upload')" in js
+    assert "fetchAPI(apiUrl('/api/rag/upload')" in js
     assert "function downloadChat()" in js
     assert "sidar_sohbet_" in js
 
@@ -44,3 +44,14 @@ def test_web_ui_handles_backend_status_stream_messages():
     js = Path("web_ui/chat.js").read_text(encoding="utf-8")
     assert "if (data.status)" in js
     assert "apSetThought(data.status)" in js
+
+def test_web_ui_has_auth_overlay_and_token_wrapper():
+    html = Path("web_ui/index.html").read_text(encoding="utf-8")
+    js = Path("web_ui/app.js").read_text(encoding="utf-8")
+
+    assert 'id="auth-overlay"' in html
+    assert 'id="login-form"' in html
+    assert 'id="register-form"' in html
+    assert "async function fetchAPI(url, options = {})" in js
+    assert "Authorization = `Bearer ${token}`" in js
+    assert "function logoutUser()" in js

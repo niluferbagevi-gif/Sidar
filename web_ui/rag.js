@@ -18,7 +18,7 @@ async function ragLoadDocs(filterText) {
   const list = document.getElementById('rag-doc-list');
   list.innerHTML = '<div class="rag-empty">Yükleniyor…</div>';
   try {
-    const data = await (await fetch('/rag/docs')).json();
+    const data = await (await fetchAPI('/rag/docs')).json();
     const docs = data.docs || [];
     const q = (filterText || '').toLowerCase().trim();
     const filtered = q ? docs.filter(d =>
@@ -55,7 +55,7 @@ async function ragLoadDocs(filterText) {
 async function ragDeleteDoc(docId) {
   if (!confirm(`"${docId}" belgesi silinsin mi?`)) return;
   try {
-    const res = await fetch(`/rag/docs/${encodeURIComponent(docId)}`, { method: 'DELETE' });
+    const res = await fetchAPI(`/rag/docs/${encodeURIComponent(docId)}`, { method: 'DELETE' });
     const data = await res.json();
     ragShowResult('rag-del-result', data.success, data.message || data.detail || 'Silindi.');
     if (data.success) ragLoadDocs(document.getElementById('rag-filter').value);
@@ -71,7 +71,7 @@ async function ragAddFile() {
   const btn = document.getElementById('rag-add-file-btn');
   btn.disabled = true; btn.textContent = 'Ekleniyor…';
   try {
-    const res = await fetch('/rag/add-file', {
+    const res = await fetchAPI('/rag/add-file', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ path, title: title || undefined })
@@ -93,7 +93,7 @@ async function ragAddUrl() {
   const btn = document.getElementById('rag-add-url-btn');
   btn.disabled = true; btn.textContent = 'Ekleniyor…';
   try {
-    const res = await fetch('/rag/add-url', {
+    const res = await fetchAPI('/rag/add-url', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ url, title: title || undefined })
@@ -114,7 +114,7 @@ async function ragSearch() {
   const out = document.getElementById('rag-search-out');
   out.textContent = 'Aranıyor…';
   try {
-    const res = await fetch(`/rag/search?q=${encodeURIComponent(q)}`);
+    const res = await fetchAPI(`/rag/search?q=${encodeURIComponent(q)}`);
     const data = await res.json();
     out.textContent = data.result || 'Sonuç bulunamadı.';
   } catch (err) {
