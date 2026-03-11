@@ -44,6 +44,10 @@ jobs:
       - name: Run test suite
         run: bash run_tests.sh
 
+      - name: Run sandbox/reviewer hardening checks
+        run: |
+          pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
+
       - name: Enforce coverage quality gate (95%)
         run: |
           python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=95

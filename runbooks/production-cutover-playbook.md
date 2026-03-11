@@ -64,3 +64,19 @@ python scripts/migrate_sqlite_to_pg.py \
 - ReviewerAgent prompt'larına "geniş regresyon" zorunluluğu eklenmeli.
 - `run_tests` adımı sadece değişen dosyaları değil, ilgili bağımlı test kümelerini de çalıştırmalı.
 - PR başına minimum: birim test + entegrasyon testi + coverage raporu kontrolü (%95 barajı).
+
+## 6) Migration sürekliliği (operasyon disiplini)
+
+- Şema değişiklikleri **manuel SQL ile değil**, yalnızca Alembic revizyonları ile yapılmalıdır.
+- Her DB değişikliği için standart akış:
+  1. `alembic revision -m "<değişiklik adı>"`
+  2. migration dosyasına `upgrade/downgrade` adımlarını yaz
+  3. staging'de `alembic upgrade head` + `alembic downgrade -1` doğrula
+  4. PR'a migration etkisi ve rollback notu ekle
+- `schema_versions` uygulama telemetrisi için tutulur; gerçek migration kaynağı `alembic_version` tablosudur.
+
+## 7) gVisor/Kata rollout doğrulama checklist'i
+
+- Staging host üzerinde runtime kurulumu doğrula (`docker info | grep -i runtime`).
+- `DOCKER_MICROVM_MODE=gvisor` için `runsc`, `DOCKER_MICROVM_MODE=kata` için `kata-runtime` çözümlemesini CI testleriyle doğrula.
+- Production rollout öncesi en az bir smoke test: sandbox kod çalıştırma akışı micro-VM runtime ile geçmelidir.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 from typing import Optional
 
@@ -19,7 +20,8 @@ class ReviewerAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "
-        "gerekirse dinamik unit test üretir, testleri çalıştırır ve sonuçlara göre onay/red kararı verirsin. "
+        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte çalıştırır ve "
+        "sonuçlara göre onay/red kararı verirsin. "
         "Kararını P2P geri bildirim olarak coder ajanına iletebilirsin."
     )
 
@@ -59,6 +61,29 @@ class ReviewerAgent(BaseAgent):
             with open(test_path, "w", encoding="utf-8") as fh:
                 fh.write(self._build_dynamic_test_content(code_context))
             return await self.call_tool("run_tests", f"pytest -q {test_path}")
+
+    @staticmethod
+    def _extract_changed_paths(code_context: str) -> list[str]:
+        """Serbest metin/diff içinden olası dosya yollarını toplar."""
+        candidates = re.findall(r"[\w./-]+\.(?:py|js|ts|json|md|yml|yaml)", code_context or "")
+        cleaned: list[str] = []
+        for item in candidates:
+            val = item.strip().lstrip("./")
+            if not val or ".." in val or val.startswith("/"):
+                continue
+            cleaned.append(val)
+        # stable + unique
+        return list(dict.fromkeys(cleaned))
+
+    def _build_regression_commands(self, code_context: str) -> list[str]:
+        """Değişen dosyalara göre hedefli test + global regresyon komutlarını üretir."""
+        commands: list[str] = []
+        changed = self._extract_changed_paths(code_context)
+        test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
+        if test_targets:
+            commands.append("pytest -q " + " ".join(test_targets[:8]))
+        commands.append(self.cfg.REVIEWER_TEST_COMMAND)
+        return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
@@ -128,8 +153,12 @@ class ReviewerAgent(BaseAgent):
             await self.events.publish("reviewer", "Dinamik QA testleri üretiliyor...")
             dynamic_test_output = await self._run_dynamic_tests(context)
 
-            await self.events.publish("reviewer", "Proje test komutu çalıştırılıyor...")
-            regression_output = await self.call_tool("run_tests", self.cfg.REVIEWER_TEST_COMMAND)
+            await self.events.publish("reviewer", "Regresyon test planı hazırlanıyor...")
+            regression_chunks = []
+            for command in self._build_regression_commands(context):
+                await self.events.publish("reviewer", f"Test çalıştırılıyor: {command}")
+                regression_chunks.append(await self.call_tool("run_tests", command))
+            regression_output = "\n\n".join(regression_chunks)
 
             combo = f"{dynamic_test_output}\n\n{regression_output}".lower()
             status = "PASS"

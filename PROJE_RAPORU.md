@@ -2638,3 +2638,21 @@ Bu oturumda veritabanı yönetim altyapısı üretim standartlarına (PostgreSQL
 4. **Dökümantasyon Senkronizasyonu**
    - README versiyonu v2.10.8 ile eşitlendi.
    - `production-cutover-playbook.md` somut script komutlarıyla güncellendi.
+
+---
+
+### Session 2026-03-11 — Production Sertifikasyon Kalan Maddeler (QA + Sandbox + Migration Disiplini)
+
+**Durum: Tamamlandı ✅**
+
+Bu oturumda v3.0 kapanışı sonrası kalan üç stratejik açık için somut iyileştirmeler uygulandı:
+
+1. **ReviewerAgent kalite kapıları derinleştirildi**
+   - Reviewer, `review_code` akışında artık yalnızca tek komut yerine hedefe yönelik test + global regresyon komutlarını birlikte planlayıp çalıştırır.
+   - Diff/metin içinden değişen dosya yolları çıkarılarak `tests/...` hedefleri için odaklı `pytest` komutu üretimi eklendi.
+2. **Gelişmiş Sandbox runtime doğrulama testleri eklendi**
+   - `DOCKER_MICROVM_MODE=gvisor` için `runsc`, `DOCKER_MICROVM_MODE=kata` için `kata-runtime` çözümlemesi otomatik testlerle doğrulandı.
+   - İzinli runtime listesi dışındaki değerlerin fail-safe şekilde reddedildiği test altına alındı.
+3. **Alembic migration sürekliliği operasyon disiplini netleştirildi**
+   - Production cutover runbook'una “manuel SQL yerine zorunlu Alembic zinciri” ilkesi ve revizyon/rollback akışı eklendi.
+   - `schema_versions` (uygulama telemetrisi) ile `alembic_version` (migration kaynağı) ayrımı dokümante edildi.
