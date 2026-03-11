@@ -2476,6 +2476,34 @@ Bu oturumda ajanlar arası doğrudan delegasyon ve QA derinleştirmesi devreye a
 4. **Coder geri bildirim tüketimi (`agent/roles/coder_agent.py`)**
    - `qa_feedback|...` mesajları parse edilip rework/approve durumları kodlayıcı tarafından işleniyor.
 
+### Session 2026-03-11 — Faz 5: Zero-Trust Sandbox ve Kaynak Kısıtları
+
+Bu oturumda kod çalıştırma katmanı kurumsal/multi-tenant güvenlik hedefleri için sertleştirildi:
+
+1. **Yeni Docker güvenlik konfigürasyonları (`config.py`)**
+   - `DOCKER_RUNTIME` (örn. `runsc` ile gVisor hazırlığı)
+   - `DOCKER_MEM_LIMIT` (varsayılan: `256m`)
+   - `DOCKER_NETWORK_DISABLED` (varsayılan: `True`)
+   - `DOCKER_NANO_CPUS` (varsayılan: `1_000_000_000` ≈ 1 vCPU)
+
+2. **Sandbox çalıştırma parametreleri (`managers/code_manager.py`)**
+   - `containers.run(...)` çağrısında konfigürasyon tabanlı limitler aktif edildi:
+     - `mem_limit=self.docker_mem_limit`
+     - `nano_cpus=self.docker_nano_cpus`
+     - `network_mode="none"` (ağ kapalıysa)
+     - `runtime=self.docker_runtime` (runtime belirtilmişse)
+   - Konteyner `StatusCode` bilgisi okunarak non-zero çıkışlar hata olarak işaretleniyor.
+
+3. **Doğrulama testleri (`tests/test_code_manager_runtime.py`)**
+   - Network disabled senaryosunda dış HTTP (`requests.get('https://google.com')`) çağrısının başarısız olduğu test ile doğrulandı.
+   - Docker run kwargs içinde `network_mode`, `mem_limit` ve `nano_cpus` değerleri assertion ile kontrol edildi.
+
+4. **Kapsam etkisi**
+   - Bu adım, Firecracker/gVisor gibi daha ileri izolasyon katmanlarına geçiş için temel güvenlik sözleşmesini oluşturur.
+   - SaaS/kurumsal dağıtımlarda varsayılan fail-closed davranışına yaklaşım güçlendirildi.
+
+---
+
 ### Session 2026-03-11 — Observability / Canlı Ajan Durum Akışı
 
 Bu oturumda ajanın arka plan adımlarını kullanıcıya gerçek zamanlı yansıtmak için event-stream entegrasyonu yapıldı:

@@ -30,3 +30,9 @@ def test_system_health_exposes_structured_health_summary():
     assert '"status": "healthy"' in src
     assert '"ollama_online": self.check_ollama()' in src
     assert '"python_version": platform.python_version()' in src
+
+def test_system_health_has_llm_prometheus_renderer():
+    src = Path("managers/system_health.py").read_text(encoding="utf-8")
+    assert "def render_llm_metrics_prometheus(snapshot" in src
+    assert "sidar_llm_cost_total_usd" in src
+    assert "sidar_llm_user_calls_total" in src

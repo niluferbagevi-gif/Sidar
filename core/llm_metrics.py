@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import inspect
 import os
 import threading
 import time
@@ -22,6 +25,7 @@ class LLMMetricEvent:
     cost_usd: float
     success: bool
     rate_limited: bool
+    user_id: str = ""
     error: str = ""
 
 
@@ -42,10 +46,29 @@ _MODEL_PRICES_PER_1M: Dict[str, Dict[str, float]] = {
 }
 
 
+_CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar("sidar_llm_user_id", default="")
+
+
+def set_current_metrics_user_id(user_id: str):
+    return _CURRENT_USER_ID.set((user_id or "").strip())
+
+
+def reset_current_metrics_user_id(token) -> None:
+    _CURRENT_USER_ID.reset(token)
+
+
+def get_current_metrics_user_id() -> str:
+    return _CURRENT_USER_ID.get()
+
+
 class LLMMetricsCollector:
     def __init__(self, max_events: int = 200) -> None:
         self._lock = threading.Lock()
         self._events: Deque[LLMMetricEvent] = deque(maxlen=max_events)
+        self._usage_sink = None
+
+    def set_usage_sink(self, sink) -> None:
+        self._usage_sink = sink
 
     @staticmethod
     def estimate_cost_usd(provider: str, model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -68,6 +91,7 @@ class LLMMetricsCollector:
         cost_usd: Optional[float] = None,
         success: bool = True,
         error: str = "",
+        user_id: str = "",
     ) -> None:
         prompt_tokens = max(0, int(prompt_tokens or 0))
         completion_tokens = max(0, int(completion_tokens or 0))
@@ -77,10 +101,12 @@ class LLMMetricsCollector:
         if cost_usd is None:
             cost_usd = self.estimate_cost_usd(provider, model, prompt_tokens, completion_tokens)
 
+        resolved_user_id = (user_id or get_current_metrics_user_id() or "").strip()
         event = LLMMetricEvent(
             timestamp=time.time(),
             provider=provider,
             model=model,
+            user_id=resolved_user_id,
             latency_ms=max(0.0, float(latency_ms or 0.0)),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -93,11 +119,24 @@ class LLMMetricsCollector:
         with self._lock:
             self._events.append(event)
 
+        if self._usage_sink is not None:
+            try:
+                result = self._usage_sink(event)
+                if inspect.isawaitable(result):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(result)
+                    except RuntimeError:
+                        pass
+            except Exception:
+                pass
+
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             events = list(self._events)
 
         by_provider: Dict[str, Dict[str, Any]] = {}
+        by_user: Dict[str, Dict[str, Any]] = {}
         total_calls = len(events)
         total_failures = 0
         total_rate_limited = 0
@@ -126,6 +165,16 @@ class LLMMetricsCollector:
             row["cost_usd"] += e.cost_usd
             row["latency_ms_avg"] += e.latency_ms
             row["latency_ms_max"] = max(row["latency_ms_max"], e.latency_ms)
+
+            if e.user_id:
+                urow = by_user.setdefault(
+                    e.user_id,
+                    {"calls": 0, "failures": 0, "total_tokens": 0, "cost_usd": 0.0},
+                )
+                urow["calls"] += 1
+                urow["failures"] += 0 if e.success else 1
+                urow["total_tokens"] += e.total_tokens
+                urow["cost_usd"] += e.cost_usd
 
             total_failures += 0 if e.success else 1
             total_rate_limited += 1 if e.rate_limited else 0
@@ -175,6 +224,7 @@ class LLMMetricsCollector:
                 "total_exceeded": total_cost > global_total,
             },
             "by_provider": by_provider,
+            "by_user": by_user,
             "recent": [asdict(e) for e in events[-20:]],
         }
 

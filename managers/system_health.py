@@ -23,6 +23,45 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+
+
+def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
+    """LLM metrik snapshot'unu Prometheus text formatına çevirir."""
+    lines: list[str] = [
+        '# HELP sidar_llm_calls_total Toplam LLM çağrı sayısı',
+        '# TYPE sidar_llm_calls_total counter',
+        '# HELP sidar_llm_cost_total_usd Toplam LLM maliyeti (USD)',
+        '# TYPE sidar_llm_cost_total_usd counter',
+        '# HELP sidar_llm_tokens_total Toplam LLM token sayısı',
+        '# TYPE sidar_llm_tokens_total counter',
+        '# HELP sidar_llm_failures_total Toplam başarısız LLM çağrısı',
+        '# TYPE sidar_llm_failures_total counter',
+    ]
+
+    totals = (snapshot or {}).get('totals', {}) if isinstance(snapshot, dict) else {}
+    lines.append(f"sidar_llm_calls_total {int(totals.get('calls', 0) or 0)}")
+    lines.append(f"sidar_llm_cost_total_usd {float(totals.get('cost_usd', 0.0) or 0.0)}")
+    lines.append(f"sidar_llm_tokens_total {int(totals.get('total_tokens', 0) or 0)}")
+    lines.append(f"sidar_llm_failures_total {int(totals.get('failures', 0) or 0)}")
+
+    by_provider = snapshot.get('by_provider', {}) if isinstance(snapshot, dict) else {}
+    for provider, row in by_provider.items():
+        p = str(provider or 'unknown').replace('"', '\"')
+        lines.append(f'sidar_llm_calls_total{{provider="{p}"}} {int(row.get("calls", 0) or 0)}')
+        lines.append(f'sidar_llm_cost_total_usd{{provider="{p}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
+        lines.append(f'sidar_llm_tokens_total{{provider="{p}"}} {int(row.get("total_tokens", 0) or 0)}')
+        lines.append(f'sidar_llm_failures_total{{provider="{p}"}} {int(row.get("failures", 0) or 0)}')
+        lines.append(f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}')
+
+    by_user = snapshot.get('by_user', {}) if isinstance(snapshot, dict) else {}
+    for user_id, row in by_user.items():
+        uid = str(user_id or 'anonymous').replace('"', '\"')
+        lines.append(f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}')
+        lines.append(f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
+        lines.append(f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}')
+
+    return "\n".join(lines) + "\n"
+
 class SystemHealthManager:
     """
     Donanım sağlığını izler, raporlar ve GPU belleğini optimize eder.

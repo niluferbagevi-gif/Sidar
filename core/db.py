@@ -608,6 +608,137 @@ class Database:
             return None
         return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
 
+
+    async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:
+        tokens = max(0, int(daily_token_limit or 0))
+        requests = max(0, int(daily_request_limit or 0))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
+                                  daily_request_limit=EXCLUDED.daily_request_limit
+                    """,
+                    user_id,
+                    tokens,
+                    requests,
+                )
+            return
+
+        assert self._sqlite_conn is not None
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                """
+                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    daily_token_limit=excluded.daily_token_limit,
+                    daily_request_limit=excluded.daily_request_limit
+                """,
+                (user_id, tokens, requests),
+            )
+            self._sqlite_conn.commit()
+        await asyncio.to_thread(_run)
+
+    async def record_provider_usage_daily(self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1) -> None:
+        provider_name = (provider or "unknown").lower().strip() or "unknown"
+        today = datetime.now(timezone.utc).date().isoformat()
+        req = max(0, int(requests_inc or 0))
+        toks = max(0, int(tokens_used or 0))
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+                    VALUES ($1, $2, $3::date, $4, $5)
+                    ON CONFLICT (user_id, provider, usage_date)
+                    DO UPDATE SET requests_used=provider_usage_daily.requests_used + EXCLUDED.requests_used,
+                                  tokens_used=provider_usage_daily.tokens_used + EXCLUDED.tokens_used
+                    """,
+                    user_id,
+                    provider_name,
+                    today,
+                    req,
+                    toks,
+                )
+            return
+
+        assert self._sqlite_conn is not None
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                """
+                INSERT INTO provider_usage_daily (user_id, provider, usage_date, requests_used, tokens_used)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, provider, usage_date)
+                DO UPDATE SET requests_used=requests_used + excluded.requests_used,
+                              tokens_used=tokens_used + excluded.tokens_used
+                """,
+                (user_id, provider_name, today, req, toks),
+            )
+            self._sqlite_conn.commit()
+        await asyncio.to_thread(_run)
+
+    async def get_user_quota_status(self, user_id: str, provider: str) -> dict[str, int | bool]:
+        provider_name = (provider or "unknown").lower().strip() or "unknown"
+        today = datetime.now(timezone.utc).date().isoformat()
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                quota = await conn.fetchrow(
+                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=$1",
+                    user_id,
+                )
+                usage = await conn.fetchrow(
+                    """
+                    SELECT requests_used, tokens_used
+                    FROM provider_usage_daily
+                    WHERE user_id=$1 AND provider=$2 AND usage_date=$3::date
+                    """,
+                    user_id,
+                    provider_name,
+                    today,
+                )
+            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
+            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
+            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
+            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+        else:
+            assert self._sqlite_conn is not None
+            def _run() -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
+                assert self._sqlite_conn is not None
+                q = self._sqlite_conn.execute(
+                    "SELECT daily_token_limit, daily_request_limit FROM user_quotas WHERE user_id=?",
+                    (user_id,),
+                ).fetchone()
+                u = self._sqlite_conn.execute(
+                    "SELECT requests_used, tokens_used FROM provider_usage_daily WHERE user_id=? AND provider=? AND usage_date=?",
+                    (user_id, provider_name, today),
+                ).fetchone()
+                return q, u
+            quota, usage = await asyncio.to_thread(_run)
+            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
+            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
+            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
+            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+
+        return {
+            "daily_token_limit": q_tokens,
+            "daily_request_limit": q_reqs,
+            "tokens_used": u_tokens,
+            "requests_used": u_reqs,
+            "token_limit_exceeded": q_tokens > 0 and u_tokens >= q_tokens,
+            "request_limit_exceeded": q_reqs > 0 and u_reqs >= q_reqs,
+        }
+
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
         session_id = str(uuid.uuid4())
         now = _utc_now_iso()

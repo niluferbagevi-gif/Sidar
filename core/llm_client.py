@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
-from core.llm_metrics import get_llm_metrics_collector
+from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 
 try:
     from opentelemetry import trace
@@ -74,6 +74,7 @@ def _record_llm_metric(
         completion_tokens=completion_tokens,
         success=success,
         error=error,
+        user_id=get_current_metrics_user_id(),
     )
 
 
