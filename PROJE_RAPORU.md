@@ -48,6 +48,7 @@
   - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
   - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
 - [6. Test Kapsamı](#6-test-kapsamı)
+  - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
 - [8. Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
 - [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
@@ -1126,6 +1127,16 @@ Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
 - **Multi-Agent Mimari Testleri:** `test_supervisor_agent.py`, `test_coder_agent.py`, `test_researcher_agent.py`
 - **Yeni LLM Sağlayıcı Testleri:** `test_anthropic_provider_runtime.py`
 - **Güvenlik / Webhook Testleri:** `test_github_webhook.py`
+
+**v3.0.0 ile Eklenen Kurumsal Test Grupları:**
+- **Veritabanı ve Migration Testleri:** `core/db.py` için kapsamlı testler ve Alembic bütünlüğü için `test_migration_ci_guards.py` benzeri CI koruma testleri eklendi.
+- **Telemetri ve Bütçe Testleri:** `test_llm_metrics_runtime.py` ile kullanıcı bütçe takibi ve Prometheus metrik üretim akışları güvence altına alındı.
+- **Çoklu Ajan (Multi-Agent) ve QA Testleri:** `SupervisorAgent` ve `ReviewerAgent` odaklı testlerle ajanlar arası etkileşim, görev devri ve kalite kapısı davranışları doğrulanıyor.
+- **Toplam Test Hacmi:** Test envanteri yaklaşık **15.974 satıra** ulaşarak üretim öncesi güvenilirlik sinyallerini güçlendirdi.
+
+### 6.1 CI/CD Pipeline Durumu
+
+GitHub Actions entegrasyonu tamamlanmıştır. `.github/workflows/` altında yer alan `ci.yml` ve `migration-cutover-checks.yml` iş akışları ile her push/pull request'te otomatik test, statik analiz (Ruff, Mypy) ve veritabanı şema doğrulama adımları çalıştırılmaktadır.
 
 **Audit #7'de Tespit Edilen Yeni Test Modülleri (6 adet):**
 
