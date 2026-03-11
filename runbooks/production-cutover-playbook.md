@@ -87,3 +87,25 @@ python scripts/migrate_sqlite_to_pg.py \
 - Staging host üzerinde runtime kurulumu doğrula (`docker info | grep -i runtime`).
 - `DOCKER_MICROVM_MODE=gvisor` için `runsc`, `DOCKER_MICROVM_MODE=kata` için `kata-runtime` çözümlemesini CI testleriyle doğrula.
 - Production rollout öncesi en az bir smoke test: sandbox kod çalıştırma akışı micro-VM runtime ile geçmelidir.
+
+## 8) Host seviyesinde sandbox runtime otomasyonu
+
+`gVisor` / `Kata` kurulumu için otomasyon scripti eklendi:
+
+```bash
+sudo bash scripts/install_host_sandbox.sh --mode gvisor
+# veya
+sudo bash scripts/install_host_sandbox.sh --mode kata
+# veya
+sudo bash scripts/install_host_sandbox.sh --mode both
+```
+
+Dry-run ve kontrollü rollout:
+
+```bash
+sudo bash scripts/install_host_sandbox.sh --mode gvisor --dry-run
+sudo bash scripts/install_host_sandbox.sh --mode gvisor --no-restart
+```
+
+Script; runtime binary kurulumunu yapar, `/etc/docker/daemon.json` içinde `runtimes` alanını günceller, opsiyonel olarak Docker'ı restart eder ve `hello-world` ile runtime smoke testlerini çalıştırır.
+
