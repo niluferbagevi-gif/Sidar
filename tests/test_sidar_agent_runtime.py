@@ -1871,3 +1871,41 @@ def test_react_loop_tool_result_none_feeds_error_and_continues(monkeypatch):
 
     out = asyncio.run(_collect(a._react_loop("test")))
     assert out[-1] == "tamam"
+
+def test_try_multi_agent_returns_none_when_disabled_and_warns_once(monkeypatch):
+    from agent.sidar_agent import SidarAgent
+
+    a = SidarAgent.__new__(SidarAgent)
+    a.cfg = SimpleNamespace(ENABLE_MULTI_AGENT=False)
+    a._multi_agent_deprecation_warned = False
+    a._supervisor = None
+
+    warned = []
+
+    def _fake_warn(msg, category=None, stacklevel=1):
+        warned.append((msg, category))
+
+    monkeypatch.setattr("agent.sidar_agent.warnings.warn", _fake_warn)
+
+    out1 = asyncio.run(SidarAgent._try_multi_agent(a, "gorev"))
+    out2 = asyncio.run(SidarAgent._try_multi_agent(a, "gorev"))
+
+    assert out1 is None
+    assert out2 is None
+    assert len(warned) == 1
+
+
+def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
+    from agent.sidar_agent import SidarAgent
+
+    class _Sup:
+        async def run_task(self, prompt: str) -> str:
+            return f"ok:{prompt}"
+
+    a = SidarAgent.__new__(SidarAgent)
+    a.cfg = SimpleNamespace(ENABLE_MULTI_AGENT=True)
+    a._multi_agent_deprecation_warned = False
+    a._supervisor = _Sup()
+
+    out = asyncio.run(SidarAgent._try_multi_agent(a, "gorev"))
+    assert out == "ok:gorev"

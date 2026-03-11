@@ -1311,7 +1311,7 @@ add_document(title, content, source)
 
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
-| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=false` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
+| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=true` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
 | 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
 | 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
@@ -1439,7 +1439,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
 | `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
 | `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
-| `ENABLE_MULTI_AGENT` | `false` | Multi-agent Supervisor modunu etkinleştirir (Strangler Pattern, varsayılan kapalı) |
+| `ENABLE_MULTI_AGENT` | `true` | Multi-agent Supervisor modunu etkinleştirir (Strangler Pattern, varsayılan açık; `false` deprecate) |
 
 ---
 
@@ -1471,6 +1471,7 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - `ENABLE_MULTI_AGENT` geçiş bayrağına bağlı çift akışın (legacy `sidar_agent.py` + `Supervisor`) kademeli azaltılması.
 - Strangler Pattern tamamlanarak `Supervisor` tabanlı çoklu ajan mimarisinin varsayılan ve tek omurga haline getirilmesi.
 - Geçiş sürecinde geriye uyumluluk notları + deprecation takvimi yayınlanması.
+- `ENABLE_MULTI_AGENT=false` kullanımı için runtime Deprecation uyarısı üretimi (legacy fallback, tek omurgaya geçişi hızlandırır).
 
 ### 14.2 Reviewer (QA) Ajanının Olgunlaştırılması
 - `ReviewerAgent` temel rolü devrededir; bir sonraki adım kalite kapıları ve regresyon sinyallerini derinleştirmektir.
@@ -1506,7 +1507,7 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 | CLI arayüzü | Python ≥ 3.10, `httpx`, `python-dotenv` | — | ✅ Tamamlandı |
 | Web arayüzü | `fastapi`, `uvicorn`, `httpx` | `WEB_PORT` (opsiyonel) | ✅ Tamamlandı |
 | **Multi-LLM Soyutlama Katmanı** (Ollama + Gemini + OpenAI + Anthropic) | `httpx`, `google-generativeai`, `openai`, `anthropic` | `AI_PROVIDER`, sağlayıcıya göre `*_API_KEY` | ✅ Tamamlandı |
-| **Multi-Agent Orkestrasyonu (Supervisor)** | `agent/core/supervisor.py`, `agent/roles/*` | `ENABLE_MULTI_AGENT=false/true` | ✅ Tamamlandı *(Geriye uyumluluk geçiş aşamasında)* |
+| **Multi-Agent Orkestrasyonu (Supervisor)** | `agent/core/supervisor.py`, `agent/roles/*` | `ENABLE_MULTI_AGENT=true` (varsayılan) / `false` (legacy, deprecate) | ✅ Tamamlandı *(Geriye uyumluluk geçiş aşamasında)* |
 | **Bağımsız Uzman Ajan Rolleri** (CoderAgent + ResearcherAgent) | `agent/base_agent.py`, `agent/roles/*` | `ENABLE_MULTI_AGENT=true` (aktif kullanım için) | ✅ Tamamlandı |
 | Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) | ✅ Tamamlandı |
 | Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` | ✅ Tamamlandı |
@@ -2055,7 +2056,7 @@ Aşağıdaki dosyalar Audit #6 dahil hiçbir önceki raporda yer almamaktadır. 
 ```python
 # Strangler Pattern: feature flag ile kapalı, geriye dönük uyumlu
 async def _try_multi_agent(self, user_input: str) -> Optional[str]:
-    if not getattr(self.cfg, "ENABLE_MULTI_AGENT", False):
+    if not getattr(self.cfg, "ENABLE_MULTI_AGENT", True):
         return None
     # SupervisorAgent lazy-init + route + [LEGACY_FALLBACK] kontrolü
 ```
@@ -2086,11 +2087,11 @@ async def _try_multi_agent(self, user_input: str) -> Optional[str]:
 
 | Değişken | `config.py` Referansı | `.env.example` Durumu |
 |----------|----------------------|----------------------|
-| `ENABLE_MULTI_AGENT` | `config.py:230` — `get_bool_env("ENABLE_MULTI_AGENT", False)` | ✅ **Mevcut** — `.env.example:81` (`ENABLE_MULTI_AGENT=false`) |
+| `ENABLE_MULTI_AGENT` | `config.py:230` — `get_bool_env("ENABLE_MULTI_AGENT", True)` | ✅ **Mevcut** — `.env.example:81` (`ENABLE_MULTI_AGENT=true`) |
 
-> **Audit #8 Düzeltmesi (2026-03-10):** Bu bölümde daha önce "❌ Eksik" yazıyordu. Audit #8'de `.env.example` dosyası satır satır incelenmiş; `ENABLE_MULTI_AGENT=false` değerinin **satır 81**'de eklenmiş olduğu doğrulanmıştır. §11.2 zaten "ÇÖZÜLDÜ" olarak işaretlemişti — §18.6.5 ile çelişki bu düzeltmeyle giderilmiştir.
+> **Audit #8 Düzeltmesi (2026-03-10):** Bu bölümde daha önce "❌ Eksik" yazıyordu. Audit #8'de `.env.example` dosyası satır satır incelenmiş; `ENABLE_MULTI_AGENT=true` değerinin **satır 81**'de bulunduğu doğrulanmıştır. §11.2 zaten "ÇÖZÜLDÜ" olarak işaretlemişti — §18.6.5 ile çelişki bu düzeltmeyle giderilmiştir.
 >
-> **11 Mart 2026 Doğrulaması (Audit #7.1):** `ENABLE_MULTI_AGENT=false` değişkeni `.env.example` içinde hâlâ mevcuttur; bu başlık altındaki durum **✅ ÇÖZÜLDÜ** olarak korunmalıdır.
+> **11 Mart 2026 Doğrulaması (Audit #7.1):** `ENABLE_MULTI_AGENT=true` değişkeni `.env.example` içinde varsayılan olarak mevcuttur; bu başlık altındaki durum **✅ ÇÖZÜLDÜ** olarak korunmalıdır.
 
 ---
 
@@ -2195,7 +2196,7 @@ Audit #7'de onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 | Tüm büyük modül satır sayıları | `wc -l` ölçümü | ✅ Audit #7 ile tam eşleşme |
 | Test satır toplamı | `wc -l tests/*.py` | ✅ 15.974 satır teyit |
 | Web UI toplam | `wc -l web_ui/*` | ✅ 3.551 satır teyit |
-| `ENABLE_MULTI_AGENT` `.env.example`'da | `.env.example:81` | ✅ Mevcut (`ENABLE_MULTI_AGENT=false`) |
+| `ENABLE_MULTI_AGENT` `.env.example`'da | `.env.example:81` | ✅ Mevcut (`ENABLE_MULTI_AGENT=true`) |
 | `duckduckgo-search` pin formatı | `requirements.txt:18`, `environment.yml:64` | ✅ `~=6.2.13` teyit |
 | `openai` ve `anthropic` pin formatları | `requirements.txt:15,16` | ✅ `openai~=1.51.2`, `anthropic~=0.40.0` |
 | `_tool_` metod sayısı (`sidar_agent.py`) | `grep -c "def _tool_" agent/sidar_agent.py` | ✅ 50 araç metodu teyit |
