@@ -324,3 +324,22 @@ Bu RFC için istenen onaylar:
 - [ ] Feature flag stratejisi onayı
 
 Onay sonrası bir sonraki adım: **Faz 1 iskelet kodu (minimal, non-breaking) PR**.
+
+## 17) v3.0 Multi-User Hazırlık Planı (PostgreSQL + Redis)
+
+- **Kimlik modeli:** `session_id` tekil yaklaşımı, `user_id` ile ilişkili çoklu oturum modeline evrilecek (`user_id -> sessions -> messages`).
+- **PostgreSQL çekirdeği (öneri):**
+  - `users(id, email, created_at, status)`
+  - `sessions(id, user_id, title, created_at, archived_at)`
+  - `messages(id, session_id, role, content, token_estimate, created_at)`
+  - `provider_usage_daily(user_id, provider, prompt_tokens, completion_tokens, cost_usd, day)`
+  - `user_quotas(user_id, daily_token_limit, daily_cost_limit, updated_at)`
+- **Redis sıcak katman (öneri):**
+  - `sidar:rl:{user_id}` (rate-limit)
+  - `sidar:budget:{user_id}` (anlık bütçe sayaçları)
+  - `sidar:session:{session_id}:hot` (kısa ömürlü aktif bağlam)
+- **Geçiş stratejisi:** Strangler Pattern ile mevcut dosya tabanlı memory + Redis fallback yapısı korunurken, read-path kademeli olarak PostgreSQL'e alınacak.
+- **Test planı (minimum):**
+  1. Tek kullanıcı regresyon testi (mevcut davranış bozulmamalı).
+  2. İki kullanıcı izolasyon testi (`user_a`/`user_b` oturum ve quota ayrışması).
+  3. Rate-limit + budget enforcement testi (Redis + DB tutarlılığı).
