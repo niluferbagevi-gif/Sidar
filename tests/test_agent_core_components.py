@@ -1,3 +1,5 @@
+from agent.base_agent import BaseAgent
+from agent.core.contracts import DelegationRequest
 from agent.core.memory_hub import MemoryHub
 from agent.core.registry import AgentRegistry
 
@@ -26,3 +28,15 @@ def test_agent_registry_register_get_and_roles():
     assert reg.has("reviewer") is True
     assert reg.get("reviewer") is agent
     assert "reviewer" in reg.roles()
+
+class _MinimalAgent(BaseAgent):
+    async def run_task(self, task_prompt: str):
+        return task_prompt
+
+
+def test_base_agent_can_build_delegation_request():
+    agent = _MinimalAgent(role_name="tester")
+    msg = agent.delegate_to("reviewer", "review_code|x", reason="qa")
+    assert isinstance(msg, DelegationRequest)
+    assert msg.reply_to == "tester"
+    assert msg.target_agent == "reviewer"

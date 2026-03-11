@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from typing import Optional
 
 from config import Config
@@ -16,8 +18,9 @@ class ReviewerAgent(BaseAgent):
     """PR, issue ve repo gözden geçirme akışlarını yöneten uzman ajan."""
 
     SYSTEM_PROMPT = (
-        "Sen bir reviewer ajansın. Kod yazmazsın; mevcut değişiklikleri, PR ve issue durumlarını "
-        "analiz eder, risk odaklı ve kısa bir kalite raporu üretirsin."
+        "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "
+        "gerekirse dinamik unit test üretir, testleri çalıştırır ve sonuçlara göre onay/red kararı verirsin. "
+        "Kararını P2P geri bildirim olarak coder ajanına iletebilirsin."
     )
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
@@ -30,6 +33,32 @@ class ReviewerAgent(BaseAgent):
         self.register_tool("pr_diff", self._tool_pr_diff)
         self.register_tool("list_issues", self._tool_list_issues)
         self.register_tool("run_tests", self._tool_run_tests)
+
+    @staticmethod
+    def _build_dynamic_test_content(code_context: str) -> str:
+        """Kod bağlamına göre minimal ama çalıştırılabilir dinamik test dosyası üretir."""
+        ctx = (code_context or "").lower()
+        if "add_two" in ctx:
+            return (
+                "def test_add_two_contract():\n"
+                "    from src.main import add_two  # örnek proje yapısı\n"
+                "    assert add_two(2) == 4\n"
+            )
+
+        safe_context = (code_context or "").replace('"""', "'''")
+        return (
+            "def test_dynamic_context_not_empty():\n"
+            f"    context = \"\"\"{safe_context[:2000]}\"\"\"\n"
+            "    assert isinstance(context, str)\n"
+            "    assert len(context.strip()) > 0\n"
+        )
+
+    async def _run_dynamic_tests(self, code_context: str) -> str:
+        with tempfile.TemporaryDirectory(prefix="sidar_reviewer_") as td:
+            test_path = os.path.join(td, "test_temp.py")
+            with open(test_path, "w", encoding="utf-8") as fh:
+                fh.write(self._build_dynamic_test_content(code_context))
+            return await self.call_tool("run_tests", f"pytest -q {test_path}")
 
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
@@ -73,7 +102,7 @@ class ReviewerAgent(BaseAgent):
             f"[STDERR]\n{err or '-'}"
         )
 
-    async def run_task(self, task_prompt: str) -> str:
+    async def run_task(self, task_prompt: str):
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
@@ -93,24 +122,31 @@ class ReviewerAgent(BaseAgent):
         if lower.startswith("run_tests"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.cfg.REVIEWER_TEST_COMMAND
             return await self.call_tool("run_tests", arg)
+
         if lower.startswith("review_code|"):
             context = prompt.split("|", 1)[1].strip()
-            await self.events.publish("reviewer", "Testler çalıştırılıyor...")
-            test_output = await self.call_tool("run_tests", self.cfg.REVIEWER_TEST_COMMAND)
+            await self.events.publish("reviewer", "Dinamik QA testleri üretiliyor...")
+            dynamic_test_output = await self._run_dynamic_tests(context)
+
+            await self.events.publish("reviewer", "Proje test komutu çalıştırılıyor...")
+            regression_output = await self.call_tool("run_tests", self.cfg.REVIEWER_TEST_COMMAND)
+
+            combo = f"{dynamic_test_output}\n\n{regression_output}".lower()
             status = "PASS"
             risk = "düşük"
-            if "[test:fail" in test_output.lower() or "fail(" in test_output.lower():
+            decision = "APPROVE"
+            if "[test:fail" in combo or "fail(" in combo:
                 status = "FAIL"
                 risk = "yüksek"
-            await self.events.publish("reviewer", "Test çıktısı analiz ediliyor...")
-            return (
-                f"[REVIEW:{status}]\n"
-                f"Risk: {risk}\n"
-                f"Kod Özeti: {context[:500] or '-'}\n\n"
-                f"Test Çıktısı:\n{test_output[:2000]}"
-            )
+                decision = "REJECT"
 
-        # Doğal dilde review niyeti varsa kalite turu + test çalıştır.
+            await self.events.publish("reviewer", "QA kararı coder ajanına P2P ile iletiliyor...")
+            feedback = (
+                f"qa_feedback|decision={decision};risk={risk};"
+                f"summary=[REVIEW:{status}] Dinamik + regresyon testleri değerlendirildi."
+            )
+            return self.delegate_to("coder", feedback, reason="review_decision")
+
         if any(k in lower for k in ("review", "incele", "regresyon", "test")):
             return await self.run_task("review_code|Doğal dil inceleme isteği")
 

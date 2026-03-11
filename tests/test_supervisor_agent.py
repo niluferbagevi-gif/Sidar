@@ -1,6 +1,6 @@
 import asyncio
 
-from agent.core.contracts import TaskEnvelope, TaskResult
+from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult
 from agent.core.supervisor import SupervisorAgent
 
 
@@ -68,3 +68,25 @@ def test_supervisor_retries_coder_when_review_fails(monkeypatch):
 
     assert calls["coder"] == 2
     assert "2. tur" in out
+
+def test_supervisor_routes_p2p_delegation_from_reviewer_to_coder(monkeypatch):
+    s = SupervisorAgent()
+
+    async def fake_coder_run_task(prompt: str):
+        if prompt.startswith("qa_feedback|"):
+            return "[CODER:APPROVED] ack"
+        return "CODER:initial"
+
+    async def fake_reviewer_run_task(_prompt: str):
+        return DelegationRequest(
+            task_id="p2p-1",
+            reply_to="reviewer",
+            target_agent="coder",
+            payload="qa_feedback|decision=APPROVE;risk=düşük",
+        )
+
+    monkeypatch.setattr(s.coder, "run_task", fake_coder_run_task)
+    monkeypatch.setattr(s.reviewer, "run_task", fake_reviewer_run_task)
+
+    out = asyncio.run(s.run_task("bir kod görevi"))
+    assert "CODER:" in out or "ack" in out

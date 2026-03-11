@@ -114,6 +114,17 @@ class CoderAgent(BaseAgent):
         if lower.startswith("execute_code|"):
             return await self.call_tool("execute_code", prompt.split("|", 1)[1])
 
+
+        if lower.startswith("qa_feedback|"):
+            feedback = prompt.split("|", 1)[1].strip()
+            if "decision=reject" in feedback.lower():
+                return f"[CODER:REWORK_REQUIRED] Reviewer geri bildirimi alındı: {feedback}"
+            return f"[CODER:APPROVED] Reviewer onayı alındı: {feedback}"
+
+        if lower.startswith("request_review|"):
+            payload = prompt.split("|", 1)[1].strip()
+            return self.delegate_to("reviewer", f"review_code|{payload}", reason="coder_request_review")
+
         # Basit doğal dil eşleme: "X isimli bir dosyaya 'Y' yaz"
         m = re.search(r"([\w./-]+\.\w+)\s+isimli\s+bir\s+dosyaya\s+['\"](.+?)['\"]\s+yaz", prompt, re.IGNORECASE)
         if m:

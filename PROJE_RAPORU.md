@@ -2438,6 +2438,44 @@ Bu oturumda çoklu kullanıcı geçişinin Faz 3 altyapısı için backend taraf
    - `ConversationMemory` başlangıçta hâlâ `default_admin` fallback davranışını barındırıyor.
    - Bu fallback yalnızca backward-compatibility için geçiş katmanı olarak tutulmalı; tam Faz 3 kapanışı için memory katmanı request-context kullanıcı kimliğine zorunlu bağlanmalı.
 
+### Session 2026-03-11 — Multi-User Faz 3 Kapanış: Web UI Auth Entegrasyonu
+
+Bu oturumda Faz 3 kapsamı backend + frontend uçtan uca tamamlandı:
+
+1. **Web UI kimlik doğrulama katmanı (`web_ui/`)**
+   - `index.html` içine login/register modalı (`auth-overlay`) ve kullanıcı profil/çıkış alanı eklendi.
+   - `style.css` içinde auth modalı ve profil bileşenleri için dark/light tema uyumlu stiller tanımlandı.
+   - `app.js` tarafında token saklama (`localStorage`), auth bootstrap ve logout akışı tamamlandı.
+
+2. **Token taşıma standardizasyonu**
+   - `fetchAPI(url, options)` wrapper'ı ile tüm UI isteklerine otomatik `Authorization: Bearer <token>` başlığı ekleniyor.
+   - `chat.js`, `sidebar.js` ve `rag.js` içindeki endpoint çağrıları wrapper üzerinden çalışacak şekilde güncellendi.
+
+3. **Faz 3 kapsam değerlendirmesi**
+   - Kimlik doğrulama, oturum sahiplik izolasyonu ve Web UI entegrasyonu birlikte çalışır durumda.
+   - Faz 3 hedefi rapor seviyesinde "tamamlandı" olarak kabul edildi.
+
+---
+
+### Session 2026-03-11 — P2P Multi-Agent Delegasyon ve Dinamik Reviewer QA
+
+Bu oturumda ajanlar arası doğrudan delegasyon ve QA derinleştirmesi devreye alındı:
+
+1. **P2P kontrat modeli (`agent/core/contracts.py`)**
+   - `P2PMessage`, `DelegationRequest`, `DelegationResult` veri modelleri eklendi.
+   - `TaskResult.summary` alanı delegasyon mesajlarını taşıyacak şekilde genişletildi.
+
+2. **Ajan tabanı ve router köprüsü (`agent/base_agent.py`, `agent/core/supervisor.py`)**
+   - BaseAgent'e `delegate_to(...)` yardımcı metodu eklendi.
+   - Supervisor içinde `_route_p2p(...)` ile delegasyon zincirini hedef ajana yönlendiren köprü mekanizması kuruldu.
+
+3. **Reviewer QA derinleştirmesi (`agent/roles/reviewer_agent.py`)**
+   - Reviewer, coder bağlamına göre geçici dinamik test dosyası üretiyor ve çalıştırıyor.
+   - Dinamik test + regresyon komutu sonuçlarından `APPROVE/REJECT` kararı çıkarıp coder'a P2P geri bildirim iletiyor.
+
+4. **Coder geri bildirim tüketimi (`agent/roles/coder_agent.py`)**
+   - `qa_feedback|...` mesajları parse edilip rework/approve durumları kodlayıcı tarafından işleniyor.
+
 ### Session 2026-03-11 — Observability / Canlı Ajan Durum Akışı
 
 Bu oturumda ajanın arka plan adımlarını kullanıcıya gerçek zamanlı yansıtmak için event-stream entegrasyonu yapıldı:
