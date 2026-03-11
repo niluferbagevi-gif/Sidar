@@ -15,6 +15,10 @@ from core.db import Database
 logger = logging.getLogger(__name__)
 
 
+class MemoryAuthError(PermissionError):
+    """Bellek işlemi için doğrulanmış kullanıcı bağlamı zorunlu."""
+
+
 class ConversationMemory:
     """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
 
@@ -49,6 +53,11 @@ class ConversationMemory:
         self._dirty = False
         self._init_db_state()
 
+    def _require_active_user(self) -> str:
+        if not self.active_user_id:
+            raise MemoryAuthError("Authenticated user context is required for memory operations.")
+        return self.active_user_id
+
     # ─────────────────────────────────────────────
     #  ASYNC ÇEKİRDEK
     # ─────────────────────────────────────────────
@@ -81,23 +90,15 @@ class ConversationMemory:
     async def _ainit_db(self) -> None:
         await self.db.connect()
         await self.db.init_schema()
-        user = await self.db.ensure_user("default_admin", role="admin")
-        self.active_user_id = user.id
-        self.active_username = user.username
-
-        sessions = await self.db.list_sessions(user.id)
-        if sessions:
-            await self.aload_session(sessions[0].id)
-        else:
-            await self.acreate_session("İlk Sohbet")
+        self.active_user_id = None
+        self.active_username = None
 
     def _init_db_state(self) -> None:
         self._run_coro_sync(self._ainit_db())
 
     async def aget_all_sessions(self) -> List[Dict]:
-        if not self.active_user_id:
-            return []
-        rows = await self.db.list_sessions(self.active_user_id)
+        user_id = self._require_active_user()
+        rows = await self.db.list_sessions(user_id)
         return [
             {
                 "id": r.id,
@@ -109,12 +110,8 @@ class ConversationMemory:
         ]
 
     async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
-        if not self.active_user_id:
-            user = await self.db.ensure_user("default_admin", role="admin")
-            self.active_user_id = user.id
-            self.active_username = user.username
-
-        row = await self.db.create_session(self.active_user_id, title)
+        user_id = self._require_active_user()
+        row = await self.db.create_session(user_id, title)
         self.active_session_id = row.id
         self.active_title = row.title
         self._turns = []
@@ -124,7 +121,8 @@ class ConversationMemory:
         return row.id
 
     async def aload_session(self, session_id: str) -> bool:
-        row = await self.db.load_session(session_id, self.active_user_id)
+        user_id = self._require_active_user()
+        row = await self.db.load_session(session_id, user_id)
         if not row:
             logger.warning("Oturum bulunamadı: %s", session_id)
             return False
@@ -146,7 +144,8 @@ class ConversationMemory:
         return True
 
     async def adelete_session(self, session_id: str) -> bool:
-        ok = await self.db.delete_session(session_id, self.active_user_id)
+        user_id = self._require_active_user()
+        ok = await self.db.delete_session(session_id, user_id)
         if not ok:
             return False
 
@@ -166,6 +165,7 @@ class ConversationMemory:
         await self.db.update_session_title(self.active_session_id, new_title)
 
     async def aadd(self, role: str, content: str) -> None:
+        self._require_active_user()
         if not self.active_session_id:
             await self.acreate_session("Yeni Sohbet")
 
