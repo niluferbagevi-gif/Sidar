@@ -1313,7 +1313,7 @@ add_document(title, content, source)
 |---|-------|-------|------|---------|-------|
 | 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=false` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
 | 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
-| 3 | Eksik uzman ajan rolü (`ReviewerAgent`) | `RFC-MultiAgent.md`, `agent/roles/` | Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok | Düşük | ⚠ **Açık** (RFC Draft) |
+| 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
 | 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
 | 6 | `.note` dosyası (311 satır) raporda belgelenmemiş | `.note` | Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor | Düşük | ⚠ **Yeni** (Audit #8 tespiti) |
@@ -1457,7 +1457,7 @@ Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme 
 | **Gelişmiş Sandbox (Mikro-VM)** | Kod çalıştırma izolasyonu Docker tabanlı | Firecracker/gVisor benzeri mikro-VM katmanı ile zero-trust çalıştırma sınırlarının güçlendirilmesi |
 | **Kurumsal Veritabanı Geçişi** | Oturum/bellek yerel dosyalar + ChromaDB ile yönetiliyor | Multi-user senaryolar için PostgreSQL tabanlı oturum/bellek katmanı ve migration stratejisi |
 
-> **Not:** `ReviewerAgent` rolü ve çoklu sağlayıcı hata/maliyet yönetimi gibi konular §11.2'de açık teknik borç olarak da izlenmektedir.
+> **Not:** Reviewer altyapısı depoda mevcuttur; §11.2'de ağırlıklı açık borç başlığı çoklu sağlayıcı hata/maliyet yönetimi ve mimari sadeleştirmedir.
 
 ---
 
@@ -1472,9 +1472,9 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - Strangler Pattern tamamlanarak `Supervisor` tabanlı çoklu ajan mimarisinin varsayılan ve tek omurga haline getirilmesi.
 - Geçiş sürecinde geriye uyumluluk notları + deprecation takvimi yayınlanması.
 
-### 14.2 Reviewer (QA) Ajanının Devreye Alınması
-- Coder ve Researcher rollerine ek olarak `ReviewerAgent` rolünün üretim akışına eklenmesi.
-- Hedef: kod inceleme, test çalıştırma, regresyon tespiti ve kalite geri bildirimi döngüsünü otomatikleştirmek.
+### 14.2 Reviewer (QA) Ajanının Olgunlaştırılması
+- `ReviewerAgent` temel rolü devrededir; bir sonraki adım kalite kapıları ve regresyon sinyallerini derinleştirmektir.
+- Hedef: kod inceleme, test çalıştırma, regresyon tespiti ve kalite geri bildirim döngüsünü otomatikleştirmek.
 - Önerilen akış: `Coder → Reviewer → (gerekirse tekrar Coder) → Supervisor final`.
 
 ### 14.3 Bütçe ve Token Yönetim Paneli (Dashboard)
@@ -2242,15 +2242,15 @@ Bu bölüm, dış gözden gelen kontrol listesi (arkadaş yorumu) ile depo gerç
 
 | # | Tespit | Durum | Not |
 |---|--------|-------|-----|
-| 1 | `tests/test_config_runtime_coverage` (uzantısız) ve `tests/test_config_runtime_coverage.py` dosyaları 0 bayt | ⚠ Açık | Audit #8 ile aynı; kaldırılmadı. |
-| 2 | Planlanan `memory_hub.py` ve `registry.py` modülleri depoda yok | ⚠ Açık | Arkadaş yorumundaki “eksik modül” kontrol önerisiyle tutarlı; RFC tasarımında bahsedilen bazı ileri faz öğeleri henüz kodda değil. |
+| 1 | `tests/test_config_runtime_coverage` (uzantısız) ve `tests/test_config_runtime_coverage.py` dosyaları 0 bayt | ✅ Çözüldü | Dosyalar depoda yok; CI boş dosya kontrolü aktif. |
+| 2 | `memory_hub.py` ve `registry.py` modülleri için eksiklik iddiası | ✅ Çözüldü | Her iki modül de depoda mevcut ve Supervisor akışında kullanılıyor. |
 | 3 | `web_ui/index.html` satır sayısı 467 (raporda 461/467 geçişi olmuştu) | ℹ Bilgi | Güncel ölçüm 467 satır; raporun satır-sayısı tablolarında tek değer korunmalı. |
 | 4 | `SIDAR.md` ve `CLAUDE.md` kısa yönlendirme dokümanları; teknik detaylar asıl olarak `README.md` + `PROJE_RAPORU.md` içinde | ℹ Bilgi | Arkadaş yorumundaki “belge çapraz kontrolü” adımı için teyit edildi. |
 
 #### 18.8.3 Öneriler (11 Mart 2026)
 
-1. Boş test artifact dosyalarını kaldırın ve CI'da `find tests -size 0` benzeri bir kontrol ekleyin.
-2. Multi-agent roadmap için RFC'de “planlanan/uygulanmış” ayrımını netleştiren bir durum matrisi ekleyin (`memory_hub`, `registry`, `ReviewerAgent`).
+1. ✅ Boş test artifact dosyaları kaldırıldı ve CI'da `find tests -size 0` kontrolü aktif.
+2. ✅ RFC'de “planlanan/uygulanmış” ayrımını netleştiren durum matrisi eklendi (`memory_hub`, `registry`, `ReviewerAgent`).
 3. Satır sayısı metriklerini tek komutla üreten bir script (ör. `scripts/audit_metrics.sh`) ekleyip raporu bu çıktıya bağlayın; manuel çelişki riski azalır.
 
 
@@ -2275,11 +2275,11 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 #### 18.9.2 Önceki Yorumlarla Nihai Uyum Durumu
 
 - `ENABLE_MULTI_AGENT` maddesi için güncel durum **çözüldü**: `.env.example` içinde değişken mevcut; bu başlık artık açık borç değildir.
-- Multi-agent tarafında açık kalan teknik borç, değişkenin varlığı değil; `ReviewerAgent` ve RFC’de geçen bazı ileri faz modüllerin henüz kodda olmamasıdır.
+- Multi-agent tarafında `ReviewerAgent`, `memory_hub` ve `registry` modülleri depoda mevcuttur; açık borç ağırlığı artık entegrasyon derinliği ve operasyonel metriklerdedir.
 - “Tüm dosyalarda +1 satır artış” iddiası güncel ölçümde doğrulanmamıştır; mevcut rapor satır sayıları Audit #8/Audit #9 ile uyumludur.
 
 #### 18.9.3 Kapanış Aksiyonları (Öncelikli)
 
 1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
-2. RFC dokümanında “planlandı / implement edildi” matrisi ekleyin (`ReviewerAgent`, `memory_hub`, `registry`).
+2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
 3. Satır sayısı metriklerini CI’da tek komutla üreten bir script ile standardize edin.

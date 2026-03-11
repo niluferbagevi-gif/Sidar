@@ -27,6 +27,7 @@ class ReviewerAgent(BaseAgent):
         self.register_tool("list_prs", self._tool_list_prs)
         self.register_tool("pr_diff", self._tool_pr_diff)
         self.register_tool("list_issues", self._tool_list_issues)
+        self.register_tool("run_tests", self._tool_run_tests)
 
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
@@ -49,6 +50,27 @@ class ReviewerAgent(BaseAgent):
         ok, out = await asyncio.to_thread(self.github.list_issues, state, 20)
         return str(out) if ok else f"[HATA] {out}"
 
+    async def _tool_run_tests(self, arg: str) -> str:
+        command = (arg or "").strip() or "bash run_tests.sh"
+        if not (command.startswith("bash run_tests.sh") or command.startswith("pytest")):
+            return "⚠ Kullanım: run_tests|bash run_tests.sh veya run_tests|pytest ..."
+
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+
+        out = (stdout or b"").decode("utf-8", errors="replace").strip()
+        err = (stderr or b"").decode("utf-8", errors="replace").strip()
+        status = "OK" if proc.returncode == 0 else f"FAIL({proc.returncode})"
+        return (
+            f"[TEST:{status}] komut={command}\n"
+            f"[STDOUT]\n{out or '-'}\n"
+            f"[STDERR]\n{err or '-'}"
+        )
+
     async def run_task(self, task_prompt: str) -> str:
         prompt = (task_prompt or "").strip()
         if not prompt:
@@ -65,6 +87,9 @@ class ReviewerAgent(BaseAgent):
         if lower.startswith("list_issues"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
             return await self.call_tool("list_issues", arg)
+        if lower.startswith("run_tests"):
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "bash run_tests.sh"
+            return await self.call_tool("run_tests", arg)
 
         # Doğal dilde review niyeti varsa PR listesini döndürerek hızlı QA sinyali üret.
         return await self.call_tool("list_prs", "open")
