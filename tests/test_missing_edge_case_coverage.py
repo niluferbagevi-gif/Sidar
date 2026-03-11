@@ -6,6 +6,7 @@ import types
 from types import SimpleNamespace
 
 import pytest
+import core.llm_client as llm_real
 
 from agent.core.contracts import DelegationRequest
 from agent.roles.coder_agent import CoderAgent
@@ -266,3 +267,116 @@ def test_web_server_prewarm_exception_logged(monkeypatch):
 
     asyncio.run(mod._prewarm_rag_embeddings())
     assert seen["warn"] == 1
+
+
+def test_web_server_git_run_failure_and_auth_success_paths(monkeypatch):
+    mod = _load_web_server()
+
+    def _check_output(cmd, cwd=None, stderr=None):
+        if cmd[:3] == ["git", "remote", "get-url"]:
+            return b""
+        if cmd[:2] == ["git", "symbolic-ref"]:
+            raise subprocess.CalledProcessError(1, cmd, output=b"fatal")
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return b"feat/x"
+        raise subprocess.CalledProcessError(1, cmd, output=b"err")
+
+    monkeypatch.setattr(mod.subprocess, "check_output", _check_output)
+    gi = asyncio.run(mod.git_info())
+    assert gi.content["repo"] == "sidar_project"
+    assert gi.content["default_branch"] == "main"
+
+    # _git_run except Exception yolu
+    monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert mod._git_run(["git", "status"], cwd=".") == ""
+
+    # auth/login success yolu: create_auth_token döndürüp response üretir
+    agent, _ = _make_agent()
+
+    async def _auth_user(**_kwargs):
+        return SimpleNamespace(id="u9", username="bob", role="user")
+
+    async def _mk_token(_uid):
+        return SimpleNamespace(token="tok-9")
+
+    agent.memory.db.authenticate_user = _auth_user
+    agent.memory.db.create_auth_token = _mk_token
+    mod.get_agent = lambda: asyncio.sleep(0, result=agent)
+
+    login = asyncio.run(mod.login_user({"username": "bob", "password": "secret"}))
+    assert login.content["access_token"] == "tok-9"
+
+    me = asyncio.run(mod.auth_me(_FakeRequest(), user=SimpleNamespace(id="u9", username="bob", role="user")))
+    assert me.content["id"] == "u9"
+
+
+def test_llm_client_stream_and_error_branches(monkeypatch):
+    llm_mod = llm_real
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=10, USE_GPU=False)
+    ollama = LLMClient("ollama", cfg)._client
+
+    # OllamaClient.chat içindeki `except LLMAPIError: raise` satırı
+    async def _raise_api_error(*_args, **_kwargs):
+        raise llm_mod.LLMAPIError("ollama", "boom", retryable=False)
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _raise_api_error)
+    with pytest.raises(llm_mod.LLMAPIError):
+        asyncio.run(ollama.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
+
+    # _stream_response içinde boş satır/bozuk JSON paketlerini atlayıp geçerli chunk üretir
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b"\n"
+            yield b"not-json\n"
+            yield b'{"message": {"content": "ok"}}\n'
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def stream(self, *_args, **_kwargs):
+            return _StreamCtx()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
+    out = asyncio.run(_collect(ollama._stream_response("http://x", {"stream": True}, timeout=llm_mod.httpx.Timeout(10))))
+    assert out == ["ok"]
+
+    # Anthropic stream except Exception dalı
+    class _MsgAPI:
+        def stream(self, **_kwargs):
+            class _Ctx:
+                async def __aenter__(self):
+                    raise RuntimeError("net down")
+
+                async def __aexit__(self, *_args):
+                    return None
+
+            return _Ctx()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = _MsgAPI()
+
+    sys.modules["anthropic"] = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
+    anth_cfg = SimpleNamespace(ANTHROPIC_API_KEY="k", ANTHROPIC_TIMEOUT=15, ANTHROPIC_MODEL="claude", OLLAMA_URL="http://x/api", OLLAMA_TIMEOUT=10)
+    client = AnthropicClient(anth_cfg)
+    chunks = asyncio.run(_collect(client._stream_anthropic(_AsyncAnthropic(), "claude", [{"role": "user", "content": "hi"}], "", 0.2, True)))
+    payload = json.loads(chunks[0])
+    assert "Anthropic akış hatası" in payload["argument"]
+
