@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -94,3 +95,32 @@ def test_cleanup_broken_files_is_noop_in_db_mode(tmp_path):
 
     mem._cleanup_broken_files(max_age_days=0, max_files=0)
     assert broken.exists()
+
+
+def test_memory_delete_last_session_creates_new_session(tmp_path):
+    mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
+
+    async def _run():
+        user = await mem.db.ensure_user("frank", role="user")
+        await mem.aset_active_user(user.id, user.username)
+        last_session_id = mem.active_session_id
+
+        deleted = await mem.adelete_session(last_session_id)
+        sessions = await mem.aget_all_sessions()
+        return last_session_id, deleted, sessions
+
+    last_session_id, deleted, sessions = asyncio.run(_run())
+    assert deleted is True
+    assert mem.active_session_id is not None
+    assert mem.active_session_id != last_session_id
+    assert mem.active_title == "Yeni Sohbet"
+    assert len(sessions) == 1
+
+
+def test_memory_del_calls_force_save_and_swallows_exceptions(tmp_path):
+    mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
+
+    mem.__del__()
+
+    with patch.object(mem, "force_save", side_effect=Exception("save-fail")):
+        mem.__del__()
