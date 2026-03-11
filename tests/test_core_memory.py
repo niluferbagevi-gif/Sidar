@@ -1,5 +1,6 @@
-from pathlib import Path
+import asyncio
 import importlib.util
+from pathlib import Path
 
 
 def _load_memory_module():
@@ -11,23 +12,24 @@ def _load_memory_module():
 
 
 def test_memory_sliding_window(tmp_path: Path):
-    """Kayan pencere stratejisi son 2 turu korur ve özet bloklarını ekler."""
+    """Kayan pencere stratejisi son 1 turu korur ve özet bloklarını ekler."""
     mod = _load_memory_module()
     ConversationMemory = mod.ConversationMemory
 
-    mem_file = tmp_path / "test_session.json"
-    memory = ConversationMemory(file_path=mem_file, max_turns=50, keep_last=2)
+    memory = ConversationMemory(file_path=tmp_path / "test_session.json", max_turns=50, keep_last=2)
+    user = asyncio.run(memory.db.ensure_user("window_user", role="user"))
+    memory.set_active_user(user.id, user.username)
 
     for i in range(1, 6):
         memory.add("user", f"Soru {i}")
         memory.add("assistant", f"Cevap {i}")
 
-    assert len(memory.get_history()) == 10, "Başlangıçta 10 mesaj olmalı."
+    assert len(memory.get_history()) == 10
 
     memory.apply_summary("Bu bir test özetidir.")
     turns = memory.get_history()
 
-    assert len(turns) == 4, f"Özet sonrası mesaj sayısı 4 olmalı, {len(turns)} bulundu."
+    assert len(turns) == 4
     assert "özeti istendi" in turns[0]["content"]
     assert "Bu bir test özetidir." in turns[1]["content"]
     assert turns[2]["content"] == "Soru 5"
