@@ -388,7 +388,10 @@ async def websocket_chat(websocket: WebSocket):
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
-                agent.memory.update_title(title)
+                if hasattr(agent.memory, "aupdate_title"):
+                    await agent.memory.aupdate_title(title)
+                else:
+                    agent.memory.update_title(title)
 
             _TOOL_SENTINEL = re.compile(r'^\x00TOOL:([^\x00]+)\x00$')
             _THOUGHT_SENTINEL = re.compile(r'^\x00THOUGHT:([^\x00]+)\x00$')
@@ -531,7 +534,10 @@ async def metrics(request: Request):
     agent = await get_agent()
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
-    sessions  = agent.memory.get_all_sessions()
+    if hasattr(agent.memory, "aget_all_sessions"):
+        sessions = await agent.memory.aget_all_sessions()
+    else:
+        sessions = agent.memory.get_all_sessions()
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
@@ -594,29 +600,32 @@ async def get_sessions():
     agent = await get_agent()
     return JSONResponse({
         "active_session": agent.memory.active_session_id,
-        "sessions": agent.memory.get_all_sessions()
+        "sessions": (await agent.memory.aget_all_sessions()) if hasattr(agent.memory, "aget_all_sessions") else agent.memory.get_all_sessions()
     })
 
 @app.get("/sessions/{session_id}")
 async def load_session(session_id: str):
     """Belirli bir oturumu yükler ve geçmişini döndürür."""
     agent = await get_agent()
-    if agent.memory.load_session(session_id):
-        return JSONResponse({"success": True, "history": agent.memory.get_history()})
+    loaded = await agent.memory.aload_session(session_id) if hasattr(agent.memory, "aload_session") else agent.memory.load_session(session_id)
+    if loaded:
+        history = await agent.memory.aget_history() if hasattr(agent.memory, "aget_history") else agent.memory.get_history()
+        return JSONResponse({"success": True, "history": history})
     return JSONResponse({"success": False, "error": "Oturum bulunamadı."}, status_code=404)
 
 @app.post("/sessions/new")
 async def new_session():
     """Yeni bir oturum oluşturur."""
     agent = await get_agent()
-    session_id = agent.memory.create_session("Yeni Sohbet")
+    session_id = await agent.memory.acreate_session("Yeni Sohbet") if hasattr(agent.memory, "acreate_session") else agent.memory.create_session("Yeni Sohbet")
     return JSONResponse({"success": True, "session_id": session_id})
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Belirli bir oturumu siler."""
     agent = await get_agent()
-    if agent.memory.delete_session(session_id):
+    deleted = await agent.memory.adelete_session(session_id) if hasattr(agent.memory, "adelete_session") else agent.memory.delete_session(session_id)
+    if deleted:
         return JSONResponse({
             "success": True, 
             "active_session": agent.memory.active_session_id

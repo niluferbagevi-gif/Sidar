@@ -41,3 +41,15 @@ class MemoryHub:
         if not mem:
             return []
         return mem.notes[-max(1, limit):]
+
+    async def aadd_global(self, note: str) -> None:
+        self.add_global(note)
+
+    async def aadd_role_note(self, role: str, note: str) -> None:
+        self.add_role_note(role, note)
+
+    async def aglobal_context(self, limit: int = 5) -> List[str]:
+        return self.global_context(limit)
+
+    async def arole_context(self, role: str, limit: int = 5) -> List[str]:
+        return self.role_context(role, limit)
