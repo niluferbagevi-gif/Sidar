@@ -1905,3 +1905,19 @@ def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
 
     out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
     assert out == "ok:gorev"
+
+def test_respond_supervisor_single_path_ignores_legacy_react(monkeypatch):
+    a = _make_agent_for_runtime()
+
+    async def fake_multi(_):
+        return "only-supervisor"
+
+    a._try_multi_agent = fake_multi
+
+    async def _legacy_fail(*args, **kwargs):
+        raise AssertionError("legacy react path should not be called")
+
+    monkeypatch.setattr(a, "_react_loop", _legacy_fail, raising=False)
+
+    out = asyncio.run(_collect(a.respond("test")))
+    assert out == ["only-supervisor"]

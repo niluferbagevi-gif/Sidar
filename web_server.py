@@ -56,6 +56,7 @@ from agent.sidar_agent import SidarAgent
 from agent.core.event_stream import get_agent_event_bus
 from managers.system_health import render_llm_metrics_prometheus
 from core.llm_metrics import get_llm_metrics_collector
+from core.llm_client import LLMAPIError
 
 try:
     from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
@@ -545,10 +546,16 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_json({'done': True})
         except asyncio.CancelledError:
             pass
+        except LLMAPIError as exc:
+            logger.warning("LLM sağlayıcı hatası: provider=%s status=%s retryable=%s", exc.provider, exc.status_code, exc.retryable)
+            try:
+                await websocket.send_json({'chunk': f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}", 'done': True})
+            except Exception:
+                pass
         except Exception as exc:
             logger.exception("Agent respond hatası: %s", exc)
             try:
-                await websocket.send_json({'chunk': f"\n[Sistem Hatası] {exc}", 'done': True})
+                await websocket.send_json({'chunk': f'\n[Sistem Hatası] {exc}', 'done': True})
             except Exception:
                 pass
         finally:

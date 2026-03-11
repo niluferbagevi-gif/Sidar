@@ -42,6 +42,8 @@ class CodeManager:
         self.base_dir = base_dir.resolve()
         self.cfg = cfg or Config()
         self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or "").strip()
+        self.docker_allowed_runtimes = list(getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]) or [""])
+        self.docker_microvm_mode = str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
         self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m").strip()
         self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on")))
         self.docker_nano_cpus = int(getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000")) or 1000000000)
@@ -67,6 +69,18 @@ class CodeManager:
         self.docker_available = False
         self.docker_client = None
         self._init_docker()
+
+    def _resolve_runtime(self) -> str:
+        runtime = self.docker_runtime
+        if self.docker_microvm_mode in ("gvisor", "runsc") and not runtime:
+            runtime = "runsc"
+        elif self.docker_microvm_mode in ("kata", "firecracker") and not runtime:
+            runtime = "kata-runtime"
+
+        if runtime not in self.docker_allowed_runtimes:
+            logger.warning("Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.", runtime, self.docker_allowed_runtimes)
+            return ""
+        return runtime
 
     def _init_docker(self):
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
@@ -267,8 +281,9 @@ class CodeManager:
             }
             if self.docker_network_disabled:
                 run_kwargs["network_mode"] = "none"
-            if self.docker_runtime:
-                run_kwargs["runtime"] = self.docker_runtime
+            selected_runtime = self._resolve_runtime()
+            if selected_runtime:
+                run_kwargs["runtime"] = selected_runtime
 
             container = self.docker_client.containers.run(**run_kwargs)
 
