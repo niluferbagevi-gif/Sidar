@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v2.10.8** — ReAct mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v3.0.0** — ReAct + Multi-Agent kurumsal mimari üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║  Yazılım Mimarı & Baş Mühendis AI  v2.10.8  ║
+ ║  Yazılım Mimarı & Baş Mühendis AI  v3.0.0  ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -108,7 +108,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v2.10.8)
+### Web Arayüzü (v3.0.0)
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)
@@ -126,7 +126,7 @@
 
 ---
 
-## v2.10.8 Öne Çıkan Yetenekler
+## v3.0.0 Öne Çıkan Yetenekler
 
 ### ✅ TodoManager ile Görev Takibi
 
@@ -546,7 +546,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
-| **v2.10.8** | Kurumsal/SaaS hazırlıkları: Alembic migration zinciri, PostgreSQL cutover runbook, multi-agent QA ve production-hardening iyileştirmeleri |
+| **v3.0.0** | Kurumsal/SaaS sürümü: Multi-Agent mimari, Bearer Auth + Admin Panel, Alembic/PostgreSQL cutover, Grafana/Prometheus observability, gVisor/Kata runtime hazırlıkları |
 | **v2.7.0** | Launcher/CLI ayrımı (`main.py` launcher, `cli.py` async terminal), canlı aktivite paneli, THOUGHT sentinel, hibrit RAG belge yönetimi ve ek doğrulama düzeltmeleri |
 | **v2.6.1** | Web UI düzeltmeleri: dışa aktarma, araç görselleştirme, mobil menü, dinamik model adı, gerçek git checkout, CancelledError düzeltmesi |
 | **v2.6.0** | GPU hızlandırma, Docker REPL sandbox, çoklu oturum, Recursive Chunking, Pydantic v2, rate limiting, WSL2 desteği |

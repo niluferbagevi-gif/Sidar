@@ -1,7 +1,7 @@
 
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: 2.10.8 (Claude Code Uyumu: mtime cache, genişletilmiş direct-route, yeni alias'lar)
+Sürüm: 3.0.0 (Kurumsal/SaaS sürüm: multi-agent, auth, DB migration, observability, sandbox)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -220,12 +220,12 @@ def check_hardware() -> HardwareInfo:
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: 2.10.8
+    Sürüm: 3.0.0
     """
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "2.10.8"
+    VERSION: str      = "3.0.0"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
 
