@@ -139,20 +139,30 @@ async function deleteSession(id, event) {
 }
 
 /* ─── Panel geçişleri ───────────────────────────────────── */
+function setActiveTopNav(tabId) {
+  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+  document.getElementById(tabId)?.classList.add('active');
+}
+
+function hideSecondaryPanels() {
+  const dashboard = document.getElementById('dashboard-panel');
+  const admin = document.getElementById('admin-panel-container');
+  if (dashboard) dashboard.style.display = 'none';
+  if (admin) admin.style.display = 'none';
+}
+
 function showTaskPanel() {
   document.getElementById('task-panel').style.display = 'flex';
   document.getElementById('chat-panel').style.display = 'none';
-  document.getElementById('admin-panel-container').style.display = 'none';
-  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
-  document.querySelectorAll('.nav-tab')[0]?.classList.add('active');
+  hideSecondaryPanels();
+  setActiveTopNav('tasks-nav-tab');
 }
 
 function showChatPanel() {
   document.getElementById('task-panel').style.display = 'none';
   document.getElementById('chat-panel').style.display = 'flex';
-  document.getElementById('admin-panel-container').style.display = 'none';
-  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
-  document.querySelectorAll('.nav-tab')[1]?.classList.add('active');
+  hideSecondaryPanels();
+  setActiveTopNav('chat-nav-tab');
   document.getElementById('input-area').focus();
 }
 
