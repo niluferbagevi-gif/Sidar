@@ -2595,3 +2595,30 @@ Bu oturumla birlikte SİDAR projesinin v3.0 kurumsal/SaaS dönüşüm hedefi res
 4. **Kilometre taşı kapanışı**
    - Multi-user mimari, P2P çoklu ajan akışı, zero-trust sandbox, telemetri, maliyet yönetimi ve admin dashboard başlıklarının tümü tamamlandı.
    - Proje bu aşamada üretim hazırlığı (production-readiness) açısından v3.0 hedeflerini karşılar durumdadır.
+
+---
+
+### 18.10 Audit #11 (Session 2026-03-11) — Güvenlik ve Kararlılık Kapanışı
+
+**Durum: Tamamlandı ✅**
+
+Bu oturumda v3.0 geçişinden kalan kritik güvenlik/kararlılık teknik borçları kapatıldı ve fail-closed prensibi çekirdek katmanlara uygulandı.
+
+1. **ConversationMemory fail-closed sertleştirmesi**
+   - `default_admin` fallback tamamen kaldırıldı.
+   - Bellek katmanında doğrulanmış kullanıcı bağlamı yoksa işlem akışı `MemoryAuthError` ile reddedilecek şekilde fail-closed hale getirildi.
+   - Böylece anonim/bağlamsız isteklerin oturum oluşturması veya bellek yazması engellendi.
+
+2. **WebSocket zorunlu Auth Handshake**
+   - `/ws/chat` akışında ilk paket zorunlu auth mesajı olacak şekilde sözleşme sıkılaştırıldı.
+   - Geçersiz/anonim websocket bağlantıları policy-violation (1008) ile anında kapatılacak şekilde güvenlik katmanı sertleştirildi.
+   - Frontend tarafında socket açılışında token tabanlı handshake gönderimi zorunlu hale getirildi.
+
+3. **Supervisor QA döngüsüne circuit-breaker**
+   - Coder ↔ Reviewer geri besleme zincirine `MAX_QA_RETRIES=3` sınırı eklendi.
+   - Bu sınır ile sonsuz/uzayan QA döngülerinin LLM bütçesini tüketme riski kapatıldı.
+   - Retry limiti aşıldığında süreç kontrollü biçimde durdurulup açık durum mesajı üretilir.
+
+4. **Doğrulama özeti**
+   - İlgili runtime testleri hedefli şekilde çalıştırıldı ve regresyon gözlenmedi.
+   - Sonuç: güvenlik sertleştirmeleri ve kararlılık devre kesicisi üretim hazırlığı hedefleriyle uyumludur.
