@@ -12,4 +12,4 @@ def test_core_init_exports_memory_and_rag_aliases():
     src = Path("core/__init__.py").read_text(encoding="utf-8")
     assert "MemoryManager = ConversationMemory" in src
     assert "RAGManager = DocumentStore" in src
-    assert '__all__ += ["MemoryManager", "RAGManager"]' in src
+    assert '__all__ += ["MemoryManager", "RAGManager", "DatabaseManager"]' in src

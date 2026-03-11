@@ -567,7 +567,8 @@ def test_web_server_and_agent_error_surface_runtime_stubs(monkeypatch):
     monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
 
     # web server fonksiyon yolları
-    sess = asyncio.run(ws_mod.get_sessions())
+    from tests.test_web_server_runtime import _FakeRequest
+    sess = asyncio.run(ws_mod.get_sessions(_FakeRequest(path="/"), user=types.SimpleNamespace(id="u1", username="alice")))
     assert getattr(sess, "status_code", 0) == 200
     rag_res = asyncio.run(ws_mod.rag_search(q="", mode="auto", top_k=1))
     assert getattr(rag_res, "status_code", 0) in (200, 400)
@@ -768,7 +769,9 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
         async def receive_text(self):
             self._i += 1
             if self._i == 1:
-                return '{"message":"first"}'
+                return '{"action":"auth","token":"tok"}'
+            if self._i == 2:
+                return '{"message":"first","action":"send"}'
             await asyncio.sleep(0.05)
             raise ws_mod.WebSocketDisconnect()
 
@@ -784,7 +787,7 @@ def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypat
 
     agent.respond = _respond
     asyncio.run(ws_mod.websocket_chat(ws))
-    assert any(p.get("chunk") == "x" for p in ws.sent)
+    assert any(p.get("chunk") == "x" or p.get("content") == "x" for p in ws.sent)
     assert any(p.get("done") is True for p in ws.sent)
 
     # 520-527: prometheus import başarılı branch
@@ -882,7 +885,9 @@ def test_websocket_error_send_fallback_pass_branch(monkeypatch):
         async def receive_text(self):
             self._i += 1
             if self._i == 1:
-                return '{"message":"boom"}'
+                return '{"action":"auth","token":"tok"}'
+            if self._i == 2:
+                return '{"message":"boom","action":"send"}'
             await asyncio.sleep(0.05)
             raise ws_mod.WebSocketDisconnect()
 
