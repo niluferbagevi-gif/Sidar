@@ -1316,7 +1316,7 @@ add_document(title, content, source)
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
 | 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | 🟡 **Kısmen Çözüldü** — token/latency/rate-limit metrik toplama + `/metrics/llm` dışa aktarımı eklendi |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
-| 6 | `.note` dosyası (311 satır) raporda belgelenmemiş | `.note` | Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor | Düşük | ⚠ **Yeni** (Audit #8 tespiti) |
+| 6 | ~~`.note` dosyası (311 satır) raporda belgelenmemiş~~ | ~~`.note`~~ | ~~Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — geçici Ar-Ge scratchpad dosyası depodan kaldırıldı |
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1488,6 +1488,9 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - Tek kullanıcı odaklı dosya tabanlı oturum modelinden çoklu kullanıcıya uygun servis mimarisine geçiş.
 - Oturum, kimlik, bellek ve kota yönetiminin PostgreSQL + Redis destekli bir katmana taşınması.
 - Her kullanıcı için izolasyonlu bellek/anahtar yönetimi ve kurumsal denetim izleri.
+- Oturum modeli `session_id`-merkezli yapıdan `user_id + session_id` ilişkili şemaya taşınmalı (çoklu cihaz ve denetim izi için).
+- PostgreSQL tarafında önerilen çekirdek tablolar: `users`, `sessions`, `messages`, `user_quotas`, `provider_usage_daily`.
+- Redis tarafında önerilen anahtarlar: `sidar:rl:{user_id}`, `sidar:budget:{user_id}`, `sidar:session:{session_id}:hot`.
 
 ### 14.5 Test Kapsamının %95+ Seviyesine Zorlanması
 - Boş test artifact riskine karşı CI hattında `find tests -type f -size 0` kontrolünün kalıcı olarak çalıştırılması (aktif).
@@ -1792,7 +1795,7 @@ Bu bölüm, Audit #8 itibarıyla projenin ulaştığı güncel doğrulanmış ç
 - ✅ **`ENABLE_MULTI_AGENT` `.env.example`'da mevcut** (satır 81) — §18.6.5'teki "Eksik" iddiası hatalıydı, düzeltildi.
 - ⚠ **İki boş artifact hâlâ silinmedi:** `test_config_runtime_coverage` ve `test_config_runtime_coverage.py`.
 - ⚠ **`ReviewerAgent` hâlâ eksik:** `agent/roles/reviewer_agent.py` mevcut değil.
-- 📌 **`.note` dosyası (311 satır) belgelendi** — proje kökünde var; raporda hiç yer almıyordu.
+- ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; kalıcı kararlar `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` içinde tutuluyor.
 
 **Audit #7 Kapanışında Öne Çıkan Güncel Çözümler:**
 - ✅ **Multi-Agent Altyapısı Entegre Edildi:** Legacy tekli ajan sınırları aşılarak `Supervisor` + `CoderAgent` + `ResearcherAgent` mimarisi devreye alındı; geçiş `ENABLE_MULTI_AGENT` feature toggle ve Strangler Pattern ile yönetiliyor.
@@ -2180,11 +2183,11 @@ Bu bölüm, 2026-03-10 tarihli sekizinci kapsamlı audit'te yapılan tam doğrul
 
 ---
 
-#### 18.7.4 Yeni Tespit — `.note` Dosyası Belgelenmemişti
+#### 18.7.4 `.note` Scratchpad Dosyası — Kapanış Güncellemesi
 
 | Dosya | Satır | Durum | Detay |
 |-------|-------|-------|-------|
-| `.note` | **311** | 📌 **Yeni belgelendi** | Proje kökünde 311 satırlık dosya — önceki hiçbir audit'te incelenmemiş veya raporda yer almamış |
+| `.note` | **0 (kaldırıldı)** | ✅ **Kapanış** | Geçici Ar-Ge scratchpad dosyası depodan temizlendi; dokümantasyon sorumluluğu README/PROJE/RFC üzerinde toplandı. |
 
 ---
 
@@ -2221,7 +2224,7 @@ Audit #7'de onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 |----------|------|-------|
 | **Onaylanan çözüldü** | 17 | Audit #7 ve önceki tüm önemli maddeler doğrulandı |
 | **Süregelen açık sorun** | 3 | 2 boş artifact dosyası + `ReviewerAgent` eksikliği |
-| **Yeni tespit** | 1 | `.note` dosyası (311 satır) raporda belgelenmemiş |
+| **Kapanan bulgu** | 1 | `.note` scratchpad dosyası depodan kaldırıldı |
 | **Rapor iç çelişkisi giderildi** | 1 | §18.6.5 "Eksik" → "Mevcut" düzeltmesi |
 | **Satır sayısı güncellenen alan** | 3 | RFC-MultiAgent.md (+103), Dockerfile (+2), Python toplam (+277) |
 
@@ -2271,7 +2274,7 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 | `tests/` dosya adedi | `find tests -maxdepth 1 -type f | wc -l` | ✅ **68** |
 | Boş test artifact dosyaları | `find tests -maxdepth 1 -type f -size 0` | ✅ Bulunamadı (çıktı boş) |
 | RFC satır sayısı | `wc -l RFC-MultiAgent.md` | ✅ **303** |
-| `.note` satır sayısı | `wc -l .note` | ✅ **311** |
+| `.note` satır sayısı | `test -f .note || echo removed` | ✅ **removed** |
 | Planlanan fakat eksik modüller | `test -f agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` | ✅ Üç modül de depoda mevcut |
 
 #### 18.9.2 Önceki Yorumlarla Nihai Uyum Durumu
@@ -2285,3 +2288,4 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
 2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
 3. ✅ Satır sayısı metrikleri `scripts/audit_metrics.sh` ile standardize edildi (CI adımı aktif).
+4. ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; dokümantasyon tutarlılığı sağlandı.

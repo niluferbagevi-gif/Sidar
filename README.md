@@ -543,4 +543,4 @@ Bu proje LotusAI ekosisteminin bir parçasıdır.
 
 - Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
-- Proje satır/dosya metrikleri tek komutla `scripts/collect_repo_metrics.sh` üzerinden üretilir.
+- Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.
