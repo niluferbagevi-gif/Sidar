@@ -21,3 +21,10 @@ def test_llm_metrics_cost_estimation_known_model_positive():
     c = LLMMetricsCollector(max_events=3)
     cost = c.estimate_cost_usd("openai", "gpt-4o-mini", 1000, 2000)
     assert cost > 0
+
+def test_llm_metrics_snapshot_exposes_by_user():
+    collector = LLMMetricsCollector(max_events=10)
+    collector.record(provider="openai", model="gpt-4o-mini", latency_ms=10, prompt_tokens=10, completion_tokens=5, user_id="u-1")
+    snap = collector.snapshot()
+    assert "by_user" in snap
+    assert "u-1" in snap["by_user"]

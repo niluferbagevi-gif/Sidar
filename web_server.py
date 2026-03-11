@@ -54,7 +54,17 @@ except Exception:  # OpenTelemetry opsiyoneldir
 from config import Config
 from agent.sidar_agent import SidarAgent
 from agent.core.event_stream import get_agent_event_bus
+from managers.system_health import render_llm_metrics_prometheus
 from core.llm_metrics import get_llm_metrics_collector
+
+try:
+    from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
+except Exception:  # test stub/fallback
+    def set_current_metrics_user_id(_user_id: str):
+        return None
+
+    def reset_current_metrics_user_id(_token) -> None:
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +82,37 @@ _rag_prewarm_task: asyncio.Task | None = None
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
 
+
+def _bind_llm_usage_sink(agent: SidarAgent) -> None:
+    collector = get_llm_metrics_collector()
+    if getattr(collector, "_sidar_usage_sink_bound", False):
+        return
+
+    def _sink(event) -> None:
+        user_id = getattr(event, "user_id", "")
+        if not user_id:
+            return
+
+        async def _persist() -> None:
+            try:
+                await agent.memory.db.record_provider_usage_daily(
+                    user_id=user_id,
+                    provider=getattr(event, "provider", "unknown"),
+                    tokens_used=int(getattr(event, "total_tokens", 0) or 0),
+                    requests_inc=1,
+                )
+            except Exception as exc:
+                logger.debug("LLM usage DB yazımı atlandı: %s", exc)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_persist())
+        except RuntimeError:
+            pass
+
+    if hasattr(collector, "set_usage_sink"):
+        collector.set_usage_sink(_sink)
+    collector._sidar_usage_sink_bound = True
 
 
 async def _prewarm_rag_embeddings() -> None:
@@ -106,6 +147,7 @@ async def get_agent() -> SidarAgent:
         async with _agent_lock:
             if _agent is None:
                 _agent = SidarAgent(cfg)
+                _bind_llm_usage_sink(_agent)
     return _agent
 
 
@@ -148,6 +190,7 @@ async def basic_auth_middleware(request: Request, call_next):
     open_paths = {
         "/", "/health", "/docs", "/redoc", "/openapi.json",
         "/auth/login", "/auth/register",
+        "/metrics", "/metrics/llm", "/metrics/llm/prometheus", "/api/budget",
     }
     if request.method == "OPTIONS" or request.url.path in open_paths or request.url.path.startswith("/static/"):
         return await call_next(request)
@@ -166,7 +209,11 @@ async def basic_auth_middleware(request: Request, call_next):
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
     request.state.user = user
-    return await call_next(request)
+    token = set_current_metrics_user_id(user.id)
+    try:
+        return await call_next(request)
+    finally:
+        reset_current_metrics_user_id(token)
 
 
 # ─────────────────────────────────────────────
@@ -426,11 +473,21 @@ async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     agent = await get_agent()
     active_task: asyncio.Task | None = None
+    ws_user_id = ""
+    query_params = getattr(websocket, "query_params", {})
+    ws_token = ""
+    if hasattr(query_params, "get"):
+        ws_token = (query_params.get("token", "") or "").strip()
+    if ws_token:
+        ws_user = await agent.memory.db.get_user_by_token(ws_token)
+        if ws_user:
+            ws_user_id = ws_user.id
 
     async def generate_response(msg: str) -> None:
         sub_id = None
         status_task = None
         stop_status = asyncio.Event()
+        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
@@ -483,6 +540,8 @@ async def websocket_chat(websocket: WebSocket):
                     await status_task
             if sub_id is not None:
                 get_agent_event_bus().unsubscribe(sub_id)
+            if ctx_token is not None:
+                reset_current_metrics_user_id(ctx_token)
 
     try:
         while True:
@@ -641,6 +700,13 @@ async def metrics(request: Request):
             pass  # prometheus_client kurulu değil — JSON ile devam et
 
     return JSONResponse(payload)
+
+
+@app.get("/metrics/llm/prometheus")
+async def llm_prometheus_metrics():
+    """LLM metriklerini Prometheus text/plain formatında döndürür."""
+    snapshot = get_llm_metrics_collector().snapshot()
+    return Response(content=render_llm_metrics_prometheus(snapshot), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/metrics/llm")
