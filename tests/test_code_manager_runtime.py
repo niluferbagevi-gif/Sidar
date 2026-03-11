@@ -355,7 +355,9 @@ def test_execute_code_docker_happy_path_and_image_not_found(manager_factory, mon
 
     class _Containers:
         def run(self, **kwargs):
-            assert kwargs["network_disabled"] is True
+            assert kwargs["network_mode"] == "none"
+            assert kwargs["mem_limit"] == "256m"
+            assert kwargs["nano_cpus"] == 1000000000
             assert kwargs["working_dir"] == "/tmp"
             return container
 
@@ -766,3 +768,41 @@ def test_execute_code_local_unlink_swallow_and_truncate_branch(manager_factory, 
     ok, msg = mgr.execute_code_local("print('x')")
     assert ok is True
     assert "ÇIKTI KIRPILDI" in msg
+
+def test_execute_code_network_disabled_blocks_outbound_http(manager_factory, monkeypatch):
+    mgr = manager_factory(can_execute=True, level=FULL)
+    mgr.docker_available = True
+
+    class _Container:
+        status = "exited"
+
+        def reload(self):
+            return None
+
+        def kill(self):
+            return None
+
+        def remove(self, force=False):
+            return None
+
+        def logs(self, stdout=True, stderr=True):
+            return b"requests.exceptions.ConnectionError: Network is unreachable"
+
+        def wait(self, timeout=1):
+            return {"StatusCode": 1}
+
+    class _Containers:
+        def run(self, **kwargs):
+            assert kwargs.get("network_mode") == "none"
+            return _Container()
+
+    class _DockerErrors:
+        class ImageNotFound(Exception):
+            pass
+
+    monkeypatch.setitem(sys.modules, "docker", types.SimpleNamespace(errors=_DockerErrors))
+    mgr.docker_client = SimpleNamespace(containers=_Containers())
+
+    ok, msg = mgr.execute_code("import requests; requests.get('https://google.com')")
+    assert ok is False
+    assert "ConnectionError" in msg or "Network is unreachable" in msg

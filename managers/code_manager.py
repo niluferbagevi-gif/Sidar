@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from config import Config
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,15 @@ class CodeManager:
 
     def __init__(self, security: SecurityManager, base_dir: Path,
                  docker_image: Optional[str] = None,
-                 docker_exec_timeout: Optional[int] = None) -> None:
+                 docker_exec_timeout: Optional[int] = None,
+                 cfg: Optional[Config] = None) -> None:
         self.security = security
         self.base_dir = base_dir.resolve()
+        self.cfg = cfg or Config()
+        self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or "").strip()
+        self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m").strip()
+        self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on")))
+        self.docker_nano_cpus = int(getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000")) or 1000000000)
         self.docker_image = (
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
@@ -249,16 +256,21 @@ class CodeManager:
             command = ["python", "-c", code]
 
             # Konteyneri başlat (Arka planda ayrılmış olarak)
-            container = self.docker_client.containers.run(
-                image=self.docker_image,  # Config'den alınan veya varsayılan imaj
-                command=command,
-                detach=True,
-                remove=False, # Çıktıyı okuyabilmek için anında silmiyoruz, manuel sileceğiz
-                network_disabled=True, # Dış ağa istek atamaz (Güvenlik)
-                mem_limit="128m", # RAM Limiti (Güvenlik)
-                cpu_quota=50000, # CPU Limiti (Güvenlik - Max %50)
-                working_dir="/tmp",
-            )
+            run_kwargs = {
+                "image": self.docker_image,
+                "command": command,
+                "detach": True,
+                "remove": False,
+                "working_dir": "/tmp",
+                "mem_limit": self.docker_mem_limit,
+                "nano_cpus": self.docker_nano_cpus,
+            }
+            if self.docker_network_disabled:
+                run_kwargs["network_mode"] = "none"
+            if self.docker_runtime:
+                run_kwargs["runtime"] = self.docker_runtime
+
+            container = self.docker_client.containers.run(**run_kwargs)
 
             # Zaman aşımı takibi (Config'den okunur, varsayılan 10 sn)
             timeout = self.docker_exec_timeout
@@ -279,9 +291,21 @@ class CodeManager:
 
             # Çıktıları al
             logs = container.logs(stdout=True, stderr=True).decode("utf-8").strip()
+
+            exit_code = None
+            if hasattr(container, "wait"):
+                try:
+                    wait_result = container.wait(timeout=1)
+                    if isinstance(wait_result, dict):
+                        exit_code = wait_result.get("StatusCode")
+                except Exception:
+                    exit_code = None
             
             # İşimiz bitti, konteyneri sil
             container.remove(force=True)
+
+            if exit_code not in (None, 0):
+                return False, f"REPL Hatası (Docker Sandbox):\n{logs or '(çıktı yok)'}"
 
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(logs) > self.max_output_chars:
