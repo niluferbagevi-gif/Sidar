@@ -93,6 +93,9 @@ function connectWebSocket() {
     if (data.thought) {
       apSetThought(data.thought);
     }
+    if (data.status) {
+      apSetThought(data.status);
+    }
     if (data.tool_call) {
       appendToolStep(currentStream.msgId, data.tool_call);
     }

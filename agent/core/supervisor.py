@@ -11,6 +11,7 @@ from agent.base_agent import BaseAgent
 from agent.core.contracts import TaskEnvelope, TaskResult
 from agent.core.memory_hub import MemoryHub
 from agent.core.registry import AgentRegistry
+from agent.core.event_stream import get_agent_event_bus
 from agent.roles.coder_agent import CoderAgent
 from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
@@ -24,6 +25,7 @@ class SupervisorAgent(BaseAgent):
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="supervisor")
         self.registry = AgentRegistry()
+        self.events = get_agent_event_bus()
         self.memory_hub = MemoryHub()
 
         self.registry.register("researcher", ResearcherAgent(self.cfg))
@@ -73,19 +75,24 @@ class SupervisorAgent(BaseAgent):
         return TaskResult(task_id=task_id, status="done", summary=summary)
 
     async def run_task(self, task_prompt: str) -> str:
+        await self.events.publish("supervisor", "Görev analiz ediliyor...")
         intent = self._intent(task_prompt)
         self.memory_hub.add_global(task_prompt)
 
         if intent == "research":
+            await self.events.publish("supervisor", "Researcher ajanına yönlendiriliyor...")
             result = await self._delegate("researcher", task_prompt, "research")
             return result.summary
 
         if intent == "review":
+            await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
             result = await self._delegate("reviewer", task_prompt, "review")
             return result.summary
 
+        await self.events.publish("supervisor", "Coder ajanı kod üzerinde çalışıyor...")
         code_result = await self._delegate("coder", task_prompt, "code")
         review_goal = f"review_code|{code_result.summary[:800]}"
+        await self.events.publish("supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor...")
         review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)
 
         if self._review_requires_revision(review_result.summary):
@@ -94,7 +101,9 @@ class SupervisorAgent(BaseAgent):
                 f"Orijinal görev: {task_prompt}\n"
                 f"Reviewer notu: {review_result.summary[:800]}"
             )
+            await self.events.publish("supervisor", "Reviewer geri bildirimi sonrası ikinci kod turu başlatılıyor...")
             second_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
+            await self.events.publish("supervisor", "Final reviewer kontrolü çalıştırılıyor...")
             final_review = await self._delegate(
                 "reviewer",
                 f"review_code|{second_code.summary[:800]}",

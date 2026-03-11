@@ -38,3 +38,9 @@ def test_web_ui_budget_strip_uses_budget_endpoint_and_cost_text():
     assert "apiUrl('/api/budget')" in js
     assert "OpenAI" in js
     assert "Anthropic" in js
+
+
+def test_web_ui_handles_backend_status_stream_messages():
+    js = Path("web_ui/chat.js").read_text(encoding="utf-8")
+    assert "if (data.status)" in js
+    assert "apSetThought(data.status)" in js

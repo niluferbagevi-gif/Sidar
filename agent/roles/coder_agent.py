@@ -13,6 +13,7 @@ from managers.security import SecurityManager
 from managers.todo_manager import TodoManager
 
 from agent.base_agent import BaseAgent
+from agent.core.event_stream import get_agent_event_bus
 
 
 class CoderAgent(BaseAgent):
@@ -28,6 +29,7 @@ class CoderAgent(BaseAgent):
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="coder")
         self.security = SecurityManager(cfg=self.cfg)
+        self.events = get_agent_event_bus()
         self.code = CodeManager(self.security, base_dir=self.cfg.BASE_DIR)
         self.pkg = PackageInfoManager(self.cfg)
         self.todo = TodoManager(cfg=self.cfg)
@@ -97,6 +99,7 @@ class CoderAgent(BaseAgent):
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
     async def run_task(self, task_prompt: str) -> str:
+        await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş kodlayıcı görevi verildi."
