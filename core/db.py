@@ -88,6 +88,8 @@ class Database:
         self.cfg = cfg or Config()
         self.database_url = (getattr(self.cfg, "DATABASE_URL", "") or "").strip() or "sqlite+aiosqlite:///data/sidar.db"
         self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
+        self.schema_version_table = str(getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions")
+        self.target_schema_version = int(getattr(self.cfg, "DB_SCHEMA_TARGET_VERSION", 1) or 1)
 
         self._backend = "sqlite"
         self._sqlite_path: Optional[Path] = None
@@ -164,8 +166,10 @@ class Database:
     async def init_schema(self) -> None:
         if self._backend == "postgresql":
             await self._init_schema_postgresql()
+            await self._ensure_schema_version_postgresql()
             return
         await self._init_schema_sqlite()
+        await self._ensure_schema_version_sqlite()
 
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -302,6 +306,49 @@ class Database:
         async with self._pg_pool.acquire() as conn:
             for q in queries:
                 await conn.execute(q)
+
+
+    async def _ensure_schema_version_sqlite(self) -> None:
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            tbl = self.schema_version_table
+            self._sqlite_conn.execute(
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
+            )
+            cur = self._sqlite_conn.execute(f"SELECT MAX(version) AS v FROM {tbl}")
+            row = cur.fetchone()
+            current = int((row["v"] if row else 0) or 0)
+            if current >= self.target_schema_version:
+                return
+            for v in range(current + 1, self.target_schema_version + 1):
+                self._sqlite_conn.execute(
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",
+                    (v, _utc_now_iso(), f"baseline migration v{v}"),
+                )
+            self._sqlite_conn.commit()
+
+        await asyncio.to_thread(_run)
+
+    async def _ensure_schema_version_postgresql(self) -> None:
+        assert self._pg_pool is not None
+        tbl = self.schema_version_table
+        async with self._pg_pool.acquire() as conn:
+            await conn.execute(
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+            )
+            current = await conn.fetchval(f"SELECT COALESCE(MAX(version), 0) FROM {tbl}")
+            current = int(current or 0)
+            if current >= self.target_schema_version:
+                return
+            for v in range(current + 1, self.target_schema_version + 1):
+                await conn.execute(
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",
+                    v,
+                    datetime.now(timezone.utc),
+                    f"baseline migration v{v}",
+                )
 
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:

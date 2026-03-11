@@ -245,6 +245,9 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL:   str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_TIMEOUT: int = get_int_env("OPENAI_TIMEOUT", 60)
+    LLM_MAX_RETRIES: int = get_int_env("LLM_MAX_RETRIES", 2)
+    LLM_RETRY_BASE_DELAY: float = get_float_env("LLM_RETRY_BASE_DELAY", 0.4)
+    LLM_RETRY_MAX_DELAY: float = get_float_env("LLM_RETRY_MAX_DELAY", 4.0)
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     ANTHROPIC_MODEL:   str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
     ANTHROPIC_TIMEOUT: int = get_int_env("ANTHROPIC_TIMEOUT", 60)
@@ -317,6 +320,8 @@ class Config:
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db")
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", 5)
+    DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
+    DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
@@ -349,6 +354,8 @@ class Config:
     # ─── Docker REPL Sandbox ─────────────────────────────────
     DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
+    DOCKER_ALLOWED_RUNTIMES: List[str] = get_list_env("DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
+    DOCKER_MICROVM_MODE: str = os.getenv("DOCKER_MICROVM_MODE", "off")
     DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
     DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
     DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)

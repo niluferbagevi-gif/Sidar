@@ -28,3 +28,14 @@ def test_llm_metrics_snapshot_exposes_by_user():
     snap = collector.snapshot()
     assert "by_user" in snap
     assert "u-1" in snap["by_user"]
+
+def test_llm_metrics_rate_limit_detection_variants():
+    c = LLMMetricsCollector(max_events=10)
+    c.record(provider="anthropic", model="claude", latency_ms=50, success=False, error="HTTP 429 Too Many Requests")
+    c.record(provider="anthropic", model="claude", latency_ms=50, success=False, error="Rate limit exceeded")
+    c.record(provider="anthropic", model="claude", latency_ms=50, success=False, error="timeout")
+
+    snap = c.snapshot()
+    assert snap["totals"]["calls"] == 3
+    assert snap["totals"]["rate_limited"] == 2
+    assert snap["by_provider"]["anthropic"]["failures"] == 3

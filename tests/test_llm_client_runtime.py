@@ -143,10 +143,9 @@ def test_ollama_chat_connect_error_returns_final_answer(llm_mod, monkeypatch):
 
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
 
-    result = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False))
-    data = json.loads(result)
-    assert data["tool"] == "final_answer"
-    assert "Ollama" in data["argument"]
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False))
+    assert exc.value.provider == "ollama"
 
 
 def test_ollama_stream_response_parses_chunks_and_trailing(llm_mod, monkeypatch):
@@ -478,8 +477,9 @@ def test_openai_chat_nonstream_error_stream_and_json_mode(llm_mod, monkeypatch):
             raise RuntimeError("openai down")
 
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _ClientErr)
-    err = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False))
-    assert "OpenAI" in json.loads(err)["argument"]
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False))
+    assert exc.value.provider == "openai"
 
     stream_err_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True))
     stream_err = asyncio.run(_collect(stream_err_iter))
@@ -610,8 +610,8 @@ def test_get_tracer_and_ollama_generic_error_paths(llm_mod, monkeypatch):
             raise RuntimeError("ollama boom")
 
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(c.chat([{"role": "user", "content": "u"}], stream=False))
-    assert "Ollama" in json.loads(out)["argument"]
+    with pytest.raises(llm_mod.LLMAPIError):
+        asyncio.run(c.chat([{"role": "user", "content": "u"}], stream=False))
     assert tr.span.attrs["sidar.llm.provider"] == "ollama"
     assert tr.cm.closed is True
 

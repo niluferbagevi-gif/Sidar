@@ -6,11 +6,13 @@ Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP taban
 from __future__ import annotations
 
 import codecs
+import asyncio
 import json
 import logging
+import random
 import time
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
@@ -21,6 +23,56 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None
 
 logger = logging.getLogger(__name__)
+
+
+class LLMAPIError(RuntimeError):
+    """Sağlayıcı çağrılarında standart hata sözleşmesi."""
+
+    def __init__(self, provider: str, message: str, *, status_code: Optional[int] = None, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.status_code = status_code
+        self.retryable = retryable
+
+
+def _is_retryable_exception(exc: Exception) -> tuple[bool, Optional[int]]:
+    status_code = getattr(exc, "status_code", None)
+    http_status_error = getattr(httpx, "HTTPStatusError", None)
+    if http_status_error and isinstance(exc, http_status_error):
+        status_code = exc.response.status_code
+    if status_code == 429 or (status_code is not None and 500 <= int(status_code) < 600):
+        return True, int(status_code)
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, asyncio.TimeoutError)):
+        return True, status_code
+    return False, status_code
+
+
+async def _retry_with_backoff(provider: str, operation, *, config, retry_hint: str) -> Any:
+    max_retries = max(0, int(getattr(config, "LLM_MAX_RETRIES", 2) or 0))
+    base_delay = max(0.05, float(getattr(config, "LLM_RETRY_BASE_DELAY", 0.4) or 0.4))
+    max_delay = max(base_delay, float(getattr(config, "LLM_RETRY_MAX_DELAY", 4.0) or 4.0))
+
+    attempt = 0
+    while True:
+        try:
+            return await operation()
+        except Exception as exc:
+            retryable, status_code = _is_retryable_exception(exc)
+            if (not retryable) or attempt >= max_retries:
+                message = f"{retry_hint}: {exc}"
+                raise LLMAPIError(provider, message, status_code=status_code, retryable=retryable) from exc
+
+            delay = min(max_delay, base_delay * (2 ** attempt)) + random.uniform(0, 0.15)
+            attempt += 1
+            logger.warning(
+                "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",
+                provider,
+                exc,
+                attempt,
+                max_retries,
+                delay,
+            )
+            await asyncio.sleep(delay)
 
 
 def _ensure_json_text(text: str, provider: str) -> str:
@@ -186,35 +238,23 @@ class OllamaClient(BaseLLMClient):
                 stream_iter = self._stream_response(url, payload, timeout=timeout)
                 return _trace_stream_metrics(stream_iter, span, started_at)
 
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                content = data.get("message", {}).get("content", "")
-                if span is not None:
-                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
-                return _ensure_json_text(content, "Ollama") if json_mode else content
+            async def _do_request():
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                    return resp.json()
 
-        except httpx.ConnectError:
-            logger.error("Ollama bağlantı hatası.")
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": "[HATA] Ollama'ya bağlanılamadı. 'ollama serve' açık mı?",
-                    "thought": "Hata oluştu.",
-                }
-            )
-            return _fallback_stream(msg) if stream else msg
+            data = await _retry_with_backoff("ollama", _do_request, config=self.config, retry_hint="Ollama isteği başarısız")
+            content = data.get("message", {}).get("content", "")
+            if span is not None:
+                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+            return _ensure_json_text(content, "Ollama") if json_mode else content
+
+        except LLMAPIError:
+            raise
         except Exception as exc:
             logger.error("Ollama hata: %s", exc)
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"[HATA] Ollama: {exc}",
-                    "thought": "Hata oluştu.",
-                }
-            )
-            return _fallback_stream(msg) if stream else msg
+            raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
         finally:
             if span_cm:
                 span_cm.__exit__(None, None, None)
@@ -482,40 +522,39 @@ class OpenAIClient(BaseLLMClient):
                 stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
                 return _track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at)
 
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
-                _record_llm_metric(
-                    provider="openai",
-                    model=model_name,
-                    started_at=started_at,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    success=True,
-                )
-                return _ensure_json_text(content, "OpenAI") if json_mode else content
+            async def _do_request():
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+
+            data = await _retry_with_backoff("openai", _do_request, config=self.config, retry_hint="OpenAI isteği başarısız")
+            prompt_tokens, completion_tokens = _extract_usage_tokens(data)
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            _record_llm_metric(
+                provider="openai",
+                model=model_name,
+                started_at=started_at,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                success=True,
+            )
+            return _ensure_json_text(content, "OpenAI") if json_mode else content
+        except LLMAPIError as exc:
+            _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+            raise
         except Exception as exc:
             _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
             logger.error("OpenAI hata: %s", exc)
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"[HATA] OpenAI: {exc}",
-                    "thought": "Hata",
-                }
-            )
-            return _fallback_stream(msg) if stream else msg
+            raise LLMAPIError("openai", f"OpenAI hata: {exc}", retryable=False) from exc
 
     async def _stream_openai(
         self,
@@ -651,13 +690,16 @@ class AnthropicClient(BaseLLMClient):
                 )
                 return _trace_stream_metrics(stream_iter, span, started_at)
 
-            response = await client.messages.create(
-                model=model_name,
-                max_tokens=4096,
-                temperature=temperature,
-                system=system_prompt or None,
-                messages=conversation,
-            )
+            async def _do_request():
+                return await client.messages.create(
+                    model=model_name,
+                    max_tokens=4096,
+                    temperature=temperature,
+                    system=system_prompt or None,
+                    messages=conversation,
+                )
+
+            response = await _retry_with_backoff("anthropic", _do_request, config=self.config, retry_hint="Anthropic isteği başarısız")
             usage = getattr(response, "usage", None)
             prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
             completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
@@ -677,19 +719,17 @@ class AnthropicClient(BaseLLMClient):
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
                 span.end()
             return _ensure_json_text(text, "Anthropic") if json_mode else text
+        except LLMAPIError as exc:
+            _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
+            if span is not None:
+                span.end()
+            raise
         except Exception as exc:
             _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
             if span is not None:
                 span.end()
             logger.error("Anthropic hata: %s", exc)
-            msg = json.dumps(
-                {
-                    "tool": "final_answer",
-                    "argument": f"[HATA] Anthropic: {exc}",
-                    "thought": "Hata",
-                }
-            )
-            return _fallback_stream(msg) if stream else msg
+            raise LLMAPIError("anthropic", f"Anthropic hata: {exc}", retryable=False) from exc
 
     async def _stream_anthropic(
         self,

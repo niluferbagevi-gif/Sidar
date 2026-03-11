@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 from core.memory import ConversationMemory
+from core.db import Database
 
 
 def test_memory_requires_authenticated_user_context(tmp_path: Path):
@@ -40,3 +41,25 @@ def test_memory_async_session_methods_work(tmp_path: Path):
     assert ok is True
     assert any(s["id"] for s in sessions)
     assert len(hist) == 2
+
+def test_db_schema_version_table_initialized(tmp_path: Path):
+    class _Cfg:
+        DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+        DB_POOL_SIZE = 2
+        DB_SCHEMA_VERSION_TABLE = "schema_versions"
+        DB_SCHEMA_TARGET_VERSION = 2
+        BASE_DIR = tmp_path
+
+    db = Database(cfg=_Cfg())
+
+    async def _run():
+        await db.connect()
+        await db.init_schema()
+        assert db._sqlite_conn is not None
+        cur = db._sqlite_conn.execute("SELECT MAX(version) AS v FROM schema_versions")
+        row = cur.fetchone()
+        await db.close()
+        return int((row["v"] if row else 0) or 0)
+
+    max_v = asyncio.run(_run())
+    assert max_v == 2
