@@ -973,7 +973,10 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
 | **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
 | **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
-| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher gibi uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
+| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher/Reviewer uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
+| **Dağıtık Multi-Agent Orkestrasyonu** | Görevlerin tek ajanda toplanmak yerine SupervisorAgent tarafından uzman rollere (Coder, Researcher, Reviewer) dağıtılması; modülerlik, hata izolasyonu ve QA kalitesini artırır |
+| **Kurumsal Altyapı (SaaS-Ready)** | `core/db.py` + Alembic geçişleri ile kullanıcı, kota ve oturumların izole edildiği Bearer Token tabanlı kalıcı veri mimarisi |
+| **Gözlemlenebilirlik (Observability)** | `core/llm_metrics.py` + Prometheus + Grafana entegrasyonu ile token tüketimi, USD maliyet ve LLM latency metriklerinin gerçek zamanlı izlenmesi |
 | **Çoklu LLM Ekosistemi** | Ollama (yerel) bağımlılığının kırılarak Gemini, OpenAI ve Anthropic istemcilerinin polimorfik (`BaseLLMClient`) bir yapıyla tek çatı altında buluşturulması |
 | **Çift Yönlü İletişim** | WebSocket altyapısı ile gerçek zamanlı çift yönlü mesajlaşma ve `asyncio.Task` tabanlı anlık işlem iptali (`cancel`) |
 
@@ -986,6 +989,8 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
 | **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
 | **Multi-Agent Bakım Yükü** | Özellik hâlâ `ENABLE_MULTI_AGENT` bayrağı ile deneysel/paralel çalışıyor; eski `sidar_agent` akışı ile yeni yapının bir süre daha birlikte bakımı gerekiyor |
+| **Multi-Agent İletişim Maliyeti (Overhead)** | Coder → Reviewer geri besleme döngüleri ek LLM çağrısı oluşturur; toplam token tüketimini ve yanıt gecikmesini (latency) artırabilir |
+| **Altyapı ve Operasyonel Karmaşıklık** | PostgreSQL, Prometheus ve Grafana gibi ek servisler docker-compose topolojisini büyütür; RAM ihtiyacı ile kurulum/bakım karmaşıklığını artırır |
 | **API Limit ve Maliyetleri** | Bulut LLM sağlayıcıları (OpenAI, Anthropic) yerel modellere kıyasla token maliyeti ve vendor API rate-limit yönetimi zorunluluğu getirir |
 
 ---
