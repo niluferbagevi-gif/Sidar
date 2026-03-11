@@ -348,6 +348,10 @@ class Config:
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
+    DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
+    DOCKER_MEM_LIMIT: str = os.getenv("DOCKER_MEM_LIMIT", "256m")
+    DOCKER_NETWORK_DISABLED: bool = get_bool_env("DOCKER_NETWORK_DISABLED", True)
+    DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
     # Maksimum Docker sandbox çalışma süresi (saniye) — sonsuz döngü koruması
     DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
 
