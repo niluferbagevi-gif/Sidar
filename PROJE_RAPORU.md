@@ -36,11 +36,11 @@
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
-  - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
-  - [3.x `core/db.py` — Veritabanı ve Multi-User Altyapısı](#)
-  - [3.x `core/llm_metrics.py` — Telemetri ve LLM Bütçe Yönetimi](#)
-  - [3.x `agent/roles/reviewer_agent.py` — QA ve Kalite Kontrol Ajanı](#)
-  - [3.x `migrations/` — Alembic Veritabanı Geçiş Yönetimi](#)
+  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#)
+  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#)
+  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#)
+  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#)
+  - [3.24 Altyapı Dosyaları](#320-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -111,9 +111,10 @@
 - **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
 - **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
 - **Multi-Agent Mimarisi:** Görevleri analiz edip ilgili uzmanlara (Coder, Researcher) dağıtan yönlendirici (Supervisor) altyapısı
-- **Çoklu Kullanıcı ve Kimlik Doğrulama (Auth):** Bearer token altyapısı ve PostgreSQL/SQLite destekli kalıcı veritabanı ile kullanıcı oturum ve kota izolasyonu
-- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM maliyet (USD), token ve performans (latency) metriklerinin gerçek zamanlı takibi
-- **Gelişmiş Kalite Kontrol (QA):** Coder ajanını denetleyen, test koşturan ve regresyon analizi yapan ReviewerAgent döngüsü
+- **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
+- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`).
+- **Kurumsal Web UI Admin Paneli:** Yönetici rolüne sahip kullanıcılar için sistem kullanımını, aktif kullanıcıları ve global kotaları gösteren merkezi yönetim arayüzü.
+- **QA ve Regresyon Sinyali:** Coder ajanı ile ortak çalışan, üretilen kodu test edip onaylayan/reddeden gelişmiş `ReviewerAgent` döngüsü.
 - **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
 - **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama (RRF destekli)
 - **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
@@ -154,18 +155,18 @@ sidar_project/
 │       ├── __init__.py        # CoderAgent, ResearcherAgent, ReviewerAgent export
 │       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
 │       ├── researcher_agent.py # Web + RAG odaklı uzman ajan (75 satır)
-│       └── reviewer_agent.py  # Kod inceleme, test ve QA uzman ajanı
+│       └── reviewer_agent.py  # Test koşturan, kod kalitesini denetleyen QA ajanı
 │
 ├── core/
 │   ├── __init__.py
-│   ├── db.py                  # Veritabanı bağlantısı, auth ve kullanıcı/kota tabloları
+│   ├── db.py                  # Veritabanı bağlantısı, kullanıcı (auth) ve kota tabloları
 │   ├── llm_client.py          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
-│   ├── llm_metrics.py         # LLM bütçe takibi ve Prometheus metrik toplayıcısı
+│   ├── llm_metrics.py         # Token, maliyet (USD) ve Prometheus metrik toplayıcısı
 │   ├── memory.py              # Kalıcı çok oturumlu bellek
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
 │
 ├── migrations/                # Alembic veritabanı geçiş (migration) dosyaları
-├── scripts/                   # Veritabanı taşıma ve metrik/audit toplama betikleri
+├── scripts/                   # Veritabanı taşıma (SQLite -> PG) ve denetim betikleri
 │
 ├── managers/
 │   ├── __init__.py
@@ -196,7 +197,7 @@ sidar_project/
 │   ├── test_sidar_md_improvements.py
 │   └── test_*_improvements.py
 │
-├── data/                      # RAG ve bellek verileri
+├── data/                      # RAG, bellek verileri ve yerel SQLite veritabanı (sidar.db)
 ├── CLAUDE.md                  # Geliştirici rehberi
 ├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi (Draft, v2.11.x hedefi)
 └── .env.example               # Ortam değişkeni şablonu
