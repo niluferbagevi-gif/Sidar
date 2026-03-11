@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sqlite3
 import uuid
+import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -18,6 +20,14 @@ class UserRecord:
     id: str
     username: str
     role: str
+    created_at: str
+
+
+@dataclass
+class AuthTokenRecord:
+    token: str
+    user_id: str
+    expires_at: str
     created_at: str
 
 
@@ -42,6 +52,27 @@ class MessageRecord:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _hash_password(password: str, salt: Optional[str] = None) -> str:
+    real_salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), real_salt.encode("utf-8"), 120000)
+    return f"pbkdf2_sha256${real_salt}${digest.hex()}"
+
+
+def _verify_password(password: str, encoded: str) -> bool:
+    try:
+        algorithm, salt, expected_hex = encoded.split("$", 2)
+    except ValueError:
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    actual = _hash_password(password, salt=salt)
+    return secrets.compare_digest(actual, encoded)
+
+
+def _expires_in(days: int = 7) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 
 class Database:
@@ -143,8 +174,35 @@ class Database:
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
+            password_hash TEXT,
             role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_quotas (
+            user_id TEXT PRIMARY KEY,
+            daily_token_limit INTEGER NOT NULL DEFAULT 0,
+            daily_request_limit INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS provider_usage_daily (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            usage_date TEXT NOT NULL,
+            requests_used INTEGER NOT NULL DEFAULT 0,
+            tokens_used INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, provider, usage_date),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
@@ -168,6 +226,8 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
+        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);
         """
 
         def _run() -> None:
@@ -184,8 +244,35 @@ class Database:
             CREATE TABLE IF NOT EXISTS users (
                 id UUID PRIMARY KEY,
                 username TEXT NOT NULL UNIQUE,
+                password_hash TEXT,
                 role TEXT NOT NULL DEFAULT 'user',
                 created_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                token TEXT PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS user_quotas (
+                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                daily_token_limit INTEGER NOT NULL DEFAULT 0,
+                daily_request_limit INTEGER NOT NULL DEFAULT 0
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS provider_usage_daily (
+                id BIGSERIAL PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                usage_date DATE NOT NULL,
+                requests_used INTEGER NOT NULL DEFAULT 0,
+                tokens_used INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, provider, usage_date)
             );
             """,
             """
@@ -209,6 +296,8 @@ class Database:
             """,
             "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);",
             "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
+            "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);",
         ]
         async with self._pg_pool.acquire() as conn:
             for q in queries:
@@ -398,17 +487,19 @@ class Database:
             return cur.rowcount > 0
 
         return await asyncio.to_thread(_run)
-    async def create_user(self, username: str, role: str = "user") -> UserRecord:
+    async def create_user(self, username: str, role: str = "user", password: Optional[str] = None) -> UserRecord:
         user_id = str(uuid.uuid4())
         created_at = _utc_now_iso()
+        password_hash = _hash_password(password) if password else None
 
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO users (id, username, role, created_at) VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO users (id, username, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5)",
                     user_id,
                     username,
+                    password_hash,
                     role,
                     created_at,
                 )
@@ -419,13 +510,103 @@ class Database:
         def _run() -> None:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
-                "INSERT INTO users (id, username, role, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, username, role, created_at),
+                "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, password_hash, role, created_at),
             )
             self._sqlite_conn.commit()
 
         await asyncio.to_thread(_run)
         return UserRecord(id=user_id, username=username, role=role, created_at=created_at)
+
+    async def register_user(self, username: str, password: str, role: str = "user") -> UserRecord:
+        return await self.create_user(username=username, role=role, password=password)
+
+    async def authenticate_user(self, username: str, password: str) -> Optional[UserRecord]:
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, username, password_hash, role, created_at FROM users WHERE username=$1",
+                    username,
+                )
+            if not row or not row["password_hash"]:
+                return None
+            if not _verify_password(password, str(row["password_hash"])):
+                return None
+            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> Optional[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                "SELECT id, username, password_hash, role, created_at FROM users WHERE username=?",
+                (username,),
+            )
+            return cur.fetchone()
+
+        row = await asyncio.to_thread(_run)
+        if not row or not row["password_hash"]:
+            return None
+        if not _verify_password(password, str(row["password_hash"])):
+            return None
+        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+
+    async def create_auth_token(self, user_id: str, ttl_days: int = 7) -> AuthTokenRecord:
+        token = secrets.token_urlsafe(48)
+        created_at = _utc_now_iso()
+        expires_at = _expires_in(max(1, ttl_days))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO auth_tokens (token, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4)",
+                    token, user_id, expires_at, created_at,
+                )
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run() -> None:
+                assert self._sqlite_conn is not None
+                self._sqlite_conn.execute(
+                    "INSERT INTO auth_tokens (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+                    (token, user_id, expires_at, created_at),
+                )
+                self._sqlite_conn.commit()
+
+            await asyncio.to_thread(_run)
+        return AuthTokenRecord(token=token, user_id=user_id, expires_at=expires_at, created_at=created_at)
+
+    async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
+        now_iso = _utc_now_iso()
+        query = (
+            "SELECT u.id, u.username, u.role, u.created_at "
+            "FROM auth_tokens t JOIN users u ON u.id=t.user_id "
+            "WHERE t.token=? AND t.expires_at>?"
+        )
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    query.replace("?", "$1", 1).replace("?", "$2", 1),
+                    token,
+                    now_iso,
+                )
+            if not row:
+                return None
+            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> Optional[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(query, (token, now_iso))
+            return cur.fetchone()
+
+        row = await asyncio.to_thread(_run)
+        if not row:
+            return None
+        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
         session_id = str(uuid.uuid4())
