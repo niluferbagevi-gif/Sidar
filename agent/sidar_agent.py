@@ -9,6 +9,7 @@ import re
 import asyncio
 import time
 import threading
+import warnings
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
@@ -164,6 +165,7 @@ class SidarAgent:
 
         # Varsayılan mimari: supervisor tabanlı multi-agent
         self._supervisor = None
+        self._multi_agent_deprecation_warned = False
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -232,8 +234,19 @@ class SidarAgent:
             yield chunk
 
 
-    async def _try_multi_agent(self, user_input: str) -> str:
-        """Görevi varsayılan olarak SupervisorAgent'a yönlendirir."""
+    async def _try_multi_agent(self, user_input: str) -> Optional[str]:
+        """Görevi mümkünse SupervisorAgent'a yönlendirir, legacy fallback'i korur."""
+        if not getattr(self.cfg, "ENABLE_MULTI_AGENT", True):
+            if not self._multi_agent_deprecation_warned:
+                msg = (
+                    "ENABLE_MULTI_AGENT=false kullanımı artık legacy/deprecated. "
+                    "v3.0 ile tek omurga Supervisor olacaktır."
+                )
+                warnings.warn(msg, DeprecationWarning, stacklevel=2)
+                logger.warning(msg)
+                self._multi_agent_deprecation_warned = True
+            return None
+
         if getattr(self, "_supervisor", None) is None:
             from agent.core.supervisor import SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)
