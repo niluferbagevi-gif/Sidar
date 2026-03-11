@@ -1,9 +1,9 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
-> **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-11 (v3.0.0 — **Final Sürüm (Production-Ready):** Web UI Admin Paneli ve Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak tamamlandı)
+> **Rapor Tarihi:** 2026-03-12
+> **Son Güncelleme:** 2026-03-11 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak kapatıldı)
 > **Proje Sürümü:** 3.0.0
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.500 satır (tests hariç, tüm .py dahil); Test: ~15.974 satır; Web UI: ~3.800 satır. *(v3.0.0 final eklemeleri: `core/db.py`, `core/llm_metrics.py`, `migrations/`, Web UI Admin paneli dahil)*
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.500 satır (v3.0.0 final eklemeleriyle; tests hariç); Test: ~15.974 satır; Web UI: 3.551 satır.
 
 ---
 
@@ -37,6 +37,10 @@
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
   - [3.20 Altyapı Dosyaları](#320-altyapı-dosyaları)
+  - [3.x `core/db.py` — Veritabanı ve Multi-User Altyapısı](#)
+  - [3.x `core/llm_metrics.py` — Telemetri ve LLM Bütçe Yönetimi](#)
+  - [3.x `agent/roles/reviewer_agent.py` — QA ve Kalite Kontrol Ajanı](#)
+  - [3.x `migrations/` — Alembic Veritabanı Geçiş Yönetimi](#)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -107,6 +111,9 @@
 - **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
 - **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
 - **Multi-Agent Mimarisi:** Görevleri analiz edip ilgili uzmanlara (Coder, Researcher) dağıtan yönlendirici (Supervisor) altyapısı
+- **Çoklu Kullanıcı ve Kimlik Doğrulama (Auth):** Bearer token altyapısı ve PostgreSQL/SQLite destekli kalıcı veritabanı ile kullanıcı oturum ve kota izolasyonu
+- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM maliyet (USD), token ve performans (latency) metriklerinin gerçek zamanlı takibi
+- **Gelişmiş Kalite Kontrol (QA):** Coder ajanını denetleyen, test koşturan ve regresyon analizi yapan ReviewerAgent döngüsü
 - **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
 - **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama (RRF destekli)
 - **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
@@ -144,15 +151,21 @@ sidar_project/
 │   │   ├── supervisor.py      # SupervisorAgent — role router + orchestrator (87 satır)
 │   │   └── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
 │   └── roles/
-│       ├── __init__.py        # CoderAgent, ResearcherAgent export
+│       ├── __init__.py        # CoderAgent, ResearcherAgent, ReviewerAgent export
 │       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
-│       └── researcher_agent.py # Web + RAG odaklı uzman ajan (75 satır)
+│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan (75 satır)
+│       └── reviewer_agent.py  # Kod inceleme, test ve QA uzman ajanı
 │
 ├── core/
 │   ├── __init__.py
+│   ├── db.py                  # Veritabanı bağlantısı, auth ve kullanıcı/kota tabloları
 │   ├── llm_client.py          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
+│   ├── llm_metrics.py         # LLM bütçe takibi ve Prometheus metrik toplayıcısı
 │   ├── memory.py              # Kalıcı çok oturumlu bellek
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
+│
+├── migrations/                # Alembic veritabanı geçiş (migration) dosyaları
+├── scripts/                   # Veritabanı taşıma ve metrik/audit toplama betikleri
 │
 ├── managers/
 │   ├── __init__.py
