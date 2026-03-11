@@ -9,6 +9,7 @@ from config import Config
 from managers.github_manager import GitHubManager
 
 from agent.base_agent import BaseAgent
+from agent.core.event_stream import get_agent_event_bus
 
 
 class ReviewerAgent(BaseAgent):
@@ -22,6 +23,7 @@ class ReviewerAgent(BaseAgent):
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="reviewer")
         self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
+        self.events = get_agent_event_bus()
 
         self.register_tool("repo_info", self._tool_repo_info)
         self.register_tool("list_prs", self._tool_list_prs)
@@ -72,6 +74,7 @@ class ReviewerAgent(BaseAgent):
         )
 
     async def run_task(self, task_prompt: str) -> str:
+        await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş reviewer görevi verildi."
@@ -92,12 +95,14 @@ class ReviewerAgent(BaseAgent):
             return await self.call_tool("run_tests", arg)
         if lower.startswith("review_code|"):
             context = prompt.split("|", 1)[1].strip()
+            await self.events.publish("reviewer", "Testler çalıştırılıyor...")
             test_output = await self.call_tool("run_tests", self.cfg.REVIEWER_TEST_COMMAND)
             status = "PASS"
             risk = "düşük"
             if "[test:fail" in test_output.lower() or "fail(" in test_output.lower():
                 status = "FAIL"
                 risk = "yüksek"
+            await self.events.publish("reviewer", "Test çıktısı analiz ediliyor...")
             return (
                 f"[REVIEW:{status}]\n"
                 f"Risk: {risk}\n"

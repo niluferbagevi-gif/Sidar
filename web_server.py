@@ -10,6 +10,7 @@ Başlatmak için:
 import argparse
 import base64
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -53,6 +54,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
 
 from config import Config
 from agent.sidar_agent import SidarAgent
+from agent.core.event_stream import get_agent_event_bus
 from core.llm_metrics import get_llm_metrics_collector
 
 logger = logging.getLogger(__name__)
@@ -385,6 +387,9 @@ async def websocket_chat(websocket: WebSocket):
     active_task: asyncio.Task | None = None
 
     async def generate_response(msg: str) -> None:
+        sub_id = None
+        status_task = None
+        stop_status = asyncio.Event()
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
@@ -392,6 +397,19 @@ async def websocket_chat(websocket: WebSocket):
                     await agent.memory.aupdate_title(title)
                 else:
                     agent.memory.update_title(title)
+
+            event_bus = get_agent_event_bus()
+            sub_id, status_queue = event_bus.subscribe()
+
+            async def _status_pump() -> None:
+                while not stop_status.is_set():
+                    try:
+                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    await websocket.send_json({'status': f"{evt.source}: {evt.message}"})
+
+            status_task = asyncio.create_task(_status_pump())
 
             _TOOL_SENTINEL = re.compile(r'^\x00TOOL:([^\x00]+)\x00$')
             _THOUGHT_SENTINEL = re.compile(r'^\x00THOUGHT:([^\x00]+)\x00$')
@@ -416,6 +434,14 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({'chunk': f"\n[Sistem Hatası] {exc}", 'done': True})
             except Exception:
                 pass
+        finally:
+            stop_status.set()
+            if status_task is not None:
+                status_task.cancel()
+                with contextlib.suppress(Exception):
+                    await status_task
+            if sub_id is not None:
+                get_agent_event_bus().unsubscribe(sub_id)
 
     try:
         while True:
