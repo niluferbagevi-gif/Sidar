@@ -1,8 +1,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-07
-> **Son Güncelleme:** 2026-03-11 (v2.10.8 — **Audit #10:** Tüm kritik dosyalar tekrar satır bazında doğrulandı; rapor içi bağlantı/tutarlılık kontrolleri tamamlandı; açık teknik borçların güncel durumu tek tabloda netleştirildi)
-> **Proje Sürümü:** 2.10.8
+> **Son Güncelleme:** 2026-03-11 (v3.0.0 — **Release Candidate:** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak kapatıldı)
+> **Proje Sürümü:** 3.0.0
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~11.023 satır (tests hariç, tüm .py dahil); Test: ~15.974 satır; Web UI: 3.551 satır.
 
 ---
@@ -125,7 +125,7 @@ sidar_project/
 ├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── cli.py                     # CLI terminal arayüzü giriş noktası
 ├── web_server.py              # FastAPI web sunucusu (WebSocket streaming)
-├── config.py                  # Merkezi yapılandırma (v2.10.8)
+├── config.py                  # Merkezi yapılandırma (v3.0.0)
 ├── github_upload.py           # GitHub otomatik yükleme aracı
 ├── Dockerfile                 # CPU + GPU çift mod Dockerfile
 ├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
@@ -2636,7 +2636,7 @@ Bu oturumda veritabanı yönetim altyapısı üretim standartlarına (PostgreSQL
    - `tests/test_migration_assets.py` güncellendi.
    - Test sırasında geçici bir veritabanı üzerinde gerçek `alembic upgrade head` çalıştırılarak şemanın hatasız oluştuğu doğrulandı.
 4. **Dökümantasyon Senkronizasyonu**
-   - README versiyonu v2.10.8 ile eşitlendi.
+   - README versiyonu v3.0.0 ile eşitlendi.
    - `production-cutover-playbook.md` somut script komutlarıyla güncellendi.
 
 ---

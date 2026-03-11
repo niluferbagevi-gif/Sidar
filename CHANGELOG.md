@@ -1,5 +1,16 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v3.0.0] - 2026-03-11
+Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
+
+### ✅ Öne çıkanlar
+* **Kurumsal veri katmanı:** Alembic migration zinciri, SQLite→PostgreSQL cutover rehberi ve CI dry-run/prova kapıları.
+* **Multi-Agent varsayılan mimari:** Supervisor + Coder + Researcher + Reviewer akışının üretim odağında olgunlaştırılması.
+* **Güvenlik ve erişim:** Bearer auth, admin panel, WebSocket auth-handshake ve graceful session-expiry UX.
+* **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
+* **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
+
+
 ## [v2.10.8] - 2026-03-10
 Bu sürümde RAG cold-start optimizasyonu tamamlandı ve Anthropic (Claude) sağlayıcı desteği eklendi.
 
