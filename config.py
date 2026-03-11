@@ -314,6 +314,10 @@ class Config:
     RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
     REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+    # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db")
+    DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", 5)
+
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
     OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://localhost:4317")
