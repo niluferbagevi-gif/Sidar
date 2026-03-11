@@ -78,15 +78,28 @@ function connectWebSocket() {
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('sidar_access_token') || '';
-  const wsQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-  const wsUrl = `${protocol}//${window.location.host}/ws/chat${wsQuery}`;
+  const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
   chatSocket = new WebSocket(wsUrl);
+
+
+  chatSocket.onopen = () => {
+    if (!token) {
+      showAuthOverlay('Oturum bulunamadı. Lütfen giriş yapın.');
+      chatSocket.close(1008, 'Authentication required');
+      return;
+    }
+    chatSocket.send(JSON.stringify({ action: 'auth', token }));
+  };
 
   chatSocket.onmessage = (event) => {
     let data = null;
     try {
       data = JSON.parse(event.data);
     } catch {
+      return;
+    }
+
+    if (data.auth_ok) {
       return;
     }
 

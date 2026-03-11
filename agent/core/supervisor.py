@@ -18,6 +18,7 @@ from agent.roles.reviewer_agent import ReviewerAgent
 
 
 class SupervisorAgent(BaseAgent):
+    MAX_QA_RETRIES = 3
     """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
 
     SYSTEM_PROMPT = "Sen bir supervisor ajansın. Görevi doğru uzmana yönlendirip çıktıyı birleştirirsin."
@@ -126,30 +127,39 @@ class SupervisorAgent(BaseAgent):
             review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
 
         review_summary = str(review_result.summary)
-        if self._review_requires_revision(review_summary):
+        retries = 0
+        latest_code_summary = code_summary
+
+        while self._review_requires_revision(review_summary):
+            retries += 1
+            if retries > self.MAX_QA_RETRIES:
+                return (
+                    f"{latest_code_summary}\n\n---\n"
+                    f"Reviewer QA Özeti (limit aşıldı):\n{review_summary}\n"
+                    f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self.MAX_QA_RETRIES})."
+                )
+
             revise_prompt = (
                 "Reviewer geri bildirimi sonrası düzeltme yap. "
                 f"Orijinal görev: {task_prompt}\n"
                 f"Reviewer notu: {review_summary[:800]}"
             )
-            await self.events.publish("supervisor", "Reviewer geri bildirimi sonrası ikinci kod turu başlatılıyor...")
-            second_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
-            if isinstance(second_code.summary, DelegationRequest):
-                second_code = await self._route_p2p(second_code.summary, parent_task_id=second_code.task_id)
+            await self.events.publish("supervisor", f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self.MAX_QA_RETRIES})...")
+            next_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
+            if isinstance(next_code.summary, DelegationRequest):
+                next_code = await self._route_p2p(next_code.summary, parent_task_id=next_code.task_id)
 
-            second_summary = str(second_code.summary)
-            await self.events.publish("supervisor", "Final reviewer kontrolü çalıştırılıyor...")
-            final_review = await self._delegate(
+            latest_code_summary = str(next_code.summary)
+            await self.events.publish("supervisor", "Reviewer kontrolü tekrar çalıştırılıyor...")
+            review_result = await self._delegate(
                 "reviewer",
-                f"review_code|{second_summary[:800]}",
+                f"review_code|{latest_code_summary[:800]}",
                 "review",
-                parent_task_id=second_code.task_id,
+                parent_task_id=next_code.task_id,
             )
-            if isinstance(final_review.summary, DelegationRequest):
-                final_review = await self._route_p2p(final_review.summary, parent_task_id=final_review.task_id)
-            return (
-                f"{second_summary}\n\n---\n"
-                f"Reviewer QA Özeti (2. tur):\n{final_review.summary}"
-            )
+            if isinstance(review_result.summary, DelegationRequest):
+                review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
+            review_summary = str(review_result.summary)
 
-        return f"{code_summary}\n\n---\nReviewer QA Özeti:\n{review_summary}"
+        suffix = f" ({retries + 1}. tur)" if retries else ""
+        return f"{latest_code_summary}\n\n---\nReviewer QA Özeti{suffix}:\n{review_summary}"

@@ -513,7 +513,17 @@ def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
 def test_websocket_chat_cancel_and_disconnect_paths():
     mod = _load_web_server()
 
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
     class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def aset_active_user(self, _user_id, _username=None):
+            return None
+
         def __len__(self):
             return 0
 
@@ -558,6 +568,7 @@ def test_websocket_chat_cancel_and_disconnect_paths():
 
     ws = _WebSocket(
         payloads=[
+            json.dumps({"action": "auth", "token": "tok"}),
             json.dumps({"message": "uzun bir mesaj", "action": "send"}),
             json.dumps({"action": "cancel"}),
         ],
@@ -628,7 +639,17 @@ def test_websocket_chat_generate_response_cancelled_error_branch():
 def test_websocket_chat_send_json_failure_is_swallowed():
     mod = _load_web_server()
 
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
     class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def aset_active_user(self, _user_id, _username=None):
+            return None
+
         def __len__(self):
             return 0
 
@@ -645,7 +666,7 @@ def test_websocket_chat_send_json_failure_is_swallowed():
 
     class _WebSocket:
         def __init__(self):
-            self._payloads = [json.dumps({"message": "m", "action": "send"})]
+            self._payloads = [json.dumps({"action": "auth", "token": "tok"}), json.dumps({"message": "m", "action": "send"})]
             self.client = types.SimpleNamespace(host="127.0.0.1")
 
         async def accept(self):

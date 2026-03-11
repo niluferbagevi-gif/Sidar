@@ -209,6 +209,7 @@ async def basic_auth_middleware(request: Request, call_next):
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
     request.state.user = user
+    await agent.memory.aset_active_user(user.id, user.username)
     token = set_current_metrics_user_id(user.id)
     try:
         return await call_next(request)
@@ -482,6 +483,11 @@ async def index():
     return html_file.read_text(encoding="utf-8")
 
 
+async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
+    if hasattr(websocket, "close"):
+        await websocket.close(code=1008, reason=reason)
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     """
@@ -493,14 +499,8 @@ async def websocket_chat(websocket: WebSocket):
     agent = await get_agent()
     active_task: asyncio.Task | None = None
     ws_user_id = ""
-    query_params = getattr(websocket, "query_params", {})
-    ws_token = ""
-    if hasattr(query_params, "get"):
-        ws_token = (query_params.get("token", "") or "").strip()
-    if ws_token:
-        ws_user = await agent.memory.db.get_user_by_token(ws_token)
-        if ws_user:
-            ws_user_id = ws_user.id
+    ws_username = ""
+    ws_authenticated = False
 
     async def generate_response(msg: str) -> None:
         sub_id = None
@@ -572,6 +572,26 @@ async def websocket_chat(websocket: WebSocket):
 
             action = payload.get("action")
             user_message = payload.get("message", "").strip()
+
+            if not ws_authenticated:
+                if action != "auth":
+                    await _ws_close_policy_violation(websocket, "Authentication required")
+                    return
+                auth_token = (payload.get("token", "") or "").strip()
+                if not auth_token:
+                    await _ws_close_policy_violation(websocket, "Authentication token missing")
+                    return
+                ws_user = await agent.memory.db.get_user_by_token(auth_token)
+                if not ws_user:
+                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
+                    return
+                ws_user_id = ws_user.id
+                ws_username = ws_user.username
+                ws_authenticated = True
+                await agent.memory.aset_active_user(ws_user_id, ws_username)
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({'auth_ok': True})
+                continue
 
             if action == "cancel" and active_task and not active_task.done():
                 active_task.cancel()
