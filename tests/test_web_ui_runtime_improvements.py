@@ -66,3 +66,10 @@ def test_web_ui_has_admin_panel_markup_and_loader_logic():
     assert 'id="admin-nav-tab"' in html
     assert "window.showAdminPanel = async function showAdminPanel()" in js
     assert "fetchAPI('/admin/stats')" in js
+
+def test_web_ui_handles_auth_expiry_websocket_disconnect_gracefully():
+    js = Path("web_ui/chat.js").read_text(encoding="utf-8")
+    assert "function handleExpiredSession" in js
+    assert "Oturumunuz sonlandı, lütfen tekrar giriş yapın." in js
+    assert "wsCode === 1008" in js
+    assert "if (!authClosed)" in js

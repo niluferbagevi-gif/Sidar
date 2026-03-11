@@ -33,6 +33,17 @@ function showUiNotice(message, level = 'warn') {
   }, 4200);
 }
 
+function handleExpiredSession(message = 'Oturumunuz sonlandı, lütfen tekrar giriş yapın.') {
+  if (typeof clearAuthState === 'function') {
+    clearAuthState();
+  }
+  if (typeof showAuthOverlay === 'function') {
+    showAuthOverlay(message);
+  } else {
+    showUiNotice(message, 'warn');
+  }
+}
+
 /* ─── Görev başlat ──────────────────────────────────────── */
 function startTask() {
   const text = document.getElementById('task-input').value.trim();
@@ -123,13 +134,24 @@ function connectWebSocket() {
     }
   };
 
-  chatSocket.onclose = () => {
+  chatSocket.onclose = (event) => {
+    const wsCode = Number(event?.code || 0);
+    const wsReason = (event?.reason || '').toLowerCase();
+    const authClosed = wsCode === 1008 || wsReason.includes('auth') || wsReason.includes('token');
+
+    if (authClosed) {
+      handleExpiredSession('Oturumunuz sonlandı, lütfen tekrar giriş yapın.');
+    }
+
     if (currentStream) {
       currentStream.accumulated += '\n\n*[Bağlantı kesildi. Yanıt tamamlanamadı.]*';
       finishStreaming();
     }
+
     if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
-    wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+    if (!authClosed) {
+      wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+    }
   };
 
   chatSocket.onerror = () => {
