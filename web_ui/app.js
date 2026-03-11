@@ -58,6 +58,28 @@ async function refreshHealthStrip() {
 }
 
 /* ─── Model bilgisi yükleme ─────────────────────────────── */
+
+
+async function refreshLlmBudgetStrip() {
+  try {
+    const data = await (await fetch(apiUrl('/metrics/llm'))).json();
+    const pill = document.getElementById('pill-llm');
+    if (!pill) return;
+    const totals = data.totals || {};
+    const calls = totals.calls ?? 0;
+    const tokens = totals.total_tokens ?? 0;
+    const failures = totals.failures ?? 0;
+    pill.className = `health-pill ${failures > 0 ? 'warn' : 'ok'}`;
+    pill.textContent = `💸 LLM: ${calls} çağrı · ${tokens} token`;
+  } catch {
+    const pill = document.getElementById('pill-llm');
+    if (pill) {
+      pill.className = 'health-pill warn';
+      pill.textContent = '💸 LLM: erişilemiyor';
+    }
+  }
+}
+
 async function loadModelInfo() {
   try {
     const data = await (await fetch(apiUrl('/status'))).json();
@@ -256,7 +278,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadGitInfo();
   loadModelInfo();
   refreshHealthStrip();
+  refreshLlmBudgetStrip();
   setInterval(refreshHealthStrip, 8000);
+  setInterval(refreshLlmBudgetStrip, 10000);
 });
 
 /* ─── Sürükle-Bırak RAG & Sohbet İndirme İşlemleri ───────────────────────── */

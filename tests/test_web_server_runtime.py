@@ -1475,3 +1475,16 @@ def test_websocket_chat_cancellederror_pass_branch_with_running_task():
     ws = _WebSocket()
     asyncio.run(mod.websocket_chat(ws))
     assert any('iptal edildi' in p.get('chunk', '') for p in ws.sent)
+
+def test_llm_budget_endpoint_returns_snapshot(monkeypatch):
+    mod = _load_web_server()
+
+    class _Collector:
+        def snapshot(self):
+            return {"totals": {"calls": 3, "total_tokens": 42}, "by_provider": {}}
+
+    monkeypatch.setattr(mod, "get_llm_metrics_collector", lambda: _Collector())
+
+    resp = asyncio.run(mod.llm_budget_metrics())
+    assert resp.status_code == 200
+    assert resp.content["totals"]["calls"] == 3

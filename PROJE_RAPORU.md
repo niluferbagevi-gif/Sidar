@@ -1314,7 +1314,7 @@ add_document(title, content, source)
 | 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=true` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
 | 2 | Eski ve yeni mimarinin birlikte yaşaması (bakım yükü) | `agent/sidar_agent.py`, `agent/core/supervisor.py` | Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor | Orta | ⚠ **Açık** |
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
-| 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | ⚠ **Açık** |
+| 4 | Çoklu API hata ve maliyet yönetimi | `core/llm_client.py`, `web_server.py`, `config.py` | OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı | Orta | 🟡 **Kısmen Çözüldü** — token/latency/rate-limit metrik toplama + `/metrics/llm` dışa aktarımı eklendi |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
 | 6 | `.note` dosyası (311 satır) raporda belgelenmemiş | `.note` | Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor | Düşük | ⚠ **Yeni** (Audit #8 tespiti) |
 
@@ -1482,6 +1482,7 @@ Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak 
 - OpenAI ve Anthropic kullanımında token tüketimi, API maliyeti, hata oranı ve latency metriklerinin merkezileştirilmesi.
 - Web UI tarafında sağlayıcı bazlı canlı izleme paneli (grafik/uyarı eşikleri) eklenmesi.
 - OpenTelemetry + Prometheus/Grafana hattı üzerinden operasyonel görünürlük standardizasyonu.
+- `core/llm_client.py` içinde OpenAI/Anthropic token (prompt/completion), latency ve hata/rate-limit metrikleri toplanıp `web_server.py` üzerinden `/metrics/llm` ve `/api/budget` uçlarıyla dışa açılmalıdır/aktiftir (v2.10.8+).
 
 ### 14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı
 - Tek kullanıcı odaklı dosya tabanlı oturum modelinden çoklu kullanıcıya uygun servis mimarisine geçiş.
@@ -2252,7 +2253,7 @@ Bu bölüm, dış gözden gelen kontrol listesi (arkadaş yorumu) ile depo gerç
 
 1. ✅ Boş test artifact dosyaları kaldırıldı ve CI'da `find tests -size 0` kontrolü aktif.
 2. ✅ RFC'de “planlanan/uygulanmış” ayrımını netleştiren durum matrisi eklendi (`memory_hub`, `registry`, `ReviewerAgent`).
-3. Satır sayısı metriklerini tek komutla üreten bir script (ör. `scripts/audit_metrics.sh`) ekleyip raporu bu çıktıya bağlayın; manuel çelişki riski azalır.
+3. ✅ Satır sayısı metriklerini tek komutla üreten `scripts/audit_metrics.sh` betiği eklendi ve CI'da çalıştırılıyor.
 
 
 
@@ -2283,4 +2284,4 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 
 1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
 2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
-3. Satır sayısı metriklerini CI’da tek komutla üreten bir script ile standardize edin.
+3. ✅ Satır sayısı metrikleri `scripts/audit_metrics.sh` ile standardize edildi (CI adımı aktif).

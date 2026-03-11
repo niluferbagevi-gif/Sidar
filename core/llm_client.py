@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
+from core.llm_metrics import get_llm_metrics_collector
 
 try:
     from opentelemetry import trace
@@ -46,6 +47,50 @@ def _get_tracer(config):
     if trace and getattr(config, "ENABLE_TRACING", False):
         return trace.get_tracer(__name__)
     return None
+
+
+def _extract_usage_tokens(data: dict) -> tuple[int, int]:
+    usage = data.get("usage", {}) if isinstance(data, dict) else {}
+    prompt = int(usage.get("prompt_tokens", 0) or 0)
+    completion = int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0)
+    return prompt, completion
+
+
+def _record_llm_metric(
+    *,
+    provider: str,
+    model: str,
+    started_at: float,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    success: bool = True,
+    error: str = "",
+) -> None:
+    get_llm_metrics_collector().record(
+        provider=provider,
+        model=model,
+        latency_ms=(time.monotonic() - started_at) * 1000,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        success=success,
+        error=error,
+    )
+
+
+async def _track_stream_completion(
+    stream_iter: AsyncIterator[str],
+    *,
+    provider: str,
+    model: str,
+    started_at: float,
+) -> AsyncIterator[str]:
+    try:
+        async for chunk in stream_iter:
+            yield chunk
+        _record_llm_metric(provider=provider, model=model, started_at=started_at, success=True)
+    except Exception as exc:
+        _record_llm_metric(provider=provider, model=model, started_at=started_at, success=False, error=str(exc))
+        raise
 
 
 async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_at: float):
@@ -429,10 +474,12 @@ class OpenAIClient(BaseLLMClient):
         headers = {"Authorization": f"Bearer {api_key}"}
         timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
 
+        started_at = time.monotonic()
         try:
             if stream:
                 payload["stream"] = True
-                return self._stream_openai(payload, headers, timeout, json_mode)
+                stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
+                return _track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at)
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
@@ -442,13 +489,23 @@ class OpenAIClient(BaseLLMClient):
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
                 content = (
                     data.get("choices", [{}])[0]
                     .get("message", {})
                     .get("content", "")
                 )
+                _record_llm_metric(
+                    provider="openai",
+                    model=model_name,
+                    started_at=started_at,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    success=True,
+                )
                 return _ensure_json_text(content, "OpenAI") if json_mode else content
         except Exception as exc:
+            _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
             logger.error("OpenAI hata: %s", exc)
             msg = json.dumps(
                 {
@@ -585,6 +642,12 @@ class AnthropicClient(BaseLLMClient):
                     temperature=temperature,
                     json_mode=json_mode,
                 )
+                stream_iter = _track_stream_completion(
+                    stream_iter,
+                    provider="anthropic",
+                    model=model_name,
+                    started_at=started_at,
+                )
                 return _trace_stream_metrics(stream_iter, span, started_at)
 
             response = await client.messages.create(
@@ -594,15 +657,27 @@ class AnthropicClient(BaseLLMClient):
                 system=system_prompt or None,
                 messages=conversation,
             )
+            usage = getattr(response, "usage", None)
+            prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
             text = "".join(
                 getattr(block, "text", "")
                 for block in getattr(response, "content", [])
+            )
+            _record_llm_metric(
+                provider="anthropic",
+                model=model_name,
+                started_at=started_at,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                success=True,
             )
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
                 span.end()
             return _ensure_json_text(text, "Anthropic") if json_mode else text
         except Exception as exc:
+            _record_llm_metric(provider="anthropic", model=model_name, started_at=started_at, success=False, error=str(exc))
             if span is not None:
                 span.end()
             logger.error("Anthropic hata: %s", exc)

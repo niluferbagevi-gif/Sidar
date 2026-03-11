@@ -53,6 +53,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
 
 from config import Config
 from agent.sidar_agent import SidarAgent
+from core.llm_metrics import get_llm_metrics_collector
 
 logger = logging.getLogger(__name__)
 
@@ -533,6 +534,7 @@ async def metrics(request: Request):
     sessions  = agent.memory.get_all_sessions()
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
+    llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
     payload = {
         "version":                       agent.VERSION,
         "uptime_seconds":                uptime_s,
@@ -543,6 +545,8 @@ async def metrics(request: Request):
         "rate_limit_requests_in_window": rl_total,
         "provider":                      agent.cfg.AI_PROVIDER,
         "gpu_enabled":                   agent.cfg.USE_GPU,
+        "llm_calls":                     llm_totals.get("calls", 0),
+        "llm_total_tokens":              llm_totals.get("total_tokens", 0),
     }
 
     # Prometheus formatı: istemci açıkça talep ederse VE kütüphane kuruluysa sun
@@ -564,6 +568,15 @@ async def metrics(request: Request):
             pass  # prometheus_client kurulu değil — JSON ile devam et
 
     return JSONResponse(payload)
+
+
+@app.get("/metrics/llm")
+@app.get("/api/budget")
+async def llm_budget_metrics():
+    """LLM token/latency/rate-limit metriklerini JSON olarak döndürür."""
+    collector = get_llm_metrics_collector()
+    return JSONResponse(collector.snapshot())
+
 
 
 # ─────────────────────────────────────────────
