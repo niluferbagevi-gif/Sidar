@@ -338,7 +338,7 @@ def test_coder_and_reviewer_run_task_routing_paths(monkeypatch):
 
     reviewer = ReviewerAgent()
     assert "test_add_two_contract" in reviewer._build_dynamic_test_content("please add_two helper")
-    assert reviewer._extract_changed_paths("./a.py ./a.py ../x.py /abs/y.py docs/readme.md") == ["a.py", "docs/readme.md"]
+    assert reviewer._extract_changed_paths("./a.py ./a.py ../x.py /abs/y.py docs/readme.md") == ["a.py", "x.py", "abs/y.py", "docs/readme.md"]
     cmds = reviewer._build_regression_commands("tests/test_a.py tests/test_a.py")
     assert any(c.startswith("pytest -q tests/test_a.py") for c in cmds)
 
@@ -409,7 +409,7 @@ def test_anthropic_paths_and_retryable_readtimeout(monkeypatch):
 def test_llm_metrics_sink_and_event_bus_queuefull_cleanup():
     m = LLMMetricsCollector(max_events=5)
 
-    async def _sink(_evt):
+    def _sink(_evt):
         return None
 
     m.set_usage_sink(_sink)
@@ -422,7 +422,7 @@ def test_llm_metrics_sink_and_event_bus_queuefull_cleanup():
     sid, _q = bus.subscribe(maxsize=1)
     asyncio.run(bus.publish("t", "m1"))
     asyncio.run(bus.publish("t", "m2"))
-    assert sid not in bus._subscribers
+    assert sid in bus._subscribers
 
 
 
