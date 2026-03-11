@@ -2313,3 +2313,25 @@ Bu oturumda mimari sadeleştirme ve kalite döngüsü için aşağıdaki iyileş
    - `Config` deprecation uyarısı testi eklendi.
    - Supervisor’ın reviewer başarısızlığında coder’ı yeniden çağırdığı akış testi eklendi.
    - Reviewer `review_code` kalite raporu üretimi için test eklendi.
+
+---
+
+### Session 2026-03-11 — LLM Bütçe ve Maliyet Dashboard Geliştirmesi
+
+Bu oturumda çoklu sağlayıcı maliyet görünürlüğü için metrik katmanı ve UI iyileştirmeleri yapıldı:
+
+1. **LLM metrik toplayıcı genişletildi (`core/llm_metrics.py`)**
+   - Olay bazında `cost_usd` alanı eklendi.
+   - OpenAI/Anthropic bilinen modelleri için yaklaşık token fiyatlandırma tablosu tanımlandı.
+   - Toplam bütçe (`LLM_BUDGET_DAILY_USD`, `LLM_BUDGET_TOTAL_USD`) ve sağlayıcı bazlı limitler (`OPENAI_BUDGET_*`, `ANTHROPIC_BUDGET_*`) snapshot çıktısına eklendi.
+
+2. **Backend bütçe endpoint sözleşmesi güçlendirildi**
+   - `GET /api/budget` ve `GET /metrics/llm` üzerinden dönen payload artık `cost_usd`, global budget özeti ve sağlayıcı budget kırılımı içeriyor.
+
+3. **Web UI canlı bütçe şeridi güncellendi (`web_ui/app.js`)**
+   - LLM şeridi `apiUrl('/api/budget')` çağrısıyla provider bazlı kullanım/limit verisini çekiyor.
+   - OpenAI veya Anthropic aktif kullanımında `$kullanım / $limit` ve toplam maliyet bilgisi canlı gösteriliyor.
+
+4. **Test kapsamı artırıldı**
+   - `tests/test_llm_metrics_runtime.py` içine maliyet ve budget sözleşmesi doğrulamaları eklendi.
+   - `tests/test_web_ui_runtime_improvements.py` içine bütçe endpoint entegrasyonu testi eklendi.

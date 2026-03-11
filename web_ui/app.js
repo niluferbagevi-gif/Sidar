@@ -62,15 +62,32 @@ async function refreshHealthStrip() {
 
 async function refreshLlmBudgetStrip() {
   try {
-    const data = await (await fetch(apiUrl('/metrics/llm'))).json();
+    const data = await (await fetch(apiUrl('/api/budget'))).json();
     const pill = document.getElementById('pill-llm');
     if (!pill) return;
+
     const totals = data.totals || {};
+    const providers = data.by_provider || {};
+    const openai = providers.openai || null;
+    const anthropic = providers.anthropic || null;
+    const activeProvider = openai || anthropic;
+
     const calls = totals.calls ?? 0;
-    const tokens = totals.total_tokens ?? 0;
+    const cost = Number(totals.cost_usd ?? 0).toFixed(3);
     const failures = totals.failures ?? 0;
+
+    if (activeProvider && activeProvider.budget) {
+      const current = Number(activeProvider.budget.daily_usage_usd ?? 0).toFixed(3);
+      const limit = Number(activeProvider.budget.daily_limit_usd ?? 0).toFixed(2);
+      const providerName = openai ? 'OpenAI' : 'Anthropic';
+      const over = !!(activeProvider.budget.daily_exceeded || activeProvider.budget.total_exceeded);
+      pill.className = `health-pill ${over || failures > 0 ? 'warn' : 'ok'}`;
+      pill.textContent = `💸 ${providerName}: $${current} / $${limit} · toplam $${cost} · ${calls} çağrı`;
+      return;
+    }
+
     pill.className = `health-pill ${failures > 0 ? 'warn' : 'ok'}`;
-    pill.textContent = `💸 LLM: ${calls} çağrı · ${tokens} token`;
+    pill.textContent = `💸 LLM: $${cost} · ${calls} çağrı`;
   } catch {
     const pill = document.getElementById('pill-llm');
     if (pill) {
