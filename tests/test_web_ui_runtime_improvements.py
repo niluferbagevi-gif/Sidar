@@ -32,3 +32,9 @@ def test_web_ui_supports_drag_drop_rag_and_markdown_download():
     assert "fetch(apiUrl('/api/rag/upload')" in js
     assert "function downloadChat()" in js
     assert "sidar_sohbet_" in js
+
+def test_web_ui_budget_strip_uses_budget_endpoint_and_cost_text():
+    js = Path("web_ui/app.js").read_text(encoding="utf-8")
+    assert "apiUrl('/api/budget')" in js
+    assert "OpenAI" in js
+    assert "Anthropic" in js
