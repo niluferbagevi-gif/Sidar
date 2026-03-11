@@ -1165,6 +1165,10 @@ GitHub Actions entegrasyonu tamamlanmıştır. `.github/workflows/` altında yer
 | `httpx` | ✓ | LLM + Web arama HTTP istemcisi |
 | `python-dotenv` | ✓ | `.env` yükleme |
 | `pydantic` | ✓ | ToolCall model doğrulaması |
+| `SQLAlchemy` + `asyncpg` | ✓ (v3.0) | `core/db.py` üzerinden PostgreSQL/SQLite için asenkron ORM/veritabanı katmanı |
+| `alembic` | ✓ (v3.0) | `migrations/` şema versiyonlama ve DB geçiş yönetimi |
+| `prometheus-client` | ✓ (v3.0) | `core/llm_metrics.py` metriklerini Prometheus scrape formatında dışa aktarma |
+| `ruff` + `mypy` | ✓ (CI/QA) | Statik analiz kalite kapıları; CI/CD ve ReviewerAgent kalite döngüsü |
 | `PyGithub` | ✓ | GitHub API |
 | `beautifulsoup4` | ✓ | HTML temizleme |
 | `packaging` | ✓ | Sürüm karşılaştırması |
@@ -1181,6 +1185,7 @@ GitHub Actions entegrasyonu tamamlanmıştır. `.github/workflows/` altında yer
 | `cryptography` | Opsiyonel | Fernet bellek şifreleme |
 | `docker` | Opsiyonel | REPL sandbox |
 | `redis` | Opsiyonel (önerilen) | Kalıcı / dağıtık rate limiting |
+| Harici servisler: `prometheus` + `grafana` | Opsiyonel (kurumsal önerilen) | `docker-compose.yml` ile observability dashboard ve metrik izleme altyapısı |
 | `opentelemetry-*` | Opsiyonel | Dağıtık tracing + span export (OTLP) |
 
 ---
