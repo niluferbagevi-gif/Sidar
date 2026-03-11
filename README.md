@@ -225,6 +225,23 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
+## Veritabanı Migration (Alembic)
+
+v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
+
+```bash
+pip install -r requirements-dev.txt
+alembic upgrade head
+```
+
+PostgreSQL gibi farklı hedef veritabanı için bağlantıyı komut anında override edebilirsiniz:
+
+```bash
+alembic -x database_url="postgresql+psycopg://user:pass@host:5432/sidar" upgrade head
+```
+
+SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-playbook.md`.
+
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın.
 

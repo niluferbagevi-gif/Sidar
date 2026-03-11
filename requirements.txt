@@ -31,3 +31,4 @@ opentelemetry-sdk~=1.29.0
 opentelemetry-instrumentation-fastapi~=0.50b0
 opentelemetry-exporter-otlp~=1.29.0
 anyio>=4.0.0
+asyncpg~=0.30.0
