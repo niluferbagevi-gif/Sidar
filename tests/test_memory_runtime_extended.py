@@ -1,4 +1,4 @@
-test_memory_runtime_extended.pyimport asyncio
+import asyncio
 from unittest.mock import patch
 
 import pytest
