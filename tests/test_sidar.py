@@ -46,7 +46,15 @@ def test_config(tmp_path):
 @pytest.fixture
 def agent(test_config):
     """Testler için SidarAgent nesnesi üretir."""
-    return SidarAgent(cfg=test_config)
+    ag = SidarAgent(cfg=test_config)
+    _activate_memory_user(ag.memory, "agent_user")
+    return ag
+
+
+def _activate_memory_user(mem, username="test_user"):
+    user = asyncio.run(mem.db.ensure_user(username, role="user"))
+    mem.set_active_user(user.id, user.username)
+    return user
 
 
 # ─────────────────────────────────────────────
@@ -246,6 +254,7 @@ def test_session_create(test_config):
     """ConversationMemory: Yeni oturum oluşturma ve aktif hale getirme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_create")
 
     session_id = mem.create_session("Test Sohbeti")
 
@@ -253,13 +262,13 @@ def test_session_create(test_config):
     assert len(session_id) == 36  # UUID4 formatı
     assert mem.active_session_id == session_id
     assert mem.active_title == "Test Sohbeti"
-    assert (test_config.DATA_DIR / "sessions" / f"{session_id}.json").exists()
 
 
 def test_session_add_and_load(test_config):
     """ConversationMemory: Mesaj ekleme ve oturumu yeniden yükleme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "shared_session_user")
 
     session_id = mem.create_session("Yükleme Testi")
     mem.add("user", "Merhaba Sidar!")
@@ -267,6 +276,7 @@ def test_session_add_and_load(test_config):
 
     # Yeni bir bellek nesnesi oluştur ve oturumu yeniden yükle
     mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem2, "shared_session_user")
     ok = mem2.load_session(session_id)
 
     assert ok is True
@@ -282,15 +292,12 @@ def test_session_delete(test_config):
     """ConversationMemory: Oturum silme ve dosyanın kaldırıldığını doğrulama."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_delete")
 
     sid = mem.create_session("Silinecek Oturum")
-    session_file = test_config.DATA_DIR / "sessions" / f"{sid}.json"
-    assert session_file.exists()
-
     result = mem.delete_session(sid)
 
     assert result is True
-    assert not session_file.exists()
 
 
 def test_session_get_all_sorted(test_config):
@@ -298,6 +305,7 @@ def test_session_get_all_sorted(test_config):
     from core.memory import ConversationMemory
     import time as _time
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_list")
 
     id1 = mem.create_session("Birinci")
     _time.sleep(0.01)
@@ -318,6 +326,7 @@ def test_session_update_title(test_config):
     """ConversationMemory: Aktif oturum başlığını güncelleme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "shared_title_user")
 
     sid = mem.create_session("Eski Başlık")
     mem.update_title("Yeni Başlık")
@@ -326,6 +335,7 @@ def test_session_update_title(test_config):
 
     # Yeniden yükleme ile kalıcılığı doğrula
     mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem2, "shared_title_user")
     mem2.load_session(sid)
     assert mem2.active_title == "Yeni Başlık"
 
@@ -334,6 +344,7 @@ def test_session_load_nonexistent(test_config):
     """ConversationMemory: Var olmayan oturum yüklenmeye çalışıldığında False döner."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_missing")
 
     result = mem.load_session("00000000-0000-0000-0000-000000000000")
     assert result is False
@@ -344,6 +355,7 @@ def test_apply_summary_keeps_last_messages(test_config):
     from core.memory import ConversationMemory
 
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=4)
+    _activate_memory_user(mem, "summary_keep")
     for i in range(8):
         role = "user" if i % 2 == 0 else "assistant"
         mem.add(role, f"mesaj-{i}")
@@ -362,6 +374,7 @@ def test_apply_summary_keep_last_zero(test_config):
     from core.memory import ConversationMemory
 
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=0)
+    _activate_memory_user(mem, "summary_zero")
     for i in range(4):
         mem.add("user", f"soru-{i}")
 
@@ -633,12 +646,12 @@ def test_session_broken_json_quarantine(test_config):
 
     # get_all_sessions() çağrısı çökme üretmemeli; bozuk dosya karantinaya alınmalı
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "broken_json")
     sessions = mem.get_all_sessions()
 
     # Bozuk dosya .json.broken adıyla karantinada olmalı
-    quarantined = sessions_dir / "bozuk-oturum.json.broken"
-    assert quarantined.exists(), "Bozuk dosya karantinaya alınmadı"
-    assert not broken_file.exists(), "Orijinal bozuk dosya hâlâ mevcut"
+    assert isinstance(sessions, list)
+    assert broken_file.exists()
 
 
 # ─────────────────────────────────────────────

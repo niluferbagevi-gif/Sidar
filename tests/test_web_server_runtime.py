@@ -196,10 +196,24 @@ def _install_web_server_stubs():
     if "agent.core" not in sys.modules:
         sys.modules["agent.core"] = types.ModuleType("agent.core")
     if "core" not in sys.modules:
-        sys.modules["core"] = types.ModuleType("core")
+        core_pkg = types.ModuleType("core")
+        core_pkg.__path__ = []
+        sys.modules["core"] = core_pkg
+    llm_client_mod = types.ModuleType("core.llm_client")
+
+    class _LLMAPIError(Exception):
+        def __init__(self, message="err", provider="stub", status_code=None, retryable=False):
+            super().__init__(message)
+            self.provider = provider
+            self.status_code = status_code
+            self.retryable = retryable
+
+    llm_client_mod.LLMAPIError = _LLMAPIError
+
     sys.modules["agent.sidar_agent"] = agent_mod
     sys.modules["agent.core.event_stream"] = event_stream_mod
     sys.modules["core.llm_metrics"] = core_metrics_mod
+    sys.modules["core.llm_client"] = llm_client_mod
 
 
 def _load_web_server():
@@ -240,11 +254,27 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
     class _Memory:
         active_session_id = "sess-1"
 
+        class _DB:
+            async def get_user_by_token(self, _token):
+                return types.SimpleNamespace(id="u1", username="alice", role="user")
+
+            async def list_sessions(self, _user_id):
+                return [types.SimpleNamespace(id="sess-1", title="S1", updated_at="2024-01-01T00:00:00")]
+
+            async def get_session_messages(self, _session_id):
+                return []
+
+        def __init__(self):
+            self.db = self._DB()
+
         def __len__(self):
             return 2
 
         def get_all_sessions(self):
             return [{"id": "sess-1"}]
+
+        async def aset_active_user(self, _user_id, _username=None):
+            return None
 
         def clear(self):
             calls["cleared"] = True
@@ -315,8 +345,15 @@ def test_basic_auth_middleware_flow():
                 return types.SimpleNamespace(id="u1", username="alice", role="user")
             return None
 
+    class _Mem:
+        def __init__(self):
+            self.db = _Db()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
     async def _get_agent():
-        return types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+        return types.SimpleNamespace(memory=_Mem())
 
     mod.get_agent = _get_agent
 
@@ -695,6 +732,16 @@ def test_websocket_chat_cancels_previous_active_task_line():
     mod = _load_web_server()
 
     class _Memory:
+        class _DB:
+            async def get_user_by_token(self, _token):
+                return types.SimpleNamespace(id="u1", username="alice")
+
+        def __init__(self):
+            self.db = self._DB()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
         def __len__(self):
             return 0
 
@@ -1278,6 +1325,16 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     assert fav.status_code == 204
 
     class _Mem:
+        class _DB:
+            async def get_user_by_token(self, _token):
+                return types.SimpleNamespace(id="u1", username="alice")
+
+        def __init__(self):
+            self.db = self._DB()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
         def __len__(self):
             return 0
 
@@ -1299,6 +1356,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
             self.sent = []
             self._messages = [
                 "not-json",
+                json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"message": "  "}),
                 json.dumps({"message": "first", "action": "send"}),
             ]
@@ -1336,7 +1394,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
         def __init__(self):
             self.client = types.SimpleNamespace(host="1.2.3.4")
             self.sent = []
-            self._messages = [json.dumps({"message": "limited", "action": "send"})]
+            self._messages = [json.dumps({"action": "auth", "token": "tok"}), json.dumps({"message": "limited", "action": "send"})]
 
         async def accept(self):
             return None
@@ -1490,6 +1548,16 @@ def test_websocket_chat_cancellederror_pass_branch_with_running_task():
     mod = _load_web_server()
 
     class _Memory:
+        class _DB:
+            async def get_user_by_token(self, _token):
+                return types.SimpleNamespace(id="u1", username="alice")
+
+        def __init__(self):
+            self.db = self._DB()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
         def __len__(self):
             return 0
 
@@ -1507,6 +1575,7 @@ def test_websocket_chat_cancellederror_pass_branch_with_running_task():
     class _WebSocket:
         def __init__(self):
             self._payloads = [
+                json.dumps({'action': 'auth', 'token': 'tok'}),
                 json.dumps({'message': 'uzun', 'action': 'send'}),
                 json.dumps({'action': 'cancel'}),
             ]
@@ -1578,8 +1647,15 @@ def test_admin_stats_endpoint_enforces_admin_and_returns_stats():
                 "users": [{"username": "default_admin", "role": "admin", "daily_token_limit": 0, "daily_request_limit": 0, "created_at": "now"}],
             }
 
+    class _Mem:
+        def __init__(self):
+            self.db = _Db()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
     async def _get_agent():
-        return types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+        return types.SimpleNamespace(memory=_Mem())
 
     mod.get_agent = _get_agent
 

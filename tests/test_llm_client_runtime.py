@@ -27,6 +27,10 @@ def _load_llm_client_module():
     )
     sys.modules["httpx"] = httpx_stub
 
+    # Bazı web server testleri core.llm_metrics'i minimal stub ile kirletebilir;
+    # llm_client testlerinde gerçek modülün yeniden yüklenmesini zorlarız.
+    sys.modules.pop("core.llm_metrics", None)
+
     path = Path("core/llm_client.py")
     spec = importlib.util.spec_from_file_location("llm_client_under_test", path)
     assert spec and spec.loader

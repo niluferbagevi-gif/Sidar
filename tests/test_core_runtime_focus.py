@@ -103,6 +103,8 @@ def test_conversation_memory_sessions_and_summary(tmp_path, monkeypatch):
 
     mem_file = tmp_path / "memory.json"
     m = ConversationMemory(mem_file, max_turns=3, keep_last=2)
+    user = asyncio.run(m.db.ensure_user("focus_user", role="user"))
+    m.set_active_user(user.id, user.username)
 
     # Session & persistence flows
     sid = m.active_session_id
@@ -127,15 +129,17 @@ def test_conversation_memory_sessions_and_summary(tmp_path, monkeypatch):
     msgs = m.get_messages_for_llm()
     assert any("KONUŞMA ÖZETİ" in x["content"] for x in msgs)
 
-    assert m.load_session(sid) is True
+    current_sid = m.active_session_id
+    assert current_sid is not None
+    assert m.load_session(current_sid) is True
     assert m.delete_session("missing") is False
 
-    # Broken JSON quarantine path
+    # DB modunda legacy sessions dizini etkilenmeden kalır
     bad = m.sessions_dir / "broken.json"
     bad.write_text("{bad", encoding="utf-8")
     all_sessions = m.get_all_sessions()
     assert isinstance(all_sessions, list)
-    assert (m.sessions_dir / "broken.json.broken").exists()
+    assert bad.exists()
 
     m.clear()
     assert len(m) == 0
