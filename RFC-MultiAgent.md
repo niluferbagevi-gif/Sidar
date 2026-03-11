@@ -204,6 +204,14 @@ agent/
 
 ---
 
+## 8.2 Modül Durum Matrisi (Planlandı vs Uygulandı)
+
+| Modül | RFC Durumu | Depo Durumu | Not |
+|---|---|---|---|
+| `agent/roles/reviewer_agent.py` | Planlandı | ✅ Uygulandı | GitHub PR/issue inceleme araçları + test çalıştırma aracı (`run_tests`) mevcut. |
+| `agent/core/memory_hub.py` | Planlandı | ✅ Uygulandı | Global ve role-local kısa ömürlü bağlam notları tutuluyor. |
+| `agent/core/registry.py` | Planlandı | ✅ Uygulandı | Role -> agent kayıt/keşif katmanı Supervisor içinde aktif kullanılıyor. |
+
 ## 9) Yürütüm Akışı (Sequence)
 
 1. Kullanıcı isteği gelir.
