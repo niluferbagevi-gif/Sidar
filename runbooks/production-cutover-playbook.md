@@ -65,13 +65,20 @@ python scripts/migrate_sqlite_to_pg.py \
 - `run_tests` adımı sadece değişen dosyaları değil, ilgili bağımlı test kümelerini de çalıştırmalı.
 - PR başına minimum: birim test + entegrasyon testi + coverage raporu kontrolü (%95 barajı).
 
+## CI Otomasyon Notu (yeni)
+
+- `.github/workflows/migration-cutover-checks.yml` ile aşağıdaki kapılar otomatik doğrulanır:
+  1. PostgreSQL üzerinde `alembic upgrade head -> downgrade base -> upgrade head`
+  2. `scripts/migrate_sqlite_to_pg.py --dry-run` ile staging provaları
+  3. `scripts/load_test_db_pool.py --concurrency 50` ile asyncpg havuz smoke/load testi
+
 ## 6) Migration sürekliliği (operasyon disiplini)
 
 - Şema değişiklikleri **manuel SQL ile değil**, yalnızca Alembic revizyonları ile yapılmalıdır.
 - Her DB değişikliği için standart akış:
   1. `alembic revision -m "<değişiklik adı>"`
   2. migration dosyasına `upgrade/downgrade` adımlarını yaz
-  3. staging'de `alembic upgrade head` + `alembic downgrade -1` doğrula
+  3. staging'de `alembic upgrade head` + `alembic downgrade base` + `alembic upgrade head` doğrula
   4. PR'a migration etkisi ve rollback notu ekle
 - `schema_versions` uygulama telemetrisi için tutulur; gerçek migration kaynağı `alembic_version` tablosudur.
 
