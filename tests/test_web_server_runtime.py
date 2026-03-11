@@ -1532,3 +1532,37 @@ def test_llm_budget_endpoint_returns_snapshot(monkeypatch):
     resp = asyncio.run(mod.llm_budget_metrics())
     assert resp.status_code == 200
     assert resp.content["totals"]["calls"] == 3
+
+def test_admin_stats_endpoint_enforces_admin_and_returns_stats():
+    mod = _load_web_server()
+
+    non_admin = types.SimpleNamespace(id="u1", username="alice", role="user")
+    admin = types.SimpleNamespace(id="u2", username="default_admin", role="user")
+
+    try:
+        mod._require_admin_user(non_admin)
+        assert False, "non-admin kullanıcı için HTTPException bekleniyordu"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 403
+
+    granted = mod._require_admin_user(admin)
+    assert granted is admin
+
+    class _Db:
+        async def get_admin_stats(self):
+            return {
+                "total_users": 3,
+                "total_tokens_used": 4567,
+                "total_api_requests": 12,
+                "users": [{"username": "default_admin", "role": "admin", "daily_token_limit": 0, "daily_request_limit": 0, "created_at": "now"}],
+            }
+
+    async def _get_agent():
+        return types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+
+    mod.get_agent = _get_agent
+
+    response = asyncio.run(mod.admin_stats(admin))
+    assert response.status_code == 200
+    assert response.content["total_users"] == 3
+    assert response.content["total_tokens_used"] == 4567

@@ -43,6 +43,7 @@
       <nav class="nav-tabs">
         <button class="nav-tab active" onclick="showTaskPanel()">Görevler</button>
         <button class="nav-tab" onclick="showChatPanel()">Sohbet</button>
+        <button class="nav-tab" id="admin-nav-tab" style="display:none;" onclick="showAdminPanel()">Admin Paneli</button>
       </nav>
     </div>
     <div class="topbar-right">
@@ -238,6 +239,44 @@
             </div>
 
           </div>
+        </div>
+      </div>
+
+      <div id="admin-panel-container" style="display:none;">
+        <div class="admin-panel-header">
+          <h2>Admin Paneli</h2>
+          <button class="btn-ghost" onclick="window.open('http://localhost:3000', '_blank')">Grafana'yı Aç</button>
+        </div>
+        <div class="admin-cards">
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam Kullanıcı</div>
+            <div class="admin-card-value" id="admin-total-users">0</div>
+          </div>
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam API İsteği</div>
+            <div class="admin-card-value" id="admin-total-requests">0</div>
+          </div>
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam Token Kullanımı</div>
+            <div class="admin-card-value" id="admin-total-tokens">0</div>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Kullanıcı</th>
+                <th>Rol</th>
+                <th>Günlük Token Kotası</th>
+                <th>Günlük İstek Kotası</th>
+                <th>Oluşturulma</th>
+              </tr>
+            </thead>
+            <tbody id="admin-users-tbody">
+              <tr><td colspan="5" class="admin-empty">Veri yükleniyor...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

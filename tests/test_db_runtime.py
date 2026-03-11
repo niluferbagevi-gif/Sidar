@@ -76,3 +76,36 @@ def test_database_auth_register_and_token(tmp_path):
     assert auth_fail is None
     assert token_user is not None
     assert token_user.id == user.id
+
+
+def test_database_admin_stats_includes_users_quotas_and_usage(tmp_path):
+    db_path = tmp_path / "sidar_admin_stats.db"
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{db_path}",
+        DB_POOL_SIZE=2,
+        BASE_DIR=tmp_path,
+    )
+
+    async def _run():
+        db = Database(cfg=cfg)
+        await db.connect()
+        await db.init_schema()
+
+        admin = await db.create_user("default_admin", role="admin")
+        user = await db.create_user("alice", role="user")
+        await db.upsert_user_quota(user.id, daily_token_limit=5000, daily_request_limit=80)
+        await db.record_provider_usage_daily(user.id, "openai", tokens_used=1234, requests_inc=2)
+
+        stats = await db.get_admin_stats()
+        await db.close()
+        return admin, user, stats
+
+    _admin, user, stats = asyncio.run(_run())
+
+    assert stats["total_users"] == 2
+    assert stats["total_tokens_used"] == 1234
+    assert stats["total_api_requests"] == 2
+    by_username = {item["username"]: item for item in stats["users"]}
+    assert by_username["alice"]["daily_token_limit"] == 5000
+    assert by_username["alice"]["daily_request_limit"] == 80
+    assert by_username["alice"]["id"] == user.id
