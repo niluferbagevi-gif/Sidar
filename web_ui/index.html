@@ -41,8 +41,9 @@
       <span class="logo-name">SİDAR</span>
       <div class="topbar-divider"></div>
       <nav class="nav-tabs">
-        <button class="nav-tab active" onclick="showTaskPanel()">Görevler</button>
-        <button class="nav-tab" onclick="showChatPanel()">Sohbet</button>
+        <button class="nav-tab active" id="tasks-nav-tab" onclick="showTaskPanel()">Görevler</button>
+        <button class="nav-tab" id="chat-nav-tab" onclick="showChatPanel()">Sohbet</button>
+        <button class="nav-tab" id="dashboard-nav-tab" onclick="showDashboardPanel()">Dashboard</button>
         <button class="nav-tab" id="admin-nav-tab" style="display:none;" onclick="showAdminPanel()">Admin Paneli</button>
       </nav>
     </div>
@@ -239,6 +240,43 @@
             </div>
 
           </div>
+        </div>
+      </div>
+
+      <div id="dashboard-panel" style="display:none;">
+        <div class="admin-panel-header">
+          <h2>Bütçe ve Token Dashboard</h2>
+        </div>
+        <div class="admin-cards">
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam Çağrı</div>
+            <div class="admin-card-value" id="dash-total-calls">0</div>
+          </div>
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam Token</div>
+            <div class="admin-card-value" id="dash-total-tokens">0</div>
+          </div>
+          <div class="admin-card">
+            <div class="admin-card-label">Toplam Maliyet (USD)</div>
+            <div class="admin-card-value" id="dash-total-cost">$0.000</div>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Sağlayıcı</th>
+                <th>Çağrı</th>
+                <th>Token</th>
+                <th>Maliyet (USD)</th>
+                <th>Bütçe Kullanımı</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-providers-tbody">
+              <tr><td colspan="5" class="admin-empty">Veri yükleniyor...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

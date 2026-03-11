@@ -125,6 +125,70 @@ async function loadAdminStats() {
   renderAdminStats(data);
 }
 
+
+function renderBudgetDashboard(data) {
+  const totals = data.totals || {};
+  document.getElementById('dash-total-calls').textContent = _fmtNumber(totals.calls || 0);
+  document.getElementById('dash-total-tokens').textContent = _fmtNumber(totals.total_tokens || 0);
+  document.getElementById('dash-total-cost').textContent = `$${Number(totals.cost_usd || 0).toFixed(3)}`;
+
+  const tbody = document.getElementById('dashboard-providers-tbody');
+  if (!tbody) return;
+  const providers = data.by_provider || {};
+  const rows = Object.entries(providers);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="admin-empty">Henüz sağlayıcı verisi yok.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(([provider, row]) => {
+    const budget = row.budget || {};
+    const usage = Number(budget.daily_usage_usd || 0);
+    const limit = Number(budget.daily_limit_usd || 0);
+    const ratio = limit > 0 ? Math.min(100, Math.round((usage / limit) * 100)) : 0;
+    return `
+      <tr>
+        <td>${escHtml(provider)}</td>
+        <td>${_fmtNumber(row.calls || 0)}</td>
+        <td>${_fmtNumber(row.total_tokens || 0)}</td>
+        <td>$${Number(row.cost_usd || 0).toFixed(3)}</td>
+        <td>
+          <div class="budget-bar-wrap">
+            <div class="budget-bar" style="width:${ratio}%"></div>
+          </div>
+          <div class="budget-bar-label">$${usage.toFixed(3)} / $${limit.toFixed(2)} (${ratio}%)</div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function loadBudgetDashboard() {
+  const tbody = document.getElementById('dashboard-providers-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="admin-empty">Veri yükleniyor...</td></tr>';
+  const res = await fetchAPI('/api/budget');
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || data.error || 'Dashboard verisi alınamadı');
+  }
+  renderBudgetDashboard(data);
+}
+
+window.showDashboardPanel = async function showDashboardPanel() {
+  document.getElementById('task-panel').style.display = 'none';
+  document.getElementById('chat-panel').style.display = 'none';
+  document.getElementById('dashboard-panel').style.display = 'flex';
+  document.getElementById('admin-panel-container').style.display = 'none';
+  if (typeof setActiveTopNav === 'function') {
+    setActiveTopNav('dashboard-nav-tab');
+  }
+  try {
+    await loadBudgetDashboard();
+  } catch (err) {
+    showUiNotice(err.message || 'Dashboard verisi alınamadı', 'warn');
+  }
+};
+
 window.showAdminPanel = async function showAdminPanel() {
   if (!isCurrentUserAdmin) {
     showUiNotice('Admin paneli sadece yetkili kullanıcılar içindir.', 'warn');
@@ -132,9 +196,14 @@ window.showAdminPanel = async function showAdminPanel() {
   }
   document.getElementById('task-panel').style.display = 'none';
   document.getElementById('chat-panel').style.display = 'none';
+  document.getElementById('dashboard-panel').style.display = 'none';
   document.getElementById('admin-panel-container').style.display = 'flex';
-  document.querySelectorAll('.nav-tab').forEach((tab) => tab.classList.remove('active'));
-  document.getElementById('admin-nav-tab')?.classList.add('active');
+  if (typeof setActiveTopNav === 'function') {
+    setActiveTopNav('admin-nav-tab');
+  } else {
+    document.querySelectorAll('.nav-tab').forEach((tab) => tab.classList.remove('active'));
+    document.getElementById('admin-nav-tab')?.classList.add('active');
+  }
   try {
     await loadAdminStats();
   } catch (err) {

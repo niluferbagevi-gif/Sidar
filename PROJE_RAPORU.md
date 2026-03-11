@@ -2618,3 +2618,23 @@ Bu oturumda v3.0 geçişinden kalan kritik güvenlik/kararlılık teknik borçla
 4. **Doğrulama özeti**
    - İlgili runtime testleri hedefli şekilde çalıştırıldı ve regresyon gözlenmedi.
    - Sonuç: güvenlik sertleştirmeleri ve kararlılık devre kesicisi üretim hazırlığı hedefleriyle uyumludur.
+---
+
+### Session 2026-03-11 — Üretim Geçiş Araçları ve Alembic Sertleştirmesi
+
+**Durum: Tamamlandı ✅**
+
+Bu oturumda veritabanı yönetim altyapısı üretim standartlarına (PostgreSQL) taşınacak seviyede sertleştirildi:
+
+1. **Gelişmiş Veri Taşıma Aracı (`scripts/migrate_sqlite_to_pg.py`)**
+   - SQLite verilerini PostgreSQL’e deterministik bir sırayla taşıyan asenkron script eklendi.
+   - `--dry-run` desteği ile taşıma öncesi veri tutarlılığı kontrolü sağlandı.
+2. **Alembic Yapılandırma İyileştirmesi**
+   - `migrations/env.py` içinde dinamik DATABASE_URL çözümleme mantığı güçlendirildi.
+   - Komut satırı argümanı (`-x database_url=...`) en yüksek önceliğe alındı.
+3. **Migration Entegrasyon Testleri**
+   - `tests/test_migration_assets.py` güncellendi.
+   - Test sırasında geçici bir veritabanı üzerinde gerçek `alembic upgrade head` çalıştırılarak şemanın hatasız oluştuğu doğrulandı.
+4. **Dökümantasyon Senkronizasyonu**
+   - README versiyonu v2.10.8 ile eşitlendi.
+   - `production-cutover-playbook.md` somut script komutlarıyla güncellendi.
