@@ -718,3 +718,66 @@ def test_websocket_status_timeout_and_cancelled_error_lines(monkeypatch):
 
     asyncio.run(mod.websocket_chat(_WS()))
     assert wait_for_calls["n"] >= 1
+
+
+def test_websocket_llm_error_send_json_failure_swallowed(monkeypatch):
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def aset_active_user(self, *_a, **_k):
+            return None
+
+        def __len__(self):
+            return 1
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            raise mod.LLMAPIError("provider down", provider="ollama", status_code=500, retryable=False)
+            yield "x"
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "hata"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(0.1)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            if payload.get("chunk", "").startswith("\n[LLM Hatası]"):
+                raise RuntimeError("socket write failed")
+            return None
+
+    # 553-554: LLM hata mesajı gönderimi sırasında exception yutulmalı
+    asyncio.run(mod.websocket_chat(_WS()))
