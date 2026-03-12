@@ -900,3 +900,38 @@ def test_llm_client_non_ollama_timeout_and_gemini_stream_fallback(llm_mod, monke
 
     out = asyncio.run(_collect(fac._stream_gemini_generator(_source())))
     assert out == ['wrapped:x', 'wrapped:y']
+
+def test_llmclient_non_ollama_fallback_helpers_and_stream_bridge(monkeypatch):
+    llm_mod = _load_llm_client_module()
+
+    cfg = SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_TIMEOUT=12,
+        OPENAI_API_KEY="k",
+        OPENAI_TIMEOUT=30,
+        GEMINI_API_KEY="",
+        ENABLE_TRACING=False,
+    )
+    client = llm_mod.LLMClient("openai", cfg)
+
+    assert client._ollama_base_url == "http://localhost:11434"
+    assert asyncio.run(client.list_ollama_models()) == []
+    assert asyncio.run(client.is_ollama_available()) is False
+
+    class _RespChunk:
+        def __init__(self, text):
+            self.text = text
+
+    class _FakeRespStream:
+        def __aiter__(self):
+            self._items = iter([_RespChunk("x"), _RespChunk(""), _RespChunk("y")])
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._items)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    chunks = asyncio.run(_collect(client._stream_gemini_generator(_FakeRespStream())))
+    assert chunks == ["x", "y"]
