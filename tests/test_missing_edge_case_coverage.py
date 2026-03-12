@@ -358,6 +358,95 @@ def test_llm_client_stream_and_error_branches(monkeypatch):
     assert out == ["ok"]
 
     # Anthropic stream except Exception dalı
+
+
+def test_llm_client_factory_openai_gemini_and_wrapper_stream(monkeypatch):
+    llm_mod = llm_real
+
+    class _FakeGemini:
+        def __init__(self, _cfg):
+            self.called = False
+
+        async def _stream_gemini_generator(self, _response_stream):
+            self.called = True
+            yield "g-1"
+            yield "g-2"
+
+    class _FakeOpenAI:
+        def __init__(self, _cfg):
+            self.created = True
+
+    monkeypatch.setattr(llm_mod, "GeminiClient", _FakeGemini)
+    monkeypatch.setattr(llm_mod, "OpenAIClient", _FakeOpenAI)
+
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=10)
+    gemini_fac = llm_mod.LLMClient("gemini", cfg)
+    openai_fac = llm_mod.LLMClient("openai", cfg)
+
+    assert isinstance(gemini_fac._client, _FakeGemini)
+    assert isinstance(openai_fac._client, _FakeOpenAI)
+    assert asyncio.run(gemini_fac.is_ollama_available()) is False
+
+    chunks = asyncio.run(_collect(gemini_fac._stream_gemini_generator(object())))
+    assert chunks == ["g-1", "g-2"]
+
+
+def test_web_server_admin_file_git_and_repo_branches(monkeypatch, tmp_path):
+    mod = _load_web_server()
+    agent, _ = _make_agent()
+
+    async def _admin_stats():
+        return {"total_users": 5}
+
+    agent.memory.db.get_admin_stats = _admin_stats
+    agent.github.repo_name = "owner-x/repo-y"
+    agent.github.list_repos = lambda owner, limit=200: (True, [{"full_name": f"{owner}/repo-y"}])
+    mod.get_agent = lambda: asyncio.sleep(0, result=agent)
+
+    admin_ok = asyncio.run(mod.admin_stats(_user=SimpleNamespace(role="admin", username="root")))
+    assert admin_ok.status_code == 200
+    assert admin_ok.content["total_users"] == 5
+
+    with pytest.raises(mod.HTTPException) as exc:
+        mod._require_admin_user(SimpleNamespace(role="user", username="alice"))
+    assert exc.value.status_code == 403
+
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".hidden").write_text("x", encoding="utf-8")
+    (root / "visible.txt").write_text("ok", encoding="utf-8")
+    (root / "archive.zip").write_bytes(b"PK")
+    (root / "subdir").mkdir()
+    monkeypatch.setattr(mod, "__file__", str(root / "web_server.py"))
+
+    listed = asyncio.run(mod.list_project_files(""))
+    names = [item["name"] for item in listed.content["items"]]
+    assert "visible.txt" in names
+    assert ".hidden" not in names
+
+    dir_err = asyncio.run(mod.file_content("subdir"))
+    assert dir_err.status_code == 400
+    bad_ext = asyncio.run(mod.file_content("archive.zip"))
+    assert bad_ext.status_code == 415
+
+    monkeypatch.setattr(mod.subprocess, "check_output", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert mod._git_run(["git", "status"], cwd=".") == ""
+
+    def _git_run(cmd, _cwd, stderr=None):
+        if "branch --format" in " ".join(cmd):
+            return "\nmain\n feature/x \n"
+        if "rev-parse --abbrev-ref HEAD" in " ".join(cmd):
+            return "feature/x"
+        return ""
+
+    monkeypatch.setattr(mod, "_git_run", _git_run)
+    branches = asyncio.run(mod.git_branches())
+    assert branches.content["branches"] == ["main", "feature/x"]
+    assert branches.content["current"] == "feature/x"
+
+    repos = asyncio.run(mod.github_repos(owner="", q=""))
+    assert repos.status_code == 200
+    assert repos.content["owner"] == "owner-x"
     class _MsgAPI:
         def stream(self, **_kwargs):
             class _Ctx:
