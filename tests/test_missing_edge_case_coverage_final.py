@@ -1,7 +1,10 @@
 import asyncio
+import builtins
 import io
+import json
 import subprocess
 import types
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import core.llm_client as llm
@@ -202,3 +205,157 @@ def test_web_server_remaining_edge_case_endpoints(monkeypatch):
     upload_err = asyncio.run(mod.upload_rag_file(up))
     assert upload_err.status_code == 500
     assert upload_err.content["success"] is False
+
+
+def test_web_server_requested_edge_case_coverage(monkeypatch):
+    mod = _load_web_server()
+
+    # 1) Redis bağlantı hatası + komut hatası fallback
+    class _RedisCtorFail:
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            raise RuntimeError("Redis down")
+
+    mod._redis_client = None
+    mod._redis_lock = None
+    monkeypatch.setattr(mod, "Redis", _RedisCtorFail)
+    assert asyncio.run(mod._get_redis()) is None
+
+    fallback_calls = []
+
+    async def _fallback(key, limit, window):
+        fallback_calls.append((key, limit, window))
+        return True
+
+    class _RedisCommandFail:
+        async def incr(self, _key):
+            raise RuntimeError("rate limit cmd failed")
+
+    mod._redis_client = _RedisCommandFail()
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _fallback)
+    assert asyncio.run(mod._redis_is_rate_limited("chat", "127.0.0.1", 1, 60)) is True
+    assert fallback_calls
+
+    # Ortak fake agent
+    db = types.SimpleNamespace(
+        get_user_by_token=AsyncMock(return_value=types.SimpleNamespace(id="u1", username="alice")),
+        delete_session=AsyncMock(return_value=False),
+    )
+    class _Memory:
+        def __init__(self):
+            self.db = db
+
+        async def aset_active_user(self, *_args, **_kwargs):
+            return None
+
+        def __len__(self):
+            return 0
+
+        def get_all_sessions(self):
+            return []
+
+    memory = _Memory()
+    cfg = types.SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="qwen",
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="none",
+    )
+    health = types.SimpleNamespace(
+        get_gpu_info=lambda: {"devices": []},
+        check_ollama=lambda: False,
+        get_health_summary=lambda: {"status": "ok", "ollama_online": False},
+    )
+    fake_agent = types.SimpleNamespace(
+        VERSION="1.0",
+        cfg=cfg,
+        memory=memory,
+        github=types.SimpleNamespace(is_available=lambda: False),
+        web=types.SimpleNamespace(is_available=lambda: False),
+        docs=types.SimpleNamespace(status=lambda: "ok", doc_count=0),
+        pkg=types.SimpleNamespace(status=lambda: "ok"),
+        health=health,
+    )
+
+    async def _get_agent():
+        return fake_agent
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+
+    # 2) WebSocketDisconnect sırasında active_task.cancel çağrısı
+    cancelled = {"flag": False}
+
+    class _FakeTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            cancelled["flag"] = True
+
+    def _fake_create_task(coro):
+        coro.close()
+        return _FakeTask()
+
+    monkeypatch.setattr(mod.asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", AsyncMock(return_value=False))
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "merhaba"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            return None
+
+    asyncio.run(mod.websocket_chat(_WS()))
+    assert cancelled["flag"] is True
+
+    # 3) /status GPU default alanları
+    status_resp = asyncio.run(mod.status())
+    assert status_resp.status_code == 200
+    assert status_resp.content["gpu_count"] == 0
+    assert status_resp.content["cuda_version"] == "N/A"
+
+    # 4) /health ollama kesintisi -> 503
+    health_resp = asyncio.run(mod.health_check())
+    assert health_resp.status_code == 503
+    assert health_resp.content["status"] == "degraded"
+
+    # 5) /metrics text/plain + prometheus ImportError -> JSON fallback
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "prometheus_client":
+            raise ImportError("missing prometheus_client")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    metrics_resp = asyncio.run(mod.metrics(_FakeRequest(headers={"Accept": "text/plain"})))
+    assert metrics_resp.status_code == 200
+    assert isinstance(metrics_resp.content, dict)
+
+    # 6) Oturum silme başarısızlığı -> 500
+    user = types.SimpleNamespace(id="u1")
+    delete_resp = asyncio.run(mod.delete_session("sess-404", _FakeRequest(path="/sessions/sess-404"), user=user))
+    assert delete_resp.status_code == 500
+
+    # 7) /file-content boyut limiti
+    tmp_file = Path("tests") / "_tmp_small.txt"
+    tmp_file.write_text("x" * (mod.MAX_FILE_CONTENT_BYTES + 1), encoding="utf-8")
+    try:
+        file_resp = asyncio.run(mod.file_content(str(tmp_file)))
+        assert file_resp.status_code == 413
+    finally:
+        tmp_file.unlink(missing_ok=True)
