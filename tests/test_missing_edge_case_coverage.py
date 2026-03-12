@@ -12,7 +12,7 @@ from agent.core.contracts import DelegationRequest
 from agent.roles.coder_agent import CoderAgent
 from core.llm_client import AnthropicClient, LLMClient, _ensure_json_text
 from core.llm_metrics import LLMMetricsCollector
-from tests.test_web_server_runtime import _FakeRequest, _load_web_server, _make_agent
+from tests.test_web_server_runtime import _FakeRequest, _FakeUploadFile, _load_web_server, _make_agent
 
 
 async def _collect(aiter):
@@ -379,3 +379,84 @@ def test_llm_client_stream_and_error_branches(monkeypatch):
     chunks = asyncio.run(_collect(client._stream_anthropic(_AsyncAnthropic(), "claude", [{"role": "user", "content": "hi"}], "", 0.2, True)))
     payload = json.loads(chunks[0])
     assert "Anthropic akış hatası" in payload["argument"]
+
+
+def test_llmclient_factory_fallbacks_and_stream_bridge(monkeypatch):
+    cfg = SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_TIMEOUT=33,
+        GEMINI_API_KEY="key",
+        GEMINI_MODEL="gemini-2.0-flash",
+    )
+
+    ollama_factory = LLMClient("ollama", cfg)
+    assert ollama_factory._ollama_base_url == "http://localhost:11434"
+    assert ollama_factory._build_ollama_timeout().connect == 10.0
+
+    non_ollama = LLMClient("gemini", cfg)
+    assert asyncio.run(non_ollama.list_ollama_models()) == []
+    assert asyncio.run(non_ollama.is_ollama_available()) is False
+
+    seen = {"created": 0}
+
+    def _fake_init(self, config):
+        seen["created"] += 1
+        self.config = config
+
+    async def _fake_stream(self, _response_stream):
+        yield "chunk"
+
+    monkeypatch.setattr(llm_real.GeminiClient, "__init__", _fake_init)
+    monkeypatch.setattr(llm_real.GeminiClient, "_stream_gemini_generator", _fake_stream)
+
+    openai_factory = LLMClient("openai", cfg)
+    assert asyncio.run(_collect(openai_factory._stream_gemini_generator(object()))) == ["chunk"]
+    assert seen["created"] == 1
+
+
+def test_web_server_security_and_error_guard_paths(monkeypatch):
+    mod = _load_web_server()
+    agent, _ = _make_agent()
+    mod.get_agent = lambda: asyncio.sleep(0, result=agent)
+
+    with pytest.raises(mod.HTTPException) as exc:
+        mod._get_request_user(_FakeRequest(path="/secure"))
+    assert exc.value.status_code == 401
+
+    async def _rate_limited(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _rate_limited)
+
+    async def _next(_request):
+        return mod.JSONResponse({"ok": True}, status_code=200)
+
+    post_resp = asyncio.run(mod.rate_limit_middleware(_FakeRequest(method="POST", path="/set-level"), _next))
+    get_resp = asyncio.run(mod.rate_limit_middleware(_FakeRequest(method="GET", path="/git-info"), _next))
+    assert post_resp.status_code == 429
+    assert get_resp.status_code == 429
+
+    assert asyncio.run(mod.serve_vendor("../escape.js")).status_code == 403
+    assert asyncio.run(mod.serve_vendor("missing.js")).status_code == 404
+
+    def _checkout_error(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(1, "git checkout", output=b"checkout failed")
+
+    monkeypatch.setattr(mod.subprocess, "check_output", _checkout_error)
+    set_branch_resp = asyncio.run(mod.set_branch(_FakeRequest(method="POST", path="/set-branch", json_body={"branch": "feature/x"})))
+    assert set_branch_resp.status_code == 400
+
+    agent.github.list_repos = lambda **_kwargs: (False, "Hata")
+    assert asyncio.run(mod.github_repos()).status_code == 400
+
+    agent.github.is_available = lambda: False
+    assert asyncio.run(mod.github_prs()).status_code == 503
+    assert asyncio.run(mod.github_pr_detail(1)).status_code == 503
+
+    rag_add_resp = asyncio.run(mod.rag_add_file(_FakeRequest(method="POST", path="/rag/add-file", json_body={"path": "../../../etc/passwd"})))
+    assert rag_add_resp.status_code == 403
+
+    up = _FakeUploadFile("doc.txt", b"hello")
+    monkeypatch.setattr(mod.shutil, "rmtree", lambda _p: (_ for _ in ()).throw(RuntimeError("rm failed")))
+    upload_resp = asyncio.run(mod.upload_rag_file(up))
+    assert upload_resp.status_code == 200
