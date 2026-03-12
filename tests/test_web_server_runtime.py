@@ -618,6 +618,109 @@ def test_websocket_chat_cancel_and_disconnect_paths():
     assert any(p.get("done") is True and "iptal" in p.get("chunk", "") for p in ws.sent)
 
 
+def test_prewarm_rag_embeddings_happy_path(monkeypatch):
+    mod = _load_web_server()
+
+    calls = {"init": 0, "to_thread": 0}
+
+    class _Rag:
+        _chroma_available = True
+
+        def _init_chroma(self):
+            calls["init"] += 1
+
+    async def _get_agent():
+        return types.SimpleNamespace(rag=_Rag())
+
+    async def _to_thread(fn, *args, **kwargs):
+        calls["to_thread"] += 1
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod.asyncio, "to_thread", _to_thread)
+
+    asyncio.run(mod._prewarm_rag_embeddings())
+    assert calls["to_thread"] == 1
+    assert calls["init"] == 1
+
+
+def test_rate_limit_mutations_and_redis_fallback_exception_path(monkeypatch):
+    mod = _load_web_server()
+
+    class _RedisFailing:
+        async def incr(self, _key):
+            raise RuntimeError("redis command failed")
+
+    mod._redis_client = _RedisFailing()
+
+    local_fallback_calls = []
+
+    async def _local_fallback(key, limit, window_sec):
+        local_fallback_calls.append((key, limit, window_sec))
+        return True
+
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _local_fallback)
+    assert asyncio.run(mod._redis_is_rate_limited("mut", "127.0.0.1", 1, 60)) is True
+    assert local_fallback_calls
+
+    async def _next(_request):
+        return _FakeResponse(status_code=200)
+
+    async def _always_limited(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _always_limited)
+    post_resp = asyncio.run(mod.rate_limit_middleware(_FakeRequest(method="POST", path="/set-level"), _next))
+    delete_resp = asyncio.run(mod.rate_limit_middleware(_FakeRequest(method="DELETE", path="/sessions/s1"), _next))
+    assert post_resp.status_code == 429
+    assert delete_resp.status_code == 429
+
+
+def test_files_file_content_and_git_branch_runtime_edges(monkeypatch):
+    mod = _load_web_server()
+
+    list_resp = asyncio.run(mod.list_project_files("tests"))
+    assert list_resp.status_code == 200
+    assert any(item["name"] == "test_web_server_runtime.py" for item in list_resp.content["items"])
+
+    dir_resp = asyncio.run(mod.file_content("tests"))
+    assert dir_resp.status_code == 400
+
+    unsupported_path = Path("tests") / "_tmp_runtime_unsupported.exe"
+    unsupported_path.write_bytes(b"MZ")
+    try:
+        unsupported_resp = asyncio.run(mod.file_content(str(unsupported_path)))
+        assert unsupported_resp.status_code == 415
+    finally:
+        unsupported_path.unlink(missing_ok=True)
+
+    large_path = Path("tests") / "_tmp_runtime_large.txt"
+    large_path.write_text("x" * (mod.MAX_FILE_CONTENT_BYTES + 5), encoding="utf-8")
+    try:
+        too_large = asyncio.run(mod.file_content(str(large_path)))
+        assert too_large.status_code == 413
+    finally:
+        large_path.unlink(missing_ok=True)
+
+    branches_resp = asyncio.run(mod.git_branches())
+    assert branches_resp.status_code == 200
+    assert "branches" in branches_resp.content
+
+    def _raise_checkout(*_args, **_kwargs):
+        raise mod.subprocess.CalledProcessError(1, ["git", "checkout", "missing-branch"], output=b"pathspec did not match")
+
+    async def _to_thread_raise(fn, *args, **kwargs):
+        if fn is mod.subprocess.check_output and args[:2] == (["git", "checkout", "missing-branch"],):
+            raise mod.subprocess.CalledProcessError(1, args[0], output=b"pathspec did not match")
+        if fn is mod.subprocess.check_output:
+            return _raise_checkout(*args, **kwargs)
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(mod.asyncio, "to_thread", _to_thread_raise)
+    set_branch_resp = asyncio.run(mod.set_branch(_FakeRequest(method="POST", path="/set-branch", json_body={"branch": "missing-branch"})))
+    assert set_branch_resp.status_code == 400
+
+
 def test_websocket_chat_generate_response_cancelled_error_branch():
     mod = _load_web_server()
 
