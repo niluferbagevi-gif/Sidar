@@ -38,6 +38,11 @@ dependencies:
       - cachetools~=5.5.0
       - redis~=5.2.1
 
+      # ── Veritabanı & Migrasyon ────────────────────────────────────────────
+      - asyncpg~=0.30.0
+      - SQLAlchemy~=2.0.36
+      - alembic~=1.14.0
+
       # ── PyTorch (CPU varsayılan; GPU için PIP_EXTRA_INDEX_URL ile cu124) ───────
       - torch~=2.4.1
       - torchvision~=0.19.1
