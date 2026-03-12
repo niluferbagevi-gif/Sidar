@@ -53,3 +53,25 @@ def test_coder_agent_run_task_execute_code_and_qa_feedback_reject():
 
     assert execute_out == "executed"
     assert reject_out.startswith("[CODER:REWORK_REQUIRED]")
+
+
+def test_coder_agent_request_review_delegates_to_reviewer(monkeypatch):
+    a = CoderAgent()
+
+    captured = {}
+
+    def fake_delegate(target, payload, reason=None):
+        captured["target"] = target
+        captured["payload"] = payload
+        captured["reason"] = reason
+        return "delegated"
+
+    monkeypatch.setattr(a, "delegate_to", fake_delegate)
+    out = asyncio.run(a.run_task("request_review|please review this patch"))
+
+    assert out == "delegated"
+    assert captured == {
+        "target": "reviewer",
+        "payload": "review_code|please review this patch",
+        "reason": "coder_request_review",
+    }
