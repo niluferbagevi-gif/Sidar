@@ -138,3 +138,67 @@ def test_web_server_missing_error_and_guard_paths(monkeypatch):
     uploaded = asyncio.run(mod.upload_rag_file(up))
     assert uploaded.status_code == 200
     assert captured["path"].endswith("uploaded_file.txt")
+
+
+def test_web_server_remaining_edge_case_endpoints(monkeypatch):
+    mod = _load_web_server()
+
+    # _get_client_ip: X-Real-IP header path and missing client fallback
+    real_ip_req = _FakeRequest(headers={"X-Real-IP": " 10.10.10.10 "})
+    assert mod._get_client_ip(real_ip_req) == "10.10.10.10"
+
+    unknown_req = _FakeRequest(headers={})
+    unknown_req.client = None
+    assert mod._get_client_ip(unknown_req) == "unknown"
+
+    github = types.SimpleNamespace(
+        is_available=lambda: False,
+        get_pull_request=lambda _number: (False, "Not Found"),
+        repo_name="owner/repo",
+        set_repo=lambda repo: (True, f"repo={repo}"),
+    )
+    docs = types.SimpleNamespace(
+        add_document_from_url=AsyncMock(return_value=(True, "ok")),
+        delete_document=lambda *_args, **_kwargs: "Hata: silinemedi",
+        add_document_from_file=lambda *_args, **_kwargs: (True, "ok"),
+    )
+    memory = types.SimpleNamespace(active_session_id="sess-1")
+    fake_agent = types.SimpleNamespace(memory=memory, github=github, docs=docs)
+
+    async def _get_agent():
+        return fake_agent
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+
+    # /github-prs/{number}: github disabled -> 503
+    pr_disabled = asyncio.run(mod.github_pr_detail(42))
+    assert pr_disabled.status_code == 503
+
+    # /github-prs/{number}: backend not found -> 404
+    github.is_available = lambda: True
+    pr_not_found = asyncio.run(mod.github_pr_detail(42))
+    assert pr_not_found.status_code == 404
+
+    # /set-repo: whitespace-only value -> 400
+    repo_empty = asyncio.run(mod.set_repo(_FakeRequest(method="POST", path="/set-repo", json_body={"repo": "   "})))
+    assert repo_empty.status_code == 400
+
+    # /rag/add-url: missing url key -> 400
+    add_url_missing = asyncio.run(mod.rag_add_url(_FakeRequest(method="POST", path="/rag/add-url", json_body={})))
+    assert add_url_missing.status_code == 400
+
+    # /rag/docs/{doc_id}: non-success marker should map to success=False
+    delete_bad = asyncio.run(mod.rag_delete_doc("doc-err"))
+    assert delete_bad.status_code == 200
+    assert delete_bad.content["success"] is False
+
+    # /api/rag/upload: unexpected exception path -> 500
+    up = _FakeUploadFile("doc.txt", b"payload")
+
+    def _raise_copy(*_args, **_kwargs):
+        raise Exception("copy failed")
+
+    monkeypatch.setattr(mod.shutil, "copyfileobj", _raise_copy)
+    upload_err = asyncio.run(mod.upload_rag_file(up))
+    assert upload_err.status_code == 500
+    assert upload_err.content["success"] is False
