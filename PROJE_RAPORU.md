@@ -23,7 +23,10 @@
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-266-satır)
   - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı](#37c-agentbase_agentpy--temel-ajan-sınıfı-34-satır)
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan](#37d-agentcoresupervisorpy--yönlendirici-supervisor-ajan-87-satır)
-  - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37e-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
+  - [3.7e `agent/core/contracts.py` — Görev Zarfı ve Sözleşmeleri](#37e-agentcorecontractspy--görev-zarfı-ve-sözleşmeleri-30-satır)
+  - [3.7f `agent/core/event_stream.py` — Agent Event Bus ve Olay Yayınlama](#37f-agentcoreevent_streampy--agent-event-bus-ve-olay-yayınlama)
+  - [3.7g `agent/core/memory_hub.py` ve `agent/core/registry.py` — Bellek Merkezi ve Kayıt](#37g-agentcorememory_hubpy-ve-agentcoreregistrypy--bellek-merkezi-ve-kayıt)
+  - [3.7h `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37h-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic)](#38-corellm_clientpy--llm-istemcisi-ollama--gemini--openai--anthropic-723-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-402-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-783-satır)
@@ -36,11 +39,11 @@
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
-  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#)
-  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#)
-  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#)
-  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#)
-  - [3.24 Altyapı Dosyaları](#324-altyapı-dosyaları)
+  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy--veritabanı-ve-çoklu-kullanıcı-altyapısı)
+  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy--telemetri-ve-bütçe-yönetimi)
+  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#322-agentrolesreviewer_agentpy--qa-ve-inceleme-ajanı)
+  - [3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları](#323-migrations-scripts-ve-runbooks--geçiş-ve-operasyon-araçları)
+  - [3.24 Altyapı Dosyaları (CI/CD, Dockerfile)](#324-altyapı-dosyaları-cicd-dockerfile)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -545,7 +548,46 @@ kullanıcı mesajı
 
 ---
 
-### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+### 3.7e `agent/core/contracts.py` — Görev Zarfı ve Sözleşmeleri (30 satır)
+
+**Amaç:** Supervisor ile uzman ajanlar arasındaki veri alışverişini standartlaştıran görev/delegasyon sözleşmelerini tanımlar.
+
+**Öne Çıkanlar:**
+- `TaskEnvelope`: role ajanlara taşınan görev bağlamı (intent, context, inputs)
+- `TaskResult`: role ajan çıktılarının tek tip formatta supervisor'a dönüşü
+- `P2PMessage` ve `DelegationRequest`: ajanlar arası doğrudan delegasyon zarfı
+- `DelegationResult`: delegasyonun durum ve içerik raporu
+
+---
+
+### 3.7f `agent/core/event_stream.py` — Agent Event Bus ve Olay Yayınlama
+
+**Amaç:** Supervisor/Coder/Reviewer akışındaki durum olaylarını process-içi bir event bus üzerinden yayınlar.
+
+**Öne Çıkanlar:**
+- `AgentEvent` dataclass (`ts`, `source`, `message`)
+- `AgentEventBus.subscribe()` ile kuyruk tabanlı abonelik
+- `publish()` içinde `QueueFull` olduğunda abonelik düşürme (backpressure güvenliği)
+- `get_agent_event_bus()` ile modül-seviyesi singleton event bus erişimi
+
+---
+
+### 3.7g `agent/core/memory_hub.py` ve `agent/core/registry.py` — Bellek Merkezi ve Kayıt
+
+**Amaç:** Multi-agent koordinasyonda kısa ömürlü bağlam notlarını ve aktif uzman ajan kayıtlarını yönetir.
+
+**Öne Çıkanlar (`memory_hub.py`):**
+- `MemoryHub`: global notlar + role-bazlı not havuzu
+- Senkron ve asenkron (`aadd_*`, `aglobal_context`, `arole_context`) API eşlenikleri
+- `RoleMemory` ile role-headline bazlı hafif bellek modeli
+
+**Öne Çıkanlar (`registry.py`):**
+- `AgentRegistry.register/get/has/roles` ile role->agent çözümleme
+- Supervisor'ın uzman rolleri runtime'da keşfetmesini sağlayan minimal kayıt katmanı
+
+---
+
+### 3.7h `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
 
 **Amaç:** Alan odaklı uzman ajanları kapsar.
 
@@ -921,17 +963,18 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
+### 3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları
 
-**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçları.
+**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçlarını tek noktada toplar.
 
 **Özellikler:**
 - **`migrations/` (Alembic):** Veritabanı şema versiyonlaması. `0001_baseline_schema.py` ile temel yetkilendirme ve oturum tablolarının kurulumunu yönetir.
 - **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite tabanlı geçmiş verilerin kayıpsız bir şekilde merkezi PostgreSQL veritabanına taşınmasını sağlayan ETL betiği.
+- **`runbooks/production-cutover-playbook.md`:** v3.0 üretim geçiş kapanışı için adım adım cutover, doğrulama ve rollback prosedürü.
 
 ---
 
-### 3.24 Altyapı Dosyaları
+### 3.24 Altyapı Dosyaları (CI/CD, Dockerfile)
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
@@ -940,6 +983,14 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 - **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir
 - **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
 - **Varsayılan:** `ACCESS_LEVEL=sandbox`
+
+#### `.github/workflows/ci.yml`
+- Pull request ve ana dal akışlarında kalite kapılarını (lint, test, temel bütünlük kontrolleri) uygular.
+- Kod kalitesi regresyonlarının merge öncesi tespitini sağlar.
+
+#### `.github/workflows/migration-cutover-checks.yml`
+- Migration/cutover sürecine özel doğrulama adımlarını çalıştırır.
+- Veritabanı geçiş güvenliği ve operasyonel kapanış kriterleri için CI emniyet ağı görevi görür.
 
 #### `docker-compose.yml` (209 satır)
 5 servis tanımı (Redis dahil):
