@@ -55,3 +55,24 @@ def test_llm_metrics_snapshot_by_user_counts_failures():
     snap = collector.snapshot()
     assert snap["by_user"]["test_user"]["calls"] == 1
     assert snap["by_user"]["test_user"]["failures"] == 1
+
+
+def test_llm_metrics_record_calculates_cost_when_none_and_handles_async_sink():
+    collector = LLMMetricsCollector(max_events=5)
+    observed = {"task_calls": 0}
+
+    async def _sink(_event):
+        observed["task_calls"] += 1
+
+    collector.set_usage_sink(_sink)
+
+    async def _run():
+        collector.record(provider="openai", model="gpt-4o-mini", latency_ms=5, prompt_tokens=10, completion_tokens=2, cost_usd=None)
+        await asyncio.sleep(0)
+
+    import asyncio
+
+    asyncio.run(_run())
+    snap = collector.snapshot()
+    assert snap["totals"]["cost_usd"] > 0
+    assert observed["task_calls"] == 1

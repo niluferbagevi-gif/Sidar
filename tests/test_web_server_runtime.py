@@ -1741,3 +1741,70 @@ def test_redis_rate_limit_command_exception_falls_back_to_local(monkeypatch):
 
     blocked = asyncio.run(mod._redis_is_rate_limited("ns", "k", 2, 60))
     assert blocked is True
+
+
+def test_web_server_additional_coverage_edges(monkeypatch):
+    mod = _load_web_server()
+
+    class _Collector:
+        def __init__(self):
+            self.sink = None
+            self._sidar_usage_sink_bound = False
+
+        def set_usage_sink(self, sink):
+            self.sink = sink
+
+    collector = _Collector()
+    monkeypatch.setattr(mod, "get_llm_metrics_collector", lambda: collector)
+
+    agent = types.SimpleNamespace(
+        memory=types.SimpleNamespace(
+            db=types.SimpleNamespace(record_provider_usage_daily=lambda **kwargs: None)
+        )
+    )
+    mod._bind_llm_usage_sink(agent)
+    assert collector.sink is not None
+    # user_id boşsa erken dönmeli
+    collector.sink(types.SimpleNamespace(user_id="", provider="p", total_tokens=1))
+
+    async def _next(_request):
+        return _FakeResponse("ok", status_code=200)
+
+    opt = asyncio.run(mod.basic_auth_middleware(_FakeRequest(method="OPTIONS", path="/private"), _next))
+    assert opt.status_code == 200
+    static = asyncio.run(mod.basic_auth_middleware(_FakeRequest(path="/static/app.js"), _next))
+    assert static.status_code == 200
+
+    async def _always_limit(*_args, **_kwargs):
+        return True
+
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _always_limit)
+    ui_bypass = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path="/ui/index.html"), _next))
+    assert ui_bypass.status_code == 200
+    static_bypass = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path="/static/x.css"), _next))
+    assert static_bypass.status_code == 200
+
+
+
+def test_git_branches_and_rag_delete_success_paths(monkeypatch):
+    mod = _load_web_server()
+
+    monkeypatch.setattr(mod, "_git_run", lambda *_a, **_k: "")
+    branches = asyncio.run(mod.git_branches())
+    assert branches.status_code == 200
+    assert branches.content["branches"] == ["main"]
+    assert branches.content["current"] == "main"
+
+    class _Docs:
+        def delete_document(self, _doc_id, _session_id):
+            return "✓ removed"
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(active_session_id="sess-1"), docs=_Docs())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    deleted = asyncio.run(mod.rag_delete_doc("doc-1"))
+    assert deleted.status_code == 200
+    assert deleted.content["success"] is True

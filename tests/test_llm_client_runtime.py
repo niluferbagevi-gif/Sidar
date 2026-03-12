@@ -867,3 +867,36 @@ def test_llmclient_stream_gemini_generator_uses_temp_client_for_non_gemini(llm_m
     chunks = asyncio.run(_collect(fac._stream_gemini_generator(_S())))
     assert called["v"] is True
     assert chunks == ["proxy-chunk"]
+
+def test_retryable_exception_handles_http_status_error_5xx(llm_mod):
+    class _HTTPStatusError(Exception):
+        def __init__(self, code):
+            self.response = types.SimpleNamespace(status_code=code)
+
+    llm_mod.httpx.HTTPStatusError = _HTTPStatusError
+    retryable, status = llm_mod._is_retryable_exception(_HTTPStatusError(503))
+    assert retryable is True
+    assert status == 503
+
+
+def test_llm_client_non_ollama_timeout_and_gemini_stream_fallback(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY='k', OPENAI_TIMEOUT=10, OLLAMA_URL='http://localhost:11434/api', OLLAMA_TIMEOUT=33)
+    fac = llm_mod.LLMClient('openai', cfg)
+
+    timeout = fac._build_ollama_timeout()
+    assert isinstance(timeout, llm_mod.httpx.Timeout)
+    assert timeout.timeout == 33
+    assert asyncio.run(fac.is_ollama_available()) is False
+
+    async def _fake_stream(_self, response_stream):
+        async for item in response_stream:
+            yield f'wrapped:{item}'
+
+    monkeypatch.setattr(llm_mod.GeminiClient, '_stream_gemini_generator', _fake_stream)
+
+    async def _source():
+        yield 'x'
+        yield 'y'
+
+    out = asyncio.run(_collect(fac._stream_gemini_generator(_source())))
+    assert out == ['wrapped:x', 'wrapped:y']
