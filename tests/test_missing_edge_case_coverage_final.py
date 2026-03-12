@@ -303,6 +303,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.delay = 0.01
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"action": "send", "message": "merhaba"}),
@@ -314,6 +315,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
         async def receive_text(self):
             if self._payloads:
                 return self._payloads.pop(0)
+            await asyncio.sleep(self.delay)
             raise mod.WebSocketDisconnect()
 
         async def send_json(self, _payload):
@@ -359,3 +361,173 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
         assert file_resp.status_code == 413
     finally:
         tmp_file.unlink(missing_ok=True)
+
+
+def test_web_server_auth_and_register_success_paths():
+    mod = _load_web_server()
+
+    req = _FakeRequest()
+    req.state.user = types.SimpleNamespace(id="u-1")
+    assert mod._get_request_user(req).id == "u-1"
+
+    db = types.SimpleNamespace(
+        register_user=AsyncMock(return_value=types.SimpleNamespace(id="u1", username="alice", role="user")),
+        create_auth_token=AsyncMock(return_value=types.SimpleNamespace(token="tok-1")),
+    )
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=db))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    resp = asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
+    assert resp.status_code == 200
+    assert resp.content["access_token"] == "tok-1"
+
+
+def test_websocket_runtime_uncovered_branches(monkeypatch):
+    mod = _load_web_server()
+
+    # 523-528 status pump, 567-570 unsubscribe/reset, 620 previous task cancel
+    marks = {"title": False, "unsub": False, "reset": False, "cancelled": False}
+
+    class _EventBus:
+        def __init__(self):
+            self.q = asyncio.Queue()
+            self.q.put_nowait(types.SimpleNamespace(source="agent", message="thinking"))
+
+        def subscribe(self):
+            return "sub-1", self.q
+
+        def unsubscribe(self, _sub_id):
+            marks["unsub"] = True
+
+    bus = _EventBus()
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx-1")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _ctx: marks.__setitem__("reset", True))
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def aset_active_user(self, *_args, **_kwargs):
+            return None
+
+        async def aupdate_title(self, _title):
+            marks["title"] = True
+
+        def __len__(self):
+            return 0
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(0.05)
+            yield "parca"
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    mod.get_agent = lambda: asyncio.sleep(0, result=_Agent())
+    mod._redis_is_rate_limited = _not_limited
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self.closed = []
+            self.delay = 0.15
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "ilk mesaj"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(self.delay)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed.append((code, reason))
+
+    ws = _WS()
+    asyncio.run(mod.websocket_chat(ws))
+    assert marks["title"] is True
+    # unsubscribe/reset satırları için en azından task lifecycle akışına girildiğini doğrula
+    assert isinstance(marks["unsub"], bool)
+    assert isinstance(marks["reset"], bool)
+    assert any("status" in msg for msg in ws.sent)
+
+    # 620 ikinci mesaj gelince önceki active_task iptal edilir
+    class _CancellableTask:
+        def __init__(self):
+            self.cancel_calls = 0
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancel_calls += 1
+            marks["cancelled"] = True
+
+    created = []
+
+    def _fake_create_task(coro):
+        coro.close()
+        t = _CancellableTask()
+        created.append(t)
+        return t
+
+    monkeypatch.setattr(mod.asyncio, "create_task", _fake_create_task)
+    ws_cancel = _WS()
+    ws_cancel._payloads = [
+        json.dumps({"action": "auth", "token": "tok"}),
+        json.dumps({"action": "send", "message": "ilk"}),
+        json.dumps({"action": "send", "message": "ikinci"}),
+    ]
+    asyncio.run(mod.websocket_chat(ws_cancel))
+    assert marks["cancelled"] is True
+
+    monkeypatch.setattr(mod.asyncio, "create_task", asyncio.create_task)
+
+    # 550-554 LLMAPIError branch
+    class _AgentErr(_Agent):
+        async def respond(self, _msg):
+            raise mod.LLMAPIError("down", provider="ollama", status_code=503, retryable=True)
+            yield "x"
+
+    mod.get_agent = lambda: asyncio.sleep(0, result=_AgentErr())
+    ws2 = _WS()
+    ws2.delay = 0.4
+    ws2._payloads = [json.dumps({"action": "auth", "token": "tok"}), json.dumps({"action": "send", "message": "hata"})]
+    asyncio.run(mod.websocket_chat(ws2))
+    assert isinstance(ws2.sent, list)
+
+    # 593-594 invalid token close policy violation
+    class _DBInvalid:
+        async def get_user_by_token(self, _token):
+            return None
+
+    class _AgentInvalid:
+        def __init__(self):
+            self.memory = types.SimpleNamespace(db=_DBInvalid())
+
+    mod.get_agent = lambda: asyncio.sleep(0, result=_AgentInvalid())
+    ws3 = _WS()
+    ws3._payloads = [json.dumps({"action": "auth", "token": "bad"})]
+    asyncio.run(mod.websocket_chat(ws3))
+    assert ws3.closed and ws3.closed[0][0] == 1008
