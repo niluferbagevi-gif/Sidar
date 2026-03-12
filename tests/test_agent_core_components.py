@@ -26,8 +26,13 @@ def test_agent_registry_register_get_and_roles():
     reg.register("reviewer", agent)
 
     assert reg.has("reviewer") is True
+    assert reg.has("coder") is False
     assert reg.get("reviewer") is agent
-    assert "reviewer" in reg.roles()
+
+    roles = reg.roles()
+    assert isinstance(roles, tuple)
+    assert "reviewer" in roles
+    assert len(roles) == 1
 
 class _MinimalAgent(BaseAgent):
     async def run_task(self, task_prompt: str):
