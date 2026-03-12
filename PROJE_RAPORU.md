@@ -130,7 +130,7 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-```
+```text
 sidar_project/
 ├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── cli.py                     # CLI terminal arayüzü giriş noktası
@@ -141,6 +141,12 @@ sidar_project/
 ├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
 ├── environment.yml            # Conda/pip bağımlılıkları
 ├── pyproject.toml             # Ruff + Mypy kalite standartları
+├── alembic.ini                # Veritabanı migration yapılandırması
+├── run_tests.sh               # Test çalıştırma ve kalite kapısı (coverage) betiği
+├── install_sidar.sh           # Sandbox ve host kurulum betiği
+│
+├── .github/
+│   └── workflows/             # CI/CD ve kalite kapısı iş akışları (ci.yml, migration-cutover-checks.yml)
 │
 ├── agent/
 │   ├── __init__.py
@@ -152,7 +158,10 @@ sidar_project/
 │   ├── core/
 │   │   ├── __init__.py        # SupervisorAgent, TaskEnvelope, TaskResult export
 │   │   ├── supervisor.py      # SupervisorAgent — role router + orchestrator (87 satır)
-│   │   └── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
+│   │   ├── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
+│   │   ├── event_stream.py    # Agent Event Bus ve Olay Yayınlama
+│   │   ├── memory_hub.py      # Multi-agent bağlam notları ve paylaşımlı bellek
+│   │   └── registry.py        # Uzman rollerin çalışma zamanı kaydı
 │   └── roles/
 │       ├── __init__.py        # CoderAgent, ResearcherAgent, ReviewerAgent export
 │       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
@@ -167,7 +176,12 @@ sidar_project/
 │   ├── memory.py              # Kalıcı çok oturumlu bellek
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
 │
+├── docker/
+│   ├── grafana/               # Kurumsal observability dashboard/provisioning tanımları
+│   └── prometheus/            # LLM ve metrik scraping yapılandırması
+│
 ├── migrations/                # Alembic veritabanı geçiş (migration) dosyaları
+├── runbooks/                  # Operasyonel prosedürler (production-cutover-playbook.md)
 ├── scripts/                   # Veritabanı taşıma (SQLite -> PG) ve denetim betikleri
 │
 ├── managers/
@@ -181,27 +195,19 @@ sidar_project/
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
 ├── web_ui/                    # Modüler Web UI (toplam ~3.800 satır)
-│   ├── index.html             # HTML iskeleti (461 satır)
+│   ├── index.html             # HTML iskeleti
 │   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
 │   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
 │   ├── sidebar.js             # Oturum yönetimi (394 satır)
 │   ├── rag.js                 # RAG belge UI (131 satır)
-│   └── app.js                 # Uygulama başlatma, tema (339 satır)
+│   └── app.js                 # Uygulama başlatma, tema
 │
-├── tests/                     # 69 test modülü
-│   ├── test_sidar.py
-│   ├── test_tooling_registry.py
-│   ├── test_parallel_react_improvements.py
-│   ├── test_github_upload_improvements.py
-│   ├── test_core_init_improvements.py
-│   ├── test_managers_init_improvements.py
-│   ├── test_claude_md_improvements.py
-│   ├── test_sidar_md_improvements.py
-│   └── test_*_improvements.py
+├── tests/                     # 69+ test modülü (~15.974 satır)
+│   └── ...                    # (test_sidar.py, test_agent_*.py, test_migration_*.py vb.)
 │
 ├── data/                      # RAG, bellek verileri ve yerel SQLite veritabanı (sidar.db)
 ├── CLAUDE.md                  # Geliştirici rehberi
-├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi (Draft, v2.11.x hedefi)
+├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi
 └── .env.example               # Ortam değişkeni şablonu
 ```
 
