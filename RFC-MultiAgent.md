@@ -1,9 +1,9 @@
 # RFC: Multi-Agent / Supervisor Mimarisi
 
 - **Belge No:** RFC-0001
-- **Durum:** Draft (İnceleme Bekliyor)
+- **Durum:** Tamamlandı (Implemented / v3.0.0 ile Aktif)
 - **Tarih:** 2026-03-10
-- **Hedef Sürüm:** v2.11.x
+- **Uygulanan Sürüm:** v3.0.0
 - **Yazar:** Sidar Mühendislik
 
 ---
@@ -305,27 +305,7 @@ Her alt göreve span:
 
 ---
 
-## 15) Açık Sorular
-
-1. Role’ler ayrı model profilleri kullanmalı mı? (örn. coder için Anthropic, researcher için Gemini)
-2. Paralel görevlerin sonuç birleştirmesinde oylama mı, öncelik mi kullanılmalı?
-3. Global belleğe ne kadar ara çıktı yazılmalı?
-4. Failure policy: role başarısızsa fallback legacy veya alternate role mı?
-
----
-
-## 16) Karar Talebi
-
-Bu RFC için istenen onaylar:
-
-- [ ] Mimari prensip onayı (Supervisor + 3 role)
-- [ ] Kontrat şeması onayı
-- [ ] Fazlı geçiş planı onayı
-- [ ] Feature flag stratejisi onayı
-
-Onay sonrası bir sonraki adım: **Faz 1 iskelet kodu (minimal, non-breaking) PR**.
-
-## 17) v3.0 Multi-User Hazırlık Planı (PostgreSQL + Redis)
+## 15) v3.0 Multi-User Hazırlık Planı (PostgreSQL + Redis)
 
 - **Kimlik modeli:** `session_id` tekil yaklaşımı, `user_id` ile ilişkili çoklu oturum modeline evrilecek (`user_id -> sessions -> messages`).
 - **PostgreSQL çekirdeği (öneri):**
@@ -343,3 +323,7 @@ Onay sonrası bir sonraki adım: **Faz 1 iskelet kodu (minimal, non-breaking) PR
   1. Tek kullanıcı regresyon testi (mevcut davranış bozulmamalı).
   2. İki kullanıcı izolasyon testi (`user_a`/`user_b` oturum ve quota ayrışması).
   3. Rate-limit + budget enforcement testi (Redis + DB tutarlılığı).
+
+## 16) Uygulama Sonucu ve Kapanış
+
+Bu RFC'de tasarlanan Supervisor, Coder, Researcher ve Reviewer ajan mimarisi **v3.0.0** sürümü itibarıyla projenin varsayılan, tek omurgası haline gelmiştir. Eski tekli ajan (SidarAgent) akışı tamamen kullanımdan kaldırılmıştır (deprecated).

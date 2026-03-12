@@ -30,7 +30,7 @@
 | İletişim | Minimal ve öz; gereksiz söz yok |
 | Karar verme | Veri tabanlı, duygusal değil |
 | Birincil Model | `qwen2.5-coder:7b` (Ollama, yerel) |
-| Yedek Model | Google Gemini 2.0 Flash (bulut) |
+| Yedek Modeller | Google Gemini 2.5 Flash, OpenAI GPT-4o, Anthropic Claude 3.5 Sonnet (bulut) |
 
 ---
 
@@ -127,6 +127,13 @@
 ---
 
 ## v3.0.0 Öne Çıkan Yetenekler
+
+### ✅ Kurumsal SaaS Altyapısı ve Çoklu Kullanıcı
+
+- **PostgreSQL ve Alembic:** Veritabanı izolasyonu ile çoklu kullanıcı oturum yönetimi (`core/db.py`).
+- **Kimlik Doğrulama:** JWT/Bearer Token tabanlı güvenli erişim ve yetkilendirme.
+- **Admin Paneli:** Sistem kullanımını, aktif kullanıcıları ve global kotaları izleyebileceğiniz Web UI yönetim arayüzü.
+- **Gözlemlenebilirlik (Observability):** Grafana ve Prometheus üzerinden anlık token tüketimi, USD maliyet ve LLM gecikme (latency) takibi.
 
 ### ✅ TodoManager ile Görev Takibi
 
@@ -352,7 +359,7 @@ python cli.py --provider gemini -c "FastAPI nedir?"
 -c, --command   Tek komut çalıştır ve çık
 --status        Sistem durumunu göster
 --level         Erişim seviyesi (restricted/sandbox/full)
---provider      AI sağlayıcısı (ollama/gemini)
+--provider      AI sağlayıcısı (ollama/gemini/openai/anthropic)
 --model         Ollama model adı
 --log           Log seviyesi (DEBUG/INFO/WARNING)
 ```
@@ -421,7 +428,7 @@ sidar_project/
 ├── core/
 │   ├── __init__.py
 │   ├── memory.py           # Çoklu oturum (session) yönetimi — thread-safe JSON
-│   ├── llm_client.py       # Ollama stream + Gemini async istemcisi
+│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi
 │   └── rag.py              # Hibrit RAG (ChromaDB + BM25), Recursive Chunking, GPU
 ├── managers/
 │   ├── __init__.py
@@ -481,11 +488,16 @@ pytest tests/ -v --cov=. --cov-report=term-missing
 
 ```env
 # AI Sağlayıcı
-AI_PROVIDER=ollama              # ollama | gemini
+AI_PROVIDER=ollama              # ollama | gemini | openai | anthropic
 CODING_MODEL=qwen2.5-coder:7b
 OLLAMA_URL=http://localhost:11434/api
 TEXT_MODEL=gemma2:9b
 GEMINI_API_KEY=                 # Gemini kullanılacaksa
+OPENAI_API_KEY=                 # OpenAI kullanılacaksa
+ANTHROPIC_API_KEY=              # Anthropic Claude kullanılacaksa
+
+# Veritabanı (v3.0.0+)
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/sidar # Boş bırakılırsa SQLite kullanılır
 
 # Güvenlik
 ACCESS_LEVEL=sandbox            # restricted | sandbox | full

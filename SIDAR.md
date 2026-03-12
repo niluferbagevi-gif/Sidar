@@ -4,8 +4,9 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 
 ## ⚙️ Sistem Bilgileri
 - **API/Web Portu:** `7860` (varsayılan)
-- **Model Standardı:** Ollama (`qwen2.5-coder:7b`) ve Gemini (`gemini-2.5-flash`)
+- **Model Standardı:** Yerel (Ollama: `qwen2.5-coder:7b`) ve Bulut (Gemini: `gemini-2.5-flash`, OpenAI: `gpt-4o-mini`, Anthropic: `claude-3-5-sonnet`)
 - **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `PROJE_RAPORU.md` takip edilir.
+- **Rol Dağılımı:** Tüm görevler Supervisor ajan tarafından koordine edilir. Kodlama (Coder), araştırma (Researcher) ve kalite kontrol (Reviewer) süreçleri uzman ajanlara delege edilir.
 
 ## 🛡 Güvenlik ve Kodlama
 - **Encoding:** Tüm dosya okuma/yazma işlemlerinde mutlaka `encoding="utf-8"` kullan. Türkçe karakterlerden kaçınma.
