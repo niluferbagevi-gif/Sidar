@@ -1848,3 +1848,132 @@ def test_upload_finally_swallows_close_and_rmtree_errors(monkeypatch):
     resp = asyncio.run(mod.upload_rag_file(up))
     assert resp.status_code == 200
     assert resp.content["success"] is True
+
+def test_web_server_targeted_missing_branches(monkeypatch):
+    mod = _load_web_server()
+
+    # _setup_tracing: ENABLE_TRACING açık + bağımlılıklar eksik => warning + sessiz dönüş
+    warnings = []
+    monkeypatch.setattr(mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    mod.cfg.ENABLE_TRACING = True
+    mod.trace = None
+    mod.OTLPSpanExporter = None
+    mod.FastAPIInstrumentor = None
+    mod.TracerProvider = None
+    mod.Resource = None
+    mod.BatchSpanProcessor = None
+    mod._setup_tracing()
+    assert any("OpenTelemetry" in w for w in warnings)
+
+    # /vendor: path traversal engeli
+    traversal = asyncio.run(mod.serve_vendor("../../gizli_dosya"))
+    assert traversal.status_code == 403
+
+    # websocket: agent.respond patlar + send_json da patlar => nested except/pass
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Mem:
+        def __init__(self):
+            self.db = _DB()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
+        def __len__(self):
+            return 1
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Mem()
+
+        async def respond(self, _msg):
+            raise RuntimeError("respond failed")
+            yield "x"
+
+    class _WebSocket:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "hello"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, _payload):
+            raise RuntimeError("socket closed")
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+    asyncio.run(mod.websocket_chat(_WebSocket()))
+
+    # /set-branch: regex dışı branch
+    invalid = asyncio.run(mod.set_branch(_FakeRequest(json_body={"branch": "branch|name&illegal"})))
+    assert invalid.status_code == 400
+
+    # GitHub entegrasyonu unavailable => 503
+    class _GH:
+        repo_name = "owner/repo"
+
+        def is_available(self):
+            return False
+
+        def list_repos(self, owner, limit):
+            return False, []
+
+        def get_pull_requests_detailed(self, state, limit):
+            return False, [], "err"
+
+        def get_pull_request(self, number):
+            return False, "missing"
+
+    agent = types.SimpleNamespace(
+        github=_GH(),
+        memory=types.SimpleNamespace(active_session_id="s1"),
+        docs=types.SimpleNamespace(add_document_from_file=lambda *_a, **_k: (True, "ok")),
+    )
+
+    async def _get_agent_gh():
+        return agent
+
+    mod.get_agent = _get_agent_gh
+
+    repos = asyncio.run(mod.github_repos(owner="", q=""))
+    assert repos.status_code == 400
+
+    prs_unavailable = asyncio.run(mod.github_prs())
+    assert prs_unavailable.status_code == 503
+
+    pr_detail_unavailable = asyncio.run(mod.github_pr_detail(123))
+    assert pr_detail_unavailable.status_code == 503
+
+    # /rag/add-file: mutlak path traversal koruması
+    rag_abs = asyncio.run(mod.rag_add_file(_FakeRequest(json_body={"path": "/etc/passwd", "title": "x"})))
+    assert rag_abs.status_code == 403
+
+    # /api/rag/upload: beklenmedik sunucu hatası -> 500
+    up = _FakeUploadFile("doc.txt", b"hello")
+    monkeypatch.setattr(mod.tempfile, "mkdtemp", lambda: (_ for _ in ()).throw(RuntimeError("tmp fail")))
+    upload_err = asyncio.run(mod.upload_rag_file(up))
+    assert upload_err.status_code == 500
+
+    # /rag/search: boş sorgu -> 400
+    empty_q = asyncio.run(mod.rag_search(q=""))
+    assert empty_q.status_code == 400
