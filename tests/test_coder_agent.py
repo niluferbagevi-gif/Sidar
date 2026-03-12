@@ -75,3 +75,27 @@ def test_coder_agent_request_review_delegates_to_reviewer(monkeypatch):
         "payload": "review_code|please review this patch",
         "reason": "coder_request_review",
     }
+
+
+def test_coder_agent_run_task_qa_feedback_approved_and_direct_tool_routes():
+    a = CoderAgent()
+
+    async def fake_read(arg: str) -> str:
+        assert arg == "README.md"
+        return "read-ok"
+
+    async def fake_patch(arg: str) -> str:
+        assert arg == "a.py|old|new"
+        return "patch-ok"
+
+    a.tools["read_file"] = fake_read
+    a.tools["patch_file"] = fake_patch
+
+    approved_out = asyncio.run(a.run_task("qa_feedback|Her şey harika görünüyor"))
+    read_out = asyncio.run(a.run_task("read_file|README.md"))
+    patch_out = asyncio.run(a.run_task("patch_file|a.py|old|new"))
+
+    assert approved_out.startswith("[CODER:APPROVED]")
+    assert "Her şey harika" in approved_out
+    assert read_out == "read-ok"
+    assert patch_out == "patch-ok"

@@ -1808,3 +1808,43 @@ def test_git_branches_and_rag_delete_success_paths(monkeypatch):
     deleted = asyncio.run(mod.rag_delete_doc("doc-1"))
     assert deleted.status_code == 200
     assert deleted.content["success"] is True
+
+def test_admin_helper_and_client_ip_unknown_branch():
+    mod = _load_web_server()
+
+    regular = types.SimpleNamespace(username="alice", role="user")
+    default_admin = types.SimpleNamespace(username="default_admin", role="user")
+
+    assert mod._is_admin_user(regular) is False
+    assert mod._is_admin_user(default_admin) is True
+
+    req = _FakeRequest(headers={})
+    req.client = None
+    assert mod._get_client_ip(req) == "unknown"
+
+
+def test_upload_finally_swallows_close_and_rmtree_errors(monkeypatch):
+    mod = _load_web_server()
+
+    class _Docs:
+        def add_document_from_file(self, *args):
+            return True, "ok"
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(active_session_id="s1"), docs=_Docs())
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    up = _FakeUploadFile("doc.txt", b"x")
+
+    async def _close_fail():
+        raise RuntimeError("close failed")
+
+    up.close = _close_fail
+    monkeypatch.setattr(mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rm failed")))
+
+    resp = asyncio.run(mod.upload_rag_file(up))
+    assert resp.status_code == 200
+    assert resp.content["success"] is True
