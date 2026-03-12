@@ -39,11 +39,12 @@
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
-  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy--veritabanı-ve-çoklu-kullanıcı-altyapısı)
-  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy--telemetri-ve-bütçe-yönetimi)
-  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#322-agentrolesreviewer_agentpy--qa-ve-inceleme-ajanı)
+  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı (989 satır)](#320-coredbpy--veritabanı-ve-çoklu-kullanıcı-altyapısı-989-satır)
+  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi (235 satır)](#321-corellm_metricspy--telemetri-ve-bütçe-yönetimi-235-satır)
+  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı (181 satır)](#322-agentrolesreviewer_agentpy--qa-ve-inceleme-ajanı-181-satır)
   - [3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları](#323-migrations-scripts-ve-runbooks--geçiş-ve-operasyon-araçları)
-  - [3.24 Altyapı Dosyaları (CI/CD, Dockerfile)](#324-altyapı-dosyaları-cicd-dockerfile)
+  - [3.24 `docker/` — Gözlemlenebilirlik (Observability) Yapılandırması](#324-docker--gözlemlenebilirlik-observability-yapılandırması)
+  - [3.25 Altyapı Dosyaları (CI/CD, Dockerfile)](#325-altyapı-dosyaları-cicd-dockerfile)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -932,9 +933,9 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı
+### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı (989 satır)
 
-**Amaç:** Çoklu kullanıcı (multi-user) SaaS mimarisi için kullanıcı, oturum, mesaj ve yetkilendirme (token) verilerinin kalıcı ve izole olarak saklanmasını sağlar.
+**Amaç:** Kurumsal/saaS mimaride kullanıcı, kimlik doğrulama token'ları, oturumlar ve mesaj geçmişi için kalıcı veri katmanını sağlar.
 
 **Özellikler:**
 - `Database` sınıfı ile asenkron bağlantı yönetimi (SQLAlchemy tabanlı).
@@ -944,7 +945,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi
+### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi (235 satır)
 
 **Amaç:** LLM çağrılarının operasyonel metriklerini toplamak, Prometheus'a aktarmak ve veritabanı üzerinden günlük kullanıcı kotalarını izlemek.
 
@@ -956,7 +957,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı
+### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı (181 satır)
 
 **Amaç:** `CoderAgent` tarafından yazılan kodu denetleyen, test koşturan ve projenin kalite standartlarına uygunluğunu doğrulayan uzman kalite kontrol ajanıdır.
 
@@ -969,45 +970,45 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ### 3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları
 
-**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçlarını tek noktada toplar.
+**Amaç:** Projenin kurumsal veritabanına taşınması, altyapı izolasyonu ve CI/CD telemetrisi için kullanılan operasyonel betikler.
 
-**Özellikler:**
-- **`migrations/` (Alembic):** Veritabanı şema versiyonlaması. `0001_baseline_schema.py` ile temel yetkilendirme ve oturum tablolarının kurulumunu yönetir.
-- **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite tabanlı geçmiş verilerin kayıpsız bir şekilde merkezi PostgreSQL veritabanına taşınmasını sağlayan ETL betiği.
-- **`runbooks/production-cutover-playbook.md`:** v3.0 üretim geçiş kapanışı için adım adım cutover, doğrulama ve rollback prosedürü.
+**Kritik Betikler ve Klasörler:**
+- **`migrations/` (Alembic):** Veritabanı şema versiyonlaması (`0001_baseline_schema.py` yetkilendirme tablolarını kurar).
+- **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite geçmiş verilerinin PostgreSQL'e taşınmasını sağlayan veri göçü betiği.
+- **`scripts/install_host_sandbox.sh`:** v3.0 Zero-Trust güvenlik kısıtlamaları için host tarafındaki (Kata/gVisor) izole container ağını hazırlayan kurulum betiği.
+- **`scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh`:** CI süreçlerinde test kapsamı ve kod kalitesini ölçüp telemetri üreten kalite kapısı betikleri.
+- **`scripts/load_test_db_pool.py`:** Veritabanı bağlantı havuzu davranışını ve yük senaryolarını doğrulamak için kullanılan yardımcı test betiği.
+- **`runbooks/production-cutover-playbook.md`:** Üretim ortamına (production) geçiş, onaylama ve geri alma adımlarını barındıran operasyon prosedürü.
 
 ---
 
-### 3.24 Altyapı Dosyaları (CI/CD, Dockerfile)
+### 3.24 `docker/` — Gözlemlenebilirlik (Observability) Yapılandırması
+
+**Amaç:** Sistemin donanım, LLM yanıt süreleri ve bütçe/token kotalarının canlı izlenebilmesi için Prometheus ve Grafana altyapısını sağlar.
+
+**Özellikler:**
+- **`docker/prometheus/prometheus.yml`:** FastAPI sunucusunun `/metrics` endpoint'indeki (`core/llm_metrics.py` kaynaklı) metriklerin hangi aralıklarla çekileceğini (scraping) tanımlar.
+- **`docker/grafana/dashboards/sidar-llm-overview.json`:** Kullanıcı bazlı token harcaması, USD maliyeti ve sistem kaynakları için hazırlanmış kurumsal izleme paneli şablonu.
+- **`docker/grafana/provisioning/`:** Grafana başladığında veri kaynağını (Datasource) ve gösterge panellerini otomatik olarak içeri aktaran (auto-provision) ayarlar.
+
+---
+
+### 3.25 Altyapı Dosyaları (CI/CD, Dockerfile)
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
-- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır
-- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001)
-- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir
-- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
-- **Varsayılan:** `ACCESS_LEVEL=sandbox`
+- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır.
+- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001).
+- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir.
+- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir.
+- **Varsayılan:** `ACCESS_LEVEL=sandbox`.
 
-#### `.github/workflows/ci.yml`
-- Pull request ve ana dal akışlarında kalite kapılarını (lint, test, temel bütünlük kontrolleri) uygular.
-- Kod kalitesi regresyonlarının merge öncesi tespitini sağlar.
-
-#### `.github/workflows/migration-cutover-checks.yml`
-- Migration/cutover sürecine özel doğrulama adımlarını çalıştırır.
-- Veritabanı geçiş güvenliği ve operasyonel kapanış kriterleri için CI emniyet ağı görevi görür.
+#### `.github/workflows/`
+- **`ci.yml`:** Pull request akışlarında kod kalitesi ve test doğrulamalarını (lint, Mypy, Pytest) yapar.
+- **`migration-cutover-checks.yml`:** Veritabanı taşıma script'lerinin ve Alembic geçişlerinin güvenliğini denetleyen CI emniyet ağı.
 
 #### `docker-compose.yml` (209 satır)
-5 servis tanımı (Redis dahil):
-
-| Servis | Mod | CPU Limit | RAM Limit | Port |
-|--------|-----|-----------|-----------|------|
-| `sidar-ai` | CLI + CPU | 2.0 | 4 GB | — |
-| `sidar-gpu` | CLI + GPU | 4.0 | 8 GB | — |
-| `sidar-web` | Web + CPU | 2.0 | 4 GB | 7860 |
-| `sidar-web-gpu` | Web + GPU | 4.0 | 8 GB | 7861 |
-| `redis` | Rate-limit store | — | — | 6379 (internal) |
-
-Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
+5 servis tanımı (`sidar-ai` (CPU), `sidar-gpu`, `sidar-web`, `sidar-web-gpu`, `redis`). Rate-limit operasyonları için internal redis portu ayrılmıştır ve tüm uygulamalar `/var/run/docker.sock` ile sandbox çalıştırma erişimine sahiptir.
 
 ---
 
