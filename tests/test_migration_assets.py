@@ -168,3 +168,89 @@ def test_migrations_env_load_database_url_branches(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setenv("DATABASE_URL", "   ")
     assert module._load_database_url() is None
+
+
+def test_migrations_env_run_online_overrides_sqlalchemy_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    env_path = Path(__file__).resolve().parents[1] / "migrations" / "env.py"
+    captured: dict[str, dict[str, str]] = {}
+
+    class DummyConfig:
+        config_file_name = None
+        config_ini_section = "alembic"
+
+        @staticmethod
+        def get_main_option(_: str) -> str:
+            return "sqlite:///fallback.db"
+
+        @staticmethod
+        def get_section(_: str) -> dict[str, str]:
+            return {"sqlalchemy.url": "sqlite:///fallback.db"}
+
+    class DummyConnectable:
+        class _ConnCtx:
+            def __enter__(self) -> object:
+                return object()
+
+            def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+                return False
+
+        @staticmethod
+        def connect() -> "DummyConnectable._ConnCtx":
+            return DummyConnectable._ConnCtx()
+
+    class DummyContext:
+        config = DummyConfig()
+
+        @staticmethod
+        def get_x_argument(as_dictionary: bool = False) -> dict[str, str]:
+            assert as_dictionary is True
+            return {"database_url": "postgresql://override-from-x-arg"}
+
+        @staticmethod
+        def configure(**_: object) -> None:
+            return None
+
+        class _Tx:
+            def __enter__(self) -> None:
+                return None
+
+            def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+                return False
+
+        @staticmethod
+        def begin_transaction() -> "DummyContext._Tx":
+            return DummyContext._Tx()
+
+        @staticmethod
+        def run_migrations() -> None:
+            return None
+
+        @staticmethod
+        def is_offline_mode() -> bool:
+            return True
+
+    def engine_from_config(section: dict[str, str], prefix: str, poolclass: object) -> DummyConnectable:
+        captured["section"] = dict(section)
+        captured["prefix"] = {"value": prefix}
+        captured["poolclass"] = {"value": str(poolclass)}
+        return DummyConnectable()
+
+    alembic_module = types.ModuleType("alembic")
+    alembic_module.context = DummyContext()
+
+    sqlalchemy_module = types.ModuleType("sqlalchemy")
+    sqlalchemy_module.engine_from_config = engine_from_config
+    sqlalchemy_module.pool = types.SimpleNamespace(NullPool=object())
+
+    monkeypatch.setitem(sys.modules, "alembic", alembic_module)
+    monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_module)
+
+    spec = util.spec_from_file_location("test_migrations_env_module_online", env_path)
+    assert spec is not None and spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    module.run_migrations_online()
+
+    assert captured["section"]["sqlalchemy.url"] == "postgresql://override-from-x-arg"
+    assert captured["prefix"]["value"] == "sqlalchemy."
