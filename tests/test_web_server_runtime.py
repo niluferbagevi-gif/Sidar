@@ -1846,6 +1846,32 @@ def test_redis_rate_limit_command_exception_falls_back_to_local(monkeypatch):
     assert blocked is True
 
 
+def test_redis_rate_limit_first_request_sets_expiry(monkeypatch):
+    mod = _load_web_server()
+
+    class _RedisFirstHit:
+        def __init__(self):
+            self.expire_calls = []
+
+        async def incr(self, _key):
+            return 1
+
+        async def expire(self, key, ttl):
+            self.expire_calls.append((key, ttl))
+
+    redis = _RedisFirstHit()
+
+    async def _fake_get_redis():
+        return redis
+
+    monkeypatch.setattr(mod, "_get_redis", _fake_get_redis)
+
+    blocked = asyncio.run(mod._redis_is_rate_limited("chat", "127.0.0.1", 10, 60))
+    assert blocked is False
+    assert len(redis.expire_calls) == 1
+    assert redis.expire_calls[0][1] == 62
+
+
 def test_web_server_additional_coverage_edges(monkeypatch):
     mod = _load_web_server()
 
