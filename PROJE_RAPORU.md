@@ -112,19 +112,17 @@
 **Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
 
 ### Temel Özellikler
-- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
-- **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
-- **Multi-Agent Mimarisi:** Görevleri analiz edip ilgili uzmanlara (Coder, Researcher) dağıtan yönlendirici (Supervisor) altyapısı
-- **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
-- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`).
-- **Kurumsal Web UI Admin Paneli:** Yönetici rolüne sahip kullanıcılar için sistem kullanımını, aktif kullanıcıları ve global kotaları gösteren merkezi yönetim arayüzü.
-- **QA ve Regresyon Sinyali:** Coder ajanı ile ortak çalışan, üretilen kodu test edip onaylayan/reddeden gelişmiş `ReviewerAgent` döngüsü.
-- **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
-- **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama (RRF destekli)
-- **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
-- **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
-- **Kalıcı bellek:** Fernet (AES-128-CBC) ile opsiyonel şifreli oturum depolama
-- **Docker izolasyonu:** Kod çalıştırma sandbox ortamı
+- **Çift Arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/`)
+- **Çoklu LLM Sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
+- **Multi-Agent ve P2P Delegasyon Mimarisi:** Görevleri analiz edip uzmanlara dağıtan yönlendirici (Supervisor) ve ajanların kendi aralarında doğrudan iletişim kurup geri bildirim verebildiği (P2P - Coder ↔ Reviewer) gelişmiş orkestrasyon altyapısı.
+- **Canlı Ajan Telemetrisi (Event-Stream):** Ajanların yürüttüğü süreçleri ve kararları, WebSocket ve `AgentEventBus` üzerinden Web arayüzüne anlık olarak yansıtan durum akışı.
+- **Kalıcı Çoklu Kullanıcı (Multi-User) Katmanı:** Bearer Token ve fail-closed güvenlik prensipleriyle korunan, PostgreSQL/SQLite destekli kullanıcı izolasyonu ve oturum yönetimi.
+- **Telemetri, Bütçe ve Admin Paneli:** Prometheus/Grafana entegrasyonu ile USD bazlı API maliyeti, token takibi ve yönetici kullanıcılar için Web UI üzerinden aktif/global sistem kotalarının izlenebildiği merkezi yönetim arayüzü.
+- **Dinamik QA ve Regresyon Sinyali:** Coder ajanı ile P2P etkileşimde olan, hedefli test senaryoları üretip çalıştırarak kodu onaylayan/reddeden `ReviewerAgent` döngüsü.
+- **Hibrit RAG (Vektör Bellek):** RRF destekli, oturum izolasyonlu ChromaDB + BM25 + Keyword belge arama motoru.
+- **Zero-Trust Sandbox İzolasyonu:** Kod çalıştırma süreçleri için ağ erişimi (network) engellenmiş, donanım kaynakları (RAM/CPU) sınırlandırılmış ve mikro-VM (gVisor/Kata) altyapısına hazır güvenlik ortamı.
+- **Derin Güvenlik:** OpenClaw 3 katmanlı erişim kısıtlaması, path traversal engeli ve WebSocket düzeyinde katı Auth Handshake zorunluluğu.
+- **Donanım Uyumlu GPU Desteği:** CUDA, FP16 mixed precision, çoklu GPU ve WSL2 ortam desteği.
 
 ---
 
