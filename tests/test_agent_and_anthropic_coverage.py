@@ -30,6 +30,22 @@ def test_coder_agent_run_task_feedback_and_tool_validation():
     assert "Kullanım" in bad_patch
 
 
+def test_coder_agent_run_task_natural_language_write_regex_path(monkeypatch):
+    agent = CoderAgent()
+
+    calls = []
+
+    async def _fake_call_tool(name: str, arg: str):
+        calls.append((name, arg))
+        return "ok"
+
+    monkeypatch.setattr(agent, "call_tool", _fake_call_tool)
+
+    out = asyncio.run(agent.run_task("deneme.py isimli bir dosyaya 'print(\"merhaba\")' yaz"))
+    assert out == "ok"
+    assert calls == [("write_file", 'deneme.py|print("merhaba")')]
+
+
 def test_reviewer_and_researcher_route_edge_paths(monkeypatch):
     reviewer = ReviewerAgent()
 

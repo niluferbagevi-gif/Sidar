@@ -71,3 +71,18 @@ def test_track_stream_completion_records_success_and_error(monkeypatch):
 
 async def _collect(aiter):
     return [x async for x in aiter]
+
+def test_retry_with_backoff_raises_on_non_retryable_error(monkeypatch):
+    monkeypatch.setattr(llm.random, "uniform", lambda _a, _b: 0.0)
+
+    async def op():
+        raise RuntimeError("hard fail")
+
+    cfg = SimpleNamespace(LLM_MAX_RETRIES=3, LLM_RETRY_BASE_DELAY=0.05, LLM_RETRY_MAX_DELAY=0.1)
+    try:
+        asyncio.run(llm._retry_with_backoff("openai", op, config=cfg, retry_hint="chat failed"))
+        assert False, "expected LLMAPIError"
+    except llm.LLMAPIError as exc:
+        assert exc.provider == "openai"
+        assert exc.retryable is False
+        assert "chat failed" in str(exc)

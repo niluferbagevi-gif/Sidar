@@ -820,3 +820,50 @@ def test_llmclient_ollama_helpers_and_stream_wrapper_fallback_branch(llm_mod, mo
     openai_fac = llm_mod.LLMClient("openai", SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=10, OLLAMA_URL="http://x/api", OLLAMA_TIMEOUT=10))
     chunks = asyncio.run(_collect(openai_fac._stream_gemini_generator(_S())))
     assert chunks == []
+
+def test_llmclient_invalid_provider_raises_value_error(llm_mod):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12)
+    try:
+        llm_mod.LLMClient("gecersiz_saglayici", cfg)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "Bilinmeyen AI sağlayıcısı" in str(exc)
+
+
+def test_llmclient_stream_gemini_generator_uses_temp_client_for_non_gemini(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(
+        OPENAI_API_KEY="k",
+        OPENAI_TIMEOUT=10,
+        OLLAMA_URL="http://x/api",
+        OLLAMA_TIMEOUT=10,
+        GEMINI_API_KEY="g",
+        GEMINI_MODEL="gemini-2.0-flash",
+        GEMINI_TIMEOUT=10,
+    )
+    fac = llm_mod.LLMClient("openai", cfg)
+
+    called = {"v": False}
+
+    async def _fake_stream(self, response_stream):
+        called["v"] = True
+        async for _item in response_stream:
+            yield "proxy-chunk"
+
+    monkeypatch.setattr(llm_mod.GeminiClient, "_stream_gemini_generator", _fake_stream)
+
+    class _S:
+        def __init__(self):
+            self._done = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if self._done:
+                raise StopAsyncIteration
+            self._done = True
+            return object()
+
+    chunks = asyncio.run(_collect(fac._stream_gemini_generator(_S())))
+    assert called["v"] is True
+    assert chunks == ["proxy-chunk"]

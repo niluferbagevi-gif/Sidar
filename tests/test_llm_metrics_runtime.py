@@ -39,3 +39,19 @@ def test_llm_metrics_rate_limit_detection_variants():
     assert snap["totals"]["calls"] == 3
     assert snap["totals"]["rate_limited"] == 2
     assert snap["by_provider"]["anthropic"]["failures"] == 3
+
+def test_llm_metrics_snapshot_by_user_counts_failures():
+    collector = LLMMetricsCollector(max_events=10)
+    collector.record(
+        provider="openai",
+        model="gpt-4o-mini",
+        latency_ms=12,
+        prompt_tokens=1,
+        completion_tokens=1,
+        success=False,
+        error="boom",
+        user_id="test_user",
+    )
+    snap = collector.snapshot()
+    assert snap["by_user"]["test_user"]["calls"] == 1
+    assert snap["by_user"]["test_user"]["failures"] == 1

@@ -1663,3 +1663,81 @@ def test_admin_stats_endpoint_enforces_admin_and_returns_stats():
     assert response.status_code == 200
     assert response.content["total_users"] == 3
     assert response.content["total_tokens_used"] == 4567
+
+def test_bind_llm_usage_sink_runtimeerror_on_get_running_loop(monkeypatch):
+    mod = _load_web_server()
+
+    sink_holder = {}
+
+    class _Collector:
+        def set_usage_sink(self, sink):
+            sink_holder["sink"] = sink
+
+    class _Db:
+        async def record_provider_usage_daily(self, **_kwargs):
+            return None
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+    monkeypatch.setattr(mod, "get_llm_metrics_collector", lambda: _Collector())
+    monkeypatch.setattr(mod.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+
+    mod._bind_llm_usage_sink(agent)
+    sink = sink_holder["sink"]
+    event = types.SimpleNamespace(user_id="u1", provider="openai", total_tokens=7)
+    # RuntimeError branch should be swallowed
+    sink(event)
+
+
+def test_basic_auth_middleware_resets_metrics_context_on_exception(monkeypatch):
+    mod = _load_web_server()
+
+    class _Db:
+        async def get_user_by_token(self, token):
+            return types.SimpleNamespace(id="u1", username="alice", role="user") if token == "good-token" else None
+
+    class _Mem:
+        def __init__(self):
+            self.db = _Db()
+
+        async def aset_active_user(self, _uid, _uname=None):
+            return None
+
+    async def _get_agent():
+        return types.SimpleNamespace(memory=_Mem())
+
+    seen = {"reset": 0}
+    mod.get_agent = _get_agent
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx-token")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda token: seen.__setitem__("reset", seen["reset"] + (1 if token == "ctx-token" else 0)))
+
+    async def _boom(_request):
+        raise RuntimeError("next failed")
+
+    req = _FakeRequest(path="/status", headers={"Authorization": "Bearer good-token"})
+    try:
+        asyncio.run(mod.basic_auth_middleware(req, _boom))
+        assert False, "expected RuntimeError"
+    except RuntimeError:
+        pass
+
+    assert seen["reset"] == 1
+
+
+def test_redis_rate_limit_command_exception_falls_back_to_local(monkeypatch):
+    mod = _load_web_server()
+
+    class _RedisBoom:
+        async def incr(self, _key):
+            raise RuntimeError("redis down")
+
+    async def _fake_get_redis():
+        return _RedisBoom()
+
+    async def _fake_local(_key, _limit, _window):
+        return True
+
+    monkeypatch.setattr(mod, "_get_redis", _fake_get_redis)
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _fake_local)
+
+    blocked = asyncio.run(mod._redis_is_rate_limited("ns", "k", 2, 60))
+    assert blocked is True
