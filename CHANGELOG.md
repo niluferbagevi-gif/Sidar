@@ -23,6 +23,13 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
 * **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
 
+### 🎯 Tamamlanan v3.0 Vizyon Hedefleri (Geliştirme Yol Haritasından Taşınanlar)
+* **Eski Mimarinin Emekliye Ayrılması:** Legacy `SidarAgent` akışı deprecate edildi, Supervisor-first tek omurga ve Strangler Pattern kapanışı tamamlandı.
+* **Reviewer (QA) Ajanının Olgunlaştırılması:** Kod inceleme, test çalıştırma, regresyon tespiti ve kalite geri bildirim döngüsü (Coder ↔ Reviewer) otomatikleştirildi.
+* **Bütçe ve Token Yönetim Paneli:** OpenAI ve Anthropic kullanımında token tüketimi, API maliyeti ve latency metrikleri toplanarak `/api/budget` ucuyla admin paneline bağlandı.
+* **Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı:** DB tabanlı şema (`users`, `sessions`, `messages`, `user_quotas`) ve Alembic migration zinciri devreye alındı.
+* **Test Kapsamının %95+ Seviyesine Zorlanması:** CI hattında `find tests -type f -size 0` kontrolü kalıcılaştırıldı ve coverage eşiği `%95+` altına düştüğünde PR engelleyecek kalite kapısı uygulandı.
+
 
 
 ## [v2.10.8] - 2026-03-10
