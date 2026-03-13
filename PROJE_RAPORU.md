@@ -94,12 +94,7 @@
   - [12.11 Telemetri ve Zero-Trust Sandbox](#1211-telemetri-ve-zero-trust-sandbox)
   - [12.12 Çeşitli](#1212-çeşitli)
 - [13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)](#13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası)
-- [14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)](#14-geliştirme-yol-haritası-ve-v30-vizyonu-v211)
-  - [14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)](#141-eski-mimarinin-emekliye-ayrılması-deprecation)
-  - [14.2 Reviewer (QA) Ajanının Olgunlaştırılması](#142-reviewer-qa-ajanının-olgunlaştırılması)
-  - [14.3 Bütçe ve Token Yönetim Paneli (Dashboard)](#143-bütçe-ve-token-yönetim-paneli-dashboard)
-  - [14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı](#144-kalıcı-çoklu-kullanıcı-multi-user-altyapısı)
-  - [14.5 Test Kapsamının %95+ Seviyesine Zorlanması](#145-test-kapsamının-%95-seviyesine-zorlanması)
+- [14. Geliştirme Yol Haritası](#14-geliştirme-yol-haritası)
 - [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
   - [15.1 Çekirdek Özellikler (Her Zaman Zorunlu)](#151-çekirdek-özellikler-her-zaman-zorunlu)
   - [15.2 Arama ve Web](#152-arama-ve-web)
@@ -1860,37 +1855,13 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 ---
 
-## 14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)
+## 14. Geliştirme Yol Haritası
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v2.10.8 sonrası dönemde projeyi **v3.0 olgunluğuna** taşıyacak stratejik adımları içerir.
-
-### 14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)
-- ✅ `SidarAgent` akışı Supervisor-first tek omurgaya taşındı; legacy ReAct/feature-flag çatallanması kaldırıldı.
-- ✅ Strangler Pattern kapanışı tamamlandı; multi-agent orkestrasyon tek giriş noktasıdır.
-- ℹ Deprecation notları geriye uyumluluk kayıtlarında tutulur; çalışma zamanı artık legacy fallback kullanmaz.
-
-### 14.2 Reviewer (QA) Ajanının Olgunlaştırılması
-- `ReviewerAgent` temel rolü devrededir; bir sonraki adım kalite kapıları ve regresyon sinyallerini derinleştirmektir.
-- Hedef: kod inceleme, test çalıştırma, regresyon tespiti ve kalite geri bildirim döngüsünü otomatikleştirmek.
-- Önerilen akış: `Coder → Reviewer → (gerekirse tekrar Coder) → Supervisor final`.
-
-### 14.3 Bütçe ve Token Yönetim Paneli (Dashboard)
-- OpenAI ve Anthropic kullanımında token tüketimi, API maliyeti, hata oranı ve latency metriklerinin merkezileştirilmesi.
-- Web UI tarafında sağlayıcı bazlı canlı izleme paneli (grafik/uyarı eşikleri) eklenmesi.
-- OpenTelemetry + Prometheus/Grafana hattı üzerinden operasyonel görünürlük standardizasyonu.
-- `core/llm_client.py` içinde OpenAI/Anthropic token (prompt/completion), latency ve hata/rate-limit metrikleri toplanıp `web_server.py` üzerinden `/metrics/llm` ve `/api/budget` uçlarıyla dışa açılmalıdır/aktiftir (v2.10.8+).
-
-### 14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı
-- ✅ Çoklu kullanıcı için DB tabanlı şema (`users`, `sessions`, `messages`, `user_quotas`, `provider_usage_daily`) devrede.
-- ✅ Şema versiyonlama altyapısı (`schema_versions`) eklendi; SQLite/PostgreSQL için hedef versiyona ilerleme adımı mevcut.
-- 🟡 Sonraki adım: resmi Alembic migration zinciri ve PostgreSQL production cutover playbook'u.
-
-### 14.5 Test Kapsamının %95+ Seviyesine Zorlanması
-- Boş test artifact riskine karşı CI hattında `find tests -type f -size 0` kontrolünün kalıcı olarak çalıştırılması (aktif).
-- Kritik iş kuralları için branch + integration kapsamının artırılması.
-- CI hattında coverage eşiğinin `%95+` altına düştüğünde PR engelleyecek kalite kapısı uygulanması.
+> **Not (v3.0.0 Sonrası Durum):** Projenin v3.0 vizyon hedeflerinin (Multi-agent geçişi, Çoklu Kullanıcı, DB kalıcılığı, Telemetri ve Zero-Trust Sandbox) tamamı gerçekleştirilmiş ve tarihsel kayıt olarak `CHANGELOG.md` dosyasına taşınmıştır. 
+> 
+> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası bu alanda planlanacaktır.*
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
