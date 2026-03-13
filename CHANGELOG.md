@@ -10,6 +10,14 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
 * **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
 
+### ✅ Ödenmiş teknik borçlar (v3.0 kapanış)
+* **[Çözüldü] JSON tabanlı bellek kırılganlığı:** Kalıcılık DB katmanına taşındı; kullanıcı/oturum verileri UUID ve zaman damgası odaklı kayıt modeliyle yönetiliyor.
+* **[Çözüldü] Senkron darboğazlar:** Kritik çağrı yolları async modele geçirildi (`httpx`/async servis akışları) ve blocking etkisi azaltıldı.
+* **[Çözüldü] Tek ajan sınırı:** Supervisor-first çoklu ajan (Coder/Researcher/Reviewer) + P2P delegasyon/QA döngüsü üretim akışına alındı.
+* **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
+* **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
+
+
 
 ## [v2.10.8] - 2026-03-10
 Bu sürümde RAG cold-start optimizasyonu tamamlandı ve Anthropic (Claude) sağlayıcı desteği eklendi.
