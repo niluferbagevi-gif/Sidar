@@ -3,7 +3,7 @@
 > **Rapor Tarihi:** 2026-03-12
 > **Son Güncelleme:** 2026-03-11 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak kapatıldı)
 > **Proje Sürümü:** 3.0.0
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.500 satır (v3.0.0 final eklemeleriyle; tests hariç); Test: ~15.974 satır; Web UI: 3.551 satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.996** satır; Web UI: **4.160** satır.
 
 ---
 
