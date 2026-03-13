@@ -78,8 +78,8 @@
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
-  - [11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)](#111-açık-teknik-borç-2026-03-10-audit-6-güncel)
-  - [11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)](#112-açık-teknik-borç-2026-03-10-audit-8-güncel)
+  - [11.1 Ödenmiş Teknik Borçlar (Resolved) ve Changelog Referansı](#111-ödenmiş-teknik-borçlar-resolved-ve-changelog-referansı)
+  - [11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)](#112-yeni-nesil-kurumsal-teknik-borçlar-açık)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -1665,32 +1665,30 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.8.0 sürümü itibarıyla projede bilinen yüksek/orta öncelikli sorunların büyük bölümü kapatılmıştır.
+> **Not (v3.0.0):** Kurumsal/SaaS geçişiyle birlikte geçmiş sürümlerdeki temel mimari darboğazların büyük bölümü kapatılmıştır.
 >
-> Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
+> JSON tabanlı bellek kalıcılığı, senkron çalışma kaynaklı blocking gecikmeleri, tekli ajan sınırlamaları ve izolasyon/güvenlik sertleşmesi gibi önceki nesil borçların çözüm kayıtları artık rapor içinde tekrar edilmek yerine **CHANGELOG.md** altında izlenebilir (traceable) biçimde tutulmaktadır.
 
-### 11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)
+### 11.1 Ödenmiş Teknik Borçlar (Resolved) ve Changelog Referansı
 
-| # | Sorun | Dosya | Etki | Öncelik | Durum |
-|---|-------|-------|------|---------|-------|
-| 1 | ~~`/file-content` endpoint boyut limiti yok~~ | ~~`web_server.py:641`~~ | ~~`target.read_text()` boyutsuz; DoS riski~~ | ~~Orta~~ | ✅ **Audit#5'te çözüldü** |
-| 2 | ~~`.env.example`'da eksik değişkenler~~ | ~~`.env.example`~~ | ~~`GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksikti~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
-| 3 | ~~`test_config_runtime_coverage` boş dosya~~ | ~~`tests/test_config_runtime_coverage`~~ | ~~0 bayt artifact; test keşfini kirletiyordu~~ | ~~Düşük~~ | ✅ **Audit#6'da çözüldü** — dosya projeden silindi |
-| 4 | ~~`duckduckgo-search` versiyon pin formatı uyumsuzluğu~~ | ~~`environment.yml`, `requirements.txt`~~ | ~~Raporda `~=6.2.13`; gerçekte `==6.2.13`~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
-| 5 | ~~OpenAI provider eksik kayıt~~ | ~~`config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt`, `environment.yml`~~ | ~~OpenAI ayarları/argümanları/bağımlılıkları eksikti~~ | ~~Orta~~ | ✅ **Audit#6'da çözüldü** — OpenAI uçtan uca kayıt tamamlandı |
+Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geçmişi için [CHANGELOG.md](./CHANGELOG.md) referans alınmalıdır:
 
-> **Audit #6 Sonucu:** O tarihte bu bölümde açık kalan teknik borç bulunmamaktaydı.
+- JSON tabanlı bellek/oturum kalıcılığından DB merkezli kalıcılığa geçiş,
+- Senkron (blocking) ağ/işlem yollarından async çekirdeğe geçiş,
+- Tekli ajan akışından Supervisor-first multi-agent + P2P QA mimarisine geçiş,
+- Zero-Trust güvenlik katmanları (sandbox, path/symlink savunmaları, auth sertleşmesi),
+- CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması.
 
-### 11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)
+### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
 
-| # | Sorun | Dosya | Etki | Öncelik | Durum |
-|---|-------|-------|------|---------|-------|
-| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=true` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
-| 2 | ~~Eski ve yeni mimarinin birlikte yaşaması (bakım yükü)~~ | ~~`agent/sidar_agent.py`, `agent/core/supervisor.py`~~ | ~~Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `SidarAgent.respond()` tek omurga olarak Supervisor akışını kullanıyor; legacy dallanma kaldırıldı |
-| 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
-| 4 | ~~Çoklu API hata ve maliyet yönetimi~~ | ~~`core/llm_client.py`, `web_server.py`, `config.py`~~ | ~~OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `LLMAPIError` sözleşmesi + sağlayıcı bazlı retry/backoff + websocket yüzeyleme tamamlandı |
-| 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
-| 6 | `.note` dosyası rapor kapanış notlarıyla çelişkili şekilde depoda duruyor | `.note` | Kapanış notlarında “kaldırıldı” denmesine rağmen kök dizinde dosya mevcut; audit tutarlılığı bozuluyor | Düşük | ⚠ **AÇIK** — rapor ya da repo durumu eşitlenmeli |
+| # | Sorun | Dosya/Alan | Etki | Öncelik | Durum |
+|---|-------|------------|------|---------|-------|
+| 1 | Sync/Async köprü maliyeti (`_run_coro_sync`) | `core/memory.py` | Event loop içinden thread-bridge ile çağrı maliyeti ve debug karmaşıklığı artıyor; tam async dönüşüm ihtiyacı sürüyor | Orta | ⚠ **AÇIK** |
+| 2 | Vanilla JS UI ölçeklenme riski | `web_ui/*.js` | Event stream + dashboard + auth durumları büyüdükçe DOM/state yönetimi karmaşıklaşıyor; component tabanlı çatı ihtiyacı doğuyor | Orta | ⚠ **AÇIK** |
+| 3 | Sağlayıcılar arası tool-calling şema farkları | `core/llm_client.py`, `agent/tooling.py` | OpenAI/Anthropic/Gemini format farkları if/else yüzeyini büyütüyor; soyutlama sızıntısı riski | Orta | ⚠ **AÇIK** |
+| 4 | Sandbox kaynak kotası standardizasyonu (cgroups) | `managers/code_manager.py`, Docker runtime profilleri | İzolasyon mevcut olsa da host profilleri arasında CPU/RAM limit standardı daha da sertleştirilmeli | Orta | ⚠ **AÇIK** |
+| 5 | Operasyonel artefakt tutarlılığı (`.note`) | repo kökü / dokümantasyon | Rapor kapanış notlarıyla depodaki artefakt durumu zaman zaman ayrışabiliyor; audit izlenebilirliği etkileniyor | Düşük | ⚠ **AÇIK** |
+
 
 ## 12. `.env` Tam Değişken Referansı
 
