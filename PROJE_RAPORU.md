@@ -1025,24 +1025,25 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 
 | Kontrol | Durum | Konum |
 |---------|-------|-------|
-| Path traversal engelleme | ✓ Aktif | `security.py:86` |
-| Symlink koruması | ✓ Aktif | `security.py:96` |
-| Hassas yol engelleme | ✓ Aktif | `security.py:32-37` |
+| Path traversal engelleme | ✓ Aktif | `managers/security.py` |
+| Symlink koruması | ✓ Aktif | `managers/security.py` |
+| Hassas yol engelleme | ✓ Aktif | `managers/security.py` |
 | Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
 | Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `daily_llm_usage` |
-| Web UI Kurumsal Yetkilendirme | ✓ Aktif (admin erişimi kısıtlı) | `web_server.py` — `basic_auth_middleware`, admin panel endpoint kontrolleri |
-| Gelişmiş Sandbox (Runtime Hardening) | 🟡 Hazırlık tamamlandı | `scripts/install_host_sandbox.sh` — gVisor/Kata runtime hazırlıkları |
-| DDoS koruması | ✓ IP başına 120 istek/60 sn | `web_server.py` — `ddos_rate_limit_middleware` |
-| CORS kısıtlaması | ✓ Yalnızca localhost | `web_server.py:66` |
-| Rate limiting | ✓ 3 katman | `web_server.py` — `rate_limit_middleware` |
-| Bellek şifreleme | Opsiyonel (Fernet) | `memory.py:49` |
-| Docker kod izolasyonu | Opsiyonel | `code_manager.py:63` |
-| GitHub binary engelleme | ✓ Aktif | `github_manager.py:33` |
-| Git upload blacklist | ✓ Aktif | `github_upload.py:18` |
-| Bilinmeyen erişim seviyesi | ✓ Sandbox'a normalize | `security.py:75` |
-| Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `github_manager.py`, `web_server.py` |
+| WebSocket zorunlu Auth Handshake | ✓ Aktif (policy violation `1008`) | `web_server.py` — `/ws/chat`, `_ws_close_policy_violation()` |
+| Fail-Closed Bellek Erişimi | ✓ Aktif (`MemoryAuthError`) | `core/memory.py` — `_require_active_user()` |
+| Zero-Trust Docker Sandbox | ✓ Aktif (`network_mode="none"`, `mem_limit`, `nano_cpus`) | `managers/code_manager.py` — `execute_code()` |
+| Mikro-VM Runtime Uyum Katmanı | ✓ Aktif (`runsc` / `kata-runtime` çözümleme) | `managers/code_manager.py` — `_resolve_runtime()` |
+| DDoS koruması | ✓ Aktif (IP başına hız sınırı) | `web_server.py` — `ddos_rate_limit_middleware` |
+| CORS kısıtlaması | ✓ Aktif (allowlist) | `web_server.py` — CORS middleware |
+| Rate limiting | ✓ Aktif (HTTP + WS + Redis fallback) | `web_server.py` |
+| LLM QA Devre Kesici | ✓ Aktif (`MAX_QA_RETRIES=3`) | `agent/sidar_agent.py` |
+| GitHub binary engelleme | ✓ Aktif | `managers/github_manager.py` |
+| Git upload blacklist | ✓ Aktif | `github_upload.py` |
+| Bilinmeyen erişim seviyesi | ✓ Sandbox'a normalize | `managers/security.py` |
+| Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `managers/github_manager.py` |
 | GitHub Webhook İmzası | ✓ Aktif (HMAC-SHA256) | `web_server.py` — `/api/webhook` |
-| Büyük Dosya Okuma Limit | ✓ 1 MB sınırı | `web_server.py` — `/file-content` |
+| Büyük Dosya Okuma Limit | ✓ Aktif (boyut limiti) | `web_server.py` — `/file-content` |
 
 ### 5.2 Güvenlik Seviyeleri Davranışı
 
@@ -1052,7 +1053,7 @@ SANDBOX    → okuma + /temp yazma + Docker Python REPL
 FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 ```
 
-**QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, sistemin kendi kendine zararlı veya projenin mimarisini bozacak asenkron olmayan bir kod yazmasını engellemek için ReviewerAgent devreye girer. CoderAgent'ın ürettiği tüm sistem değişiklikleri, ReviewerAgent'ın statik güvenlik analizinden ve testlerinden geçmek zorundadır.
+**QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, CoderAgent çıktıları ReviewerAgent doğrulamasından geçer. Ek olarak `MAX_QA_RETRIES=3` sınırı ile Coder ↔ Reviewer geri besleme zinciri fail-safe biçimde sonlandırılır; sonsuz döngü ve maliyet artışı engellenir.
 
 ---
 
