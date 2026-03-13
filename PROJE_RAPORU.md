@@ -67,6 +67,11 @@
   - [8.4 Frontend ve Test Özeti](#84-frontend-ve-test-özeti)
   - [8.5 Dizin Bazlı Hacim Özeti](#85-dizin-bazlı-hacim-özeti)
 - [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
+  - [9.1 Statik Bağımlılık Matrisi (Import Grafı)](#91-statik-bağımlılık-matrisi-import-grafı)
+  - [9.2 Olay Güdümlü Pub/Sub Omurgası (AgentEventBus)](#92-olay-güdümlü-pubsub-omurgası-agenteventbus)
+  - [9.3 Güvenlik Zinciri: CodeManager → SecurityManager (Hard Coupling)](#93-güvenlik-zinciri-codemanager--securitymanager-hard-coupling)
+  - [9.4 DB Merkezli Bellek ve Kimlik Hiyerarşisi](#94-db-merkezli-bellek-ve-kimlik-hiyerarşisi)
+  - [9.5 P2P Delegasyon Köprüsü (Supervisor + Contracts)](#95-p2p-delegasyon-köprüsü-supervisor--contracts)
 - [10. Veri Akış Diyagramı](#10-veri-akış-diyagramı)
   - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
@@ -1460,7 +1465,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Aşağıdaki harita v3.0 final mimarisindeki güncel iç bağımlılık yönünü gösterir (ok yönü: bağımlı modül → bağımlı olunan modül).
+Bu bölüm, v3.0 mimarisindeki bağımlılıkları yalnızca “dosya import ediyor mu?” seviyesinde değil; **event bus**, **güvenlik zinciri**, **DB merkezli state** ve **P2P delegasyon köprüleri** ile birlikte açıklar.
+
+### 9.1 Statik Bağımlılık Matrisi (Import Grafı)
+
+Aşağıdaki harita güncel iç bağımlılık yönünü gösterir (ok yönü: bağımlı modül → bağımlı olunan modül).
 
 ```
 config.py              ←── (bağımlılık YOK — kök konfigürasyon)
@@ -1485,9 +1494,10 @@ agent/base_agent.py        ←── config.py, core/llm_client.py, agent/toolin
 
 agent/core/contracts.py    ←── (veri sözleşmeleri)
 agent/core/event_stream.py ←── (event bus)
-agent/core/memory_hub.py   ←── core/memory.py
+agent/core/memory_hub.py   ←── (hafif role/global bağlam merkezi)
 agent/core/registry.py     ←── agent/base_agent.py
-agent/core/supervisor.py   ←── agent/roles/*, core/llm_client.py, agent/core/contracts.py
+agent/core/supervisor.py   ←── agent/roles/*, agent/core/contracts.py,
+                              agent/core/event_stream.py, agent/core/memory_hub.py
 
 agent/roles/coder_agent.py      ←── agent/base_agent.py, managers/code_manager.py, agent/tooling.py
 agent/roles/researcher_agent.py ←── agent/base_agent.py, managers/web_search.py, core/rag.py, agent/tooling.py
@@ -1501,14 +1511,38 @@ agent/sidar_agent.py       ←── config.py, core/*, managers/*, agent/auto_h
 
 main.py                    ←── cli.py / web_server.py başlatımı (legacy tekli ajan akışı YOK)
 cli.py                     ←── config.py, agent/sidar_agent.py
-web_server.py              ←── config.py, agent/sidar_agent.py, core/*, managers/*
+web_server.py              ←── config.py, agent/sidar_agent.py, core/*, managers/*,
+                              agent/core/event_stream.py
 github_upload.py           ←── (bağımsız araç)
 ```
 
-**Döngüsel bağımlılık:** Tespit edilmedi. `config.py` bağımlılık ağacının kökü; hiçbir iç modülü import etmez.
+### 9.2 Olay Güdümlü Pub/Sub Omurgası (AgentEventBus)
 
+- `agent/core/event_stream.py` içindeki `AgentEventBus`, `subscribe()/publish()/unsubscribe()` modeliyle process-içi pub/sub omurgası sağlar.
+- `SupervisorAgent` çalışma adımlarında `events.publish(...)` çağrılarıyla ajan durumlarını event olarak üretir.
+- `web_server.py` bu bus’a abone olup WebSocket kanalına canlı durum akışı taşır; böylece UI tarafı ajanları doğrudan çağırmadan gözlem yapar (loose coupling).
 
-**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları araç dispatch için `agent/tooling.py`, oturum kalıcılığı için `core/memory.py` + `core/db.py`, canlı durum yayınları için `agent/core/event_stream.py` ve telemetri/bütçe takibi için `core/llm_metrics.py` katmanlarını ortak kullanır.
+### 9.3 Güvenlik Zinciri: CodeManager → SecurityManager (Hard Coupling)
+
+- `managers/code_manager.py`, kurulumda zorunlu `SecurityManager` instance’ı alır (`CodeManager(security=...)`).
+- Dosya okuma/yazma ve yürütme öncesi güvenlik kararları `SecurityManager` denetimlerinden geçirilir.
+- Bu nedenle yöneticiler genel olarak modüler olsa da, **kod yürütme hattında güvenlik açısından bilinçli bir hard-coupling** vardır.
+
+### 9.4 DB Merkezli Bellek ve Kimlik Hiyerarşisi
+
+- `core/memory.py` içindeki `ConversationMemory`, kalıcılık için doğrudan `core/db.py::Database` katmanına bağlıdır.
+- Web katmanı (`web_server.py`) token tabanlı kimlik doğrulama/oturum çözümlemesinde DB kayıtlarını kullanır.
+- `agent/core/memory_hub.py` ise DB yerine kısa ömürlü role/global notlar tutan hafif bir orchestrasyon belleğidir; DB merkezli uzun ömürlü oturum belleğinin yerini almaz, onu tamamlar.
+
+### 9.5 P2P Delegasyon Köprüsü (Supervisor + Contracts)
+
+- `agent/core/contracts.py` içinde `P2PMessage` ve `DelegationRequest`/`DelegationResult` sözleşmeleri, ajanlar arası nokta-atışı görev devri için veri modelini tanımlar.
+- `agent/core/supervisor.py::_route_p2p(...)`, delegasyon isteklerini hedef ajanlara hop kontrollü (`max_hops`) biçimde taşır.
+- Coder/Reviewer geri besleme döngüsü ve gerektiğinde araştırma/kod delegasyonu bu sözleşmeler üzerinden ilerleyerek QA odaklı P2P iş akışını kurar.
+
+**Döngüsel bağımlılık:** Tespit edilmedi. `config.py` hâlâ bağımlılık ağacının kökü konumundadır.
+
+**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları; araç dispatch için `agent/tooling.py`, kalıcı konuşma verisi için `core/memory.py` + `core/db.py`, canlı durum akışı için `agent/core/event_stream.py`, maliyet/telemetri için `core/llm_metrics.py` katmanlarını birlikte kullanır.
 
 ---
 
