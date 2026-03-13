@@ -16,7 +16,7 @@
   - [3.1 `config.py` — Merkezi Yapılandırma (589 satır)](#31-configpy-merkezi-yapılandırma-589-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı (225 satır)](#32-mainpy-akıllı-başlatıcı-225-satır)
   - [3.3 `cli.py` — CLI Arayüzü (232 satır)](#33-clipy-cli-arayüzü-232-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)](#34-web_serverpy-fastapi-web-sunucusu-1173-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)](#34-web_serverpy-fastapi-web-sunucusu-1376-satır)
   - [3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)](#35-agentsidar_agentpy-ana-ajan-1698-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)](#36-agentauto_handlepy-hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)](#37-agentdefinitionspy-ajan-tanımları-165-satır)
@@ -364,7 +364,7 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ---
 
-### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)
+### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)
 
 **Amaç:** WebSocket destekli asenkron chat, DB tabanlı kimlik doğrulama ve kurumsal metrik/bütçe uçlarını tek API yüzeyinde sunar.
 
