@@ -194,7 +194,7 @@ sidar_project/
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── supervisor.py      # Yönlendirici ve orkestrasyon ajanı
-│   │   ├── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri
+│   │   ├── contracts.py       # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri
 │   │   ├── event_stream.py    # Ajan olay veriyolu (canlı durum akışı)
 │   │   ├── memory_hub.py      # Multi-agent bellek yönetim merkezi
 │   │   └── registry.py        # Ajan ve yetenek kayıt defteri
@@ -592,7 +592,7 @@ kullanıcı mesajı
 **Amaç:** Multi-agent omurgasında roller arası görev sözleşmesi, canlı olay akışı ve paylaşımlı bellek/araç kayıt altyapısını sağlar.
 
 **Kapsam:**
-- `contracts.py` — `TaskEnvelope` / `TaskResult` veri sözleşmeleri
+- `contracts.py` — `TaskEnvelope` / `TaskResult` + P2P delegasyon sözleşmeleri (`P2PMessage`, `DelegationRequest`, `DelegationResult`)
 - `event_stream.py` — ajan durum ve araç olaylarını yayınlayan event bus
 - `memory_hub.py` — roller arası ortak bellek erişim katmanı
 - `registry.py` — çalışma zamanında rol/ajan kayıt ve çözümleme yardımcıları
@@ -2126,7 +2126,7 @@ Aşağıdaki dosyalar Audit #6 dahil hiçbir önceki raporda yer almamaktadır. 
 | `agent/base_agent.py` | 55 | `BaseAgent` — tüm uzman ajanlar için ortak LLM + tool dispatch soyut sınıfı |
 | `agent/core/__init__.py` | 5 | `SupervisorAgent`, `TaskEnvelope`, `TaskResult` export |
 | `agent/core/supervisor.py` | 164 | `SupervisorAgent` — intent tespiti + delegasyon + QA orkestrasyonu |
-| `agent/core/contracts.py` | 30 | `TaskEnvelope` (görev zarfı) + `TaskResult` (yapısal sonuç) dataclass'ları |
+| `agent/core/contracts.py` | 56 | `TaskEnvelope`/`TaskResult` + `P2PMessage`/`DelegationRequest`/`DelegationResult` veri sözleşmeleri |
 | `agent/roles/__init__.py` | 5 | `CoderAgent`, `ResearcherAgent` export |
 | `agent/roles/coder_agent.py` | 120 | `CoderAgent` — dosya/kod araçlarıyla çalışan uzman ajan |
 | `agent/roles/researcher_agent.py` | 75 | `ResearcherAgent` — web + RAG araçlarıyla çalışan uzman ajan |
