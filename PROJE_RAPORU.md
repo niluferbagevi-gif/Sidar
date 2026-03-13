@@ -503,6 +503,8 @@ kullanıcı mesajı
 
 **Amaç:** Araçların Pydantic şemalarını ve `build_tool_dispatch()` fonksiyonu aracılığıyla araç dispatch tablosunu merkezi olarak yönetir.
 
+> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/tooling.py` çıktısına göre **266** olarak ölçülmüştür.
+
 **Kritik Bileşenler:**
 
 | Bileşen | Açıklama |
@@ -516,10 +518,10 @@ kullanıcı mesajı
 | `GithubListPRsSchema` | `state` (varsayılan: `"open"`) + `limit` (varsayılan: 10) |
 | `GithubListIssuesSchema` | `state` (varsayılan: `"open"`) + `limit` (varsayılan: 10) |
 | `GithubCreateIssueSchema` | `title` + `body` |
-| `GithubCommentIssueSchema` | `issue_number` (int) + `body` |
-| `GithubCloseIssueSchema` | `issue_number` (int) |
-| `GithubPRDiffSchema` | `pr_number` (int) |
-| `ScanProjectTodosSchema` | opsiyonel `path` (varsayılan: proje kökü) |
+| `GithubCommentIssueSchema` | `number` (int) + `body` |
+| `GithubCloseIssueSchema` | `number` (int) |
+| `GithubPRDiffSchema` | `number` (int) |
+| `ScanProjectTodosSchema` | opsiyonel `directory` + opsiyonel `extensions` (uzantı listesi) |
 | `TOOL_ARG_SCHEMAS` | Araç adını şema sınıfına eşleyen sözlük (13 giriş) |
 | `parse_tool_argument()` | JSON öncelikli, `|||` sınırlı legacy format fallback ile argüman ayrıştırma |
 | `build_tool_dispatch()` | `SidarAgent` instance'ından araç adı → metod sözlüğü üretir |
@@ -528,7 +530,7 @@ kullanıcı mesajı
 1. **JSON öncelik:** `json.loads(text)` başarılıysa `schema.model_validate(dict)` ile Pydantic doğrulaması yapılır.
 2. **Legacy format fallback:** `|||` ayırıcısı ile bölünmüş eski string formatı desteklenir. Bu, eski LLM çıktılarıyla geriye dönük uyumluluğu korur.
 
-**`build_tool_dispatch()` Araç Tablosu (60+ araç + alias'lar):**
+**`build_tool_dispatch()` Araç Tablosu (56 araç/alias eşlemesi):**
 
 | Araç Adı | Alias | Metod |
 |----------|-------|-------|
