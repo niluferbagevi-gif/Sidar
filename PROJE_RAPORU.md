@@ -76,6 +76,7 @@
   - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
+  - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
   - [11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)](#111-açık-teknik-borç-2026-03-10-audit-6-güncel)
   - [11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)](#112-açık-teknik-borç-2026-03-10-audit-8-güncel)
@@ -1633,6 +1634,30 @@ docs_add / docs_add_file
 ```
 
 > RAG yolu tüm uzman ajanlar tarafından ortak kullanılır; erişim kontrolü ve gözlemlenebilirlik katmanlarıyla birlikte çalışır.
+
+### 10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)
+
+Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-driven + observability) özetler:
+
+1. **Faz 1 — Ingestion & Auth Gate (CLI/HTTP/WS):**
+   - İstek girişleri web tarafında zorunlu auth kontrollerinden (özellikle WebSocket `action=auth` handshake) geçer.
+   - Doğrulama sonrası istek ajan yürütme hattına alınır; durum olayları `AgentEventBus` üzerinden yayınlanmaya başlar.
+
+2. **Faz 2 — State & Context (DB + Token Budget):**
+   - `ConversationMemory` kullanıcı bağlamını (`user_id`) doğrular, geçmiş oturum/mesajları DB katmanından yönetir.
+   - Bağlam token boyutu izlenir; eşik aşımlarında özetleme/sıkıştırma adımlarıyla LLM'e taşınacak yük optimize edilir.
+
+3. **Faz 3 — Supervisor Routing + P2P QA Loop:**
+   - Supervisor niyet analizi sonrası işi `TaskEnvelope` ile uzman ajana yönlendirir.
+   - Kod odaklı işlerde Coder çıktısı Reviewer süzgecinden geçer; gerekirse `DelegationRequest` + `_route_p2p` köprüsüyle Coder'a revizyon döner (`MAX_QA_RETRIES` devre kesici).
+
+4. **Faz 4 — Zero-Trust Tool Execution Path:**
+   - Araç çağrıları güvenlik denetiminden geçer (path/erişim seviyesi kontrolleri).
+   - Web aramada motor fallback zinciri (Tavily → Google → DuckDuckGo), kod yürütmede Docker sandbox izolasyonu ve politika bazlı fallback uygulanır.
+
+5. **Faz 5 — Observability Split + Persistence + Broadcast:**
+   - LLM akışı yalnızca son kullanıcı yanıtı üretmez; paralelde telemetri (token/latency/cost) `core/llm_metrics.py` ile toplanır.
+   - Bu metrikler `/api/budget` ve Prometheus format yüzeylerine aktarılır; event bus/WebSocket üzerinden canlı durum yayınları sürerken nihai içerik DB'ye kalıcı yazılır.
 
 ---
 
