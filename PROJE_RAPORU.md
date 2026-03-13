@@ -51,6 +51,9 @@
   - [5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)](#53-kurumsal-zero-trust-savunma-sütunları-v30)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
+  - [6.2 Coverage Hard Gate (%95)](#62-coverage-hard-gate-95)
+  - [6.3 Test Havuzu ve Modüler Senaryolar](#63-test-havuzu-ve-modüler-senaryolar)
+  - [6.4 Asenkron Test Altyapısı](#64-asenkron-test-altyapısı)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
 - [8. Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
   - [8.1 Çekirdek Modüller (Güncel)](#81-çekirdek-modüller-güncel)
@@ -1246,7 +1249,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiş
 
 - **`test_*.py` modül sayısı:** **91**
 - **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **93**
-- **Toplam test satırı (`tests/*.py`):** **20.996**
+- **Toplam test satırı (`tests/*.py`):** **20.904**
 
 **v3.0 Öne Çıkan Test Kategorileri:**
 - **Veritabanı & Migration:** `test_db_runtime.py`, `test_db_postgresql_branches.py`, `test_migration_assets.py`, `test_migration_ci_guards.py`
@@ -1268,6 +1271,24 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiş
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
 
 Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + güvenlik sertleştirme senaryoları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
+
+### 6.2 Coverage Hard Gate (%95)
+
+- `.coveragerc` içinde `fail_under = 95` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
+- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=95` komutunu çalıştırır; eşik altı durumda pipeline fail olur.
+- Bu model, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir ve eksik kapsanan satırların görünür kalmasını sağlar.
+
+### 6.3 Test Havuzu ve Modüler Senaryolar
+
+- Güncel depoda `test_*.py` desenine uyan **91 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **93** adettir.
+- Testler yalnızca birim doğrulama ile sınırlı değildir; edge-case, provider retry/fallback, migration/DB branch ayrışmaları, sandbox profilleri ve web güvenliği gibi alanlara bölünmüş modüler paketler içerir.
+- Örnek kurumsal odak alanları: `test_missing_edge_case_coverage.py`, `test_llm_client_retry_helpers.py`, `test_db_postgresql_branches.py`, `test_sandbox_runtime_profiles.py`.
+
+### 6.4 Asenkron Test Altyapısı
+
+- `pytest.ini` içinde `python_files = test_*.py` standardı ve `asyncio` marker tanımı ile tutarlı keşif/etiketleme sağlanır.
+- `tests/conftest.py`, coroutine testlerini event loop içinde çalıştıran özel hook (`pytest_pyfunc_call`) içerir; böylece async servis akışları doğrudan test edilebilir.
+- Bu altyapı, v3.0'ın async mimarisine uygun şekilde zamanlama/timeout/durum geçişi testlerini stabil biçimde yürütür.
 
 ---
 
