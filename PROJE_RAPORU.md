@@ -1209,15 +1209,16 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Aşağıdaki tablo her modülün hangi iç modülleri import ettiğini gösterir. Okun yönü bağımlılık yönüdür.
+Aşağıdaki harita v3.0 final mimarisindeki güncel iç bağımlılık yönünü gösterir (ok yönü: bağımlı modül → bağımlı olunan modül).
 
 ```
-config.py          ←── (bağımlılık YOK — temel taş)
+config.py              ←── (bağımlılık YOK — kök konfigürasyon)
 
-core/llm_client.py ←── config.py
-                     └─ dış sağlayıcılar: Ollama, Gemini, OpenAI, Anthropic (Claude)
-core/memory.py     ←── config.py
-core/rag.py        ←── config.py
+core/db.py             ←── config.py
+core/llm_client.py     ←── config.py
+core/llm_metrics.py    ←── core/db.py, config.py
+core/memory.py         ←── core/db.py, config.py
+core/rag.py            ←── config.py
 
 managers/security.py       ←── config.py
 managers/code_manager.py   ←── managers/security.py, config.py
@@ -1227,31 +1228,36 @@ managers/web_search.py     ←── config.py
 managers/package_info.py   ←── (yalnızca dış: httpx, packaging)
 managers/todo_manager.py   ←── config.py
 
-agent/definitions.py       ←── (bağımlılık YOK — salt metin sabiti)
-agent/tooling.py           ←── pydantic (dış) — iç modül bağımlılığı YOK
+agent/definitions.py       ←── (salt metin sabiti)
+agent/tooling.py           ←── pydantic (dış)
 agent/base_agent.py        ←── config.py, core/llm_client.py, agent/tooling.py
-agent/roles/coder_agent.py ←── agent/base_agent.py, managers/code_manager.py, agent/tooling.py
+
+agent/core/contracts.py    ←── (veri sözleşmeleri)
+agent/core/event_stream.py ←── (event bus)
+agent/core/memory_hub.py   ←── core/memory.py
+agent/core/registry.py     ←── agent/base_agent.py
+agent/core/supervisor.py   ←── agent/roles/*, core/llm_client.py, agent/core/contracts.py
+
+agent/roles/coder_agent.py      ←── agent/base_agent.py, managers/code_manager.py, agent/tooling.py
 agent/roles/researcher_agent.py ←── agent/base_agent.py, managers/web_search.py, core/rag.py, agent/tooling.py
-agent/core/supervisor.py   ←── agent/roles/*, core/llm_client.py
+agent/roles/reviewer_agent.py   ←── agent/base_agent.py
+
 agent/auto_handle.py       ←── managers/*, core/memory.py, core/rag.py
 agent/sidar_agent.py       ←── config.py, core/*, managers/*, agent/auto_handle.py,
-                              agent/definitions.py, agent/tooling.py, agent/core/supervisor.py
+                              agent/definitions.py, agent/tooling.py,
+                              agent/core/supervisor.py, agent/core/event_stream.py,
+                              agent/roles/reviewer_agent.py
 
-main.py (Akıllı Başlatıcı)
- ├── agent/sidar_agent.py (Eski Tekli Ajan - Geriye Uyumluluk)
- └── agent/core/supervisor.py (Yeni Multi-Agent Yönlendirici)
-      ├── agent/roles/coder_agent.py (Kod Uzmanı)
-      └── agent/roles/researcher_agent.py (Araştırma Uzmanı)
-
-cli.py          ←── config.py, agent/sidar_agent.py
-web_server.py   ←── config.py, agent/sidar_agent.py, core/*, managers/*
-github_upload.py←── (bağımsız araç)
+main.py                    ←── cli.py / web_server.py başlatımı (legacy tekli ajan akışı YOK)
+cli.py                     ←── config.py, agent/sidar_agent.py
+web_server.py              ←── config.py, agent/sidar_agent.py, core/*, managers/*
+github_upload.py           ←── (bağımsız araç)
 ```
 
 **Döngüsel bağımlılık:** Tespit edilmedi. `config.py` bağımlılık ağacının kökü; hiçbir iç modülü import etmez.
 
 
-**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları araç dispatch için `agent/tooling.py` katmanını, konuşma/oturum durumu için `core/memory.py` katmanını ve bilgi erişimi için `core/rag.py` katmanını ortak kullanır.
+**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları araç dispatch için `agent/tooling.py`, oturum kalıcılığı için `core/memory.py` + `core/db.py`, canlı durum yayınları için `agent/core/event_stream.py` ve telemetri/bütçe takibi için `core/llm_metrics.py` katmanlarını ortak kullanır.
 
 ---
 
