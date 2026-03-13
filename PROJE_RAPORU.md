@@ -22,7 +22,7 @@
   - [3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)](#37-agentdefinitionspy-ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)](#37b-agenttoolingpy-araç-kayıt-ve-şema-yöneticisi-266-satır)
   - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (55 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-55-satır)
-  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-87-satır)
+  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (164 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-164-satır)
   - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
   - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-723-satır)
@@ -572,13 +572,17 @@ kullanıcı mesajı
 
 ---
 
-### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)
+### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (164 satır)
 
 **Amaç:** Kullanıcı niyetini analiz edip görevi uygun role yönlendiren orkestrasyon katmanı.
 
+> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/core/supervisor.py` çıktısına göre **164** olarak ölçülmüştür.
+
 **Öne Çıkanlar:**
-- Intent/role routing
-- TaskEnvelope/TaskResult sözleşmeleriyle uyumlu görev yönetimi
+- Intent/role routing (`_intent`: research / review / code)
+- `TaskEnvelope`/`TaskResult` sözleşmeleriyle uyumlu görev yönetimi (`_delegate`)
+- Coder ↔ Reviewer QA döngüsü: `_review_requires_revision` + `MAX_QA_RETRIES=3` ile düzeltme turları ve devre kesici
+- P2P delegasyon köprüsü: `_route_p2p` ile `DelegationRequest` zincirini `max_hops=4` sınırıyla yönlendirme
 - Supervisor orkestrasyonu v3.0 omurgasında varsayılan ana akış olarak çalışır
 
 ---
@@ -2119,9 +2123,9 @@ Aşağıdaki dosyalar Audit #6 dahil hiçbir önceki raporda yer almamaktadır. 
 
 | Dosya | Satır | Açıklama |
 |-------|-------|----------|
-| `agent/base_agent.py` | 34 | `BaseAgent` — tüm uzman ajanlar için ortak LLM + tool dispatch soyut sınıfı |
+| `agent/base_agent.py` | 55 | `BaseAgent` — tüm uzman ajanlar için ortak LLM + tool dispatch soyut sınıfı |
 | `agent/core/__init__.py` | 5 | `SupervisorAgent`, `TaskEnvelope`, `TaskResult` export |
-| `agent/core/supervisor.py` | 87 | `SupervisorAgent` — intent tespiti + role routing + orchestration |
+| `agent/core/supervisor.py` | 164 | `SupervisorAgent` — intent tespiti + delegasyon + QA orkestrasyonu |
 | `agent/core/contracts.py` | 30 | `TaskEnvelope` (görev zarfı) + `TaskResult` (yapısal sonuç) dataclass'ları |
 | `agent/roles/__init__.py` | 5 | `CoderAgent`, `ResearcherAgent` export |
 | `agent/roles/coder_agent.py` | 120 | `CoderAgent` — dosya/kod araçlarıyla çalışan uzman ajan |
