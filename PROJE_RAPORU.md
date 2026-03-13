@@ -1102,35 +1102,15 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ### 3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
-#### `Dockerfile` (101 satır)
-- **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
-- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır
-- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001)
-- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir
-- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
-- **Varsayılan:** `ACCESS_LEVEL=sandbox`
+**Amaç:** Üretim ortamında gözlemlenebilirlik (observability), telemetri görselleştirme ve canlıya geçiş (cutover) operasyonlarını tekrarlanabilir SOP'larla yönetmek.
 
-#### `docker-compose.yml` (209 satır)
-5 servis tanımı (Redis dahil):
-
-| Servis | Mod | CPU Limit | RAM Limit | Port |
-|--------|-----|-----------|-----------|------|
-| `sidar-ai` | CLI + CPU | 2.0 | 4 GB | — |
-| `sidar-gpu` | CLI + GPU | 4.0 | 8 GB | — |
-| `sidar-web` | Web + CPU | 2.0 | 4 GB | 7860 |
-| `sidar-web-gpu` | Web + GPU | 4.0 | 8 GB | 7861 |
-| `redis` | Rate-limit store | — | — | 6379 (internal) |
-
-Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
-
-#### `docker/` alt dizini
-- `docker/prometheus/prometheus.yml` ile Prometheus scrape hedefleri tanımlanır.
-- `docker/grafana/provisioning/` altında datasource/dashboard provisioning otomatik yüklenir.
-- `docker/grafana/dashboards/sidar-llm-overview.json` ile LLM maliyet/token/latency görünürlüğü sağlanır.
-
-#### `runbooks/production-cutover-playbook.md`
-- Üretime geçiş adımları, rollback planı ve operasyonel kontrol listelerini içerir.
-- DB migration, gözlemlenebilirlik ve servis sağlık kontrol adımlarını tek bir playbook altında toplar.
+**Özellikler (Kurumsal V3.0 DevOps):**
+- **Tek komutla observability orkestrasyonu (`docker-compose.yml`):** Uygulama servisleriyle birlikte `prometheus` ve `grafana` konteynerlerini tek bir `docker compose up -d` akışında ayağa kaldırır; servis bağımlılıkları (`depends_on`) ile başlangıç sırası yönetilir.
+- **Prometheus scrape topolojisi (`docker/prometheus/prometheus.yml`):** `metrics_path: /metrics/llm/prometheus` üzerinden `sidar-web:7860` hedefini container ağında kazır; `global.scrape_interval: 15s` ile uygulama içi iş yükünü artırmadan dıştan metrik toplama modeli uygular.
+- **Grafana auto-provisioning (`docker/grafana/provisioning/*`):** Datasource (`datasources/prometheus.yml`) ve dashboard provider (`dashboards/dashboards.yml`) tanımları kod olarak tutulur; konteyner her açıldığında manuel adım olmadan hazır dashboard'lar yüklenir.
+- **JSON-as-Code dashboard (`docker/grafana/dashboards/sidar-llm-overview.json`):** LLM token, maliyet ve latency metriklerini standart panel setiyle sunar; dashboard değişiklikleri sürüm kontrolüne girerek denetlenebilir hale gelir.
+- **Kurumsal cutover/rollback playbook (`runbooks/production-cutover-playbook.md`):** SQLite → PostgreSQL geçişinde pre-flight, Alembic migration zinciri, `--dry-run` veri taşıma provası ve kritik hata durumunda rollback adımlarını SOP düzeyinde tanımlar.
+- **Host sandbox rollout notları (`runbooks/production-cutover-playbook.md` + `scripts/install_host_sandbox.sh`):** gVisor/Kata runtime kurulumu, doğrulama checklist'i ve kontrollü restart adımlarıyla production güvenlik sertleşmesini operasyonel sürece bağlar.
 
 ---
 
@@ -1334,6 +1314,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `scripts/audit_metrics.sh` | 56 |
 | `scripts/collect_repo_metrics.sh` | 13 |
 | `scripts/install_host_sandbox.sh` | 199 |
+| `docker/prometheus/prometheus.yml` | 7 |
+| `docker/grafana/provisioning/datasources/prometheus.yml` | 8 |
+| `docker/grafana/provisioning/dashboards/dashboards.yml` | 10 |
+| `docker/grafana/dashboards/sidar-llm-overview.json` | 66 |
+| `runbooks/production-cutover-playbook.md` | 109 |
 | `Dockerfile` | 103 |
 | `docker-compose.yml` | 236 |
 
