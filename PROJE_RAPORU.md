@@ -23,10 +23,7 @@
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-266-satır)
   - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı](#37c-agentbase_agentpy--temel-ajan-sınıfı-34-satır)
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan](#37d-agentcoresupervisorpy--yönlendirici-supervisor-ajan-87-satır)
-  - [3.7e `agent/core/contracts.py` — Görev Zarfı ve Sözleşmeleri](#37e-agentcorecontractspy--görev-zarfı-ve-sözleşmeleri-30-satır)
-  - [3.7f `agent/core/event_stream.py` — Agent Event Bus ve Olay Yayınlama](#37f-agentcoreevent_streampy--agent-event-bus-ve-olay-yayınlama)
-  - [3.7g `agent/core/memory_hub.py` ve `agent/core/registry.py` — Bellek Merkezi ve Kayıt](#37g-agentcorememory_hubpy-ve-agentcoreregistrypy--bellek-merkezi-ve-kayıt)
-  - [3.7h `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37h-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
+  - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37e-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic)](#38-corellm_clientpy--llm-istemcisi-ollama--gemini--openai--anthropic-723-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-402-satır)
   - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-783-satır)
@@ -39,22 +36,17 @@
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
   - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
-  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı (989 satır)](#320-coredbpy--veritabanı-ve-çoklu-kullanıcı-altyapısı-989-satır)
-  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi (235 satır)](#321-corellm_metricspy--telemetri-ve-bütçe-yönetimi-235-satır)
-  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı (181 satır)](#322-agentrolesreviewer_agentpy--qa-ve-inceleme-ajanı-181-satır)
-  - [3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları](#323-migrations-scripts-ve-runbooks--geçiş-ve-operasyon-araçları)
-  - [3.24 `docker/` — Gözlemlenebilirlik (Observability) Yapılandırması](#324-docker--gözlemlenebilirlik-observability-yapılandırması)
-  - [3.25 Altyapı Dosyaları (CI/CD, Dockerfile)](#325-altyapı-dosyaları-cicd-dockerfile)
+  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#)
+  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#)
+  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#)
+  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#)
+  - [3.24 Altyapı Dosyaları](#324-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
-  - [4.1 Olay Yönelimli Multi-Agent Mimarisi (Event-Driven & P2P)](#41-olay-yönelimli-multi-agent-mimarisi-event-driven--p2p)
-  - [4.2 Katmanlı Güvenlik ve Zero-Trust İzolasyonu](#42-katmanlı-güvenlik-ve-zero-trust-izolasyonu)
-  - [4.3 Kurumsal Gözlemlenebilirlik (LLMOps & Observability)](#43-kurumsal-gözlemlenebilirlik-llmops--observability)
-  - [4.4 Hibrit Veri Katmanı (Hybrid Data Layer)](#44-hibrit-veri-katmanı-hybrid-data-layer)
+  - [4.1 Güçlü Yönler](#41-güçlü-yönler)
+  - [4.2 Kısıtlamalar](#42-kısıtlamalar)
 - [5. Güvenlik Analizi](#5-güvenlik-analizi)
-  - [5.1 OpenClaw Güvenlik Katmanı (Erişim Kontrolü)](#51-openclaw-güvenlik-katmanı-erişim-kontrolü)
-  - [5.2 Zero-Trust Docker Sandbox](#52-zero-trust-docker-sandbox)
-  - [5.3 Kullanıcı İzolasyonu ve Kimlik Doğrulama](#53-kullanıcı-izolasyonu-ve-kimlik-doğrulama)
-  - [5.4 LLM ve Çevre Değişkeni Güvenliği](#54-llm-ve-çevre-değişkeni-güvenliği)
+  - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
+  - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
@@ -117,17 +109,19 @@
 **Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
 
 ### Temel Özellikler
-- **Çift Arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/`)
-- **Çoklu LLM Sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
-- **Multi-Agent ve P2P Delegasyon Mimarisi:** Görevleri analiz edip uzmanlara dağıtan yönlendirici (Supervisor) ve ajanların kendi aralarında doğrudan iletişim kurup geri bildirim verebildiği (P2P - Coder ↔ Reviewer) gelişmiş orkestrasyon altyapısı.
-- **Canlı Ajan Telemetrisi (Event-Stream):** Ajanların yürüttüğü süreçleri ve kararları, WebSocket ve `AgentEventBus` üzerinden Web arayüzüne anlık olarak yansıtan durum akışı.
-- **Kalıcı Çoklu Kullanıcı (Multi-User) Katmanı:** Bearer Token ve fail-closed güvenlik prensipleriyle korunan, PostgreSQL/SQLite destekli kullanıcı izolasyonu ve oturum yönetimi.
-- **Telemetri, Bütçe ve Admin Paneli:** Prometheus/Grafana entegrasyonu ile USD bazlı API maliyeti, token takibi ve yönetici kullanıcılar için Web UI üzerinden aktif/global sistem kotalarının izlenebildiği merkezi yönetim arayüzü.
-- **Dinamik QA ve Regresyon Sinyali:** Coder ajanı ile P2P etkileşimde olan, hedefli test senaryoları üretip çalıştırarak kodu onaylayan/reddeden `ReviewerAgent` döngüsü.
-- **Hibrit RAG (Vektör Bellek):** RRF destekli, oturum izolasyonlu ChromaDB + BM25 + Keyword belge arama motoru.
-- **Zero-Trust Sandbox İzolasyonu:** Kod çalıştırma süreçleri için ağ erişimi (network) engellenmiş, donanım kaynakları (RAM/CPU) sınırlandırılmış ve mikro-VM (gVisor/Kata) altyapısına hazır güvenlik ortamı.
-- **Derin Güvenlik:** OpenClaw 3 katmanlı erişim kısıtlaması, path traversal engeli ve WebSocket düzeyinde katı Auth Handshake zorunluluğu.
-- **Donanım Uyumlu GPU Desteği:** CUDA, FP16 mixed precision, çoklu GPU ve WSL2 ortam desteği.
+- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
+- **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
+- **Multi-Agent Mimarisi:** Görevleri analiz edip ilgili uzmanlara (Coder, Researcher) dağıtan yönlendirici (Supervisor) altyapısı
+- **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
+- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`).
+- **Kurumsal Web UI Admin Paneli:** Yönetici rolüne sahip kullanıcılar için sistem kullanımını, aktif kullanıcıları ve global kotaları gösteren merkezi yönetim arayüzü.
+- **QA ve Regresyon Sinyali:** Coder ajanı ile ortak çalışan, üretilen kodu test edip onaylayan/reddeden gelişmiş `ReviewerAgent` döngüsü.
+- **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
+- **RAG (Vektör Bellek):** ChromaDB + BM25 + Keyword hibrit arama (RRF destekli)
+- **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
+- **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
+- **Kalıcı bellek:** Fernet (AES-128-CBC) ile opsiyonel şifreli oturum depolama
+- **Docker izolasyonu:** Kod çalıştırma sandbox ortamı
 
 ---
 
@@ -135,7 +129,7 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-```text
+```
 sidar_project/
 ├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── cli.py                     # CLI terminal arayüzü giriş noktası
@@ -146,12 +140,6 @@ sidar_project/
 ├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
 ├── environment.yml            # Conda/pip bağımlılıkları
 ├── pyproject.toml             # Ruff + Mypy kalite standartları
-├── alembic.ini                # Veritabanı migration yapılandırması
-├── run_tests.sh               # Test çalıştırma ve kalite kapısı (coverage) betiği
-├── install_sidar.sh           # Sandbox ve host kurulum betiği
-│
-├── .github/
-│   └── workflows/             # CI/CD ve kalite kapısı iş akışları (ci.yml, migration-cutover-checks.yml)
 │
 ├── agent/
 │   ├── __init__.py
@@ -163,10 +151,7 @@ sidar_project/
 │   ├── core/
 │   │   ├── __init__.py        # SupervisorAgent, TaskEnvelope, TaskResult export
 │   │   ├── supervisor.py      # SupervisorAgent — role router + orchestrator (87 satır)
-│   │   ├── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
-│   │   ├── event_stream.py    # Agent Event Bus ve Olay Yayınlama
-│   │   ├── memory_hub.py      # Multi-agent bağlam notları ve paylaşımlı bellek
-│   │   └── registry.py        # Uzman rollerin çalışma zamanı kaydı
+│   │   └── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
 │   └── roles/
 │       ├── __init__.py        # CoderAgent, ResearcherAgent, ReviewerAgent export
 │       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
@@ -181,12 +166,7 @@ sidar_project/
 │   ├── memory.py              # Kalıcı çok oturumlu bellek
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
 │
-├── docker/
-│   ├── grafana/               # Kurumsal observability dashboard/provisioning tanımları
-│   └── prometheus/            # LLM ve metrik scraping yapılandırması
-│
 ├── migrations/                # Alembic veritabanı geçiş (migration) dosyaları
-├── runbooks/                  # Operasyonel prosedürler (production-cutover-playbook.md)
 ├── scripts/                   # Veritabanı taşıma (SQLite -> PG) ve denetim betikleri
 │
 ├── managers/
@@ -200,19 +180,27 @@ sidar_project/
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
 ├── web_ui/                    # Modüler Web UI (toplam ~3.800 satır)
-│   ├── index.html             # HTML iskeleti
+│   ├── index.html             # HTML iskeleti (461 satır)
 │   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
 │   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
 │   ├── sidebar.js             # Oturum yönetimi (394 satır)
 │   ├── rag.js                 # RAG belge UI (131 satır)
-│   └── app.js                 # Uygulama başlatma, tema
+│   └── app.js                 # Uygulama başlatma, tema (339 satır)
 │
-├── tests/                     # 69+ test modülü (~15.974 satır)
-│   └── ...                    # (test_sidar.py, test_agent_*.py, test_migration_*.py vb.)
+├── tests/                     # 69 test modülü
+│   ├── test_sidar.py
+│   ├── test_tooling_registry.py
+│   ├── test_parallel_react_improvements.py
+│   ├── test_github_upload_improvements.py
+│   ├── test_core_init_improvements.py
+│   ├── test_managers_init_improvements.py
+│   ├── test_claude_md_improvements.py
+│   ├── test_sidar_md_improvements.py
+│   └── test_*_improvements.py
 │
 ├── data/                      # RAG, bellek verileri ve yerel SQLite veritabanı (sidar.db)
 ├── CLAUDE.md                  # Geliştirici rehberi
-├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi
+├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi (Draft, v2.11.x hedefi)
 └── .env.example               # Ortam değişkeni şablonu
 ```
 
@@ -557,46 +545,7 @@ kullanıcı mesajı
 
 ---
 
-### 3.7e `agent/core/contracts.py` — Görev Zarfı ve Sözleşmeleri (30 satır)
-
-**Amaç:** Supervisor ile uzman ajanlar arasındaki veri alışverişini standartlaştıran görev/delegasyon sözleşmelerini tanımlar.
-
-**Öne Çıkanlar:**
-- `TaskEnvelope`: role ajanlara taşınan görev bağlamı (intent, context, inputs)
-- `TaskResult`: role ajan çıktılarının tek tip formatta supervisor'a dönüşü
-- `P2PMessage` ve `DelegationRequest`: ajanlar arası doğrudan delegasyon zarfı
-- `DelegationResult`: delegasyonun durum ve içerik raporu
-
----
-
-### 3.7f `agent/core/event_stream.py` — Agent Event Bus ve Olay Yayınlama
-
-**Amaç:** Supervisor/Coder/Reviewer akışındaki durum olaylarını process-içi bir event bus üzerinden yayınlar.
-
-**Öne Çıkanlar:**
-- `AgentEvent` dataclass (`ts`, `source`, `message`)
-- `AgentEventBus.subscribe()` ile kuyruk tabanlı abonelik
-- `publish()` içinde `QueueFull` olduğunda abonelik düşürme (backpressure güvenliği)
-- `get_agent_event_bus()` ile modül-seviyesi singleton event bus erişimi
-
----
-
-### 3.7g `agent/core/memory_hub.py` ve `agent/core/registry.py` — Bellek Merkezi ve Kayıt
-
-**Amaç:** Multi-agent koordinasyonda kısa ömürlü bağlam notlarını ve aktif uzman ajan kayıtlarını yönetir.
-
-**Öne Çıkanlar (`memory_hub.py`):**
-- `MemoryHub`: global notlar + role-bazlı not havuzu
-- Senkron ve asenkron (`aadd_*`, `aglobal_context`, `arole_context`) API eşlenikleri
-- `RoleMemory` ile role-headline bazlı hafif bellek modeli
-
-**Öne Çıkanlar (`registry.py`):**
-- `AgentRegistry.register/get/has/roles` ile role->agent çözümleme
-- Supervisor'ın uzman rolleri runtime'da keşfetmesini sağlayan minimal kayıt katmanı
-
----
-
-### 3.7h `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
 
 **Amaç:** Alan odaklı uzman ajanları kapsar.
 
@@ -937,9 +886,9 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı (989 satır)
+### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı
 
-**Amaç:** Kurumsal/saaS mimaride kullanıcı, kimlik doğrulama token'ları, oturumlar ve mesaj geçmişi için kalıcı veri katmanını sağlar.
+**Amaç:** Çoklu kullanıcı (multi-user) SaaS mimarisi için kullanıcı, oturum, mesaj ve yetkilendirme (token) verilerinin kalıcı ve izole olarak saklanmasını sağlar.
 
 **Özellikler:**
 - `Database` sınıfı ile asenkron bağlantı yönetimi (SQLAlchemy tabanlı).
@@ -949,7 +898,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi (235 satır)
+### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi
 
 **Amaç:** LLM çağrılarının operasyonel metriklerini toplamak, Prometheus'a aktarmak ve veritabanı üzerinden günlük kullanıcı kotalarını izlemek.
 
@@ -961,7 +910,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı (181 satır)
+### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı
 
 **Amaç:** `CoderAgent` tarafından yazılan kodu denetleyen, test koşturan ve projenin kalite standartlarına uygunluğunu doğrulayan uzman kalite kontrol ajanıdır.
 
@@ -972,47 +921,38 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.23 `migrations/`, `scripts/` ve `runbooks/` — Geçiş ve Operasyon Araçları
+### 3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
 
-**Amaç:** Projenin kurumsal veritabanına taşınması, altyapı izolasyonu ve CI/CD telemetrisi için kullanılan operasyonel betikler.
-
-**Kritik Betikler ve Klasörler:**
-- **`migrations/` (Alembic):** Veritabanı şema versiyonlaması (`0001_baseline_schema.py` yetkilendirme tablolarını kurar).
-- **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite geçmiş verilerinin PostgreSQL'e taşınmasını sağlayan veri göçü betiği.
-- **`scripts/install_host_sandbox.sh`:** v3.0 Zero-Trust güvenlik kısıtlamaları için host tarafındaki (Kata/gVisor) izole container ağını hazırlayan kurulum betiği.
-- **`scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh`:** CI süreçlerinde test kapsamı ve kod kalitesini ölçüp telemetri üreten kalite kapısı betikleri.
-- **`scripts/load_test_db_pool.py`:** Veritabanı bağlantı havuzu davranışını ve yük senaryolarını doğrulamak için kullanılan yardımcı test betiği.
-- **`runbooks/production-cutover-playbook.md`:** Üretim ortamına (production) geçiş, onaylama ve geri alma adımlarını barındıran operasyon prosedürü.
-
----
-
-### 3.24 `docker/` — Gözlemlenebilirlik (Observability) Yapılandırması
-
-**Amaç:** Sistemin donanım, LLM yanıt süreleri ve bütçe/token kotalarının canlı izlenebilmesi için Prometheus ve Grafana altyapısını sağlar.
+**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçları.
 
 **Özellikler:**
-- **`docker/prometheus/prometheus.yml`:** FastAPI sunucusunun `/metrics` endpoint'indeki (`core/llm_metrics.py` kaynaklı) metriklerin hangi aralıklarla çekileceğini (scraping) tanımlar.
-- **`docker/grafana/dashboards/sidar-llm-overview.json`:** Kullanıcı bazlı token harcaması, USD maliyeti ve sistem kaynakları için hazırlanmış kurumsal izleme paneli şablonu.
-- **`docker/grafana/provisioning/`:** Grafana başladığında veri kaynağını (Datasource) ve gösterge panellerini otomatik olarak içeri aktaran (auto-provision) ayarlar.
+- **`migrations/` (Alembic):** Veritabanı şema versiyonlaması. `0001_baseline_schema.py` ile temel yetkilendirme ve oturum tablolarının kurulumunu yönetir.
+- **`scripts/migrate_sqlite_to_pg.py`:** Eski yerel SQLite tabanlı geçmiş verilerin kayıpsız bir şekilde merkezi PostgreSQL veritabanına taşınmasını sağlayan ETL betiği.
 
 ---
 
-### 3.25 Altyapı Dosyaları (CI/CD, Dockerfile)
+### 3.24 Altyapı Dosyaları
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
-- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır.
-- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001).
-- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir.
-- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir.
-- **Varsayılan:** `ACCESS_LEVEL=sandbox`.
-
-#### `.github/workflows/`
-- **`ci.yml`:** Pull request akışlarında kod kalitesi ve test doğrulamalarını (lint, Mypy, Pytest) yapar.
-- **`migration-cutover-checks.yml`:** Veritabanı taşıma script'lerinin ve Alembic geçişlerinin güvenliğini denetleyen CI emniyet ağı.
+- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır
+- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001)
+- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir
+- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
+- **Varsayılan:** `ACCESS_LEVEL=sandbox`
 
 #### `docker-compose.yml` (209 satır)
-5 servis tanımı (`sidar-ai` (CPU), `sidar-gpu`, `sidar-web`, `sidar-web-gpu`, `redis`). Rate-limit operasyonları için internal redis portu ayrılmıştır ve tüm uygulamalar `/var/run/docker.sock` ile sandbox çalıştırma erişimine sahiptir.
+5 servis tanımı (Redis dahil):
+
+| Servis | Mod | CPU Limit | RAM Limit | Port |
+|--------|-----|-----------|-----------|------|
+| `sidar-ai` | CLI + CPU | 2.0 | 4 GB | — |
+| `sidar-gpu` | CLI + GPU | 4.0 | 8 GB | — |
+| `sidar-web` | Web + CPU | 2.0 | 4 GB | 7860 |
+| `sidar-web-gpu` | Web + GPU | 4.0 | 8 GB | 7861 |
+| `redis` | Rate-limit store | — | — | 6379 (internal) |
+
+Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 
 ---
 
@@ -1020,29 +960,39 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Sidar projesi, v3.0 sürümü itibarıyla monolitik bir araç olmaktan çıkıp, kurumsal standartlarda, olay yönelimli (event-driven) ve çoklu ajanlı (multi-agent) bir mimariye evrilmiştir.
+### 4.1 Güçlü Yönler
 
-### 4.1 Olay Yönelimli Multi-Agent Mimarisi (Event-Driven & P2P)
+| Alan | Değerlendirme |
+|------|---------------|
+| **Asenkron Mimari** | `async/await` ve `asyncio.to_thread` tutarlı kullanımı; event loop hiçbir yerde bloklanmıyor |
+| **Güvenlik Derinliği** | 3 katmanlı erişim + path traversal + symlink + hassas yol koruması |
+| **Yapısal LLM Çıktısı** | Ollama, OpenAI ve Anthropic structured output ile JSON schema zorlaması; Pydantic doğrulaması |
+| **Hata Toleransı** | Her araç try/except; ChromaDB yoksa BM25'e, BM25 yoksa keyword'e fallback |
+| **Stream Güvenliği** | UTF-8 incremental decoder ile kırık TCP paketleri güvenle birleştirilir |
+| **Bellek Güvenliği** | Fernet şifreleme, karantina mekanizması, RLock ile thread safety |
+| **Konfigürasyon** | Tek merkezi Config; hardcoded değer yok; lazy hardware init |
+| **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
+| **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
+| **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
+| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher/Reviewer uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
+| **Dağıtık Multi-Agent Orkestrasyonu** | Görevlerin tek ajanda toplanmak yerine SupervisorAgent tarafından uzman rollere (Coder, Researcher, Reviewer) dağıtılması; modülerlik, hata izolasyonu ve QA kalitesini artırır |
+| **Kurumsal Altyapı (SaaS-Ready)** | `core/db.py` + Alembic geçişleri ile kullanıcı, kota ve oturumların izole edildiği Bearer Token tabanlı kalıcı veri mimarisi |
+| **Gözlemlenebilirlik (Observability)** | `core/llm_metrics.py` + Prometheus + Grafana entegrasyonu ile token tüketimi, USD maliyet ve LLM latency metriklerinin gerçek zamanlı izlenmesi |
+| **Çoklu LLM Ekosistemi** | Ollama (yerel) bağımlılığının kırılarak Gemini, OpenAI ve Anthropic istemcilerinin polimorfik (`BaseLLMClient`) bir yapıyla tek çatı altında buluşturulması |
+| **Çift Yönlü İletişim** | WebSocket altyapısı ile gerçek zamanlı çift yönlü mesajlaşma ve `asyncio.Task` tabanlı anlık işlem iptali (`cancel`) |
 
-Sistem, ReAct döngüsünü kullanarak görevleri merkezi bir yönlendirici (Supervisor) üzerinden alıp ilgili uzman ajanlara (Coder, Researcher, Reviewer) dağıtır.
-- **P2P Delegasyon:** Ajanlar sadece merkezi otoriteyle değil, kendi aralarında da doğrudan sözleşme (contract) bazlı iletişim kurabilir. (Örn: Coder'ın yazdığı kodun doğrudan Reviewer ajan tarafından test edilip geri bildirim döngüsüne sokulması).
-- **Event Bus (Olay Veriyolu):** Ajanların düşünce süreçleri, kararları ve yürüttükleri araçlar `AgentEventBus` üzerinden asenkron olarak yayınlanır. Bu yapı, WebSocket aracılığıyla Web arayüzüne milisaniyeler içinde "Canlı Telemetri" akışı sağlar.
+### 4.2 Kısıtlamalar
 
-### 4.2 Katmanlı Güvenlik ve Zero-Trust İzolasyonu
-
-- **Zero-Trust Sandbox:** AI'ın ürettiği kodlar, internet erişimi (network) tamamen engellenmiş, CPU/RAM limitleri donanımsal olarak kısıtlanmış izole Docker konteynerlerinde çalıştırılır. Altyapı, yüksek güvenlikli Kata/gVisor Container runtime'larını destekleyecek şekilde tasarlanmıştır.
-- **Erişim Kontrolü (OpenClaw):** Dosya sistemi müdahaleleri (okuma/yazma/silme) üç katmanlı bir güvenlik yöneticisi (`managers/security.py`) tarafından denetlenir. "Fail-Closed" prensibi ile path traversal ve yetkisiz erişim denemeleri anında engellenir.
-- **Oturum ve Veri Yalıtımı:** Çoklu kullanıcı desteği kapsamında, her kullanıcının sohbet belleği, dosyaları ve vektörel veritabanı (ChromaDB) kriptografik tokenler aracılığıyla birbirinden yalıtılmıştır.
-
-### 4.3 Kurumsal Gözlemlenebilirlik (LLMOps & Observability)
-
-- **Metrik ve Telemetri:** Tüm LLM istekleri, token tüketimleri ve API maliyetleri (USD) `core/llm_metrics.py` üzerinden anlık olarak ölçülür.
-- **Grafana & Prometheus Entegrasyonu:** Sistemin donanım yükü (RAM/CPU/GPU), ajanların yanıt gecikmeleri ve kota harcamaları, sağlanan Docker metrik altyapısı sayesinde kurumsal gösterge panellerinden (Grafana Dashboard) anlık olarak izlenebilmektedir.
-
-### 4.4 Hibrit Veri Katmanı (Hybrid Data Layer)
-
-- **Vektörel ve İlişkisel Bellek:** Proje dosyaları ve RAG dokümanları ChromaDB üzerinde vektörel olarak indekslenirken; yetkilendirme, kota bilgileri ve uygulama şemaları Alembic ile versiyonlanan ilişkisel veritabanında (SQLite / PostgreSQL) tutulur.
-- **RRF (Reciprocal Rank Fusion):** RAG motoru, hem BM25 (anahtar kelime) hem de anlamsal (vektör) aramayı birleştirerek yüksek isabetli belge getirimi (hybrid search) sağlar.
+| Alan | Durum |
+|------|-------|
+| **Rate Limiting Altyapısı** | Redis gerektirir; Redis erişilemezse local fallback devreye girer (dağıtık tutarlılık geçici olarak düşer) |
+| **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
+| **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
+| **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
+| **Multi-Agent Bakım Yükü** | Özellik hâlâ `ENABLE_MULTI_AGENT` bayrağı ile deneysel/paralel çalışıyor; eski `sidar_agent` akışı ile yeni yapının bir süre daha birlikte bakımı gerekiyor |
+| **Multi-Agent İletişim Maliyeti (Overhead)** | Coder → Reviewer geri besleme döngüleri ek LLM çağrısı oluşturur; toplam token tüketimini ve yanıt gecikmesini (latency) artırabilir |
+| **Altyapı ve Operasyonel Karmaşıklık** | PostgreSQL, Prometheus ve Grafana gibi ek servisler docker-compose topolojisini büyütür; RAM ihtiyacı ile kurulum/bakım karmaşıklığını artırır |
+| **API Limit ve Maliyetleri** | Bulut LLM sağlayıcıları (OpenAI, Anthropic) yerel modellere kıyasla token maliyeti ve vendor API rate-limit yönetimi zorunluluğu getirir |
 
 ---
 
@@ -1050,33 +1000,38 @@ Sistem, ReAct döngüsünü kullanarak görevleri merkezi bir yönlendirici (Sup
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Sidar projesi, v3.0 sürümü ile birlikte "Fail-Closed" (Varsayılan Olarak Kapalı) prensibine dayalı, çok katmanlı bir güvenlik mimarisine geçiş yapmıştır. Sistemin temel güvenlik bileşenleri şunlardır:
+### 5.1 Güvenlik Kontrolleri Özeti
 
-### 5.1 OpenClaw Güvenlik Katmanı (Erişim Kontrolü)
+| Kontrol | Durum | Konum |
+|---------|-------|-------|
+| Path traversal engelleme | ✓ Aktif | `security.py:86` |
+| Symlink koruması | ✓ Aktif | `security.py:96` |
+| Hassas yol engelleme | ✓ Aktif | `security.py:32-37` |
+| Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
+| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `daily_llm_usage` |
+| Web UI Kurumsal Yetkilendirme | ✓ Aktif (admin erişimi kısıtlı) | `web_server.py` — `basic_auth_middleware`, admin panel endpoint kontrolleri |
+| Gelişmiş Sandbox (Runtime Hardening) | 🟡 Hazırlık tamamlandı | `scripts/install_host_sandbox.sh` — gVisor/Kata runtime hazırlıkları |
+| DDoS koruması | ✓ IP başına 120 istek/60 sn | `web_server.py` — `ddos_rate_limit_middleware` |
+| CORS kısıtlaması | ✓ Yalnızca localhost | `web_server.py:66` |
+| Rate limiting | ✓ 3 katman | `web_server.py` — `rate_limit_middleware` |
+| Bellek şifreleme | Opsiyonel (Fernet) | `memory.py:49` |
+| Docker kod izolasyonu | Opsiyonel | `code_manager.py:63` |
+| GitHub binary engelleme | ✓ Aktif | `github_manager.py:33` |
+| Git upload blacklist | ✓ Aktif | `github_upload.py:18` |
+| Bilinmeyen erişim seviyesi | ✓ Sandbox'a normalize | `security.py:75` |
+| Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `github_manager.py`, `web_server.py` |
+| GitHub Webhook İmzası | ✓ Aktif (HMAC-SHA256) | `web_server.py` — `/api/webhook` |
+| Büyük Dosya Okuma Limit | ✓ 1 MB sınırı | `web_server.py` — `/file-content` |
 
-Ajanların dosya sistemi ve işletim sistemi seviyesindeki tüm işlemleri `managers/security.py` üzerinden 3 farklı seviyede denetlenir:
-- **Seviye 0 (READ_ONLY):** Ajan sadece dosya okuyabilir ve dizinleri listeleyebilir. Yazma, silme veya komut çalıştırma yetkisi yoktur.
-- **Seviye 1 (RESTRICTED - Varsayılan):** Ajan sadece izin verilen çalışma dizini (workspace) içinde dosya okuyup yazabilir. Alt dizinlere geçiş (Path Traversal - `../` vb.) saldırıları otomatik algılanıp engellenir.
-- **Seviye 2 (UNRESTRICTED):** Güvenilir yerel ortamlarda serbest okuma/yazma ve host üzerinde komut çalıştırma izni verir.
+### 5.2 Güvenlik Seviyeleri Davranışı
 
-### 5.2 Zero-Trust Docker Sandbox
+```
+RESTRICTED → yalnızca okuma + analiz (yazma/çalıştırma/shell YOK)
+SANDBOX    → okuma + /temp yazma + Docker Python REPL
+FULL       → tam erişim (shell, git, npm, proje geneli yazma)
+```
 
-Ajan tarafından üretilen kodlar ve test betikleri doğrudan makinede değil, katı kısıtlamalara sahip izole bir Docker kapsayıcısında çalıştırılır:
-- **Ağ İzolasyonu (Network İzolasyonu):** Kapsayıcının dış dünya ve internet erişimi (`network_mode="none"`) tamamen kapalıdır. Bu sayede zararlı paket indirme veya dışarıya veri sızdırma riskleri engellenir.
-- **Kaynak Kısıtlamaları:** CPU ve RAM kullanımı Docker düzeyinde sınırlandırılarak "Denial of Service (DoS)" veya kaynak tüketme senaryoları önlenir.
-- **Non-Root Kullanıcı:** İşlemler root yetkisiyle değil, en alt yetki seviyesindeki `sidaruser` (UID: 10001) ile gerçekleştirilir.
-- **Mikro-VM Hazırlığı:** İzole altyapı, daha yüksek güvenlik isteyen kurumlar için Kata Containers ve gVisor gibi Kernel-seviyesi (mikro-VM) container runtime'ları ile uyumlu şekilde yapılandırılmıştır.
-
-### 5.3 Kullanıcı İzolasyonu ve Kimlik Doğrulama
-
-Çoklu kullanıcı (Multi-User) veri güvenliği gereği:
-- **API ve Token Koruması:** Tüm REST API uç noktaları ve veri tabanı istekleri Bearer Token doğrulamasından geçmektedir.
-- **WebSocket Auth Handshake:** Web arayüzüne canlı telemetri aktaran asenkron WebSocket bağlantıları anonim erişime kapalıdır. Bağlantı anında zorunlu "Auth Handshake" (yetki el sıkışması) yapılır; yetkisiz erişimler saniyesinde düşürülür.
-- **Kriptografik Veri Yalıtımı:** Kullanıcıların sohbet hafızaları (memory), RAG dokümanları (ChromaDB koleksiyonları) ve çalışma alanları oturum (session) bazlı olarak birbirinden yalıtılmıştır.
-
-### 5.4 LLM ve Çevre Değişkeni Güvenliği
-
-API anahtarları (OpenAI, Gemini, Anthropic) ve veritabanı şifreleri ortam değişkenleri (`.env`) üzerinden yönetilir. Güvenlik yöneticisi sayesinde bu hassas verilerin ajan belleğine sızması veya telemetri loglarında (Prometheus/Grafana) ifşa olması engellenir.
+**QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, sistemin kendi kendine zararlı veya projenin mimarisini bozacak asenkron olmayan bir kod yazmasını engellemek için ReviewerAgent devreye girer. CoderAgent'ın ürettiği tüm sistem değişiklikleri, ReviewerAgent'ın statik güvenlik analizinden ve testlerinden geçmek zorundadır.
 
 ---
 
