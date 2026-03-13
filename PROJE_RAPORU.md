@@ -14,7 +14,7 @@
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
   - [3.1 `config.py` — Merkezi Yapılandırma (589 satır)](#31-configpy-merkezi-yapılandırma-589-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı (341 satır)](#32-mainpy-akıllı-başlatıcı-341-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı (225 satır)](#32-mainpy-akıllı-başlatıcı-225-satır)
   - [3.3 `cli.py` — CLI Arayüzü (288 satır)](#33-clipy-cli-arayüzü-288-satır)
   - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)](#34-web_serverpy-fastapi-web-sunucusu-1173-satır)
   - [3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)](#35-agentsidar_agentpy-ana-ajan-1698-satır)
@@ -303,7 +303,7 @@ sidar_project/
 
 ---
 
-### 3.2 `main.py` — Akıllı Başlatıcı (341 satır)
+### 3.2 `main.py` — Akıllı Başlatıcı (225 satır)
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
 
@@ -312,14 +312,14 @@ sidar_project/
 | Fonksiyon | Açıklama |
 |-----------|----------|
 | `print_banner()` | ANSI renkli ASCII art banner |
-| `ask_choice(prompt, options, default)` | Güvenli menü seçimi (geçersiz giriş döngüsü) |
+| `ask_choice(prompt, options, default_key)` | Güvenli menü seçimi (geçersiz giriş döngüsü) |
 | `ask_text(prompt, default)` | Metin girişi (Enter = varsayılan) |
 | `confirm(prompt, default_yes)` | Y/n onay istemi |
-| `preflight(provider)` | `.env` varlığı, Python sürümü, Ollama/Gemini erişim kontrolü |
+| `preflight(provider)` | `.env` varlığı, Python sürümü, Ollama/Gemini/OpenAI/Anthropic erişim kontrolü |
 | `build_command(mode, provider, level, log, extra_args)` | `cli.py` veya `web_server.py` komutu oluşturur |
-| `_stream_pipe(pipe, file, prefix, color, mirror)` | Thread'de pipe akışını bellek dostu okur |
-| `_run_with_streaming(cmd, log_path)` | Çocuk süreç stdout/stderr canlı yayınlar; opsiyonel dosya logu |
-| `execute_command(cmd, capture_output, child_log)` | `subprocess.run` veya streaming ile çalıştırır |
+| `_stream_pipe(pipe, file_obj, prefix, color, mirror)` | Thread'de pipe akışını bellek dostu okur |
+| `_run_with_streaming(cmd, child_log_path)` | Çocuk süreç stdout/stderr canlı yayınlar; opsiyonel dosya logu |
+| `execute_command(cmd, capture_output, child_log_path)` | `subprocess.run` veya streaming ile çalıştırır |
 | `run_wizard()` | 4 adımlı etkileşimli menü |
 
 **`--quick` Mod Argümanları:**
@@ -1141,7 +1141,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | Dosya | Satır |
 |---|---:|
 | `config.py` | 589 |
-| `main.py` | 341 |
+| `main.py` | 225 |
 | `cli.py` | 288 |
 | `web_server.py` | 1.376 |
 | `agent/sidar_agent.py` | 1.651 |
