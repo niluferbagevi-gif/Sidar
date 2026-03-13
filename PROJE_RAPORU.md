@@ -26,7 +26,7 @@
   - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
   - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-723-satır)
-  - [3.9 `core/memory.py` — Konuşma Belleği (402 satır)](#39-corememorypy-konuşma-belleği-402-satır)
+  - [3.9 `core/memory.py` — Konuşma Belleği (DB tabanlı, v3.0)](#39-corememorypy-konuşma-belleği-db-tabanlı-v30)
   - [3.10 `core/rag.py` — RAG Motoru (783 satır)](#310-coreragpy-rag-motoru-783-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)](#311-managerssecuritypy-güvenlik-yöneticisi-290-satır)
   - [3.12 `managers/code_manager.py` — Kod Yöneticisi (766 satır)](#312-managerscode_managerpy-kod-yöneticisi-766-satır)
@@ -39,9 +39,8 @@
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)](#319-github_uploadpy-github-yükleme-aracı-294-satır)
   - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy-veritabanı-ve-çoklu-kullanıcı-altyapısı)
   - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy-telemetri-ve-bütçe-yönetimi)
-  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#322-agentrolesreviewer_agentpy-qa-ve-i̇nceleme-ajanı)
-  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#323-migrations-ve-scripts-geçiş-ve-operasyon-araçları)
-  - [3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları](#324-docker-ve-runbooks-telemetri-ve-production-altyapı-dosyaları)
+  - [3.22 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#322-migrations-ve-scripts-geçiş-ve-operasyon-araçları)
+  - [3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları](#323-docker-ve-runbooks-telemetri-ve-production-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -272,35 +271,31 @@ sidar_project/
 
 ### 3.1 `config.py` — Merkezi Yapılandırma (570 satır)
 
-**Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler ve donanım tespiti yapar.
+**Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler, donanım tespiti yapar ve v3.0 kurumsal çalışma profillerini merkezi olarak yönetir.
 
 **Kritik Bileşenler:**
 
 | Bileşen | Açıklama |
 |---------|----------|
 | `get_bool_env / get_int_env / get_float_env / get_list_env` | Type-safe ortam değişkeni okuma yardımcıları |
-| `HardwareInfo` (dataclass) | CUDA tespiti sonuçlarını tutar |
-| `_is_wsl2()` | `/proc/sys/kernel/osrelease` ile WSL2 ortam tespiti |
-| `check_hardware()` | PyTorch üzerinden GPU tespiti; pynvml ile sürücü bilgisi |
-| `Config` (sınıf) | Tüm sistem parametrelerini sınıf attribute olarak tutar |
+| `HardwareInfo` (dataclass) | CUDA/WSL2 donanım tespiti sonuçlarını tutar |
+| `Config` (sınıf) | Tüm sistem parametrelerini sınıf attribute olarak toplar |
+| `validate_critical_settings()` | Sağlayıcı anahtarları, şifreleme anahtarı ve kritik ayar doğrulamaları |
 
-**`Config` Sınıfı Parametre Grupları:**
+**`Config` Sınıfı Parametre Grupları (v3.0):**
 
-- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `OLLAMA_URL`, `CODING_MODEL`, `TEXT_MODEL`
+- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, model seçim parametreleri
+- **Veritabanı:** `DATABASE_URL`, `DB_POOL_SIZE`, `DB_SCHEMA_VERSION_TABLE`, `DB_SCHEMA_TARGET_VERSION`
 - **Güvenlik:** `ACCESS_LEVEL`, `MEMORY_ENCRYPTION_KEY`
-- **GPU/Donanım:** `USE_GPU`, `GPU_DEVICE`, `GPU_COUNT`, `CUDA_VERSION`, `GPU_MEMORY_FRACTION`, `GPU_MIXED_PRECISION`, `MULTI_GPU`
-- **ReAct:** `MAX_REACT_STEPS` (10), `REACT_TIMEOUT` (60), `SUBTASK_MAX_STEPS` (5), `AUTO_HANDLE_TIMEOUT` (12)
-- **Rate Limiting:** `RATE_LIMIT_CHAT` (20/dk), `RATE_LIMIT_MUTATIONS` (60/dk), `RATE_LIMIT_GET_IO` (30/dk)
-- **RAG:** `RAG_DIR`, `RAG_TOP_K` (3), `RAG_CHUNK_SIZE` (1000), `RAG_CHUNK_OVERLAP` (200), `RAG_FILE_THRESHOLD` (20000)
-- **Web Arama:** `SEARCH_ENGINE`, `TAVILY_API_KEY`, `GOOGLE_SEARCH_API_KEY`, `WEB_SEARCH_MAX_RESULTS` (5)
-- **Docker REPL:** `DOCKER_PYTHON_IMAGE` (`python:3.11-alpine`), `DOCKER_EXEC_TIMEOUT` (10sn)
-- **Loglama:** `RotatingFileHandler` (10 MB / 5 yedek), UTF-8 zorunlu
-- **Mimari:** `ENABLE_MULTI_AGENT` (Multi-agent Supervisor modunu aktif eder)
+- **Docker Zero-Trust Sandbox:** `DOCKER_NETWORK_DISABLED`, `DOCKER_MEM_LIMIT`, `DOCKER_NANO_CPUS`, `DOCKER_MICROVM_MODE`, `DOCKER_ALLOWED_RUNTIMES`, `DOCKER_RUNTIME`, `DOCKER_EXEC_TIMEOUT`
+- **Observability:** `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`
+- **Rate Limiting:** `RATE_LIMIT_CHAT`, `RATE_LIMIT_MUTATIONS`, `RATE_LIMIT_GET_IO`, `REDIS_URL`
+- **RAG:** `RAG_DIR`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_FILE_THRESHOLD`
+- **Mimari:** `ENABLE_MULTI_AGENT`, `REVIEWER_TEST_COMMAND`
 
 **Dikkat Noktaları:**
-- `_ensure_hardware_info_loaded()` ile lazy-load: import anında GPU yükleme yan etkisi yoktur.
-- `validate_critical_settings()` Gemini API anahtarı ve Fernet anahtar formatını başlangıçta doğrular.
-- Tüm sınıf attribute'ları modül import anında bir kez değerlendirilir; çalışma zamanı override için instance attribute kullanılmalıdır.
+- Donanım bilgisi lazy-load yaklaşımıyla alınır; import anında ağır GPU yan etkisi oluşturmaz.
+- v3.0 ile DB ve sandbox parametreleri tek merkezden yönetildiği için runtime profiller arasında sapma riski düşürülmüştür.
 
 ---
 
@@ -367,59 +362,28 @@ Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu
 
 ### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)
 
-**Amaç:** WebSocket destekli asenkron ve çift yönlü chat web arayüzü.
+**Amaç:** WebSocket destekli asenkron chat, DB tabanlı kimlik doğrulama ve kurumsal metrik/bütçe uçlarını tek API yüzeyinde sunar.
 
-**v2.8.0 Eklentisi:** `StaticFiles` middleware ile `web_ui/` dizininin `/static` yolu üzerinden servis edilmesi sağlandı. `index.html` ayrı rotası `/` → `FileResponse` ile korunuyor; statik JS/CSS dosyaları performanslı ve güvenli şekilde sunuluyor.
+**Kurumsal v3.0 Öne Çıkanlar:**
+- **Bearer Token middleware:** HTTP isteklerinde zorunlu kimlik doğrulama (`basic_auth_middleware`).
+- **Auth uçları:** `/auth/register`, `/auth/login`, `/auth/me`.
+- **Bütçe/telemetri uçları:** `/api/budget`, `/metrics/llm`, `/metrics/llm/prometheus`.
+- **WebSocket Auth Handshake:** `/ws/chat` bağlantısında ilk mesajın `action="auth"` ve geçerli token içermesi zorunlu; aksi durumda policy violation ile bağlantı kapatılır.
 
-```python
-app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
-```
-
-**Temel API Endpoint'leri:**
+**Temel API Endpoint'leri (özet):**
 
 | Endpoint | Metod | Açıklama |
 |----------|-------|----------|
 | `/` | GET | `index.html` servis et |
-| `/static/*` | GET | JS/CSS statik dosyaları (`web_ui/`) |
-| `/ws/chat` | WS | Çift yönlü chat akışı + anlık cancel desteği |
-| `/status` | GET | Sistem durumu JSON |
-| `/metrics` | GET | Uptime, istek sayacı |
-| `/sessions` | GET | Tüm oturum listesi |
-| `/sessions` | POST | Yeni oturum oluştur |
-| `/sessions/{id}` | POST | Oturum yükle / başlık güncelle |
-| `/sessions/{id}` | DELETE | Oturum sil |
-| `/clear` | POST | Aktif belleği temizle |
-| `/set-level` | POST | Erişim seviyesini runtime değiştir ve belleğe logla |
-| `/files` | GET | Proje dosyalarını listele |
-| `/file-content` | GET | Dosya içeriğini oku |
-| `/git-info` | GET | Git log/status |
-| `/git-branches` | GET | Branch listesi |
-| `/rag/documents` | GET | RAG belge listesi |
-| `/rag/documents` | POST | URL'den belge ekle |
-| `/rag/documents/{id}` | DELETE | Belge sil |
-| `/rag/search` | GET | RAG arama |
-| `/todo` | GET | Görev listesi |
-| `/github-prs` | GET | GitHub PR listesi |
-| `/ollama-models` | GET | Ollama model listesi |
-| `/health` | GET | Sağlık raporu |
-
-**Güvenlik Mekanizmaları (4 Katman):**
-
-| Middleware | Açıklama |
-|------------|----------|
-| `basic_auth_middleware` | DB tabanlı Bearer token doğrulaması (`Authorization: Bearer <token>`); `auth_tokens` + `users` tablosu ile oturum doğrulama |
-| `ddos_rate_limit_middleware` | IP başına 120 istek/60 sn global DDoS koruması; `/ui/`, `/static/`, `/health` muaf |
-| `rate_limit_middleware` | TTLCache ile 3 katmanlı limit: chat=20/dk, mutations=60/dk, GET I/O=30/dk |
-| `CORSMiddleware` | Yalnızca `localhost/127.0.0.1/0.0.0.0` kökenlerine izin verir |
-
-- WebSocketDisconnect ile kopuk istemci bağlantıları güvenli şekilde kapatılır
-- `/vendor/{file_path}`: yerel vendor dosyaları için güvenli path traversal kontrolü
-- `/api/rag/upload`: drag-drop dosya yükleme; `shutil.copyfileobj` + temp dizin temizleme
-- `/rag/docs`, `/rag/add-file`: yeni RAG endpoint'leri (oturum izolasyonlu)
-- `/github-repos`: repo listesi (`list_repos()` + owner filtresi)
-- `/set-branch`: `_BRANCH_RE` regex ile dal adı enjeksiyon koruması
-
-**Singleton Ajan:** `get_agent()` fonksiyonu ile lazy-init; event loop başladıktan sonra `asyncio.Lock` oluşturulur.
+| `/static/*` | GET | JS/CSS statik dosyaları |
+| `/auth/register` | POST | Yeni kullanıcı kaydı |
+| `/auth/login` | POST | Giriş + access token üretimi |
+| `/auth/me` | GET | Aktif kullanıcı kimliği |
+| `/ws/chat` | WS | Auth handshake + çift yönlü chat akışı |
+| `/api/budget` | GET | LLM maliyet/token/latency bütçe özeti |
+| `/metrics/llm` | GET | LLM metrik snapshot (JSON) |
+| `/metrics/llm/prometheus` | GET | Prometheus formatında LLM metrikleri |
+| `/sessions*` | GET/POST/DELETE | Kullanıcıya izole oturum CRUD işlemleri |
 
 ---
 
@@ -619,12 +583,14 @@ kullanıcı mesajı
 
 ### 3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)
 
-**Amaç:** Alan odaklı uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
+**Amaç:** Uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
 
 **Alt Roller:**
 - `coder_agent.py` — dosya/kod odaklı uzman ajan
 - `researcher_agent.py` — web + RAG odaklı uzman ajan
-- `reviewer_agent.py` — test/kalite denetimi yapan QA uzman ajan
+- `reviewer_agent.py` — test koşturan, kalite kapısı uygulayan QA ajanı
+
+**Not:** `reviewer_agent.py` analizi bu başlığa entegredir; önceki bağımsız 3.22 maddesi kaldırılmıştır.
 
 ---
 
@@ -667,33 +633,23 @@ BaseLLMClient (ABC)
 
 ---
 
-### 3.9 `core/memory.py` — Konuşma Belleği (402 satır)
+### 3.9 `core/memory.py` — Konuşma Belleği (DB tabanlı, v3.0)
 
-**Amaç:** Çok oturumlu, kalıcı, thread-safe ve opsiyonel şifreli bellek yönetimi.
+**Amaç:** Çok kullanıcılı, thread-safe ve DB kalıcılığı kullanan konuşma belleği katmanı sağlar.
 
-**Mimari:**
-- Her oturum `data/sessions/<uuid>.json` dosyasında saklanır
-- `threading.RLock` ile tüm okuma/yazma işlemleri korunur
-- Bozuk dosyalar `.json.broken` uzantısıyla karantinaya alınır (7 gün / 50 dosya retention)
-- `active_session_id: Optional[str]` özelliği ile mevcut oturum RAG izolasyonuna aktarılır
+**v3.0 Mimari Değişim:**
+- Eski JSON dosya temelli kalıcılık yerine `core/db.py` üzerinden **asenkron veritabanı** kalıcılığı kullanılır.
+- Oturum ve mesaj işlemleri kullanıcı kimliği (`user_id`) ile izole edilir.
+- Kimliği doğrulanmamış kullanım `MemoryAuthError` ile **fail-closed** engellenir.
 
-**Fernet Şifrelemesi:**
-- `MEMORY_ENCRYPTION_KEY` ayarlandığında oturum dosyaları AES-128-CBC ile şifrelenir
-- Geçiş dönemi uyumu: şifre çözülemeyen eski dosyalar düz metin olarak okunmaya çalışılır
-- Anahtar geçersizse `ValueError` ile sistem durdurulur (fail-closed)
+**Öne Çıkan API'ler:**
+- Async çekirdek: `acreate_session`, `aload_session`, `adelete_session`, `aget_all_sessions`, `aadd`, `aget_history`, `aupdate_title`, `aset_active_user`
+- Sync uyumluluk katmanı: `create_session`, `load_session`, `delete_session`, `add`, `get_history` (içeride async çağrıları güvenli köprü ile çalıştırır)
 
-**Kaydetme Optimizasyonu:**
-- `_save_interval_seconds = 0.5` ile kısa aralıklı `add()` çağrıları birleştirilir
-- `force_save()` ile anında disk yazımı (clear, session değişimi, başlık güncelleme)
-
-**Özetleme Desteği (v2.9.0 — §14.3.4 Sliding Window):**
-- `needs_summarization()`: bellek penceresinin %80'i dolu VEYA tahminî token > 6000 ise True
-- `apply_summary(text)`: v2.9.0 öncesi tüm geçmiş 2 mesaja indirgeniyor; v2.9.0 itibarıyla **kayan pencere** uygulandı:
-  - Son `keep_last` mesaj (varsayılan: 4) tam olarak korunur
-  - Daha eski mesajlar özet çiftiyle değiştirilir: `[özet_user, özet_assistant, *son_mesajlar]`
-  - `MEMORY_SUMMARY_KEEP_LAST` env değişkeni ile yapılandırılabilir
-
-**Token Tahmini:** `_estimate_tokens()` — UTF-8 Türkçe için ~3.5 karakter/token heuristic kullanır.
+**Davranış Notları:**
+- DB schema başlangıçta otomatik hazırlanır (`connect` + `init_schema`).
+- `needs_summarization` / `apply_summary` ile uzun oturumlarda özetleme korunur.
+- Legacy dosya-karantina metodları DB modunda no-op olarak bırakılmıştır (geriye dönük uyumluluk).
 
 ---
 
@@ -765,18 +721,18 @@ Inkremental güncelleme: belge eklendiğinde/silindiğinde tüm corpus yeniden y
 
 ### 3.12 `managers/code_manager.py` — Kod Yöneticisi (766 satır)
 
-**Amaç:** Dosya okuma/yazma, sözdizimi doğrulama, proje denetimi ve Docker izole kod çalıştırma.
+**Amaç:** Güvenli dosya I/O, sözdizimi denetimi ve Docker tabanlı kod yürütmeyi yönetir.
 
-**Docker REPL Mimarisi:**
-- `_init_docker()` önce `docker.from_env()` dener; başarısız olursa WSL2 socket yollarını (`/var/run/docker.sock`, Desktop socket) dener.
-- `execute_code()`: Python kodunu geçici dosyaya yazar; `python:3.11-alpine` konteynerinde çalıştırır; `DOCKER_EXEC_TIMEOUT` (10 sn) ile sonsuz döngü koruması.
-- Docker yoksa subprocess fallback (sandbox fail-closed prensibi uygulanır).
+**Zero-Trust Sandbox (v3.0):**
+- `network_mode="none"` ile varsayılan ağ erişimi kapalı (`DOCKER_NETWORK_DISABLED=true`).
+- `mem_limit` ve `nano_cpus` ile konteyner kaynakları sınırlandırılır.
+- `DOCKER_MICROVM_MODE` + `DOCKER_ALLOWED_RUNTIMES` ile `runsc`/`kata-runtime` gibi mikro-VM runtime'larına uyumlu çalışır.
+- Çalıştırma süresi `DOCKER_EXEC_TIMEOUT` ile zorlanır; timeout durumunda konteyner kill edilerek sonsuz döngü riski sınırlandırılır.
 
-**Desteklenen Dosya Uzantıları:** `.py`, `.js`, `.ts`, `.json`, `.yaml`, `.yml`, `.md`, `.txt`, `.sh`
-
-**Metrikler:** `_files_read`, `_files_written`, `_syntax_checks`, `_audits_done` sayaçları
-
-**Denetim (`audit_project`):** Proje kökündeki tüm Python dosyalarını tarar; import listesi, `TODO`/`FIXME` yorumları, sözdizimi hataları, büyük dosyalar raporlanır.
+**Temel Yetenekler:**
+- Güvenli dosya okuma/yazma ve path doğrulama
+- Syntax kontrolü / proje denetimi
+- Docker yoksa güvenlik seviyesine göre kontrollü fallback davranışı
 
 ---
 
@@ -983,18 +939,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı
-
-**Amaç:** `CoderAgent` tarafından yazılan kodu denetleyen, test koşturan ve projenin kalite standartlarına uygunluğunu doğrulayan uzman kalite kontrol ajanıdır.
-
-**Özellikler:**
-- Statik analiz (Ruff, Mypy) ve test script'lerini çalıştırarak regresyon tespiti.
-- Yazılan kodların güvenlik kurallarına ve mimari kararlara (örn. asenkron çalışma) uygunluğunu teyit etme.
-- Onay (Approve) veya Red (Reject) kararı üreterek Supervisor'a geri bildirim sağlama; gerekirse Coder'ı düzeltmeye zorlama döngüsü.
-
----
-
-### 3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
+### 3.22 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
 
 **Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı ve operasyonel altyapı araçları.
 
@@ -1004,7 +949,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
+### 3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
