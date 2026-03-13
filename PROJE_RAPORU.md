@@ -3,7 +3,7 @@
 > **Rapor Tarihi:** 2026-03-12
 > **Son Güncelleme:** 2026-03-11 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak kapatıldı)
 > **Proje Sürümü:** 3.0.0
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.996** satır; Web UI: **4.160** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.904** satır; Web UI: **4.160** satır.
 
 ---
 
@@ -65,6 +65,7 @@
   - [8.2 Multi-Agent Çekirdek ve Roller](#82-multi-agent-çekirdek-ve-roller)
   - [8.3 Migration / Operasyon / Altyapı](#83-migration-operasyon-altyapı)
   - [8.4 Frontend ve Test Özeti](#84-frontend-ve-test-özeti)
+  - [8.5 Dizin Bazlı Hacim Özeti](#85-dizin-bazlı-hacim-özeti)
 - [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
 - [10. Veri Akış Diyagramı](#10-veri-akış-diyagramı)
   - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
@@ -1370,8 +1371,8 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | Dosya | Satır |
 |---|---:|
 | `config.py` | 589 |
-| `main.py` | 225 |
-| `cli.py` | 232 |
+| `main.py` | 341 |
+| `cli.py` | 288 |
 | `web_server.py` | 1.376 |
 | `agent/sidar_agent.py` | 1.651 |
 | `agent/auto_handle.py` | 601 |
@@ -1437,7 +1438,21 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | **Web UI Toplamı** | **4.160** |
 | **Test modülü (`tests/test_*.py`)** | **91** |
 | **`tests/*.py` toplam dosya** | **93** |
-| **`tests/*.py` toplam satır** | **20.996** |
+| **`tests/*.py` toplam satır** | **20.904** |
+
+### 8.5 Dizin Bazlı Hacim Özeti
+
+| Dizin/Kapsam | Ölçüm | Değer |
+|---|---|---:|
+| `tests/` | `test_*.py` modül sayısı | 91 |
+| `tests/` | `*.py` toplam dosya | 93 |
+| `tests/` | `*.py` toplam satır | 20.904 |
+| `scripts/` | dosya sayısı | 6 |
+| `scripts/` | toplam satır | 442 |
+| `migrations/` | dosya sayısı (tüm migration dosyaları) | 3 |
+| `migrations/` | toplam satır | 187 |
+| `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
+| `docker/` | ilgili telemetri dosyaları toplam satır | 91 |
 
 ---
 
