@@ -445,6 +445,8 @@ kullanıcı mesajı
 
 **Amaç:** Kullanıcı mesajındaki ortak kalıpları regex ile tanıyarak LLM döngüsüne girmeden cevap verir.
 
+> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/auto_handle.py` çıktısına göre **601** olarak ölçülmüştür.
+
 **Mimari:**
 - `AutoHandle.handle(text)` → `(işlendi_mi: bool, yanıt: str)` döner
 - Senkron araçlar `asyncio.to_thread` ile event loop bloklanmadan çalıştırılır
