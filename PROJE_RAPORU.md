@@ -21,7 +21,7 @@
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)](#36-agentauto_handlepy-hızlı-yönlendirici-601-satır)
   - [3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)](#37-agentdefinitionspy-ajan-tanımları-165-satır)
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)](#37b-agenttoolingpy-araç-kayıt-ve-şema-yöneticisi-266-satır)
-  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-34-satır)
+  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (55 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-55-satır)
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-87-satır)
   - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
   - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
@@ -560,14 +560,15 @@ kullanıcı mesajı
 ---
 
 
-### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)
+### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (55 satır)
 
 **Amaç:** Multi-agent yapısındaki uzman ajanlar için ortak bir soyut temel sınıf (`BaseAgent`) sağlar.
 
 **Öne Çıkanlar:**
 - Ortak `cfg` ve `llm_client` bağımlılıklarının tek bir tabanda toplanması
-- Uzman roller arasında tutarlı arayüz
-- Gelecekte yeni role eklentileri için genişletilebilir iskelet
+- Uzman roller arasında tutarlı arayüz (`register_tool`, `call_tool`)
+- P2P delegasyon altyapısı: `delegate_to` ile `DelegationRequest` üretimi ve `is_delegation_message` ile sonuç tip doğrulama
+- Gelecekte yeni role eklentileri için genişletilebilir iskelet (`ABC` + `@abstractmethod run_task`)
 
 ---
 
