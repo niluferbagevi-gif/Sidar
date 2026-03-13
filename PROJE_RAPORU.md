@@ -13,34 +13,35 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma](#31-configpy--merkezi-yapılandırma-570-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı](#32-mainpy--akıllı-başlatıcı-341-satır)
-  - [3.3 `cli.py` — CLI Arayüzü](#33-clipy--cli-arayüzü-288-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu](#34-web_serverpy--fastapi-web-sunucusu-1173-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan](#35-agentsidar_agentpy--ana-ajan-1698-satır)
-  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici](#36-agentauto_handlepy--hızlı-yönlendirici-601-satır)
-  - [3.7 `agent/definitions.py` — Ajan Tanımları](#37-agentdefinitionspy--ajan-tanımları-165-satır)
-  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi](#37b-agenttoolingpy--araç-kayıt-ve-şema-yöneticisi-266-satır)
-  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı](#37c-agentbase_agentpy--temel-ajan-sınıfı-34-satır)
-  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan](#37d-agentcoresupervisorpy--yönlendirici-supervisor-ajan-87-satır)
-  - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher)](#37e-agentroles--uzman-ajan-rolleri-coder--researcher-200-satır)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic)](#38-corellm_clientpy--llm-istemcisi-ollama--gemini--openai--anthropic-723-satır)
-  - [3.9 `core/memory.py` — Konuşma Belleği](#39-corememorypy--konuşma-belleği-402-satır)
-  - [3.10 `core/rag.py` — RAG Motoru](#310-coreragpy--rag-motoru-783-satır)
-  - [3.11 `managers/security.py` — Güvenlik Yöneticisi](#311-managerssecuritypy--güvenlik-yöneticisi-290-satır)
-  - [3.12 `managers/code_manager.py` — Kod Yöneticisi](#312-managerscode_managerpy--kod-yöneticisi-766-satır)
-  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi](#313-managersgithub_managerpy--github-yöneticisi-644-satır)
-  - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi](#314-managerssystem_healthpy--sistem-sağlık-yöneticisi-436-satır)
-  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi](#315-managersweb_searchpy--web-arama-yöneticisi-387-satır)
-  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi](#316-managerspackage_infopy--paket-bilgi-yöneticisi-322-satır)
-  - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi](#317-managerstodo_managerpy--görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Modüler, toplam ~3.800 satır)](#318-web_ui--web-arayüzü-toplam-3800-satır)
-  - [3.19 `github_upload.py` — GitHub Yükleme Aracı](#319-github_uploadpy--github-yükleme-aracı-294-satır)
-  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#)
-  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#)
-  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#)
-  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#)
-  - [3.24 Altyapı Dosyaları](#324-altyapı-dosyaları)
+  - [3.1 `config.py` — Merkezi Yapılandırma (570 satır)](#31-configpy-merkezi-yapılandırma-570-satır)
+  - [3.2 `main.py` — Akıllı Başlatıcı (341 satır)](#32-mainpy-akıllı-başlatıcı-341-satır)
+  - [3.3 `cli.py` — CLI Arayüzü (288 satır)](#33-clipy-cli-arayüzü-288-satır)
+  - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)](#34-web_serverpy-fastapi-web-sunucusu-1173-satır)
+  - [3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)](#35-agentsidar_agentpy-ana-ajan-1698-satır)
+  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)](#36-agentauto_handlepy-hızlı-yönlendirici-601-satır)
+  - [3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)](#37-agentdefinitionspy-ajan-tanımları-165-satır)
+  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)](#37b-agenttoolingpy-araç-kayıt-ve-şema-yöneticisi-266-satır)
+  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-34-satır)
+  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-87-satır)
+  - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
+  - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-723-satır)
+  - [3.9 `core/memory.py` — Konuşma Belleği (402 satır)](#39-corememorypy-konuşma-belleği-402-satır)
+  - [3.10 `core/rag.py` — RAG Motoru (783 satır)](#310-coreragpy-rag-motoru-783-satır)
+  - [3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)](#311-managerssecuritypy-güvenlik-yöneticisi-290-satır)
+  - [3.12 `managers/code_manager.py` — Kod Yöneticisi (766 satır)](#312-managerscode_managerpy-kod-yöneticisi-766-satır)
+  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi (644 satır)](#313-managersgithub_managerpy-github-yöneticisi-644-satır)
+  - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi (436 satır)](#314-managerssystem_healthpy-sistem-sağlık-yöneticisi-436-satır)
+  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)](#315-managersweb_searchpy-web-arama-yöneticisi-387-satır)
+  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)](#316-managerspackage_infopy-paket-bilgi-yöneticisi-322-satır)
+  - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır)](#317-managerstodo_managerpy-görev-takip-yöneticisi-451-satır)
+  - [3.18 `web_ui/` — Web Arayüzü (Toplam ~3.800 satır)](#318-web_ui-web-arayüzü-toplam-3800-satır)
+  - [3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)](#319-github_uploadpy-github-yükleme-aracı-294-satır)
+  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy-veritabanı-ve-çoklu-kullanıcı-altyapısı)
+  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy-telemetri-ve-bütçe-yönetimi)
+  - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#322-agentrolesreviewer_agentpy-qa-ve-i̇nceleme-ajanı)
+  - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#323-migrations-ve-scripts-geçiş-ve-operasyon-araçları)
+  - [3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları](#324-docker-ve-runbooks-telemetri-ve-production-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -54,13 +55,15 @@
 - [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
 - [10. Veri Akış Diyagramı](#10-veri-akış-diyagramı)
   - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
-  - [10.2 Bellek Yazma Yolu](#102-bellek-yazma-yolu)
-  - [10.3 RAG Belge Ekleme Yolu](#103-rag-belge-ekleme-yolu)
+  - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
+  - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
+  - [11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)](#111-açık-teknik-borç-2026-03-10-audit-6-güncel)
+  - [11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)](#112-açık-teknik-borç-2026-03-10-audit-8-güncel)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
-  - [12.3 GPU / Donanım](#123-gpu--donanım)
+  - [12.3 GPU / Donanım](#123-gpu-donanım)
   - [12.4 Web Arayüzü](#124-web-arayüzü)
   - [12.5 Web Arama](#125-web-arama)
   - [12.6 RAG](#126-rag)
@@ -68,18 +71,18 @@
   - [12.8 Loglama](#128-loglama)
   - [12.9 Rate Limiting](#129-rate-limiting)
   - [12.10 Çeşitli](#1210-çeşitli)
-- [13. Olası İyileştirmeler](#13-olası-iyileştirmeler)
+- [13. Olası İyileştirmeler](#13-olası-i̇yileştirmeler)
 - [14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)](#14-geliştirme-yol-haritası-ve-v30-vizyonu-v211)
   - [14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)](#141-eski-mimarinin-emekliye-ayrılması-deprecation)
-  - [14.2 Reviewer (QA) Ajanının Devreye Alınması](#142-reviewer-qa-ajanının-devreye-alınması)
+  - [14.2 Reviewer (QA) Ajanının Olgunlaştırılması](#142-reviewer-qa-ajanının-olgunlaştırılması)
   - [14.3 Bütçe ve Token Yönetim Paneli (Dashboard)](#143-bütçe-ve-token-yönetim-paneli-dashboard)
   - [14.4 Kalıcı Çoklu Kullanıcı (Multi-User) Altyapısı](#144-kalıcı-çoklu-kullanıcı-multi-user-altyapısı)
-  - [14.5 Test Kapsamının %95+ Seviyesine Zorlanması](#145-test-kapsamının-95-seviyesine-zorlanması)
+  - [14.5 Test Kapsamının %95+ Seviyesine Zorlanması](#145-test-kapsamının-%95-seviyesine-zorlanması)
 - [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
   - [15.1 Çekirdek Özellikler (Her Zaman Zorunlu)](#151-çekirdek-özellikler-her-zaman-zorunlu)
   - [15.2 Arama ve Web](#152-arama-ve-web)
   - [15.3 RAG (Belge Deposu)](#153-rag-belge-deposu)
-  - [15.4 Sistem İzleme ve GPU](#154-sistem-izleme-ve-gpu)
+  - [15.4 Sistem İzleme ve GPU](#154-sistem-i̇zleme-ve-gpu)
   - [15.5 Kod Yürütme](#155-kod-yürütme)
   - [15.6 Özellik Profilleri](#156-özellik-profilleri)
   - [15.7 v3.0 Vizyon Gereksinimleri (Planlanan)](#157-v30-vizyon-gereksinimleri-planlanan)
@@ -89,16 +92,43 @@
   - [16.3 Asenkron Hata Yönetimi](#163-asenkron-hata-yönetimi)
   - [16.4 Bozuk Veri Karantinası](#164-bozuk-veri-karantinası)
 - [17. Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
-- [18. Doğrulanmış Çözüm Özeti](#18-doğrulanmış-çözüm-özeti-2026-03-10-audit-8--güncel)
-  - [18.1 Doğrulanan Maddeler](#181-önceki-raporda-çözüldü-olarak-işaretlenmiş-ve-doğrulanan-maddeler)
-  - [18.2 Audit #2 Düzeltmeleri](#182-rapor-düzeltme-özeti--audit-2-2026-03-08-sürüm-v2100)
-  - [18.3 Audit #3 Düzeltmeleri ve Yeni Bulgular](#183-rapor-düzeltme-özeti--audit-3-2026-03-08-güncel)
-  - [18.4 Audit #4 Düzeltmeleri ve Yeni Bulgular](#184-rapor-düzeltme-özeti--audit-4-2026-03-10)
-  - [18.5 Audit #6 Kapanış Özeti](#185-rapor-düzeltme-özeti--audit-6-2026-03-10)
-  - [18.6 Audit #7 — Multi-Agent Mimarisi ve Güncel Bulgular](#186-rapor-düzeltme-özeti--audit-7-2026-03-10)
-  - [18.7 Audit #8 — Tam Doğrulama ve Yeni Tespitler](#187-rapor-düzeltme-özeti--audit-8-2026-03-10)
-  - [18.8 Audit #9 — Arkadaş Yorumu Kontrolü ve Çapraz Teyit](#188-rapor-düzeltme-özeti--audit-9-2026-03-11)
-  - [18.9 Audit #10 — Son Durum Tam Doğrulama (Dosya Bazlı)](#189-rapor-düzeltme-özeti--audit-10-2026-03-11)
+  - [17.1 Ollama Bağlantı Sorunları](#171-ollama-bağlantı-sorunları)
+  - [17.2 GPU / CUDA Sorunları](#172-gpu-cuda-sorunları)
+  - [17.3 ChromaDB / RAG Sorunları](#173-chromadb-rag-sorunları)
+  - [17.4 Docker REPL Sorunları](#174-docker-repl-sorunları)
+  - [17.5 Bellek / Şifreleme Sorunları](#175-bellek-şifreleme-sorunları)
+  - [17.6 GitHub Entegrasyon Sorunları](#176-github-entegrasyon-sorunları)
+  - [17.7 Web Sunucu Sorunları](#177-web-sunucu-sorunları)
+  - [17.8 `.env` Dosyası Sorunları](#178-env-dosyası-sorunları)
+  - [17.9 Bulut LLM 429 (Rate Limit) Hatası](#179-bulut-llm-429-rate-limit-hatası)
+  - [17.10 Ajan Döngüsü / JSON Parse Hataları](#1710-ajan-döngüsü-json-parse-hataları)
+  - [17.11 Supervisor Devreye Girmiyor (Tekli Ajan Davranışı)](#1711-supervisor-devreye-girmiyor-tekli-ajan-davranışı)
+- [18. Doğrulanmış Çözüm Özeti (2026-03-10 Audit #8 — Güncel)](#18-doğrulanmış-çözüm-özeti-2026-03-10-audit-8-güncel)
+  - [18.1 Önceki Raporda "Çözüldü" Olarak İşaretlenmiş ve Doğrulanan Maddeler](#181-önceki-raporda-çözüldü-olarak-i̇şaretlenmiş-ve-doğrulanan-maddeler)
+  - [18.2 Rapor Düzeltme Özeti — Audit #2 (2026-03-08, Sürüm v2.10.0)](#182-rapor-düzeltme-özeti-audit-2-2026-03-08-sürüm-v2100)
+  - [18.3 Rapor Düzeltme Özeti — Audit #3 (2026-03-08, Güncel)](#183-rapor-düzeltme-özeti-audit-3-2026-03-08-güncel)
+  - [18.4 Rapor Düzeltme Özeti — Audit #4 (2026-03-10)](#184-rapor-düzeltme-özeti-audit-4-2026-03-10)
+  - [18.5 Rapor Düzeltme Özeti — Audit #6 (2026-03-10)](#185-rapor-düzeltme-özeti-audit-6-2026-03-10)
+  - [18.6 Rapor Düzeltme Özeti — Audit #7 (2026-03-10)](#186-rapor-düzeltme-özeti-audit-7-2026-03-10)
+  - [18.7 Rapor Düzeltme Özeti — Audit #8 (2026-03-10)](#187-rapor-düzeltme-özeti-audit-8-2026-03-10)
+  - [18.8 Rapor Düzeltme Özeti — Audit #9 (2026-03-11)](#188-rapor-düzeltme-özeti-audit-9-2026-03-11)
+  - [18.9 Rapor Düzeltme Özeti — Audit #10 (2026-03-11)](#189-rapor-düzeltme-özeti-audit-10-2026-03-11)
+  - [Session 2026-03-11 — Multi-Agent Geçiş Sertleştirme ve Reviewer QA Döngüsü](#session-2026-03-11-multi-agent-geçiş-sertleştirme-ve-reviewer-qa-döngüsü)
+  - [Session 2026-03-11 — LLM Bütçe ve Maliyet Dashboard Geliştirmesi](#session-2026-03-11-llm-bütçe-ve-maliyet-dashboard-geliştirmesi)
+  - [Session 2026-03-11 — Legacy ReAct Akışının Emekliye Ayrılması](#session-2026-03-11-legacy-react-akışının-emekliye-ayrılması)
+  - [Session 2026-03-11 — Multi-User Faz 1: Veritabanı İskeleti](#session-2026-03-11-multi-user-faz-1-veritabanı-i̇skeleti)
+  - [Session 2026-03-11 — Multi-User Faz 2: Memory Katmanının DB'ye Taşınması](#session-2026-03-11-multi-user-faz-2-memory-katmanının-dbye-taşınması)
+  - [Session 2026-03-11 — Multi-User Faz 3: DB Tabanlı Authentication ve Session İzolasyonu](#session-2026-03-11-multi-user-faz-3-db-tabanlı-authentication-ve-session-i̇zolasyonu)
+  - [Session 2026-03-11 — Multi-User Faz 3 Kapanış: Web UI Auth Entegrasyonu](#session-2026-03-11-multi-user-faz-3-kapanış-web-ui-auth-entegrasyonu)
+  - [Session 2026-03-11 — P2P Multi-Agent Delegasyon ve Dinamik Reviewer QA](#session-2026-03-11-p2p-multi-agent-delegasyon-ve-dinamik-reviewer-qa)
+  - [Session 2026-03-11 — Faz 5: Zero-Trust Sandbox ve Kaynak Kısıtları](#session-2026-03-11-faz-5-zero-trust-sandbox-ve-kaynak-kısıtları)
+  - [Session 2026-03-11 — Observability / Canlı Ajan Durum Akışı](#session-2026-03-11-observability-canlı-ajan-durum-akışı)
+  - [Session 2026-03-11 — Quality Gate: Coverage %95 Zorunluluğu](#session-2026-03-11-quality-gate-coverage-%95-zorunluluğu)
+  - [Session 2026-03-11 — Telemetri, Maliyet Yönetimi ve Dashboard Altyapısı](#session-2026-03-11-telemetri-maliyet-yönetimi-ve-dashboard-altyapısı)
+  - [Session 2026-03-11 — Frontend (Web UI) Admin Paneli ve Kurumsal Sürüme Geçiş (v3.0 Tamamlandı)](#session-2026-03-11-frontend-web-ui-admin-paneli-ve-kurumsal-sürüme-geçiş-v30-tamamlandı)
+  - [18.10 Audit #11 (Session 2026-03-11) — Güvenlik ve Kararlılık Kapanışı](#1810-audit-11-session-2026-03-11-güvenlik-ve-kararlılık-kapanışı)
+  - [Session 2026-03-11 — Üretim Geçiş Araçları ve Alembic Sertleştirmesi](#session-2026-03-11-üretim-geçiş-araçları-ve-alembic-sertleştirmesi)
+  - [Session 2026-03-11 — Production Sertifikasyon Kalan Maddeler (QA + Sandbox + Migration Disiplini)](#session-2026-03-11-production-sertifikasyon-kalan-maddeler-qa-sandbox-migration-disiplini)
 
 ---
 
@@ -545,13 +575,28 @@ kullanıcı mesajı
 
 ---
 
-### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+### 3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı
 
-**Amaç:** Alan odaklı uzman ajanları kapsar.
+**Amaç:** Multi-agent omurgasında roller arası görev sözleşmesi, canlı olay akışı ve paylaşımlı bellek/araç kayıt altyapısını sağlar.
+
+**Kapsam:**
+- `contracts.py` — `TaskEnvelope` / `TaskResult` veri sözleşmeleri
+- `event_stream.py` — ajan durum ve araç olaylarını yayınlayan event bus
+- `memory_hub.py` — roller arası ortak bellek erişim katmanı
+- `registry.py` — çalışma zamanında rol/ajan kayıt ve çözümleme yardımcıları
+
+**Mimari Değer:** Bu katman, `SupervisorAgent` ile rol ajanları arasında gevşek bağlı (loosely-coupled) iletişim kurarak genişletilebilirliği artırır.
+
+---
+
+### 3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)
+
+**Amaç:** Alan odaklı uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
 
 **Alt Roller:**
 - `coder_agent.py` — dosya/kod odaklı uzman ajan
 - `researcher_agent.py` — web + RAG odaklı uzman ajan
+- `reviewer_agent.py` — test/kalite denetimi yapan QA uzman ajan
 
 ---
 
@@ -931,7 +976,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.24 Altyapı Dosyaları
+### 3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
@@ -953,6 +998,15 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 | `redis` | Rate-limit store | — | — | 6379 (internal) |
 
 Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
+
+#### `docker/` alt dizini
+- `docker/prometheus/prometheus.yml` ile Prometheus scrape hedefleri tanımlanır.
+- `docker/grafana/provisioning/` altında datasource/dashboard provisioning otomatik yüklenir.
+- `docker/grafana/dashboards/sidar-llm-overview.json` ile LLM maliyet/token/latency görünürlüğü sağlanır.
+
+#### `runbooks/production-cutover-playbook.md`
+- Üretime geçiş adımları, rollback planı ve operasyonel kontrol listelerini içerir.
+- DB migration, gözlemlenebilirlik ve servis sağlık kontrol adımlarını tek bir playbook altında toplar.
 
 ---
 
@@ -1401,7 +1455,7 @@ add_document(title, content, source)
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
 | 4 | ~~Çoklu API hata ve maliyet yönetimi~~ | ~~`core/llm_client.py`, `web_server.py`, `config.py`~~ | ~~OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `LLMAPIError` sözleşmesi + sağlayıcı bazlı retry/backoff + websocket yüzeyleme tamamlandı |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
-| 6 | ~~`.note` dosyası (311 satır) raporda belgelenmemiş~~ | ~~`.note`~~ | ~~Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — geçici Ar-Ge scratchpad dosyası depodan kaldırıldı |
+| 6 | `.note` dosyası rapor kapanış notlarıyla çelişkili şekilde depoda duruyor | `.note` | Kapanış notlarında “kaldırıldı” denmesine rağmen kök dizinde dosya mevcut; audit tutarlılığı bozuluyor | Düşük | ⚠ **AÇIK** — rapor ya da repo durumu eşitlenmeli |
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1876,7 +1930,7 @@ Bu bölüm, Audit #8 itibarıyla projenin ulaştığı güncel doğrulanmış ç
 - ✅ **`ENABLE_MULTI_AGENT` `.env.example`'da mevcut** (satır 81) — §18.6.5'teki "Eksik" iddiası hatalıydı, düzeltildi.
 - ⚠ **İki boş artifact hâlâ silinmedi:** `test_config_runtime_coverage` ve `test_config_runtime_coverage.py`.
 - ⚠ **`ReviewerAgent` hâlâ eksik:** `agent/roles/reviewer_agent.py` mevcut değil.
-- ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; kalıcı kararlar `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` içinde tutuluyor.
+- ⚠ `.note` dosyası depoda mevcut; “kaldırıldı” ifadeleri güncel duruma göre revize edilmelidir.
 
 **Audit #7 Kapanışında Öne Çıkan Güncel Çözümler:**
 - ✅ **Multi-Agent Altyapısı Entegre Edildi:** Legacy tekli ajan sınırları aşılarak `Supervisor` + `CoderAgent` + `ResearcherAgent` mimarisi devreye alındı; geçiş `ENABLE_MULTI_AGENT` feature toggle ve Strangler Pattern ile yönetiliyor.
@@ -2264,11 +2318,11 @@ Bu bölüm, 2026-03-10 tarihli sekizinci kapsamlı audit'te yapılan tam doğrul
 
 ---
 
-#### 18.7.4 `.note` Scratchpad Dosyası — Kapanış Güncellemesi
+#### 18.7.4 `.note` Scratchpad Dosyası — Durum Düzeltmesi
 
 | Dosya | Satır | Durum | Detay |
 |-------|-------|-------|-------|
-| `.note` | **0 (kaldırıldı)** | ✅ **Kapanış** | Geçici Ar-Ge scratchpad dosyası depodan temizlendi; dokümantasyon sorumluluğu README/PROJE/RFC üzerinde toplandı. |
+| `.note` | **mevcut** | ⚠ **Açık Çelişki** | Kök dizinde `.note` dosyası bulunduğu için “kaldırıldı” kapanışı güncel depo ile uyumsuzdur. |
 
 ---
 
@@ -2305,7 +2359,7 @@ Audit #7'de onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 |----------|------|-------|
 | **Onaylanan çözüldü** | 17 | Audit #7 ve önceki tüm önemli maddeler doğrulandı |
 | **Süregelen açık sorun** | 3 | 2 boş artifact dosyası + `ReviewerAgent` eksikliği |
-| **Kapanan bulgu** | 1 | `.note` scratchpad dosyası depodan kaldırıldı |
+| **Açık bulgu** | 1 | `.note` scratchpad dosyası depoda mevcut; kapanış iddiası revize edilmeli |
 | **Rapor iç çelişkisi giderildi** | 1 | §18.6.5 "Eksik" → "Mevcut" düzeltmesi |
 | **Satır sayısı güncellenen alan** | 3 | RFC-MultiAgent.md (+103), Dockerfile (+2), Python toplam (+277) |
 
@@ -2355,7 +2409,7 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 | `tests/` dosya adedi | `find tests -maxdepth 1 -type f | wc -l` | ✅ **68** |
 | Boş test artifact dosyaları | `find tests -maxdepth 1 -type f -size 0` | ✅ Bulunamadı (çıktı boş) |
 | RFC satır sayısı | `wc -l RFC-MultiAgent.md` | ✅ **303** |
-| `.note` satır sayısı | `test -f .note || echo removed` | ✅ **removed** |
+| `.note` varlık kontrolü | `test -f .note && echo present` | ⚠ **present** |
 | Planlanan fakat eksik modüller | `test -f agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` | ✅ Üç modül de depoda mevcut |
 
 #### 18.9.2 Önceki Yorumlarla Nihai Uyum Durumu
@@ -2369,7 +2423,7 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
 2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
 3. ✅ Satır sayısı metrikleri `scripts/audit_metrics.sh` ile standardize edildi (CI adımı aktif).
-4. ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; dokümantasyon tutarlılığı sağlandı.
+4. ⚠ `.note` dosyası depoda mevcut; dokümantasyon tutarlılığı için rapor kapanış notları revize edildi.
 ---
 
 ### Session 2026-03-11 — Multi-Agent Geçiş Sertleştirme ve Reviewer QA Döngüsü
