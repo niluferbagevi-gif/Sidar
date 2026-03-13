@@ -15,7 +15,7 @@
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
   - [3.1 `config.py` — Merkezi Yapılandırma (589 satır)](#31-configpy-merkezi-yapılandırma-589-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı (225 satır)](#32-mainpy-akıllı-başlatıcı-225-satır)
-  - [3.3 `cli.py` — CLI Arayüzü (288 satır)](#33-clipy-cli-arayüzü-288-satır)
+  - [3.3 `cli.py` — CLI Arayüzü (232 satır)](#33-clipy-cli-arayüzü-232-satır)
   - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)](#34-web_serverpy-fastapi-web-sunucusu-1173-satır)
   - [3.5 `agent/sidar_agent.py` — Ana Ajan (1.698 satır)](#35-agentsidar_agentpy-ana-ajan-1698-satır)
   - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)](#36-agentauto_handlepy-hızlı-yönlendirici-601-satır)
@@ -333,7 +333,7 @@ python main.py --quick web --capture-output --child-log logs/child.log
 
 ---
 
-### 3.3 `cli.py` — CLI Arayüzü (288 satır)
+### 3.3 `cli.py` — CLI Arayüzü (232 satır)
 
 **Amaç:** Terminal tabanlı etkileşimli REPL döngüsü.
 
@@ -1142,7 +1142,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---:|
 | `config.py` | 589 |
 | `main.py` | 225 |
-| `cli.py` | 288 |
+| `cli.py` | 232 |
 | `web_server.py` | 1.376 |
 | `agent/sidar_agent.py` | 1.651 |
 | `agent/auto_handle.py` | 601 |
@@ -2043,7 +2043,7 @@ Bu bölüm, 2026-03-10 tarihli Audit #6 kapanış güncellemesinde Audit #5'te a
 |-------|------------------|-------------------|------|-----|
 | `config.py` | 544 | **556** | +12 | OpenAI ayar/validasyon/özet güncellemesi |
 | `web_server.py` | 1.139 | **1.139** | 0 | Provider seçeneği güncellendi, satır sayısı aynı |
-| `cli.py` | 288 | **288** | 0 | Provider seçeneği güncellendi, satır sayısı aynı |
+| `cli.py` | 232 | **288** | 0 | Provider seçeneği güncellendi, satır sayısı aynı |
 | `main.py` | 332 | **337** | +5 | OpenAI preflight + wizard provider seçeneği |
 | Diğer dosyalar | — | ✅ Audit #5 ile uyumlu | — | |
 
