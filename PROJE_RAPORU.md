@@ -605,12 +605,15 @@ kullanıcı mesajı
 
 **Amaç:** Uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
 
-**Alt Roller:**
-- `coder_agent.py` — dosya/kod odaklı uzman ajan
-- `researcher_agent.py` — web + RAG odaklı uzman ajan
-- `reviewer_agent.py` — test koşturan, kalite kapısı uygulayan QA ajanı
+> Not (Doğrulama): Güncel depoda `wc -l` çıktıları: `agent/roles/coder_agent.py=134`, `agent/roles/researcher_agent.py=75`, `agent/roles/reviewer_agent.py=181`, `agent/roles/__init__.py=6`.
 
-**Not:** `reviewer_agent.py` analizi bu başlığa entegredir; önceki bağımsız 3.22 maddesi kaldırılmıştır.
+**Alt Roller ve Yetenekler:**
+- `__init__.py` — rol sınıflarını (`CoderAgent`, `ResearcherAgent`, `ReviewerAgent`) dışa aktarır.
+- `coder_agent.py` — kod/dosya odaklı uzman ajan; `read_file`, `write_file`, `patch_file`, `execute_code`, `list_directory`, `glob_search`, `grep_search`, `audit_project`, `get_package_info`, `scan_project_todos` dahil 10 araç kaydıyla çalışır.
+- `researcher_agent.py` — araştırma odaklı uzman ajan; `web_search`, `fetch_url`, `search_docs`, `docs_search` araçlarıyla web + RAG keşfi yapar.
+- `reviewer_agent.py` — QA uzmanı; `_build_dynamic_test_content` ile dinamik test üretir, `_extract_changed_paths` ile değişen dosyaları hedefler, regresyon komutlarını çalıştırır ve sonucu `delegate_to("coder", ...)` ile P2P geri bildirim olarak kodlayıcıya iletir.
+
+**Mimari Not:** Coder ↔ Reviewer etkileşimi yalnızca merkezî supervisor döngüsüyle sınırlı değildir; reviewer tarafından üretilen `qa_feedback|decision=...` çıktıları coder tarafında ayrıştırılıp yeniden çalışma (rework) akışı tetiklenebilir.
 
 ---
 
@@ -2128,7 +2131,7 @@ Aşağıdaki dosyalar Audit #6 dahil hiçbir önceki raporda yer almamaktadır. 
 | `agent/core/supervisor.py` | 164 | `SupervisorAgent` — intent tespiti + delegasyon + QA orkestrasyonu |
 | `agent/core/contracts.py` | 56 | `TaskEnvelope`/`TaskResult` + `P2PMessage`/`DelegationRequest`/`DelegationResult` veri sözleşmeleri |
 | `agent/roles/__init__.py` | 5 | `CoderAgent`, `ResearcherAgent` export |
-| `agent/roles/coder_agent.py` | 120 | `CoderAgent` — dosya/kod araçlarıyla çalışan uzman ajan |
+| `agent/roles/coder_agent.py` | 134 | `CoderAgent` — dosya/kod araçlarıyla çalışan uzman ajan |
 | `agent/roles/researcher_agent.py` | 75 | `ResearcherAgent` — web + RAG araçlarıyla çalışan uzman ajan |
 | `RFC-MultiAgent.md` | ~200 | Mimari tasarım RFC belgesi (Draft; `v2.11.x` hedefi) |
 
