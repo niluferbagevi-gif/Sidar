@@ -1269,77 +1269,85 @@ github_upload.py           ←── (bağımsız araç)
 
 ```
 [Kullanıcı]
-    │ metin gönderir
+    │ mesaj gönderir (CLI / Web)
     ▼
-[Web: POST /chat]  veya  [CLI: _interactive_loop_async]
-    │
+[Auth Katmanı]
+    │ HTTP: Bearer token middleware
+    │ WS: zorunlu auth handshake (aksi: 1008 policy violation)
     ▼
-[SidarAgent.respond(text, stream=True)]
+[SidarAgent.respond(...)]
     │
-    ├─► [ConversationMemory.add("user", text)]
-    │         └─► disk: data/sessions/<id>.json  (şifreli opsiyonel)
+    ├─► [SupervisorAgent.route(...)]   ← v3.0 Supervisor-first (legacy tekli akış YOK)
+    │        │
+    │        ├─► Araştırma/RAG görevi → ResearcherAgent
+    │        └─► Kod görevi           → CoderAgent
+    │                                   │
+    │                                   ├─► (gerekirse) ReviewerAgent QA süzgeci
+    │                                   │      ├─► Approve → devam
+    │                                   │      └─► Reject  → Coder'a geri dönüş
+    │                                   │                (MAX_QA_RETRIES=3 devre kesici)
+    │                                   ▼
+    │                          Tool dispatch (`agent/tooling.py`)
+    │                                   │
+    │                                   ├─► code_manager / security
+    │                                   ├─► web_search / package_info
+    │                                   ├─► github_manager
+    │                                   ├─► rag / docs_* işlemleri
+    │                                   └─► health / todo
     │
-    ├─► [AutoHandle.handle(text)]
-    │         ├─► regex eşleşirse → doğrudan yanıt (LLM çağrısı YOK)
-    │         └─► eşleşmezse → (False, "")
+    ├─► [ConversationMemory.aadd(...)]
+    │        └─► core/db.py → `messages`/`sessions` (user_id izolasyonlu)
     │
-    ├─► [ENABLE_MULTI_AGENT ?]
-    │         ├─► HAYIR → Tekli ajan ReAct akışı (geriye uyumlu)
-    │         └─► EVET  → [SupervisorAgent.route(prompt)]
-    │                       │
-    │                       ├─► Kod görevi  → [CoderAgent]
-    │                       └─► Araştırma/RAG görevi → [ResearcherAgent]
-    │                                  │
-    │                                  ▼
-    │                        [LLMClient.chat(...)]  → sağlayıcı: Ollama / Gemini / OpenAI / Anthropic
-    │                                  │
-    │                                  ▼
-    │                        ReAct: {thought, tool, argument}
-    │                                  │
-    │                                  ▼
-    │                        [agent/tooling.py dispatch]
-    │                                  │
-    │                                  ├── read_file / write_file / patch_file → CodeManager → SecurityManager → disk
-    │                                  ├── web_search / fetch_url → WebSearchManager → httpx → Tavily/Google/DDG
-    │                                  ├── docs_search / docs_add → DocumentStore → ChromaDB / BM25 / Keyword
-    │                                  ├── github_*              → GitHubManager → PyGithub → GitHub API
-    │                                  ├── execute_code          → CodeManager → Docker → python:3.11-alpine
-    │                                  └── health                → SystemHealthManager → psutil / pynvml / torch
+    ├─► [AgentEventBus.publish(...)]
+    │        └─► WebSocket ile canlı thought/tool/status akışı
     │
-    └─► [Supervisor sonuç birleştirme]
-              │
-              ▼
-         nihai yanıt → kullanıcı
+    ├─► [LLM Metrics Collector]
+    │        └─► token/latency/cost kaydı → `/api/budget`, `/metrics/llm`
+    │
+    └─► Nihai yanıt kullanıcıya döner
 ```
 
 ### 10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)
 
-
-> **Not (v2.10.8):** Multi-Agent modunda Coder/Researcher ajanları aynı oturum belleğini (`core/memory.py`) paylaşır; rol bazlı alt görev çıktıları Supervisor üzerinden tek bir konuşma akışında birleştirilir.
-
 ```
-add(role, content)
-    → _save_interval_seconds (0.5 sn) debounce
-        → JSON serileştirme
-            → [MEMORY_ENCRYPTION_KEY varsa] Fernet.encrypt()
-                → data/sessions/<uuid>.json
+ConversationMemory.aadd(role, content)
+    │
+    ├─► _require_active_user()
+    │      ├─► user_id var  → devam
+    │      └─► yok          → MemoryAuthError (fail-closed)
+    │
+    ├─► active_session yoksa acreate_session("Yeni Sohbet")
+    │
+    ├─► in-memory turns güncelle (RLock korumalı)
+    │
+    └─► core/db.py.add_message(...)
+           ├─► `sessions` tablosu (oturum meta)
+           └─► `messages` tablosu (kalıcı konuşma)
+                 (tenant izolasyonu: user_id zorunlu)
 ```
+
+> Not: v3.0 mimarisinde bellek kalıcılığı JSON dosya yerine DB katmanına taşınmıştır.
 
 ### 10.3 RAG Belge Ekleme Yolu (Ortak Erişim)
 
-
-> **Not (v2.10.8):** Multi-Agent modunda hem CoderAgent hem ResearcherAgent, `docs_search/docs_add` benzeri araçlar üzerinden aynı RAG katmanına (`core/rag.py`, ChromaDB + BM25) erişebilir.
-
 ```
-add_document(title, content, source)
-    → _chunk_text()  ← recursive chunking
-        → _write_lock alınır
-            → store_dir/<doc_id>.txt  (tam metin)
-            → index.json güncellenir
-            → BM25 cache güncellenir (inkremental)
-            → ChromaDB.upsert(chunks)  ← cosine space
-        → _write_lock bırakılır
+docs_add / docs_add_file
+    │
+    ├─► güvenlik doğrulaması (path + erişim seviyesi)
+    ├─► içerik normalize + chunking
+    ├─► ChromaDB upsert (vektör katmanı)
+    ├─► BM25/keyword indeks güncelleme
+    │
+    ├─► AgentEventBus.publish("RAG güncelleniyor...")
+    │      └─► Web UI canlı durum akışı
+    │
+    └─► arama sırasında hibrit birleştirme
+           ├─► vector sonuçları
+           ├─► BM25 sonuçları
+           └─► RRF ile final sıralama
 ```
+
+> RAG yolu tüm uzman ajanlar tarafından ortak kullanılır; erişim kontrolü ve gözlemlenebilirlik katmanlarıyla birlikte çalışır.
 
 ---
 
