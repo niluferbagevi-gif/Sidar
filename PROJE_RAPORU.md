@@ -1094,34 +1094,33 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 [⬆ İçindekilere Dön](#içindekiler)
 
+Aşağıdaki tablo, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.yml` ile doğrulanan v3.0 bağımlılık setini özetler.
+
 | Paket | Zorunlu | Kullanım Yeri |
 |-------|---------|---------------|
-| `fastapi` + `uvicorn` | ✓ | Web sunucusu |
-| `httpx` | ✓ | LLM + Web arama HTTP istemcisi |
+| `fastapi` + `uvicorn[standard]` | ✓ | Web sunucusu + WebSocket API (`web_server.py`) |
+| `httpx` | ✓ | LLM ve web arama HTTP istemcisi |
 | `python-dotenv` | ✓ | `.env` yükleme |
-| `pydantic` | ✓ | ToolCall model doğrulaması |
-| `SQLAlchemy` + `asyncpg` | ✓ (v3.0) | `core/db.py` üzerinden PostgreSQL/SQLite için asenkron ORM/veritabanı katmanı |
-| `alembic` | ✓ (v3.0) | `migrations/` şema versiyonlama ve DB geçiş yönetimi |
-| `prometheus-client` | ✓ (v3.0) | `core/llm_metrics.py` metriklerini Prometheus scrape formatında dışa aktarma |
-| `ruff` + `mypy` | ✓ (CI/QA) | Statik analiz kalite kapıları; CI/CD ve ReviewerAgent kalite döngüsü |
-| `PyGithub` | ✓ | GitHub API |
-| `beautifulsoup4` | ✓ | HTML temizleme |
-| `packaging` | ✓ | Sürüm karşılaştırması |
-| `duckduckgo-search` | Opsiyonel | DDG web araması |
-| `google-generativeai` | Opsiyonel | Gemini LLM |
-| `openai` | Opsiyonel | OpenAI API entegrasyonu |
-| `anthropic` | Opsiyonel | Claude API entegrasyonu |
-| `chromadb` | Opsiyonel | Vektör RAG |
-| `sentence-transformers` | Opsiyonel | GPU embedding |
-| `rank_bm25` | Opsiyonel | BM25 RAG |
-| `torch` | Opsiyonel | GPU kontrolü + embedding |
-| `psutil` | Opsiyonel | CPU/RAM izleme |
-| `pynvml` | Opsiyonel | GPU sıcaklık/kullanım |
-| `cryptography` | Opsiyonel | Fernet bellek şifreleme |
-| `docker` | Opsiyonel | REPL sandbox |
-| `redis` | Opsiyonel (önerilen) | Kalıcı / dağıtık rate limiting |
-| Harici servisler: `prometheus` + `grafana` | Opsiyonel (kurumsal önerilen) | `docker-compose.yml` ile observability dashboard ve metrik izleme altyapısı |
-| `opentelemetry-*` | Opsiyonel | Dağıtık tracing + span export (OTLP) |
+| `pydantic` | ✓ | Tool/şema doğrulama |
+| `cachetools` | ✓ | HTTP/WS rate-limit ve TTLCache katmanları |
+| `redis` | Opsiyonel (önerilen) | Dağıtık/persist rate limiting fallback mimarisi |
+| `SQLAlchemy` + `asyncpg` | ✓ (v3.0) | PostgreSQL odaklı DB katmanı ve çoklu kullanıcı veri modeli |
+| `sqlite3` (stdlib) | ✓ | Yerel DB fallback (SQLite) |
+| `alembic` | ✓ (v3.0) | `migrations/` şema versiyonlama |
+| `prometheus-client` | ✓ (v3.0) | `/metrics` ve LLM metrik dışa aktarımı |
+| `opentelemetry-*` | Opsiyonel | Tracing + OTLP export |
+| `tiktoken` | ✓ (v3.0) | LLM token ölçümü + bellek özetleme eşikleri |
+| `PyGithub` | ✓ | GitHub API entegrasyonu |
+| `duckduckgo-search` + `beautifulsoup4` | Opsiyonel | Web arama ve içerik temizleme |
+| `chromadb` + `rank-bm25` + `sentence-transformers` | Opsiyonel | Hibrit RAG (vektör + BM25) |
+| `torch` + `torchvision` + `nvidia-ml-py` + `psutil` | Opsiyonel | GPU/CPU gözlemleme ve hızlandırma |
+| `docker` | Opsiyonel (sandbox için kritik) | Zero-Trust REPL yürütme katmanı |
+| `cryptography` | Opsiyonel | Fernet tabanlı şifreleme yardımcıları |
+| `packaging` + `pyyaml` + `python-multipart` + `anyio` | ✓ | Yardımcı altyapı bağımlılıkları |
+| `pytest` + `pytest-asyncio` + `pytest-cov` + `pytest-benchmark` | ✓ (CI/QA) | Test yürütme, async testler, coverage (%95 gate), benchmark |
+| `ruff` + `mypy` + `black` + `flake8` | ✓ (CI/QA) | Statik analiz ve kalite kapıları |
+
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde PBKDF2-HMAC akışıyla yapılır; JWT/passlib/bcrypt şu an zorunlu bağımlılık setinde yer almamaktadır.
 
 ---
 
