@@ -563,7 +563,7 @@ kullanıcı mesajı
 **Öne Çıkanlar:**
 - Intent/role routing
 - TaskEnvelope/TaskResult sözleşmeleriyle uyumlu görev yönetimi
-- `ENABLE_MULTI_AGENT` açıkken Strangler Pattern üzerinden ana akışa entegre çalışma
+- Supervisor orkestrasyonu v3.0 omurgasında varsayılan ana akış olarak çalışır
 
 ---
 
@@ -991,35 +991,29 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 
 | Alan | Değerlendirme |
 |------|---------------|
-| **Asenkron Mimari** | `async/await` ve `asyncio.to_thread` tutarlı kullanımı; event loop hiçbir yerde bloklanmıyor |
-| **Güvenlik Derinliği** | 3 katmanlı erişim + path traversal + symlink + hassas yol koruması |
-| **Yapısal LLM Çıktısı** | Ollama, OpenAI ve Anthropic structured output ile JSON schema zorlaması; Pydantic doğrulaması |
-| **Hata Toleransı** | Her araç try/except; ChromaDB yoksa BM25'e, BM25 yoksa keyword'e fallback |
-| **Stream Güvenliği** | UTF-8 incremental decoder ile kırık TCP paketleri güvenle birleştirilir |
-| **Bellek Güvenliği** | Fernet şifreleme, karantina mekanizması, RLock ile thread safety |
-| **Konfigürasyon** | Tek merkezi Config; hardcoded değer yok; lazy hardware init |
-| **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
-| **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
-| **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
-| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher/Reviewer uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
-| **Dağıtık Multi-Agent Orkestrasyonu** | Görevlerin tek ajanda toplanmak yerine SupervisorAgent tarafından uzman rollere (Coder, Researcher, Reviewer) dağıtılması; modülerlik, hata izolasyonu ve QA kalitesini artırır |
-| **Kurumsal Altyapı (SaaS-Ready)** | `core/db.py` + Alembic geçişleri ile kullanıcı, kota ve oturumların izole edildiği Bearer Token tabanlı kalıcı veri mimarisi |
-| **Gözlemlenebilirlik (Observability)** | `core/llm_metrics.py` + Prometheus + Grafana entegrasyonu ile token tüketimi, USD maliyet ve LLM latency metriklerinin gerçek zamanlı izlenmesi |
-| **Çoklu LLM Ekosistemi** | Ollama (yerel) bağımlılığının kırılarak Gemini, OpenAI ve Anthropic istemcilerinin polimorfik (`BaseLLMClient`) bir yapıyla tek çatı altında buluşturulması |
-| **Çift Yönlü İletişim** | WebSocket altyapısı ile gerçek zamanlı çift yönlü mesajlaşma ve `asyncio.Task` tabanlı anlık işlem iptali (`cancel`) |
+| **Asenkron Mimari** | `async/await` ve `asyncio.to_thread` tutarlı kullanımı; event loop bloklanmadan yüksek eşzamanlılık sağlanıyor |
+| **Event-Driven Ajan Akışı** | `agent/core/event_stream.py` ile ajan düşünce/adım/araç olayları yayınlanıyor; WebSocket tarafında canlı izleme mümkün |
+| **Kurumsal Kimlik ve İzolasyon** | Bearer token + DB tabanlı kullanıcı doğrulama ile oturum/mesaj verileri kullanıcı bazında izole tutuluyor |
+| **DB Tabanlı Bellek + Fail-Closed** | `core/memory.py` bellek kalıcılığını DB'ye taşıyor; doğrulanmamış bağlamlar `MemoryAuthError` ile reddediliyor |
+| **Zero-Trust Sandbox** | `network_mode="none"`, `mem_limit`, `nano_cpus` ve mikro-VM runtime uyumu (`runsc`/`kata-runtime`) ile güvenli kod yürütme |
+| **QA Devre Kesici** | Coder ↔ Reviewer geri besleme döngüsünde `MAX_QA_RETRIES=3` sınırıyla sonsuz döngü ve maliyet patlaması riski kontrol ediliyor |
+| **Yapısal LLM Çıktısı** | Sağlayıcı bazlı structured output + Pydantic doğrulaması ile tool çağrılarında format kararlılığı |
+| **Hata Toleransı** | ChromaDB/BM25/keyword fallback zinciri ve araç seviyesinde hata yakalama ile operasyon sürekliliği |
+| **Konfigürasyon Merkeziyeti** | `Config` üzerinden DB, güvenlik, sandbox ve tracing parametrelerinin tek merkezden yönetimi |
+| **Gözlemlenebilirlik** | OpenTelemetry + Prometheus/Grafana + `/api/budget` ile latency/token/maliyet metriklerinin canlı takibi |
+| **Dağıtık Multi-Agent Orkestrasyonu** | Supervisor tabanlı görev yönlendirme (Coder/Researcher/Reviewer) ile modülerlik, hata izolasyonu ve kalite artışı |
+| **Çoklu LLM Ekosistemi** | Ollama, Gemini, OpenAI, Anthropic istemcilerinin ortak sözleşmeyle birlikte çalışması |
 
 ### 4.2 Kısıtlamalar
 
 | Alan | Durum |
 |------|-------|
-| **Rate Limiting Altyapısı** | Redis gerektirir; Redis erişilemezse local fallback devreye girer (dağıtık tutarlılık geçici olarak düşer) |
-| **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
-| **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
-| **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
-| **Multi-Agent Bakım Yükü** | Özellik hâlâ `ENABLE_MULTI_AGENT` bayrağı ile deneysel/paralel çalışıyor; eski `sidar_agent` akışı ile yeni yapının bir süre daha birlikte bakımı gerekiyor |
-| **Multi-Agent İletişim Maliyeti (Overhead)** | Coder → Reviewer geri besleme döngüleri ek LLM çağrısı oluşturur; toplam token tüketimini ve yanıt gecikmesini (latency) artırabilir |
-| **Altyapı ve Operasyonel Karmaşıklık** | PostgreSQL, Prometheus ve Grafana gibi ek servisler docker-compose topolojisini büyütür; RAM ihtiyacı ile kurulum/bakım karmaşıklığını artırır |
-| **API Limit ve Maliyetleri** | Bulut LLM sağlayıcıları (OpenAI, Anthropic) yerel modellere kıyasla token maliyeti ve vendor API rate-limit yönetimi zorunluluğu getirir |
+| **Rate Limiting Altyapısı** | Redis gerektirir; Redis kesintisinde local fallback devreye girer ve dağıtık tutarlılık geçici düşebilir |
+| **Docker Bağımlılığı** | `execute_code` tam işlevsellik için Docker daemon erişimi gerektirir |
+| **BM25 Bellek Maliyeti** | Büyük doküman korpuslarında BM25 token verisinin RAM tüketimi artar |
+| **LLM Maliyet/Limit Baskısı** | Bulut sağlayıcılarda token maliyeti ve provider rate-limit yönetimi zorunludur |
+| **QA Overhead** | Reviewer doğrulama adımları kaliteyi artırırken ek LLM çağrısı/latency maliyeti üretir |
+| **Operasyonel Karmaşıklık** | PostgreSQL + Prometheus + Grafana + migration süreçleri kurulum/işletim maliyetini yükseltir |
 
 ---
 
