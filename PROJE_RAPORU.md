@@ -162,45 +162,56 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-```
+```text
 sidar_project/
+├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
 ├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── cli.py                     # CLI terminal arayüzü giriş noktası
 ├── web_server.py              # FastAPI web sunucusu (WebSocket streaming)
 ├── config.py                  # Merkezi yapılandırma (v3.0.0)
 ├── github_upload.py           # GitHub otomatik yükleme aracı
 ├── Dockerfile                 # CPU + GPU çift mod Dockerfile
-├── docker-compose.yml         # 5 servis: cli/web × cpu/gpu + redis
-├── environment.yml            # Conda/pip bağımlılıkları
+├── docker-compose.yml         # 5 servis + Prometheus & Grafana entegrasyonu
+├── environment.yml            # Conda bağımlılıkları
+├── requirements.txt           # Pip temel bağımlılıkları
+├── requirements-dev.txt       # Geliştirme ve test bağımlılıkları
 ├── pyproject.toml             # Ruff + Mypy kalite standartları
+├── pytest.ini                 # Pytest konfigürasyonu
+├── alembic.ini                # Veritabanı geçiş (migration) ayarları
+├── run_tests.sh               # Kapsam ve test çalıştırıcı betik
+├── install_sidar.sh           # Otomatik kurulum betiği
 │
 ├── agent/
 │   ├── __init__.py
-│   ├── sidar_agent.py         # Ana ajan (1698 satır, 45+ araç + tracing + multi-agent)
-│   ├── base_agent.py          # BaseAgent soyut sınıfı (multi-agent iskeleti, 34 satır)
-│   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici (601 satır)
-│   ├── definitions.py         # Sistem istemi ve ajan kimliği (165 satır)
-│   ├── tooling.py             # Araç kayıt + Pydantic şema yöneticisi (266 satır)
+│   ├── sidar_agent.py         # Ana ajan bağlayıcısı
+│   ├── base_agent.py          # BaseAgent soyut sınıfı (multi-agent iskeleti)
+│   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici
+│   ├── definitions.py         # Sistem istemi ve ajan kimliği
+│   ├── tooling.py             # Araç kayıt + Pydantic şema yöneticisi
 │   ├── core/
-│   │   ├── __init__.py        # SupervisorAgent, TaskEnvelope, TaskResult export
-│   │   ├── supervisor.py      # SupervisorAgent — role router + orchestrator (87 satır)
-│   │   └── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri (30 satır)
+│   │   ├── __init__.py
+│   │   ├── supervisor.py      # Yönlendirici ve orkestrasyon ajanı
+│   │   ├── contracts.py       # TaskEnvelope, TaskResult veri sözleşmeleri
+│   │   ├── event_stream.py    # Ajan olay veriyolu (canlı durum akışı)
+│   │   ├── memory_hub.py      # Multi-agent bellek yönetim merkezi
+│   │   └── registry.py        # Ajan ve yetenek kayıt defteri
 │   └── roles/
-│       ├── __init__.py        # CoderAgent, ResearcherAgent, ReviewerAgent export
-│       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan (120 satır)
-│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan (75 satır)
+│       ├── __init__.py
+│       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan
+│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan
 │       └── reviewer_agent.py  # Test koşturan, kod kalitesini denetleyen QA ajanı
 │
 ├── core/
 │   ├── __init__.py
-│   ├── db.py                  # Veritabanı bağlantısı, kullanıcı (auth) ve kota tabloları
+│   ├── db.py                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
 │   ├── llm_client.py          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
-│   ├── llm_metrics.py         # Token, maliyet (USD) ve Prometheus metrik toplayıcısı
-│   ├── memory.py              # Kalıcı çok oturumlu bellek
+│   ├── llm_metrics.py         # Token, maliyet ve Prometheus metrik toplayıcısı
+│   ├── memory.py              # Kalıcı çok oturumlu bellek (DB destekli)
 │   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
 │
-├── migrations/                # Alembic veritabanı geçiş (migration) dosyaları
-├── scripts/                   # Veritabanı taşıma (SQLite -> PG) ve denetim betikleri
+├── docker/                    # Gözlemlenebilirlik (observability) ayarları
+│   ├── grafana/               # Dashboard ve provisioning dosyaları
+│   └── prometheus/            # Scrape yapılandırması
 │
 ├── managers/
 │   ├── __init__.py
@@ -212,29 +223,43 @@ sidar_project/
 │   ├── package_info.py        # PyPI + npm + GitHub Releases
 │   └── todo_manager.py        # Görev takip yöneticisi
 │
-├── web_ui/                    # Modüler Web UI (toplam ~3.800 satır)
-│   ├── index.html             # HTML iskeleti (461 satır)
-│   ├── style.css              # Tema ve bileşen stilleri (1547 satır)
-│   ├── chat.js                # WebSocket streaming, mesaj render (656 satır)
-│   ├── sidebar.js             # Oturum yönetimi (394 satır)
-│   ├── rag.js                 # RAG belge UI (131 satır)
-│   └── app.js                 # Uygulama başlatma, tema (339 satır)
+├── migrations/                # Alembic veritabanı geçiş dosyaları
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/              # 0001_baseline_schema.py vb. şema versiyonları
 │
-├── tests/                     # 69 test modülü
-│   ├── test_sidar.py
-│   ├── test_tooling_registry.py
-│   ├── test_parallel_react_improvements.py
-│   ├── test_github_upload_improvements.py
-│   ├── test_core_init_improvements.py
-│   ├── test_managers_init_improvements.py
-│   ├── test_claude_md_improvements.py
-│   ├── test_sidar_md_improvements.py
-│   └── test_*_improvements.py
+├── scripts/                   # Operasyon, test ve metrik betikleri
+│   ├── audit_metrics.sh       # Kod satır sayısı ve audit metrikleri üretici
+│   ├── check_empty_test_artifacts.sh # CI kalite kapısı kontrolleri
+│   ├── collect_repo_metrics.sh
+│   ├── install_host_sandbox.sh # Zero-trust sandbox (gVisor/Kata) hazırlığı
+│   ├── load_test_db_pool.py   # DB bağlantı havuzu yük testi
+│   └── migrate_sqlite_to_pg.py # SQLite'tan PostgreSQL'e geçiş aracı
 │
-├── data/                      # RAG, bellek verileri ve yerel SQLite veritabanı (sidar.db)
+├── runbooks/                  # Operasyonel kılavuzlar
+│   └── production-cutover-playbook.md # Kurumsal sürüme geçiş yönergeleri
+│
+├── web_ui/                    # Modüler Web UI
+│   ├── index.html
+│   ├── style.css
+│   ├── chat.js                # WebSocket streaming, canlı durum akışı
+│   ├── sidebar.js             # Oturum yönetimi
+│   ├── rag.js                 # RAG belge UI
+│   └── app.js                 # Uygulama başlatma, auth, bütçe yönetimi
+│
+├── tests/                     # Kapsamlı test paketi (~70 test modülü)
+│   ├── conftest.py            # Ortak test fixture'ları
+│   └── test_*.py              # Modül bazlı ve entegrasyon testleri
+│
+├── data/                      # RAG ve varsayılan yerel depolama dosyaları
+├── .coveragerc                # Coverage kalite kapısı kuralları (%95 eşik)
+├── .env.example               # Ortam değişkeni şablonu
+├── CHANGELOG.md               # Sürüm notları ve değişiklik geçmişi
 ├── CLAUDE.md                  # Geliştirici rehberi
-├── RFC-MultiAgent.md          # Multi-agent mimari tasarım RFC belgesi (Draft, v2.11.x hedefi)
-└── .env.example               # Ortam değişkeni şablonu
+├── PROJE_RAPORU.md            # Ana mimari ve denetim raporu
+├── README.md                  # Proje tanıtım ve kurulum belgesi
+├── RFC-MultiAgent.md          # Multi-agent mimari tasarım dokümanı
+└── SIDAR.md                   # Sistem promptları ve proje kuralları
 ```
 
 ---
