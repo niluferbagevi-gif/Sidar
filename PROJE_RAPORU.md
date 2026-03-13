@@ -1870,6 +1870,10 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılandırılmış olması gerektiğini gösterir.
 
+> **Doğrulama Notu (Kod Tabanı Eşleşmesi):** 15. madde kapsamındaki çekirdek özellikler, arama/web, RAG, sistem izleme-GPU ve kod yürütme başlıkları; ilgili kaynak dosyalar (`cli.py`, `config.py`, `core/memory.py`, `core/rag.py`, `requirements.txt`, `environment.yml`) üzerinden satır bazlı karşılaştırılmış ve mevcut kod tabanıyla uyumlu olduğu doğrulanmıştır. İddia edilen zorunlu paketler ile `.env` değişkenleri kod içinde karşılık bulmaktadır.
+
+*Özet Sonuç:* 15. maddede listelenen özellik-gereksinim eşleşmelerinde çelişki tespit edilmemiştir.
+
 ### 15.1 Çekirdek Özellikler (Her Zaman Zorunlu)
 
 | Özellik | Zorunlu Paket / Servis | Zorunlu `.env` | Gerçekleşme Durumu |
