@@ -23,7 +23,8 @@
   - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)](#37b-agenttoolingpy-araç-kayıt-ve-şema-yöneticisi-266-satır)
   - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (34 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-34-satır)
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (87 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-87-satır)
-  - [3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)](#37e-agentroles-uzman-ajan-rolleri-coder-researcher-200-satır)
+  - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
+  - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
   - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-723-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği (402 satır)](#39-corememorypy-konuşma-belleği-402-satır)
   - [3.10 `core/rag.py` — RAG Motoru (783 satır)](#310-coreragpy-rag-motoru-783-satır)
@@ -40,7 +41,7 @@
   - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy-telemetri-ve-bütçe-yönetimi)
   - [3.22 `agent/roles/reviewer_agent.py` — QA ve İnceleme Ajanı](#322-agentrolesreviewer_agentpy-qa-ve-i̇nceleme-ajanı)
   - [3.23 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#323-migrations-ve-scripts-geçiş-ve-operasyon-araçları)
-  - [3.24 Altyapı Dosyaları](#324-altyapı-dosyaları)
+  - [3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları](#324-docker-ve-runbooks-telemetri-ve-production-altyapı-dosyaları)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -574,13 +575,28 @@ kullanıcı mesajı
 
 ---
 
-### 3.7e `agent/roles/` — Uzman Ajan Rolleri (Coder & Researcher) (200 satır)
+### 3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı
 
-**Amaç:** Alan odaklı uzman ajanları kapsar.
+**Amaç:** Multi-agent omurgasında roller arası görev sözleşmesi, canlı olay akışı ve paylaşımlı bellek/araç kayıt altyapısını sağlar.
+
+**Kapsam:**
+- `contracts.py` — `TaskEnvelope` / `TaskResult` veri sözleşmeleri
+- `event_stream.py` — ajan durum ve araç olaylarını yayınlayan event bus
+- `memory_hub.py` — roller arası ortak bellek erişim katmanı
+- `registry.py` — çalışma zamanında rol/ajan kayıt ve çözümleme yardımcıları
+
+**Mimari Değer:** Bu katman, `SupervisorAgent` ile rol ajanları arasında gevşek bağlı (loosely-coupled) iletişim kurarak genişletilebilirliği artırır.
+
+---
+
+### 3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)
+
+**Amaç:** Alan odaklı uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
 
 **Alt Roller:**
 - `coder_agent.py` — dosya/kod odaklı uzman ajan
 - `researcher_agent.py` — web + RAG odaklı uzman ajan
+- `reviewer_agent.py` — test/kalite denetimi yapan QA uzman ajan
 
 ---
 
@@ -960,7 +976,7 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.24 Altyapı Dosyaları
+### 3.24 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
 #### `Dockerfile` (101 satır)
 - **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
@@ -982,6 +998,15 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 | `redis` | Rate-limit store | — | — | 6379 (internal) |
 
 Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
+
+#### `docker/` alt dizini
+- `docker/prometheus/prometheus.yml` ile Prometheus scrape hedefleri tanımlanır.
+- `docker/grafana/provisioning/` altında datasource/dashboard provisioning otomatik yüklenir.
+- `docker/grafana/dashboards/sidar-llm-overview.json` ile LLM maliyet/token/latency görünürlüğü sağlanır.
+
+#### `runbooks/production-cutover-playbook.md`
+- Üretime geçiş adımları, rollback planı ve operasyonel kontrol listelerini içerir.
+- DB migration, gözlemlenebilirlik ve servis sağlık kontrol adımlarını tek bir playbook altında toplar.
 
 ---
 
@@ -1430,7 +1455,7 @@ add_document(title, content, source)
 | 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
 | 4 | ~~Çoklu API hata ve maliyet yönetimi~~ | ~~`core/llm_client.py`, `web_server.py`, `config.py`~~ | ~~OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `LLMAPIError` sözleşmesi + sağlayıcı bazlı retry/backoff + websocket yüzeyleme tamamlandı |
 | 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
-| 6 | ~~`.note` dosyası (311 satır) raporda belgelenmemiş~~ | ~~`.note`~~ | ~~Proje kökünde 311 satırlık dosya; içeriği ve amacı hiçbir rapor bölümünde yer almıyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — geçici Ar-Ge scratchpad dosyası depodan kaldırıldı |
+| 6 | `.note` dosyası rapor kapanış notlarıyla çelişkili şekilde depoda duruyor | `.note` | Kapanış notlarında “kaldırıldı” denmesine rağmen kök dizinde dosya mevcut; audit tutarlılığı bozuluyor | Düşük | ⚠ **AÇIK** — rapor ya da repo durumu eşitlenmeli |
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1905,7 +1930,7 @@ Bu bölüm, Audit #8 itibarıyla projenin ulaştığı güncel doğrulanmış ç
 - ✅ **`ENABLE_MULTI_AGENT` `.env.example`'da mevcut** (satır 81) — §18.6.5'teki "Eksik" iddiası hatalıydı, düzeltildi.
 - ⚠ **İki boş artifact hâlâ silinmedi:** `test_config_runtime_coverage` ve `test_config_runtime_coverage.py`.
 - ⚠ **`ReviewerAgent` hâlâ eksik:** `agent/roles/reviewer_agent.py` mevcut değil.
-- ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; kalıcı kararlar `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` içinde tutuluyor.
+- ⚠ `.note` dosyası depoda mevcut; “kaldırıldı” ifadeleri güncel duruma göre revize edilmelidir.
 
 **Audit #7 Kapanışında Öne Çıkan Güncel Çözümler:**
 - ✅ **Multi-Agent Altyapısı Entegre Edildi:** Legacy tekli ajan sınırları aşılarak `Supervisor` + `CoderAgent` + `ResearcherAgent` mimarisi devreye alındı; geçiş `ENABLE_MULTI_AGENT` feature toggle ve Strangler Pattern ile yönetiliyor.
@@ -2293,11 +2318,11 @@ Bu bölüm, 2026-03-10 tarihli sekizinci kapsamlı audit'te yapılan tam doğrul
 
 ---
 
-#### 18.7.4 `.note` Scratchpad Dosyası — Kapanış Güncellemesi
+#### 18.7.4 `.note` Scratchpad Dosyası — Durum Düzeltmesi
 
 | Dosya | Satır | Durum | Detay |
 |-------|-------|-------|-------|
-| `.note` | **0 (kaldırıldı)** | ✅ **Kapanış** | Geçici Ar-Ge scratchpad dosyası depodan temizlendi; dokümantasyon sorumluluğu README/PROJE/RFC üzerinde toplandı. |
+| `.note` | **mevcut** | ⚠ **Açık Çelişki** | Kök dizinde `.note` dosyası bulunduğu için “kaldırıldı” kapanışı güncel depo ile uyumsuzdur. |
 
 ---
 
@@ -2334,7 +2359,7 @@ Audit #7'de onaylanan tüm maddeler bu audit'te de doğrulanmıştır:
 |----------|------|-------|
 | **Onaylanan çözüldü** | 17 | Audit #7 ve önceki tüm önemli maddeler doğrulandı |
 | **Süregelen açık sorun** | 3 | 2 boş artifact dosyası + `ReviewerAgent` eksikliği |
-| **Kapanan bulgu** | 1 | `.note` scratchpad dosyası depodan kaldırıldı |
+| **Açık bulgu** | 1 | `.note` scratchpad dosyası depoda mevcut; kapanış iddiası revize edilmeli |
 | **Rapor iç çelişkisi giderildi** | 1 | §18.6.5 "Eksik" → "Mevcut" düzeltmesi |
 | **Satır sayısı güncellenen alan** | 3 | RFC-MultiAgent.md (+103), Dockerfile (+2), Python toplam (+277) |
 
@@ -2384,7 +2409,7 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 | `tests/` dosya adedi | `find tests -maxdepth 1 -type f | wc -l` | ✅ **68** |
 | Boş test artifact dosyaları | `find tests -maxdepth 1 -type f -size 0` | ✅ Bulunamadı (çıktı boş) |
 | RFC satır sayısı | `wc -l RFC-MultiAgent.md` | ✅ **303** |
-| `.note` satır sayısı | `test -f .note || echo removed` | ✅ **removed** |
+| `.note` varlık kontrolü | `test -f .note && echo present` | ⚠ **present** |
 | Planlanan fakat eksik modüller | `test -f agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` | ✅ Üç modül de depoda mevcut |
 
 #### 18.9.2 Önceki Yorumlarla Nihai Uyum Durumu
@@ -2398,7 +2423,7 @@ Bu bölüm, “dosya dosya/satır satır son durum” talebine karşılık nihai
 1. ✅ `tests/test_config_runtime_coverage` ve `tests/test_config_runtime_coverage.py` dosyaları depoda bulunmuyor; `find tests -type f -size 0` doğrulaması temiz.
 2. ✅ RFC dokümanında “planlandı / implement edildi” matrisi eklendi (`ReviewerAgent`, `memory_hub`, `registry`).
 3. ✅ Satır sayısı metrikleri `scripts/audit_metrics.sh` ile standardize edildi (CI adımı aktif).
-4. ✅ `.note` geçici scratchpad dosyası depodan kaldırıldı; dokümantasyon tutarlılığı sağlandı.
+4. ⚠ `.note` dosyası depoda mevcut; dokümantasyon tutarlılığı için rapor kapanış notları revize edildi.
 ---
 
 ### Session 2026-03-11 — Multi-Agent Geçiş Sertleştirme ve Reviewer QA Döngüsü
