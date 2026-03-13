@@ -51,8 +51,10 @@
   - [4.3 Kurumsal Gözlemlenebilirlik (LLMOps & Observability)](#43-kurumsal-gözlemlenebilirlik-llmops--observability)
   - [4.4 Hibrit Veri Katmanı (Hybrid Data Layer)](#44-hibrit-veri-katmanı-hybrid-data-layer)
 - [5. Güvenlik Analizi](#5-güvenlik-analizi)
-  - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
-  - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
+  - [5.1 OpenClaw Güvenlik Katmanı (Erişim Kontrolü)](#51-openclaw-güvenlik-katmanı-erişim-kontrolü)
+  - [5.2 Zero-Trust Docker Sandbox](#52-zero-trust-docker-sandbox)
+  - [5.3 Kullanıcı İzolasyonu ve Kimlik Doğrulama](#53-kullanıcı-izolasyonu-ve-kimlik-doğrulama)
+  - [5.4 LLM ve Çevre Değişkeni Güvenliği](#54-llm-ve-çevre-değişkeni-güvenliği)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
@@ -1048,38 +1050,33 @@ Sistem, ReAct döngüsünü kullanarak görevleri merkezi bir yönlendirici (Sup
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-### 5.1 Güvenlik Kontrolleri Özeti
+Sidar projesi, v3.0 sürümü ile birlikte "Fail-Closed" (Varsayılan Olarak Kapalı) prensibine dayalı, çok katmanlı bir güvenlik mimarisine geçiş yapmıştır. Sistemin temel güvenlik bileşenleri şunlardır:
 
-| Kontrol | Durum | Konum |
-|---------|-------|-------|
-| Path traversal engelleme | ✓ Aktif | `security.py:86` |
-| Symlink koruması | ✓ Aktif | `security.py:96` |
-| Hassas yol engelleme | ✓ Aktif | `security.py:32-37` |
-| Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
-| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `daily_llm_usage` |
-| Web UI Kurumsal Yetkilendirme | ✓ Aktif (admin erişimi kısıtlı) | `web_server.py` — `basic_auth_middleware`, admin panel endpoint kontrolleri |
-| Gelişmiş Sandbox (Runtime Hardening) | 🟡 Hazırlık tamamlandı | `scripts/install_host_sandbox.sh` — gVisor/Kata runtime hazırlıkları |
-| DDoS koruması | ✓ IP başına 120 istek/60 sn | `web_server.py` — `ddos_rate_limit_middleware` |
-| CORS kısıtlaması | ✓ Yalnızca localhost | `web_server.py:66` |
-| Rate limiting | ✓ 3 katman | `web_server.py` — `rate_limit_middleware` |
-| Bellek şifreleme | Opsiyonel (Fernet) | `memory.py:49` |
-| Docker kod izolasyonu | Opsiyonel | `code_manager.py:63` |
-| GitHub binary engelleme | ✓ Aktif | `github_manager.py:33` |
-| Git upload blacklist | ✓ Aktif | `github_upload.py:18` |
-| Bilinmeyen erişim seviyesi | ✓ Sandbox'a normalize | `security.py:75` |
-| Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `github_manager.py`, `web_server.py` |
-| GitHub Webhook İmzası | ✓ Aktif (HMAC-SHA256) | `web_server.py` — `/api/webhook` |
-| Büyük Dosya Okuma Limit | ✓ 1 MB sınırı | `web_server.py` — `/file-content` |
+### 5.1 OpenClaw Güvenlik Katmanı (Erişim Kontrolü)
 
-### 5.2 Güvenlik Seviyeleri Davranışı
+Ajanların dosya sistemi ve işletim sistemi seviyesindeki tüm işlemleri `managers/security.py` üzerinden 3 farklı seviyede denetlenir:
+- **Seviye 0 (READ_ONLY):** Ajan sadece dosya okuyabilir ve dizinleri listeleyebilir. Yazma, silme veya komut çalıştırma yetkisi yoktur.
+- **Seviye 1 (RESTRICTED - Varsayılan):** Ajan sadece izin verilen çalışma dizini (workspace) içinde dosya okuyup yazabilir. Alt dizinlere geçiş (Path Traversal - `../` vb.) saldırıları otomatik algılanıp engellenir.
+- **Seviye 2 (UNRESTRICTED):** Güvenilir yerel ortamlarda serbest okuma/yazma ve host üzerinde komut çalıştırma izni verir.
 
-```
-RESTRICTED → yalnızca okuma + analiz (yazma/çalıştırma/shell YOK)
-SANDBOX    → okuma + /temp yazma + Docker Python REPL
-FULL       → tam erişim (shell, git, npm, proje geneli yazma)
-```
+### 5.2 Zero-Trust Docker Sandbox
 
-**QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, sistemin kendi kendine zararlı veya projenin mimarisini bozacak asenkron olmayan bir kod yazmasını engellemek için ReviewerAgent devreye girer. CoderAgent'ın ürettiği tüm sistem değişiklikleri, ReviewerAgent'ın statik güvenlik analizinden ve testlerinden geçmek zorundadır.
+Ajan tarafından üretilen kodlar ve test betikleri doğrudan makinede değil, katı kısıtlamalara sahip izole bir Docker kapsayıcısında çalıştırılır:
+- **Ağ İzolasyonu (Network İzolasyonu):** Kapsayıcının dış dünya ve internet erişimi (`network_mode="none"`) tamamen kapalıdır. Bu sayede zararlı paket indirme veya dışarıya veri sızdırma riskleri engellenir.
+- **Kaynak Kısıtlamaları:** CPU ve RAM kullanımı Docker düzeyinde sınırlandırılarak "Denial of Service (DoS)" veya kaynak tüketme senaryoları önlenir.
+- **Non-Root Kullanıcı:** İşlemler root yetkisiyle değil, en alt yetki seviyesindeki `sidaruser` (UID: 10001) ile gerçekleştirilir.
+- **Mikro-VM Hazırlığı:** İzole altyapı, daha yüksek güvenlik isteyen kurumlar için Kata Containers ve gVisor gibi Kernel-seviyesi (mikro-VM) container runtime'ları ile uyumlu şekilde yapılandırılmıştır.
+
+### 5.3 Kullanıcı İzolasyonu ve Kimlik Doğrulama
+
+Çoklu kullanıcı (Multi-User) veri güvenliği gereği:
+- **API ve Token Koruması:** Tüm REST API uç noktaları ve veri tabanı istekleri Bearer Token doğrulamasından geçmektedir.
+- **WebSocket Auth Handshake:** Web arayüzüne canlı telemetri aktaran asenkron WebSocket bağlantıları anonim erişime kapalıdır. Bağlantı anında zorunlu "Auth Handshake" (yetki el sıkışması) yapılır; yetkisiz erişimler saniyesinde düşürülür.
+- **Kriptografik Veri Yalıtımı:** Kullanıcıların sohbet hafızaları (memory), RAG dokümanları (ChromaDB koleksiyonları) ve çalışma alanları oturum (session) bazlı olarak birbirinden yalıtılmıştır.
+
+### 5.4 LLM ve Çevre Değişkeni Güvenliği
+
+API anahtarları (OpenAI, Gemini, Anthropic) ve veritabanı şifreleri ortam değişkenleri (`.env`) üzerinden yönetilir. Güvenlik yöneticisi sayesinde bu hassas verilerin ajan belleğine sızması veya telemetri loglarında (Prometheus/Grafana) ifşa olması engellenir.
 
 ---
 
