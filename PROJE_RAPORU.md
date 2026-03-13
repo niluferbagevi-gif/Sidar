@@ -55,6 +55,11 @@
   - [6.3 Test Havuzu ve Modüler Senaryolar](#63-test-havuzu-ve-modüler-senaryolar)
   - [6.4 Asenkron Test Altyapısı](#64-asenkron-test-altyapısı)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
+  - [7.1 Asenkron Altyapı ve Uygulama Çekirdeği](#71-asenkron-altyapı-ve-uygulama-çekirdeği)
+  - [7.2 Veritabanı, Migrasyon ve Telemetri](#72-veritabanı-migrasyon-ve-telemetri)
+  - [7.3 Güvenlik, Sandbox ve Donanım Gözlemlenebilirliği](#73-güvenlik-sandbox-ve-donanım-gözlemlenebilirliği)
+  - [7.4 AI Sağlayıcıları ve RAG Katmanı](#74-ai-sağlayıcıları-ve-rag-katmanı)
+  - [7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)](#75-test-ve-kalite-kapıları-dev-bağımlılıkları)
 - [8. Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
   - [8.1 Çekirdek Modüller (Güncel)](#81-çekirdek-modüller-güncel)
   - [8.2 Multi-Agent Çekirdek ve Roller](#82-multi-agent-çekirdek-ve-roller)
@@ -1296,31 +1301,57 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Aşağıdaki tablo, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.yml` ile doğrulanan v3.0 bağımlılık setini özetler.
+Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.yml` dosyalarına göre v3.0 bağımlılık setini kurumsal kategorilerle özetler.
 
-| Paket | Zorunlu | Kullanım Yeri |
-|-------|---------|---------------|
-| `fastapi` + `uvicorn[standard]` | ✓ | Web sunucusu + WebSocket API (`web_server.py`) |
-| `httpx` | ✓ | LLM ve web arama HTTP istemcisi |
-| `python-dotenv` | ✓ | `.env` yükleme |
-| `pydantic` | ✓ | Tool/şema doğrulama |
-| `cachetools` | ✓ | HTTP/WS rate-limit ve TTLCache katmanları |
-| `redis` | Opsiyonel (önerilen) | Dağıtık/persist rate limiting fallback mimarisi |
-| `SQLAlchemy` + `asyncpg` | ✓ (v3.0) | PostgreSQL odaklı DB katmanı ve çoklu kullanıcı veri modeli |
-| `sqlite3` (stdlib) | ✓ | Yerel DB fallback (SQLite) |
-| `alembic` | ✓ (v3.0) | `migrations/` şema versiyonlama |
-| `prometheus-client` | ✓ (v3.0) | `/metrics` ve LLM metrik dışa aktarımı |
+### 7.1 Asenkron Altyapı ve Uygulama Çekirdeği
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `fastapi` + `uvicorn[standard]` | ✓ Zorunlu | Web API + WebSocket katmanı |
+| `httpx` | ✓ Zorunlu | Asenkron HTTP istemcisi (LLM/web entegrasyonları) |
+| `python-dotenv`, `pydantic`, `cachetools`, `anyio` | ✓ Zorunlu | Konfigürasyon, doğrulama, rate-limit yardımcıları |
+| `redis` | Opsiyonel (önerilen) | Dağıtık/persist rate-limit altyapısı |
+
+### 7.2 Veritabanı, Migrasyon ve Telemetri
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `SQLAlchemy` + `asyncpg` | ✓ Zorunlu (v3.0) | Async PostgreSQL veri katmanı |
+| `alembic` | ✓ Zorunlu (v3.0) | Şema sürümleme ve migration zinciri |
+| `prometheus-client` | ✓ Zorunlu (v3.0) | `/metrics` ve LLM telemetri export |
 | `opentelemetry-*` | Opsiyonel | Tracing + OTLP export |
-| `tiktoken` | ✓ (v3.0) | LLM token ölçümü + bellek özetleme eşikleri |
-| `PyGithub` | ✓ | GitHub API entegrasyonu |
-| `duckduckgo-search` + `beautifulsoup4` | Opsiyonel | Web arama ve içerik temizleme |
-| `chromadb` + `rank-bm25` + `sentence-transformers` | Opsiyonel | Hibrit RAG (vektör + BM25) |
-| `torch` + `torchvision` + `nvidia-ml-py` + `psutil` | Opsiyonel | GPU/CPU gözlemleme ve hızlandırma |
-| `docker` | Opsiyonel (sandbox için kritik) | Zero-Trust REPL yürütme katmanı |
+| `tiktoken` | ✓ Zorunlu (v3.0) | Token ölçümü ve özetleme eşikleri |
+
+### 7.3 Güvenlik, Sandbox ve Donanım Gözlemlenebilirliği
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `docker` | Kritik/opsiyonel | Zero-Trust REPL sandbox çalıştırma |
+| `nvidia-ml-py` + `psutil` | Opsiyonel | GPU/CPU/RAM donanım metrikleri |
 | `cryptography` | Opsiyonel | Fernet tabanlı şifreleme yardımcıları |
-| `packaging` + `pyyaml` + `python-multipart` + `anyio` | ✓ | Yardımcı altyapı bağımlılıkları |
-| `pytest` + `pytest-asyncio` + `pytest-cov` + `pytest-benchmark` | ✓ (CI/QA) | Test yürütme, async testler, coverage (%95 gate), benchmark |
-| `ruff` + `mypy` + `black` + `flake8` | ✓ (CI/QA) | Statik analiz ve kalite kapıları |
+| `python-multipart`, `packaging`, `pyyaml` | ✓ Zorunlu | Yardımcı runtime bileşenleri |
+
+### 7.4 AI Sağlayıcıları ve RAG Katmanı
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `openai`, `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Çoklu LLM istemci katmanı |
+| `chromadb` + `sentence-transformers` | Opsiyonel | Vektör tabanlı RAG ve embedding |
+| `rank-bm25` | Opsiyonel (mevcut) | BM25 tabanlı hibrit arama uyumluluğu |
+| `duckduckgo-search` + `beautifulsoup4` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları |
+| `torch` + `torchvision` | Opsiyonel | Embedding ve GPU hızlandırmalı iş yükleri |
+
+### 7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-benchmark` | ✓ Zorunlu (CI/QA) | Test yürütme, async test, coverage gate, benchmark |
+| `ruff`, `mypy`, `black`, `flake8` | ✓ Zorunlu (CI/QA) | Lint, statik analiz, format kalite kapıları |
+
+**Geçiş Notu (v3.0):**
+- `requests` bağımlılığı doğrudan runtime listesinde yer almamaktadır; ana HTTP akışı `httpx` ile asenkron modele taşınmıştır.
+- `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
+- `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
 **Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde PBKDF2-HMAC akışıyla yapılır; JWT/passlib/bcrypt şu an zorunlu bağımlılık setinde yer almamaktadır.
 
