@@ -1061,119 +1061,32 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projede **69 `.py` test modülü** bulunmaktadır (toplam ~15.974 satır):
+Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiştir:
 
-> **⚠️ Audit #4 Güncellemesi (2026-03-10):** Son audit'te test modülü sayısı 39'dan 63'e yükselmiştir. Audit #3'ten bu yana 24 yeni `*_runtime.py` test modülü eklenmiştir.
->
-> **⚠️ Audit #7 Güncellemesi (2026-03-10):** Test modülü sayısı 63'ten **69'a** yükselmiştir (6 yeni modül). `test_config_runtime_coverage` (uzantısız, 0 bayt) **hâlâ mevcut** — Audit #6'da silindiği belirtilmişti. Ek olarak `test_config_runtime_coverage.py` adıyla yeni bir 0 baytlık `.py` dosyası oluşturulmuştur.
->
-> **⚠️ Audit #8 Güncellemesi (2026-03-10):** `tests/` dizininde toplam **70 öğe** (`ls` çıktısı) mevcuttur: 69 `.py` dosyası (68 test modülü + `__init__.py`) ve 1 uzantısız artifact (`test_config_runtime_coverage`). Her iki boş artifact (**`test_config_runtime_coverage`** uzantısız ve **`test_config_runtime_coverage.py`**) **hâlâ mevcut** — kaldırılmamış. Test satır toplamı `wc -l tests/*.py` ile yeniden doğrulandı: **15.974 satır** ✅.
+- **`test_*.py` modül sayısı:** **91**
+- **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **93**
+- **Toplam test satırı (`tests/*.py`):** **20.996**
 
-**Orijinal (v2.10.7) Test Modülleri:**
+**v3.0 Öne Çıkan Test Kategorileri:**
+- **Veritabanı & Migration:** `test_db_runtime.py`, `test_db_postgresql_branches.py`, `test_migration_assets.py`, `test_migration_ci_guards.py`
+- **Zero-Trust Sandbox:** `test_sandbox_runtime_profiles.py`, `test_host_sandbox_installer_assets.py`, `test_dockerfile_runtime_improvements.py`
+- **Telemetri & Bütçe:** `test_llm_metrics_runtime.py`, `test_grafana_dashboard_provisioning.py`
+- **Multi-Agent & Reviewer:** `test_reviewer_agent.py`, `test_supervisor_agent.py`, `test_event_stream_runtime.py`, `test_agent_core_components.py`
+- **Güvenlik ve WebSocket/Auth:** `test_security_level_transition.py`, `test_github_webhook.py`, `test_web_server_runtime.py`, `test_web_ui_security_improvements.py`
 
-| Test Dosyası | Satır | Kapsam |
-|-------------|-------|--------|
-| `test_sidar.py` | 1.219 | Genel entegrasyon testleri (en kapsamlı) |
-| `test_sidar_improvements.py` | 7 | Ajan iyileştirme testleri |
-| `test_auto_handle_improvements.py` | 34 | AutoHandle regex ve mantık testleri |
-| `test_agent_init_improvements.py` | 15 | Ajan başlatma testleri |
-| `test_agent_subtask.py` | 26 | Alt görev (subtask) testleri |
-| `test_parallel_react_improvements.py` | 18 | `parallel` araç ve asyncio.gather testleri |
-| `test_llm_client_improvements.py` | 38 | LLM istemci testleri (OpenAI dahil) |
-| `test_memory_improvements.py` | 46 | Bellek yönetimi testleri |
-| `test_core_memory.py` | 30 | ConversationMemory birim testleri (sliding window) |
-| `test_rag_improvements.py` | 34 | RAG motor testleri (RRF, izolasyon) |
-| `test_security_improvements.py` | 36 | Güvenlik kontrolü testleri |
-| `test_code_manager_improvements.py` | 39 | Kod yöneticisi testleri |
-| `test_github_manager_improvements.py` | 30 | GitHub entegrasyon testleri |
-| `test_github_upload_improvements.py` | 14 | GitHub yükleme aracı testleri |
-| `test_system_health_improvements.py` | 24 | Sağlık monitör testleri (Prometheus) |
-| `test_web_search_improvements.py` | 36 | Web arama testleri |
-| `test_package_info_improvements.py` | 25 | Paket bilgi testleri |
-| `test_todo_manager_improvements.py` | 46 | Görev yöneticisi testleri (scan_project_todos) |
-| `test_tooling_registry.py` | 75 | `tooling.py` şema ve dispatch testleri (yeni Issue şemaları) |
-| `test_config_env_helpers.py` | 30 | Config yardımcı fonksiyon testleri |
-| `test_config_improvements.py` | 7 | Config doğrulama testleri |
-| `test_web_server_improvements.py` | 112 | Web sunucu endpoint testleri (DDoS, Basic Auth) |
-| `test_web_ui_runtime_improvements.py` | 33 | Web UI çalışma zamanı testleri |
-| `test_web_ui_security_improvements.py` | 10 | Web UI güvenlik testleri |
-| `test_cli_banner.py` | 29 | CLI banner testleri |
-| `test_cli_runtime_improvements.py` | 17 | CLI çalışma zamanı testleri |
-| `test_main_launcher_improvements.py` | 34 | Başlatıcı testleri |
-| `test_dockerfile_runtime_improvements.py` | 22 | Dockerfile çalışma zamanı testleri |
-| `test_definitions_prompt.py` | 26 | Sistem istemi testleri |
-| `test_core_init_improvements.py` | 14 | `core/__init__.py` export testleri |
-| `test_managers_init_improvements.py` | 7 | `managers/__init__.py` export testleri |
-| `test_claude_md_improvements.py` | 23 | `CLAUDE.md` içerik testleri |
-| `test_sidar_md_improvements.py` | 22 | `SIDAR.md` içerik testleri |
-| `test_benchmark.py` | — | Performans baseline'ları (ChromaDB <200ms, BM25 <50ms, regex <5ms) |
-| `test_coverage_policy.py` | — | Coverage eşik zorunluluk testleri |
-| `test_quality_tooling_config.py` | — | Ruff/Mypy kalite altyapısı testleri |
-| `test_config_env_profiles.py` | — | Ortam başına konfigürasyon testleri |
-| `test_github_webhook.py` | — | GitHub webhook HMAC doğrulama testleri |
-| `test_security_level_transition.py` | — | Güvenlik seviyesi geçiş logu testleri |
-
-**Audit #4'te Tespit Edilen Yeni Test Modülleri (24 adet):**
-
-| Test Dosyası | Kapsam |
-|-------------|--------|
-| `test_auto_handle_runtime.py` | AutoHandle çalışma zamanı testleri |
-| `test_cli_runtime_full.py` | CLI tam çalışma zamanı testleri |
-| `test_code_manager_runtime.py` | CodeManager çalışma zamanı testleri |
-| `test_config_hardware_runtime.py` | Config donanım algılama çalışma zamanı |
-| `test_config_runtime.py` | Config çalışma zamanı testleri |
-| `test_core_runtime_focus.py` | Core modül odaklı çalışma zamanı |
-| `test_github_manager_runtime.py` | GitHubManager çalışma zamanı testleri |
-| `test_github_upload_runtime.py` | GitHub yükleme çalışma zamanı testleri |
-| `test_llm_client_runtime.py` | LLM istemci çalışma zamanı testleri |
-| `test_main_runtime.py` | main.py başlatıcı çalışma zamanı |
-| `test_memory_runtime_extended.py` | Bellek genişletilmiş çalışma zamanı |
-| `test_package_info_extended.py` | PackageInfo genişletilmiş testleri |
-| `test_package_info_runtime.py` | PackageInfo çalışma zamanı testleri |
-| `test_quick_100.py` | Hızlı %100 kapsam testleri |
-| `test_rag_runtime_extended.py` | RAG genişletilmiş çalışma zamanı |
-| `test_rag_ultimate_edge_cases.py` | RAG uç durum testleri |
-| `test_sidar_agent_runtime.py` | SidarAgent çalışma zamanı testleri |
-| `test_system_health_runtime.py` | SystemHealth çalışma zamanı testleri |
-| `test_targeted_coverage_additions.py` | Hedefli kapsam tamamlama testleri |
-| `test_todo_manager_runtime.py` | TodoManager çalışma zamanı testleri |
-| `test_tooling_runtime.py` | Tooling çalışma zamanı testleri |
-| `test_ultimate_coverage.py` | Nihai kapsam testleri |
-| `test_web_search_runtime.py` | WebSearch çalışma zamanı testleri |
-| `test_web_server_runtime.py` | WebServer çalışma zamanı testleri (1.470 satır) |
-
-> **Artifact Sorunu (Audit #6):** `test_config_runtime_coverage` (uzantısız, 0 bayt) Audit #6'da silindiği belirtildi; **gerçekte hâlâ mevcut**.
-> **Yeni Artifact (Audit #7):** `test_config_runtime_coverage.py` (0 bayt, Audit #6 sonrası 19:52'de oluşturulmuş) — boş; pytest test sayısına dahil edilir ama test içermez; kaldırılmalıdır.
-
-**Öne Çıkan Yeni Test Kategorileri (v2.10.8):**
-- **Multi-Agent Mimari Testleri:** `test_supervisor_agent.py`, `test_coder_agent.py`, `test_researcher_agent.py`
-- **Yeni LLM Sağlayıcı Testleri:** `test_anthropic_provider_runtime.py`
-- **Güvenlik / Webhook Testleri:** `test_github_webhook.py`
-
-**v3.0.0 ile Eklenen Kurumsal Test Grupları:**
-- **Veritabanı ve Migration Testleri:** `core/db.py` için kapsamlı testler ve Alembic bütünlüğü için `test_migration_ci_guards.py` benzeri CI koruma testleri eklendi.
-- **Telemetri ve Bütçe Testleri:** `test_llm_metrics_runtime.py` ile kullanıcı bütçe takibi ve Prometheus metrik üretim akışları güvence altına alındı.
-- **Çoklu Ajan (Multi-Agent) ve QA Testleri:** `SupervisorAgent` ve `ReviewerAgent` odaklı testlerle ajanlar arası etkileşim, görev devri ve kalite kapısı davranışları doğrulanıyor.
-- **Toplam Test Hacmi:** Test envanteri yaklaşık **15.974 satıra** ulaşarak üretim öncesi güvenilirlik sinyallerini güçlendirdi.
+> Not: Önceki audit notlarında geçen 0 bayt test artifact uyarıları tarihsel kayıt niteliğindedir; güncel pipeline `find tests -type f -size 0` kontrolüyle bu durumu bloklayıcı kalite kapısı olarak yönetir.
 
 ### 6.1 CI/CD Pipeline Durumu
 
-GitHub Actions entegrasyonu tamamlanmıştır. `.github/workflows/` altında yer alan `ci.yml` ve `migration-cutover-checks.yml` iş akışları ile her push/pull request'te otomatik test, statik analiz (Ruff, Mypy) ve veritabanı şema doğrulama adımları çalıştırılmaktadır.
+| Kalite Kapısı | Durum | Kaynak |
+|---|---|---|
+| Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml` |
+| Coverage Quality Gate (`fail_under=95`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `ci.yml` |
+| Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
+| Repo metrik/audit üretimi | ✅ Aktif | `scripts/collect_repo_metrics.sh`, `scripts/audit_metrics.sh` |
+| Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
 
-**Audit #7'de Tespit Edilen Yeni Test Modülleri (6 adet):**
-
-| Test Dosyası | Satır | Kapsam |
-|-------------|-------|--------|
-| `test_supervisor_agent.py` | 42 | SupervisorAgent + TaskEnvelope/TaskResult sözleşme testleri |
-| `test_coder_agent.py` | 38 | CoderAgent araç seti ve doğal dil yorum testleri |
-| `test_researcher_agent.py` | 24 | ResearcherAgent araç seti ve web_search yönlendirme testleri |
-| `test_anthropic_provider_runtime.py` | 31 | AnthropicClient API key eksiklik + factory testi |
-| `test_config_runtime_coverage.py` | 0 | **BOŞ** — kaldırılmalı (Audit #7 artifact) |
-| `test_config_runtime_coverage` (uzantısız) | 0 | **BOŞ** — kaldırılmalı (Audit #6'dan süregelen) |
-
-**Test çalıştırma:** `pytest` veya `pytest --cov=.`
-
-> **Uyarı:** Test dosyalarının büyük çoğunluğu unit test niteliğindedir (mock ve stub kullanır). Gerçek LLM, Docker ve ChromaDB gerektiren entegrasyon testleri `test_sidar.py` içinde bulunmakla birlikte sınırlıdır. Bkz. §14.7.
+Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + güvenlik sertleştirme senaryoları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
 
 ---
 
