@@ -35,7 +35,7 @@
   - [3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)](#315-managersweb_searchpy-web-arama-yöneticisi-387-satır)
   - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)](#316-managerspackage_infopy-paket-bilgi-yöneticisi-322-satır)
   - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır)](#317-managerstodo_managerpy-görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Toplam ~3.800 satır)](#318-web_ui-web-arayüzü-toplam-3800-satır)
+  - [3.18 `web_ui/` — Web Arayüzü (Toplam ~4.160 satır)](#318-web_ui-web-arayüzü-toplam-4160-satır)
   - [3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)](#319-github_uploadpy-github-yükleme-aracı-294-satır)
   - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy-veritabanı-ve-çoklu-kullanıcı-altyapısı)
   - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy-telemetri-ve-bütçe-yönetimi)
@@ -973,38 +973,45 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ---
 
-### 3.18 `web_ui/` — Web Arayüzü (Toplam ~3.800 satır)
+### 3.18 `web_ui/` — Web Arayüzü (Toplam ~4.160 satır)
 
-> **v2.8.0 Mimari Değişikliği:** Daha önce 3.399 satırlık tek `index.html` dosyasında olan HTML + CSS + JavaScript ayrı modüllere bölündü. FastAPI `StaticFiles` middleware ile `/static/*` üzerinden servis edilmektedir.
+> Not (Doğrulama): Güncel depoda `wc -l` ölçümü: `index.html=572`, `style.css=1684`, `app.js=670`, `chat.js=695`, `rag.js=131`, `sidebar.js=408` (**toplam 4.160**).
+
+**Mimari Yapı (Modüler Vanilla JS SPA):**
+- Monolitik tek-dosya yaklaşımı yerine sorumluluklar `app.js`, `chat.js`, `sidebar.js`, `rag.js` modüllerine ayrılmıştır.
+- `index.html` sadece iskelet + modal katmanları + script yükleme sırasını taşır; davranış mantığı modüllerde tutulur.
 
 **Dosya Yapısı:**
 
 | Dosya | Satır | Sorumluluk |
-|-------|-------|-----------|
-| `index.html` | 467 | HTML iskeleti, modal'lar, script yükleme noktaları |
-| `style.css` | 1.547 | CSS custom properties, tema (dark/light), tüm bileşen stilleri |
-| `chat.js` | 656 | WebSocket streaming, mesaj render, kod vurgulama, dosya ekleme |
-| `sidebar.js` | 394 | Oturum yönetimi, filtreleme, başlık düzenleme |
-| `rag.js` | 131 | RAG belge listesi, ekleme, arama, silme UI |
-| `app.js` | 356 | Tema, git bilgisi, model bilgisi, klavye kısayolları, DOMContentLoaded |
-| **Toplam** | **3.551** | *(önceki tek dosyadan genişledi, modüler ve bağımsız)* |
+|-------|------:|-----------|
+| `index.html` | 572 | HTML iskeleti, auth overlay, modal/board container'lar, script yükleme noktaları |
+| `style.css` | 1.684 | Tema (dark/light), layout sistemi, bileşen stilleri |
+| `chat.js` | 695 | WebSocket chat akışı, event render, markdown + kod çıktısı işleme |
+| `sidebar.js` | 408 | Oturum listesi, filtreleme, başlık düzenleme/silme |
+| `rag.js` | 131 | RAG belge ekleme/listeleme/arama/silme UI |
+| `app.js` | 670 | Auth flow, global state, tema/yardımcı kontroller, uygulama orkestrasyonu |
+| **Toplam** | **4.160** | Modüler ve ayrışmış web istemcisi |
+
+**Kimlik Doğrulama ve Oturum Koruması:**
+- `AUTH_TOKEN_KEY` / `AUTH_USER_KEY` ile token + kullanıcı bağlamı istemci tarafında yönetilir.
+- Auth overlay (`login/register`) akışı olmadan chat oturumu başlatılmaz; token olmayan istemci WebSocket tarafında yetkisiz kapatmayı tetikler.
+
+**Gerçek Zamanlı Event Stream ve UX:**
+- `chat.js` WebSocket üzerinden ajan olaylarını/araç adımlarını JSON event olarak işler; kullanıcının işlem durumunu canlı görmesini sağlar.
+- Bağlantı kopmaları için yeniden bağlanma ve auth-hata ayrımı yapılır (ör. auth kaynaklı kapanış vs geçici kesinti).
+
+**Güvenli Render ve Metin İşleme:**
+- `marked` tabanlı markdown render + güvenli HTML temizleme (`sanitizeRenderedHtml`) ile çıktı yüzeyi korunur.
+- Kod blokları ve uzun yanıtlar UI tarafında kontrollü biçimde parse edilip gösterilir.
 
 **Yükleme Sırası (index.html → script tags):**
 ```html
-<script src="/static/chat.js"></script>    <!-- Önce: bağımlılık yok -->
-<script src="/static/sidebar.js"></script> <!-- Önce: bağımlılık yok -->
-<script src="/static/rag.js"></script>     <!-- Önce: bağımlılık yok -->
-<script src="/static/app.js"></script>     <!-- Son: diğer modüllere bağımlı -->
+<script src="/static/chat.js"></script>
+<script src="/static/sidebar.js"></script>
+<script src="/static/rag.js"></script>
+<script src="/static/app.js"></script>
 ```
-
-**Temel Özellikler:**
-- **WebSocket Chat (`chat.js`):** çift yönlü gerçek zamanlı akış, düşünce/araç adımları ve anlık `cancel` desteği
-- **Markdown Render (`chat.js`):** `marked.js` ile kod blokları, tablolar, başlıklar
-- **Kod Vurgulama (`chat.js`):** `highlight.js` ile 180+ dil desteği
-- **Oturum Yönetimi (`sidebar.js`):** Sol panel sohbet listesi, başlık düzenleme, silme, arama
-- **RAG Arayüzü (`rag.js`):** Belge yükleme (dosya/URL), arama, silme
-- **Uygulama Başlatma (`app.js`):** Git/model bilgisi yükleme, sağlık şeridi, klavye kısayolları
-- **Tema (`style.css`):** CSS `--bg`, `--accent` vb. custom properties ile karanlık/aydınlık mod
 
 ---
 
