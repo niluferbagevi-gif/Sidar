@@ -46,8 +46,10 @@
   - [3.24 `docker/` — Gözlemlenebilirlik (Observability) Yapılandırması](#324-docker--gözlemlenebilirlik-observability-yapılandırması)
   - [3.25 Altyapı Dosyaları (CI/CD, Dockerfile)](#325-altyapı-dosyaları-cicd-dockerfile)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
-  - [4.1 Güçlü Yönler](#41-güçlü-yönler)
-  - [4.2 Kısıtlamalar](#42-kısıtlamalar)
+  - [4.1 Olay Yönelimli Multi-Agent Mimarisi (Event-Driven & P2P)](#41-olay-yönelimli-multi-agent-mimarisi-event-driven--p2p)
+  - [4.2 Katmanlı Güvenlik ve Zero-Trust İzolasyonu](#42-katmanlı-güvenlik-ve-zero-trust-izolasyonu)
+  - [4.3 Kurumsal Gözlemlenebilirlik (LLMOps & Observability)](#43-kurumsal-gözlemlenebilirlik-llmops--observability)
+  - [4.4 Hibrit Veri Katmanı (Hybrid Data Layer)](#44-hibrit-veri-katmanı-hybrid-data-layer)
 - [5. Güvenlik Analizi](#5-güvenlik-analizi)
   - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
   - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
@@ -1016,39 +1018,29 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-### 4.1 Güçlü Yönler
+Sidar projesi, v3.0 sürümü itibarıyla monolitik bir araç olmaktan çıkıp, kurumsal standartlarda, olay yönelimli (event-driven) ve çoklu ajanlı (multi-agent) bir mimariye evrilmiştir.
 
-| Alan | Değerlendirme |
-|------|---------------|
-| **Asenkron Mimari** | `async/await` ve `asyncio.to_thread` tutarlı kullanımı; event loop hiçbir yerde bloklanmıyor |
-| **Güvenlik Derinliği** | 3 katmanlı erişim + path traversal + symlink + hassas yol koruması |
-| **Yapısal LLM Çıktısı** | Ollama, OpenAI ve Anthropic structured output ile JSON schema zorlaması; Pydantic doğrulaması |
-| **Hata Toleransı** | Her araç try/except; ChromaDB yoksa BM25'e, BM25 yoksa keyword'e fallback |
-| **Stream Güvenliği** | UTF-8 incremental decoder ile kırık TCP paketleri güvenle birleştirilir |
-| **Bellek Güvenliği** | Fernet şifreleme, karantina mekanizması, RLock ile thread safety |
-| **Konfigürasyon** | Tek merkezi Config; hardcoded değer yok; lazy hardware init |
-| **Döngü Koruması** | Araç tekrar tespiti ve `_DIRECT_ROUTE_ALLOWED_TOOLS` ile gereksiz LLM çağrısı azaltılmış |
-| **Gözlemlenebilirlik** | OpenTelemetry span’leri ile HTTP istekleri, ReAct adımları, araç çalıştırma ve LLM TTFT/toplam süre metrikleri izlenebilir |
-| **Operasyonel Dayanıklılık** | Redis tabanlı kalıcı rate limiting + Redis kesintisinde local fallback ile servis sürekliliği |
-| **Multi-Agent Mimarisi** | Supervisor yönlendiricisi ve Coder/Researcher/Reviewer uzman rollerle görevlerin bölünmesi; Strangler Pattern ile güvenli ve modüler geçiş altyapısı |
-| **Dağıtık Multi-Agent Orkestrasyonu** | Görevlerin tek ajanda toplanmak yerine SupervisorAgent tarafından uzman rollere (Coder, Researcher, Reviewer) dağıtılması; modülerlik, hata izolasyonu ve QA kalitesini artırır |
-| **Kurumsal Altyapı (SaaS-Ready)** | `core/db.py` + Alembic geçişleri ile kullanıcı, kota ve oturumların izole edildiği Bearer Token tabanlı kalıcı veri mimarisi |
-| **Gözlemlenebilirlik (Observability)** | `core/llm_metrics.py` + Prometheus + Grafana entegrasyonu ile token tüketimi, USD maliyet ve LLM latency metriklerinin gerçek zamanlı izlenmesi |
-| **Çoklu LLM Ekosistemi** | Ollama (yerel) bağımlılığının kırılarak Gemini, OpenAI ve Anthropic istemcilerinin polimorfik (`BaseLLMClient`) bir yapıyla tek çatı altında buluşturulması |
-| **Çift Yönlü İletişim** | WebSocket altyapısı ile gerçek zamanlı çift yönlü mesajlaşma ve `asyncio.Task` tabanlı anlık işlem iptali (`cancel`) |
+### 4.1 Olay Yönelimli Multi-Agent Mimarisi (Event-Driven & P2P)
 
-### 4.2 Kısıtlamalar
+Sistem, ReAct döngüsünü kullanarak görevleri merkezi bir yönlendirici (Supervisor) üzerinden alıp ilgili uzman ajanlara (Coder, Researcher, Reviewer) dağıtır.
+- **P2P Delegasyon:** Ajanlar sadece merkezi otoriteyle değil, kendi aralarında da doğrudan sözleşme (contract) bazlı iletişim kurabilir. (Örn: Coder'ın yazdığı kodun doğrudan Reviewer ajan tarafından test edilip geri bildirim döngüsüne sokulması).
+- **Event Bus (Olay Veriyolu):** Ajanların düşünce süreçleri, kararları ve yürüttükleri araçlar `AgentEventBus` üzerinden asenkron olarak yayınlanır. Bu yapı, WebSocket aracılığıyla Web arayüzüne milisaniyeler içinde "Canlı Telemetri" akışı sağlar.
 
-| Alan | Durum |
-|------|-------|
-| **Rate Limiting Altyapısı** | Redis gerektirir; Redis erişilemezse local fallback devreye girer (dağıtık tutarlılık geçici olarak düşer) |
-| **Docker Zorunluluğu** | `execute_code` tam işlevsellik için Docker bağlantısı gerektirir |
-| **BM25 Bellek** | Tüm belgelerin token'ları RAM'de tutulur; büyük korpuslarda ölçeklenemez |
-| **Ollama Timeout** | Varsayılan 30 sn; büyük modellerde ilk yanıt bu süreyi aşabilir |
-| **Multi-Agent Bakım Yükü** | Özellik hâlâ `ENABLE_MULTI_AGENT` bayrağı ile deneysel/paralel çalışıyor; eski `sidar_agent` akışı ile yeni yapının bir süre daha birlikte bakımı gerekiyor |
-| **Multi-Agent İletişim Maliyeti (Overhead)** | Coder → Reviewer geri besleme döngüleri ek LLM çağrısı oluşturur; toplam token tüketimini ve yanıt gecikmesini (latency) artırabilir |
-| **Altyapı ve Operasyonel Karmaşıklık** | PostgreSQL, Prometheus ve Grafana gibi ek servisler docker-compose topolojisini büyütür; RAM ihtiyacı ile kurulum/bakım karmaşıklığını artırır |
-| **API Limit ve Maliyetleri** | Bulut LLM sağlayıcıları (OpenAI, Anthropic) yerel modellere kıyasla token maliyeti ve vendor API rate-limit yönetimi zorunluluğu getirir |
+### 4.2 Katmanlı Güvenlik ve Zero-Trust İzolasyonu
+
+- **Zero-Trust Sandbox:** AI'ın ürettiği kodlar, internet erişimi (network) tamamen engellenmiş, CPU/RAM limitleri donanımsal olarak kısıtlanmış izole Docker konteynerlerinde çalıştırılır. Altyapı, yüksek güvenlikli Kata/gVisor Container runtime'larını destekleyecek şekilde tasarlanmıştır.
+- **Erişim Kontrolü (OpenClaw):** Dosya sistemi müdahaleleri (okuma/yazma/silme) üç katmanlı bir güvenlik yöneticisi (`managers/security.py`) tarafından denetlenir. "Fail-Closed" prensibi ile path traversal ve yetkisiz erişim denemeleri anında engellenir.
+- **Oturum ve Veri Yalıtımı:** Çoklu kullanıcı desteği kapsamında, her kullanıcının sohbet belleği, dosyaları ve vektörel veritabanı (ChromaDB) kriptografik tokenler aracılığıyla birbirinden yalıtılmıştır.
+
+### 4.3 Kurumsal Gözlemlenebilirlik (LLMOps & Observability)
+
+- **Metrik ve Telemetri:** Tüm LLM istekleri, token tüketimleri ve API maliyetleri (USD) `core/llm_metrics.py` üzerinden anlık olarak ölçülür.
+- **Grafana & Prometheus Entegrasyonu:** Sistemin donanım yükü (RAM/CPU/GPU), ajanların yanıt gecikmeleri ve kota harcamaları, sağlanan Docker metrik altyapısı sayesinde kurumsal gösterge panellerinden (Grafana Dashboard) anlık olarak izlenebilmektedir.
+
+### 4.4 Hibrit Veri Katmanı (Hybrid Data Layer)
+
+- **Vektörel ve İlişkisel Bellek:** Proje dosyaları ve RAG dokümanları ChromaDB üzerinde vektörel olarak indekslenirken; yetkilendirme, kota bilgileri ve uygulama şemaları Alembic ile versiyonlanan ilişkisel veritabanında (SQLite / PostgreSQL) tutulur.
+- **RRF (Reciprocal Rank Fusion):** RAG motoru, hem BM25 (anahtar kelime) hem de anlamsal (vektör) aramayı birleştirerek yüksek isabetli belge getirimi (hybrid search) sağlar.
 
 ---
 
