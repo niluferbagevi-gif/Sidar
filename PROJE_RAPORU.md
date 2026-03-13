@@ -93,7 +93,7 @@
   - [12.10 Veritabanı ve Auth (Kurumsal)](#1210-veritabanı-ve-auth-kurumsal)
   - [12.11 Telemetri ve Zero-Trust Sandbox](#1211-telemetri-ve-zero-trust-sandbox)
   - [12.12 Çeşitli](#1212-çeşitli)
-- [13. Olası İyileştirmeler](#13-olası-i̇yileştirmeler)
+- [13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)](#13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası)
 - [14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)](#14-geliştirme-yol-haritası-ve-v30-vizyonu-v211)
   - [14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)](#141-eski-mimarinin-emekliye-ayrılması-deprecation)
   - [14.2 Reviewer (QA) Ajanının Olgunlaştırılması](#142-reviewer-qa-ajanının-olgunlaştırılması)
@@ -1841,21 +1841,22 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 ---
 
-## 13. Olası İyileştirmeler
+## 13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v2.10.8 sonrası yol haritası odaklı **ileri seviye** geliştirme fırsatlarını listeler. Daha önce tamamlanan maddeler için [CHANGELOG.md](./CHANGELOG.md) referans alınmalıdır.
+Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agent, sandbox, observability) tekrar etmek yerine, bir sonraki kurumsal sıçrama için v4.0 hedeflerini listeler.
 
-| İyileştirme Alanı | Mevcut Durum | Önerilen Geliştirme |
+| İyileştirme Alanı (v4.0) | Mevcut Durum (v3.0) | Önerilen Geliştirme |
 |---|---|---|
-| **Ajanlar Arası Doğrudan İletişim (P2P Multi-Agent)** | Görev dağıtımı ağırlıklı olarak Supervisor üzerinden akıyor | Rol ajanlarının (örn. Coder → Reviewer) Supervisor'a dönmeden doğrudan delegasyon yapabildiği P2P protokol |
-| **Kapsamlı Telemetri ve Maliyet Takibi (Observability)** | OpenTelemetry span'leri mevcut, ancak sağlayıcı bazlı birleşik maliyet dashboard'u sınırlı | OpenAI/Anthropic token maliyeti, gecikme (latency), hata oranı ve kota/rate-limit durumunu tek panelde izleyen Prometheus/Grafana + OTEL entegrasyonu |
-| **Gerçek Zamanlı Ajan Logları (WebSocket/SSE)** | Web UI sonuç odaklı akış veriyor | "Web'de arama yapılıyor", "Kod çalıştırılıyor" gibi ajan adım/log olaylarının Web UI'ya anlık stream edilmesi |
-| **Gelişmiş Sandbox (Mikro-VM)** | Docker izolasyonu + alternatif runtime altyapısı (`runsc`/`kata-runtime`) hazır | Bir sonraki adım: host seviyesinde gVisor/Kata kurulumunun CI/CD ve production rollout ile etkinleştirilmesi |
-| **Kurumsal Veritabanı Geçişi** | Oturum/bellek yerel dosyalar + ChromaDB ile yönetiliyor | Multi-user senaryolar için PostgreSQL tabanlı oturum/bellek katmanı ve migration stratejisi |
+| **Kubernetes/Helm ile Ölçekleme** | `docker-compose` tabanlı güçlü operasyon akışı mevcut | Çok tenantlı ve yüksek eşzamanlı yükte yatay ölçekleme için K8s deployment + HPA + Helm chart standardizasyonu |
+| **LLM Gateway/Proxy Katmanı** | Sağlayıcılar `core/llm_client.py` içinde provider-bazlı yönetiliyor | LiteLLM/OpenRouter benzeri merkezi gateway ile model yönlendirme, kota/anahtar yönetimi, failover ve maliyet politikalarının tek noktadan yönetimi |
+| **Kurumsal Vektör Veri Katmanı** | ChromaDB + FTS5/BM25 hibrit arama aktif | Büyük kurumsal korpuslarda pgvector/Milvus/Qdrant gibi dağıtık vektör altyapılarıyla ölçeklenebilir retrieval katmanı |
+| **Dinamik Agent Swarm + Marketplace** | Coder/Researcher/Reviewer rolleri üretimde sabit tanımlı | Göreve göre dinamik uzman ajan türetimi (swarm), araç/ajan eklenti pazaryeri ve çalışma zamanı yetenek keşfi |
+| **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli |
 
-> **Not:** Reviewer altyapısı depoda mevcuttur; §11.2'de ağırlıklı açık borç başlığı çoklu sağlayıcı hata/maliyet yönetimi ve mimari sadeleştirmedir.
+> **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
+
 
 ---
 
