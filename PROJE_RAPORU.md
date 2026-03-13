@@ -51,6 +51,10 @@
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
 - [8. Kod Satır Sayısı Özeti](#8-kod-satır-sayısı-özeti)
+  - [8.1 Çekirdek Modüller (Güncel)](#81-çekirdek-modüller-güncel)
+  - [8.2 Multi-Agent Çekirdek ve Roller](#82-multi-agent-çekirdek-ve-roller)
+  - [8.3 Migration / Operasyon / Altyapı](#83-migration-operasyon-altyapı)
+  - [8.4 Frontend ve Test Özeti](#84-frontend-ve-test-özeti)
 - [9. Modül Bağımlılık Haritası](#9-modül-bağımlılık-haritası)
 - [10. Veri Akış Diyagramı](#10-veri-akış-diyagramı)
   - [10.1 Bir Chat Mesajının Ömrü](#101-bir-chat-mesajının-ömrü)
@@ -1128,49 +1132,76 @@ Aşağıdaki tablo, güncel `requirements.txt`, `requirements-dev.txt` ve `envir
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **✅ Audit #6 (2026-03-10):** Aşağıdaki kritik dosyalar, son OpenAI entegrasyonu sonrası `wc -l` ile yeniden doğrulanmıştır.
-> **⚠ Audit #7 (2026-03-10):** Anthropic entegrasyonu + multi-agent mimari sonrası tüm dosyalar `wc -l` ile yeniden ölçülmüştür. Birçok dosyada ek satır artışı tespit edilmiştir.
-> **✅ Audit #8 (2026-03-10):** Tüm dosyalar `wc -l` ve `find … | xargs wc -l` ile yeniden ölçüldü. Tüm büyük modüller Audit #7 ile eşleşiyor. Python kaynak toplam (tüm .py dahil, tests hariç) **11.023** olarak düzeltildi; önceki ~10.746 yalnızca büyük modüllerin toplamıydı, `__init__.py` ve küçük dosyalar eksikti (+277 fark).
+Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içerir.
 
-| Dosya | Audit #6 | **Gerçek (Audit #7)** | **Gerçek (Audit #8)** | Fark A8 | Not |
-|-------|----------|------------------------|-----------------------|---------|-----|
-| `config.py` | 556 | **570** | **570** | 0 | ✅ Teyit |
-| `main.py` | 337 | **341** | **341** | 0 | ✅ Teyit |
-| `cli.py` | 288 | **288** | **288** | 0 | ✅ Teyit |
-| `web_server.py` | 1.139 | **1.173** | **1.173** | 0 | ✅ Teyit |
-| `agent/sidar_agent.py` | 1.659 | **1.698** | **1.698** | 0 | ✅ Teyit |
-| `agent/auto_handle.py` | 601 | **601** | **601** | 0 | ✅ Teyit |
-| `agent/definitions.py` | 165 | **165** | **165** | 0 | ✅ Teyit |
-| `agent/tooling.py` | 266 | **266** | **266** | 0 | ✅ Teyit |
-| `core/llm_client.py` | 570 | **723** | **723** | 0 | ✅ Teyit |
-| `core/memory.py` | 402 | **402** | **402** | 0 | ✅ Teyit |
-| `core/rag.py` | 783 | **783** | **783** | 0 | ✅ Teyit |
-| `managers/security.py` | 290 | **290** | **290** | 0 | ✅ Teyit |
-| `managers/code_manager.py` | 766 | **766** | **766** | 0 | ✅ Teyit |
-| `managers/github_manager.py` | 644 | **644** | **644** | 0 | ✅ Teyit |
-| `managers/system_health.py` | 436 | **436** | **436** | 0 | ✅ Teyit |
-| `managers/web_search.py` | 387 | **387** | **387** | 0 | ✅ Teyit |
-| `managers/package_info.py` | 322 | **322** | **322** | 0 | ✅ Teyit |
-| `managers/todo_manager.py` | 451 | **451** | **451** | 0 | ✅ Teyit |
-| `github_upload.py` | 294 | **294** | **294** | 0 | ✅ Teyit |
-| `agent/base_agent.py` | — | **34** | **34** | 0 | ✅ Teyit |
-| `agent/core/supervisor.py` | — | **87** | **87** | 0 | ✅ Teyit |
-| `agent/core/contracts.py` | — | **30** | **30** | 0 | ✅ Teyit |
-| `agent/roles/coder_agent.py` | — | **120** | **120** | 0 | ✅ Teyit |
-| `agent/roles/researcher_agent.py` | — | **75** | **75** | 0 | ✅ Teyit |
-| `web_ui/index.html` | 461 | **467** | **467** | 0 | ✅ Teyit |
-| `web_ui/style.css` | 1.547 | **1.547** | **1.547** | 0 | ✅ Teyit |
-| `web_ui/chat.js` | 656 | **656** | **656** | 0 | ✅ Teyit |
-| `web_ui/sidebar.js` | 394 | **394** | **394** | 0 | ✅ Teyit |
-| `web_ui/rag.js` | 131 | **131** | **131** | 0 | ✅ Teyit |
-| `web_ui/app.js` | 339 | **356** | **356** | 0 | ✅ Teyit |
-| **web_ui/ (Frontend Toplam)** | **3.528** | **3.551** | **3.551** | 0 | ✅ Teyit |
-| **RFC-MultiAgent.md** | — | ~200 | **303** | +103 | ⚠ Audit#8 düzeltmesi |
-| **Dockerfile** | — | 101 | **103** | +2 | ⚠ Küçük fark |
-| **docker-compose.yml** | — | 209 | **208** | -1 | ⚠ Küçük fark |
-| **Toplam Python kaynak** | **~10.423** (tests hariç) | **~10.746** (tests hariç) | **~11.023** (tests hariç, tüm .py) | +277 | ⚠ `__init__.py` ve küçük dosyalar önceden eksikti |
-| **Toplam Proje Satır Sayısı** | — | **~26.720** (testler dahil) | **~30.548** (testler dahil) | — | 11.023 kaynak + 15.974 test + 3.551 frontend |
+**Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ile otomatik üretilmelidir.
 
+### 8.1 Çekirdek Modüller (Güncel)
+
+| Dosya | Satır |
+|---|---:|
+| `config.py` | 589 |
+| `main.py` | 341 |
+| `cli.py` | 288 |
+| `web_server.py` | 1.376 |
+| `agent/sidar_agent.py` | 1.651 |
+| `agent/auto_handle.py` | 601 |
+| `agent/definitions.py` | 165 |
+| `agent/tooling.py` | 266 |
+| `agent/base_agent.py` | 55 |
+| `core/llm_client.py` | 839 |
+| `core/memory.py` | 316 |
+| `core/rag.py` | 783 |
+| `core/db.py` | 989 |
+| `core/llm_metrics.py` | 235 |
+| `managers/security.py` | 290 |
+| `managers/code_manager.py` | 805 |
+| `managers/github_manager.py` | 644 |
+| `managers/system_health.py` | 475 |
+| `managers/web_search.py` | 387 |
+| `managers/package_info.py` | 322 |
+| `managers/todo_manager.py` | 451 |
+| `github_upload.py` | 294 |
+
+### 8.2 Multi-Agent Çekirdek ve Roller
+
+| Dosya | Satır |
+|---|---:|
+| `agent/core/supervisor.py` | 164 |
+| `agent/core/contracts.py` | 56 |
+| `agent/core/event_stream.py` | 45 |
+| `agent/core/memory_hub.py` | 54 |
+| `agent/core/registry.py` | 25 |
+| `agent/roles/coder_agent.py` | 134 |
+| `agent/roles/researcher_agent.py` | 75 |
+| `agent/roles/reviewer_agent.py` | 181 |
+
+### 8.3 Migration / Operasyon / Altyapı
+
+| Dosya | Satır |
+|---|---:|
+| `migrations/env.py` | 65 |
+| `migrations/versions/0001_baseline_schema.py` | 98 |
+| `scripts/audit_metrics.sh` | 56 |
+| `scripts/migrate_sqlite_to_pg.py` | 91 |
+| `scripts/install_host_sandbox.sh` | 199 |
+| `Dockerfile` | 103 |
+| `docker-compose.yml` | 236 |
+
+### 8.4 Frontend ve Test Özeti
+
+| Kapsam | Değer |
+|---|---:|
+| `web_ui/index.html` | 572 |
+| `web_ui/style.css` | 1.684 |
+| `web_ui/chat.js` | 695 |
+| `web_ui/sidebar.js` | 408 |
+| `web_ui/rag.js` | 131 |
+| `web_ui/app.js` | 670 |
+| **Web UI Toplamı** | **4.160** |
+| **Test modülü (`tests/test_*.py`)** | **91** |
+| **`tests/*.py` toplam dosya** | **93** |
+| **`tests/*.py` toplam satır** | **20.996** |
 
 ---
 
