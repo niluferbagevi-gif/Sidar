@@ -44,9 +44,11 @@
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
+  - [4.3 Kurumsal v3.0 Mimari Sütunlar (Enterprise Lens)](#43-kurumsal-v30-mimari-sütunlar-enterprise-lens)
 - [5. Güvenlik Analizi](#5-güvenlik-analizi)
   - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
   - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
+  - [5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)](#53-kurumsal-zero-trust-savunma-sütunları-v30)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
@@ -1102,35 +1104,15 @@ Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXM
 
 ### 3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
-#### `Dockerfile` (101 satır)
-- **Çift mod:** `BASE_IMAGE` build-arg ile `python:3.11-slim` (CPU) veya `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (GPU)
-- **Bağımlılık:** `environment.yml`'den pip paketleri dinamik olarak çıkarılır
-- **Güvenlik:** Non-root kullanıcı (`sidaruser`, uid=10001)
-- **Sağlık kontrolü:** Web modunda `/status` endpoint, CLI modunda PID 1 süreç adı kontrol edilir
-- **RAG Pre-cache:** `PRECACHE_RAG_MODEL=true` ile `all-MiniLM-L6-v2` build aşamasında indirilir
-- **Varsayılan:** `ACCESS_LEVEL=sandbox`
+**Amaç:** Üretim ortamında gözlemlenebilirlik (observability), telemetri görselleştirme ve canlıya geçiş (cutover) operasyonlarını tekrarlanabilir SOP'larla yönetmek.
 
-#### `docker-compose.yml` (209 satır)
-5 servis tanımı (Redis dahil):
-
-| Servis | Mod | CPU Limit | RAM Limit | Port |
-|--------|-----|-----------|-----------|------|
-| `sidar-ai` | CLI + CPU | 2.0 | 4 GB | — |
-| `sidar-gpu` | CLI + GPU | 4.0 | 8 GB | — |
-| `sidar-web` | Web + CPU | 2.0 | 4 GB | 7860 |
-| `sidar-web-gpu` | Web + GPU | 4.0 | 8 GB | 7861 |
-| `redis` | Rate-limit store | — | — | 6379 (internal) |
-
-Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
-
-#### `docker/` alt dizini
-- `docker/prometheus/prometheus.yml` ile Prometheus scrape hedefleri tanımlanır.
-- `docker/grafana/provisioning/` altında datasource/dashboard provisioning otomatik yüklenir.
-- `docker/grafana/dashboards/sidar-llm-overview.json` ile LLM maliyet/token/latency görünürlüğü sağlanır.
-
-#### `runbooks/production-cutover-playbook.md`
-- Üretime geçiş adımları, rollback planı ve operasyonel kontrol listelerini içerir.
-- DB migration, gözlemlenebilirlik ve servis sağlık kontrol adımlarını tek bir playbook altında toplar.
+**Özellikler (Kurumsal V3.0 DevOps):**
+- **Tek komutla observability orkestrasyonu (`docker-compose.yml`):** Uygulama servisleriyle birlikte `prometheus` ve `grafana` konteynerlerini tek bir `docker compose up -d` akışında ayağa kaldırır; servis bağımlılıkları (`depends_on`) ile başlangıç sırası yönetilir.
+- **Prometheus scrape topolojisi (`docker/prometheus/prometheus.yml`):** `metrics_path: /metrics/llm/prometheus` üzerinden `sidar-web:7860` hedefini container ağında kazır; `global.scrape_interval: 15s` ile uygulama içi iş yükünü artırmadan dıştan metrik toplama modeli uygular.
+- **Grafana auto-provisioning (`docker/grafana/provisioning/*`):** Datasource (`datasources/prometheus.yml`) ve dashboard provider (`dashboards/dashboards.yml`) tanımları kod olarak tutulur; konteyner her açıldığında manuel adım olmadan hazır dashboard'lar yüklenir.
+- **JSON-as-Code dashboard (`docker/grafana/dashboards/sidar-llm-overview.json`):** LLM token, maliyet ve latency metriklerini standart panel setiyle sunar; dashboard değişiklikleri sürüm kontrolüne girerek denetlenebilir hale gelir.
+- **Kurumsal cutover/rollback playbook (`runbooks/production-cutover-playbook.md`):** SQLite → PostgreSQL geçişinde pre-flight, Alembic migration zinciri, `--dry-run` veri taşıma provası ve kritik hata durumunda rollback adımlarını SOP düzeyinde tanımlar.
+- **Host sandbox rollout notları (`runbooks/production-cutover-playbook.md` + `scripts/install_host_sandbox.sh`):** gVisor/Kata runtime kurulumu, doğrulama checklist'i ve kontrollü restart adımlarıyla production güvenlik sertleşmesini operasyonel sürece bağlar.
 
 ---
 
@@ -1165,6 +1147,29 @@ Tüm servisler `/var/run/docker.sock` bağlar (iç REPL sandbox için).
 | **LLM Maliyet/Limit Baskısı** | Bulut sağlayıcılarda token maliyeti ve provider rate-limit yönetimi zorunludur |
 | **QA Overhead** | Reviewer doğrulama adımları kaliteyi artırırken ek LLM çağrısı/latency maliyeti üretir |
 | **Operasyonel Karmaşıklık** | PostgreSQL + Prometheus + Grafana + migration süreçleri kurulum/işletim maliyetini yükseltir |
+
+### 4.3 Kurumsal v3.0 Mimari Sütunlar (Enterprise Lens)
+
+#### 4.3.1 Asenkron + Event-Driven Çekirdek
+- Servisler `asyncio` temelli non-blocking çalışma modeline geçirilmiş; LLM, web ve DB katmanında eşzamanlılık ölçeklenebilirliği artırılmıştır.
+- `AgentEventBus`/event stream yaklaşımı ile ajan durumları olay olarak yayınlanır; WebSocket tüketicileri bu akışı gerçek zamanlı izler.
+
+#### 4.3.2 Dayanıklılık (Resilience) ve Hata Toleransı
+- Ağ/sağlayıcı dalgalanmalarına karşı retry/backoff stratejileri ile çağrı başarım sürekliliği hedeflenir.
+- Araç zincirlerinde fallback şelalesi (örn. Tavily → Google → DuckDuckGo) ile tek noktadan hata kaynaklı servis kesintisi azaltılır.
+- Kod yazma akışlarında disk öncesi sözdizimi/AST doğrulama ve güvenli yazım politikaları ile bozuk çıktıların kalıcılaşması engellenir.
+
+#### 4.3.3 Thread-Safety ve Tip Güvenliği
+- Multi-agent eşzamanlı erişim noktalarında `threading.Lock`/`RLock` tabanlı kritik bölge koruması benimsenmiştir.
+- `@dataclass` tabanlı kayıt modelleri (DB, todo, vb.) ile veri taşıma nesneleri tipli ve denetlenebilir bir kontrata bağlanmıştır.
+
+#### 4.3.4 Zero-Trust Güvenlik ve İzolasyon
+- Kod çalıştırma akışları Docker sandbox izolasyonu, kaynak limitleri ve ağ kapatma ilkeleriyle sınırlandırılır.
+- Path traversal/symlink denetimleri, hassas dosya blacklist kuralları ve fail-closed güvenlik kontrolleri kurumsal güvenlik çizgisini güçlendirir.
+
+#### 4.3.5 Observability + SaaS Veri Katmanı
+- OpenTelemetry izleri, Prometheus metrik ihracı ve Grafana panoları ile latency/token/maliyet görünürlüğü uçtan uca sağlanır.
+- SQLite kökenli tekil modelden, async pool destekli PostgreSQL ve multi-tenant kullanıcı izolasyonuna geçiş mimari olgunluk seviyesini yükseltir.
 
 ---
 
@@ -1205,6 +1210,31 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 ```
 
 **QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, CoderAgent çıktıları ReviewerAgent doğrulamasından geçer. Ek olarak `MAX_QA_RETRIES=3` sınırı ile Coder ↔ Reviewer geri besleme zinciri fail-safe biçimde sonlandırılır; sonsuz döngü ve maliyet artışı engellenir.
+
+### 5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)
+
+#### 5.3.1 Path Traversal + Blacklist + Symlink Koruması
+- `SecurityManager`, ham yol girdilerinde `../` ve kritik sistem dizinlerini (`/etc`, `/proc`, `/sys`, `C:\Windows`, `Program Files`) `_DANGEROUS_PATH_RE` ile reddeder.
+- `.env`, `.git`, `sessions`, `__pycache__` gibi hassas yollar `_BLOCKED_PATTERNS` ile ek katmanda engellenir; bu kural FULL seviyede dahi güvenlik zeminini korur.
+- `Path.resolve()` + `relative_to(base_dir)` kontrolleri ile symlink üzerinden kök dizin dışına kaçış girişimleri fail-closed biçimde bloklanır.
+
+#### 5.3.2 Docker Sandbox İzolasyonu (Kod Çalıştırma)
+- `execute_code` akışı, kodu izole Docker konteynerinde çalıştırır; `network_mode="none"`, `mem_limit` ve `nano_cpus` ile ağ/kaynak sınırları uygulanır.
+- Sandbox katmanı erişilemezse politika seviyesine göre kontrollü davranış devreye girer (SANDBOX modunda reddetme, FULL modda sınırlı fallback).
+
+#### 5.3.3 Kriptografik Kimlik/Oturum Güvenliği
+- Parola doğrulama akışı `PBKDF2-HMAC-SHA256` + salt + sabit-zamanlı karşılaştırma (`secrets.compare_digest`) ile uygulanır.
+- Oturum belirteçleri `secrets.token_urlsafe(...)` ile üretilir; kullanıcı/oturum anahtarlarında UUID kullanımı tahmin edilebilirlik riskini azaltır.
+- WebSocket kanalında `auth` handshake zorunludur; geçersiz/eksik token durumunda bağlantı policy violation ile kapatılır.
+
+#### 5.3.4 OOM/Binary ve Rate-Limit Savunmaları
+- GitHub dosya okuma katmanında güvenli uzantı/uzantısız whitelist uygulanır; binary/uygunsuz dosya tipleri decode edilmeden reddedilir.
+- API yüzeyinde DDoS/rate-limit middleware'leri ve Redis destekli limit mekanizmasıyla ani yüklenmelerde servis kararlılığı korunur.
+- Büyük dosya okuma limitleri ve güvenli metin odaklı işleme yaklaşımı, bellek şişmesi (OOM) riskini azaltan uygulama savunması sağlar.
+
+#### 5.3.5 Web UI XSS Sertleştirmesi
+- `marked` ile üretilen HTML, istemci tarafında `sanitizeRenderedHtml(...)` süzgecinden geçirilir.
+- `script/iframe/object/embed/form/meta/link` etiketleri ve `javascript:` gibi tehlikeli URL şemaları temizlenerek içerik render edilir.
 
 ---
 
@@ -1334,6 +1364,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `scripts/audit_metrics.sh` | 56 |
 | `scripts/collect_repo_metrics.sh` | 13 |
 | `scripts/install_host_sandbox.sh` | 199 |
+| `docker/prometheus/prometheus.yml` | 7 |
+| `docker/grafana/provisioning/datasources/prometheus.yml` | 8 |
+| `docker/grafana/provisioning/dashboards/dashboards.yml` | 10 |
+| `docker/grafana/dashboards/sidar-llm-overview.json` | 66 |
+| `runbooks/production-cutover-playbook.md` | 109 |
 | `Dockerfile` | 103 |
 | `docker-compose.yml` | 236 |
 
