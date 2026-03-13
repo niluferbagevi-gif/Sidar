@@ -90,7 +90,9 @@
   - [12.7 Hafıza ve ReAct](#127-hafıza-ve-react)
   - [12.8 Loglama](#128-loglama)
   - [12.9 Rate Limiting](#129-rate-limiting)
-  - [12.10 Çeşitli](#1210-çeşitli)
+  - [12.10 Veritabanı ve Auth (Kurumsal)](#1210-veritabanı-ve-auth-kurumsal)
+  - [12.11 Telemetri ve Zero-Trust Sandbox](#1211-telemetri-ve-zero-trust-sandbox)
+  - [12.12 Çeşitli](#1212-çeşitli)
 - [13. Olası İyileştirmeler](#13-olası-i̇yileştirmeler)
 - [14. Geliştirme Yol Haritası ve v3.0 Vizyonu (v2.11+)](#14-geliştirme-yol-haritası-ve-v30-vizyonu-v211)
   - [14.1 Eski Mimarinin Emekliye Ayrılması (Deprecation)](#141-eski-mimarinin-emekliye-ayrılması-deprecation)
@@ -1795,7 +1797,35 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `RATE_LIMIT_GET_IO` | `30` | Okuma endpoint limit |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis bağlantı adresi (kalıcı/distro rate limiting) |
 
-### 12.10 Çeşitli
+### 12.10 Veritabanı ve Auth (Kurumsal)
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `DATABASE_URL` | `sqlite+aiosqlite:///data/sidar.db` | Async DB bağlantı adresi (PostgreSQL için `postgresql+asyncpg://...`) |
+| `DB_POOL_SIZE` | `5` | Async bağlantı havuzu taban boyutu |
+| `DB_SCHEMA_VERSION_TABLE` | `schema_versions` | Uygulama şema sürüm tablosu adı |
+| `DB_SCHEMA_TARGET_VERSION` | `1` | Hedef şema sürümü |
+
+> **Auth Notu:** Güncel kod tabanında `.env` içinde ayrı `SECRET_KEY` / `AUTH_SECRET` değişkeni tanımlı değildir; kimlik doğrulama bearer token + DB tabanlı token yaşam döngüsü ile yönetilir.
+
+### 12.11 Telemetri ve Zero-Trust Sandbox
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
+| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
+| `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
+| `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
+| `DOCKER_RUNTIME` | `""` | Seçili container runtime (örn. `runsc`, `kata-runtime`) |
+| `DOCKER_ALLOWED_RUNTIMES` | `"",runc,runsc,kata-runtime` | İzin verilen runtime listesi |
+| `DOCKER_MICROVM_MODE` | `off` | Mikro-VM hazırlık modu (`off`,`gvisor`,`kata`) |
+| `DOCKER_MEM_LIMIT` | `256m` | Sandbox konteyner bellek limiti |
+| `DOCKER_NETWORK_DISABLED` | `true` | Sandbox için network kapatma anahtarı |
+| `DOCKER_NANO_CPUS` | `1000000000` | Sandbox CPU kotası (~1 vCPU) |
+
+> **Telemetri Notu:** Konfigürasyonda ayrı `ENABLE_TELEMETRY`/`METRICS_PORT` anahtarı yoktur; metrik ihracı uygulama endpoint'leri (`/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget`) üzerinden sağlanır.
+
+### 12.12 Çeşitli
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
@@ -1805,12 +1835,8 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `GITHUB_TOKEN` | `""` | GitHub API token |
 | `GITHUB_REPO` | `""` | Varsayılan GitHub repo (`owner/repo`) |
 | `GITHUB_WEBHOOK_SECRET` | `""` | GitHub webhook HMAC doğrulama gizli anahtarı |
-| `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
-| `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
 | `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
-| `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
-| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
 | `ENABLE_MULTI_AGENT` | `true` | Multi-agent Supervisor modunu etkinleştirir (Strangler Pattern, varsayılan açık; `false` deprecate) |
 
 ---
