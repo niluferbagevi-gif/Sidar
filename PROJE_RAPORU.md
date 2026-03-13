@@ -13,7 +13,7 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma (570 satır)](#31-configpy-merkezi-yapılandırma-570-satır)
+  - [3.1 `config.py` — Merkezi Yapılandırma (589 satır)](#31-configpy-merkezi-yapılandırma-589-satır)
   - [3.2 `main.py` — Akıllı Başlatıcı (341 satır)](#32-mainpy-akıllı-başlatıcı-341-satır)
   - [3.3 `cli.py` — CLI Arayüzü (288 satır)](#33-clipy-cli-arayüzü-288-satır)
   - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.173 satır)](#34-web_serverpy-fastapi-web-sunucusu-1173-satır)
@@ -273,7 +273,7 @@ sidar_project/
 
 ---
 
-### 3.1 `config.py` — Merkezi Yapılandırma (570 satır)
+### 3.1 `config.py` — Merkezi Yapılandırma (589 satır)
 
 **Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler, donanım tespiti yapar ve v3.0 kurumsal çalışma profillerini merkezi olarak yönetir.
 
