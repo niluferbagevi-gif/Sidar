@@ -61,8 +61,8 @@
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
-  - [11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)](#111-açık-teknik-borç-2026-03-10-audit-6-güncel)
-  - [11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)](#112-açık-teknik-borç-2026-03-10-audit-8-güncel)
+  - [11.1 Güncel Açık Teknik Borçlar (v3.0 Final)](#111-güncel-açık-teknik-borçlar-v30-final)
+  - [11.2 Tarihsel Audit Kayıtları (Arşiv)](#112-tarihsel-audit-kayıtları-arşiv)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -1355,32 +1355,22 @@ docs_add / docs_add_file
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not:** v2.8.0 sürümü itibarıyla projede bilinen yüksek/orta öncelikli sorunların büyük bölümü kapatılmıştır.
->
-> Daha önce bu bölümde listelenen (örn. DuckDuckGo asenkron API bloklanması ve Web UI modülarizasyonu gibi) sorunların çözüm detayları ve doğrulama sonuçları için doğrudan [CHANGELOG.md](./CHANGELOG.md) dosyasına bakabilirsiniz.
+v3.0 ile eski audit dönemindeki birçok borç kapatılmış olsa da, kurumsal/SaaS mimarinin doğasından kaynaklanan **güncel teknik borçlar** aşağıdadır.
 
-### 11.1 Açık Teknik Borç (2026-03-10 Audit #6 — Güncel)
+### 11.1 Güncel Açık Teknik Borçlar (v3.0 Final)
 
 | # | Sorun | Dosya | Etki | Öncelik | Durum |
 |---|-------|-------|------|---------|-------|
-| 1 | ~~`/file-content` endpoint boyut limiti yok~~ | ~~`web_server.py:641`~~ | ~~`target.read_text()` boyutsuz; DoS riski~~ | ~~Orta~~ | ✅ **Audit#5'te çözüldü** |
-| 2 | ~~`.env.example`'da eksik değişkenler~~ | ~~`.env.example`~~ | ~~`GITHUB_WEBHOOK_SECRET`, `SIDAR_ENV`, `MEMORY_SUMMARY_KEEP_LAST` eksikti~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
-| 3 | ~~`test_config_runtime_coverage` boş dosya~~ | ~~`tests/test_config_runtime_coverage`~~ | ~~0 bayt artifact; test keşfini kirletiyordu~~ | ~~Düşük~~ | ✅ **Audit#6'da çözüldü** — dosya projeden silindi |
-| 4 | ~~`duckduckgo-search` versiyon pin formatı uyumsuzluğu~~ | ~~`environment.yml`, `requirements.txt`~~ | ~~Raporda `~=6.2.13`; gerçekte `==6.2.13`~~ | ~~Düşük~~ | ✅ **Audit#5'te çözüldü** |
-| 5 | ~~OpenAI provider eksik kayıt~~ | ~~`config.py`, `.env.example`, `cli.py`, `web_server.py`, `main.py`, `requirements.txt`, `environment.yml`~~ | ~~OpenAI ayarları/argümanları/bağımlılıkları eksikti~~ | ~~Orta~~ | ✅ **Audit#6'da çözüldü** — OpenAI uçtan uca kayıt tamamlandı |
+| 1 | Docker erişilemezse FULL modda yerel subprocess fallback | `managers/code_manager.py` | Zero-Trust sandbox bariyerleri (network kapalı + kaynak limiti) atlanabilir; güvenlik modeli zayıflar | **Yüksek** | ⚠ **AÇIK** — kurumsal profilde fail-closed zorunlu hale getirilmeli |
+| 2 | Auth token'ın frontend `localStorage` içinde tutulması | `web_ui/app.js` | XSS senaryolarında token sızıntısı riski | **Orta** | ⚠ **AÇIK** — HttpOnly/Secure cookie tabanlı modele geçiş önerilir |
+| 3 | BM25 katmanında büyük korpuslarda RAM/IO baskısı | `core/rag.py` | Çok kullanıcı + büyüyen belge havuzunda performans darboğazı ve maliyet artışı | **Orta** | ⚠ **AÇIK** — shard/limit/TTL/arka plan indeksleme stratejileri planlanmalı |
+| 4 | `.note` dosyası için rapor/repo tutarsızlığı | `.note`, `PROJE_RAPORU.md` audit notları | Dokümantasyon güvenilirliği düşer; kapanış kayıtlarıyla çelişir | **Düşük** | ⚠ **AÇIK** — repo veya rapor tarafında tek-doğru durum eşitlenmeli |
 
-> **Audit #6 Sonucu:** O tarihte bu bölümde açık kalan teknik borç bulunmamaktaydı.
+### 11.2 Tarihsel Audit Kayıtları (Arşiv)
 
-### 11.2 Açık Teknik Borç (2026-03-10 Audit #8 — Güncel)
+Önceki Audit #6/#8 tabloları tarihsel bağlam için raporda korunmaktadır; ancak aktif teknik borç takibi bu bölümdeki **11.1 güncel borç tablosu** üzerinden yürütülmelidir.
 
-| # | Sorun | Dosya | Etki | Öncelik | Durum |
-|---|-------|-------|------|---------|-------|
-| 1 | ~~`ENABLE_MULTI_AGENT` `.env.example`'da yok~~ | ~~`.env.example`~~ | ~~Kullanıcılar multi-agent modunu keşfedemiyor~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `.env.example:81` içinde `ENABLE_MULTI_AGENT=true` mevcut (Audit #8 teyit; **11 Mart 2026 yeniden doğrulama**: durum değişmedi) |
-| 2 | ~~Eski ve yeni mimarinin birlikte yaşaması (bakım yükü)~~ | ~~`agent/sidar_agent.py`, `agent/core/supervisor.py`~~ | ~~Feature flag geçişi nedeniyle çift akışın birlikte bakımı gerekiyor; kod karmaşıklığı artıyor~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `SidarAgent.respond()` tek omurga olarak Supervisor akışını kullanıyor; legacy dallanma kaldırıldı |
-| 3 | ~~Eksik uzman ajan rolü (`ReviewerAgent`)~~ | ~~`RFC-MultiAgent.md`, `agent/roles/`~~ | ~~Kod inceleme / test odaklı dördüncü rol henüz üretim entegrasyonunda yok~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — `agent/roles/reviewer_agent.py` mevcut; PR/issue araçları ve `run_tests` yeteneği aktif |
-| 4 | ~~Çoklu API hata ve maliyet yönetimi~~ | ~~`core/llm_client.py`, `web_server.py`, `config.py`~~ | ~~OpenAI/Anthropic için birleşik rate-limit, token maliyeti ve sağlayıcı-hata standardizasyonu ihtiyacı~~ | ~~Orta~~ | ✅ **ÇÖZÜLDÜ** — `LLMAPIError` sözleşmesi + sağlayıcı bazlı retry/backoff + websocket yüzeyleme tamamlandı |
-| 5 | ~~Boş test dosyaları (0 bayt artifact)~~ | ~~`tests/test_config_runtime_coverage.py`, `tests/test_config_runtime_coverage`~~ | ~~pytest keşfini kirletir; kalite metriklerini yanıltır~~ | ~~Düşük~~ | ✅ **ÇÖZÜLDÜ** — dosyalar depoda yok; CI'da `find tests -type f -size 0` kontrolü aktif (`.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh`) |
-| 6 | `.note` dosyası rapor kapanış notlarıyla çelişkili şekilde depoda duruyor | `.note` | Kapanış notlarında “kaldırıldı” denmesine rağmen kök dizinde dosya mevcut; audit tutarlılığı bozuluyor | Düşük | ⚠ **AÇIK** — rapor ya da repo durumu eşitlenmeli |
+---
 
 ## 12. `.env` Tam Değişken Referansı
 
