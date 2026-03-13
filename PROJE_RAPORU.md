@@ -25,7 +25,7 @@
   - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (164 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-164-satır)
   - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
   - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-723-satır)
+  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 839 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-839-satır)
   - [3.9 `core/memory.py` — Konuşma Belleği (DB tabanlı, v3.0)](#39-corememorypy-konuşma-belleği-db-tabanlı-v30)
   - [3.10 `core/rag.py` — RAG Motoru (783 satır)](#310-coreragpy-rag-motoru-783-satır)
   - [3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)](#311-managerssecuritypy-güvenlik-yöneticisi-290-satır)
@@ -617,9 +617,11 @@ kullanıcı mesajı
 
 ---
 
-### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 723 satır)
+### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 839 satır)
 
 **Amaç:** Ollama, Gemini, OpenAI ve Anthropic için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
+
+> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/llm_client.py` çıktısına göre **839** olarak ölçülmüştür.
 
 **Sınıf Hiyerarşisi:**
 ```
@@ -651,6 +653,19 @@ BaseLLMClient (ABC)
 - `response_format: {"type": "json_object"}` ile JSON modu.
 - WebSocket olay paketleri (`chunk/thought/tool_call/done`) ile gerçek zamanlı streaming desteği.
 - `AI_PROVIDER=openai` + `OPENAI_API_KEY` ile aktif edilir.
+
+**Anthropic Entegrasyonu:**
+- `anthropic` paketi runtime'da import edilir; `AsyncAnthropic` istemcisiyle asenkron çağrı yapılır.
+- `json_mode=True` iken sistem istemine ek JSON şema talimatı enjekte edilerek `{thought, tool, argument}` formatı zorlanır.
+- Streaming ve non-streaming akışlar ortak yardımcılarla izlenir; sonuçlar `_ensure_json_text()` ile güvenli JSON'a normalize edilir.
+
+**Akıllı Yeniden Deneme (Retry/Backoff):**
+- `_is_retryable_exception` + `_retry_with_backoff` ile 429/5xx gibi geçici bulut hatalarında yeniden deneme uygulanır.
+- Exponential backoff + jitter kullanılarak sağlayıcı geçici hatalarında dayanıklılık artırılır.
+
+**Telemetri ve Gözlemlenebilirlik (Observability):**
+- `core.llm_metrics` entegrasyonu ile çağrı başına latency/success/error ve token kullanımı kaydedilir (`_record_llm_metric`).
+- OpenTelemetry span'leri üzerinden stream performansı izlenir; TTFT (time-to-first-token) ve toplam akış süresi `_trace_stream_metrics` ile ölçülür.
 
 **`_ensure_json_text()`:** Modelin JSON dışı metin döndürmesi durumunda `final_answer` sarmalayıcı olarak güvenli JSON üretir.
 
