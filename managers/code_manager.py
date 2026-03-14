@@ -16,7 +16,6 @@ import sys
 import tempfile
 import threading
 import time
-import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -48,10 +47,6 @@ class CodeManager:
         self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m").strip()
         self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on")))
         self.docker_nano_cpus = int(getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000")) or 1000000000)
-        self.docker_pids_limit = int(getattr(self.cfg, "DOCKER_PIDS_LIMIT", os.getenv("DOCKER_PIDS_LIMIT", "128")) or 128)
-        self.docker_cpuset_cpus = str(getattr(self.cfg, "DOCKER_CPUSET_CPUS", os.getenv("DOCKER_CPUSET_CPUS", "")) or "").strip()
-        self.docker_memswap_limit = str(getattr(self.cfg, "DOCKER_MEMSWAP_LIMIT", os.getenv("DOCKER_MEMSWAP_LIMIT", self.docker_mem_limit)) or self.docker_mem_limit).strip()
-        self.docker_oom_kill_disable = bool(getattr(self.cfg, "DOCKER_OOM_KILL_DISABLE", os.getenv("DOCKER_OOM_KILL_DISABLE", "false").lower() in ("1", "true", "yes", "on")))
         self.docker_image = (
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
@@ -247,131 +242,6 @@ class CodeManager:
     #  GÜVENLİ KOD ÇALIŞTIRMA (DOCKER SANDBOX)
     # ─────────────────────────────────────────────
 
-    async def execute_code_async(self, code: str) -> Tuple[bool, str]:
-        """Kodu aiodocker ile asenkron sandbox içinde çalıştırır (v4.0 yolu)."""
-        if not self.security.can_execute():
-            return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
-
-        if not self.docker_available:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
-                    "yerel (unsafe) çalıştırma engellendi."
-                )
-            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
-            return await asyncio.to_thread(self.execute_code_local, code)
-
-        try:
-            import aiodocker
-        except ImportError:
-            # Geçiş aşaması: aiodocker kurulu değilse mevcut sync akışa düş.
-            return await asyncio.to_thread(self.execute_code, code)
-
-        docker = aiodocker.Docker()
-        container = None
-        try:
-            command = ["python", "-c", code]
-            config = {
-                "Image": self.docker_image,
-                "Cmd": command,
-                "WorkingDir": "/tmp",
-                "AttachStdout": True,
-                "AttachStderr": True,
-                "HostConfig": {
-                    "Memory": self._parse_mem_to_bytes(self.docker_mem_limit),
-                    "MemorySwap": self._parse_mem_to_bytes(self.docker_memswap_limit),
-                    "NanoCpus": self.docker_nano_cpus,
-                    "PidsLimit": self.docker_pids_limit,
-                    "OomKillDisable": self.docker_oom_kill_disable,
-                    "NetworkMode": "none" if self.docker_network_disabled else "default",
-                },
-            }
-            if self.docker_cpuset_cpus:
-                config["HostConfig"]["CpusetCpus"] = self.docker_cpuset_cpus
-            selected_runtime = self._resolve_runtime()
-            if selected_runtime:
-                config["HostConfig"]["Runtime"] = selected_runtime
-
-            container = await docker.containers.create_or_replace(config=config, name=None)
-            await container.start()
-
-            timeout = self.docker_exec_timeout
-            start_time = time.monotonic()
-            while True:
-                info = await container.show()
-                state = (info.get("State") or {}) if isinstance(info, dict) else {}
-                if not state.get("Running", False):
-                    break
-                if time.monotonic() - start_time > timeout:
-                    await container.kill()
-                    await container.delete(force=True)
-                    return False, (
-                        f"⚠ Zaman aşımı! Kod {timeout} saniyeden uzun sürdü ve "
-                        "zorla durduruldu (sonsuz döngü koruması)."
-                    )
-                await asyncio.sleep(0.5)
-
-            raw_logs = await container.log(stdout=True, stderr=True)
-            logs = "".join(chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace") for chunk in raw_logs).strip()
-
-            info = await container.show()
-            state = (info.get("State") or {}) if isinstance(info, dict) else {}
-            exit_code = state.get("ExitCode")
-
-            await container.delete(force=True)
-            container = None
-
-            if exit_code not in (None, 0):
-                return False, f"REPL Hatası (Docker Sandbox):\n{logs or '(çıktı yok)'}"
-
-            if len(logs) > self.max_output_chars:
-                logs = logs[:self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
-                )
-
-            if logs:
-                return True, f"REPL Çıktısı (Docker Sandbox):\n{logs}"
-            return True, "(Kod başarıyla çalıştı ancak konsola bir çıktı üretmedi)"
-        except Exception as exc:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
-                    f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}"
-                )
-            logger.warning("Docker async çalıştırma hatası — FULL modda yerel subprocess fallback: %s", exc)
-            return await asyncio.to_thread(self.execute_code_local, code)
-        finally:
-            if container is not None:
-                try:
-                    await container.delete(force=True)
-                except Exception:
-                    pass
-            try:
-                await docker.close()
-            except Exception:
-                pass
-
-    @staticmethod
-    def _parse_mem_to_bytes(value: str) -> int:
-        text = str(value or "").strip().lower()
-        if not text:
-            return 0
-        units = {
-            "k": 1024,
-            "m": 1024 ** 2,
-            "g": 1024 ** 3,
-        }
-        suffix = text[-1]
-        if suffix in units:
-            try:
-                return int(float(text[:-1]) * units[suffix])
-            except Exception:
-                return 0
-        try:
-            return int(text)
-        except Exception:
-            return 0
-
     def execute_code(self, code: str) -> Tuple[bool, str]:
         """
         Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
@@ -407,15 +277,10 @@ class CodeManager:
                 "remove": False,
                 "working_dir": "/tmp",
                 "mem_limit": self.docker_mem_limit,
-                "memswap_limit": self.docker_memswap_limit,
                 "nano_cpus": self.docker_nano_cpus,
-                "pids_limit": self.docker_pids_limit,
-                "oom_kill_disable": self.docker_oom_kill_disable,
             }
             if self.docker_network_disabled:
                 run_kwargs["network_mode"] = "none"
-            if self.docker_cpuset_cpus:
-                run_kwargs["cpuset_cpus"] = self.docker_cpuset_cpus
             selected_runtime = self._resolve_runtime()
             if selected_runtime:
                 run_kwargs["runtime"] = selected_runtime

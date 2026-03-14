@@ -20,7 +20,7 @@ class MemoryAuthError(PermissionError):
 
 
 class ConversationMemory:
-    """Tam asenkron konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
+    """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
 
 
     def __init__(self, file_path: Path, max_turns: int = 20,
@@ -51,14 +51,7 @@ class ConversationMemory:
         self._last_file: Optional[str] = None
 
         self._dirty = False
-        self._db_initialized = False
-        self._db_init_lock = asyncio.Lock()
-        # Senkron kurulum senaryoları (CLI/test) için ilk DB hazırlığı.
-        # Event loop içinde oluşturuluyorsa lazy init'e bırakılır.
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(self._ainit_db())
+        self._init_db_state()
 
     def _require_active_user(self) -> str:
         if not self.active_user_id:
@@ -69,20 +62,41 @@ class ConversationMemory:
     #  ASYNC ÇEKİRDEK
     # ─────────────────────────────────────────────
 
+    def _run_coro_sync(self, coro):
+        try:
+            asyncio.get_running_loop()
+            in_loop = True
+        except RuntimeError:
+            in_loop = False
+
+        if not in_loop:
+            return asyncio.run(coro)
+
+        box = {"result": None, "error": None}
+
+        def _runner():
+            try:
+                box["result"] = asyncio.run(coro)
+            except Exception as exc:  # pragma: no cover
+                box["error"] = exc
+
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+        t.join()
+        if box["error"]:
+            raise box["error"]
+        return box["result"]
+
     async def _ainit_db(self) -> None:
-        if self._db_initialized:
-            return
-        async with self._db_init_lock:
-            if self._db_initialized:
-                return
-            await self.db.connect()
-            await self.db.init_schema()
-            self.active_user_id = None
-            self.active_username = None
-            self._db_initialized = True
+        await self.db.connect()
+        await self.db.init_schema()
+        self.active_user_id = None
+        self.active_username = None
+
+    def _init_db_state(self) -> None:
+        self._run_coro_sync(self._ainit_db())
 
     async def aget_all_sessions(self) -> List[Dict]:
-        await self._ainit_db()
         user_id = self._require_active_user()
         rows = await self.db.list_sessions(user_id)
         return [
@@ -96,7 +110,6 @@ class ConversationMemory:
         ]
 
     async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
-        await self._ainit_db()
         user_id = self._require_active_user()
         row = await self.db.create_session(user_id, title)
         self.active_session_id = row.id
@@ -108,7 +121,6 @@ class ConversationMemory:
         return row.id
 
     async def aload_session(self, session_id: str) -> bool:
-        await self._ainit_db()
         user_id = self._require_active_user()
         row = await self.db.load_session(session_id, user_id)
         if not row:
@@ -132,7 +144,6 @@ class ConversationMemory:
         return True
 
     async def adelete_session(self, session_id: str) -> bool:
-        await self._ainit_db()
         user_id = self._require_active_user()
         ok = await self.db.delete_session(session_id, user_id)
         if not ok:
@@ -147,7 +158,6 @@ class ConversationMemory:
         return True
 
     async def aupdate_title(self, new_title: str) -> None:
-        await self._ainit_db()
         if not self.active_session_id:
             return
         with self._lock:
@@ -155,7 +165,6 @@ class ConversationMemory:
         await self.db.update_session_title(self.active_session_id, new_title)
 
     async def aadd(self, role: str, content: str) -> None:
-        await self._ainit_db()
         self._require_active_user()
         if not self.active_session_id:
             await self.acreate_session("Yeni Sohbet")
@@ -169,13 +178,16 @@ class ConversationMemory:
         self._dirty = False
 
     async def aget_history(self, n_last: Optional[int] = None) -> List[Dict]:
-        await self._ainit_db()
         with self._lock:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
 
+    # ─────────────────────────────────────────────
+    #  SYNC UYUMLULUK KATMANI
+    # ─────────────────────────────────────────────
+
+
     async def aset_active_user(self, user_id: str, username: Optional[str] = None) -> None:
-        await self._ainit_db()
         self.active_user_id = user_id
         self.active_username = username
         sessions = await self.db.list_sessions(user_id)
@@ -183,6 +195,30 @@ class ConversationMemory:
             await self.aload_session(sessions[0].id)
         else:
             await self.acreate_session("Yeni Sohbet")
+
+    def set_active_user(self, user_id: str, username: Optional[str] = None) -> None:
+        self._run_coro_sync(self.aset_active_user(user_id, username))
+
+    def get_all_sessions(self) -> List[Dict]:
+        return self._run_coro_sync(self.aget_all_sessions())
+
+    def create_session(self, title: str = "Yeni Sohbet") -> str:
+        return self._run_coro_sync(self.acreate_session(title))
+
+    def load_session(self, session_id: str) -> bool:
+        return self._run_coro_sync(self.aload_session(session_id))
+
+    def delete_session(self, session_id: str) -> bool:
+        return self._run_coro_sync(self.adelete_session(session_id))
+
+    def update_title(self, new_title: str) -> None:
+        self._run_coro_sync(self.aupdate_title(new_title))
+
+    def add(self, role: str, content: str) -> None:
+        self._run_coro_sync(self.aadd(role, content))
+
+    def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        return self._run_coro_sync(self.aget_history(n_last))
 
     # ─────────────────────────────────────────────
     #  MEVCUT API (değişmeden)
@@ -216,7 +252,7 @@ class ConversationMemory:
             token_est = self._estimate_tokens()
             return len(self._turns) >= threshold or token_est > 6000
 
-    async def aapply_summary(self, summary_text: str) -> None:
+    def apply_summary(self, summary_text: str) -> None:
         with self._lock:
             kept_turns = self._turns[-self.keep_last:] if self.keep_last > 0 else []
             summary_turns = [
@@ -231,20 +267,20 @@ class ConversationMemory:
         uid = self.active_user_id
         title = self.active_title
         if sid and uid:
-            await self.db.delete_session(sid, uid)
-            await self.acreate_session(title)
+            self._run_coro_sync(self.db.delete_session(sid, uid))
+            self.create_session(title)
             for turn in compact_turns:
-                await self.aadd(turn["role"], turn["content"])
+                self.add(turn["role"], turn["content"])
 
-    async def aclear(self) -> None:
+    def clear(self) -> None:
         with self._lock:
             self._turns.clear()
             self._last_file = None
         sid = self.active_session_id
         title = self.active_title
         if sid:
-            await self.db.delete_session(sid, self.active_user_id)
-            await self.acreate_session(title)
+            self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))
+            self.create_session(title)
 
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.
