@@ -66,6 +66,11 @@ def launch_from_gui(mode: str, provider: str, level: str, log_level: str = DEFAU
         return {"status": "error", "message": str(exc), "return_code": 1}
 
 
+def start_sidar(mode: str, provider: str, level: str, log_level: str = DEFAULT_LOG_LEVEL) -> Dict[str, Any]:
+    """Eel'in doğrudan expose edeceği sabit fonksiyon adı."""
+    return launch_from_gui(mode, provider, level, log_level)
+
+
 def start_gui() -> None:
     """Eel arayüzünü başlatır."""
     try:
@@ -77,7 +82,7 @@ def start_gui() -> None:
 
     gui_dir = Path(__file__).resolve().parent / "launcher_gui"
     eel.init(str(gui_dir))
-    eel.expose(launch_from_gui, "start_sidar")
+    eel.expose(start_sidar)
 
     eel.start(
         "index.html",
