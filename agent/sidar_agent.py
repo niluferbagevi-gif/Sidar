@@ -1552,7 +1552,7 @@ class SidarAgent:
         Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
         AYRICA: Eski konuşmaları 'Sonsuz Hafıza' için Vektör DB'ye (ChromaDB) gömer.
         """
-        history = self.memory.get_history()
+        history = await self.memory.get_history()
         if len(history) < 4:
             return
 
@@ -1594,7 +1594,7 @@ class SidarAgent:
                 stream=False,
                 json_mode=False,
             )
-            self.memory.apply_summary(str(summary))
+            await self.memory.apply_summary(str(summary))
             logger.info("Bellek özetlendi (%d → 2 mesaj).", len(history))
         except Exception as exc:
             logger.warning("Bellek özetleme başarısız: %s", exc)
@@ -1603,11 +1603,11 @@ class SidarAgent:
     #  YARDIMCI METODLAR
     # ─────────────────────────────────────────────
 
-    def clear_memory(self) -> str:
-        self.memory.clear()
+    async def clear_memory(self) -> str:
+        await self.memory.clear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
-    def set_access_level(self, new_level: str) -> str:
+    async def set_access_level(self, new_level: str) -> str:
         """
         Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
         sohbet belleğine kalıcı olarak yazar.
@@ -1621,8 +1621,8 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            self.memory.add("user", msg)
-            self.memory.add(
+            await self.memory.add("user", msg)
+            await self.memory.add(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "
