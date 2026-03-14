@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Tüm v3.0 nesil teknik borçlar kapatıldı: Borç #2 Vanilla JS UIStore tek kaynak refaktörü ve Borç #3 LLM JSON şema soyutlaması çözüldü; 11.2 tablosu temizlendi, CHANGELOG güncellendi)
+> **Son Güncelleme:** 2026-03-14 (v3.0.2 — Kod tabanı yeniden denetlendi; test/bağımlılık/env bulguları rapora işlendi, `ToolCall` geriye dönük uyumluluk düzeltmesi yapıldı ve açık teknik borç tablosu güncellendi)
 > **Proje Sürümü:** 3.0.0
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.160 satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.239** satır.
+> **Analiz Kapsamı:** Repo yeniden taranmıştır; `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` çıktılarıyla güncel hacim doğrulanmıştır: Python **33.157** satır (`.py` toplam), test dosyası **92**, JS **2.072**, CSS **1.798**, HTML **625**, Markdown **5.839** satır.
 
 ---
 
@@ -56,7 +56,7 @@
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
   - [11.1 Ödenmiş Teknik Borçlar (Resolved) ve Changelog Referansı](#111-ödenmiş-teknik-borçlar-resolved-ve-changelog-referansı)
-  - [11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)](#112-yeni-nesil-kurumsal-teknik-borçlar-açık)
+  - [11.2 Açık Teknik Borçlar (Güncel)](#112-açık-teknik-borçlar-güncel)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -849,9 +849,16 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 - Vanilla JS UI ölçeklenme riski: `seedUIStore()` IIFE ile 12 paylaşımlı durum anahtarı tek merkezde; `let` global değişkenleri ve çift yazma (double-write) anti-pattern'i kaldırıldı (`web_ui/*.js`),
 - Sağlayıcılar arası tool-calling şema farkları: `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti, `BaseLLMClient.json_mode_config()` soyut metodu ve `_inject_json_instruction()` yardımcısı ile sağlayıcıdan bağımsız JSON şema uygulama (`core/llm_client.py`).
 
-### 11.2 Açık Teknik Borçlar
+### 11.2 Açık Teknik Borçlar (Güncel)
 
-Şu anda izlenen açık teknik borç bulunmamaktadır. Tüm kalemler kapatılmış olup çözüm kayıtları **11.1** ve **[CHANGELOG.md](./CHANGELOG.md)** altında tutulmaktadır.
+Aşağıdaki kalemler son tam taramada yeniden doğrulanmış **aktif** teknik borçlardır:
+
+| ID | Bulgular | Etki | Kanıt / Komut | Önerilen Aksiyon |
+|---|---|---|---|---|
+| TB-2026-03-14-01 | `tests/test_sidar.py` koleksiyonunda `ToolCall` import kırılması tespit edildi; `agent/sidar_agent.py` içine Pydantic `ToolCall` modeli geri eklendi (uyumluluk düzeltmesi uygulandı). | Test koleksiyonu kırılması, CI erken durma riski. | `pytest -q` (ilk çalıştırma: ImportError), `pytest -q tests/test_sidar.py::test_toolcall_pydantic_validation` (geçti). | Düzeltme tamamlandı; benzer public API kaldırımlarında deprecation katmanı zorunlu kılınmalı. |
+| TB-2026-03-14-02 | `tests/test_sidar.py` bütününde DB initialize edilmeden `ensure_user` çağrıları nedeniyle `AssertionError` zinciri sürüyor. | Oturum/bellek testlerinin büyük kısmı fail; regresyon sinyali zayıflıyor. | `pytest -q tests/test_sidar.py` (9 failed, 14 errors). | Fixture seviyesinde `await mem.initialize()` veya DB lazy-init sözleşmesi netleştirilmeli. |
+| TB-2026-03-14-03 | Legacy `_react_loop` beklentili testler (`tests/test_targeted_coverage_additions.py -k toolcall`) artık olmayan metoda bağlı. | Test tasarımı ile üretim kodu arasında sürüklenme; yanlış alarm. | `pytest -q tests/test_targeted_coverage_additions.py -k toolcall` (AttributeError). | Eski ReAct testleri Supervisor-first mimariye göre revize edilmeli. |
+| TB-2026-03-14-04 | `.env.example` ile runtime anahtar seti arasında farklar var (örn. `DATABASE_URL`, `SANDBOX_CPUS`, `SANDBOX_MEMORY`, `SANDBOX_NETWORK` config’te kullanılıyor). | Operasyonel konfigürasyon drift’i; kurulum hatası riski. | Özel karşılaştırma betiği (config getenv vs `.env.example`). | `.env.example` ve raporun 12. bölümünde eksik anahtarlar eklenmeli, gereksizler etiketlenmeli. |
 
 
 ## 12. `.env` Tam Değişken Referansı
