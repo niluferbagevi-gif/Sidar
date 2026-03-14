@@ -232,6 +232,18 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
+### Opsiyonel: Masaüstü GUI Launcher
+
+`main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
+
+```bash
+pip install eel
+python gui_launcher.py
+```
+
+Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui_launcher.py`
+üzerinden mevcut `preflight`, `build_command` ve `execute_command` akışına bağlar.
+
 ## Veritabanı Migration (Alembic)
 
 v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
