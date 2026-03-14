@@ -50,6 +50,15 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 
 
 
+### 🧹 Audit Geçişi Konsolidasyonu (v2.x → v3.0)
+* **Rapor düzeltmeleri sadeleştirildi:** Satır sayısı/test sayısı düzeltmeleri ana rapordan çıkarılarak yalnızca kalıcı teknik sonuçlar bırakıldı.
+* **CLI kilitlenme düzeltmesi kalıcılandı:** Tek event-loop yaklaşımı (`_interactive_loop_async` + kontrollü `asyncio.run`) doğrulandı.
+* **WebSocket sohbet altyapısı kalıcılandı:** `/ws/chat` hattının üretim kullanımında olduğu audit geçişlerinde tekrar doğrulandı.
+* **Sandbox çıktı güvenlik sınırı korundu:** Kod çalıştırma çıktısı için üst limit yaklaşımı audit geçiş notlarına göre stabil kaldı.
+* **Redis rate limiting fallback mimarisi doğrulandı:** Redis + bellek içi fallback yaklaşımı v3.0 geçişinde korunarak devam etti.
+* **`/file-content` boyut limiti kapatıldı:** `MAX_FILE_CONTENT_BYTES = 1_048_576` ve `413 Payload Too Large` yanıtı ile sınırsız okuma riski kapatıldı.
+
+
 ## [v2.10.8] - 2026-03-10
 Bu sürümde RAG cold-start optimizasyonu tamamlandı ve Anthropic (Claude) sağlayıcı desteği eklendi.
 
