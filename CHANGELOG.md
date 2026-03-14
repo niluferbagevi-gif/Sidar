@@ -23,6 +23,13 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
 * **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
 
+### ✅ Audit #8-#10 doğrulama kapanışları (2026-03-14 belge revizyonu)
+* **[Doğrulandı] Multi-agent feature toggle varlığı:** `.env.example` içinde `ENABLE_MULTI_AGENT` değişkeni mevcut.
+* **[Doğrulandı] Planlanan modüller depoda aktif:** `agent/roles/reviewer_agent.py`, `agent/core/memory_hub.py`, `agent/core/registry.py` dosyaları mevcut ve mimari akışta referanslı.
+* **[Doğrulandı] Boş test artifact temizliği:** `find tests -type f -size 0` çıktısı boş; CI workflow içinde guard adımı tanımlı.
+* **[Doğrulandı] RFC durum matrisi:** `RFC-MultiAgent.md` içinde `planlandı/uygulandı` izleme satırları (`ReviewerAgent`, `memory_hub`, `registry`) korunuyor.
+* **[Doğrulandı] Ölçüm standardizasyonu:** `scripts/audit_metrics.sh` scripti depoda mevcut ve CI içinde markdown/json çıktısı üretiyor.
+
 #### Önceki Denetimlerde (Audit) Çözüldüğü Doğrulanan Diğer Maddeler
 | Madde | Doğrulama | Dosya / Referans |
 |-------|-----------|-----------------|
