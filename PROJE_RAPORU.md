@@ -154,105 +154,100 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-```text
 sidar_project/
-├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
-├── main.py                    # Akıllı başlatıcı (wizard + --quick mod)
-├── cli.py                     # CLI terminal arayüzü giriş noktası
-├── web_server.py              # FastAPI web sunucusu (WebSocket streaming)
-├── config.py                  # Merkezi yapılandırma (v3.0.0)
-├── github_upload.py           # GitHub otomatik yükleme aracı
-├── Dockerfile                 # CPU + GPU çift mod Dockerfile
-├── docker-compose.yml         # 5 servis + Prometheus & Grafana entegrasyonu
-├── environment.yml            # Conda bağımlılıkları
-├── requirements.txt           # Pip temel bağımlılıkları
-├── requirements-dev.txt       # Geliştirme ve test bağımlılıkları
-├── pyproject.toml             # Ruff + Mypy kalite standartları
-├── pytest.ini                 # Pytest konfigürasyonu
-├── alembic.ini                # Veritabanı geçiş (migration) ayarları
-├── run_tests.sh               # Kapsam ve test çalıştırıcı betik
-├── install_sidar.sh           # Otomatik kurulum betiği
-│
-├── agent/
-│   ├── __init__.py
-│   ├── sidar_agent.py         # Ana ajan bağlayıcısı
-│   ├── base_agent.py          # BaseAgent soyut sınıfı (multi-agent iskeleti)
-│   ├── auto_handle.py         # Anahtar kelime tabanlı hızlı yönlendirici
-│   ├── definitions.py         # Sistem istemi ve ajan kimliği
-│   ├── tooling.py             # Araç kayıt + Pydantic şema yöneticisi
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── supervisor.py      # Yönlendirici ve orkestrasyon ajanı
-│   │   ├── contracts.py       # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri
-│   │   ├── event_stream.py    # Ajan olay veriyolu (canlı durum akışı)
-│   │   ├── memory_hub.py      # Multi-agent bellek yönetim merkezi
-│   │   └── registry.py        # Ajan ve yetenek kayıt defteri
-│   └── roles/
-│       ├── __init__.py
-│       ├── coder_agent.py     # Dosya/kod odaklı uzman ajan
-│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan
-│       └── reviewer_agent.py  # Test koşturan, kod kalitesini denetleyen QA ajanı
-│
-├── core/
-│   ├── __init__.py
-│   ├── db.py                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
-│   ├── llm_client.py          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
-│   ├── llm_metrics.py         # Token, maliyet ve Prometheus metrik toplayıcısı
-│   ├── memory.py              # Kalıcı çok oturumlu bellek (DB destekli)
-│   └── rag.py                 # ChromaDB + BM25 hibrit RAG motoru
-│
-├── docker/                    # Gözlemlenebilirlik (observability) ayarları
-│   ├── grafana/               # Dashboard ve provisioning dosyaları
-│   └── prometheus/            # Scrape yapılandırması
-│
-├── managers/
-│   ├── __init__.py
-│   ├── code_manager.py        # Dosya I/O + Docker REPL + denetim
-│   ├── security.py            # OpenClaw erişim kontrol sistemi
-│   ├── github_manager.py      # GitHub API entegrasyonu
-│   ├── system_health.py       # CPU/RAM/GPU izleme
-│   ├── web_search.py          # Tavily + Google + DuckDuckGo arama
-│   ├── package_info.py        # PyPI + npm + GitHub Releases
-│   └── todo_manager.py        # Görev takip yöneticisi
-│
-├── migrations/                # Alembic veritabanı geçiş dosyaları
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/              # 0001_baseline_schema.py vb. şema versiyonları
-│
-├── scripts/                   # Operasyon, test ve metrik betikleri
-│   ├── audit_metrics.sh       # Kod satır sayısı ve audit metrikleri üretici
-│   ├── check_empty_test_artifacts.sh # CI kalite kapısı kontrolleri
-│   ├── collect_repo_metrics.sh
-│   ├── install_host_sandbox.sh # Zero-trust sandbox (gVisor/Kata) hazırlığı
-│   ├── load_test_db_pool.py   # DB bağlantı havuzu yük testi
-│   └── migrate_sqlite_to_pg.py # SQLite'tan PostgreSQL'e geçiş aracı
-│
-├── runbooks/                  # Operasyonel kılavuzlar
-│   └── production-cutover-playbook.md # Kurumsal sürüme geçiş yönergeleri
-│
-├── web_ui/                    # Modüler Web UI
-│   ├── index.html
-│   ├── style.css
-│   ├── chat.js                # WebSocket streaming, canlı durum akışı
-│   ├── sidebar.js             # Oturum yönetimi
-│   ├── rag.js                 # RAG belge UI
-│   └── app.js                 # Uygulama başlatma, auth, bütçe yönetimi
-│
-├── tests/                     # Kapsamlı test paketi (~70 test modülü)
-│   ├── conftest.py            # Ortak test fixture'ları
-│   └── test_*.py              # Modül bazlı ve entegrasyon testleri
-│
-├── data/                      # RAG ve varsayılan yerel depolama dosyaları
-├── .coveragerc                # Coverage kalite kapısı kuralları (%95 eşik)
-├── .env.example               # Ortam değişkeni şablonu
-├── CHANGELOG.md               # Sürüm notları ve değişiklik geçmişi
-├── CLAUDE.md                  # Geliştirici rehberi
-├── PROJE_RAPORU.md            # Ana mimari ve denetim raporu
-├── README.md                  # Proje tanıtım ve kurulum belgesi
-├── RFC-MultiAgent.md          # Multi-agent mimari tasarım dokümanı
-└── SIDAR.md                   # Sistem promptları ve proje kuralları
-```
+- .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
+- [`main.py`](docs/module-notes/main.py.md)                    # Akıllı başlatıcı (wizard + --quick mod)
+- [`cli.py`](docs/module-notes/cli.py.md)                     # CLI terminal arayüzü giriş noktası
+- [`web_server.py`](docs/module-notes/web_server.py.md)              # FastAPI web sunucusu (WebSocket streaming)
+- [`config.py`](docs/module-notes/config.py.md)                  # Merkezi yapılandırma (v3.0.0)
+- [`github_upload.py`](docs/module-notes/github_upload.py.md)           # GitHub otomatik yükleme aracı
+- [`Dockerfile`](docs/module-notes/Dockerfile.md)                 # CPU + GPU çift mod Dockerfile
+- [`docker-compose.yml`](docs/module-notes/docker-compose.yml.md)         # 5 servis + Prometheus & Grafana entegrasyonu
+- [`environment.yml`](docs/module-notes/environment.yml.md)            # Conda bağımlılıkları
+- [`requirements.txt`](docs/module-notes/requirements.txt.md)           # Pip temel bağımlılıkları
+- [`requirements-dev.txt`](docs/module-notes/requirements-dev.txt.md)       # Geliştirme ve test bağımlılıkları
+- [`pyproject.toml`](docs/module-notes/pyproject.toml.md)             # Ruff + Mypy kalite standartları
+- [`pytest.ini`](docs/module-notes/pytest.ini.md)                 # Pytest konfigürasyonu
+- [`alembic.ini`](docs/module-notes/alembic.ini.md)                # Veritabanı geçiş (migration) ayarları
+- [`run_tests.sh`](docs/module-notes/run_tests.sh.md)               # Kapsam ve test çalıştırıcı betik
+- [`install_sidar.sh`](docs/module-notes/install_sidar.sh.md)           # Otomatik kurulum betiği
+
+- agent/
+  - [`__init__.py`](docs/module-notes/agent/__init__.py.md)
+  - [`sidar_agent.py`](docs/module-notes/agent/sidar_agent.py.md)         # Ana ajan bağlayıcısı
+  - [`base_agent.py`](docs/module-notes/agent/base_agent.py.md)          # BaseAgent soyut sınıfı (multi-agent iskeleti)
+  - [`auto_handle.py`](docs/module-notes/agent/auto_handle.py.md)         # Anahtar kelime tabanlı hızlı yönlendirici
+  - [`definitions.py`](docs/module-notes/agent/definitions.py.md)         # Sistem istemi ve ajan kimliği
+  - [`tooling.py`](docs/module-notes/agent/tooling.py.md)             # Araç kayıt + Pydantic şema yöneticisi
+  - core/
+    - [`__init__.py`](docs/module-notes/agent/core/__init__.py.md)
+    - [`supervisor.py`](docs/module-notes/agent/core/supervisor.py.md)      # Yönlendirici ve orkestrasyon ajanı
+    - [`contracts.py`](docs/module-notes/agent/core/contracts.py.md)       # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri
+    - [`event_stream.py`](docs/module-notes/agent/core/event_stream.py.md)    # Ajan olay veriyolu (canlı durum akışı)
+    - [`memory_hub.py`](docs/module-notes/agent/core/memory_hub.py.md)      # Multi-agent bellek yönetim merkezi
+    - [`registry.py`](docs/module-notes/agent/core/registry.py.md)        # Ajan ve yetenek kayıt defteri
+  - roles/
+    - [`__init__.py`](docs/module-notes/agent/roles/__init__.py.md)
+    - [`coder_agent.py`](docs/module-notes/agent/roles/coder_agent.py.md)     # Dosya/kod odaklı uzman ajan
+    - [`researcher_agent.py`](docs/module-notes/agent/roles/researcher_agent.py.md) # Web + RAG odaklı uzman ajan
+    - [`reviewer_agent.py`](docs/module-notes/agent/roles/reviewer_agent.py.md)  # Test koşturan, kod kalitesini denetleyen QA ajanı
+
+- core/
+  - [`__init__.py`](docs/module-notes/core/__init__.py.md)
+  - [`db.py`](docs/module-notes/core/db.py.md)                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
+  - [`llm_client.py`](docs/module-notes/core/llm_client.py.md)          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
+  - [`llm_metrics.py`](docs/module-notes/core/llm_metrics.py.md)         # Token, maliyet ve Prometheus metrik toplayıcısı
+  - [`memory.py`](docs/module-notes/core/memory.py.md)              # Kalıcı çok oturumlu bellek (DB destekli)
+  - [`rag.py`](docs/module-notes/core/rag.py.md)                 # ChromaDB + BM25 hibrit RAG motoru
+
+- docker/                    # Gözlemlenebilirlik (observability) ayarları
+  - grafana/               # Dashboard ve provisioning dosyaları
+  - prometheus/            # Scrape yapılandırması
+
+- managers/
+  - [`__init__.py`](docs/module-notes/managers/__init__.py.md)
+  - [`code_manager.py`](docs/module-notes/managers/code_manager.py.md)        # Dosya I/O + Docker REPL + denetim
+  - [`security.py`](docs/module-notes/managers/security.py.md)            # OpenClaw erişim kontrol sistemi
+  - [`github_manager.py`](docs/module-notes/managers/github_manager.py.md)      # GitHub API entegrasyonu
+  - [`system_health.py`](docs/module-notes/managers/system_health.py.md)       # CPU/RAM/GPU izleme
+  - [`web_search.py`](docs/module-notes/managers/web_search.py.md)          # Tavily + Google + DuckDuckGo arama
+  - [`package_info.py`](docs/module-notes/managers/package_info.py.md)        # PyPI + npm + GitHub Releases
+  - [`todo_manager.py`](docs/module-notes/managers/todo_manager.py.md)        # Görev takip yöneticisi
+
+- migrations/                # Alembic veritabanı geçiş dosyaları
+  - [`env.py`](docs/module-notes/migrations/env.py.md)
+  - [`script.py.mako`](docs/module-notes/migrations/script.py.mako.md)
+  - versions/              # 0001_baseline_schema.py vb. şema versiyonları
+
+- scripts/                   # Operasyon, test ve metrik betikleri
+  - [`audit_metrics.sh`](docs/module-notes/scripts/audit_metrics.sh.md)       # Kod satır sayısı ve audit metrikleri üretici
+  - [`check_empty_test_artifacts.sh`](docs/module-notes/scripts/check_empty_test_artifacts.sh.md) # CI kalite kapısı kontrolleri
+  - [`collect_repo_metrics.sh`](docs/module-notes/scripts/collect_repo_metrics.sh.md)
+  - [`install_host_sandbox.sh`](docs/module-notes/scripts/install_host_sandbox.sh.md) # Zero-trust sandbox (gVisor/Kata) hazırlığı
+  - [`load_test_db_pool.py`](docs/module-notes/scripts/load_test_db_pool.py.md)   # DB bağlantı havuzu yük testi
+  - [`migrate_sqlite_to_pg.py`](docs/module-notes/scripts/migrate_sqlite_to_pg.py.md) # SQLite'tan PostgreSQL'e geçiş aracı
+
+- runbooks/                  # Operasyonel kılavuzlar
+  - [`production-cutover-playbook.md`](docs/module-notes/runbooks/production-cutover-playbook.md.md) # Kurumsal sürüme geçiş yönergeleri
+
+- web_ui/                    # Modüler Web UI
+  - [`index.html`](docs/module-notes/web_ui/index.html.md)
+  - [`style.css`](docs/module-notes/web_ui/style.css.md)
+  - [`chat.js`](docs/module-notes/web_ui/chat.js.md)                # WebSocket streaming, canlı durum akışı
+  - [`sidebar.js`](docs/module-notes/web_ui/sidebar.js.md)             # Oturum yönetimi
+  - [`rag.js`](docs/module-notes/web_ui/rag.js.md)                 # RAG belge UI
+  - [`app.js`](docs/module-notes/web_ui/app.js.md)                 # Uygulama başlatma, auth, bütçe yönetimi
+
+- [`tests/`](docs/module-notes/tests.md)                     # Kapsamlı test paketi (~70 test modülü)
+- [`data/`](docs/module-notes/data/gitkeep.md)                      # RAG ve varsayılan yerel depolama dosyaları
+- [`.coveragerc`](docs/module-notes/coveragerc.md)                # Coverage kalite kapısı kuralları (%95 eşik)
+- [`.env.example`](docs/module-notes/env.example.md)               # Ortam değişkeni şablonu
+- [`CHANGELOG.md`](docs/module-notes/CHANGELOG.md.md)               # Sürüm notları ve değişiklik geçmişi
+- [`CLAUDE.md`](docs/module-notes/CLAUDE.md.md)                  # Geliştirici rehberi
+- [`PROJE_RAPORU.md`](docs/module-notes/PROJE_RAPORU.md.md)            # Ana mimari ve denetim raporu
+- [`README.md`](docs/module-notes/README.md.md)                  # Proje tanıtım ve kurulum belgesi
+- [`RFC-MultiAgent.md`](docs/module-notes/RFC-MultiAgent.md.md)          # Multi-agent mimari tasarım dokümanı
+- [`SIDAR.md`](docs/module-notes/SIDAR.md.md)                   # Sistem promptları ve proje kuralları
 
 ---
 
