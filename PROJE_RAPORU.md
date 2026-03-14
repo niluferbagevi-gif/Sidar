@@ -264,845 +264,200 @@ sidar_project/
 
 ### 3.1 `config.py` — Merkezi Yapılandırma (589 satır)
 
-**Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler, donanım tespiti yapar ve v3.0 kurumsal çalışma profillerini merkezi olarak yönetir.
+Bu başlıktaki detaylı içerik `docs/module-notes/config.py.md` dosyasına taşınmıştır.
 
-**Kritik Bileşenler:**
-
-| Bileşen | Açıklama |
-|---------|----------|
-| `get_bool_env / get_int_env / get_float_env / get_list_env` | Type-safe ortam değişkeni okuma yardımcıları |
-| `HardwareInfo` (dataclass) | CUDA/WSL2 donanım tespiti sonuçlarını tutar |
-| `Config` (sınıf) | Tüm sistem parametrelerini sınıf attribute olarak toplar |
-| `validate_critical_settings()` | Sağlayıcı anahtarları, şifreleme anahtarı ve kritik ayar doğrulamaları |
-
-**`Config` Sınıfı Parametre Grupları (v3.0):**
-
-- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, model seçim parametreleri
-- **Veritabanı:** `DATABASE_URL`, `DB_POOL_SIZE`, `DB_SCHEMA_VERSION_TABLE`, `DB_SCHEMA_TARGET_VERSION`
-- **Güvenlik:** `ACCESS_LEVEL`, `MEMORY_ENCRYPTION_KEY`
-- **Docker Zero-Trust Sandbox:** `DOCKER_NETWORK_DISABLED`, `DOCKER_MEM_LIMIT`, `DOCKER_NANO_CPUS`, `DOCKER_MICROVM_MODE`, `DOCKER_ALLOWED_RUNTIMES`, `DOCKER_RUNTIME`, `DOCKER_EXEC_TIMEOUT`
-- **Observability:** `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`
-- **Rate Limiting:** `RATE_LIMIT_CHAT`, `RATE_LIMIT_MUTATIONS`, `RATE_LIMIT_GET_IO`, `REDIS_URL`
-- **RAG:** `RAG_DIR`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_FILE_THRESHOLD`
-- **Mimari:** `ENABLE_MULTI_AGENT`, `REVIEWER_TEST_COMMAND`
-
-**Dikkat Noktaları:**
-- Donanım bilgisi lazy-load yaklaşımıyla alınır; import anında ağır GPU yan etkisi oluşturmaz.
-- v3.0 ile DB ve sandbox parametreleri tek merkezden yönetildiği için runtime profiller arasında sapma riski düşürülmüştür.
+- [Modül Notu: `docs/module-notes/config.py.md`](docs/module-notes/config.py.md)
 
 ---
-
 ### 3.2 `main.py` — Akıllı Başlatıcı (225 satır)
 
-**Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
+Bu başlıktaki detaylı içerik `docs/module-notes/main.py.md` dosyasına taşınmıştır.
 
-**Temel Fonksiyonlar:**
-
-| Fonksiyon | Açıklama |
-|-----------|----------|
-| `print_banner()` | ANSI renkli ASCII art banner |
-| `ask_choice(prompt, options, default_key)` | Güvenli menü seçimi (geçersiz giriş döngüsü) |
-| `ask_text(prompt, default)` | Metin girişi (Enter = varsayılan) |
-| `confirm(prompt, default_yes)` | Y/n onay istemi |
-| `preflight(provider)` | `.env` varlığı, Python sürümü, Ollama/Gemini/OpenAI/Anthropic erişim kontrolü |
-| `build_command(mode, provider, level, log, extra_args)` | `cli.py` veya `web_server.py` komutu oluşturur |
-| `_stream_pipe(pipe, file_obj, prefix, color, mirror)` | Thread'de pipe akışını bellek dostu okur |
-| `_run_with_streaming(cmd, child_log_path)` | Çocuk süreç stdout/stderr canlı yayınlar; opsiyonel dosya logu |
-| `execute_command(cmd, capture_output, child_log_path)` | `subprocess.run` veya streaming ile çalıştırır |
-| `run_wizard()` | 4 adımlı etkileşimli menü |
-
-**`--quick` Mod Argümanları:**
-```
-python main.py --quick web --host 0.0.0.0 --port 7860
-python main.py --quick cli --provider gemini --level sandbox
-python main.py --quick web --capture-output --child-log logs/child.log
-```
-
-**Mimari Not:** `DummyConfig` fallback sınıfı ile `config.py` olmadan da çalışır.
+- [Modül Notu: `docs/module-notes/main.py.md`](docs/module-notes/main.py.md)
 
 ---
-
 ### 3.3 `cli.py` — CLI Arayüzü (232 satır)
 
-**Amaç:** Terminal tabanlı etkileşimli REPL döngüsü.
+Bu başlıktaki detaylı içerik `docs/module-notes/cli.py.md` dosyasına taşınmıştır.
 
-**Mimari Düzeltme:**
-Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu; bu `asyncio.Lock` ömrünü bozuyordu. Yeni yapıda tüm döngü tek bir `async` fonksiyona (`_interactive_loop_async`) alınmıştır — lock tüm oturum boyunca aynı event loop'ta yaşar.
-
-**Desteklenen Nokta Komutları:**
-
-| Komut | Eylem |
-|-------|-------|
-| `.status` | Sistem durumu |
-| `.clear` / `/clear` / `/reset` | Konuşma belleğini temizle |
-| `.audit` | Proje denetimi |
-| `.health` | Sistem sağlık raporu |
-| `.gpu` | GPU belleği optimize et |
-| `.github` | GitHub bağlantı durumu |
-| `.level` / `.level <seviye>` | Erişim seviyesini göster / değiştir |
-| `.web` | Web arama durumu |
-| `.docs` | Belge deposunu listele |
-| `.help` | Yardım |
-| `.exit` / `.q` | Çıkış |
-
-**Doğrudan Komutlar (AutoHandle üzerinden):**
-- `web'de ara: <sorgu>`, `pypi: <paket>`, `npm: <paket>`, `github releases: <owner/repo>`, `docs ara: <sorgu>`, `stackoverflow: <sorgu>`, `belge ekle <url>`
-
-**CLI Argümanları:**
-- `--level`, `--provider`, `--model`, `--log`, `-c/--command`, `--status`
+- [Modül Notu: `docs/module-notes/cli.py.md`](docs/module-notes/cli.py.md)
 
 ---
-
 ### 3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)
 
-**Amaç:** WebSocket destekli asenkron chat, DB tabanlı kimlik doğrulama ve kurumsal metrik/bütçe uçlarını tek API yüzeyinde sunar.
+Bu başlıktaki detaylı içerik `docs/module-notes/web_server.py.md` dosyasına taşınmıştır.
 
-**Kurumsal v3.0 Öne Çıkanlar:**
-- **Bearer Token middleware:** HTTP isteklerinde zorunlu kimlik doğrulama (`basic_auth_middleware`).
-- **Auth uçları:** `/auth/register`, `/auth/login`, `/auth/me`.
-- **Bütçe/telemetri uçları:** `/api/budget`, `/metrics/llm`, `/metrics/llm/prometheus`.
-- **WebSocket Auth Handshake:** `/ws/chat` bağlantısında ilk mesajın `action="auth"` ve geçerli token içermesi zorunlu; aksi durumda policy violation ile bağlantı kapatılır.
-
-**Temel API Endpoint'leri (özet):**
-
-| Endpoint | Metod | Açıklama |
-|----------|-------|----------|
-| `/` | GET | `index.html` servis et |
-| `/static/*` | GET | JS/CSS statik dosyaları |
-| `/auth/register` | POST | Yeni kullanıcı kaydı |
-| `/auth/login` | POST | Giriş + access token üretimi |
-| `/auth/me` | GET | Aktif kullanıcı kimliği |
-| `/ws/chat` | WS | Auth handshake + çift yönlü chat akışı |
-| `/api/budget` | GET | LLM maliyet/token/latency bütçe özeti |
-| `/metrics/llm` | GET | LLM metrik snapshot (JSON) |
-| `/metrics/llm/prometheus` | GET | Prometheus formatında LLM metrikleri |
-| `/sessions*` | GET/POST/DELETE | Kullanıcıya izole oturum CRUD işlemleri |
+- [Modül Notu: `docs/module-notes/web_server.py.md`](docs/module-notes/web_server.py.md)
 
 ---
-
 ### 3.5 `agent/sidar_agent.py` — Ana Ajan (1.651 satır)
 
-**Amaç:** ReAct döngüsü, araç yönetimi, akış yönetimi ve özetleme mantığı.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/sidar_agent.py.md` dosyasına taşınmıştır.
 
-**Araç Kataloğu (45+ araç):**
-
-| Kategori | Araçlar |
-|----------|---------|
-| Dosya İşlemleri | `list_dir`, `read_file`, `write_file`, `patch_file`, `glob_search`, `grep_files` |
-| Kod Yürütme | `execute_code`, `run_shell` / `bash` / `shell` |
-| GitHub — PR/Branch | `github_commits`, `github_info`, `github_read`, `github_list_files`, `github_write`, `github_create_branch`, `github_create_pr`, `github_smart_pr`, `github_list_prs`, `github_get_pr`, `github_comment_pr`, `github_close_pr`, `github_pr_files`, `github_search_code`, `github_pr_diff`, `github_list_repos` |
-| GitHub — Issue | `github_list_issues`, `github_create_issue`, `github_comment_issue`, `github_close_issue` |
-| Web | `web_search`, `fetch_url`, `search_docs`, `search_stackoverflow` |
-| Paket Bilgi | `pypi`, `pypi_compare`, `npm`, `gh_releases`, `gh_latest` |
-| RAG | `docs_search`, `docs_add`, `docs_add_file`, `docs_list`, `docs_delete` |
-| Sistem | `health`, `gpu_optimize`, `audit`, `get_config`, `print_config_summary` |
-| Görev | `todo_write`, `todo_read`, `todo_update`, `scan_project_todos` |
-| Alt Ajan | `subtask` / `agent`, `parallel` |
-
-**ReAct Döngüsü Akışı:**
-```
-kullanıcı mesajı
-    → AutoHandle (hızlı yönlendirici)
-        → [eşleşirse] doğrudan yanıt döner
-        → [eşleşmezse] LLM çağrısı
-            → JSON: {thought, tool, argument}
-                → araç çalıştırılır
-                    → sonuç belleğe eklenir
-                        → [final_answer değilse] LLM tekrar çağrılır (maks. MAX_REACT_STEPS)
-                            → final_answer → kullanıcıya akış
-```
-
-**Önemli Tasarım Kararları:**
-
-1. **`_DIRECT_ROUTE_ALLOWED_TOOLS`:** `list_dir`, `read_file`, `health` vb. tek adımlı güvenli araçlar ReAct döngüsüne girmeden doğrudan çalıştırılır. Gereksiz LLM çağrısını önler.
-
-2. **Yapısal Çıktı (Pydantic):** LLM çıktısı `ToolCall` modeli ile doğrulanır. Geçersiz JSON → `_FMT_SYS_ERR` formatında belleğe yazılır.
-
-3. **Döngü Tespiti:** Aynı araç 3 kez arka arkaya çağrılırsa uyarı üretilir ve `final_answer`'a yönlendirilir.
-
-4. **`_instructions_cache`:** `SIDAR.md` ve `CLAUDE.md` dosyaları mtime tabanlı cache ile okunur; her turda disk I/O yapılmaz.
-
-5. **Bellek Özetleme:** `ConversationMemory.needs_summarization()` True döndürdüğünde ajan LLM'i özetleme için çağırır; eski turlar tek bir "KONUŞMA ÖZETİ" mesajıyla değiştirilir.
-
-6. **`subtask` aracı:** Alt görev için bağımsız ajan döngüsü açar; `SUBTASK_MAX_STEPS` (varsayılan 5) adımla sınırlıdır.
-
-7. **`parallel` aracı:** Birden fazla araç argümanını eşzamanlı `asyncio.gather` ile çalıştırır.
+- [Modül Notu: `docs/module-notes/agent/sidar_agent.py.md`](docs/module-notes/agent/sidar_agent.py.md)
 
 ---
-
 ### 3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)
 
-**Amaç:** Kullanıcı mesajındaki ortak kalıpları regex ile tanıyarak LLM döngüsüne girmeden cevap verir.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/auto_handle.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/auto_handle.py` çıktısına göre **601** olarak ölçülmüştür.
-
-**Mimari:**
-- `AutoHandle.handle(text)` → `(işlendi_mi: bool, yanıt: str)` döner
-- Senkron araçlar `asyncio.to_thread` ile event loop bloklanmadan çalıştırılır
-- `AUTO_HANDLE_TIMEOUT` (varsayılan 12 sn) ile her araç çağrısı zaman aşımına karşı korunur
-
-**`_MULTI_STEP_RE` Koruyucu:** "ardından", "önce...sonra", numaralı adım kalıpları algılanırsa AutoHandle çıkar ve ReAct'a bırakır.
-
-**İşlenen Kalıplar:**
-
-| Kategori | Regex Tetikleyici Örnekler |
-|----------|---------------------------|
-| Nokta komutları | `.status`, `.health`, `.clear`, `.audit`, `.gpu` |
-| Dosya okuma | `dosyayı oku`, `incele`, `cat` |
-| Dizin listeleme | `dizin listele`, `ls` |
-| Denetim | `denetle`, `audit`, `teknik rapor` |
-| Sağlık | `sistem sağlık`, `cpu durumu`, `gpu durum` |
-| GitHub | `son commit`, `PR listele`, `github bilgi` |
-| Web arama | `web'de ara:`, `google:`, `internette ara` |
-| Paket bilgi | `pypi:`, `npm:`, `github releases:` |
-| RAG | `depoda ara:`, `belge ekle`, `belge listele` |
-| Güvenlik durumu | `openclaw`, `erişim seviyesi`, `access level` |
+- [Modül Notu: `docs/module-notes/agent/auto_handle.py.md`](docs/module-notes/agent/auto_handle.py.md)
 
 ---
-
 ### 3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)
 
-**Amaç:** `SIDAR_SYSTEM_PROMPT` sistem istemini barındırır.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/definitions.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/definitions.py` çıktısına göre **165** olarak ölçülmüştür.
-
-**Sistem İstemi Bölümleri:**
-
-| Bölüm | İçerik |
-|-------|--------|
-| Geriye dönük uyumluluk listeleri | `SIDAR_KEYS` ve `SIDAR_WAKE_WORDS` sabitleri |
-| KİŞİLİK | Analitik, minimal, veriye dayalı, güvenliğe şüpheci |
-| MİSYON | Dosya erişimi, GitHub senkronizasyonu, kod yönetimi, teknik denetim |
-| GÜNCEL RUNTIME KİMLİĞİ | Varsayılan port/model bilgileri ve `get_config` ile doğrulama notu |
-| BİLGİ SINIRI | Ağustos 2025 sonrası için tahmin yasağı; `web_search` / `pypi` zorunlu |
-| HALLUCINATION YASAĞI | Sistem değerlerini (versiyon, model, yol) ASLA uydurma; `get_config` kullan |
-| DOSYA ERİŞİM STRATEJİSİ | `glob_search` → `read_file` → `patch_file` sırası |
-| GÖREV TAKİP | Çok adımlı görevlerde `todo_write` zorunlu |
-| SIDAR.md | Proje özel talimatların otomatik yüklenmesi |
-| İLKELER | PEP 8, UTF-8, test doğrulama ve fail-closed yaklaşımı |
-| DÖNGÜ YASAĞI | Aynı araç 2 kez çağrılmaz; tek adımlı araçlar listelendi |
-| HATA KURTARMA | Dosya/patch/izin/web/GitHub hataları için toparlanma adımları |
-| ARAÇ KULLANIM STRATEJİLERİ | Her araç için ne zaman / hangi argüman kullanılacağı |
-| ARAÇ KULLANIMI (JSON FORMATI) | Yanıtların zorunlu JSON şeması (`thought`, `tool`, `argument`) |
-| ÖRNEK JSON YANITLARI | 5 örnek senaryo |
+- [Modül Notu: `docs/module-notes/agent/definitions.py.md`](docs/module-notes/agent/definitions.py.md)
 
 ---
-
 ### 3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)
 
-**Amaç:** Araçların Pydantic şemalarını ve `build_tool_dispatch()` fonksiyonu aracılığıyla araç dispatch tablosunu merkezi olarak yönetir.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/tooling.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/tooling.py` çıktısına göre **266** olarak ölçülmüştür.
-
-**Kritik Bileşenler:**
-
-| Bileşen | Açıklama |
-|---------|----------|
-| `WriteFileSchema` | `path` + `content` alanlarına sahip yazma şeması |
-| `PatchFileSchema` | `path` + `old_text` + `new_text` alanlarına sahip yama şeması |
-| `GithubListFilesSchema` | `path` + opsiyonel `branch` alanları |
-| `GithubWriteSchema` | `path`, `content`, `commit_message`, opsiyonel `branch` |
-| `GithubCreateBranchSchema` | `branch_name` + opsiyonel `from_branch` |
-| `GithubCreatePRSchema` | `title`, `body`, `head`, opsiyonel `base` |
-| `GithubListPRsSchema` | `state` (varsayılan: `"open"`) + `limit` (varsayılan: 10) |
-| `GithubListIssuesSchema` | `state` (varsayılan: `"open"`) + `limit` (varsayılan: 10) |
-| `GithubCreateIssueSchema` | `title` + `body` |
-| `GithubCommentIssueSchema` | `number` (int) + `body` |
-| `GithubCloseIssueSchema` | `number` (int) |
-| `GithubPRDiffSchema` | `number` (int) |
-| `ScanProjectTodosSchema` | opsiyonel `directory` + opsiyonel `extensions` (uzantı listesi) |
-| `TOOL_ARG_SCHEMAS` | Araç adını şema sınıfına eşleyen sözlük (13 giriş) |
-| `parse_tool_argument()` | JSON öncelikli, `|||` sınırlı legacy format fallback ile argüman ayrıştırma |
-| `build_tool_dispatch()` | `SidarAgent` instance'ından araç adı → metod sözlüğü üretir |
-
-**`parse_tool_argument()` İki Aşamalı Ayrıştırma Mantığı:**
-1. **JSON öncelik:** `json.loads(text)` başarılıysa `schema.model_validate(dict)` ile Pydantic doğrulaması yapılır.
-2. **Legacy format fallback:** `|||` ayırıcısı ile bölünmüş eski string formatı desteklenir. Bu, eski LLM çıktılarıyla geriye dönük uyumluluğu korur.
-
-**`build_tool_dispatch()` Araç Tablosu (56 araç/alias eşlemesi):**
-
-| Araç Adı | Alias | Metod |
-|----------|-------|-------|
-| `list_dir` | `ls` | `_tool_list_dir` |
-| `read_file` | — | `_tool_read_file` |
-| `write_file` | — | `_tool_write_file` |
-| `patch_file` | — | `_tool_patch_file` |
-| `execute_code` | — | `_tool_execute_code` |
-| `run_shell` | `bash`, `shell` | `_tool_run_shell` |
-| `glob_search` | — | `_tool_glob_search` |
-| `grep_files` | `grep` | `_tool_grep_files` |
-| `github_*` PR/Branch (16 araç) | — | `_tool_github_*` |
-| `github_list_issues`, `github_create_issue`, `github_comment_issue`, `github_close_issue` | — | `_tool_github_*` |
-| `github_pr_diff`, `github_list_repos` | — | `_tool_github_*` |
-| `web_search`, `fetch_url`, `search_docs`, `search_stackoverflow` | — | `_tool_*` |
-| `pypi`, `pypi_compare`, `npm`, `gh_releases`, `gh_latest` | — | `_tool_*` |
-| `docs_search`, `docs_add`, `docs_add_file`, `docs_list`, `docs_delete` | — | `_tool_*` |
-| `health`, `gpu_optimize`, `audit` | — | `_tool_*` |
-| `todo_write`, `todo_read`, `todo_update`, `scan_project_todos` | — | `_tool_*` |
-| `get_config` | `print_config_summary` | `_tool_get_config` |
-| `subtask` | `agent` | `_tool_subtask` |
-
-> **Not:** `parallel` aracı bu dispatch tablosunda yer almaz; `sidar_agent.py` içinde ReAct döngüsünde doğrudan `asyncio.gather` ile işlenir.
-
-**Mimari Değer:** `tooling.py` sayesinde araç ekleme/değiştirme işlemleri `sidar_agent.py` içine dağılmaz; tek bir yerden yönetilir. Şema eklemek için yalnızca `TOOL_ARG_SCHEMAS` sözlüğüne yeni giriş yapılması yeterlidir.
+- [Modül Notu: `docs/module-notes/agent/tooling.py.md`](docs/module-notes/agent/tooling.py.md)
 
 ---
-
-
 ### 3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (55 satır)
 
-**Amaç:** Multi-agent yapısındaki uzman ajanlar için ortak bir soyut temel sınıf (`BaseAgent`) sağlar.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/base_agent.py.md` dosyasına taşınmıştır.
 
-**Öne Çıkanlar:**
-- Ortak `cfg` ve `llm_client` bağımlılıklarının tek bir tabanda toplanması
-- Uzman roller arasında tutarlı arayüz (`register_tool`, `call_tool`)
-- P2P delegasyon altyapısı: `delegate_to` ile `DelegationRequest` üretimi ve `is_delegation_message` ile sonuç tip doğrulama
-- Gelecekte yeni role eklentileri için genişletilebilir iskelet (`ABC` + `@abstractmethod run_task`)
+- [Modül Notu: `docs/module-notes/agent/base_agent.py.md`](docs/module-notes/agent/base_agent.py.md)
 
 ---
-
 ### 3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (164 satır)
 
-**Amaç:** Kullanıcı niyetini analiz edip görevi uygun role yönlendiren orkestrasyon katmanı.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/core/supervisor.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l agent/core/supervisor.py` çıktısına göre **164** olarak ölçülmüştür.
-
-**Öne Çıkanlar:**
-- Intent/role routing (`_intent`: research / review / code)
-- `TaskEnvelope`/`TaskResult` sözleşmeleriyle uyumlu görev yönetimi (`_delegate`)
-- Coder ↔ Reviewer QA döngüsü: `_review_requires_revision` + `MAX_QA_RETRIES=3` ile düzeltme turları ve devre kesici
-- P2P delegasyon köprüsü: `_route_p2p` ile `DelegationRequest` zincirini `max_hops=4` sınırıyla yönlendirme
-- Supervisor orkestrasyonu v3.0 omurgasında varsayılan ana akış olarak çalışır
+- [Modül Notu: `docs/module-notes/agent/core/supervisor.py.md`](docs/module-notes/agent/core/supervisor.py.md)
 
 ---
-
 ### 3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı
 
-**Amaç:** Multi-agent omurgasında roller arası görev sözleşmesi, canlı olay akışı ve paylaşımlı bellek/araç kayıt altyapısını sağlar.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/core/contracts.py.md` dosyasına taşınmıştır.
 
-**Kapsam:**
-- `contracts.py` — `TaskEnvelope` / `TaskResult` + P2P delegasyon sözleşmeleri (`P2PMessage`, `DelegationRequest`, `DelegationResult`)
-- `event_stream.py` — ajan durum ve araç olaylarını yayınlayan event bus
-- `memory_hub.py` — roller arası ortak bellek erişim katmanı
-- `registry.py` — çalışma zamanında rol/ajan kayıt ve çözümleme yardımcıları
-
-**Mimari Değer:** Bu katman, `SupervisorAgent` ile rol ajanları arasında gevşek bağlı (loosely-coupled) iletişim kurarak genişletilebilirliği artırır.
+- [Modül Notu: `docs/module-notes/agent/core/contracts.py.md`](docs/module-notes/agent/core/contracts.py.md)
 
 ---
-
 ### 3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)
 
-**Amaç:** Uzman ajanların görev paylaşımıyla kod üretimi, araştırma ve kalite kontrol döngüsünü yürütür.
+Bu başlıktaki detaylı içerik `docs/module-notes/agent/roles/__init__.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Güncel depoda `wc -l` çıktıları: `agent/roles/coder_agent.py=134`, `agent/roles/researcher_agent.py=75`, `agent/roles/reviewer_agent.py=181`, `agent/roles/__init__.py=6`.
-
-**Alt Roller ve Yetenekler:**
-- `__init__.py` — rol sınıflarını (`CoderAgent`, `ResearcherAgent`, `ReviewerAgent`) dışa aktarır.
-- `coder_agent.py` — kod/dosya odaklı uzman ajan; `read_file`, `write_file`, `patch_file`, `execute_code`, `list_directory`, `glob_search`, `grep_search`, `audit_project`, `get_package_info`, `scan_project_todos` dahil 10 araç kaydıyla çalışır.
-- `researcher_agent.py` — araştırma odaklı uzman ajan; `web_search`, `fetch_url`, `search_docs`, `docs_search` araçlarıyla web + RAG keşfi yapar.
-- `reviewer_agent.py` — QA uzmanı; `_build_dynamic_test_content` ile dinamik test üretir, `_extract_changed_paths` ile değişen dosyaları hedefler, regresyon komutlarını çalıştırır ve sonucu `delegate_to("coder", ...)` ile P2P geri bildirim olarak kodlayıcıya iletir.
-
-**Mimari Not:** Coder ↔ Reviewer etkileşimi yalnızca merkezî supervisor döngüsüyle sınırlı değildir; reviewer tarafından üretilen `qa_feedback|decision=...` çıktıları coder tarafında ayrıştırılıp yeniden çalışma (rework) akışı tetiklenebilir.
+- [Modül Notu: `docs/module-notes/agent/roles/__init__.py.md`](docs/module-notes/agent/roles/__init__.py.md)
 
 ---
-
 ### 3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 839 satır)
 
-**Amaç:** Ollama, Gemini, OpenAI ve Anthropic için ortak asenkron chat arayüzü — `BaseLLMClient` ABC.
+Bu başlıktaki detaylı içerik `docs/module-notes/core/llm_client.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/llm_client.py` çıktısına göre **839** olarak ölçülmüştür.
-
-**Sınıf Hiyerarşisi:**
-```
-BaseLLMClient (ABC)
-├── OllamaClient
-├── GeminiClient
-├── OpenAIClient          ← v2.9.0 yeni eklenti
-└── AnthropicClient       ← v2.10.8 yeni eklenti
-```
-
-**`LLMClient.chat()` Parametreleri:**
-- `stream`: True → `AsyncIterator[str]`, False → `str`
-- `json_mode`: True → LLM'i `{thought, tool, argument}` JSON çıktısına zorlar
-
-**Ollama Entegrasyonu:**
-- **Yapısal Çıktı (Structured Output):** Ollama ≥0.4 için JSON Schema formatı ile `{thought, tool, argument}` şeması zorunlu kılınır. Hallucination ve yanlış format sorunlarını önler.
-- **Stream Güvenliği:** `aiter_bytes()` + `codecs.IncrementalDecoder` ile TCP paket sınırlarında bölünen JSON satırları güvenle birleştirilir. `aiter_lines()` kullanılmaz çünkü bu yaklaşım içerik kaybına yol açabilir.
-- **GPU Desteği:** `USE_GPU=true` ise `options.num_gpu=-1` ile tüm katmanlar GPU'ya gönderilir.
-- **Timeout:** `max(10, OLLAMA_TIMEOUT)` — minimum 10 sn garanti edilir.
-
-**Gemini Entegrasyonu:**
-- `google.generativeai` paketi runtime'da import edilir; kurulu değilse anlamlı hata mesajı döner.
-- `response_mime_type: application/json` ile JSON modu; `text/plain` ile düz metin modu.
-- Safety settings: Tüm zararlı içerik kategorileri `BLOCK_NONE` — teknik konularda LLM bloklamalarını önler.
-- `send_message_async` ile gerçek asenkron Gemini çağrısı.
-
-**OpenAI Entegrasyonu (v2.9.0):**
-- `openai` paketi runtime'da import edilir; `AsyncOpenAI` istemcisi.
-- `response_format: {"type": "json_object"}` ile JSON modu.
-- WebSocket olay paketleri (`chunk/thought/tool_call/done`) ile gerçek zamanlı streaming desteği.
-- `AI_PROVIDER=openai` + `OPENAI_API_KEY` ile aktif edilir.
-
-**Anthropic Entegrasyonu:**
-- `anthropic` paketi runtime'da import edilir; `AsyncAnthropic` istemcisiyle asenkron çağrı yapılır.
-- `json_mode=True` iken sistem istemine ek JSON şema talimatı enjekte edilerek `{thought, tool, argument}` formatı zorlanır.
-- Streaming ve non-streaming akışlar ortak yardımcılarla izlenir; sonuçlar `_ensure_json_text()` ile güvenli JSON'a normalize edilir.
-
-**Akıllı Yeniden Deneme (Retry/Backoff):**
-- `_is_retryable_exception` + `_retry_with_backoff` ile 429/5xx gibi geçici bulut hatalarında yeniden deneme uygulanır.
-- Exponential backoff + jitter kullanılarak sağlayıcı geçici hatalarında dayanıklılık artırılır.
-
-**Telemetri ve Gözlemlenebilirlik (Observability):**
-- `core.llm_metrics` entegrasyonu ile çağrı başına latency/success/error ve token kullanımı kaydedilir (`_record_llm_metric`).
-- OpenTelemetry span'leri üzerinden stream performansı izlenir; TTFT (time-to-first-token) ve toplam akış süresi `_trace_stream_metrics` ile ölçülür.
-
-**`_ensure_json_text()`:** Modelin JSON dışı metin döndürmesi durumunda `final_answer` sarmalayıcı olarak güvenli JSON üretir.
+- [Modül Notu: `docs/module-notes/core/llm_client.py.md`](docs/module-notes/core/llm_client.py.md)
 
 ---
-
 ### 3.9 `core/memory.py` — Konuşma Belleği (DB tabanlı, v3.0)
 
-**Amaç:** Çok kullanıcılı, thread-safe ve DB kalıcılığı kullanan konuşma belleği katmanı sağlar.
+Bu başlıktaki detaylı içerik `docs/module-notes/core/memory.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/memory.py` çıktısına göre **316** olarak ölçülmüştür.
-
-**v3.0 Mimari Değişim:**
-- Eski JSON dosya temelli kalıcılık yerine `core/db.py` üzerinden **asenkron veritabanı** kalıcılığı kullanılır.
-- Oturum ve mesaj işlemleri kullanıcı kimliği (`user_id`) ile izole edilir.
-- Kimliği doğrulanmamış kullanım `MemoryAuthError` ile **fail-closed** engellenir (`_require_active_user`).
-
-**Öne Çıkan API'ler:**
-- Async çekirdek: `acreate_session`, `aload_session`, `adelete_session`, `aget_all_sessions`, `aadd`, `aget_history`, `aupdate_title`, `aset_active_user`
-- Sync uyumluluk katmanı: `create_session`, `load_session`, `delete_session`, `add`, `get_history` (içeride async çağrıları `_run_coro_sync` köprüsü ile güvenli biçimde çalıştırır)
-
-**Davranış Notları:**
-- DB schema başlangıçta otomatik hazırlanır (`connect` + `init_schema`).
-- Token bazlı akıllı özetleme aktiftir: `tiktoken` ile token tahmini yapılır; `max_turns` penceresi veya `6000` token eşiği aşılırsa `needs_summarization` tetiklenir.
-- `apply_summary`, geçmiş konuşmayı `[KONUŞMA ÖZETİ]` mesajına sıkıştırır, son `keep_last` turları korur ve DB oturumunu özetlenmiş içerikle yeniden yazar.
-- Legacy uyumluluk için `_save()` ve `_cleanup_broken_files()` DB modunda no-op olarak korunur.
+- [Modül Notu: `docs/module-notes/core/memory.py.md`](docs/module-notes/core/memory.py.md)
 
 ---
-
 ### 3.10 `core/rag.py` — RAG Motoru (783 satır)
 
-**Amaç:** ChromaDB (vektör) + BM25 + Keyword hibrit belge deposu. v3.0 ile birlikte **RRF birleştirme**, **oturum izolasyonu** ve disk tabanlı BM25 altyapısı birlikte çalışır.
+Bu başlıktaki detaylı içerik `docs/module-notes/core/rag.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/rag.py` çıktısına göre **783** olarak ölçülmüştür.
-
-**Arama Modları (v3.0):**
-
-| Mod | Motor | Açıklama |
-|-----|-------|----------|
-| `auto` | **RRF (ChromaDB + BM25)** → ChromaDB → BM25 → Keyword | Her iki motor hazırsa `_rrf_search` ile birleştirme (k=60) |
-| `vector` | ChromaDB (cosine similarity + `session_id` where filtresi) | Anlamsal arama |
-| `bm25` | SQLite FTS5 (`bm25_fts.db`) + `bm25()` skoru | Disk tabanlı tam metin arama; `tokenize='unicode61 remove_diacritics 1'` |
-| `keyword` | Anahtar kelime eşleşmesi (`session_id` kontrolü) | Başlık ×5, etiket ×3, içerik ×1 ağırlıkla skor |
-
-**RRF Algoritması (`_rrf_search`):**
-```python
-# Her iki motordan sonuç alınır; rank tabanlı birleştirme
-rrf_score(doc) = Σ  1 / (k + rank_i)   (k=60, TREC'19 standardı)
-```
-ChromaDB ve BM25 sonuçları `_fetch_chroma()` / `_fetch_bm25()` ayrı metodlarıyla alınır; skorlar birleştirilerek `top_k` sonuç döndürülür.
-
-**Oturum İzolasyonu (`session_id`):**
-- `add_document()`: her belgeye `session_id` metadata alanı eklenir
-- `_fetch_chroma()`: `where={"session_id": session_id}` ChromaDB filtresi
-- `_fetch_bm25()`: SQL düzeyinde `session_id = ?` filtresiyle FTS5 araması yapılır
-- `_keyword_search()`: `meta.get("session_id")` kontrolü
-- `delete_document()`: farklı oturumun belgesini silmeye karşı yetki kontrolü
-- `get_index_info()`: `session_id=None` → tüm belgeler; `session_id=<id>` → oturuma özgü
-
-**Chunking Motoru:**
-`_recursive_chunk_text()` LangChain'in `RecursiveCharacterTextSplitter` mantığını simüle eder. Öncelik sırası: `\nclass ` → `\ndef ` → `\n\n` → `\n` → ` ` → karakter. Overlap mekanizması bağlam sürekliliğini korur.
-
-**Embedding Runtime Notları:**
-- `_build_embedding_function()` — `USE_GPU=true` ise `sentence-transformers/all-MiniLM-L6-v2` modeli CUDA üzerinde çalışır; `GPU_MIXED_PRECISION=true` ise FP16 ile VRAM tasarrufu sağlanır.
-- `_apply_hf_runtime_env()` — `HF_HUB_OFFLINE=true` iken `HF_HUB_OFFLINE=1` ve `TRANSFORMERS_OFFLINE=1` ortam değişkenleri zorlanarak çevrimdışı kurumsal ağlarda stabil çalışma sağlanır.
-
-**BM25 Disk Motoru (FTS5):**
-- `_init_fts()` ile `bm25_fts.db` üzerinde `bm25_index` sanal tablosu oluşturulur.
-- Belge ekleme/silme akışında `_update_bm25_cache_on_add()` ve `_update_bm25_cache_on_delete()` ile FTS indeks güncel tutulur.
-- Sonuç gösteriminde `_extract_snippet()` kullanılarak sorgu anahtar kelimesi etrafından kırpılmış bağlamsal metin döndürülür.
-
-**Belge Yönetimi:**
-- `add_document(session_id)`: dosya sistemi + index.json + ChromaDB chunked upsert (thread-safe `_write_lock`) + FTS5 güncelleme
-- `add_document_from_url(session_id)`: httpx asenkron HTTP çekme + HTML temizleme + ekleme
-- `add_document_from_file(session_id)`: uzantı whitelist kontrolü (.py, .md, .json, .yaml, vb.)
-- `delete_document(session_id)`: izolasyon yetki kontrolü sonrası dosya + ChromaDB + FTS5 kayıt silme
+- [Modül Notu: `docs/module-notes/core/rag.py.md`](docs/module-notes/core/rag.py.md)
 
 ---
-
 ### 3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)
 
-**Amaç:** OpenClaw erişim kontrol sistemi — 3 katmanlı güvenlik.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/security.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/security.py` çıktısına göre **290** olarak ölçülmüştür.
-
-**Erişim Seviyeleri:**
-
-| Seviye | Okuma | Yazma | REPL | Shell |
-|--------|-------|-------|------|-------|
-| `restricted` (0) | ✓ | ✗ | ✗ | ✗ |
-| `sandbox` (1) | ✓ | Yalnızca `/temp` | ✓ | ✗ |
-| `full` (2) | ✓ | Proje kökü altı | ✓ | ✓ |
-
-**Hard-Gate Güvenlik Katmanları:**
-
-1. **Path Traversal + Sistem Dizin Koruması:** `_DANGEROUS_PATH_RE` ile `../`, `/etc/`, `/proc/`, `/sys/`, `C:\Windows`, `C:\Program Files` kalıpları doğrudan engellenir.
-2. **Hassas Dosya/Dizin Kara Listesi:** `_BLOCKED_PATTERNS` üzerinden `.env`, `sessions/`, `.git/`, `__pycache__/` erişimleri seviyeden bağımsız bloke edilir.
-3. **Symlink Kaçış Koruması:** `_resolve_safe()` içinde `Path.resolve()` ile gerçek hedef hesaplanır; base_dir dışına çıkan sembolik bağlantılar reddedilir.
-4. **Bilinmeyen Seviye Normalize (Fail-Safe):** Geçersiz erişim seviyesi adları güvenli varsayılan `sandbox` değerine düşürülür.
-
-**İzin Karar API'leri:**
-- `check_read(path)`: yol + blacklist + symlink doğrulaması sonrası okuma izni.
-- `check_write(path)`: erişim seviyesine göre (`restricted`/`sandbox`/`full`) ve güvenlik bariyerlerine göre yazma izni.
-- `check_terminal()`: REPL/terminal çağrılarına seviye tabanlı izin.
-- `check_shell()`: yalnızca `full` seviyesinde kabuk komutlarına izin.
+- [Modül Notu: `docs/module-notes/managers/security.py.md`](docs/module-notes/managers/security.py.md)
 
 ---
-
 ### 3.12 `managers/code_manager.py` — Kod Yöneticisi (805 satır)
 
-**Amaç:** Güvenli dosya I/O, sözdizimi denetimi ve Docker tabanlı kod yürütmeyi yönetir.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/code_manager.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/code_manager.py` çıktısına göre **805** olarak ölçülmüştür.
-
-**Zero-Trust Sandbox (v3.0):**
-- `execute_code()` akışı varsayılan olarak Docker izolesinde çalışır; çıktı `stdout/stderr` ayrıştırılarak geri döndürülür.
-- `network_mode="none"` ile varsayılan ağ erişimi kapalıdır (`DOCKER_NETWORK_DISABLED=true`).
-- `mem_limit` ve `nano_cpus` ile konteyner kaynakları sınırlandırılır.
-- `DOCKER_MICROVM_MODE` + `DOCKER_ALLOWED_RUNTIMES` ile `runsc`/`kata-runtime` gibi mikro-VM runtime'larına uyumlu çalışır.
-- Çalıştırma süresi `DOCKER_EXEC_TIMEOUT` ile zorlanır; timeout durumunda konteyner kill edilerek sonsuz döngü riski sınırlandırılır.
-- Docker erişilemezse `execute_code_local()` ile kontrollü ve zaman-aşımlı yerel fallback devreye girer.
-
-**Yazma Öncesi Kod Doğrulama:**
-- Python dosyaları için `write_file()` / `patch_file()` akışlarında `ast.parse()` ile sözdizimi doğrulaması yapılır.
-- `SyntaxError` durumunda değişiklik diske yazılmadan işlem güvenli şekilde reddedilir.
-
-**Akıllı Encoding Fallback:**
-- Okuma akışında UTF-8 başarısız olursa `chardet` ile encoding tespiti yapılarak `UnicodeDecodeError` kaynaklı kırılmalar azaltılır.
-
-**Gelişmiş Arama Araçları:**
-- `glob_search(pattern, base_path)` ile desen/uzantı bazlı dosya keşfi.
-- `grep_files(regex, path, file_glob, context)` ile regex destekli içerik araması ve bağlam satırı döndürme.
-
-**SecurityManager ile Sıkı Entegrasyon:**
-- Tüm dosya okuma/yazma yolları `self.security_manager.check_read()` ve `check_write()` kararlarına bağlıdır.
-- Güvenlik onayı alınmadan dosya erişimi veya yazma yapılmaz.
-
-**Temel Yetenekler:**
-- Güvenli dosya okuma/yazma ve path doğrulama
-- Syntax kontrolü / proje denetimi (`audit_project`)
-- Docker yoksa güvenlik seviyesine göre kontrollü fallback davranışı
+- [Modül Notu: `docs/module-notes/managers/code_manager.py.md`](docs/module-notes/managers/code_manager.py.md)
 
 ---
-
 ### 3.13 `managers/github_manager.py` — GitHub Yöneticisi (644 satır)
 
-**Amaç:** PyGithub üzerinden GitHub API entegrasyonu.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/github_manager.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/github_manager.py` çıktısına göre **644** olarak ölçülmüştür.
-
-**Kurumsal Koruma Katmanları:**
-- **Binary dosya koruması (OOM savunması):** `read_remote_file()` içinde `SAFE_TEXT_EXTENSIONS` ve `SAFE_EXTENSIONLESS` kontrolleriyle metin dışı içerikler reddedilir; binary/bozuk içeriklerde güvenli hata mesajı döndürülür.
-- **Branch adı doğrulama:** `_BRANCH_RE` ile yalnızca güvenli karakter setindeki dal adlarına izin verilir.
-- **404 güvenli yakalama:** `_is_not_found_error()` ile not-found durumları kontrollü işlenir (sert çökme yerine anlamlı dönüş).
-
-**Ölçeklenebilir Veri Çekme Sınırları (Pagination/Limit):**
-- `list_commits(limit)`: istenen değer güvenli aralıkta sınırlandırılır (`1..100`); yüksek isteklerde kullanıcıya kısıtlama uyarısı verilir.
-- `list_branches(limit)`, `list_pull_requests(limit)`, `list_issues(limit)`, `list_repos(limit)`: benzer şekilde limitli/paginated çağrılarla kaynak kullanımı kontrol altında tutulur.
-- `search_code()`: sonuçlar ilk 10 kayıtla sınırlandırılır.
-
-**PR ve Branch Yönetimi:**
-- `list_commits(n)`, `get_repo_info()`, `list_files(path)`, `read_remote_file(path)`
-- `write_file()`, `create_branch()`, `create_pr()`, `list_pull_requests()`
-- `get_pull_request()`, `comment_pr()`, `close_pr()`, `get_pr_files()`
-- `get_pull_request_diff(pr_number)` — PR diff metnini döndürür; patch olmayan dosyalar için binary olasılığına dair güvenli not üretir.
-- `search_code(query)`, `github_smart_pr()` — LLM ile otomatik PR başlığı/açıklaması
-- `get_pull_requests_detailed()`, `list_repos(owner_filter)` — yeni eklenti
-
-**Issue Yönetimi (v2.9.0 — §14.5.2):**
-- `list_issues(state, limit)`: Issue listesi (open/closed/all)
-- `create_issue(title, body)`: Yeni issue açar
-- `comment_issue(issue_number, body)`: Issue'ya yorum ekler
-- `close_issue(issue_number)`: Issue'yu kapatır
-
-**Not (Kapsam):** Mevcut sürümde açık bir exponential backoff yardımcı fonksiyonu bulunmaz; hata toleransı çoğunlukla limitli çağrı + kontrollü exception mesajları üzerinden sağlanır.
+- [Modül Notu: `docs/module-notes/managers/github_manager.py.md`](docs/module-notes/managers/github_manager.py.md)
 
 ---
-
 ### 3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi (475 satır)
 
-**Amaç:** CPU/RAM/GPU/disk donanım izleme ve VRAM optimizasyonu.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/system_health.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/system_health.py` çıktısına göre **475** olarak ölçülmüştür.
-
-**Bağımlılıklar (opsiyonel):**
-- `psutil`: CPU, RAM ve disk metrikleri
-- `torch`: CUDA mevcutluğu, VRAM kullanım bilgisi, `empty_cache()`
-- `pynvml`: GPU sıcaklık, anlık kullanım yüzdesi, sürücü sürümü
-
-**Derin GPU/VRAM Gözlemi:**
-- `get_gpu_info()` her GPU için cihaz adı, compute capability, ayrılan/rezerve VRAM, toplam VRAM, sıcaklık ve utilization yüzdesi döndürür.
-- `_get_driver_version()` öncelikle pynvml ile sürücü sürümünü alır; gerekirse `nvidia-smi` fallback yolunu kullanır.
-
-**Graceful Degradation (Donanım bağımsız çalışma):**
-- `torch`/`pynvml`/`psutil` modülleri yoksa servis çökmez; ilgili alt metrikler güvenli fallback değerleriyle raporlanır.
-- WSL2/NVIDIA sürücü kısıtlarında pynvml hataları kritik kabul edilmez, CPU/RAM odaklı gözlem akışı devam eder.
-
-**Disk Darboğazı Takibi:**
-- `get_disk_usage()` ile çalışma dizini için kullanılan/toplam/boş disk ve yüzde kullanım bilgisi üretilir.
-- `full_report()` çıktısına disk kullanım satırları eklenerek kapasite doluluk riskleri görünür hale getirilir.
-
-**Operasyonel API'ler:**
-- `full_report()`: CPU, RAM, disk, GPU ve sürücü bilgilerini tek raporda sunar.
-- `optimize_gpu_memory()`: `torch.cuda.empty_cache()` + `gc.collect()` ile VRAM boşaltır; `try-finally` ile GC her koşulda çalışır.
-- `update_prometheus_metrics()`: metrikleri `Gauge` nesnelerine aktarır; `prometheus_client` yoksa sessizce atlar.
-- `close()`: pynvml kapanışını güvenli şekilde yapar (atexit ile de çağrılır).
+- [Modül Notu: `docs/module-notes/managers/system_health.py.md`](docs/module-notes/managers/system_health.py.md)
 
 ---
-
 ### 3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)
 
-**Amaç:** Tavily → Google → DuckDuckGo kademeli motor desteğiyle asenkron web araması.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/web_search.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/web_search.py` çıktısına göre **387** olarak ölçülmüştür.
-
-**Akıllı Motor Şelalesi (`auto`):** Tavily → Google Custom Search → DuckDuckGo sırasıyla denenir; anahtar eksikliği, kota/hata veya yanıt başarısızlığında sistem bir sonraki motora düşerek kesintisiz arama davranışı sağlar.
-
-**Desteklenen Operasyonlar:**
-- `search(query)`: Genel web araması
-- `fetch_url(url)`: URL içerik çekme + BeautifulSoup HTML temizleme
-- `search_docs(library, topic)`: Resmi dokümantasyon araması
-- `search_stackoverflow(query)`: Stack Overflow araması
-
-**Metin Sanitizasyonu (Token hijyeni):**
-- Sonuç/snippet içerikleri `html.unescape` ile normalize edilerek HTML entity/artıklarının (`&amp;`, vb.) LLM bağlamını kirletmesi azaltılır.
-
-**v2.8.0 DuckDuckGo Güvenlik İyileştirmeleri (Madde #10 Çözümü):**
-
-`_search_duckduckgo()` içinde üç katmanlı güvenlik uygulandı:
-
-```python
-# 1. Dinamik AsyncDDGS kontrolü (versiyon değişikliği koruması)
-if hasattr(duckduckgo_search, "AsyncDDGS"):
-    results = await asyncio.wait_for(_async_search(), timeout=FETCH_TIMEOUT)
-else:
-    # AsyncDDGS yoksa (gelecek sürümler için) sync+thread fallback
-    results = await asyncio.wait_for(
-        asyncio.to_thread(_sync_search), timeout=FETCH_TIMEOUT)
-
-# 2. Timeout koruması — her iki yol da wait_for ile sınırlı
-# 3. Except sırası: asyncio.TimeoutError > Exception (Python best practice)
-except asyncio.TimeoutError:  # Spesifik önce
-    ...
-except Exception as exc:       # Genel sonra
-    ...
-```
-
-| Güvenlik Katmanı | Açıklama |
-|---|---|
-| Versiyon pinleme | `environment.yml`: `duckduckgo-search~=6.2.13` |
-| `AsyncDDGS` dinamik kontrol | `hasattr()` ile mevcut sürümde async yol, gelecek sürümlerde sync yol |
-| `asyncio.wait_for()` | Her iki arama yolu için `FETCH_TIMEOUT` sınırı (sessiz takılma engeli) |
-| `asyncio.TimeoutError` handler | Spesifik timeout mesajı + `logger.warning` |
-
-**Konfigürasyon:** `WEB_SEARCH_MAX_RESULTS` (5), `WEB_FETCH_TIMEOUT` (15sn), `WEB_SCRAPE_MAX_CHARS` (12000)
+- [Modül Notu: `docs/module-notes/managers/web_search.py.md`](docs/module-notes/managers/web_search.py.md)
 
 ---
-
 ### 3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)
 
-**Amaç:** PyPI, npm ve GitHub Releases gerçek zamanlı sorgusu.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/package_info.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/package_info.py` çıktısına göre **322** olarak ölçülmüştür.
-
-**Özellikler:**
-- `pypi_info(package)`: Sürüm, lisans, GitHub URL, son güncelleme tarihi
-- `pypi_compare(package, version)`: Mevcut kurulu sürüm ile son sürüm karşılaştırması
-- `npm_info(package)`: npm Registry paket bilgisi
-- `github_releases(owner/repo)`: GitHub Releases listesi
-- `github_latest_release(owner/repo)`: Son release bilgisini hızlı döndürür
-
-**Asenkron Ağ Katmanı (httpx):**
-- Tüm dış istekler `httpx.AsyncClient` ile `async/await` akışında çalışır; ajan döngüsü bloklanmaz.
-- Ortak `_get_json()` yardımcı metodu timeout/bağlantı hatalarını standartlaştırır.
-
-**TTL Tabanlı Akıllı Önbellek:**
-- `PACKAGE_INFO_CACHE_TTL` (varsayılan 1800 sn) ile in-memory cache (`_cache_get`/`_cache_set`) kullanılır.
-- Aynı paket sorgularında gereksiz dış API çağrıları azaltılarak latency ve rate-limit baskısı düşürülür.
-
-**Semantik Sürüm Doğrulama:**
-- `packaging.version.Version` / `InvalidVersion` ile sürüm metinleri normalize edilir.
-- `_is_prerelease()` ve `_version_sort_key()` üzerinden pre-release/bozuk sürüm durumları güvenli fallback ile ele alınır.
+- [Modül Notu: `docs/module-notes/managers/package_info.py.md`](docs/module-notes/managers/package_info.py.md)
 
 ---
-
 ### 3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır)
 
-**Amaç:** Claude Code'daki `TodoWrite/TodoRead` araçlarına eşdeğer görev listesi.
+Bu başlıktaki detaylı içerik `docs/module-notes/managers/todo_manager.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l managers/todo_manager.py` çıktısına göre **451** olarak ölçülmüştür.
-
-**Görev Durumları:** `pending` ⬜ → `in_progress` 🔄 → `completed` ✅
-
-**Özellikler:**
-- Thread-safe `RLock` ile korunur (multi-agent eşzamanlı yazma/okuma yarışlarını azaltır)
-- `@dataclass` tabanlı `TodoTask` modeli ile tip güvenliği (`id`, `content`, `status`, `created_at`, `updated_at`)
-- `created_at` / `updated_at` timestamp alanlarıyla görev yaşam döngüsü takibi
-- `todo_write("görev1:::pending|||görev2:::in_progress")` formatı
-- `_ensure_single_in_progress()`: aynı anda yalnızca 1 aktif görev; diğerleri `pending`'e döner
-- `set_tasks()`: toplu görev yenileme (TodoWrite style)
-- `_normalize_limit()`: limit değeri 1–200 arasına sıkıştırılır
-- Kalıcı: `data/todo.json` dosyasına kaydedilir
-
-**`scan_project_todos()` (v2.9.0 — §14.7.5):**
-Proje dizinini gezer; `.py`, `.md`, `.js`, `.ts` dosyalarındaki `TODO` ve `FIXME` yorumlarını tarar. Güvenlik kontrolü: `base_dir` dışı tarama engellenir.
+- [Modül Notu: `docs/module-notes/managers/todo_manager.py.md`](docs/module-notes/managers/todo_manager.py.md)
 
 ---
-
 ### 3.18 `web_ui/` — Web Arayüzü (Toplam ~4.160 satır)
 
-> Not (Doğrulama): Güncel depoda `wc -l` ölçümü: `index.html=572`, `style.css=1684`, `app.js=670`, `chat.js=695`, `rag.js=131`, `sidebar.js=408` (**toplam 4.160**).
+Bu başlıktaki detaylı içerik `docs/module-notes/web_ui/index.html.md` dosyasına taşınmıştır.
 
-**Mimari Yapı (Modüler Vanilla JS SPA):**
-- Monolitik tek-dosya yaklaşımı yerine sorumluluklar `app.js`, `chat.js`, `sidebar.js`, `rag.js` modüllerine ayrılmıştır.
-- `index.html` sadece iskelet + modal katmanları + script yükleme sırasını taşır; davranış mantığı modüllerde tutulur.
-
-**Dosya Yapısı:**
-
-| Dosya | Satır | Sorumluluk |
-|-------|------:|-----------|
-| `index.html` | 572 | HTML iskeleti, auth overlay, modal/board container'lar, script yükleme noktaları |
-| `style.css` | 1.684 | Tema (dark/light), layout sistemi, bileşen stilleri |
-| `chat.js` | 695 | WebSocket chat akışı, event render, markdown + kod çıktısı işleme |
-| `sidebar.js` | 408 | Oturum listesi, filtreleme, başlık düzenleme/silme |
-| `rag.js` | 131 | RAG belge ekleme/listeleme/arama/silme UI |
-| `app.js` | 670 | Auth flow, global state, tema/yardımcı kontroller, uygulama orkestrasyonu |
-| **Toplam** | **4.160** | Modüler ve ayrışmış web istemcisi |
-
-**Kimlik Doğrulama ve Oturum Koruması:**
-- `AUTH_TOKEN_KEY` / `AUTH_USER_KEY` ile token + kullanıcı bağlamı istemci tarafında yönetilir.
-- Auth overlay (`login/register`) akışı olmadan chat oturumu başlatılmaz; token olmayan istemci WebSocket tarafında yetkisiz kapatmayı tetikler.
-
-**Gerçek Zamanlı Event Stream ve UX:**
-- `chat.js` WebSocket üzerinden ajan olaylarını/araç adımlarını JSON event olarak işler; kullanıcının işlem durumunu canlı görmesini sağlar.
-- Bağlantı kopmaları için yeniden bağlanma ve auth-hata ayrımı yapılır (ör. auth kaynaklı kapanış vs geçici kesinti).
-
-**Güvenli Render ve Metin İşleme:**
-- `marked` tabanlı markdown render + güvenli HTML temizleme (`sanitizeRenderedHtml`) ile çıktı yüzeyi korunur.
-- Kod blokları ve uzun yanıtlar UI tarafında kontrollü biçimde parse edilip gösterilir.
-
-**Yükleme Sırası (index.html → script tags):**
-```html
-<script src="/static/chat.js"></script>
-<script src="/static/sidebar.js"></script>
-<script src="/static/rag.js"></script>
-<script src="/static/app.js"></script>
-```
+- [Modül Notu: `docs/module-notes/web_ui/index.html.md`](docs/module-notes/web_ui/index.html.md)
 
 ---
-
 ### 3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)
 
-**Amaç:** Projeyi otomatik olarak GitHub'a yükler/yedekler.
+Bu başlıktaki detaylı içerik `docs/module-notes/github_upload.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l github_upload.py` çıktısına göre **294** olarak ölçülmüştür.
-
-**Güvenlik Katmanı (`FORBIDDEN_PATHS`):**
-- `.env`, `sessions/`, `chroma_db/`, `__pycache__/`, `.git/`, `logs/`, `models/`
-- Binary/UTF-8 okunamayan dosyalar da engellenir
-
-**Otomasyon ve Dayanıklılık Özellikleri:**
-- **Repo/remote doğrulama:** Çalıştırma başında `.git` varlığı ve `origin` remote kontrol edilir; eksikse yönlendirici/otomatik kurulum adımları uygulanır.
-- **Zaman damgalı commit mesajı:** Kullanıcı mesaj vermezse `datetime.now().strftime(...)` ile otomatik commit başlığı üretilir.
-- **Push-rejected kurtarma akışı:** `git push` reddedildiğinde (`rejected`/`fetch first`/`non-fast-forward`) güvenli `pull` + merge stratejisi (`--rebase=false --allow-unrelated-histories --no-edit -X ours`) ile senkronizasyon denenir ve push tekrar edilir.
-- **GitHub Push Protection farkındalığı:** secret scanning/push protection hataları algılanır ve kullanıcıya düzeltme yönlendirmesi verilir.
-
-**Hata Yönetimi:**
-- `subprocess.CalledProcessError` yakalanarak anlaşılır terminal çıktısı üretilir; ağ/auth/çatışma senaryolarında sessiz çökme engellenir.
+- [Modül Notu: `docs/module-notes/github_upload.py.md`](docs/module-notes/github_upload.py.md)
 
 ---
-
 ### 3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı
 
-**Amaç:** Çoklu kullanıcı (multi-user) SaaS mimarisi için kullanıcı, oturum, mesaj ve yetkilendirme (token) verilerinin kalıcı ve izole olarak saklanmasını sağlar.
+Bu başlıktaki detaylı içerik `docs/module-notes/core/db.py.md` dosyasına taşınmıştır.
 
-> Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/db.py` çıktısına göre **989** olarak ölçülmüştür.
-
-**Kriptografik Auth Altyapısı:**
-- Parolalar PBKDF2-HMAC (`hashlib.pbkdf2_hmac`) + salt ile hashlenir; düz metin parola saklanmaz.
-- Auth token üretimi `secrets` ile yapılır (`token_urlsafe` / güvenli karşılaştırma), token yaşam döngüsü DB'de izlenir.
-- Kullanıcı/oturum/mesaj kimlikleri `uuid` tabanlı benzersiz anahtarlarla yönetilir.
-
-**Asenkron ve Non-Blocking Veri Katmanı:**
-- Tüm temel I/O yolu `async def` akışındadır (bağlantı, şema, CRUD, auth doğrulama).
-- `DATABASE_URL`’e göre PostgreSQL (`asyncpg`) veya SQLite (`aiosqlite`) fallback desteği vardır.
-- Çoklu ajan/kullanıcı eşzamanlılığında bloklamayı azaltmak için bağlantı ve sorgu yolları asenkron tasarlanmıştır.
-
-**UTC / TTL Tabanlı Oturum Yönetimi:**
-- Zaman alanları `datetime.now(timezone.utc)` ile UTC normalize edilir.
-- Token süre sonları `timedelta` tabanlı hesaplanır (`_expires_in`), periyodik temizlik/süre kontrol akışlarıyla birlikte çalışır.
-- `sessions`, `messages`, `auth_tokens` kayıtları zaman damgası ve kullanıcı kimliğiyle birlikte izlenir.
-
-**Dataclass ile Katı Şema Temsili:**
-- DB satırları `@dataclass` kayıt modellerine (`UserRecord`, `AuthTokenRecord`, `SessionRecord`, `MessageRecord`, vb.) dönüştürülür.
-- Bu modelleme katmanı API tüketicilerinde tip güvenliği ve sözleşme tutarlılığı sağlar.
-
-**Alembic / Şema Versiyonlama Uyum Notu:**
-- `schema_versions` tablosu üzerinden uygulama tarafı şema sürümü izlenir.
-- Migration kaynağı olarak Alembic zinciriyle uyumlu çalışacak biçimde tasarlanmıştır (`alembic.ini` + `migrations/`).
-
-**Temel Tablolar ve İzolasyon:**
-- Çekirdek tablolar: `users`, `auth_tokens`, `sessions`, `messages`, `daily_llm_usage`.
-- Her oturum ve mesaj kaydı `user_id` bağlamına bağlıdır; tenant izolasyonu veri modelinde zorunludur.
+- [Modül Notu: `docs/module-notes/core/db.py.md`](docs/module-notes/core/db.py.md)
 
 ---
-
 ### 3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi
 
-**Amaç:** LLM çağrılarının operasyonel metriklerini toplamak, Prometheus'a aktarmak ve veritabanı üzerinden günlük kullanıcı kotalarını izlemek.
+Bu başlıktaki detaylı içerik `docs/module-notes/core/llm_metrics.py.md` dosyasına taşınmıştır.
 
-> Doğrulama notu: Bu bölüm, `wc -l core/llm_metrics.py` çıktısına göre dosya uzunluğunun 235 satır olduğu güncel sürümle hizalanmıştır.
-
-**Özellikler:**
-- `LLMMetricsManager` üzerinden token kullanımı (prompt, completion) ve işlem süresi (latency) ölçümü.
-- API maliyetlerinin (USD bazında) model bazlı dinamik fiyat tablosu ile hesaplanması (`prompt`/`completion` token ayrımı).
-- Prometheus uyumlu sayaç/ölçüm metriklerinin (`Counter`, `Histogram`, `Gauge`) dışa aktarımı; özellikle istek sayısı, token toplamı, maliyet ve gecikme dağılımı için panel uyumluluğu.
-- Eşzamanlı isteklerde güvenli metrik güncellemesi için `threading.Lock` tabanlı kritik bölüm yaklaşımı ve process-içi tek toplayıcı erişim deseni.
-- Grafana dashboard'ları için kurumsal metrik (observability) verisi sağlanması.
+- [Modül Notu: `docs/module-notes/core/llm_metrics.py.md`](docs/module-notes/core/llm_metrics.py.md)
 
 ---
-
 ### 3.22 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları
 
-**Amaç:** Projenin tekil kullanıcıdan kurumsal veritabanına pürüzsüz geçişini sağlayan veri tabanı, migrasyon ve operasyonel otomasyon araçlarını standartlaştırmak.
+Bu başlıktaki detaylı içerik `docs/module-notes/migrations/env.py.md` dosyasına taşınmıştır.
 
-**Özellikler (Kurumsal V3.0):**
-- **Alembic ile otomatik şema sürümleme (`migrations/`):** `alembic.ini` + `migrations/env.py` altyapısı ile ortam-bağımsız veritabanı revizyon yönetimi yapılır; `DATABASE_URL` veya `-x database_url` üzerinden dinamik bağlantı çözümleme desteklenir.
-- **Baseline kurulum garantisi (`migrations/versions/0001_baseline_schema.py`):** `users`, `auth_tokens`, `user_quotas`, `provider_usage_daily`, `sessions`, `messages`, `schema_versions` tablolarını ve kritik indeksleri tek revizyonda kurar; yeni ortamların sıfırdan güvenli bootstrap'ini sağlar.
-- **SQLite → PostgreSQL veri taşıma (`scripts/migrate_sqlite_to_pg.py`):** Yerel SQLite verilerini tablo sırasına bağlı ve tutarlı biçimde PostgreSQL'e aktarır; `asyncio`/`asyncpg` tabanlı çalışır ve `--dry-run` ile kayıpsız geçiş öncesi doğrulama yapılabilir.
-- **Docker sandbox güvenli host kurulumu (`scripts/install_host_sandbox.sh`):** gVisor/Kata runtime kurulumunu, Docker daemon runtime kaydını ve opsiyonel servis restart akışını otomatikleştirir (`--mode gvisor|kata|both`, `--dry-run`).
-- **Veritabanı yük/stres testi (`scripts/load_test_db_pool.py`):** Asenkron connection pool davranışını eşzamanlı yükte ölçerek çoklu ajan senaryolarında havuz limitlerinin doğrulanmasını destekler.
-- **Kalite ve CI/CD metrik denetimi (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`):** Satır sayısı/audit metriklerini ve repo özet metriklerini otomatik üretir; CI pipeline'larına doğrudan entegre edilebilir.
+- [Modül Notu: `docs/module-notes/migrations/env.py.md`](docs/module-notes/migrations/env.py.md)
 
 ---
-
 ### 3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları
 
-**Amaç:** Üretim ortamında gözlemlenebilirlik (observability), telemetri görselleştirme ve canlıya geçiş (cutover) operasyonlarını tekrarlanabilir SOP'larla yönetmek.
+Bu başlıktaki detaylı içerik `docs/module-notes/docker/prometheus/prometheus.yml.md` dosyasına taşınmıştır.
 
-**Özellikler (Kurumsal V3.0 DevOps):**
-- **Tek komutla observability orkestrasyonu (`docker-compose.yml`):** Uygulama servisleriyle birlikte `prometheus` ve `grafana` konteynerlerini tek bir `docker compose up -d` akışında ayağa kaldırır; servis bağımlılıkları (`depends_on`) ile başlangıç sırası yönetilir.
-- **Prometheus scrape topolojisi (`docker/prometheus/prometheus.yml`):** `metrics_path: /metrics/llm/prometheus` üzerinden `sidar-web:7860` hedefini container ağında kazır; `global.scrape_interval: 15s` ile uygulama içi iş yükünü artırmadan dıştan metrik toplama modeli uygular.
-- **Grafana auto-provisioning (`docker/grafana/provisioning/*`):** Datasource (`datasources/prometheus.yml`) ve dashboard provider (`dashboards/dashboards.yml`) tanımları kod olarak tutulur; konteyner her açıldığında manuel adım olmadan hazır dashboard'lar yüklenir.
-- **JSON-as-Code dashboard (`docker/grafana/dashboards/sidar-llm-overview.json`):** LLM token, maliyet ve latency metriklerini standart panel setiyle sunar; dashboard değişiklikleri sürüm kontrolüne girerek denetlenebilir hale gelir.
-- **Kurumsal cutover/rollback playbook (`runbooks/production-cutover-playbook.md`):** SQLite → PostgreSQL geçişinde pre-flight, Alembic migration zinciri, `--dry-run` veri taşıma provası ve kritik hata durumunda rollback adımlarını SOP düzeyinde tanımlar.
-- **Host sandbox rollout notları (`runbooks/production-cutover-playbook.md` + `scripts/install_host_sandbox.sh`):** gVisor/Kata runtime kurulumu, doğrulama checklist'i ve kontrollü restart adımlarıyla production güvenlik sertleşmesini operasyonel sürece bağlar.
+- [Modül Notu: `docs/module-notes/docker/prometheus/prometheus.yml.md`](docs/module-notes/docker/prometheus/prometheus.yml.md)
 
 ---
-
 ## 4. Mimari Değerlendirme
 
 [⬆ İçindekilere Dön](#içindekiler)
