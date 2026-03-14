@@ -1,0 +1,6 @@
+# core/llm_client.py
+
+- **Kaynak dosya:** `core/llm_client.py`
+- **Not dosyası:** `docs/module-notes/core/llm_client.py.md`
+- **Amaç:** Çekirdek uygulama/altyapı modülü.
+- **Durum:** İncelendi ve `docs/module-notes` altında dokümante edildi.
