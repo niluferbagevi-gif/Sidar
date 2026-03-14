@@ -3,6 +3,7 @@
 > **Rapor Tarihi:** 2026-03-14
 > **Son Güncelleme:** 2026-03-14 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak doğrulandı)
 > **Proje Sürümü:** 3.0.0
+> **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.904** satır; Web UI: **4.160** satır.
 
 ---
