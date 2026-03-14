@@ -42,7 +42,13 @@ if sidar_env:
         load_dotenv(dotenv_path=specific_env_path, override=True)
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
-        print(f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak.")
+        optional_env_aliases = {"development", "dev", "local"}
+        if sidar_env in optional_env_aliases and base_env_path.exists():
+            print(
+                f"ℹ️  .env.{sidar_env} bulunamadı; temel .env ayarları kullanılacak."
+            )
+        else:
+            print(f"⚠️  Belirtilen ortam dosyası bulunamadı: .env.{sidar_env}. Temel ayarlar kullanılacak.")
 elif not base_env_path.exists():
     print("⚠️  '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.")
 
