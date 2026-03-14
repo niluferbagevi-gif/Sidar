@@ -3,7 +3,7 @@
 > **Rapor Tarihi:** 2026-03-14
 > **Son Güncelleme:** 2026-03-14 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak doğrulandı)
 > **Proje Sürümü:** 3.0.0
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.904** satır; Web UI: **4.160** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~13.361 satır (tests hariç, güncel ölçüm); Test: **20.996** satır; Web UI: **4.166** satır.
 
 ---
 
@@ -215,7 +215,7 @@ sidar_project/
 │   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                 # RAG belge UI
 │   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                 # Uygulama başlatma, auth, bütçe yönetimi
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (~70 test modülü)
+├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (~91 test modülü)
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
 ├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%95 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
@@ -415,7 +415,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiş
 
 - **`test_*.py` modül sayısı:** **91**
 - **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **93**
-- **Toplam test satırı (`tests/*.py`):** **20.904**
+- **Toplam test satırı (`tests/*.py`):** **20.996**
 
 **v3.0 Öne Çıkan Test Kategorileri:**
 - **Veritabanı & Migration:** `test_db_runtime.py`, `test_db_postgresql_branches.py`, `test_migration_assets.py`, `test_migration_ci_guards.py`
@@ -530,75 +530,75 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 589 |
-| `main.py` | 341 |
-| `cli.py` | 288 |
-| `web_server.py` | 1.376 |
-| `agent/sidar_agent.py` | 1.651 |
-| `agent/auto_handle.py` | 601 |
-| `agent/definitions.py` | 165 |
-| `agent/tooling.py` | 266 |
-| `agent/base_agent.py` | 55 |
-| `core/llm_client.py` | 839 |
-| `core/memory.py` | 316 |
-| `core/rag.py` | 783 |
-| `core/db.py` | 989 |
-| `core/llm_metrics.py` | 235 |
-| `managers/security.py` | 290 |
-| `managers/code_manager.py` | 805 |
-| `managers/github_manager.py` | 644 |
-| `managers/system_health.py` | 475 |
-| `managers/web_search.py` | 387 |
-| `managers/package_info.py` | 322 |
-| `managers/todo_manager.py` | 451 |
-| `github_upload.py` | 294 |
+| `config.py` | 590 |
+| `main.py` | 342 |
+| `cli.py` | 289 |
+| `web_server.py` | 1.377 |
+| `agent/sidar_agent.py` | 1.652 |
+| `agent/auto_handle.py` | 602 |
+| `agent/definitions.py` | 166 |
+| `agent/tooling.py` | 267 |
+| `agent/base_agent.py` | 56 |
+| `core/llm_client.py` | 840 |
+| `core/memory.py` | 317 |
+| `core/rag.py` | 784 |
+| `core/db.py` | 990 |
+| `core/llm_metrics.py` | 236 |
+| `managers/security.py` | 291 |
+| `managers/code_manager.py` | 806 |
+| `managers/github_manager.py` | 645 |
+| `managers/system_health.py` | 476 |
+| `managers/web_search.py` | 388 |
+| `managers/package_info.py` | 323 |
+| `managers/todo_manager.py` | 452 |
+| `github_upload.py` | 295 |
 
 ### 8.2 Multi-Agent Çekirdek ve Roller
 
 | Dosya | Satır |
 |---|---:|
-| `agent/core/supervisor.py` | 164 |
-| `agent/core/contracts.py` | 56 |
-| `agent/core/event_stream.py` | 45 |
-| `agent/core/memory_hub.py` | 54 |
-| `agent/core/registry.py` | 25 |
-| `agent/roles/coder_agent.py` | 134 |
-| `agent/roles/researcher_agent.py` | 75 |
-| `agent/roles/reviewer_agent.py` | 181 |
+| `agent/core/supervisor.py` | 165 |
+| `agent/core/contracts.py` | 57 |
+| `agent/core/event_stream.py` | 46 |
+| `agent/core/memory_hub.py` | 55 |
+| `agent/core/registry.py` | 26 |
+| `agent/roles/coder_agent.py` | 135 |
+| `agent/roles/researcher_agent.py` | 76 |
+| `agent/roles/reviewer_agent.py` | 182 |
 
 ### 8.3 Migration / Operasyon / Altyapı
 
 | Dosya | Satır |
 |---|---:|
-| `migrations/env.py` | 65 |
-| `migrations/versions/0001_baseline_schema.py` | 98 |
-| `scripts/migrate_sqlite_to_pg.py` | 91 |
-| `scripts/load_test_db_pool.py` | 73 |
-| `scripts/audit_metrics.sh` | 56 |
-| `scripts/collect_repo_metrics.sh` | 13 |
-| `scripts/install_host_sandbox.sh` | 199 |
-| `docker/prometheus/prometheus.yml` | 7 |
-| `docker/grafana/provisioning/datasources/prometheus.yml` | 8 |
-| `docker/grafana/provisioning/dashboards/dashboards.yml` | 10 |
-| `docker/grafana/dashboards/sidar-llm-overview.json` | 66 |
-| `runbooks/production-cutover-playbook.md` | 109 |
+| `migrations/env.py` | 66 |
+| `migrations/versions/0001_baseline_schema.py` | 99 |
+| `scripts/migrate_sqlite_to_pg.py` | 92 |
+| `scripts/load_test_db_pool.py` | 74 |
+| `scripts/audit_metrics.sh` | 57 |
+| `scripts/collect_repo_metrics.sh` | 14 |
+| `scripts/install_host_sandbox.sh` | 200 |
+| `docker/prometheus/prometheus.yml` | 8 |
+| `docker/grafana/provisioning/datasources/prometheus.yml` | 9 |
+| `docker/grafana/provisioning/dashboards/dashboards.yml` | 11 |
+| `docker/grafana/dashboards/sidar-llm-overview.json` | 67 |
+| `runbooks/production-cutover-playbook.md` | 110 |
 | `Dockerfile` | 103 |
-| `docker-compose.yml` | 236 |
+| `docker-compose.yml` | 237 |
 
 ### 8.4 Frontend ve Test Özeti
 
 | Kapsam | Değer |
 |---|---:|
-| `web_ui/index.html` | 572 |
-| `web_ui/style.css` | 1.684 |
-| `web_ui/chat.js` | 695 |
-| `web_ui/sidebar.js` | 408 |
-| `web_ui/rag.js` | 131 |
-| `web_ui/app.js` | 670 |
-| **Web UI Toplamı** | **4.160** |
+| `web_ui/index.html` | 573 |
+| `web_ui/style.css` | 1.685 |
+| `web_ui/chat.js` | 696 |
+| `web_ui/sidebar.js` | 409 |
+| `web_ui/rag.js` | 132 |
+| `web_ui/app.js` | 671 |
+| **Web UI Toplamı** | **4.166** |
 | **Test modülü (`tests/test_*.py`)** | **91** |
 | **`tests/*.py` toplam dosya** | **93** |
-| **`tests/*.py` toplam satır** | **20.904** |
+| **`tests/*.py` toplam satır** | **20.996** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
@@ -606,13 +606,13 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---|---:|
 | `tests/` | `test_*.py` modül sayısı | 91 |
 | `tests/` | `*.py` toplam dosya | 93 |
-| `tests/` | `*.py` toplam satır | 20.904 |
+| `tests/` | `*.py` toplam satır | 20.996 |
 | `scripts/` | dosya sayısı | 6 |
-| `scripts/` | toplam satır | 442 |
+| `scripts/` | toplam satır | 448 |
 | `migrations/` | dosya sayısı (tüm migration dosyaları) | 3 |
-| `migrations/` | toplam satır | 187 |
+| `migrations/` | toplam satır | 190 |
 | `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
-| `docker/` | ilgili telemetri dosyaları toplam satır | 91 |
+| `docker/` | ilgili telemetri dosyaları toplam satır | 95 |
 
 ---
 
