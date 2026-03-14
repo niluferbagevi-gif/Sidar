@@ -15,6 +15,7 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Web Arayüzü]:** WebSocket destekli gerçek zamanlı Web UI üretim akışına alındı.
 * **[Güvenli Kod Çalıştırma]:** Zero-Trust Docker REPL sandbox entegrasyonu ile ajan kod yürütme yolu izole edildi.
 * **[Telemetri ve İzleme]:** Prometheus + Grafana hattı ile token/maliyet/gecikme görünürlüğü üretim seviyesine çıkarıldı.
+* **[Added] `/file-content` endpoint boyut limiti:** 1 MB üst sınır (`413`) uygulanarak olası OOM senaryoları engellendi.
 
 ### ✅ Ödenmiş teknik borçlar (v3.0 kapanış)
 * **[Çözüldü] JSON tabanlı bellek kırılganlığı:** Kalıcılık DB katmanına taşındı; kullanıcı/oturum verileri UUID ve zaman damgası odaklı kayıt modeliyle yönetiliyor.
@@ -22,6 +23,9 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Çözüldü] Tek ajan sınırı:** Supervisor-first çoklu ajan (Coder/Researcher/Reviewer) + P2P delegasyon/QA döngüsü üretim akışına alındı.
 * **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
 * **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
+* **[Fixed] ReviewerAgent entegrasyonu:** Dinamik test üretimi ve P2P QA döngüsü üretim akışına alındı.
+* **[Fixed] `.env.example` değişken tamamlama:** `GITHUB_WEBHOOK_SECRET`, `MEMORY_SUMMARY_KEEP_LAST`, `SIDAR_ENV`, `ENABLE_MULTI_AGENT` alanları senkronize edildi.
+* **[Fixed] Boş test artifact temizliği:** `test_config_runtime_coverage` türü 0 bayt dosyalar temizlendi ve CI kalite kapısına bağlandı.
 
 #### Önceki Denetimlerde (Audit) Çözüldüğü Doğrulanan Diğer Maddeler
 | Madde | Doğrulama | Dosya / Referans |

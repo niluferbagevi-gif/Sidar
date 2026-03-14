@@ -178,7 +178,7 @@ app = FastAPI(
         "Sidar AI Ajanı için Web Arayüzü ve REST API uç noktaları. "
         "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
     ),
-    version="2.10.4",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=_app_lifespan,
