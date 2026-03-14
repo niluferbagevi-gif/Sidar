@@ -1,0 +1,115 @@
+:root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --text: #e2e8f0;
+    --accent: #38bdf8;
+    --danger: #ef4444;
+    --safe: #10b981;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at top right, #0b1c36, var(--bg));
+    color: var(--text);
+    font-family: Inter, "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+}
+
+#app-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 1.5rem;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    letter-spacing: 0.12rem;
+    text-align: center;
+}
+
+.header p {
+    margin-top: 0.5rem;
+    text-align: center;
+    opacity: 0.85;
+}
+
+.accent {
+    color: var(--accent);
+    text-shadow: 0 0 14px rgb(56 189 248 / 45%);
+}
+
+.slider-container {
+    position: relative;
+    width: min(90vw, 760px);
+    min-height: 330px;
+    padding: 1.8rem;
+    border: 1px solid rgb(148 163 184 / 20%);
+    border-radius: 16px;
+    background: rgb(15 23 42 / 82%);
+    backdrop-filter: blur(8px);
+}
+
+.step {
+    position: absolute;
+    inset: 1.8rem;
+    display: none;
+    text-align: center;
+}
+
+.step.active {
+    display: block;
+}
+
+.step h2 {
+    margin-top: 0;
+    font-size: 1.45rem;
+}
+
+.options {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.9rem;
+}
+
+.opt-btn {
+    border: 1px solid #334155;
+    background: linear-gradient(180deg, #1e293b, #0f172a);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 0.8rem 1.2rem;
+    cursor: pointer;
+    transition: all 180ms ease;
+    font-size: 1rem;
+}
+
+.opt-btn:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    box-shadow: 0 12px 30px rgb(56 189 248 / 22%);
+}
+
+.opt-btn.alert:hover {
+    border-color: var(--danger);
+    box-shadow: 0 12px 30px rgb(239 68 68 / 24%);
+}
+
+.opt-btn.safe:hover {
+    border-color: var(--safe);
+    box-shadow: 0 12px 30px rgb(16 185 129 / 24%);
+}
+
+#status-text {
+    opacity: 0.92;
+}

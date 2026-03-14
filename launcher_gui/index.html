@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sidar Ultimate Launcher</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body>
+    <main id="app-container">
+        <header class="header">
+            <h1>SİDAR <span class="accent">ULTIMATE LAUNCHER</span></h1>
+            <p>Akıcı masaüstü başlatıcı prototipi</p>
+        </header>
+
+        <section class="slider-container" aria-live="polite">
+            <article class="step active" id="step-1">
+                <h2>1) Arayüz Seçimi</h2>
+                <div class="options">
+                    <button class="opt-btn" data-value="web" onclick="selectOption('mode', 'web')">Web Arayüzü</button>
+                    <button class="opt-btn" data-value="cli" onclick="selectOption('mode', 'cli')">CLI Terminal</button>
+                </div>
+            </article>
+
+            <article class="step" id="step-2">
+                <h2>2) AI Sağlayıcısı</h2>
+                <div class="options">
+                    <button class="opt-btn" onclick="selectOption('provider', 'ollama')">Ollama</button>
+                    <button class="opt-btn" onclick="selectOption('provider', 'gemini')">Gemini</button>
+                    <button class="opt-btn" onclick="selectOption('provider', 'openai')">OpenAI</button>
+                    <button class="opt-btn" onclick="selectOption('provider', 'anthropic')">Anthropic</button>
+                </div>
+            </article>
+
+            <article class="step" id="step-3">
+                <h2>3) Güvenlik Seviyesi</h2>
+                <div class="options">
+                    <button class="opt-btn alert" onclick="selectOption('level', 'full')">Full</button>
+                    <button class="opt-btn" onclick="selectOption('level', 'sandbox')">Sandbox</button>
+                    <button class="opt-btn safe" onclick="selectOption('level', 'restricted')">Restricted</button>
+                </div>
+            </article>
+
+            <article class="step" id="step-loading">
+                <h2 class="pulsate">🚀 Sistem Ateşleniyor...</h2>
+                <p id="status-text">Ön kontroller yapılıyor...</p>
+            </article>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
