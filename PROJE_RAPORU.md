@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Tüm v3.0 nesil teknik borçlar kapatıldı: Borç #2 Vanilla JS UIStore tek kaynak refaktörü ve Borç #3 LLM JSON şema soyutlaması çözüldü; 11.2 tablosu temizlendi, CHANGELOG güncellendi)
-> **Proje Sürümü:** 3.0.0
+> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Çoklu denetim turu: satır sayıları güncellendi; SANDBOX_* env var boşluğu kapatıldı; §11.2'ye yeni teknik borçlar (Borç #4–#8) eklendi; §7 bağımlılık nüansları ve §13 JWT yol haritası güncellendi)
+> **Proje Sürümü:** 3.0.1
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.160 satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.239** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.185** satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.240** satır.
 
 ---
 
@@ -485,10 +485,10 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
-| `SQLAlchemy` + `asyncpg` | ✓ Zorunlu (v3.0) | Async PostgreSQL veri katmanı |
+| `SQLAlchemy` + `asyncpg` | ⚠ requirements.txt'te zorunlu; runtime'da PostgreSQL URL varsa aktif (`core/db.py:148` — lazy import); SQLite kurulumlarda kullanılmaz | Async PostgreSQL veri katmanı |
 | `alembic` | ✓ Zorunlu (v3.0) | Şema sürümleme ve migration zinciri |
 | `prometheus-client` | ✓ Zorunlu (v3.0) | `/metrics` ve LLM telemetri export |
-| `opentelemetry-*` | Opsiyonel | Tracing + OTLP export |
+| `opentelemetry-*` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except Exception` ile opsiyonel (`core/llm_client.py:20`, `web_server.py:39`) — `ENABLE_TRACING=false` varsayılan | Tracing + OTLP export |
 | `tiktoken` | ✓ Zorunlu (v3.0) | Token ölçümü ve özetleme eşikleri |
 
 ### 7.3 Güvenlik, Sandbox ve Donanım Gözlemlenebilirliği
@@ -505,7 +505,7 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `openai`, `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Çoklu LLM istemci katmanı |
-| `chromadb` + `sentence-transformers` | Opsiyonel | Vektör tabanlı RAG ve embedding |
+| `chromadb` + `sentence-transformers` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except` ile opsiyonel (`core/rag.py:165`) — ChromaDB yoksa BM25/keyword fallback devreye girer | Vektör tabanlı RAG ve embedding |
 | `rank-bm25` | Opsiyonel (mevcut) | BM25 tabanlı hibrit arama uyumluluğu |
 | `duckduckgo-search` + `beautifulsoup4` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları |
 | `torch` + `torchvision` | Opsiyonel | Embedding ve GPU hızlandırmalı iş yükleri |
@@ -547,7 +547,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `agent/definitions.py` | 165 |
 | `agent/tooling.py` | 117 |
 | `agent/base_agent.py` | 55 |
-| `core/llm_client.py` | 860 |
+| `core/llm_client.py` | 898 |
 | `core/memory.py` | 280 |
 | `core/rag.py` | 783 |
 | `core/db.py` | 989 |
@@ -600,11 +600,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---:|
 | `web_ui/index.html` | 572 |
 | `web_ui/style.css` | 1.684 |
-| `web_ui/chat.js` | 721 |
-| `web_ui/sidebar.js` | 421 |
+| `web_ui/chat.js` | 708 |
+| `web_ui/sidebar.js` | 412 |
 | `web_ui/rag.js` | 131 |
-| `web_ui/app.js` | 710 |
-| **Web UI Toplamı** | **4.239** |
+| `web_ui/app.js` | 733 |
+| **Web UI Toplamı** | **4.240** |
 | **Test modülü (`tests/test_*.py`)** | **92** |
 | **`tests/*.py` toplam dosya** | **94** |
 | **`tests/*.py` toplam satır** | **20.962** |
@@ -843,15 +843,31 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 - Tekli ajan akışından Supervisor-first multi-agent + P2P QA mimarisine geçiş,
 - Zero-Trust güvenlik katmanları (sandbox, path/symlink savunmaları, auth sertleşmesi),
 - CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması,
-- `core/memory.py` Sync/Async köprüsü (`_run_coro_sync`) kaldırılarak tam async dönüşüm,
+- `core/memory.py` Sync/Async köprüsü (`_run_coro_sync`) kaldırıldı; `memory.add()` ve `memory.clear()` tam `async def` olarak yeniden yazıldı. ⚠ **Kısmi:** `agent/sidar_agent.py:432-434` ve `397-399`'da `inspect.isawaitable()` geriye dönük uyumluluk köprüsü hâlâ mevcuttur (Borç #4 — aşağıda).
 - `agent/sidar_agent.py` ölü kod (`_react_loop`, `_tool_*`) temizliği (1.651 → 448 satır),
 - Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu),
 - Vanilla JS UI ölçeklenme riski: `seedUIStore()` IIFE ile 12 paylaşımlı durum anahtarı tek merkezde; `let` global değişkenleri ve çift yazma (double-write) anti-pattern'i kaldırıldı (`web_ui/*.js`),
 - Sağlayıcılar arası tool-calling şema farkları: `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti, `BaseLLMClient.json_mode_config()` soyut metodu ve `_inject_json_instruction()` yardımcısı ile sağlayıcıdan bağımsız JSON şema uygulama (`core/llm_client.py`).
 
-### 11.2 Açık Teknik Borçlar
+### 11.2 Açık Teknik Borçlar (Güncel)
 
-Şu anda izlenen açık teknik borç bulunmamaktadır. Tüm kalemler kapatılmış olup çözüm kayıtları **11.1** ve **[CHANGELOG.md](./CHANGELOG.md)** altında tutulmaktadır.
+Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağımsız kod incelemesi) türetilmiştir.
+
+| # | Borç | Etkilenen Dosya(lar) | Öncelik |
+|---|------|----------------------|---------|
+| **Borç #4** | **`inspect.isawaitable()` geriye dönük uyumluluk köprüsü:** `memory.add()` ve `memory.clear()` tam `async def` olmasına karşın `agent/sidar_agent.py:432-434` ve `397-399`'da `_memory_add()` wrapper + `inspect.isawaitable()` kontrolü mevcuttur. Doğrudan `await self.memory.add(...)` / `await self.memory.clear()` yapılması gerekir. | `agent/sidar_agent.py` | Yüksek |
+| **Borç #5** | **`ConversationMemory.__init__` `file_path` API kalıntısı:** `memory.py` `__init__` imzası hâlâ `file_path: Path` alıyor; `config.py` `MEMORY_FILE = DATA_DIR / "memory.json"` tanımlı; `sidar_agent.py:57`'de `file_path=self.cfg.MEMORY_FILE` geçiyor. Kalıcılık katmanı artık DB-first olduğundan `file_path` yalnızca DB path türetme amacıyla kullanılan API kafa karışıklığıdır. | `core/memory.py`, `agent/sidar_agent.py`, `config.py` | Orta |
+| **Borç #6** | **RAG / `DocumentStore` senkron blokajı:** `DocumentStore.add_document()` (rag.py:330) ve `search()` (rag.py:504) senkron `def`'lerdir; event-loop'u bloklamaktan kaçınmak için `asyncio.to_thread()` ile çağrılmaktadır (sidar_agent.py:155, 357-358). Native async istemci veya tam async wrapper katmanı ile değiştirilmesi gerekir. | `core/rag.py`, `agent/sidar_agent.py` | Orta |
+| **Borç #7** | **`requirements.txt` zorunlu ↔ runtime opsiyonel çelişkisi:** `asyncpg`, `opentelemetry-*` (4 paket) ve `chromadb` requirements.txt'te pin edilmiş zorunlu bağımlılıklardır; ancak kodda `try/except Exception/ImportError` ile sanki opsiyonelmiş gibi ele alınmaktadır. SQLite kullanan kurulumlar için `asyncpg` gereksiz yere kurulur; `opentelemetry` ve `chromadb` için de aynı durum geçerlidir. `[postgres]`, `[telemetry]`, `[rag]` gibi extras gruplarına ayrılması mimariyi hafifletecektir. | `requirements.txt`, `core/db.py:148`, `core/llm_client.py:20`, `web_server.py:39`, `core/rag.py:165` | Orta |
+| **Borç #8** | **`ToolCall` Pydantic modeli `sidar_agent.py`'de eksik — test kırıkları:** `class ToolCall` hiçbir agent dosyasında tanımlı değil. Aşağıdaki testler bu sınıfa ya doğrudan import, ya `SA_MOD.ToolCall` attribute erişimi, ya da kaynak içi string arama yoluyla bağlıdır ve kırık durumdadır: `test_sidar.py:18` (ImportError), `test_sidar_agent_runtime.py:342-345` (AttributeError), `test_parallel_react_improvements.py:10` (source string eksik), `test_agent_subtask.py:21` (source string eksik). | `agent/sidar_agent.py`, `tests/test_sidar.py`, `tests/test_sidar_agent_runtime.py`, `tests/test_parallel_react_improvements.py`, `tests/test_agent_subtask.py` | **Kritik** |
+| **Borç #9** | **`_tool_subtask` metodu eksik — test kırıkları (legacy test drift):** `test_sidar_agent_runtime.py`'de 8 ayrı konumda `a._tool_subtask("...")` çağrısı bulunuyor; `agent/sidar_agent.py`'de bu metod mevcut değil. `test_parallel_react_improvements.py` ve `test_agent_subtask.py` da sidar_agent.py kaynak içinde `parallel_batch`, `action_list`, `isinstance(payload, list)` gibi eski paralel ReAct kod parçacıklarını arar; bunların hiçbiri mevcut kaynakta bulunmuyor. | `agent/sidar_agent.py`, `tests/test_sidar_agent_runtime.py`, `tests/test_parallel_react_improvements.py`, `tests/test_agent_subtask.py` | **Kritik** |
+| **Borç #10** | **`main.py` `DummyConfig` fail-fast sorunu:** `main.py:32-48`'de `config.py` import edilemezse `DummyConfig` ile çalışmaya devam edilmektedir. `config.py` her zaman aynı dizinde bulunduğundan `ImportError` tetiklenemez; ancak mevcut yapı, sahte model adı (`qwen2.5-coder:7b`) ile sessizce başlatmaya çalışan bir operasyonel risk yaratır. Kurumsal sistemlerde fail-fast (`sys.exit(1)`) tercih edilir. | `main.py` | Düşük |
+
+> **v3.0.1 Denetim Özeti:**
+> - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
+> - Dairesel import riski yok; `config.py` bağımlılık kökü, tüm modüller tek yönlü DAG.
+> - Hardcoded credential yok; tüm hassas değerler `os.getenv()` / yardımcı sarmalayıcılar.
+> - SANDBOX_* env var dokümantasyon boşluğu kapatıldı (`.env.example` + §12.11 güncellendi).
 
 
 ## 12. `.env` Tam Değişken Referansı
@@ -988,7 +1004,14 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `DOCKER_MEM_LIMIT` | `256m` | Sandbox konteyner bellek limiti |
 | `DOCKER_NETWORK_DISABLED` | `true` | Sandbox için network kapatma anahtarı |
 | `DOCKER_NANO_CPUS` | `1000000000` | Sandbox CPU kotası (~1 vCPU) |
+| `SANDBOX_MEMORY` | `256m` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner bellek sınırı (override için) |
+| `SANDBOX_CPUS` | `0.5` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner CPU payı |
+| `SANDBOX_NETWORK` | `none` | `config.py::SANDBOX_LIMITS` kaynak kotası — ağ modu (`none` = kapalı, yalıtılmış) |
+| `SANDBOX_PIDS_LIMIT` | `64` | `config.py::SANDBOX_LIMITS` kaynak kotası — süreç sayısı sınırı |
+| `SANDBOX_TIMEOUT` | `10` | `config.py::SANDBOX_LIMITS` kaynak kotası — sandbox çalışma süresi limiti (sn) |
 
+> **Sandbox Kaynak Notu:** `SANDBOX_MEMORY/CPUS/NETWORK/PIDS_LIMIT/TIMEOUT` değerleri `config.py` içindeki `SANDBOX_LIMITS` sözlüğüne beslenir ve `CodeManager._resolve_sandbox_limits()` üzerinden Docker run çağrısına aktarılır. Bu değişkenler `.env.example`'da önceden yer almıyordu; v3.0.1 denetimiyle belgelenmiştir.
+>
 > **Telemetri Notu:** Konfigürasyonda ayrı `ENABLE_TELEMETRY`/`METRICS_PORT` anahtarı yoktur; metrik ihracı uygulama endpoint'leri (`/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget`) üzerinden sağlanır.
 
 ### 12.12 Çeşitli
@@ -1042,6 +1065,8 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 | **Kurumsal Vektör Veri Katmanı** | ChromaDB + FTS5/BM25 hibrit arama aktif | Büyük kurumsal korpuslarda pgvector/Milvus/Qdrant gibi dağıtık vektör altyapılarıyla ölçeklenebilir retrieval katmanı |
 | **Dinamik Agent Swarm + Marketplace** | Coder/Researcher/Reviewer rolleri üretimde sabit tanımlı | Göreve göre dinamik uzman ajan türetimi (swarm), araç/ajan eklenti pazaryeri ve çalışma zamanı yetenek keşfi |
 | **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli |
+| **Stateless Auth ve JWT Entegrasyonu** | Oturum token'ları DB'de `auth_tokens` tablosunda tutulmaktadır; kimlik doğrulama DB sorgusu gerektirir | Merkezi auth sunucularıyla uyumlu, veritabanı sorgusu gerektirmeyen (stateless) JWT tabanlı asenkron yetkilendirme; `python-jose` veya `authlib` ile access + refresh token modeli. PBKDF2 parola doğrulama zinciri korunabilir. |
+| **Bağımlılık Extras Grupları** | `asyncpg`, `opentelemetry-*`, `chromadb` requirements.txt'te zorunlu ama kodda opsiyonel (Borç #7) | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi |
 
 > **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
 

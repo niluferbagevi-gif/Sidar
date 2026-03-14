@@ -1,7 +1,7 @@
 # Sürüm Geçmişi (Changelog)
 
 ## [v3.0.1] - 2026-03-15
-Teknik borç temizleme yayını — tüm v3.0 nesil teknik borç kalemleri kapatıldı, Bölüm 11.2 tablosu sıfırlandı.
+Teknik borç temizleme + tam repo denetimi yayını — tüm v3.0 nesil teknik borç kalemleri kapatıldı, Bölüm 11.2 tablosu sıfırlandı; satır sayımları güncellendi; `SANDBOX_*` env var dokümantasyon boşluğu kapatıldı.
 
 ### ✅ Ödenmiş Teknik Borçlar
 
@@ -20,6 +20,36 @@ Teknik borç temizleme yayını — tüm v3.0 nesil teknik borç kalemleri kapat
 * `GeminiClient` → `response_mime_type: application/json` + system_text'e talimat enjeksiyonu.
 * `OpenAIClient` → `json_object` yerine `json_schema` structured outputs (`strict: True`) + `_inject_json_instruction` ile system prompt enjeksiyonu.
 * `AnthropicClient` → `json_mode_config()` `{}` döndürür; sistem talimatı `SIDAR_TOOL_JSON_INSTRUCTION` sabiti üzerinden enjekte edilir.
+
+### 🔍 Çoklu Denetim Turu Bulguları
+
+**Satır sayısı güncellemeleri (Borç #2 + #3 refaktörleri sonrası gerçek ölçüm):**
+* `core/llm_client.py`: 860 → 898 satır (Borç #3 ilaveleri: `json_mode_config()`, `_inject_json_instruction()`, `SIDAR_TOOL_JSON_INSTRUCTION`)
+* `web_ui/chat.js`: 721 → 708 satır (Borç #2: 10 `let` bildirimi kaldırıldı)
+* `web_ui/sidebar.js`: 421 → 412 satır (Borç #2: `_cachedBranches` ve double-write kaldırıldı)
+* `web_ui/app.js`: 710 → 733 satır (Borç #2: `seedUIStore()` IIFE ve `setUIState()` çağrıları eklendi)
+* Web UI toplamı: 4.239 → 4.240 satır; Python kaynak toplamı: ~12.160 → 12.185 satır
+
+**`SANDBOX_*` ortam değişkeni dokümantasyon boşluğu (kapatıldı):**
+* `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_NETWORK`, `SANDBOX_PIDS_LIMIT`, `SANDBOX_TIMEOUT` değişkenleri `config.py::SANDBOX_LIMITS` sözlüğünde tanımlı olmasına rağmen `.env.example`'da ve PROJE_RAPORU.md §12.11'de yer almıyordu.
+* Her iki dosyaya da eklenip belgelenmiştir.
+
+**Denetim tespitleri (eylem gerektirmeyen / temiz):**
+* 134 Python dosyasının tamamı sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
+* Dairesel import riski yok; tüm iç bağımlılık grafiği tek yönlü DAG.
+* Hardcoded secret/credential yok; tüm hassas değerler `os.getenv()` veya yardımcı sarmalayıcılar üzerinden okunuyor.
+* `ENABLE_MULTI_AGENT` legacy bayrak olarak `config.py`'de `True` sabitine dönüştürüldü; `.env` üzerinden değiştirilemiyor (belgelendi).
+
+**Bağımsız kod incelemelerinden gelen yeni açık teknik borçlar (§11.2'ye eklendi):**
+* **Borç #4:** `inspect.isawaitable()` köprüsü — `memory.add()`/`memory.clear()` async olmasına rağmen `sidar_agent.py:432-434`, `397-399`'da wrapper mevcut.
+* **Borç #5:** `ConversationMemory.__init__` `file_path` API kalıntısı — DB-first mimarisiyle çelişen `MEMORY_FILE` parametresi.
+* **Borç #6:** RAG `DocumentStore` senkron blokajı — `add_document()` ve `search()` sync; `asyncio.to_thread()` ile wrap ediliyor.
+* **Borç #7:** `requirements.txt` zorunlu ↔ runtime opsiyonel çelişkisi — `asyncpg`, `opentelemetry-*`, `chromadb` zorunlu listede ama `try/except` ile opsiyonel.
+* **Borç #8 (kritik):** `ToolCall` Pydantic modeli `sidar_agent.py`'de tanımlı değil → `test_sidar.py` ImportError, `test_sidar_agent_runtime.py` AttributeError.
+* **Borç #9 (kritik):** `_tool_subtask` metodu ve paralel ReAct kod parçacıkları `sidar_agent.py`'de yok → 8+ test kırık (`test_sidar_agent_runtime.py`, `test_parallel_react_improvements.py`, `test_agent_subtask.py`).
+* **Borç #10:** `main.py` `DummyConfig` fail-fast sorunu — `config.py` yoksa sahte ayarlarla devam edilmesi.
+* **§7.2/7.4:** `asyncpg`, `opentelemetry-*`, `chromadb` bağımlılık statüsü ⚠ notu ile güncellendi.
+* **§13:** JWT stateless auth ve dependency extras grupları v4.0 yol haritasına eklendi.
 
 ## [v3.0.0] - 2026-03-11
 Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
