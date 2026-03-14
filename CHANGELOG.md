@@ -23,6 +23,30 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
 * **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage hard gate (%95) operasyonel standarda bağlandı.
 
+### 📚 Arşivlenen Audit / Session geçmişi (PROJE_RAPORU §18 taşıması)
+`PROJE_RAPORU.md` dosyası yaşayan mimari rapor olarak sadeleştirildi. Önceki §18 altında biriken tarihsel doğrulama notları bu bölümde arşivlenmiştir.
+
+#### Arşiv kapsamı
+* Audit kapanışları: **Audit #1 → Audit #11** (satır sayısı düzeltmeleri, doğrulama tabloları, kapanış notları).
+* Session günlükleri (2026-03-11):
+  * Multi-Agent geçiş sertleştirme ve Reviewer QA döngüsü
+  * LLM bütçe/maliyet dashboard geliştirmesi
+  * Legacy ReAct akışının emekliye ayrılması
+  * Multi-User Faz 1/2/3 (DB iskeleti, memory taşıma, auth+session izolasyonu)
+  * Web UI auth entegrasyonu ve admin paneli olgunlaştırması
+  * P2P multi-agent delegasyon ve dinamik reviewer QA
+  * Zero-Trust sandbox kaynak kısıtları
+  * Observability / canlı ajan durum akışı
+  * Coverage %95 quality gate sertleştirmesi
+  * Telemetri/maliyet yönetimi dashboard altyapısı
+  * Üretim geçiş araçları ve Alembic sertleştirmesi
+  * Production sertifikasyon kalan maddeleri (QA + Sandbox + Migration disiplini)
+
+#### Bu arşivin amacı
+* `PROJE_RAPORU.md` içinde yalnızca **mevcut mimari ve güncel durum** bilgisini bırakmak,
+* Değişim geçmişini, karar zaman çizelgesini ve audit delillerini sürüm günlüğünde (changelog) tutmak,
+* Yeni geliştiriciler için bilişsel yükü azaltırken, geçmiş kararların izlenebilirliğini korumaktır.
+
 
 
 ## [v2.10.8] - 2026-03-10
