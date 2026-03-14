@@ -17,8 +17,15 @@ def _load_modules():
         class _DummyConfig:
             ACCESS_LEVEL = "full"
             BASE_DIR = Path(".")
+            SANDBOX_LIMITS = {
+                "memory": "256m",
+                "cpus": "0.5",
+                "pids_limit": 64,
+                "network": "none",
+                "timeout": 10,
+            }
 
-        sys.modules["config"] = types.SimpleNamespace(Config=_DummyConfig)
+        sys.modules["config"] = types.SimpleNamespace(Config=_DummyConfig, SANDBOX_LIMITS=_DummyConfig.SANDBOX_LIMITS)
 
         pkg = types.ModuleType("managers")
         pkg.__path__ = [str(Path("managers").resolve())]
@@ -357,7 +364,7 @@ def test_execute_code_docker_happy_path_and_image_not_found(manager_factory, mon
         def run(self, **kwargs):
             assert kwargs["network_mode"] == "none"
             assert kwargs["mem_limit"] == "256m"
-            assert kwargs["nano_cpus"] == 1000000000
+            assert kwargs["nano_cpus"] == 500000000
             assert kwargs["working_dir"] == "/tmp"
             return container
 
