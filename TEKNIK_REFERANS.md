@@ -22,6 +22,8 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
   - [4.1 Supervisor-first çalışma modeli](#41-supervisor-first-çalışma-modeli)
   - [4.2 Tool dispatch envanteri](#42-tool-dispatch-envanteri)
   - [4.3 Reviewer/QA döngüsü](#43-reviewerqa-döngüsü)
+  - [4.4 Prompt/Context inşası (`sidar_agent.py`)](#44-promptcontext-inşası-sidar_agentpy)
+  - [4.5 Bellek sıkıştırma ve `memory_archive` akışı](#45-bellek-sıkıştırma-ve-memory_archive-akışı)
 - [5. Konfigürasyon Referansı](#5-konfigürasyon-referansı)
   - [5.1 `.env` katmanlama (`SIDAR_ENV`)](#51-env-katmanlama-sidar_env)
   - [5.2 Config tarafından okunan env anahtarları (tam liste)](#52-config-tarafından-okunan-env-anahtarları-tam-liste)
@@ -99,6 +101,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 - Token üretimi: `secrets.token_urlsafe(48)`
 - Varsayılan token TTL: `7 gün`
 - `get_user_by_token()` sorgusu, `expires_at > now` filtresiyle geçerlilik kontrolü yapar.
+- **Önemli:** PBKDF2 hashleme `password_hash` alanı içindir; `auth_tokens.token` değeri DB'de plain (rastgele üretilmiş bearer token) tutulur.
 
 ### 2.4 Kota/FinOps yazma-okuma akışı
 
@@ -207,6 +210,11 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 - `SidarAgent.respond()` çağrıları Supervisor omurgasına yönlendirilir.
 - `SupervisorAgent` içinde QA geri besleme limiti `MAX_QA_RETRIES = 3` olarak sabittir.
 - `ENABLE_MULTI_AGENT` bayrağı config sınıfında `True` sabitlenmiş durumdadır (legacy toggle kaldırılmıştır).
+- Intent routing kuralları `SupervisorAgent._intent()` içinde anahtar kelime tabanlıdır:
+  - `research`: "araştır", "web", "url", "doküman", "search"
+  - `review`: "github", "pull request", "issue", "review", "incele"
+  - diğer tüm istekler varsayılan olarak `code`
+- Legacy tekli ReAct akışı dosyada yardımcı/yedek kod olarak dursa da üretim omurgası Supervisor zinciridir.
 
 ### 4.2 Tool dispatch envanteri
 
@@ -229,6 +237,36 @@ Ana gruplar:
 - Güvenli kullanım kısıtı:
   - `bash run_tests.sh` veya `pytest ...` desenleri dışına çıkılmaz.
 - Supervisor, reviewer geri bildirimi sonrası coder turunu sınırlı sayıda tekrarlar.
+
+### 4.4 Prompt/Context inşası (`sidar_agent.py`)
+
+Her üretim çağrısında prompt bağlamı katmanlı kurulur:
+
+1. Sistem promptu (`SIDAR_SYSTEM_PROMPT`)
+2. Tool listesi (`_build_tool_list()`)
+3. Runtime context (`_build_context()`)
+   - sağlayıcı/model
+   - GPU bilgisi
+   - erişim seviyesi
+   - RAG durumu
+4. Arşiv bağlamı (`_get_memory_archive_context()`)
+   - ChromaDB'den `source=memory_archive` filtresiyle geri çağırma
+
+Ek olarak `SIDAR.md` / `CLAUDE.md` talimat dosyaları hiyerarşik şekilde okunup prompta enjekte edilir.
+
+### 4.5 Bellek sıkıştırma ve `memory_archive` akışı
+
+`sidar_agent.py::_summarize_memory()` akışı özetle iki aşamadan oluşur:
+
+1. Eski konuşma turları `memory_archive` etiketiyle vektör depoya arşivlenir.
+2. Aktif konuşma penceresi, kısa bir özet + son turlar korunacak şekilde küçültülür.
+
+Bu sayede:
+- aktif context token yükü düşer,
+- geçmiş bilgi kaybı minimuma iner,
+- yeni sorularda arşivden semantik geri çağırma yapılabilir.
+
+Not: `core/memory.py` tarafında aktif kullanıcı zorunluluğu (`_require_active_user`) fail-closed prensibiyle uygulanır; kullanıcı bağlamı yoksa bellek/oturum işlemleri hata verir.
 
 ---
 
