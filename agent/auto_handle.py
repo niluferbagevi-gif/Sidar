@@ -82,7 +82,8 @@ class AutoHandle:
 
         # ── Temel araçlar (Senkron) ──────────────────────────
         result = await self._try_clear_memory(t)
-        if result[0]: return result
+        if result[0]:
+            return result
 
         result = self._try_list_directory(t, text)
         if result[0]: return result
