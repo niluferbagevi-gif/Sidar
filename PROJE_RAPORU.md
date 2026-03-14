@@ -69,6 +69,7 @@
   - [12.10 Veritabanı ve Auth (Kurumsal)](#1210-veritabanı-ve-auth-kurumsal)
   - [12.11 Telemetri ve Zero-Trust Sandbox](#1211-telemetri-ve-zero-trust-sandbox)
   - [12.12 Çeşitli](#1212-çeşitli)
+  - [12.13 Docker Compose Override Değişkenleri](#1213-docker-compose-override-değişkenleri)
 - [13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)](#13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası)
 - [14. Geliştirme Yol Haritası](#14-geliştirme-yol-haritası)
 - [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
@@ -988,6 +989,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `RESPONSE_LANGUAGE` | `tr` | LLM yanıt dili |
+| `SIDAR_ENV` | `""` | Ortam profili seçimi (`.env.<profil>` dosyasını temel `.env` üzerine yükler; örn. `production`) |
 | `HF_TOKEN` | `""` | HuggingFace token (özel modeller) |
 | `HF_HUB_OFFLINE` | `false` | HF Hub çevrimdışı mod |
 | `GITHUB_TOKEN` | `""` | GitHub API token |
@@ -997,6 +999,25 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
 | `REVIEWER_TEST_COMMAND` | `bash run_tests.sh` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu |
 | `ENABLE_MULTI_AGENT` | `true` | **Sabitlenmiştir:** Legacy bayrak kaldırılmıştır; sistem daima Supervisor/Multi-Agent akışında çalışır (`.env` üzerinden değiştirilemez) |
+
+### 12.13 Docker Compose Override Değişkenleri
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `SIDAR_CPU_LIMIT` | `2.0` | `sidar-ai` servisi için CPU limiti (`docker-compose.yml`) |
+| `SIDAR_MEM_LIMIT` | `4g` | `sidar-ai` servisi için bellek limiti |
+| `SIDAR_GPU_CPU_LIMIT` | `4.0` | `sidar-gpu` servisi için CPU limiti |
+| `SIDAR_GPU_MEM_LIMIT` | `8g` | `sidar-gpu` servisi için bellek limiti |
+| `SIDAR_WEB_CPU_LIMIT` | `2.0` | `sidar-web` servisi için CPU limiti |
+| `SIDAR_WEB_MEM_LIMIT` | `4g` | `sidar-web` servisi için bellek limiti |
+| `SIDAR_WEB_GPU_CPU_LIMIT` | `4.0` | `sidar-web-gpu` servisi için CPU limiti |
+| `SIDAR_WEB_GPU_MEM_LIMIT` | `8g` | `sidar-web-gpu` servisi için bellek limiti |
+| `HOST_GATEWAY` | `host-gateway` | Konteynerden host Ollama erişimi için `extra_hosts` gateway değeri |
+| `WEB_PORT` / `WEB_GPU_PORT` | `7860` / `7861` | Compose port publish değerleri |
+| `NVIDIA_VISIBLE_DEVICES` | `all` | GPU konteynerlerinde görünür cihaz seçimi |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,utility` | NVIDIA sürücü yetenek seti |
+
+> **Not:** Bu değişkenler uygulama `Config` sınıfından çok, doğrudan container orkestrasyon katmanında (Compose) etkilidir.
 
 ---
 
@@ -1047,6 +1068,7 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 | Konuşma belleği | — (stdlib: `json`, `uuid`) | `MAX_MEMORY_TURNS` (opsiyonel) | ✅ Tamamlandı |
 | Bellek şifreleme | `cryptography` | `MEMORY_ENCRYPTION_KEY` | ✅ Tamamlandı |
 | GitHub entegrasyonu (PR + Issue yaşam döngüsü) | `PyGithub` | `GITHUB_TOKEN`, `GITHUB_REPO`, `GITHUB_WEBHOOK_SECRET` | ✅ Tamamlandı |
+| GitHub Issue operasyon araçları (`list/create/comment/close`) | `PyGithub`, `agent/sidar_agent.py` tool zinciri | `GITHUB_TOKEN`, `GITHUB_REPO` | ✅ Tamamlandı |
 | Proje denetimi (`audit`) | — (stdlib: `ast`, `pathlib`) | — | ✅ Tamamlandı |
 
 ### 15.2 Arama ve Web
@@ -1105,6 +1127,7 @@ Minimum kurulum senaryolarına göre gereken paket kümeleri:
 | **GPU RAG** | yukarıdaki + `chromadb`, `sentence-transformers`, `torch` (CUDA) | ✅ Aktif |
 | **Gemini Modu** | yukarıdaki + `google-generativeai` | ✅ Aktif |
 | **Çoklu Sağlayıcı Deploy** | tüm opsiyonel dahil + Docker + Redis + `openai` + `anthropic` | ✅ Aktif |
+| **Observability Stack** | `prometheus-client` + `opentelemetry-*` + (opsiyonel) Prometheus/Grafana servisleri | ✅ Aktif |
 
 
 ### 15.7 v3.0 Vizyon Gereksinimleri (Planlanan)
