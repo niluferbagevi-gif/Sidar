@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 from agent.base_agent import BaseAgent
 from agent.core.contracts import DelegationRequest
 from agent.core.memory_hub import MemoryHub

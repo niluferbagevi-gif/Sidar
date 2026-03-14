@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Multi-agent iletişim kontratları (Supervisor <-> Specialist)."""
 
 from __future__ import annotations

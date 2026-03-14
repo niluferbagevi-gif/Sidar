@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Temel Test ve Entegrasyon Suiti
 Çalıştırmak için kök dizinde: pytest tests/

@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
 Sürüm: 1.9

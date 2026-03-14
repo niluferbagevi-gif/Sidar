@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 import importlib.util
 import types
 from datetime import datetime

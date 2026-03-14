@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Ajan Tanımları
 Sidar'ın karakter profili ve sistem talimatı.

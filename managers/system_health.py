@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project — Sistem Sağlığı Yöneticisi
 Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)

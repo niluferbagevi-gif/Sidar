@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Runtime tests for managers/system_health.py — targets uncovered branches:
   _check_import ImportError, _check_gpu exception, _init_nvml WSL2/non-WSL2,

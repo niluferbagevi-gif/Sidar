@@ -1,4 +1,4 @@
-# SIDAR.md — Çalışma Prensipleri (v3.0.0)
+# SIDAR.md — 🚀 Sidar 3.0.0 - Otomatik Dağıtım
 
 Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu dosya operasyonel sınırlarını belirler.
 

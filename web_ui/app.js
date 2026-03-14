@@ -1,3 +1,7 @@
+/*
+🚀 Sidar 3.0.0 - Otomatik Dağıtım
+*/
+
 const AUTH_TOKEN_KEY = 'sidar_access_token';
 const AUTH_USER_KEY = 'sidar_user';
 let isCurrentUserAdmin = false;

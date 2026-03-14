@@ -1,3 +1,7 @@
+/*
+🚀 Sidar 3.0.0 - Otomatik Dağıtım
+*/
+
 
 marked.setOptions({ breaks: true, gfm: true });
 

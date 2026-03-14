@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Araştırma odaklı uzman ajan (web + RAG)."""
 
 from __future__ import annotations

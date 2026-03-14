@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Görev Takip Yöneticisi
 Claude Code'daki TodoWrite/TodoRead araçlarına eşdeğer görev listesi yönetimi.

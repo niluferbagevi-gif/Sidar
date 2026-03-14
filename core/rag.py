@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Belge Deposu ve Arama (RAG)
 ChromaDB tabanlı Vektör Arama + BM25 Hibrit Sistemi.

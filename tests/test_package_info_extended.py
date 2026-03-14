@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Extended runtime tests for managers/package_info.py — targets uncovered branches:
   _cache_get miss (line 54), cache expiry cleanup (58-59),

@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Otomatik Komut İşleyici
 Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Asenkron Uyumlu).

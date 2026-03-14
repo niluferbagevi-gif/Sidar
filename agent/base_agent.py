@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Sidar Multi-Agent iskeleti için temel soyut ajan sınıfı."""
 
 from __future__ import annotations

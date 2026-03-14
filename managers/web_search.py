@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Web Arama Yöneticisi
 Tavily, Google Custom Search ve DuckDuckGo motorları ile asenkron web araması.

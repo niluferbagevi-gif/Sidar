@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Kod üretim/düzenleme odaklı uzman ajan."""
 
 from __future__ import annotations

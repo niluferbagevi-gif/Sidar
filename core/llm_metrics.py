@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """LLM maliyet/latency/bütçe metrikleri için hafif, process-içi toplayıcı."""
 
 from __future__ import annotations

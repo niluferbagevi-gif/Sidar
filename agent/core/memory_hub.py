@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Supervisor/role arasında minimal bağlam taşıyan hafif bellek merkezi."""
 
 from __future__ import annotations

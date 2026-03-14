@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Ana Ajan
 ReAct (Reason + Act) döngüsü ile çalışan yazılım mühendisi AI asistanı (Asenkron + Pydantic Uyumlu).

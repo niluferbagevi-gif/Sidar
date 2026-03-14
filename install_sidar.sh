@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 # Sidar AI — Otomatik Kurulum Betiği
 # Sürüm: 2.7.0
 

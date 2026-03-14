@@ -1,4 +1,6 @@
 #!/bin/bash
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."

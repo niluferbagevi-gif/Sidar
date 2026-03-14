@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """PostgreSQL asyncpg havuzu için hafif yük/stres testi.
 
 Örnek:

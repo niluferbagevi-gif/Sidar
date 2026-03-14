@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Basit process-içi event stream: Supervisor/Coder/Reviewer durumlarını yayınlar."""
 
 from __future__ import annotations

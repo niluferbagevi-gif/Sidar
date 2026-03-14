@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Uzman ajan kayıt/keşif katmanı."""
 
 from __future__ import annotations

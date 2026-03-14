@@ -1,3 +1,7 @@
+/*
+🚀 Sidar 3.0.0 - Otomatik Dağıtım
+*/
+
 /* ─── Başlangıç ve Oturumlar (Sessions) ─────────────────── */
 async function loadSessions() {
   try {

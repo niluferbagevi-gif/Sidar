@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """SQLite -> PostgreSQL veri taşıma scripti.
 
 Kullanım örneği:

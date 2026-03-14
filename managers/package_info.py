@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Paket Bilgi Yöneticisi
 PyPI, npm Registry ve GitHub Releases entegrasyonu (Asenkron).

@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 from tests.test_rag_runtime_extended import _load_rag_module, _new_store
 
 

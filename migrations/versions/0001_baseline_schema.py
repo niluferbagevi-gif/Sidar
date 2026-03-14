@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """baseline schema for sidar v3.0
 
 Revision ID: 0001_baseline_schema

@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - Web Arayüzü Sunucusu
 FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat arayüzü.

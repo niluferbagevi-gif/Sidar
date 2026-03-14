@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Sidar Project - GitHub Yöneticisi
 Depo analizi, commit geçmişi ve uzak dosya okuma (Binary Korumalı).

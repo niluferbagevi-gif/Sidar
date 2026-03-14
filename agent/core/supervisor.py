@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Supervisor ajanı: görevi role ajanlara yönlendirir."""
 
 from __future__ import annotations

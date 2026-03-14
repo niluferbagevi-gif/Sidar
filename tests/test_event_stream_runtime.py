@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 import asyncio
 
 from agent.core.event_stream import get_agent_event_bus

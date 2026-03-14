@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """
 Final coverage push — hedef: %95 barajını aşmak.
 

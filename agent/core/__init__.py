@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Multi-agent çekirdek bileşenleri.
 
 Döngüsel importları önlemek için paket düzeyindeki tüm ağır importlar lazy yapılır.

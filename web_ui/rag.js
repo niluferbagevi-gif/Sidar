@@ -1,3 +1,7 @@
+/*
+🚀 Sidar 3.0.0 - Otomatik Dağıtım
+*/
+
 /* ─── RAG Belge Deposu Modalı ───────────────────────────── */
 function openRagModal() {
   document.getElementById('rag-modal').classList.add('open');

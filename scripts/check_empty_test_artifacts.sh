@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 set -euo pipefail
 
 empty_files=$(find tests -type f -size 0 -print)

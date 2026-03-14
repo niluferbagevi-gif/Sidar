@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Sidar Project - Konuşma Belleği (DB tabanlı, çoklu kullanıcı hazırlığı)."""
 
 from __future__ import annotations

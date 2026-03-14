@@ -1,3 +1,5 @@
+# 🚀 Sidar 3.0.0 - Otomatik Dağıtım
+
 """Sidar Project - Manager Modülleri"""
 from .code_manager import CodeManager
 from .github_manager import GitHubManager
