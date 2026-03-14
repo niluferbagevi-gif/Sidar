@@ -5,7 +5,6 @@ ReAct (Reason + Act) döngüsü ile çalışan yazılım mühendisi AI asistanı
 
 import logging
 import json
-import re
 import asyncio
 import inspect
 import time
