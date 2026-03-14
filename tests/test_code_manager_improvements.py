@@ -28,10 +28,13 @@ def test_code_manager_enforces_utf8_and_fail_closed_sandbox_execution():
 
 def test_code_manager_applies_standard_sandbox_cgroup_limits():
     src = Path("managers/code_manager.py").read_text(encoding="utf-8")
+    assert "from config import Config, SANDBOX_LIMITS" in src
     assert "def _resolve_sandbox_limits" in src
     assert "\"pids_limit\": sandbox_limits[\"pids_limit\"]" in src
     assert "sandbox_limits[\"network_mode\"] == \"none\"" in src
     assert "timeout = int(sandbox_limits[\"timeout\"])" in src
+    assert "def _build_docker_cli_command" in src
+    assert "--pids-limit={limits['pids_limit']}" in src
 
 def test_config_exposes_parametric_sandbox_limits():
     src = Path("config.py").read_text(encoding="utf-8")
@@ -46,7 +49,7 @@ def test_code_manager_reads_docker_runtime_from_config_or_env():
     src = Path("managers/code_manager.py").read_text(encoding="utf-8")
     assert "os.getenv(\"DOCKER_IMAGE\", \"\")" in src
     assert "os.getenv(\"DOCKER_PYTHON_IMAGE\", \"python:3.11-alpine\")" in src
-    assert "os.getenv(\"DOCKER_EXEC_TIMEOUT\", \"10\")" in src
+    assert "os.getenv(\"DOCKER_EXEC_TIMEOUT\", str(SANDBOX_LIMITS.get(\"timeout\", 10)))" in src
     assert "timeout=self.docker_exec_timeout" in src
 
 def test_code_manager_limits_output_size_for_sandbox_and_shell():

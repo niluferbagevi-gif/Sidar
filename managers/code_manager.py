@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from config import Config
+from config import Config, SANDBOX_LIMITS
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ class CodeManager:
         )
         self.docker_exec_timeout = (
             int(docker_exec_timeout) if docker_exec_timeout is not None
-            else int(os.getenv("DOCKER_EXEC_TIMEOUT", "10"))
+            else int(os.getenv("DOCKER_EXEC_TIMEOUT", str(SANDBOX_LIMITS.get("timeout", 10))))
         )
         self.max_output_chars = 10000
         self._lock = threading.RLock()
@@ -84,22 +84,23 @@ class CodeManager:
 
     def _resolve_sandbox_limits(self) -> Dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
-        limits = getattr(self.cfg, "SANDBOX_LIMITS", {}) or {}
+        limits = dict(SANDBOX_LIMITS)
+        limits.update(getattr(self.cfg, "SANDBOX_LIMITS", {}) or {})
 
         memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
-        cpus_raw = str(limits.get("cpus") or "").strip()
+        cpus = str(limits.get("cpus") or "0.5").strip()
         pids_limit = int(limits.get("pids_limit", 64))
         timeout = int(limits.get("timeout", self.docker_exec_timeout or 10))
         network_mode = str(limits.get("network") or "none").strip().lower()
 
         nano_cpus = self.docker_nano_cpus
-        if cpus_raw:
+        if cpus:
             try:
-                cpu_val = float(cpus_raw)
+                cpu_val = float(cpus)
                 if cpu_val > 0:
                     nano_cpus = int(cpu_val * 1_000_000_000)
             except (TypeError, ValueError):
-                logger.warning("Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.", cpus_raw)
+                logger.warning("Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.", cpus)
 
         if pids_limit < 1:
             pids_limit = 64
@@ -108,11 +109,43 @@ class CodeManager:
 
         return {
             "memory": memory,
+            "cpus": cpus,
             "nano_cpus": nano_cpus,
             "pids_limit": pids_limit,
             "timeout": timeout,
             "network_mode": network_mode,
         }
+
+    def _build_docker_cli_command(self, code: str, limits: Dict[str, object]) -> List[str]:
+        """Docker CLI ile sandbox çalıştırma komutunu oluşturur."""
+        return [
+            "docker", "run", "--rm",
+            f"--memory={limits['memory']}",
+            f"--cpus={limits['cpus']}",
+            f"--pids-limit={limits['pids_limit']}",
+            f"--network={limits['network_mode']}",
+            self.docker_image,
+            "python", "-c", code,
+        ]
+
+    def _execute_code_with_docker_cli(self, code: str, limits: Dict[str, object]) -> Tuple[bool, str]:
+        """Docker SDK başarısız olursa docker CLI ile çalıştırmayı dener."""
+        docker_cmd = self._build_docker_cli_command(code, limits)
+        result = subprocess.run(
+            docker_cmd,
+            capture_output=True,
+            text=True,
+            timeout=int(limits["timeout"]),
+            cwd=str(self.base_dir),
+        )
+        output = (result.stdout + result.stderr).strip()
+        if len(output) > self.max_output_chars:
+            output = output[:self.max_output_chars] + (
+                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+            )
+        if result.returncode != 0:
+            return False, f"REPL Hatası (Docker CLI Sandbox):\n{output or '(çıktı yok)'}"
+        return True, f"REPL Çıktısı (Docker CLI Sandbox):\n{output or '(kod çalıştı, çıktı yok)'}"
 
     def _init_docker(self):
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
@@ -374,13 +407,22 @@ class CodeManager:
                  f"Lütfen terminalde 'docker pull {self.docker_image}' komutunu çalıştırın."
              )
         except Exception as exc:
-            if self.security.level == SANDBOX:
+            sandbox_limits = self._resolve_sandbox_limits()
+            try:
+                return self._execute_code_with_docker_cli(code, sandbox_limits)
+            except subprocess.TimeoutExpired:
                 return False, (
-                    "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
-                    f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}"
+                    f"⚠ Zaman aşımı! Kod {sandbox_limits['timeout']} saniyeden uzun sürdü ve "
+                    "zorla durduruldu (sonsuz döngü koruması)."
                 )
-            logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", exc)
-            return self.execute_code_local(code)
+            except Exception as cli_exc:
+                if self.security.level == SANDBOX:
+                    return False, (
+                        "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
+                        f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}; CLI Detay: {cli_exc}"
+                    )
+                logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc)
+                return self.execute_code_local(code)
 
     def execute_code_local(self, code: str) -> Tuple[bool, str]:
         """
