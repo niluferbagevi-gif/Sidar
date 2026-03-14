@@ -193,7 +193,13 @@ async def basic_auth_middleware(request: Request, call_next):
         "/auth/login", "/auth/register",
         "/metrics", "/metrics/llm", "/metrics/llm/prometheus", "/api/budget",
     }
-    if request.method == "OPTIONS" or request.url.path in open_paths or request.url.path.startswith("/static/"):
+    if (
+        request.method == "OPTIONS"
+        or request.url.path in open_paths
+        or request.url.path.startswith("/static/")
+        or request.url.path.startswith("/vendor/")
+        or request.url.path == "/favicon.ico"
+    ):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")

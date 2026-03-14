@@ -1877,6 +1877,10 @@ def test_web_server_additional_coverage_edges(monkeypatch):
     assert opt.status_code == 200
     static = asyncio.run(mod.basic_auth_middleware(_FakeRequest(path="/static/app.js"), _next))
     assert static.status_code == 200
+    vendor = asyncio.run(mod.basic_auth_middleware(_FakeRequest(path="/vendor/highlight.min.js"), _next))
+    assert vendor.status_code == 200
+    fav = asyncio.run(mod.basic_auth_middleware(_FakeRequest(path="/favicon.ico"), _next))
+    assert fav.status_code == 200
 
     async def _always_limit(*_args, **_kwargs):
         return True

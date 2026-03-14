@@ -74,6 +74,12 @@ function quickTask(text) {
   });
 });
 
+
+function hasAuthToken() {
+  const token = localStorage.getItem('sidar_access_token');
+  return !!(token && token.trim());
+}
+
 /* ─── Streaming durdur ──────────────────────────────────── */
 function stopStreaming() {
   if (!isStreaming) return;
@@ -87,18 +93,17 @@ function connectWebSocket() {
     return;
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('sidar_access_token') || '';
+  if (!token.trim()) {
+    return;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
   chatSocket = new WebSocket(wsUrl);
 
 
   chatSocket.onopen = () => {
-    if (!token) {
-      showAuthOverlay('Oturum bulunamadı. Lütfen giriş yapın.');
-      chatSocket.close(1008, 'Authentication required');
-      return;
-    }
     chatSocket.send(JSON.stringify({ action: 'auth', token }));
   };
 
@@ -597,6 +602,7 @@ function apAddTool(toolName, label) {
 }
 
 async function apRefreshTodos() {
+  if (!hasAuthToken()) return;
   try {
     const data = await (await fetchAPI('/todo')).json();
     const tasks = data.tasks || [];
@@ -637,6 +643,7 @@ function closeTodoPanel() {
 }
 
 async function fetchTodo() {
+  if (!hasAuthToken()) return;
   try {
     const data = await (await fetchAPI('/todo')).json();
     renderTodoPanel(data.tasks || []);
@@ -684,6 +691,7 @@ function updateTodoIndicator(activeCount) {
 
 function startTodoPoll() {
   stopTodoPoll();
+  if (!hasAuthToken()) return;
   fetchTodo(); // Hemen bir kez al
   _todoPollTimer = setInterval(fetchTodo, 5000);
 }
@@ -693,4 +701,12 @@ function stopTodoPoll() {
 }
 
 // Sayfa yüklendiğinde polling başlat
-window.addEventListener('load', () => { connectWebSocket(); setTimeout(startTodoPoll, 1500); });
+window.addEventListener('load', () => {
+  if (!hasAuthToken()) return;
+  connectWebSocket();
+  setTimeout(startTodoPoll, 1500);
+});
+
+window.connectWebSocket = connectWebSocket;
+window.startTodoPoll = startTodoPoll;
+window.fetchTodo = fetchTodo;
