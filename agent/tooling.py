@@ -96,7 +96,7 @@ for _schema in TOOL_ARG_SCHEMAS.values():
 
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
-    """Şema tanımlı araçlar için JSON/legacy argümanı typed modele dönüştür."""
+    """Şema tanımlı araçlar için yalnızca JSON object argümanı typed modele dönüştür."""
     schema = TOOL_ARG_SCHEMAS.get(tool_name)
     if schema is None:
         return raw_arg
@@ -105,104 +105,17 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
     if not text:
         return schema.model_validate({})
 
-    # 1) Öncelik: doğrudan JSON object
+    # Yalnızca JSON object formatı desteklenir.
     try:
         payload = json.loads(text)
         if isinstance(payload, dict):
             return schema.model_validate(payload)
+        raise ValueError("Argüman JSON object olmalıdır")
     except json.JSONDecodeError:
-        pass
-
-    # 2) Legacy delimiter formatları
-    parts = text.split("|||")
-    if schema is WriteFileSchema:
-        if len(parts) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return WriteFileSchema(path=parts[0].strip(), content=parts[1])
-
-    if schema is PatchFileSchema:
-        if len(parts) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return PatchFileSchema(path=parts[0].strip(), old_text=parts[1], new_text=parts[2])
-
-    if schema is GithubListFilesSchema:
-        return GithubListFilesSchema(
-            path=parts[0].strip() if parts else "",
-            branch=parts[1].strip() if len(parts) > 1 and parts[1].strip() else None,
+        raise ValueError(
+            f"'{tool_name}' için legacy '|||' formatı kaldırıldı. "
+            "JSON object argümanı gönderin."
         )
-
-    if schema is GithubWriteSchema:
-        if len(parts) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubWriteSchema(
-            path=parts[0].strip(),
-            content=parts[1],
-            commit_message=parts[2].strip(),
-            branch=parts[3].strip() if len(parts) > 3 and parts[3].strip() else None,
-        )
-
-    if schema is GithubCreateBranchSchema:
-        if not parts or not parts[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateBranchSchema(
-            branch_name=parts[0].strip(),
-            from_branch=parts[1].strip() if len(parts) > 1 and parts[1].strip() else None,
-        )
-
-    if schema is GithubCreatePRSchema:
-        if len(parts) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreatePRSchema(
-            title=parts[0].strip(),
-            body=parts[1],
-            head=parts[2].strip(),
-            base=parts[3].strip() if len(parts) > 3 and parts[3].strip() else None,
-        )
-
-    if schema is GithubListPRsSchema:
-        state = parts[0].strip() if parts and parts[0].strip() else "open"
-        try:
-            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-        except ValueError:
-            limit = 10
-        return GithubListPRsSchema(state=state, limit=limit)
-
-    if schema is GithubListIssuesSchema:
-        state = parts[0].strip() if parts and parts[0].strip() else "open"
-        try:
-            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-        except ValueError:
-            limit = 10
-        return GithubListIssuesSchema(state=state, limit=limit)
-
-    if schema is GithubCreateIssueSchema:
-        if len(parts) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateIssueSchema(title=parts[0].strip(), body=parts[1])
-
-    if schema is GithubCommentIssueSchema:
-        if len(parts) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCommentIssueSchema(number=int(parts[0].strip()), body=parts[1])
-
-    if schema is GithubCloseIssueSchema:
-        if not parts or not parts[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCloseIssueSchema(number=int(parts[0].strip()))
-
-    if schema is GithubPRDiffSchema:
-        if not parts or not parts[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubPRDiffSchema(number=int(parts[0].strip()))
-
-    if schema is ScanProjectTodosSchema:
-        directory = parts[0].strip() if parts and parts[0].strip() else None
-        ext_list = None
-        if len(parts) > 1 and parts[1].strip():
-            ext_list = [e.strip() for e in parts[1].split(",") if e.strip()]
-        return ScanProjectTodosSchema(directory=directory, extensions=ext_list)
-
-    return raw_arg
 
 
 def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:

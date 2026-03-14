@@ -25,6 +25,33 @@ except Exception:  # OpenTelemetry opsiyoneldir
 logger = logging.getLogger(__name__)
 
 
+SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "thought": {"type": "string"},
+        "tool": {"type": "string"},
+        "argument": {"type": "string"},
+    },
+    "required": ["thought", "tool", "argument"],
+    "additionalProperties": False,
+}
+
+
+def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
+    """Sidar'ın tekil araç JSON formatını sağlayıcıya göre adapte eder."""
+    provider = (provider or "").lower()
+    if provider == "ollama":
+        return {"format": SIDAR_TOOL_JSON_SCHEMA}
+    if provider == "openai":
+        # Chat Completions endpointi için yaygın JSON object modu.
+        return {"response_format": {"type": "json_object"}}
+    if provider == "gemini":
+        return {"generation_config": {"response_mime_type": "application/json"}}
+    if provider == "anthropic":
+        return {}
+    return {}
+
+
 class LLMAPIError(RuntimeError):
     """Sağlayıcı çağrılarında standart hata sözleşmesi."""
 
@@ -213,16 +240,7 @@ class OllamaClient(BaseLLMClient):
             "options": options,
         }
         if json_mode:
-            payload["format"] = {
-                "type": "object",
-                "properties": {
-                    "thought": {"type": "string"},
-                    "tool": {"type": "string"},
-                    "argument": {"type": "string"},
-                },
-                "required": ["thought", "tool", "argument"],
-                "additionalProperties": False,
-            }
+            payload.update(build_provider_json_mode_config("ollama"))
 
         timeout = self._build_timeout()
         tracer = _get_tracer(self.config)
@@ -389,6 +407,9 @@ class GeminiClient(BaseLLMClient):
             "temperature": 0.2 if json_mode else temperature,
             "response_mime_type": "application/json" if json_mode else "text/plain",
         }
+        if json_mode:
+            gemini_cfg = build_provider_json_mode_config("gemini").get("generation_config", {})
+            gen_config.update(gemini_cfg)
 
         try:
             from google.generativeai.types import HarmBlockThreshold, HarmCategory
@@ -510,7 +531,7 @@ class OpenAIClient(BaseLLMClient):
             "temperature": temperature,
         }
         if json_mode:
-            payload["response_format"] = {"type": "json_object"}
+            payload.update(build_provider_json_mode_config("openai"))
 
         headers = {"Authorization": f"Bearer {api_key}"}
         timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
