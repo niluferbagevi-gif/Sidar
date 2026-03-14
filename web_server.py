@@ -148,7 +148,7 @@ async def get_agent() -> SidarAgent:
         async with _agent_lock:
             if _agent is None:
                 _agent = SidarAgent(cfg)
-                await _agent.initialize()
+                await _agent.memory.initialize()
                 _bind_llm_usage_sink(_agent)
     return _agent
 
@@ -1305,9 +1305,8 @@ async def github_webhook(
 
     if msg:
         logger.info("Webhook işlendi: %s", msg)
-        await asyncio.to_thread(agent.memory.add, "user", msg)
-        await asyncio.to_thread(
-            agent.memory.add,
+        await agent.memory.add("user", msg)
+        await agent.memory.add(
             "assistant",
             "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
         )
