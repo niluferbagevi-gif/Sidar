@@ -225,6 +225,12 @@ async function loginOrRegister(path, username, password) {
   hideAuthOverlay();
   renderUserProfile();
   await loadSessions();
+  if (typeof window.connectWebSocket === 'function') {
+    window.connectWebSocket();
+  }
+  if (typeof window.startTodoPoll === 'function') {
+    window.startTodoPoll();
+  }
 }
 
 function logoutUser() {
