@@ -144,12 +144,8 @@ class SidarAgent(SidarToolRegistryMixin):
             self._lock = asyncio.Lock()
 
         async with self._lock:
-            if hasattr(self.memory, "aadd"):
-                await self.memory.aadd("user", user_input)
-                await self.memory.aadd("assistant", multi_result)
-            else:
-                self.memory.add("user", user_input)
-                self.memory.add("assistant", multi_result)
+            await self.memory.aadd("user", user_input)
+            await self.memory.aadd("assistant", multi_result)
 
         yield multi_result
 
@@ -496,14 +492,11 @@ class SidarAgent(SidarToolRegistryMixin):
     #  YARDIMCI METODLAR
     # ─────────────────────────────────────────────
 
-    def clear_memory(self) -> str:
-        if hasattr(self.memory, "aclear"):
-            asyncio.run(self.memory.aclear())
-        else:
-            self.memory.clear()
+    async def clear_memory(self) -> str:
+        await self.memory.aclear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
-    def set_access_level(self, new_level: str) -> str:
+    async def set_access_level(self, new_level: str) -> str:
         """
         Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
         sohbet belleğine kalıcı olarak yazar.
@@ -517,26 +510,15 @@ class SidarAgent(SidarToolRegistryMixin):
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            if hasattr(self.memory, "aadd"):
-                asyncio.run(self.memory.aadd("user", msg))
-                asyncio.run(self.memory.aadd(
-                    "assistant",
-                    (
-                        "Anlaşıldı, bundan sonraki işlemlerde "
-                        f"'{self.security.level_name}' seviyesinin güvenlik "
-                        "kurallarına ve yetkilerine göre hareket edeceğim."
-                    ),
-                ))
-            else:
-                self.memory.add("user", msg)
-                self.memory.add(
-                    "assistant",
-                    (
-                        "Anlaşıldı, bundan sonraki işlemlerde "
-                        f"'{self.security.level_name}' seviyesinin güvenlik "
-                        "kurallarına ve yetkilerine göre hareket edeceğim."
-                    ),
-                )
+            await self.memory.aadd("user", msg)
+            await self.memory.aadd(
+                "assistant",
+                (
+                    "Anlaşıldı, bundan sonraki işlemlerde "
+                    f"'{self.security.level_name}' seviyesinin güvenlik "
+                    "kurallarına ve yetkilerine göre hareket edeceğim."
+                ),
+            )
             return (
                 f"✓ Erişim seviyesi '{self.security.level_name}' olarak güncellendi "
                 "ve sohbet belleğine işlendi."

@@ -81,7 +81,7 @@ class AutoHandle:
             return False, ""
 
         # ── Temel araçlar (Senkron) ──────────────────────────
-        result = self._try_clear_memory(t)
+        result = await self._try_clear_memory(t)
         if result[0]: return result
 
         result = self._try_list_directory(t, text)
@@ -167,7 +167,7 @@ class AutoHandle:
         if cmd in ("status", "health"):
             return await self._try_health(f".{cmd}")
         if cmd == "clear":
-            return self._try_clear_memory(".clear")
+            return await self._try_clear_memory(".clear")
         if cmd == "audit":
             return await self._try_audit(".audit")
         if cmd == "gpu":
@@ -395,7 +395,7 @@ class AutoHandle:
             return True, self.code.security.status_report()
         return False, ""
 
-    def _try_clear_memory(self, t: str) -> Tuple[bool, str]:
+    async def _try_clear_memory(self, t: str) -> Tuple[bool, str]:
         """'.clear' veya doğal dil temizleme komutlarını işler."""
         if re.search(
             r"^\.clear\b|bell[eə][ğg]i?\s+(temizle|sıfırla|sil|resetle)"
@@ -404,7 +404,7 @@ class AutoHandle:
             r"|hafıza[yı]?\s+(temizle|sıfırla|sil|resetle)",
             t,
         ):
-            self.memory.clear()
+            await self.memory.aclear()
             return True, "✓ Konuşma belleği temizlendi."
         return False, ""
 
