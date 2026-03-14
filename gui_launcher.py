@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from typing import Dict, Any
 
 from main import build_command, execute_command, preflight
@@ -80,8 +81,14 @@ def start_gui() -> None:
             "Eel kurulu değil. Kurmak için: pip install eel"
         ) from exc
 
-    gui_dir = Path(__file__).resolve().parent / "launcher_gui"
-    eel.init(str(gui_dir))
+    project_root = Path(__file__).resolve().parent
+    gui_dir = project_root / "launcher_gui"
+    if not gui_dir.exists():
+        raise RuntimeError(f"Launcher GUI klasörü bulunamadı: {gui_dir}")
+
+    # Eel static root için göreli path daha güvenilir; çalışma dizinini proje köküne sabitleriz.
+    os.chdir(project_root)
+    eel.init("launcher_gui")
     eel.expose(start_sidar)
 
     eel.start(
