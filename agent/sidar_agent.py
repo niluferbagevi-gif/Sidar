@@ -164,6 +164,8 @@ class SidarAgent:
 
         # Tek omurga: supervisor tabanlı multi-agent
         self._supervisor = None
+        self._initialized = False
+        self._init_lock: Optional[asyncio.Lock] = None
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -172,6 +174,18 @@ class SidarAgent:
             self.cfg.CODING_MODEL,
             self.cfg.ACCESS_LEVEL,
         )
+
+
+    async def initialize(self) -> None:
+        if self._initialized:
+            return
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        async with self._init_lock:
+            if self._initialized:
+                return
+            await self.memory.initialize()
+            self._initialized = True
 
     # ─────────────────────────────────────────────
     #  ANA YANIT METODU (ASYNC STREAMING)
@@ -186,6 +200,8 @@ class SidarAgent:
             yield "⚠ Boş girdi."
             return
 
+        await self.initialize()
+
         # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
 
@@ -193,8 +209,8 @@ class SidarAgent:
             self._lock = asyncio.Lock()
 
         async with self._lock:
-            await asyncio.to_thread(self.memory.add, "user", user_input)
-            await asyncio.to_thread(self.memory.add, "assistant", multi_result)
+            await self.memory.add("user", user_input)
+            await self.memory.add("assistant", multi_result)
 
         yield multi_result
 
@@ -408,7 +424,7 @@ class SidarAgent:
                     # Boş argument güvenlik ağı: JS'de falsy olduğu için UI "yanıt alınamadı" gösterir.
                     if not str(tool_arg).strip():
                         tool_arg = "✓ İşlem tamamlandı."
-                    await asyncio.to_thread(self.memory.add, "assistant", tool_arg)
+                    await self.memory.add("assistant", tool_arg)
                     yield str(tool_arg)
                     return
 

@@ -148,6 +148,7 @@ async def get_agent() -> SidarAgent:
         async with _agent_lock:
             if _agent is None:
                 _agent = SidarAgent(cfg)
+                await _agent.initialize()
                 _bind_llm_usage_sink(_agent)
     return _agent
 
@@ -1349,9 +1350,10 @@ def main() -> None:
         cfg.AI_PROVIDER = args.provider
 
     # Ajan önceden başlat (ilk istekte gecikme olmasın).
-    # SidarAgent.__init__ senkrondur; asyncio.run() gerekmez.
+    # Bellek katmanı native-async olduğu için initialize() adımı burada tamamlanır.
     global _agent
     _agent = SidarAgent(cfg)
+    asyncio.run(_agent.initialize())
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
     version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"
