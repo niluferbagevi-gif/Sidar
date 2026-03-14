@@ -48,6 +48,6 @@ jobs:
         run: |
           pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
 
-      - name: Enforce coverage quality gate (95%)
+      - name: Enforce coverage quality gate (99.9%)
         run: |
-          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=95
+          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9

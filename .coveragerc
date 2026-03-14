@@ -3,6 +3,6 @@ omit =
     tests/*
 
 [report]
-fail_under = 95
+fail_under = 99.9
 show_missing = True
 skip_covered = True
