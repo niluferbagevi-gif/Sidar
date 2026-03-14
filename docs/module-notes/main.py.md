@@ -24,3 +24,13 @@
 python main.py --quick web --host 0.0.0.0 --port 7860
 python main.py --quick cli --provider gemini --level sandbox
 python main.py --quick web --capture-output --child-log logs/child.log
+python main.py --quick cli --provider ollama --model qwen2.5-coder:7b --log debug
+```
+
+**Varsayılan Değerler ve Ekstra Parametreler:**
+
+- `--log`: `info` (varsayılan), `debug`, `warning`
+- `--model`: Ollama için varsayılan model `qwen2.5-coder:7b`
+- Web varsayılanları: Host `0.0.0.0`, Port `7860`
+
+**Mimari Not:** `DummyConfig` fallback sınıfı ile `config.py` olmadan da çalışır.
