@@ -82,6 +82,38 @@ class CodeManager:
             return ""
         return runtime
 
+    def _resolve_sandbox_limits(self) -> Dict[str, object]:
+        """Docker çalıştırma limitlerini normalize eder (cgroups)."""
+        limits = getattr(self.cfg, "SANDBOX_LIMITS", {}) or {}
+
+        memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
+        cpus_raw = str(limits.get("cpus") or "").strip()
+        pids_limit = int(limits.get("pids_limit", 64))
+        timeout = int(limits.get("timeout", self.docker_exec_timeout or 10))
+        network_mode = str(limits.get("network") or "none").strip().lower()
+
+        nano_cpus = self.docker_nano_cpus
+        if cpus_raw:
+            try:
+                cpu_val = float(cpus_raw)
+                if cpu_val > 0:
+                    nano_cpus = int(cpu_val * 1_000_000_000)
+            except (TypeError, ValueError):
+                logger.warning("Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.", cpus_raw)
+
+        if pids_limit < 1:
+            pids_limit = 64
+        if timeout < 1:
+            timeout = 10
+
+        return {
+            "memory": memory,
+            "nano_cpus": nano_cpus,
+            "pids_limit": pids_limit,
+            "timeout": timeout,
+            "network_mode": network_mode,
+        }
+
     def _init_docker(self):
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
         try:
@@ -247,8 +279,8 @@ class CodeManager:
         Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
         - Ağ erişimi kapalı (network_disabled=True)
         - Dosya sistemi okunaksız/geçici
-        - Bellek kısıtlaması (128 MB)
-        - Zaman aşımı koruması (10 saniye)
+        - Bellek/CPU/PID kotaları (cgroups)
+        - Zaman aşımı koruması (configurable)
         """
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
@@ -269,6 +301,8 @@ class CodeManager:
             # 'python -c "kod"' formatında çalışacak
             command = ["python", "-c", code]
 
+            sandbox_limits = self._resolve_sandbox_limits()
+
             # Konteyneri başlat (Arka planda ayrılmış olarak)
             run_kwargs = {
                 "image": self.docker_image,
@@ -276,10 +310,11 @@ class CodeManager:
                 "detach": True,
                 "remove": False,
                 "working_dir": "/tmp",
-                "mem_limit": self.docker_mem_limit,
-                "nano_cpus": self.docker_nano_cpus,
+                "mem_limit": sandbox_limits["memory"],
+                "nano_cpus": sandbox_limits["nano_cpus"],
+                "pids_limit": sandbox_limits["pids_limit"],
             }
-            if self.docker_network_disabled:
+            if self.docker_network_disabled or sandbox_limits["network_mode"] == "none":
                 run_kwargs["network_mode"] = "none"
             selected_runtime = self._resolve_runtime()
             if selected_runtime:
@@ -288,7 +323,7 @@ class CodeManager:
             container = self.docker_client.containers.run(**run_kwargs)
 
             # Zaman aşımı takibi (Config'den okunur, varsayılan 10 sn)
-            timeout = self.docker_exec_timeout
+            timeout = int(sandbox_limits["timeout"])
             start_time = time.time()
 
             while True:

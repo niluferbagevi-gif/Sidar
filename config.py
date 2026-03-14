@@ -122,6 +122,17 @@ if ENV_PATH.exists():
     logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
 
 # ═══════════════════════════════════════════════════════════════
+# SANDBOX KAYNAK KOTALARI (Docker/cgroups)
+# ═══════════════════════════════════════════════════════════════
+SANDBOX_LIMITS = {
+    "memory": os.getenv("SANDBOX_MEMORY", "256m"),
+    "cpus": os.getenv("SANDBOX_CPUS", "0.5"),
+    "pids_limit": get_int_env("SANDBOX_PIDS_LIMIT", 64),
+    "network": os.getenv("SANDBOX_NETWORK", "none"),
+    "timeout": get_int_env("SANDBOX_TIMEOUT", 10),
+}
+
+# ═══════════════════════════════════════════════════════════════
 # DONANIM TESPİTİ
 # ═══════════════════════════════════════════════════════════════
 
@@ -358,6 +369,7 @@ class Config:
     RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
+    SANDBOX_LIMITS: Dict[str, Any] = dict(SANDBOX_LIMITS)
     DOCKER_PYTHON_IMAGE: str = os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
     DOCKER_RUNTIME: str = os.getenv("DOCKER_RUNTIME", "")
     DOCKER_ALLOWED_RUNTIMES: List[str] = get_list_env("DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
