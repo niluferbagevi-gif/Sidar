@@ -134,7 +134,7 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-<pre>
+<div style="font-family: monospace; white-space: pre;">
 sidar_project/
 ├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
 ├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı başlatıcı (wizard + --quick mod)
@@ -229,7 +229,7 @@ sidar_project/
 ├── <a href="docs/module-notes/README.md.md">README.md</a>                  # Proje tanıtım ve kurulum belgesi
 ├── <a href="docs/module-notes/RFC-MultiAgent.md.md">RFC-MultiAgent.md</a>          # Multi-agent mimari tasarım dokümanı
 └── <a href="docs/module-notes/SIDAR.md.md">SIDAR.md</a>                   # Sistem promptları ve proje kuralları
-</pre>
+</div>
 
 ---
 
