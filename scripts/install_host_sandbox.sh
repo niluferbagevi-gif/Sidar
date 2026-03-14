@@ -178,6 +178,7 @@ Not:
 - gVisor için: DOCKER_MICROVM_MODE=gvisor
 - Kata için:   DOCKER_MICROVM_MODE=kata
 - Override gerekirse: DOCKER_RUNTIME=runsc|kata-runtime
+- Sandbox çalıştırmaları Docker cgroups limitleri ile sınırlandırılır: memory/cpus/pids/network/timeout (config.py -> SANDBOX_LIMITS).
 HINT
 }
 
