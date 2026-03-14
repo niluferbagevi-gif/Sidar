@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak doğrulandı; satır sayıları ve dosya envanteri güncel ölçümlerle eşleştirildi)
+> **Son Güncelleme:** 2026-03-15 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak doğrulandı; satır sayıları ve dosya envanteri güncel ölçümlerle eşleştirildi; Bölüm 11 teknik borç durumları kaynak kod incelemesiyle güncellendi — 3 borç kapatıldı, 1 kısmen çözüldü, 1 AÇIK)
 > **Proje Sürümü:** 3.0.0
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.160 satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.239** satır.
@@ -842,17 +842,20 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 - Senkron (blocking) ağ/işlem yollarından async çekirdeğe geçiş,
 - Tekli ajan akışından Supervisor-first multi-agent + P2P QA mimarisine geçiş,
 - Zero-Trust güvenlik katmanları (sandbox, path/symlink savunmaları, auth sertleşmesi),
-- CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması.
+- CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması,
+- `core/memory.py` Sync/Async köprüsü (`_run_coro_sync`) kaldırılarak tam async dönüşüm,
+- `agent/sidar_agent.py` ölü kod (`_react_loop`, `_tool_*`) temizliği (1.651 → 448 satır),
+- Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu).
 
-### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
+### 11.2 Yeni Nesil Kurumsal Teknik Borçlar
 
 | # | Sorun | Dosya/Alan | Etki | Öncelik | Durum |
 |---|-------|------------|------|---------|-------|
-| 1 | Sync/Async köprü maliyeti (`_run_coro_sync`) | `core/memory.py` | Event loop içinden thread-bridge ile çağrı maliyeti ve debug karmaşıklığı artıyor; tam async dönüşüm ihtiyacı sürüyor | Orta | ⚠ **AÇIK** |
-| 2 | Vanilla JS UI ölçeklenme riski | `web_ui/*.js` | Event stream + dashboard + auth durumları büyüdükçe DOM/state yönetimi karmaşıklaşıyor; component tabanlı çatı ihtiyacı doğuyor | Orta | ⚠ **AÇIK** |
-| 3 | Sağlayıcılar arası tool-calling şema farkları | `core/llm_client.py`, `agent/tooling.py` | OpenAI/Anthropic/Gemini format farkları if/else yüzeyini büyütüyor; soyutlama sızıntısı riski | Orta | ⚠ **AÇIK** |
-| 4 | Sandbox kaynak kotası standardizasyonu (cgroups) | `managers/code_manager.py`, Docker runtime profilleri | İzolasyon mevcut olsa da host profilleri arasında CPU/RAM limit standardı daha da sertleştirilmeli | Orta | ⚠ **AÇIK** |
-| 5 | `sidar_agent.py` ölü kod temizliği | `agent/sidar_agent.py` | Supervisor mimarisine geçiş sonrası yetim kalan (orphaned) eski `_react_loop` ve `_tool_*` metotları dosyada bakım maliyeti yaratıyor; temizlenmesi önerilir | Düşük | ⚠ **AÇIK** |
+| 1 | ~~Sync/Async köprü maliyeti (`_run_coro_sync`)~~ | `core/memory.py` | `_run_coro_sync` bridge tamamen kaldırıldı; `ConversationMemory` tüm metodlar (`add`, `initialize`, `get_history`, `set_active_user` vb.) tam `async/await` ile yeniden yazıldı. Event loop bloklaması riski ortadan kalktı. | Orta | ✅ **ÇÖZÜLDÜ** |
+| 2 | Vanilla JS UI ölçeklenme riski | `web_ui/*.js` | `app.js:5–37` içinde `window.UIStore` (merkezi state store), `getCachedEl` (DOM önbellekleme), `fetchAPI` (token-inject merkezi çağrı) ve `reportUIError` yardımcıları eklenerek ölçeklenme riski kısmen hafifletilmiştir. Ancak global `let` değişkenleri (`isStreaming`, `currentSessionId`, `currentBranch` vb.) hem doğrudan hem `_setState()` ile **çift yönetilmektedir** (tutarsız durum). Dosyalar arası koordinasyon `window.*` global namespace üzerinden sürmekte; activity panel, todo panel, session panel ve modaller birbirinden izole state adacıkları olarak büyümektedir. Tam component soyutlaması (React/Vue/Svelte) henüz yapılmamıştır. | Orta | ⚠ **AÇIK** (kısmen hafifletildi) |
+| 3 | Sağlayıcılar arası tool-calling şema farkları | `core/llm_client.py`, `agent/tooling.py` | `BaseLLMClient` soyut sınıfı ve sağlayıcıya özel alt sınıflar (`OllamaClient`, `GeminiClient`, `OpenAIClient`, `AnthropicClient`) oluşturularak if/else yüzeyi OOP'a taşındı. `build_provider_json_mode_config()` ile JSON mod konfigürasyonu standartlaştırıldı. Ancak provider-specific format farkları (streaming yapısı, response şeması) soyutlama içinde hâlâ mevcut; tam soyutlama sızıntısız değil. | Orta | 🟡 **KISMEN ÇÖZÜLDÜ** |
+| 4 | ~~Sandbox kaynak kotası standardizasyonu (cgroups)~~ | `managers/code_manager.py` | `_resolve_sandbox_limits()` metodu eklenerek memory, cpus (→nano_cpus), pids_limit, timeout, network_mode tek merkezden normalize ediliyor. `SANDBOX_LIMITS` dict ile merkezi konfigürasyon desteği ve geçersiz değer koruması (pids_limit < 1 → 64, CPU ValueError handling) sağlandı. | Orta | ✅ **ÇÖZÜLDÜ** |
+| 5 | ~~`sidar_agent.py` ölü kod temizliği~~ | `agent/sidar_agent.py` | `_react_loop` ve `_tool_*` metodları tamamen kaldırıldı. Dosya 1.651 satırdan 448 satıra indirildi; yalnızca `respond()`, `_try_multi_agent()`, `_build_context()`, `_summarize_memory()` gibi aktif Supervisor-first metodları kaldı. Bakım maliyeti önemli ölçüde azaldı. | Düşük | ✅ **ÇÖZÜLDÜ** |
 
 
 ## 12. `.env` Tam Değişken Referansı
