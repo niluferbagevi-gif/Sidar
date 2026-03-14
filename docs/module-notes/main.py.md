@@ -1,68 +1,105 @@
-# 3.2 `main.py` — Akıllı Başlatıcı (225 satır)
+# `main.py` Modül Notları (Güncel)
 
-<<<<<<< HEAD
-- **Kaynak dosya:** `main.py`
-- **Not dosyası:** `docs/module-notes/main.py.md`
-- **Amaç:** Bu not dosyası, rapordaki **3.1 `config.py` — Merkezi Yapılandırma** bölüm içeriğinin taşınmış sürümünü içerir.
-- **Durum:** İncelendi ve rapordan modül-notlarına taşındı.
+Bu doküman, projenin giriş başlatıcısı olan `main.py` dosyasının **sorumluluğunu**, **çalışma akışını** ve **bağımlılıklarını** özetler.
 
----
+## 1) Ne işe yarar?
 
-## 3.1 `config.py` — Merkezi Yapılandırma (589 satır)
+`main.py`, Sidar için bir **launcher/orchestrator** görevi görür:
 
-**Amaç:** Tüm sistem ayarlarını tek noktada toplar; `.env` dosyasını yükler, donanım tespiti yapar ve v3.0 kurumsal çalışma profillerini merkezi olarak yönetir.
+- Etkileşimli sihirbaz (wizard) ile kullanıcıdan mod/sağlayıcı/erişim/log seçimleri alır.
+- `--quick` parametresi ile sihirbazı atlayıp doğrudan hızlı başlatma yapar.
+- Seçimlere göre hedef scripti belirleyip alt süreçte çalıştırır:
+  - `cli.py` (CLI modu)
+  - `web_server.py` (Web modu)
+- Çalıştırma öncesinde temel `preflight` kontrollerini yapar.
+- İsteğe bağlı olarak alt süreç stdout/stderr çıktısını canlı akıtır ve dosyaya kaydeder.
 
-**Kritik Bileşenler:**
+## 2) Çalışma akışı
 
-| Bileşen | Açıklama |
-|---------|----------|
-| `get_bool_env / get_int_env / get_float_env / get_list_env` | Type-safe ortam değişkeni okuma yardımcıları |
-| `HardwareInfo` (dataclass) | CUDA/WSL2 donanım tespiti sonuçlarını tutar |
-| `Config` (sınıf) | Tüm sistem parametrelerini sınıf attribute olarak toplar |
-| `validate_critical_settings()` | Sağlayıcı anahtarları, şifreleme anahtarı ve kritik ayar doğrulamaları |
+1. `config.py` içinden `Config` yüklenmeye çalışılır.
+2. `config.py` yoksa `DummyConfig` ile güvenli varsayılanlara düşülür.
+3. Kullanıcı:
+   - sihirbaz modunda (`python main.py`) etkileşimli seçim yapar, veya
+   - hızlı modda (`python main.py --quick ...`) argümanlarla ilerler.
+4. `preflight(provider)` çağrısı ile:
+   - Python sürümü,
+   - `.env` varlığı,
+   - provider API anahtarları,
+   - Ollama ağ erişimi (mümkünse `httpx` ile)
+   kontrol edilir.
+5. `build_command(...)` ile çalıştırılacak komut inşa edilir.
+6. `execute_command(...)` ile alt süreç başlatılır.
 
-**`Config` Sınıfı Parametre Grupları (v3.0):**
+## 3) Girdi argümanları
 
-- **AI Sağlayıcı:** `AI_PROVIDER`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, model seçim parametreleri
-- **Veritabanı:** `DATABASE_URL`, `DB_POOL_SIZE`, `DB_SCHEMA_VERSION_TABLE`, `DB_SCHEMA_TARGET_VERSION`
-- **Güvenlik:** `ACCESS_LEVEL`, `MEMORY_ENCRYPTION_KEY`
-- **Docker Zero-Trust Sandbox:** `DOCKER_NETWORK_DISABLED`, `DOCKER_MEM_LIMIT`, `DOCKER_NANO_CPUS`, `DOCKER_MICROVM_MODE`, `DOCKER_ALLOWED_RUNTIMES`, `DOCKER_RUNTIME`, `DOCKER_EXEC_TIMEOUT`
-- **Observability:** `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`
-- **Rate Limiting:** `RATE_LIMIT_CHAT`, `RATE_LIMIT_MUTATIONS`, `RATE_LIMIT_GET_IO`, `REDIS_URL`
-- **RAG:** `RAG_DIR`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_FILE_THRESHOLD`
-- **Mimari:** `ENABLE_MULTI_AGENT`, `REVIEWER_TEST_COMMAND`
+`main.py` şu ana argümanları destekler:
 
-**Dikkat Noktaları:**
-- Donanım bilgisi lazy-load yaklaşımıyla alınır; import anında ağır GPU yan etkisi oluşturmaz.
-- v3.0 ile DB ve sandbox parametreleri tek merkezden yönetildiği için runtime profiller arasında sapma riski düşürülmüştür.
-=======
-## Rapor İçeriği (Taşınan Bölüm)
+- `--quick {cli,web}`
+- `--provider {ollama,gemini,openai,anthropic}`
+- `--level {restricted,sandbox,full}`
+- `--model` (özellikle `cli + ollama` senaryosunda)
+- `--host`, `--port` (web için)
+- `--log` (`info`, `debug`, `warning`)
+- `--capture-output`
+- `--child-log <dosya>`
 
-**Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
+## 4) Hangi dosyalara/servislere ihtiyaç duyar?
 
-**Temel Fonksiyonlar:**
+### Doğrudan dosyalar
 
-| Fonksiyon | Açıklama |
-|-----------|----------|
-| `print_banner()` | ANSI renkli ASCII art banner |
-| `ask_choice(prompt, options, default_key)` | Güvenli menü seçimi (geçersiz giriş döngüsü) |
-| `ask_text(prompt, default)` | Metin girişi (Enter = varsayılan) |
-| `confirm(prompt, default_yes)` | Y/n onay istemi |
-| `preflight(provider)` | `.env` varlığı, Python sürümü, Ollama/Gemini/OpenAI/Anthropic erişim kontrolü |
-| `build_command(mode, provider, level, log, extra_args)` | `cli.py` veya `web_server.py` komutu oluşturur |
-| `_stream_pipe(pipe, file_obj, prefix, color, mirror)` | Thread'de pipe akışını bellek dostu okur |
-| `_run_with_streaming(cmd, child_log_path)` | Çocuk süreç stdout/stderr canlı yayınlar; opsiyonel dosya logu |
-| `execute_command(cmd, capture_output, child_log_path)` | `subprocess.run` veya streaming ile çalıştırır |
-| `run_wizard()` | 4 adımlı etkileşimli menü |
+- `main.py` (başlatıcı)
+- `cli.py` (CLI hedefi)
+- `web_server.py` (Web hedefi)
+- `config.py` (opsiyonel ama önerilir)
+- `.env` (opsiyonel, ortam değişkenleri için)
 
-**`--quick` Mod Argümanları:**
+### Çalışma zamanı koşulları
+
+- Python 3.10+ önerilir.
+- `provider=ollama` ise yerel Ollama servisinin erişilebilir olması beklenir.
+- Bulut sağlayıcılarda (`gemini/openai/anthropic`) ilgili API key ortamının tanımlı olması beklenir.
+
+## 5) Davranış notları
+
+- `--quick` yoksa her zaman etkileşimli sihirbaz açılır.
+- `cli + ollama` kombinasyonunda model parametresi komuta eklenir.
+- `web` modunda host/port komuta eklenir.
+- `--capture-output` veya `--child-log` verildiğinde çıktı akışı thread'lerle satır satır işlenir.
+- Alt süreç hata kodu launcher tarafından kullanıcıya raporlanır.
+
+## 6) Çalıştırma örnekleri
+
+### Etkileşimli sihirbaz
+
+```bash
+python main.py
 ```
-python main.py --quick web --host 0.0.0.0 --port 7860
-python main.py --quick cli --provider gemini --level sandbox
+
+### Hızlı web başlatma
+
+```bash
+python main.py --quick web --provider ollama --level full --host 0.0.0.0 --port 7860
+```
+
+### Hızlı CLI başlatma (Ollama modeli ile)
+
+```bash
+python main.py --quick cli --provider ollama --level sandbox --model qwen2.5-coder:7b
+```
+
+### Çıktı yakalama + dosyaya yazma
+
+```bash
 python main.py --quick web --capture-output --child-log logs/child.log
 ```
 
-**Mimari Not:** `DummyConfig` fallback sınıfı ile `config.py` olmadan da çalışır.
+## 7) Güncelleme kontrol listesi (maintainer checklist)
 
----
->>>>>>> origin/codex/transfer-3.1-config.py-details-to-main.py.md
+`main.py` güncellendiğinde bu dokümanda aşağıdakileri eşzamanlı güncelleyin:
+
+- [ ] Yeni/çıkarılan CLI argümanları
+- [ ] Yeni provider veya erişim seviyesi seçenekleri
+- [ ] `preflight` kontrol adımlarındaki değişiklikler
+- [ ] Hedef script seçimi (`cli.py` / `web_server.py`) veya komut üretim mantığı
+- [ ] Loglama/capture davranışındaki değişiklikler
+- [ ] Çalıştırma örnekleri
