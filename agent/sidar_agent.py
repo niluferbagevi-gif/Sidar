@@ -7,6 +7,7 @@ import logging
 import json
 import re
 import asyncio
+import inspect
 import time
 import threading
 from pathlib import Path
@@ -209,8 +210,8 @@ class SidarAgent:
             self._lock = asyncio.Lock()
 
         async with self._lock:
-            await self.memory.add("user", user_input)
-            await self.memory.add("assistant", multi_result)
+            await self._memory_add("user", user_input)
+            await self._memory_add("assistant", multi_result)
 
         yield multi_result
 
@@ -424,7 +425,7 @@ class SidarAgent:
                     # Boş argument güvenlik ağı: JS'de falsy olduğu için UI "yanıt alınamadı" gösterir.
                     if not str(tool_arg).strip():
                         tool_arg = "✓ İşlem tamamlandı."
-                    await self.memory.add("assistant", tool_arg)
+                    await self._memory_add("assistant", tool_arg)
                     yield str(tool_arg)
                     return
 
@@ -539,27 +540,16 @@ class SidarAgent:
 
     async def _tool_write_file(self, a: str | WriteFileSchema) -> str:
         """Bir dosyayı verilen içerikle tamamen yazar (overwrite)."""
-        if isinstance(a, WriteFileSchema):
-            path = a.path.strip()
-            content = a.content
-        else:
-            parts = a.split("|||", 1)
-            if len(parts) < 2:
-                return "⚠ Hatalı format. Kullanım: path|||content"
-            path = parts[0].strip()
-            content = parts[1]
+        arg = a if isinstance(a, WriteFileSchema) else parse_tool_argument("write_file", a)
+        path = arg.path.strip()
+        content = arg.content
         _, result = await asyncio.to_thread(self.code.write_file, path, content)
         return result
 
     async def _tool_patch_file(self, a: str | PatchFileSchema) -> str:
         """Dosyada eski metni yenisiyle değiştirerek yama uygular."""
-        if isinstance(a, PatchFileSchema):
-            path, old_text, new_text = a.path.strip(), a.old_text, a.new_text
-        else:
-            parts = a.split("|||")
-            if len(parts) < 3:
-                return "⚠ Hatalı patch formatı. Kullanım: path|||eski_kod|||yeni_kod"
-            path, old_text, new_text = parts[0].strip(), parts[1], parts[2]
+        arg = a if isinstance(a, PatchFileSchema) else parse_tool_argument("patch_file", a)
+        path, old_text, new_text = arg.path.strip(), arg.old_text, arg.new_text
         _, result = await asyncio.to_thread(self.code.patch_file, path, old_text, new_text)
         return result
 
@@ -600,60 +590,34 @@ class SidarAgent:
         return result
 
     async def _tool_github_list_files(self, a: str | GithubListFilesSchema) -> str:
-        """GitHub deposundaki dizin içeriğini listele. Argüman: 'path[|||branch]'"""
-        if isinstance(a, GithubListFilesSchema):
-            path, branch = a.path, a.branch
-        else:
-            parts = a.split("|||")
-            path = parts[0].strip() if parts else ""
-            branch = parts[1].strip() if len(parts) > 1 else None
+        """GitHub deposundaki dizin içeriğini listele."""
+        arg = a if isinstance(a, GithubListFilesSchema) else parse_tool_argument("github_list_files", a)
+        path, branch = arg.path, arg.branch
         _, result = self.github.list_files(path, branch)
         return result
 
     async def _tool_github_write(self, a: str | GithubWriteSchema) -> str:
-        """GitHub'a dosya yaz/güncelle. Argüman: 'path|||content|||commit_message[|||branch]'"""
-        if isinstance(a, GithubWriteSchema):
-            path, content, message, branch = a.path.strip(), a.content, a.commit_message.strip(), a.branch
-        else:
-            parts = a.split("|||")
-            if len(parts) < 3:
-                return "⚠ Hatalı format. Kullanım: path|||içerik|||commit_mesajı[|||branch]"
-            path = parts[0].strip()
-            content = parts[1]
-            message = parts[2].strip()
-            branch = parts[3].strip() if len(parts) > 3 else None
+        """GitHub'a dosya yaz/güncelle."""
+        arg = a if isinstance(a, GithubWriteSchema) else parse_tool_argument("github_write", a)
+        path, content, message, branch = arg.path.strip(), arg.content, arg.commit_message.strip(), arg.branch
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_or_update_file(path, content, message, branch)
         return result
 
     async def _tool_github_create_branch(self, a: str | GithubCreateBranchSchema) -> str:
-        """GitHub'da yeni dal oluştur. Argüman: 'branch_adı[|||kaynak_branch]'"""
-        if isinstance(a, GithubCreateBranchSchema):
-            branch_name, from_branch = a.branch_name, a.from_branch
-        else:
-            if not a:
-                return "⚠ Dal adı belirtilmedi."
-            parts = a.split("|||")
-            branch_name = parts[0].strip()
-            from_branch = parts[1].strip() if len(parts) > 1 else None
+        """GitHub'da yeni dal oluştur."""
+        arg = a if isinstance(a, GithubCreateBranchSchema) else parse_tool_argument("github_create_branch", a)
+        branch_name, from_branch = arg.branch_name, arg.from_branch
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_branch(branch_name, from_branch)
         return result
 
     async def _tool_github_create_pr(self, a: str | GithubCreatePRSchema) -> str:
-        """GitHub Pull Request oluştur. Argüman: 'başlık|||açıklama|||head_branch[|||base_branch]'"""
-        if isinstance(a, GithubCreatePRSchema):
-            title, body, head, base = a.title.strip(), a.body, a.head.strip(), a.base
-        else:
-            parts = a.split("|||")
-            if len(parts) < 3:
-                return "⚠ Hatalı format. Kullanım: başlık|||açıklama|||head_branch[|||base_branch]"
-            title = parts[0].strip()
-            body = parts[1]
-            head = parts[2].strip()
-            base = parts[3].strip() if len(parts) > 3 else None
+        """GitHub Pull Request oluştur."""
+        arg = a if isinstance(a, GithubCreatePRSchema) else parse_tool_argument("github_create_pr", a)
+        title, body, head, base = arg.title.strip(), arg.body, arg.head.strip(), arg.base
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.create_pull_request(title, body, head, base)
@@ -669,16 +633,9 @@ class SidarAgent:
         return result
 
     async def _tool_github_list_prs(self, a: str | GithubListPRsSchema) -> str:
-        """Pull Request listesi. Argüman: 'state[|||limit]' (state: open/closed/all)"""
-        if isinstance(a, GithubListPRsSchema):
-            state, limit = a.state, a.limit
-        else:
-            parts = a.split("|||")
-            state = parts[0].strip() if parts[0].strip() else "open"
-            try:
-                limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-            except ValueError:
-                limit = 10
+        """Pull Request listesi."""
+        arg = a if isinstance(a, GithubListPRsSchema) else parse_tool_argument("github_list_prs", a)
+        state, limit = arg.state, arg.limit
         if not self.github.is_available():
             return "⚠ GitHub token ayarlanmamış."
         _, result = self.github.list_pull_requests(state=state, limit=limit)
@@ -1313,8 +1270,8 @@ class SidarAgent:
             return None
         try:
             parsed_arg = parse_tool_argument(tool_name, raw_arg)
-        except Exception:
-            parsed_arg = raw_arg
+        except Exception as exc:
+            return f"⚠ Araç argümanı doğrulanamadı: {exc}"
 
         try:
             span_cm = self.tracer.start_as_current_span("tool_execution") if self.tracer else None
@@ -1620,7 +1577,9 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def clear_memory(self) -> str:
-        await self.memory.clear()
+        maybe = self.memory.clear()
+        if inspect.isawaitable(maybe):
+            await maybe
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     async def set_access_level(self, new_level: str) -> str:
@@ -1637,8 +1596,8 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            await self.memory.add("user", msg)
-            await self.memory.add(
+            await self._memory_add("user", msg)
+            await self._memory_add(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "
@@ -1651,6 +1610,11 @@ class SidarAgent:
                 "ve sohbet belleğine işlendi."
             )
         return f"ℹ Erişim seviyesi zaten '{self.security.level_name}'."
+
+    async def _memory_add(self, role: str, content: str) -> None:
+        maybe = self.memory.add(role, content)
+        if inspect.isawaitable(maybe):
+            await maybe
 
     def status(self) -> str:
         lines = [
