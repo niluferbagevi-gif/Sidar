@@ -1,5 +1,26 @@
 # Sürüm Geçmişi (Changelog)
 
+## [v3.0.1] - 2026-03-15
+Teknik borç temizleme yayını — tüm v3.0 nesil teknik borç kalemleri kapatıldı, Bölüm 11.2 tablosu sıfırlandı.
+
+### ✅ Ödenmiş Teknik Borçlar
+
+**[Borç #2 Çözüldü] Vanilla JS UI ölçeklenme riski (`web_ui/*.js`)**
+* `seedUIStore()` IIFE `app.js`'e eklenerek 12 paylaşımlı durum anahtarı (`isCurrentUserAdmin`, `isStreaming`, `msgCounter`, `currentRepo`, `currentBranch`, `defaultBranch`, `currentSessionId`, `attachedFileContent`, `attachedFileName`, `allSessions`, `cachedRepos`, `cachedBranches`) merkezi varsayılanlarla başlatıldı.
+* Tüm dosya genelindeki `let` global değişkenleri kaldırıldı; `chat.js` 10 `let` bildirimi, `sidebar.js` `_cachedBranches`, `app.js` `isCurrentUserAdmin` tamamen UIStore'a taşındı.
+* Çift yazma (double-write) anti-pattern'i kaldırıldı — `setUIState()` / `_setState()` tek ve yetkin kaynak oldu.
+* `sidebar.js`'e `_getState` shim'i eklendi; dosyalar arası tüm koordinasyon `window.UIStore.state` üzerinden yürüyor.
+* `app.js`: `loadGitInfo()` doğrudan global atamaları bıraktı, ESC kısayol ve DOMContentLoaded init UIStore okuyor.
+
+**[Borç #3 Çözüldü] Sağlayıcılar arası tool-calling şema farkları (`core/llm_client.py`)**
+* `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti eklendi — Anthropic'teki dağınık inline string kaldırıldı; tüm sağlayıcılar aynı talimat metnini kullanıyor.
+* `BaseLLMClient.json_mode_config()` soyut metodu eklendi — her alt sınıf kendi payload konfigürasyonunu kapsülüyor; `build_provider_json_mode_config()` dışarıdan string dispatch'e gerek kalmadı.
+* `BaseLLMClient._inject_json_instruction()` statik yardımcısı: mevcut system mesajına talimatı birleştirir, yoksa başa ekler.
+* `OllamaClient` → `{"format": SIDAR_TOOL_JSON_SCHEMA}` (değişmedi, metoda taşındı).
+* `GeminiClient` → `response_mime_type: application/json` + system_text'e talimat enjeksiyonu.
+* `OpenAIClient` → `json_object` yerine `json_schema` structured outputs (`strict: True`) + `_inject_json_instruction` ile system prompt enjeksiyonu.
+* `AnthropicClient` → `json_mode_config()` `{}` döndürür; sistem talimatı `SIDAR_TOOL_JSON_INSTRUCTION` sabiti üzerinden enjekte edilir.
+
 ## [v3.0.0] - 2026-03-11
 Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 
