@@ -1,13 +1,19 @@
+const _setState = window.setUIState || ((_k, v) => v);
+const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
+
 /* ─── Başlangıç ve Oturumlar (Sessions) ─────────────────── */
 async function loadSessions() {
   try {
     const res = await fetchAPI(apiUrl('/sessions'));
     const data = await res.json();
     currentSessionId = data.active_session;
+    _setState('currentSessionId', currentSessionId);
     allSessions = data.sessions || [];
+    _setState('allSessions', allSessions);
     renderSessionList(allSessions);
   } catch (err) {
     console.error("Oturumlar yüklenemedi:", err);
+    if (typeof reportUIError === "function") reportUIError(err, "Oturumlar yüklenemedi");
   }
 }
 
@@ -68,6 +74,7 @@ async function selectSession(id) {
     return;
   }
   currentSessionId = id;
+  _setState('currentSessionId', currentSessionId);
   await loadSessionHistory(id, true);
 }
 
@@ -104,6 +111,7 @@ async function createNewSession() {
     const data = await res.json();
     if (data.success) {
       currentSessionId = data.session_id;
+      _setState('currentSessionId', currentSessionId);
       document.getElementById('messages').innerHTML = '';
       document.getElementById('task-input').value = '';
       document.getElementById('input-area').value = '';
@@ -130,6 +138,7 @@ async function deleteSession(id, event) {
       await loadSessions();
       if (data.active_session && currentSessionId === id) {
          currentSessionId = data.active_session;
+         _setState('currentSessionId', currentSessionId);
          loadSessionHistory(currentSessionId, false);
       }
     }
@@ -171,7 +180,7 @@ let _cachedBranches = null;
 
 async function openRepoModal() {
   document.getElementById('repo-search').value = '';
-  document.getElementById('repo-modal').classList.add('open');
+  _getEl('repo-modal')?.classList.add('open');
 
   if (!_cachedRepos) {
     document.getElementById('repo-list').innerHTML =
@@ -180,8 +189,10 @@ async function openRepoModal() {
       const ownerHint = (currentRepo || '').includes('/') ? currentRepo.split('/')[0] : '';
       const data = await (await fetchAPI(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
       _cachedRepos = data.repos || [];
+      _setState('cachedRepos', _cachedRepos);
     } catch {
       _cachedRepos = [];
+      _setState('cachedRepos', _cachedRepos);
     }
   }
 
@@ -239,6 +250,7 @@ async function selectRepo(name) {
   }
 
   currentRepo = name;
+  _setState('currentRepo', currentRepo);
   _cachedBranches = null; // Repo değişince dal listesi önbelleğini sıfırla
   document.getElementById('repo-label').textContent = name;
   const srl = document.getElementById('sidebar-repo-label');
@@ -254,7 +266,7 @@ async function selectRepo(name) {
 
 async function openBranchModal() {
   document.getElementById('branch-search').value = '';
-  document.getElementById('branch-modal').classList.add('open');
+  _getEl('branch-modal')?.classList.add('open');
 
   // Gerçek dal listesini sunucudan çek (oturum boyunca önbelleğe al)
   if (!_cachedBranches) {
@@ -323,6 +335,7 @@ async function selectBranch(name) {
 
   // Başarılı: UI güncelle
   currentBranch = name;
+  _setState('currentBranch', currentBranch);
   _cachedBranches = null; // Dal listesi önbelleğini sıfırla
 
   document.getElementById('branch-label').textContent = name;

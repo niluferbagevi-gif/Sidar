@@ -2,16 +2,20 @@
 marked.setOptions({ breaks: true, gfm: true });
 
 /* ─── Değişkenler ───────────────────────────────────────── */
-let isStreaming    = false;
-let msgCounter     = 0;
-let currentRepo    = 'niluferbagevi-gif/sidar_project';
-let currentBranch  = 'main';
-let defaultBranch  = 'main';   // Repo'nun varsayılan hedef branch'i (PR base)
-let currentSessionId = null;
-let attachedFileContent = null;
-let attachedFileName    = null;
-let allSessions = [];
-let _cachedRepos = null;
+const _getState = window.getUIState || ((_, fb) => fb);
+const _setState = window.setUIState || ((_k, v) => v);
+const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
+
+let isStreaming = _getState('isStreaming', false);
+let msgCounter = _getState('msgCounter', 0);
+let currentRepo = _getState('currentRepo', 'niluferbagevi-gif/sidar_project');
+let currentBranch = _getState('currentBranch', 'main');
+let defaultBranch = _getState('defaultBranch', 'main'); // Repo'nun varsayılan hedef branch'i (PR base)
+let currentSessionId = _getState('currentSessionId', null);
+let attachedFileContent = _getState('attachedFileContent', null);
+let attachedFileName = _getState('attachedFileName', null);
+let allSessions = _getState('allSessions', []);
+let _cachedRepos = _getState('cachedRepos', null);
 const API_URL = window.location.origin;
 let chatSocket = null;
 let wsReconnectTimer = null;
@@ -22,7 +26,7 @@ function apiUrl(path) {
 }
 
 function showUiNotice(message, level = 'warn') {
-  const box = document.getElementById('ui-notice');
+  const box = _getEl('ui-notice');
   if (!box) return;
   box.className = `ui-notice ${level}`;
   box.textContent = message;
@@ -176,7 +180,9 @@ function handleFileAttach(e) {
   const reader = new FileReader();
   reader.onload = ev => {
     attachedFileContent = ev.target.result;
+    _setState('attachedFileContent', attachedFileContent);
     attachedFileName    = file.name;
+    _setState('attachedFileName', attachedFileName);
     renderAttachedFile(file.name);
   };
   reader.readAsText(file, 'utf-8');
@@ -184,7 +190,7 @@ function handleFileAttach(e) {
 }
 
 function renderAttachedFile(name) {
-  const preview = document.getElementById('attached-file-preview');
+  const preview = _getEl('attached-file-preview');
   preview.innerHTML = `
     <div class="attached-file">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -197,7 +203,9 @@ function renderAttachedFile(name) {
 
 function removeAttachedFile() {
   attachedFileContent = null;
+  _setState('attachedFileContent', attachedFileContent);
   attachedFileName    = null;
+  _setState('attachedFileName', attachedFileName);
   document.getElementById('attached-file-preview').innerHTML = '';
 }
 
@@ -224,6 +232,7 @@ async function sendText(text) {
   }
 
   isStreaming = true;
+  _setState('isStreaming', isStreaming);
   const sendBtn = document.getElementById('send-btn');
   const stopBtn = document.getElementById('stop-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.display = 'none'; }
@@ -250,6 +259,7 @@ function finishStreaming() {
   finalizeMsg(currentStream.msgId, currentStream.accumulated);
   currentStream = null;
   isStreaming = false;
+  _setState('isStreaming', isStreaming);
 
   if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
   if (stopBtn) stopBtn.style.display = 'none';
