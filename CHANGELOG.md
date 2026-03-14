@@ -10,6 +10,9 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
 * **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
 
+### 🗂️ Denetim Geçmişi Notu
+* v3.0.0 sonrası `PROJE_RAPORU.md` sadeleştirilmiş, tarihsel Audit/Session kapanış logları için birincil referans `CHANGELOG.md` olarak korunmuştur.
+
 ### Added (Eklenenler)
 * **[Veritabanı Altyapısı]:** Kalıcılık katmanı JSON modelinden async PostgreSQL + Alembic migration temeline taşındı.
 * **[Web Arayüzü]:** WebSocket destekli gerçek zamanlı Web UI üretim akışına alındı.
