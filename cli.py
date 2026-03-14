@@ -170,7 +170,7 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             print(agent.status())
             continue
         elif user_input.lower() in (".clear", "/clear", "/reset"):
-            print(agent.clear_memory())
+            print(await agent.clear_memory())
             continue
         elif user_input.lower() == ".audit":
             print(agent.code.audit_project("."))
@@ -187,7 +187,7 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
         elif user_input.lower().startswith(".level"):
             parts = user_input.strip().split(maxsplit=1)
             if len(parts) > 1:
-                print(f"\nSidar > {agent.set_access_level(parts[1])}\n")
+                print(f"\nSidar > {await agent.set_access_level(parts[1])}\n")
             else:
                 print(agent.security.status_report())
             continue

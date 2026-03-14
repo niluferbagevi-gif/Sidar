@@ -517,10 +517,7 @@ async def websocket_chat(websocket: WebSocket):
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
-                if hasattr(agent.memory, "aupdate_title"):
-                    await agent.memory.aupdate_title(title)
-                else:
-                    agent.memory.update_title(title)
+                await agent.memory.aupdate_title(title)
 
             event_bus = get_agent_event_bus()
             sub_id, status_queue = event_bus.subscribe()
@@ -712,10 +709,7 @@ async def metrics(request: Request):
     agent = await get_agent()
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
-    if hasattr(agent.memory, "aget_all_sessions"):
-        sessions = await agent.memory.aget_all_sessions()
-    else:
-        sessions = agent.memory.get_all_sessions()
+    sessions = await agent.memory.aget_all_sessions()
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
@@ -1226,10 +1220,7 @@ async def get_todo():
 async def clear():
     """Aktif konuşma belleğini temizle."""
     agent = await get_agent()
-    if hasattr(agent.memory, "aclear"):
-        await agent.memory.aclear()
-    else:
-        agent.memory.clear()
+    await agent.memory.aclear()
     return JSONResponse({"result": True})
 
 
@@ -1250,7 +1241,7 @@ async def set_level_endpoint(request: Request):
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
     agent = await get_agent()
-    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
+    result_msg = await agent.set_access_level(new_level)
     return JSONResponse(
         {
             "success": True,

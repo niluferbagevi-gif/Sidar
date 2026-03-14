@@ -174,11 +174,6 @@ class ConversationMemory:
             turns = list(self._turns)
         return turns if n_last is None else turns[-n_last:]
 
-    # ─────────────────────────────────────────────
-    #  SYNC UYUMLULUK KATMANI
-    # ─────────────────────────────────────────────
-
-
     async def aset_active_user(self, user_id: str, username: Optional[str] = None) -> None:
         await self._ainit_db()
         self.active_user_id = user_id
@@ -188,38 +183,6 @@ class ConversationMemory:
             await self.aload_session(sessions[0].id)
         else:
             await self.acreate_session("Yeni Sohbet")
-
-    def _run_async_compat(self, coro):
-        """Sadece geriye dönük sync kullanım için sınırlı uyumluluk katmanı."""
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        raise RuntimeError("ConversationMemory sync API artık event loop içinde kullanılamaz; async metotları kullanın.")
-
-    def set_active_user(self, user_id: str, username: Optional[str] = None) -> None:
-        self._run_async_compat(self.aset_active_user(user_id, username))
-
-    def get_all_sessions(self) -> List[Dict]:
-        return self._run_async_compat(self.aget_all_sessions())
-
-    def create_session(self, title: str = "Yeni Sohbet") -> str:
-        return self._run_async_compat(self.acreate_session(title))
-
-    def load_session(self, session_id: str) -> bool:
-        return self._run_async_compat(self.aload_session(session_id))
-
-    def delete_session(self, session_id: str) -> bool:
-        return self._run_async_compat(self.adelete_session(session_id))
-
-    def update_title(self, new_title: str) -> None:
-        self._run_async_compat(self.aupdate_title(new_title))
-
-    def add(self, role: str, content: str) -> None:
-        self._run_async_compat(self.aadd(role, content))
-
-    def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
-        return self._run_async_compat(self.aget_history(n_last))
 
     # ─────────────────────────────────────────────
     #  MEVCUT API (değişmeden)
@@ -282,18 +245,6 @@ class ConversationMemory:
         if sid:
             await self.db.delete_session(sid, self.active_user_id)
             await self.acreate_session(title)
-
-    def clear_sync(self) -> None:
-        self._run_async_compat(self.aclear())
-
-    def apply_summary_sync(self, summary_text: str) -> None:
-        self._run_async_compat(self.aapply_summary(summary_text))
-
-    def apply_summary(self, summary_text: str) -> None:
-        self.apply_summary_sync(summary_text)
-
-    def clear(self) -> None:
-        self.clear_sync()
 
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.

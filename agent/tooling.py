@@ -101,7 +101,7 @@ for _schema in TOOL_ARG_SCHEMAS.values():
 
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
-    """Şema tanımlı araçlar için JSON/legacy argümanı typed modele dönüştür."""
+    """Şema tanımlı araçlar için yalnızca JSON argümanını typed modele dönüştür."""
     schema = TOOL_ARG_SCHEMAS.get(tool_name)
     if schema is None:
         return raw_arg
@@ -110,109 +110,15 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
     if not text:
         return schema.model_validate({})
 
-    # 1) Öncelik: doğrudan JSON object
     try:
         payload = json.loads(text)
-        if isinstance(payload, dict):
-            return schema.model_validate(payload)
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{tool_name} aracı JSON argümanı bekliyor.") from exc
 
-    # 2) Legacy delimiter formatları
-    parts = text.split("|||")
+    if not isinstance(payload, dict):
+        raise ValueError(f"{tool_name} aracı JSON object argümanı bekliyor.")
 
-    def _parse_write_file(p: List[str]) -> WriteFileSchema:
-        if len(p) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return WriteFileSchema(path=p[0].strip(), content=p[1])
-
-    def _parse_patch_file(p: List[str]) -> PatchFileSchema:
-        if len(p) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return PatchFileSchema(path=p[0].strip(), old_text=p[1], new_text=p[2])
-
-    def _parse_github_list_files(p: List[str]) -> GithubListFilesSchema:
-        return GithubListFilesSchema(
-            path=p[0].strip() if p else "",
-            branch=p[1].strip() if len(p) > 1 and p[1].strip() else None,
-        )
-
-    def _parse_github_write(p: List[str]) -> GithubWriteSchema:
-        if len(p) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubWriteSchema(
-            path=p[0].strip(),
-            content=p[1],
-            commit_message=p[2].strip(),
-            branch=p[3].strip() if len(p) > 3 and p[3].strip() else None,
-        )
-
-    def _parse_branch(p: List[str]) -> GithubCreateBranchSchema:
-        if not p or not p[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateBranchSchema(branch_name=p[0].strip(), from_branch=p[1].strip() if len(p) > 1 and p[1].strip() else None)
-
-    def _parse_pr(p: List[str]) -> GithubCreatePRSchema:
-        if len(p) < 3:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreatePRSchema(title=p[0].strip(), body=p[1], head=p[2].strip(), base=p[3].strip() if len(p) > 3 and p[3].strip() else None)
-
-    def _parse_list_prs(p: List[str]) -> GithubListPRsSchema:
-        state = p[0].strip() if p and p[0].strip() else "open"
-        limit = int(p[1].strip()) if len(p) > 1 and p[1].strip().isdigit() else 10
-        return GithubListPRsSchema(state=state, limit=limit)
-
-    def _parse_list_issues(p: List[str]) -> GithubListIssuesSchema:
-        state = p[0].strip() if p and p[0].strip() else "open"
-        limit = int(p[1].strip()) if len(p) > 1 and p[1].strip().isdigit() else 10
-        return GithubListIssuesSchema(state=state, limit=limit)
-
-    def _parse_create_issue(p: List[str]) -> GithubCreateIssueSchema:
-        if len(p) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateIssueSchema(title=p[0].strip(), body=p[1])
-
-    def _parse_comment_issue(p: List[str]) -> GithubCommentIssueSchema:
-        if len(p) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCommentIssueSchema(number=int(p[0].strip()), body=p[1])
-
-    def _parse_close_issue(p: List[str]) -> GithubCloseIssueSchema:
-        if not p or not p[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubCloseIssueSchema(number=int(p[0].strip()))
-
-    def _parse_pr_diff(p: List[str]) -> GithubPRDiffSchema:
-        if not p or not p[0].strip():
-            raise ValueError("Argüman formatı geçersiz")
-        return GithubPRDiffSchema(number=int(p[0].strip()))
-
-    def _parse_scan_todos(p: List[str]) -> ScanProjectTodosSchema:
-        directory = p[0].strip() if p and p[0].strip() else None
-        ext_list = [e.strip() for e in p[1].split(",") if e.strip()] if len(p) > 1 and p[1].strip() else None
-        return ScanProjectTodosSchema(directory=directory, extensions=ext_list)
-
-    legacy_parsers = {
-        WriteFileSchema: _parse_write_file,
-        PatchFileSchema: _parse_patch_file,
-        GithubListFilesSchema: _parse_github_list_files,
-        GithubWriteSchema: _parse_github_write,
-        GithubCreateBranchSchema: _parse_branch,
-        GithubCreatePRSchema: _parse_pr,
-        GithubListPRsSchema: _parse_list_prs,
-        GithubListIssuesSchema: _parse_list_issues,
-        GithubCreateIssueSchema: _parse_create_issue,
-        GithubCommentIssueSchema: _parse_comment_issue,
-        GithubCloseIssueSchema: _parse_close_issue,
-        GithubPRDiffSchema: _parse_pr_diff,
-        ScanProjectTodosSchema: _parse_scan_todos,
-    }
-
-    parser = legacy_parsers.get(schema)
-    if parser is not None:
-        return parser(parts)
-
-    return raw_arg
+    return schema.model_validate(payload)
 
 
 def build_tool_dispatch(agent: Any) -> Dict[str, Callable[[Any], Any]]:
@@ -333,9 +239,10 @@ class SidarToolRegistryMixin:
     async def _tool_execute_code(self, a: str) -> str:
         """Python kodunu izole ortamda çalıştırır."""
         if not a: return "⚠ Çalıştırılacak kod belirtilmedi."
-        # execute_code içinde time.sleep(0.5) döngüsü var — event loop'u dondurur.
-        # asyncio.to_thread ile ayrı bir thread'de çalıştırılır; web sunucusu kilitlenmez.
-        _, result = await asyncio.to_thread(self.code.execute_code, a)
+        if hasattr(self.code, "execute_code_async"):
+            _, result = await self.code.execute_code_async(a)
+        else:
+            _, result = await asyncio.to_thread(self.code.execute_code, a)
         return result
 
     async def _tool_audit(self, a: str) -> str:
