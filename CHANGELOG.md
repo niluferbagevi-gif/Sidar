@@ -10,6 +10,12 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
 * **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
 
+### ✅ Final doğrulama kayıtları (Audit #8–#11)
+* **Güvenlik:** WebSocket zorunlu Auth Handshake ve ConversationMemory fail-closed (`MemoryAuthError`) sertleştirmesi eklendi.
+* **QA:** ReviewerAgent ile dinamik unit test üretimi ve `MAX_QA_RETRIES=3` devre kesici (circuit-breaker) mekanizması devreye alındı.
+* **Operasyon:** SQLite'tan PostgreSQL'e geçiş için `migrate_sqlite_to_pg.py` scripti ve Alembic migration zinciri standardize edildi.
+* **Kalite:** Test coverage alt sınırı %95'e çıkarıldı ve CI üzerinde bloklayıcı hale getirildi.
+
 ### Added (Eklenenler)
 * **[Veritabanı Altyapısı]:** Kalıcılık katmanı JSON modelinden async PostgreSQL + Alembic migration temeline taşındı.
 * **[Web Arayüzü]:** WebSocket destekli gerçek zamanlı Web UI üretim akışına alındı.
