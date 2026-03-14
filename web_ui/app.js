@@ -2,6 +2,40 @@ const AUTH_TOKEN_KEY = 'sidar_access_token';
 const AUTH_USER_KEY = 'sidar_user';
 let isCurrentUserAdmin = false;
 
+// Merkezi UI store + yardımcılar (Vanilla JS ölçeklenme riski azaltma)
+window.UIStore = window.UIStore || { state: {}, domCache: new Map() };
+
+function getUIState(key, fallback = null) {
+  return Object.prototype.hasOwnProperty.call(window.UIStore.state, key)
+    ? window.UIStore.state[key]
+    : fallback;
+}
+
+function setUIState(key, value) {
+  window.UIStore.state[key] = value;
+  return value;
+}
+
+function getCachedEl(id) {
+  if (!id) return null;
+  if (!window.UIStore.domCache.has(id)) {
+    const el = document.getElementById(id);
+    if (el) window.UIStore.domCache.set(id, el);
+  }
+  return window.UIStore.domCache.get(id) || null;
+}
+
+function reportUIError(err, fallback = 'Beklenmeyen bir hata oluştu.') {
+  const message = (err && err.message) ? err.message : fallback;
+  if (typeof showUiNotice === 'function') showUiNotice(message, 'warn');
+  return message;
+}
+
+window.getUIState = getUIState;
+window.setUIState = setUIState;
+window.getCachedEl = getCachedEl;
+window.reportUIError = reportUIError;
+
 function getAuthToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';
 }
@@ -185,7 +219,7 @@ window.showDashboardPanel = async function showDashboardPanel() {
   try {
     await loadBudgetDashboard();
   } catch (err) {
-    showUiNotice(err.message || 'Dashboard verisi alınamadı', 'warn');
+    reportUIError(err, 'Dashboard verisi alınamadı');
   }
 };
 
@@ -207,7 +241,7 @@ window.showAdminPanel = async function showAdminPanel() {
   try {
     await loadAdminStats();
   } catch (err) {
-    showUiNotice(err.message || 'Admin panel verisi alınamadı', 'warn');
+    reportUIError(err, 'Admin panel verisi alınamadı');
   }
 };
 
