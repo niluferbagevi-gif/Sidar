@@ -266,7 +266,7 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
 
     agent = SidarAgent(cfg)
-    asyncio.run(agent.initialize())
+    asyncio.run(agent.memory.initialize())
 
     if args.status:
         print(agent.status())
