@@ -1226,7 +1226,10 @@ async def get_todo():
 async def clear():
     """Aktif konuşma belleğini temizle."""
     agent = await get_agent()
-    agent.memory.clear()
+    if hasattr(agent.memory, "aclear"):
+        await agent.memory.aclear()
+    else:
+        agent.memory.clear()
     return JSONResponse({"result": True})
 
 

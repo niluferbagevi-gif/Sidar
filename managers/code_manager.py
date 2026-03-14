@@ -47,6 +47,10 @@ class CodeManager:
         self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m").strip()
         self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on")))
         self.docker_nano_cpus = int(getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000")) or 1000000000)
+        self.docker_pids_limit = int(getattr(self.cfg, "DOCKER_PIDS_LIMIT", os.getenv("DOCKER_PIDS_LIMIT", "128")) or 128)
+        self.docker_cpuset_cpus = str(getattr(self.cfg, "DOCKER_CPUSET_CPUS", os.getenv("DOCKER_CPUSET_CPUS", "")) or "").strip()
+        self.docker_memswap_limit = str(getattr(self.cfg, "DOCKER_MEMSWAP_LIMIT", os.getenv("DOCKER_MEMSWAP_LIMIT", self.docker_mem_limit)) or self.docker_mem_limit).strip()
+        self.docker_oom_kill_disable = bool(getattr(self.cfg, "DOCKER_OOM_KILL_DISABLE", os.getenv("DOCKER_OOM_KILL_DISABLE", "false").lower() in ("1", "true", "yes", "on")))
         self.docker_image = (
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
@@ -277,10 +281,15 @@ class CodeManager:
                 "remove": False,
                 "working_dir": "/tmp",
                 "mem_limit": self.docker_mem_limit,
+                "memswap_limit": self.docker_memswap_limit,
                 "nano_cpus": self.docker_nano_cpus,
+                "pids_limit": self.docker_pids_limit,
+                "oom_kill_disable": self.docker_oom_kill_disable,
             }
             if self.docker_network_disabled:
                 run_kwargs["network_mode"] = "none"
+            if self.docker_cpuset_cpus:
+                run_kwargs["cpuset_cpus"] = self.docker_cpuset_cpus
             selected_runtime = self._resolve_runtime()
             if selected_runtime:
                 run_kwargs["runtime"] = selected_runtime

@@ -193,8 +193,8 @@ class SidarAgent:
             self._lock = asyncio.Lock()
 
         async with self._lock:
-            await asyncio.to_thread(self.memory.add, "user", user_input)
-            await asyncio.to_thread(self.memory.add, "assistant", multi_result)
+            await self.memory.aadd("user", user_input)
+            await self.memory.aadd("assistant", multi_result)
 
         yield multi_result
 
@@ -211,289 +211,18 @@ class SidarAgent:
         return result
 
     async def _try_direct_tool_route(self, user_input: str) -> Optional[str]:
-        """
-        Basit/tek-adım komutları LLM tabanlı hafif bir router ile doğrudan araca yönlendir.
-        Böylece her yeni ifade için AutoHandle regex ekleme ihtiyacı azalır.
-        """
-        router_system = (
-            "Kullanıcı isteğini TEK adımda çözülebilecekse uygun aracı seç. "
-            "Yalnızca şu şemada JSON döndür: "
-            '{"thought":"...","tool":"...","argument":"..."}. '
-            "Araç gerekmiyorsa tool='none' döndür. "
-            "Sadece izinli araçlar: "
-            + ", ".join(sorted(_DIRECT_ROUTE_ALLOWED_TOOLS))
-        )
-        try:
-            raw = await self.llm.chat(
-                messages=[{"role": "user", "content": user_input}],
-                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                system_prompt=router_system,
-                temperature=0.0,
-                stream=False,
-                json_mode=True,
-            )
-            if not isinstance(raw, str):
-                return None
-            parsed = ToolCall.model_validate_json(raw)
-            tool_name = parsed.tool.strip().lower()
-            if tool_name in ("", "none", "final_answer"):
-                return None
-            if tool_name not in _DIRECT_ROUTE_ALLOWED_TOOLS:
-                return None
-            result = await self._execute_tool(tool_name, parsed.argument)
-            return result
-        except Exception:
-            return None
+        """Legacy tek-adım yönlendirici Supervisor mimarisinde kullanılmıyor."""
+        return None
 
     # ─────────────────────────────────────────────
     #  ReAct DÖNGÜSÜ (PYDANTIC PARSING)
     # ─────────────────────────────────────────────
 
     async def _react_loop(self, user_input: str) -> AsyncIterator[str]:
-        """
-        LLM ile araç çağrısı döngüsü (Asenkron).
-        Kullanıcıya yalnızca nihai yanıt metni döndürülür; ara JSON/araç
-        çıktıları arka planda işlenir.
-        """
-        messages = self.memory.get_messages_for_llm()
-        context = self._build_context()
-        archive_context = await self._get_memory_archive_context(user_input)
-        tool_list_context = self._build_tool_list()
-        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + tool_list_context + "\n\n" + context + archive_context
-
-
-        _last_tool: str = ""          # Son çağrılan araç adı
-        _last_tool_result: str = ""   # Son araç sonucu (tekrar tespitinde kullanılır)
-
-        for step in range(self.cfg.MAX_REACT_STEPS):
-            # 1. LLM Çağrısı (Async Stream)
-            # ReAct döngüsü: düşünme/planlama/özetleme → TEXT_MODEL
-            # Kod odaklı araçlara (execute_code, write_file, patch_file) CODING_MODEL
-            # atanabilir; ancak döngü genelinde tutarlılık için TEXT_MODEL tercih edilir.
-            if self.tracer:
-                with self.tracer.start_as_current_span("react_step") as react_span:
-                    react_span.set_attribute("sidar.react.step", step + 1)
-                    response_generator = await self.llm.chat(
-                        messages=messages,
-                        model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                        system_prompt=full_system,
-                        temperature=0.3,
-                        stream=True
-                    )
-
-                    # LLM yanıtını biriktir
-                    llm_response_accumulated = ""
-                    first_chunk_at = None
-                    llm_call_started = time.monotonic()
-                    async for chunk in response_generator:
-                        if first_chunk_at is None and chunk:
-                            first_chunk_at = time.monotonic()
-                        llm_response_accumulated += chunk
-                    react_span.set_attribute("sidar.react.llm.total_ms", (time.monotonic() - llm_call_started) * 1000)
-                    if first_chunk_at is not None:
-                        react_span.set_attribute("sidar.react.llm.ttft_ms", (first_chunk_at - llm_call_started) * 1000)
-            else:
-                response_generator = await self.llm.chat(
-                    messages=messages,
-                    model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                    system_prompt=full_system,
-                    temperature=0.3,
-                    stream=True
-                )
-
-                llm_response_accumulated = ""
-                async for chunk in response_generator:
-                    llm_response_accumulated += chunk
-
-            # 2. JSON Ayrıştırma ve Yapısal Doğrulama (Pydantic)
-            try:
-                raw_text = llm_response_accumulated.strip()
-                # JSONDecoder ile ilk geçerli JSON payload'u bul (object veya array)
-                _decoder = json.JSONDecoder()
-                payload = None
-                for idx, ch in enumerate(raw_text):
-                    if ch not in "[{":
-                        continue
-                    try:
-                        payload, _ = _decoder.raw_decode(raw_text, idx)
-                        break
-                    except json.JSONDecodeError:
-                        continue
-
-                if payload is None:
-                    raise ValueError("Yanıtın içerisinde geçerli bir JSON payload ( { ... } veya [ ... ] ) bulunamadı.")
-
-                action_list: List[ToolCall] = []
-                if isinstance(payload, list):
-                    if not payload:
-                        raise ValueError("Boş JSON liste döndürüldü.")
-                    action_list = [ToolCall.model_validate(item) for item in payload]
-                else:
-                    json_match = payload
-                    # LLM bazen {"response": "..."} veya {"answer": "..."} formatı kullanıyor.
-                    if "tool" not in json_match:
-                        thought = json_match.pop("thought", "LLM doğrudan yanıt verdi.")
-                        for alias in ("response", "answer", "result", "output", "content"):
-                            if alias in json_match:
-                                json_match = {
-                                    "thought": thought,
-                                    "tool": "final_answer",
-                                    "argument": str(json_match[alias]),
-                                }
-                                break
-                        else:
-                            summary = "\n".join(f"- **{k}:** {v}" for k, v in json_match.items())
-                            json_match = {
-                                "thought": thought,
-                                "tool": "final_answer",
-                                "argument": summary,
-                            }
-                    action_list = [ToolCall.model_validate(json_match)]
-
-                # Çoklu ToolCall (JSON array) desteği: yalnızca güvenli okuma araçlarını paralel çalıştır.
-                if len(action_list) > 1:
-                    if any(a.tool == "final_answer" for a in action_list):
-                        messages = messages + [
-                            {"role": "assistant", "content": llm_response_accumulated},
-                            {"role": "user", "content": _FMT_SYS_ERR.format(msg="ToolCall listesinde final_answer yalnızca tek başına kullanılabilir.")},
-                        ]
-                        continue
-
-                    unsafe = [a.tool for a in action_list if a.tool not in self._AUTO_PARALLEL_SAFE]
-                    if unsafe:
-                        messages = messages + [
-                            {"role": "assistant", "content": llm_response_accumulated},
-                            {"role": "user", "content": _FMT_SYS_ERR.format(msg=f"JSON liste paralel yürütmede yalnızca okuma araçları desteklenir. Desteklenmeyen: {', '.join(sorted(set(unsafe)))}")},
-                        ]
-                        continue
-
-                    thought_summary = " | ".join(str(a.thought) for a in action_list)[:300].replace("\x00", " ")
-                    yield f"\x00THOUGHT:{thought_summary}\x00"
-                    for a in action_list:
-                        yield f"\x00TOOL:{a.tool}\x00"
-
-                    batch_results = await asyncio.gather(
-                        *[self._execute_tool(a.tool, a.argument) for a in action_list],
-                        return_exceptions=True,
-                    )
-
-                    lines = [f"[Paralel Araç Çalıştırma — {len(action_list)} adım]", ""]
-                    had_error = False
-                    for action, result in zip(action_list, batch_results):
-                        if isinstance(result, Exception) or result is None:
-                            had_error = True
-                            lines.append(f"❌ **{action.tool}**: {result}")
-                        else:
-                            snippet = str(result)[:700]
-                            suffix = "..." if len(str(result)) > 700 else ""
-                            lines.append(f"✓ **{action.tool}**:\n{snippet}{suffix}")
-                        lines.append("")
-                    tool_result = "\n".join(lines)
-
-                    _last_tool = "parallel_batch"
-                    _last_tool_result = tool_result[:2000]
-                    messages = messages + [
-                        {"role": "assistant", "content": llm_response_accumulated},
-                        {"role": "user", "content": _FMT_TOOL_OK.format(name="parallel_batch", result=tool_result)},
-                    ]
-                    if had_error:
-                        messages = messages + [{"role": "user", "content": _FMT_SYS_WARN.format(msg="Paralel adımlardan bazıları başarısız oldu; güvenli biçimde devam et veya final_answer üret.")}]
-                    continue
-
-                action_data = action_list[0]
-                tool_name = action_data.tool
-                tool_arg = action_data.argument
-
-                if tool_name == "final_answer":
-                    # Boş argument güvenlik ağı: JS'de falsy olduğu için UI "yanıt alınamadı" gösterir.
-                    if not str(tool_arg).strip():
-                        tool_arg = "✓ İşlem tamamlandı."
-                    await asyncio.to_thread(self.memory.add, "assistant", tool_arg)
-                    yield str(tool_arg)
-                    return
-
-                # ── Tekrar tespiti: aynı araç art arda 2+ kez çağrılıyorsa
-                # modeli zorla final_answer ver.
-                if tool_name == _last_tool and _last_tool_result:
-                    loop_correction = _FMT_SYS_WARN.format(
-                        msg=(
-                            f"'{tool_name}' aracı art arda çağrıldı — döngü tespit edildi.\n"
-                            f"Bu araç zaten aşağıdaki sonucu döndürdü:\n===\n{_last_tool_result}\n===\n"
-                            f"Artık MUTLAKA final_answer aracını kullanarak bu sonucu kullanıcıya ilet.\n"
-                            f"Örnek: {{\"thought\": \"Sonuç mevcut.\", \"tool\": \"final_answer\", \"argument\": \"<özet>\"}}"
-                        )
-                    )
-                    messages = messages + [
-                        {"role": "assistant", "content": llm_response_accumulated},
-                        {"role": "user", "content": loop_correction},
-                    ]
-                    continue
-
-                # Düşünce sürecini UI'ya bildir (sentinel format: \x00THOUGHT:<thought>\x00)
-                _thought_safe = str(action_data.thought)[:300].replace('\x00', ' ')
-                yield f"\x00THOUGHT:{_thought_safe}\x00"
-                # Araç çağrısını UI'ya bildir (sentinel format: \x00TOOL:<name>\x00)
-                yield f"\x00TOOL:{tool_name}\x00"
-
-                # Aracı asenkron çalıştır
-                tool_result = await self._execute_tool(tool_name, tool_arg)
-
-                if tool_result is None:
-                    messages = messages + [
-                         {"role": "assistant", "content": llm_response_accumulated},
-                         {"role": "user", "content": _FMT_TOOL_ERR.format(
-                             name=tool_name,
-                             error="Bu araç yok veya geçersiz bir işlem seçildi."
-                         )},
-                    ]
-                    continue
-
-                # Son araç bilgisini güncelle (tekrar tespiti için)
-                _last_tool = tool_name
-                _last_tool_result = str(tool_result)[:2000]  # bellek tasarrufu
-
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": _FMT_TOOL_OK.format(name=tool_name, result=tool_result)},
-                ]
-
-            except ValidationError as ve:
-                logger.warning("Pydantic doğrulama hatası:\n%s", ve)
-                error_feedback = _FMT_SYS_ERR.format(
-                    msg=(
-                        f"Ürettiğin JSON yapısı beklentilere uymuyor.\n"
-                        f"Eksik veya hatalı alanlar:\n{ve}\n\n"
-                        f"Lütfen sadece şu formata uyan BİR TANE JSON döndür:\n"
-                        f'{{"thought": "düşüncen", "tool": "araç_adı", "argument": "argüman"}}'
-                    )
-                )
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": error_feedback},
-                ]
-            except (ValueError, json.JSONDecodeError) as e:
-                logger.warning("JSON ayrıştırma hatası: %s", e)
-                error_feedback = _FMT_SYS_ERR.format(
-                    msg=(
-                        f"Yanıtın geçerli bir JSON formatında değil veya bozuk: {e}\n\n"
-                        f"Lütfen yanıtını herhangi bir markdown (```json) bloğuna almadan, "
-                        f"sadece düz geçerli bir JSON objesi olarak ver."
-                    )
-                )
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": error_feedback},
-                ]
-            except Exception as exc:
-                 logger.exception("ReAct döngüsünde beklenmeyen hata: %s", exc)
-                 yield "Üzgünüm, yanıt üretirken beklenmeyen bir hata oluştu."
-                 return
-            
-        yield "Üzgünüm, bu istek için güvenilir bir sonuca ulaşamadım (Maksimum adım sayısına ulaşıldı)."
-
-    # ─────────────────────────────────────────────
-    #  ARAÇ HANDLER METODLARI
-    # ─────────────────────────────────────────────
+        """Legacy ReAct döngüsü Supervisor mimarisinde devre dışı."""
+        if user_input:
+            yield "⚠ Legacy ReAct döngüsü kaldırıldı; Supervisor akışı kullanılmalıdır."
+        return
 
     async def _tool_list_dir(self, a: str) -> str:
         """Yerel bir dizinin içeriğini listeler."""
@@ -1552,7 +1281,7 @@ class SidarAgent:
         Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
         AYRICA: Eski konuşmaları 'Sonsuz Hafıza' için Vektör DB'ye (ChromaDB) gömer.
         """
-        history = self.memory.get_history()
+        history = await self.memory.aget_history()
         if len(history) < 4:
             return
 
@@ -1594,7 +1323,7 @@ class SidarAgent:
                 stream=False,
                 json_mode=False,
             )
-            self.memory.apply_summary(str(summary))
+            await self.memory.aapply_summary(str(summary))
             logger.info("Bellek özetlendi (%d → 2 mesaj).", len(history))
         except Exception as exc:
             logger.warning("Bellek özetleme başarısız: %s", exc)
@@ -1604,7 +1333,7 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     def clear_memory(self) -> str:
-        self.memory.clear()
+        asyncio.run(self.memory.aclear())
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     def set_access_level(self, new_level: str) -> str:
@@ -1621,15 +1350,15 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            self.memory.add("user", msg)
-            self.memory.add(
+            asyncio.run(self.memory.aadd("user", msg))
+            asyncio.run(self.memory.aadd(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "
                     f"'{self.security.level_name}' seviyesinin güvenlik "
                     "kurallarına ve yetkilerine göre hareket edeceğim."
                 ),
-            )
+            ))
             return (
                 f"✓ Erişim seviyesi '{self.security.level_name}' olarak güncellendi "
                 "ve sohbet belleğine işlendi."

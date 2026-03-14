@@ -775,16 +775,16 @@ class LLMClient:
         self.provider = provider.lower()
         self.config = config
 
-        if self.provider == "ollama":
-            self._client: BaseLLMClient = OllamaClient(config)
-        elif self.provider == "gemini":
-            self._client = GeminiClient(config)
-        elif self.provider == "openai":
-            self._client = OpenAIClient(config)
-        elif self.provider == "anthropic":
-            self._client = AnthropicClient(config)
-        else:
+        provider_registry = {
+            "ollama": OllamaClient,
+            "gemini": GeminiClient,
+            "openai": OpenAIClient,
+            "anthropic": AnthropicClient,
+        }
+        client_cls = provider_registry.get(self.provider)
+        if client_cls is None:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
+        self._client: BaseLLMClient = client_cls(config)
 
     @property
     def _ollama_base_url(self) -> str:

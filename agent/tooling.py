@@ -115,92 +115,97 @@ def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
 
     # 2) Legacy delimiter formatları
     parts = text.split("|||")
-    if schema is WriteFileSchema:
-        if len(parts) < 2:
-            raise ValueError("Argüman formatı geçersiz")
-        return WriteFileSchema(path=parts[0].strip(), content=parts[1])
 
-    if schema is PatchFileSchema:
-        if len(parts) < 3:
+    def _parse_write_file(p: List[str]) -> WriteFileSchema:
+        if len(p) < 2:
             raise ValueError("Argüman formatı geçersiz")
-        return PatchFileSchema(path=parts[0].strip(), old_text=parts[1], new_text=parts[2])
+        return WriteFileSchema(path=p[0].strip(), content=p[1])
 
-    if schema is GithubListFilesSchema:
+    def _parse_patch_file(p: List[str]) -> PatchFileSchema:
+        if len(p) < 3:
+            raise ValueError("Argüman formatı geçersiz")
+        return PatchFileSchema(path=p[0].strip(), old_text=p[1], new_text=p[2])
+
+    def _parse_github_list_files(p: List[str]) -> GithubListFilesSchema:
         return GithubListFilesSchema(
-            path=parts[0].strip() if parts else "",
-            branch=parts[1].strip() if len(parts) > 1 and parts[1].strip() else None,
+            path=p[0].strip() if p else "",
+            branch=p[1].strip() if len(p) > 1 and p[1].strip() else None,
         )
 
-    if schema is GithubWriteSchema:
-        if len(parts) < 3:
+    def _parse_github_write(p: List[str]) -> GithubWriteSchema:
+        if len(p) < 3:
             raise ValueError("Argüman formatı geçersiz")
         return GithubWriteSchema(
-            path=parts[0].strip(),
-            content=parts[1],
-            commit_message=parts[2].strip(),
-            branch=parts[3].strip() if len(parts) > 3 and parts[3].strip() else None,
+            path=p[0].strip(),
+            content=p[1],
+            commit_message=p[2].strip(),
+            branch=p[3].strip() if len(p) > 3 and p[3].strip() else None,
         )
 
-    if schema is GithubCreateBranchSchema:
-        if not parts or not parts[0].strip():
+    def _parse_branch(p: List[str]) -> GithubCreateBranchSchema:
+        if not p or not p[0].strip():
             raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateBranchSchema(
-            branch_name=parts[0].strip(),
-            from_branch=parts[1].strip() if len(parts) > 1 and parts[1].strip() else None,
-        )
+        return GithubCreateBranchSchema(branch_name=p[0].strip(), from_branch=p[1].strip() if len(p) > 1 and p[1].strip() else None)
 
-    if schema is GithubCreatePRSchema:
-        if len(parts) < 3:
+    def _parse_pr(p: List[str]) -> GithubCreatePRSchema:
+        if len(p) < 3:
             raise ValueError("Argüman formatı geçersiz")
-        return GithubCreatePRSchema(
-            title=parts[0].strip(),
-            body=parts[1],
-            head=parts[2].strip(),
-            base=parts[3].strip() if len(parts) > 3 and parts[3].strip() else None,
-        )
+        return GithubCreatePRSchema(title=p[0].strip(), body=p[1], head=p[2].strip(), base=p[3].strip() if len(p) > 3 and p[3].strip() else None)
 
-    if schema is GithubListPRsSchema:
-        state = parts[0].strip() if parts and parts[0].strip() else "open"
-        try:
-            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-        except ValueError:
-            limit = 10
+    def _parse_list_prs(p: List[str]) -> GithubListPRsSchema:
+        state = p[0].strip() if p and p[0].strip() else "open"
+        limit = int(p[1].strip()) if len(p) > 1 and p[1].strip().isdigit() else 10
         return GithubListPRsSchema(state=state, limit=limit)
 
-    if schema is GithubListIssuesSchema:
-        state = parts[0].strip() if parts and parts[0].strip() else "open"
-        try:
-            limit = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 10
-        except ValueError:
-            limit = 10
+    def _parse_list_issues(p: List[str]) -> GithubListIssuesSchema:
+        state = p[0].strip() if p and p[0].strip() else "open"
+        limit = int(p[1].strip()) if len(p) > 1 and p[1].strip().isdigit() else 10
         return GithubListIssuesSchema(state=state, limit=limit)
 
-    if schema is GithubCreateIssueSchema:
-        if len(parts) < 2:
+    def _parse_create_issue(p: List[str]) -> GithubCreateIssueSchema:
+        if len(p) < 2:
             raise ValueError("Argüman formatı geçersiz")
-        return GithubCreateIssueSchema(title=parts[0].strip(), body=parts[1])
+        return GithubCreateIssueSchema(title=p[0].strip(), body=p[1])
 
-    if schema is GithubCommentIssueSchema:
-        if len(parts) < 2:
+    def _parse_comment_issue(p: List[str]) -> GithubCommentIssueSchema:
+        if len(p) < 2:
             raise ValueError("Argüman formatı geçersiz")
-        return GithubCommentIssueSchema(number=int(parts[0].strip()), body=parts[1])
+        return GithubCommentIssueSchema(number=int(p[0].strip()), body=p[1])
 
-    if schema is GithubCloseIssueSchema:
-        if not parts or not parts[0].strip():
+    def _parse_close_issue(p: List[str]) -> GithubCloseIssueSchema:
+        if not p or not p[0].strip():
             raise ValueError("Argüman formatı geçersiz")
-        return GithubCloseIssueSchema(number=int(parts[0].strip()))
+        return GithubCloseIssueSchema(number=int(p[0].strip()))
 
-    if schema is GithubPRDiffSchema:
-        if not parts or not parts[0].strip():
+    def _parse_pr_diff(p: List[str]) -> GithubPRDiffSchema:
+        if not p or not p[0].strip():
             raise ValueError("Argüman formatı geçersiz")
-        return GithubPRDiffSchema(number=int(parts[0].strip()))
+        return GithubPRDiffSchema(number=int(p[0].strip()))
 
-    if schema is ScanProjectTodosSchema:
-        directory = parts[0].strip() if parts and parts[0].strip() else None
-        ext_list = None
-        if len(parts) > 1 and parts[1].strip():
-            ext_list = [e.strip() for e in parts[1].split(",") if e.strip()]
+    def _parse_scan_todos(p: List[str]) -> ScanProjectTodosSchema:
+        directory = p[0].strip() if p and p[0].strip() else None
+        ext_list = [e.strip() for e in p[1].split(",") if e.strip()] if len(p) > 1 and p[1].strip() else None
         return ScanProjectTodosSchema(directory=directory, extensions=ext_list)
+
+    legacy_parsers = {
+        WriteFileSchema: _parse_write_file,
+        PatchFileSchema: _parse_patch_file,
+        GithubListFilesSchema: _parse_github_list_files,
+        GithubWriteSchema: _parse_github_write,
+        GithubCreateBranchSchema: _parse_branch,
+        GithubCreatePRSchema: _parse_pr,
+        GithubListPRsSchema: _parse_list_prs,
+        GithubListIssuesSchema: _parse_list_issues,
+        GithubCreateIssueSchema: _parse_create_issue,
+        GithubCommentIssueSchema: _parse_comment_issue,
+        GithubCloseIssueSchema: _parse_close_issue,
+        GithubPRDiffSchema: _parse_pr_diff,
+        ScanProjectTodosSchema: _parse_scan_todos,
+    }
+
+    parser = legacy_parsers.get(schema)
+    if parser is not None:
+        return parser(parts)
 
     return raw_arg
 
