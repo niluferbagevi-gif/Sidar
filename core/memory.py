@@ -53,6 +53,8 @@ class ConversationMemory:
         self._dirty = False
         self._db_initialized = False
         self._db_init_lock = asyncio.Lock()
+        # Senkron kurulum senaryoları (CLI/test) için ilk DB hazırlığı.
+        # Event loop içinde oluşturuluyorsa lazy init'e bırakılır.
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -188,6 +190,7 @@ class ConversationMemory:
             await self.acreate_session("Yeni Sohbet")
 
     def _run_async_compat(self, coro):
+        """Sadece geriye dönük sync kullanım için sınırlı uyumluluk katmanı."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:
