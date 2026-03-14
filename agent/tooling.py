@@ -239,9 +239,10 @@ class SidarToolRegistryMixin:
     async def _tool_execute_code(self, a: str) -> str:
         """Python kodunu izole ortamda çalıştırır."""
         if not a: return "⚠ Çalıştırılacak kod belirtilmedi."
-        # execute_code içinde time.sleep(0.5) döngüsü var — event loop'u dondurur.
-        # asyncio.to_thread ile ayrı bir thread'de çalıştırılır; web sunucusu kilitlenmez.
-        _, result = await asyncio.to_thread(self.code.execute_code, a)
+        if hasattr(self.code, "execute_code_async"):
+            _, result = await self.code.execute_code_async(a)
+        else:
+            _, result = await asyncio.to_thread(self.code.execute_code, a)
         return result
 
     async def _tool_audit(self, a: str) -> str:
@@ -960,5 +961,4 @@ class SidarToolRegistryMixin:
             f"  Bellek Turu  : max {self.cfg.MAX_MEMORY_TURNS}",
         ]
         return "\n".join(lines)
-
 
