@@ -10,6 +10,12 @@ Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
 * **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
 * **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
 
+### ✅ Multi-agent sertleştirme ve P2P QA
+* **P2P Delegasyon Altyapısı:** Ajanlar arası doğrudan görev aktarımı ve `ReviewerAgent` için dinamik QA döngüsü devreye alındı.
+* **Zero-Trust Sandbox Sertleştirmesi:** Docker konteynerleri için ağ kısıtlaması, RAM/CPU limitleri ve gVisor/Kata runtime uyumluluğu eklendi.
+* **Canlı Observability:** WebSocket üzerinden ajanların düşünce süreçleri ve araç kullanım olaylarının canlı izlenmesi tamamlandı.
+* **Kalite Kapısı (Quality Gate):** CI hattına coverage `%95` zorunluluğu entegre edildi.
+
 ### Added (Eklenenler)
 * **[Veritabanı Altyapısı]:** Kalıcılık katmanı JSON modelinden async PostgreSQL + Alembic migration temeline taşındı.
 * **[Web Arayüzü]:** WebSocket destekli gerçek zamanlı Web UI üretim akışına alındı.
