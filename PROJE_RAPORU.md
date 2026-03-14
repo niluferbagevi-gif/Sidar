@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.0 — **Final Sürüm (Production-Ready):** Kurumsal/SaaS v3.0 kapsamı (migration, auth, observability, sandbox hazırlıkları) operasyonel olarak doğrulandı; satır sayıları ve dosya envanteri güncel ölçümlerle eşleştirildi; Bölüm 11 teknik borç durumları kaynak kod incelemesiyle güncellendi — 3 borç kapatıldı, 1 kısmen çözüldü, 1 AÇIK)
+> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Tüm v3.0 nesil teknik borçlar kapatıldı: Borç #2 Vanilla JS UIStore tek kaynak refaktörü ve Borç #3 LLM JSON şema soyutlaması çözüldü; 11.2 tablosu temizlendi, CHANGELOG güncellendi)
 > **Proje Sürümü:** 3.0.0
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.160 satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.239** satır.
@@ -845,17 +845,13 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 - CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması,
 - `core/memory.py` Sync/Async köprüsü (`_run_coro_sync`) kaldırılarak tam async dönüşüm,
 - `agent/sidar_agent.py` ölü kod (`_react_loop`, `_tool_*`) temizliği (1.651 → 448 satır),
-- Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu).
+- Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu),
+- Vanilla JS UI ölçeklenme riski: `seedUIStore()` IIFE ile 12 paylaşımlı durum anahtarı tek merkezde; `let` global değişkenleri ve çift yazma (double-write) anti-pattern'i kaldırıldı (`web_ui/*.js`),
+- Sağlayıcılar arası tool-calling şema farkları: `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti, `BaseLLMClient.json_mode_config()` soyut metodu ve `_inject_json_instruction()` yardımcısı ile sağlayıcıdan bağımsız JSON şema uygulama (`core/llm_client.py`).
 
-### 11.2 Yeni Nesil Kurumsal Teknik Borçlar
+### 11.2 Açık Teknik Borçlar
 
-| # | Sorun | Dosya/Alan | Etki | Öncelik | Durum |
-|---|-------|------------|------|---------|-------|
-| 1 | ~~Sync/Async köprü maliyeti (`_run_coro_sync`)~~ | `core/memory.py` | `_run_coro_sync` bridge tamamen kaldırıldı; `ConversationMemory` tüm metodlar (`add`, `initialize`, `get_history`, `set_active_user` vb.) tam `async/await` ile yeniden yazıldı. Event loop bloklaması riski ortadan kalktı. | Orta | ✅ **ÇÖZÜLDÜ** |
-| 2 | ~~Vanilla JS UI ölçeklenme riski~~ | `web_ui/*.js` | **`seedUIStore()` IIFE** `app.js`'e eklenerek 12 paylaşımlı durum anahtarı (`isCurrentUserAdmin`, `isStreaming`, `msgCounter`, `currentRepo`, `currentBranch`, `defaultBranch`, `currentSessionId`, `attachedFileContent`, `attachedFileName`, `allSessions`, `cachedRepos`, `cachedBranches`) tek merkezde başlatıldı. Tüm `let` global değişkenleri (`isStreaming`, `currentSessionId`, `currentBranch`, `_cachedBranches` vb.) kaldırıldı. Çift yazma (double-write) anti-pattern'i ortadan kaldırıldı — `setUIState()` / `_setState()` tek kaynak oldu. `sidebar.js`'e `_getState` shimı eklenerek dosyalar arası tutarlılık sağlandı. `app.js` `isCurrentUserAdmin` global'i UIStore'a taşındı; `loadGitInfo()` doğrudan global atamaları bırakıp `setUIState()` kullanıyor. ESC kısayol ve DOMContentLoaded init kodları UIStore'u doğru okuyor. | Orta | ✅ **ÇÖZÜLDÜ** |
-| 3 | ~~Sağlayıcılar arası tool-calling şema farkları~~ | `core/llm_client.py`, `agent/tooling.py` | **`SIDAR_TOOL_JSON_INSTRUCTION`** paylaşımlı sabiti eklendi; tüm sağlayıcılar aynı system prompt talimatını kullanıyor. **`BaseLLMClient.json_mode_config()`** soyut metodu eklendi — her alt sınıf kendi payload konfigürasyonunu döndürüyor: `OllamaClient` → `{"format": SCHEMA}`, `GeminiClient` → `response_mime_type`, `OpenAIClient` → `json_schema` structured outputs (strict), `AnthropicClient` → `{}`. **`BaseLLMClient._inject_json_instruction()`** statik yardımcısı ile OpenAI ve Gemini system prompt'larına da şema talimatı enjekte ediliyor. Anthropic'te dağınık inline string kaldırıldı. `build_provider_json_mode_config()` geriye dönük uyumluluk şimi olarak korundu. Sağlayıcıdan bağımsız JSON şema uygulama soyutlaması sızıntısız hale geldi. | Orta | ✅ **ÇÖZÜLDÜ** |
-| 4 | ~~Sandbox kaynak kotası standardizasyonu (cgroups)~~ | `managers/code_manager.py` | `_resolve_sandbox_limits()` metodu eklenerek memory, cpus (→nano_cpus), pids_limit, timeout, network_mode tek merkezden normalize ediliyor. `SANDBOX_LIMITS` dict ile merkezi konfigürasyon desteği ve geçersiz değer koruması (pids_limit < 1 → 64, CPU ValueError handling) sağlandı. | Orta | ✅ **ÇÖZÜLDÜ** |
-| 5 | ~~`sidar_agent.py` ölü kod temizliği~~ | `agent/sidar_agent.py` | `_react_loop` ve `_tool_*` metodları tamamen kaldırıldı. Dosya 1.651 satırdan 448 satıra indirildi; yalnızca `respond()`, `_try_multi_agent()`, `_build_context()`, `_summarize_memory()` gibi aktif Supervisor-first metodları kaldı. Bakım maliyeti önemli ölçüde azaldı. | Düşük | ✅ **ÇÖZÜLDÜ** |
+Şu anda izlenen açık teknik borç bulunmamaktadır. Tüm kalemler kapatılmış olup çözüm kayıtları **11.1** ve **[CHANGELOG.md](./CHANGELOG.md)** altında tutulmaktadır.
 
 
 ## 12. `.env` Tam Değişken Referansı
