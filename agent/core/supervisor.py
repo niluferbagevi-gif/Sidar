@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Optional
 
@@ -38,13 +39,51 @@ class SupervisorAgent(BaseAgent):
         self.reviewer = self.registry.get("reviewer")
 
     @staticmethod
-    def _intent(prompt: str) -> str:
+    def _intent_keyword_fallback(prompt: str) -> str:
         text = (prompt or "").lower()
         if any(t in text for t in ("araştır", "web", "url", "kaynak", "docs", "doküman", "nedir", "yenilik")):
             return "research"
         if any(t in text for t in ("github", "pull request", "issue", "review", "incele")):
             return "review"
         return "code"
+
+    async def _intent(self, prompt: str) -> str:
+        """Görev intent'ini düşük maliyetli LLM sınıflandırması ile belirler."""
+        prompt_text = (prompt or "").strip()
+        if not prompt_text:
+            return "code"
+
+        router_system = (
+            "Sen bir semantic router'sın. "
+            "Kullanıcı isteğini sadece şu intentlerden birine sınıflandır: "
+            "research, code, review. "
+            "Yalnızca JSON dön: {\"intent\":\"research|code|review\"}."
+        )
+        router_user = (
+            "Aşağıdaki görevi intent olarak sınıflandır:\n"
+            f"{prompt_text}"
+        )
+
+        try:
+            raw = await self.llm.chat(
+                messages=[
+                    {"role": "system", "content": router_system},
+                    {"role": "user", "content": router_user},
+                ],
+                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                temperature=0.0,
+                stream=False,
+                json_mode=True,
+            )
+            if isinstance(raw, str):
+                data = json.loads(raw)
+                intent = str((data or {}).get("intent", "")).strip().lower()
+                if intent in {"research", "code", "review"}:
+                    return intent
+        except Exception:
+            pass
+
+        return self._intent_keyword_fallback(prompt_text)
 
     @staticmethod
     def _review_requires_revision(review_summary: str) -> bool:
@@ -97,7 +136,7 @@ class SupervisorAgent(BaseAgent):
 
     async def run_task(self, task_prompt: str) -> str:
         await self.events.publish("supervisor", "Görev analiz ediliyor...")
-        intent = self._intent(task_prompt)
+        intent = await self._intent(task_prompt)
         self.memory_hub.add_global(task_prompt)
 
         if intent == "research":
