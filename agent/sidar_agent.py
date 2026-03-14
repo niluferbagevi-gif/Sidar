@@ -32,7 +32,6 @@ from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
 from agent.auto_handle import AutoHandle
-from agent.definitions import SIDAR_SYSTEM_PROMPT
 from agent.tooling import (
     GithubCloseIssueSchema,
     GithubCommentIssueSchema,
@@ -72,26 +71,6 @@ _FMT_TOOL_ERR = "[ARAÇ:{name}:HATA]\n{error}"  # araç hatası (bilinmeyen ara�
 _FMT_SYS_ERR  = "[Sistem Hatası] {msg}"        # ayrıştırma / doğrulama hatası
 _FMT_SYS_WARN = "[Sistem Uyarısı] {msg}"       # döngü / iyileştirme uyarıları
 _FMT_TOOL_STEP = "[ARAÇ:{name}:SONUÇ]\n===\n{result}\n===\nDevam et veya final_answer ver."
-
-# Kodex-benzeri kullanım için: basit/tek-adım istekleri ReAct döngüsüne girmeden
-# doğrudan güvenli araçlara yönlendiren hafif intent router.
-_DIRECT_ROUTE_ALLOWED_TOOLS = frozenset({
-    "list_dir",
-    "ls",
-    "read_file",
-    "github_list_files",
-    "github_read",
-    "github_info",
-    "github_commits",
-    "get_config",
-    "health",
-    "audit",
-    "docs_list",
-    "glob_search",
-    "grep_files",
-    "grep",
-    "todo_read",
-})
 
 # ─────────────────────────────────────────────
 #  PYDANTIC VERİ MODELİ (YAPISAL ÇIKTI)
@@ -226,287 +205,6 @@ class SidarAgent:
         if not isinstance(result, str) or not result.strip():
             return "⚠ Supervisor geçerli bir çıktı üretemedi."
         return result
-
-    async def _try_direct_tool_route(self, user_input: str) -> Optional[str]:
-        """
-        Basit/tek-adım komutları LLM tabanlı hafif bir router ile doğrudan araca yönlendir.
-        Böylece her yeni ifade için AutoHandle regex ekleme ihtiyacı azalır.
-        """
-        router_system = (
-            "Kullanıcı isteğini TEK adımda çözülebilecekse uygun aracı seç. "
-            "Yalnızca şu şemada JSON döndür: "
-            '{"thought":"...","tool":"...","argument":"..."}. '
-            "Araç gerekmiyorsa tool='none' döndür. "
-            "Sadece izinli araçlar: "
-            + ", ".join(sorted(_DIRECT_ROUTE_ALLOWED_TOOLS))
-        )
-        try:
-            raw = await self.llm.chat(
-                messages=[{"role": "user", "content": user_input}],
-                model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                system_prompt=router_system,
-                temperature=0.0,
-                stream=False,
-                json_mode=True,
-            )
-            if not isinstance(raw, str):
-                return None
-            parsed = ToolCall.model_validate_json(raw)
-            tool_name = parsed.tool.strip().lower()
-            if tool_name in ("", "none", "final_answer"):
-                return None
-            if tool_name not in _DIRECT_ROUTE_ALLOWED_TOOLS:
-                return None
-            result = await self._execute_tool(tool_name, parsed.argument)
-            return result
-        except Exception:
-            return None
-
-    # ─────────────────────────────────────────────
-    #  ReAct DÖNGÜSÜ (PYDANTIC PARSING)
-    # ─────────────────────────────────────────────
-
-    async def _react_loop(self, user_input: str) -> AsyncIterator[str]:
-        """
-        LLM ile araç çağrısı döngüsü (Asenkron).
-        Kullanıcıya yalnızca nihai yanıt metni döndürülür; ara JSON/araç
-        çıktıları arka planda işlenir.
-        """
-        messages = self.memory.get_messages_for_llm()
-        context = self._build_context()
-        archive_context = await self._get_memory_archive_context(user_input)
-        tool_list_context = self._build_tool_list()
-        full_system = SIDAR_SYSTEM_PROMPT + "\n\n" + tool_list_context + "\n\n" + context + archive_context
-
-
-        _last_tool: str = ""          # Son çağrılan araç adı
-        _last_tool_result: str = ""   # Son araç sonucu (tekrar tespitinde kullanılır)
-
-        for step in range(self.cfg.MAX_REACT_STEPS):
-            # 1. LLM Çağrısı (Async Stream)
-            # ReAct döngüsü: düşünme/planlama/özetleme → TEXT_MODEL
-            # Kod odaklı araçlara (execute_code, write_file, patch_file) CODING_MODEL
-            # atanabilir; ancak döngü genelinde tutarlılık için TEXT_MODEL tercih edilir.
-            if self.tracer:
-                with self.tracer.start_as_current_span("react_step") as react_span:
-                    react_span.set_attribute("sidar.react.step", step + 1)
-                    response_generator = await self.llm.chat(
-                        messages=messages,
-                        model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                        system_prompt=full_system,
-                        temperature=0.3,
-                        stream=True
-                    )
-
-                    # LLM yanıtını biriktir
-                    llm_response_accumulated = ""
-                    first_chunk_at = None
-                    llm_call_started = time.monotonic()
-                    async for chunk in response_generator:
-                        if first_chunk_at is None and chunk:
-                            first_chunk_at = time.monotonic()
-                        llm_response_accumulated += chunk
-                    react_span.set_attribute("sidar.react.llm.total_ms", (time.monotonic() - llm_call_started) * 1000)
-                    if first_chunk_at is not None:
-                        react_span.set_attribute("sidar.react.llm.ttft_ms", (first_chunk_at - llm_call_started) * 1000)
-            else:
-                response_generator = await self.llm.chat(
-                    messages=messages,
-                    model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
-                    system_prompt=full_system,
-                    temperature=0.3,
-                    stream=True
-                )
-
-                llm_response_accumulated = ""
-                async for chunk in response_generator:
-                    llm_response_accumulated += chunk
-
-            # 2. JSON Ayrıştırma ve Yapısal Doğrulama (Pydantic)
-            try:
-                raw_text = llm_response_accumulated.strip()
-                # JSONDecoder ile ilk geçerli JSON payload'u bul (object veya array)
-                _decoder = json.JSONDecoder()
-                payload = None
-                for idx, ch in enumerate(raw_text):
-                    if ch not in "[{":
-                        continue
-                    try:
-                        payload, _ = _decoder.raw_decode(raw_text, idx)
-                        break
-                    except json.JSONDecodeError:
-                        continue
-
-                if payload is None:
-                    raise ValueError("Yanıtın içerisinde geçerli bir JSON payload ( { ... } veya [ ... ] ) bulunamadı.")
-
-                action_list: List[ToolCall] = []
-                if isinstance(payload, list):
-                    if not payload:
-                        raise ValueError("Boş JSON liste döndürüldü.")
-                    action_list = [ToolCall.model_validate(item) for item in payload]
-                else:
-                    json_match = payload
-                    # LLM bazen {"response": "..."} veya {"answer": "..."} formatı kullanıyor.
-                    if "tool" not in json_match:
-                        thought = json_match.pop("thought", "LLM doğrudan yanıt verdi.")
-                        for alias in ("response", "answer", "result", "output", "content"):
-                            if alias in json_match:
-                                json_match = {
-                                    "thought": thought,
-                                    "tool": "final_answer",
-                                    "argument": str(json_match[alias]),
-                                }
-                                break
-                        else:
-                            summary = "\n".join(f"- **{k}:** {v}" for k, v in json_match.items())
-                            json_match = {
-                                "thought": thought,
-                                "tool": "final_answer",
-                                "argument": summary,
-                            }
-                    action_list = [ToolCall.model_validate(json_match)]
-
-                # Çoklu ToolCall (JSON array) desteği: yalnızca güvenli okuma araçlarını paralel çalıştır.
-                if len(action_list) > 1:
-                    if any(a.tool == "final_answer" for a in action_list):
-                        messages = messages + [
-                            {"role": "assistant", "content": llm_response_accumulated},
-                            {"role": "user", "content": _FMT_SYS_ERR.format(msg="ToolCall listesinde final_answer yalnızca tek başına kullanılabilir.")},
-                        ]
-                        continue
-
-                    unsafe = [a.tool for a in action_list if a.tool not in self._AUTO_PARALLEL_SAFE]
-                    if unsafe:
-                        messages = messages + [
-                            {"role": "assistant", "content": llm_response_accumulated},
-                            {"role": "user", "content": _FMT_SYS_ERR.format(msg=f"JSON liste paralel yürütmede yalnızca okuma araçları desteklenir. Desteklenmeyen: {', '.join(sorted(set(unsafe)))}")},
-                        ]
-                        continue
-
-                    thought_summary = " | ".join(str(a.thought) for a in action_list)[:300].replace("\x00", " ")
-                    yield f"\x00THOUGHT:{thought_summary}\x00"
-                    for a in action_list:
-                        yield f"\x00TOOL:{a.tool}\x00"
-
-                    batch_results = await asyncio.gather(
-                        *[self._execute_tool(a.tool, a.argument) for a in action_list],
-                        return_exceptions=True,
-                    )
-
-                    lines = [f"[Paralel Araç Çalıştırma — {len(action_list)} adım]", ""]
-                    had_error = False
-                    for action, result in zip(action_list, batch_results):
-                        if isinstance(result, Exception) or result is None:
-                            had_error = True
-                            lines.append(f"❌ **{action.tool}**: {result}")
-                        else:
-                            snippet = str(result)[:700]
-                            suffix = "..." if len(str(result)) > 700 else ""
-                            lines.append(f"✓ **{action.tool}**:\n{snippet}{suffix}")
-                        lines.append("")
-                    tool_result = "\n".join(lines)
-
-                    _last_tool = "parallel_batch"
-                    _last_tool_result = tool_result[:2000]
-                    messages = messages + [
-                        {"role": "assistant", "content": llm_response_accumulated},
-                        {"role": "user", "content": _FMT_TOOL_OK.format(name="parallel_batch", result=tool_result)},
-                    ]
-                    if had_error:
-                        messages = messages + [{"role": "user", "content": _FMT_SYS_WARN.format(msg="Paralel adımlardan bazıları başarısız oldu; güvenli biçimde devam et veya final_answer üret.")}]
-                    continue
-
-                action_data = action_list[0]
-                tool_name = action_data.tool
-                tool_arg = action_data.argument
-
-                if tool_name == "final_answer":
-                    # Boş argument güvenlik ağı: JS'de falsy olduğu için UI "yanıt alınamadı" gösterir.
-                    if not str(tool_arg).strip():
-                        tool_arg = "✓ İşlem tamamlandı."
-                    await self._memory_add("assistant", tool_arg)
-                    yield str(tool_arg)
-                    return
-
-                # ── Tekrar tespiti: aynı araç art arda 2+ kez çağrılıyorsa
-                # modeli zorla final_answer ver.
-                if tool_name == _last_tool and _last_tool_result:
-                    loop_correction = _FMT_SYS_WARN.format(
-                        msg=(
-                            f"'{tool_name}' aracı art arda çağrıldı — döngü tespit edildi.\n"
-                            f"Bu araç zaten aşağıdaki sonucu döndürdü:\n===\n{_last_tool_result}\n===\n"
-                            f"Artık MUTLAKA final_answer aracını kullanarak bu sonucu kullanıcıya ilet.\n"
-                            f"Örnek: {{\"thought\": \"Sonuç mevcut.\", \"tool\": \"final_answer\", \"argument\": \"<özet>\"}}"
-                        )
-                    )
-                    messages = messages + [
-                        {"role": "assistant", "content": llm_response_accumulated},
-                        {"role": "user", "content": loop_correction},
-                    ]
-                    continue
-
-                # Düşünce sürecini UI'ya bildir (sentinel format: \x00THOUGHT:<thought>\x00)
-                _thought_safe = str(action_data.thought)[:300].replace('\x00', ' ')
-                yield f"\x00THOUGHT:{_thought_safe}\x00"
-                # Araç çağrısını UI'ya bildir (sentinel format: \x00TOOL:<name>\x00)
-                yield f"\x00TOOL:{tool_name}\x00"
-
-                # Aracı asenkron çalıştır
-                tool_result = await self._execute_tool(tool_name, tool_arg)
-
-                if tool_result is None:
-                    messages = messages + [
-                         {"role": "assistant", "content": llm_response_accumulated},
-                         {"role": "user", "content": _FMT_TOOL_ERR.format(
-                             name=tool_name,
-                             error="Bu araç yok veya geçersiz bir işlem seçildi."
-                         )},
-                    ]
-                    continue
-
-                # Son araç bilgisini güncelle (tekrar tespiti için)
-                _last_tool = tool_name
-                _last_tool_result = str(tool_result)[:2000]  # bellek tasarrufu
-
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": _FMT_TOOL_OK.format(name=tool_name, result=tool_result)},
-                ]
-
-            except ValidationError as ve:
-                logger.warning("Pydantic doğrulama hatası:\n%s", ve)
-                error_feedback = _FMT_SYS_ERR.format(
-                    msg=(
-                        f"Ürettiğin JSON yapısı beklentilere uymuyor.\n"
-                        f"Eksik veya hatalı alanlar:\n{ve}\n\n"
-                        f"Lütfen sadece şu formata uyan BİR TANE JSON döndür:\n"
-                        f'{{"thought": "düşüncen", "tool": "araç_adı", "argument": "argüman"}}'
-                    )
-                )
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": error_feedback},
-                ]
-            except (ValueError, json.JSONDecodeError) as e:
-                logger.warning("JSON ayrıştırma hatası: %s", e)
-                error_feedback = _FMT_SYS_ERR.format(
-                    msg=(
-                        f"Yanıtın geçerli bir JSON formatında değil veya bozuk: {e}\n\n"
-                        f"Lütfen yanıtını herhangi bir markdown (```json) bloğuna almadan, "
-                        f"sadece düz geçerli bir JSON objesi olarak ver."
-                    )
-                )
-                messages = messages + [
-                    {"role": "assistant", "content": llm_response_accumulated},
-                    {"role": "user", "content": error_feedback},
-                ]
-            except Exception as exc:
-                 logger.exception("ReAct döngüsünde beklenmeyen hata: %s", exc)
-                 yield "Üzgünüm, yanıt üretirken beklenmeyen bir hata oluştu."
-                 return
-            
-        yield "Üzgünüm, bu istek için güvenilir bir sonuca ulaşamadım (Maksimum adım sayısına ulaşıldı)."
 
     # ─────────────────────────────────────────────
     #  ARAÇ HANDLER METODLARI
@@ -1033,11 +731,21 @@ class SidarAgent:
                     ]
                     continue
 
-                tool_result = await self._execute_tool(tool_name, tool_arg)
-                if tool_result is None:
+                handler = self._tools.get(tool_name)
+                if handler is None:
                     messages += [
                         {"role": "assistant", "content": raw},
                         {"role": "user", "content": _FMT_TOOL_ERR.format(name=tool_name, error="Bu araç mevcut değil.")},
+                    ]
+                    continue
+
+                try:
+                    parsed_arg = parse_tool_argument(tool_name, str(tool_arg).strip())
+                    tool_result = await handler(parsed_arg)
+                except Exception as exc:
+                    messages += [
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": _FMT_TOOL_ERR.format(name=tool_name, error=str(exc))},
                     ]
                     continue
 
@@ -1244,91 +952,6 @@ class SidarAgent:
             f"  Bellek Turu  : max {self.cfg.MAX_MEMORY_TURNS}",
         ]
         return "\n".join(lines)
-
-    def _build_tool_list(self) -> str:
-        """Ajanın kullanabileceği araçların dinamik markdown listesini üretir."""
-        lines = [
-            "## MEVCUT ARAÇLAR",
-            "Aşağıda kullanabileceğin araçlar ve argüman formatları listelenmiştir:",
-            "",
-        ]
-        seen_funcs = set()
-        for name, func in self._tools.items():
-            if func in seen_funcs:
-                continue
-            seen_funcs.add(func)
-            doc = func.__doc__ or "Açıklama belirtilmemiş."
-            doc_first_line = doc.strip().split("\n")[0]
-            lines.append(f"- {name:<23}: {doc_first_line}")
-        return "\n".join(lines)
-
-    async def _execute_tool(self, tool_name: str, tool_arg: str) -> Optional[str]:
-        """Dispatch tablosu aracılığıyla araç handler'ını çağırır ve denetim logu tutar."""
-        raw_arg = str(tool_arg).strip()
-        handler = self._tools.get(tool_name)
-        if not handler:
-            return None
-        try:
-            parsed_arg = parse_tool_argument(tool_name, raw_arg)
-        except Exception as exc:
-            return f"⚠ Araç argümanı doğrulanamadı: {exc}"
-
-        try:
-            span_cm = self.tracer.start_as_current_span("tool_execution") if self.tracer else None
-            if span_cm:
-                span_cm.__enter__()
-            tool_started = time.monotonic()
-            result = await handler(parsed_arg)
-            # Eğer dönen sonuç bilinen bir hata kalıbıyla başlıyorsa başarısız (False) kabul edelim
-            success = True
-            if isinstance(result, str) and (
-                result.startswith("⚠") or result.startswith("✗") or result.startswith("[HATA]")
-            ):
-                success = False
-
-            if self.tracer:
-                current_span = trace.get_current_span()
-                current_span.set_attribute("sidar.tool.name", tool_name)
-                current_span.set_attribute("sidar.tool.success", success)
-                current_span.set_attribute("sidar.tool.duration_ms", (time.monotonic() - tool_started) * 1000)
-            await self._log_audit(tool_name, raw_arg, success)
-            return result
-        except Exception as exc:
-            if self.tracer:
-                current_span = trace.get_current_span()
-                current_span.set_attribute("sidar.tool.name", tool_name)
-                current_span.set_attribute("sidar.tool.success", False)
-            await self._log_audit(tool_name, raw_arg, False)
-            raise exc
-        finally:
-            if span_cm:
-                span_cm.__exit__(None, None, None)
-
-    async def _log_audit(self, tool_name: str, argument: str, success: bool) -> None:
-        """Çalıştırılan araçları logs/audit.jsonl dosyasına yapısal olarak kaydeder."""
-        log_dir = Path(self.cfg.BASE_DIR) / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        audit_file = log_dir / "audit.jsonl"
-
-        # Eğer argüman çok uzunsa log dosyasını şişirmemek için kırp
-        safe_arg = argument[:2000] + ("..." if len(argument) > 2000 else "")
-
-        entry = {
-            "timestamp": time.time(),
-            "time_human": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "session_id": self.memory.active_session_id or "global",
-            "tool": tool_name,
-            "argument": safe_arg,
-            "access_level": getattr(self.security, "level_name", "unknown"),
-            "success": success,
-        }
-
-        def _write():
-            with open(audit_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-        # Disk I/O işleminin asenkron event loop'u dondurmasını engelle
-        await asyncio.to_thread(_write)
 
     async def _get_memory_archive_context(self, user_input: str) -> str:
         """Sonsuz hafıza arşivinden sınırlı ve alakalı bağlamı çek."""
