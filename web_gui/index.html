@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sidar Ultimate Launcher GUI</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://unpkg.com/gsap@3/dist/gsap.min.js"></script>
+    <script type="text/javascript" src="/eel.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <h1>Sidar - Ultimate Launcher</h1>
+      <p class="subtitle">Akıcı masaüstü sihirbaz (Eel + GSAP konsepti)</p>
+
+      <section class="wizard-card" id="wizard-card">
+        <div class="grid">
+          <label>
+            Mod
+            <select id="mode">
+              <option value="web">Web</option>
+              <option value="cli">CLI</option>
+            </select>
+          </label>
+
+          <label>
+            Sağlayıcı
+            <select id="provider">
+              <option value="ollama">Ollama</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
+          </label>
+
+          <label>
+            Erişim Seviyesi
+            <select id="level">
+              <option value="full">Full</option>
+              <option value="sandbox">Sandbox</option>
+              <option value="restricted">Restricted</option>
+            </select>
+          </label>
+
+          <label>
+            Log
+            <select id="log">
+              <option value="info">info</option>
+              <option value="debug">debug</option>
+              <option value="warning">warning</option>
+            </select>
+          </label>
+
+          <label>
+            Host (web modu)
+            <input id="host" value="0.0.0.0" />
+          </label>
+
+          <label>
+            Port (web modu)
+            <input id="port" value="7860" />
+          </label>
+
+          <label>
+            Ollama Modeli (cli modu)
+            <input id="model" value="qwen2.5-coder:7b" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="btn-preflight">Preflight Çalıştır</button>
+          <button id="btn-launch" class="primary">Sidar'ı Başlat</button>
+        </div>
+      </section>
+
+      <section class="status-panel" id="status"></section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

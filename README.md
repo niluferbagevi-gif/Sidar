@@ -338,6 +338,17 @@ python main.py --quick web --provider gemini --level sandbox --host 0.0.0.0 --po
 
 Launcher akışı step-by-step olarak seçim yaptırır ve `cli.py` veya `web_server.py` süreçlerini alt süreçte başlatır.
 
+### ✨ GUI Launcher (Eel + GSAP iskeleti)
+
+`main.py` mimarisini bozmadan GUI köprüsü için yeni bir başlatıcı eklendi:
+
+```bash
+pip install eel
+python gui_launcher.py
+```
+
+Bu akışta frontend (`web_gui/`) seçimleri Eel üzerinden Python backend'e aktarır; backend de mevcut `preflight()`, `build_command()` ve `execute_command()` fonksiyonlarını kullanır.
+
 ### 💻 Terminal (CLI) Modu
 
 ```bash
