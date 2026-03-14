@@ -13,34 +13,10 @@
   - [Temel Özellikler](#temel-özellikler)
 - [2. Proje Dosya Yapısı](#2-proje-dosya-yapısı)
 - [3. Modül Bazında Detaylı Analiz](#3-modül-bazında-detaylı-analiz)
-  - [3.1 `config.py` — Merkezi Yapılandırma (589 satır)](#31-configpy-merkezi-yapılandırma-589-satır)
-  - [3.2 `main.py` — Akıllı Başlatıcı (225 satır)](#32-mainpy-akıllı-başlatıcı-225-satır)
-  - [3.3 `cli.py` — CLI Arayüzü (232 satır)](#33-clipy-cli-arayüzü-232-satır)
-  - [3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)](#34-web_serverpy-fastapi-web-sunucusu-1376-satır)
-  - [3.5 `agent/sidar_agent.py` — Ana Ajan (1.651 satır)](#35-agentsidar_agentpy-ana-ajan-1651-satır)
-  - [3.6 `agent/auto_handle.py` — Hızlı Yönlendirici (601 satır)](#36-agentauto_handlepy-hızlı-yönlendirici-601-satır)
-  - [3.7 `agent/definitions.py` — Ajan Tanımları (165 satır)](#37-agentdefinitionspy-ajan-tanımları-165-satır)
-  - [3.7b `agent/tooling.py` — Araç Kayıt ve Şema Yöneticisi (266 satır)](#37b-agenttoolingpy-araç-kayıt-ve-şema-yöneticisi-266-satır)
-  - [3.7c `agent/base_agent.py` — Temel Ajan Sınıfı (55 satır)](#37c-agentbase_agentpy-temel-ajan-sınıfı-55-satır)
-  - [3.7d `agent/core/supervisor.py` — Yönlendirici (Supervisor) Ajan (164 satır)](#37d-agentcoresupervisorpy-yönlendirici-supervisor-ajan-164-satır)
-  - [3.7e `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` — Çekirdek Ajan İletişim Altyapısı](#37e-agentcorecontractspy-event_streampy-memory_hubpy-registrypy-çekirdek-ajan-i̇letişim-altyapısı)
-  - [3.7f `agent/roles/` — Uzman Ajan Rolleri (Coder, Researcher & Reviewer)](#37f-agentroles-uzman-ajan-rolleri-coder-researcher-reviewer)
-  - [3.8 `core/llm_client.py` — LLM İstemcisi (Ollama + Gemini + OpenAI + Anthropic, 839 satır)](#38-corellm_clientpy-llm-i̇stemcisi-ollama-gemini-openai-anthropic-839-satır)
-  - [3.9 `core/memory.py` — Konuşma Belleği (DB tabanlı, v3.0)](#39-corememorypy-konuşma-belleği-db-tabanlı-v30)
-  - [3.10 `core/rag.py` — RAG Motoru (783 satır)](#310-coreragpy-rag-motoru-783-satır)
-  - [3.11 `managers/security.py` — Güvenlik Yöneticisi (290 satır)](#311-managerssecuritypy-güvenlik-yöneticisi-290-satır)
-  - [3.12 `managers/code_manager.py` — Kod Yöneticisi (805 satır)](#312-managerscode_managerpy-kod-yöneticisi-805-satır)
-  - [3.13 `managers/github_manager.py` — GitHub Yöneticisi (644 satır)](#313-managersgithub_managerpy-github-yöneticisi-644-satır)
-  - [3.14 `managers/system_health.py` — Sistem Sağlık Yöneticisi (475 satır)](#314-managerssystem_healthpy-sistem-sağlık-yöneticisi-475-satır)
-  - [3.15 `managers/web_search.py` — Web Arama Yöneticisi (387 satır)](#315-managersweb_searchpy-web-arama-yöneticisi-387-satır)
-  - [3.16 `managers/package_info.py` — Paket Bilgi Yöneticisi (322 satır)](#316-managerspackage_infopy-paket-bilgi-yöneticisi-322-satır)
-  - [3.17 `managers/todo_manager.py` — Görev Takip Yöneticisi (451 satır)](#317-managerstodo_managerpy-görev-takip-yöneticisi-451-satır)
-  - [3.18 `web_ui/` — Web Arayüzü (Toplam ~4.160 satır)](#318-web_ui-web-arayüzü-toplam-4160-satır)
-  - [3.19 `github_upload.py` — GitHub Yükleme Aracı (294 satır)](#319-github_uploadpy-github-yükleme-aracı-294-satır)
-  - [3.20 `core/db.py` — Veritabanı ve Çoklu Kullanıcı Altyapısı](#320-coredbpy-veritabanı-ve-çoklu-kullanıcı-altyapısı)
-  - [3.21 `core/llm_metrics.py` — Telemetri ve Bütçe Yönetimi](#321-corellm_metricspy-telemetri-ve-bütçe-yönetimi)
-  - [3.22 `migrations/` ve `scripts/` — Geçiş ve Operasyon Araçları](#322-migrations-ve-scripts-geçiş-ve-operasyon-araçları)
-  - [3.23 `docker/` ve `runbooks/` — Telemetri ve Production Altyapı Dosyaları](#323-docker-ve-runbooks-telemetri-ve-production-altyapı-dosyaları)
+  - [3.A Çekirdek Giriş Dosyaları](#3a-çekirdek-giriş-dosyaları)
+  - [3.B Agent Katmanı](#3b-agent-katmanı)
+  - [3.C Core ve Manager Katmanı](#3c-core-ve-manager-katmanı)
+  - [3.D UI, Altyapı ve Operasyon](#3d-ui-altyapı-ve-operasyon)
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
@@ -701,6 +677,7 @@ github_upload.py           ←── (bağımsız araç)
 - `SupervisorAgent` çalışma adımlarında `events.publish(...)` çağrılarıyla ajan durumlarını event olarak üretir.
 - `web_server.py` bu bus’a abone olup WebSocket kanalına canlı durum akışı taşır; böylece UI tarafı ajanları doğrudan çağırmadan gözlem yapar (loose coupling).
 
+<a id="93-güvenlik-zinciri-codemanager--securitymanager-hard-coupling"></a>
 ### 9.3 Güvenlik Zinciri: CodeManager → SecurityManager (Hard Coupling)
 
 - `managers/code_manager.py`, kurulumda zorunlu `SecurityManager` instance’ı alır (`CodeManager(security=...)`).
@@ -713,6 +690,7 @@ github_upload.py           ←── (bağımsız araç)
 - Web katmanı (`web_server.py`) token tabanlı kimlik doğrulama/oturum çözümlemesinde DB kayıtlarını kullanır.
 - `agent/core/memory_hub.py` ise DB yerine kısa ömürlü role/global notlar tutan hafif bir orchestrasyon belleğidir; DB merkezli uzun ömürlü oturum belleğinin yerini almaz, onu tamamlar.
 
+<a id="95-p2p-delegasyon-köprüsü-supervisor--contracts"></a>
 ### 9.5 P2P Delegasyon Köprüsü (Supervisor + Contracts)
 
 - `agent/core/contracts.py` içinde `P2PMessage` ve `DelegationRequest`/`DelegationResult` sözleşmeleri, ajanlar arası nokta-atışı görev devri için veri modelini tanımlar.
@@ -1016,6 +994,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 ---
 
+<a id="13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası"></a>
 ## 13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)
 
 [⬆ İçindekilere Dön](#içindekiler)
@@ -1088,6 +1067,7 @@ Hangi özelliği kullanmak için hangi paket veya dış servisin kurulu/yapılan
 | HuggingFace model cache | `sentence-transformers` | `HF_TOKEN` (opsiyonel) |
 | HF çevrimdışı mod | — | `HF_HUB_OFFLINE=true` |
 
+<a id="154-sistem-i̇zleme-ve-gpu"></a>
 ### 15.4 Sistem İzleme ve GPU
 
 | Özellik | Zorunlu Paket / Servis | Zorunlu `.env` |
