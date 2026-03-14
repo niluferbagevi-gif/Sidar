@@ -842,7 +842,8 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 | # | Sorun | Dosya/Alan | Etki | Öncelik | Durum |
 |---|-------|------------|------|---------|-------|
 | 1 | Sync/Async köprü maliyeti (`_run_coro_sync`) | `core/memory.py` | Event loop içinden thread-bridge ile çağrı maliyeti ve debug karmaşıklığı artıyor; tam async dönüşüm ihtiyacı sürüyor | Orta | ⚠ **AÇIK** |
-| 2 | Vanilla JS UI ölçeklenme riski | `web_ui/*.js` | Event stream + dashboard + auth durumları büyüdükçe DOM/state yönetimi karmaşıklaşıyor; component tabanlı çatı ihtiyacı doğuyor | Orta | ⚠ **AÇIK** |
+| 2 | Vanilla JS UI ölçeklenme riski | `web_ui/*.js` | Event stream + dashboard + auth durumları büyüdükçe DOM/state yönetimi karmaşıklaşıyor; component tabanlı çatı ihtiyacı doğuyor | Orta | ✅ **KAPALI** |
+|   | ↳ Not | `web_ui/app.js`, `web_ui/chat.js`, `web_ui/sidebar.js` | UIStore ile global state yönetimi merkezileştirildi, DOM önbellekleme (DOM Caching) kuruldu ve event handling/hata bildirimi standardize edildi | - | Bilgi |
 | 3 | Sağlayıcılar arası tool-calling şema farkları | `core/llm_client.py`, `agent/tooling.py` | OpenAI/Anthropic/Gemini format farkları if/else yüzeyini büyütüyor; soyutlama sızıntısı riski | Orta | ⚠ **AÇIK** |
 | 4 | Sandbox kaynak kotası standardizasyonu (cgroups) | `managers/code_manager.py`, Docker runtime profilleri | İzolasyon mevcut olsa da host profilleri arasında CPU/RAM limit standardı daha da sertleştirilmeli | Orta | ⚠ **AÇIK** |
 | 5 | `sidar_agent.py` ölü kod temizliği | `agent/sidar_agent.py` | Supervisor mimarisine geçiş sonrası yetim kalan (orphaned) eski `_react_loop` ve `_tool_*` metotları dosyada bakım maliyeti yaratıyor; temizlenmesi önerilir | Düşük | ⚠ **AÇIK** |
