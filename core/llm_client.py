@@ -36,6 +36,13 @@ SIDAR_TOOL_JSON_SCHEMA: Dict[str, Any] = {
     "additionalProperties": False,
 }
 
+# Sağlayıcıdan bağımsız, tüm istemcilerin system prompt'una enjekte ettiği standart JSON talimatı
+SIDAR_TOOL_JSON_INSTRUCTION: str = (
+    "Yalnızca aşağıdaki JSON şemasına uygun tek bir JSON nesnesi döndür. "
+    'Şema: {"thought": string, "tool": string, "argument": string}. '
+    "Ek açıklama, markdown kod bloğu veya ek metin ekleme; sadece ham JSON."
+)
+
 
 def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
     """Sidar'ın tekil araç JSON formatını sağlayıcıya göre adapte eder."""
@@ -196,6 +203,21 @@ class BaseLLMClient(ABC):
         self.config = config
 
     @abstractmethod
+    def json_mode_config(self) -> Dict[str, Any]:
+        """json_mode=True çağrısında payload'a eklenecek sağlayıcıya özel ayarları döndürür."""
+
+    @staticmethod
+    def _inject_json_instruction(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Mesaj listesindeki system mesajına JSON şema talimatını ekler (system yoksa başa ekler)."""
+        result = list(messages)
+        for i, msg in enumerate(result):
+            if msg.get("role") == "system":
+                existing = (msg.get("content") or "").strip()
+                result[i] = {**msg, "content": f"{existing}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()}
+                return result
+        return [{"role": "system", "content": SIDAR_TOOL_JSON_INSTRUCTION}] + result
+
+    @abstractmethod
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -217,6 +239,9 @@ class OllamaClient(BaseLLMClient):
     def _build_timeout(self) -> httpx.Timeout:
         timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
+
+    def json_mode_config(self) -> Dict[str, Any]:
+        return {"format": SIDAR_TOOL_JSON_SCHEMA}
 
     async def chat(
         self,
@@ -240,7 +265,7 @@ class OllamaClient(BaseLLMClient):
             "options": options,
         }
         if json_mode:
-            payload.update(build_provider_json_mode_config("ollama"))
+            payload.update(self.json_mode_config())
 
         timeout = self._build_timeout()
         tracer = _get_tracer(self.config)
@@ -363,6 +388,9 @@ class OllamaClient(BaseLLMClient):
 class GeminiClient(BaseLLMClient):
     """Gemini sağlayıcısı istemcisi."""
 
+    def json_mode_config(self) -> Dict[str, Any]:
+        return {"generation_config": {"response_mime_type": "application/json"}}
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -403,13 +431,10 @@ class GeminiClient(BaseLLMClient):
             else:
                 chat_messages.append(m)
 
-        gen_config = {
-            "temperature": 0.2 if json_mode else temperature,
-            "response_mime_type": "application/json" if json_mode else "text/plain",
-        }
+        gen_config = {"temperature": 0.2 if json_mode else temperature}
         if json_mode:
-            gemini_cfg = build_provider_json_mode_config("gemini").get("generation_config", {})
-            gen_config.update(gemini_cfg)
+            gen_config.update(self.json_mode_config().get("generation_config", {}))
+            system_text = f"{system_text}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()
 
         try:
             from google.generativeai.types import HarmBlockThreshold, HarmCategory
@@ -505,6 +530,18 @@ class GeminiClient(BaseLLMClient):
 class OpenAIClient(BaseLLMClient):
     """OpenAI Chat Completions istemcisi (opsiyonel sağlayıcı)."""
 
+    def json_mode_config(self) -> Dict[str, Any]:
+        return {
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "sidar_tool",
+                    "strict": True,
+                    "schema": SIDAR_TOOL_JSON_SCHEMA,
+                },
+            }
+        }
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -525,13 +562,15 @@ class OpenAIClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         model_name = model or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini")
+        if json_mode:
+            messages = self._inject_json_instruction(messages)
         payload = {
             "model": model_name,
             "messages": messages,
             "temperature": temperature,
         }
         if json_mode:
-            payload.update(build_provider_json_mode_config("openai"))
+            payload.update(self.json_mode_config())
 
         headers = {"Authorization": f"Bearer {api_key}"}
         timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
@@ -622,6 +661,10 @@ class OpenAIClient(BaseLLMClient):
 class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""
 
+    def json_mode_config(self) -> Dict[str, Any]:
+        # Anthropic için yerel JSON modu bulunmaz; şema talimatı system prompt'a enjekte edilir
+        return {}
+
     @staticmethod
     def _split_system_and_messages(messages: List[Dict[str, str]]) -> tuple[str, List[Dict[str, str]]]:
         system_parts: List[str] = []
@@ -676,12 +719,7 @@ class AnthropicClient(BaseLLMClient):
             conversation = [{"role": "user", "content": "Merhaba"}]
 
         if json_mode:
-            json_instruction = (
-                "Sadece geçerli JSON döndür. JSON şeması: "
-                '{"thought": string, "tool": string, "argument": string}. '
-                "Ek açıklama yazma."
-            )
-            system_prompt = f"{system_prompt}\n\n{json_instruction}".strip()
+            system_prompt = f"{system_prompt}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()
 
         client = AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
         tracer = _get_tracer(self.config)
