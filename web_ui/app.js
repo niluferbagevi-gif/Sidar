@@ -1,9 +1,30 @@
 const AUTH_TOKEN_KEY = 'sidar_access_token';
 const AUTH_USER_KEY = 'sidar_user';
-let isCurrentUserAdmin = false;
 
-// Merkezi UI store + yardımcılar (Vanilla JS ölçeklenme riski azaltma)
+// ── Merkezi UI Store — tüm paylaşımlı UI durumu tek kaynakta ──────────────
 window.UIStore = window.UIStore || { state: {}, domCache: new Map() };
+
+// Tüm dosyaların ortak kullandığı UI durumu için varsayılan değerler
+(function seedUIStore() {
+  const defaults = {
+    isCurrentUserAdmin:  false,
+    isStreaming:         false,
+    msgCounter:          0,
+    currentRepo:         'niluferbagevi-gif/sidar_project',
+    currentBranch:       'main',
+    defaultBranch:       'main',
+    currentSessionId:    null,
+    attachedFileContent: null,
+    attachedFileName:    null,
+    allSessions:         [],
+    cachedRepos:         null,
+    cachedBranches:      null,
+  };
+  const s = window.UIStore.state;
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!Object.prototype.hasOwnProperty.call(s, k)) s[k] = v;
+  }
+}());
 
 function getUIState(key, fallback = null) {
   return Object.prototype.hasOwnProperty.call(window.UIStore.state, key)
@@ -102,7 +123,7 @@ function renderUserProfile() {
   } else {
     box.style.display = 'none';
   }
-  isCurrentUserAdmin = !!(user && (user.role === 'admin' || user.username === 'default_admin'));
+  setUIState('isCurrentUserAdmin', !!(user && (user.role === 'admin' || user.username === 'default_admin')));
   const adminTab = document.getElementById('admin-nav-tab');
   if (adminTab) adminTab.style.display = isCurrentUserAdmin ? '' : 'none';
 }
@@ -224,7 +245,7 @@ window.showDashboardPanel = async function showDashboardPanel() {
 };
 
 window.showAdminPanel = async function showAdminPanel() {
-  if (!isCurrentUserAdmin) {
+  if (!getUIState('isCurrentUserAdmin', false)) {
     showUiNotice('Admin paneli sadece yetkili kullanıcılar içindir.', 'warn');
     return;
   }
@@ -440,10 +461,11 @@ async function loadGitInfo() {
     const branch = data.branch || 'main';
     const repo   = data.repo   || '';
 
-    // Global değişkenleri gerçek git bilgisiyle doldur
-    currentBranch = branch;
-    defaultBranch = data.default_branch || 'main';
-    if (repo) currentRepo = repo;
+    // UIStore'u gerçek git bilgisiyle güncelle
+    const localDefaultBranch = data.default_branch || 'main';
+    setUIState('currentBranch', branch);
+    setUIState('defaultBranch', localDefaultBranch);
+    if (repo) setUIState('currentRepo', repo);
 
     // Sidebar etiketleri
     const sbl = document.getElementById('sidebar-branch-label');
@@ -461,8 +483,8 @@ async function loadGitInfo() {
 
     // PR Çubuğu: varsayılan dışındaki dallarda göster
     const prBar = document.getElementById('pr-bar');
-    if (prBar && branch && branch !== defaultBranch) {
-      document.getElementById('pr-base').textContent = defaultBranch;
+    if (prBar && branch && branch !== localDefaultBranch) {
+      document.getElementById('pr-base').textContent = localDefaultBranch;
       document.getElementById('pr-head').textContent = branch;
       const viewBtn = document.getElementById('pr-view-btn');
       if (viewBtn && repo) {
@@ -563,7 +585,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     ['repo-modal','branch-modal','status-modal','shortcuts-modal','rag-modal'].forEach(id => closeModal(id));
     closeTodoPanel();
-    if (isStreaming) stopStreaming();
+    if (getUIState('isStreaming', false)) stopStreaming();
     return;
   }
   // Aktif input/textarea içindeyken kısayolları tetikleme
@@ -602,8 +624,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   await syncCurrentUserFromAPI();
   renderUserProfile();
   await loadSessions();
-  if (currentSessionId) {
-    await loadSessionHistory(currentSessionId, false);
+  const _initSessionId = getUIState('currentSessionId', null);
+  if (_initSessionId) {
+    await loadSessionHistory(_initSessionId, false);
   }
   loadGitInfo();
   loadModelInfo();
