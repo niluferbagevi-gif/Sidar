@@ -6,17 +6,8 @@ const _getState = window.getUIState || ((_, fb) => fb);
 const _setState = window.setUIState || ((_k, v) => v);
 const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
 
-let isStreaming = _getState('isStreaming', false);
-let msgCounter = _getState('msgCounter', 0);
-let currentRepo = _getState('currentRepo', 'niluferbagevi-gif/sidar_project');
-let currentBranch = _getState('currentBranch', 'main');
-let defaultBranch = _getState('defaultBranch', 'main'); // Repo'nun varsayılan hedef branch'i (PR base)
-let currentSessionId = _getState('currentSessionId', null);
-let attachedFileContent = _getState('attachedFileContent', null);
-let attachedFileName = _getState('attachedFileName', null);
-let allSessions = _getState('allSessions', []);
-let _cachedRepos = _getState('cachedRepos', null);
 const API_URL = window.location.origin;
+// Ephemeral runtime state (paylaşılmaz, UIStore'a alınmaz)
 let chatSocket = null;
 let wsReconnectTimer = null;
 let currentStream = null;
@@ -86,7 +77,7 @@ function hasAuthToken() {
 
 /* ─── Streaming durdur ──────────────────────────────────── */
 function stopStreaming() {
-  if (!isStreaming) return;
+  if (!_getState('isStreaming', false)) return;
   if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
     chatSocket.send(JSON.stringify({ action: 'cancel' }));
   }
@@ -179,10 +170,8 @@ function handleFileAttach(e) {
   }
   const reader = new FileReader();
   reader.onload = ev => {
-    attachedFileContent = ev.target.result;
-    _setState('attachedFileContent', attachedFileContent);
-    attachedFileName    = file.name;
-    _setState('attachedFileName', attachedFileName);
+    _setState('attachedFileContent', ev.target.result);
+    _setState('attachedFileName', file.name);
     renderAttachedFile(file.name);
   };
   reader.readAsText(file, 'utf-8');
@@ -202,10 +191,8 @@ function renderAttachedFile(name) {
 }
 
 function removeAttachedFile() {
-  attachedFileContent = null;
-  _setState('attachedFileContent', attachedFileContent);
-  attachedFileName    = null;
-  _setState('attachedFileName', attachedFileName);
+  _setState('attachedFileContent', null);
+  _setState('attachedFileName', null);
   document.getElementById('attached-file-preview').innerHTML = '';
 }
 
@@ -213,9 +200,11 @@ function removeAttachedFile() {
 function sendMessage() {
   const textarea = document.getElementById('input-area');
   const text = textarea.value.trim();
-  if (!text && !attachedFileContent) return;
-  const finalText = attachedFileContent
-    ? `${text}\n\n**Dosya: ${attachedFileName}**\n\`\`\`\n${attachedFileContent}\n\`\`\``
+  const _afc = _getState('attachedFileContent', null);
+  const _afn = _getState('attachedFileName', null);
+  if (!text && !_afc) return;
+  const finalText = _afc
+    ? `${text}\n\n**Dosya: ${_afn}**\n\`\`\`\n${_afc}\n\`\`\``
     : text;
   textarea.value = '';
   textarea.style.height = 'auto';
@@ -224,15 +213,14 @@ function sendMessage() {
 }
 
 async function sendText(text) {
-  if (isStreaming) return;
+  if (_getState('isStreaming', false)) return;
   if (!chatSocket || chatSocket.readyState !== WebSocket.OPEN) {
     connectWebSocket();
     showUiNotice('Sunucu bağlantısı hazırlanıyor, lütfen tekrar deneyin.', 'warn');
     return;
   }
 
-  isStreaming = true;
-  _setState('isStreaming', isStreaming);
+  _setState('isStreaming', true);
   const sendBtn = document.getElementById('send-btn');
   const stopBtn = document.getElementById('stop-btn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.style.display = 'none'; }
@@ -258,8 +246,7 @@ function finishStreaming() {
 
   finalizeMsg(currentStream.msgId, currentStream.accumulated);
   currentStream = null;
-  isStreaming = false;
-  _setState('isStreaming', isStreaming);
+  _setState('isStreaming', false);
 
   if (sendBtn) { sendBtn.disabled = false; sendBtn.style.display = ''; }
   if (stopBtn) stopBtn.style.display = 'none';
@@ -355,7 +342,7 @@ function copyText(text, btn) {
 
 function createSidarMsg() {
   const msgs = document.getElementById('messages');
-  const id   = `m${++msgCounter}`;
+  const id   = `m${_setState('msgCounter', _getState('msgCounter', 0) + 1)}`;
   const el   = document.createElement('div');
   el.className = 'message message-sidar';
   el.id = id;

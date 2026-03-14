@@ -1,3 +1,4 @@
+const _getState = window.getUIState || ((_, fb) => fb);
 const _setState = window.setUIState || ((_k, v) => v);
 const _getEl = window.getCachedEl || ((id) => document.getElementById(id));
 
@@ -6,11 +7,9 @@ async function loadSessions() {
   try {
     const res = await fetchAPI(apiUrl('/sessions'));
     const data = await res.json();
-    currentSessionId = data.active_session;
-    _setState('currentSessionId', currentSessionId);
-    allSessions = data.sessions || [];
-    _setState('allSessions', allSessions);
-    renderSessionList(allSessions);
+    _setState('currentSessionId', data.active_session);
+    _setState('allSessions', data.sessions || []);
+    renderSessionList(_getState('allSessions', []));
   } catch (err) {
     console.error("Oturumlar yüklenemedi:", err);
     if (typeof reportUIError === "function") reportUIError(err, "Oturumlar yüklenemedi");
@@ -32,7 +31,7 @@ function renderSessionList(sessions) {
   listEl.innerHTML = '';
   if (!sessions || sessions.length === 0) return;
   sessions.forEach(s => {
-    const isActive = s.id === currentSessionId;
+    const isActive = s.id === _getState('currentSessionId', null);
     const div = document.createElement('div');
     div.className = `session-item ${isActive ? 'active' : ''}`;
     div.onclick = () => selectSession(s.id);
@@ -61,20 +60,19 @@ function renderSessionList(sessions) {
 
 function filterSessions(q) {
   if (!q.trim()) {
-    renderSessionList(allSessions);
+    renderSessionList(_getState('allSessions', []));
     return;
   }
   const lower = q.toLowerCase();
-  renderSessionList(allSessions.filter(s => s.title.toLowerCase().includes(lower)));
+  renderSessionList(_getState('allSessions', []).filter(s => s.title.toLowerCase().includes(lower)));
 }
 
 async function selectSession(id) {
-  if (id === currentSessionId) {
+  if (id === _getState('currentSessionId', null)) {
     showChatPanel();
     return;
   }
-  currentSessionId = id;
-  _setState('currentSessionId', currentSessionId);
+  _setState('currentSessionId', id);
   await loadSessionHistory(id, true);
 }
 
@@ -85,8 +83,8 @@ async function loadSessionHistory(id, switchToChat = false) {
     
     if (data.success) {
       document.getElementById('messages').innerHTML = '';
-      msgCounter = 0;
-      
+      _setState('msgCounter', 0);
+
       if (data.history && data.history.length > 0) {
         data.history.forEach(msg => {
           if (msg.role === 'user') {
@@ -110,12 +108,11 @@ async function createNewSession() {
     const res = await fetchAPI('/sessions/new', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
-      currentSessionId = data.session_id;
-      _setState('currentSessionId', currentSessionId);
+      _setState('currentSessionId', data.session_id);
       document.getElementById('messages').innerHTML = '';
       document.getElementById('task-input').value = '';
       document.getElementById('input-area').value = '';
-      msgCounter = 0;
+      _setState('msgCounter', 0);
       await loadSessions();
       showTaskPanel();
     }
@@ -131,15 +128,14 @@ async function deleteSession(id, event) {
     const res = await fetchAPI(`/sessions/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      if (currentSessionId === id) {
+      if (_getState('currentSessionId', null) === id) {
          document.getElementById('messages').innerHTML = '';
          showTaskPanel();
       }
       await loadSessions();
-      if (data.active_session && currentSessionId === id) {
-         currentSessionId = data.active_session;
-         _setState('currentSessionId', currentSessionId);
-         loadSessionHistory(currentSessionId, false);
+      if (data.active_session && _getState('currentSessionId', null) === id) {
+         _setState('currentSessionId', data.active_session);
+         loadSessionHistory(data.active_session, false);
       }
     }
   } catch (err) {
@@ -176,27 +172,23 @@ function showChatPanel() {
 }
 
 /* ─── Branch Seçici ─────────────────────────────────────── */
-let _cachedBranches = null;
-
 async function openRepoModal() {
   document.getElementById('repo-search').value = '';
   _getEl('repo-modal')?.classList.add('open');
 
-  if (!_cachedRepos) {
+  if (!_getState('cachedRepos', null)) {
     document.getElementById('repo-list').innerHTML =
       '<div style="padding:14px;color:var(--text-dim);font-size:12px">Depolar yükleniyor…</div>';
     try {
-      const ownerHint = (currentRepo || '').includes('/') ? currentRepo.split('/')[0] : '';
+      const ownerHint = (_getState('currentRepo', '') || '').includes('/') ? _getState('currentRepo', '').split('/')[0] : '';
       const data = await (await fetchAPI(`/github-repos?owner=${encodeURIComponent(ownerHint)}`)).json();
-      _cachedRepos = data.repos || [];
-      _setState('cachedRepos', _cachedRepos);
+      _setState('cachedRepos', data.repos || []);
     } catch {
-      _cachedRepos = [];
-      _setState('cachedRepos', _cachedRepos);
+      _setState('cachedRepos', []);
     }
   }
 
-  renderRepos(_cachedRepos);
+  renderRepos(_getState('cachedRepos', []));
   setTimeout(() => document.getElementById('repo-search').focus(), 50);
 }
 
@@ -208,7 +200,7 @@ function renderRepos(list) {
   }
   document.getElementById('repo-list').innerHTML = list.map(r => {
     const name = r.full_name || '';
-    const selected = name === currentRepo ? 'selected' : '';
+    const selected = name === _getState('currentRepo', '') ? 'selected' : '';
     const defBranch = r.default_branch || 'main';
     const privacy = r.private === 'true' ? 'private' : 'public';
     return `
@@ -225,12 +217,12 @@ function renderRepos(list) {
 
 function filterRepos(q) {
   const query = q.toLowerCase();
-  renderRepos((_cachedRepos || []).filter(r => (r.full_name || '').toLowerCase().includes(query)));
+  renderRepos((_getState('cachedRepos', null) || []).filter(r => (r.full_name || '').toLowerCase().includes(query)));
 }
 
 async function selectRepo(name) {
   closeModal('repo-modal');
-  if (!name || name === currentRepo) return;
+  if (!name || name === _getState('currentRepo', '')) return;
 
   try {
     const res = await fetchAPI('/set-repo', {
@@ -249,17 +241,16 @@ async function selectRepo(name) {
     return;
   }
 
-  currentRepo = name;
-  _setState('currentRepo', currentRepo);
-  _cachedBranches = null; // Repo değişince dal listesi önbelleğini sıfırla
+  _setState('currentRepo', name);
+  _setState('cachedBranches', null); // Repo değişince dal listesi önbelleğini sıfırla
   document.getElementById('repo-label').textContent = name;
   const srl = document.getElementById('sidebar-repo-label');
   if (srl) srl.textContent = name.split('/').pop() || name;
 
-  const prHead = document.getElementById('pr-head')?.textContent || currentBranch || defaultBranch;
+  const prHead = document.getElementById('pr-head')?.textContent || _getState('currentBranch', 'main') || _getState('defaultBranch', 'main');
   const viewBtn = document.getElementById('pr-view-btn');
   if (viewBtn && name) {
-    viewBtn.href = `https://github.com/${name}/compare/${defaultBranch}...${prHead}`;
+    viewBtn.href = `https://github.com/${name}/compare/${_getState('defaultBranch', 'main')}...${prHead}`;
     viewBtn.style.display = 'inline-flex';
   }
 }
@@ -269,25 +260,25 @@ async function openBranchModal() {
   _getEl('branch-modal')?.classList.add('open');
 
   // Gerçek dal listesini sunucudan çek (oturum boyunca önbelleğe al)
-  if (!_cachedBranches) {
+  if (!_getState('cachedBranches', null)) {
     document.getElementById('branch-list').innerHTML =
       '<div style="padding:14px;color:var(--text-dim);font-size:12px">Dallar yükleniyor…</div>';
     try {
-      const data      = await (await fetchAPI('/git-branches')).json();
-      _cachedBranches = data.branches || ['main'];
+      const data = await (await fetchAPI('/git-branches')).json();
+      _setState('cachedBranches', data.branches || ['main']);
     } catch {
-      _cachedBranches = [currentBranch || 'main'];
+      _setState('cachedBranches', [_getState('currentBranch', 'main')]);
     }
   }
 
-  renderBranches(_cachedBranches);
+  renderBranches(_getState('cachedBranches', []));
   setTimeout(() => document.getElementById('branch-search').focus(), 50);
 }
 
 function renderBranches(list) {
   const container = document.getElementById('branch-list');
   container.innerHTML = list.map(b => `
-    <div class="repo-item ${b === currentBranch ? 'selected' : ''}" data-branch="${escHtml(b)}">
+    <div class="repo-item ${b === _getState('currentBranch', 'main') ? 'selected' : ''}" data-branch="${escHtml(b)}">
       <div class="repo-item-icon" style="font-size:18px">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="var(--text-dim)">
           <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z"/>
@@ -306,7 +297,7 @@ function renderBranches(list) {
 }
 
 function filterBranches(q) {
-  renderBranches((_cachedBranches || [currentBranch]).filter(
+  renderBranches((_getState('cachedBranches', null) || [_getState('currentBranch', 'main')]).filter(
     b => b.toLowerCase().includes(q.toLowerCase())
   ));
 }
@@ -334,9 +325,8 @@ async function selectBranch(name) {
   }
 
   // Başarılı: UI güncelle
-  currentBranch = name;
-  _setState('currentBranch', currentBranch);
-  _cachedBranches = null; // Dal listesi önbelleğini sıfırla
+  _setState('currentBranch', name);
+  _setState('cachedBranches', null); // Dal listesi önbelleğini sıfırla
 
   document.getElementById('branch-label').textContent = name;
   const sbl = document.getElementById('sidebar-branch-label');
@@ -345,12 +335,12 @@ async function selectBranch(name) {
   // PR çubuğunu güncelle
   const prBar = document.getElementById('pr-bar');
   if (prBar) {
-    if (name && name !== defaultBranch) {
-      document.getElementById('pr-base').textContent = defaultBranch;
+    if (name && name !== _getState('defaultBranch', 'main')) {
+      document.getElementById('pr-base').textContent = _getState('defaultBranch', 'main');
       document.getElementById('pr-head').textContent = name;
       const viewBtn = document.getElementById('pr-view-btn');
-      if (viewBtn && currentRepo) {
-        viewBtn.href = `https://github.com/${currentRepo}/compare/${defaultBranch}...${name}`;
+      if (viewBtn && _getState('currentRepo', null)) {
+        viewBtn.href = `https://github.com/${_getState('currentRepo', '')}/compare/${_getState('defaultBranch', 'main')}...${name}`;
       }
       prBar.style.display = 'flex';
     } else {
@@ -361,7 +351,7 @@ async function selectBranch(name) {
 
 /* ─── Akıllı PR Oluşturma ────────────────────────────────── */
 function createSmartPR() {
-  const branch = currentBranch || document.getElementById('pr-head')?.textContent || '';
+  const branch = _getState('currentBranch', 'main') || document.getElementById('pr-head')?.textContent || '';
   if (!branch || branch === 'main' || branch === 'master') {
     quickTask('Mevcut branch için git diff analiz edip akıllı PR oluştur');
     return;
@@ -380,9 +370,10 @@ function createSmartPR() {
 
 /* ─── Oturum Dışa Aktarma ────────────────────────────────── */
 async function exportSession(format) {
-  if (!currentSessionId) { alert('Aktif oturum yok.'); return; }
+  const _sid = _getState('currentSessionId', null);
+  if (!_sid) { alert('Aktif oturum yok.'); return; }
   try {
-    const data = await (await fetchAPI(`/sessions/${currentSessionId}`)).json();
+    const data = await (await fetchAPI(`/sessions/${_sid}`)).json();
     if (!data.success) { alert('Oturum verisi alınamadı.'); return; }
     const history = data.history || [];
     const title = (document.querySelector('.session-item.active .session-item-title')
@@ -390,7 +381,7 @@ async function exportSession(format) {
 
     let content, mime, ext;
     if (format === 'json') {
-      content = JSON.stringify({ title, session_id: currentSessionId, messages: history }, null, 2);
+      content = JSON.stringify({ title, session_id: _sid, messages: history }, null, 2);
       mime = 'application/json'; ext = 'json';
     } else {
       const lines = [`# ${title}\n`];
