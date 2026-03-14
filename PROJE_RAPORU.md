@@ -1,10 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Tüm v3.0 nesil teknik borçlar kapatıldı: Borç #2 Vanilla JS UIStore tek kaynak refaktörü ve Borç #3 LLM JSON şema soyutlaması çözüldü; 11.2 tablosu temizlendi, CHANGELOG güncellendi)
-> **Proje Sürümü:** 3.0.0
+> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Tam repo denetimi: satır sayıları güncellendi, SANDBOX_* ortam değişkeni eksikliği tespit edilerek 12.11'e eklendi ve .env.example'a dahil edildi; tüm v3.0 teknik borçları kapatıldı)
+> **Proje Sürümü:** 3.0.1
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: ~12.160 satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.239** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.185** satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.240** satır.
 
 ---
 
@@ -547,7 +547,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `agent/definitions.py` | 165 |
 | `agent/tooling.py` | 117 |
 | `agent/base_agent.py` | 55 |
-| `core/llm_client.py` | 860 |
+| `core/llm_client.py` | 898 |
 | `core/memory.py` | 280 |
 | `core/rag.py` | 783 |
 | `core/db.py` | 989 |
@@ -600,11 +600,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---:|
 | `web_ui/index.html` | 572 |
 | `web_ui/style.css` | 1.684 |
-| `web_ui/chat.js` | 721 |
-| `web_ui/sidebar.js` | 421 |
+| `web_ui/chat.js` | 708 |
+| `web_ui/sidebar.js` | 412 |
 | `web_ui/rag.js` | 131 |
-| `web_ui/app.js` | 710 |
-| **Web UI Toplamı** | **4.239** |
+| `web_ui/app.js` | 733 |
+| **Web UI Toplamı** | **4.240** |
 | **Test modülü (`tests/test_*.py`)** | **92** |
 | **`tests/*.py` toplam dosya** | **94** |
 | **`tests/*.py` toplam satır** | **20.962** |
@@ -853,6 +853,12 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 
 Şu anda izlenen açık teknik borç bulunmamaktadır. Tüm kalemler kapatılmış olup çözüm kayıtları **11.1** ve **[CHANGELOG.md](./CHANGELOG.md)** altında tutulmaktadır.
 
+> **v3.0.1 Denetim Notları (kapatılmış, belgeleme tamamlandı):**
+> - **SANDBOX_* ortam değişkeni dokümantasyon boşluğu (kapatıldı):** `config.py::SANDBOX_LIMITS` içindeki `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_NETWORK`, `SANDBOX_PIDS_LIMIT`, `SANDBOX_TIMEOUT` değişkenleri `.env.example`'da ve §12.11 tablosunda yer almıyordu. v3.0.1 denetimiyle her ikisine de eklendi.
+> - **Sözdizimi denetimi (temiz):** 134 Python kaynak dosyasının tamamı `ast.parse()` ile incelendi; sözdizimi hatası saptanmadı.
+> - **Modüler import zinciri (sağlıklı):** Dairesel import riski yok; `config.py` bağımlılık kökü olarak korunuyor, tüm iç modüller tek yönlü DAG oluşturuyor.
+> - **Güvenlik taraması (temiz):** Hardcoded secret/credential içeren satır yok; tüm hassas değerler `os.getenv()` ve yardımcı sarmalayıcılar üzerinden okunuyor.
+
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -988,7 +994,14 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `DOCKER_MEM_LIMIT` | `256m` | Sandbox konteyner bellek limiti |
 | `DOCKER_NETWORK_DISABLED` | `true` | Sandbox için network kapatma anahtarı |
 | `DOCKER_NANO_CPUS` | `1000000000` | Sandbox CPU kotası (~1 vCPU) |
+| `SANDBOX_MEMORY` | `256m` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner bellek sınırı (override için) |
+| `SANDBOX_CPUS` | `0.5` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner CPU payı |
+| `SANDBOX_NETWORK` | `none` | `config.py::SANDBOX_LIMITS` kaynak kotası — ağ modu (`none` = kapalı, yalıtılmış) |
+| `SANDBOX_PIDS_LIMIT` | `64` | `config.py::SANDBOX_LIMITS` kaynak kotası — süreç sayısı sınırı |
+| `SANDBOX_TIMEOUT` | `10` | `config.py::SANDBOX_LIMITS` kaynak kotası — sandbox çalışma süresi limiti (sn) |
 
+> **Sandbox Kaynak Notu:** `SANDBOX_MEMORY/CPUS/NETWORK/PIDS_LIMIT/TIMEOUT` değerleri `config.py` içindeki `SANDBOX_LIMITS` sözlüğüne beslenir ve `CodeManager._resolve_sandbox_limits()` üzerinden Docker run çağrısına aktarılır. Bu değişkenler `.env.example`'da önceden yer almıyordu; v3.0.1 denetimiyle belgelenmiştir.
+>
 > **Telemetri Notu:** Konfigürasyonda ayrı `ENABLE_TELEMETRY`/`METRICS_PORT` anahtarı yoktur; metrik ihracı uygulama endpoint'leri (`/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget`) üzerinden sağlanır.
 
 ### 12.12 Çeşitli
