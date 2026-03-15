@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from opentelemetry import trace
@@ -345,6 +345,52 @@ class SidarAgent:
             self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
             return self._instructions_cache
 
+
+    async def _tool_docs_search(self, argument: str) -> str:
+        """RAG belgelerinde arama yapar (thread offload ile)."""
+        query = (argument or "").strip()
+        if not query:
+            return "⚠ Arama sorgusu boş olamaz."
+        search_result = await asyncio.to_thread(self.docs.search, query, None, "auto")
+        if asyncio.iscoroutine(search_result):
+            _, result = await search_result
+        else:
+            _, result = search_result
+        return result
+
+    async def _tool_subtask(self, argument: str) -> str:
+        """Yapılandırılabilir adım sınırıyla alt görev çalıştırır."""
+        max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5))
+        max_steps = max(1, max_steps)
+
+        action = {"thought": "subtask", "tool": "subtask", "argument": argument}
+        try:
+            _ = ToolCall.model_validate(action)
+        except ValidationError as exc:
+            return f"⚠ Geçersiz alt görev şeması: {exc}"
+
+        if getattr(self, "_supervisor", None) is None:
+            from agent.core.supervisor import SupervisorAgent
+            self._supervisor = SupervisorAgent(self.cfg)
+
+        # Supervisor API'si farklı sürümlerde değişebileceği için kontrollü çağrı
+        runner = getattr(self._supervisor, "run_subtask", None)
+        if callable(runner):
+            return await runner(argument, max_steps=max_steps)
+        result = await self._supervisor.run_task(argument)
+        return str(result)
+
+    async def _tool_smart_pr(self, argument: str = "") -> str:
+        """PR özeti için diff'i güvenli boyuta kırpar."""
+        _ = argument
+        ok, diff_text = self.code.execute_code("git diff --no-color HEAD")
+        if not ok:
+            return f"⚠ Diff alınamadı: {diff_text}"
+        max_diff_chars = 10000
+        if len(diff_text) > max_diff_chars:
+            diff_text = diff_text[:max_diff_chars] + "\n...\n[Diff çok büyük olduğu için geri kalanı kırpıldı]"
+        return diff_text
+
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
     # ─────────────────────────────────────────────
@@ -423,8 +469,8 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            await self._memory_add("user", msg)
-            await self._memory_add(
+            await self.memory.add("user", msg)
+            await self.memory.add(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "

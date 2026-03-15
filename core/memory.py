@@ -112,7 +112,7 @@ class ConversationMemory:
             for r in rows
         ]
 
-    async def create_session(self, title: str = "Yeni Sohbet") -> str:
+    async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
         await self._ensure_initialized()
         user_id = self._require_active_user()
         row = await self.db.create_session(user_id, title)
@@ -160,7 +160,7 @@ class ConversationMemory:
             if sessions:
                 await self.load_session(sessions[0]["id"])
             else:
-                await self.create_session("Yeni Sohbet")
+                await self.acreate_session("Yeni Sohbet")
         return True
 
     async def update_title(self, new_title: str) -> None:
@@ -171,11 +171,11 @@ class ConversationMemory:
             self.active_title = new_title
         await self.db.update_session_title(self.active_session_id, new_title)
 
-    async def add(self, role: str, content: str) -> None:
+    async def aadd(self, role: str, content: str) -> None:
         await self._ensure_initialized()
         self._require_active_user()
         if not self.active_session_id:
-            await self.create_session("Yeni Sohbet")
+            await self.acreate_session("Yeni Sohbet")
 
         now = time.time()
         with self._lock:
@@ -185,7 +185,7 @@ class ConversationMemory:
         await self.db.add_message(self.active_session_id, role, content, tokens_used=0)
         self._dirty = False
 
-    async def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+    async def aget_history(self, n_last: Optional[int] = None) -> List[Dict]:
         await self._ensure_initialized()
         with self._lock:
             turns = list(self._turns)
@@ -199,11 +199,50 @@ class ConversationMemory:
         if sessions:
             await self.load_session(sessions[0].id)
         else:
-            await self.create_session("Yeni Sohbet")
+            await self.acreate_session("Yeni Sohbet")
+
+
+    def _run_coro_sync(self, coro):
+        """Async metotları senkron bağlamdan güvenle çalıştır."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        raise RuntimeError("Cannot run sync wrapper while event loop is running")
 
     # ─────────────────────────────────────────────
     #  MEVCUT API (değişmeden)
     # ─────────────────────────────────────────────
+
+    def create_session_sync(self, title: str = "Yeni Sohbet") -> str:
+        return self._run_coro_sync(self.acreate_session(title))
+
+    def add_sync(self, role: str, content: str) -> None:
+        self._run_coro_sync(self.aadd(role, content))
+
+    def get_history_sync(self, n_last: Optional[int] = None) -> List[Dict]:
+        return self._run_coro_sync(self.aget_history(n_last))
+
+    def apply_summary_sync(self, summary_text: str) -> None:
+        self._run_coro_sync(self.aapply_summary(summary_text))
+
+    def clear_sync(self) -> None:
+        self._run_coro_sync(self.aclear())
+
+    async def create_session(self, title: str = "Yeni Sohbet") -> str:
+        return await self.acreate_session(title)
+
+    async def add(self, role: str, content: str) -> None:
+        await self.aadd(role, content)
+
+    async def get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        return await self.aget_history(n_last)
+
+    async def apply_summary(self, summary_text: str) -> None:
+        await self.aapply_summary(summary_text)
+
+    async def clear(self) -> None:
+        await self.aclear()
 
     def get_messages_for_llm(self) -> List[Dict[str, str]]:
         with self._lock:
@@ -233,7 +272,7 @@ class ConversationMemory:
             token_est = self._estimate_tokens()
             return len(self._turns) >= threshold or token_est > 6000
 
-    async def apply_summary(self, summary_text: str) -> None:
+    async def aapply_summary(self, summary_text: str) -> None:
         await self._ensure_initialized()
         with self._lock:
             kept_turns = self._turns[-self.keep_last:] if self.keep_last > 0 else []
@@ -250,11 +289,11 @@ class ConversationMemory:
         title = self.active_title
         if sid and uid:
             await self.db.delete_session(sid, uid)
-            await self.create_session(title)
+            await self.acreate_session(title)
             for turn in compact_turns:
-                await self.add(turn["role"], turn["content"])
+                await self.aadd(turn["role"], turn["content"])
 
-    async def clear(self) -> None:
+    async def aclear(self) -> None:
         await self._ensure_initialized()
         with self._lock:
             self._turns.clear()
@@ -263,7 +302,7 @@ class ConversationMemory:
         title = self.active_title
         if sid:
             await self.db.delete_session(sid, self.active_user_id)
-            await self.create_session(title)
+            await self.acreate_session(title)
 
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.
@@ -298,3 +337,6 @@ class ConversationMemory:
 
     def __repr__(self) -> str:
         return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>"
+# compatibility hooks: self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))
+# compatibility hooks: self._run_coro_sync(self.db.delete_session(sid, uid))
+# compatibility hooks: self.create_session(title)

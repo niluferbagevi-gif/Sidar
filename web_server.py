@@ -1189,7 +1189,11 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
-    ok, result = await agent.docs.search(q.strip(), min(top_k, 10), mode, session_id)
+    search_result = await asyncio.to_thread(agent.docs.search, q.strip(), min(top_k, 10), mode, session_id)
+    if asyncio.iscoroutine(search_result):
+        ok, result = await search_result
+    else:
+        ok, result = search_result
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -1240,7 +1244,9 @@ async def set_level_endpoint(request: Request):
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
     agent = await get_agent()
-    result_msg = await agent.set_access_level(new_level)
+    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
+    if asyncio.iscoroutine(result_msg):
+        result_msg = await result_msg
     return JSONResponse(
         {
             "success": True,
