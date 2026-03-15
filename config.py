@@ -392,7 +392,7 @@ class Config:
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
-    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "bash run_tests.sh")
+    REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "python -m pytest")
 
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
