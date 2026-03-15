@@ -142,6 +142,20 @@ def preflight(provider: str) -> None:
 
 def build_command(mode: str, provider: str, level: str, log: str, extra_args: Dict[str, str]) -> List[str]:
     """Seçimlere göre çalıştırılacak terminal komutunu inşa eder."""
+    valid_modes = {"web", "cli"}
+    valid_providers = {"ollama", "gemini", "openai", "anthropic"}
+    valid_levels = {"restricted", "sandbox", "full"}
+    valid_logs = {"info", "debug", "warning", "error"}
+
+    if mode not in valid_modes:
+        raise ValueError(f"Geçersiz mode: {mode}")
+    if provider not in valid_providers:
+        raise ValueError(f"Geçersiz provider: {provider}")
+    if level not in valid_levels:
+        raise ValueError(f"Geçersiz level: {level}")
+    if log not in valid_logs:
+        raise ValueError(f"Geçersiz log seviyesi: {log}")
+
     target_script = "web_server.py" if mode == "web" else "cli.py"
     cmd = [sys.executable, target_script, "--provider", provider, "--level", level, "--log", log]
     

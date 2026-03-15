@@ -58,3 +58,10 @@ def test_start_gui_import_error(monkeypatch) -> None:
         raise AssertionError("RuntimeError bekleniyordu")
     except RuntimeError as exc:
         assert "Eel kurulu değil" in str(exc)
+
+def test_normalize_selection_invalid_log_level() -> None:
+    try:
+        gui_launcher._normalize_selection("web", "ollama", "full", "trace")
+        raise AssertionError("ValueError bekleniyordu")
+    except ValueError as exc:
+        assert "Geçersiz log_level" in str(exc)
