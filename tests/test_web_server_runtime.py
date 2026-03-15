@@ -1402,7 +1402,6 @@ def test_metrics_text_plain_importerror_falls_back_to_json(monkeypatch):
         VERSION="1",
         cfg=cfg,
         docs=types.SimpleNamespace(doc_count=1),
-        memory=types.SimpleNamespace(__len__=lambda self: 1, get_all_sessions=lambda: [{"id": "s1"}]),
     )
 
     class _Mem:
