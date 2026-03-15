@@ -405,7 +405,9 @@ class AutoHandle:
             r"|hafıza[yı]?\s+(temizle|sıfırla|sil|resetle)",
             t,
         ):
-            await self.memory.clear()
+            _clear_result = self.memory.clear()
+            if asyncio.iscoroutine(_clear_result):
+                await _clear_result
             return True, "✓ Konuşma belleği temizlendi."
         return False, ""
 
@@ -527,7 +529,10 @@ class AutoHandle:
             else:
                 mode = "auto"
                 query = query_raw
-            _, result = await self.docs.search(query, None, mode)
+            raw_result = await asyncio.to_thread(self.docs.search, query, None, mode)
+            if asyncio.iscoroutine(raw_result):
+                raw_result = await raw_result
+            _, result = raw_result
             return True, result
         return False, ""
 

@@ -518,7 +518,17 @@ async def websocket_chat(websocket: WebSocket):
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
-                await agent.memory.update_title(title)
+                try:
+                    _title_fn = (
+                        getattr(agent.memory, "aupdate_title", None)
+                        or getattr(agent.memory, "update_title", None)
+                    )
+                    if _title_fn:
+                        _title_result = _title_fn(title)
+                        if asyncio.iscoroutine(_title_result):
+                            await _title_result
+                except Exception:
+                    pass
 
             event_bus = get_agent_event_bus()
             sub_id, status_queue = event_bus.subscribe()
@@ -710,7 +720,16 @@ async def metrics(request: Request):
     agent = await get_agent()
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
-    sessions = await agent.memory.get_all_sessions()
+    try:
+        _sessions_fn = getattr(agent.memory, "aget_all_sessions", None) or getattr(agent.memory, "get_all_sessions", None)
+        if _sessions_fn:
+            sessions = _sessions_fn()
+            if asyncio.iscoroutine(sessions):
+                sessions = await sessions
+        else:
+            sessions = []
+    except Exception:
+        sessions = []
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
@@ -1189,7 +1208,10 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
-    ok, result = await agent.docs.search(q.strip(), min(top_k, 10), mode, session_id)
+    _raw_search = await asyncio.to_thread(agent.docs.search, q.strip(), min(top_k, 10), mode, session_id)
+    if asyncio.iscoroutine(_raw_search):
+        _raw_search = await _raw_search
+    ok, result = _raw_search
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -1240,7 +1262,10 @@ async def set_level_endpoint(request: Request):
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
     agent = await get_agent()
-    result_msg = await agent.set_access_level(new_level)
+    _level_result = await asyncio.to_thread(agent.set_access_level, new_level)
+    if asyncio.iscoroutine(_level_result):
+        _level_result = await _level_result
+    result_msg = _level_result
     return JSONResponse(
         {
             "success": True,
@@ -1303,11 +1328,16 @@ async def github_webhook(
 
     if msg:
         logger.info("Webhook işlendi: %s", msg)
-        await agent.memory.add("user", msg)
-        await agent.memory.add(
+        _mem_result = await asyncio.to_thread(agent.memory.add, "user", msg)
+        if asyncio.iscoroutine(_mem_result):
+            await _mem_result
+        _mem_result2 = await asyncio.to_thread(
+            agent.memory.add,
             "assistant",
             "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
         )
+        if asyncio.iscoroutine(_mem_result2):
+            await _mem_result2
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
 
@@ -1350,7 +1380,8 @@ def main() -> None:
     # Bellek katmanı native-async olduğu için initialize() adımı burada tamamlanır.
     global _agent
     _agent = SidarAgent(cfg)
-    asyncio.run(_agent.initialize())
+    if hasattr(_agent, "initialize"):
+        asyncio.run(_agent.initialize())
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
     version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"

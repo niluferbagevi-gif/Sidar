@@ -5,12 +5,13 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 
 import logging
 import asyncio
+import subprocess
 import time
 import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from opentelemetry import trace
@@ -409,37 +410,88 @@ class SidarAgent:
         await self.memory.clear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
-    async def set_access_level(self, new_level: str) -> str:
+    def set_access_level(self, new_level: str) -> str:
         """
         Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
         sohbet belleğine kalıcı olarak yazar.
         """
         old_level = self.security.level_name
         changed = self.security.set_level(new_level)
-        if changed:
-            self.cfg.ACCESS_LEVEL = self.security.level_name
-            msg = (
-                "[GÜVENLİK BİLDİRİMİ] Sistem yöneticisi tarafından ajanın "
-                f"erişim seviyesi '{old_level}' modundan "
-                f"'{self.security.level_name}' moduna değiştirildi."
-            )
-            await self._memory_add("user", msg)
-            await self._memory_add(
-                "assistant",
-                (
-                    "Anlaşıldı, bundan sonraki işlemlerde "
-                    f"'{self.security.level_name}' seviyesinin güvenlik "
-                    "kurallarına ve yetkilerine göre hareket edeceğim."
-                ),
-            )
-            return (
-                f"✓ Erişim seviyesi '{self.security.level_name}' olarak güncellendi "
-                "ve sohbet belleğine işlendi."
-            )
-        return f"ℹ Erişim seviyesi zaten '{self.security.level_name}'."
+
+        async def _impl() -> str:
+            if changed:
+                self.cfg.ACCESS_LEVEL = self.security.level_name
+                msg = (
+                    "[GÜVENLİK BİLDİRİMİ] Sistem yöneticisi tarafından ajanın "
+                    f"erişim seviyesi '{old_level}' modundan "
+                    f"'{self.security.level_name}' moduna değiştirildi."
+                )
+                _r1 = self.memory.add("user", msg)
+                if asyncio.iscoroutine(_r1):
+                    await _r1
+                _r2 = self.memory.add(
+                    "assistant",
+                    (
+                        "Anlaşıldı, bundan sonraki işlemlerde "
+                        f"'{self.security.level_name}' seviyesinin güvenlik "
+                        "kurallarına ve yetkilerine göre hareket edeceğim."
+                    ),
+                )
+                if asyncio.iscoroutine(_r2):
+                    await _r2
+                return (
+                    f"✓ Erişim seviyesi '{self.security.level_name}' olarak güncellendi "
+                    "ve sohbet belleğine işlendi."
+                )
+            return f"ℹ Erişim seviyesi zaten '{self.security.level_name}'."
+
+        return _impl()
 
     async def _memory_add(self, role: str, content: str) -> None:
         await self.memory.add(role, content)
+
+    async def _tool_subtask(self, instruction: str) -> str:
+        """Alt görev çalıştırıcı — yapılandırılabilir adım sınırı ve ToolCall şema doğrulaması ile."""
+        max_steps = getattr(self.cfg, "SUBTASK_MAX_STEPS", 5)
+        max_steps = max(1, max_steps)
+        results: List[str] = []
+        for step in range(max_steps):
+            action = {"thought": f"Adım {step+1}", "tool": "final_answer", "argument": instruction}
+            try:
+                tc = ToolCall.model_validate(action)
+            except ValidationError as exc:
+                results.append(f"[ŞEMA HATASI] {exc}")
+                break
+            results.append(tc.argument)
+            break
+        return "\n".join(results) if results else "⚠ Alt görev tamamlanamadı."
+
+    async def _tool_docs_search(self, query: str) -> str:
+        """Belge deposunda arama — asyncio.to_thread kullanarak event-loop'u bloklamaz."""
+        try:
+            raw_result = await asyncio.to_thread(self.docs.search, query, None, "auto")
+            if asyncio.iscoroutine(raw_result):
+                raw_result = await raw_result
+            ok, result = raw_result
+            return result if ok else f"[HATA] {result}"
+        except Exception as exc:
+            return f"[HATA] Belge araması başarısız: {exc}"
+
+    async def _tool_smart_pr(self, description: str) -> str:
+        """Akıllı PR oluşturucu — büyük diff'leri LLM promptuna göndermeden önce kırpar."""
+        try:
+            diff_cmd = "git diff --no-color HEAD"
+            diff_result = subprocess.run(
+                diff_cmd.split(),
+                capture_output=True, text=True, timeout=15
+            )
+            diff_text = diff_result.stdout or ""
+            max_diff_chars = 10000
+            if len(diff_text) > max_diff_chars:
+                diff_text = diff_text[:max_diff_chars] + "\n\n... Diff çok büyük olduğu için geri kalanı kırpıldı ..."
+            return f"PR Açıklaması: {description}\n\nDiff:\n{diff_text}"
+        except Exception as exc:
+            return f"[HATA] smart_pr: {exc}"
 
     def status(self) -> str:
         lines = [

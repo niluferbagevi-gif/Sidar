@@ -309,66 +309,52 @@ class OllamaClient(BaseLLMClient):
         timeout: httpx.Timeout,
     ) -> AsyncGenerator[str, None]:
         """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
-        client = None
-        stream_cm = None
-        resp = None
         try:
-            async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
-                cm = stream_client.stream("POST", url, json=payload)
-                response = await cm.__aenter__()
-                response.raise_for_status()
-                return stream_client, cm, response
+            async with httpx.AsyncClient(timeout=timeout) as stream_client:
+                async with stream_client.stream("POST", url, json=payload) as resp:
+                    resp.raise_for_status()
+                    buffer = ""
+                    utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                    async for raw_bytes in resp.aiter_bytes():
+                        decoded = utf8_decoder.decode(raw_bytes, final=False)
+                        buffer += decoded
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                body = json.loads(line)
+                                chunk = body.get("message", {}).get("content", "")
+                                if chunk:
+                                    yield chunk
+                            except json.JSONDecodeError:
+                                continue
 
-            client, stream_cm, resp = await _retry_with_backoff(
-                "ollama",
-                _open_stream,
-                config=self.config,
-                retry_hint="Ollama stream başlatma başarısız",
-            )
+                    trailing = utf8_decoder.decode(b"", final=True)
+                    if trailing:
+                        buffer += trailing
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                body = json.loads(line)
+                                chunk = body.get("message", {}).get("content", "")
+                                if chunk:
+                                    yield chunk
+                            except json.JSONDecodeError:
+                                continue
 
-            buffer = ""
-            utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            async for raw_bytes in resp.aiter_bytes():
-                decoded = utf8_decoder.decode(raw_bytes, final=False)
-                buffer += decoded
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        body = json.loads(line)
-                        chunk = body.get("message", {}).get("content", "")
-                        if chunk:
-                            yield chunk
-                    except json.JSONDecodeError:
-                        continue
-
-            trailing = utf8_decoder.decode(b"", final=True)
-            if trailing:
-                buffer += trailing
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        body = json.loads(line)
-                        chunk = body.get("message", {}).get("content", "")
-                        if chunk:
-                            yield chunk
-                    except json.JSONDecodeError:
-                        continue
-
-            if buffer.strip():
-                try:
-                    body = json.loads(buffer)
-                    chunk = body.get("message", {}).get("content", "")
-                    if chunk:
-                        yield chunk
-                except json.JSONDecodeError:
-                    pass
+                    if buffer.strip():
+                        try:
+                            body = json.loads(buffer)
+                            chunk = body.get("message", {}).get("content", "")
+                            if chunk:
+                                yield chunk
+                        except json.JSONDecodeError:
+                            pass
         except Exception as exc:
             yield json.dumps(
                 {
@@ -377,11 +363,6 @@ class OllamaClient(BaseLLMClient):
                     "thought": "Hata",
                 }
             )
-        finally:
-            if stream_cm is not None:
-                await stream_cm.__aexit__(None, None, None)
-            if client is not None and hasattr(client, "aclose"):
-                await client.aclose()
 
     async def list_models(self) -> List[str]:
         url = f"{self.base_url}/api/tags"

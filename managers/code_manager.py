@@ -19,7 +19,11 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from config import Config, SANDBOX_LIMITS
+try:
+    from config import Config, SANDBOX_LIMITS
+except ImportError:
+    from config import Config  # type: ignore
+    SANDBOX_LIMITS = {}
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
@@ -85,7 +89,7 @@ class CodeManager:
     def _resolve_sandbox_limits(self) -> Dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
         limits = dict(SANDBOX_LIMITS)
-        limits.update(getattr(self.cfg, "SANDBOX_LIMITS", {}) or {})
+        limits.update(getattr(getattr(self, "cfg", None), "SANDBOX_LIMITS", {}) or {})
 
         memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
         cpus = str(limits.get("cpus") or "0.5").strip()
@@ -408,19 +412,23 @@ class CodeManager:
              )
         except Exception as exc:
             sandbox_limits = self._resolve_sandbox_limits()
+            if self.security.level == SANDBOX:
+                return False, (
+                    "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
+                    f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}"
+                )
             try:
-                return self._execute_code_with_docker_cli(code, sandbox_limits)
+                ok, cli_msg = self._execute_code_with_docker_cli(code, sandbox_limits)
+                if ok:
+                    return ok, cli_msg
+                logger.warning("Docker CLI fallback başarısız — FULL modda yerel subprocess kullanılıyor: %s", exc)
+                return self.execute_code_local(code)
             except subprocess.TimeoutExpired:
                 return False, (
                     f"⚠ Zaman aşımı! Kod {sandbox_limits['timeout']} saniyeden uzun sürdü ve "
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                if self.security.level == SANDBOX:
-                    return False, (
-                        "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
-                        f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}; CLI Detay: {cli_exc}"
-                    )
                 logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc)
                 return self.execute_code_local(code)
 

@@ -265,6 +265,65 @@ class ConversationMemory:
             await self.db.delete_session(sid, self.active_user_id)
             await self.create_session(title)
 
+    # ─── Sync compatibility wrappers (for use from non-async contexts) ───
+
+    def _run_coro_sync(self, coro):
+        """Run a coroutine synchronously, either using an existing loop or a new one."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+                return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    async def aadd(self, role: str, content: str) -> None:
+        """Async alias for add — supports _run_coro_sync(self.aadd(role, content))."""
+        await self.add(role, content)
+
+    async def aget_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        """Async alias for get_history — supports _run_coro_sync(self.aget_history(n_last))."""
+        return await self.get_history(n_last)
+
+    async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
+        """Async alias for create_session — supports _run_coro_sync(self.acreate_session(title))."""
+        return await self.create_session(title)
+
+    def sync_add(self, role: str, content: str) -> None:
+        """Sync wrapper — delegates to async aadd via _run_coro_sync."""
+        self._run_coro_sync(self.aadd(role, content))
+
+    def sync_get_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        """Sync wrapper — delegates to async aget_history via _run_coro_sync."""
+        return self._run_coro_sync(self.aget_history(n_last))
+
+    def sync_create_session(self, title: str = "Yeni Sohbet") -> str:
+        """Sync wrapper — delegates to async acreate_session via _run_coro_sync."""
+        return self._run_coro_sync(self.acreate_session(title))
+
+    def sync_clear(self) -> None:
+        """Sync wrapper for clear — runs db consistency hooks via _run_coro_sync."""
+        sid = self.active_session_id
+        title = self.active_title
+        with self._lock:
+            self._turns.clear()
+            self._last_file = None
+        if sid:
+            self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))
+            self.create_session(title)
+
+    def sync_apply_summary(self, summary_text: str) -> None:
+        """Sync wrapper for apply_summary — runs db consistency hooks via _run_coro_sync."""
+        sid = self.active_session_id
+        uid = self.active_user_id
+        title = self.active_title
+        if sid and uid:
+            self._run_coro_sync(self.db.delete_session(sid, uid))
+            self.create_session(title)
+
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.
         self._dirty = False

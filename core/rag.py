@@ -11,6 +11,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 3. Fallback: Basit anahtar kelime eşleşmesi
 """
 
+import collections.abc
 import hashlib
 import json
 import logging
@@ -26,6 +27,64 @@ from typing import Dict, List, Optional, Tuple
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+class _AwaitableStr(str):
+    """String subclass that is also awaitable — allows both sync and async callers."""
+
+    def __await__(self):
+        return self._resolve().__await__()
+
+    async def _resolve(self) -> str:
+        return str(self)
+
+
+class _TupleCoroutineIter:
+    """One-shot iterator that yields nothing and resolves immediately with the tuple result."""
+    __slots__ = ("_result",)
+
+    def __init__(self, result):
+        self._result = result
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopIteration(self._result)
+
+    def send(self, value):
+        raise StopIteration(self._result)
+
+    def throw(self, typ, val=None, tb=None):
+        if isinstance(typ, BaseException):
+            raise typ
+        if val is None:
+            raise typ()
+        raise val
+
+    def close(self):
+        pass
+
+
+class _AwaitableTuple(tuple, collections.abc.Coroutine):
+    """Tuple subclass that is both directly indexable AND awaitable (asyncio.run / await)."""
+
+    def send(self, value):
+        # Used when asyncio.Task drives this directly as a coroutine object
+        raise StopIteration(tuple(self))
+
+    def throw(self, typ, val=None, tb=None):
+        if isinstance(typ, BaseException):
+            raise typ
+        if val is None:
+            raise typ()
+        raise val
+
+    def close(self):
+        pass
+
+    def __await__(self):
+        return _TupleCoroutineIter(tuple(self))
 
 
 def _build_embedding_function(use_gpu: bool = False,
@@ -389,22 +448,17 @@ class DocumentStore:
         logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
         return doc_id
 
-    async def add_document(
+    def add_document(
         self,
         title: str,
         content: str,
         source: str = "",
         tags: Optional[List[str]] = None,
         session_id: str = "global",
-    ) -> str:
-        return await asyncio.to_thread(
-            self._add_document_sync,
-            title,
-            content,
-            source,
-            tags,
-            session_id,
-        )
+    ) -> "_AwaitableStr":
+        """Sync-callable but also awaitable for async callers."""
+        doc_id = self._add_document_sync(title, content, source, tags, session_id)
+        return _AwaitableStr(doc_id)
 
     async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
         import httpx
@@ -418,7 +472,7 @@ class DocumentStore:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
                 title = m.group(1).strip() if m else url.split("/")[-1] or url
 
-            doc_id = await self.add_document(title, content, url, tags, session_id)
+            doc_id = self.add_document(title, content, url, tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
@@ -546,14 +600,16 @@ class DocumentStore:
         if self._bm25_available: return self._bm25_search(query, top_k, session_id)
         return self._keyword_search(query, top_k, session_id)
 
-    async def search(
+    def search(
         self,
         query: str,
         top_k: Optional[int] = None,
         mode: str = "auto",
         session_id: str = "global",
-    ) -> Tuple[bool, str]:
-        return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+    ) -> "_AwaitableTuple":
+        """Sync-callable but also a proper coroutine for asyncio.run and await callers."""
+        result = self._search_sync(query, top_k, mode, session_id)
+        return _AwaitableTuple(result)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
         chroma_results = self._fetch_chroma(query, top_k, session_id)
