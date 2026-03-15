@@ -1096,6 +1096,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Stateless güvenlik (JWT + RBAC):** DB sorgusu gerektiren stateful token akışından access/refresh JWT + rol bazlı yetkilendirme modeline geçiş.
 - **Message broker entegrasyonu:** Ajanlar arası iletişimin event-driven mimariyle (RabbitMQ / Redis Streams / Kafka) dağıtık hale getirilmesi.
 - **Gelişmiş vektör + semantic cache:** `pgvector` (veya eşdeğer kurumsal vektör katmanı) ile retrieval ölçeklemesi; Redis/GPTCache ile maliyet/latency optimizasyonu.
+- **Operasyonel mükemmellik temeli:** OpenTelemetry + Jaeger/Zipkin ile dağıtık tracing, Kubernetes/Helm release standardı ve LLM gateway üzerinden kota/politika yönetişimi için temel platform kabiliyetlerinin v4.0 hattında hazırlanması.
 
 #### Faz 3: Dinamik Ajan Ekosistemi ve Ürünleşme (v4.x) - *[Uzun Vade]*
 *kullanıcı deneyimi, yönetilebilirlik ve AI esnekliğinin ürün düzeyinde maksimize edilmesi.*
@@ -1103,11 +1104,12 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Dinamik swarm mimarisi:** Göreve göre anlık worker-ajan türetimi, çalışma zamanı yetenek keşfi ve görev bitiminde kaynakların geri kazanımı.
 - **Modern SPA frontend:** Mevcut arayüzün React/Next.js (veya Vue) tabanlı, canlı ajan diyaloğunu akış/nodes görselleştirmeleriyle sunan bir yapıya evrilmesi.
 
-#### Faz 4: Operasyonel Mükemmellik ve Kurumsal SLA (v4.x+) - *[Sürekli İyileştirme]*
-*büyüyen tenant yükünde öngörülebilir performans, izlenebilirlik ve yönetişim standartlarının sağlanması.*
-- **Tam dağıtık izlenebilirlik:** OpenTelemetry tracing + Jaeger/Zipkin APM ile uçtan uca waterfall analizi ve MTTR düşürme.
-- **Yönetişim ve maliyet kontrolü:** LLM gateway üzerinden model yönlendirme, kota/politika yönetimi ve maliyet bütçesi otomasyonu.
-- **Platform standardizasyonu:** Kubernetes/Helm operasyon modeli, ortamlar arası release standardı ve kapasite planlama olgunluğu.
+#### Faz 4: LLMOps, Otonomi ve Ekosistem Entegrasyonu (v5.0 ve Ötesi) - *[Gelecek Vizyonu]*
+*sistemin yalnızca bir asistan değil, kurumsal bir “Sanal Mühendislik Departmanı” olarak konumlandırılması.*
+- **Aktif öğrenme ve fine-tuning:** Reviewer tarafından onaylanan çıktıların veri setine dönüştürülmesi ve LoRA/QLoRA tabanlı periyodik model iyileştirme (auto-tuning) döngüsünün kurulması.
+- **Multimodal yetenekler:** Metin/kod akışına ek olarak görsel tasarım (UI mockup/Figma) analizinden doğrudan frontend üretimi yapabilen ajan rollerinin eklenmesi.
+- **Dış sistem ve CI/CD otonomisi:** GitHub dışındaki kurumsal araçlara (Jira, Slack, Teams, GitLab/Jenkins) native entegrasyon ve görevden PR’a uçtan uca otonom akışlar.
+- **LLM gateway ve cost-aware model routing:** Sorgu karmaşıklığına göre lokal/uzak model seçimi yapan, maliyet ve SLA odaklı akıllı yönlendirme katmanı.
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
