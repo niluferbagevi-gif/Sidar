@@ -152,7 +152,7 @@ class _Pkg:
 
 
 class _Docs:
-    def search(self, query, *_args):
+    async def search(self, query, *_args):
         return True, f"dsearch:{query}"
 
     def list_documents(self):

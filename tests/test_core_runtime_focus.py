@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import types
+import pytest
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -97,27 +98,29 @@ def test_security_manager_runtime_paths(tmp_path):
     assert "SecurityManager" in repr(sec_sb)
 
 
-def test_conversation_memory_sessions_and_summary(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_conversation_memory_sessions_and_summary(tmp_path, monkeypatch):
     mem_mod = _load_memory_module()
     ConversationMemory = mem_mod.ConversationMemory
 
     mem_file = tmp_path / "memory.json"
-    m = ConversationMemory(mem_file, max_turns=3, keep_last=2)
-    user = asyncio.run(m.db.ensure_user("focus_user", role="user"))
-    m.set_active_user(user.id, user.username)
+    m = ConversationMemory(file_path=mem_file, max_turns=3, keep_last=2)
+    await m.initialize()
+    user = await m.db.ensure_user("focus_user", role="user")
+    await m.set_active_user(user.id, user.username)
 
     # Session & persistence flows
     sid = m.active_session_id
     assert sid is not None
-    m.add("user", "merhaba")
-    m.add("assistant", "selam")
+    await m.add("user", "merhaba")
+    await m.add("assistant", "selam")
     m.set_last_file("a.py")
     assert m.get_last_file() == "a.py"
 
-    sessions = m.get_all_sessions()
+    sessions = await m.get_all_sessions()
     assert sessions and sessions[0]["id"] == sid
 
-    m.update_title("Yeni Başlık")
+    await m.update_title("Yeni Başlık")
     assert m.active_title == "Yeni Başlık"
 
     # Tokenizer fallback/import path
@@ -125,29 +128,30 @@ def test_conversation_memory_sessions_and_summary(tmp_path, monkeypatch):
     assert m._estimate_tokens() > 0
 
     assert isinstance(m.needs_summarization(), bool)
-    m.apply_summary("özet metin")
+    await m.apply_summary("özet metin")
     msgs = m.get_messages_for_llm()
     assert any("KONUŞMA ÖZETİ" in x["content"] for x in msgs)
 
     current_sid = m.active_session_id
     assert current_sid is not None
-    assert m.load_session(current_sid) is True
-    assert m.delete_session("missing") is False
+    assert await m.load_session(current_sid) is True
+    assert await m.delete_session("missing") is False
 
     # DB modunda legacy sessions dizini etkilenmeden kalır
     bad = m.sessions_dir / "broken.json"
     bad.write_text("{bad", encoding="utf-8")
-    all_sessions = m.get_all_sessions()
+    all_sessions = await m.get_all_sessions()
     assert isinstance(all_sessions, list)
     assert bad.exists()
 
-    m.clear()
+    await m.clear()
     assert len(m) == 0
     m.force_save()
     assert "ConversationMemory" in repr(m)
 
 
-def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
     rag_mod = _load_rag_module(tmp_path)
     DocumentStore = rag_mod.DocumentStore
 
@@ -177,10 +181,10 @@ def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
     assert got_ok is True and "Python" in content
 
     # search mode dispatches
-    ok, out = store.search("Python", mode="keyword", session_id="s1")
+    ok, out = await store.search("Python", mode="keyword", session_id="s1")
     assert isinstance(ok, bool) and isinstance(out, str)
 
-    ok, out = store.search("Python", mode="auto", session_id="s1")
+    ok, out = await store.search("Python", mode="auto", session_id="s1")
     assert ok is True and out
 
     # helpers
@@ -212,7 +216,7 @@ def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
             return _Resp()
 
     monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(AsyncClient=_Client))
-    ok, msg = asyncio.run(store.add_document_from_url("https://example.com", session_id="s1"))
+    ok, msg = await store.add_document_from_url("https://example.com", session_id="s1")
     assert ok is True
 
     # delete path
@@ -220,7 +224,8 @@ def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
     assert "silindi" in del_msg or "bulunamadı" in del_msg
 
 
-def test_document_store_handles_chroma_and_fts_runtime_exceptions(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_document_store_handles_chroma_and_fts_runtime_exceptions(tmp_path, monkeypatch):
     rag_mod = _load_rag_module(tmp_path)
     DocumentStore = rag_mod.DocumentStore
 
@@ -252,6 +257,6 @@ def test_document_store_handles_chroma_and_fts_runtime_exceptions(tmp_path, monk
     monkeypatch.setattr(store, "_rrf_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("rrf error")))
     monkeypatch.setattr(store, "_chroma_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("chroma error")))
     monkeypatch.setattr(store, "_bm25_search", lambda q, k, s: (True, "[RAG Arama: python] (Motor: BM25)"))
-    ok, out = store.search("python", mode="auto", session_id="s1")
+    ok, out = await store.search("python", mode="auto", session_id="s1")
     assert ok is True
     assert "BM25" in out
