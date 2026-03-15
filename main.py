@@ -205,14 +205,28 @@ def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
     t_out.start()
     t_err.start()
 
-    return_code = process.wait()
-    t_out.join()
-    t_err.join()
+    return_code = 1
+    try:
+        return_code = process.wait()
+    finally:
+        poll = getattr(process, "poll", None)
+        terminate = getattr(process, "terminate", None)
+        kill = getattr(process, "kill", None)
+        still_running = (callable(poll) and poll() is None) or (poll is None)
+        if still_running and callable(terminate):
+            terminate()
+            try:
+                process.wait(timeout=3)
+            except Exception:
+                if callable(kill):
+                    kill()
+        t_out.join()
+        t_err.join()
 
-    if f:
-        f.write(f"\n[exit_code]\n{return_code}\n")
-        f.close()
-        print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
+        if f:
+            f.write(f"\n[exit_code]\n{return_code}\n")
+            f.close()
+            print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
 
     return return_code
 
