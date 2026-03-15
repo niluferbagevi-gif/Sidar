@@ -840,6 +840,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
 - **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** Toplam 9 paket (`chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg` ve `opentelemetry-*` ailesi) çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
+- **[Çözüldü] Modern Paketleme (PEP 621) Geçişi:** Projenin tüm temel bağımlılıkları `requirements.txt` standardından `pyproject.toml` içindeki `dependencies` dizisine aktarılarak PEP 621 standardına tam uyum sağlandı. Ağır kütüphaneler (GPU, RAG, Telemetri) `optional-dependencies` altına alınarak kurulum profilleri hafifletildi.
 - **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama işlemleri asenkron yürütme desenine geçirildi.
 - **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory`) modern veritabanı URL mimarisine uyarlandı.
 - **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
@@ -847,7 +848,6 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
 Projede aktif bir "borç" kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
-- **[Teknik Borç] Modern Paketleme (PEP 621) Geçişi:** Temel bağımlılıkların `pyproject.toml` içindeki `dependencies` bloğunda tekil doğru kaynak (Single Source of Truth) olacak biçimde yönetiminin sürdürülmesi.
 - **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 
@@ -1052,6 +1052,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 | **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
 | **Stateless Auth, RBAC ve JWT Entegrasyonu** | Oturum token'ları DB'de `auth_tokens` tablosunda tutulmaktadır; kimlik doğrulama DB sorgusu gerektirir | Merkezi auth sunucularıyla uyumlu stateless JWT (access+refresh) + rol tabanlı yetkilendirme (`Admin/Developer/Viewer`) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
 | **Bağımlılık Extras Grupları** | 9 opsiyonel paket (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras ile yönetilir | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
+| **Paket Yöneticisi Modernizasyonu** | Mevcut durumda `pyproject.toml` ve `requirements.txt` eşzamanlı çalışıyor | `requirements.txt` dosyasının tamamen kaldırılarak `uv` veya `poetry` gibi modern paket yöneticilerine tam geçişin sağlanması | Kurulum ve bağımlılık çözümleme sürelerini hızlandırır, versiyon çakışmalarını kilit (lock) dosyalarıyla kesin olarak çözer. |
 
 > **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
 
