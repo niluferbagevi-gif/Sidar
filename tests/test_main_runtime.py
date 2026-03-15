@@ -326,3 +326,57 @@ def test_build_command_rejects_invalid_mode_and_log() -> None:
         assert False
     except ValueError as exc:
         assert "Geçersiz log seviyesi" in str(exc)
+
+def test_build_command_rejects_invalid_provider_and_level() -> None:
+    MAIN = _load_main_module()
+
+    try:
+        MAIN.build_command("cli", "bad-provider", "full", "info", {})
+        assert False
+    except ValueError as exc:
+        assert "Geçersiz provider" in str(exc)
+
+    try:
+        MAIN.build_command("cli", "ollama", "bad-level", "info", {})
+        assert False
+    except ValueError as exc:
+        assert "Geçersiz level" in str(exc)
+
+
+def test_run_with_streaming_terminates_and_kills_when_still_running(monkeypatch):
+    MAIN = _load_main_module()
+
+    class _Pipe:
+        def readline(self):
+            return ""
+
+        def close(self):
+            return None
+
+    state = {"terminated": False, "killed": False}
+
+    class _Proc:
+        def __init__(self):
+            self.stdout = _Pipe()
+            self.stderr = _Pipe()
+
+        def wait(self, timeout=None):
+            if timeout is None:
+                return 0
+            raise RuntimeError("hang")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            state["terminated"] = True
+
+        def kill(self):
+            state["killed"] = True
+
+    monkeypatch.setattr(MAIN.subprocess, "Popen", lambda *a, **k: _Proc())
+
+    rc = MAIN._run_with_streaming(["python", "x.py"], None)
+    assert rc == 0
+    assert state["terminated"] is True
+    assert state["killed"] is True
