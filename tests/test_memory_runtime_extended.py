@@ -7,18 +7,19 @@ from core.memory import ConversationMemory, MemoryAuthError
 
 
 def _activate_user(mem: ConversationMemory, username: str = "tester") -> None:
+    asyncio.run(mem.initialize())
     user = asyncio.run(mem.db.ensure_user(username, role="user"))
-    mem.set_active_user(user.id, user.username)
+    asyncio.run(mem.set_active_user(user.id, user.username))
 
 
 def test_memory_requires_user_context_before_stateful_ops(tmp_path):
     mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
 
     with pytest.raises(MemoryAuthError):
-        mem.add("user", "merhaba")
+        asyncio.run(mem.add("user", "merhaba"))
 
     with pytest.raises(MemoryAuthError):
-        mem.get_all_sessions()
+        asyncio.run(mem.get_all_sessions())
 
 
 def test_memory_set_active_user_creates_session_and_persists_messages(tmp_path):
@@ -28,10 +29,10 @@ def test_memory_set_active_user_creates_session_and_persists_messages(tmp_path):
     assert mem.active_user_id
     assert mem.active_session_id
 
-    mem.add("user", "u1")
-    mem.add("assistant", "a1")
+    asyncio.run(mem.add("user", "u1"))
+    asyncio.run(mem.add("assistant", "a1"))
 
-    hist = mem.get_history()
+    hist = asyncio.run(mem.get_history())
     assert len(hist) == 2
     assert hist[-1]["content"] == "a1"
 
@@ -40,14 +41,15 @@ def test_memory_async_roundtrip_load_and_delete(tmp_path):
     mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
 
     async def _run():
+        await mem.initialize()
         user = await mem.db.ensure_user("bob", role="user")
-        await mem.aset_active_user(user.id, user.username)
-        sid = await mem.acreate_session("deneme")
-        await mem.aadd("user", "x")
-        await mem.aadd("assistant", "y")
-        ok = await mem.aload_session(sid)
-        deleted = await mem.adelete_session(sid)
-        return ok, deleted, await mem.aget_all_sessions()
+        await mem.set_active_user(user.id, user.username)
+        sid = await mem.create_session("deneme")
+        await mem.add("user", "x")
+        await mem.add("assistant", "y")
+        ok = await mem.load_session(sid)
+        deleted = await mem.delete_session(sid)
+        return ok, deleted, await mem.get_all_sessions()
 
     ok, deleted, sessions = asyncio.run(_run())
     assert ok is True
@@ -60,11 +62,11 @@ def test_apply_summary_keeps_last_turns(tmp_path):
     _activate_user(mem, "charlie")
 
     for i in range(1, 5):
-        mem.add("user", f"Soru {i}")
-        mem.add("assistant", f"Cevap {i}")
+        asyncio.run(mem.add("user", f"Soru {i}"))
+        asyncio.run(mem.add("assistant", f"Cevap {i}"))
 
-    mem.apply_summary("özet metni")
-    turns = mem.get_history()
+    asyncio.run(mem.apply_summary("özet metni"))
+    turns = asyncio.run(mem.get_history())
 
     assert len(turns) == 4
     assert "özeti" in turns[0]["content"].lower()
@@ -78,12 +80,12 @@ def test_clear_recreates_active_session(tmp_path):
     _activate_user(mem, "dora")
 
     first_session = mem.active_session_id
-    mem.add("user", "deneme")
-    mem.clear()
+    asyncio.run(mem.add("user", "deneme"))
+    asyncio.run(mem.clear())
 
     assert mem.active_session_id
     assert mem.active_session_id != first_session
-    assert mem.get_history() == []
+    assert asyncio.run(mem.get_history()) == []
 
 
 def test_cleanup_broken_files_is_noop_in_db_mode(tmp_path):
@@ -101,12 +103,13 @@ def test_memory_delete_last_session_creates_new_session(tmp_path):
     mem = ConversationMemory(file_path=tmp_path / "memory.json", max_turns=10)
 
     async def _run():
+        await mem.initialize()
         user = await mem.db.ensure_user("frank", role="user")
-        await mem.aset_active_user(user.id, user.username)
+        await mem.set_active_user(user.id, user.username)
         last_session_id = mem.active_session_id
 
-        deleted = await mem.adelete_session(last_session_id)
-        sessions = await mem.aget_all_sessions()
+        deleted = await mem.delete_session(last_session_id)
+        sessions = await mem.get_all_sessions()
         return last_session_id, deleted, sessions
 
     last_session_id, deleted, sessions = asyncio.run(_run())
