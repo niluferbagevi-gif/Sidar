@@ -51,14 +51,13 @@ def agent(test_config):
     return ag
 
 
-def _activate_memory_user(mem, username="test_user"):
+def _activate_memory_user(mem, username):
     async def _setup():
         await mem.initialize()
         user = await mem.db.ensure_user(username, role="user")
         await mem.set_active_user(user.id, user.username)
-        return user
 
-    return asyncio.run(_setup())
+    asyncio.run(_setup())
 
 
 async def _aactivate_memory_user(mem, username="test_user"):
