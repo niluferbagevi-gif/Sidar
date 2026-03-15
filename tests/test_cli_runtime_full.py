@@ -104,9 +104,10 @@ def _make_agent():
         health = _Health()
         security = _Sec()
         code = types.SimpleNamespace(audit_project=lambda _: "audit")
+        memory = types.SimpleNamespace(initialize=lambda: asyncio.sleep(0))
 
         @staticmethod
-        def clear_memory():
+        async def clear_memory():
             return "cleared"
 
         @staticmethod
@@ -114,7 +115,7 @@ def _make_agent():
             return "agent-status"
 
         @staticmethod
-        def set_access_level(level):
+        async def set_access_level(level):
             return f"set:{level}"
 
         async def respond(self, text):
@@ -207,7 +208,7 @@ def test_interactive_loop_gemini_gpu_and_error_paths(monkeypatch):
         code = types.SimpleNamespace(audit_project=lambda _: "audit")
 
         @staticmethod
-        def clear_memory():
+        async def clear_memory():
             return "cleared"
 
         @staticmethod
@@ -215,7 +216,7 @@ def test_interactive_loop_gemini_gpu_and_error_paths(monkeypatch):
             return "agent-status"
 
         @staticmethod
-        def set_access_level(level):
+        async def set_access_level(level):
             return f"set:{level}"
 
         async def respond(self, _text):
@@ -257,9 +258,14 @@ def test_cli_dunder_main_invokes_main(monkeypatch):
     cfg_mod.Config = _Cfg
 
     agent_mod = types.ModuleType("agent.sidar_agent")
+    async def _resp(_cmd):
+        if False:
+            yield ""
+
     agent_mod.SidarAgent = lambda cfg: types.SimpleNamespace(
         status=lambda: "ok",
-        respond=lambda _cmd: (),
+        respond=_resp,
+        memory=types.SimpleNamespace(initialize=lambda: asyncio.sleep(0)),
     )
     agent_pkg = types.ModuleType("agent")
 
@@ -271,3 +277,12 @@ def test_cli_dunder_main_invokes_main(monkeypatch):
         runpy.run_path("cli.py", run_name="__main__")
 
     assert ran["printed"] >= 1
+
+def test_interactive_loop_supports_slash_exit_and_slash_clear(monkeypatch):
+    cli = _load_cli_module()
+    agent = _make_agent()
+
+    inputs = iter(["/clear", "exit"])
+    monkeypatch.setattr(asyncio, "to_thread", lambda fn, *a, **k: asyncio.sleep(0, result=next(inputs)))
+
+    asyncio.run(cli._interactive_loop_async(agent))

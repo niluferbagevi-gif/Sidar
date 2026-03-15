@@ -481,7 +481,8 @@ def test_ollama_stream_trailing_exact_buffer_hit(monkeypatch):
     assert "trailing_success" in chunks
 
 
-def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
 
     # _init_fts genel exception yolu (236-238)
@@ -499,7 +500,7 @@ def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkey
 
     # delete_document içinde Chroma delete exception yolu (476-480)
     store = _new_store(mod, tmp_path)
-    doc_id = store.add_document("T", "icerik", session_id="global")
+    doc_id = await store.add_document("T", "icerik", session_id="global")
 
     class _BrokenCol:
         def delete(self, **kwargs):
@@ -676,7 +677,8 @@ def test_web_server_blocked_anyio_import_and_health_route_path():
     response = asyncio.run(ws_mod.health_check())
     assert getattr(response, "status_code", 0) in (200, 503)
 
-def test_rag_remaining_branches_for_fp16_chunk_delete_and_keyword(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_rag_remaining_branches_for_fp16_chunk_delete_and_keyword(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
 
     # 65-66: fp16 wrapper (__call__ özel metot olduğundan doğrudan __call__ çağrılır)
@@ -714,7 +716,7 @@ def test_rag_remaining_branches_for_fp16_chunk_delete_and_keyword(tmp_path, monk
     assert all(len(part) <= 2 for part in forced)
 
     # 465: kilit içinde doc önceden silinmiş dalı
-    doc_id = st.add_document("T", "body", session_id="s1")
+    doc_id = await st.add_document("T", "body", session_id="s1")
 
     class _RaceLock:
         def __enter__(self_nonlocal):
@@ -1049,7 +1051,8 @@ def test_sidar_agent_opentelemetry_import_error_with_runtime_loader(monkeypatch)
     assert mod.trace is None
 
 
-def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
 
@@ -1065,7 +1068,7 @@ def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_chroma_search", _raise)
     monkeypatch.setattr(store, "_bm25_search", lambda *_a, **_k: (True, "bm25 fallback ok"))
 
-    ok, result = store.search("test query", mode="auto")
+    ok, result = await store.search("test query", mode="auto")
     assert ok is True
     assert result == "bm25 fallback ok"
 

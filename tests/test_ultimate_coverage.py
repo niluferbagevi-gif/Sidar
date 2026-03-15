@@ -13,7 +13,8 @@ from tests.test_sidar_agent_runtime import LEGACY_INTERNAL_METHODS_MISSING
 from tests.test_web_server_runtime import _install_web_server_stubs, _load_web_server_with_blocked_imports, _make_agent
 
 
-def test_rag_ultimate_edge_cases(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_rag_ultimate_edge_cases(monkeypatch, tmp_path):
     """RAG içinde import/FTS/chroma hata yollarını güvenli şekilde tetikler."""
     # pysqlite3 import fallback benzeri yol: modülü bu durumda yeniden yüklemek güvenli olmalı
     orig_import = builtins.__import__
@@ -43,7 +44,7 @@ def test_rag_ultimate_edge_cases(monkeypatch, tmp_path):
 
     # Chroma delete exception
     store = _new_store(mod, tmp_path)
-    doc_id = store.add_document("T", "icerik", session_id="global")
+    doc_id = await store.add_document("T", "icerik", session_id="global")
 
     class _BrokenCol:
         def delete(self, **kwargs):
