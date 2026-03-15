@@ -413,12 +413,13 @@ async def test_apply_summary_keep_last_zero(test_config):
 @pytest.mark.asyncio
 async def test_execute_tool_unknown_returns_none(agent, monkeypatch):
     """Supervisor intent eşlemesi bilinmeyen komutlarda code'e düşer."""
-    from agent import sidar_agent as sidar_agent_mod
+    from agent.core.supervisor import SupervisorAgent
+    from agent.core.contracts import TaskResult
 
-    async def _fake_chat(self, *args, **kwargs):
-        return '{"thought": "test", "tool": "final_answer", "argument": "Sahte LLM yanıtı"}'
+    async def _fake_delegate(self, receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+        return TaskResult(task_id="t1", status="done", summary="Görev tamamlandı")
 
-    monkeypatch.setattr(sidar_agent_mod.LLMClient, "chat", _fake_chat)
+    monkeypatch.setattr(SupervisorAgent, "_delegate", _fake_delegate)
 
     assert agent._supervisor is None
     result = await agent._try_multi_agent("var_olmayan_arac_xyz")
@@ -429,12 +430,13 @@ async def test_execute_tool_unknown_returns_none(agent, monkeypatch):
 @pytest.mark.asyncio
 async def test_execute_tool_known_does_not_return_none(agent, monkeypatch):
     """Supervisor omurgası bilinen niyetlerde yanıt üretir."""
-    from agent import sidar_agent as sidar_agent_mod
+    from agent.core.supervisor import SupervisorAgent
+    from agent.core.contracts import TaskResult
 
-    async def _fake_chat(self, *args, **kwargs):
-        return "Onaylandı, her şey yolunda"
+    async def _fake_delegate(self, receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+        return TaskResult(task_id="t2", status="done", summary="Onaylandı, her şey yolunda")
 
-    monkeypatch.setattr(sidar_agent_mod.LLMClient, "chat", _fake_chat)
+    monkeypatch.setattr(SupervisorAgent, "_delegate", _fake_delegate)
 
     result = await agent._try_multi_agent("bu kodu gözden geçir")
     assert result is not None
