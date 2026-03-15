@@ -273,7 +273,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         def get_all_sessions(self):
             return [{"id": "sess-1"}]
 
-        async def aset_active_user(self, _user_id, _username=None):
+        async def set_active_user(self, _user_id, _username=None):
             return None
 
         def clear(self):
@@ -349,7 +349,7 @@ def test_basic_auth_middleware_flow():
         def __init__(self):
             self.db = _Db()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
     async def _get_agent():
@@ -511,6 +511,9 @@ def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
         def clear(self):
             calls["cleared"] += 1
 
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
     agent = types.SimpleNamespace(memory=_Memory())
 
     async def _get_agent():
@@ -558,7 +561,7 @@ def test_websocket_chat_cancel_and_disconnect_paths():
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, _user_id, _username=None):
+        async def set_active_user(self, _user_id, _username=None):
             return None
 
         def __len__(self):
@@ -731,6 +734,9 @@ def test_websocket_chat_generate_response_cancelled_error_branch():
         def update_title(self, title):
             self.title = title
 
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
     class _Agent:
         def __init__(self):
             self.memory = _Memory()
@@ -787,7 +793,7 @@ def test_websocket_chat_send_json_failure_is_swallowed():
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, _user_id, _username=None):
+        async def set_active_user(self, _user_id, _username=None):
             return None
 
         def __len__(self):
@@ -842,7 +848,7 @@ def test_websocket_chat_cancels_previous_active_task_line():
         def __init__(self):
             self.db = self._DB()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
         def __len__(self):
@@ -1227,6 +1233,9 @@ def test_list_files_metrics_rag_docs_todo_clear_and_github_repos_success(monkeyp
         def clear(self):
             self.cleared = True
 
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
     class _Docs:
         doc_count = 5
 
@@ -1371,6 +1380,9 @@ def test_metrics_text_plain_importerror_falls_back_to_json(monkeypatch):
         def get_all_sessions(self):
             return [{"id": "s1"}]
 
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
     agent.memory = _Mem()
 
     async def _get_agent():
@@ -1435,7 +1447,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
         def __init__(self):
             self.db = self._DB()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
         def __len__(self):
@@ -1658,7 +1670,7 @@ def test_websocket_chat_cancellederror_pass_branch_with_running_task():
         def __init__(self):
             self.db = self._DB()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
         def __len__(self):
@@ -1754,7 +1766,7 @@ def test_admin_stats_endpoint_enforces_admin_and_returns_stats():
         def __init__(self):
             self.db = _Db()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
     async def _get_agent():
@@ -1802,7 +1814,7 @@ def test_basic_auth_middleware_resets_metrics_context_on_exception(monkeypatch):
         def __init__(self):
             self.db = _Db()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
     async def _get_agent():
@@ -1985,7 +1997,7 @@ def test_web_server_targeted_missing_branches(monkeypatch):
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, _uid, _uname=None):
+        async def set_active_user(self, _uid, _uname=None):
             return None
 
         def __len__(self):

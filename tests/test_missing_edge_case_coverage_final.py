@@ -246,7 +246,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
         def __init__(self):
             self.db = db
 
-        async def aset_active_user(self, *_args, **_kwargs):
+        async def set_active_user(self, *_args, **_kwargs):
             return None
 
         def __len__(self):
@@ -416,7 +416,7 @@ def test_websocket_runtime_uncovered_branches(monkeypatch):
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, *_args, **_kwargs):
+        async def set_active_user(self, *_args, **_kwargs):
             return None
 
         async def aupdate_title(self, _title):
@@ -559,7 +559,7 @@ def test_websocket_llm_error_and_cleanup_lines(monkeypatch):
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, *_a, **_k):
+        async def set_active_user(self, *_a, **_k):
             return None
 
         def __len__(self):
@@ -669,7 +669,7 @@ def test_websocket_status_timeout_and_cancelled_error_lines(monkeypatch):
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, *_a, **_k):
+        async def set_active_user(self, *_a, **_k):
             return None
 
         def __len__(self):
@@ -731,7 +731,7 @@ def test_websocket_llm_error_send_json_failure_swallowed(monkeypatch):
         def __init__(self):
             self.db = _DB()
 
-        async def aset_active_user(self, *_a, **_k):
+        async def set_active_user(self, *_a, **_k):
             return None
 
         def __len__(self):
