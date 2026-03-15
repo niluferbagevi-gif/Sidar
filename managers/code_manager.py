@@ -19,7 +19,11 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from config import Config, SANDBOX_LIMITS
+try:
+    from config import Config, SANDBOX_LIMITS
+except ImportError:
+    from config import Config
+    SANDBOX_LIMITS = {}
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
@@ -408,6 +412,12 @@ class CodeManager:
                  f"Lütfen terminalde 'docker pull {self.docker_image}' komutunu çalıştırın."
              )
         except Exception as exc:
+            if self.security.level == SANDBOX:
+                return False, (
+                    "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
+                    f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}"
+                )
+
             sandbox_limits = self._resolve_sandbox_limits()
             try:
                 return self._execute_code_with_docker_cli(code, sandbox_limits)
@@ -417,11 +427,6 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                if self.security.level == SANDBOX:
-                    return False, (
-                        "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
-                        f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}; CLI Detay: {cli_exc}"
-                    )
                 logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc)
                 return self.execute_code_local(code)
 

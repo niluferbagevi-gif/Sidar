@@ -5,6 +5,7 @@ import threading
 import types
 from pathlib import Path
 
+import pytest
 
 def _load_rag_module(tmp_path: Path):
     cfg_mod = types.ModuleType("config")
@@ -144,7 +145,8 @@ def test_init_chroma_and_init_fts_migration_paths(tmp_path, monkeypatch):
     assert st2._chroma_available is False
 
 
-def test_document_and_search_error_and_fallback_paths(tmp_path):
+@pytest.mark.asyncio
+async def test_document_and_search_error_and_fallback_paths(tmp_path):
     mod = _load_rag_module(tmp_path)
     st = _new_store(mod, tmp_path)
 
@@ -159,7 +161,7 @@ def test_document_and_search_error_and_fallback_paths(tmp_path):
 
     st._chroma_available = True
     st.collection = _BrokenCol()
-    doc_id = st.add_document("T", "content", session_id="s1")
+    doc_id = await st.add_document("T", "content", session_id="s1")
     assert doc_id
 
     # add_document_from_url exception lines 410-412
@@ -180,7 +182,7 @@ def test_document_and_search_error_and_fallback_paths(tmp_path):
 
     httpx_mod.AsyncClient = _FailClient
     sys.modules["httpx"] = httpx_mod
-    ok, msg = __import__("asyncio").run(st.add_document_from_url("https://example.invalid"))
+    ok, msg = await st.add_document_from_url("https://example.invalid")
     assert ok is False and "eklenemedi" in msg
 
     # add_document_from_file exception lines 429-431
@@ -209,13 +211,13 @@ def test_document_and_search_error_and_fallback_paths(tmp_path):
     # search mode guards and keyword fallback line 534
     st._index = {"a": {"session_id": "s1", "title": "A", "tags": [], "source": ""}}
     st._chroma_available = False
-    assert "kullanılamıyor" in st.search("q", mode="vector", session_id="s1")[1]
+    assert "kullanılamıyor" in (await st.search("q", mode="vector", session_id="s1"))[1]
     st._bm25_available = False
-    assert "BM25 kullanılamıyor" in st.search("q", mode="bm25", session_id="s1")[1]
+    assert "BM25 kullanılamıyor" in (await st.search("q", mode="bm25", session_id="s1"))[1]
     st._bm25_available = False
     st._chroma_available = False
     st._keyword_search = lambda *args: (True, "kw")
-    assert st.search("q", mode="auto", session_id="s1") == (True, "kw")
+    assert await st.search("q", mode="auto", session_id="s1") == (True, "kw")
 
 
 
@@ -227,11 +229,12 @@ def test_delete_document_returns_not_found_for_unknown_doc(tmp_path):
     assert "Belge bulunamadı" in msg
 
 
-def test_delete_document_rejects_cross_session_deletion(tmp_path):
+@pytest.mark.asyncio
+async def test_delete_document_rejects_cross_session_deletion(tmp_path):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
 
-    doc_id = store.add_document("T", "icerik", session_id="A")
+    doc_id = await store.add_document("T", "icerik", session_id="A")
     msg = store.delete_document(doc_id, session_id="B")
 
     assert "erişim yetkiniz yok" in msg

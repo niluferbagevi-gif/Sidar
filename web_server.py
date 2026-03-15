@@ -519,7 +519,10 @@ async def websocket_chat(websocket: WebSocket):
         try:
             if len(agent.memory) == 0:
                 title = msg[:30] + "..." if len(msg) > 30 else msg
-                await agent.memory.update_title(title)
+                if hasattr(agent.memory, "aupdate_title"):
+                    await _await_if_needed(agent.memory.aupdate_title(title))
+                else:
+                    await _await_if_needed(agent.memory.update_title(title))
 
             event_bus = get_agent_event_bus()
             sub_id, status_queue = event_bus.subscribe()
@@ -684,6 +687,14 @@ async def status():
         503: {"description": "Sistemde kritik bir sorun var"},
     },
 )
+
+
+async def _await_if_needed(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 async def health_check():
     """
     Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
@@ -1225,7 +1236,7 @@ async def get_todo():
 async def clear():
     """Aktif konuşma belleğini temizle."""
     agent = await get_agent()
-    await agent.memory.clear()
+    await _await_if_needed(agent.memory.clear())
     return JSONResponse({"result": True})
 
 
@@ -1311,11 +1322,12 @@ async def github_webhook(
 
     if msg:
         logger.info("Webhook işlendi: %s", msg)
-        await asyncio.to_thread(agent.memory.add, "user", msg)
-        await asyncio.to_thread(
-            agent.memory.add,
-            "assistant",
-            "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
+        await _await_if_needed(agent.memory.add("user", msg))
+        await _await_if_needed(
+            agent.memory.add(
+                "assistant",
+                "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
+            )
         )
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
