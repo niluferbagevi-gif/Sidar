@@ -168,7 +168,7 @@ async def test_agent_initialization(agent):
     assert agent.VERSION is not None
     assert agent.cfg.AI_PROVIDER in ("ollama", "gemini")
     assert "Bellek" in status_report
-    assert "Güvenlik" in agent._build_context()
+    assert "Güvenlik" in asyncio.run(agent._build_context())
 
 
 # ─────────────────────────────────────────────
@@ -1155,7 +1155,7 @@ def test_instruction_files_are_loaded_hierarchically(test_config):
     (deep / "SIDAR.md").write_text("DEEP SIDAR", encoding="utf-8")
 
     agent = SidarAgent(cfg=test_config)
-    context = agent._build_context()
+    context = asyncio.run(agent._build_context())
 
     assert "[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]" in context
     assert "ROOT SIDAR" in context
@@ -1173,7 +1173,7 @@ def test_instruction_files_load_both_names_in_same_directory(test_config):
     (root / "CLAUDE.md").write_text("CLAUDE ROOT RULE", encoding="utf-8")
 
     agent = SidarAgent(cfg=test_config)
-    context = agent._build_context()
+    context = asyncio.run(agent._build_context())
 
     assert "SIDAR ROOT RULE" in context
     assert "CLAUDE ROOT RULE" in context 
