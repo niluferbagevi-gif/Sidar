@@ -95,6 +95,7 @@ class Database:
         self._backend = "sqlite"
         self._sqlite_path: Optional[Path] = None
         self._sqlite_conn: Optional[sqlite3.Connection] = None
+        self._sqlite_lock: Optional[asyncio.Lock] = None
 
         self._pg_pool = None
 
@@ -138,9 +139,20 @@ class Database:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON;")
             conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA busy_timeout = 10000;")
             return conn
 
         self._sqlite_conn = await asyncio.to_thread(_open)
+        self._sqlite_lock = asyncio.Lock()
+
+    async def _run_sqlite_op(self, operation):
+        """SQLite işlemlerini tek bağlantı üzerinde sıralı çalıştır (thread-safe)."""
+        if self._sqlite_conn is None:
+            raise RuntimeError("SQLite bağlantısı başlatılmadı.")
+        if self._sqlite_lock is None:
+            self._sqlite_lock = asyncio.Lock()
+        async with self._sqlite_lock:
+            return await asyncio.to_thread(operation)
 
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
@@ -157,6 +169,7 @@ class Database:
         if self._sqlite_conn is not None:
             conn = self._sqlite_conn
             self._sqlite_conn = None
+            self._sqlite_lock = None
             await asyncio.to_thread(conn.close)
 
         if self._pg_pool is not None:
@@ -240,7 +253,7 @@ class Database:
             self._sqlite_conn.executescript(schema_sql)
             self._sqlite_conn.commit()
 
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
 
     async def _init_schema_postgresql(self) -> None:
         assert self._pg_pool is not None
@@ -330,7 +343,7 @@ class Database:
                 )
             self._sqlite_conn.commit()
 
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
 
     async def _ensure_schema_version_postgresql(self) -> None:
         assert self._pg_pool is not None
@@ -379,7 +392,7 @@ class Database:
             )
             return cur.fetchone()
 
-        row = await asyncio.to_thread(_fetch)
+        row = await self._run_sqlite_op(_fetch)
         if row:
             return UserRecord(
                 id=str(row["id"]),
@@ -423,7 +436,7 @@ class Database:
             )
             return cur.fetchall()
 
-        rows = await asyncio.to_thread(_run)
+        rows = await self._run_sqlite_op(_run)
         return [
             SessionRecord(
                 id=str(r["id"]),
@@ -476,7 +489,7 @@ class Database:
                 )
             return cur.fetchone()
 
-        row = await asyncio.to_thread(_run)
+        row = await self._run_sqlite_op(_run)
         if not row:
             return None
         return SessionRecord(
@@ -511,7 +524,7 @@ class Database:
             self._sqlite_conn.commit()
             return cur.rowcount > 0
 
-        return await asyncio.to_thread(_run)
+        return await self._run_sqlite_op(_run)
 
     async def delete_session(self, session_id: str, user_id: Optional[str] = None) -> bool:
         if self._backend == "postgresql":
@@ -534,7 +547,7 @@ class Database:
             self._sqlite_conn.commit()
             return cur.rowcount > 0
 
-        return await asyncio.to_thread(_run)
+        return await self._run_sqlite_op(_run)
     async def create_user(self, username: str, role: str = "user", password: Optional[str] = None) -> UserRecord:
         user_id = str(uuid.uuid4())
         created_at = _utc_now_iso()
@@ -563,7 +576,7 @@ class Database:
             )
             self._sqlite_conn.commit()
 
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
         return UserRecord(id=user_id, username=username, role=role, created_at=created_at)
 
     async def register_user(self, username: str, password: str, role: str = "user") -> UserRecord:
@@ -593,7 +606,7 @@ class Database:
             )
             return cur.fetchone()
 
-        row = await asyncio.to_thread(_run)
+        row = await self._run_sqlite_op(_run)
         if not row or not row["password_hash"]:
             return None
         if not _verify_password(password, str(row["password_hash"])):
@@ -622,7 +635,7 @@ class Database:
                 )
                 self._sqlite_conn.commit()
 
-            await asyncio.to_thread(_run)
+            await self._run_sqlite_op(_run)
         return AuthTokenRecord(token=token, user_id=user_id, expires_at=expires_at, created_at=created_at)
 
     async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
@@ -651,7 +664,7 @@ class Database:
             cur = self._sqlite_conn.execute(query, (token, now_iso))
             return cur.fetchone()
 
-        row = await asyncio.to_thread(_run)
+        row = await self._run_sqlite_op(_run)
         if not row:
             return None
         return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
@@ -691,7 +704,7 @@ class Database:
                 (user_id, tokens, requests),
             )
             self._sqlite_conn.commit()
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
 
     async def record_provider_usage_daily(self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1) -> None:
         provider_name = (provider or "unknown").lower().strip() or "unknown"
@@ -732,7 +745,7 @@ class Database:
                 (user_id, provider_name, today, req, toks),
             )
             self._sqlite_conn.commit()
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
 
     async def get_user_quota_status(self, user_id: str, provider: str) -> dict[str, int | bool]:
         provider_name = (provider or "unknown").lower().strip() or "unknown"
@@ -772,7 +785,7 @@ class Database:
                     (user_id, provider_name, today),
                 ).fetchone()
                 return q, u
-            quota, usage = await asyncio.to_thread(_run)
+            quota, usage = await self._run_sqlite_op(_run)
             q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
             q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
             u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
@@ -840,7 +853,7 @@ class Database:
                 for row in rows
             ]
 
-        return await asyncio.to_thread(_run)
+        return await self._run_sqlite_op(_run)
 
     async def get_admin_stats(self) -> dict[str, Any]:
         users = await self.list_users_with_quotas()
@@ -872,7 +885,7 @@ class Database:
                 assert row is not None
                 return row
 
-            totals = await asyncio.to_thread(_run_totals)
+            totals = await self._run_sqlite_op(_run_totals)
 
         return {
             "total_users": len(users),
@@ -908,7 +921,7 @@ class Database:
             )
             self._sqlite_conn.commit()
 
-        await asyncio.to_thread(_run)
+        await self._run_sqlite_op(_run)
         return SessionRecord(id=session_id, user_id=user_id, title=title, created_at=now, updated_at=now)
 
     async def add_message(self, session_id: str, role: str, content: str, tokens_used: int = 0) -> MessageRecord:
@@ -944,7 +957,7 @@ class Database:
             self._sqlite_conn.commit()
             return int(cur.lastrowid)
 
-        msg_id = await asyncio.to_thread(_run)
+        msg_id = await self._run_sqlite_op(_run)
         return MessageRecord(id=msg_id, session_id=session_id, role=role, content=content, tokens_used=tokens, created_at=now)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
@@ -977,7 +990,7 @@ class Database:
             )
             return cur.fetchall()
 
-        rows = await asyncio.to_thread(_run)
+        rows = await self._run_sqlite_op(_run)
         return [
             MessageRecord(
                 id=int(r["id"]),

@@ -309,52 +309,66 @@ class OllamaClient(BaseLLMClient):
         timeout: httpx.Timeout,
     ) -> AsyncGenerator[str, None]:
         """Ollama stream yanıtını güvenli buffer yaklaşımı ile ayrıştırır."""
+        client = None
+        stream_cm = None
+        resp = None
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream("POST", url, json=payload) as resp:
-                    resp.raise_for_status()
-                    buffer = ""
-                    utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                    async for raw_bytes in resp.aiter_bytes():
-                        decoded = utf8_decoder.decode(raw_bytes, final=False)
-                        buffer += decoded
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                body = json.loads(line)
-                                chunk = body.get("message", {}).get("content", "")
-                                if chunk:
-                                    yield chunk
-                            except json.JSONDecodeError:
-                                continue
+            async def _open_stream():
+                stream_client = httpx.AsyncClient(timeout=timeout)
+                cm = stream_client.stream("POST", url, json=payload)
+                response = await cm.__aenter__()
+                response.raise_for_status()
+                return stream_client, cm, response
 
-                    trailing = utf8_decoder.decode(b"", final=True)
-                    if trailing:
-                        buffer += trailing
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                body = json.loads(line)
-                                chunk = body.get("message", {}).get("content", "")
-                                if chunk:
-                                    yield chunk
-                            except json.JSONDecodeError:
-                                continue
+            client, stream_cm, resp = await _retry_with_backoff(
+                "ollama",
+                _open_stream,
+                config=self.config,
+                retry_hint="Ollama stream başlatma başarısız",
+            )
 
-                    if buffer.strip():
-                        try:
-                            body = json.loads(buffer)
-                            chunk = body.get("message", {}).get("content", "")
-                            if chunk:
-                                yield chunk
-                        except json.JSONDecodeError:
-                            pass
+            buffer = ""
+            utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            async for raw_bytes in resp.aiter_bytes():
+                decoded = utf8_decoder.decode(raw_bytes, final=False)
+                buffer += decoded
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        body = json.loads(line)
+                        chunk = body.get("message", {}).get("content", "")
+                        if chunk:
+                            yield chunk
+                    except json.JSONDecodeError:
+                        continue
+
+            trailing = utf8_decoder.decode(b"", final=True)
+            if trailing:
+                buffer += trailing
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        body = json.loads(line)
+                        chunk = body.get("message", {}).get("content", "")
+                        if chunk:
+                            yield chunk
+                    except json.JSONDecodeError:
+                        continue
+
+            if buffer.strip():
+                try:
+                    body = json.loads(buffer)
+                    chunk = body.get("message", {}).get("content", "")
+                    if chunk:
+                        yield chunk
+                except json.JSONDecodeError:
+                    pass
         except Exception as exc:
             yield json.dumps(
                 {
@@ -363,6 +377,11 @@ class OllamaClient(BaseLLMClient):
                     "thought": "Hata",
                 }
             )
+        finally:
+            if stream_cm is not None:
+                await stream_cm.__aexit__(None, None, None)
+            if client is not None and hasattr(client, "aclose"):
+                await client.aclose()
 
     async def list_models(self) -> List[str]:
         url = f"{self.base_url}/api/tags"
@@ -423,6 +442,9 @@ class GeminiClient(BaseLLMClient):
 
         genai.configure(api_key=self.config.GEMINI_API_KEY)
 
+        if json_mode:
+            messages = self._inject_json_instruction(messages)
+
         system_text = ""
         chat_messages = []
         for m in messages:
@@ -434,7 +456,6 @@ class GeminiClient(BaseLLMClient):
         gen_config = {"temperature": 0.2 if json_mode else temperature}
         if json_mode:
             gen_config.update(self.json_mode_config().get("generation_config", {}))
-            system_text = f"{system_text}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()
 
         try:
             from google.generativeai.types import HarmBlockThreshold, HarmCategory
@@ -487,7 +508,15 @@ class GeminiClient(BaseLLMClient):
         try:
             chat_session = gm.start_chat(history=history[:-1] if history else [])
             if stream:
-                response_stream = await chat_session.send_message_async(prompt, stream=True)
+                async def _start_stream():
+                    return await chat_session.send_message_async(prompt, stream=True)
+
+                response_stream = await _retry_with_backoff(
+                    "gemini",
+                    _start_stream,
+                    config=self.config,
+                    retry_hint="Gemini stream başlatma başarısız",
+                )
                 stream_iter = self._stream_gemini_generator(response_stream)
                 return _trace_stream_metrics(stream_iter, span, started_at)
 
@@ -623,30 +652,43 @@ class OpenAIClient(BaseLLMClient):
         timeout: httpx.Timeout,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
+        client = None
+        stream_cm = None
+        resp = None
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream(
+            async def _open_stream():
+                stream_client = httpx.AsyncClient(timeout=timeout)
+                cm = stream_client.stream(
                     "POST",
                     "https://api.openai.com/v1/chat/completions",
                     json=payload,
                     headers=headers,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if data == "[DONE]":
-                            break
-                        try:
-                            body = json.loads(data)
-                            delta = body.get("choices", [{}])[0].get("delta", {})
-                            text = delta.get("content", "")
-                            if text:
-                                yield text
-                        except json.JSONDecodeError:
-                            continue
+                )
+                response = await cm.__aenter__()
+                response.raise_for_status()
+                return stream_client, cm, response
+
+            client, stream_cm, resp = await _retry_with_backoff(
+                "openai",
+                _open_stream,
+                config=self.config,
+                retry_hint="OpenAI stream başlatma başarısız",
+            )
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    body = json.loads(data)
+                    delta = body.get("choices", [{}])[0].get("delta", {})
+                    text = delta.get("content", "")
+                    if text:
+                        yield text
+                except json.JSONDecodeError:
+                    continue
         except Exception as exc:
             msg = json.dumps(
                 {
@@ -656,6 +698,12 @@ class OpenAIClient(BaseLLMClient):
                 }
             )
             yield _ensure_json_text(msg, "OpenAI") if json_mode else msg
+
+        finally:
+            if stream_cm is not None:
+                await stream_cm.__aexit__(None, None, None)
+            if client is not None and hasattr(client, "aclose"):
+                await client.aclose()
 
 
 class AnthropicClient(BaseLLMClient):
@@ -714,12 +762,11 @@ class AnthropicClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
 
         model_name = model or getattr(self.config, "ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+        if json_mode:
+            messages = self._inject_json_instruction(messages)
         system_prompt, conversation = self._split_system_and_messages(messages)
         if not conversation:
             conversation = [{"role": "user", "content": "Merhaba"}]
-
-        if json_mode:
-            system_prompt = f"{system_prompt}\n\n{SIDAR_TOOL_JSON_INSTRUCTION}".strip()
 
         client = AsyncAnthropic(api_key=api_key, timeout=self._build_timeout())
         tracer = _get_tracer(self.config)
@@ -799,15 +846,27 @@ class AnthropicClient(BaseLLMClient):
         temperature: float,
         json_mode: bool,
     ) -> AsyncGenerator[str, None]:
+        stream_cm = None
+        stream = None
         try:
-            async with client.messages.stream(
-                model=model_name,
-                max_tokens=4096,
-                temperature=temperature,
-                system=system_prompt or None,
-                messages=messages,
-            ) as stream:
-                async for event in stream:
+            async def _open_stream():
+                cm = client.messages.stream(
+                    model=model_name,
+                    max_tokens=4096,
+                    temperature=temperature,
+                    system=system_prompt or None,
+                    messages=messages,
+                )
+                opened = await cm.__aenter__()
+                return cm, opened
+
+            stream_cm, stream = await _retry_with_backoff(
+                "anthropic",
+                _open_stream,
+                config=self.config,
+                retry_hint="Anthropic stream başlatma başarısız",
+            )
+            async for event in stream:
                     if getattr(event, "type", "") != "content_block_delta":
                         continue
                     delta = getattr(event, "delta", None)
@@ -825,6 +884,9 @@ class AnthropicClient(BaseLLMClient):
                 }
             )
             yield _ensure_json_text(msg, "Anthropic") if json_mode else msg
+        finally:
+            if stream_cm is not None:
+                await stream_cm.__aexit__(None, None, None)
 
 
 class LLMClient:
