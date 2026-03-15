@@ -270,16 +270,16 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         def __len__(self):
             return 2
 
-        def get_all_sessions(self):
+        async def get_all_sessions(self):
             return [{"id": "sess-1"}]
 
         async def set_active_user(self, _user_id, _username=None):
             return None
 
-        def clear(self):
+        async def clear(self):
             calls["cleared"] = True
 
-        def add(self, role, text):
+        async def add(self, role, text):
             calls["adds"].append((role, text))
 
     class _Docs:
@@ -292,7 +292,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
             calls["add_file"] = args
             return True, "eklendi"
 
-        def search(self, q, top_k, mode, session_id):
+        async def search(self, q, top_k, mode, session_id):
             calls["search"] = (q, top_k, mode, session_id)
             return True, ["x"]
 
@@ -320,6 +320,9 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         CUDA_VERSION="N/A",
         MEMORY_ENCRYPTION_KEY="",
     )
+    async def _set_access_level(_level):
+        return "ok"
+
     agent = types.SimpleNamespace(
         VERSION="2.0",
         cfg=cfg,
@@ -331,7 +334,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         pkg=types.SimpleNamespace(status=lambda: "ok"),
         todo=types.SimpleNamespace(get_tasks=lambda: [{"status": "completed"}]),
         security=types.SimpleNamespace(level_name="sandbox"),
-        set_access_level=lambda lvl: f"set:{lvl}",
+        set_access_level=_set_access_level,
     )
     return agent, calls
 
@@ -449,9 +452,14 @@ def test_agent_lifecycle_get_agent_singleton_and_shutdown_close():
 
     created = {"count": 0}
 
+    class _Memory:
+        async def initialize(self):
+            return None
+
     class _Agent:
         def __init__(self, cfg):
             created["count"] += 1
+            self.memory = _Memory()
 
     class _RedisConn:
         def __init__(self):
@@ -508,7 +516,7 @@ def test_sessions_and_memory_clear_endpoints_cover_success_and_error_paths():
         def _safe_ts(_text):
             return 0.0
 
-        def clear(self):
+        async def clear(self):
             calls["cleared"] += 1
 
         async def set_active_user(self, _uid, _uname=None):
@@ -1198,11 +1206,19 @@ def test_git_info_branches_set_branch_and_main_paths(monkeypatch):
 
     created = {"cfg": None, "uvicorn": None}
 
+    class _Memory:
+        async def initialize(self):
+            return None
+
     class _Agent:
         VERSION = "9.9"
 
         def __init__(self, cfg):
             created["cfg"] = cfg
+            self.memory = _Memory()
+
+        async def initialize(self):
+            return None
 
     def _run(app, host, port, log_level):
         created["uvicorn"] = (host, port, log_level)
@@ -1227,10 +1243,10 @@ def test_list_files_metrics_rag_docs_todo_clear_and_github_repos_success(monkeyp
         def __len__(self):
             return 3
 
-        def get_all_sessions(self):
+        async def get_all_sessions(self):
             return [{"id": "sess-42"}, {"id": "sess-2"}]
 
-        def clear(self):
+        async def clear(self):
             self.cleared = True
 
         async def set_active_user(self, _uid, _uname=None):
@@ -1306,7 +1322,10 @@ def test_webhook_pull_request_and_issues_branches_add_memory_records():
     mod = _load_web_server()
     calls = []
 
-    memory = types.SimpleNamespace(add=lambda role, text: calls.append((role, text)))
+    async def _add(role, text):
+        calls.append((role, text))
+
+    memory = types.SimpleNamespace(add=_add)
     agent = types.SimpleNamespace(memory=memory)
 
     async def _get_agent():
@@ -1622,7 +1641,10 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     assert bad_json.status_code == 400
 
     calls_mem = []
-    agent.memory = types.SimpleNamespace(add=lambda role, text: calls_mem.append((role, text)))
+    async def _add_mem(role, text):
+        calls_mem.append((role, text))
+
+    agent.memory = types.SimpleNamespace(add=_add_mem)
     mod.get_agent = _get_agent2
     push_payload = json.dumps({"pusher": {"name": "alice"}, "ref": "refs/heads/main"}).encode("utf-8")
     push_ok = asyncio.run(mod.github_webhook(_FakeRequest(body_bytes=push_payload), x_github_event="push", x_hub_signature_256=""))
