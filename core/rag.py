@@ -327,7 +327,7 @@ class DocumentStore:
         c_overlap = chunk_overlap or getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
         return self._recursive_chunk_text(text, c_size, c_overlap)
 
-    def add_document(
+    def _add_document_sync(
         self,
         title: str,
         content: str,
@@ -389,6 +389,23 @@ class DocumentStore:
         logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
         return doc_id
 
+    async def add_document(
+        self,
+        title: str,
+        content: str,
+        source: str = "",
+        tags: Optional[List[str]] = None,
+        session_id: str = "global",
+    ) -> str:
+        return await asyncio.to_thread(
+            self._add_document_sync,
+            title,
+            content,
+            source,
+            tags,
+            session_id,
+        )
+
     async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
         import httpx
         try:
@@ -401,7 +418,7 @@ class DocumentStore:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
                 title = m.group(1).strip() if m else url.split("/")[-1] or url
 
-            doc_id = await asyncio.to_thread(self.add_document, title, content, url, tags, session_id)
+            doc_id = await self.add_document(title, content, url, tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
@@ -420,7 +437,7 @@ class DocumentStore:
             if not title: title = file.name
 
             source = f"file://{file}"
-            doc_id = self.add_document(title, content, source=source, tags=tags or [], session_id=session_id)
+            doc_id = self._add_document_sync(title, content, source=source, tags=tags or [], session_id=session_id)
             return True, f"✓ Dosya RAG deposuna eklendi: [{doc_id}] {title} ({len(content):,} karakter)"
         except Exception as exc:
             logger.error("Dosya belge ekleme hatası (%s): %s", path, exc)
@@ -501,7 +518,7 @@ class DocumentStore:
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────
 
-    def search(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
+    def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
         if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
 
         session_docs = [k for k, v in self._index.items() if v.get("session_id", "global") == session_id]
@@ -528,6 +545,15 @@ class DocumentStore:
 
         if self._bm25_available: return self._bm25_search(query, top_k, session_id)
         return self._keyword_search(query, top_k, session_id)
+
+    async def search(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        mode: str = "auto",
+        session_id: str = "global",
+    ) -> Tuple[bool, str]:
+        return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
         chroma_results = self._fetch_chroma(query, top_k, session_id)

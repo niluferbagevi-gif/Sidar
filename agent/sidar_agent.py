@@ -54,6 +54,8 @@ class SidarAgent:
         self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
         
         self.memory = ConversationMemory(
+            database_url=getattr(self.cfg, "DATABASE_URL", ""),
+            base_dir=self.cfg.BASE_DIR,
             file_path=self.cfg.MEMORY_FILE,
             max_turns=self.cfg.MAX_MEMORY_TURNS,
             encryption_key=getattr(self.cfg, "MEMORY_ENCRYPTION_KEY", ""),

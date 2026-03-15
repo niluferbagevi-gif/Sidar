@@ -1,3 +1,23 @@
+[project]
+name = "sidar-project"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+postgres = [
+  "asyncpg~=0.30.0",
+]
+telemetry = [
+  "opentelemetry-api~=1.29.0",
+  "opentelemetry-sdk~=1.29.0",
+  "opentelemetry-instrumentation-fastapi~=0.50b0",
+  "opentelemetry-exporter-otlp~=1.29.0",
+]
+rag = [
+  "chromadb~=0.5.5",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
