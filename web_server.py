@@ -687,8 +687,6 @@ async def status():
         503: {"description": "Sistemde kritik bir sorun var"},
     },
 )
-
-
 async def _await_if_needed(value):
     if inspect.isawaitable(value):
         return await value

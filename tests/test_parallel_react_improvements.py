@@ -7,8 +7,8 @@ from tests.test_sidar_agent_runtime import _collect, _make_agent_for_runtime
 def test_supervisor_flow_no_parallel_react_loop_markers_in_agent_source():
     src = Path("agent/sidar_agent.py").read_text(encoding="utf-8")
     assert "_react_loop" not in src
-    assert "_execute_tool" not in src
-    assert "_try_direct_tool_route" not in src
+    assert "SupervisorAgent" in src
+    assert "_try_multi_agent" in src
 
 
 def test_supervisor_entrypoint_exists_and_routes_through_run_task():

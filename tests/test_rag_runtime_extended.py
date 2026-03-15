@@ -5,7 +5,6 @@ import threading
 import types
 from pathlib import Path
 
-import pytest
 
 def _load_rag_module(tmp_path: Path):
     cfg_mod = types.ModuleType("config")

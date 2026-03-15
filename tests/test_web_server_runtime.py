@@ -183,6 +183,9 @@ def _install_web_server_stubs():
         def unsubscribe(self, _sub_id):
             return None
 
+        async def publish(self, _source, _message):
+            return None
+
     event_stream_mod.get_agent_event_bus = lambda: _EventBus()
     sys.modules["fastapi"] = fastapi_mod
     sys.modules["fastapi.middleware.cors"] = cors_mod
@@ -192,9 +195,13 @@ def _install_web_server_stubs():
     sys.modules["uvicorn"] = uvicorn_mod
     sys.modules["config"] = cfg_mod
     if "agent" not in sys.modules:
-        sys.modules["agent"] = types.ModuleType("agent")
+        agent_pkg = types.ModuleType("agent")
+        agent_pkg.__path__ = [str(Path("agent").resolve())]
+        sys.modules["agent"] = agent_pkg
     if "agent.core" not in sys.modules:
-        sys.modules["agent.core"] = types.ModuleType("agent.core")
+        core_pkg = types.ModuleType("agent.core")
+        core_pkg.__path__ = [str(Path("agent/core").resolve())]
+        sys.modules["agent.core"] = core_pkg
     if "core" not in sys.modules:
         core_pkg = types.ModuleType("core")
         core_pkg.__path__ = []
@@ -209,6 +216,12 @@ def _install_web_server_stubs():
             self.retryable = retryable
 
     llm_client_mod.LLMAPIError = _LLMAPIError
+
+    class _LLMClient:
+        def __init__(self, *_a, **_k):
+            return None
+
+    llm_client_mod.LLMClient = _LLMClient
 
     sys.modules["agent.sidar_agent"] = agent_mod
     sys.modules["agent.core.event_stream"] = event_stream_mod

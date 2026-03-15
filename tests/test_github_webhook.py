@@ -19,5 +19,5 @@ def test_web_server_has_webhook_endpoint_and_hmac_validation():
 def test_webhook_events_are_logged_into_memory_context():
     src = Path("web_server.py").read_text(encoding="utf-8")
     assert "[GITHUB BİLDİRİMİ]" in src
-    assert "await asyncio.to_thread(agent.memory.add, \"user\", msg)" in src
+    assert "await _await_if_needed(agent.memory.add(\"user\", msg))" in src
     assert "GitHub bildirimini kayıtlarıma aldım" in src
