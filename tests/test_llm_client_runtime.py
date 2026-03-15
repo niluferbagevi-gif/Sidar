@@ -935,3 +935,47 @@ def test_llmclient_non_ollama_fallback_helpers_and_stream_bridge(monkeypatch):
 
     chunks = asyncio.run(_collect(client._stream_gemini_generator(_FakeRespStream())))
     assert chunks == ["x", "y"]
+
+def test_openai_stream_ignores_invalid_json_chunks_then_continues(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30)
+    client = llm_mod.OpenAIClient(cfg)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield "data: {invalid"
+            yield "data: {\"choices\":[{\"delta\":{\"content\":\"B\"}}]}"
+            yield "data: [DONE]"
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def stream(self, method, url, json, headers):
+            return _StreamCtx()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    out = asyncio.run(
+        _collect(
+            client._stream_openai(
+                payload={"stream": True},
+                headers={"Authorization": "Bearer k"},
+                timeout=llm_mod.httpx.Timeout(10),
+                json_mode=True,
+            )
+        )
+    )
+    assert out == ["B"]
