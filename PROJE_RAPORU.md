@@ -1058,15 +1058,14 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agent, sandbox, observability) tekrar etmek yerine, bir sonraki kurumsal sıçrama için **yalnızca v4.0 hedeflerini** listeler.
 
-| İyileştirme Alanı (v4.0) | Mevcut Durum (v3.0) | Önerilen Geliştirme |
-|---|---|---|
-| **Kubernetes/Helm ile Ölçekleme** | `docker-compose` tabanlı güçlü operasyon akışı mevcut | Çok tenantlı ve yüksek eşzamanlı yükte yatay ölçekleme için K8s deployment + HPA + Helm chart standardizasyonu |
-| **LLM Gateway/Proxy Katmanı** | Sağlayıcılar `core/llm_client.py` içinde provider-bazlı yönetiliyor | LiteLLM/OpenRouter benzeri merkezi gateway ile model yönlendirme, kota/anahtar yönetimi, failover ve maliyet politikalarının tek noktadan yönetimi |
-| **Kurumsal Vektör Veri Katmanı** | ChromaDB + FTS5/BM25 hibrit arama aktif | Büyük kurumsal korpuslarda pgvector/Milvus/Qdrant gibi dağıtık vektör altyapılarıyla ölçeklenebilir retrieval katmanı |
-| **Dinamik Agent Swarm + Marketplace** | Coder/Researcher/Reviewer rolleri üretimde sabit tanımlı | Göreve göre dinamik uzman ajan türetimi (swarm), araç/ajan eklenti pazaryeri ve çalışma zamanı yetenek keşfi |
-| **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli |
-| **Stateless Auth ve JWT Entegrasyonu** | Oturum token'ları DB'de `auth_tokens` tablosunda tutulmaktadır; kimlik doğrulama DB sorgusu gerektirir | Merkezi auth sunucularıyla uyumlu, veritabanı sorgusu gerektirmeyen (stateless) JWT tabanlı asenkron yetkilendirme; `python-jose` veya `authlib` ile access + refresh token modeli. PBKDF2 parola doğrulama zinciri korunabilir. |
-| **Bağımlılık Extras Grupları** | `asyncpg`, `opentelemetry-*`, `chromadb` requirements.txt'te zorunlu ama kodda opsiyonel (Borç #7) | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi |
+| İyileştirme Alanı | Mevcut Durum (v3.0) | v4.0 Hedefi / Vizyonu | İş Değeri / Gerekçe |
+|---|---|---|---|
+| **1. Dağıtık Ajan İletişimi (Message Broker)** | Ajanlar arası görev devri ve mesajlaşma ağırlıklı olarak in-memory `MemoryHub` veya doğrudan asenkron çağrılar üzerinden ilerliyor. | RabbitMQ, Redis Pub/Sub veya Apache Kafka tabanlı event-driven mesaj omurgasına geçiş. | Ajanların aynı sunucuda çalışması zorunluluğunu kaldırır; Coder/Reviewer gibi roller ayrı konteyner ve sunucularda bağımsız ölçeklenebilir. |
+| **2. Gelişmiş RAG ve Vektör Veritabanı** | ChromaDB tabanlı temel RAG aktif; vektör aramaları daha çok lokal/senkron profilde. | PostgreSQL `pgvector` ile tekil DB yaklaşımı veya Milvus/Qdrant ile kurumsal vektör katmanı; hybrid search (keyword + semantic) + reranking entegrasyonu. | Postgres merkezli mimaride operasyonel karmaşıklığı azaltır, daha yüksek doğrulukla hallucination riskini düşürür. |
+| **3. Anlamsal Önbellekleme (Semantic Caching)** | Bellek katmanı mevcut; semantik olarak eşdeğer farklı sorular LLM tarafında tekrar maliyet üretiyor. | Redis veya GPTCache ile vektör benzerliği tabanlı yanıt önbelleği. | Yüksek trafikte token maliyetini ciddi düşürür, gecikmeyi milisaniye seviyesine yaklaştırır. |
+| **4. Dinamik Prompt ve Model Yönetimi** | Agent sistem promptları ve davranış kuralları kod içinde statik tanımlanıyor. | Prompt Registry + Yönetici Paneli ile prompt, temperature ve model seçimini DB üzerinden canlı yönetme. | Operasyonel esneklik sağlar; A/B testlerini ve deployment gerektirmeyen davranış güncellemelerini mümkün kılar. |
+| **5. Dağıtık İzlenebilirlik (Distributed Tracing)** | Prometheus/Grafana ile metrikler izleniyor; uçtan uca request izleri sınırlı. | OpenTelemetry'nin tam etkinleştirilmesi ve Jaeger/Zipkin ile APM düzeyinde dağıtık izleme. | Yavaşlığın DB, vektör arama veya LLM katmanından hangisinde oluştuğunu waterfall trace ile saniye düzeyinde görünür kılar. |
+| **6. Gelişmiş Güvenlik ve RBAC** | Basit token/session tabanlı yetkilendirme mevcut. | Stateless JWT kimlik doğrulama + rol tabanlı erişim kontrolü (RBAC) ve tenant izolasyonu. | Multi-tenant SaaS kullanımında Admin/Developer/Viewer gibi ince yetki seviyeleriyle kurumsal güvenlik beklentisini karşılar. |
 
 > **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
 
