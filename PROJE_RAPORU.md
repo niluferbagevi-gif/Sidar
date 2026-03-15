@@ -510,10 +510,12 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `openai`, `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Çoklu LLM istemci katmanı |
-| `chromadb` + `sentence-transformers` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except` ile opsiyonel (`core/rag.py:165`) — ChromaDB yoksa BM25/keyword fallback devreye girer | Vektör tabanlı RAG ve embedding |
+| `chromadb` + `sentence-transformers` | Opsiyonel (`[project.optional-dependencies].rag`) | Vektör tabanlı RAG ve embedding |
 | `rank-bm25` | Opsiyonel (mevcut) | BM25 tabanlı hibrit arama uyumluluğu |
 | `duckduckgo-search` + `beautifulsoup4` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları |
-| `torch` + `torchvision` | Opsiyonel | Embedding ve GPU hızlandırmalı iş yükleri |
+| `torch` + `torchvision` | Opsiyonel (`[project.optional-dependencies].rag`) | Embedding ve GPU hızlandırmalı iş yükleri |
+
+**Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `requirements.txt` içinden çıkarılarak `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
 
 ### 7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)
 
@@ -837,7 +839,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
-- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `asyncpg`, `opentelemetry` paketleri çekirdek kurulumdan çıkartılıp, `pyproject.toml` içerisinde opsiyonel (`[rag]`, `[postgres]`, `[telemetry]`) hale getirildi.
+- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg`, `opentelemetry` paketleri çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
 - **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama işlemleri asenkron yürütme desenine geçirildi.
 - **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory`) modern veritabanı URL mimarisine uyarlandı.
 - **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
@@ -845,6 +847,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
 Projede aktif bir "borç" kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
+- **[Teknik Borç] Modern Paketleme (PEP 621) Geçişi:** Temel bağımlılıkların `pyproject.toml` içindeki `dependencies` bloğunda tekil doğru kaynak (Single Source of Truth) olacak biçimde yönetiminin sürdürülmesi.
 - **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 
@@ -1005,7 +1008,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `GITHUB_WEBHOOK_SECRET` | `""` | GitHub webhook HMAC doğrulama gizli anahtarı |
 | `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
-| `REVIEWER_TEST_COMMAND` | `bash run_tests.sh` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu |
+| `REVIEWER_TEST_COMMAND` | `python -m pytest` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu (çapraz platform) |
 | `ENABLE_MULTI_AGENT` | `true` | **Sabitlenmiştir:** Legacy bayrak kaldırılmıştır; sistem daima Supervisor/Multi-Agent akışında çalışır (`.env` üzerinden değiştirilemez) |
 
 ### 12.13 Docker Compose Override Değişkenleri
