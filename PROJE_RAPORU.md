@@ -833,29 +833,23 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-[⬆ İçindekilere Dön](#içindekiler)
-
-> **Not (v3.0.3 Sonrası Güncelleme):** Kod tabanında yapılan son uçtan uca denetimde, raporda "Açık Borç" olarak listelenen birçok kritik sorunun (Event Loop blokajı, Zombie Process, Şifreleme İterasyon Sertleştirmesi) kod düzeyinde halihazırda çözüldüğü tespit edilmiştir. İlgili maddeler "Ödenmiş Borçlar" sekmesine taşınmıştır.
+> **Not (Güncel Sürüm Sonrası Kontrol):** Kod tabanında yapılan son denetimde, Event Loop blokajı, Zombie Process, Şifreleme İterasyon Sertleştirmesi, senkron uyumluluk kalıntıları ve ölü kodlar (ToolCall modeli) başarıyla temizlenmiş ve çözülmüştür. İlgili maddeler "Ödenmiş Borçlar" sekmesine taşınmıştır.
 
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
-
-*(Önceki sürümlerden gelen yapısal çözümlere ek olarak en son denetimde çözüldüğü doğrulananlar)*
-
-- **[Çözüldü] Event Loop Blokajı (Senkron I/O Sızıntısı):** `agent/sidar_agent.py` içindeki `_load_instruction_files()` metodu, dosya okuma işlemleri sırasında event-loop'u bloklamaması için `asyncio.to_thread` sarıcısına alınmıştır. (Eski Borç #12)
-- **[Çözüldü] Şifreleme İterasyon Standardı:** `core/db.py` içindeki PBKDF2 iterasyon sayısı OWASP 2026 beklentilerine uygun olarak `600000` seviyesine çıkarılmıştır. (Eski Borç #14)
-- **[Çözüldü] Zombie Süreç (Process) Riski:** `main.py` başlatıcısındaki `_run_with_streaming` akışında, sürecin sonlanması `try/finally` bloğu, `process.terminate()` ve `kill()` çağrılarıyla garanti altına alınmıştır. (Eski Borç #13)
-- **[Çözüldü] .env ve Config Çelişkisi:** `ENABLE_MULTI_AGENT` parametresi `.env.example` dosyasından tamamen temizlenmiş ve kod içerisine entegre edilmiştir. (Eski Borç #16)
-- **[Çözüldü] Async Uyumluluk Köprüsü Temizliği:** `agent/sidar_agent.py` içindeki `clear_memory` ve `_memory_add` metotlarında kalan `inspect.isawaitable()` kontrolleri kaldırılmış, doğrudan `await self.memory.clear()` / `await self.memory.add(...)` kullanımına geçilmiştir. (Eski Borç #4)
-- **[Çözüldü] Kullanılmayan ToolCall Modeli:** `agent/sidar_agent.py` içindeki kullanılmayan `ToolCall` Pydantic modeli silinmiştir. (Eski Borç #8)
+- **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Ajan içindeki bellek metotları tam asenkron standartlara (`await self.memory...`) kavuşturuldu. (Eski Borç #4)
+- **[Çözüldü] Ölü Kod (Dead Code) Temizliği:** Kullanılmayan Pydantic şemaları (`ToolCall`) dosyadan arındırıldı. (Eski Borç #8)
+- **[Çözüldü] Event Loop Blokajı (Senkron I/O Sızıntısı):** `_load_instruction_files()` metodu, dosya okuma işlemleri sırasında event-loop'u bloklamaması için `asyncio.to_thread` sarıcısına alındı.
+- **[Çözüldü] Şifreleme İterasyon Standardı:** PBKDF2 iterasyon sayısı OWASP beklentilerine uygun olarak `600000` seviyesine çıkarıldı.
+- **[Çözüldü] Zombie Süreç (Process) Riski:** Alt süreç (child process) yönetimi sertleştirilerek süreç sonlanmaları garanti altına alındı.
 
 ### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
 
 | # | Borç | Etkilenen Dosya(lar) | Öncelik | Durum/Çözüm Önerisi |
 |---|------|----------------------|---------|---------------------|
-| **Borç #5** | **`ConversationMemory.__init__` `file_path` API kalıntısı:** Bellek katmanı artık DB-first olmasına rağmen `memory.py` `__init__` imzası hala `file_path: Path` alıyor. Bu parametre, yalnızca SQLite DB yolunu türetmek için kullanılıyor ve kafa karışıklığı yaratıyor. | `core/memory.py`, `agent/sidar_agent.py` | Düşük | API imzası `database_url` veya `base_dir` alacak şekilde modernize edilmelidir. |
-| **Borç #6** | **RAG / `DocumentStore` senkron blokajı:** `rag.py` içindeki `add_document` ve `search` metotları senkron `def`'lerdir ve thread ile çağrılmaktadır. | `core/rag.py` | Orta | ChromaDB'nin native async istemcisine (v0.5+ HTTP Async Client) geçilmelidir. |
-| **Borç #7** | **Zorunlu ↔ Opsiyonel Bağımlılık Çelişkisi:** `asyncpg`, `opentelemetry-*` ve `chromadb` `requirements.txt`'te zorunlu görünürken, kodda `try/except ImportError` ile opsiyonel ele alınıyor. | `requirements.txt`, `core/db.py`, `core/rag.py` | Orta | `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` şeklinde extras gruplarına ayrılmalıdır. |
-| **Borç #9** | **Legacy Test Drift:** Bazı testler, `sidar_agent.py` içinde artık var olmayan `_tool_subtask`, `parallel_batch` gibi eski senkron/tekli ajan yapılarını aramaktadır. | `tests/*.py` | Kritik | Mimari Supervisor yapısına geçtiği için eski testler güncel P2P / Delegasyon sözleşmelerine göre yeniden yazılmalıdır. |
+| **Borç #1** | **Zorunlu ↔ Opsiyonel Bağımlılık Çelişkisi:** `asyncpg`, `opentelemetry-*` ve `chromadb` paketleri kodda opsiyonelmiş gibi (`try/except ImportError`) yönetilmesine rağmen, `requirements.txt`'te zorunlu bağımlılık olarak listeleniyor. | `requirements.txt`, `core/db.py`, `core/rag.py` | Orta | Bu paketler `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` şeklinde opsiyonel bağımlılıklar (extras) olarak ayrılmalıdır. |
+| **Borç #2** | **RAG / `DocumentStore` Senkron Blokajı:** `rag.py` içindeki `add_document` ve `search` metotları senkron (`def`) fonksiyonlardır ve thread pool ile asenkrona köprülenmektedir. | `core/rag.py` | Orta | ChromaDB'nin doğrudan asenkron (HTTP Async Client) metodolojisine geçilmeli ve kod tabanı `async def` olarak güncellenmelidir. |
+| **Borç #3** | **`ConversationMemory.__init__` `file_path` API Kalıntısı:** Bellek katmanı SQLite veritabanı yapısına geçmiş olmasına rağmen `memory.py` `__init__` imzası hala `file_path: Path` parametresini almaktadır. Bu durum eski dosya tabanlı sistemden kalan bir kafa karışıklığıdır. | `core/memory.py`, `agent/sidar_agent.py` | Düşük | API imzası `database_url` veya `base_dir` alacak şekilde modernizasyon geçirmelidir. |
+| **Borç #4** | **Legacy Test Kayması (Test Drift):** Proje Supervisor (Multi-Agent) mimarisine geçmesine rağmen, bazı eski testler ajan modülünde var olmayan eski senkron/tekli yapıları sorgulamaktadır. | `tests/*.py` | Kritik | Eski testler, yeni omurgadaki P2P ve delegasyon sözleşmelerine uyumlu olarak tamamen yeniden yazılmalıdır. |
 
 ## 12. `.env` Tam Değişken Referansı
 
