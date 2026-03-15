@@ -243,30 +243,25 @@ def test_memory_db_url_elif_branch_endswith_sidar_db(tmp_path: Path):
         assert "sidar_memory.db" in mem.cfg.DATABASE_URL
 
 
-def test_memory_run_coro_sync_propagates_thread_exception(tmp_path: Path):
-    """Line 86-87: _run_coro_sync re-raises box error from worker thread when in event loop."""
+def test_memory_initialize_is_idempotent(tmp_path: Path):
+    """initialize() birden fazla çağrıldığında güvenle tamamlanmalıdır."""
     from core.memory import ConversationMemory
-    import pytest
 
     mem_file = tmp_path / "sessions" / "memory.json"
     mem_file.parent.mkdir(parents=True, exist_ok=True)
     mem = ConversationMemory(file_path=mem_file)
 
-    # Simulate the box["error"] path by directly injecting an error and calling raise logic
-    # We test _run_coro_sync being called inside an event loop (thread path)
-    async def _run_in_loop():
-        async def _boom():
-            raise ValueError("thread-boom")
+    async def _run():
+        await mem.initialize()
+        await mem.initialize()
+        assert mem._initialized is True
+        await mem.db.close()
 
-        # We're inside a running loop so _run_coro_sync goes through the thread path
-        with pytest.raises(ValueError, match="thread-boom"):
-            mem._run_coro_sync(_boom())
-
-    asyncio.run(_run_in_loop())
+    asyncio.run(_run())
 
 
-def test_memory_aupdate_title_noop_without_session(tmp_path: Path):
-    """Line 162: aupdate_title returns early when there is no active_session_id."""
+def test_memory_update_title_noop_without_session(tmp_path: Path):
+    """Line 162: update_title returns early when there is no active_session_id."""
     from core.memory import ConversationMemory
 
     mem_file = tmp_path / "sessions" / "mem.json"
@@ -275,11 +270,11 @@ def test_memory_aupdate_title_noop_without_session(tmp_path: Path):
     mem.active_session_id = None
 
     # Should return without error (line 162 early return)
-    asyncio.run(mem.aupdate_title("new title"))
+    asyncio.run(mem.update_title("new title"))
 
 
-def test_memory_aadd_creates_session_when_no_active_session(tmp_path: Path):
-    """Line 170: aadd auto-creates a session when active_session_id is not set."""
+def test_memory_add_creates_session_when_no_active_session(tmp_path: Path):
+    """Line 170: add auto-creates a session when active_session_id is not set."""
     from core.memory import ConversationMemory
 
     mem_file = tmp_path / "sessions" / "add.json"
@@ -290,11 +285,10 @@ def test_memory_aadd_creates_session_when_no_active_session(tmp_path: Path):
         await mem.db.connect()
         await mem.db.init_schema()
         user = await mem.db.register_user("aadd_user", "pw")
-        mem.active_user_id = user.id
-        mem.active_username = "aadd_user"
-        # No active session — aadd should create one (line 170)
+        await mem.set_active_user(user.id, "aadd_user")
+        # No active session — add should create one
         mem.active_session_id = None
-        await mem.aadd("user", "hello world")
+        await mem.add("user", "hello world")
         assert mem.active_session_id is not None
         await mem.db.close()
 
@@ -313,15 +307,14 @@ def test_memory_turns_trimmed_when_exceeds_double_max(tmp_path: Path):
         await mem.db.connect()
         await mem.db.init_schema()
         user = await mem.db.register_user("trim_user", "pw")
-        mem.active_user_id = user.id
-        mem.active_username = "trim_user"
-        await mem.acreate_session("trim session")
+        await mem.set_active_user(user.id, "trim_user")
+        await mem.create_session("trim session")
 
         # Add more than max_turns*2 = 6 messages to trigger trim (line 176)
         for i in range(8):
-            await mem.aadd("user", f"msg {i}")
+            await mem.add("user", f"msg {i}")
 
-        history = await mem.aget_history()
+        history = await mem.get_history()
         assert len(history) <= mem.max_turns * 2
         await mem.db.close()
 

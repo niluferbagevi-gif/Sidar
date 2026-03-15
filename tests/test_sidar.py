@@ -494,7 +494,7 @@ def test_rag_search_auto_prefers_rrf(monkeypatch):
 
     monkeypatch.setattr(docs, "_rrf_search", _rrf)
 
-    ok, text = DocumentStore.search(docs, "soru", mode="auto")
+    ok, text = asyncio.run(DocumentStore.search(docs, "soru", mode="auto"))
 
     assert ok is True
     assert text == "rrf"
@@ -533,7 +533,7 @@ def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
     docs._bm25_available = False
     docs.collection = None
 
-    ok, msg = DocumentStore.search(docs, "soru", mode="auto", session_id="s2")
+    ok, msg = asyncio.run(DocumentStore.search(docs, "soru", mode="auto", session_id="s2"))
     assert ok is False
     assert "bu oturum" in msg.lower()
 

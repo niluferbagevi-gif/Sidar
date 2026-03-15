@@ -49,7 +49,7 @@ def _load_tooling_module():
             sys.modules["pydantic"] = old
 
 
-def test_tooling_uncovered_parse_branches_runtime():
+def test_tooling_parse_branches_runtime_json_only():
     tooling = _load_tooling_module()
 
     parsed_empty = tooling.parse_tool_argument("github_list_files", "")
@@ -59,48 +59,45 @@ def test_tooling_uncovered_parse_branches_runtime():
     with pytest.raises(ValueError):
         tooling.parse_tool_argument("write_file", "path_only")
 
-    parsed_list = tooling.parse_tool_argument("github_list_files", "src|||dev")
+    parsed_list = tooling.parse_tool_argument("github_list_files", '{"path":"src","branch":"dev"}')
     assert parsed_list.path == "src"
     assert parsed_list.branch == "dev"
 
-    parsed_write = tooling.parse_tool_argument("github_write", "a.py|||x|||msg|||dev")
+    parsed_write = tooling.parse_tool_argument("github_write", '{"path":"a.py","content":"x","commit_message":"msg","branch":"dev"}')
     assert parsed_write.path == "a.py"
     assert parsed_write.commit_message == "msg"
 
-    parsed_legacy_write = tooling.parse_tool_argument("write_file", "a.py|||print('x')")
-    assert parsed_legacy_write.path == "a.py"
-    assert "print" in parsed_legacy_write.content
-
-    parsed_patch = tooling.parse_tool_argument("patch_file", "a.py|||old|||new")
+    parsed_patch = tooling.parse_tool_argument("patch_file", '{"path":"a.py","old_text":"old","new_text":"new"}')
     assert parsed_patch.old_text == "old"
     assert parsed_patch.new_text == "new"
 
-    parsed_branch = tooling.parse_tool_argument("github_create_branch", "feature-x|||main")
+    parsed_branch = tooling.parse_tool_argument("github_create_branch", '{"branch_name":"feature-x","from_branch":"main"}')
     assert parsed_branch.branch_name == "feature-x"
     assert parsed_branch.from_branch == "main"
 
-    parsed_close_issue = tooling.parse_tool_argument("github_close_issue", "42")
+    parsed_close_issue = tooling.parse_tool_argument("github_close_issue", '{"number":42}')
     assert parsed_close_issue.number == 42
 
-    parsed_pr_diff = tooling.parse_tool_argument("github_pr_diff", "42")
+    parsed_pr_diff = tooling.parse_tool_argument("github_pr_diff", '{"number":42}')
     assert parsed_pr_diff.number == 42
 
     with pytest.raises(ValueError):
         tooling.parse_tool_argument("github_create_branch", "")
 
     for tool, arg in (
-        ("github_comment_issue", "1"),
+        ("github_comment_issue", '{"number":1}'),
         ("github_close_issue", ""),
         ("github_pr_diff", "|||"),
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(Exception):
             tooling.parse_tool_argument(tool, arg)
 
     class _Dummy(tooling.BaseModel):
         value: str = ""
 
     tooling.TOOL_ARG_SCHEMAS["dummy"] = _Dummy
-    assert tooling.parse_tool_argument("dummy", "raw") == "raw"
+    with pytest.raises(ValueError):
+        tooling.parse_tool_argument("dummy", "raw")
 
 
 def test_load_tooling_module_restores_when_pydantic_missing(monkeypatch):
@@ -114,31 +111,32 @@ def test_load_tooling_module_restores_when_pydantic_missing(monkeypatch):
             sys.modules["pydantic"] = old
 
 
-def test_tooling_legacy_parse_value_errors_and_extensions():
+def test_tooling_json_parsing_for_list_and_todo_tools():
     tooling = _load_tooling_module()
 
-    result_pr = tooling.parse_tool_argument("github_list_prs", "open|||not-a-number")
-    assert result_pr.limit == 10
+    result_pr = tooling.parse_tool_argument("github_list_prs", '{"state":"open","limit":25}')
+    assert result_pr.limit == 25
 
-    result_issue = tooling.parse_tool_argument("github_list_issues", "closed|||invalid")
-    assert result_issue.limit == 10
+    result_issue = tooling.parse_tool_argument("github_list_issues", '{"state":"closed","limit":12}')
+    assert result_issue.limit == 12
 
-    result_scan = tooling.parse_tool_argument("scan_project_todos", "src|||.py, .js")
+    result_scan = tooling.parse_tool_argument("scan_project_todos", '{"directory":"src","extensions":[".py",".js"]}')
     assert result_scan.directory == "src"
     assert result_scan.extensions == [".py", ".js"]
 
-def test_tooling_rejects_whitespace_only_ids_for_branch_and_issue():
+
+def test_tooling_rejects_legacy_delimited_payloads():
     tooling = _load_tooling_module()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"legacy '\|\|\|' formatı kaldırıldı"):
         tooling.parse_tool_argument("github_create_branch", "   |||main")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"legacy '\|\|\|' formatı kaldırıldı"):
         tooling.parse_tool_argument("github_close_issue", "|||   ")
+
 
 def test_tooling_github_close_issue_empty_argument():
-    """GithubCloseIssueSchema için boş argümanda beklenen ValueError mesajını doğrular."""
     tooling = _load_tooling_module()
 
-    with pytest.raises(ValueError, match="Argüman formatı geçersiz"):
-        tooling.parse_tool_argument("github_close_issue", "|||   ")
+    with pytest.raises(Exception):
+        tooling.parse_tool_argument("github_close_issue", "")

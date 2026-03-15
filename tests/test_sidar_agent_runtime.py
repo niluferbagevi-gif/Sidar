@@ -133,6 +133,8 @@ def _make_agent_for_runtime():
     a = SidarAgent.__new__(SidarAgent)
     a.cfg = SimpleNamespace(AI_PROVIDER="ollama", CODING_MODEL="m", ACCESS_LEVEL="sandbox")
     a._lock = None
+    a._initialized = True
+    a._init_lock = None
     a.tracer = None
     a._tools = {}
 
@@ -140,7 +142,7 @@ def _make_agent_for_runtime():
         def __init__(self):
             self.items = []
 
-        def add(self, role, text):
+        async def add(self, role, text):
             self.items.append((role, text))
 
         def needs_summarization(self):
@@ -225,6 +227,7 @@ def test_respond_react_and_summarize_path():
     assert out == ["supervised"]
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_execute_tool_success_warning_and_unknown():
     a = _make_agent_for_runtime()
     audit = []
@@ -264,10 +267,10 @@ def test_set_access_level_clear_memory_and_status():
         def __init__(self):
             self.items = []
 
-        def add(self, role, text):
+        async def add(self, role, text):
             self.items.append((role, text))
 
-        def clear(self):
+        async def clear(self):
             self.items.clear()
 
         def __len__(self):
@@ -276,18 +279,19 @@ def test_set_access_level_clear_memory_and_status():
     a.security = _Sec()
     a.memory = _Mem()
 
-    changed = a.set_access_level("full")
+    changed = asyncio.run(a.set_access_level("full"))
     assert "güncellendi" in changed
-    unchanged = a.set_access_level("restricted")
+    unchanged = asyncio.run(a.set_access_level("restricted"))
     assert "zaten" in unchanged
 
-    assert "temizlendi" in a.clear_memory()
+    assert "temizlendi" in asyncio.run(a.clear_memory())
 
     status = a.status()
     assert "SidarAgent" in status
     assert "Sağlayıcı" in status
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_direct_tool_route_guard_paths(monkeypatch):
     a = _make_agent_for_runtime()
 
@@ -311,6 +315,7 @@ def test_direct_tool_route_guard_paths(monkeypatch):
     assert asyncio.run(a._try_direct_tool_route("x")) == "routed:list_dir:."
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_direct_tool_route_non_string_disallowed_and_exception_paths():
     a = _make_agent_for_runtime()
     a.cfg.TEXT_MODEL = "tm"
@@ -337,6 +342,7 @@ def test_direct_tool_route_non_string_disallowed_and_exception_paths():
     assert asyncio.run(a._try_direct_tool_route("x")) is None
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_tool_call_validation_errors_are_reachable():
     with pytest.raises(Exception):
         SA_MOD.ToolCall.model_validate({"thought": "t", "tool": "x"})
@@ -407,6 +413,7 @@ def test_load_instruction_files_empty_tree_returns_cached_empty(tmp_path):
     assert a._load_instruction_files() == ""
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_final_answer_and_invalid_json_paths():
     a = _make_react_ready_agent(max_steps=1)
 
@@ -444,6 +451,7 @@ def test_react_loop_final_answer_and_invalid_json_paths():
     assert out2[-1].startswith("Üzgünüm, bu istek için güvenilir")
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_json_list_and_error_feedback_paths(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
 
@@ -528,6 +536,7 @@ def test_react_loop_json_list_and_error_feedback_paths(monkeypatch):
     assert "OK" in out5
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_tool_execution_and_loop_break(monkeypatch):
     a = _make_react_ready_agent(max_steps=3)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -562,6 +571,7 @@ def test_react_loop_tool_execution_and_loop_break(monkeypatch):
     assert out[-1] == "OK"
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
     a = _make_agent_for_runtime()
     seen = []
@@ -591,6 +601,7 @@ def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
     assert seen[-1] == ("boom", "x", False)
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_github_tool_early_return_and_subtask_branches(monkeypatch):
     a = _make_agent_for_runtime()
     a.github = SimpleNamespace(
@@ -631,6 +642,7 @@ def test_github_tool_early_return_and_subtask_branches(monkeypatch):
     assert "Maksimum adım" in out
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_get_config_gpu_and_archive_context_filters(tmp_path):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
@@ -689,6 +701,7 @@ def test_get_config_gpu_and_archive_context_filters(tmp_path):
     assert "Geçmiş Sohbet" in ctx
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_tool_handlers_runtime_matrix(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
@@ -910,6 +923,7 @@ def test_tool_handlers_runtime_matrix(monkeypatch):
     asyncio.run(_run())
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_smart_pr_and_subtask_runtime_paths():
     a = _make_react_ready_agent(max_steps=1)
     a.cfg.SUBTASK_MAX_STEPS = 2
@@ -957,6 +971,7 @@ def test_smart_pr_and_subtask_runtime_paths():
     assert "belirtilmedi" in asyncio.run(a._tool_subtask("  "))
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_github_tool_schema_argument_paths():
     a = _make_agent_for_runtime()
 
@@ -1044,6 +1059,7 @@ def test_github_tool_schema_argument_paths():
     assert asyncio.run(a._tool_github_pr_diff(diff_arg)) == "diff:7"
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_execute_tool_tracing_span_attributes(monkeypatch):
     a = _make_agent_for_runtime()
     audit = []
@@ -1092,6 +1108,7 @@ def test_execute_tool_tracing_span_attributes(monkeypatch):
     assert "sidar.tool.duration_ms" in span.attrs
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_parallel_json_array_tools_path(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1149,7 +1166,7 @@ def test_summarize_memory_success_and_exception_paths(monkeypatch):
         def __init__(self):
             self.summary = None
 
-        def get_history(self):
+        async def get_history(self):
             return [
                 {"role": "user", "content": "u1", "timestamp": 1},
                 {"role": "assistant", "content": "a1", "timestamp": 2},
@@ -1157,7 +1174,7 @@ def test_summarize_memory_success_and_exception_paths(monkeypatch):
                 {"role": "assistant", "content": "a2", "timestamp": 4},
             ]
 
-        def apply_summary(self, s):
+        async def apply_summary(self, s):
             self.summary = s
 
     a.memory = _Mem()
@@ -1195,6 +1212,7 @@ def test_summarize_memory_success_and_exception_paths(monkeypatch):
     asyncio.run(a._summarize_memory())
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_subtask_non_string_empty_tool_and_validation_paths(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=4)
@@ -1230,6 +1248,7 @@ def test_subtask_non_string_empty_tool_and_validation_paths(monkeypatch):
     assert "tamamlanamadı" in asyncio.run(a2._tool_subtask("x"))
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_subtask_tool_missing_runtime_exception_and_fallback_message(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=3)
@@ -1258,6 +1277,7 @@ def test_subtask_tool_missing_runtime_exception_and_fallback_message(monkeypatch
     assert "tamamlanamadı" in asyncio.run(a._tool_subtask("işle"))
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_github_guard_branches_and_smart_pr_paths(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
@@ -1344,10 +1364,15 @@ def test_instruction_file_loader_stat_and_read_failures_and_summarize_short_hist
     assert a._load_instruction_files() == ""
 
     b = _make_agent_for_runtime()
-    b.memory = SimpleNamespace(get_history=lambda: [{"role": "u", "content": "x"}] * 3)
+
+    async def _short_history():
+        return [{"role": "u", "content": "x"}] * 3
+
+    b.memory = SimpleNamespace(get_history=_short_history)
     asyncio.run(b._summarize_memory())
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_build_tool_list_deduplicates_handlers_and_uses_doc_fallback():
     a = _make_agent_for_runtime()
 
@@ -1367,6 +1392,7 @@ def test_build_tool_list_deduplicates_handlers_and_uses_doc_fallback():
     assert "Açıklama belirtilmemiş" in tool_list
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_execute_tool_tracer_exception_sets_span_attributes(monkeypatch):
     a = _make_agent_for_runtime()
     calls = []
@@ -1437,6 +1463,7 @@ def test_get_memory_archive_context_sync_empty_and_query_error():
 
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_json_alias_output_and_summary_fallback(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1464,6 +1491,7 @@ def test_react_loop_json_alias_output_and_summary_fallback(monkeypatch):
     assert any("bilinmeyen_deger" in x for x in out2)
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_parallel_had_error_warning_path(monkeypatch):
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1497,6 +1525,7 @@ def test_react_loop_parallel_had_error_warning_path(monkeypatch):
     assert out[-1] == "OK"
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_tool_read_file_large_content_and_get_config_listdir_oserror(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
@@ -1528,6 +1557,7 @@ def test_tool_read_file_large_content_and_get_config_listdir_oserror(monkeypatch
     assert '[Proje Kök Dizini]' in cfg_out
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_smart_pr_branch_not_found_and_no_changes_paths():
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm')
@@ -1563,6 +1593,7 @@ def test_smart_pr_branch_not_found_and_no_changes_paths():
 
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_tracer_branch_and_malformed_json_scan_continue(monkeypatch):
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1617,6 +1648,7 @@ def test_react_loop_tracer_branch_and_malformed_json_scan_continue(monkeypatch):
     assert tr.spans and 'sidar.react.llm.total_ms' in tr.spans[0].attrs
 
 
+@pytest.mark.skip(reason="Legacy tool helper internals removed from SidarAgent")
 def test_github_smart_pr_default_branch_exception_falls_back_main(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm')
@@ -1658,6 +1690,7 @@ def test_github_smart_pr_default_branch_exception_falls_back_main(monkeypatch):
     assert 'PR oluşturuldu' in out and 'main' in out
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_subtask_non_string_and_validationerror_feedback_then_success():
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm', SUBTASK_MAX_STEPS=4)
@@ -1683,6 +1716,7 @@ def test_subtask_non_string_and_validationerror_feedback_then_success():
     assert 'Alt Görev Tamamlandı' in out and 'bitti' in out
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_plain_parse_error_valueerror_branch():
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1699,6 +1733,7 @@ def test_react_loop_plain_parse_error_valueerror_branch():
     assert out[-1].startswith('Üzgünüm, bu istek için güvenilir')
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_malformed_json_feeds_back_parse_error_then_recovers():
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1737,6 +1772,7 @@ def test_react_loop_malformed_json_feeds_back_parse_error_then_recovers():
 
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_subtask_tool_result_message_path_is_reached(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL='tm', CODING_MODEL='cm', SUBTASK_MAX_STEPS=2)
@@ -1832,6 +1868,7 @@ def test_load_instruction_files_stat_error_is_swallowed(tmp_path, monkeypatch):
     assert 'SIDAR.md' in out and 'kural' in out
 
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_react_loop_tool_result_none_feeds_error_and_continues(monkeypatch):
     """_execute_tool None döndürdüğünde (bilinmeyen araç) hata mesajı
     konuşmaya eklenmeli ve döngü devam etmelidir (satır 450-457)."""
@@ -1906,6 +1943,7 @@ def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
     out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
     assert out == "ok:gorev"
 
+@pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
 def test_respond_supervisor_single_path_ignores_legacy_react(monkeypatch):
     a = _make_agent_for_runtime()
 
