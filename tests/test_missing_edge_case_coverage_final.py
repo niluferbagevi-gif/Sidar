@@ -252,7 +252,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
         def __len__(self):
             return 0
 
-        def get_all_sessions(self):
+        async def get_all_sessions(self):
             return []
 
     memory = _Memory()
@@ -420,6 +420,9 @@ def test_websocket_runtime_uncovered_branches(monkeypatch):
             return None
 
         async def aupdate_title(self, _title):
+            marks["title"] = True
+
+        async def update_title(self, _title):
             marks["title"] = True
 
         def __len__(self):

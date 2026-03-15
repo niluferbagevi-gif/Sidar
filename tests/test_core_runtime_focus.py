@@ -181,10 +181,10 @@ async def test_document_store_core_flows_without_chroma(tmp_path, monkeypatch):
     assert got_ok is True and "Python" in content
 
     # search mode dispatches
-    ok, out = await store.search("Python", mode="keyword", session_id="s1")
+    ok, out = store.search("Python", mode="keyword", session_id="s1")
     assert isinstance(ok, bool) and isinstance(out, str)
 
-    ok, out = await store.search("Python", mode="auto", session_id="s1")
+    ok, out = store.search("Python", mode="auto", session_id="s1")
     assert ok is True and out
 
     # helpers
@@ -257,6 +257,6 @@ async def test_document_store_handles_chroma_and_fts_runtime_exceptions(tmp_path
     monkeypatch.setattr(store, "_rrf_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("rrf error")))
     monkeypatch.setattr(store, "_chroma_search", lambda q, k, s: (_ for _ in ()).throw(RuntimeError("chroma error")))
     monkeypatch.setattr(store, "_bm25_search", lambda q, k, s: (True, "[RAG Arama: python] (Motor: BM25)"))
-    ok, out = await store.search("python", mode="auto", session_id="s1")
+    ok, out = store.search("python", mode="auto", session_id="s1")
     assert ok is True
     assert "BM25" in out

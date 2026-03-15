@@ -161,6 +161,13 @@ def _install_web_server_stubs():
             return None
 
     cfg_mod.Config = _Config
+    cfg_mod.SANDBOX_LIMITS = {
+        "memory": "256m",
+        "cpus": "0.5",
+        "pids_limit": 64,
+        "network": "none",
+        "timeout": 10,
+    }
 
     agent_mod = types.ModuleType("agent.sidar_agent")
     agent_mod.SidarAgent = object
@@ -279,7 +286,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         async def clear(self):
             calls["cleared"] = True
 
-        async def add(self, role, text):
+        def add(self, role, text):
             calls["adds"].append((role, text))
 
     class _Docs:
@@ -292,7 +299,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
             calls["add_file"] = args
             return True, "eklendi"
 
-        async def search(self, q, top_k, mode, session_id):
+        def search(self, q, top_k, mode, session_id):
             calls["search"] = (q, top_k, mode, session_id)
             return True, ["x"]
 
@@ -320,7 +327,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         CUDA_VERSION="N/A",
         MEMORY_ENCRYPTION_KEY="",
     )
-    async def _set_access_level(_level):
+    def _set_access_level(_level):
         return "ok"
 
     agent = types.SimpleNamespace(
@@ -1322,7 +1329,7 @@ def test_webhook_pull_request_and_issues_branches_add_memory_records():
     mod = _load_web_server()
     calls = []
 
-    async def _add(role, text):
+    def _add(role, text):
         calls.append((role, text))
 
     memory = types.SimpleNamespace(add=_add)
@@ -1472,7 +1479,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
         def __len__(self):
             return 0
 
-        def update_title(self, _t):
+        async def update_title(self, _t):
             return None
 
     class _Agent:
@@ -1641,7 +1648,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     assert bad_json.status_code == 400
 
     calls_mem = []
-    async def _add_mem(role, text):
+    def _add_mem(role, text):
         calls_mem.append((role, text))
 
     agent.memory = types.SimpleNamespace(add=_add_mem)

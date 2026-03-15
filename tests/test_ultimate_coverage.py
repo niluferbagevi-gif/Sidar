@@ -44,7 +44,7 @@ async def test_rag_ultimate_edge_cases(monkeypatch, tmp_path):
 
     # Chroma delete exception
     store = _new_store(mod, tmp_path)
-    doc_id = await store.add_document("T", "icerik", session_id="global")
+    doc_id = store.add_document("T", "icerik", session_id="global")
 
     class _BrokenCol:
         def delete(self, **kwargs):

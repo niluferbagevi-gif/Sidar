@@ -389,7 +389,7 @@ class DocumentStore:
         logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
         return doc_id
 
-    async def add_document(
+    def add_document(
         self,
         title: str,
         content: str,
@@ -397,13 +397,24 @@ class DocumentStore:
         tags: Optional[List[str]] = None,
         session_id: str = "global",
     ) -> str:
+        """Belge deposuna yeni belge ekler (senkron, thread-safe).
+
+        Async bağlamlarda asyncio.to_thread(self.add_document, ...) veya
+        aadd_document() kullanılabilir.
+        """
+        return self._add_document_sync(title, content, source, tags, session_id)
+
+    async def aadd_document(
+        self,
+        title: str,
+        content: str,
+        source: str = "",
+        tags: Optional[List[str]] = None,
+        session_id: str = "global",
+    ) -> str:
+        """Async alias for add_document (asyncio.to_thread ile izole edilmiş)."""
         return await asyncio.to_thread(
-            self._add_document_sync,
-            title,
-            content,
-            source,
-            tags,
-            session_id,
+            self._add_document_sync, title, content, source, tags, session_id
         )
 
     async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
@@ -418,7 +429,7 @@ class DocumentStore:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
                 title = m.group(1).strip() if m else url.split("/")[-1] or url
 
-            doc_id = await self.add_document(title, content, url, tags, session_id)
+            doc_id = self.add_document(title, content, url, tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
@@ -546,14 +557,15 @@ class DocumentStore:
         if self._bm25_available: return self._bm25_search(query, top_k, session_id)
         return self._keyword_search(query, top_k, session_id)
 
-    async def search(
+    def search(
         self,
         query: str,
         top_k: Optional[int] = None,
         mode: str = "auto",
         session_id: str = "global",
     ) -> Tuple[bool, str]:
-        return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+        """Belge deposunda arama (senkron, I/O-bound işlemler asyncio.to_thread ile çağrılmalıdır)."""
+        return self._search_sync(query, top_k, mode, session_id)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
         chroma_results = self._fetch_chroma(query, top_k, session_id)

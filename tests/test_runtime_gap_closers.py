@@ -146,6 +146,9 @@ def test_web_server_auth_and_main_arg_overrides(monkeypatch):
                 started["level"] = cfg.ACCESS_LEVEL
                 started["provider"] = cfg.AI_PROVIDER
 
+            async def initialize(self):
+                pass
+
         monkeypatch.setattr(mod, "SidarAgent", _FakeAgent)
         monkeypatch.setattr(mod.uvicorn, "run", lambda _app, host, port, log_level: started.update({"host": host, "port": port, "log": log_level}))
         monkeypatch.setattr(sys, "argv", ["web_server.py", "--level", "full", "--provider", "openai", "--host", "0.0.0.0", "--port", "9999"])

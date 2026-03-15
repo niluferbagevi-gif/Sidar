@@ -271,7 +271,27 @@ def test_runtime_config_provider_and_validate_branches(monkeypatch):
     monkeypatch.setitem(sys.modules, "httpx", httpx_mod)
     cfg_mod.Config.GEMINI_API_KEY = "key"
     cfg_mod.Config.MEMORY_ENCRYPTION_KEY = "invalid"
+
+    # Patch cryptography.fernet to avoid PanicException in this environment
+    class _BadFernet:
+        def __init__(self, key):
+            raise ValueError("bad key")
+
+    _fernet_mod = types.SimpleNamespace(Fernet=_BadFernet)
+    monkeypatch.setitem(sys.modules, "cryptography", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "cryptography.fernet", _fernet_mod)
+    # Also patch the cfg_mod's access so it uses our stub
+    import builtins
+    _real_import = builtins.__import__
+
+    def _patched_import(name, *args, **kwargs):
+        if name == "cryptography.fernet":
+            return _fernet_mod
+        return _real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _patched_import)
     valid2 = cfg_mod.Config.validate_critical_settings()
+    monkeypatch.setattr(builtins, "__import__", _real_import)
     assert valid2 is False
     assert any("Ollama yanıt kodu" in w for w in warns)
 

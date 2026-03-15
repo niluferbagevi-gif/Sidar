@@ -88,6 +88,9 @@ def test_web_server_metrics_paths_with_async_sessions(monkeypatch):
         async def aget_all_sessions(self):
             return [1, 2]
 
+        async def get_all_sessions(self):
+            return [1, 2]
+
     fake_agent = SimpleNamespace(
         VERSION="x",
         cfg=SimpleNamespace(AI_PROVIDER="ollama", USE_GPU=False),

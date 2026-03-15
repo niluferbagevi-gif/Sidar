@@ -1189,7 +1189,7 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
-    ok, result = await agent.docs.search(q.strip(), min(top_k, 10), mode, session_id)
+    ok, result = await asyncio.to_thread(agent.docs.search, q.strip(), min(top_k, 10), mode, session_id)
     return JSONResponse({"success": ok, "result": result})
 
 
@@ -1240,7 +1240,7 @@ async def set_level_endpoint(request: Request):
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
     agent = await get_agent()
-    result_msg = await agent.set_access_level(new_level)
+    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
     return JSONResponse(
         {
             "success": True,
@@ -1303,8 +1303,9 @@ async def github_webhook(
 
     if msg:
         logger.info("Webhook işlendi: %s", msg)
-        await agent.memory.add("user", msg)
-        await agent.memory.add(
+        await asyncio.to_thread(agent.memory.add, "user", msg)
+        await asyncio.to_thread(
+            agent.memory.add,
             "assistant",
             "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
         )

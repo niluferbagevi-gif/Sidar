@@ -113,7 +113,7 @@ class _Memory:
         self._last = None
         self.cleared = 0
 
-    def clear(self):
+    async def clear(self):
         self.cleared += 1
 
     def get_last_file(self):
@@ -152,7 +152,7 @@ class _Pkg:
 
 
 class _Docs:
-    async def search(self, query, *_args):
+    def search(self, query, *_args):
         return True, f"dsearch:{query}"
 
     def list_documents(self):

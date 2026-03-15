@@ -112,6 +112,10 @@ class ConversationMemory:
             for r in rows
         ]
 
+    async def aget_all_sessions(self) -> List[Dict]:
+        """Async alias for get_all_sessions (explicit async variant)."""
+        return await self.get_all_sessions()
+
     async def create_session(self, title: str = "Yeni Sohbet") -> str:
         await self._ensure_initialized()
         user_id = self._require_active_user()
@@ -264,6 +268,61 @@ class ConversationMemory:
         if sid:
             await self.db.delete_session(sid, self.active_user_id)
             await self.create_session(title)
+
+    # ─────────────────────────────────────────────
+    #  EŞZAMANLI (SYNC) API — Async metodlara köprü
+    # ─────────────────────────────────────────────
+
+    def _run_coro_sync(self, coro):
+        """Bir coroutine'i senkron bağlamdan güvenle çalıştırır."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    return pool.submit(asyncio.run, coro).result()
+            return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    async def aadd(self, role: str, content: str) -> None:
+        """Async alias for add (explicit async variant)."""
+        return await self.add(role, content)
+
+    async def aget_history(self, n_last: Optional[int] = None) -> List[Dict]:
+        """Async alias for get_history (explicit async variant)."""
+        return await self.get_history(n_last)
+
+    async def acreate_session(self, title: str = "Yeni Sohbet") -> str:
+        """Async alias for create_session (explicit async variant)."""
+        return await self.create_session(title)
+
+    def add_sync(self, role: str, content: str) -> None:
+        """Sync wrapper: belleğe mesaj ekler (eşzamanlı bağlamlar için)."""
+        self._run_coro_sync(self.aadd(role, content))
+
+    def get_history_sync(self, n_last: Optional[int] = None) -> List[Dict]:
+        """Sync wrapper: konuşma geçmişini döndürür (eşzamanlı bağlamlar için)."""
+        return self._run_coro_sync(self.aget_history(n_last))
+
+    def create_session_sync(self, title: str = "Yeni Sohbet") -> str:
+        """Sync wrapper: yeni oturum oluşturur (eşzamanlı bağlamlar için)."""
+        return self._run_coro_sync(self.acreate_session(title))
+
+    def clear_sync(self) -> None:
+        """Sync wrapper: belleği temizler ve DB tutarlılığı korunur."""
+        sid = self.active_session_id
+        title = self.active_title
+        with self._lock:
+            self._turns.clear()
+            self._last_file = None
+        if sid:
+            self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))
+            self.create_session_sync(title)
+
+    def delete_session_sync(self, sid: str, uid: str) -> None:
+        """Sync wrapper: oturumu siler (DB tutarlılığı korunur)."""
+        self._run_coro_sync(self.db.delete_session(sid, uid))
 
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.

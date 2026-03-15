@@ -85,7 +85,8 @@ class CodeManager:
     def _resolve_sandbox_limits(self) -> Dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
         limits = dict(SANDBOX_LIMITS)
-        limits.update(getattr(self.cfg, "SANDBOX_LIMITS", {}) or {})
+        cfg = getattr(self, "cfg", None)
+        limits.update(getattr(cfg, "SANDBOX_LIMITS", {}) or {})
 
         memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
         cpus = str(limits.get("cpus") or "0.5").strip()
@@ -409,7 +410,16 @@ class CodeManager:
         except Exception as exc:
             sandbox_limits = self._resolve_sandbox_limits()
             try:
-                return self._execute_code_with_docker_cli(code, sandbox_limits)
+                cli_ok, cli_msg = self._execute_code_with_docker_cli(code, sandbox_limits)
+                if not cli_ok:
+                    if self.security.level == SANDBOX:
+                        return False, (
+                            "HATA: Docker Sandbox başarısız oldu ve güvenlik politikası gereği "
+                            f"yerel (unsafe) çalıştırma engellendi. Detay: {exc}; CLI Detay: {cli_msg}"
+                        )
+                    logger.warning("Docker CLI başarısız — FULL modda yerel subprocess fallback: %s", cli_msg)
+                    return self.execute_code_local(code)
+                return cli_ok, cli_msg
             except subprocess.TimeoutExpired:
                 return False, (
                     f"⚠ Zaman aşımı! Kod {sandbox_limits['timeout']} saniyeden uzun sürdü ve "

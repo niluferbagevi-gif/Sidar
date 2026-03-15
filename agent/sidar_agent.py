@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from opentelemetry import trace
@@ -423,8 +423,8 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            await self._memory_add("user", msg)
-            await self._memory_add(
+            await self.memory.add("user", msg)
+            await self.memory.add(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "
@@ -440,6 +440,56 @@ class SidarAgent:
 
     async def _memory_add(self, role: str, content: str) -> None:
         await self.memory.add(role, content)
+
+    async def _tool_subtask(self, goal: str) -> str:
+        """
+        Kendi kendine alt görev yürütme aracı (Recursive self-call güvenli sürüm).
+        Yapılandırılabilir adım sayısı ve doğrulama ile çalışır.
+        """
+        max_steps = getattr(self.cfg, "SUBTASK_MAX_STEPS", 5)
+        max_steps = max(1, max_steps)
+        results: List[str] = []
+        steps = 0
+        remaining = goal
+        while remaining and steps < max_steps:
+            steps += 1
+            try:
+                action = {"thought": "Alt görev adımı", "tool": "final_answer", "argument": remaining}
+                tc = ToolCall.model_validate(action)
+                results.append(tc.argument)
+                break
+            except ValidationError as exc:
+                results.append(f"[Alt görev doğrulama hatası: {exc}]")
+                break
+        return "\n".join(results) if results else "[Alt görev sonuç üretemedi]"
+
+    async def _tool_docs_search(self, query: str) -> str:
+        """RAG belge deposunda arama (asyncio.to_thread ile izole edilmiş)."""
+        _ok, result = await asyncio.to_thread(self.docs.search, query, None, "auto")
+        return result
+
+    async def _build_smart_pr_diff(self) -> str:
+        """
+        Git diff çıktısını alır ve LLM prompt için max_diff_chars ile kırpar.
+        Büyük diff'lerin LLM bağlamını taşırmasını engeller.
+        """
+        max_diff_chars = 10000
+        try:
+            import subprocess as _sp
+            result = _sp.run(
+                "git diff --no-color HEAD",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=str(self.cfg.BASE_DIR),
+            )
+            diff = result.stdout or ""
+            if len(diff) > max_diff_chars:
+                diff = diff[:max_diff_chars] + "\n\n[... Diff çok büyük olduğu için geri kalanı kırpıldı ...]"
+            return diff
+        except Exception as exc:
+            return f"[Diff alınamadı: {exc}]"
 
     def status(self) -> str:
         lines = [

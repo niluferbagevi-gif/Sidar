@@ -313,19 +313,10 @@ class OllamaClient(BaseLLMClient):
         stream_cm = None
         resp = None
         try:
-            async def _open_stream():
-                stream_client = httpx.AsyncClient(timeout=timeout)
-                cm = stream_client.stream("POST", url, json=payload)
-                response = await cm.__aenter__()
-                response.raise_for_status()
-                return stream_client, cm, response
-
-            client, stream_cm, resp = await _retry_with_backoff(
-                "ollama",
-                _open_stream,
-                config=self.config,
-                retry_hint="Ollama stream başlatma başarısız",
-            )
+            client = httpx.AsyncClient(timeout=timeout)
+            stream_cm = client.stream("POST", url, json=payload)
+            resp = await stream_cm.__aenter__()
+            resp.raise_for_status()
 
             buffer = ""
             utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
