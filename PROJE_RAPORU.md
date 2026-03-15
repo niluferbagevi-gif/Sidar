@@ -487,10 +487,10 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
-| `SQLAlchemy` + `asyncpg` | ⚠ requirements.txt'te zorunlu; runtime'da PostgreSQL URL varsa aktif (`core/db.py:148` — lazy import); SQLite kurulumlarda kullanılmaz | Async PostgreSQL veri katmanı |
+| `SQLAlchemy` + `asyncpg` | `SQLAlchemy` çekirdek; `asyncpg` opsiyonel (`[project.optional-dependencies].postgres`) | Async PostgreSQL veri katmanı |
 | `alembic` | ✓ Zorunlu (v3.0) | Şema sürümleme ve migration zinciri |
 | `prometheus-client` | ✓ Zorunlu (v3.0) | `/metrics` ve LLM telemetri export |
-| `opentelemetry-*` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except Exception` ile opsiyonel (`core/llm_client.py:20`, `web_server.py:39`) — `ENABLE_TRACING=false` varsayılan | Tracing + OTLP export |
+| `opentelemetry-*` | Opsiyonel (`[project.optional-dependencies].telemetry`), `ENABLE_TRACING=false` varsayılan | Tracing + OTLP export |
 | `tiktoken` | ✓ Zorunlu (v3.0) | Token ölçümü ve özetleme eşikleri |
 
 #### 7.2.1 Performans ve Ölçeklenebilirlik Notu (SQLite)
@@ -510,10 +510,12 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `openai`, `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Çoklu LLM istemci katmanı |
-| `chromadb` + `sentence-transformers` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except` ile opsiyonel (`core/rag.py:165`) — ChromaDB yoksa BM25/keyword fallback devreye girer | Vektör tabanlı RAG ve embedding |
+| `chromadb` + `sentence-transformers` | Opsiyonel (`[project.optional-dependencies].rag`) | Vektör tabanlı RAG ve embedding |
 | `rank-bm25` | Opsiyonel (mevcut) | BM25 tabanlı hibrit arama uyumluluğu |
 | `duckduckgo-search` + `beautifulsoup4` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları |
-| `torch` + `torchvision` | Opsiyonel | Embedding ve GPU hızlandırmalı iş yükleri |
+| `torch` + `torchvision` | Opsiyonel (`[project.optional-dependencies].rag`) | Embedding ve GPU hızlandırmalı iş yükleri |
+
+**Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `requirements.txt` içinden çıkarılarak `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
 
 ### 7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)
 
@@ -837,7 +839,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
-- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `asyncpg`, `opentelemetry` paketleri çekirdek kurulumdan çıkartılıp, `pyproject.toml` içerisinde opsiyonel (`[rag]`, `[postgres]`, `[telemetry]`) hale getirildi.
+- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** Toplam 9 paket (`chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg` ve `opentelemetry-*` ailesi) çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
 - **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama işlemleri asenkron yürütme desenine geçirildi.
 - **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory`) modern veritabanı URL mimarisine uyarlandı.
 - **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
@@ -845,6 +847,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
 Projede aktif bir "borç" kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
+- **[Teknik Borç] Modern Paketleme (PEP 621) Geçişi:** Temel bağımlılıkların `pyproject.toml` içindeki `dependencies` bloğunda tekil doğru kaynak (Single Source of Truth) olacak biçimde yönetiminin sürdürülmesi.
 - **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 
@@ -1005,7 +1008,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `GITHUB_WEBHOOK_SECRET` | `""` | GitHub webhook HMAC doğrulama gizli anahtarı |
 | `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
 | `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
-| `REVIEWER_TEST_COMMAND` | `bash run_tests.sh` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu |
+| `REVIEWER_TEST_COMMAND` | `python -m pytest` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu (çapraz platform) |
 | `ENABLE_MULTI_AGENT` | `true` | **Sabitlenmiştir:** Legacy bayrak kaldırılmıştır; sistem daima Supervisor/Multi-Agent akışında çalışır (`.env` üzerinden değiştirilemez) |
 
 ### 12.13 Docker Compose Override Değişkenleri
@@ -1048,7 +1051,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 | **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | Prometheus/Grafana metrikleri mevcut, uçtan uca trace görünürlüğü sınırlı | OpenTelemetry trace pipeline'ının Jaeger/Zipkin ile tam APM seviyesinde etkinleştirilmesi | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
 | **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
 | **Stateless Auth, RBAC ve JWT Entegrasyonu** | Oturum token'ları DB'de `auth_tokens` tablosunda tutulmaktadır; kimlik doğrulama DB sorgusu gerektirir | Merkezi auth sunucularıyla uyumlu stateless JWT (access+refresh) + rol tabanlı yetkilendirme (`Admin/Developer/Viewer`) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
-| **Bağımlılık Extras Grupları** | `asyncpg`, `opentelemetry-*`, `chromadb` requirements/environment dosyalarından ayrıştırılmış ve extras ile yönetilen | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
+| **Bağımlılık Extras Grupları** | 9 opsiyonel paket (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras ile yönetilir | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
 
 > **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
 
@@ -1067,7 +1070,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 *v3.0 mimarisinin pürüzlerinin giderilmesi ve test/runtime stabilitesinin kurumsal seviyede sabitlenmesi.*
 - **Kritik bugfix ve legacy temizlik:** Legacy test kayması sonrası kalan kırık testlerin kapanması ve CI hattında %100 green hedefi.
 - **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
-- **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
+- **Bağımlılık ayrıştırma:** Toplam 9 opsiyonel paketin (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
 - **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
 - **Env parite sertleştirmesi:** `.env.example` dosyasının `config.py` ile birebir senkronizasyonu, etkisiz legacy anahtarların kaldırılması ve CI'da env parity kontrolünün otomatikleştirilmesi.
 - **Runtime I/O ve süreç güvenliği:** talimat dosyası yükleme akışının non-blocking hâle getirilmesi, launcher child-process sonlandırma davranışının regresyon testleriyle garanti altına alınması.
