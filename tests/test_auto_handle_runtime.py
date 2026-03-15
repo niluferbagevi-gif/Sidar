@@ -505,3 +505,36 @@ def test_auto_handle_dot_command_unreachable_fallback(monkeypatch):
 
     assert handled is False
     assert msg == ""
+
+def test_handle_natural_clear_path_hits_main_clear_branch_with_async_memory_clear():
+    auto = _make_auto(github_available=True)
+
+    class _AsyncMemory(_Memory):
+        async def clear(self):
+            self.cleared += 1
+
+    auto.memory = _AsyncMemory()
+
+    handled, msg = asyncio.run(auto.handle("konuşma temizle"))
+    assert handled is True
+    assert "temizlendi" in msg
+    assert auto.memory.cleared == 1
+
+
+def test_try_read_file_success_sets_last_file_and_adds_80_line_suffix():
+    auto = _make_auto(github_available=True)
+
+    long_content = "\n".join(f"satir-{i}" for i in range(1, 86))
+
+    class _CodeLong(_Code):
+        def read_file(self, _path):
+            return True, long_content
+
+    auto.code = _CodeLong()
+
+    handled, resp = auto._try_read_file("dosya içeriğini göster", "dosya içeriğini göster demo.txt")
+
+    assert handled is True
+    assert resp.startswith("[demo.txt]\n```")
+    assert "... (5 satır daha)" in resp
+    assert auto.memory.get_last_file() == "demo.txt"
