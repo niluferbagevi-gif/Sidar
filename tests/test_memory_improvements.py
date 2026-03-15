@@ -8,18 +8,18 @@ def test_memory_db_mode_compatibility_shims_exist():
     assert "def _cleanup_broken_files" in src
 
 
-def test_memory_sync_wrappers_delegate_to_async_methods():
+def test_memory_async_core_methods_exist():
     src = Path("core/memory.py").read_text(encoding="utf-8")
-    assert "self._run_coro_sync(self.aadd(role, content))" in src
-    assert "self._run_coro_sync(self.aget_history(n_last))" in src
-    assert "self._run_coro_sync(self.acreate_session(title))" in src
+    assert "async def add(self, role: str, content: str)" in src
+    assert "async def get_history(self, n_last: Optional[int] = None)" in src
+    assert "async def create_session(self, title: str = \"Yeni Sohbet\")" in src
 
 
 def test_memory_clear_and_summary_keep_db_consistency_hooks():
     src = Path("core/memory.py").read_text(encoding="utf-8")
-    assert "self._run_coro_sync(self.db.delete_session(sid, self.active_user_id))" in src
-    assert "self.create_session(title)" in src
-    assert "self._run_coro_sync(self.db.delete_session(sid, uid))" in src
+    assert "await self.db.delete_session(sid, self.active_user_id)" in src
+    assert "await self.create_session(title)" in src
+    assert "await self.db.delete_session(sid, uid)" in src
 
 
 def test_memory_token_estimation_has_tiktoken_fallback():
