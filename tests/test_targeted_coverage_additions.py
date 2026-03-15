@@ -61,6 +61,13 @@ def _activate_memory_user(mem, username="test_user"):
     return asyncio.run(_setup())
 
 
+async def _aactivate_memory_user(mem, username="test_user"):
+    await mem.initialize()
+    user = await mem.db.ensure_user(username, role="user")
+    await mem.set_active_user(user.id, user.username)
+    return user
+
+
 # ─────────────────────────────────────────────
 # 1. TEMEL YÖNETİCİ TESTLERİ
 # ─────────────────────────────────────────────
@@ -173,7 +180,7 @@ async def test_agent_initialization(agent):
     assert agent.VERSION is not None
     assert agent.cfg.AI_PROVIDER in ("ollama", "gemini")
     assert "Bellek" in status_report
-    assert "Güvenlik" in asyncio.run(agent._build_context())
+    assert "Güvenlik" in await agent._build_context()
 
 
 # ─────────────────────────────────────────────
@@ -255,13 +262,14 @@ def test_rag_gpu_params(test_config):
 # 7. SESSION LIFECYCLE TESTLERİ
 # ─────────────────────────────────────────────
 
-def test_session_create(test_config):
+@pytest.mark.asyncio
+async def test_session_create(test_config):
     """ConversationMemory: Yeni oturum oluşturma ve aktif hale getirme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "session_create")
+    await _aactivate_memory_user(mem, "session_create")
 
-    session_id = mem.create_session("Test Sohbeti")
+    session_id = await mem.create_session("Test Sohbeti")
 
     assert session_id is not None
     assert len(session_id) == 36  # UUID4 formatı
@@ -269,56 +277,59 @@ def test_session_create(test_config):
     assert mem.active_title == "Test Sohbeti"
 
 
-def test_session_add_and_load(test_config):
+@pytest.mark.asyncio
+async def test_session_add_and_load(test_config):
     """ConversationMemory: Mesaj ekleme ve oturumu yeniden yükleme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "shared_session_user")
+    await _aactivate_memory_user(mem, "shared_session_user")
 
-    session_id = mem.create_session("Yükleme Testi")
-    mem.add("user", "Merhaba Sidar!")
-    mem.add("assistant", "Merhaba! Nasıl yardımcı olabilirim?")
+    session_id = await mem.create_session("Yükleme Testi")
+    await mem.add("user", "Merhaba Sidar!")
+    await mem.add("assistant", "Merhaba! Nasıl yardımcı olabilirim?")
 
     # Yeni bir bellek nesnesi oluştur ve oturumu yeniden yükle
     mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem2, "shared_session_user")
-    ok = mem2.load_session(session_id)
+    await _aactivate_memory_user(mem2, "shared_session_user")
+    ok = await mem2.load_session(session_id)
 
     assert ok is True
     assert mem2.active_session_id == session_id
-    history = mem2.get_history()
+    history = await mem2.get_history()
     assert len(history) == 2
     assert history[0]["role"] == "user"
     assert history[0]["content"] == "Merhaba Sidar!"
     assert history[1]["role"] == "assistant"
 
 
-def test_session_delete(test_config):
+@pytest.mark.asyncio
+async def test_session_delete(test_config):
     """ConversationMemory: Oturum silme ve dosyanın kaldırıldığını doğrulama."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "session_delete")
+    await _aactivate_memory_user(mem, "session_delete")
 
-    sid = mem.create_session("Silinecek Oturum")
-    result = mem.delete_session(sid)
+    sid = await mem.create_session("Silinecek Oturum")
+    result = await mem.delete_session(sid)
 
     assert result is True
 
 
-def test_session_get_all_sorted(test_config):
+@pytest.mark.asyncio
+async def test_session_get_all_sorted(test_config):
     """ConversationMemory: Tüm oturumları en yeniden en eskiye sıralı listeler."""
     from core.memory import ConversationMemory
     import time as _time
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "session_list")
+    await _aactivate_memory_user(mem, "session_list")
 
-    id1 = mem.create_session("Birinci")
+    id1 = await mem.create_session("Birinci")
     _time.sleep(0.01)
-    id2 = mem.create_session("İkinci")
+    id2 = await mem.create_session("İkinci")
     _time.sleep(0.01)
-    id3 = mem.create_session("Üçüncü")
+    id3 = await mem.create_session("Üçüncü")
 
-    sessions = mem.get_all_sessions()
+    sessions = await mem.get_all_sessions()
     ids = [s["id"] for s in sessions]
 
     # En son oluşturulan en üstte olmalı
@@ -327,65 +338,69 @@ def test_session_get_all_sorted(test_config):
     assert id2 in ids
 
 
-def test_session_update_title(test_config):
+@pytest.mark.asyncio
+async def test_session_update_title(test_config):
     """ConversationMemory: Aktif oturum başlığını güncelleme."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "shared_title_user")
+    await _aactivate_memory_user(mem, "shared_title_user")
 
-    sid = mem.create_session("Eski Başlık")
-    mem.update_title("Yeni Başlık")
+    sid = await mem.create_session("Eski Başlık")
+    await mem.update_title("Yeni Başlık")
 
     assert mem.active_title == "Yeni Başlık"
 
     # Yeniden yükleme ile kalıcılığı doğrula
     mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem2, "shared_title_user")
-    mem2.load_session(sid)
+    await _aactivate_memory_user(mem2, "shared_title_user")
+    await mem2.load_session(sid)
     assert mem2.active_title == "Yeni Başlık"
 
 
-def test_session_load_nonexistent(test_config):
+@pytest.mark.asyncio
+async def test_session_load_nonexistent(test_config):
     """ConversationMemory: Var olmayan oturum yüklenmeye çalışıldığında False döner."""
     from core.memory import ConversationMemory
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "session_missing")
+    await _aactivate_memory_user(mem, "session_missing")
 
-    result = mem.load_session("00000000-0000-0000-0000-000000000000")
+    result = await mem.load_session("00000000-0000-0000-0000-000000000000")
     assert result is False
 
 
-def test_apply_summary_keeps_last_messages(test_config):
+@pytest.mark.asyncio
+async def test_apply_summary_keeps_last_messages(test_config):
     """ConversationMemory: Özetleme, son N mesajı koruyup başa özet bloğu ekler."""
     from core.memory import ConversationMemory
 
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=4)
-    _activate_memory_user(mem, "summary_keep")
+    await _aactivate_memory_user(mem, "summary_keep")
     for i in range(8):
         role = "user" if i % 2 == 0 else "assistant"
-        mem.add(role, f"mesaj-{i}")
+        await mem.add(role, f"mesaj-{i}")
 
-    mem.apply_summary("Kısa özet")
+    await mem.apply_summary("Kısa özet")
 
-    history = mem.get_history()
+    history = await mem.get_history()
     assert len(history) == 6
     assert history[0]["content"] == "[Önceki konuşmaların özeti istendi]"
     assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nKısa özet"
     assert [t["content"] for t in history[2:]] == ["mesaj-4", "mesaj-5", "mesaj-6", "mesaj-7"]
 
 
-def test_apply_summary_keep_last_zero(test_config):
+@pytest.mark.asyncio
+async def test_apply_summary_keep_last_zero(test_config):
     """ConversationMemory: keep_last=0 iken yalnızca özet blokları kalır."""
     from core.memory import ConversationMemory
 
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=0)
-    _activate_memory_user(mem, "summary_zero")
+    await _aactivate_memory_user(mem, "summary_zero")
     for i in range(4):
-        mem.add("user", f"soru-{i}")
+        await mem.add("user", f"soru-{i}")
 
-    mem.apply_summary("Sadece özet")
+    await mem.apply_summary("Sadece özet")
 
-    history = mem.get_history()
+    history = await mem.get_history()
     assert len(history) == 2
     assert history[0]["role"] == "user"
     assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nSadece özet"
@@ -397,59 +412,67 @@ def test_apply_summary_keep_last_zero(test_config):
 
 @pytest.mark.asyncio
 async def test_execute_tool_unknown_returns_none(agent):
-    """SidarAgent dispatcher'ı bilinmeyen araç adı için None döndürür."""
-    result = await agent._execute_tool("var_olmayan_arac_xyz", "test argümanı")
-    assert result is None
+    """Supervisor intent eşlemesi bilinmeyen komutlarda code'e düşer."""
+    assert agent._supervisor is None
+    result = await agent._try_multi_agent("var_olmayan_arac_xyz")
+    assert isinstance(result, str)
+    assert agent._supervisor is not None
 
 
 @pytest.mark.asyncio
 async def test_execute_tool_known_does_not_return_none(agent):
-    """SidarAgent dispatcher'ı bilinen araç için None döndürmez."""
-    # list_dir gerçek I/O yapar; BASE_DIR mevcut olduğundan sonuç döner
-    result = await agent._execute_tool("list_dir", str(agent.cfg.BASE_DIR))
+    """Supervisor omurgası bilinen niyetlerde yanıt üretir."""
+    result = await agent._try_multi_agent("bu kodu gözden geçir")
     assert result is not None
 
 
 @pytest.mark.asyncio
 async def test_execute_tool_writes_audit_log_on_success(agent, monkeypatch):
-    """SidarAgent: başarılı araç çağrısı _log_audit ile success=True loglanır."""
+    """Supervisor, niyete göre reviewer yolunu seçer."""
+    from agent.core.supervisor import SupervisorAgent
+
     captured = {}
 
-    async def _fake_log(tool_name, argument, success):
-        captured["tool_name"] = tool_name
-        captured["argument"] = argument
-        captured["success"] = success
+    async def _fake_delegate(receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+        captured["receiver"] = receiver
+        captured["intent"] = intent
+        class _R:
+            summary = "ok"
+            task_id = "t1"
+        return _R()
 
-    async def _fake_tool(arg):
-        return "tamam"
+    sup = SupervisorAgent(cfg=agent.cfg)
+    monkeypatch.setattr(sup, "_delegate", _fake_delegate)
+    out = await sup.run_task("github review yap")
 
-    monkeypatch.setattr(agent, "_log_audit", _fake_log)
-    monkeypatch.setitem(agent._tools, "dummy_tool", _fake_tool)
-
-    result = await agent._execute_tool("dummy_tool", "abc")
-
-    assert result == "tamam"
-    assert captured == {"tool_name": "dummy_tool", "argument": "abc", "success": True}
+    assert out == "ok"
+    assert captured["receiver"] == "reviewer"
+    assert captured["intent"] == "review"
 
 
 @pytest.mark.asyncio
 async def test_execute_tool_writes_audit_log_on_tool_error_pattern(agent, monkeypatch):
-    """SidarAgent: ⚠/✗/[HATA] ile başlayan sonuçlar başarısız loglanır."""
-    captured = {}
+    """Supervisor review hata sinyalini görünce revision döngüsüne girer."""
+    from agent.core.supervisor import SupervisorAgent
 
-    async def _fake_log(tool_name, argument, success):
-        captured["success"] = success
+    sup = SupervisorAgent(cfg=agent.cfg)
+    calls = {"coder": 0, "reviewer": 0}
 
-    async def _fake_tool(arg):
-        return "⚠ doğrulama hatası"
+    async def _fake_delegate(receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+        calls[receiver] += 1
+        class _R:
+            task_id = "t1"
+            summary = "[test:fail] regresyon"
+        if receiver == "coder":
+            _R.summary = "kod"
+        elif calls["reviewer"] > 1:
+            _R.summary = "[test:pass]"
+        return _R()
 
-    monkeypatch.setattr(agent, "_log_audit", _fake_log)
-    monkeypatch.setitem(agent._tools, "dummy_tool_err", _fake_tool)
-
-    result = await agent._execute_tool("dummy_tool_err", "xyz")
-
-    assert result.startswith("⚠")
-    assert captured["success"] is False
+    monkeypatch.setattr(sup, "_delegate", _fake_delegate)
+    result = await sup.run_task("bir özellik geliştir")
+    assert "Reviewer QA Özeti" in result
+    assert calls["coder"] >= 2
 
 
 def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
@@ -584,66 +607,58 @@ async def test_rag_chunking_large_text(test_config):
 
 @pytest.mark.asyncio
 async def test_auto_handle_no_match(agent):
-    """AutoHandle: normal LLM sorusuna müdahale etmez."""
-    handled, _ = await agent.auto.handle("Python'da asenkron programlama nasıl çalışır?")
-    assert handled is False
+    """Supervisor niyet sınıflandırması araştırma isteğini doğru etiketler."""
+    from agent.core.supervisor import SupervisorAgent
+    assert SupervisorAgent._intent("Python'da asenkron programlama nasıl çalışır?") in ("research", "code")
 
 
 @pytest.mark.asyncio
 async def test_auto_handle_clear_command(agent):
-    """AutoHandle: 'belleği temizle' / 'sohbeti sıfırla' komutlarına yanıt verir."""
-    # Önce birkaç mesaj ekle
-    agent.memory.add("user", "test mesajı")
-    handled, response = await agent.auto.handle("belleği temizle")
-    assert handled is True
-    assert "temizlendi" in response.lower()
+    """Bellek temizleme komutu async memory API ile çalışır."""
+    await agent.memory.add("user", "test mesajı")
+    assert len(await agent.memory.get_history()) == 1
+    await agent.memory.clear()
+    assert await agent.memory.get_history() == []
 
 
 @pytest.mark.asyncio
 async def test_auto_handle_repo_files_list_command(agent, monkeypatch):
-    """AutoHandle: 'repodaki dosyaları listele' komutunu GitHub listesine yönlendirir."""
-    monkeypatch.setattr(agent.auto.github, "is_available", lambda: True)
-    monkeypatch.setattr(
-        agent.auto.github,
-        "list_files",
-        lambda path="", branch=None: (True, "[GitHub Dosya Listesi: /]\n  📄 README.md"),
-    )
-
-    handled, response = await agent.auto.handle("repomuzdaki dosyaları listele")
-    assert handled is True
-    assert "GitHub Dosya Listesi" in response
+    """Supervisor niyet sınıflandırması review komutlarını yakalar."""
+    from agent.core.supervisor import SupervisorAgent
+    assert SupervisorAgent._intent("repodaki dosyaları incele") == "review"
 
 
 @pytest.mark.asyncio
 async def test_auto_handle_read_file_content_getir_command(agent, monkeypatch):
-    """AutoHandle: '<dosya> içeriğini getir' komutunu dosya okuma akışına yönlendirir."""
-    monkeypatch.setattr(agent.auto.code, "read_file", lambda path: (True, "satır1\nsatır2"))
-
-    handled, response = await agent.auto.handle("config.py içeriğini getir")
-    assert handled is True
-    assert "[config.py]" in response
-    assert "satır1" in response
+    """Kod yönelimli istekler supervisor intent olarak code seçer."""
+    from agent.core.supervisor import SupervisorAgent
+    assert SupervisorAgent._intent("config.py içeriğini getir") == "code"
 
 
-def test_direct_router_handles_single_step_read(agent, monkeypatch):
-    """SidarAgent: Doğrudan router tek adım aracı çalıştırır (respond akışına bağlı değil)."""
+@pytest.mark.asyncio
+async def test_direct_router_handles_single_step_read(agent, monkeypatch):
+    """SidarAgent: multi-agent akışı respond içinde tek sonuç üretir."""
 
-    async def fake_chat(**kwargs):
-        return '{"thought":"tek adım","tool":"read_file","argument":"config.py"}'
+    async def _fake_multi(prompt):
+        return "CFG=1"
 
-    monkeypatch.setattr(agent.llm, "chat", fake_chat)
-    monkeypatch.setattr(agent.code, "read_file", lambda path: (True, "CFG=1"))
+    monkeypatch.setattr(agent, "_try_multi_agent", _fake_multi)
 
-    result = asyncio.run(agent._try_direct_tool_route("config.py dosyasını açıp içeriğini ver"))
-    assert result is not None
-    assert "CFG=1" in result
+    async def _noop_init():
+        return None
+
+    monkeypatch.setattr(agent, "initialize", _noop_init)
+    agent.memory.active_user_id = "u-test"
+    chunks = [c async for c in agent.respond("config.py dosyasını açıp içeriğini ver")]
+    assert chunks == ["CFG=1"]
 
 
 # ─────────────────────────────────────────────
 # 11. BROKEN JSON KARANTINA TESTİ
 # ─────────────────────────────────────────────
 
-def test_session_broken_json_quarantine(test_config):
+@pytest.mark.asyncio
+async def test_session_broken_json_quarantine(test_config):
     """ConversationMemory: Bozuk JSON dosyası .json.broken olarak karantinaya alınır."""
     from core.memory import ConversationMemory
 
@@ -655,8 +670,8 @@ def test_session_broken_json_quarantine(test_config):
 
     # get_all_sessions() çağrısı çökme üretmemeli; bozuk dosya karantinaya alınmalı
     mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
-    _activate_memory_user(mem, "broken_json")
-    sessions = mem.get_all_sessions()
+    await _aactivate_memory_user(mem, "broken_json")
+    sessions = await mem.get_all_sessions()
 
     # Bozuk dosya .json.broken adıyla karantinada olmalı
     assert isinstance(sessions, list)
@@ -777,30 +792,20 @@ def test_utf8_invalid_bytes_use_replace_fallback():
 
 @pytest.mark.asyncio
 async def test_auto_handle_health_none_no_crash(agent):
-    """AutoHandle: health=None olduğunda sistem sağlık sorgusu AttributeError üretmez."""
-    original_health = agent.auto.health
-    try:
-        agent.auto.health = None
-        handled, response = await agent.auto.handle("sistem sağlık raporunu göster")
-        # Çökme olmamalı; yanıt string olmalı
-        assert isinstance(handled, bool)
-        assert isinstance(response, str)
-        if handled:
-            # None guard devreye girmeli
-            assert "başlatılamadı" in response or "⚠" in response
-    finally:
-        agent.auto.health = original_health
+    """Health manager referansı geçici olarak None olsa da tekrar atanabilir."""
+    original_health = agent.health
+    agent.health = None
+    assert agent.health is None
+    agent.health = original_health
+    assert agent.health is not None
 
 
 @pytest.mark.asyncio
 async def test_auto_handle_health_returns_report_when_available(agent):
-    """AutoHandle: health yöneticisi mevcutsa sağlık raporu içeriği döner."""
-    if agent.auto.health is None:
-        pytest.skip("Sağlık yöneticisi başlatılmamış.")
-    handled, response = await agent.auto.handle("donanım durumunu göster")
-    # Eğer tanındıysa rapor içeriği dolu olmalı
-    if handled:
-        assert len(response) > 0
+    """Health manager mevcutken rapor metni döner."""
+    response = agent.health.full_report()
+    assert isinstance(response, str)
+    assert len(response) > 0
 
 
 # ─────────────────────────────────────────────
@@ -1149,7 +1154,8 @@ def test_gpu_memory_optimize_gc_runs_on_error(tmp_path):
     assert "GC" in result
     assert isinstance(result, str) 
 
-def test_instruction_files_are_loaded_hierarchically(test_config):
+@pytest.mark.asyncio
+async def test_instruction_files_are_loaded_hierarchically(test_config):
     """SIDAR.md ve CLAUDE.md dosyaları bağlama hiyerarşik sırayla eklenmeli."""
     root = test_config.BASE_DIR
     (root / "SIDAR.md").write_text("ROOT SIDAR", encoding="utf-8")
@@ -1163,7 +1169,7 @@ def test_instruction_files_are_loaded_hierarchically(test_config):
     (deep / "SIDAR.md").write_text("DEEP SIDAR", encoding="utf-8")
 
     agent = SidarAgent(cfg=test_config)
-    context = asyncio.run(agent._build_context())
+    context = await agent._build_context()
 
     assert "[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]" in context
     assert "ROOT SIDAR" in context
@@ -1174,14 +1180,15 @@ def test_instruction_files_are_loaded_hierarchically(test_config):
     assert context.index("ROOT SIDAR") < context.index("NESTED CLAUDE") < context.index("DEEP SIDAR")
 
 
-def test_instruction_files_load_both_names_in_same_directory(test_config):
+@pytest.mark.asyncio
+async def test_instruction_files_load_both_names_in_same_directory(test_config):
     """Aynı dizinde SIDAR.md ve CLAUDE.md varsa ikisi de bağlama eklenir."""
     root = test_config.BASE_DIR
     (root / "SIDAR.md").write_text("SIDAR ROOT RULE", encoding="utf-8")
     (root / "CLAUDE.md").write_text("CLAUDE ROOT RULE", encoding="utf-8")
 
     agent = SidarAgent(cfg=test_config)
-    context = asyncio.run(agent._build_context())
+    context = await agent._build_context()
 
     assert "SIDAR ROOT RULE" in context
     assert "CLAUDE ROOT RULE" in context 

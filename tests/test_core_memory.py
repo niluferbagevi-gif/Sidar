@@ -17,17 +17,18 @@ def test_memory_sliding_window(tmp_path: Path):
     ConversationMemory = mod.ConversationMemory
 
     memory = ConversationMemory(file_path=tmp_path / "test_session.json", max_turns=50, keep_last=2)
+    asyncio.run(memory.initialize())
     user = asyncio.run(memory.db.ensure_user("window_user", role="user"))
-    memory.set_active_user(user.id, user.username)
+    asyncio.run(memory.set_active_user(user.id, user.username))
 
     for i in range(1, 6):
-        memory.add("user", f"Soru {i}")
-        memory.add("assistant", f"Cevap {i}")
+        asyncio.run(memory.add("user", f"Soru {i}"))
+        asyncio.run(memory.add("assistant", f"Cevap {i}"))
 
-    assert len(memory.get_history()) == 10
+    assert len(asyncio.run(memory.get_history())) == 10
 
-    memory.apply_summary("Bu bir test özetidir.")
-    turns = memory.get_history()
+    asyncio.run(memory.apply_summary("Bu bir test özetidir."))
+    turns = asyncio.run(memory.get_history())
 
     assert len(turns) == 4
     assert "özeti istendi" in turns[0]["content"]
