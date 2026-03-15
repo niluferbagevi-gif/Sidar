@@ -86,3 +86,23 @@ def test_retry_with_backoff_raises_on_non_retryable_error(monkeypatch):
         assert exc.provider == "openai"
         assert exc.retryable is False
         assert "chat failed" in str(exc)
+
+def test_is_retryable_exception_http_status_error_429_and_network_classes(monkeypatch):
+    class _HTTPStatusError(Exception):
+        def __init__(self, code):
+            self.response = SimpleNamespace(status_code=code)
+
+    class _TimeoutException(Exception):
+        pass
+
+    class _ConnectError(Exception):
+        pass
+
+    monkeypatch.setattr(llm.httpx, "HTTPStatusError", _HTTPStatusError, raising=False)
+    monkeypatch.setattr(llm.httpx, "TimeoutException", _TimeoutException, raising=False)
+    monkeypatch.setattr(llm.httpx, "ConnectError", _ConnectError, raising=False)
+
+    assert llm._is_retryable_exception(_HTTPStatusError(429)) == (True, 429)
+    assert llm._is_retryable_exception(_HTTPStatusError(502)) == (True, 502)
+    assert llm._is_retryable_exception(_TimeoutException("timeout")) == (True, None)
+    assert llm._is_retryable_exception(_ConnectError("conn")) == (True, None)
