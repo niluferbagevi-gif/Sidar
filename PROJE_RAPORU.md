@@ -493,6 +493,9 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 | `opentelemetry-*` | ⚠ requirements.txt'te zorunlu; runtime'da `try/except Exception` ile opsiyonel (`core/llm_client.py:20`, `web_server.py:39`) — `ENABLE_TRACING=false` varsayılan | Tracing + OTLP export |
 | `tiktoken` | ✓ Zorunlu (v3.0) | Token ölçümü ve özetleme eşikleri |
 
+#### 7.2.1 Performans ve Ölçeklenebilirlik Notu (SQLite)
+- **SQLite Concurrency Yönetimi:** SQLite modunda çalışırken, ASGI (FastAPI) eşzamanlılığında thread çakışmalarını önlemek için global bağlantı kullanımı yerine sıralı erişim/izolasyon stratejisi zorunlu kabul edilir. Kurumsal ölçekte önerilen hedef mimari doğrudan PostgreSQL (`asyncpg` pool) işletimidir; SQLite yalnızca edge/dev senaryolarında düşünülmelidir.
+
 ### 7.3 Güvenlik, Sandbox ve Donanım Gözlemlenebilirliği
 
 | Paket | Durum | Kullanım Yeri |
@@ -870,6 +873,9 @@ Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağı
 | **Borç #14** | **Şifreleme İterasyon Standardı:** `core/db.py` içindeki PBKDF2 `120000` iterasyon sayısı OWASP 2026 beklentilerine göre düşüktür. Yeni kayıtlar için en az `600000` ve mevcut kullanıcılar için lazy-rehash gereklidir. | `core/db.py` | Yüksek |
 | **Borç #15** | **OpenTelemetry Asenkron Bağlam Sızıntısı:** `core/llm_client.py` streaming metotlarında senkron span yöneticileri asenkron generator etrafında açık bırakıldığında cross-request context leak riski oluşabilir. Async-safe wrapper standardizasyonu önerilir. | `core/llm_client.py` | Orta |
 | **Borç #16** | **`.env` ve Config Çelişkisi:** `.env.example` içinde `ENABLE_MULTI_AGENT` parametresi verilmiş olsa da `config.py` bunu sabit `True` olarak kullanmaktadır. Dokümantasyon/konfigürasyon senkronu için değişken kaldırılmalı veya env'den okunur hale getirilmelidir. | `config.py`, `.env.example` | Düşük |
+| **Borç #17** | **SQLite Thread-Safety Zafiyeti:** `core/db.py` içinde SQLite bağlantısı thread’ler arası paylaşımlı kullanım riski taşır. Eşzamanlı isteklerde `database is locked` hataları ve kararsızlık üretmemesi için bağlantı erişimi izole edilmelidir (aiosqlite veya thread-safe erişim katmanı). | `core/db.py` | Kritik |
+| **Borç #18** | **Stream (Akış) API Retry Eksikliği:** `llm_client.py` içindeki stream başlatma adımları, ağ kesintileri ve `429/5xx` durumları için non-stream kadar güçlü yeniden deneme garantisi taşımalıdır. Stream başlangıç handshakeleri backoff ile sarmalanmalıdır. | `core/llm_client.py` | Yüksek |
+| **Borç #19** | **Paket/Bağımlılık Senkronizasyonu:** `requirements.txt` ile `core/db.py` runtime beklentileri uyumsuzluğu kurulumlarda kafa karışıklığı yaratır; DB bağımlılıkları (özellikle SQLite/async sürücüler) manifestoda açık ve senkron tutulmalıdır. | `requirements.txt`, `core/db.py` | Orta |
 
 > **v3.0.3 Denetim Özeti:**
 > - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
