@@ -833,23 +833,21 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-> **Not (Güncel Sürüm Sonrası Kontrol):** Kod tabanında yapılan son denetimde, Event Loop blokajı, Zombie Process, Şifreleme İterasyon Sertleştirmesi, senkron uyumluluk kalıntıları ve ölü kodlar (ToolCall modeli) başarıyla temizlenmiş ve çözülmüştür. İlgili maddeler "Ödenmiş Borçlar" sekmesine taşınmıştır.
+> **Not (Son Sürüm Mimari Denetimi):** Proje, çoklu ajan (Multi-Agent) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Bağımlılık yönetimi (Extras), asenkron RAG blokajları, Event Loop sorunları, Zombie Process riskleri ve ölü kodlar tamamen temizlenmiş, bellek katmanları modernize edilmiştir.
 
-### 11.1 Ödenmiş Teknik Borçlar (Resolved)
-- **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Ajan içindeki bellek metotları tam asenkron standartlara (`await self.memory...`) kavuşturuldu. (Eski Borç #4)
-- **[Çözüldü] Ölü Kod (Dead Code) Temizliği:** Kullanılmayan Pydantic şemaları (`ToolCall`) dosyadan arındırıldı. (Eski Borç #8)
-- **[Çözüldü] Event Loop Blokajı (Senkron I/O Sızıntısı):** `_load_instruction_files()` metodu, dosya okuma işlemleri sırasında event-loop'u bloklamaması için `asyncio.to_thread` sarıcısına alındı.
-- **[Çözüldü] Şifreleme İterasyon Standardı:** PBKDF2 iterasyon sayısı OWASP beklentilerine uygun olarak `600000` seviyesine çıkarıldı.
-- **[Çözüldü] Zombie Süreç (Process) Riski:** Alt süreç (child process) yönetimi sertleştirilerek süreç sonlanmaları garanti altına alındı.
+### 11.1 Ödenmiş Teknik Borçlar (Resolved - Son Güncellemeler)
+- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `asyncpg` ve `opentelemetry` paketleri varsayılan kurulum (`requirements.txt` ve `environment.yml`) ortamlarından izole edildi. Yalnızca ihtiyaç halinde kurulmak üzere `pyproject.toml` içinde `[rag]`, `[postgres]`, `[telemetry]` opsiyonel bağımlılıklarına (extras) dönüştürüldü.
+- **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama ve belge ekleme metotları tam asenkron (`async def`) yapıya taşındı.
+- **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory.__init__`), eski dosya tabanlı parametrelerden (`file_path`) arındırılıp DB yapısına uygun hale getirildi.
+- **[Çözüldü] Geriye Dönük Uyumluluk Karmaşası:** Ajan içindeki bellek metotlarındaki `isawaitable` kullanımı kaldırılarak kod standart asenkron çalışmaya uygun hale getirildi.
+- **[Çözüldü] Ölü Kod (Dead Code):** Kullanılmayan model şemaları temizlendi.
+- **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç sonlanmaları sertleştirildi.
 
 ### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
 
 | # | Borç | Etkilenen Dosya(lar) | Öncelik | Durum/Çözüm Önerisi |
 |---|------|----------------------|---------|---------------------|
-| **Borç #1** | **Zorunlu ↔ Opsiyonel Bağımlılık Çelişkisi:** `asyncpg`, `opentelemetry-*` ve `chromadb` paketleri kodda opsiyonelmiş gibi yönetilmesine rağmen, hem `requirements.txt` hem de Conda `environment.yml` dosyasında zorunlu listeleniyor. Bu durum varsayılan kurulum boyutunu gereksiz şişiriyor. | `requirements.txt`, `environment.yml`, `pyproject.toml` | Orta | Bu paketler `requirements.txt` ve `environment.yml` içinden çıkarılıp yalnızca `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` opsiyonel bağımlılıkları (extras) olarak yönetilmelidir. |
-| **Borç #2** | **RAG / `DocumentStore` Senkron Blokajı:** `rag.py` içindeki `add_document` ve `search` metotları senkron (`def`) fonksiyonlardır ve thread pool ile asenkrona köprülenmektedir. | `core/rag.py` | Orta | ChromaDB'nin doğrudan asenkron (HTTP Async Client) metodolojisine geçilmeli ve kod tabanı `async def` olarak güncellenmelidir. |
-| **Borç #3** | **`ConversationMemory.__init__` `file_path` API Kalıntısı:** Bellek katmanı SQLite veritabanı yapısına geçmiş olmasına rağmen `memory.py` `__init__` imzası hala `file_path: Path` parametresini almaktadır. Bu durum eski dosya tabanlı sistemden kalan bir kafa karışıklığıdır. | `core/memory.py`, `agent/sidar_agent.py` | Düşük | API imzası `database_url` veya `base_dir` alacak şekilde modernizasyon geçirmelidir. |
-| **Borç #4** | **Legacy Test Kayması (Test Drift):** Proje Supervisor (Multi-Agent) mimarisine geçmesine rağmen, bazı eski testler ajan modülünde var olmayan eski senkron/tekli yapıları sorgulamaktadır. | `tests/*.py` | Kritik | Eski testler, yeni omurgadaki P2P ve delegasyon sözleşmelerine uyumlu olarak tamamen yeniden yazılmalıdır. |
+| **Borç #1** | **Legacy Test Kayması (Test Drift):** Proje başarıyla omurga değiştirip Supervisor (Multi-Agent) mimarisine geçmesine ve tüm asenkron açıklarını kapatmasına rağmen, bazı eski testler ajan modülünde var olmayan eski senkron/tekil ajan yapılarını aramaktadır. | `tests/*.py` | Kritik | Eski testler, yeni sistemdeki P2P ve delegasyon (görev dağıtım) sözleşmelerine %100 uyumlu olacak şekilde tamamen yeniden yazılmalıdır. Test coverage kapsamı yeni opsiyonel paket mimarisine göre yapılandırılmalıdır. |
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1051,7 +1049,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 | **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | Prometheus/Grafana metrikleri mevcut, uçtan uca trace görünürlüğü sınırlı | OpenTelemetry trace pipeline'ının Jaeger/Zipkin ile tam APM seviyesinde etkinleştirilmesi | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
 | **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
 | **Stateless Auth, RBAC ve JWT Entegrasyonu** | Oturum token'ları DB'de `auth_tokens` tablosunda tutulmaktadır; kimlik doğrulama DB sorgusu gerektirir | Merkezi auth sunucularıyla uyumlu stateless JWT (access+refresh) + rol tabanlı yetkilendirme (`Admin/Developer/Viewer`) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
-| **Bağımlılık Extras Grupları** | `asyncpg`, `opentelemetry-*`, `chromadb` requirements.txt'te zorunlu ama kodda opsiyonel (Borç #7) | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
+| **Bağımlılık Extras Grupları** | `asyncpg`, `opentelemetry-*`, `chromadb` requirements/environment dosyalarından ayrıştırılmış ve extras ile yönetilen | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
 
 > **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
 
@@ -1068,7 +1066,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 #### Faz 1: Stabilizasyon ve Teknik Borç Temizliği (v3.1) - *[Kısa Vade]*
 *v3.0 mimarisinin pürüzlerinin giderilmesi ve test/runtime stabilitesinin kurumsal seviyede sabitlenmesi.*
-- **Kritik bugfix ve legacy temizlik:** `ToolCall` model tutarlılığı ve legacy `_tool_subtask` kalıntılarının tamamen kaldırılması; kırık testlerin kapanması ve CI hattında %100 green hedefi (Bkz. 11.2 Teknik Borçlar, özellikle Borç #8 ve #9).
+- **Kritik bugfix ve legacy temizlik:** Legacy test kaymasının giderilmesi, kırık testlerin kapanması ve CI hattında %100 green hedefi (Bkz. 11.2 Teknik Borçlar, Borç #1).
 - **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
 - **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
 - **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
