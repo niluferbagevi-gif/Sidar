@@ -1396,7 +1396,7 @@ def test_metrics_text_plain_importerror_falls_back_to_json(monkeypatch):
         def __len__(self):
             return 1
 
-        def get_all_sessions(self):
+        async def get_all_sessions(self):
             return [{"id": "s1"}]
 
         async def set_active_user(self, _uid, _uname=None):

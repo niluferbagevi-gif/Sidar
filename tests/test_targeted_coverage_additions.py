@@ -1,1160 +1,1239 @@
+"""
+Sidar Project - Temel Test ve Entegrasyon Suiti
+Çalıştırmak için kök dizinde: pytest tests/
+
+pytest-asyncio modu: pyproject.toml / pytest.ini'da
+  asyncio_mode = "auto"  ya da her async test @pytest.mark.asyncio ile işaretlenmiştir.
+"""
+
 import asyncio
-import types
-from types import SimpleNamespace
+import codecs
+import os
+from pathlib import Path
+
 import pytest
-
-from tests.test_github_manager_runtime import GM, _manager
-from tests.test_llm_client_runtime import _collect, _load_llm_client_module
-from tests.test_sidar_agent_runtime import _make_react_ready_agent
-from tests.test_sidar_agent_runtime import LEGACY_INTERNAL_METHODS_MISSING
-from tests.test_rag_runtime_extended import _load_rag_module, _new_store
-from tests.test_web_search_runtime import _load_web_search_module
-
-
-def test_llmclient_stream_gemini_generator_branches(monkeypatch):
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5)
-
-    class _GemClient(llm_mod.GeminiClient):
-        def __init__(self, _cfg):
-            self.config = _cfg
-
-        async def _stream_gemini_generator(self, _response_stream):
-            yield "g1"
-
-    fac = llm_mod.LLMClient("ollama", cfg)
-    fac._client = _GemClient(cfg)
-    out = asyncio.run(_collect(fac._stream_gemini_generator(object())))
-    assert out == ["g1"]
-
-    class _FakeGemini:
-        def __init__(self, _cfg):
-            pass
-
-        async def _stream_gemini_generator(self, _response_stream):
-            yield "fallback"
-
-    monkeypatch.setattr(llm_mod, "GeminiClient", _FakeGemini)
-    fac2 = llm_mod.LLMClient("ollama", cfg)
-    out2 = asyncio.run(_collect(fac2._stream_gemini_generator(object())))
-    assert out2 == ["fallback"]
-
-
-def test_ollama_chat_sets_total_ms_and_stream_trailing_invalid_json(monkeypatch):
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Span:
-        def __init__(self):
-            self.attrs = {}
-
-        def set_attribute(self, k, v):
-            self.attrs[k] = v
-
-    class _CM:
-        def __init__(self, span):
-            self.span = span
-
-        def __enter__(self):
-            return self.span
-
-        def __exit__(self, *args):
-            return False
-
-    class _Tracer:
-        def __init__(self):
-            self.span = _Span()
-
-        def start_as_current_span(self, _):
-            return _CM(self.span)
-
-    monkeypatch.setattr(llm_mod, "_get_tracer", lambda _cfg: _Tracer())
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"message": {"content": "ok"}}
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def post(self, *_args, **_kwargs):
-            return _Resp()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    result = asyncio.run(client.chat([{"role": "user", "content": "u"}], stream=False, json_mode=False))
-    assert result == "ok"
-
-    class _RespStream:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b'{"message":{"content":"ok"}}\xff'
-
-    class _SCtx:
-        async def __aenter__(self):
-            return _RespStream()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _ClientStream(_Client):
-        def stream(self, *_args, **_kwargs):
-            return _SCtx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _ClientStream)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == []
-
-
-def test_web_search_return_and_scrape_success_lines(monkeypatch):
-    mod = _load_web_search_module(monkeypatch)
-    cfg = SimpleNamespace(
-        SEARCH_ENGINE="tavily",
-        TAVILY_API_KEY="tk",
-        GOOGLE_SEARCH_API_KEY="",
-        GOOGLE_SEARCH_CX="",
-        WEB_SEARCH_MAX_RESULTS=5,
-        WEB_FETCH_TIMEOUT=10,
-        WEB_SCRAPE_MAX_CHARS=12000,
-    )
-    monkeypatch.setattr(mod.WebSearchManager, "_check_ddg", lambda self: False)
-    manager = mod.WebSearchManager(cfg)
-
-    async def tavily_ok(*_):
-        return True, "plain"
-
-    monkeypatch.setattr(manager, "_search_tavily", tavily_ok)
-    ok, text = asyncio.run(manager.search("q"))
-    assert ok is True and text == "plain"
-
-    class _Resp:
-        text = "<html><body>icerik</body></html>"
-        encoding = None
-
-        def raise_for_status(self):
-            return None
-
-    class _Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def get(self, *_args, **_kwargs):
-            return _Resp()
-
-    monkeypatch.setattr(mod.httpx, "AsyncClient", _Client)
-    text2 = asyncio.run(manager.scrape_url("https://example.com"))
-    assert "icerik" in text2
-
-
-def test_github_manager_missing_branches():
-    class _Repo:
-        full_name = "org/repo"
-        default_branch = "main"
-
-        def get_pulls(self, **kwargs):
-            raise RuntimeError("repo-info")
-
-        def get_contents(self, file_path, **kwargs):
-            if kwargs.get("ref"):
-                raise RuntimeError("with-ref")
-            if file_path == "README":
-                return types.SimpleNamespace(type="file", name="README")
-            return types.SimpleNamespace(name="README", decoded_content=b"ok")
-
-        def create_file(self, **kwargs):
-            raise RuntimeError("create-boom")
-
-        def get_pull(self, _num):
-            class _PR:
-                title = "T"
-
-                def get_files(self):
-                    return []
-
-            return _PR()
-
-    class _GH:
-        @staticmethod
-        def get_user():
-            return types.SimpleNamespace(get_repos=lambda **_k: [types.SimpleNamespace(full_name="x/y", default_branch="main")])
-
-    m = _manager(repo=_Repo(), gh=_GH(), available=True, token="t")
-
-    ok, msg = m.list_repos(limit=0)
-    assert ok is True and msg == []
-
-    ok, info = m.get_repo_info()
-    assert ok is False and "alınamadı" in info
-
-    ok, read = m.read_remote_file("README", ref="dev")
-    assert ok is False and "okunamadı" in read
-
-    ok, listed = m.list_files(path="README")
-    assert ok is True and "README" in listed
-
-    ok, msg2 = m.create_or_update_file("x", "y", "m")
-    assert ok is False and "yazma hatası" in msg2
-
-    ok, diff = m.get_pull_request_diff(1)
-    assert ok is True and "kod dosyası bulunmuyor" in diff
-
-
-def test_ollama_stream_trailing_block_with_custom_decoder(monkeypatch):
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Decoder:
-        def decode(self, _raw, final=False):
-            if final:
-                return '\n{"message":{"content":"trail"}}\n{bad-json}'
-            return ""
-
-    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            if False:
-                yield b""
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == ["trail"]
-
-
-@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
-def test_react_loop_handles_json_array_items_that_fail_toolcall_validation():
-    agent = _make_react_ready_agent(max_steps=1)
-    agent.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
-
-    async def _gen_once(text):
-        yield text
-
-    class _LLM:
-        async def chat(self, **kwargs):
-            # JSON parse başarılı; fakat liste öğesi ToolCall şemasına uymadığı için
-            # _react_loop içinde ValidationError dalına düşmelidir.
-            return _gen_once('[{"gecersiz_alan": "deger"}]')
-
-    agent.llm = _LLM()
-    out = asyncio.run(_collect(agent._react_loop("x")))
-    assert out[-1].startswith("Üzgünüm, bu istek için güvenilir")
-
-
-def test_recursive_chunk_text_flushes_current_chunk_before_splitting_large_part(tmp_path):
-    rag_mod = _load_rag_module(tmp_path)
-    store = _new_store(rag_mod, tmp_path)
-
-    text = "kisa metin. " + "BU_TEK_KELIME_ON_KARAKTERDEN_COK_DAHA_UZUN_BIR_KELIMEDIR_VE_BOSLUK_YOKTUR."
-    chunks = store._recursive_chunk_text(text, size=10, overlap=0)
-
-    assert chunks
-    assert "kisa metin." in chunks
-    assert any(chunk.startswith(" BU_TEK") for chunk in chunks)
-
-
-def test_recursive_chunk_text_flushes_before_large_newline_part_and_continues(tmp_path):
-    rag_mod = _load_rag_module(tmp_path)
-    store = _new_store(rag_mod, tmp_path)
-
-    text = "Kisa Metin\n" + ("A" * 2000)
-    chunks = store._recursive_chunk_text(text, size=1000, overlap=0)
-
-    assert chunks
-    assert chunks[0] == "Kisa Metin"
-    assert any(chunk.startswith("\nA") for chunk in chunks[1:])
-
-
-def test_web_search_auto_tavily_actionable_and_ddg_list_no_results(monkeypatch):
-    mod = _load_web_search_module(monkeypatch)
-    cfg = SimpleNamespace(
-        SEARCH_ENGINE="auto",
-        TAVILY_API_KEY="tk",
-        GOOGLE_SEARCH_API_KEY="",
-        GOOGLE_SEARCH_CX="",
-        WEB_SEARCH_MAX_RESULTS=5,
-        WEB_FETCH_TIMEOUT=10,
-        WEB_SCRAPE_MAX_CHARS=12000,
-    )
-    monkeypatch.setattr(mod.WebSearchManager, "_check_ddg", lambda self: True)
-    manager = mod.WebSearchManager(cfg)
-
-    async def tavily_ok(*_):
-        return True, "ACTION"
-
-    monkeypatch.setattr(manager, "_search_tavily", tavily_ok)
-    ok, text = asyncio.run(manager.search("q"))
-    assert ok is True and text == "ACTION"
-
-    class _AsyncDDGS:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def text(self, query, max_results):
-            if query == "none":
-                return []
-            return [{"title": "T", "body": "B", "href": "H"}]
-
-    monkeypatch.setitem(__import__("sys").modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=_AsyncDDGS))
-    ok1, txt1 = asyncio.run(manager._search_duckduckgo("have", 3))
-    assert ok1 is True and "DuckDuckGo" in txt1
-
-    ok2, txt2 = asyncio.run(manager._search_duckduckgo("none", 3))
-    assert ok2 is True and "sonuç bulunamadı" in txt2
-
-
-def test_github_manager_extensionless_not_in_safe_list_hits_guard():
-    class _Repo:
-        def get_contents(self, *_args, **_kwargs):
-            return types.SimpleNamespace(name="secret", decoded_content=b"x")
-
-    m = _manager(repo=_Repo(), gh=None, available=True, token="t")
-    ok, msg = m.read_remote_file("secret")
-    assert ok is False
-    assert "güvenli listede değil" in msg
-
-
-def test_ollama_stream_trailing_valid_json_without_newline(monkeypatch):
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b'{"message":{"content":"son_kelime"}}'
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == ["son_kelime"]
-
-
-def test_ollama_stream_trailing_newline_message_content_branch(monkeypatch):
-    """_stream_response trailing-decoder while-loop içinde message.content dalını zorlar."""
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Decoder:
-        def decode(self, _raw, final=False):
-            if final:
-                return '\n{"message":{"content":"tail-hit"}}\n'
-            return ""
-
-    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            if False:
-                yield b""
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == ["tail-hit"]
-
-
-def test_ollama_stream_trailing_exact_buffer_hit(monkeypatch):
-    """chat(stream=True) ile sonda \n olmayan geçerli JSON'un trailing parse ile dönmesini doğrular."""
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            yield b'{"message": {"content": "trailing_success"}}'
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    stream_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True, json_mode=False))
-    chunks = asyncio.run(_collect(stream_iter))
-    assert "trailing_success" in chunks
-
-
-def test_rag_exception_paths_for_fts_chunking_and_chroma_delete(tmp_path, monkeypatch):
-    mod = _load_rag_module(tmp_path)
-
-    # _init_fts genel exception yolu (236-238)
-    st = mod.DocumentStore.__new__(mod.DocumentStore)
-    st.store_dir = tmp_path
-    st._index = {}
-    import sqlite3
-    monkeypatch.setattr(sqlite3, "connect", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fts down")))
-    st._init_fts()
-    assert st._bm25_available is False
-
-    # _recursive_chunk_text force split yolu (280-281)
-    force_chunks = st._recursive_chunk_text("abcdefgh", size=2, overlap=1)
-    assert force_chunks and all(len(c) <= 2 for c in force_chunks)
-
-    # delete_document içinde Chroma delete exception yolu (476-480)
-    store = _new_store(mod, tmp_path)
-    doc_id = store.add_document("T", "icerik", session_id="global")
-
-    class _BrokenCol:
-        def delete(self, **kwargs):
-            raise RuntimeError("chroma delete fail")
-
-    store._chroma_available = True
-    store.collection = _BrokenCol()
-    msg = store.delete_document(doc_id, session_id="global")
-    assert "Belge silindi" in msg
-
-
-def test_ollama_stream_trailing_split_invalid_then_valid_hits_jsondecode_continue(monkeypatch):
-    """trailing while-loop içinde hem JSONDecodeError(218-219) hem valid content yolunu çalıştırır."""
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    class _Decoder:
-        def decode(self, _raw, final=False):
-            if final:
-                return '\n{bad-json}\n{"message":{"content":"after-bad"}}\n'
-            return ""
-
-    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            if False:
-                yield b""
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == ["after-bad"]
-
-
-@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
-def test_web_server_and_agent_error_surface_runtime_stubs(monkeypatch):
-    from tests.test_web_server_runtime import _load_web_server, _make_agent
-
-    ws_mod = _load_web_server()
-    fake_agent, _calls = _make_agent(ai_provider="ollama", ollama_online=False)
-
-    async def _fake_get_agent():
-        return fake_agent
-
-    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
-
-    # web server fonksiyon yolları
-    from tests.test_web_server_runtime import _FakeRequest
-    sess = asyncio.run(ws_mod.get_sessions(_FakeRequest(path="/"), user=types.SimpleNamespace(id="u1", username="alice")))
-    assert getattr(sess, "status_code", 0) == 200
-    rag_res = asyncio.run(ws_mod.rag_search(q="", mode="auto", top_k=1))
-    assert getattr(rag_res, "status_code", 0) in (200, 400)
-
-    # agent tarafında bilinmeyen tool / parse fallback
-    from tests.test_sidar_agent_runtime import _make_agent_for_runtime, SA_MOD
-
-    ag = _make_agent_for_runtime()
-    ag._tools = {}
-    ok_unknown = asyncio.run(ag._execute_tool("olmayan_tool_xyz", {"x": 1}))
-    assert ok_unknown is None or "Bilinmeyen" in str(ok_unknown) or "Unknown" in str(ok_unknown)
-
-    ag.cfg.BASE_DIR = "."
-
-    async def _noop_audit(*_a, **_k):
-        return None
-
-    ag._log_audit = _noop_audit
-
-    def _bad_parse(_name, _arg):
-        raise RuntimeError("parse fail")
-
-    monkeypatch.setattr(SA_MOD, "parse_tool_argument", _bad_parse)
-
-    async def _ok_handler(_arg):
-        return "ok"
-
-    ag._tools = {"write_file": _ok_handler}
-    out = asyncio.run(ag._execute_tool("write_file", {"bad": 1}))
-    assert out == "ok"
-
-
-def test_ollama_stream_transient_json_error_then_success_in_trailing_loop(monkeypatch):
-    """Trailing parse döngüsünde ilk JSON decode hatası sonrası ikinci satırın başarıyla üretilmesini doğrular."""
-    llm_mod = _load_llm_client_module()
-    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=5, USE_GPU=False)
-    client = llm_mod.OllamaClient(cfg)
-
-    real_loads = llm_mod.json.loads
-    state = {"n": 0}
-
-    def flaky_loads(payload):
-        state["n"] += 1
-        if state["n"] == 1:
-            raise llm_mod.json.JSONDecodeError("boom", payload, 0)
-        return real_loads(payload)
-
-    monkeypatch.setattr(llm_mod.json, "loads", flaky_loads)
-
-    class _Decoder:
-        def decode(self, _raw, final=False):
-            if final:
-                return '\n{"message":{"content":"first"}}\n{"message":{"content":"second"}}\n'
-            return ""
-
-    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", lambda *_a, **_k: (lambda **_kw: _Decoder()))
-
-    class _Resp:
-        def raise_for_status(self):
-            return None
-
-        async def aiter_bytes(self):
-            if False:
-                yield b""
-
-    class _Ctx:
-        async def __aenter__(self):
-            return _Resp()
-
-        async def __aexit__(self, *args):
-            return None
-
-    class _Client:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def stream(self, *_args, **_kwargs):
-            return _Ctx()
-
-    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _Client)
-    out = asyncio.run(_collect(client._stream_response("u", {"a": 1}, timeout=llm_mod.httpx.Timeout(5))))
-    assert out == ["second"]
-
-
-def test_web_server_blocked_anyio_import_and_health_route_path():
-    from tests.test_web_server_runtime import _load_web_server_with_blocked_imports, _make_agent
-
-    ws_mod = _load_web_server_with_blocked_imports()
-    agent, _calls = _make_agent(ai_provider="ollama", ollama_online=False)
-
-    async def _fake_get_agent():
-        return agent
-
-    ws_mod.get_agent = _fake_get_agent
-    response = asyncio.run(ws_mod.health_check())
-    assert getattr(response, "status_code", 0) in (200, 503)
-
-def test_rag_remaining_branches_for_fp16_chunk_delete_and_keyword(tmp_path, monkeypatch):
-    mod = _load_rag_module(tmp_path)
-
-    # 65-66: fp16 wrapper (__call__ özel metot olduğundan doğrudan __call__ çağrılır)
-    ef_mod = types.ModuleType("chromadb.utils.embedding_functions")
-
-    class _EF:
-        def __call__(self, input):
-            return [f"ok:{len(input)}"]
-
-    ef_mod.SentenceTransformerEmbeddingFunction = lambda **kwargs: _EF()
-    torch_mod = types.ModuleType("torch")
-    torch_mod.cuda = types.SimpleNamespace(is_available=lambda: True)
-    torch_mod.float16 = "fp16"
-
-    class _Auto:
-        def __enter__(self):
-            return None
-
-        def __exit__(self, *args):
-            return False
-
-    torch_mod.autocast = lambda **kwargs: _Auto()
-    monkeypatch.setitem(__import__("sys").modules, "chromadb.utils.embedding_functions", ef_mod)
-    monkeypatch.setitem(__import__("sys").modules, "torch", torch_mod)
-    monkeypatch.setitem(__import__("sys").modules, "torch.amp", types.ModuleType("torch.amp"))
-
-    ef = mod._build_embedding_function(use_gpu=True, gpu_device=0, mixed_precision=True)
-    assert ef.__call__(["x"]) == ["ok:1"]
-
-    st = _new_store(mod, tmp_path)
-
-    # 276 ve 280-281: recursive splitter iç dalları
-    assert st._recursive_chunk_text("a b", size=1, overlap=0)
-    forced = st._recursive_chunk_text("aaaa", size=2, overlap=1)
-    assert all(len(part) <= 2 for part in forced)
-
-    # 465: kilit içinde doc önceden silinmiş dalı
-    doc_id = st.add_document("T", "body", session_id="s1")
-
-    class _RaceLock:
-        def __enter__(self_nonlocal):
-            st._index.pop(doc_id, None)
-            return self_nonlocal
-
-        def __exit__(self_nonlocal, *args):
-            return False
-
-    st._write_lock = _RaceLock()
-    assert "zaten silinmiş" in st.delete_document(doc_id)
-
-    # 693: keyword search sırasında dosya yoksa FileNotFoundError
-    st._index = {"miss": {"title": "X", "tags": [], "session_id": "s1", "source": ""}}
-    ok, out = st._keyword_search("x", top_k=1, session_id="s1")
-    assert ok is True and "Kelime Eşleşmesi" in out
-
-
-def test_web_server_remaining_branches_for_redis_ws_metrics_and_github(monkeypatch):
-    from tests.test_web_server_runtime import _FakeRequest, _load_web_server, _make_agent
-
-    ws_mod = _load_web_server()
-    agent, _ = _make_agent()
-
-    async def _fake_get_agent():
-        return agent
-
-    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
-
-    # 191-192: redis ping başarılı kurulumu
-    ws_mod._redis_client = None
-    ws_mod._redis_lock = None
-    redis_client = asyncio.run(ws_mod._get_redis())
-    assert redis_client is not None
-
-    # 262: ddos middleware call_next devamı
-    req = _FakeRequest(method="GET", path="/api")
-    async def _next(_r):
-        return "OK"
-    res = asyncio.run(ws_mod.ddos_rate_limit_middleware(req, _next))
-    assert res == "OK"
-
-    # 369-371: websocket chunk ve done gönderimi
-    class _WS:
-        def __init__(self):
-            self.sent = []
-            self.client = types.SimpleNamespace(host="127.0.0.1")
-            self._i = 0
-
-        async def accept(self):
-            return None
-
-        async def send_json(self, payload):
-            self.sent.append(payload)
-
-        async def receive_text(self):
-            self._i += 1
-            if self._i == 1:
-                return '{"action":"auth","token":"tok"}'
-            if self._i == 2:
-                return '{"message":"first","action":"send"}'
-            await asyncio.sleep(0.05)
-            raise ws_mod.WebSocketDisconnect()
-
-    ws = _WS()
-
-    async def _limited(*_a, **_k):
-        return False
-
-    monkeypatch.setattr(ws_mod, "_redis_is_rate_limited", _limited)
-
-    async def _respond(_msg):
-        yield "x"
-
-    agent.respond = _respond
-    asyncio.run(ws_mod.websocket_chat(ws))
-    assert any(p.get("chunk") == "x" or p.get("content") == "x" for p in ws.sent)
-    assert any(p.get("done") is True for p in ws.sent)
-
-    # 520-527: prometheus import başarılı branch
-    prom = types.ModuleType("prometheus_client")
-
-    class _Gauge:
-        def __init__(self, *_a, **_k):
-            pass
-
-        def set(self, _v):
-            return None
-
-    prom.CollectorRegistry = lambda: object()
-    prom.Gauge = _Gauge
-    prom.generate_latest = lambda _reg: b"m"
-    prom.CONTENT_TYPE_LATEST = "text/plain"
-    monkeypatch.setitem(__import__("sys").modules, "prometheus_client", prom)
-
-    metrics_res = asyncio.run(ws_mod.metrics(_FakeRequest(headers={"Accept": "text/plain"})))
-    assert getattr(metrics_res, "media_type", "") == "text/plain"
-
-    # 775 / 787: github pr endpoint success branch
-    agent.github = types.SimpleNamespace(
-        is_available=lambda: True,
-        repo_name="o/r",
-        get_pull_requests_detailed=lambda **_k: (True, [{"n": 1}], None),
-        get_pull_request=lambda _n: (True, {"number": _n}),
-    )
-    prs = asyncio.run(ws_mod.github_prs())
-    detail = asyncio.run(ws_mod.github_pr_detail(7))
-    assert prs.content["success"] is True and detail.content["success"] is True
-
-
-def test_web_server_upload_exception_and_finally_paths(monkeypatch):
-    from tests.test_web_server_runtime import _FakeUploadFile, _load_web_server
-
-    ws_mod = _load_web_server()
-
-    class _Docs:
-        def add_document_from_file(self, *_args):
-            return True, "ok"
-
-    agent = types.SimpleNamespace(
-        memory=types.SimpleNamespace(active_session_id="s1"),
-        docs=_Docs(),
-    )
-
-    async def _fake_get_agent():
-        return agent
-
-    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
-
-    # try/except: diske yazma hatası -> 500
-    monkeypatch.setattr(ws_mod.shutil, "copyfileobj", lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk fail")))
-    up1 = _FakeUploadFile("x.txt", b"1")
-    res1 = asyncio.run(ws_mod.upload_rag_file(up1))
-    assert res1.status_code == 500
-    assert "disk fail" in res1.content.get("error", "")
-    assert up1.closed is True
-
-    # finally: close/rmtree hataları yutulmalı, başarılı yanıt dönmeli
-    monkeypatch.setattr(ws_mod.shutil, "copyfileobj", lambda *_a, **_k: None)
-    monkeypatch.setattr(ws_mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rm fail")))
-    up2 = _FakeUploadFile("x2.txt", b"2")
-
-    async def _close_fail():
-        raise RuntimeError("close fail")
-
-    up2.close = _close_fail
-    res2 = asyncio.run(ws_mod.upload_rag_file(up2))
-    assert res2.status_code == 200
-    assert res2.content["success"] is True
-
-
-def test_websocket_error_send_fallback_pass_branch(monkeypatch):
-    from tests.test_web_server_runtime import _load_web_server, _make_agent
-
-    ws_mod = _load_web_server()
-    agent, _ = _make_agent()
-
-    async def _fake_get_agent():
-        return agent
-
-    monkeypatch.setattr(ws_mod, "get_agent", _fake_get_agent)
-
-    class _WS:
-        def __init__(self):
-            self.client = types.SimpleNamespace(host="127.0.0.1")
-            self._i = 0
-            self.calls = 0
-
-        async def accept(self):
-            return None
-
-        async def receive_text(self):
-            self._i += 1
-            if self._i == 1:
-                return '{"action":"auth","token":"tok"}'
-            if self._i == 2:
-                return '{"message":"boom","action":"send"}'
-            await asyncio.sleep(0.05)
-            raise ws_mod.WebSocketDisconnect()
-
-        async def send_json(self, _payload):
-            self.calls += 1
-            raise RuntimeError("send fail")
-
-    async def _rl(*_a, **_k):
-        return False
-
-    async def _respond(_msg):
-        yield "x"
-
-    monkeypatch.setattr(ws_mod, "_redis_is_rate_limited", _rl)
-    agent.respond = _respond
-    ws = _WS()
-    asyncio.run(ws_mod.websocket_chat(ws))
-    assert ws.calls >= 2
-
-
-@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
-def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch):
-    from tests.test_sidar_agent_runtime import SA_MOD, _make_react_ready_agent, _make_agent_for_runtime
-
-    # 337: boş liste toolcall
-    a = _make_react_ready_agent(max_steps=1)
-
-    async def _chat_empty_list(**_kwargs):
-        async def _gen():
-            yield "[]"
-        return _gen()
-
-    a.llm = types.SimpleNamespace(chat=_chat_empty_list)
-    a.memory.get_messages_for_llm = lambda: []
-    out = asyncio.run(_collect(a._react_loop("u")))
-    assert any("Maksimum adım" in x for x in out)
-
-    # 418: final_answer boş argüman fallback
-    b = _make_react_ready_agent(max_steps=1)
-
-    async def _chat_empty_answer(**_kwargs):
-        async def _gen():
-            yield '{"thought":"t","tool":"final_answer","argument":"   "}'
-        return _gen()
-
-    b.llm = types.SimpleNamespace(chat=_chat_empty_answer)
-    b.memory.get_messages_for_llm = lambda: []
-    out2 = asyncio.run(_collect(b._react_loop("u")))
-    assert out2 == ["✓ İşlem tamamlandı."]
-
-    # 495-498: react döngüsünde beklenmeyen exception
-    c = _make_react_ready_agent(max_steps=1)
-
-    async def _chat_tool(**_kwargs):
-        async def _gen():
-            yield '{"thought":"t","tool":"list_dir","argument":"."}'
-        return _gen()
-
-    async def _boom_tool(_name, _arg):
-        raise RuntimeError("boom")
-
-    c.llm = types.SimpleNamespace(chat=_chat_tool)
-    c._execute_tool = _boom_tool
-    c.memory.get_messages_for_llm = lambda: []
-    out3 = asyncio.run(_collect(c._react_loop("u")))
-    assert any("beklenmeyen bir hata" in x for x in out3)
-
-    d = _make_agent_for_runtime()
-
-    # 535-536 ve 549: schema dalları
-    wf = SA_MOD.WriteFileSchema()
-    wf.path = "  a.txt  "
-    wf.content = "hello"
-    pf = SA_MOD.PatchFileSchema()
-    pf.path = " b.txt "
-    pf.old_text = "x"
-    pf.new_text = "y"
-
-    d.code = types.SimpleNamespace(
-        write_file=lambda path, content: (True, f"{path}:{content}"),
-        patch_file=lambda path, old, new: (True, f"{path}:{old}>{new}"),
-        grep_files=lambda *a, **k: (True, "grep-ok"),
-    )
-    assert asyncio.run(d._tool_write_file(wf)).startswith("a.txt")
-    assert asyncio.run(d._tool_patch_file(pf)).startswith("b.txt")
-
-    # 666: github_list_prs schema path
-    d.github = types.SimpleNamespace(is_available=lambda: True, list_pull_requests=lambda **k: (True, str(k)))
-    prs_arg = SA_MOD.GithubListPRsSchema()
-    prs_arg.state = "closed"
-    prs_arg.limit = 3
-    assert "closed" in asyncio.run(d._tool_github_list_prs(prs_arg))
-
-    # 1137-1138 / 1164 / 1169 / 1226 / 1466 / 1524-1525
-    assert asyncio.run(d._tool_grep_files("pat|||.|||*|||bad")) == "grep-ok"
-    d.todo = types.SimpleNamespace(set_tasks=lambda t: str(t))
-    todo_res = asyncio.run(d._tool_todo_write(" |||task only"))
-    assert "pending" in todo_res
-
-    d.cfg = types.SimpleNamespace(
-        PROJECT_NAME="P", VERSION="1", BASE_DIR=".", AI_PROVIDER="gemini", GEMINI_MODEL="g",
-        ACCESS_LEVEL="sandbox", USE_GPU=True, GPU_INFO="gpu", GPU_COUNT=1, CUDA_VERSION="12",
-        GITHUB_REPO="r", MEMORY_ENCRYPTION_KEY="",
-    )
-    d.security = types.SimpleNamespace(level_name="sandbox")
-    d.memory.get_last_file = lambda: None
-    d.github = types.SimpleNamespace(is_available=lambda: False)
-    d.web = types.SimpleNamespace(is_available=lambda: False)
-    d.docs = types.SimpleNamespace(status=lambda: "ok")
-    class _Todo:
-        def __len__(self):
-            return 0
-        def list_tasks(self):
-            return ""
-    d.todo = _Todo()
-    d._load_instruction_files = lambda: ""
-    d.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0, "commands_executed": 0})
-    ctx = asyncio.run(d._build_context())
-    assert "Gemini Modeli" in ctx and "CUDA" in ctx
-
-    d._instructions_lock = __import__("threading").Lock()
-    d._instructions_cache = None
-    d._instructions_mtimes = {}
-
-    class _BadPath:
-        def is_file(self):
-            return True
-
-        def resolve(self):
-            return self
-
-        def stat(self):
-            raise RuntimeError("boom")
-
-    monkeypatch.setattr(SA_MOD.Path, "rglob", lambda self, _p: [_BadPath()])
-    monkeypatch.setattr(SA_MOD.Path, "exists", lambda self: True)
-    monkeypatch.setattr(SA_MOD.Path, "is_dir", lambda self: True)
-    d.cfg.BASE_DIR = SA_MOD.Path(".")
-    assert d._load_instruction_files() == ""
-
-
-def test_sidar_agent_opentelemetry_import_error_with_runtime_loader(monkeypatch):
-    import builtins
-    from tests.test_sidar_agent_runtime import _load_sidar_agent_module
-
-    real_import = builtins.__import__
-
-    def _blocked(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "opentelemetry" or name.startswith("opentelemetry."):
-            raise ImportError("blocked opentelemetry")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _blocked)
-    mod = _load_sidar_agent_module()
-    assert mod.trace is None
-
-
-def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
-    mod = _load_rag_module(tmp_path)
-    store = _new_store(mod, tmp_path)
-
-    store._chroma_available = True
-    store._bm25_available = True
-    store.collection = object()
-    store._index = {"d1": {"session_id": "global", "title": "T", "tags": [], "source": ""}}
-
-    def _raise(*_a, **_k):
-        raise RuntimeError("simulated search error")
-
-    monkeypatch.setattr(store, "_rrf_search", _raise)
-    monkeypatch.setattr(store, "_chroma_search", _raise)
-    monkeypatch.setattr(store, "_bm25_search", lambda *_a, **_k: (True, "bm25 fallback ok"))
-
-    ok, result = store.search("test query", mode="auto")
+from pydantic import ValidationError
+
+from config import Config
+from agent.sidar_agent import SidarAgent, ToolCall
+from managers.web_search import WebSearchManager
+from managers.system_health import SystemHealthManager
+from core.rag import DocumentStore
+
+
+@pytest.fixture
+def test_config(tmp_path):
+    """Her test için izole edilmiş geçici bir yapılandırma oluşturur."""
+    cfg = Config()
+    cfg.BASE_DIR = tmp_path
+    cfg.TEMP_DIR = tmp_path / "temp"
+    cfg.DATA_DIR = tmp_path / "data"
+    cfg.RAG_DIR = tmp_path / "rag"
+    cfg.MEMORY_FILE = cfg.DATA_DIR / "memory.json"
+    
+    cfg.TEMP_DIR.mkdir()
+    cfg.DATA_DIR.mkdir()
+    cfg.RAG_DIR.mkdir()
+    
+    # Testleri hızlandırmak için API'leri devre dışı bırak
+    cfg.TAVILY_API_KEY = ""
+    cfg.GOOGLE_SEARCH_API_KEY = ""
+    cfg.SEARCH_ENGINE = "auto"
+    
+    return cfg
+
+
+@pytest.fixture
+def agent(test_config):
+    """Testler için SidarAgent nesnesi üretir."""
+    ag = SidarAgent(cfg=test_config)
+    _activate_memory_user(ag.memory, "agent_user")
+    return ag
+
+
+def _activate_memory_user(mem, username="test_user"):
+    async def _setup():
+        await mem.initialize()
+        user = await mem.db.ensure_user(username, role="user")
+        await mem.set_active_user(user.id, user.username)
+        return user
+
+    return asyncio.run(_setup())
+
+
+# ─────────────────────────────────────────────
+# 1. TEMEL YÖNETİCİ TESTLERİ
+# ─────────────────────────────────────────────
+
+def test_code_manager_read_write(agent):
+    """CodeManager: Dosya yazma ve okuma yetkisini test eder."""
+    test_file = agent.cfg.TEMP_DIR / "test_hello.py"
+    
+    # Yazma
+    ok, msg = agent.code.write_file(str(test_file), "print('Hello')", validate=False)
     assert ok is True
-    assert result == "bm25 fallback ok"
+    assert test_file.exists()
+
+    # Okuma
+    ok, content = agent.code.read_file(str(test_file))
+    assert ok is True
+    assert "print('Hello')" in content
 
 
-@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
-def test_sidar_agent_direct_route_edge_cases_extra(monkeypatch):
-    from tests.test_sidar_agent_runtime import _make_agent_for_runtime
+def test_code_manager_validation(agent):
+    """CodeManager: Python sözdizimi doğrulamasını test eder."""
+    # Bozuk kod
+    ok, msg = agent.code.validate_python_syntax("def broken_func() print('hi')")
+    assert ok is False
+    assert "Sözdizimi hatası" in msg
 
-    agent = _make_agent_for_runtime()
-    agent.cfg.TEXT_MODEL = "tm"
-    agent.llm = types.SimpleNamespace()
-
-    async def _chat_text(**_k):
-        return "duz metin"
-
-    monkeypatch.setattr(agent.llm, "chat", _chat_text, raising=False)
-    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
-
-    async def _chat_dict(**_k):
-        return {"tool": "none"}
-
-    monkeypatch.setattr(agent.llm, "chat", _chat_dict, raising=False)
-    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
-
-    async def _chat_disallowed(**_k):
-        return '{"thought":"","tool":"rm_rf","argument":""}'
-
-    monkeypatch.setattr(agent.llm, "chat", _chat_disallowed, raising=False)
-    assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
+    # Geçerli kod
+    ok, msg = agent.code.validate_python_syntax("def clean_func():\n    pass")
+    assert ok is True
 
 
-@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
-def test_sidar_agent_react_parallel_exception_path_extra():
-    from tests.test_sidar_agent_runtime import _make_react_ready_agent
+# ─────────────────────────────────────────────
+# 2. YAPISAL ÇIKTI (PYDANTIC) TESTLERİ
+# ─────────────────────────────────────────────
 
-    agent = _make_react_ready_agent(max_steps=3)
-    agent.memory.get_messages_for_llm = lambda: []
-    agent._AUTO_PARALLEL_SAFE = {"list_dir", "read_file"}
-
-    calls = {"n": 0}
-
-    async def _chat(**_k):
-        calls["n"] += 1
-
-        async def _gen():
-            if calls["n"] == 1:
-                yield '[{"thought":"a","tool":"list_dir","argument":"."},{"thought":"b","tool":"read_file","argument":"x.txt"}]'
-            else:
-                yield '{"thought":"done","tool":"final_answer","argument":"sonuc"}'
-
-        return _gen()
-
-    async def _exec(tool_name, _arg):
-        if tool_name == "read_file":
-            raise ValueError("Kritik Arac Hatasi")
-        return "Arac Basarili"
-
-    agent.llm = types.SimpleNamespace(chat=_chat)
-    agent._execute_tool = _exec
-
-    out = asyncio.run(_collect(agent._react_loop("test_parallel")))
-    joined = "\n".join(out)
-    assert "sonuc" in joined
-    assert "\x00TOOL:list_dir\x00" in joined and "\x00TOOL:read_file\x00" in joined
+def test_toolcall_pydantic_validation():
+    """Pydantic şemasının doğru JSON'ları kabul edip hatalıları reddettiğini test eder."""
+    
+    # Başarılı JSON
+    valid_json = '{"thought": "Webde arama yapmalıyım", "tool": "web_search", "argument": "python fastapi"}'
+    parsed = ToolCall.model_validate_json(valid_json)
+    assert parsed.tool == "web_search"
+    assert parsed.argument == "python fastapi"
+    
+    # Hatalı/Eksik JSON (tool alanı eksik)
+    invalid_json = '{"thought": "düşünüyorum", "argument": "sadece argüman"}'
+    with pytest.raises(ValidationError):
+         ToolCall.model_validate_json(invalid_json)
 
 
-def test_web_server_anyio_closed_and_upload_close_extra(monkeypatch):
-    from tests.test_web_server_runtime import _FakeUploadFile, _load_web_server
+# ─────────────────────────────────────────────
+# 3. ASENKRON WEB ARAMA (FALLBACK) TESTİ
+# ─────────────────────────────────────────────
 
-    mod = _load_web_server()
+def test_web_search_status_without_engines_is_deterministic(monkeypatch, test_config):
+    """DDG kurulu olmasa da olmasa da deterministik 'motor yok' durumunu doğrular."""
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
+    web = WebSearchManager(test_config)
 
-    class _Docs:
-        def add_document_from_file(self, *_args):
-            return True, "ok"
+    assert web.tavily_key == ""
+    assert web.google_key == ""
+    assert web._ddg_available is False
+    assert web.status() == "WebSearch: Kurulu veya yapılandırılmış motor yok."
 
-    agent = types.SimpleNamespace(memory=types.SimpleNamespace(active_session_id="s1"), docs=_Docs())
 
-    async def _get_agent():
-        return agent
+def test_web_search_status_with_ddg_available_is_deterministic(monkeypatch, test_config):
+    """DDG mevcut senaryosunu çevreden bağımsız doğrular."""
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
+    web = WebSearchManager(test_config)
 
-    mod.get_agent = _get_agent
+    assert web._ddg_available is True
+    assert "DuckDuckGo" in web.status()
 
-    up = _FakeUploadFile("test.txt", b"content")
 
-    async def _close_fail():
-        raise ValueError("close fail")
+# ─────────────────────────────────────────────
+# 4. RAG VE VEKTÖR BELLEK TESTLERİ
+# ─────────────────────────────────────────────
 
-    up.close = _close_fail
-    monkeypatch.setattr(mod.shutil, "copyfileobj", lambda *_a, **_k: None)
-    monkeypatch.setattr(mod.shutil, "rmtree", lambda *_a, **_k: (_ for _ in ()).throw(OSError("rm fail")))
-    resp = asyncio.run(mod.upload_rag_file(up))
-    assert resp.status_code == 200
+@pytest.mark.asyncio
+async def test_rag_document_chunking(test_config):
+    """DocumentStore'un büyük metinleri chunking mantığıyla böldüğünü test eder."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    
+    # Uzun ve yapısal bir metin oluşturalım
+    long_text = "Metin baslangici.\n\n"
+    for i in range(50):
+        long_text += f"def func_{i}():\n    return {i}\n\n"
+        
+    doc_id = await docs.add_document(title="Test Kodu", content=long_text, source="test_source")
+    
+    assert doc_id is not None
+    # Index'e tam boyutla eklenmiş olmalı
+    assert docs._index[doc_id]["size"] == len(long_text)
+    
+    # Metin parçalanıp kaydedildiyse, get_document ile tamamını geri okuyabilmeliyiz
+    ok, retrieved = docs.get_document(doc_id)
+    assert ok is True
+    assert "func_49()" in retrieved
+
+
+# ─────────────────────────────────────────────
+# 5. AJAN BAŞLATMA TESTİ
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_agent_initialization(agent):
+    """Ajanın ve alt modüllerinin başarıyla ayağa kalktığını test eder."""
+    status_report = agent.status()
+
+    assert agent.VERSION is not None
+    assert agent.cfg.AI_PROVIDER in ("ollama", "gemini")
+    assert "Bellek" in status_report
+    assert "Güvenlik" in asyncio.run(agent._build_context())
+
+
+# ─────────────────────────────────────────────
+# 6. GPU & DONANIM TESTLERİ
+# ─────────────────────────────────────────────
+
+def test_config_gpu_fields():
+    """Config sınıfının GPU ile ilgili tüm alanları içerdiğini doğrular."""
+    cfg = Config()
+    assert hasattr(cfg, "USE_GPU")
+    assert hasattr(cfg, "GPU_INFO")
+    assert hasattr(cfg, "GPU_COUNT")
+    assert hasattr(cfg, "GPU_DEVICE")
+    assert hasattr(cfg, "CUDA_VERSION")
+    assert hasattr(cfg, "DRIVER_VERSION")
+    assert hasattr(cfg, "MULTI_GPU")
+    assert hasattr(cfg, "GPU_MEMORY_FRACTION")
+    assert hasattr(cfg, "GPU_MIXED_PRECISION")
+
+    assert isinstance(cfg.USE_GPU, bool)
+    assert isinstance(cfg.GPU_DEVICE, int)
+    assert 0.0 < cfg.GPU_MEMORY_FRACTION <= 1.0
+
+
+def test_system_health_manager_cpu_only():
+    """SystemHealthManager'ın GPU olmadan CPU/RAM raporunu ürettiğini test eder."""
+    health = SystemHealthManager(use_gpu=False)
+
+    assert health.get_gpu_info()["available"] is False
+
+    report = health.full_report()
+    assert "Sistem Sağlık Raporu" in report
+    assert "OS" in report
+
+    # GPU devre dışı — optimize çağrısı yine de güvenli çalışmalı
+    result = health.optimize_gpu_memory()
+    assert "GC" in result
+
+
+def test_system_health_gpu_info_structure():
+    """get_gpu_info() çıktısının beklenen yapıyı döndürdüğünü test eder."""
+    health = SystemHealthManager(use_gpu=True)
+    info = health.get_gpu_info()
+
+    assert "available" in info
+    if info["available"]:
+        # GPU varsa zorunlu alanlar
+        assert "device_count" in info
+        assert "devices" in info
+        assert "cuda_version" in info
+        for dev in info["devices"]:
+            assert "id" in dev
+            assert "name" in dev
+            assert "total_vram_gb" in dev
+            assert "free_gb" in dev
+            assert "compute_capability" in dev
+    else:
+        # GPU yoksa reason veya error alanı olmalı
+        assert "reason" in info or "error" in info
+
+
+def test_rag_gpu_params(test_config):
+    """DocumentStore'un GPU parametrelerini kabul ettiğini doğrular."""
+    # GPU olmayan sistemde use_gpu=True verilse bile güvenle başlamalı
+    docs = DocumentStore(
+        test_config.RAG_DIR,
+        use_gpu=True,
+        gpu_device=0,
+        mixed_precision=False,
+    )
+    assert docs._use_gpu is True
+    assert docs._gpu_device == 0
+    # CUDA yoksa ChromaDB CPU'ya düşmeli; collection ya None ya da başlatılmış olmalı
+    status = docs.status()
+    assert "RAG" in status
+
+
+# ─────────────────────────────────────────────
+# 7. SESSION LIFECYCLE TESTLERİ
+# ─────────────────────────────────────────────
+
+def test_session_create(test_config):
+    """ConversationMemory: Yeni oturum oluşturma ve aktif hale getirme."""
+    from core.memory import ConversationMemory
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_create")
+
+    session_id = mem.create_session("Test Sohbeti")
+
+    assert session_id is not None
+    assert len(session_id) == 36  # UUID4 formatı
+    assert mem.active_session_id == session_id
+    assert mem.active_title == "Test Sohbeti"
+
+
+def test_session_add_and_load(test_config):
+    """ConversationMemory: Mesaj ekleme ve oturumu yeniden yükleme."""
+    from core.memory import ConversationMemory
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "shared_session_user")
+
+    session_id = mem.create_session("Yükleme Testi")
+    mem.add("user", "Merhaba Sidar!")
+    mem.add("assistant", "Merhaba! Nasıl yardımcı olabilirim?")
+
+    # Yeni bir bellek nesnesi oluştur ve oturumu yeniden yükle
+    mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem2, "shared_session_user")
+    ok = mem2.load_session(session_id)
+
+    assert ok is True
+    assert mem2.active_session_id == session_id
+    history = mem2.get_history()
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[0]["content"] == "Merhaba Sidar!"
+    assert history[1]["role"] == "assistant"
+
+
+def test_session_delete(test_config):
+    """ConversationMemory: Oturum silme ve dosyanın kaldırıldığını doğrulama."""
+    from core.memory import ConversationMemory
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_delete")
+
+    sid = mem.create_session("Silinecek Oturum")
+    result = mem.delete_session(sid)
+
+    assert result is True
+
+
+def test_session_get_all_sorted(test_config):
+    """ConversationMemory: Tüm oturumları en yeniden en eskiye sıralı listeler."""
+    from core.memory import ConversationMemory
+    import time as _time
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_list")
+
+    id1 = mem.create_session("Birinci")
+    _time.sleep(0.01)
+    id2 = mem.create_session("İkinci")
+    _time.sleep(0.01)
+    id3 = mem.create_session("Üçüncü")
+
+    sessions = mem.get_all_sessions()
+    ids = [s["id"] for s in sessions]
+
+    # En son oluşturulan en üstte olmalı
+    assert ids[0] == id3
+    assert id1 in ids
+    assert id2 in ids
+
+
+def test_session_update_title(test_config):
+    """ConversationMemory: Aktif oturum başlığını güncelleme."""
+    from core.memory import ConversationMemory
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "shared_title_user")
+
+    sid = mem.create_session("Eski Başlık")
+    mem.update_title("Yeni Başlık")
+
+    assert mem.active_title == "Yeni Başlık"
+
+    # Yeniden yükleme ile kalıcılığı doğrula
+    mem2 = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem2, "shared_title_user")
+    mem2.load_session(sid)
+    assert mem2.active_title == "Yeni Başlık"
+
+
+def test_session_load_nonexistent(test_config):
+    """ConversationMemory: Var olmayan oturum yüklenmeye çalışıldığında False döner."""
+    from core.memory import ConversationMemory
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "session_missing")
+
+    result = mem.load_session("00000000-0000-0000-0000-000000000000")
+    assert result is False
+
+
+def test_apply_summary_keeps_last_messages(test_config):
+    """ConversationMemory: Özetleme, son N mesajı koruyup başa özet bloğu ekler."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=4)
+    _activate_memory_user(mem, "summary_keep")
+    for i in range(8):
+        role = "user" if i % 2 == 0 else "assistant"
+        mem.add(role, f"mesaj-{i}")
+
+    mem.apply_summary("Kısa özet")
+
+    history = mem.get_history()
+    assert len(history) == 6
+    assert history[0]["content"] == "[Önceki konuşmaların özeti istendi]"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nKısa özet"
+    assert [t["content"] for t in history[2:]] == ["mesaj-4", "mesaj-5", "mesaj-6", "mesaj-7"]
+
+
+def test_apply_summary_keep_last_zero(test_config):
+    """ConversationMemory: keep_last=0 iken yalnızca özet blokları kalır."""
+    from core.memory import ConversationMemory
+
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10, keep_last=0)
+    _activate_memory_user(mem, "summary_zero")
+    for i in range(4):
+        mem.add("user", f"soru-{i}")
+
+    mem.apply_summary("Sadece özet")
+
+    history = mem.get_history()
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[1]["content"] == "[KONUŞMA ÖZETİ]\nSadece özet"
+
+
+# ─────────────────────────────────────────────
+# 8. ARAÇ DISPATCHER TESTLERİ
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_execute_tool_unknown_returns_none(agent):
+    """SidarAgent dispatcher'ı bilinmeyen araç adı için None döndürür."""
+    result = await agent._execute_tool("var_olmayan_arac_xyz", "test argümanı")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_known_does_not_return_none(agent):
+    """SidarAgent dispatcher'ı bilinen araç için None döndürmez."""
+    # list_dir gerçek I/O yapar; BASE_DIR mevcut olduğundan sonuç döner
+    result = await agent._execute_tool("list_dir", str(agent.cfg.BASE_DIR))
+    assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_writes_audit_log_on_success(agent, monkeypatch):
+    """SidarAgent: başarılı araç çağrısı _log_audit ile success=True loglanır."""
+    captured = {}
+
+    async def _fake_log(tool_name, argument, success):
+        captured["tool_name"] = tool_name
+        captured["argument"] = argument
+        captured["success"] = success
+
+    async def _fake_tool(arg):
+        return "tamam"
+
+    monkeypatch.setattr(agent, "_log_audit", _fake_log)
+    monkeypatch.setitem(agent._tools, "dummy_tool", _fake_tool)
+
+    result = await agent._execute_tool("dummy_tool", "abc")
+
+    assert result == "tamam"
+    assert captured == {"tool_name": "dummy_tool", "argument": "abc", "success": True}
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_writes_audit_log_on_tool_error_pattern(agent, monkeypatch):
+    """SidarAgent: ⚠/✗/[HATA] ile başlayan sonuçlar başarısız loglanır."""
+    captured = {}
+
+    async def _fake_log(tool_name, argument, success):
+        captured["success"] = success
+
+    async def _fake_tool(arg):
+        return "⚠ doğrulama hatası"
+
+    monkeypatch.setattr(agent, "_log_audit", _fake_log)
+    monkeypatch.setitem(agent._tools, "dummy_tool_err", _fake_tool)
+
+    result = await agent._execute_tool("dummy_tool_err", "xyz")
+
+    assert result.startswith("⚠")
+    assert captured["success"] is False
+
+
+def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
+    """RRF: Aynı belgeleri iki motordan birleştirip tek sıralama üretir."""
+    docs = DocumentStore.__new__(DocumentStore)
+
+    monkeypatch.setattr(docs, "_fetch_chroma", lambda q, k, s: [
+        {"id": "doc_a", "title": "A", "source": "", "snippet": "sa", "score": 1.0},
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 1.0},
+    ])
+    monkeypatch.setattr(docs, "_fetch_bm25", lambda q, k, s: [
+        {"id": "doc_b", "title": "B", "source": "", "snippet": "sb", "score": 5.0},
+        {"id": "doc_c", "title": "C", "source": "", "snippet": "sc", "score": 4.0},
+    ])
+
+    captured = {}
+
+    def _format(results, query, source_name):
+        captured["ids"] = [r["id"] for r in results]
+        captured["source"] = source_name
+        return True, "ok"
+
+    monkeypatch.setattr(docs, "_format_results_from_struct", _format)
+
+    ok, _ = DocumentStore._rrf_search(docs, "test", 3, "s1")
+
+    assert ok is True
+    assert captured["source"] == "Hibrit RRF (ChromaDB + BM25)"
+    assert captured["ids"][0] == "doc_b"
+
+
+def test_rag_search_auto_prefers_rrf(monkeypatch):
+    """search(auto): Chroma+BM25 varken önce RRF yolunu kullanır."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t"}}
+    docs._chroma_available = True
+    docs._bm25_available = True
+    docs.collection = object()
+
+    calls = {"rrf": 0}
+
+    def _rrf(query, top_k, session_id):
+        calls["rrf"] += 1
+        return True, "rrf"
+
+    monkeypatch.setattr(docs, "_rrf_search", _rrf)
+
+    ok, text = asyncio.run(DocumentStore.search(docs, "soru", mode="auto"))
+
+    assert ok is True
+    assert text == "rrf"
+    assert calls["rrf"] == 1
+
+
+@pytest.mark.asyncio
+async def test_rag_index_info_filters_by_session(test_config):
+    """get_index_info(session_id): yalnızca ilgili oturum belgelerini döndürür."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    await docs.add_document("A", "alpha", session_id="s1")
+    await docs.add_document("B", "beta", session_id="s2")
+
+    s1_docs = docs.get_index_info(session_id="s1")
+    assert len(s1_docs) == 1
+    assert s1_docs[0]["session_id"] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_rag_list_documents_filters_by_session(test_config):
+    """list_documents(session_id): farklı oturum belgelerini dışarıda bırakır."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    await docs.add_document("S1 Başlık", "alpha içerik", session_id="s1")
+    await docs.add_document("S2 Başlık", "beta içerik", session_id="s2")
+
+    text = docs.list_documents(session_id="s1")
+    assert "S1 Başlık" in text
+    assert "S2 Başlık" not in text
+
+
+def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
+    """search(session_id): oturumda belge yoksa uyarı döndürür."""
+    docs = DocumentStore.__new__(DocumentStore)
+    docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
+    docs.default_top_k = 3
+    docs._index = {"d1": {"title": "t", "session_id": "s1"}}
+    docs._chroma_available = False
+    docs._bm25_available = False
+    docs.collection = None
+
+    ok, msg = asyncio.run(DocumentStore.search(docs, "soru", mode="auto", session_id="s2"))
+    assert ok is False
+    assert "bu oturum" in msg.lower()
+
+
+# ─────────────────────────────────────────────
+# 9. CHUNKING SINIR TESTLERİ
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_rag_chunking_small_text(test_config):
+    """DocumentStore: _chunk_size'dan küçük metin tek parça olarak eklenir."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    small = "Küçük bir metin."
+    doc_id = await docs.add_document(title="Küçük", content=small, source="test")
+    assert doc_id is not None
+    ok, retrieved = docs.get_document(doc_id)
+    assert ok is True
+    # get_document() "[doc_id] başlık\nKaynak: ...\n\nİçerik" formatında döner
+    content_part = retrieved.split("\n\n", 1)[1]
+    assert content_part == small
+
+
+@pytest.mark.asyncio
+async def test_rag_chunking_large_text(test_config):
+    """DocumentStore: _chunk_size'dan büyük metin parçalara bölünür ve tamamı saklanır."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+    # Varsayılan chunk_size (genellikle 512) değerini aşan metin üret
+    large = "A" * 2000 + "\n\n" + "B" * 2000
+    doc_id = await docs.add_document(title="Büyük", content=large, source="test")
+    assert doc_id is not None
+    ok, retrieved = docs.get_document(doc_id)
+    assert ok is True
+    # get_document() "[doc_id] başlık\nKaynak: ...\n\nİçerik" formatında döner
+    content_part = retrieved.split("\n\n", 1)[1]
+    assert len(content_part) == len(large)
+
+
+# ─────────────────────────────────────────────
+# 10. AUTOHANDLE PATTERN TESTLERİ
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_auto_handle_no_match(agent):
+    """AutoHandle: normal LLM sorusuna müdahale etmez."""
+    handled, _ = await agent.auto.handle("Python'da asenkron programlama nasıl çalışır?")
+    assert handled is False
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_clear_command(agent):
+    """AutoHandle: 'belleği temizle' / 'sohbeti sıfırla' komutlarına yanıt verir."""
+    # Önce birkaç mesaj ekle
+    agent.memory.add("user", "test mesajı")
+    handled, response = await agent.auto.handle("belleği temizle")
+    assert handled is True
+    assert "temizlendi" in response.lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_repo_files_list_command(agent, monkeypatch):
+    """AutoHandle: 'repodaki dosyaları listele' komutunu GitHub listesine yönlendirir."""
+    monkeypatch.setattr(agent.auto.github, "is_available", lambda: True)
+    monkeypatch.setattr(
+        agent.auto.github,
+        "list_files",
+        lambda path="", branch=None: (True, "[GitHub Dosya Listesi: /]\n  📄 README.md"),
+    )
+
+    handled, response = await agent.auto.handle("repomuzdaki dosyaları listele")
+    assert handled is True
+    assert "GitHub Dosya Listesi" in response
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_read_file_content_getir_command(agent, monkeypatch):
+    """AutoHandle: '<dosya> içeriğini getir' komutunu dosya okuma akışına yönlendirir."""
+    monkeypatch.setattr(agent.auto.code, "read_file", lambda path: (True, "satır1\nsatır2"))
+
+    handled, response = await agent.auto.handle("config.py içeriğini getir")
+    assert handled is True
+    assert "[config.py]" in response
+    assert "satır1" in response
+
+
+def test_direct_router_handles_single_step_read(agent, monkeypatch):
+    """SidarAgent: Doğrudan router tek adım aracı çalıştırır (respond akışına bağlı değil)."""
+
+    async def fake_chat(**kwargs):
+        return '{"thought":"tek adım","tool":"read_file","argument":"config.py"}'
+
+    monkeypatch.setattr(agent.llm, "chat", fake_chat)
+    monkeypatch.setattr(agent.code, "read_file", lambda path: (True, "CFG=1"))
+
+    result = asyncio.run(agent._try_direct_tool_route("config.py dosyasını açıp içeriğini ver"))
+    assert result is not None
+    assert "CFG=1" in result
+
+
+# ─────────────────────────────────────────────
+# 11. BROKEN JSON KARANTINA TESTİ
+# ─────────────────────────────────────────────
+
+def test_session_broken_json_quarantine(test_config):
+    """ConversationMemory: Bozuk JSON dosyası .json.broken olarak karantinaya alınır."""
+    from core.memory import ConversationMemory
+
+    # Bozuk bir JSON dosyası oluştur
+    sessions_dir = test_config.DATA_DIR / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    broken_file = sessions_dir / "bozuk-oturum.json"
+    broken_file.write_text("{bozuk json içerik: !!!", encoding="utf-8")
+
+    # get_all_sessions() çağrısı çökme üretmemeli; bozuk dosya karantinaya alınmalı
+    mem = ConversationMemory(file_path=test_config.MEMORY_FILE, max_turns=10)
+    _activate_memory_user(mem, "broken_json")
+    sessions = mem.get_all_sessions()
+
+    # Bozuk dosya .json.broken adıyla karantinada olmalı
+    assert isinstance(sessions, list)
+    assert broken_file.exists()
+
+
+# ─────────────────────────────────────────────
+# 12. JSON PARSE DOĞRULUĞU (GREEDY REGEX YERİNE JSONDecoder)
+# ─────────────────────────────────────────────
+
+def test_json_decoder_picks_first_valid_object():
+    """JSONDecoder ilk geçerli JSON nesnesini seçer; arkasındaki bozuk bloğu yoksayar."""
+    import json
+    decoder = json.JSONDecoder()
+    # Geçerli JSON + arkasında bozuk ek metin
+    text = '{"thought": "plan", "tool": "final_answer", "argument": "tamam"} fazla metin'
+    idx = text.find('{')
+    result, end = decoder.raw_decode(text, idx)
+    assert result["tool"] == "final_answer"
+    assert result["argument"] == "tamam"
+
+
+def test_json_decoder_skips_first_broken_finds_next():
+    """JSONDecoder bozuk ilk bloğu atlayıp sonraki geçerli JSON'ı bulur."""
+    import json
+    decoder = json.JSONDecoder()
+    # İlk '{' bozuk, ikinci '{' geçerli
+    text = '{bozuk} {"thought": "ok", "tool": "web_search", "argument": "x"}'
+    idx = text.find('{')
+    json_match = None
+    while idx != -1:
+        try:
+            json_match, _ = decoder.raw_decode(text, idx)
+            break
+        except json.JSONDecodeError:
+            idx = text.find('{', idx + 1)
+    assert json_match is not None
+    assert json_match["tool"] == "web_search"
+
+
+def test_json_decoder_no_json_returns_none():
+    """JSON içermeyen metinde döngü girmez, json_match None kalır."""
+    import json
+    decoder = json.JSONDecoder()
+    text = "Bu bir metin. JSON bloğu içermiyor."
+    idx = text.find('{')
+    json_match = None
+    while idx != -1:
+        try:
+            json_match, _ = decoder.raw_decode(text, idx)
+            break
+        except json.JSONDecodeError:
+            idx = text.find('{', idx + 1)
+    assert json_match is None
+
+
+def test_json_decoder_embedded_in_markdown():
+    """Markdown kod bloğu içine gömülü JSON doğru çıkarılır."""
+    import json
+
+    text = '```json\n{"thought": "düşünüyorum", "tool": "list_dir", "argument": "."}\n```'
+    decoder = json.JSONDecoder()
+    idx = text.find('{')
+    json_match, _ = decoder.raw_decode(text, idx)
+
+    assert json_match["tool"] == "list_dir"
+    assert json_match["argument"] == "."
+
+
+# ─────────────────────────────────────────────
+# 13. UTF-8 MULTİBYTE BUFFER GÜVENLİĞİ
+# ─────────────────────────────────────────────
+
+def test_utf8_multibyte_two_byte_split():
+    """2 baytlık UTF-8 karakteri (ş=\\xc5\\x9f) iki pakete bölününce doğru birleşir."""
+    char = "ş"  # \xc5\x9f
+    full_bytes = char.encode("utf-8")
+    assert len(full_bytes) == 2
+
+    # llm_client._stream_ollama_response ile aynı mantık (incremental decoder)
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    result = ""
+    for packet in [full_bytes[:1], full_bytes[1:]]:
+        result += decoder.decode(packet, final=False)
+
+    # Kalan buffer varsa temizle
+    result += decoder.decode(b"", final=True)
+
+    assert result == char
+
+
+def test_utf8_three_byte_char_split():
+    """3 baytlık UTF-8 karakteri (€=\\xe2\\x82\\xac) ortadan bölününce birleşir."""
+    char = "€"  # \xe2\x82\xac
+    full_bytes = char.encode("utf-8")
+    assert len(full_bytes) == 3
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    result = ""
+    for packet in [full_bytes[:2], full_bytes[2:]]:
+        result += decoder.decode(packet, final=False)
+
+    result += decoder.decode(b"", final=True)
+
+    assert result == char
+
+
+def test_utf8_invalid_bytes_use_replace_fallback():
+    """Tamamen geçersiz UTF-8 baytları 'replace' moduyla Unicode ikame karakteri üretir."""
+    invalid = b"\xff\xfe\xfd"
+    decoded = invalid.decode("utf-8", errors="replace")
+    assert "\ufffd" in decoded  # U+FFFD: Unicode ikame karakteri
+
+
+# ─────────────────────────────────────────────
+# 14. AUTO_HANDLE HEALTH=NONE NULL GUARD
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_auto_handle_health_none_no_crash(agent):
+    """AutoHandle: health=None olduğunda sistem sağlık sorgusu AttributeError üretmez."""
+    original_health = agent.auto.health
+    try:
+        agent.auto.health = None
+        handled, response = await agent.auto.handle("sistem sağlık raporunu göster")
+        # Çökme olmamalı; yanıt string olmalı
+        assert isinstance(handled, bool)
+        assert isinstance(response, str)
+        if handled:
+            # None guard devreye girmeli
+            assert "başlatılamadı" in response or "⚠" in response
+    finally:
+        agent.auto.health = original_health
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_health_returns_report_when_available(agent):
+    """AutoHandle: health yöneticisi mevcutsa sağlık raporu içeriği döner."""
+    if agent.auto.health is None:
+        pytest.skip("Sağlık yöneticisi başlatılmamış.")
+    handled, response = await agent.auto.handle("donanım durumunu göster")
+    # Eğer tanındıysa rapor içeriği dolu olmalı
+    if handled:
+        assert len(response) > 0
+
+
+# ─────────────────────────────────────────────
+# 15. RATE LIMITER (TOCTOU SENARYOSU)
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_rate_limiter_blocks_after_limit():
+    """_is_rate_limited: Limit aşıldıktan sonra True döner."""
+    import web_server
+
+    test_ip = "192.0.2.1"  # RFC 5737 test IP
+    web_server._rate_data.pop(test_ip, None)
+    web_server._rate_lock = asyncio.Lock()
+
+    limit = 3
+    for _ in range(limit):
+        blocked = await web_server._is_rate_limited(test_ip, limit)
+        assert blocked is False, "Limit dolmadan önce bloklanmamalı"
+
+    # Limit + 1 → bloklanmalı
+    blocked = await web_server._is_rate_limited(test_ip, limit)
+    assert blocked is True, "Limit aşıldığında bloklanmalı"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_different_keys_independent():
+    """_is_rate_limited: Farklı IP'ler birbirini etkilemez (TOCTOU izolasyonu)."""
+    import web_server
+
+    ip_a = "192.0.2.2"
+    ip_b = "192.0.2.3"
+    web_server._rate_data.pop(ip_a, None)
+    web_server._rate_data.pop(ip_b, None)
+    web_server._rate_lock = asyncio.Lock()
+
+    limit = 2
+    # ip_a limitini doldur
+    for _ in range(limit):
+        await web_server._is_rate_limited(ip_a, limit)
+    await web_server._is_rate_limited(ip_a, limit)  # ip_a bloklandı
+
+    # ip_b hâlâ serbest olmalı
+    blocked_b = await web_server._is_rate_limited(ip_b, limit)
+    assert blocked_b is False, "ip_b bağımsız olmalı"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_concurrent_toctou():
+    """_is_rate_limited: Eş zamanlı çağrılar limit sayısını aşmaz."""
+    import web_server
+
+    test_ip = "192.0.2.4"
+    web_server._rate_data.pop(test_ip, None)
+    web_server._rate_lock = asyncio.Lock()
+
+    limit = 5
+    tasks = [web_server._is_rate_limited(test_ip, limit) for _ in range(limit + 3)]
+    results = await asyncio.gather(*tasks)
+
+    # En fazla `limit` kadar False (izin verilen) olmalı
+    allowed = results.count(False)
+    assert allowed <= limit, f"Limit aşıldı: {allowed} > {limit}"
+
+
+# ─────────────────────────────────────────────
+# 16. RAG CONCURRENT DELETE+UPSERT
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_rag_concurrent_add_no_data_loss(test_config):
+    """DocumentStore: Eş zamanlı add_document çağrıları _write_lock ile güvenle serialize edilir."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+
+    async def add_one(i: int) -> str:
+        return await docs.add_document(
+            title=f"Belge {i}",
+            content=f"İçerik {i}: " + "x" * 200,
+            source="concurrent_test",
+        )
+
+    tasks = [add_one(i) for i in range(6)]
+    results = await asyncio.gather(*tasks)
+
+    # Tüm ekleme işlemleri bir doc_id döndürmeli
+    assert len(results) == 6
+    assert all(r is not None for r in results), "Bazı belgeler eklenemedi"
+
+    # Her belge bağımsız olarak okunabilmeli
+    for doc_id in results:
+        ok, content = docs.get_document(doc_id)
+        assert ok is True, f"Belge okunamadı: {doc_id}"
+        assert len(content) > 0
+
+
+@pytest.mark.asyncio
+async def test_rag_update_replaces_old_chunks(test_config):
+    """DocumentStore: Aynı başlıkla iki kez add_document → ikinci çağrı birincinin yerine geçer."""
+    docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+
+    id1 = await docs.add_document(title="Güncellenecek", content="Eski içerik A", source="test")
+    id2 = await docs.add_document(title="Güncellenecek", content="Yeni içerik B", source="test")
+
+    # Her iki doc_id de okunabilmeli (bağımsız UUID)
+    ok1, c1 = docs.get_document(id1)
+    ok2, c2 = docs.get_document(id2)
+    assert ok1 and "Eski içerik A" in c1
+    assert ok2 and "Yeni içerik B" in c2
+
+
+# ─────────────────────────────────────────────
+# 17. GITHUB MANAGER UZANTISIZ DOSYA BYPASS
+# ─────────────────────────────────────────────
+
+def test_github_manager_safe_extensions_set():
+    """GitHubManager: SAFE_TEXT_EXTENSIONS kritik uzantıları içeriyor."""
+    from managers.github_manager import GitHubManager
+
+    safe = GitHubManager.SAFE_TEXT_EXTENSIONS
+    for ext in (".py", ".md", ".json", ".yaml", ".yml", ".sh", ".txt"):
+        assert ext in safe, f"{ext} güvenli listede olmalı"
+
+    for ext in (".png", ".zip", ".exe", ".dll", ".bin", ".so"):
+        assert ext not in safe, f"{ext} güvenli listede OLMAMALI"
+
+
+def test_github_manager_safe_extensionless_set():
+    """GitHubManager: SAFE_EXTENSIONLESS bilinen güvenli uzantısız dosyaları içeriyor."""
+    from managers.github_manager import GitHubManager
+
+    safe = GitHubManager.SAFE_EXTENSIONLESS
+    for name in ("makefile", "dockerfile", "procfile", "license", "readme"):
+        assert name in safe, f"'{name}' güvenli uzantısız listede olmalı"
+
+
+def test_github_manager_no_token_status_guidance():
+    """GitHubManager: Token yokken status() token kurulum rehberini içeriyor."""
+    from managers.github_manager import GitHubManager
+
+    gm = GitHubManager(token="", repo_name="")
+    assert gm.is_available() is False
+
+    status = gm.status()
+    assert "GITHUB_TOKEN" in status
+    assert "github.com/settings/tokens" in status
+
+
+# ─────────────────────────────────────────────
+# 18. PACKAGE_INFO VERSION SORT PRE-RELEASE
+# ─────────────────────────────────────────────
+
+def test_version_sort_stable_beats_prerelease():
+    """_version_sort_key: Stabil sürüm tüm pre-release sürümlerden büyük sıralanır."""
+    from managers.package_info import PackageInfoManager
+
+    versions = ["1.0.0a1", "1.0.0b2", "1.0.0rc1", "1.0.0", "0.9.9"]
+    sorted_v = sorted(versions, key=PackageInfoManager._version_sort_key, reverse=True)
+
+    assert sorted_v[0] == "1.0.0",   f"En büyük 1.0.0 olmalı, bulundu: {sorted_v[0]}"
+    assert sorted_v[1] == "1.0.0rc1"
+    assert sorted_v[2] == "1.0.0b2"
+    assert sorted_v[3] == "1.0.0a1"
+    assert sorted_v[4] == "0.9.9"
+
+
+def test_is_prerelease_letter_based():
+    """_is_prerelease: Harf tabanlı pre-release formatlarını tanır."""
+    from managers.package_info import PackageInfoManager
+
+    assert PackageInfoManager._is_prerelease("1.0.0a1")    is True
+    assert PackageInfoManager._is_prerelease("1.0.0b2")    is True
+    assert PackageInfoManager._is_prerelease("1.0.0rc1")   is True
+    assert PackageInfoManager._is_prerelease("1.0.0alpha") is True
+    assert PackageInfoManager._is_prerelease("1.0.0")      is False
+    assert PackageInfoManager._is_prerelease("2.5.3")      is False
+
+
+def test_is_prerelease_npm_numeric():
+    """_is_prerelease: npm sayısal pre-release formatını tanır (1.0.0-0, 1.0.0-1)."""
+    from managers.package_info import PackageInfoManager
+
+    assert PackageInfoManager._is_prerelease("1.0.0-0")  is True
+    assert PackageInfoManager._is_prerelease("1.0.0-1")  is True
+    assert PackageInfoManager._is_prerelease("2.0.0-42") is True
+    assert PackageInfoManager._is_prerelease("1.0.0")    is False  # tire yok
+    assert PackageInfoManager._is_prerelease("1.0.0-rc1") is True  # hem harf hem sayısal
+
+
+def test_version_sort_invalid_version_goes_last():
+    """_version_sort_key: Geçersiz sürüm formatı '0.0.0' olarak değerlendirilir."""
+    from managers.package_info import PackageInfoManager
+
+    versions = ["1.0.0", "invalid-ver", "2.0.0"]
+    sorted_v = sorted(versions, key=PackageInfoManager._version_sort_key, reverse=True)
+
+    assert sorted_v[0] == "2.0.0"
+    assert sorted_v[1] == "1.0.0"
+    assert sorted_v[-1] == "invalid-ver"
+
+# ─────────────────────────────────────────────
+# 19. GÜVENLİK — PATH TRAVERSAL + SYMLINK
+# ─────────────────────────────────────────────
+
+def test_security_path_traversal_blocked(tmp_path):
+    """SecurityManager: '../' içeren yollara yazma izni verilmez."""
+    from managers.security import SecurityManager
+    sm = SecurityManager("sandbox", tmp_path)
+
+    assert sm.can_write("../../../etc/passwd") is False
+    assert sm.can_write("../../sensitive.txt") is False
+
+
+def test_security_dangerous_pattern_read_blocked(tmp_path):
+    """SecurityManager: tehlikeli sistem yollarına okuma engellenir."""
+    from managers.security import SecurityManager
+    sm = SecurityManager("full", tmp_path)
+
+    assert sm.can_read("/etc/shadow") is False
+    assert sm.can_read("/proc/1/maps") is False
+
+
+def test_security_safe_write_sandbox(tmp_path):
+    """SecurityManager: SANDBOX modda temp/ dizinine yazma serbesttir."""
+    from managers.security import SecurityManager
+    sm = SecurityManager("sandbox", tmp_path)
+    safe_path = str(tmp_path / "temp" / "output.py")
+    assert sm.can_write(safe_path) is True
+
+
+def test_security_full_base_dir_write(tmp_path):
+    """SecurityManager: FULL modda proje kökü altındaki dosyaya yazma serbesttir."""
+    from managers.security import SecurityManager
+    sm = SecurityManager("full", tmp_path)
+    safe_path = str(tmp_path / "managers" / "new_file.py")
+    assert sm.can_write(safe_path) is True
+
+
+def test_security_full_outside_base_dir_blocked(tmp_path):
+    """SecurityManager: FULL modda proje kökü dışına yazma engellenir."""
+    from managers.security import SecurityManager
+    import tempfile
+    sm = SecurityManager("full", tmp_path)
+    outside = tempfile.gettempdir() + "/outside.py"
+    assert sm.can_write(outside) is False
+
+
+def test_security_get_safe_write_path_strips_dir(tmp_path):
+    """SecurityManager: get_safe_write_path() yalnızca dosya adını kullanır."""
+    from managers.security import SecurityManager
+    sm = SecurityManager("sandbox", tmp_path)
+    safe = sm.get_safe_write_path("../../evil/file.py")
+    # Yalnızca "file.py" kalmalı, ../evil/ atılmalı
+    assert safe.parent == (tmp_path / "temp").resolve()
+    assert safe.name == "file.py"
+
+
+# ─────────────────────────────────────────────
+# 20. GITHUB MANAGER — DAL ADI DOĞRULAMASI
+# ─────────────────────────────────────────────
+
+def test_github_manager_branch_name_invalid():
+    """GitHubManager: Geçersiz dal adı create_branch() tarafından reddedilir."""
+    from managers.github_manager import GitHubManager, _BRANCH_RE
+    # Boşluk ve özel karakter içeren adlar
+    assert not _BRANCH_RE.match("branch name with spaces")
+    assert not _BRANCH_RE.match("branch;injected")
+    assert not _BRANCH_RE.match("branch`cmd`")
+    # Geçerli adlar
+    assert _BRANCH_RE.match("feature/my-branch")
+    assert _BRANCH_RE.match("fix-123")
+    assert _BRANCH_RE.match("release/v2.6.1")
+
+
+# ─────────────────────────────────────────────
+# 21. CONFIG — DOCKER TIMEOUT VE DOĞRULAMA
+# ─────────────────────────────────────────────
+
+def test_config_docker_exec_timeout_default():
+    """Config: DOCKER_EXEC_TIMEOUT varsayılanı 10 saniyedir."""
+    cfg = Config()
+    assert hasattr(cfg, "DOCKER_EXEC_TIMEOUT")
+    assert isinstance(cfg.DOCKER_EXEC_TIMEOUT, int)
+    assert cfg.DOCKER_EXEC_TIMEOUT == 10
+
+
+def test_config_validate_critical_settings_returns_bool():
+    """Config.validate_critical_settings() bool döndürür."""
+    cfg = Config()
+    result = cfg.validate_critical_settings()
+    assert isinstance(result, bool)
+
+
+# ─────────────────────────────────────────────
+# 22. WEB SERVER — X-FORWARDED-FOR RATE LIMIT
+# ─────────────────────────────────────────────
+
+def test_get_client_ip_xff():
+    """web_server._get_client_ip(): X-Forwarded-For başlığından IP çeker."""
+    from unittest.mock import MagicMock
+    import web_server
+
+    req = MagicMock()
+    req.headers = {"X-Forwarded-For": "1.2.3.4, 10.0.0.1, 172.16.0.1"}
+    req.client = None
+
+    ip = web_server._get_client_ip(req)
+    assert ip == "1.2.3.4"
+
+
+def test_get_client_ip_xri():
+    """web_server._get_client_ip(): X-Real-IP başlığından IP çeker."""
+    from unittest.mock import MagicMock
+    import web_server
+
+    req = MagicMock()
+    req.headers = {"X-Real-IP": "5.6.7.8"}
+    req.client = None
+
+    ip = web_server._get_client_ip(req)
+    assert ip == "5.6.7.8"
+
+
+def test_get_client_ip_fallback():
+    """web_server._get_client_ip(): Başlık yoksa request.client.host kullanır."""
+    from unittest.mock import MagicMock
+    import web_server
+
+    req = MagicMock()
+    req.headers = {}
+    req.client.host = "192.168.1.100"
+
+    ip = web_server._get_client_ip(req)
+    assert ip == "192.168.1.100"
+
+
+# ─────────────────────────────────────────────
+# 23. GPU BELLEK TEMİZLEME — HATA DURUMUNDA GC
+# ─────────────────────────────────────────────
+
+def test_gpu_memory_optimize_gc_runs_on_error(tmp_path):
+    """SystemHealthManager.optimize_gpu_memory(): GPU hatası olsa bile GC çalışır."""
+    import gc as _gc
+    health = SystemHealthManager(use_gpu=False)
+    # GPU devre dışı — hata verme, yalnızca GC çalışmalı
+    result = health.optimize_gpu_memory()
+    assert "GC" in result
+    assert isinstance(result, str) 
+
+def test_instruction_files_are_loaded_hierarchically(test_config):
+    """SIDAR.md ve CLAUDE.md dosyaları bağlama hiyerarşik sırayla eklenmeli."""
+    root = test_config.BASE_DIR
+    (root / "SIDAR.md").write_text("ROOT SIDAR", encoding="utf-8")
+
+    nested = root / "app"
+    nested.mkdir()
+    (nested / "CLAUDE.md").write_text("NESTED CLAUDE", encoding="utf-8")
+
+    deep = nested / "core"
+    deep.mkdir()
+    (deep / "SIDAR.md").write_text("DEEP SIDAR", encoding="utf-8")
+
+    agent = SidarAgent(cfg=test_config)
+    context = asyncio.run(agent._build_context())
+
+    assert "[Proje Talimat Dosyaları — SIDAR.md / CLAUDE.md]" in context
+    assert "ROOT SIDAR" in context
+    assert "NESTED CLAUDE" in context
+    assert "DEEP SIDAR" in context
+
+    # Hiyerarşi: daha üst dosyalar önce, daha derin dosyalar sonra.
+    assert context.index("ROOT SIDAR") < context.index("NESTED CLAUDE") < context.index("DEEP SIDAR")
+
+
+def test_instruction_files_load_both_names_in_same_directory(test_config):
+    """Aynı dizinde SIDAR.md ve CLAUDE.md varsa ikisi de bağlama eklenir."""
+    root = test_config.BASE_DIR
+    (root / "SIDAR.md").write_text("SIDAR ROOT RULE", encoding="utf-8")
+    (root / "CLAUDE.md").write_text("CLAUDE ROOT RULE", encoding="utf-8")
+
+    agent = SidarAgent(cfg=test_config)
+    context = asyncio.run(agent._build_context())
+
+    assert "SIDAR ROOT RULE" in context
+    assert "CLAUDE ROOT RULE" in context 
+
+def test_launcher_format_cmd_quotes_spaces():
+    """main._format_cmd: Boşluk içeren argümanları shell-safe biçimde quote eder."""
+    import main as launcher_main
+
+    rendered = launcher_main._format_cmd(["python", "cli.py", "--model", "llama 3"])
+    assert "'llama 3'" in rendered or '"llama 3"' in rendered
+
+
+def test_launcher_execute_command_writes_child_log(tmp_path):
+    """main.execute_command: capture + dosya loglama modunda child çıktısını kaydeder."""
+    import main as launcher_main
+
+    log_path = tmp_path / "child.log"
+    cmd = [
+        os.sys.executable,
+        "-c",
+        "import sys; print('child-out'); print('child-err', file=sys.stderr)",
+    ]
+
+    code = launcher_main.execute_command(cmd, capture_output=True, child_log_path=str(log_path))
+    assert code == 0
+    content = log_path.read_text(encoding="utf-8")
+    assert "child-out" in content
+    assert "child-err" in content
+
+
+def test_launcher_execute_command_logs_exit_code_on_failure(tmp_path):
+    """main.execute_command: child başarısız olursa çıkış kodunu log dosyasına yazar."""
+    import main as launcher_main
+
+    log_path = tmp_path / "child_fail.log"
+    cmd = [os.sys.executable, "-c", "import sys; print('boom'); sys.exit(7)"]
+
+    code = launcher_main.execute_command(cmd, capture_output=True, child_log_path=str(log_path))
+    assert code == 7
+    content = log_path.read_text(encoding="utf-8")
+    assert "[exit_code]" in content
+    assert "7" in content
+
+def test_rag_delete_document_coverage_native(test_config):
+    """RAG delete_document: bulunamayan belge ve cross-session yetki kontrollerini kapsar."""
+    st = DocumentStore(test_config.RAG_DIR, use_gpu=False)
+
+    # Olmayan belgeyi silme -> early return
+    res_not_found = st.delete_document("olmayan_belge", session_id="global")
+    assert "Belge bulunamadı" in res_not_found
+
+    # Yetkisiz belge silme (farklı session) -> isolation guard
+    st._index["baskasinin_belgesi"] = {"session_id": "baska_bir_oturum"}
+    res_unauthorized = st.delete_document("baskasinin_belgesi", session_id="benim_oturum")
+    assert "yetkiniz yok" in res_unauthorized

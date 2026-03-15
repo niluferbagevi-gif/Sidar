@@ -52,9 +52,13 @@ def agent(test_config):
 
 
 def _activate_memory_user(mem, username="test_user"):
-    user = asyncio.run(mem.db.ensure_user(username, role="user"))
-    mem.set_active_user(user.id, user.username)
-    return user
+    async def _setup():
+        await mem.initialize()
+        user = await mem.db.ensure_user(username, role="user")
+        await mem.set_active_user(user.id, user.username)
+        return user
+
+    return asyncio.run(_setup())
 
 
 # ─────────────────────────────────────────────
@@ -135,7 +139,8 @@ def test_web_search_status_with_ddg_available_is_deterministic(monkeypatch, test
 # 4. RAG VE VEKTÖR BELLEK TESTLERİ
 # ─────────────────────────────────────────────
 
-def test_rag_document_chunking(test_config):
+@pytest.mark.asyncio
+async def test_rag_document_chunking(test_config):
     """DocumentStore'un büyük metinleri chunking mantığıyla böldüğünü test eder."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
     
@@ -144,7 +149,7 @@ def test_rag_document_chunking(test_config):
     for i in range(50):
         long_text += f"def func_{i}():\n    return {i}\n\n"
         
-    doc_id = docs.add_document(title="Test Kodu", content=long_text, source="test_source")
+    doc_id = await docs.add_document(title="Test Kodu", content=long_text, source="test_source")
     
     assert doc_id is not None
     # Index'e tam boyutla eklenmiş olmalı
@@ -501,22 +506,24 @@ def test_rag_search_auto_prefers_rrf(monkeypatch):
     assert calls["rrf"] == 1
 
 
-def test_rag_index_info_filters_by_session(test_config):
+@pytest.mark.asyncio
+async def test_rag_index_info_filters_by_session(test_config):
     """get_index_info(session_id): yalnızca ilgili oturum belgelerini döndürür."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
-    docs.add_document("A", "alpha", session_id="s1")
-    docs.add_document("B", "beta", session_id="s2")
+    await docs.add_document("A", "alpha", session_id="s1")
+    await docs.add_document("B", "beta", session_id="s2")
 
     s1_docs = docs.get_index_info(session_id="s1")
     assert len(s1_docs) == 1
     assert s1_docs[0]["session_id"] == "s1"
 
 
-def test_rag_list_documents_filters_by_session(test_config):
+@pytest.mark.asyncio
+async def test_rag_list_documents_filters_by_session(test_config):
     """list_documents(session_id): farklı oturum belgelerini dışarıda bırakır."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
-    docs.add_document("S1 Başlık", "alpha içerik", session_id="s1")
-    docs.add_document("S2 Başlık", "beta içerik", session_id="s2")
+    await docs.add_document("S1 Başlık", "alpha içerik", session_id="s1")
+    await docs.add_document("S2 Başlık", "beta içerik", session_id="s2")
 
     text = docs.list_documents(session_id="s1")
     assert "S1 Başlık" in text
@@ -542,11 +549,12 @@ def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
 # 9. CHUNKING SINIR TESTLERİ
 # ─────────────────────────────────────────────
 
-def test_rag_chunking_small_text(test_config):
+@pytest.mark.asyncio
+async def test_rag_chunking_small_text(test_config):
     """DocumentStore: _chunk_size'dan küçük metin tek parça olarak eklenir."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
     small = "Küçük bir metin."
-    doc_id = docs.add_document(title="Küçük", content=small, source="test")
+    doc_id = await docs.add_document(title="Küçük", content=small, source="test")
     assert doc_id is not None
     ok, retrieved = docs.get_document(doc_id)
     assert ok is True
@@ -555,12 +563,13 @@ def test_rag_chunking_small_text(test_config):
     assert content_part == small
 
 
-def test_rag_chunking_large_text(test_config):
+@pytest.mark.asyncio
+async def test_rag_chunking_large_text(test_config):
     """DocumentStore: _chunk_size'dan büyük metin parçalara bölünür ve tamamı saklanır."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
     # Varsayılan chunk_size (genellikle 512) değerini aşan metin üret
     large = "A" * 2000 + "\n\n" + "B" * 2000
-    doc_id = docs.add_document(title="Büyük", content=large, source="test")
+    doc_id = await docs.add_document(title="Büyük", content=large, source="test")
     assert doc_id is not None
     ok, retrieved = docs.get_document(doc_id)
     assert ok is True
@@ -867,8 +876,7 @@ async def test_rag_concurrent_add_no_data_loss(test_config):
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
 
     async def add_one(i: int) -> str:
-        return await asyncio.to_thread(
-            docs.add_document,
+        return await docs.add_document(
             title=f"Belge {i}",
             content=f"İçerik {i}: " + "x" * 200,
             source="concurrent_test",
@@ -893,8 +901,8 @@ async def test_rag_update_replaces_old_chunks(test_config):
     """DocumentStore: Aynı başlıkla iki kez add_document → ikinci çağrı birincinin yerine geçer."""
     docs = DocumentStore(test_config.RAG_DIR, use_gpu=False)
 
-    id1 = docs.add_document(title="Güncellenecek", content="Eski içerik A", source="test")
-    id2 = docs.add_document(title="Güncellenecek", content="Yeni içerik B", source="test")
+    id1 = await docs.add_document(title="Güncellenecek", content="Eski içerik A", source="test")
+    id2 = await docs.add_document(title="Güncellenecek", content="Yeni içerik B", source="test")
 
     # Her iki doc_id de okunabilmeli (bağımsız UUID)
     ok1, c1 = docs.get_document(id1)

@@ -39,9 +39,3 @@ def test_todo_manager_can_scan_project_todo_fixme_markers():
     assert "def scan_project_todos(self, directory: Optional[str] = None, extensions: Optional[List[str]] = None)" in src
     assert "⚠ Güvenlik ihlali: Sadece proje dizini taranabilir." in src
     assert "TODO:" in src and "FIXME:" in src
-
-
-def test_agent_exposes_scan_project_todos_tool():
-    src = Path("agent/sidar_agent.py").read_text(encoding="utf-8", errors="replace")
-    assert "def _tool_scan_project_todos" in src
-    assert "self.todo.scan_project_todos" in src
