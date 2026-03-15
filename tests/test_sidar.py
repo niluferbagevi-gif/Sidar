@@ -411,8 +411,15 @@ async def test_apply_summary_keep_last_zero(test_config):
 # ─────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_execute_tool_unknown_returns_none(agent):
+async def test_execute_tool_unknown_returns_none(agent, monkeypatch):
     """Supervisor intent eşlemesi bilinmeyen komutlarda code'e düşer."""
+    from core.llm_client import LLMClient
+
+    async def _fake_chat(self, *args, **kwargs):
+        return "Sahte LLM yanıtı"
+
+    monkeypatch.setattr(LLMClient, "chat", _fake_chat)
+
     assert agent._supervisor is None
     result = await agent._try_multi_agent("var_olmayan_arac_xyz")
     assert isinstance(result, str)
@@ -420,8 +427,15 @@ async def test_execute_tool_unknown_returns_none(agent):
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_known_does_not_return_none(agent):
+async def test_execute_tool_known_does_not_return_none(agent, monkeypatch):
     """Supervisor omurgası bilinen niyetlerde yanıt üretir."""
+    from core.llm_client import LLMClient
+
+    async def _fake_chat(self, *args, **kwargs):
+        return "Onaylandı, her şey yolunda"
+
+    monkeypatch.setattr(LLMClient, "chat", _fake_chat)
+
     result = await agent._try_multi_agent("bu kodu gözden geçir")
     assert result is not None
 
