@@ -1098,6 +1098,13 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Dinamik Swarm Mimarisi:** Görevin karmaşıklığına göre anlık olarak alt-ajanların (Worker Agents) türetilmesi ve görev bitiminde kaldırılması.
 - **Modern SPA Frontend:** Vanilla JS tabanlı mevcut arayüzün React/Next.js tabanlı, canlı ajan diyaloğunu akış şemaları (nodes/graphs) ile gösterebilen modern bir arayüze dönüştürülmesi.
 
+#### Faz 4: LLMOps, Otonomi ve Ekosistem Entegrasyonu (v5.0 ve Ötesi) - *[Gelecek Vizyonu]*
+*Sistemin yalnızca bir asistan değil, kurumsal bir “Sanal Mühendislik Departmanı” olarak konumlandırılması.*
+- **Aktif Öğrenme (Active Learning) ve Fine-Tuning:** Ajanların (özellikle Reviewer tarafından onaylanan başarılı kod ve araştırma çıktıları) ürettiği verilerden otomatik veri seti oluşturulması ve lokal modellerin (LoRA/QLoRA) periyodik auto-tuning süreçleriyle eğitilmesi.
+- **Multimodal (Çoklu Modalite) Yetenekler:** Metin ve kodun ötesinde, vizyon modelleriyle UI/UX tasarım girdilerini (görsel/Figma bağlantısı) analiz ederek frontend üretim sürecine dönüştürebilen yeni nesil ajan rolleri.
+- **Dış Sistem ve CI/CD Otonomisi:** GitHub yanında Jira, Slack, Microsoft Teams ve GitLab/Jenkins hatlarıyla native entegre; atanan iş emrini okuyup PR akışını uçtan uca yürütebilen otonom süreçler.
+- **LLM Gateway ve Model Yönlendirme Katmanı:** LiteLLM/OpenRouter benzeri dahili proxy ile görev zorluğuna göre cost-aware model yönlendirmesi (basit istekler lokal modellerde, karmaşık mimari görevler üst seviye modellerde).
+
 ---
 ## 15. Özellik-Gereksinim Matrisi
 
