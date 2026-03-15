@@ -140,3 +140,9 @@ def test_tooling_github_close_issue_empty_argument():
 
     with pytest.raises(Exception):
         tooling.parse_tool_argument("github_close_issue", "")
+
+def test_tooling_rejects_non_object_json_payload():
+    tooling = _load_tooling_module()
+
+    with pytest.raises(ValueError, match="JSON object olmalıdır"):
+        tooling.parse_tool_argument("github_list_files", "[]")

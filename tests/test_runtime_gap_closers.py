@@ -500,3 +500,19 @@ def test_web_server_rate_limit_fallback_and_invalid_webhook_signature(monkeypatc
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = value
+
+def test_researcher_docs_search_awaitable_result_path(monkeypatch):
+    researcher = ResearcherAgent()
+
+    async def _result():
+        return True, "rag-await:limits"
+
+    researcher.docs.search = lambda query, *_args: _result()
+
+    async def _to_thread_passthrough(func, *args):
+        return func(*args)
+
+    monkeypatch.setattr(asyncio, "to_thread", _to_thread_passthrough)
+
+    out = asyncio.run(researcher._tool_docs_search("limits"))
+    assert out == "rag-await:limits"
