@@ -710,7 +710,10 @@ async def metrics(request: Request):
     agent = await get_agent()
     uptime_s  = int(time.monotonic() - _start_time)
     rag_docs  = agent.docs.doc_count
-    sessions = await agent.memory.get_all_sessions()
+    if hasattr(agent.memory, "aget_all_sessions"):
+        sessions = await agent.memory.aget_all_sessions()
+    else:
+        sessions = await agent.memory.get_all_sessions()
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
@@ -1240,7 +1243,9 @@ async def set_level_endpoint(request: Request):
         return JSONResponse({"success": False, "error": "Seviye belirtilmedi."}, status_code=400)
 
     agent = await get_agent()
-    result_msg = await agent.set_access_level(new_level)
+    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
+    if asyncio.iscoroutine(result_msg):
+        result_msg = await result_msg
     return JSONResponse(
         {
             "success": True,
@@ -1303,8 +1308,9 @@ async def github_webhook(
 
     if msg:
         logger.info("Webhook işlendi: %s", msg)
-        await agent.memory.add("user", msg)
-        await agent.memory.add(
+        await asyncio.to_thread(agent.memory.add, "user", msg)
+        await asyncio.to_thread(
+            agent.memory.add,
             "assistant",
             "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
         )
@@ -1350,7 +1356,8 @@ def main() -> None:
     # Bellek katmanı native-async olduğu için initialize() adımı burada tamamlanır.
     global _agent
     _agent = SidarAgent(cfg)
-    asyncio.run(_agent.initialize())
+    if hasattr(_agent, "initialize"):
+        asyncio.run(_agent.initialize())
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
     version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"

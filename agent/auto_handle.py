@@ -4,6 +4,7 @@ Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Ase
 """
 
 import asyncio
+import inspect
 import re
 from typing import Optional, Tuple
 
@@ -527,7 +528,10 @@ class AutoHandle:
             else:
                 mode = "auto"
                 query = query_raw
-            _, result = await self.docs.search(query, None, mode)
+            result_obj = await asyncio.to_thread(self.docs.search, query, None, mode)
+            if inspect.isawaitable(result_obj):
+                result_obj = await result_obj
+            _, result = result_obj
             return True, result
         return False, ""
 

@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from opentelemetry import trace
@@ -345,6 +345,107 @@ class SidarAgent:
             self._instructions_cache = "\n".join(blocks) if len(blocks) > 1 else ""
             return self._instructions_cache
 
+
+    async def _tool_docs_search(self, arg: str) -> str:
+        query = (arg or "").strip()
+        if not query:
+            return "⚠ Arama sorgusu belirtilmedi."
+        mode = "auto"
+        if "|" in query:
+            parts = [p.strip() for p in query.split("|", 1)]
+            query = parts[0]
+            mode = parts[1] or "auto"
+        session_id = "global"
+        result_obj = await asyncio.to_thread(self.docs.search, query, None, mode, session_id)
+        if asyncio.iscoroutine(result_obj):
+            result_obj = await result_obj
+        _ok, result = result_obj
+        return result
+
+    async def _tool_subtask(self, arg: str) -> str:
+        task = (arg or "").strip()
+        if not task:
+            return "⚠ Alt görev belirtilmedi."
+
+        max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5))
+        max_steps = max(1, max_steps)
+        feedback = task
+
+        for _ in range(max_steps):
+            try:
+                raw = await self.llm.chat(
+                    messages=[{"role": "user", "content": feedback}],
+                    model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
+                    temperature=0.1,
+                    stream=False,
+                    json_mode=True,
+                )
+                if not isinstance(raw, str):
+                    feedback = "Lütfen geçerli JSON araç çağrısı üret."
+                    continue
+                try:
+                    action = ToolCall.model_validate_json(raw)
+                except ValidationError:
+                    import json as _json
+                    action = _json.loads(raw)
+                    action = ToolCall.model_validate(action)
+
+                tool = action.tool.strip().lower()
+                if tool == "final_answer":
+                    return f"✓ Alt Görev Tamamlandı: {action.argument}"
+
+                tool_result = await self._execute_tool(tool, action.argument)
+                feedback = f"Araç sonucu: {tool_result}"
+            except ValidationError:
+                feedback = "Şema doğrulama hatası: thought/tool/argument alanları zorunlu."
+            except Exception as exc:
+                feedback = f"Araç çağrısı başarısız: {exc}"
+
+        return "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
+
+    async def _tool_github_smart_pr(self, arg: str) -> str:
+        if not self.github.is_available():
+            return "⚠ GitHub token bulunamadı."
+
+        parts = [p.strip() for p in (arg or "").split("|||")]
+        title = parts[0] if len(parts) > 0 and parts[0] else "Otomatik PR"
+        base = parts[1] if len(parts) > 1 and parts[1] else ""
+        notes = parts[2] if len(parts) > 2 else ""
+
+        ok, branch = self.code.run_shell("git branch --show-current")
+        head = (branch or "").strip() if ok else ""
+        if not head:
+            return "✗ Aktif branch bulunamadı."
+
+        if not base:
+            try:
+                base = self.github.default_branch
+            except Exception:
+                base = "main"
+
+        ok_status, status_out = self.code.run_shell("git status --short")
+        if not ok_status or not str(status_out).strip():
+            return "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
+
+        self.code.run_shell("git diff --stat HEAD")
+        ok_diff, diff_out = self.code.run_shell("git diff --no-color HEAD")
+        diff_text = str(diff_out or "") if ok_diff else ""
+        max_diff_chars = 10000
+        if len(diff_text) > max_diff_chars:
+            diff_text = diff_text[:max_diff_chars] + "\n\n[Not] Diff çok büyük olduğu için geri kalanı kırpıldı."
+
+        _ok_log, commits = self.code.run_shell(f"git log --oneline {base}..HEAD")
+        body = (
+            f"{notes}\n\n"
+            f"### Commitler\n{commits}\n\n"
+            f"### Diff Özeti\n```diff\n{diff_text}\n```"
+        )
+        ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
+        if not ok_pr:
+            return f"✗ PR oluşturulamadı: {pr_out}"
+        return f"✓ PR oluşturuldu: {pr_out}"
+
+
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
     # ─────────────────────────────────────────────
@@ -423,8 +524,8 @@ class SidarAgent:
                 f"erişim seviyesi '{old_level}' modundan "
                 f"'{self.security.level_name}' moduna değiştirildi."
             )
-            await self._memory_add("user", msg)
-            await self._memory_add(
+            await self.memory.add("user", msg)
+            await self.memory.add(
                 "assistant",
                 (
                     "Anlaşıldı, bundan sonraki işlemlerde "

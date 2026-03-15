@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Optional
 
@@ -57,7 +58,10 @@ class ResearcherAgent(BaseAgent):
 
     async def _tool_docs_search(self, arg: str) -> str:
         session_id = "global"
-        _ok, result = await self.docs.search(arg, None, "auto", session_id)
+        result_obj = await asyncio.to_thread(self.docs.search, arg, None, "auto", session_id)
+        if inspect.isawaitable(result_obj):
+            result_obj = await result_obj
+        _ok, result = result_obj
         return result
 
     async def run_task(self, task_prompt: str) -> str:
