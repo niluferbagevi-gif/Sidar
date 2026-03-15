@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-95}"
+COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99}"
 
 # 1) Genel proje kapsam eşiği (quality gate)
 python -m pytest -v --cov=. --cov-report=term-missing --cov-fail-under="${COVERAGE_FAIL_UNDER}"
