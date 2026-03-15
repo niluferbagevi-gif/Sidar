@@ -2373,6 +2373,9 @@ def test_github_manager_init_client_loads_repo(tmp_path):
         login = "testuser"
 
     class _FakeGH:
+        def __init__(self, **kwargs):
+            pass  # accept auth=... kwarg
+
         def get_user(self, *args):
             return _FakeUser()
 
