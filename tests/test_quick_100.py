@@ -117,23 +117,18 @@ def test_tooling_missing_branches():
     _require_runtime_imports()
     from agent.tooling import parse_tool_argument
 
-    res_pr = parse_tool_argument("github_list_prs", "closed ||| 25")
+    res_pr = parse_tool_argument("github_list_prs", "{\"state\":\"closed\",\"limit\":25}")
     assert res_pr.state == "closed"
     assert res_pr.limit == 25
 
-    res_todo = parse_tool_argument("scan_project_todos", "src ||| .py, .js")
+    res_todo = parse_tool_argument("scan_project_todos", "{\"directory\":\"src\",\"extensions\":[\".py\",\".js\"]}")
     assert res_todo.directory == "src"
     assert res_todo.extensions == [".py", ".js"]
 
 
-def test_tooling_build_dispatch_maps_tools_to_agent_methods():
+def test_tooling_build_dispatch_removed_from_tooling_module():
     _require_runtime_imports()
-    from agent.tooling import build_tool_dispatch
+    import agent.tooling as tooling
 
-    class _Agent:
-        def __getattr__(self, _name):
-            return lambda *_a, **_k: "ok"
-
-    dispatch = build_tool_dispatch(_Agent())
-    assert "github_close_issue" in dispatch
-    assert callable(dispatch["github_close_issue"])
+    assert hasattr(tooling, "parse_tool_argument")
+    assert not hasattr(tooling, "build_tool_dispatch")
