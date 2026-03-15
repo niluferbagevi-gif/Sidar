@@ -2,7 +2,9 @@
 
 > **Rapor Tarihi:** 2026-03-14
 > **Son Güncelleme:** 2026-03-15 (v3.0.3 — Çapraz denetim: event-loop blokajı, zombie process riski, PBKDF2 iterasyon sertleştirme ihtiyacı ve OpenTelemetry async context sızıntı riski doğrulandı; §5.3.3 ve §11.2 güncellendi; `main.py` child-process sonlandırma güvenliği sertleştirildi)
-> **Proje Sürümü:** 3.0.1
+> **Proje Sürümü:** 3.0.0
+
+> **Önceki Kayıt:** 3.0.1
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.185** satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.240** satır.
 
