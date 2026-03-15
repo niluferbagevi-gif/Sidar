@@ -527,7 +527,7 @@ class AutoHandle:
             else:
                 mode = "auto"
                 query = query_raw
-            _, result = await asyncio.to_thread(self.docs.search, query, None, mode)
+            _, result = await self.docs.search(query, None, mode)
             return True, result
         return False, ""
 

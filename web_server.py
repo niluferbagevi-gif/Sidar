@@ -1189,9 +1189,7 @@ async def rag_search(q: str = "", mode: str = "auto", top_k: int = 3):
         return JSONResponse({"success": False, "error": "Sorgu boş."}, status_code=400)
     agent = await get_agent()
     session_id = agent.memory.active_session_id or "global"
-    ok, result = await asyncio.to_thread(
-        agent.docs.search, q.strip(), min(top_k, 10), mode, session_id
-    )
+    ok, result = await agent.docs.search(q.strip(), min(top_k, 10), mode, session_id)
     return JSONResponse({"success": ok, "result": result})
 
 

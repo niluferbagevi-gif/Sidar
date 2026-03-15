@@ -57,7 +57,7 @@ class ResearcherAgent(BaseAgent):
 
     async def _tool_docs_search(self, arg: str) -> str:
         session_id = "global"
-        _ok, result = await asyncio.to_thread(self.docs.search, arg, None, "auto", session_id)
+        _ok, result = await self.docs.search(arg, None, "auto", session_id)
         return result
 
     async def run_task(self, task_prompt: str) -> str:

@@ -23,10 +23,24 @@ class ConversationMemory:
     """Thread-safe konuşma belleği; kalıcılık katmanı olarak DB kullanır."""
 
 
-    def __init__(self, file_path: Path, max_turns: int = 20,
-                 encryption_key: str = "", keep_last: int = 4) -> None:
-        # Geriye dönük uyumluluk: bazı testler/senaryolar bu dizini bekliyor.
-        self.sessions_dir = file_path.parent / "sessions"
+    def __init__(
+        self,
+        database_url: Optional[str] = None,
+        base_dir: Optional[Path] = None,
+        *,
+        file_path: Optional[Path] = None,
+        max_turns: int = 20,
+        encryption_key: str = "",
+        keep_last: int = 4,
+    ) -> None:
+        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API base_dir/database_url'dur.
+        resolved_base_dir = Path(base_dir) if base_dir is not None else None
+        if resolved_base_dir is None and file_path is not None:
+            resolved_base_dir = Path(file_path).parent
+        if resolved_base_dir is None:
+            resolved_base_dir = Path.cwd() / "data"
+
+        self.sessions_dir = resolved_base_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
         self.max_turns = max_turns
@@ -34,12 +48,17 @@ class ConversationMemory:
         self._lock = threading.RLock()
 
         self.cfg = Config()
-        # Bellek katmanı için varsayılan DB yolu, verilen file_path köküne bağlanır.
-        if not getattr(self.cfg, "DATABASE_URL", ""):
-            self.cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(file_path.parent / 'sidar_memory.db').as_posix()}"
-        elif str(getattr(self.cfg, "DATABASE_URL", "")).endswith("data/sidar.db"):
-            self.cfg.DATABASE_URL = f"sqlite+aiosqlite:///{(file_path.parent / 'sidar_memory.db').as_posix()}"
-        self.cfg.BASE_DIR = file_path.parent
+        resolved_database_url = database_url
+        if not resolved_database_url:
+            resolved_database_url = getattr(self.cfg, "DATABASE_URL", "")
+
+        if not resolved_database_url:
+            resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
+        elif str(resolved_database_url).endswith("data/sidar.db"):
+            resolved_database_url = f"sqlite+aiosqlite:///{(resolved_base_dir / 'sidar_memory.db').as_posix()}"
+
+        self.cfg.DATABASE_URL = resolved_database_url
+        self.cfg.BASE_DIR = resolved_base_dir
 
         self.db = Database(cfg=self.cfg)
 
