@@ -208,6 +208,29 @@ def test_gemini_stream_generator_handles_exception(llm_mod):
     assert "Gemini akış hatası" in err["argument"]
 
 
+def test_gemini_stream_generator_yields_only_non_empty_text_chunks(llm_mod):
+    client = llm_mod.GeminiClient(SimpleNamespace())
+
+    class _Chunk:
+        def __init__(self, text=None):
+            if text is not None:
+                self.text = text
+
+    class _RespStream:
+        def __aiter__(self):
+            self._items = iter([_Chunk("ilk"), _Chunk(""), _Chunk(None), _Chunk("son")])
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._items)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    out = asyncio.run(_collect(client._stream_gemini_generator(_RespStream())))
+    assert out == ["ilk", "son"]
+
+
 def test_openai_chat_without_key_and_stream_parse(llm_mod, monkeypatch):
     config = SimpleNamespace(OPENAI_API_KEY="", OPENAI_TIMEOUT=60)
     client = llm_mod.OpenAIClient(config)
