@@ -12,7 +12,7 @@ def test_memory_async_core_methods_exist():
     src = Path("core/memory.py").read_text(encoding="utf-8")
     assert "async def add(self, role: str, content: str)" in src
     assert "async def get_history(self, n_last: Optional[int] = None)" in src
-    assert "async def create_session(self, title: str = "Yeni Sohbet")" in src
+    assert 'async def create_session(self, title: str = "Yeni Sohbet")' in src
 
 
 def test_memory_clear_and_summary_keep_db_consistency_hooks():
