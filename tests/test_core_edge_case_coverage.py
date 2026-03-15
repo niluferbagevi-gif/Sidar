@@ -59,3 +59,22 @@ def test_memory_ensure_initialized_creates_lock_and_initializes_once(tmp_path: P
     asyncio.run(_run())
     assert mem._init_lock is not None
     assert calls["n"] == 1
+
+def test_db_run_sqlite_op_raises_when_connection_uninitialized(tmp_path: Path):
+    cfg = types.SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{(tmp_path / 'db.sqlite').as_posix()}",
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+        BASE_DIR=tmp_path,
+    )
+    db = Database(cfg=cfg)
+
+    async def _run():
+        try:
+            await db._run_sqlite_op(lambda: 1)
+        except RuntimeError as exc:
+            return str(exc)
+        return ""
+
+    assert "başlatılmadı" in asyncio.run(_run())
