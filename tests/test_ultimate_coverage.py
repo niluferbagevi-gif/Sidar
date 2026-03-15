@@ -9,6 +9,7 @@ import pytest
 from tests.test_llm_client_runtime import _collect, _load_llm_client_module
 from tests.test_rag_runtime_extended import _load_rag_module, _new_store
 from tests.test_sidar_agent_runtime import _make_react_ready_agent
+from tests.test_sidar_agent_runtime import LEGACY_INTERNAL_METHODS_MISSING
 from tests.test_web_server_runtime import _install_web_server_stubs, _load_web_server_with_blocked_imports, _make_agent
 
 
@@ -91,6 +92,7 @@ def test_web_server_ultimate_edge_cases(monkeypatch):
     assert calls["n"] >= 0
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_sidar_agent_ultimate_edge_cases(monkeypatch):
     """Agent paralel/parse edge-case yollarını çalışma zamanındaki stub ajanla tetikler."""
     a = _make_react_ready_agent(max_steps=2)

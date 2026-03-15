@@ -1,10 +1,12 @@
 import asyncio
 import types
 from types import SimpleNamespace
+import pytest
 
 from tests.test_github_manager_runtime import GM, _manager
 from tests.test_llm_client_runtime import _collect, _load_llm_client_module
 from tests.test_sidar_agent_runtime import _make_react_ready_agent
+from tests.test_sidar_agent_runtime import LEGACY_INTERNAL_METHODS_MISSING
 from tests.test_rag_runtime_extended import _load_rag_module, _new_store
 from tests.test_web_search_runtime import _load_web_search_module
 
@@ -261,6 +263,7 @@ def test_ollama_stream_trailing_block_with_custom_decoder(monkeypatch):
     assert out == ["trail"]
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_handles_json_array_items_that_fail_toolcall_validation():
     agent = _make_react_ready_agent(max_steps=1)
     agent.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -555,6 +558,7 @@ def test_ollama_stream_trailing_split_invalid_then_valid_hits_jsondecode_continu
     assert out == ["after-bad"]
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_web_server_and_agent_error_surface_runtime_stubs(monkeypatch):
     from tests.test_web_server_runtime import _load_web_server, _make_agent
 
@@ -908,6 +912,7 @@ def test_websocket_error_send_fallback_pass_branch(monkeypatch):
     assert ws.calls >= 2
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch):
     from tests.test_sidar_agent_runtime import SA_MOD, _make_react_ready_agent, _make_agent_for_runtime
 
@@ -1065,6 +1070,7 @@ def test_rag_auto_mode_full_exceptions_to_bm25_fallback(tmp_path, monkeypatch):
     assert result == "bm25 fallback ok"
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_sidar_agent_direct_route_edge_cases_extra(monkeypatch):
     from tests.test_sidar_agent_runtime import _make_agent_for_runtime
 
@@ -1091,6 +1097,7 @@ def test_sidar_agent_direct_route_edge_cases_extra(monkeypatch):
     assert asyncio.run(agent._try_direct_tool_route("merhaba")) is None
 
 
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_sidar_agent_react_parallel_exception_path_extra():
     from tests.test_sidar_agent_runtime import _make_react_ready_agent
 

@@ -168,6 +168,14 @@ def _make_agent_for_runtime():
     return a
 
 
+
+
+_mod_for_legacy_check = _load_sidar_agent_module()
+LEGACY_INTERNAL_METHODS_MISSING = not all(
+    hasattr(_mod_for_legacy_check.SidarAgent, name)
+    for name in ("_execute_tool", "_react_loop", "_try_direct_tool_route")
+)
+
 def _make_react_ready_agent(max_steps=2):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
@@ -228,6 +236,7 @@ def test_respond_react_and_summarize_path():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_execute_tool_success_warning_and_unknown():
     a = _make_agent_for_runtime()
     audit = []
@@ -292,6 +301,7 @@ def test_set_access_level_clear_memory_and_status():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_direct_tool_route_guard_paths(monkeypatch):
     a = _make_agent_for_runtime()
 
@@ -316,6 +326,7 @@ def test_direct_tool_route_guard_paths(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_direct_tool_route_non_string_disallowed_and_exception_paths():
     a = _make_agent_for_runtime()
     a.cfg.TEXT_MODEL = "tm"
@@ -414,6 +425,7 @@ def test_load_instruction_files_empty_tree_returns_cached_empty(tmp_path):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_final_answer_and_invalid_json_paths():
     a = _make_react_ready_agent(max_steps=1)
 
@@ -452,6 +464,7 @@ def test_react_loop_final_answer_and_invalid_json_paths():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_json_list_and_error_feedback_paths(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
 
@@ -537,6 +550,7 @@ def test_react_loop_json_list_and_error_feedback_paths(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_tool_execution_and_loop_break(monkeypatch):
     a = _make_react_ready_agent(max_steps=3)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -572,6 +586,7 @@ def test_react_loop_tool_execution_and_loop_break(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_execute_tool_parse_fallback_and_raise_path(monkeypatch):
     a = _make_agent_for_runtime()
     seen = []
@@ -1060,6 +1075,7 @@ def test_github_tool_schema_argument_paths():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_execute_tool_tracing_span_attributes(monkeypatch):
     a = _make_agent_for_runtime()
     audit = []
@@ -1109,6 +1125,7 @@ def test_execute_tool_tracing_span_attributes(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_parallel_json_array_tools_path(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1249,6 +1266,7 @@ def test_subtask_non_string_empty_tool_and_validation_paths(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_subtask_tool_missing_runtime_exception_and_fallback_message(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm", SUBTASK_MAX_STEPS=3)
@@ -1393,6 +1411,7 @@ def test_build_tool_list_deduplicates_handlers_and_uses_doc_fallback():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_execute_tool_tracer_exception_sets_span_attributes(monkeypatch):
     a = _make_agent_for_runtime()
     calls = []
@@ -1464,6 +1483,7 @@ def test_get_memory_archive_context_sync_empty_and_query_error():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_json_alias_output_and_summary_fallback(monkeypatch):
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1492,6 +1512,7 @@ def test_react_loop_json_alias_output_and_summary_fallback(monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_parallel_had_error_warning_path(monkeypatch):
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1594,6 +1615,7 @@ def test_smart_pr_branch_not_found_and_no_changes_paths():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_tracer_branch_and_malformed_json_scan_continue(monkeypatch):
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1717,6 +1739,7 @@ def test_subtask_non_string_and_validationerror_feedback_then_success():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_plain_parse_error_valueerror_branch():
     a = _make_react_ready_agent(max_steps=1)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1734,6 +1757,7 @@ def test_react_loop_plain_parse_error_valueerror_branch():
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_malformed_json_feeds_back_parse_error_then_recovers():
     a = _make_react_ready_agent(max_steps=2)
     a.memory = SimpleNamespace(get_messages_for_llm=lambda: [], add=lambda *_: None)
@@ -1869,6 +1893,7 @@ def test_load_instruction_files_stat_error_is_swallowed(tmp_path, monkeypatch):
 
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_react_loop_tool_result_none_feeds_error_and_continues(monkeypatch):
     """_execute_tool None döndürdüğünde (bilinmeyen araç) hata mesajı
     konuşmaya eklenmeli ve döngü devam etmelidir (satır 450-457)."""
@@ -1944,6 +1969,7 @@ def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
     assert out == "ok:gorev"
 
 @pytest.mark.skip(reason="Legacy ReAct internals removed from SidarAgent")
+@pytest.mark.skipif(LEGACY_INTERNAL_METHODS_MISSING, reason="Legacy private SidarAgent internals were removed")
 def test_respond_supervisor_single_path_ignores_legacy_react(monkeypatch):
     a = _make_agent_for_runtime()
 
