@@ -1083,7 +1083,31 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 > **Not (v3.0.0 Sonrası Durum):** Projenin v3.0 vizyon hedeflerinin (Multi-agent geçişi, Çoklu Kullanıcı, DB kalıcılığı, Telemetri ve Zero-Trust Sandbox) tamamı gerçekleştirilmiş ve tarihsel kayıt olarak `CHANGELOG.md` dosyasına taşınmıştır. 
 > 
-> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası bu alanda planlanacaktır.*
+> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası aşağıdaki fazlar halinde planlanmıştır.*
+
+#### Faz 1: Stabilizasyon ve Teknik Borç Temizliği (v3.1) - *[Kısa Vade]*
+*v3.0 mimarisinin pürüzlerinin giderilmesi ve test/runtime stabilitesinin kurumsal seviyede sabitlenmesi.*
+- **Kritik bugfix ve legacy temizlik:** `ToolCall` model tutarlılığı ve legacy `_tool_subtask` kalıntılarının tamamen kaldırılması; kırık testlerin kapanması ve CI hattında %100 green hedefi (Bkz. 11.2 Teknik Borçlar, özellikle Borç #8 ve #9).
+- **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
+- **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
+
+#### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
+*sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
+- **Stateless güvenlik (JWT + RBAC):** DB sorgusu gerektiren stateful token akışından access/refresh JWT + rol bazlı yetkilendirme modeline geçiş.
+- **Message broker entegrasyonu:** Ajanlar arası iletişimin event-driven mimariyle (RabbitMQ / Redis Streams / Kafka) dağıtık hale getirilmesi.
+- **Gelişmiş vektör + semantic cache:** `pgvector` (veya eşdeğer kurumsal vektör katmanı) ile retrieval ölçeklemesi; Redis/GPTCache ile maliyet/latency optimizasyonu.
+
+#### Faz 3: Dinamik Ajan Ekosistemi ve Ürünleşme (v4.x) - *[Uzun Vade]*
+*kullanıcı deneyimi, yönetilebilirlik ve AI esnekliğinin ürün düzeyinde maksimize edilmesi.*
+- **Dinamik prompt/model yönetimi:** Ajan promptlarının koddan çıkarılıp Prompt Registry + Admin UI üzerinden canlı yönetilmesi.
+- **Dinamik swarm mimarisi:** Göreve göre anlık worker-ajan türetimi, çalışma zamanı yetenek keşfi ve görev bitiminde kaynakların geri kazanımı.
+- **Modern SPA frontend:** Mevcut arayüzün React/Next.js (veya Vue) tabanlı, canlı ajan diyaloğunu akış/nodes görselleştirmeleriyle sunan bir yapıya evrilmesi.
+
+#### Faz 4: Operasyonel Mükemmellik ve Kurumsal SLA (v4.x+) - *[Sürekli İyileştirme]*
+*büyüyen tenant yükünde öngörülebilir performans, izlenebilirlik ve yönetişim standartlarının sağlanması.*
+- **Tam dağıtık izlenebilirlik:** OpenTelemetry tracing + Jaeger/Zipkin APM ile uçtan uca waterfall analizi ve MTTR düşürme.
+- **Yönetişim ve maliyet kontrolü:** LLM gateway üzerinden model yönlendirme, kota/politika yönetimi ve maliyet bütçesi otomasyonu.
+- **Platform standardizasyonu:** Kubernetes/Helm operasyon modeli, ortamlar arası release standardı ve kapasite planlama olgunluğu.
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
