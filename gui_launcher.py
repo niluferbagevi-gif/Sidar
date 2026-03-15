@@ -23,6 +23,7 @@ def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -
     valid_modes = {"web", "cli"}
     valid_providers = {"ollama", "gemini", "openai", "anthropic"}
     valid_levels = {"restricted", "sandbox", "full"}
+    valid_log_levels = {"info", "debug", "warning", "error"}
 
     if clean["mode"] not in valid_modes:
         raise ValueError(f"Geçersiz mode: {clean['mode']}")
@@ -30,6 +31,8 @@ def _normalize_selection(mode: str, provider: str, level: str, log_level: str) -
         raise ValueError(f"Geçersiz provider: {clean['provider']}")
     if clean["level"] not in valid_levels:
         raise ValueError(f"Geçersiz level: {clean['level']}")
+    if clean["log_level"] not in valid_log_levels:
+        raise ValueError(f"Geçersiz log_level: {clean['log_level']}")
 
     return clean
 

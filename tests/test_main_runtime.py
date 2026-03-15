@@ -311,3 +311,18 @@ def test_load_main_module_without_config_uses_dummy(monkeypatch):
     assert spec and spec.loader
     spec.loader.exec_module(mod)
     assert mod.cfg.AI_PROVIDER == "ollama"
+
+def test_build_command_rejects_invalid_mode_and_log() -> None:
+    MAIN = _load_main_module()
+
+    try:
+        MAIN.build_command("desktop", "ollama", "full", "info", {})
+        assert False
+    except ValueError as exc:
+        assert "Geçersiz mode" in str(exc)
+
+    try:
+        MAIN.build_command("cli", "ollama", "full", "trace", {})
+        assert False
+    except ValueError as exc:
+        assert "Geçersiz log seviyesi" in str(exc)
