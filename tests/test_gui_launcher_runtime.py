@@ -65,3 +65,89 @@ def test_normalize_selection_invalid_log_level() -> None:
         raise AssertionError("ValueError bekleniyordu")
     except ValueError as exc:
         assert "Geçersiz log_level" in str(exc)
+
+def test_normalize_selection_invalid_provider_and_level() -> None:
+    try:
+        gui_launcher._normalize_selection("web", "unknown", "full", "info")
+        raise AssertionError("ValueError bekleniyordu")
+    except ValueError as exc:
+        assert "Geçersiz provider" in str(exc)
+
+    try:
+        gui_launcher._normalize_selection("web", "ollama", "unsafe", "info")
+        raise AssertionError("ValueError bekleniyordu")
+    except ValueError as exc:
+        assert "Geçersiz level" in str(exc)
+
+
+def test_launch_from_gui_exception_path_and_start_sidar_wrapper(monkeypatch) -> None:
+    def _boom(_provider):
+        raise RuntimeError("preflight failed")
+
+    monkeypatch.setattr(gui_launcher, "preflight", _boom)
+    out = gui_launcher.launch_from_gui("web", "ollama", "sandbox", "info")
+    assert out["status"] == "error"
+    assert out["return_code"] == 1
+    assert "preflight failed" in out["message"]
+
+    monkeypatch.setattr(gui_launcher, "launch_from_gui", lambda *a, **k: {"status": "success", "message": "ok", "return_code": 0})
+    wrapped = gui_launcher.start_sidar("web", "ollama", "sandbox", "info")
+    assert wrapped["status"] == "success"
+
+
+def test_start_gui_success_calls_eel_init_expose_and_start(monkeypatch) -> None:
+    calls = {}
+
+    class _Eel:
+        @staticmethod
+        def init(path):
+            calls["init"] = path
+
+        @staticmethod
+        def expose(fn):
+            calls["expose"] = fn.__name__
+
+        @staticmethod
+        def start(page, size=None, position=None):
+            calls["start"] = (page, size, position)
+
+    import sys
+    monkeypatch.setitem(sys.modules, "eel", _Eel)
+
+    gui_launcher.start_gui()
+
+    assert calls["init"].endswith("launcher_gui")
+    assert calls["expose"] == "start_sidar"
+    assert calls["start"][0] == "index.html"
+
+
+def test_gui_launcher_main_block_executes_start_gui(monkeypatch, tmp_path) -> None:
+    import runpy
+    import sys
+    import types
+
+    calls = {"started": False}
+
+    fake_main = types.ModuleType("main")
+    fake_main.build_command = lambda *a, **k: []
+    fake_main.execute_command = lambda *_: 0
+    fake_main.preflight = lambda *_: None
+    monkeypatch.setitem(sys.modules, "main", fake_main)
+
+    class _Eel:
+        @staticmethod
+        def init(_path):
+            return None
+
+        @staticmethod
+        def expose(_fn):
+            return None
+
+        @staticmethod
+        def start(*args, **kwargs):
+            calls["started"] = True
+
+    monkeypatch.setitem(sys.modules, "eel", _Eel)
+
+    runpy.run_path("gui_launcher.py", run_name="__main__")
+    assert calls["started"] is True
