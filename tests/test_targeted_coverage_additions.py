@@ -1004,7 +1004,7 @@ def test_sidar_agent_remaining_branches_for_react_tools_and_context(monkeypatch)
     d.todo = _Todo()
     d._load_instruction_files = lambda: ""
     d.code = types.SimpleNamespace(get_metrics=lambda: {"files_read": 0, "files_written": 0, "commands_executed": 0})
-    ctx = d._build_context()
+    ctx = asyncio.run(d._build_context())
     assert "Gemini Modeli" in ctx and "CUDA" in ctx
 
     d._instructions_lock = __import__("threading").Lock()

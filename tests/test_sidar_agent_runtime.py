@@ -390,7 +390,7 @@ def test_build_context_and_instruction_file_cache(tmp_path):
     cached = a._load_instruction_files()
     assert cached == loaded
 
-    ctx = a._build_context()
+    ctx = asyncio.run(a._build_context())
     assert "[Proje Ayarları" in ctx
     assert "[Araç Durumu]" in ctx
     assert "[Proje Talimat Dosyaları" in ctx

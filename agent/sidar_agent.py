@@ -233,7 +233,7 @@ class SidarAgent:
     #  BAĞLAM OLUŞTURMA
     # ─────────────────────────────────────────────
 
-    def _build_context(self) -> str:
+    async def _build_context(self) -> str:
         """
         Tüm alt sistem durumlarını özetleyen bağlam dizesi.
         Her LLM turunda system_prompt'a eklenir; model bu değerleri
@@ -282,7 +282,7 @@ class SidarAgent:
             lines.append(self.todo.list_tasks())
 
         # ── SIDAR.md / CLAUDE.md (Claude Code uyumlu) ──────────────────
-        instruction_block = self._load_instruction_files()
+        instruction_block = await asyncio.to_thread(self._load_instruction_files)
         if instruction_block:
             lines.append("")
             lines.append(instruction_block)

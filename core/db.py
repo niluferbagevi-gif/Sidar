@@ -56,7 +56,8 @@ def _utc_now_iso() -> str:
 
 def _hash_password(password: str, salt: Optional[str] = None) -> str:
     real_salt = salt or secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), real_salt.encode("utf-8"), 120000)
+    # OWASP güncel rehberleriyle uyumlu iş faktörü (kurumsal dağıtım varsayılanı).
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), real_salt.encode("utf-8"), 600000)
     return f"pbkdf2_sha256${real_salt}${digest.hex()}"
 
 
