@@ -416,7 +416,7 @@ async def test_execute_tool_unknown_returns_none(agent, monkeypatch):
     from agent import sidar_agent as sidar_agent_mod
 
     async def _fake_chat(self, *args, **kwargs):
-        return "Sahte LLM yanıtı"
+        return '{"thought": "test", "tool": "final_answer", "argument": "Sahte LLM yanıtı"}'
 
     monkeypatch.setattr(sidar_agent_mod.LLMClient, "chat", _fake_chat)
 
