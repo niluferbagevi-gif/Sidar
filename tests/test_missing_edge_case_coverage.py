@@ -323,6 +323,11 @@ def test_llm_client_stream_and_error_branches(monkeypatch):
     with pytest.raises(llm_mod.LLMAPIError):
         asyncio.run(ollama.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False))
 
+    async def _retry_passthrough(provider, operation, *, config=None, retry_hint=""):
+        return await operation()
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _retry_passthrough)
+
     # _stream_response içinde boş satır/bozuk JSON paketlerini atlayıp geçerli chunk üretir
     class _Resp:
         def raise_for_status(self):
