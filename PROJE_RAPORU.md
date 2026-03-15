@@ -835,60 +835,27 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not (v3.0.0):** Kurumsal/SaaS geçişiyle birlikte geçmiş sürümlerdeki temel mimari darboğazların büyük bölümü kapatılmıştır.
->
-> JSON tabanlı bellek kalıcılığı, senkron çalışma kaynaklı blocking gecikmeleri, tekli ajan sınırlamaları ve izolasyon/güvenlik sertleşmesi gibi önceki nesil borçların çözüm kayıtları artık rapor içinde tekrar edilmek yerine **CHANGELOG.md** altında izlenebilir (traceable) biçimde tutulmaktadır.
+> **Not (v3.0.3 Sonrası Güncelleme):** Kod tabanında yapılan son uçtan uca denetimde, raporda "Açık Borç" olarak listelenen birçok kritik sorunun (Event Loop blokajı, Zombie Process, Şifreleme İterasyon Sertleştirmesi) kod düzeyinde halihazırda çözüldüğü tespit edilmiştir. İlgili maddeler "Ödenmiş Borçlar" sekmesine taşınmıştır.
 
-### 11.1 Ödenmiş Teknik Borçlar (Resolved) ve Changelog Referansı
+### 11.1 Ödenmiş Teknik Borçlar (Resolved)
 
-Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geçmişi için [CHANGELOG.md](./CHANGELOG.md) referans alınmalıdır:
+*(Önceki sürümlerden gelen yapısal çözümlere ek olarak en son denetimde çözüldüğü doğrulananlar)*
 
-- JSON tabanlı bellek/oturum kalıcılığından DB merkezli kalıcılığa geçiş,
-- Senkron (blocking) ağ/işlem yollarından async çekirdeğe geçiş,
-- Tekli ajan akışından Supervisor-first multi-agent + P2P QA mimarisine geçiş,
-- Zero-Trust güvenlik katmanları (sandbox, path/symlink savunmaları, auth sertleşmesi),
-- CI kalite kapıları (coverage hard gate, migration/sandbox doğrulama) olgunlaştırması,
-- `core/memory.py` Sync/Async köprüsü (`_run_coro_sync`) kaldırıldı; `memory.add()` ve `memory.clear()` tam `async def` olarak yeniden yazıldı. ⚠ **Kısmi:** `agent/sidar_agent.py:432-434` ve `397-399`'da `inspect.isawaitable()` geriye dönük uyumluluk köprüsü hâlâ mevcuttur (Borç #4 — aşağıda).
-- `agent/sidar_agent.py` ölü kod (`_react_loop`, `_tool_*`) temizliği (1.651 → 448 satır),
-- Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu),
-- Vanilla JS UI ölçeklenme riski: `seedUIStore()` IIFE ile 12 paylaşımlı durum anahtarı tek merkezde; `let` global değişkenleri ve çift yazma (double-write) anti-pattern'i kaldırıldı (`web_ui/*.js`),
-- Sağlayıcılar arası tool-calling şema farkları: `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti, `BaseLLMClient.json_mode_config()` soyut metodu ve `_inject_json_instruction()` yardımcısı ile sağlayıcıdan bağımsız JSON şema uygulama (`core/llm_client.py`).
-- **[Çözüldü] Stream API Kesinti Koruması:** LLM sağlayıcılarında akış (stream) başlatılırken yaşanan anlık hatalara karşı exponential backoff tabanlı yeniden deneme (retry) mekanizması entegre edildi.
-- **[Çözüldü] Prompt Token İsrafı:** Çoklu LLM istemcilerindeki mükerrer JSON format talimatları kaldırılarak `_inject_json_instruction()` üzerinden tekilleştirme sağlandı.
-- **[Çözüldü] Paket Senkronizasyonu:** `requirements.txt` içinde SQLite async sürücüsü (`aiosqlite`) dahil edilerek runtime beklentileriyle bağımlılık manifestosu hizalandı.
+- **[Çözüldü] Event Loop Blokajı (Senkron I/O Sızıntısı):** `agent/sidar_agent.py` içindeki `_load_instruction_files()` metodu, dosya okuma işlemleri sırasında event-loop'u bloklamaması için `asyncio.to_thread` sarıcısına alınmıştır. (Eski Borç #12)
+- **[Çözüldü] Şifreleme İterasyon Standardı:** `core/db.py` içindeki PBKDF2 iterasyon sayısı OWASP 2026 beklentilerine uygun olarak `600000` seviyesine çıkarılmıştır. (Eski Borç #14)
+- **[Çözüldü] Zombie Süreç (Process) Riski:** `main.py` başlatıcısındaki `_run_with_streaming` akışında, sürecin sonlanması `try/finally` bloğu, `process.terminate()` ve `kill()` çağrılarıyla garanti altına alınmıştır. (Eski Borç #13)
+- **[Çözüldü] .env ve Config Çelişkisi:** `ENABLE_MULTI_AGENT` parametresi `.env.example` dosyasından tamamen temizlenmiş ve kod içerisine entegre edilmiştir. (Eski Borç #16)
+- **[Çözüldü] Async Uyumluluk Köprüsü Temizliği:** `agent/sidar_agent.py` içindeki `clear_memory` ve `_memory_add` metotlarında kalan `inspect.isawaitable()` kontrolleri kaldırılmış, doğrudan `await self.memory.clear()` / `await self.memory.add(...)` kullanımına geçilmiştir. (Eski Borç #4)
+- **[Çözüldü] Kullanılmayan ToolCall Modeli:** `agent/sidar_agent.py` içindeki kullanılmayan `ToolCall` Pydantic modeli silinmiştir. (Eski Borç #8)
 
-### 11.2 Açık Teknik Borçlar (Güncel)
+### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
 
-Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağımsız kod incelemesi) türetilmiştir.
-
-| # | Borç | Etkilenen Dosya(lar) | Öncelik |
-|---|------|----------------------|---------|
-| **Borç #4** | **`inspect.isawaitable()` geriye dönük uyumluluk köprüsü:** `memory.add()` ve `memory.clear()` tam `async def` olmasına karşın `agent/sidar_agent.py:432-434` ve `397-399`'da `_memory_add()` wrapper + `inspect.isawaitable()` kontrolü mevcuttur. Doğrudan `await self.memory.add(...)` / `await self.memory.clear()` yapılması gerekir. | `agent/sidar_agent.py` | Yüksek |
-| **Borç #5** | **`ConversationMemory.__init__` `file_path` API kalıntısı:** `memory.py` `__init__` imzası hâlâ `file_path: Path` alıyor; `config.py` `MEMORY_FILE = DATA_DIR / "memory.json"` tanımlı; `sidar_agent.py:57`'de `file_path=self.cfg.MEMORY_FILE` geçiyor. Kalıcılık katmanı artık DB-first olduğundan `file_path` yalnızca DB path türetme amacıyla kullanılan API kafa karışıklığıdır. | `core/memory.py`, `agent/sidar_agent.py`, `config.py` | Orta |
-| **Borç #6** | **RAG / `DocumentStore` senkron blokajı:** `DocumentStore.add_document()` (rag.py:330) ve `search()` (rag.py:504) senkron `def`'lerdir; event-loop'u bloklamaktan kaçınmak için `asyncio.to_thread()` ile çağrılmaktadır (sidar_agent.py:155, 357-358). Native async istemci veya tam async wrapper katmanı ile değiştirilmesi gerekir. | `core/rag.py`, `agent/sidar_agent.py` | Orta |
-| **Borç #7** | **`requirements.txt` zorunlu ↔ runtime opsiyonel çelişkisi:** `asyncpg`, `opentelemetry-*` (4 paket) ve `chromadb` requirements.txt'te pin edilmiş zorunlu bağımlılıklardır; ancak kodda `try/except Exception/ImportError` ile sanki opsiyonelmiş gibi ele alınmaktadır. SQLite kullanan kurulumlar için `asyncpg` gereksiz yere kurulur; `opentelemetry` ve `chromadb` için de aynı durum geçerlidir. `[postgres]`, `[telemetry]`, `[rag]` gibi extras gruplarına ayrılması mimariyi hafifletecektir. | `requirements.txt`, `core/db.py:148`, `core/llm_client.py:20`, `web_server.py:39`, `core/rag.py:165` | Orta |
-| **Borç #8** | **`ToolCall` sözleşmesi için regresyon koruması eksik:** `ToolCall` modeli yeniden eklense de (`thought/tool/argument`), schema drift (alan adları/opsiyonellik) tekrar import veya doğrulama kırıkları üretebilir. Bu sözleşme için hedefli test + tip/sözleşme dokümantasyonu kalıcı hale getirilmelidir. | `agent/sidar_agent.py`, `tests/test_sidar.py`, `tests/test_sidar_agent_runtime.py` | Orta |
-| **Borç #9** | **`_tool_subtask` metodu eksik — test kırıkları (legacy test drift):** `test_sidar_agent_runtime.py`'de 8 ayrı konumda `a._tool_subtask("...")` çağrısı bulunuyor; `agent/sidar_agent.py`'de bu metod mevcut değil. `test_parallel_react_improvements.py` ve `test_agent_subtask.py` da sidar_agent.py kaynak içinde `parallel_batch`, `action_list`, `isinstance(payload, list)` gibi eski paralel ReAct kod parçacıklarını arar; bunların hiçbiri mevcut kaynakta bulunmuyor. | `agent/sidar_agent.py`, `tests/test_sidar_agent_runtime.py`, `tests/test_parallel_react_improvements.py`, `tests/test_agent_subtask.py` | **Kritik** |
-| **Borç #10** | **`main.py` `DummyConfig` fail-fast sorunu:** `main.py:32-48`'de `config.py` import edilemezse `DummyConfig` ile çalışmaya devam edilmektedir. `config.py` her zaman aynı dizinde bulunduğundan `ImportError` tetiklenemez; ancak mevcut yapı, sahte model adı (`qwen2.5-coder:7b`) ile sessizce başlatmaya çalışan bir operasyonel risk yaratır. Kurumsal sistemlerde fail-fast (`sys.exit(1)`) tercih edilir. | `main.py` | Düşük |
-| **Borç #11** | **Özel async test hook'u (`pytest_pyfunc_call`) ölçeklenebilirlik riski:** `tests/conftest.py` içinde coroutine testleri `asyncio.run(...)` ile manuel yürütülüyor. Bu yaklaşım async/yield fixture'lar ve karmaşık loop yönetimi olan senaryolarda `Event loop is closed` türü hatalara zemin hazırlayabilir. Sektör standardı `pytest-asyncio` event-loop fixture modeline geçiş önerilir. | `tests/conftest.py`, `pytest.ini`, `requirements-dev.txt` | Orta |
-| **Borç #12** | **Event Loop Blokajı (Senkron I/O Sızıntısı):** `agent/sidar_agent.py` içindeki `_load_instruction_files()` metodu `_build_context` içinde senkron `rglob()` ve `read_text()` kullanmaktadır. Bu işlem SaaS/Kurumsal ölçekte event-loop'u bloklayabilir. `asyncio.to_thread` ile izole edilmesi veya startup cache/watcher katmanı önerilir. | `agent/sidar_agent.py` | Kritik |
-| **Borç #13** | **Zombie Süreç (Process) Riski:** `main.py` içinde başlatılan subprocess akışında kullanıcı `Ctrl+C` yaptığında child process'in kesin sonlandırılması (`terminate/kill`) garanti edilmelidir. Portların askıda kalmasına neden olabilir. | `main.py` | Yüksek |
-| **Borç #14** | **Şifreleme İterasyon Standardı:** `core/db.py` içindeki PBKDF2 `120000` iterasyon sayısı OWASP 2026 beklentilerine göre düşüktür. Yeni kayıtlar için en az `600000` ve mevcut kullanıcılar için lazy-rehash gereklidir. | `core/db.py` | Yüksek |
-| **Borç #15** | **OpenTelemetry Asenkron Bağlam Sızıntısı:** `core/llm_client.py` streaming metotlarında senkron span yöneticileri asenkron generator etrafında açık bırakıldığında cross-request context leak riski oluşabilir. Async-safe wrapper standardizasyonu önerilir. | `core/llm_client.py` | Orta |
-| **Borç #16** | **`.env` ve Config Çelişkisi:** `.env.example` içinde `ENABLE_MULTI_AGENT` parametresi verilmiş olsa da `config.py` bunu sabit `True` olarak kullanmaktadır. Dokümantasyon/konfigürasyon senkronu için değişken kaldırılmalı veya env'den okunur hale getirilmelidir. | `config.py`, `.env.example` | Düşük |
-| **Borç #17 (Revize)** | **SQLite Global Lock Bottleneck (Performans):** SQLite eşzamanlı çökme hataları `asyncio.Lock` ile çözülmüş ve stabilite sağlanmıştır. Ancak global lock kullanımı, yüksek trafikli senaryolarda veritabanını darboğaza sokabilir. İlerleyen sürümlerde `asyncio.to_thread + Lock` mimarisinden native `aiosqlite` ya da PostgreSQL kullanımına geçiş önerilir. | `core/db.py` | Orta |
-
-> **v3.0.3 Denetim Özeti:**
-> - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
-> - Dairesel import riski yok; `config.py` bağımlılık kökü, tüm modüller tek yönlü DAG.
-> - Hardcoded credential yok; tüm hassas değerler `os.getenv()` / yardımcı sarmalayıcılar.
-> - SANDBOX_* env var dokümantasyon boşluğu kapatıldı (`.env.example` + §12.11 güncellendi).
-> - v3.0.2 hızlı denetimde `bash scripts/audit_metrics.sh` çıktısı: 134 Python dosyası / 33.157 satır, toplam 232 dosya / 43.579 satır.
-> - `ast.parse()` ile 134 Python dosyasında sözdizimi hatası bulunmadı.
-> - `config.py` kaynaklı 84 env anahtarının `.env.example` ile kıyasında 9 anahtarın örnek dosyada eksik olduğu görüldü (Borç #12).
-> - Çapraz inceleme ile `_load_instruction_files()` senkron I/O blokajı, PBKDF2 iş faktörü düşüklüğü ve stream tracing context izolasyon riski doğrulandı (Borç #13, #15, #16).
-> - `main.py::_run_with_streaming()` içinde child process sonlandırma güvenliği `try/finally` ile sertleştirildi (Borç #14 kısmi kapanış).
-
+| # | Borç | Etkilenen Dosya(lar) | Öncelik | Durum/Çözüm Önerisi |
+|---|------|----------------------|---------|---------------------|
+| **Borç #5** | **`ConversationMemory.__init__` `file_path` API kalıntısı:** Bellek katmanı artık DB-first olmasına rağmen `memory.py` `__init__` imzası hala `file_path: Path` alıyor. Bu parametre, yalnızca SQLite DB yolunu türetmek için kullanılıyor ve kafa karışıklığı yaratıyor. | `core/memory.py`, `agent/sidar_agent.py` | Düşük | API imzası `database_url` veya `base_dir` alacak şekilde modernize edilmelidir. |
+| **Borç #6** | **RAG / `DocumentStore` senkron blokajı:** `rag.py` içindeki `add_document` ve `search` metotları senkron `def`'lerdir ve thread ile çağrılmaktadır. | `core/rag.py` | Orta | ChromaDB'nin native async istemcisine (v0.5+ HTTP Async Client) geçilmelidir. |
+| **Borç #7** | **Zorunlu ↔ Opsiyonel Bağımlılık Çelişkisi:** `asyncpg`, `opentelemetry-*` ve `chromadb` `requirements.txt`'te zorunlu görünürken, kodda `try/except ImportError` ile opsiyonel ele alınıyor. | `requirements.txt`, `core/db.py`, `core/rag.py` | Orta | `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` şeklinde extras gruplarına ayrılmalıdır. |
+| **Borç #9** | **Legacy Test Drift:** Bazı testler, `sidar_agent.py` içinde artık var olmayan `_tool_subtask`, `parallel_batch` gibi eski senkron/tekli ajan yapılarını aramaktadır. | `tests/*.py` | Kritik | Mimari Supervisor yapısına geçtiği için eski testler güncel P2P / Delegasyon sözleşmelerine göre yeniden yazılmalıdır. |
 
 ## 12. `.env` Tam Değişken Referansı
 

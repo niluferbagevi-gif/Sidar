@@ -5,12 +5,10 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 
 import logging
 import asyncio
-import inspect
 import time
 import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
-from pydantic import BaseModel
 
 try:
     from opentelemetry import trace
@@ -31,13 +29,6 @@ from managers.todo_manager import TodoManager
 
 logger = logging.getLogger(__name__)
 
-
-class ToolCall(BaseModel):
-    """LLM araç çağrılarının doğrulanması için standart şema."""
-
-    thought: str
-    tool: str
-    argument: str
 
 class SidarAgent:
     """
@@ -403,9 +394,7 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def clear_memory(self) -> str:
-        maybe = self.memory.clear()
-        if inspect.isawaitable(maybe):
-            await maybe
+        await self.memory.clear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     async def set_access_level(self, new_level: str) -> str:
@@ -438,9 +427,7 @@ class SidarAgent:
         return f"ℹ Erişim seviyesi zaten '{self.security.level_name}'."
 
     async def _memory_add(self, role: str, content: str) -> None:
-        maybe = self.memory.add(role, content)
-        if inspect.isawaitable(maybe):
-            await maybe
+        await self.memory.add(role, content)
 
     def status(self) -> str:
         lines = [
