@@ -449,6 +449,11 @@ def test_execute_code_docker_exception_paths_for_sandbox_and_full(manager_factor
     mgr_full = manager_factory(can_execute=True, level=FULL)
     mgr_full.docker_available = True
     mgr_full.docker_client = SimpleNamespace(containers=_ContainersBoom())
+    monkeypatch.setattr(
+        mgr_full,
+        "_execute_code_with_docker_cli",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("cli fallback fail")),
+    )
     monkeypatch.setattr(mgr_full, "execute_code_local", lambda code: (False, "local fallback"))
     ok, msg = mgr_full.execute_code("print('x')")
     assert ok is False
