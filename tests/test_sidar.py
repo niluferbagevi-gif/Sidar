@@ -519,7 +519,8 @@ def test_rag_rrf_merges_chroma_and_bm25(monkeypatch):
     assert captured["ids"][0] == "doc_b"
 
 
-def test_rag_search_auto_prefers_rrf(monkeypatch):
+@pytest.mark.asyncio
+async def test_rag_search_auto_prefers_rrf(monkeypatch):
     """search(auto): Chroma+BM25 varken önce RRF yolunu kullanır."""
     docs = DocumentStore.__new__(DocumentStore)
     docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
@@ -537,7 +538,7 @@ def test_rag_search_auto_prefers_rrf(monkeypatch):
 
     monkeypatch.setattr(docs, "_rrf_search", _rrf)
 
-    ok, text = asyncio.run(DocumentStore.search(docs, "soru", mode="auto"))
+    ok, text = await DocumentStore.search(docs, "soru", mode="auto")
 
     assert ok is True
     assert text == "rrf"
@@ -568,7 +569,8 @@ async def test_rag_list_documents_filters_by_session(test_config):
     assert "S2 Başlık" not in text
 
 
-def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
+@pytest.mark.asyncio
+async def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
     """search(session_id): oturumda belge yoksa uyarı döndürür."""
     docs = DocumentStore.__new__(DocumentStore)
     docs.cfg = type("Cfg", (), {"RAG_TOP_K": 3})()
@@ -578,7 +580,7 @@ def test_rag_search_returns_empty_for_missing_session_docs(monkeypatch):
     docs._bm25_available = False
     docs.collection = None
 
-    ok, msg = asyncio.run(DocumentStore.search(docs, "soru", mode="auto", session_id="s2"))
+    ok, msg = await DocumentStore.search(docs, "soru", mode="auto", session_id="s2")
     assert ok is False
     assert "bu oturum" in msg.lower()
 
