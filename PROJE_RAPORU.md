@@ -853,6 +853,9 @@ Aşağıdaki tarihsel borçlar **kapatılmış** olup ayrıntılı çözüm geç
 - Sandbox kaynak kotası standardizasyonu (`_resolve_sandbox_limits()` ile cgroups normalizasyonu),
 - Vanilla JS UI ölçeklenme riski: `seedUIStore()` IIFE ile 12 paylaşımlı durum anahtarı tek merkezde; `let` global değişkenleri ve çift yazma (double-write) anti-pattern'i kaldırıldı (`web_ui/*.js`),
 - Sağlayıcılar arası tool-calling şema farkları: `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti, `BaseLLMClient.json_mode_config()` soyut metodu ve `_inject_json_instruction()` yardımcısı ile sağlayıcıdan bağımsız JSON şema uygulama (`core/llm_client.py`).
+- **[Çözüldü] Stream API Kesinti Koruması:** LLM sağlayıcılarında akış (stream) başlatılırken yaşanan anlık hatalara karşı exponential backoff tabanlı yeniden deneme (retry) mekanizması entegre edildi.
+- **[Çözüldü] Prompt Token İsrafı:** Çoklu LLM istemcilerindeki mükerrer JSON format talimatları kaldırılarak `_inject_json_instruction()` üzerinden tekilleştirme sağlandı.
+- **[Çözüldü] Paket Senkronizasyonu:** `requirements.txt` içinde SQLite async sürücüsü (`aiosqlite`) dahil edilerek runtime beklentileriyle bağımlılık manifestosu hizalandı.
 
 ### 11.2 Açık Teknik Borçlar (Güncel)
 
@@ -873,9 +876,7 @@ Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağı
 | **Borç #14** | **Şifreleme İterasyon Standardı:** `core/db.py` içindeki PBKDF2 `120000` iterasyon sayısı OWASP 2026 beklentilerine göre düşüktür. Yeni kayıtlar için en az `600000` ve mevcut kullanıcılar için lazy-rehash gereklidir. | `core/db.py` | Yüksek |
 | **Borç #15** | **OpenTelemetry Asenkron Bağlam Sızıntısı:** `core/llm_client.py` streaming metotlarında senkron span yöneticileri asenkron generator etrafında açık bırakıldığında cross-request context leak riski oluşabilir. Async-safe wrapper standardizasyonu önerilir. | `core/llm_client.py` | Orta |
 | **Borç #16** | **`.env` ve Config Çelişkisi:** `.env.example` içinde `ENABLE_MULTI_AGENT` parametresi verilmiş olsa da `config.py` bunu sabit `True` olarak kullanmaktadır. Dokümantasyon/konfigürasyon senkronu için değişken kaldırılmalı veya env'den okunur hale getirilmelidir. | `config.py`, `.env.example` | Düşük |
-| **Borç #17** | **SQLite Thread-Safety Zafiyeti:** `core/db.py` içinde SQLite bağlantısı thread’ler arası paylaşımlı kullanım riski taşır. Eşzamanlı isteklerde `database is locked` hataları ve kararsızlık üretmemesi için bağlantı erişimi izole edilmelidir (aiosqlite veya thread-safe erişim katmanı). | `core/db.py` | Kritik |
-| **Borç #18** | **Stream (Akış) API Retry Eksikliği:** `llm_client.py` içindeki stream başlatma adımları, ağ kesintileri ve `429/5xx` durumları için non-stream kadar güçlü yeniden deneme garantisi taşımalıdır. Stream başlangıç handshakeleri backoff ile sarmalanmalıdır. | `core/llm_client.py` | Yüksek |
-| **Borç #19** | **Paket/Bağımlılık Senkronizasyonu:** `requirements.txt` ile `core/db.py` runtime beklentileri uyumsuzluğu kurulumlarda kafa karışıklığı yaratır; DB bağımlılıkları (özellikle SQLite/async sürücüler) manifestoda açık ve senkron tutulmalıdır. | `requirements.txt`, `core/db.py` | Orta |
+| **Borç #17 (Revize)** | **SQLite Global Lock Bottleneck (Performans):** SQLite eşzamanlı çökme hataları `asyncio.Lock` ile çözülmüş ve stabilite sağlanmıştır. Ancak global lock kullanımı, yüksek trafikli senaryolarda veritabanını darboğaza sokabilir. İlerleyen sürümlerde `asyncio.to_thread + Lock` mimarisinden native `aiosqlite` ya da PostgreSQL kullanımına geçiş önerilir. | `core/db.py` | Orta |
 
 > **v3.0.3 Denetim Özeti:**
 > - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
