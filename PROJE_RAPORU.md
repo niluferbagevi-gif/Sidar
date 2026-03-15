@@ -1076,9 +1076,27 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not (v3.0.0 Sonrası Durum):** Projenin v3.0 vizyon hedeflerinin (Multi-agent geçişi, Çoklu Kullanıcı, DB kalıcılığı, Telemetri ve Zero-Trust Sandbox) tamamı gerçekleştirilmiş ve tarihsel kayıt olarak `CHANGELOG.md` dosyasına taşınmıştır. 
+> **Not (v3.0.0 Sonrası Durum):** Projenin v3.0 vizyon hedeflerinin (Multi-agent geçişi, Çoklu Kullanıcı, DB kalıcılığı, Telemetri ve Zero-Trust Sandbox) tamamı gerçekleştirilmiş ve tarihsel kayıt olarak `CHANGELOG.md` dosyasına taşınmıştır.
 > 
-> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası bu alanda planlanacaktır.*
+> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası aşağıdaki fazlar halinde planlanmıştır:*
+
+#### Faz 1: Stabilizasyon ve Teknik Borç Temizliği (v3.1) - *[Kısa Vade]*
+*v3.0 mimarisinin pürüzlerinin giderilmesi ve test kırıklarının onarılması.*
+- **Kritik Bugfix:** `ToolCall` Pydantic modelinin eksikliği ve legacy `_tool_subtask` kalıntılarının ajanlardan tamamen temizlenerek testlerin stabilize edilmesi (Bkz. §11.2 Borç #8 ve #9).
+- **Asenkron Optimizasyon:** `ConversationMemory` içindeki senkron API kalıntılarının (`inspect.isawaitable`) ve ChromaDB (`DocumentStore`) blokajlarının native async yöntemlerle çözülmesi.
+- **Bağımlılık Ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry`, `chromadb`) zorunlu kurulumdan çıkarılarak `[extras]` profillerine taşınması.
+
+#### Faz 2: Kurumsal Ölçeklenme ve Stateless Auth (v4.0) - *[Orta Vade]*
+*Sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi.*
+- **Stateless Güvenlik (JWT):** Veritabanı sorgusu gerektiren stateful oturum token'ları yerine, asenkron JWT tabanlı Role-Based Access Control (RBAC) altyapısına geçiş.
+- **Message Broker Entegrasyonu:** Ajanlar arası `MemoryHub` tabanlı P2P iletişimin RabbitMQ, Redis Pub/Sub veya Kafka tabanlı event-driven mimariye aktarılması.
+- **Gelişmiş Vektör ve Önbellek:** Veritabanı bütünlüğü için `pgvector` eklentisine geçiş ve LLM maliyetlerini düşürmek için Redis/GPTCache tabanlı anlamsal (semantic) önbellekleme entegrasyonu.
+
+#### Faz 3: Dinamik Ajan Ekosistemi ve Gelişmiş UI (v4.x) - *[Uzun Vade]*
+*Kullanıcı deneyiminin ve yapay zeka esnekliğinin maksimize edilmesi.*
+- **Dinamik Prompt & Ajan Pazaryeri:** Ajan davranışlarının kod (`definitions.py`) içerisinden çıkarılarak veritabanı üzerinden Admin Paneli'nden yönetilebilir (Prompt Registry) hale getirilmesi.
+- **Dinamik Swarm Mimarisi:** Görevin karmaşıklığına göre anlık olarak alt-ajanların (Worker Agents) türetilmesi ve görev bitiminde kaldırılması.
+- **Modern SPA Frontend:** Vanilla JS tabanlı mevcut arayüzün React/Next.js tabanlı, canlı ajan diyaloğunu akış şemaları (nodes/graphs) ile gösterebilen modern bir arayüze dönüştürülmesi.
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
