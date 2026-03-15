@@ -10,6 +10,8 @@ import threading
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List
 
+from pydantic import BaseModel, Field
+
 try:
     from opentelemetry import trace
 except Exception:  # OpenTelemetry opsiyoneldir
@@ -28,6 +30,14 @@ from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
 
 logger = logging.getLogger(__name__)
+
+
+class ToolCall(BaseModel):
+    """Ajanın LLM çıktısındaki tekil araç çağrısı şeması."""
+
+    thought: str = Field(..., description="Modelin araç seçimi öncesi kısa düşüncesi")
+    tool: str = Field(..., description="Çalıştırılacak araç adı")
+    argument: str = Field(..., description="Araç için ham argüman metni")
 
 
 class SidarAgent:
