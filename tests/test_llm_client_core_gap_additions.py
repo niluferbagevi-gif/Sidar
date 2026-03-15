@@ -1,4 +1,5 @@
 import asyncio
+import codecs
 from types import SimpleNamespace
 
 import pytest
@@ -201,3 +202,62 @@ def test_anthropic_chat_stream_returns_traced_iterator(llm_mod, monkeypatch):
     )
     out = asyncio.run(_collect(stream_iter))
     assert out == ["x", "y"]
+
+
+def test_stream_response_trailing_decoder_flush_with_newline_covers_lines_350_362(llm_mod, monkeypatch):
+    """Satır 350-362: utf8_decoder.decode(b'', final=True) \n içeren veri döndürdüğünde
+    buffer'a eklenir ve while döngüsü ile JSON parse edilir."""
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+
+    class _MockDecoder:
+        """İlk decode çağrısında boş döner; final=True ile \n içeren JSON döner."""
+
+        def decode(self, data, final=False):
+            if final and data == b"":
+                # Trailing: newline içeren geçerli + geçersiz JSON satırları
+                return '{"message":{"content":"trailing_chunk"}}\n{bozuk_json}\n{"message":{"content":"son_chunk"}}\n'
+            return data.decode("utf-8", errors="replace")
+
+    real_getincrementaldecoder = codecs.getincrementaldecoder
+
+    def _mock_getincrementaldecoder(encoding):
+        def _factory(**kwargs):
+            return _MockDecoder()
+        return _factory
+
+    monkeypatch.setattr(llm_mod.codecs, "getincrementaldecoder", _mock_getincrementaldecoder)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            # Boş bayt bloğu: main loop'ta işlenecek bir \n yok
+            yield b""
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *args):
+            return None
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def stream(self, method, url, json):
+            return _StreamCtx()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    out = asyncio.run(
+        _collect(client._stream_response("http://localhost/api/chat", {"x": 1}, timeout=llm_mod.httpx.Timeout(10)))
+    )
+    # trailing_chunk ve son_chunk gelmeli; bozuk_json JSONDecodeError ile atlanmalı
+    assert "trailing_chunk" in out
+    assert "son_chunk" in out
