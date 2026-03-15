@@ -78,3 +78,19 @@ def test_db_run_sqlite_op_raises_when_connection_uninitialized(tmp_path: Path):
         return ""
 
     assert "başlatılmadı" in asyncio.run(_run())
+
+
+def test_memory_defaults_base_dir_to_cwd_data_when_no_inputs(tmp_path: Path, monkeypatch):
+    cfg = types.SimpleNamespace(
+        DATABASE_URL="",
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+        BASE_DIR=tmp_path,
+    )
+    monkeypatch.setattr("core.memory.Path.cwd", lambda: tmp_path)
+    monkeypatch.setattr("core.memory.Config", lambda: cfg)
+
+    mem = ConversationMemory(file_path=None, base_dir=None)
+
+    assert mem.sessions_dir == (tmp_path / "data" / "sessions")
