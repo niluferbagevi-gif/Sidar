@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.1 — Çoklu denetim turu: satır sayıları güncellendi; SANDBOX_* env var boşluğu kapatıldı; §11.2'ye yeni teknik borçlar (Borç #4–#8) eklendi; §7 bağımlılık nüansları ve §13 JWT yol haritası güncellendi)
+> **Son Güncelleme:** 2026-03-15 (v3.0.2 — Repo-geneli hızlı denetim: metrik/syntax/test smoke kontrolleri çalıştırıldı; custom async test altyapısı riski güçlendirildi; `.env.example` ↔ `config.py` değişken uyumsuzlukları için yeni borç kalemi eklendi; §14 Faz 1 aksiyonları güncellendi)
 > **Proje Sürümü:** 3.0.1
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.185** satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.240** satır.
@@ -864,12 +864,16 @@ Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağı
 | **Borç #9** | **`_tool_subtask` metodu eksik — test kırıkları (legacy test drift):** `test_sidar_agent_runtime.py`'de 8 ayrı konumda `a._tool_subtask("...")` çağrısı bulunuyor; `agent/sidar_agent.py`'de bu metod mevcut değil. `test_parallel_react_improvements.py` ve `test_agent_subtask.py` da sidar_agent.py kaynak içinde `parallel_batch`, `action_list`, `isinstance(payload, list)` gibi eski paralel ReAct kod parçacıklarını arar; bunların hiçbiri mevcut kaynakta bulunmuyor. | `agent/sidar_agent.py`, `tests/test_sidar_agent_runtime.py`, `tests/test_parallel_react_improvements.py`, `tests/test_agent_subtask.py` | **Kritik** |
 | **Borç #10** | **`main.py` `DummyConfig` fail-fast sorunu:** `main.py:32-48`'de `config.py` import edilemezse `DummyConfig` ile çalışmaya devam edilmektedir. `config.py` her zaman aynı dizinde bulunduğundan `ImportError` tetiklenemez; ancak mevcut yapı, sahte model adı (`qwen2.5-coder:7b`) ile sessizce başlatmaya çalışan bir operasyonel risk yaratır. Kurumsal sistemlerde fail-fast (`sys.exit(1)`) tercih edilir. | `main.py` | Düşük |
 | **Borç #11** | **Özel async test hook'u (`pytest_pyfunc_call`) ölçeklenebilirlik riski:** `tests/conftest.py` içinde coroutine testleri `asyncio.run(...)` ile manuel yürütülüyor. Bu yaklaşım async/yield fixture'lar ve karmaşık loop yönetimi olan senaryolarda `Event loop is closed` türü hatalara zemin hazırlayabilir. Sektör standardı `pytest-asyncio` event-loop fixture modeline geçiş önerilir. | `tests/conftest.py`, `pytest.ini`, `requirements-dev.txt` | Orta |
+| **Borç #12** | **`.env.example` ↔ `config.py` değişken paritesi eksik:** `config.py` içinde kullanılan bazı env anahtarları örnek ortam dosyasında yok (`DATABASE_URL`, `DB_POOL_SIZE`, `DB_SCHEMA_VERSION_TABLE`, `DB_SCHEMA_TARGET_VERSION`, `DOCKER_RUNTIME`, `DOCKER_MEM_LIMIT`, `DOCKER_NETWORK_DISABLED`, `DOCKER_NANO_CPUS`, `DOCKER_MICROVM_MODE`). Ters tarafta `ENABLE_MULTI_AGENT` örnek dosyada bulunup runtime'da etkisizdir. Kurulum/onboarding sırasında yanlış beklenti üretir. | `.env.example`, `config.py` | Yüksek |
 
-> **v3.0.1 Denetim Özeti:**
+> **v3.0.2 Denetim Özeti:**
 > - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
 > - Dairesel import riski yok; `config.py` bağımlılık kökü, tüm modüller tek yönlü DAG.
 > - Hardcoded credential yok; tüm hassas değerler `os.getenv()` / yardımcı sarmalayıcılar.
 > - SANDBOX_* env var dokümantasyon boşluğu kapatıldı (`.env.example` + §12.11 güncellendi).
+> - v3.0.2 hızlı denetimde `bash scripts/audit_metrics.sh` çıktısı: 134 Python dosyası / 33.157 satır, toplam 232 dosya / 43.579 satır.
+> - `ast.parse()` ile 134 Python dosyasında sözdizimi hatası bulunmadı.
+> - `config.py` kaynaklı 84 env anahtarının `.env.example` ile kıyasında 9 anahtarın örnek dosyada eksik olduğu görüldü (Borç #12).
 
 
 ## 12. `.env` Tam Değişken Referansı
@@ -1093,6 +1097,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
 - **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
 - **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
+- **Env parite sertleştirmesi:** `.env.example` dosyasının `config.py` ile birebir senkronizasyonu, etkisiz legacy anahtarların kaldırılması ve CI'da env parity kontrolünün otomatikleştirilmesi.
 
 #### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
 *sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
