@@ -85,7 +85,8 @@ class CodeManager:
     def _resolve_sandbox_limits(self) -> Dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
         limits = dict(SANDBOX_LIMITS)
-        limits.update(getattr(self.cfg, "SANDBOX_LIMITS", {}) or {})
+        cfg = getattr(self, "cfg", None)
+        limits.update(getattr(cfg, "SANDBOX_LIMITS", {}) or {})
 
         memory = str(limits.get("memory") or self.docker_mem_limit or "256m").strip()
         cpus = str(limits.get("cpus") or "0.5").strip()

@@ -406,7 +406,9 @@ class AutoHandle:
             r"|hafıza[yı]?\s+(temizle|sıfırla|sil|resetle)",
             t,
         ):
-            await self.memory.clear()
+            clear_result = self.memory.clear()
+            if inspect.isawaitable(clear_result):
+                await clear_result
             return True, "✓ Konuşma belleği temizlendi."
         return False, ""
 

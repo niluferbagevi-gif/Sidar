@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import hashlib
 import hmac
+import inspect
 import json
 import logging
 import re
@@ -713,7 +714,9 @@ async def metrics(request: Request):
     if hasattr(agent.memory, "aget_all_sessions"):
         sessions = await agent.memory.aget_all_sessions()
     else:
-        sessions = await agent.memory.get_all_sessions()
+        sessions = agent.memory.get_all_sessions()
+        if inspect.isawaitable(sessions):
+            sessions = await sessions
     rl_total = sum(len(v) for v in _local_rate_limits.values())
 
     llm_totals = get_llm_metrics_collector().snapshot().get("totals", {})
