@@ -1,7 +1,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-15 (v3.0.2 — Repo-geneli hızlı denetim: metrik/syntax/test smoke kontrolleri çalıştırıldı; custom async test altyapısı riski güçlendirildi; `.env.example` ↔ `config.py` değişken uyumsuzlukları için yeni borç kalemi eklendi; §14 Faz 1 aksiyonları güncellendi)
+> **Son Güncelleme:** 2026-03-15 (v3.0.3 — Çapraz denetim: event-loop blokajı, zombie process riski, PBKDF2 iterasyon sertleştirme ihtiyacı ve OpenTelemetry async context sızıntı riski doğrulandı; §5.3.3 ve §11.2 güncellendi; `main.py` child-process sonlandırma güvenliği sertleştirildi)
 > **Proje Sürümü:** 3.0.1
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
 > **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.185** satır (tests hariç, güncel ölçüm); Test: **20.962** satır; Web UI: **4.240** satır.
@@ -401,6 +401,7 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 #### 5.3.3 Kriptografik Kimlik/Oturum Güvenliği
 - Parola doğrulama akışı `PBKDF2-HMAC-SHA256` + salt + sabit-zamanlı karşılaştırma (`secrets.compare_digest`) ile uygulanır.
+- **Güçlendirme Notu:** Mevcut PBKDF2 iterasyon sayısı (`120000`) modern OWASP önerilerinin gerisindedir; kurumsal dağıtımda daha yüksek iş faktörü + lazy-rehash stratejisi ile yükseltilmesi önerilir (Bkz. Borç #15).
 - Oturum belirteçleri `secrets.token_urlsafe(...)` ile üretilir; kullanıcı/oturum anahtarlarında UUID kullanımı tahmin edilebilirlik riskini azaltır.
 - WebSocket kanalında `auth` handshake zorunludur; geçersiz/eksik token durumunda bağlantı policy violation ile kapatılır.
 
@@ -865,8 +866,12 @@ Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağı
 | **Borç #10** | **`main.py` `DummyConfig` fail-fast sorunu:** `main.py:32-48`'de `config.py` import edilemezse `DummyConfig` ile çalışmaya devam edilmektedir. `config.py` her zaman aynı dizinde bulunduğundan `ImportError` tetiklenemez; ancak mevcut yapı, sahte model adı (`qwen2.5-coder:7b`) ile sessizce başlatmaya çalışan bir operasyonel risk yaratır. Kurumsal sistemlerde fail-fast (`sys.exit(1)`) tercih edilir. | `main.py` | Düşük |
 | **Borç #11** | **Özel async test hook'u (`pytest_pyfunc_call`) ölçeklenebilirlik riski:** `tests/conftest.py` içinde coroutine testleri `asyncio.run(...)` ile manuel yürütülüyor. Bu yaklaşım async/yield fixture'lar ve karmaşık loop yönetimi olan senaryolarda `Event loop is closed` türü hatalara zemin hazırlayabilir. Sektör standardı `pytest-asyncio` event-loop fixture modeline geçiş önerilir. | `tests/conftest.py`, `pytest.ini`, `requirements-dev.txt` | Orta |
 | **Borç #12** | **`.env.example` ↔ `config.py` değişken paritesi eksik:** `config.py` içinde kullanılan bazı env anahtarları örnek ortam dosyasında yok (`DATABASE_URL`, `DB_POOL_SIZE`, `DB_SCHEMA_VERSION_TABLE`, `DB_SCHEMA_TARGET_VERSION`, `DOCKER_RUNTIME`, `DOCKER_MEM_LIMIT`, `DOCKER_NETWORK_DISABLED`, `DOCKER_NANO_CPUS`, `DOCKER_MICROVM_MODE`). Ters tarafta `ENABLE_MULTI_AGENT` örnek dosyada bulunup runtime'da etkisizdir. Kurulum/onboarding sırasında yanlış beklenti üretir. | `.env.example`, `config.py` | Yüksek |
+| **Borç #13** | **Event-loop blokajı: `_load_instruction_files()` senkron I/O:** `agent/sidar_agent.py` içinde `_build_context()` her çağrıda `_load_instruction_files()` çalıştırır; bu akış `rglob()` + `read_text()` ile senkron dosya taraması yapar. Yüksek eşzamanlılıkta web event-loop gecikmesi yaratabilir. `asyncio.to_thread` veya startup cache/watcher deseni önerilir. | `agent/sidar_agent.py` | **Kritik** |
+| **Borç #14** | **Zombie child process riski (kısmen azaltıldı):** Launch akışında child process bekleme/interrupt senaryolarında sürecin kesin kapatılması için koruma gerekiyordu. `main.py` içinde sonlandırma güvenliği eklendi; SIGTERM sonrası graceful kapanmayan süreçler için izleme/test sertleştirmesi sürdürülmelidir. | `main.py`, `tests/test_main_runtime.py` | Orta |
+| **Borç #15** | **PBKDF2 iterasyon seviyesi kurumsal hedefin altında:** `core/db.py` parola hash iş faktörü `120000` olarak sabit. Kurumsal SaaS tehdit modelinde daha yüksek iş faktörü + versiyonlu hash/lazy-rehash migrasyonu planlanmalıdır. | `core/db.py` | Yüksek |
+| **Borç #16** | **OpenTelemetry stream tracing’de async bağlam izolasyonu riski:** `core/llm_client.py` içinde stream yollarında `start_span()` manuel yönetiliyor; concurrent akışlarda context tutarlılığı için async-safe span lifecycle standardizasyonu (`use_span`/wrapper) önerilir. | `core/llm_client.py` | Orta |
 
-> **v3.0.2 Denetim Özeti:**
+> **v3.0.3 Denetim Özeti:**
 > - 134 Python dosyası sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
 > - Dairesel import riski yok; `config.py` bağımlılık kökü, tüm modüller tek yönlü DAG.
 > - Hardcoded credential yok; tüm hassas değerler `os.getenv()` / yardımcı sarmalayıcılar.
@@ -874,6 +879,8 @@ Aşağıdaki borçlar v3.0.1 çoklu denetim turundan (kendi denetim + iki bağı
 > - v3.0.2 hızlı denetimde `bash scripts/audit_metrics.sh` çıktısı: 134 Python dosyası / 33.157 satır, toplam 232 dosya / 43.579 satır.
 > - `ast.parse()` ile 134 Python dosyasında sözdizimi hatası bulunmadı.
 > - `config.py` kaynaklı 84 env anahtarının `.env.example` ile kıyasında 9 anahtarın örnek dosyada eksik olduğu görüldü (Borç #12).
+> - Çapraz inceleme ile `_load_instruction_files()` senkron I/O blokajı, PBKDF2 iş faktörü düşüklüğü ve stream tracing context izolasyon riski doğrulandı (Borç #13, #15, #16).
+> - `main.py::_run_with_streaming()` içinde child process sonlandırma güvenliği `try/finally` ile sertleştirildi (Borç #14 kısmi kapanış).
 
 
 ## 12. `.env` Tam Değişken Referansı
@@ -1098,6 +1105,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
 - **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
 - **Env parite sertleştirmesi:** `.env.example` dosyasının `config.py` ile birebir senkronizasyonu, etkisiz legacy anahtarların kaldırılması ve CI'da env parity kontrolünün otomatikleştirilmesi.
+- **Runtime I/O ve süreç güvenliği:** talimat dosyası yükleme akışının non-blocking hâle getirilmesi, launcher child-process sonlandırma davranışının regresyon testleriyle garanti altına alınması.
 
 #### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
 *sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
