@@ -1985,3 +1985,83 @@ def test_respond_supervisor_single_path_ignores_legacy_react(monkeypatch):
 
     out = asyncio.run(_collect(a.respond("test")))
     assert out == ["only-supervisor"]
+
+def test_memory_archive_context_stops_at_top_k_break():
+    a = _make_agent_for_runtime()
+
+    class _Collection:
+        def query(self, **kwargs):
+            return {
+                "documents": [["ilk belge", "ikinci belge"]],
+                "metadatas": [[
+                    {"source": "memory_archive", "title": "T1"},
+                    {"source": "memory_archive", "title": "T2"},
+                ]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    a.docs = SimpleNamespace(collection=_Collection())
+
+    out = a._get_memory_archive_context_sync("q", top_k=1, min_score=0.1, max_chars=2000)
+    assert "Geçmiş Sohbet Arşivinden İlgili Notlar" in out
+    assert "T1" in out
+    assert "T2" not in out
+
+
+def test_tool_subtask_empty_and_execute_tool_then_final_answer():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=4, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    assert "Alt görev belirtilmedi" in asyncio.run(a._tool_subtask("   "))
+
+    replies = iter([
+        '{"thought":"t","tool":"list_dir","argument":"."}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    calls = {"n": 0}
+
+    async def _exec(tool, arg):
+        calls["n"] += 1
+        return f"ok:{tool}:{arg}"
+
+    a.llm = _LLM()
+    a._execute_tool = _exec
+
+    out = asyncio.run(a._tool_subtask("alt görev"))
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+    assert calls["n"] == 1
+
+
+def test_tool_github_smart_pr_success_branch_returns_created_message():
+    a = _make_agent_for_runtime()
+
+    class _Code:
+        def run_shell(self, cmd):
+            mapping = {
+                "git branch --show-current": (True, "feat-1\n"),
+                "git status --short": (True, " M a.py"),
+                "git diff --stat HEAD": (True, "stat"),
+                "git diff --no-color HEAD": (True, "diff"),
+                "git log --oneline main..HEAD": (True, "abc msg"),
+            }
+            return mapping.get(cmd, (False, ""))
+
+    class _Github:
+        def is_available(self):
+            return True
+
+        default_branch = "main"
+
+        def create_pull_request(self, title, body, head, base):
+            return True, "https://example/pr/1"
+
+    a.code = _Code()
+    a.github = _Github()
+
+    out = asyncio.run(a._tool_github_smart_pr("Başlık|||main|||not"))
+    assert out == "✓ PR oluşturuldu: https://example/pr/1"
