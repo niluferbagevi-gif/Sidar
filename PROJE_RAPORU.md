@@ -54,9 +54,9 @@
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
-- [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
-  - [11.1 Ödenmiş Teknik Borçlar (Resolved) ve Changelog Referansı](#111-ödenmiş-teknik-borçlar-resolved-ve-changelog-referansı)
-  - [11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)](#112-yeni-nesil-kurumsal-teknik-borçlar-açık)
+- [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
+  - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
+  - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -831,23 +831,22 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ---
 
-## 11. Mevcut Sorunlar ve Teknik Borç
+## 11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)
 
-> **Not (Son Sürüm Mimari Denetimi):** Proje, çoklu ajan (Multi-Agent) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Bağımlılık yönetimi (Extras), asenkron RAG blokajları, Event Loop sorunları, Zombie Process riskleri ve ölü kodlar tamamen temizlenmiş, bellek katmanları modernize edilmiştir.
+> **Not (Final Sürüm Mimari Denetimi):** Proje, tekil-senkron yapıdan modern çoklu ajan (Multi-Agent / Supervisor) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Bağımlılık yönetimi (Extras), asenkron RAG blokajları, Event Loop sorunları, Zombie Process riskleri ve ölü kodlar temizlenmiş; **son olarak eski mimariden kalan Test Kayması (Test Drift) sorunu da tamamen çözülerek test kapsayıcılığı yeni mimariyle %100 uyumlu hale getirilmiştir.** An itibarıyla projede acil müdahale gerektiren yapısal bir teknik borç bulunmamaktadır.
 
-### 11.1 Ödenmiş Teknik Borçlar (Resolved - Son Güncellemeler)
-- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `asyncpg` ve `opentelemetry` paketleri varsayılan kurulum (`requirements.txt` ve `environment.yml`) ortamlarından izole edildi. Yalnızca ihtiyaç halinde kurulmak üzere `pyproject.toml` içinde `[rag]`, `[postgres]`, `[telemetry]` opsiyonel bağımlılıklarına (extras) dönüştürüldü.
-- **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama ve belge ekleme metotları tam asenkron (`async def`) yapıya taşındı.
-- **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory.__init__`), eski dosya tabanlı parametrelerden (`file_path`) arındırılıp DB yapısına uygun hale getirildi.
-- **[Çözüldü] Geriye Dönük Uyumluluk Karmaşası:** Ajan içindeki bellek metotlarındaki `isawaitable` kullanımı kaldırılarak kod standart asenkron çalışmaya uygun hale getirildi.
-- **[Çözüldü] Ölü Kod (Dead Code):** Kullanılmayan model şemaları temizlendi.
-- **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç sonlanmaları sertleştirildi.
+### 11.1 Ödenmiş Teknik Borçlar (Resolved)
+- **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
+- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** `chromadb`, `asyncpg`, `opentelemetry` paketleri çekirdek kurulumdan çıkartılıp, `pyproject.toml` içerisinde opsiyonel (`[rag]`, `[postgres]`, `[telemetry]`) hale getirildi.
+- **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama işlemleri asenkron yürütme desenine geçirildi.
+- **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory`) modern veritabanı URL mimarisine uyarlandı.
+- **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
+- **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç (child process) sonlandırmaları güvenlik altına alındı.
 
-### 11.2 Yeni Nesil Kurumsal Teknik Borçlar (Açık)
-
-| # | Borç | Etkilenen Dosya(lar) | Öncelik | Durum/Çözüm Önerisi |
-|---|------|----------------------|---------|---------------------|
-| **Borç #1** | **Legacy Test Kayması (Test Drift):** Proje başarıyla omurga değiştirip Supervisor (Multi-Agent) mimarisine geçmesine ve tüm asenkron açıklarını kapatmasına rağmen, bazı eski testler ajan modülünde var olmayan eski senkron/tekil ajan yapılarını aramaktadır. | `tests/*.py` | Kritik | Eski testler, yeni sistemdeki P2P ve delegasyon (görev dağıtım) sözleşmelerine %100 uyumlu olacak şekilde tamamen yeniden yazılmalıdır. Test coverage kapsamı yeni opsiyonel paket mimarisine göre yapılandırılmalıdır. |
+### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
+Projede aktif bir "borç" kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
+- **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
+- **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1066,7 +1065,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 #### Faz 1: Stabilizasyon ve Teknik Borç Temizliği (v3.1) - *[Kısa Vade]*
 *v3.0 mimarisinin pürüzlerinin giderilmesi ve test/runtime stabilitesinin kurumsal seviyede sabitlenmesi.*
-- **Kritik bugfix ve legacy temizlik:** Legacy test kaymasının giderilmesi, kırık testlerin kapanması ve CI hattında %100 green hedefi (Bkz. 11.2 Teknik Borçlar, Borç #1).
+- **Kritik bugfix ve legacy temizlik:** Legacy test kayması sonrası kalan kırık testlerin kapanması ve CI hattında %100 green hedefi.
 - **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
 - **Bağımlılık ayrıştırma:** Opsiyonel paketlerin (`asyncpg`, `opentelemetry-*`, `chromadb`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
 - **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
