@@ -42,6 +42,7 @@ try:
     from opentelemetry import trace
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -49,6 +50,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None
     OTLPSpanExporter = None
     FastAPIInstrumentor = None
+    HTTPXClientInstrumentor = None
     TracerProvider = None
     Resource = None
     BatchSpanProcessor = None
@@ -254,6 +256,21 @@ async def basic_auth_middleware(request: Request, call_next):
 #  OBSERVABILITY (OpenTelemetry)
 # ─────────────────────────────────────────────
 def _setup_tracing() -> None:
+    if hasattr(cfg, "init_telemetry"):
+        cfg.init_telemetry(
+            service_name="sidar-web",
+            fastapi_app=app,
+            logger_obj=logger,
+            trace_module=trace,
+            otlp_exporter_cls=OTLPSpanExporter,
+            tracer_provider_cls=TracerProvider,
+            resource_cls=Resource,
+            batch_span_processor_cls=BatchSpanProcessor,
+            fastapi_instrumentor_cls=FastAPIInstrumentor,
+            httpx_instrumentor_cls=HTTPXClientInstrumentor,
+        )
+        return
+
     if not getattr(cfg, "ENABLE_TRACING", False):
         return
     if not all([trace, OTLPSpanExporter, FastAPIInstrumentor, TracerProvider, Resource, BatchSpanProcessor]):
@@ -266,6 +283,9 @@ def _setup_tracing() -> None:
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     FastAPIInstrumentor.instrument_app(app)
+    if HTTPXClientInstrumentor is not None:
+        with contextlib.suppress(Exception):
+            HTTPXClientInstrumentor().instrument()
     logger.info("✅ OpenTelemetry aktif: %s", cfg.OTEL_EXPORTER_ENDPOINT)
 
 

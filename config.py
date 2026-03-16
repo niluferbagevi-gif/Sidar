@@ -9,6 +9,7 @@ import os
 import sys
 import logging
 import warnings
+import contextlib
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
@@ -355,6 +356,13 @@ class Config:
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
     OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://localhost:4317")
+    OTEL_SERVICE_NAME: str = os.getenv("OTEL_SERVICE_NAME", "sidar")
+    OTEL_INSTRUMENT_FASTAPI: bool = get_bool_env("OTEL_INSTRUMENT_FASTAPI", True)
+    OTEL_INSTRUMENT_HTTPX: bool = get_bool_env("OTEL_INSTRUMENT_HTTPX", True)
+
+    # ─── Semantic Cache (v4.0) ───────────────────────────────
+    ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
+    SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")
@@ -585,7 +593,73 @@ class Config:
             "redis_url":          cls.REDIS_URL,
             "enable_tracing":     cls.ENABLE_TRACING,
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
+            "enable_semantic_cache": cls.ENABLE_SEMANTIC_CACHE,
+            "semantic_cache_threshold": cls.SEMANTIC_CACHE_THRESHOLD,
         }
+
+    @classmethod
+    def init_telemetry(
+        cls,
+        *,
+        service_name: Optional[str] = None,
+        fastapi_app=None,
+        logger_obj: Optional[logging.Logger] = None,
+        trace_module=None,
+        otlp_exporter_cls=None,
+        tracer_provider_cls=None,
+        resource_cls=None,
+        batch_span_processor_cls=None,
+        fastapi_instrumentor_cls=None,
+        httpx_instrumentor_cls=None,
+    ) -> bool:
+        """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
+        log = logger_obj or logger
+        if not cls.ENABLE_TRACING:
+            return False
+
+        try:
+            if trace_module is None:
+                from opentelemetry import trace as trace_module
+            if otlp_exporter_cls is None:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as otlp_exporter_cls
+            if tracer_provider_cls is None:
+                from opentelemetry.sdk.trace import TracerProvider as tracer_provider_cls
+            if resource_cls is None:
+                from opentelemetry.sdk.resources import Resource as resource_cls
+            if batch_span_processor_cls is None:
+                from opentelemetry.sdk.trace.export import BatchSpanProcessor as batch_span_processor_cls
+        except Exception:
+            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
+            return False
+
+        try:
+            svc_name = service_name or cls.OTEL_SERVICE_NAME or "sidar"
+            resource = resource_cls.create({"service.name": svc_name})
+            provider = tracer_provider_cls(resource=resource)
+            exporter = otlp_exporter_cls(endpoint=cls.OTEL_EXPORTER_ENDPOINT, insecure=True)
+            provider.add_span_processor(batch_span_processor_cls(exporter))
+            trace_module.set_tracer_provider(provider)
+
+            if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
+                if fastapi_instrumentor_cls is None:
+                    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor as fastapi_instrumentor_cls
+                fastapi_instrumentor_cls.instrument_app(fastapi_app)
+
+            if cls.OTEL_INSTRUMENT_HTTPX:
+                if httpx_instrumentor_cls is None:
+                    try:
+                        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor as httpx_instrumentor_cls
+                    except Exception:
+                        httpx_instrumentor_cls = None
+                if httpx_instrumentor_cls is not None:
+                    with contextlib.suppress(Exception):
+                        httpx_instrumentor_cls().instrument()
+
+            log.info("✅ OpenTelemetry aktif: %s", cls.OTEL_EXPORTER_ENDPOINT)
+            return True
+        except Exception as exc:
+            log.warning("OpenTelemetry başlatılamadı: %s", exc)
+            return False
 
     @classmethod
     def print_config_summary(cls) -> None:
