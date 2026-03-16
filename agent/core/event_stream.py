@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import contextlib
 import json
 import logging
@@ -10,7 +11,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Dict
+from typing import Deque, Dict
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -28,6 +29,7 @@ class AgentEvent:
 class AgentEventBus:
     def __init__(self) -> None:
         self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
+        self._buffered_events: Dict[int, Deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
@@ -37,15 +39,20 @@ class AgentEventBus:
         self._redis_listener_task: asyncio.Task | None = None
         self._redis_bootstrap_task: asyncio.Task | None = None
         self._redis_available: bool | None = None
+        self._buffer_flush_task: asyncio.Task | None = None
+        self._buffer_flush_interval_s = max(0.01, float(os.getenv("SIDAR_EVENT_BUFFER_FLUSH_INTERVAL_S", "0.05")))
+        self._buffer_max_per_subscriber = max(20, int(os.getenv("SIDAR_EVENT_BUFFER_MAX_PER_SUBSCRIBER", "500")))
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
         self._subscribers[sub_id] = asyncio.Queue(maxsize=max(10, maxsize))
+        self._buffered_events[sub_id] = deque(maxlen=self._buffer_max_per_subscriber)
         self._schedule_redis_bootstrap()
         return sub_id, self._subscribers[sub_id]
 
     def unsubscribe(self, sub_id: int) -> None:
         self._subscribers.pop(sub_id, None)
+        self._buffered_events.pop(sub_id, None)
 
     async def publish(self, source: str, message: str) -> None:
         evt = AgentEvent(ts=time.time(), source=source, message=message)
@@ -160,14 +167,54 @@ class AgentEventBus:
                             await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
 
     def _fanout_local(self, evt: AgentEvent) -> None:
-        to_drop = []
         for sid, q in self._subscribers.items():
             try:
                 q.put_nowait(evt)
             except asyncio.QueueFull:
-                to_drop.append(sid)
-        for sid in to_drop:
-            self.unsubscribe(sid)
+                buf = self._buffered_events.setdefault(sid, deque(maxlen=self._buffer_max_per_subscriber))
+                prev_len = len(buf)
+                buf.append(evt)
+                if len(buf) == prev_len and prev_len == self._buffer_max_per_subscriber:
+                    logger.debug("AgentEventBus: subscriber=%s buffer dolu, en eski event düşürüldü.", sid)
+                self._schedule_buffer_flush()
+
+    def _schedule_buffer_flush(self) -> None:
+        if not any(self._buffered_events.values()):
+            return
+        if self._buffer_flush_task is not None and not self._buffer_flush_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._buffer_flush_task = loop.create_task(self._buffer_flush_loop())
+
+    async def _drain_buffered_events_once(self) -> bool:
+        had_pending = False
+        for sid, buf in list(self._buffered_events.items()):
+            q = self._subscribers.get(sid)
+            if q is None:
+                self._buffered_events.pop(sid, None)
+                continue
+
+            while buf:
+                had_pending = True
+                try:
+                    q.put_nowait(buf[0])
+                    buf.popleft()
+                except asyncio.QueueFull:
+                    break
+        return had_pending
+
+    async def _buffer_flush_loop(self) -> None:
+        try:
+            while True:
+                had_pending = await self._drain_buffered_events_once()
+                if not had_pending:
+                    return
+                await asyncio.sleep(self._buffer_flush_interval_s)
+        finally:
+            self._buffer_flush_task = None
 
     async def _cleanup_redis(self) -> None:
         if self._redis_listener_task is not None and not self._redis_listener_task.done():

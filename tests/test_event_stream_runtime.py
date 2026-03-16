@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 import importlib.util
 import sys
 import types
@@ -94,7 +95,7 @@ def test_event_bus_listener_switches_to_local_fallback_on_redis_disconnect(monke
     assert cleaned["value"] is True
 
 
-def test_event_bus_fanout_drops_only_full_queues():
+def test_event_bus_fanout_buffers_full_queues_instead_of_unsubscribe():
     bus = AgentEventBus()
 
     full_q = asyncio.Queue(maxsize=10)
@@ -103,11 +104,38 @@ def test_event_bus_fanout_drops_only_full_queues():
         full_q.put_nowait(AgentEvent(ts=float(i), source="seed", message=f"m{i}"))
 
     bus._subscribers = {1: full_q, 2: survivor_q}
+    bus._buffered_events = {1: deque(maxlen=10), 2: deque(maxlen=10)}
     evt = AgentEvent(ts=1.0, source="supervisor", message="devam")
 
     bus._fanout_local(evt)
 
-    assert 1 not in bus._subscribers
+    assert 1 in bus._subscribers
     assert 2 in bus._subscribers
     got = survivor_q.get_nowait()
     assert got.message == "devam"
+    assert len(bus._buffered_events[1]) == 1
+    assert bus._buffered_events[1][0].message == "devam"
+
+
+def test_event_bus_drain_buffered_events_once_moves_waiting_events():
+    bus = AgentEventBus()
+    q = asyncio.Queue(maxsize=1)
+    sid = 10
+    bus._subscribers = {sid: q}
+    bus._buffered_events = {sid: deque(maxlen=10)}
+    q.put_nowait(AgentEvent(ts=0.0, source="seed", message="seed"))
+    bus._buffered_events[sid].append(AgentEvent(ts=1.0, source="supervisor", message="buffered"))
+
+    async def _run():
+        first = await bus._drain_buffered_events_once()
+        assert first is True
+        _ = q.get_nowait()  # seed tüket
+        second = await bus._drain_buffered_events_once()
+        assert second is True
+        moved = q.get_nowait()
+        third = await bus._drain_buffered_events_once()
+        return moved, third
+
+    moved, third = asyncio.run(_run())
+    assert moved.message == "buffered"
+    assert third is False
