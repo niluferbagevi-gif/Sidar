@@ -338,6 +338,28 @@ class _LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class _PromptUpsertRequest(BaseModel):
+    role_name: str = Field(..., min_length=1, max_length=64)
+    prompt_text: str = Field(..., min_length=1)
+    activate: bool = Field(default=True)
+
+
+class _PromptActivateRequest(BaseModel):
+    prompt_id: int = Field(..., gt=0)
+
+
+def _serialize_prompt(record) -> dict:
+    return {
+        "id": int(record.id),
+        "role_name": str(record.role_name),
+        "prompt_text": str(record.prompt_text),
+        "version": int(record.version),
+        "is_active": bool(record.is_active),
+        "created_at": str(record.created_at),
+        "updated_at": str(record.updated_at),
+    }
+
+
 @app.post("/auth/register")
 async def register_user(payload: _RegisterRequest):
     username = (payload.get("username", "") if isinstance(payload, dict) else payload.username).strip()
@@ -378,6 +400,47 @@ async def admin_stats(_user=Depends(_require_admin_user)):
     agent = await get_agent()
     stats = await agent.memory.db.get_admin_stats()
     return JSONResponse(stats)
+
+
+@app.get("/admin/prompts")
+async def admin_list_prompts(role_name: str = "", _user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    prompts = await agent.memory.db.list_prompts(role_name=role_name.strip() or None)
+    return JSONResponse({"items": [_serialize_prompt(p) for p in prompts]})
+
+
+@app.get("/admin/prompts/active")
+async def admin_active_prompt(role_name: str = "system", _user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    active = await agent.memory.db.get_active_prompt(role_name)
+    if not active:
+        raise HTTPException(status_code=404, detail="Aktif prompt bulunamadı")
+    return JSONResponse(_serialize_prompt(active))
+
+
+@app.post("/admin/prompts")
+async def admin_upsert_prompt(payload: _PromptUpsertRequest, _user=Depends(_require_admin_user)):
+    role_name = (payload.role_name or "").strip().lower()
+    prompt_text = (payload.prompt_text or "").strip()
+    if not role_name or not prompt_text:
+        raise HTTPException(status_code=400, detail="role_name ve prompt_text zorunludur")
+
+    agent = await get_agent()
+    record = await agent.memory.db.upsert_prompt(role_name=role_name, prompt_text=prompt_text, activate=bool(payload.activate))
+    if role_name == "system" and bool(record.is_active):
+        agent.system_prompt = record.prompt_text
+    return JSONResponse(_serialize_prompt(record))
+
+
+@app.post("/admin/prompts/activate")
+async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    active = await agent.memory.db.activate_prompt(payload.prompt_id)
+    if not active:
+        raise HTTPException(status_code=404, detail="Prompt kaydı bulunamadı")
+    if active.role_name == "system":
+        agent.system_prompt = active.prompt_text
+    return JSONResponse(_serialize_prompt(active))
 
 
 # ─────────────────────────────────────────────

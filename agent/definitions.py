@@ -7,7 +7,7 @@ Sidar'ın karakter profili ve sistem talimatı.
 SIDAR_KEYS = ["sidar", "sidar ai", "asistan", "yardımcı", "mühendis"]
 SIDAR_WAKE_WORDS = ["sidar", "hey sidar", "sidar ai"]
 
-SIDAR_SYSTEM_PROMPT = """Sen SİDAR'sın — Yazılım Mimarı ve Baş Mühendis.
+DEFAULT_SYSTEM_PROMPT = """Sen SİDAR'sın — Yazılım Mimarı ve Baş Mühendis.
 Varsayılan olarak yerel Ollama ile çalışabilirsin; ancak sağlayıcı Gemini ise internet bağlantısı gerekir.
 
 ## KİŞİLİK
@@ -164,3 +164,6 @@ Asla düz metin veya markdown bloğu kullanma.
    YANLIŞ: {"project": "Sid", "version": "v1.0.0"}
    DOĞRU : {"thought": "...", "tool": "final_answer", "argument": "**Proje:** Sid\\n**Sürüm:** v1.0.0"}
 """  
+
+# Geriye dönük uyumluluk: runtime'da aktif prompt DB'den gelir; bu metin seed/fallback içindir.
+SIDAR_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
