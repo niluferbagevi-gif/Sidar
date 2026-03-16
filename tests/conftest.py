@@ -1,15 +1,11 @@
 import asyncio
-import inspect
+
+import pytest
 
 
-def pytest_configure(config):
-    config.addinivalue_line("markers", "asyncio: run test in asyncio event loop")
-
-
-def pytest_pyfunc_call(pyfuncitem):
-    testfunction = pyfuncitem.obj
-    if inspect.iscoroutinefunction(testfunction):
-        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
-        asyncio.run(testfunction(**kwargs))
-        return True
-    return None
+@pytest.fixture(scope="session")
+def event_loop():
+    """Tüm test session'ı için tek bir event loop garantisi (DB testleri için şarttır)."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
