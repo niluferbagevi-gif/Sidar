@@ -153,3 +153,21 @@ def test_github_webhook_hmac_invalid_signature_rejected_and_valid_accepted():
     )
     assert ok.status_code == 200
     assert any("bob" in txt for _role, txt in agent.memory_calls)
+
+
+def test_github_webhook_requires_signature_when_secret_is_set():
+    mod = _load_web_server()
+    mod.cfg.GITHUB_WEBHOOK_SECRET = "secret"
+
+    try:
+        asyncio.run(
+            mod.github_webhook(
+                _FakeRequest(body_bytes=b"{}"),
+                x_github_event="push",
+                x_hub_signature_256="",
+            )
+        )
+        assert False, "expected 401"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 401
+
