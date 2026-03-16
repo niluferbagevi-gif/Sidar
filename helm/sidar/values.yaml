@@ -1,0 +1,68 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: sidar/app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+web:
+  enabled: true
+  replicaCount: 2
+  command: ["python", "web_server.py", "--host", "0.0.0.0", "--port", "7860"]
+  service:
+    type: ClusterIP
+    port: 7860
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+aIWorker:
+  enabled: true
+  replicaCount: 1
+  command: ["python", "sidar.py"]
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+redis:
+  enabled: true
+  image: redis:alpine
+  port: 6379
+  storage:
+    size: 5Gi
+    storageClassName: ""
+
+postgresql:
+  enabled: true
+  image: postgres:16-alpine
+  port: 5432
+  database: sidar
+  username: sidar
+  password: sidar
+  storage:
+    size: 10Gi
+    storageClassName: ""
+
+hpa:
+  web:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+env:
+  AI_PROVIDER: ollama
+  OLLAMA_URL: http://host.docker.internal:11434/api
+  WEB_HOST: 0.0.0.0
+  WEB_PORT: "7860"
+  ENABLE_TRACING: "true"
+  OTEL_EXPORTER_ENDPOINT: http://jaeger:4317
