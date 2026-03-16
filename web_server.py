@@ -8,6 +8,7 @@ Başlatmak için:
 """
 
 import argparse
+import atexit
 import asyncio
 import contextlib
 import hashlib
@@ -21,6 +22,8 @@ import secrets
 import subprocess
 import time
 import tempfile
+import os
+import signal
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -90,8 +93,86 @@ _agent: SidarAgent | None = None
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
 _rag_prewarm_task: asyncio.Task | None = None
+_shutdown_cleanup_done = False
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
+
+
+def _list_child_ollama_pids() -> list[int]:
+    """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
+    try:
+        out = subprocess.check_output(["ps", "-eo", "pid=,ppid=,comm=,args="], stderr=subprocess.DEVNULL).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    me = os.getpid()
+    pids: list[int] = []
+    for line in out.splitlines():
+        parts = line.strip().split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except Exception:
+            continue
+        comm = parts[2].strip().lower()
+        args = parts[3].strip().lower()
+        if ppid != me:
+            continue
+        if comm == "ollama" or "ollama serve" in args:
+            pids.append(pid)
+    return pids
+
+
+def _reap_child_processes_nonblocking() -> int:
+    """Zombi child process'leri waitpid(WNOHANG) ile temizle."""
+    reaped = 0
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            break
+        except Exception:
+            break
+        if pid <= 0:
+            break
+        reaped += 1
+    return reaped
+
+
+def _force_shutdown_local_llm_processes() -> None:
+    """Sunucu kapanırken yerel ollama child process'lerini zorla sonlandırır."""
+    global _shutdown_cleanup_done
+    if _shutdown_cleanup_done:
+        return
+    _shutdown_cleanup_done = True
+
+    if str(getattr(cfg, "AI_PROVIDER", "") or "").lower() != "ollama":
+        _reap_child_processes_nonblocking()
+        return
+
+    if not bool(getattr(cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)):
+        _reap_child_processes_nonblocking()
+        return
+
+    pids = _list_child_ollama_pids()
+    for pid in pids:
+        with contextlib.suppress(Exception):
+            os.kill(pid, signal.SIGTERM)
+
+    if pids:
+        time.sleep(0.15)
+        for pid in pids:
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGKILL)
+
+    reaped = _reap_child_processes_nonblocking()
+    if pids or reaped:
+        logger.info("Yerel LLM shutdown cleanup: term=%d reap=%d", len(pids), reaped)
+
+
+atexit.register(_force_shutdown_local_llm_processes)
 
 
 def _bind_llm_usage_sink(agent: SidarAgent) -> None:
@@ -181,6 +262,7 @@ async def _app_lifespan(_app: FastAPI):
             except asyncio.CancelledError:
                 pass
         await _close_redis_client()
+        _force_shutdown_local_llm_processes()
 
 
 

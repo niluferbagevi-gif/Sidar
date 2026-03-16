@@ -252,6 +252,54 @@ def test_app_lifespan_prewarm_cancellederror_branch(mod, monkeypatch):
     asyncio.run(_run())
     assert flags["cancelled"] is True
 
+
+def test_force_shutdown_local_llm_processes_kills_child_ollama(mod, monkeypatch):
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = True
+
+    monkeypatch.setattr(mod.os, "getpid", lambda: 999)
+    monkeypatch.setattr(
+        mod.subprocess,
+        "check_output",
+        lambda *a, **k: b" 123 999 ollama ollama serve\n 124 1 ollama ollama serve\n",
+    )
+
+    killed = []
+    monkeypatch.setattr(mod.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+
+    wait_calls = {"n": 0}
+
+    def _waitpid(_pid, _flags):
+        wait_calls["n"] += 1
+        if wait_calls["n"] == 1:
+            return (123, 0)
+        return (0, 0)
+
+    monkeypatch.setattr(mod.os, "waitpid", _waitpid)
+
+    mod._force_shutdown_local_llm_processes()
+
+    assert any(pid == 123 for pid, _ in killed)
+
+
+def test_force_shutdown_local_llm_processes_noop_when_disabled(mod, monkeypatch):
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = False
+
+    wait_calls = {"n": 0}
+
+    def _waitpid(_pid, _flags):
+        wait_calls["n"] += 1
+        return (0, 0)
+
+    monkeypatch.setattr(mod.os, "waitpid", _waitpid)
+
+    mod._force_shutdown_local_llm_processes()
+    assert wait_calls["n"] >= 1
+
 def test_admin_prompt_endpoints(mod, monkeypatch):
     active_record = types.SimpleNamespace(
         id=2,

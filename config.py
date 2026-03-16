@@ -286,6 +286,7 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
     OLLAMA_TIMEOUT: int = get_int_env("OLLAMA_TIMEOUT", 30)
+    OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     CODING_MODEL:   str = os.getenv("CODING_MODEL", "qwen2.5-coder:7b")
     TEXT_MODEL:     str = os.getenv("TEXT_MODEL", "gemma2:9b")
 
