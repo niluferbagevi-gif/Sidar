@@ -60,6 +60,8 @@ except Exception:  # OpenTelemetry opsiyoneldir
     BatchSpanProcessor = None
 
 from config import Config
+from agent.base_agent import BaseAgent
+from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.core.event_stream import get_agent_event_bus
 from managers.system_health import render_llm_metrics_prometheus
@@ -361,6 +363,15 @@ class _PromptActivateRequest(BaseModel):
     prompt_id: int = Field(..., gt=0)
 
 
+class _AgentPluginRegisterRequest(BaseModel):
+    role_name: str = Field(..., min_length=2, max_length=64)
+    source_code: str = Field(..., min_length=1)
+    class_name: str | None = Field(default=None, min_length=1, max_length=128)
+    capabilities: list[str] = Field(default_factory=list)
+    description: str = Field(default="", max_length=512)
+    version: str = Field(default="1.0.0", max_length=32)
+
+
 def _serialize_prompt(record) -> dict:
     return {
         "id": int(record.id),
@@ -373,10 +384,84 @@ def _serialize_prompt(record) -> dict:
     }
 
 
+_PLUGIN_ROLE_RE = re.compile(r"^[a-zA-Z0-9_-]{2,64}$")
+
+
+def _validate_plugin_role_name(role_name: str) -> str:
+    normalized = (role_name or "").strip().lower()
+    if not _PLUGIN_ROLE_RE.match(normalized):
+        raise HTTPException(status_code=400, detail="Geçersiz role_name")
+    return normalized
+
+
+def _sanitize_capabilities(capabilities: list[str] | None) -> list[str]:
+    if not capabilities:
+        return []
+    return [c.strip() for c in capabilities if str(c).strip()]
+
+
+def _load_plugin_agent_class(source_code: str, class_name: str | None, module_label: str) -> type[BaseAgent]:
+    namespace = {"__name__": module_label}
+    try:
+        exec(compile(source_code, module_label, "exec"), namespace)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}") from exc
+
+    if class_name:
+        candidate = namespace.get(class_name)
+        if not inspect.isclass(candidate):
+            raise HTTPException(status_code=400, detail=f"Belirtilen sınıf bulunamadı: {class_name}")
+        if not issubclass(candidate, BaseAgent):
+            raise HTTPException(status_code=400, detail="Plugin sınıfı BaseAgent türetmelidir")
+        return candidate
+
+    discovered: list[type[BaseAgent]] = []
+    for obj in namespace.values():
+        if inspect.isclass(obj) and issubclass(obj, BaseAgent) and obj is not BaseAgent:
+            discovered.append(obj)
+
+    if not discovered:
+        raise HTTPException(status_code=400, detail="Plugin içinde BaseAgent türevi bir sınıf bulunamadı")
+    return discovered[0]
+
+
+def _register_plugin_agent(
+    *,
+    role_name: str,
+    source_code: str,
+    class_name: str | None,
+    capabilities: list[str] | None,
+    description: str,
+    version: str,
+) -> dict:
+    normalized_role = _validate_plugin_role_name(role_name)
+    module_label = f"sidar_plugin_{normalized_role}_{secrets.token_hex(4)}"
+    plugin_cls = _load_plugin_agent_class(source_code, class_name, module_label)
+    plugin_description = (description or "").strip() or (plugin_cls.__doc__ or "").strip().split("\n")[0]
+
+    AgentRegistry.register_type(
+        role_name=normalized_role,
+        agent_class=plugin_cls,
+        capabilities=_sanitize_capabilities(capabilities),
+        description=plugin_description,
+        version=(version or "1.0.0").strip() or "1.0.0",
+        is_builtin=False,
+    )
+    spec = AgentRegistry.get(normalized_role)
+    return {
+        "role_name": normalized_role,
+        "class_name": plugin_cls.__name__,
+        "capabilities": list(spec.capabilities if spec else []),
+        "description": str(spec.description if spec else plugin_description),
+        "version": str(spec.version if spec else version),
+        "is_builtin": bool(spec.is_builtin if spec else False),
+    }
+
+
 @app.post("/auth/register")
 async def register_user(payload: _RegisterRequest):
-    username = payload.username.strip()
-    password = payload.password
+    username = (payload.username if hasattr(payload, "username") else payload.get("username", "")).strip()
+    password = payload.password if hasattr(payload, "password") else payload.get("password", "")
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -392,8 +477,8 @@ async def register_user(payload: _RegisterRequest):
 
 @app.post("/auth/login")
 async def login_user(payload: _LoginRequest):
-    username = payload.username.strip()
-    password = payload.password
+    username = (payload.username if hasattr(payload, "username") else payload.get("username", "")).strip()
+    password = payload.password if hasattr(payload, "password") else payload.get("password", "")
     agent = await get_agent()
     user = await agent.memory.db.authenticate_user(username=username, password=password)
     if not user:
@@ -454,6 +539,53 @@ async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_
     if active.role_name == "system":
         agent.system_prompt = active.prompt_text
     return JSONResponse(_serialize_prompt(active))
+
+
+@app.post("/api/agents/register")
+async def register_agent_plugin(payload: _AgentPluginRegisterRequest, _user=Depends(_require_admin_user)):
+    result = _register_plugin_agent(
+        role_name=payload.role_name,
+        source_code=payload.source_code,
+        class_name=payload.class_name,
+        capabilities=payload.capabilities,
+        description=payload.description,
+        version=payload.version,
+    )
+    return JSONResponse({"success": True, "agent": result})
+
+
+@app.post("/api/agents/register-file")
+async def register_agent_plugin_file(
+    file: UploadFile = File(...),
+    role_name: str = "",
+    class_name: str = "",
+    capabilities: str = "",
+    description: str = "",
+    version: str = "1.0.0",
+    _user=Depends(_require_admin_user),
+):
+    data = await file.read()
+    await file.close()
+    if not data:
+        raise HTTPException(status_code=400, detail="Yüklü dosya boş")
+    if len(data) > MAX_FILE_CONTENT_BYTES:
+        raise HTTPException(status_code=413, detail="Dosya çok büyük")
+    try:
+        source_code = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Plugin dosyası UTF-8 olmalıdır") from exc
+
+    parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
+    target_role_name = role_name.strip() or Path(file.filename or "").stem
+    result = _register_plugin_agent(
+        role_name=target_role_name,
+        source_code=source_code,
+        class_name=class_name.strip() or None,
+        capabilities=parsed_capabilities,
+        description=description,
+        version=version,
+    )
+    return JSONResponse({"success": True, "agent": result})
 
 
 # ─────────────────────────────────────────────
