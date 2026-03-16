@@ -120,9 +120,10 @@ class SidarAgent:
             if self._initialized:
                 return
             await self.memory.initialize()
-            active_prompt = await self.memory.db.get_active_prompt("system")
-            if active_prompt and active_prompt.prompt_text.strip():
-                self.system_prompt = active_prompt.prompt_text
+            if hasattr(self.memory, "db") and hasattr(self.memory.db, "get_active_prompt"):
+                active_prompt = await self.memory.db.get_active_prompt("system")
+                if active_prompt and active_prompt.prompt_text.strip():
+                    self.system_prompt = active_prompt.prompt_text
             self._initialized = True
 
     # ─────────────────────────────────────────────
