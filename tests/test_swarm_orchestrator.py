@@ -231,3 +231,63 @@ def test_swarm_orchestrator_loop_guard_stops_recursive_delegation(monkeypatch, s
     result = asyncio.run(orchestrator.run("Aynı işi tekrar yap", intent="code_generation", session_id="s-loop"))
     assert result.status == "failed"
     assert "Recursive loop guard" in result.summary
+
+
+def test_swarm_orchestrator_run_pipeline_carries_previous_success_context(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+
+    seen_contexts = []
+
+    class _PipelineAgent:
+        async def handle(self, envelope):
+            seen_contexts.append(dict(envelope.context))
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=f"ok:{envelope.goal}",
+                evidence=[envelope.receiver],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda role_name, **kwargs: _PipelineAgent())
+
+    tasks = [
+        swarm_module.SwarmTask(goal="A", intent="code_generation", context={"seed": "1"}),
+        swarm_module.SwarmTask(goal="B", intent="code_review", context={}),
+    ]
+    results = asyncio.run(orchestrator.run_pipeline(tasks, session_id="sess-pipe"))
+
+    assert len(results) == 2
+    assert all(r.status == "success" for r in results)
+    assert "prev_coder" not in seen_contexts[0]
+    assert seen_contexts[1]["prev_coder"].startswith("ok:A")
+    assert seen_contexts[1]["session_id"] == "sess-pipe"
+
+
+def test_swarm_orchestrator_loop_guard_stops_at_max_hops(monkeypatch, swarm_module):
+    cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1, SWARM_LOOP_GUARD_MAX_REPEAT=99)
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=cfg)
+
+    class _DelegatingAgent:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=swarm_module.DelegationRequest(
+                    task_id=envelope.task_id,
+                    reply_to=envelope.receiver,
+                    target_agent="reviewer" if envelope.receiver == "coder" else "researcher",
+                    payload=f"next:{envelope.receiver}",
+                    meta={"reason": "chain"},
+                ),
+                evidence=[],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role_name: _DummySpec(role_name))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda role_name, **kwargs: _DelegatingAgent())
+
+    result = asyncio.run(orchestrator.run("delegasyon zinciri", intent="mixed", session_id="s-hop"))
+
+    assert result.status == "failed"
+    assert "maksimum devir sayısı aşıldı" in result.summary
