@@ -2,6 +2,9 @@ import asyncio
 import importlib.util
 import io
 import json
+from datetime import datetime, timedelta, timezone
+
+import jwt
 import sys
 import types
 from pathlib import Path
@@ -355,16 +358,7 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
 def test_basic_auth_middleware_flow():
     mod = _load_web_server()
 
-    class _Db:
-        async def get_user_by_token(self, token):
-            if token == "good-token":
-                return types.SimpleNamespace(id="u1", username="alice", role="user")
-            return None
-
     class _Mem:
-        def __init__(self):
-            self.db = _Db()
-
         async def set_active_user(self, _uid, _uname=None):
             return None
 
@@ -384,7 +378,15 @@ def test_basic_auth_middleware_flow():
     unauthorized = asyncio.run(mod.basic_auth_middleware(bad, _next))
     assert unauthorized.status_code == 401
 
-    good = _FakeRequest(path="/status", headers={"Authorization": "Bearer good-token"})
+    payload = {
+        "sub": "u1",
+        "username": "alice",
+        "role": "user",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+    }
+    good_token = jwt.encode(payload, "sidar-dev-secret", algorithm="HS256")
+    good = _FakeRequest(path="/status", headers={"Authorization": f"Bearer {good_token}"})
     ok = asyncio.run(mod.basic_auth_middleware(good, _next))
     assert ok.status_code == 200
 
@@ -1853,14 +1855,7 @@ def test_bind_llm_usage_sink_runtimeerror_on_get_running_loop(monkeypatch):
 def test_basic_auth_middleware_resets_metrics_context_on_exception(monkeypatch):
     mod = _load_web_server()
 
-    class _Db:
-        async def get_user_by_token(self, token):
-            return types.SimpleNamespace(id="u1", username="alice", role="user") if token == "good-token" else None
-
     class _Mem:
-        def __init__(self):
-            self.db = _Db()
-
         async def set_active_user(self, _uid, _uname=None):
             return None
 
@@ -1875,7 +1870,15 @@ def test_basic_auth_middleware_resets_metrics_context_on_exception(monkeypatch):
     async def _boom(_request):
         raise RuntimeError("next failed")
 
-    req = _FakeRequest(path="/status", headers={"Authorization": "Bearer good-token"})
+    payload = {
+        "sub": "u1",
+        "username": "alice",
+        "role": "user",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+    }
+    good_token = jwt.encode(payload, "sidar-dev-secret", algorithm="HS256")
+    req = _FakeRequest(path="/status", headers={"Authorization": f"Bearer {good_token}"})
     try:
         asyncio.run(mod.basic_auth_middleware(req, _boom))
         assert False, "expected RuntimeError"
