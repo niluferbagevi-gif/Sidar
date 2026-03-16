@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
+  - python=3.11.15
   - pip=24.2
   - git=2.45
   - setuptools=75.1
@@ -20,3 +20,5 @@ dependencies:
       - pytest-benchmark>=4.0.0
       - ruff~=0.8.1
       - -e .[rag,postgres,telemetry,dev]
+      # Python 3.11.x uyumluluğu: RAG bağımlılık pinleri pyproject.toml extras içinde yönetilir.
+      # Beklenen pinler: chromadb~=0.5.5, torch~=2.4.1, torchvision~=0.19.1
