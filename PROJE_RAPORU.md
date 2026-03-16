@@ -6,12 +6,12 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-16 (v3.0.5 — Tam kapsamlı kaynak denetimi: v3.0.4'te tespit edilen K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6 bulgularının tamamı doğrulandı/çözüldü; satır sayıları yeniden ölçüldü (105 test modülü, 21.290 test satırı); 5 yeni bulgu (YN-K-1, YN-Y-1..YN-Y-3, YN-O-1) tespit edilerek kayıt altına alındı)
+> **Son Güncelleme:** 2026-03-16 (v3.0.6 — Tam kapsamlı doğrulama turu: v3.0.5'te çözüldü olarak işaretlenen K/Y/O/D ve YN bulguları dosya bazında yeniden doğrulandı; satır/metrik sayıları güncellendi (108 test modülü, 21.648 test satırı); 2 yeni operasyonel uyumsuzluk (YN2-Y-1, YN2-O-1) tespit edilerek kayıt altına alındı)
 > **Proje Sürümü:** 3.0.0
 
-> **Önceki Kayıt:** 3.0.3
+> **Önceki Kayıt:** 3.0.5
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.727** satır (tests hariç, güncel ölçüm); Test: **21.290** satır; Web UI: **4.240** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **13.885** satır (tests hariç, güncel ölçüm); Test: **21.648** satır; Web UI: **4.246** satır.
 
 ---
 
@@ -66,6 +66,7 @@
   - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
   - [11.3 2026-03-16 v3.0.4 Denetimi — Tüm Bulgular (Çözüldü)](#113-2026-03-16-denetiminde-tespit-edilen-yeni-bulgular)
   - [11.4 2026-03-16 v3.0.5 Denetimi — Yeni Bulgular](#114-2026-03-16-v305-denetiminde-tespit-edilen-yeni-bulgular)
+  - [11.5 2026-03-16 v3.0.6 Doğrulama — Yeni Uyumsuzluklar](#115-2026-03-16-v306-doğrulama--yeni-uyumsuzluklar)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -936,6 +937,21 @@ v3.0.4 bulgularının tümü doğrulandıktan sonra aynı tam kaynak incelemesin
 
 ---
 
+
+### 11.5 2026-03-16 v3.0.6 Doğrulama — Yeni Uyumsuzluklar
+
+Bu doğrulama turunda §11.3 ve §11.4 altında kapatılmış tüm bulgular ilgili dosyalarda tekrar kontrol edilmiş ve teknik çözüm durumları **doğrulanmıştır**.
+
+| ID | Dosya | Öncelik | Durum | Tespit Özeti |
+|---|---|---:|---|---|
+| YN2-Y-1 | `pytest.ini`, `pyproject.toml`, `environment.yml` | Yüksek | Açık | `pytest.ini` içinde `asyncio_mode=auto` tanımlı olmasına rağmen temel ortam (`pyproject.toml` + `environment.yml`) test eklentilerini zorunlu kurmuyor. Temiz ortamda `pytest` çalıştırıldığında async testler plugin yokluğu nedeniyle yürümüyor. |
+| YN2-O-1 | `tests/test_code_manager_runtime.py`, `managers/code_manager.py` | Orta | Açık | Docker WSL2 fallback'ında socket tür doğrulaması (`stat.S_ISSOCK`) eklendiği için testteki yalın stub senaryosu artık gerçek davranışla uyumsuz. Üretim kodu güvenli; ancak test beklentisi güncellenmeli (socket stat monkeypatch). |
+
+**Doğrulama Özeti (v3.0.6):**
+- K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6: **doğrulandı/çözüm aktif**.
+- YN-K-1, YN-Y-1..YN-Y-3, YN-O-1: **doğrulandı/çözüm aktif**.
+- Yeni açılan uyumsuzluk: **2 adet** (1 yüksek, 1 orta).
+
 ## 12. `.env` Tam Değişken Referansı
 
 [⬆ İçindekilere Dön](#içindekiler)
@@ -1493,5 +1509,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | v3.0.3 | 2026-03-15 | Child-process sonlandırma güvenliği, OpenTelemetry async context sızıntı riski doğrulandı |
 | v3.0.4 | 2026-03-16 | Test kapsama %100, 33 legacy skip testi temizlendi, kapsama kalite kapısı %99.9, kaynak dosya satır sayıları yeniden ölçüldü, 8 yeni güvenlik/işlevsellik bulgusu (K-1, K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) kayıt altına alındı |
 | **v3.0.5** | **2026-03-16** | **v3.0.4 bulgularının tamamı (K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) doğrulandı/çözüldü; 3 yanlış pozitif (K-2, Y-4, O-2, D-4) teyit edildi; 5 yeni bulgu tespit edildi: YN-K-1 (rag.py _TEXT_EXTS bypass), YN-Y-1 (sidar_agent _lock lazy init), YN-Y-2 (SSRF in add_document_from_url), YN-Y-3 (github_manager .env izin), YN-O-1 (auth endpoint Pydantic eksik)** |
+| **v3.0.6** | **2026-03-16** | **v3.0.5'te kapatılan tüm K/Y/O/D ve YN bulguları tekrar doğrulandı; satır/metrik sayıları güncellendi (108 test modülü, 21.648 test satırı); 2 yeni operasyonel uyumsuzluk eklendi: YN2-Y-1 (pytest async plugin kurulum uyumsuzluğu), YN2-O-1 (CodeManager WSL2 socket doğrulaması sonrası test beklentisi farkı).** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
