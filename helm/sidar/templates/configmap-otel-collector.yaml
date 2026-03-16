@@ -1,0 +1,48 @@
+{{- if .Values.apm.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sidar.fullname" . }}-otel-collector
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: otel-collector
+data:
+  collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.apm.collector.service.grpcPort }}
+          http:
+            endpoint: 0.0.0.0:{{ .Values.apm.collector.service.httpPort }}
+
+    processors:
+      batch: {}
+      memory_limiter:
+        limit_mib: 256
+        spike_limit_mib: 64
+        check_interval: 5s
+
+    exporters:
+{{- if eq .Values.apm.backend "zipkin" }}
+      zipkin:
+        endpoint: http://{{ include "sidar.fullname" . }}-zipkin:{{ .Values.apm.zipkin.service.port }}/api/v2/spans
+{{- else }}
+      otlp/jaeger:
+        endpoint: {{ include "sidar.fullname" . }}-jaeger:{{ .Values.apm.jaeger.service.collectorGrpcPort }}
+        tls:
+          insecure: true
+{{- end }}
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+{{- if eq .Values.apm.backend "zipkin" }}
+          exporters: [zipkin]
+{{- else }}
+          exporters: [otlp/jaeger]
+{{- end }}
+{{- end }}

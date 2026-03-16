@@ -1,0 +1,30 @@
+{{- if and .Values.apm.enabled (eq .Values.apm.backend "zipkin") .Values.apm.zipkin.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidar.fullname" . }}-zipkin
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: zipkin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: zipkin
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: zipkin
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: zipkin
+          image: {{ .Values.apm.zipkin.image | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.apm.zipkin.service.port }}
+          resources:
+            {{- toYaml .Values.apm.zipkin.resources | nindent 12 }}
+{{- end }}

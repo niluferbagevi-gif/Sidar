@@ -47,7 +47,20 @@ env:
   AI_PROVIDER: litellm
   LITELLM_GATEWAY_URL: http://litellm-prod:4000
   ENABLE_TRACING: "true"
-  OTEL_EXPORTER_ENDPOINT: http://otel-collector:4317
   OTEL_SERVICE_NAME: sidar-prod
   LOG_LEVEL: WARNING
   SANDBOX_ENABLED: "true"
+
+apm:
+  enabled: true
+  backend: jaeger
+  collector:
+    replicaCount: 2
+  jaeger:
+    enabled: true
+  zipkin:
+    enabled: true
+
+monitoring:
+  sloDashboard:
+    enabled: true
