@@ -341,3 +341,24 @@ def test_chunk_text_cfg_none_and_explicit_args_cover_both_sides(tmp_path):
 
     out_explicit = st._chunk_text('lorem ipsum ' * 20, chunk_size=20, chunk_overlap=5)
     assert isinstance(out_explicit, list) and out_explicit
+
+
+def test_search_sync_auto_disables_rrf_for_local_provider(monkeypatch, tmp_path):
+    mod = _load_rag_module(tmp_path)
+    st = mod.DocumentStore.__new__(mod.DocumentStore)
+    st.cfg = types.SimpleNamespace(AI_PROVIDER="ollama", RAG_LOCAL_ENABLE_HYBRID=False)
+    st.default_top_k = 3
+    st._index = {"d": {"session_id": "s1"}}
+    st._is_local_llm_provider = True
+    st._local_hybrid_enabled = False
+    st._pgvector_available = False
+    st._chroma_available = False
+    st.collection = None
+    st._bm25_available = True
+
+    monkeypatch.setattr(st, "_rrf_search", lambda *_a: (True, "rrf"))
+    monkeypatch.setattr(st, "_bm25_search", lambda *_a: (True, "bm25"))
+
+    ok, msg = mod.DocumentStore._search_sync(st, "q", mode="auto", session_id="s1")
+    assert ok is True
+    assert msg == "bm25"

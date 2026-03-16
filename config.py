@@ -180,11 +180,17 @@ def check_hardware() -> HardwareInfo:
                 "🚀 GPU Hızlandırma Aktif: %s  (%d GPU tespit edildi, CUDA %s)",
                 info.gpu_name, info.gpu_count, info.cuda_version,
             )
-            # VRAM fraksiyonunu hemen uygula (GPU_MEMORY_FRACTION env'den okunur)
-            frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
+            # VRAM fraksiyonu: geriye dönük GPU_MEMORY_FRACTION + opsiyonel LLM/RAG ayrımı
+            legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
+            llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
+            rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
+            if os.getenv("LLM_GPU_MEMORY_FRACTION") is not None or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None:
+                frac = llm_frac + rag_frac
+            else:
+                frac = legacy_frac
             if not (0.1 <= frac < 1.0):
                 logger.warning(
-                    "GPU_MEMORY_FRACTION=%.2f geçersiz aralık (0.1–1.0 bekleniyor) "
+                    "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–1.0 bekleniyor) "
                     "— varsayılan 0.8 kullanılıyor.",
                     frac,
                 )
@@ -319,6 +325,9 @@ class Config:
 
     # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–1.0)
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
+    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
+    LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
+    RAG_GPU_MEMORY_FRACTION: float = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35)))
 
     # FP16 / mixed precision  →  embedding modellerinde bellek tasarrufu
     GPU_MIXED_PRECISION: bool = get_bool_env("GPU_MIXED_PRECISION", False)
@@ -601,6 +610,9 @@ class Config:
             "driver_version":     cls.DRIVER_VERSION,
             "multi_gpu":          cls.MULTI_GPU,
             "gpu_mixed_precision": cls.GPU_MIXED_PRECISION,
+            "gpu_memory_fraction": cls.GPU_MEMORY_FRACTION,
+            "llm_gpu_memory_fraction": cls.LLM_GPU_MEMORY_FRACTION,
+            "rag_gpu_memory_fraction": cls.RAG_GPU_MEMORY_FRACTION,
             "cpu_count":          cls.CPU_COUNT,
             "debug_mode":         cls.DEBUG_MODE,
             "web_port":           cls.WEB_PORT,
@@ -695,6 +707,8 @@ class Config:
             print(f"  GPU Sayısı       : {cls.GPU_COUNT}")
             print(f"  Hedef Cihaz      : cuda:{cls.GPU_DEVICE}")
             print(f"  Mixed Precision  : {'Açık' if cls.GPU_MIXED_PRECISION else 'Kapalı'}")
+            print(f"  LLM VRAM Payı    : {cls.LLM_GPU_MEMORY_FRACTION:.2f}")
+            print(f"  RAG VRAM Payı    : {cls.RAG_GPU_MEMORY_FRACTION:.2f}")
             if cls.DRIVER_VERSION != "N/A":
                 print(f"  Sürücü Sürümü    : {cls.DRIVER_VERSION}")
         else:
