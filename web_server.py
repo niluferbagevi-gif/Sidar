@@ -175,6 +175,29 @@ async def _app_lifespan(_app: FastAPI):
         await _close_redis_client()
 
 
+
+
+async def _resolve_user_from_token(agent: SidarAgent, token: str):
+    db = agent.memory.db
+    verifier = getattr(db, "verify_auth_token", None)
+    if callable(verifier):
+        return verifier(token)
+
+    legacy = getattr(db, "get_user_by_token", None)
+    if callable(legacy):
+        return await legacy(token)
+    return None
+
+
+async def _issue_auth_token(agent: SidarAgent, user) -> str:
+    creator = agent.memory.db.create_auth_token
+    try:
+        record = await creator(user.id, role=user.role, username=user.username)
+    except TypeError:
+        record = await creator(user.id)
+    return record.token
+
+
 app = FastAPI(
     title="Sidar Web UI & REST API",
     description=(
@@ -190,7 +213,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
-    """Bearer token ile DB tabanlı kullanıcı doğrulama uygular."""
+    """Bearer token ile stateless JWT kullanıcı doğrulaması uygular."""
     open_paths = {
         "/", "/health", "/docs", "/redoc", "/openapi.json",
         "/auth/login", "/auth/register",
@@ -214,7 +237,7 @@ async def basic_auth_middleware(request: Request, call_next):
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
 
     agent = await get_agent()
-    user = await agent.memory.db.get_user_by_token(token)
+    user = await _resolve_user_from_token(agent, token)
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
@@ -279,8 +302,8 @@ class _LoginRequest(BaseModel):
 
 @app.post("/auth/register")
 async def register_user(payload: _RegisterRequest):
-    username = payload.username.strip()
-    password = payload.password
+    username = (payload.get("username", "") if isinstance(payload, dict) else payload.username).strip()
+    password = payload.get("password", "") if isinstance(payload, dict) else payload.password
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -290,21 +313,21 @@ async def register_user(payload: _RegisterRequest):
     except Exception as exc:
         raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
 
-    token = await agent.memory.db.create_auth_token(user.id)
-    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token.token})
+    token = await _issue_auth_token(agent, user)
+    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token})
 
 
 @app.post("/auth/login")
 async def login_user(payload: _LoginRequest):
-    username = payload.username.strip()
-    password = payload.password
+    username = (payload.get("username", "") if isinstance(payload, dict) else payload.username).strip()
+    password = payload.get("password", "") if isinstance(payload, dict) else payload.password
     agent = await get_agent()
     user = await agent.memory.db.authenticate_user(username=username, password=password)
     if not user:
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı")
 
-    token = await agent.memory.db.create_auth_token(user.id)
-    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token.token})
+    token = await _issue_auth_token(agent, user)
+    return JSONResponse({"user": {"id": user.id, "username": user.username, "role": user.role}, "access_token": token})
 
 
 @app.get("/auth/me")
@@ -607,7 +630,7 @@ async def websocket_chat(websocket: WebSocket):
                 if not auth_token:
                     await _ws_close_policy_violation(websocket, "Authentication token missing")
                     return
-                ws_user = await agent.memory.db.get_user_by_token(auth_token)
+                ws_user = await _resolve_user_from_token(agent, auth_token)
                 if not ws_user:
                     await _ws_close_policy_violation(websocket, "Invalid or expired token")
                     return

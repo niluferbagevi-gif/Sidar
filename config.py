@@ -279,6 +279,11 @@ class Config:
     ACCESS_LEVEL: str = os.getenv("ACCESS_LEVEL", "full")
     API_KEY: str = os.getenv("API_KEY", "")
 
+    # ─── JWT Auth (stateless) ─────────────────────────────────
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", os.getenv("API_KEY", ""))
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_TTL_DAYS: int = get_int_env("JWT_TTL_DAYS", 7)
+
     # ─── GitHub ──────────────────────────────────────────────
     GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
     GITHUB_REPO:  str = os.getenv("GITHUB_REPO", "")

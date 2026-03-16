@@ -7,6 +7,7 @@ import hashlib
 import sqlite3
 import uuid
 import secrets
+import jwt
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -622,45 +623,13 @@ class Database:
             return None
         return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
 
-    async def create_auth_token(self, user_id: str, ttl_days: int = 7) -> AuthTokenRecord:
-        token = secrets.token_urlsafe(48)
-        created_at = _utc_now_iso()
-        expires_at = _expires_in(max(1, ttl_days))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO auth_tokens (token, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4)",
-                    token, user_id, expires_at, created_at,
-                )
-        else:
-            assert self._sqlite_conn is not None
-
-            def _run() -> None:
-                assert self._sqlite_conn is not None
-                self._sqlite_conn.execute(
-                    "INSERT INTO auth_tokens (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-                    (token, user_id, expires_at, created_at),
-                )
-                self._sqlite_conn.commit()
-
-            await self._run_sqlite_op(_run)
-        return AuthTokenRecord(token=token, user_id=user_id, expires_at=expires_at, created_at=created_at)
-
-    async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
-        now_iso = _utc_now_iso()
-        query = (
-            "SELECT u.id, u.username, u.role, u.created_at "
-            "FROM auth_tokens t JOIN users u ON u.id=t.user_id "
-            "WHERE t.token=? AND t.expires_at>?"
-        )
+    async def _get_user_by_id(self, user_id: str) -> Optional[UserRecord]:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    query.replace("?", "$1", 1).replace("?", "$2", 1),
-                    token,
-                    now_iso,
+                    "SELECT id, username, role, created_at FROM users WHERE id=$1",
+                    user_id,
                 )
             if not row:
                 return None
@@ -670,13 +639,73 @@ class Database:
 
         def _run() -> Optional[sqlite3.Row]:
             assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(query, (token, now_iso))
+            cur = self._sqlite_conn.execute(
+                "SELECT id, username, role, created_at FROM users WHERE id=?",
+                (user_id,),
+            )
             return cur.fetchone()
 
         row = await self._run_sqlite_op(_run)
         if not row:
             return None
         return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+
+    async def create_auth_token(
+        self,
+        user_id: str,
+        ttl_days: Optional[int] = None,
+        role: Optional[str] = None,
+        username: Optional[str] = None,
+    ) -> AuthTokenRecord:
+        created_at = _utc_now_iso()
+        effective_ttl_days = ttl_days if ttl_days is not None else int(getattr(self.cfg, "JWT_TTL_DAYS", 7) or 7)
+        ttl = max(1, int(effective_ttl_days or 1))
+        expires_at = _expires_in(ttl)
+
+        resolved_role = (role or "").strip() or "user"
+        resolved_username = (username or "").strip()
+
+        payload = {
+            "sub": user_id,
+            "role": resolved_role,
+            "username": resolved_username,
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+            "exp": int((datetime.now(timezone.utc) + timedelta(days=ttl)).timestamp()),
+        }
+        secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+        algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
+        token = jwt.encode(payload, secret_key, algorithm=algorithm)
+        return AuthTokenRecord(token=token, user_id=user_id, expires_at=expires_at, created_at=created_at)
+
+    def verify_auth_token(self, token: str) -> Optional[UserRecord]:
+        try:
+            secret_key = str(getattr(self.cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+            algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
+            payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+        except jwt.PyJWTError:
+            return None
+
+        user_id = str(payload.get("sub", "") or "").strip()
+        role = str(payload.get("role", "") or "").strip()
+        username = str(payload.get("username", "") or "").strip()
+        if not user_id or not role:
+            return None
+
+        return UserRecord(
+            id=user_id,
+            username=username,
+            role=role,
+            created_at="",
+        )
+
+    async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
+        """Geriye dönük uyumluluk: JWT doğrular, mümkünse kullanıcı kaydını da yükler."""
+        jwt_user = self.verify_auth_token(token)
+        if not jwt_user:
+            return None
+
+        db_user = await self._get_user_by_id(jwt_user.id)
+        return db_user or jwt_user
 
 
     async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:
