@@ -28,21 +28,30 @@ class PackageInfoManager:
 
     def __init__(self, config=None) -> None:
         self.cfg = config
+
+        # Instance defaultlarını init başında kesinleştir.
+        self.TIMEOUT = 12
+        self.CACHE_TTL_SECONDS = 1800
+
         if config is not None:
             self.TIMEOUT = getattr(config, "PACKAGE_INFO_TIMEOUT", self.TIMEOUT)
-        self.timeout = httpx.Timeout(float(self.TIMEOUT), connect=5.0)
+            self.CACHE_TTL_SECONDS = getattr(config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS)
+
+        self.cache_ttl = timedelta(seconds=max(60, int(self.CACHE_TTL_SECONDS)))
+        self._cache: Dict[str, Tuple[Dict, datetime]] = {}
+
+        timeout_seconds = float(self.TIMEOUT)
+        try:
+            self.timeout = httpx.Timeout(timeout=timeout_seconds, connect=5.0)
+        except TypeError:
+            # Bazı test stub'larında/versiyonlarda keyword-only imzası olmayabilir.
+            self.timeout = httpx.Timeout(timeout_seconds)
+
         version = getattr(config, "VERSION", "2.7.0") if config is not None else "2.7.0"
         self.headers = {
             "User-Agent": f"SidarAI/{version} (Software Engineer Assistant)",
             "Accept": "application/json",
         }
-        cache_ttl_seconds = (
-            getattr(config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS)
-            if config is not None
-            else self.CACHE_TTL_SECONDS
-        )
-        self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))
-        self._cache: Dict[str, Tuple[Dict, datetime]] = {}
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR (CACHE + HTTP)
@@ -324,4 +333,6 @@ class PackageInfoManager:
         return "PackageInfo: PyPI + npm + GitHub Releases — Aktif (Asenkron)"
 
     def __repr__(self) -> str:
-        return f"<PackageInfoManager timeout={self.TIMEOUT}s cache_ttl={int(self.cache_ttl.total_seconds())}s>"
+        ttl_seconds = int(getattr(self, "cache_ttl", timedelta(seconds=60)).total_seconds())
+        timeout_seconds = getattr(self, "TIMEOUT", "?")
+        return f"<PackageInfoManager timeout={timeout_seconds}s cache_ttl={ttl_seconds}s>"
