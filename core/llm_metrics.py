@@ -30,10 +30,21 @@ class LLMMetricEvent:
 
 
 def _env_float(key: str, default: float) -> float:
+    if default is None:
+        default = 0.0
     try:
-        return float(os.getenv(key, str(default)))
+        raw = os.getenv(key)
+        if raw is None:
+            return float(default)
+        text = str(raw).strip()
+        if not text:
+            return float(default)
+        value = float(text)
+        if value != value or value in (float("inf"), float("-inf")):
+            return float(default)
+        return value
     except (TypeError, ValueError):
-        return default
+        return float(default)
 
 
 # Yaklaşık maliyet tablosu (1M token başına USD)
