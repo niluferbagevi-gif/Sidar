@@ -1,22 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const WS_URL = (sessionId) =>
-  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${sessionId}`;
+const WS_URL = () =>
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat`;
 
-export function useWebSocket(sessionId, { onChunk, onDone, onError, onStatus, onToolCall, onThought } = {}) {
+const TOKEN_KEY = "sidar_access_token";
+
+export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, onToolCall, onThought } = {}) {
   const wsRef = useRef(null);
   const [status, setStatus] = useState("disconnected");
   const bufferRef = useRef("");
 
   const connect = useCallback(() => {
-    if (!sessionId) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
+    const token = (localStorage.getItem(TOKEN_KEY) || "").trim();
+    if (!token) {
+      setStatus("unauthenticated");
+      onError?.("Lütfen giriş yapın. Erişim belirteci bulunamadı.");
+      return;
+    }
+
     setStatus("connecting");
-    const ws = new WebSocket(WS_URL(sessionId));
+    const ws = new WebSocket(WS_URL());
     wsRef.current = ws;
 
-    ws.onopen = () => setStatus("connected");
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ action: "auth", token }));
+    };
 
     ws.onmessage = (event) => {
       const raw = event.data;
@@ -29,6 +39,11 @@ export function useWebSocket(sessionId, { onChunk, onDone, onError, onStatus, on
 
       try {
         const msg = JSON.parse(raw);
+        if (msg.auth_ok) {
+          setStatus("connected");
+          return;
+        }
+
         if (msg.type === "chunk" || typeof msg.chunk === "string") {
           const chunk = msg.content ?? msg.chunk;
           bufferRef.current += chunk;
@@ -57,7 +72,7 @@ export function useWebSocket(sessionId, { onChunk, onDone, onError, onStatus, on
     };
 
     ws.onclose = () => setStatus("disconnected");
-  }, [sessionId, onChunk, onDone, onError, onStatus, onToolCall, onThought]);
+  }, [onChunk, onDone, onError, onStatus, onToolCall, onThought]);
 
   const disconnect = useCallback(() => {
     wsRef.current?.close();
@@ -70,7 +85,10 @@ export function useWebSocket(sessionId, { onChunk, onDone, onError, onStatus, on
         return;
       }
       bufferRef.current = "";
-      wsRef.current.send(typeof message === "string" ? message : JSON.stringify(message));
+      const payload = typeof message === "string"
+        ? { action: "message", message }
+        : message;
+      wsRef.current.send(JSON.stringify(payload));
     },
     [onError],
   );

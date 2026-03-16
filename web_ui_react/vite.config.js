@@ -14,7 +14,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../web_ui_built",   // `npm run build` çıktısı FastAPI'nin mount ettiği dizine gider
+    outDir: "dist",
     emptyOutDir: true,
   },
 });
