@@ -7,40 +7,37 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 - DocumentStore     : ChromaDB + BM25 + Keyword hibrit RAG belgesi deposu
 """
 
+from importlib import import_module
+
 __version__ = "2.7.0"
 
 
-def _optional_import(importer, fallback_name: str):
+def _optional_import(module_name: str, attr_name: str):
     """Opsiyonel bağımlılık eksik olsa da çekirdek paketin import edilebilmesini sağlar."""
     try:
-        return importer()
+        module = import_module(module_name)
+        return getattr(module, attr_name)
     except Exception:
         class _MissingDependencyProxy:  # pragma: no cover - yalnızca bağımlılık eksikse çalışır
-            __name__ = fallback_name
+            __name__ = attr_name
 
             def __init__(self, *args, **kwargs):
                 raise RuntimeError(
-                    f"'{fallback_name}' kullanımı için opsiyonel bağımlılıklar yüklü olmalıdır."
+                    f"'{attr_name}' kullanımı için opsiyonel bağımlılıklar yüklü olmalıdır."
                 )
 
         return _MissingDependencyProxy
 
 
-LLMClient = _optional_import(lambda: __import__("core.llm_client", fromlist=["LLMClient"]).LLMClient, "LLMClient")
-ConversationMemory = _optional_import(
-    lambda: __import__("core.memory", fromlist=["ConversationMemory"]).ConversationMemory,
-    "ConversationMemory",
-)
-DocumentStore = _optional_import(lambda: __import__("core.rag", fromlist=["DocumentStore"]).DocumentStore, "DocumentStore")
-Database = _optional_import(lambda: __import__("core.db", fromlist=["Database"]).Database, "Database")
-LLMMetricsCollector = _optional_import(
-    lambda: __import__("core.llm_metrics", fromlist=["LLMMetricsCollector"]).LLMMetricsCollector,
-    "LLMMetricsCollector",
-)
-get_llm_metrics_collector = _optional_import(
-    lambda: __import__("core.llm_metrics", fromlist=["get_llm_metrics_collector"]).get_llm_metrics_collector,
-    "get_llm_metrics_collector",
-)
+LLMClient = _optional_import("core.llm_client", "LLMClient")
+ConversationMemory = _optional_import("core.memory", "ConversationMemory")
+DocumentStore = _optional_import("core.rag", "DocumentStore")
+Database = _optional_import("core.db", "Database")
+
+# Metrik toplayıcı sembollerini doğrudan hedef modülden çöz.
+# Böylece __import__/fromlist kaynaklı kırılganlıklar ortadan kalkar.
+LLMMetricsCollector = _optional_import("core.llm_metrics", "LLMMetricsCollector")
+get_llm_metrics_collector = _optional_import("core.llm_metrics", "get_llm_metrics_collector")
 
 # Geriye dönük/kolaylaştırıcı alias'lar
 MemoryManager = ConversationMemory
