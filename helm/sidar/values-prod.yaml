@@ -1,0 +1,53 @@
+# Üretim ortamı değer geçersiz kılmaları — base values.yaml üzerine uygulanır
+# Kullanım: helm upgrade --install sidar ./helm/sidar -f values.yaml -f values-prod.yaml
+
+image:
+  tag: stable   # CI pipeline tarafından sha/semver etiketiyle değiştirilir
+  pullPolicy: IfNotPresent
+
+web:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+aIWorker:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+redis:
+  storage:
+    size: 20Gi
+    storageClassName: ssd
+
+postgresql:
+  password: ""  # ExternalSecret / Vault Secret referansıyla sağlanır (boş bırakın)
+  storage:
+    size: 50Gi
+    storageClassName: ssd
+
+hpa:
+  web:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+
+env:
+  AI_PROVIDER: litellm
+  LITELLM_GATEWAY_URL: http://litellm-prod:4000
+  ENABLE_TRACING: "true"
+  OTEL_EXPORTER_ENDPOINT: http://otel-collector:4317
+  OTEL_SERVICE_NAME: sidar-prod
+  LOG_LEVEL: WARNING
+  SANDBOX_ENABLED: "true"

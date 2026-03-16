@@ -289,7 +289,7 @@ async def basic_auth_middleware(request: Request, call_next):
 def _setup_tracing() -> None:
     if hasattr(cfg, "init_telemetry"):
         cfg.init_telemetry(
-            service_name="sidar-web",
+            service_name=getattr(cfg, "OTEL_SERVICE_NAME", "sidar-web"),
             fastapi_app=app,
             logger_obj=logger,
             trace_module=trace,
@@ -308,7 +308,7 @@ def _setup_tracing() -> None:
         logger.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
         return
 
-    resource = Resource.create({"service.name": "sidar-web"})
+    resource = Resource.create({"service.name": getattr(cfg, "OTEL_SERVICE_NAME", "sidar-web")})
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=cfg.OTEL_EXPORTER_ENDPOINT, insecure=True)
     provider.add_span_processor(BatchSpanProcessor(exporter))
