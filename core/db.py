@@ -477,12 +477,16 @@ class Database:
 
 
     async def ensure_default_prompt_registry(self) -> None:
+        import logging as _log
         from agent.definitions import SIDAR_SYSTEM_PROMPT
 
         existing = await self.get_active_prompt("system")
         if existing:
             return
-        await self.upsert_prompt(role_name="system", prompt_text=SIDAR_SYSTEM_PROMPT, activate=True)
+        try:
+            await self.upsert_prompt(role_name="system", prompt_text=SIDAR_SYSTEM_PROMPT, activate=True)
+        except Exception as exc:  # noqa: BLE001
+            _log.getLogger(__name__).warning("Varsayılan prompt kaydı oluşturulamadı: %s", exc)
 
     async def list_prompts(self, role_name: Optional[str] = None) -> list[PromptRecord]:
         role = (role_name or "").strip() or None
