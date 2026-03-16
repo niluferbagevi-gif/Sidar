@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from typing import Dict
 
@@ -28,6 +29,7 @@ class AgentEvent:
 class AgentEventBus:
     def __init__(self) -> None:
         self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
+        self._buffered_events: Dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
@@ -41,11 +43,13 @@ class AgentEventBus:
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
         self._subscribers[sub_id] = asyncio.Queue(maxsize=max(10, maxsize))
+        self._buffered_events[sub_id] = deque(maxlen=100)
         self._schedule_redis_bootstrap()
         return sub_id, self._subscribers[sub_id]
 
     def unsubscribe(self, sub_id: int) -> None:
         self._subscribers.pop(sub_id, None)
+        self._buffered_events.pop(sub_id, None)
 
     async def publish(self, source: str, message: str) -> None:
         evt = AgentEvent(ts=time.time(), source=source, message=message)
@@ -159,15 +163,33 @@ class AgentEventBus:
                         with contextlib.suppress(Exception):
                             await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
 
+    async def _drain_buffered_events_once(self) -> bool:
+        any_progress = False
+        for sid, q in self._subscribers.items():
+            buffer = self._buffered_events.get(sid)
+            if not buffer:
+                continue
+
+            # Kuyruk doluysa event bir sonraki turda taşınmak üzere bekler.
+            if q.full():
+                any_progress = True
+                continue
+
+            evt = buffer.popleft()
+            q.put_nowait(evt)
+            any_progress = True
+
+        return any_progress
+
     def _fanout_local(self, evt: AgentEvent) -> None:
-        to_drop = []
         for sid, q in self._subscribers.items():
             try:
                 q.put_nowait(evt)
             except asyncio.QueueFull:
-                to_drop.append(sid)
-        for sid in to_drop:
-            self.unsubscribe(sid)
+                buffer = self._buffered_events.get(sid)
+                if buffer is None:
+                    continue
+                buffer.append(evt)
 
     async def _cleanup_redis(self) -> None:
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
