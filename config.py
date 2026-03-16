@@ -381,6 +381,8 @@ class Config:
     RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
     RAG_VECTOR_BACKEND: str = os.getenv("RAG_VECTOR_BACKEND", "chroma")  # chroma | pgvector
     PGVECTOR_TABLE: str = os.getenv("PGVECTOR_TABLE", "rag_embeddings")
+    PGVECTOR_EMBEDDING_DIM: int = get_int_env("PGVECTOR_EMBEDDING_DIM", 384)
+    PGVECTOR_EMBEDDING_MODEL: str = os.getenv("PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: Dict[str, Any] = dict(SANDBOX_LIMITS)
