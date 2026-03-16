@@ -44,7 +44,14 @@ env:
   AI_PROVIDER: litellm
   LITELLM_GATEWAY_URL: http://litellm-staging:4000
   ENABLE_TRACING: "true"
-  OTEL_EXPORTER_ENDPOINT: http://jaeger-staging:4317
   OTEL_SERVICE_NAME: sidar-staging
   LOG_LEVEL: DEBUG
   SANDBOX_ENABLED: "false"
+
+apm:
+  enabled: true
+  backend: jaeger
+
+monitoring:
+  sloDashboard:
+    enabled: true

@@ -32,9 +32,13 @@ spec:
               value: "redis://{{ include \"sidar.fullname\" . }}-redis:{{ .Values.redis.port }}/0"
             - name: DATABASE_URL
               value: "postgresql+asyncpg://{{ .Values.postgresql.username }}:{{ .Values.postgresql.password }}@{{ include \"sidar.fullname\" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            - name: OTEL_EXPORTER_ENDPOINT
+              value: {{ include "sidar.otelEndpoint" . | quote }}
             {{- range $k, $v := .Values.env }}
+            {{- if ne $k "OTEL_EXPORTER_ENDPOINT" }}
             - name: {{ $k }}
               value: {{ $v | quote }}
+            {{- end }}
             {{- end }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}

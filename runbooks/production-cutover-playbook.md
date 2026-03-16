@@ -108,3 +108,44 @@ sudo bash scripts/install_host_sandbox.sh --mode gvisor --no-restart
 ```
 
 Script; runtime binary kurulumunu yapar, `/etc/docker/daemon.json` içinde `runtimes` alanını günceller, opsiyonel olarak Docker'ı restart eder ve `hello-world` ile runtime smoke testlerini çalıştırır.
+## 9) APM (Jaeger/Zipkin) production devreye alma
+
+Helm chart artık OTLP trafiğini `otel-collector` üzerinden Jaeger veya Zipkin backend'ine yönlendirebilir.
+
+### 9.1 Dağıtım
+
+Jaeger backend ile:
+
+```bash
+helm upgrade --install sidar ./helm/sidar \
+  -f helm/sidar/values.yaml \
+  -f helm/sidar/values-prod.yaml \
+  --set apm.enabled=true \
+  --set apm.backend=jaeger
+```
+
+Zipkin backend ile:
+
+```bash
+helm upgrade --install sidar ./helm/sidar \
+  -f helm/sidar/values.yaml \
+  -f helm/sidar/values-prod.yaml \
+  --set apm.enabled=true \
+  --set apm.backend=zipkin
+```
+
+### 9.2 Doğrulama
+
+- `web` ve `ai-worker` pod'larında `OTEL_EXPORTER_ENDPOINT` değeri cluster içi collector servisine (`*-otel-collector:4317`) işaret etmelidir.
+- Jaeger kullanılıyorsa query UI servisi: `*-jaeger:16686`
+- Zipkin kullanılıyorsa UI servisi: `*-zipkin:9411`
+
+### 9.3 SLO Dashboard
+
+Chart, Grafana sidecar taraması için `grafana_dashboard=1` etiketli `sidar-slo-overview` dashboard ConfigMap'i üretir.
+Önerilen başlangıç SLO metrikleri:
+
+- Availability (`up`) ≥ 99.9%
+- P95 latency (`http_server_requests_seconds_bucket`) ≤ hedef eşik
+- 5xx error rate (`http_server_requests_seconds_count{status=~"5.."}`) ≤ hedef eşik
+

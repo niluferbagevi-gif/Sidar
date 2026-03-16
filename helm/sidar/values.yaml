@@ -65,4 +65,51 @@ env:
   WEB_HOST: 0.0.0.0
   WEB_PORT: "7860"
   ENABLE_TRACING: "true"
-  OTEL_EXPORTER_ENDPOINT: http://jaeger:4317
+  OTEL_EXPORTER_ENDPOINT: http://sidar-otel-collector:4317
+
+apm:
+  enabled: true
+  backend: jaeger # jaeger | zipkin
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.102.1
+    replicaCount: 1
+    service:
+      grpcPort: 4317
+      httpPort: 4318
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  jaeger:
+    enabled: true
+    image: jaegertracing/all-in-one:1.59
+    service:
+      collectorGrpcPort: 4317
+      collectorHttpPort: 14268
+      queryPort: 16686
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  zipkin:
+    enabled: true
+    image: openzipkin/zipkin:3
+    service:
+      port: 9411
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+monitoring:
+  sloDashboard:
+    enabled: true
