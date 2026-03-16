@@ -22,6 +22,7 @@ class UserRecord:
     username: str
     role: str
     created_at: str
+    tenant_id: str = "default"
 
 
 @dataclass
@@ -49,6 +50,19 @@ class MessageRecord:
     content: str
     tokens_used: int
     created_at: str
+
+
+@dataclass
+class AccessPolicyRecord:
+    id: int
+    user_id: str
+    tenant_id: str
+    resource_type: str
+    resource_id: str
+    action: str
+    effect: str
+    created_at: str
+    updated_at: str
 
 
 @dataclass
@@ -202,12 +216,68 @@ class Database:
     async def init_schema(self) -> None:
         if self._backend == "postgresql":
             await self._init_schema_postgresql()
+            await self._ensure_access_control_schema_postgresql()
             await self._ensure_schema_version_postgresql()
             await self.ensure_default_prompt_registry()
             return
         await self._init_schema_sqlite()
+        await self._ensure_access_control_schema_sqlite()
         await self._ensure_schema_version_sqlite()
         await self.ensure_default_prompt_registry()
+
+
+    async def _ensure_access_control_schema_sqlite(self) -> None:
+        assert self._sqlite_conn is not None
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            cols = self._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
+            col_names = {str(c[1]) for c in cols}
+            if "tenant_id" not in col_names:
+                self._sqlite_conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'")
+            self._sqlite_conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS access_policies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    resource_type TEXT NOT NULL,
+                    resource_id TEXT NOT NULL DEFAULT '*',
+                    action TEXT NOT NULL,
+                    effect TEXT NOT NULL DEFAULT 'allow',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """
+            )
+            self._sqlite_conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+            )
+            self._sqlite_conn.commit()
+        await self._run_sqlite_op(_run)
+
+    async def _ensure_access_control_schema_postgresql(self) -> None:
+        assert self._pg_pool is not None
+        async with self._pg_pool.acquire() as conn:
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS access_policies (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    resource_type TEXT NOT NULL,
+                    resource_id TEXT NOT NULL DEFAULT '*',
+                    action TEXT NOT NULL,
+                    effect TEXT NOT NULL DEFAULT 'allow',
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
+                )
+                """
+            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)")
 
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -218,6 +288,7 @@ class Database:
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT,
             role TEXT NOT NULL DEFAULT 'user',
+            tenant_id TEXT NOT NULL DEFAULT 'default',
             created_at TEXT NOT NULL
         );
 
@@ -270,6 +341,23 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
         CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);
+        CREATE TABLE IF NOT EXISTS access_policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            resource_type TEXT NOT NULL,
+            resource_id TEXT NOT NULL DEFAULT '*',
+            action TEXT NOT NULL,
+            effect TEXT NOT NULL DEFAULT 'allow',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant
+            ON access_policies(user_id, tenant_id, resource_type, action);
+
 
         CREATE TABLE IF NOT EXISTS prompt_registry (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,6 +388,7 @@ class Database:
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT,
                 role TEXT NOT NULL DEFAULT 'user',
+                tenant_id TEXT NOT NULL DEFAULT 'default',
                 created_at TIMESTAMPTZ NOT NULL
             );
             """,
@@ -352,6 +441,22 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);",
             "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);",
             "CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);",
+            """
+            CREATE TABLE IF NOT EXISTS access_policies (
+                id BIGSERIAL PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                resource_type TEXT NOT NULL,
+                resource_id TEXT NOT NULL DEFAULT '*',
+                action TEXT NOT NULL,
+                effect TEXT NOT NULL DEFAULT 'allow',
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL,
+                UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action);",
+
             """
             CREATE TABLE IF NOT EXISTS prompt_registry (
                 id BIGSERIAL PRIMARY KEY,
@@ -683,7 +788,7 @@ class Database:
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT id, username, role, created_at FROM users WHERE username=$1",
+                    "SELECT id, username, role, created_at, tenant_id FROM users WHERE username=$1",
                     username,
                 )
                 if row:
@@ -692,6 +797,7 @@ class Database:
                         username=str(row["username"]),
                         role=str(row["role"]),
                         created_at=str(row["created_at"]),
+                        tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]),
                     )
             return await self.create_user(username=username, role=role)
 
@@ -700,7 +806,7 @@ class Database:
         def _fetch() -> Optional[sqlite3.Row]:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
-                "SELECT id, username, role, created_at FROM users WHERE username=?",
+                "SELECT id, username, role, created_at, tenant_id FROM users WHERE username=?",
                 (username,),
             )
             return cur.fetchone()
@@ -870,7 +976,7 @@ class Database:
             return cur.rowcount > 0
 
         return await self._run_sqlite_op(_run)
-    async def create_user(self, username: str, role: str = "user", password: Optional[str] = None) -> UserRecord:
+    async def create_user(self, username: str, role: str = "user", password: Optional[str] = None, tenant_id: str = "default") -> UserRecord:
         user_id = str(uuid.uuid4())
         created_at = _utc_now_iso()
         password_hash = _hash_password(password) if password else None
@@ -879,51 +985,52 @@ class Database:
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 await conn.execute(
-                    "INSERT INTO users (id, username, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5)",
+                    "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
                     user_id,
                     username,
                     password_hash,
                     role,
+                    tenant_id,
                     created_at,
                 )
-            return UserRecord(id=user_id, username=username, role=role, created_at=created_at)
+            return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
 
         assert self._sqlite_conn is not None
 
         def _run() -> None:
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
-                "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, username, password_hash, role, created_at),
+                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, username, password_hash, role, tenant_id, created_at),
             )
             self._sqlite_conn.commit()
 
         await self._run_sqlite_op(_run)
-        return UserRecord(id=user_id, username=username, role=role, created_at=created_at)
+        return UserRecord(id=user_id, username=username, role=role, created_at=created_at, tenant_id=tenant_id)
 
-    async def register_user(self, username: str, password: str, role: str = "user") -> UserRecord:
-        return await self.create_user(username=username, role=role, password=password)
+    async def register_user(self, username: str, password: str, role: str = "user", tenant_id: str = "default") -> UserRecord:
+        return await self.create_user(username=username, role=role, password=password, tenant_id=tenant_id)
 
     async def authenticate_user(self, username: str, password: str) -> Optional[UserRecord]:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT id, username, password_hash, role, created_at FROM users WHERE username=$1",
+                    "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=$1",
                     username,
                 )
             if not row or not row["password_hash"]:
                 return None
             if not _verify_password(password, str(row["password_hash"])):
                 return None
-            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
 
         assert self._sqlite_conn is not None
 
         def _run() -> Optional[sqlite3.Row]:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
-                "SELECT id, username, password_hash, role, created_at FROM users WHERE username=?",
+                "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=?",
                 (username,),
             )
             return cur.fetchone()
@@ -933,26 +1040,26 @@ class Database:
             return None
         if not _verify_password(password, str(row["password_hash"])):
             return None
-        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
 
     async def _get_user_by_id(self, user_id: str) -> Optional[UserRecord]:
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT id, username, role, created_at FROM users WHERE id=$1",
+                    "SELECT id, username, role, created_at, tenant_id FROM users WHERE id=$1",
                     user_id,
                 )
             if not row:
                 return None
-            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+            return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
 
         assert self._sqlite_conn is not None
 
         def _run() -> Optional[sqlite3.Row]:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
-                "SELECT id, username, role, created_at FROM users WHERE id=?",
+                "SELECT id, username, role, created_at, tenant_id FROM users WHERE id=?",
                 (user_id,),
             )
             return cur.fetchone()
@@ -960,7 +1067,7 @@ class Database:
         row = await self._run_sqlite_op(_run)
         if not row:
             return None
-        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]))
+        return UserRecord(id=str(row["id"]), username=str(row["username"]), role=str(row["role"]), created_at=str(row["created_at"]), tenant_id=str(row.get("tenant_id", "default") if hasattr(row, "get") else row["tenant_id"]))
 
     async def create_auth_token(
         self,
@@ -968,6 +1075,7 @@ class Database:
         ttl_days: Optional[int] = None,
         role: Optional[str] = None,
         username: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> AuthTokenRecord:
         created_at = _utc_now_iso()
         effective_ttl_days = ttl_days if ttl_days is not None else int(getattr(self.cfg, "JWT_TTL_DAYS", 7) or 7)
@@ -976,11 +1084,13 @@ class Database:
 
         resolved_role = (role or "").strip() or "user"
         resolved_username = (username or "").strip()
+        resolved_tenant_id = (tenant_id or "default").strip() or "default"
 
         payload = {
             "sub": user_id,
             "role": resolved_role,
             "username": resolved_username,
+            "tenant_id": resolved_tenant_id,
             "iat": int(datetime.now(timezone.utc).timestamp()),
             "exp": int((datetime.now(timezone.utc) + timedelta(days=ttl)).timestamp()),
         }
@@ -1000,6 +1110,7 @@ class Database:
         user_id = str(payload.get("sub", "") or "").strip()
         role = str(payload.get("role", "") or "").strip()
         username = str(payload.get("username", "") or "").strip()
+        tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
         if not user_id or not role:
             return None
 
@@ -1008,6 +1119,7 @@ class Database:
             username=username,
             role=role,
             created_at="",
+            tenant_id=tenant_id,
         )
 
     async def get_user_by_token(self, token: str) -> Optional[UserRecord]:
@@ -1019,6 +1131,163 @@ class Database:
         db_user = await self._get_user_by_id(jwt_user.id)
         return db_user or jwt_user
 
+
+    async def list_access_policies(self, user_id: str, tenant_id: Optional[str] = None) -> list[AccessPolicyRecord]:
+        effective_tenant = (tenant_id or "").strip()
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at "
+                "FROM access_policies WHERE user_id=$1"
+            )
+            args: list[Any] = [user_id]
+            if effective_tenant:
+                query += " AND tenant_id=$2"
+                args.append(effective_tenant)
+            query += " ORDER BY resource_type, action, resource_id"
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+            return [
+                AccessPolicyRecord(
+                    id=int(r["id"]),
+                    user_id=str(r["user_id"]),
+                    tenant_id=str(r["tenant_id"]),
+                    resource_type=str(r["resource_type"]),
+                    resource_id=str(r["resource_id"]),
+                    action=str(r["action"]),
+                    effect=str(r["effect"]),
+                    created_at=str(r["created_at"]),
+                    updated_at=str(r["updated_at"]),
+                )
+                for r in rows
+            ]
+
+        assert self._sqlite_conn is not None
+        def _run() -> list[sqlite3.Row]:
+            assert self._sqlite_conn is not None
+            if effective_tenant:
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    FROM access_policies
+                    WHERE user_id=? AND tenant_id=?
+                    ORDER BY resource_type, action, resource_id
+                    """,
+                    (user_id, effective_tenant),
+                )
+            else:
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    FROM access_policies
+                    WHERE user_id=?
+                    ORDER BY resource_type, action, resource_id
+                    """,
+                    (user_id,),
+                )
+            return cur.fetchall()
+        rows = await self._run_sqlite_op(_run)
+        return [
+            AccessPolicyRecord(
+                id=int(r["id"]),
+                user_id=str(r["user_id"]),
+                tenant_id=str(r["tenant_id"]),
+                resource_type=str(r["resource_type"]),
+                resource_id=str(r["resource_id"]),
+                action=str(r["action"]),
+                effect=str(r["effect"]),
+                created_at=str(r["created_at"]),
+                updated_at=str(r["updated_at"]),
+            )
+            for r in rows
+        ]
+
+    async def upsert_access_policy(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str = "default",
+        resource_type: str,
+        resource_id: str = "*",
+        action: str,
+        effect: str = "allow",
+    ) -> None:
+        now = _utc_now_iso()
+        tenant = (tenant_id or "default").strip() or "default"
+        r_type = (resource_type or "").strip().lower()
+        r_id = (resource_id or "*").strip() or "*"
+        act = (action or "").strip().lower()
+        eff = (effect or "allow").strip().lower()
+        if eff not in {"allow", "deny"}:
+            raise ValueError("effect must be allow or deny")
+        if not r_type or not act:
+            raise ValueError("resource_type and action are required")
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+                    ON CONFLICT (user_id, tenant_id, resource_type, resource_id, action)
+                    DO UPDATE SET effect=EXCLUDED.effect, updated_at=EXCLUDED.updated_at
+                    """,
+                    user_id,
+                    tenant,
+                    r_type,
+                    r_id,
+                    act,
+                    eff,
+                    now,
+                )
+            return
+
+        assert self._sqlite_conn is not None
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                """
+                INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, tenant_id, resource_type, resource_id, action)
+                DO UPDATE SET effect=excluded.effect, updated_at=excluded.updated_at
+                """,
+                (user_id, tenant, r_type, r_id, act, eff, now, now),
+            )
+            self._sqlite_conn.commit()
+        await self._run_sqlite_op(_run)
+
+    async def check_access_policy(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str = "default",
+        resource_type: str,
+        action: str,
+        resource_id: str = "*",
+    ) -> bool:
+        tenant = (tenant_id or "default").strip() or "default"
+        r_type = (resource_type or "").strip().lower()
+        act = (action or "").strip().lower()
+        r_id = (resource_id or "*").strip() or "*"
+        if not user_id or not r_type or not act:
+            return False
+
+        policies = await self.list_access_policies(user_id=user_id, tenant_id=tenant)
+        if not policies and tenant != "default":
+            policies = await self.list_access_policies(user_id=user_id, tenant_id="default")
+
+        def _match(spec: AccessPolicyRecord) -> bool:
+            return spec.resource_type == r_type and spec.action == act and (spec.resource_id == "*" or spec.resource_id == r_id)
+
+        matched = [p for p in policies if _match(p)]
+        matched.sort(key=lambda p: 0 if p.resource_id == r_id else 1)
+        if not matched:
+            return False
+        if any(p.effect == "deny" for p in matched):
+            return False
+        return any(p.effect == "allow" for p in matched)
 
     async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:
         tokens = max(0, int(daily_token_limit or 0))
