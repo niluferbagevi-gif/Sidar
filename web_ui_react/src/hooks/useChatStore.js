@@ -1,27 +1,18 @@
-/**
- * useChatStore — Zustand tabanlı sohbet durumu yönetimi.
- *
- * Mesajlar, oturum bilgisi ve akış durumunu tek merkezde tutar.
- */
-
 import { create } from "zustand";
-import { nanoid } from "nanoid"; // vite ile tree-shaken edilir; gerekirse crypto.randomUUID() kullan
 
-// nanoid yoksa basit UUID fallback
 const genId = () =>
   typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
 export const useChatStore = create((set, get) => ({
-  // ── Durum ────────────────────────────────────────────────────────────
   sessionId: genId(),
-  messages: [],       // { id, role, content, ts }[]
-  streamingText: "",  // asistan akış tamponu
+  messages: [],
+  streamingText: "",
   isStreaming: false,
   error: null,
+  telemetryEvents: [], // { id, kind, content, ts }
 
-  // ── Eylemler ─────────────────────────────────────────────────────────
   addUserMessage(content) {
     const msg = { id: genId(), role: "user", content, ts: Date.now() };
     set((s) => ({ messages: [...s.messages, msg], error: null }));
@@ -39,15 +30,28 @@ export const useChatStore = create((set, get) => ({
     set((s) => ({ messages: [...s.messages, msg], streamingText: "", isStreaming: false }));
   },
 
+  addTelemetryEvent(kind, content) {
+    if (!content) return;
+    const evt = { id: genId(), kind, content: String(content), ts: Date.now() };
+    set((s) => ({ telemetryEvents: [...s.telemetryEvents.slice(-99), evt] }));
+  },
+
   setError(msg) {
     set({ error: msg, isStreaming: false, streamingText: "" });
   },
 
   clearMessages() {
-    set({ messages: [], streamingText: "", error: null });
+    set({ messages: [], streamingText: "", error: null, telemetryEvents: [] });
   },
 
   newSession() {
-    set({ sessionId: genId(), messages: [], streamingText: "", error: null, isStreaming: false });
+    set({
+      sessionId: genId(),
+      messages: [],
+      streamingText: "",
+      error: null,
+      isStreaming: false,
+      telemetryEvents: [],
+    });
   },
 }));

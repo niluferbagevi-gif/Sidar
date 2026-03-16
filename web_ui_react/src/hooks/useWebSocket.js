@@ -1,30 +1,11 @@
-/**
- * useWebSocket — Sidar WebSocket bağlantı hook'u.
- *
- * FastAPI web_server.py /ws/{session_id} endpoint'ine bağlanır.
- * Akış mesajları (streaming) otomatik olarak yakalanır ve
- * `onChunk` callback'i ile iletilir.
- *
- * Kullanım:
- *   const { send, status } = useWebSocket(sessionId, {
- *     onChunk: (text) => setPartial(prev => prev + text),
- *     onDone:  (full) => setMessages(m => [...m, { role:"assistant", content:full }]),
- *     onError: (msg)  => console.error(msg),
- *   });
- */
-
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const WS_URL = (sessionId) =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${sessionId}`;
 
-/**
- * @param {string} sessionId
- * @param {{ onChunk?: Function, onDone?: Function, onError?: Function }} callbacks
- */
-export function useWebSocket(sessionId, { onChunk, onDone, onError } = {}) {
+export function useWebSocket(sessionId, { onChunk, onDone, onError, onStatus, onToolCall, onThought } = {}) {
   const wsRef = useRef(null);
-  const [status, setStatus] = useState("disconnected"); // disconnected | connecting | connected | error
+  const [status, setStatus] = useState("disconnected");
   const bufferRef = useRef("");
 
   const connect = useCallback(() => {
@@ -40,27 +21,31 @@ export function useWebSocket(sessionId, { onChunk, onDone, onError } = {}) {
     ws.onmessage = (event) => {
       const raw = event.data;
 
-      // Akış sonu işareti
       if (raw === "[DONE]") {
         onDone?.(bufferRef.current);
         bufferRef.current = "";
         return;
       }
 
-      // JSON zarf: { type, content } veya ham metin chunk
       try {
         const msg = JSON.parse(raw);
-        if (msg.type === "chunk") {
-          bufferRef.current += msg.content;
-          onChunk?.(msg.content);
-        } else if (msg.type === "error") {
-          onError?.(msg.content);
-        } else if (msg.type === "done") {
-          onDone?.(bufferRef.current || msg.content);
+        if (msg.type === "chunk" || typeof msg.chunk === "string") {
+          const chunk = msg.content ?? msg.chunk;
+          bufferRef.current += chunk;
+          onChunk?.(chunk);
+        } else if (msg.type === "error" || typeof msg.error === "string") {
+          onError?.(msg.content ?? msg.error);
+        } else if (msg.type === "done" || msg.done === true) {
+          onDone?.(bufferRef.current || msg.content || "");
           bufferRef.current = "";
+        } else if (typeof msg.status === "string") {
+          onStatus?.(msg.status);
+        } else if (typeof msg.tool_call === "string") {
+          onToolCall?.(msg.tool_call);
+        } else if (typeof msg.thought === "string") {
+          onThought?.(msg.thought);
         }
       } catch {
-        // Ham metin chunk (JSON değil)
         bufferRef.current += raw;
         onChunk?.(raw);
       }
@@ -72,22 +57,24 @@ export function useWebSocket(sessionId, { onChunk, onDone, onError } = {}) {
     };
 
     ws.onclose = () => setStatus("disconnected");
-  }, [sessionId, onChunk, onDone, onError]);
+  }, [sessionId, onChunk, onDone, onError, onStatus, onToolCall, onThought]);
 
   const disconnect = useCallback(() => {
     wsRef.current?.close();
   }, []);
 
-  const send = useCallback((message) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      onError?.("Bağlantı kapalı.");
-      return;
-    }
-    bufferRef.current = "";
-    wsRef.current.send(typeof message === "string" ? message : JSON.stringify(message));
-  }, [onError]);
+  const send = useCallback(
+    (message) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        onError?.("Bağlantı kapalı.");
+        return;
+      }
+      bufferRef.current = "";
+      wsRef.current.send(typeof message === "string" ? message : JSON.stringify(message));
+    },
+    [onError],
+  );
 
-  // sessionId değişince yeniden bağlan
   useEffect(() => {
     connect();
     return () => disconnect();
