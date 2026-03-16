@@ -28,7 +28,6 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
-
 def _safe_load_dotenv(*, dotenv_path: Path, override: bool = False) -> bool:
     try:
         load_dotenv(dotenv_path=dotenv_path, override=override)
