@@ -77,6 +77,15 @@ def _expires_in(days: int = 7) -> str:
     return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 
+def _quote_sql_identifier(identifier: str) -> str:
+    value = (identifier or "").strip()
+    if not value:
+        raise ValueError("SQL identifier cannot be empty")
+    if not value.replace("_", "").isalnum() or not (value[0].isalpha() or value[0] == "_"):
+        raise ValueError(f"Invalid SQL identifier: {identifier!r}")
+    return f'"{value}"'
+
+
 class Database:
     """Asenkron veritabanı erişim katmanı.
 
@@ -91,6 +100,7 @@ class Database:
         self.database_url = (getattr(self.cfg, "DATABASE_URL", "") or "").strip() or "sqlite+aiosqlite:///data/sidar.db"
         self.pool_size = int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5)
         self.schema_version_table = str(getattr(self.cfg, "DB_SCHEMA_VERSION_TABLE", "schema_versions") or "schema_versions")
+        self._schema_version_table_quoted = _quote_sql_identifier(self.schema_version_table)
         self.target_schema_version = int(getattr(self.cfg, "DB_SCHEMA_TARGET_VERSION", 1) or 1)
 
         self._backend = "sqlite"
@@ -328,7 +338,7 @@ class Database:
 
         def _run() -> None:
             assert self._sqlite_conn is not None
-            tbl = self.schema_version_table
+            tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
@@ -348,7 +358,7 @@ class Database:
 
     async def _ensure_schema_version_postgresql(self) -> None:
         assert self._pg_pool is not None
-        tbl = self.schema_version_table
+        tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
                 f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"

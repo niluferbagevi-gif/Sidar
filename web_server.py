@@ -712,6 +712,12 @@ async def status():
         "ollama_latency_ms": ollama_latency_ms,
     })
 
+async def _await_if_needed(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 @app.get(
     "/health",
     summary="Sağlık Kontrolü (Health Check)",
@@ -721,12 +727,6 @@ async def status():
         503: {"description": "Sistemde kritik bir sorun var"},
     },
 )
-async def _await_if_needed(value):
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
-
 async def health_check():
     """
     Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
