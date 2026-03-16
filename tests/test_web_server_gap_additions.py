@@ -251,3 +251,78 @@ def test_app_lifespan_prewarm_cancellederror_branch(mod, monkeypatch):
 
     asyncio.run(_run())
     assert flags["cancelled"] is True
+
+def test_admin_prompt_endpoints(mod, monkeypatch):
+    active_record = types.SimpleNamespace(
+        id=2,
+        role_name="system",
+        prompt_text="aktif",
+        version=2,
+        is_active=True,
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    class _Db:
+        async def list_prompts(self, role_name=None):
+            return [active_record]
+
+        async def get_active_prompt(self, role_name):
+            return active_record if role_name == "system" else None
+
+        async def upsert_prompt(self, role_name, prompt_text, activate=True):
+            return types.SimpleNamespace(
+                id=3,
+                role_name=role_name,
+                prompt_text=prompt_text,
+                version=3,
+                is_active=activate,
+                created_at="2026-01-01T00:00:00+00:00",
+                updated_at="2026-01-01T00:00:00+00:00",
+            )
+
+        async def activate_prompt(self, prompt_id):
+            if prompt_id != 3:
+                return None
+            return types.SimpleNamespace(
+                id=3,
+                role_name="system",
+                prompt_text="v3",
+                version=3,
+                is_active=True,
+                created_at="2026-01-01T00:00:00+00:00",
+                updated_at="2026-01-01T00:00:00+00:00",
+            )
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()), system_prompt="eski")
+
+    async def _get_agent():
+        return agent
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+
+    listed = asyncio.run(mod.admin_list_prompts(role_name="system", _user=types.SimpleNamespace(role="admin", username="x")))
+    assert listed.status_code == 200
+    assert listed.content["items"][0]["role_name"] == "system"
+
+    active = asyncio.run(mod.admin_active_prompt(role_name="system", _user=types.SimpleNamespace(role="admin", username="x")))
+    assert active.status_code == 200
+    assert active.content["is_active"] is True
+
+    created = asyncio.run(
+        mod.admin_upsert_prompt(
+            mod._PromptUpsertRequest(role_name="system", prompt_text="v3", activate=True),
+            _user=types.SimpleNamespace(role="admin", username="x"),
+        )
+    )
+    assert created.status_code == 200
+    assert agent.system_prompt == "v3"
+
+    activated = asyncio.run(
+        mod.admin_activate_prompt(
+            mod._PromptActivateRequest(prompt_id=3),
+            _user=types.SimpleNamespace(role="admin", username="x"),
+        )
+    )
+    assert activated.status_code == 200
+    assert activated.content["id"] == 3

@@ -28,6 +28,7 @@ from managers.security import SecurityManager
 from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
+from agent.definitions import SIDAR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class SidarAgent:
         self._instructions_cache: Optional[str] = None
         self._instructions_mtimes: Dict[str, float] = {}
         self._instructions_lock = threading.Lock()
+        self.system_prompt: str = SIDAR_SYSTEM_PROMPT
 
 
         # Tek omurga: supervisor tabanlı multi-agent
@@ -116,6 +118,9 @@ class SidarAgent:
             if self._initialized:
                 return
             await self.memory.initialize()
+            active_prompt = await self.memory.db.get_active_prompt("system")
+            if active_prompt and active_prompt.prompt_text.strip():
+                self.system_prompt = active_prompt.prompt_text
             self._initialized = True
 
     # ─────────────────────────────────────────────
