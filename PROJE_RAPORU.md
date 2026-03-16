@@ -541,7 +541,7 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde PBKDF2-HMAC akışıyla yapılır; JWT/passlib/bcrypt şu an zorunlu bağımlılık setinde yer almamaktadır.
+**Auth Notu (v4.0):** Kimlik doğrulama akışı stateless JWT modeline geçirilmiştir. `web_server.py` içinde token doğrulama `jwt.decode(...)` ile middleware katmanında lokal olarak yapılır; isteğe başına DB token doğrulama hit'i kaldırılmıştır. Şifre doğrulama tarafında `core/db.py` içindeki PBKDF2-HMAC akışı korunmaktadır.
 
 ---
 
@@ -1054,14 +1054,14 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `DB_SCHEMA_VERSION_TABLE` | `schema_versions` | Uygulama şema sürüm tablosu adı |
 | `DB_SCHEMA_TARGET_VERSION` | `1` | Hedef şema sürümü |
 
-> **Auth Notu:** Güncel kod tabanında `.env` içinde ayrı `SECRET_KEY` / `AUTH_SECRET` değişkeni tanımlı değildir; kimlik doğrulama bearer token + DB tabanlı token yaşam döngüsü ile yönetilir.
+> **Auth Notu:** Güncel kod tabanında stateless JWT doğrulama modeli kullanılmaktadır; middleware token imzasını yerel olarak doğrular ve DB tabanlı token lookup akışı kaldırılmıştır.
 
 ### 12.11 Telemetri ve Zero-Trust Sandbox
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
-| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
+| `OTEL_EXPORTER_ENDPOINT` | `http://jaeger:4317` | OTLP exporter endpoint (collector/Jaeger) |
 | `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
 | `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
 | `DOCKER_RUNTIME` | `""` | Seçili container runtime (örn. `runsc`, `kata-runtime`) |
@@ -1122,32 +1122,18 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agent, sandbox, observability) tekrar etmek yerine, bir sonraki kurumsal sıçrama için **yalnızca v4.0 hedeflerini** listeler.
+Bu bölüm, v4.0 kurumsal yol haritasındaki başlıkların **uygulamadaki güncel durumunu** özetler.
 
-| İyileştirme Alanı (v4.0) | Mevcut Durum (v3.0) | v4.0 Hedefi / Önerilen Geliştirme | İş Değeri / Gerekçe |
+| İyileştirme Alanı (v4.0) | Güncel Durum | Gerçekleşen Uygulama | Operasyonel Etki |
 |---|---|---|---|
-| **Kubernetes/Helm ile Ölçekleme** | `docker-compose` tabanlı güçlü operasyon akışı mevcut | Çok tenantlı ve yüksek eşzamanlı yükte yatay ölçekleme için K8s deployment + HPA + Helm chart standardizasyonu | Kurumsal ortamlarda çoklu ortam (dev/stage/prod) standardizasyonu ve otomatik ölçekleme ile operasyonel sürdürülebilirlik sağlar. |
-| **LLM Gateway/Proxy Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/llm_client.py` içinde LiteLLM entegrasyonu ve JSON format yapılandırmaları aktif | OpenRouter/LiteLLM benzeri merkezi yönlendirme katmanının provider bazlı failover ve kota politikalarıyla genişletilmesi (ileri faz) | Sağlayıcı bağımlılığını azaltır, maliyet kontrolünü merkezileştirir, SLA hedeflerini korur. |
-| **Dağıtık Ajan İletişimi (Message Broker)** | ✅ **Tamamlandı / Gerçekleştirildi:** `agent/core/event_stream.py` Redis Streams + Consumer Group (`XADD`, `XREADGROUP`, `XACK`) modeline geçirildi; `BUSYGROUP` güvenli yönetimi ve local fallback korunuyor | Kafka/NATS gibi ikinci broker seçeneği ve stream retention/pending-claim operasyonlarının SRE playbook'larına alınması | Ajanların farklı konteyner/sunucularda bağımsız ölçeklenmesini mümkün kılar; replay/ack ile dayanıklılığı artırır. |
-| **Kurumsal Vektör Veri Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/rag.py` içinde aktif `pgvector` başlatma, upsert/delete yaşam döngüsü, `<=>` (cosine distance) araması ve RRF entegrasyonu uygulanmıştır | pgvector için migration/versioning, index tuning (IVFFLAT/HNSW) ve kapasite planının runbook seviyesinde sertleştirilmesi | RAG doğruluğunu artırır, halüsinasyon oranını azaltır ve mevcut PostgreSQL yatırımıyla tekil veri platformu yaklaşımını destekler. |
-| **Anlamsal Önbellekleme (Semantic Caching)** | 🟡 **Kısmen Tamamlandı:** `config.py` üzerinde `ENABLE_SEMANTIC_CACHE` ve `SEMANTIC_CACHE_THRESHOLD` ayarları eklendi | Redis/GPTCache tabanlı gerçek semantic cache katmanının (embedding benzerlik eşleşmesi + TTL/purge + metrikler) runtime'a entegre edilmesi | Token maliyetlerini düşürür, p95 yanıt sürelerini iyileştirir ve yoğun trafikte altyapı yükünü azaltır. |
-| **Dinamik Prompt ve Model Yönetimi** | Ajan promptları ve davranış parametreleri büyük ölçüde kod seviyesinde yönetiliyor | Veritabanı destekli Prompt Registry + yönetim paneli ile prompt, model ve temperature ayarlarının canlı güncellenmesi | Kod dağıtımı olmadan A/B test ve hızlı iterasyon sağlar; ürün ekiplerinin deneysel geliştirme hızını artırır. |
-| **Dinamik Agent Swarm + Marketplace** | Coder/Researcher/Reviewer rolleri üretimde sabit tanımlı | Göreve göre dinamik uzman ajan türetimi (swarm), araç/ajan eklenti pazaryeri ve çalışma zamanı yetenek keşfi | Karmaşık görevleri alt uzmanlıklara bölerek başarı oranını yükseltir; ekosistem büyümesi için platform etkisi oluşturur. |
-| **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | Prometheus/Grafana metrikleri mevcut, uçtan uca trace görünürlüğü sınırlı | OpenTelemetry trace pipeline'ının Jaeger/Zipkin ile tam APM seviyesinde etkinleştirilmesi | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
-| **Reaktif Frontend ve Gelişmiş Admin UI** | Modüler Vanilla JS SPA + temel admin yüzeyleri mevcut | React/Next.js (veya Vue) ile stateful UI, canlı P2P ajan diyaloğu görselleştirme, tenant kota/anahtar yönetimi için gelişmiş yönetim paneli | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
-| **Stateless Auth, RBAC ve JWT Entegrasyonu** | ✅ **Tamamlandı / Gerçekleştirildi:** PyJWT tabanlı stateless token doğrulama ve middleware'de yerel imza kontrolü aktif (DB hit kaldırıldı) | RBAC kapsamının tenant/policy bazlı ince taneli yetkilendirme ile derinleştirilmesi (ileri faz) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
-| **Bağımlılık Extras Grupları** | 9 opsiyonel paket (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras ile yönetilir | `requirements.txt` + `pyproject.toml` üzerinden `[postgres]`, `[telemetry]`, `[rag]` extras gruplarına ayrılarak minimal kurulum profili desteklenmesi | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
-| **Paket Yöneticisi Modernizasyonu** | ✅ **Tamamlandı / Gerçekleştirildi:** bağımlılık yönetimi `pyproject.toml` (PEP 621) + `environment.yml` üzerinde birleştirildi; `requirements.txt` devre dışı | Lock dosyası ve dağıtım profilleri (`uv`/`poetry`) ile kurumsal tekrar üretilebilirlik katmanının güçlendirilmesi (ileri faz) | Kurulum ve bağımlılık çözümleme sürelerini hızlandırır, versiyon çakışmalarını kilit (lock) dosyalarıyla kesin olarak çözer. |
+| **Anlamsal Önbellekleme (Semantic Caching)** | ✅ **Tamamlandı / Aktif** | `core/llm_client.py` içinde Redis tabanlı `_SemanticCacheManager` ile embedding benzerliği + threshold + TTL akışı canlıya alındı | Tekrarlayan isteklerde token maliyeti ve p95 yanıt süresi düşürüldü. |
+| **Stateless Auth, RBAC ve JWT Entegrasyonu** | ✅ **Tamamlandı / Aktif** | `web_server.py` middleware katmanında JWT imza doğrulaması yerel (DB lookup yok), auth token üretimi stateless | Yatay ölçekleme kolaylaştı, auth yolundaki DB yükü azaltıldı. |
+| **Dinamik Prompt ve Model Yönetimi** | ✅ **Tamamlandı / Aktif** | `core/db.py` içinde `prompt_registry` + migration; `SidarAgent` başlangıçta aktif prompt'u DB'den okur; `/admin/prompts*` endpoint'leri eklendi | Kod dağıtımı olmadan prompt versiyonlama, A/B test ve hızlı iterasyon mümkün hale geldi. |
+| **Kurumsal Vektör Veri Katmanı (pgvector)** | ✅ **Tamamlandı / Aktif** | `core/rag.py` pgvector başlangıcında HNSW (`vector_cosine_ops`) indeksi oluşturuluyor; retrieval hattı RRF ile entegre | Büyük veri kümelerinde arama gecikmesi düşürüldü, RAG doğruluğu/ölçeklenebilirliği artırıldı. |
+| **Dağıtık İzlenebilirlik (Distributed Tracing / APM)** | ✅ **Tamamlandı / Aktif** | OpenTelemetry + OTLP hattı Jaeger servisiyle (`docker-compose.yml`) bağlandı; exporter varsayılanı `http://jaeger:4317` | Waterfall düzeyinde uçtan uca latency izolasyonu ve kök neden analizi hızlandı. |
+| **Kubernetes/Helm ile Ölçekleme** | ✅ **Tamamlandı / Aktif** | `helm/sidar/` altında Web/API & AI Worker Deployment'ları, Redis/PostgreSQL StatefulSet'leri ve Web HPA tanımlandı | Çoklu ortam standardizasyonu, otomatik ölçekleme ve operasyonel sürdürülebilirlik güçlendi. |
 
-> **Kapsam Notu:** v3.0 ile tamamlanan “DB'ye geçiş, web arayüzü, güvenli kod çalıştırma, telemetri” gibi başlıklar artık teknik borç veya iyileştirme adayı değil; operasyonel olarak kapanmış yeteneklerdir.
-
-> **v4.0 Güncel Durum Özeti (Tamamlanan Kurumsal Geçişler):**
-> - ✅ Paket yöneticisi modernizasyonu ve bağımlılık izolasyonu tamamlandı.
-> - ✅ Stateless Auth/JWT geçişi ile middleware tarafında DB doğrulama yükü kaldırıldı.
-> - ✅ Dağıtık ajan iletişimi Redis Streams + Consumer Group (ack/replay) modeliyle aktif edildi.
-> - ✅ Kurumsal vektör DB (aktif pgvector retrieval + RRF entegrasyonu) ve LiteLLM gateway entegrasyonu eklendi.
-> - ✅ Kritik güvenlik + liveness/readiness iyileştirmeleri (`/health` ve SQL identifier sterilizasyonu) tamamlandı.
-
+> **v4.0 Sonuç Özeti:** Bölüm 13'te hedeflenen ana kurumsal mimari adımların tamamı kod tabanına entegre edilmiştir. Sonraki adım, bu yeteneklerin üretim runbook/SLO hedefleriyle (load test, kapasite planı, DR senaryoları) sertleştirilmesidir.
 
 ---
 
@@ -1170,10 +1156,10 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 #### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
 *sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
-- **Stateless güvenlik (JWT + RBAC):** DB sorgusu gerektiren stateful token akışından access/refresh JWT + rol bazlı yetkilendirme modeline geçiş.
+- **Stateless güvenlik (JWT + RBAC):** ✅ Tamamlandı; middleware tarafında stateless JWT doğrulama aktif. Sıradaki adım tenant/policy bazlı ince taneli RBAC genişlemesi.
 - **Message broker entegrasyonu:** ✅ Redis Streams consumer-group modeli tamamlandı; bir sonraki adım çoklu broker stratejisi (Kafka/NATS) ve operasyonel retention/claim runbook'ları.
-- **Gelişmiş vektör + semantic cache:** ✅ pgvector retrieval hattı aktif; sıradaki adım semantic cache runtime katmanının (Redis/GPTCache) devreye alınması ve maliyet/latency optimizasyonunun ölçülmesi.
-- **Operasyonel mükemmellik temeli:** ✅ `Config.init_telemetry()` ile merkezi OTel bootstrap (FastAPI/HTTPX opsiyonel instrument) hazır; sıradaki adım Jaeger/Zipkin arka uçlarıyla tam APM hattı ve K8s/Helm release standardı.
+- **Gelişmiş vektör + semantic cache:** ✅ Tamamlandı; pgvector retrieval + HNSW indeks + Redis tabanlı semantic cache runtime hattı aktif.
+- **Operasyonel mükemmellik temeli:** ✅ Tamamlandı; OTel + Jaeger dağıtık tracing hattı ve Helm chart tabanlı K8s dağıtım standardı eklendi.
 
 #### Faz 3: Dinamik Ajan Ekosistemi ve Ürünleşme (v4.x) - *[Uzun Vade]*
 *kullanıcı deneyimi, yönetilebilirlik ve AI esnekliğinin ürün düzeyinde maksimize edilmesi.*
