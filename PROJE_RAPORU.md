@@ -7,12 +7,12 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-16 (v3.0.7 — Doğrulama turu: v3.0.6 bulguları yeniden teyit edildi; YN2-O-1 çözüldü; YN2-Y-1 hâlâ açık; 6 yeni bulgu (YN3-O-1..YN3-O-4, YN3-D-1, YN3-D-2) tespit edilerek kayıt altına alındı)
+> **Son Güncelleme:** 2026-03-16 (v3.0.10 — Kapsamlı yeniden denetim: tüm proje dosyaları satır satır incelendi; dosya yapısı, satır sayıları, test metrikleri ve bağımlılık listesi mevcut depo durumuyla tam olarak eşleştirildi)
 > **Proje Sürümü:** 3.0.0
 
-> **Önceki Kayıt:** 3.0.5
+> **Önceki Kayıt:** 3.0.9
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.727** satır (tests hariç, güncel ölçüm); Test: **21.648** satır (**108** test modülü); Web UI: **4.240** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **13.502** satır (tests hariç, güncel ölçüm); Test: **21.552** satır (**106** test modülü / **108** tests/*.py dosyası); Web UI: **4.240** satır.
 
 ---
 
@@ -36,7 +36,7 @@
   - [5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)](#53-kurumsal-zero-trust-savunma-sütunları-v30)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
-  - [6.2 Coverage Hard Gate (%95)](#62-coverage-hard-gate-95)
+  - [6.2 Coverage Hard Gate (%99.9)](#62-coverage-hard-gate-999)
   - [6.3 Test Havuzu ve Modüler Senaryolar](#63-test-havuzu-ve-modüler-senaryolar)
   - [6.4 Asenkron Test Altyapısı](#64-asenkron-test-altyapısı)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
@@ -154,8 +154,7 @@ sidar_project/
 ├── <a href="docs/module-notes/Dockerfile.md">Dockerfile</a>                 # CPU + GPU çift mod Dockerfile
 ├── <a href="docs/module-notes/docker-compose.yml.md">docker-compose.yml</a>         # 7 servis (redis, sidar-ai, sidar-gpu, sidar-web, sidar-web-gpu, prometheus, grafana)
 ├── <a href="docs/module-notes/environment.yml.md">environment.yml</a>            # Conda bağımlılıkları
-├── <a href="docs/module-notes/requirements.txt.md">requirements.txt</a>           # Pip temel bağımlılıkları
-├── <a href="docs/module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları
+├── <a href="docs/module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları (-e .[rag,postgres,telemetry,dev])
 ├── <a href="docs/module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları
 ├── <a href="docs/module-notes/pytest.ini.md">pytest.ini</a>                 # Pytest konfigürasyonu
 ├── <a href="docs/module-notes/alembic.ini.md">alembic.ini</a>                # Veritabanı geçiş (migration) ayarları
@@ -207,7 +206,9 @@ sidar_project/
 ├── migrations/                # Alembic veritabanı geçiş dosyaları
 │   ├── <a href="docs/module-notes/migrations/env.py.md">env.py</a>
 │   ├── <a href="docs/module-notes/migrations/script.py.mako.md">script.py.mako</a>
-│   └── versions/              # 0001_baseline_schema.py vb. şema versiyonları
+│   └── versions/
+│       ├── 0001_baseline_schema.py     # Temel şema (users, sessions, messages, quotas)
+│       └── 0002_prompt_registry.py     # Prompt registry tablosu (v3.0.9+)
 │
 ├── scripts/                   # Operasyon, test ve metrik betikleri
 │   ├── <a href="docs/module-notes/scripts/audit_metrics.sh.md">audit_metrics.sh</a>       # Kod satır sayısı ve audit metrikleri üretici
@@ -233,10 +234,24 @@ sidar_project/
 │   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                 # RAG belge UI
 │   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                 # Uygulama başlatma, auth, bütçe yönetimi
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (~70 test modülü)
+├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (106 test_*.py modülü / 108 tests/*.py dosyası)
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
-├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%95 eşik)
+├── docs/                      # Proje belgeleri ve modül notları
+│   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
+├── helm/                      # Kubernetes Helm chart (v3.0.9+)
+│   └── sidar/
+│       ├── Chart.yaml         # Helm chart meta verisi
+│       ├── values.yaml        # Helm değerleri (image, replica, ingress, GPU vb.)
+│       └── templates/         # 11 Kubernetes kaynak şablonu
+│           ├── _helpers.tpl, NOTES.txt
+│           ├── deployment-web.yaml, deployment-ai-worker.yaml
+│           ├── hpa-web.yaml                    # Horizontal Pod Autoscaler
+│           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
+│           ├── service-web.yaml, service-postgresql.yaml, service-redis.yaml
+│           └── secret-postgresql.yaml
+├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%99.9 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
+├── AUDIT_REPORT_v4.0.md       # v4.0 kurumsal geçiş denetim raporu
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
 ├── <a href="docs/module-notes/CLAUDE.md.md">CLAUDE.md</a>                  # Geliştirici rehberi
 ├── <a href="docs/module-notes/PROJE_RAPORU.md.md">PROJE_RAPORU.md</a>            # Ana mimari ve denetim raporu
@@ -432,9 +447,9 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **103**
-- **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **105**
-- **Toplam test satırı (`tests/*.py`):** **21.277**
+- **`test_*.py` modül sayısı:** **106**
+- **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **108**
+- **Toplam test satırı (`tests/*.py`):** **21.552**
 - **Atlanan test (skip) sayısı:** **0** — Tüm eski mimariye ait 33 legacy/skip testi temizlenmiştir.
 
 **v3.0 Öne Çıkan Test Kategorileri:**
@@ -463,12 +478,12 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 - `.coveragerc` içinde `fail_under = 99.9` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
 - CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `--cov-fail-under=99.9` parametresiyle çalıştırır; eşik altı durumda pipeline fail olur.
 - `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği uygular.
-- Mevcut durum: **%100 kapsama** — 845 test başarılı, 0 atlanan test, 103 test modülü aktif.
+- Mevcut durum: **%100 kapsama** — tüm testler başarılı, 0 atlanan test, 106 test modülü aktif.
 - Bu model, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir ve eksik kapsanan satırların görünür kalmasını sağlar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **103 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **105** adettir.
+- Güncel depoda `test_*.py` desenine uyan **106 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **108** adettir.
 - Testler yalnızca birim doğrulama ile sınırlı değildir; edge-case, provider retry/fallback, migration/DB branch ayrışmaları, sandbox profilleri ve web güvenliği gibi alanlara bölünmüş modüler paketler içerir.
 - Örnek kurumsal odak alanları: `test_missing_edge_case_coverage.py`, `test_llm_client_retry_helpers.py`, `test_db_postgresql_branches.py`, `test_sandbox_runtime_profiles.py`.
 
@@ -485,7 +500,7 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.yml` dosyalarına göre v3.0 bağımlılık setini kurumsal kategorilerle özetler.
+Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml` dosyalarına göre v3.0 bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; tüm bağımlılıklar `pyproject.toml` PEP 621 standardında yönetilir.)
 
 ### 7.1 Asenkron Altyapı ve Uygulama Çekirdeği
 
@@ -528,7 +543,7 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 | `duckduckgo-search` + `beautifulsoup4` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları |
 | `torch` + `torchvision` | Opsiyonel (`[project.optional-dependencies].rag`) | Embedding ve GPU hızlandırmalı iş yükleri |
 
-**Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `requirements.txt` içinden çıkarılarak `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
+**Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
 
 ### 7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)
 
@@ -542,7 +557,7 @@ Bu bölüm, güncel `requirements.txt`, `requirements-dev.txt` ve `environment.y
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde PBKDF2-HMAC akışıyla yapılır; JWT/passlib/bcrypt şu an zorunlu bağımlılık setinde yer almamaktadır.
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde PBKDF2-HMAC akışıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
 
 ---
 
@@ -558,19 +573,19 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 607 |
-| `main.py` | 369 |
+| `config.py` | 722 |
+| `main.py` | 372 |
 | `cli.py` | 289 |
-| `web_server.py` | 1.406 |
-| `agent/sidar_agent.py` | 555 |
+| `web_server.py` | 1.568 |
+| `agent/sidar_agent.py` | 557 |
 | `agent/auto_handle.py` | 612 |
-| `agent/definitions.py` | 165 |
+| `agent/definitions.py` | 168 |
 | `agent/tooling.py` | 117 |
 | `agent/base_agent.py` | 55 |
-| `core/llm_client.py` | 961 |
+| `core/llm_client.py` | 1.235 |
 | `core/memory.py` | 299 |
-| `core/rag.py` | 810 |
-| `core/db.py` | 1.012 |
+| `core/rag.py` | 1.057 |
+| `core/db.py` | 1.353 |
 | `core/llm_metrics.py` | 245 |
 | `managers/security.py` | 290 |
 | `managers/code_manager.py` | 898 |
@@ -588,7 +603,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---:|
 | `agent/core/supervisor.py` | 168 |
 | `agent/core/contracts.py` | 56 |
-| `agent/core/event_stream.py` | 45 |
+| `agent/core/event_stream.py` | 189 |
 | `agent/core/memory_hub.py` | 54 |
 | `agent/core/registry.py` | 29 |
 | `agent/roles/coder_agent.py` | 134 |
@@ -601,6 +616,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---:|
 | `migrations/env.py` | 65 |
 | `migrations/versions/0001_baseline_schema.py` | 98 |
+| `migrations/versions/0002_prompt_registry.py` | 52 |
 | `scripts/migrate_sqlite_to_pg.py` | 91 |
 | `scripts/load_test_db_pool.py` | 73 |
 | `scripts/audit_metrics.sh` | 56 |
@@ -625,21 +641,22 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `web_ui/rag.js` | 131 |
 | `web_ui/app.js` | 733 |
 | **Web UI Toplamı** | **4.240** |
-| **Test modülü (`tests/test_*.py`)** | **103** |
-| **`tests/*.py` toplam dosya** | **105** |
-| **`tests/*.py` toplam satır** | **21.290** |
+| **Test modülü (`tests/test_*.py`)** | **106** |
+| **`tests/*.py` toplam dosya** | **108** |
+| **`tests/*.py` toplam satır** | **21.552** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 103 |
-| `tests/` | `*.py` toplam dosya | 105 |
-| `tests/` | `*.py` toplam satır | 21.290 |
+| `tests/` | `test_*.py` modül sayısı | 106 |
+| `tests/` | `*.py` toplam dosya | 108 |
+| `tests/` | `*.py` toplam satır | 21.552 |
 | `scripts/` | dosya sayısı | 6 |
 | `scripts/` | toplam satır | 443 |
-| `migrations/` | dosya sayısı (tüm migration dosyaları) | 3 |
-| `migrations/` | toplam satır | 163 |
+| `migrations/` | `.py` dosya sayısı (env.py + 2 versions) | 3 |
+| `migrations/` | `*.py` toplam satır | 215 |
+| `helm/sidar/` | şablon dosyası sayısı (templates/ dahil) | 13 |
 | `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
 | `docker/` | ilgili telemetri dosyaları toplam satır | 91 |
 
@@ -859,7 +876,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 - **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
 - **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç (child process) sonlandırmaları güvenlik altına alındı.
 - **[Çözüldü] PBKDF2 Iterasyon Sayısı:** `core/db.py` satır 60'ta OWASP uyumlu 600.000 iterasyon kullanılmaktadır. Eski sürümde 120.000 olan değer güncellendi; `secrets.compare_digest` ile sabit-zamanlı karşılaştırma da aktif.
-- **[Çözüldü] Test Kapsama %100 ve Skip Temizliği:** 33 eski legacy/skip testi kaldırıldı; `core/llm_client.py` satır 355 dahil tüm dallar kapsamaya alındı; kapsama kalite kapısı %95 → %99.9'a yükseltildi. Sonuç: 845 test başarılı, 0 atlanan.
+- **[Çözüldü] Test Kapsama %100 ve Skip Temizliği:** 33 eski legacy/skip testi kaldırıldı; `core/llm_client.py` satır 355 dahil tüm dallar kapsamaya alındı; kapsama kalite kapısı %99.9'a yükseltildi. Sonuç: tüm testler başarılı, 0 atlanan.
 
 ### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
 Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
@@ -1005,6 +1022,10 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `WEB_HOST` | `0.0.0.0` | Web sunucu bind adresi |
 | `WEB_PORT` | `7860` | CPU mod web portu |
 | `WEB_GPU_PORT` | `7861` | GPU mod web portu |
+| `JWT_SECRET_KEY` | `""` | **Zorunlu (üretim):** JWT imzalama anahtarı; boşsa `CRITICAL` uyarısı + geçici dev anahtarına düşer |
+| `JWT_ALGORITHM` | `HS256` | JWT imza algoritması (`HS256` veya `RS256`) |
+| `JWT_TTL_DAYS` | `7` | JWT token geçerlilik süresi (gün) |
+| `GRAFANA_URL` | `http://localhost:3000` | Web UI Admin panelindeki "Grafana'yı Aç" butonu için Grafana endpoint adresi |
 
 ### 12.5 Web Arama
 
@@ -1069,7 +1090,7 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 | `DB_SCHEMA_VERSION_TABLE` | `schema_versions` | Uygulama şema sürüm tablosu adı |
 | `DB_SCHEMA_TARGET_VERSION` | `1` | Hedef şema sürümü |
 
-> **Auth Notu:** Güncel kod tabanında `.env` içinde ayrı `SECRET_KEY` / `AUTH_SECRET` değişkeni tanımlı değildir; kimlik doğrulama bearer token + DB tabanlı token yaşam döngüsü ile yönetilir.
+> **Auth Notu:** JWT kimlik doğrulama için `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_TTL_DAYS` değişkenleri §12.4'te tanımlıdır. Ayrıca `API_KEY` ile ek HTTP Basic Auth katmanı etkinleştirilebilir. Eski `SECRET_KEY` / `AUTH_SECRET` değişkenleri kullanılmamaktadır.
 
 ### 12.11 Telemetri ve Zero-Trust Sandbox
 
@@ -1141,7 +1162,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 
 | İyileştirme Alanı (v4.0) | Mevcut Durum (v3.0) | v4.0 Hedefi / Önerilen Geliştirme | İş Değeri / Gerekçe |
 |---|---|---|---|
-| **Kubernetes/Helm ile Ölçekleme** | `docker-compose` tabanlı güçlü operasyon akışı mevcut | Çok tenantlı ve yüksek eşzamanlı yükte yatay ölçekleme için K8s deployment + HPA + Helm chart standardizasyonu | Kurumsal ortamlarda çoklu ortam (dev/stage/prod) standardizasyonu ve otomatik ölçekleme ile operasyonel sürdürülebilirlik sağlar. |
+| **Kubernetes/Helm ile Ölçekleme** | ✅ **Tamamlandı / Gerçekleştirildi:** `helm/sidar/` dizini altında Chart.yaml, values.yaml ve 11 Kubernetes kaynak şablonu (Deployment, StatefulSet, HPA, Service, Secret) aktif | Helm chart'ının çoklu ortam (dev/stage/prod) değer dosyaları ve sertifika/secret yönetimi runbook'larıyla olgunlaştırılması (ileri faz) | Kurumsal ortamlarda çoklu ortam standardizasyonu ve otomatik ölçekleme ile operasyonel sürdürülebilirlik sağlar. |
 | **LLM Gateway/Proxy Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/llm_client.py` içinde LiteLLM entegrasyonu ve JSON format yapılandırmaları aktif | OpenRouter/LiteLLM benzeri merkezi yönlendirme katmanının provider bazlı failover ve kota politikalarıyla genişletilmesi (ileri faz) | Sağlayıcı bağımlılığını azaltır, maliyet kontrolünü merkezileştirir, SLA hedeflerini korur. |
 | **Dağıtık Ajan İletişimi (Message Broker)** | ✅ **Tamamlandı / Gerçekleştirildi:** `agent/core/event_stream.py` Redis Streams + Consumer Group (`XADD`, `XREADGROUP`, `XACK`) modeline geçirildi; `BUSYGROUP` güvenli yönetimi ve local fallback korunuyor | Kafka/NATS gibi ikinci broker seçeneği ve stream retention/pending-claim operasyonlarının SRE playbook'larına alınması | Ajanların farklı konteyner/sunucularda bağımsız ölçeklenmesini mümkün kılar; replay/ack ile dayanıklılığı artırır. |
 | **Kurumsal Vektör Veri Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/rag.py` içinde aktif `pgvector` başlatma, upsert/delete yaşam döngüsü, `<=>` (cosine distance) araması ve RRF entegrasyonu uygulanmıştır | pgvector için migration/versioning, index tuning (IVFFLAT/HNSW) ve kapasite planının runbook seviyesinde sertleştirilmesi | RAG doğruluğunu artırır, halüsinasyon oranını azaltır ve mevcut PostgreSQL yatırımıyla tekil veri platformu yaklaşımını destekler. |
@@ -1162,6 +1183,7 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 > - ✅ Dağıtık ajan iletişimi Redis Streams + Consumer Group (ack/replay) modeliyle aktif edildi.
 > - ✅ Kurumsal vektör DB (aktif pgvector retrieval + RRF entegrasyonu) ve LiteLLM gateway entegrasyonu eklendi.
 > - ✅ Kritik güvenlik + liveness/readiness iyileştirmeleri (`/health` ve SQL identifier sterilizasyonu) tamamlandı.
+> - ✅ Kubernetes/Helm altyapısı (`helm/sidar/`) oluşturuldu; Deployment, StatefulSet, HPA, Service ve Secret şablonları aktif.
 
 
 ---
@@ -1291,6 +1313,8 @@ Minimum kurulum senaryolarına göre gereken paket kümeleri:
 | **Reviewer (QA) Ajanı** | `agent/roles/reviewer_agent.py`, test/kalite geri bildirim döngüsü, Supervisor entegrasyonu | 🟡 Olgunlaştırma Aşaması |
 | **Eski Mimarinin Kaldırılması** | Legacy `sidar_agent.py` akışının deprecate edilmesi, Supervisor-first tek omurga | ✅ Tamamlandı |
 | **Gelişmiş Maliyet (Token) İzleme** | Sağlayıcı bazlı token/maliyet/rate-limit telemetrisi + dashboard | ✅ Tamamlandı (Grafana dashboard + provisioning aktif) |
+| **Kubernetes/Helm Altyapısı** | K8s Deployment, StatefulSet, HPA, Service şablonları; Helm chart standardizasyonu | ✅ Tamamlandı (`helm/sidar/` — 11 şablon aktif) |
+| **Prompt Registry Veritabanı** | DB destekli prompt kayıt defteri, migration ile şema versiyonlama | ✅ Tamamlandı (`migrations/versions/0002_prompt_registry.py`) |
 
 ---
 
@@ -1512,5 +1536,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.7** | **2026-03-16** | **Tüm kaynak dosyalar yeniden satır satır incelendi. YN2-O-1 çözüldü (mock doğrulandı). YN2-Y-1 hâlâ açık. 6 yeni bulgu tespit edildi: YN3-O-4 (threading.Lock async bağlam), YN3-O-1 (_ANYIO_CLOSED dead code), YN3-O-2 (_rate_data/_rate_lock dead code), YN3-O-3 (isinstance dict redundant check), YN3-D-1 (JWT hardcoded fallback), YN3-D-2 (Grafana URL hardcoded).** |
 | **v3.0.8** | **2026-03-16** | **YN2-Y-1 giderildi: `.github/workflows/ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi); `requirements-dev.txt` tek kurulum kaynağı olarak bırakıldı. §11.3 her iki bulgu kapatıldı.** |
 | **v3.0.9** | **2026-03-16** | **YN3 serisi (6 bulgu) kapatıldı: YN3-O-4 yanlış pozitif; YN3-O-1 (_ANYIO_CLOSED WS handler); YN3-O-2 (_rate_lock dead code + test düzeltmesi); YN3-O-3 (isinstance redundant); YN3-D-1 (JWT_SECRET_KEY config + uyarı); YN3-D-2 (Grafana URL dinamik injection). config.py, web_server.py, index.html, .env.example, 2 test dosyası güncellendi.** |
+| **v3.0.10** | **2026-03-16** | **Kapsamlı yeniden denetim: tüm proje dosyaları satır satır incelendi. Doğrulanan ve güncellenen alanlar: Python kaynak 12.727 → 13.502 satır; test modülü 103 → 106; test satırı 21.290 → 21.552; web_server.py 1.406 → 1.568; core/llm_client.py 961 → 1.235; core/rag.py 810 → 1.057; core/db.py 1.012 → 1.353; config.py 607 → 722; event_stream.py 45 → 189. §2 dosya yapısına helm/, docs/module-notes/, AUDIT_REPORT_v4.0.md, 0002_prompt_registry.py eklendi; requirements.txt referansı (diskte yok) kaldırıldı. §12.4'e JWT_SECRET_KEY/JWT_ALGORITHM/JWT_TTL_DAYS/GRAFANA_URL eklendi. §13 Helm tamamlandı olarak işaretlendi. §15.7'ye Helm ve Prompt Registry satırları eklendi. §7 Auth notu PyJWT gerçeğini yansıtacak şekilde düzeltildi.** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
