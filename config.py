@@ -417,6 +417,16 @@ class Config:
     WEB_PORT: int = get_int_env("WEB_PORT", 7860)
     WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
 
+    # ─── JWT Kimlik Doğrulama ────────────────────────────────
+    # JWT_SECRET_KEY boş bırakılırsa sunucu başlangıcında CRITICAL uyarısı verilir.
+    JWT_SECRET_KEY:  str = os.getenv("JWT_SECRET_KEY", "")
+    JWT_ALGORITHM:   str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_TTL_DAYS:    int = get_int_env("JWT_TTL_DAYS", 7)
+
+    # ─── Observability Bağlantı Noktaları ───────────────────
+    # GRAFANA_URL ayarlanmazsa varsayılan olarak yerel kurulum portu kullanılır.
+    GRAFANA_URL: str = os.getenv("GRAFANA_URL", "http://localhost:3000")
+
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
     REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "python -m pytest")
 

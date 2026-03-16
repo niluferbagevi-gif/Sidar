@@ -836,7 +836,7 @@ async def test_rate_limiter_blocks_after_limit():
 
     test_ip = "192.0.2.1"  # RFC 5737 test IP
     web_server._rate_data.pop(test_ip, None)
-    web_server._rate_lock = asyncio.Lock()
+    web_server._local_rate_lock = asyncio.Lock()
 
     limit = 3
     for _ in range(limit):
@@ -857,7 +857,7 @@ async def test_rate_limiter_different_keys_independent():
     ip_b = "192.0.2.3"
     web_server._rate_data.pop(ip_a, None)
     web_server._rate_data.pop(ip_b, None)
-    web_server._rate_lock = asyncio.Lock()
+    web_server._local_rate_lock = asyncio.Lock()
 
     limit = 2
     # ip_a limitini doldur
@@ -877,7 +877,7 @@ async def test_rate_limiter_concurrent_toctou():
 
     test_ip = "192.0.2.4"
     web_server._rate_data.pop(test_ip, None)
-    web_server._rate_lock = asyncio.Lock()
+    web_server._local_rate_lock = asyncio.Lock()
 
     limit = 5
     tasks = [web_server._is_rate_limited(test_ip, limit) for _ in range(limit + 3)]
