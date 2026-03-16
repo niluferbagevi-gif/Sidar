@@ -189,9 +189,10 @@ def _build_user_from_jwt_payload(payload: dict):
     user_id = str(payload.get("sub", "") or "").strip()
     username = str(payload.get("username", "") or "").strip()
     role = str(payload.get("role", "user") or "user").strip() or "user"
+    tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
     if not user_id or not username:
         return None
-    return SimpleNamespace(id=user_id, username=username, role=role)
+    return SimpleNamespace(id=user_id, username=username, role=role, tenant_id=tenant_id)
 
 
 def _get_jwt_secret() -> str:
@@ -227,6 +228,7 @@ async def _issue_auth_token(agent: SidarAgent, user) -> str:
         "sub": str(user.id),
         "username": str(user.username),
         "role": str(getattr(user, "role", "user") or "user"),
+        "tenant_id": str(getattr(user, "tenant_id", "default") or "default"),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(days=ttl_days)).timestamp()),
     }
@@ -343,9 +345,46 @@ def _require_admin_user(user=Depends(_get_request_user)):
     return user
 
 
+def _get_user_tenant(user) -> str:
+    return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
+
+
+def _serialize_policy(record) -> dict:
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "user_id": str(getattr(record, "user_id", "") or ""),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "resource_type": str(getattr(record, "resource_type", "") or ""),
+        "resource_id": str(getattr(record, "resource_id", "*") or "*"),
+        "action": str(getattr(record, "action", "") or ""),
+        "effect": str(getattr(record, "effect", "allow") or "allow"),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
+
+
+def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
+    path = request.url.path
+    if path.startswith("/rag/"):
+        action = "read" if request.method == "GET" else "write"
+        resource_id = path.rsplit("/", 1)[-1] if request.method == "DELETE" else "*"
+        return ("rag", action, resource_id)
+    if path.startswith("/github-") or path == "/set-repo":
+        action = "read" if request.method == "GET" else "write"
+        return ("github", action, "*")
+    if path.startswith("/api/agents/register"):
+        return ("agents", "register", "*")
+    if path.startswith("/admin/"):
+        return ("admin", "manage", "*")
+    if path.startswith("/ws/"):
+        return ("swarm", "execute", "*")
+    return ("", "", "")
+
+
 class _RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=64)
     password: str = Field(..., min_length=6, max_length=128)
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
 
 
 class _LoginRequest(BaseModel):
@@ -361,6 +400,15 @@ class _PromptUpsertRequest(BaseModel):
 
 class _PromptActivateRequest(BaseModel):
     prompt_id: int = Field(..., gt=0)
+
+
+class _PolicyUpsertRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=128)
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    resource_type: str = Field(..., min_length=1, max_length=64)
+    resource_id: str = Field(default="*", min_length=1, max_length=256)
+    action: str = Field(..., min_length=1, max_length=64)
+    effect: str = Field(default="allow", min_length=1, max_length=8)
 
 
 class _AgentPluginRegisterRequest(BaseModel):
@@ -462,12 +510,13 @@ def _register_plugin_agent(
 async def register_user(payload: _RegisterRequest):
     username = (payload.username if hasattr(payload, "username") else payload.get("username", "")).strip()
     password = payload.password if hasattr(payload, "password") else payload.get("password", "")
+    tenant_id = (payload.tenant_id if hasattr(payload, "tenant_id") else payload.get("tenant_id", "default")).strip() or "default"
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
     agent = await get_agent()
     try:
-        user = await agent.memory.db.register_user(username=username, password=password)
+        user = await agent.memory.db.register_user(username=username, password=password, tenant_id=tenant_id)
     except Exception as exc:
         raise HTTPException(status_code=409, detail=f"Kullanıcı oluşturulamadı: {exc}") from exc
 
@@ -541,6 +590,28 @@ async def admin_activate_prompt(payload: _PromptActivateRequest, _user=Depends(_
     return JSONResponse(_serialize_prompt(active))
 
 
+@app.get("/admin/policies/{user_id}")
+async def admin_list_policies(user_id: str, tenant_id: str = "", _user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    records = await agent.memory.db.list_access_policies(user_id=user_id, tenant_id=tenant_id.strip() or None)
+    return JSONResponse({"items": [_serialize_policy(r) for r in records]})
+
+
+@app.post("/admin/policies")
+async def admin_upsert_policy(payload: _PolicyUpsertRequest, _user=Depends(_require_admin_user)):
+    agent = await get_agent()
+    await agent.memory.db.upsert_access_policy(
+        user_id=payload.user_id.strip(),
+        tenant_id=payload.tenant_id.strip() or "default",
+        resource_type=payload.resource_type.strip().lower(),
+        resource_id=payload.resource_id.strip() or "*",
+        action=payload.action.strip().lower(),
+        effect=payload.effect.strip().lower(),
+    )
+    records = await agent.memory.db.list_access_policies(user_id=payload.user_id.strip(), tenant_id=payload.tenant_id.strip() or "default")
+    return JSONResponse({"success": True, "items": [_serialize_policy(r) for r in records]})
+
+
 @app.post("/api/agents/register")
 async def register_agent_plugin(payload: _AgentPluginRegisterRequest, _user=Depends(_require_admin_user)):
     result = _register_plugin_agent(
@@ -586,6 +657,41 @@ async def register_agent_plugin_file(
         version=version,
     )
     return JSONResponse({"success": True, "agent": result})
+
+
+@app.middleware("http")
+async def access_policy_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    user = getattr(request.state, "user", None)
+    if not user:
+        return await call_next(request)
+    if _is_admin_user(user):
+        return await call_next(request)
+
+    resource_type, action, resource_id = _resolve_policy_from_request(request)
+    if not resource_type:
+        return await call_next(request)
+
+    try:
+        agent = await get_agent()
+        checker = getattr(agent.memory.db, "check_access_policy", None)
+        if checker is None:
+            return await call_next(request)
+        allowed = await checker(
+            user_id=str(getattr(user, "id", "") or ""),
+            tenant_id=_get_user_tenant(user),
+            resource_type=resource_type,
+            action=action,
+            resource_id=resource_id,
+        )
+    except Exception as exc:
+        logger.warning("ACL kontrolü başarısız (%s), erişim reddedildi.", exc)
+        allowed = False
+
+    if not allowed:
+        return JSONResponse(status_code=403, content={"error": "Yetki yok", "resource": resource_type, "action": action})
+    return await call_next(request)
 
 
 # ─────────────────────────────────────────────
