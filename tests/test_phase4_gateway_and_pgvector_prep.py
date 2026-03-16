@@ -48,8 +48,29 @@ def test_rag_pgvector_backend_disables_chroma(tmp_path):
         HF_TOKEN="",
         HF_HUB_OFFLINE=False,
         RAG_VECTOR_BACKEND="pgvector",
+        DATABASE_URL="sqlite:///tmp.db",
+        PGVECTOR_TABLE="rag_embeddings",
+        PGVECTOR_EMBEDDING_DIM=384,
+        PGVECTOR_EMBEDDING_MODEL="all-MiniLM-L6-v2",
     )
     store = DocumentStore(tmp_path / "rag", cfg=cfg)
     assert store._vector_backend == "pgvector"
     assert store._chroma_available is False
+    assert store._pgvector_available is False
     assert "pgvector" in store.status().lower()
+
+
+def test_rag_vector_mode_prefers_pgvector(monkeypatch):
+    store = DocumentStore.__new__(DocumentStore)
+    store.cfg = SimpleNamespace(RAG_TOP_K=2)
+    store.default_top_k = 2
+    store._index = {"d1": {"session_id": "s1"}}
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = False
+    monkeypatch.setattr(store, "_pgvector_search", lambda q, k, s: (True, f"pg:{q}:{k}:{s}"))
+
+    ok, msg = DocumentStore._search_sync(store, "soru", mode="vector", session_id="s1")
+    assert ok is True
+    assert msg == "pg:soru:2:s1"

@@ -130,13 +130,21 @@ class DocumentStore:
 
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
+        self._pgvector_available = False
 
         self.chroma_client = None
         self.collection    = None
+        self.pg_engine = None
+        self._pg_embedding_model = None
+        self._pg_table = str(getattr(self.cfg, "PGVECTOR_TABLE", "rag_embeddings") or "rag_embeddings")
+        self._pg_embedding_dim = int(getattr(self.cfg, "PGVECTOR_EMBEDDING_DIM", 384) or 384)
+        self._pg_embedding_model_name = str(
+            getattr(self.cfg, "PGVECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2") or "all-MiniLM-L6-v2"
+        )
 
         if self._vector_backend == "pgvector":
-            logger.info("RAG_VECTOR_BACKEND=pgvector seçildi; bu sürümde vektör katmanı hazırlık modunda. BM25/keyword arama kullanılacak.")
             self._chroma_available = False
+            self._init_pgvector()
         elif self._chroma_available:
             self._init_chroma()
 
@@ -243,6 +251,132 @@ class DocumentStore:
         except Exception as exc:
             logger.error("FTS5 başlatma hatası: %s", exc)
             self._bm25_available = False
+
+    @staticmethod
+    def _normalize_pg_url(url: str) -> str:
+        return url.replace("+asyncpg", "")
+
+    @staticmethod
+    def _format_vector_for_sql(values: List[float]) -> str:
+        return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
+
+    def _init_pgvector(self) -> None:
+        """PostgreSQL + pgvector tablosunu başlatır."""
+        db_url = str(getattr(self.cfg, "DATABASE_URL", "") or "")
+        if not db_url.startswith("postgresql"):
+            logger.warning("pgvector backend için PostgreSQL DATABASE_URL gerekli. Alınan: %s", db_url)
+            return
+
+        if not self._check_import("sqlalchemy") or not self._check_import("pgvector"):
+            logger.warning("pgvector backend için sqlalchemy ve pgvector paketleri gerekli.")
+            return
+
+        try:
+            from sentence_transformers import SentenceTransformer
+            from sqlalchemy import create_engine, text
+
+            self._apply_hf_runtime_env()
+            self.pg_engine = create_engine(self._normalize_pg_url(db_url), pool_pre_ping=True)
+            with self.pg_engine.begin() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.execute(text(f"""
+                    CREATE TABLE IF NOT EXISTS {self._pg_table} (
+                        doc_id TEXT NOT NULL,
+                        parent_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        chunk_index INTEGER NOT NULL,
+                        title TEXT,
+                        source TEXT,
+                        chunk_content TEXT,
+                        embedding vector({self._pg_embedding_dim}),
+                        PRIMARY KEY (doc_id, chunk_index)
+                    )
+                """))
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"))
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"))
+
+            self._pg_embedding_model = SentenceTransformer(self._pg_embedding_model_name)
+            self._pgvector_available = True
+            logger.info("pgvector backend başlatıldı: table=%s model=%s", self._pg_table, self._pg_embedding_model_name)
+        except Exception as exc:
+            logger.error("pgvector başlatma hatası: %s", exc)
+            self._pgvector_available = False
+
+    def _pgvector_embed_texts(self, texts: List[str]) -> List[List[float]]:
+        if not self._pg_embedding_model:
+            return []
+        vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
+        return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+
+    def _upsert_pgvector_chunks(
+        self,
+        doc_id: str,
+        parent_id: str,
+        session_id: str,
+        title: str,
+        source: str,
+        chunks: List[str],
+    ) -> None:
+        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None) or not chunks:
+            return
+        try:
+            from sqlalchemy import text
+
+            vectors = self._pgvector_embed_texts(chunks)
+            if not vectors:
+                return
+
+            with self.pg_engine.begin() as conn:
+                conn.execute(
+                    text(f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),
+                    {"parent_id": parent_id, "session_id": session_id},
+                )
+                rows = [
+                    {
+                        "doc_id": doc_id,
+                        "parent_id": parent_id,
+                        "session_id": session_id,
+                        "chunk_index": idx,
+                        "title": title,
+                        "source": source,
+                        "chunk_content": chunk,
+                        "embedding": self._format_vector_for_sql(vec),
+                    }
+                    for idx, (chunk, vec) in enumerate(zip(chunks, vectors))
+                ]
+                conn.execute(
+                    text(f"""
+                        INSERT INTO {self._pg_table}
+                        (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
+                        VALUES
+                        (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source, :chunk_content, CAST(:embedding AS vector))
+                        ON CONFLICT (doc_id, chunk_index)
+                        DO UPDATE SET
+                            parent_id = EXCLUDED.parent_id,
+                            session_id = EXCLUDED.session_id,
+                            title = EXCLUDED.title,
+                            source = EXCLUDED.source,
+                            chunk_content = EXCLUDED.chunk_content,
+                            embedding = EXCLUDED.embedding
+                    """),
+                    rows,
+                )
+        except Exception as exc:
+            logger.error("pgvector belge ekleme hatası: %s", exc)
+
+    def _delete_pgvector_parent(self, parent_id: str, session_id: str) -> None:
+        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
+            return
+        try:
+            from sqlalchemy import text
+
+            with self.pg_engine.begin() as conn:
+                conn.execute(
+                    text(f"DELETE FROM {self._pg_table} WHERE parent_id = :parent_id AND session_id = :session_id"),
+                    {"parent_id": parent_id, "session_id": session_id},
+                )
+        except Exception as exc:
+            logger.error("pgvector silme hatası: %s", exc)
 
     def _load_index(self) -> Dict[str, Dict]:
         if self.index_file.exists():
@@ -393,6 +527,9 @@ class DocumentStore:
                 except Exception as exc:
                     logger.error("ChromaDB belge ekleme hatası: %s", exc)
 
+            if getattr(self, "_pgvector_available", False):
+                self._upsert_pgvector_chunks(doc_id, parent_id, session_id, title, source, chunks)
+
         logger.info("RAG belge eklendi: [%s] %s (%d karakter) [Oturum: %s]", doc_id, title, len(content), session_id)
         return doc_id
 
@@ -521,6 +658,10 @@ class DocumentStore:
                 except Exception as exc:
                     logger.error("ChromaDB silme hatası: %s", exc)
 
+            if getattr(self, "_pgvector_available", False):
+                parent_id = self._index[doc_id].get("parent_id", doc_id)
+                self._delete_pgvector_parent(parent_id, meta.get("session_id", "global"))
+
             # 3. Index'ten ve BM25'ten sil
             del self._index[doc_id]
             self._save_index()
@@ -555,8 +696,9 @@ class DocumentStore:
             return False, "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>"
 
         if mode == "vector":
+            if getattr(self, "_pgvector_available", False): return self._pgvector_search(query, top_k, session_id)
             if self._chroma_available and self.collection: return self._chroma_search(query, top_k, session_id)
-            return False, "Vektör arama kullanılamıyor — ChromaDB kurulu değil."
+            return False, "Vektör arama kullanılamıyor — pgvector/ChromaDB hazır değil."
 
         if mode == "bm25":
             if self._bm25_available: return self._bm25_search(query, top_k, session_id)
@@ -564,9 +706,15 @@ class DocumentStore:
 
         if mode == "keyword": return self._keyword_search(query, top_k, session_id)
 
-        if self._chroma_available and self._bm25_available and self.collection:
+        has_vector = getattr(self, "_pgvector_available", False) or (self._chroma_available and self.collection)
+
+        if has_vector and self._bm25_available:
             try: return self._rrf_search(query, top_k, session_id)
             except Exception as exc: logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
+
+        if getattr(self, "_pgvector_available", False):
+            try: return self._pgvector_search(query, top_k, session_id)
+            except Exception as exc: logger.warning("pgvector arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._chroma_available and self.collection:
             try: return self._chroma_search(query, top_k, session_id)
@@ -585,15 +733,15 @@ class DocumentStore:
         return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
-        chroma_results = self._fetch_chroma(query, top_k, session_id)
+        vector_results = self._fetch_pgvector(query, top_k, session_id) if getattr(self, "_pgvector_available", False) else self._fetch_chroma(query, top_k, session_id)
         bm25_results = self._fetch_bm25(query, top_k, session_id)
 
-        if not chroma_results and not bm25_results: return self._keyword_search(query, top_k, session_id)
+        if not vector_results and not bm25_results: return self._keyword_search(query, top_k, session_id)
 
         k = 60
         rrf_scores, docs_map = {}, {}
 
-        for rank, res in enumerate(chroma_results):
+        for rank, res in enumerate(vector_results):
             doc_id = res["id"]
             docs_map[doc_id] = res
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
@@ -610,7 +758,54 @@ class DocumentStore:
             doc_info["score"] = score
             final_results.append(doc_info)
 
-        return self._format_results_from_struct(final_results, query, source_name="Hibrit RRF (ChromaDB + BM25)")
+        vector_name = "pgvector" if getattr(self, "_pgvector_available", False) else "ChromaDB"
+        return self._format_results_from_struct(final_results, query, source_name=f"Hibrit RRF ({vector_name} + BM25)")
+
+    def _fetch_pgvector(self, query: str, top_k: int, session_id: str) -> list:
+        if not getattr(self, "_pgvector_available", False) or not getattr(self, "pg_engine", None):
+            return []
+        try:
+            from sqlalchemy import text
+
+            qvec = self._format_vector_for_sql(self._pgvector_embed_texts([query])[0])
+            with self.pg_engine.begin() as conn:
+                rows = conn.execute(
+                    text(f"""
+                        SELECT doc_id, parent_id, title, source, chunk_content,
+                               (embedding <=> CAST(:qvec AS vector)) AS distance
+                        FROM {self._pg_table}
+                        WHERE session_id = :session_id
+                        ORDER BY embedding <=> CAST(:qvec AS vector) ASC
+                        LIMIT :lim
+                    """),
+                    {"qvec": qvec, "session_id": session_id, "lim": max(top_k * 3, top_k)},
+                ).fetchall()
+
+            found_docs, seen_parents = [], set()
+            for row in rows:
+                parent_id = row.parent_id
+                if parent_id in seen_parents:
+                    continue
+                seen_parents.add(parent_id)
+                found_docs.append(
+                    {
+                        "id": parent_id,
+                        "title": row.title or "?",
+                        "source": row.source or "",
+                        "snippet": row.chunk_content or "",
+                        "score": max(0.0, 1.0 - float(row.distance)),
+                    }
+                )
+                if len(found_docs) >= top_k:
+                    break
+            return found_docs
+        except Exception as exc:
+            logger.warning("pgvector arama hatası: %s", exc)
+            return []
+
+    def _pgvector_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
+        results = self._fetch_pgvector(query, top_k, session_id)
+        return self._format_results_from_struct(results, query, source_name="Vektör Arama (pgvector)")
 
     def _fetch_chroma(self, query: str, top_k: int, session_id: str) -> list:
         try: collection_size = self.collection.count()
@@ -829,8 +1024,10 @@ class DocumentStore:
 
     def status(self) -> str:
         engines = []
-        if self._vector_backend == "pgvector":
-            engines.append("pgvector (hazırlık modu)")
+        if getattr(self, "_pgvector_available", False):
+            engines.append("pgvector")
+        elif self._vector_backend == "pgvector":
+            engines.append("pgvector (pasif)")
         elif self._chroma_available:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
