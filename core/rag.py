@@ -659,8 +659,9 @@ class DocumentStore:
         """
 
         try:
-            cursor = self.fts_conn.execute(sql, (match_query, session_id, top_k))
-            rows = cursor.fetchall()
+            with self._write_lock:
+                cursor = self.fts_conn.execute(sql, (match_query, session_id, top_k))
+                rows = cursor.fetchall()
         except Exception as exc:
             logger.warning("FTS5 Arama Hatası: %s", exc)
             return []

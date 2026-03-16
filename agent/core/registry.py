@@ -17,6 +17,10 @@ class AgentRegistry:
         self._agents[role] = agent
 
     def get(self, role: str) -> BaseAgent:
+        if role not in self._agents:
+            raise KeyError(
+                f"'{role}' rolü kayıtlı değil. Mevcut roller: {sorted(self._agents)}"
+            )
         return self._agents[role]
 
     def has(self, role: str) -> bool:

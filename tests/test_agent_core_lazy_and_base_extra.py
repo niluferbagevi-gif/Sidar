@@ -50,8 +50,8 @@ async def test_memory_hub_empty_branches_and_async_helpers():
     hub.add_role_note("coder", "")
     assert hub.role_context("coder") == []
 
-    await hub.aadd_global("g1")
-    await hub.aadd_role_note("coder", "n1")
-    assert await hub.aglobal_context(limit=1) == ["g1"]
-    assert await hub.arole_context("coder", limit=1) == ["n1"]
+    hub.aadd_global("g1")
+    hub.aadd_role_note("coder", "n1")
+    assert hub.aglobal_context(limit=1) == ["g1"]
+    assert hub.arole_context("coder", limit=1) == ["n1"]
     assert hub.role_context("unknown") == []
