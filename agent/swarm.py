@@ -171,6 +171,8 @@ class SwarmOrchestrator:
     async def _execute_task(self, task: SwarmTask, *, session_id: str = "") -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
         started_at = time.monotonic()
+        max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
+        retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
 
         # Ajan seçimi
         spec = (
@@ -215,7 +217,31 @@ class SwarmOrchestrator:
         # Görevi çalıştır
         self._active_agents[task.task_id] = agent
         try:
-            result: TaskResult = await agent.handle(envelope)
+            result: Optional[TaskResult] = None
+            last_exc: Optional[Exception] = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    result = await agent.handle(envelope)
+                    break
+                except Exception as exc:  # pragma: no cover - branch specific tests verify behavior
+                    last_exc = exc
+                    if attempt >= max_retries:
+                        raise
+                    logger.warning(
+                        "SwarmOrchestrator: [%s] retry %d/%d [%s] sebebi: %s",
+                        task.task_id,
+                        attempt + 1,
+                        max_retries,
+                        spec.role_name,
+                        exc,
+                    )
+                    if retry_delay_ms > 0:
+                        await asyncio.sleep(retry_delay_ms / 1000)
+
+            if result is None and last_exc is not None:
+                raise last_exc
+
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.info(
                 "SwarmOrchestrator: [%s] → %s tamamlandı (%dms, status=%s)",
