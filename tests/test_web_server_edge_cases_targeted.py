@@ -106,7 +106,10 @@ def test_websocket_disconnect_cancels_active_task_and_generate_cancelled_cleanup
         async def receive_text(self):
             if self._payloads:
                 return self._payloads.pop(0)
-            await asyncio.sleep(0.05)
+            for _ in range(20):
+                if seen["chunk_sends"] > 0:
+                    break
+                await asyncio.sleep(0.01)
             raise mod.WebSocketDisconnect()
 
         async def send_json(self, _payload):
@@ -133,7 +136,8 @@ def test_websocket_disconnect_cancels_active_task_and_generate_cancelled_cleanup
 
     monkeypatch.setattr(mod, "get_agent", _get_agent)
     monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
-    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: _Bus())
+    bus = _Bus()
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
     monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx")
     monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _tok: cancel_seen.__setitem__("reset", cancel_seen["reset"] + 1))
     monkeypatch.setattr(mod.asyncio, "create_task", _track_create_task)
@@ -142,3 +146,84 @@ def test_websocket_disconnect_cancels_active_task_and_generate_cancelled_cleanup
 
     assert cancel_seen["cancelled"] is True
     assert cancel_seen["reset"] >= 0
+
+def test_websocket_large_chunk_disconnect_still_cleans_event_bus_and_context(monkeypatch):
+    mod = _load_web_server()
+
+    seen = {"unsub": 0, "reset": 0, "send_calls": 0, "chunk_sends": 0}
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Mem:
+        def __init__(self):
+            self.db = _DB()
+
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Mem()
+
+        async def respond(self, _msg):
+            yield "X" * 200_000
+            yield "tail"
+
+    class _Bus:
+        def subscribe(self):
+            return "sub-large", asyncio.Queue()
+
+        def unsubscribe(self, _sid):
+            seen["unsub"] += 1
+
+    class _WebSocket:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "big"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            for _ in range(20):
+                if seen["chunk_sends"] > 0:
+                    break
+                await asyncio.sleep(0.01)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            seen["send_calls"] += 1
+            if "chunk" in payload:
+                seen["chunk_sends"] += 1
+            if len(payload.get("chunk", "")) > 100_000:
+                raise mod.WebSocketDisconnect()
+            return None
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_a, **_k):
+        return False
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    bus = _Bus()
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _tok: seen.__setitem__("reset", seen["reset"] + 1))
+
+    asyncio.run(mod.websocket_chat(_WebSocket()))
+
+    assert seen["chunk_sends"] >= 1
+    assert seen["unsub"] == 1
+    assert seen["reset"] == 1

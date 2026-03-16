@@ -973,7 +973,7 @@ async def websocket_chat(websocket: WebSocket):
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 get_agent_event_bus().unsubscribe(sub_id)
@@ -1036,6 +1036,8 @@ async def websocket_chat(websocket: WebSocket):
         logger.info("İstemci WebSocket bağlantısını kesti.")
         if active_task and not active_task.done():
             active_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await active_task
     except Exception as _ws_exc:
         # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
         # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
@@ -1043,6 +1045,8 @@ async def websocket_chat(websocket: WebSocket):
             logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
             if active_task and not active_task.done():
                 active_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await active_task
         else:
             logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
 
