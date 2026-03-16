@@ -28,19 +28,28 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources
 # ═══════════════════════════════════════════════════════════════
 BASE_DIR = Path(__file__).resolve().parent
 
+
+def _safe_load_dotenv(*, dotenv_path: Path, override: bool = False) -> bool:
+    try:
+        load_dotenv(dotenv_path=dotenv_path, override=override)
+        return True
+    except Exception as exc:
+        print(f"⚠️  Ortam dosyası yüklenemedi: {dotenv_path.name} ({exc})")
+        return False
+
 # 1. Ortam değişkenini kontrol et (örn: SIDAR_ENV=production)
 sidar_env = os.getenv("SIDAR_ENV", "").strip().lower()
 
 # 2. Önce her zaman temel .env dosyasını yükle (varsa)
 base_env_path = BASE_DIR / ".env"
 if base_env_path.exists():
-    load_dotenv(dotenv_path=base_env_path)
+    _safe_load_dotenv(dotenv_path=base_env_path)
 
 # 3. Ortama özgü dosyayı (örn: .env.production) temel ayarların üstüne yaz
 if sidar_env:
     specific_env_path = BASE_DIR / f".env.{sidar_env}"
     if specific_env_path.exists():
-        load_dotenv(dotenv_path=specific_env_path, override=True)
+        _safe_load_dotenv(dotenv_path=specific_env_path, override=True)
         print(f"ℹ️  Ortama özgü yapılandırma yüklendi: .env.{sidar_env}")
     else:
         optional_env_aliases = {"development", "dev", "local"}

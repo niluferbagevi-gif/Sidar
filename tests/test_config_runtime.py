@@ -469,3 +469,61 @@ def test_config_enforces_supervisor_mode(monkeypatch):
 
     c = cfg_mod.Config()
     assert c.ENABLE_MULTI_AGENT is True
+
+def test_config_import_handles_broken_dotenv_file_gracefully(monkeypatch):
+    printed = []
+
+    dotenv_mod = types.ModuleType("dotenv")
+
+    def _boom(*_args, **_kwargs):
+        raise ValueError("invalid dotenv syntax")
+
+    dotenv_mod.load_dotenv = _boom
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        monkeypatch.setattr(Path, "exists", lambda self: str(self).endswith(".env"))
+
+        spec = importlib.util.spec_from_file_location("config_runtime_broken_dotenv_under_test", Path("config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+
+        assert any("Ortam dosyası yüklenemedi" in p for p in printed)
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+
+
+def test_hardware_detection_respects_use_gpu_false_even_when_cuda_available(monkeypatch):
+    cfg_mod = _load_config_module()
+    monkeypatch.setenv("USE_GPU", "false")
+
+    class _Cuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 4
+
+        @staticmethod
+        def get_device_name(_dev):
+            return "A100"
+
+    class _Torch:
+        cuda = _Cuda()
+
+        class version:
+            cuda = "12.4"
+
+    monkeypatch.setitem(sys.modules, "torch", _Torch())
+
+    hw = cfg_mod.check_hardware()
+    assert hw.has_cuda is False
+    assert hw.gpu_count == 0
+    assert hw.gpu_name == "Devre Dışı (Kullanıcı)"
