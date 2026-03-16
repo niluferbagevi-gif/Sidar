@@ -251,21 +251,26 @@ class SidarAgent:
         hiyerarşik öncelik ile bağlama eklenir.
         """
         lines = []
+        is_local_provider = (self.cfg.AI_PROVIDER or "").lower() == "ollama"
+        include_verbose_runtime = not is_local_provider
 
         # ── Proje Ayarları (gerçek değerler — hallucination önleme) ──
         lines.append("[Proje Ayarları — GERÇEK RUNTIME DEĞERLERİ]")
         lines.append(f"  Proje        : {self.cfg.PROJECT_NAME} v{self.cfg.VERSION}")
-        lines.append(f"  Dizin        : {self.cfg.BASE_DIR}")
+        if include_verbose_runtime:
+            lines.append(f"  Dizin        : {self.cfg.BASE_DIR}")
         lines.append(f"  AI Sağlayıcı : {self.cfg.AI_PROVIDER.upper()}")
         if self.cfg.AI_PROVIDER == "ollama":
             lines.append(f"  Coding Modeli: {self.cfg.CODING_MODEL}")
             lines.append(f"  Text Modeli  : {self.cfg.TEXT_MODEL}")
-            lines.append(f"  Ollama URL   : {self.cfg.OLLAMA_URL}")
+            if include_verbose_runtime:
+                lines.append(f"  Ollama URL   : {self.cfg.OLLAMA_URL}")
         else:
             lines.append(f"  Gemini Modeli: {self.cfg.GEMINI_MODEL}")
         lines.append(f"  Erişim Seviye: {self.cfg.ACCESS_LEVEL.upper()}")
         gpu_str = f"{self.cfg.GPU_INFO} (CUDA {self.cfg.CUDA_VERSION})" if self.cfg.USE_GPU else f"Yok ({self.cfg.GPU_INFO})"
-        lines.append(f"  GPU          : {gpu_str}")
+        if include_verbose_runtime:
+            lines.append(f"  GPU          : {gpu_str}")
 
         # ── Araç Durumu ───────────────────────────────────────────────
         lines.append("")
@@ -276,12 +281,13 @@ class SidarAgent:
         lines.append(f"  WebSearch  : {'Aktif' if self.web.is_available() else 'Kurulu değil'}")
         lines.append(f"  RAG        : {self.docs.status()}")
 
-        m = self.code.get_metrics()
-        lines.append(f"  Okunan     : {m['files_read']} dosya | Yazılan: {m['files_written']}")
+        if include_verbose_runtime:
+            m = self.code.get_metrics()
+            lines.append(f"  Okunan     : {m['files_read']} dosya | Yazılan: {m['files_written']}")
 
-        last_file = self.memory.get_last_file()
-        if last_file:
-            lines.append(f"  Son dosya  : {last_file}")
+            last_file = self.memory.get_last_file()
+            if last_file:
+                lines.append(f"  Son dosya  : {last_file}")
 
         # ── Görev Listesi (aktif görev varsa ekle) ──────────────────────
         if len(self.todo) > 0:
@@ -293,9 +299,16 @@ class SidarAgent:
         instruction_block = await asyncio.to_thread(self._load_instruction_files)
         if instruction_block:
             lines.append("")
+            max_instruction_chars = max(600, int(getattr(self.cfg, "LOCAL_INSTRUCTION_MAX_CHARS", 2400)))
+            if is_local_provider and len(instruction_block) > max_instruction_chars:
+                instruction_block = instruction_block[:max_instruction_chars].rstrip() + "\n\n[Not] Talimatlar yerel model bağlam sınırı için kırpıldı."
             lines.append(instruction_block)
 
-        return "\n".join(lines)
+        context_text = "\n".join(lines)
+        max_context_chars = max(1000, int(getattr(self.cfg, "LOCAL_AGENT_CONTEXT_MAX_CHARS", 4500)))
+        if is_local_provider and len(context_text) > max_context_chars:
+            return context_text[:max_context_chars].rstrip() + "\n\n[Not] Bağlam yerel model için kırpıldı."
+        return context_text
 
     def _load_instruction_files(self) -> str:
         """
