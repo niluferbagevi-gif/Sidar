@@ -76,3 +76,26 @@ def test_llm_metrics_record_calculates_cost_when_none_and_handles_async_sink():
     snap = collector.snapshot()
     assert snap["totals"]["cost_usd"] > 0
     assert observed["task_calls"] == 1
+
+def test_estimate_cost_usd_openai_and_anthropic_exact_values():
+    c = LLMMetricsCollector(max_events=5)
+
+    # openai:gpt-4o-mini -> prompt:0.15$/1M, completion:0.60$/1M
+    # 2_000 prompt + 3_000 completion = 0.0003 + 0.0018 = 0.0021
+    openai_cost = c.estimate_cost_usd("openai", "gpt-4o-mini", 2_000, 3_000)
+    assert openai_cost == 0.0021
+
+    # anthropic:claude-3-5-sonnet-latest -> prompt:3$/1M, completion:15$/1M
+    # 1_000 + 2_000 = 0.003 + 0.03 = 0.033
+    anthropic_cost = c.estimate_cost_usd("anthropic", "claude-3-5-sonnet-latest", 1_000, 2_000)
+    assert anthropic_cost == 0.033
+
+
+def test_estimate_cost_usd_is_case_insensitive_and_unknown_model_zero():
+    c = LLMMetricsCollector(max_events=5)
+
+    mixed_case = c.estimate_cost_usd("OpenAI", "GPT-4O-MINI", 1_000, 1_000)
+    lower_case = c.estimate_cost_usd("openai", "gpt-4o-mini", 1_000, 1_000)
+
+    assert mixed_case == lower_case
+    assert c.estimate_cost_usd("openai", "unknown-model", 10_000, 10_000) == 0.0
