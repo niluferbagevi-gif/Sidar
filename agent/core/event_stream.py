@@ -1,11 +1,11 @@
-"""Ajan durum event stream'i: Redis Pub/Sub + process-içi fallback."""
+"""Ajan durum event stream'i: Redis Streams + process-içi fallback."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
-import contextlib
 import os
 import time
 import uuid
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +30,10 @@ class AgentEventBus:
         self._subscribers: Dict[int, asyncio.Queue[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
+        self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_client: Redis | None = None
-        self._redis_pubsub = None
         self._redis_listener_task: asyncio.Task | None = None
         self._redis_bootstrap_task: asyncio.Task | None = None
         self._redis_available: bool | None = None
@@ -74,9 +75,16 @@ class AgentEventBus:
                 self._redis_client = Redis.from_url(self._redis_url, encoding="utf-8", decode_responses=True)
                 await self._redis_client.ping()
 
-            if self._redis_pubsub is None:
-                self._redis_pubsub = self._redis_client.pubsub()
-                await self._redis_pubsub.subscribe(self._channel)
+            try:
+                await self._redis_client.xgroup_create(
+                    name=self._channel,
+                    groupname=self._consumer_group,
+                    id="0-0",
+                    mkstream=True,
+                )
+            except ResponseError as exc:
+                if "BUSYGROUP" not in str(exc):
+                    raise
 
             self._redis_available = True
             self._redis_listener_task = asyncio.create_task(self._redis_listener_loop())
@@ -93,14 +101,17 @@ class AgentEventBus:
         if not self._redis_client or self._redis_available is not True:
             return False
 
-        payload = json.dumps({
-            "sid": self._instance_id,
-            "ts": evt.ts,
-            "source": evt.source,
-            "message": evt.message,
-        }, ensure_ascii=False)
+        payload = json.dumps(
+            {
+                "sid": self._instance_id,
+                "ts": evt.ts,
+                "source": evt.source,
+                "message": evt.message,
+            },
+            ensure_ascii=False,
+        )
         try:
-            await self._redis_client.publish(self._channel, payload)
+            await self._redis_client.xadd(self._channel, {"payload": payload})
             return True
         except Exception as exc:
             logger.debug("AgentEventBus Redis publish başarısız, local fallback: %s", exc)
@@ -109,10 +120,16 @@ class AgentEventBus:
             return False
 
     async def _redis_listener_loop(self) -> None:
-        assert self._redis_pubsub is not None
+        assert self._redis_client is not None
         while True:
             try:
-                msg = await self._redis_pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                response = await self._redis_client.xreadgroup(
+                    groupname=self._consumer_group,
+                    consumername=self._instance_id,
+                    streams={self._channel: ">"},
+                    count=20,
+                    block=1000,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -121,23 +138,26 @@ class AgentEventBus:
                 await self._cleanup_redis()
                 return
 
-            if not msg or msg.get("type") != "message":
-                await asyncio.sleep(0.01)
+            if not response:
                 continue
 
-            try:
-                payload = json.loads(str(msg.get("data", "{}")))
-                if payload.get("sid") == self._instance_id:
-                    continue
-                evt = AgentEvent(
-                    ts=float(payload.get("ts", time.time())),
-                    source=str(payload.get("source", "agent")),
-                    message=str(payload.get("message", "")),
-                )
-            except Exception:
-                continue
-
-            self._fanout_local(evt)
+            for _stream_name, entries in response:
+                for msg_id, fields in entries:
+                    payload_raw = fields.get("payload", "{}")
+                    try:
+                        payload = json.loads(str(payload_raw))
+                        if payload.get("sid") != self._instance_id:
+                            evt = AgentEvent(
+                                ts=float(payload.get("ts", time.time())),
+                                source=str(payload.get("source", "agent")),
+                                message=str(payload.get("message", "")),
+                            )
+                            self._fanout_local(evt)
+                    except Exception:
+                        pass
+                    finally:
+                        with contextlib.suppress(Exception):
+                            await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
 
     def _fanout_local(self, evt: AgentEvent) -> None:
         to_drop = []
@@ -155,12 +175,6 @@ class AgentEventBus:
             with contextlib.suppress(Exception):
                 await self._redis_listener_task
         self._redis_listener_task = None
-
-        if self._redis_pubsub is not None:
-            with contextlib.suppress(Exception):
-                closer = getattr(self._redis_pubsub, "aclose", None) or self._redis_pubsub.close
-                await closer()
-        self._redis_pubsub = None
 
         if self._redis_client is not None:
             with contextlib.suppress(Exception):
