@@ -6,8 +6,10 @@ Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP taban
 from __future__ import annotations
 
 import codecs
+import hashlib
 import asyncio
 import json
+import math
 import sys
 import logging
 import random
@@ -16,6 +18,10 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Optional, Union
 
 import httpx
+try:
+    from redis.asyncio import Redis
+except Exception:
+    Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 
 try:
@@ -197,6 +203,126 @@ async def _trace_stream_metrics(stream_iter: AsyncIterator[str], span, started_a
     finally:
         if span is not None:
             span.end()
+
+
+
+
+class _SemanticCacheManager:
+    """Redis tabanlı semantik LLM yanıt önbelleği."""
+
+    def __init__(self, config) -> None:
+        self.config = config
+        self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
+        self.threshold = float(getattr(config, "SEMANTIC_CACHE_THRESHOLD", 0.95) or 0.95)
+        self.ttl = int(getattr(config, "SEMANTIC_CACHE_TTL", 3600) or 3600)
+        self.max_items = max(1, int(getattr(config, "SEMANTIC_CACHE_MAX_ITEMS", 500) or 500))
+        self.index_key = "sidar:semantic_cache:index"
+        self._redis: Redis | None = None
+
+    async def _get_redis(self) -> Redis | None:
+        if not self.enabled or Redis is None:
+            return None
+        if self._redis is not None:
+            return self._redis
+        try:
+            self._redis = Redis.from_url(
+                getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
+                encoding="utf-8",
+                decode_responses=True,
+            )
+            await self._redis.ping()
+            return self._redis
+        except Exception as exc:
+            logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
+            self._redis = None
+            return None
+
+    @staticmethod
+    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        an = math.sqrt(sum(x * x for x in a))
+        bn = math.sqrt(sum(y * y for y in b))
+        if an == 0 or bn == 0:
+            return 0.0
+        return dot / (an * bn)
+
+    def _embed_prompt(self, prompt: str) -> List[float]:
+        try:
+            from core.rag import embed_texts_for_semantic_cache
+
+            vectors = embed_texts_for_semantic_cache([prompt], cfg=self.config)
+            if vectors:
+                return [float(v) for v in vectors[0]]
+        except Exception as exc:
+            logger.debug("Semantic cache embedding hatası: %s", exc)
+        return []
+
+    async def get(self, prompt: str) -> Optional[str]:
+        redis = await self._get_redis()
+        if redis is None or not prompt:
+            return None
+
+        query_vector = self._embed_prompt(prompt)
+        if not query_vector:
+            return None
+
+        try:
+            keys = await redis.lrange(self.index_key, 0, -1)
+            if not keys:
+                return None
+
+            best_sim = -1.0
+            best_response: Optional[str] = None
+            for key in keys:
+                raw = await redis.hgetall(key)
+                if not raw:
+                    continue
+                try:
+                    emb = json.loads(raw.get("embedding", "[]"))
+                except Exception:
+                    continue
+                sim = self._cosine_similarity(query_vector, emb)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_response = raw.get("response")
+
+            if best_response is not None and best_sim >= self.threshold:
+                logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
+                return best_response
+            logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
+            return None
+        except Exception as exc:
+            logger.debug("Semantic cache okuma hatası: %s", exc)
+            return None
+
+    async def set(self, prompt: str, response: str) -> None:
+        redis = await self._get_redis()
+        if redis is None or not prompt or not response:
+            return
+
+        vector = self._embed_prompt(prompt)
+        if not vector:
+            return
+
+        item_key = f"sidar:semantic_cache:item:{hashlib.sha256(prompt.encode('utf-8')).hexdigest()}"
+        payload = {
+            "prompt": prompt,
+            "response": response,
+            "embedding": json.dumps(vector),
+            "created_at": str(time.time()),
+        }
+        try:
+            async with redis.pipeline(transaction=True) as pipe:
+                pipe.hset(item_key, mapping=payload)
+                pipe.expire(item_key, self.ttl)
+                pipe.lrem(self.index_key, 0, item_key)
+                pipe.lpush(self.index_key, item_key)
+                pipe.ltrim(self.index_key, 0, self.max_items - 1)
+                await pipe.execute()
+        except Exception as exc:
+            logger.debug("Semantic cache yazma hatası: %s", exc)
 
 
 class BaseLLMClient(ABC):
@@ -1024,6 +1150,7 @@ class LLMClient:
     def __init__(self, provider: str, config) -> None:
         self.provider = provider.lower()
         self.config = config
+        self._semantic_cache = _SemanticCacheManager(config)
 
         if self.provider == "ollama":
             self._client: BaseLLMClient = OllamaClient(config)
@@ -1063,13 +1190,30 @@ class LLMClient:
     ) -> Union[str, AsyncIterator[str]]:
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + list(messages)
-        return await self._client.chat(
+
+        user_prompt = ""
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                user_prompt = (message.get("content") or "").strip()
+                break
+
+        if (not stream) and user_prompt:
+            cached_response = await self._semantic_cache.get(user_prompt)
+            if cached_response is not None:
+                return cached_response
+
+        response = await self._client.chat(
             messages=messages,
             model=model,
             temperature=temperature,
             stream=stream,
             json_mode=json_mode,
         )
+
+        if (not stream) and user_prompt and isinstance(response, str):
+            await self._semantic_cache.set(user_prompt, response)
+
+        return response
 
     async def list_ollama_models(self) -> List[str]:
         if isinstance(self._client, OllamaClient):

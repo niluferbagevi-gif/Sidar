@@ -363,6 +363,8 @@ class Config:
     # ─── Semantic Cache (v4.0) ───────────────────────────────
     ENABLE_SEMANTIC_CACHE: bool = get_bool_env("ENABLE_SEMANTIC_CACHE", False)
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
+    SEMANTIC_CACHE_TTL: int = get_int_env("SEMANTIC_CACHE_TTL", 3600)
+    SEMANTIC_CACHE_MAX_ITEMS: int = get_int_env("SEMANTIC_CACHE_MAX_ITEMS", 500)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")
@@ -595,6 +597,8 @@ class Config:
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
             "enable_semantic_cache": cls.ENABLE_SEMANTIC_CACHE,
             "semantic_cache_threshold": cls.SEMANTIC_CACHE_THRESHOLD,
+            "semantic_cache_ttl": cls.SEMANTIC_CACHE_TTL,
+            "semantic_cache_max_items": cls.SEMANTIC_CACHE_MAX_ITEMS,
         }
 
     @classmethod
