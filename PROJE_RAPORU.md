@@ -7,7 +7,7 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-16 (v3.0.6 — Doğrulama turu: v3.0.4/v3.0.5 bulguları kod üzerinde yeniden teyit edildi; rapor-kod senkronizasyonu gözden geçirildi; 2 yeni operasyonel uyumsuzluk (YN2-Y-1, YN2-O-1) tespit edilerek kayıt altına alındı)
+> **Son Güncelleme:** 2026-03-16 (v3.0.7 — Doğrulama turu: v3.0.6 bulguları yeniden teyit edildi; YN2-O-1 çözüldü; YN2-Y-1 hâlâ açık; 6 yeni bulgu (YN3-O-1..YN3-O-4, YN3-D-1, YN3-D-2) tespit edilerek kayıt altına alındı)
 > **Proje Sürümü:** 3.0.0
 
 > **Önceki Kayıt:** 3.0.5
@@ -66,6 +66,7 @@
   - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
   - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
   - [11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar](#113-2026-03-16-v306-doğrulama-turu--operasyonel-uyumsuzluklar)
+  - [11.4 2026-03-16 v3.0.7 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu](#114-2026-03-16-v307-doğrulama-turu--yeni-bulgular-ve-kapatma-durumu)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -892,6 +893,47 @@ uyumsuzluk tespit edilmiştir.
 
 ---
 
+### 11.4 2026-03-16 v3.0.7 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
+
+v3.0.7 doğrulama turunda tüm kaynak dosyalar yeniden satır satır incelenmiştir. YN2-O-1 çözüldü;
+YN2-Y-1 hâlâ açık. Ayrıca 6 yeni bulgu tespit edilmiştir.
+
+#### ✅ v3.0.6 Bulgu Kapatma Durumu
+
+| # | Önceki Durum | Güncel Durum | Açıklama |
+|---|-------------|-------------|----------|
+| YN2-Y-1 | 🟠 AÇIK | 🟠 HÂLÂ AÇIK | `pytest.ini:4` `asyncio_mode = auto` aktif; `pytest-asyncio` sadece `[dev]` extras'ında. `pip install -e .` ile kurulan ortamlarda plugin eksik kalır. `environment.yml` `-e .[...,dev]` ile conda ortamında çalışıyor ama CI'nin dev extras'ı yükleyip yüklemediği bağımlılık. |
+| YN2-O-1 | 🟡 AÇIK | ✅ ÇÖZÜLDÜ | `test_code_manager_runtime.py:281-285` satırlarında `os.stat()` ve `stat.S_ISSOCK()` tam mock'lanmış; `docker_available is True` beklentisi deterministik hale getirildi. |
+
+#### 🟠 YÜKSEK
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN3-O-4 | `agent/sidar_agent.py` | `96`, `321` | **`threading.Lock()` async bağlamda kullanım** | `_instructions_lock = threading.Lock()` senkron kilit olarak tanımlanmış (satır 96); `with self._instructions_lock:` bloğu async bir fonksiyon içinde kullanılıyor (satır 321). Senkron kilit, async event loop'u anlık bloklar. Mtime/cache karşılaştırması gibi küçük bir bölüm olsa da, pattern `asyncio.Lock()` ile değiştirilmelidir. |
+
+#### 🟡 ORTA
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN3-O-1 | `web_server.py` | `32-35` | **`_ANYIO_CLOSED` dead code** | `anyio.ClosedResourceError` import ediliyor, `_ANYIO_CLOSED` değişkenine atanıyor ancak dosyanın hiçbir yerinde kullanılmıyor. Gereksiz import yükü ve yanıltıcı değişken. |
+| YN3-O-2 | `web_server.py` | `466-467` | **`_rate_data` / `_rate_lock` dead code** | `_rate_data: dict[str, list[float]] = _local_rate_limits` atanmış ama kullanılmıyor; `_rate_lock: asyncio.Lock \| None = None` tanımlı ama asıl kullanılan `_local_rate_lock` değişkeni. İsimlendirme/alias karışıklığı okuyucu yanıltır. |
+| YN3-O-3 | `web_server.py` | `365-366`, `382-383` | **`isinstance(payload, dict)` redundant tip kontrolü** | `/auth/register` ve `/auth/login` endpoint'leri Pydantic `_RegisterRequest`/`_LoginRequest` modeliyle tanımlı; FastAPI otomatik doğrulama yapar. `isinstance(payload, dict)` dal her zaman `False`; `.get()` Pydantic model üzerinde çalışmaz. Yanıltıcı dallanma kaldırılmalıdır. |
+
+#### 🟡 DÜŞÜK
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN3-D-1 | `web_server.py` | `196`, `207` | **`"sidar-dev-secret"` hardcoded JWT fallback** | `JWT_SECRET_KEY` config'den alınamadığında `"sidar-dev-secret"` sabit değerine düşülüyor. Production ortamında `.env`'de `JWT_SECRET_KEY` tanımlanmazsa HMAC imzaları tahmin edilebilir hale gelir. Bu değerin `secrets.token_urlsafe(32)` ile değiştirilmesi ya da uygulama başlangıcında zorunlu config kontrolüne eklenmesi gerekir. |
+| YN3-D-2 | `web_ui/index.html` | `286` | **Grafana URL hardcoded** | Grafana paneli açma butonu `http://localhost:3000` sabit değerine bağlı. Konteyner ortamında Grafana farklı bir adres/port'ta çalışıyorsa buton işe yaramaz. `GRAFANA_URL` env değişkeninden okunmalı ya da sunucu tarafından dinamik inject edilmelidir. |
+
+#### v3.0.7 Test ve Doğrulama Notu
+
+* YN2-O-1: `test_code_manager_runtime.py:281-285` — `os.stat()` ve `stat.S_ISSOCK()` mock'ları doğrulandı. **KAPANDI.**
+* YN2-Y-1: `pyproject.toml[dev]` + `environment.yml` incelendi. Conda ortamında çalışıyor; bare `pip install -e .` ortamında eksik. **AÇIK.**
+* YN3 serisi bulgular tespit edildi, kapatma testleri önerilir (bkz. Borç #YN3-O-1..YN3-D-2).
+
+---
+
 ## 12. `.env` Tam Değişken Referansı
 
 [⬆ İçindekilere Dön](#içindekiler)
@@ -1450,5 +1492,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | v3.0.4 | 2026-03-16 | Test kapsama %100, 33 legacy skip testi temizlendi, kapsama kalite kapısı %99.9, kaynak dosya satır sayıları yeniden ölçüldü, 8 yeni güvenlik/işlevsellik bulgusu (K-1, K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) kayıt altına alındı |
 | **v3.0.5** | **2026-03-16** | **v3.0.4 bulgularının tamamı (K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) doğrulandı/çözüldü; 3 yanlış pozitif (K-2, Y-4, O-2, D-4) teyit edildi; 5 yeni bulgu tespit edildi: YN-K-1 (rag.py _TEXT_EXTS bypass), YN-Y-1 (sidar_agent _lock lazy init), YN-Y-2 (SSRF in add_document_from_url), YN-Y-3 (github_manager .env izin), YN-O-1 (auth endpoint Pydantic eksik)** |
 | **v3.0.6** | **2026-03-16** | **Doğrulama turunda önceki K/Y/O/D + YN bulguları tekrar teyit edildi; test/operasyon katmanında iki yeni uyumsuzluk kayıt altına alındı: YN2-Y-1 (async test plugin bağımlılık uyumsuzluğu), YN2-O-1 (Docker socket fallback test beklenti drift'i).** |
+| **v3.0.7** | **2026-03-16** | **Tüm kaynak dosyalar yeniden satır satır incelendi. YN2-O-1 çözüldü (mock doğrulandı). YN2-Y-1 hâlâ açık. 6 yeni bulgu tespit edildi: YN3-O-4 (threading.Lock async bağlam), YN3-O-1 (_ANYIO_CLOSED dead code), YN3-O-2 (_rate_data/_rate_lock dead code), YN3-O-3 (isinstance dict redundant check), YN3-D-1 (JWT hardcoded fallback), YN3-D-2 (Grafana URL hardcoded).** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
