@@ -64,7 +64,7 @@
 - [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
   - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
   - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
-  - [11.3 2026-03-16 v3.0.4 Denetimi — Tüm Bulgular (Çözüldü)](#113-2026-03-16-denetiminde-tespit-edilen-yeni-bulgular)
+  - [11.3 2026-03-16 v3.0.4 Denetimi — Arşiv/CHANGELOG Referansı](#113-2026-03-16-v304-denetimi--arşivchangelog-referansı)
   - [11.4 2026-03-16 v3.0.5 Denetimi — Yeni Bulgular](#114-2026-03-16-v305-denetiminde-tespit-edilen-yeni-bulgular)
   - [11.5 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar](#115-2026-03-16-v306-doğrulama-turu--operasyonel-uyumsuzluklar)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
@@ -867,9 +867,9 @@ Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu viz
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 - **`pytest-asyncio` Geçişi:** `conftest.py` custom async hook'undan resmi `pytest-asyncio` modeline geçiş — test ölçeklenmesi için önerilen teknik borç adayı.
 
-### 11.3 2026-03-16 Denetiminde Tespit Edilen Yeni Bulgular
+### 11.3 2026-03-16 v3.0.4 Denetimi — Arşiv/CHANGELOG Referansı
 
-Aşağıdaki bulgular tüm kaynak dosyaların satır satır incelenmesiyle ortaya çıkmıştır. Her bulgu öncelik ve konum bilgisiyle birlikte listelenmiştir.
+Bu bölüm tarihsel izlenebilirlik için korunur. **Çözüldü/yanlış-pozitif olarak kapanan tüm v3.0.4 bulguların resmi kapanış kaydı CHANGELOG'a taşınmıştır**; detaylı kapanış notları için [`CHANGELOG.md` v3.0.4](CHANGELOG.md#v304---2026-03-16) ve [`CHANGELOG.md` v3.0.5 doğrulama bölümü](CHANGELOG.md#v305---2026-03-16) referans alınmalıdır.
 
 #### 🔴 KRİTİK
 

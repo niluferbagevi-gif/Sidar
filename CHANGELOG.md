@@ -4,6 +4,14 @@
 
 ---
 
+## [v3.0.6] - 2026-03-16
+Doğrulama turu — rapor/changelog senkronizasyonu güçlendirildi, arşiv referansları netleştirildi.
+
+### ✅ Dokümantasyon Senkronizasyonu
+
+* `PROJE_RAPORU.md` §11.3 bölümü, çözülen v3.0.4 bulgular için **arşiv/özet** olarak netleştirildi.
+* v3.0.4 kapanış detaylarının birincil kayıt noktası olarak bu dosyadaki `v3.0.4` ve `v3.0.5` bölümlerine yönlendirme eklendi.
+
 ## [v3.0.5] - 2026-03-16
 Tam kaynak denetimi (v3.0.5) — v3.0.4 tüm bulgular doğrulandı/kapatıldı; 5 yeni bulgu tespit edilip giderildi.
 
