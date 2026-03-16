@@ -19,6 +19,8 @@ import re
 import shutil
 import threading
 import asyncio
+import ipaddress
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -406,10 +408,32 @@ class DocumentStore:
             session_id,
         )
 
+    @staticmethod
+    def _validate_url_safe(url: str) -> None:
+        """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Yalnızca http/https URL'lerine izin verilir, alınan: '{parsed.scheme}'")
+        hostname = parsed.hostname or ""
+        if not hostname:
+            raise ValueError("URL geçerli bir hostname içermiyor.")
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                raise ValueError(f"İç ağ adresine erişim engellendi: {hostname}")
+        except ValueError as exc:
+            # ip_address() hata fırlattıysa ama "İç ağ" mesajımız değilse → hostname (DNS adı)
+            if "İç ağ" in str(exc):
+                raise
+        blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
+        if hostname.lower() in blocked_hosts:
+            raise ValueError(f"Engellenen hostname: {hostname}")
+
     async def add_document_from_url(self, url: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
         import httpx
         try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            self._validate_url_safe(url)
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True, max_redirects=5, headers={"User-Agent": "Mozilla/5.0"}) as client:
                 resp = await client.get(url)
             resp.raise_for_status()
             content = self._clean_html(resp.text)
@@ -425,7 +449,7 @@ class DocumentStore:
             return False, f"[HATA] URL belge eklenemedi: {exc}"
 
     def add_document_from_file(self, path: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
-        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".env", ".example", ".gitignore", ".dockerignore", ""}
+        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".gitignore", ".dockerignore", ""}
         try:
             file = Path(path).resolve()
             if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
