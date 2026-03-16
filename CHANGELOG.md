@@ -4,6 +4,44 @@
 
 ---
 
+## [v3.0.7] - 2026-03-16
+Tam kaynak denetimi (v3.0.7) — tüm kaynak dosyalar yeniden satır satır incelendi; YN2-O-1 kapatıldı; YN2-Y-1 hâlâ açık; 6 yeni bulgu (YN3 serisi) kayıt altına alındı.
+
+### ✅ YN2-O-1 Kapatıldı
+
+**[YN2-O-1 Çözüldü] `managers/code_manager.py` — Docker socket fallback test mock'ları doğrulandı**
+* `tests/test_code_manager_runtime.py:281-285` satırlarında `os.stat()` `st_mode=0` döndüren sahte nesneyle, `stat.S_ISSOCK()` her zaman `True` döndürecek şekilde tam mock'lanmıştır.
+* Test artık WSL2 socket fallback akışını deterministik biçimde doğrulamaktadır.
+* Referans: `tests/test_code_manager_runtime.py:238-285`
+
+### 🟠 YN2-Y-1 Hâlâ Açık
+
+**[YN2-Y-1 Devam Ediyor] `pytest.ini` / `pyproject.toml` — async test plugin bağımlılık uyumsuzluğu**
+* `pytest.ini:4` içinde `asyncio_mode = auto` aktif. `pytest-asyncio>=0.23.0` yalnızca `pyproject.toml[dev]` extras'ında tanımlı.
+* `environment.yml` `-e .[rag,postgres,telemetry,dev]` ile conda ortamında dev dahil ediliyor.
+* Bare `pip install -e .` ile kurulan ortamlarda (`dev` extras olmadan) `pytest-asyncio` yüklenmez ve async testler `"async def functions are not natively supported"` hatası verir.
+* **Öneri:** `pytest-asyncio` ve `anyio[trio]` paketlerini `pyproject.toml` ana `dependencies`'den değil, CI workflow'da `pip install -e ".[dev]"` ile zorunlu kılarak çözmek veya CI adımına eklemek.
+
+### ✅ YN3 Serisi — Yeni Tespit Edilen Bulgular
+
+| # | Dosya | Satır | Ciddiyet | Açıklama |
+|---|-------|-------|----------|----------|
+| YN3-O-4 | `agent/sidar_agent.py` | `96`, `321` | 🟠 ORTA | `threading.Lock()` async fonksiyon içinde kullanılıyor; event loop'u anlık bloklama riski. `asyncio.Lock()` ile değiştirilmeli. |
+| YN3-O-1 | `web_server.py` | `32-35` | 🟡 ORTA | `_ANYIO_CLOSED` dead code — import ediliyor ama hiç kullanılmıyor. |
+| YN3-O-2 | `web_server.py` | `466-467` | 🟡 ORTA | `_rate_data` ve `_rate_lock` dead code — `_local_rate_lock` kullanılırken bu değişkenler tanımlı ama işlevsiz. |
+| YN3-O-3 | `web_server.py` | `365-366`, `382-383` | 🟡 ORTA | `isinstance(payload, dict)` redundant — FastAPI Pydantic validation sonrası `payload` her zaman model örneğidir; `.get()` çalışmaz. |
+| YN3-D-1 | `web_server.py` | `196`, `207` | 🟡 DÜŞÜK | `"sidar-dev-secret"` hardcoded JWT fallback — production'da `JWT_SECRET_KEY` set edilmezse imzalar tahmin edilebilir. |
+| YN3-D-2 | `web_ui/index.html` | `286` | 🟡 DÜŞÜK | `http://localhost:3000` hardcoded Grafana URL — container ortamında düzgün çalışmayabilir. |
+
+---
+
+## [v3.0.6] - 2026-03-16
+Doğrulama turu — v3.0.4/v3.0.5 bulguları kod üzerinde yeniden teyit edildi; 2 yeni operasyonel uyumsuzluk tespit edildi (YN2-Y-1, YN2-O-1).
+
+_(Ayrıntılar PROJE_RAPORU.md §11.3'te kayıtlıdır.)_
+
+---
+
 ## [v3.0.5] - 2026-03-16
 Tam kaynak denetimi (v3.0.5) — v3.0.4 tüm bulgular doğrulandı/kapatıldı; 5 yeni bulgu tespit edilip giderildi.
 
