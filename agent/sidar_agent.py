@@ -114,6 +114,8 @@ class SidarAgent:
     async def initialize(self) -> None:
         if self._initialized:
             return
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
         async with self._init_lock:
             if self._initialized:
                 return
@@ -141,6 +143,8 @@ class SidarAgent:
         # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
 
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             await self._memory_add("user", user_input)
             await self._memory_add("assistant", multi_result)

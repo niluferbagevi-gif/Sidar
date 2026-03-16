@@ -91,7 +91,7 @@ class SupervisorAgent(BaseAgent):
                     parent_task_id=parent_task_id,
                     sender=current.reply_to,
                 ),
-                timeout=self.cfg.REACT_TIMEOUT,
+                timeout=getattr(getattr(self, "cfg", None), "REACT_TIMEOUT", 60),
             )
             if isinstance(result.summary, DelegationRequest):
                 current = result.summary

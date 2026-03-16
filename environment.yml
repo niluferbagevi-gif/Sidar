@@ -17,4 +17,6 @@ dependencies:
   #   PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
   - pip:
       - uv
+      - pytest-benchmark>=4.0.0
+      - ruff~=0.8.1
       - -e .[rag,postgres,telemetry,dev]

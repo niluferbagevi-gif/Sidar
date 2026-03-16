@@ -64,20 +64,27 @@ class _FakeRequest:
 
 
 def _install_stubs():
+    # Track modules that were already installed so we can restore them after
+    # web_server.py is loaded. This prevents permanent sys.modules pollution.
+    _saved_jwt = sys.modules.get("jwt")
+    _saved_pydantic = sys.modules.get("pydantic")
+
     # ── jwt stub ──────────────────────────────────────────────────────────
-    jwt_stub = types.ModuleType("jwt")
-    jwt_stub.encode = lambda payload, key, algorithm="HS256": "stub-token"
-    jwt_stub.decode = lambda token, key, algorithms=None: {}
-    jwt_stub.PyJWTError = type("PyJWTError", (Exception,), {})
-    jwt_stub.DecodeError = type("DecodeError", (Exception,), {})
-    jwt_stub.ExpiredSignatureError = type("ExpiredSignatureError", (Exception,), {})
-    sys.modules["jwt"] = jwt_stub
+    if _saved_jwt is None:
+        jwt_stub = types.ModuleType("jwt")
+        jwt_stub.encode = lambda payload, key, algorithm="HS256": "stub-token"
+        jwt_stub.decode = lambda token, key, algorithms=None: {}
+        jwt_stub.PyJWTError = type("PyJWTError", (Exception,), {})
+        jwt_stub.DecodeError = type("DecodeError", (Exception,), {})
+        jwt_stub.ExpiredSignatureError = type("ExpiredSignatureError", (Exception,), {})
+        sys.modules["jwt"] = jwt_stub
 
     # ── pydantic stub ─────────────────────────────────────────────────────
-    pydantic_stub = types.ModuleType("pydantic")
-    pydantic_stub.BaseModel = object
-    pydantic_stub.Field = lambda *a, **k: None
-    sys.modules["pydantic"] = pydantic_stub
+    if _saved_pydantic is None:
+        pydantic_stub = types.ModuleType("pydantic")
+        pydantic_stub.BaseModel = object
+        pydantic_stub.Field = lambda *a, **k: None
+        sys.modules["pydantic"] = pydantic_stub
 
     # ── managers.system_health stub ───────────────────────────────────────
     mgr_pkg = types.ModuleType("managers")

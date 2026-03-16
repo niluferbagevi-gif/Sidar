@@ -373,14 +373,17 @@ def test_web_server_auth_and_register_success_paths():
 
     db = types.SimpleNamespace(
         register_user=AsyncMock(return_value=types.SimpleNamespace(id="u1", username="alice", role="user")),
-        create_auth_token=AsyncMock(return_value=types.SimpleNamespace(token="tok-1")),
     )
     agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=db))
 
     async def _get_agent():
         return agent
 
+    async def _fake_issue_auth_token(_agent, _user):
+        return "tok-1"
+
     mod.get_agent = _get_agent
+    mod._issue_auth_token = _fake_issue_auth_token
     resp = asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
     assert resp.status_code == 200
     assert resp.content["access_token"] == "tok-1"

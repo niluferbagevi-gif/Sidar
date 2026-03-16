@@ -1074,7 +1074,7 @@ def test_vendor_index_and_file_content_guard_paths(tmp_path, monkeypatch):
 
     (tmp_path / "index.html").write_text("<h1>ok</h1>", encoding="utf-8")
     idx_ok = asyncio.run(mod.index())
-    assert "<h1>ok</h1>" in idx_ok
+    assert "<h1>ok</h1>" in idx_ok.content
 
     outside = asyncio.run(mod.file_content("../etc/passwd"))
     assert outside.status_code == 403
