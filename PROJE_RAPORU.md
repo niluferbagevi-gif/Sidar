@@ -883,6 +883,7 @@ Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu viz
 - **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 - **`pytest-asyncio` Geçişi:** `conftest.py` custom async hook'undan resmi `pytest-asyncio` modeline geçiş — test ölçeklenmesi için önerilen teknik borç adayı.
+- **[Kısmi Çözüm / Refactor Kalıntısı] Pydantic Model Geçişi Kalıntıları:** `web_server.py` içindeki `/auth/register` ve `/auth/login` endpoint'lerinde `isinstance(payload, dict)` dalları kaldırılmış olsa da, Pydantic model nesneleri için anlamsız kalan `hasattr(...)` + `payload.get(...)` desenleri hâlâ mevcuttur. `_RegisterRequest` ve `_LoginRequest` şemaları gereği `payload.username` / `payload.password` alanlarına doğrudan erişim güvenlidir; bu dead-code kalıntısının bir sonraki yamada sadeleştirilmesi planlanmaktadır.
 
 ### 11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar (Kapatıldı)
 
@@ -951,7 +952,7 @@ monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
 | YN3-O-4 | 🟠 Orta | ✅ YANLIŞ POZİTİF | `_load_instruction_files` sync metot — `asyncio.to_thread()` ile çağrılıyor. Thread pool'da `threading.Lock()` kullanımı **doğru** pattern. `asyncio.Lock()` thread-safe değildir. Değişiklik gerekmez. |
 | YN3-O-1 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_ANYIO_CLOSED` WebSocket handler'ın dış `except` blokuna eklendi (`web_server.py`). `anyio.ClosedResourceError` artık `WebSocketDisconnect` gibi normal çıkış olarak işleniyor. |
 | YN3-O-2 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_rate_lock` dead code kaldırıldı (`web_server.py:467`). Test dosyalarında (`test_targeted_coverage_additions.py`, `test_sidar.py`) `_rate_lock` → `_local_rate_lock` güncellendi; artık asıl production kilidi sıfırlanıyor. |
-| YN3-O-3 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `register_user` ve `login_user` endpoint'lerindeki `isinstance(payload, dict)` dalları kaldırıldı. `payload.username` / `payload.password` doğrudan kullanılıyor. |
+| YN3-O-3 | 🟡 Orta | 🟡 KISMİ / TAKİPTE | `isinstance(payload, dict)` dalları kaldırıldı; ancak endpoint'lerde Pydantic model için gereksiz kalan `hasattr(...)` + `payload.get(...)` fallback deseni hâlâ mevcut (refactor kalıntısı dead code). Bir sonraki yamada doğrudan `payload.username` / `payload.password` erişimine sadeleştirilecek. |
 | YN3-D-1 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `_get_jwt_secret()` yardımcı fonksiyonu eklendi. `JWT_SECRET_KEY` boşsa `logger.critical(...)` ile uyarı verilir; `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS` `config.py`'ye taşındı. `.env.example`'a dokümantasyon eklendi. |
 | YN3-D-2 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `GRAFANA_URL` `config.py`'ye eklendi. `index()` route'u `window.__SIDAR_CONFIG__.grafanaUrl` değerini `<head>` içine inject ediyor. `index.html:286` butonu artık bu değeri kullanıyor; `.env.example`'a dokümantasyon eklendi. |
 
