@@ -50,18 +50,132 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 16},
+      "id": 10,
+      "title": "Prompt Registry",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "decimals": 0, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 17},
+      "id": 11,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "title": "Toplam Prompt Sayısı",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(sidar_prompt_registry_total)",
+          "legendFormat": "Toplam",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "decimals": 0, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}},
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 17},
+      "id": 12,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "title": "Aktif Rol Sayısı",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(sidar_prompt_active_version)",
+          "legendFormat": "Aktif rol",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "decimals": 0, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "orange", "value": null}]}},
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 17},
+      "id": 13,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "title": "Son 24 Saat Aktivasyon Sayısı",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(increase(sidar_prompt_activations_total[24h]))",
+          "legendFormat": "Aktivasyon",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "none", "decimals": 0, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "purple", "value": null}]}},
+        "overrides": []
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 17},
+      "id": 14,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "title": "Ortalama Sürüm No",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "avg(sidar_prompt_active_version)",
+          "legendFormat": "Ort. sürüm",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "decimals": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21},
+      "id": 15,
+      "title": "Rol Bazında Aktif Prompt Sürümü",
+      "type": "bargauge",
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "horizontal", "displayMode": "gradient", "valueMode": "color"},
+      "targets": [
+        {
+          "expr": "sidar_prompt_active_version",
+          "legendFormat": "{{role_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "none", "decimals": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21},
+      "id": 16,
+      "title": "Prompt Aktivasyon Geçmişi (son 7 gün)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (role_name) (increase(sidar_prompt_activations_total[1h]))",
+          "legendFormat": "{{role_name}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["sidar", "llm", "cost"],
+  "tags": ["sidar", "llm", "cost", "prompt-registry"],
   "templating": {"list": []},
   "time": {"from": "now-7d", "to": "now"},
   "timepicker": {},
   "timezone": "",
   "title": "SIDAR LLM Maliyet & Kullanım",
   "uid": "sidar-llm-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

@@ -1,0 +1,50 @@
+# Staging ortamı değer geçersiz kılmaları — base values.yaml üzerine uygulanır
+# Kullanım: helm upgrade --install sidar ./helm/sidar -f values.yaml -f values-staging.yaml
+
+image:
+  tag: staging
+  pullPolicy: Always
+
+web:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 125m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+aIWorker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+redis:
+  storage:
+    size: 2Gi
+    storageClassName: standard
+
+postgresql:
+  password: staging-secret  # Üretimde ExternalSecret / Vault referansıyla değiştirin
+  storage:
+    size: 5Gi
+    storageClassName: standard
+
+hpa:
+  web:
+    enabled: false  # Staging'de HPA gereksiz kaynak tüketimine yol açar
+
+env:
+  AI_PROVIDER: litellm
+  LITELLM_GATEWAY_URL: http://litellm-staging:4000
+  ENABLE_TRACING: "true"
+  OTEL_EXPORTER_ENDPOINT: http://jaeger-staging:4317
+  OTEL_SERVICE_NAME: sidar-staging
+  LOG_LEVEL: DEBUG
+  SANDBOX_ENABLED: "false"
