@@ -1128,9 +1128,9 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 |---|---|---|---|
 | **Kubernetes/Helm ile Ölçekleme** | `docker-compose` tabanlı güçlü operasyon akışı mevcut | Çok tenantlı ve yüksek eşzamanlı yükte yatay ölçekleme için K8s deployment + HPA + Helm chart standardizasyonu | Kurumsal ortamlarda çoklu ortam (dev/stage/prod) standardizasyonu ve otomatik ölçekleme ile operasyonel sürdürülebilirlik sağlar. |
 | **LLM Gateway/Proxy Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/llm_client.py` içinde LiteLLM entegrasyonu ve JSON format yapılandırmaları aktif | OpenRouter/LiteLLM benzeri merkezi yönlendirme katmanının provider bazlı failover ve kota politikalarıyla genişletilmesi (ileri faz) | Sağlayıcı bağımlılığını azaltır, maliyet kontrolünü merkezileştirir, SLA hedeflerini korur. |
-| **Dağıtık Ajan İletişimi (Message Broker)** | ✅ **Tamamlandı / Gerçekleştirildi:** `agent/core/event_stream.py` içinde `AgentEventBus` Redis Pub/Sub (`sidar:agent_events`) altyapısına taşındı | Redis Streams/Kafka gibi daha gelişmiş dayanıklılık desenleri (consumer group/replay) için opsiyonel genişleme | Ajanların farklı konteyner/sunucularda bağımsız ölçeklenmesini mümkün kılar; iş yükü piklerinde dayanıklılığı artırır. |
-| **Kurumsal Vektör Veri Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi (hazırlık):** `core/rag.py` içinde `RAG_VECTOR_BACKEND=pgvector` desteği eklendi | Kurumsal ortamda pgvector/Milvus/Qdrant için production hardening, migration ve kapasite planı | RAG doğruluğunu artırır, halüsinasyon oranını azaltır ve mevcut PostgreSQL yatırımıyla tekil veri platformu yaklaşımını destekler. |
-| **Anlamsal Önbellekleme (Semantic Caching)** | Benzer niyetli tekrar sorularda LLM çağrıları yeniden tetikleniyor | Redis/GPTCache tabanlı embedding-benzerlik önbelleği ile soru/yanıt tekrar kullanım katmanı | Token maliyetlerini düşürür, p95 yanıt sürelerini iyileştirir ve yoğun trafikte altyapı yükünü azaltır. |
+| **Dağıtık Ajan İletişimi (Message Broker)** | ✅ **Tamamlandı / Gerçekleştirildi:** `agent/core/event_stream.py` Redis Streams + Consumer Group (`XADD`, `XREADGROUP`, `XACK`) modeline geçirildi; `BUSYGROUP` güvenli yönetimi ve local fallback korunuyor | Kafka/NATS gibi ikinci broker seçeneği ve stream retention/pending-claim operasyonlarının SRE playbook'larına alınması | Ajanların farklı konteyner/sunucularda bağımsız ölçeklenmesini mümkün kılar; replay/ack ile dayanıklılığı artırır. |
+| **Kurumsal Vektör Veri Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/rag.py` içinde aktif `pgvector` başlatma, upsert/delete yaşam döngüsü, `<=>` (cosine distance) araması ve RRF entegrasyonu uygulanmıştır | pgvector için migration/versioning, index tuning (IVFFLAT/HNSW) ve kapasite planının runbook seviyesinde sertleştirilmesi | RAG doğruluğunu artırır, halüsinasyon oranını azaltır ve mevcut PostgreSQL yatırımıyla tekil veri platformu yaklaşımını destekler. |
+| **Anlamsal Önbellekleme (Semantic Caching)** | 🟡 **Kısmen Tamamlandı:** `config.py` üzerinde `ENABLE_SEMANTIC_CACHE` ve `SEMANTIC_CACHE_THRESHOLD` ayarları eklendi | Redis/GPTCache tabanlı gerçek semantic cache katmanının (embedding benzerlik eşleşmesi + TTL/purge + metrikler) runtime'a entegre edilmesi | Token maliyetlerini düşürür, p95 yanıt sürelerini iyileştirir ve yoğun trafikte altyapı yükünü azaltır. |
 | **Dinamik Prompt ve Model Yönetimi** | Ajan promptları ve davranış parametreleri büyük ölçüde kod seviyesinde yönetiliyor | Veritabanı destekli Prompt Registry + yönetim paneli ile prompt, model ve temperature ayarlarının canlı güncellenmesi | Kod dağıtımı olmadan A/B test ve hızlı iterasyon sağlar; ürün ekiplerinin deneysel geliştirme hızını artırır. |
 | **Dinamik Agent Swarm + Marketplace** | Coder/Researcher/Reviewer rolleri üretimde sabit tanımlı | Göreve göre dinamik uzman ajan türetimi (swarm), araç/ajan eklenti pazaryeri ve çalışma zamanı yetenek keşfi | Karmaşık görevleri alt uzmanlıklara bölerek başarı oranını yükseltir; ekosistem büyümesi için platform etkisi oluşturur. |
 | **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | Prometheus/Grafana metrikleri mevcut, uçtan uca trace görünürlüğü sınırlı | OpenTelemetry trace pipeline'ının Jaeger/Zipkin ile tam APM seviyesinde etkinleştirilmesi | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
@@ -1144,8 +1144,8 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 > **v4.0 Güncel Durum Özeti (Tamamlanan Kurumsal Geçişler):**
 > - ✅ Paket yöneticisi modernizasyonu ve bağımlılık izolasyonu tamamlandı.
 > - ✅ Stateless Auth/JWT geçişi ile middleware tarafında DB doğrulama yükü kaldırıldı.
-> - ✅ Dağıtık ajan iletişimi Redis Pub/Sub ile aktif edildi.
-> - ✅ Kurumsal vektör DB (pgvector hazırlığı) ve LiteLLM gateway entegrasyonu eklendi.
+> - ✅ Dağıtık ajan iletişimi Redis Streams + Consumer Group (ack/replay) modeliyle aktif edildi.
+> - ✅ Kurumsal vektör DB (aktif pgvector retrieval + RRF entegrasyonu) ve LiteLLM gateway entegrasyonu eklendi.
 > - ✅ Kritik güvenlik + liveness/readiness iyileştirmeleri (`/health` ve SQL identifier sterilizasyonu) tamamlandı.
 
 
@@ -1164,16 +1164,16 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 - **Kritik bugfix ve legacy temizlik:** Legacy test kayması sonrası kalan kırık testlerin kapanması ve CI hattında %100 green hedefi.
 - **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
 - **Bağımlılık ayrıştırma:** Toplam 9 opsiyonel paketin (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
-- **Test altyapısı standardizasyonu:** `conftest.py` custom async hook'undan `pytest-asyncio` loop/fixture modeline kontrollü geçiş ve async fixture kapsamasının artırılması.
+- **Test altyapısı standardizasyonu:** ✅ `conftest.py` custom async hook kaldırıldı; session-level `event_loop` fixture modeli aktif. Sıradaki adım: `pytest-asyncio` eklentisinin CI/prod parity ile zorunlu hale getirilmesi.
 - **Env parite sertleştirmesi:** `.env.example` dosyasının `config.py` ile birebir senkronizasyonu, etkisiz legacy anahtarların kaldırılması ve CI'da env parity kontrolünün otomatikleştirilmesi.
 - **Runtime I/O ve süreç güvenliği:** talimat dosyası yükleme akışının non-blocking hâle getirilmesi, launcher child-process sonlandırma davranışının regresyon testleriyle garanti altına alınması.
 
 #### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
 *sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
 - **Stateless güvenlik (JWT + RBAC):** DB sorgusu gerektiren stateful token akışından access/refresh JWT + rol bazlı yetkilendirme modeline geçiş.
-- **Message broker entegrasyonu:** Ajanlar arası iletişimin event-driven mimariyle (RabbitMQ / Redis Streams / Kafka) dağıtık hale getirilmesi.
-- **Gelişmiş vektör + semantic cache:** `pgvector` (veya eşdeğer kurumsal vektör katmanı) ile retrieval ölçeklemesi; Redis/GPTCache ile maliyet/latency optimizasyonu.
-- **Operasyonel mükemmellik temeli:** OpenTelemetry + Jaeger/Zipkin ile dağıtık tracing, Kubernetes/Helm release standardı ve LLM gateway üzerinden kota/politika yönetişimi için temel platform kabiliyetlerinin v4.0 hattında hazırlanması.
+- **Message broker entegrasyonu:** ✅ Redis Streams consumer-group modeli tamamlandı; bir sonraki adım çoklu broker stratejisi (Kafka/NATS) ve operasyonel retention/claim runbook'ları.
+- **Gelişmiş vektör + semantic cache:** ✅ pgvector retrieval hattı aktif; sıradaki adım semantic cache runtime katmanının (Redis/GPTCache) devreye alınması ve maliyet/latency optimizasyonunun ölçülmesi.
+- **Operasyonel mükemmellik temeli:** ✅ `Config.init_telemetry()` ile merkezi OTel bootstrap (FastAPI/HTTPX opsiyonel instrument) hazır; sıradaki adım Jaeger/Zipkin arka uçlarıyla tam APM hattı ve K8s/Helm release standardı.
 
 #### Faz 3: Dinamik Ajan Ekosistemi ve Ürünleşme (v4.x) - *[Uzun Vade]*
 *kullanıcı deneyimi, yönetilebilirlik ve AI esnekliğinin ürün düzeyinde maksimize edilmesi.*
