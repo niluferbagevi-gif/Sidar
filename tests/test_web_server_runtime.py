@@ -391,6 +391,147 @@ def test_basic_auth_middleware_flow():
     assert ok.status_code == 200
 
 
+
+
+def test_access_policy_middleware_admin_bypass_and_user_acl(monkeypatch):
+    mod = _load_web_server()
+
+    calls = {"checked": []}
+
+    class _Db:
+        async def check_access_policy(self, **kwargs):
+            calls["checked"].append(kwargs)
+            return kwargs["action"] == "read"
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    async def _next(_request):
+        return _FakeResponse("ok", status_code=200)
+
+    admin_req = _FakeRequest(method="POST", path="/rag/add")
+    admin_req.state.user = types.SimpleNamespace(id="a1", username="root", role="admin", tenant_id="t-admin")
+    admin_resp = asyncio.run(mod.access_policy_middleware(admin_req, _next))
+    assert admin_resp.status_code == 200
+    assert calls["checked"] == []
+
+    user_read_req = _FakeRequest(method="GET", path="/rag/search")
+    user_read_req.state.user = types.SimpleNamespace(id="u1", username="alice", role="user", tenant_id="t1")
+    read_resp = asyncio.run(mod.access_policy_middleware(user_read_req, _next))
+    assert read_resp.status_code == 200
+    assert calls["checked"][-1]["resource_type"] == "rag"
+    assert calls["checked"][-1]["action"] == "read"
+
+    user_write_req = _FakeRequest(method="POST", path="/rag/add")
+    user_write_req.state.user = types.SimpleNamespace(id="u1", username="alice", role="user", tenant_id="t1")
+    write_resp = asyncio.run(mod.access_policy_middleware(user_write_req, _next))
+    assert write_resp.status_code == 403
+    assert write_resp.content["error"] == "Yetki yok"
+
+
+def test_access_policy_middleware_policy_checker_error_denies_access():
+    mod = _load_web_server()
+
+    class _Db:
+        async def check_access_policy(self, **_kwargs):
+            raise RuntimeError("acl-down")
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    async def _next(_request):
+        return _FakeResponse("ok", status_code=200)
+
+    req = _FakeRequest(method="GET", path="/github-prs")
+    req.state.user = types.SimpleNamespace(id="u9", username="bob", role="user", tenant_id="t9")
+
+    resp = asyncio.run(mod.access_policy_middleware(req, _next))
+    assert resp.status_code == 403
+    assert resp.content["resource"] == "github"
+    assert resp.content["action"] == "read"
+
+
+def test_core_endpoints_health_status_and_sessions_basics():
+    mod = _load_web_server()
+
+    class _Db:
+        async def list_sessions(self, _user_id):
+            return [
+                types.SimpleNamespace(id="s1", title="First", updated_at="now"),
+                types.SimpleNamespace(id="s2", title="Second", updated_at="later"),
+            ]
+
+        async def get_session_messages(self, session_id):
+            return [1, 2] if session_id == "s1" else [1]
+
+    class _Health:
+        def get_health_summary(self):
+            return {"status": "ok", "ollama_online": True}
+
+        def get_gpu_info(self):
+            return {"devices": []}
+
+        def check_ollama(self):
+            return True
+
+    class _Docs:
+        doc_count = 0
+
+        def status(self):
+            return "ok"
+
+    class _Memory:
+        def __init__(self):
+            self.db = _Db()
+
+        def __len__(self):
+            return 0
+
+    agent = types.SimpleNamespace(
+        VERSION="9.9",
+        cfg=types.SimpleNamespace(
+            AI_PROVIDER="ollama",
+            CODING_MODEL="qwen",
+            GEMINI_MODEL="g-2",
+            ACCESS_LEVEL="sandbox",
+            USE_GPU=False,
+            GPU_INFO="none",
+            GPU_COUNT=0,
+            CUDA_VERSION="N/A",
+        ),
+        health=_Health(),
+        memory=_Memory(),
+        docs=_Docs(),
+        github=types.SimpleNamespace(is_available=lambda: True),
+        web=types.SimpleNamespace(is_available=lambda: True),
+        pkg=types.SimpleNamespace(status=lambda: "ok"),
+        todo=types.SimpleNamespace(get_tasks=lambda: []),
+    )
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    hc = asyncio.run(mod.health_check())
+    st = asyncio.run(mod.status())
+    user = types.SimpleNamespace(id="u1", username="alice", role="user")
+    sess = asyncio.run(mod.get_sessions(_FakeRequest(path="/sessions"), user=user))
+
+    assert hc.status_code == 200
+    assert st.status_code == 200
+    assert st.content["provider"] == "ollama"
+    assert sess.status_code == 200
+    assert [s["message_count"] for s in sess.content["sessions"]] == [2, 1]
+
 def test_health_status_and_rag_search_endpoints():
     mod = _load_web_server()
     agent, calls = _make_agent(ai_provider="ollama", ollama_online=False)
