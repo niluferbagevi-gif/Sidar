@@ -179,6 +179,14 @@ class LLMMetricsCollector:
             total_failures += 0 if e.success else 1
             total_rate_limited += 1 if e.rate_limited else 0
 
+        day_ago = time.time() - 86400
+        daily_cost_by_provider: Dict[str, float] = {}
+        for e in events:
+            if e.timestamp >= day_ago:
+                daily_cost_by_provider[e.provider] = (
+                    daily_cost_by_provider.get(e.provider, 0.0) + e.cost_usd
+                )
+
         for provider, row in by_provider.items():
             if row["calls"]:
                 row["latency_ms_avg"] = round(row["latency_ms_avg"] / row["calls"], 2)
@@ -187,15 +195,17 @@ class LLMMetricsCollector:
 
             daily_limit = _env_float(f"{provider.upper()}_BUDGET_DAILY_USD", _env_float("LLM_BUDGET_DAILY_USD", 5.0))
             total_limit = _env_float(f"{provider.upper()}_BUDGET_TOTAL_USD", _env_float("LLM_BUDGET_TOTAL_USD", 20.0))
+            daily_usage = round(daily_cost_by_provider.get(provider, 0.0), 6)
+            total_usage = row["cost_usd"]
             row["budget"] = {
                 "daily_limit_usd": daily_limit,
                 "total_limit_usd": total_limit,
-                "daily_usage_usd": row["cost_usd"],
-                "total_usage_usd": row["cost_usd"],
-                "daily_remaining_usd": round(max(0.0, daily_limit - row["cost_usd"]), 6),
-                "total_remaining_usd": round(max(0.0, total_limit - row["cost_usd"]), 6),
-                "daily_exceeded": row["cost_usd"] > daily_limit,
-                "total_exceeded": row["cost_usd"] > total_limit,
+                "daily_usage_usd": daily_usage,
+                "total_usage_usd": total_usage,
+                "daily_remaining_usd": round(max(0.0, daily_limit - daily_usage), 6),
+                "total_remaining_usd": round(max(0.0, total_limit - total_usage), 6),
+                "daily_exceeded": daily_usage > daily_limit,
+                "total_exceeded": total_usage > total_limit,
             }
 
         total_cost = round(sum(e.cost_usd for e in events), 6)

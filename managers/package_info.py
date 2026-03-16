@@ -172,7 +172,11 @@ class PackageInfoManager:
         if not ok_info:
             return False, info
 
-        if current_version == latest:
+        try:
+            needs_update = Version(current_version) < Version(latest)
+        except InvalidVersion:
+            needs_update = current_version != latest
+        if not needs_update:
             status_line = f"  Durum         : ✓ Güncel ({current_version})"
         else:
             status_line = f"  Durum         : ⚠ Güncelleme mevcut — {current_version} → {latest}"
