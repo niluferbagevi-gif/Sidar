@@ -215,8 +215,8 @@ def test_stream_response_trailing_decoder_flush_with_newline_covers_lines_350_36
 
         def decode(self, data, final=False):
             if final and data == b"":
-                # Trailing: newline içeren geçerli + geçersiz JSON satırları
-                return '{"message":{"content":"trailing_chunk"}}\n{bozuk_json}\n{"message":{"content":"son_chunk"}}\n'
+                # Trailing: boş satır (line 355) + geçerli + geçersiz + geçerli JSON satırları
+                return '\n{"message":{"content":"trailing_chunk"}}\n{bozuk_json}\n{"message":{"content":"son_chunk"}}\n'
             return data.decode("utf-8", errors="replace")
 
     real_getincrementaldecoder = codecs.getincrementaldecoder
