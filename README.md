@@ -222,11 +222,11 @@ conda env create -f environment.yml
 conda activate sidar-ai
 ```
 
-### pip ile
+### pip ile (Conda dışı)
 
 ```bash
-# Runtime bağımlılıkları
-pip install -r requirements.txt
+# Runtime + opsiyonel gruplar (pyproject.toml extras)
+pip install -e .[rag,postgres,telemetry]
 
 # Geliştirme + test bağımlılıkları
 pip install -r requirements-dev.txt
