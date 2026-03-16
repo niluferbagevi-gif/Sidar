@@ -12,7 +12,11 @@ import warnings
 import contextlib
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:  # pragma: no cover - test ortamında opsiyonel bağımlılık olmayabilir
+    def load_dotenv(*_args, **_kwargs):
+        return False
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
