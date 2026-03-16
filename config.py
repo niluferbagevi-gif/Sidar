@@ -355,7 +355,7 @@ class Config:
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING:       bool = get_bool_env("ENABLE_TRACING", False)
-    OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://localhost:4317")
+    OTEL_EXPORTER_ENDPOINT: str = os.getenv("OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
     OTEL_SERVICE_NAME: str = os.getenv("OTEL_SERVICE_NAME", "sidar")
     OTEL_INSTRUMENT_FASTAPI: bool = get_bool_env("OTEL_INSTRUMENT_FASTAPI", True)
     OTEL_INSTRUMENT_HTTPX: bool = get_bool_env("OTEL_INSTRUMENT_HTTPX", True)
