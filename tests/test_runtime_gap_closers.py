@@ -322,6 +322,15 @@ def test_web_server_sink_and_prewarm_negative_paths(monkeypatch):
 
 import builtins
 
+# Bazı test modülleri core.llm_metrics için minimal stub bırakabildiği için
+# gerçek modülü import etmeden önce stub temizliği yap.
+sys.modules.pop("core.llm_metrics", None)
+_core_pkg = sys.modules.get("core")
+if _core_pkg is not None:
+    _core_paths = [str(p) for p in (getattr(_core_pkg, "__path__", []) or [])]
+    if not any("sidar_project/core" in p.replace("\\", "/") for p in _core_paths):
+        sys.modules.pop("core", None)
+
 from agent.core.event_stream import AgentEventBus
 from core.llm_metrics import LLMMetricsCollector
 

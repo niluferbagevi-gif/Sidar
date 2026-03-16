@@ -1,3 +1,14 @@
+import sys
+
+# Bazı runtime testleri core/core.llm_metrics için stub modül bırakabiliyor.
+# Bu durumda gerçek modülü zorla yeniden çöz.
+sys.modules.pop("core.llm_metrics", None)
+_core_pkg = sys.modules.get("core")
+if _core_pkg is not None:
+    _core_paths = [str(p) for p in (getattr(_core_pkg, "__path__", []) or [])]
+    if not any("sidar_project/core" in p.replace("\\", "/") for p in _core_paths):
+        sys.modules.pop("core", None)
+
 from core.llm_metrics import LLMMetricsCollector
 
 
