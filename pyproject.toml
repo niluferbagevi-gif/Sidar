@@ -3,6 +3,7 @@ name = "sidar-project"
 version = "0.0.0"
 requires-python = ">=3.11"
 dependencies = [
+  # ── Temel altyapı ──────────────────────────────────────────────────────
   "packaging~=24.1",
   "python-dotenv~=1.0.1",
   "pyyaml~=6.0.2",
@@ -11,30 +12,69 @@ dependencies = [
   "cachetools~=5.5.0",
   "redis~=5.2.1",
   "psutil~=6.0.0",
-  "nvidia-ml-py~=12.560.30",
-  "docker~=7.1.0",
-  "google-generativeai~=0.8.3",
-  "openai~=1.51.2",
-  "anthropic~=0.40.0",
-  "PyGithub~=2.4.0",
-  "duckduckgo-search~=6.2.13",
-  "beautifulsoup4~=4.12.3",
-  "rank-bm25==0.2.2",
-  "tiktoken~=0.8.0",
-  "cryptography~=43.0.1",
+  # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi~=0.115.0",
   "python-multipart~=0.0.9",
   "uvicorn[standard]~=0.30.6",
-  "eel>=0.16.0",
-  "prometheus-client~=0.21.0",
   "anyio>=4.0.0",
+  # ── Veritabanı ─────────────────────────────────────────────────────────
   "aiosqlite~=0.20.0",
   "SQLAlchemy~=2.0.36",
   "alembic~=1.14.0",
+  # ── Güvenlik / Kimlik doğrulama ────────────────────────────────────────
+  "cryptography~=43.0.1",
   "PyJWT~=2.9.0",
+  # ── Observability (temel) ──────────────────────────────────────────────
+  "prometheus-client~=0.21.0",
+  # ── İçerik işleme ─────────────────────────────────────────────────────
+  "tiktoken~=0.8.0",
+  "rank-bm25==0.2.2",
+  "beautifulsoup4~=4.12.3",
+  # ── Harici entegrasyonlar ─────────────────────────────────────────────
+  "PyGithub~=2.4.0",
+  "duckduckgo-search~=6.2.13",
 ]
 
 [project.optional-dependencies]
+# ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
+gemini = [
+  "google-generativeai~=0.8.3",
+]
+anthropic = [
+  "anthropic~=0.40.0",
+]
+
+# ── Altyapı extras ────────────────────────────────────────────────────────
+postgres = [
+  "asyncpg~=0.30.0",
+]
+telemetry = [
+  "opentelemetry-api~=1.29.0",
+  "opentelemetry-sdk~=1.29.0",
+  "opentelemetry-instrumentation-fastapi~=0.50b0",
+  "opentelemetry-instrumentation-httpx~=0.50b0",
+  "opentelemetry-exporter-otlp~=1.29.0",
+]
+rag = [
+  "chromadb~=0.5.5",
+  "torch~=2.4.1",
+  "torchvision~=0.19.1",
+  "sentence-transformers~=3.0.1",
+]
+gpu = [
+  "nvidia-ml-py~=12.560.30",
+]
+sandbox = [
+  "docker~=7.1.0",
+]
+gui = [
+  "eel>=0.16.0",
+]
+
+# ── Kolaylık profilleri ───────────────────────────────────────────────────
+all = [
+  "sidar-project[gemini,anthropic,postgres,telemetry,rag,gpu,sandbox,gui]",
+]
 dev = [
   "pytest>=8.0.0",
   "pytest-asyncio>=0.23.0",
@@ -44,21 +84,6 @@ dev = [
   "flake8~=7.1.1",
   "ruff~=0.8.1",
   "mypy~=1.11.2",
-]
-postgres = [
-  "asyncpg~=0.30.0",
-]
-telemetry = [
-  "opentelemetry-api~=1.29.0",
-  "opentelemetry-sdk~=1.29.0",
-  "opentelemetry-instrumentation-fastapi~=0.50b0",
-  "opentelemetry-exporter-otlp~=1.29.0",
-]
-rag = [
-  "chromadb~=0.5.5",
-  "torch~=2.4.1",
-  "torchvision~=0.19.1",
-  "sentence-transformers~=3.0.1",
 ]
 
 [tool.ruff]

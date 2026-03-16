@@ -4,6 +4,42 @@
 
 ---
 
+## [v3.0.12] - 2026-03-16
+§13 kalan maddeler: Extras fine-tuning tamamlandı; Swarm + React UI temeli oluşturuldu.
+
+### ✅ Bağımlılık Extras Grupları — Tamamlandı
+**Dosya:** `pyproject.toml`, `requirements-dev.txt`, `uv.lock`
+- Yeni extras: `[gemini]` (`google-generativeai`), `[anthropic]` (`anthropic`), `[gpu]` (`nvidia-ml-py`), `[sandbox]` (`docker`), `[gui]` (`eel`)
+- `openai~=1.51.2` core'dan kaldırıldı — codebase httpx ile OpenAI API'yi doğrudan çağırıyor; SDK hiç kullanılmıyordu
+- `opentelemetry-instrumentation-httpx~=0.50b0` `[telemetry]` extras'ına eklendi (web_server.py'de HTTPXClientInstrumentor kullanılıyor)
+- `[all]` kolaylık profili eklendi: tek komutla tüm opsiyonel paketleri kurar
+- `requirements-dev.txt` → `-e .[all,dev]` olarak güncellendi
+- `uv.lock` yeniden oluşturuldu (openai kaldırıldı, otel-httpx eklendi)
+
+### 🔄 Agent Swarm + Marketplace Temeli
+**Dosyalar:** `agent/registry.py`, `agent/swarm.py`
+- **`AgentRegistry`**: Çalışma zamanı ajan keşfi ve eklenti kaydı. `@AgentRegistry.register()` dekoratörü veya `register_type()` ile yeni ajan tipleri eklenir. `find_by_capability()` intent bazlı arama sağlar.
+- **`AgentSpec`**: `role_name`, `capabilities`, `description`, `version`, `is_builtin` meta verisi ile ajan tanımı
+- **`SwarmOrchestrator`**: `run()` (tek görev), `run_parallel()` (eş zamanlı, semafore kısıtlı), `run_pipeline()` (sıralı, context aktarımlı) modları
+- **`TaskRouter`**: `_INTENT_CAPABILITY_MAP` üzerinden intent → yetenek → ajan spec yönlendirmesi; yeni kayıtlı ajanlar otomatik keşfedilir
+- Yerleşik 3 rol (coder, researcher, reviewer) otomatik kayıtlı
+
+### 🔄 React Frontend Scaffold
+**Dizin:** `web_ui_react/`
+- Vite + React 18 + Zustand tabanlı modern SPA
+- **`useWebSocket`**: FastAPI `/ws/{session_id}` endpoint'i ile tam uyumlu; streaming chunks, `[DONE]` sinyali, JSON zarf ve ham metin chunk desteği
+- **`useChatStore`**: Zustand ile mesaj geçmişi, akış tamponu, hata durumu
+- **Bileşenler:** `ChatWindow` (auto-scroll), `ChatMessage` (react-markdown + rehype-highlight), `ChatInput` (Enter gönder, Shift+Enter satır), `StatusBar` (WS durum + yeni oturum)
+- Vite proxy: `/api`, `/ws`, `/admin`, `/sessions` → `localhost:7860`; `npm run dev` ile hazır çalışır
+- Build çıktısı `web_ui_built/` → FastAPI mount'u için hazır yapı
+
+### Güvenlik (önceki commit)
+**Dosyalar:** `config.py`, `tests/test_security_warnings.py`
+- `MEMORY_ENCRYPTION_KEY` boşken `logger.critical()` (JWT_SECRET_KEY pattern'i ile tutarlı)
+- Redis rate limit fallback testleri (10 test)
+
+---
+
 ## [v3.0.11] - 2026-03-16
 §13 v4.0 Kurumsal Yol Haritası iyileştirmeleri uygulandı.
 
