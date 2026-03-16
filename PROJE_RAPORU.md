@@ -65,7 +65,7 @@
 - [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
   - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
   - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
-  - [11.3 2026-03-16 v3.0.4 Denetimi — Tüm Bulgular (Çözüldü)](#113-2026-03-16-denetiminde-tespit-edilen-yeni-bulgular)
+  - [11.3 2026-03-16 v3.0.4 Denetimi — Çözülen Bulguların Durumu](#113-2026-03-16-v304-denetimi--çözülen-bulguların-durumu)
   - [11.4 2026-03-16 v3.0.5 Denetimi — Yeni Bulgular](#114-2026-03-16-v305-denetiminde-tespit-edilen-yeni-bulgular)
   - [11.5 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar](#115-2026-03-16-v306-doğrulama-turu--operasyonel-uyumsuzluklar)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
@@ -868,49 +868,16 @@ Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu viz
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 - **`pytest-asyncio` Geçişi:** `conftest.py` custom async hook'undan resmi `pytest-asyncio` modeline geçiş — test ölçeklenmesi için önerilen teknik borç adayı.
 
-### 11.3 2026-03-16 Denetiminde Tespit Edilen Yeni Bulgular
+### 11.3 2026-03-16 v3.0.4 Denetimi — Çözülen Bulguların Durumu
 
-Aşağıdaki bulgular tüm kaynak dosyaların satır satır incelenmesiyle ortaya çıkmıştır. Her bulgu öncelik ve konum bilgisiyle birlikte listelenmiştir.
+Bu bölümde listelenmiş olan K/Y/O/D bulgularının tamamı v3.0.5 itibarıyla kapatılmıştır.
+Raporu tekrar etmeyi önlemek için tekil düzeltme detayları bu dokümandan kaldırılmış, sürüm bazlı kayıt
+olarak **CHANGELOG** dosyasına taşınmıştır.
 
-#### 🔴 KRİTİK
+- v3.0.5 sürüm notları: [CHANGELOG.md#v305---2026-03-16](CHANGELOG.md#v305---2026-03-16)
+- v3.0.6 doğrulama turu özeti: [CHANGELOG.md#v306---2026-03-16](CHANGELOG.md#v306---2026-03-16)
 
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| ~~K-1~~ | `web_server.py` | 876 | **[ÇÖZÜLDÜ] `.env` ve `.example` uzantıları `_SAFE_EXTENSIONS`'dan kaldırıldı** | `.env` ve `.example` kümeden çıkarıldı; artık `/file-content` endpoint'i bu dosyalara `415 Unsupported Media Type` döndürüyor. Regresyon testi `test_vendor_index_and_file_content_guard_paths`'e eklendi. |
-| ~~K-2~~ | ~~`managers/code_manager.py`~~ | ~~383–395~~ | **[YANLIŞ POZİTİF — Düzeltildi]** | Kod `isinstance(wait_result, dict)` ile `wait_result.get("StatusCode")` kullanıyor; zaten doğru çalışıyor. Denetim sırasında hatalı yorumlanmıştır. |
-
-#### 🟠 YÜKSEK
-
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| ~~Y-1~~ | `agent/roles/reviewer_agent.py` | 50–53 | **[ÇÖZÜLDÜ] Test kodu enjeksiyonu** | Triple-quote embed yerine `repr()` kullanılarak tüm özel karakterler (tırnak, ters eğik çizgi, satır sonu) otomatik kaçışlanıyor. `reviewer_agent.py:50-53` güncellendi. |
-| ~~Y-2~~ | `core/db.py` | 514, 537 | **[ÇÖZÜLDÜ] PostgreSQL `endswith()` kırılganlığı** | `result.endswith("1")` yerine `int(str(result).split()[-1]) > 0` parse mantığı kullanıldı. "UPDATE 10" gibi çok satırlı güncellemeler de artık doğru `True` döndürüyor. Her iki satır güncellendi. |
-| ~~Y-3~~ | `agent/auto_handle.py` | 89, 92, 104 | **[ÇÖZÜLDÜ] Async bağlamda bloklayıcı senkron çağrılar** | `handle()` içinde `_try_list_directory`, `_try_read_file`, `_try_validate_file` çağrıları `await asyncio.to_thread(...)` ile sarmalandı. Metodlar sync kaldığından mevcut testler etkilenmedi. |
-| ~~Y-4~~ | ~~`core/rag.py`~~ | ~~435~~ | **[YANLIŞ POZİTİF]** | `add_document_from_file` sync fonksiyon; tüm çağrı noktaları (`web_server.py:1114`, `web_server.py:1168`) zaten `asyncio.to_thread()` kullanıyor. |
-| ~~Y-5~~ | `web_server.py` | 838, 879, 1105 | **[ÇÖZÜLDÜ] Symlink traversal tutarsızlığı** | `/files`, `/file-content` ve `/rag/add-file` endpoint'lerinde `_root = Path(__file__).parent` → `_root = Path(__file__).parent.resolve()` yapıldı. `_root` ve `target` artık her ikisi de gerçek yolla karşılaştırılıyor. |
-
-#### 🟡 ORTA
-
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| ~~O-1~~ | `agent/auto_handle.py` | 56–60 | **[ÇÖZÜLDÜ] ReDoS (Regex DoS) açığı** | `_MULTI_STEP_RE` içindeki `\bfirst\b.*\bthen\b` → `.{0,200}` ile sınırlandırıldı; `handle()` başına 2000 karakter erken-dönüş koruması eklendi. |
-| ~~O-2~~ | ~~`managers/security.py`~~ | ~~30~~ | **[YANLIŞ POZİTİF]** | `_DANGEROUS_PATH_RE` zaten `re.IGNORECASE` ile derleniyor; `WINDOWS`, `PROGRAM FILES` varyantları yakalanıyor. |
-| ~~O-3~~ | `web_server.py` | 1294 | **[ÇÖZÜLDÜ] Webhook imzası opsiyonel** | `GITHUB_WEBHOOK_SECRET` yapılandırılmadığında artık `logger.warning(...)` üretiliyor; operatörler uyarılıyor. |
-| ~~O-4~~ | `core/llm_client.py` | 303, 383, 542, 705, 890 | **[ÇÖZÜLDÜ] Manuel context manager yönetimi** | `import sys` eklendi; 5 adet `__exit__/__aexit__(None, None, None)` çağrısı `sys.exc_info()` ile değiştirildi — yayılan istisna bağlamı context manager'a iletiliyor. |
-| ~~O-5~~ | `agent/sidar_agent.py` | 101 | **[ÇÖZÜLDÜ] `_init_lock` lazy None başlatma** | `self._init_lock = asyncio.Lock()` `__init__` içinde önceden oluşturuluyor; `initialize()` içindeki None-guard kaldırıldı. |
-| ~~O-6~~ | `agent/core/supervisor.py` | 86–95 | **[ÇÖZÜLDÜ] P2P delegasyon timeout yok** | `asyncio` import edildi; `_route_p2p` içindeki `_delegate()` çağrısı `asyncio.wait_for(..., timeout=self.cfg.REACT_TIMEOUT)` ile sarıldı. |
-| ~~O-7~~ | `managers/code_manager.py` | 173–185 | **[ÇÖZÜLDÜ] Docker socket yolu doğrulaması yok** | `import stat` eklendi; WSL2 fallback döngüsünde `os.stat()` + `stat.S_ISSOCK()` kontrolü eklendi — yalnızca gerçek socket dosyaları deneniyor. |
-
-#### 🔵 DÜŞÜK / İYİLEŞTİRME
-
-| # | Dosya | Satır | Bulgu |
-|---|-------|-------|-------|
-| ~~D-1~~ | `agent/core/memory_hub.py` | 45–54 | **[ÇÖZÜLDÜ]** 4 `async def` shim metodu (`aadd_global`, `aadd_role_note`, `aglobal_context`, `arole_context`) düz `def`'e dönüştürüldü; test dosyasındaki `await` çağrıları kaldırıldı. |
-| ~~D-2~~ | `managers/package_info.py` | 175–182 | **[ÇÖZÜLDÜ]** `current_version == latest` string eşitliği → `Version(current_version) < Version(latest)` + `InvalidVersion` fallback; `packaging` zaten import edilmişti. |
-| ~~D-3~~ | `core/llm_metrics.py` | 188–210 | **[ÇÖZÜLDÜ]** `daily_usage_usd` artık `timestamp >= time.time() - 86400` filtresinden hesaplanıyor; `total_usage_usd` penceredeki tam toplamı gösteriyor — iki değer artık farklı. |
-| ~~D-4~~ | ~~`managers/todo_manager.py`~~ | ~~76~~ | **[YANLIŞ POZİTİF]** `self._tasks = []`, `__init__`'te `_load()` çağrılmadan önce satır 65'te başlatılıyor; `AttributeError` riski yok. |
-| ~~D-5~~ | `agent/core/registry.py` | 19–23 | **[ÇÖZÜLDÜ]** `get(role)` artık mevcut rolleri listeleyen açıklayıcı `KeyError` fırlatıyor: `"'{role}' rolü kayıtlı değil. Mevcut: ..."`. |
-| ~~D-6~~ | `core/rag.py` | 661–666 | **[ÇÖZÜLDÜ]** FTS okuma sorgusu (`_bm25_search`) `_write_lock` ile korunmaya alındı — asyncio + threading karışımında SQLite bağlantısına eşzamanlı erişim güvence altına alındı. |
+> Not: 11.4 ve 11.5 bölümlerinde yalnızca bu denetimlerden sonra tespit edilen yeni bulgular/uyumsuzluklar tutulur.
 
 ### 11.4 2026-03-16 v3.0.5 Denetiminde Tespit Edilen Yeni Bulgular
 

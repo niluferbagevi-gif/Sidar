@@ -4,6 +4,21 @@
 
 ---
 
+## [v3.0.6] - 2026-03-16
+Doğrulama turu + dokümantasyon sadeleştirmesi.
+
+### ✅ Dokümantasyon Senkronizasyonu
+
+- `PROJE_RAPORU.md` §11.3 yeniden düzenlendi: v3.0.4 denetiminde kapanan K/Y/O/D bulgularının ayrıntılı listesi rapordan kaldırılarak changelog'a taşındı.
+- Rapor içinde geçmişte kapanmış bulguların tekrarını önlemek için §11.3, sürüm notlarına yönlendiren özet statü bölümüne dönüştürüldü.
+
+### ✅ v3.0.6 Doğrulama Turu Notu
+
+- v3.0.4 ve v3.0.5'te kapatılan bulguların kod seviyesinde korunduğu tekrar doğrulandı.
+- İki operasyonel uyumsuzluk ayrı başlıkta takip edilmeye başlandı: YN2-Y-1 (async test plugin bağımlılık uyumsuzluğu), YN2-O-1 (Docker socket fallback test beklenti drift'i).
+
+---
+
 ## [v3.0.5] - 2026-03-16
 Tam kaynak denetimi (v3.0.5) — v3.0.4 tüm bulgular doğrulandı/kapatıldı; 5 yeni bulgu tespit edilip giderildi.
 
