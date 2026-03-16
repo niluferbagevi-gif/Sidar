@@ -531,6 +531,14 @@ class Config:
                     "   güvenlik riskine yol açabilir. Kurmak için: pip install cryptography"
                 )
                 is_valid = False
+        else:
+            logger.critical(
+                "MEMORY_ENCRYPTION_KEY yapılandırılmamış! Konuşma geçmişi şifrelenmeden "
+                "saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet anahtarı "
+                "eklemelisiniz.\n"
+                "   Yeni anahtar üretmek için: python -c \"from cryptography.fernet import "
+                "Fernet; print(Fernet.generate_key().decode())\""
+            )
 
         if cls.AI_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
             logger.error(
