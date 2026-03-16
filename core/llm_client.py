@@ -734,11 +734,18 @@ class OpenAIClient(BaseLLMClient):
         timeout = httpx.Timeout(max(10, int(getattr(self.config, "OPENAI_TIMEOUT", 60))), connect=10.0)
 
         started_at = time.monotonic()
+        tracer = _get_tracer(self.config)
+        span_cm = tracer.start_as_current_span("llm.openai.chat") if (tracer and not stream) else None
+        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.openai.chat") if tracer and stream else None)
+        if span is not None:
+            span.set_attribute("sidar.llm.provider", "openai")
+            span.set_attribute("sidar.llm.model", model_name)
+            span.set_attribute("sidar.llm.stream", stream)
         try:
             if stream:
                 payload["stream"] = True
                 stream_iter = self._stream_openai(payload, headers, timeout, json_mode)
-                return _track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at)
+                return _trace_stream_metrics(_track_stream_completion(stream_iter, provider="openai", model=model_name, started_at=started_at), span, started_at)
 
             async def _do_request():
                 async with httpx.AsyncClient(timeout=timeout) as client:
@@ -765,13 +772,22 @@ class OpenAIClient(BaseLLMClient):
                 completion_tokens=completion_tokens,
                 success=True,
             )
-            return _ensure_json_text(content, "OpenAI") if json_mode else content
+            if span is not None:
+                span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+            result = _ensure_json_text(content, "OpenAI") if json_mode else content
+            if span_cm:
+                span_cm.__exit__(None, None, None)
+            return result
         except LLMAPIError as exc:
             _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
+            if span_cm:
+                span_cm.__exit__(*sys.exc_info())
             raise
         except Exception as exc:
             _record_llm_metric(provider="openai", model=model_name, started_at=started_at, success=False, error=str(exc))
             logger.error("OpenAI hata: %s", exc)
+            if span_cm:
+                span_cm.__exit__(*sys.exc_info())
             raise LLMAPIError("openai", f"OpenAI hata: {exc}", retryable=False) from exc
 
     async def _stream_openai(
@@ -880,6 +896,12 @@ class LiteLLMClient(BaseLLMClient):
         models = self._candidate_models(model)
         started_at = time.monotonic()
         last_error: Optional[Exception] = None
+        tracer = _get_tracer(self.config)
+        span_cm = tracer.start_as_current_span("llm.litellm.chat") if (tracer and not stream) else None
+        span = span_cm.__enter__() if span_cm else (tracer.start_span("llm.litellm.chat") if tracer and stream else None)
+        if span is not None:
+            span.set_attribute("sidar.llm.provider", "litellm")
+            span.set_attribute("sidar.llm.stream", stream)
 
         for idx, model_name in enumerate(models):
             payload: Dict[str, Any] = {
@@ -907,7 +929,13 @@ class LiteLLMClient(BaseLLMClient):
                 prompt_tokens, completion_tokens = _extract_usage_tokens(data)
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 _record_llm_metric(provider="litellm", model=model_name, started_at=started_at, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, success=True)
-                return _ensure_json_text(content, "LiteLLM") if json_mode else content
+                if span is not None:
+                    span.set_attribute("sidar.llm.model", model_name)
+                    span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
+                result = _ensure_json_text(content, "LiteLLM") if json_mode else content
+                if span_cm:
+                    span_cm.__exit__(None, None, None)
+                return result
             except Exception as exc:
                 last_error = exc
                 logger.warning("LiteLLM modeli başarısız oldu (%s): %s", model_name, exc)
@@ -915,6 +943,8 @@ class LiteLLMClient(BaseLLMClient):
                     break
 
         _record_llm_metric(provider="litellm", model=models[0] if models else "unknown", started_at=started_at, success=False, error=str(last_error or "unknown"))
+        if span_cm:
+            span_cm.__exit__(None, None, None)
         raise LLMAPIError("litellm", f"LiteLLM hata: {last_error}", retryable=False)
 
     async def _stream_openai_compatible(
