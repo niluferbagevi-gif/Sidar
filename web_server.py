@@ -730,11 +730,17 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# Modüler Web UI statik dosyalarını sunmak için
-web_ui_dir = Path(__file__).parent / "web_ui"
-app.mount("/static", StaticFiles(directory=web_ui_dir), name="static")
+# React SPA (web_ui_react/dist) hazırsa onu, değilse legacy web_ui dizinini sun.
+LEGACY_WEB_DIR = Path(__file__).parent / "web_ui"
+REACT_DIST_DIR = Path(__file__).parent / "web_ui_react" / "dist"
+WEB_DIR = REACT_DIST_DIR if REACT_DIST_DIR.exists() else LEGACY_WEB_DIR
 
-WEB_DIR = Path(__file__).parent / "web_ui"
+# Legacy kodun /static beklentisi korunur; React build'de de aynı mount kalır.
+app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+# Vite build asset'leri (/assets/*) için ayrı mount.
+if (WEB_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")
 
 
 
@@ -764,10 +770,10 @@ async def serve_vendor(file_path: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """Ana sayfa — chat arayüzü. Sunucu tarafı config değerleri HTML'e enjekte edilir."""
+    """Ana sayfa — React SPA veya legacy chat arayüzü."""
     html_file = WEB_DIR / "index.html"
     if not html_file.exists():
-        return HTMLResponse("<h1>Hata: web_ui/index.html bulunamadı.</h1>", status_code=500)
+        return HTMLResponse("<h1>Hata: UI index.html bulunamadı.</h1>", status_code=500)
     grafana_url = str(getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000")
     config_script = (
         f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url)}}};</script>'
