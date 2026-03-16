@@ -126,13 +126,18 @@ class DocumentStore:
         # Meta verileri yükle
         self._index: Dict[str, Dict] = self._load_index()
 
+        self._vector_backend = str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
+
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
 
         self.chroma_client = None
         self.collection    = None
 
-        if self._chroma_available:
+        if self._vector_backend == "pgvector":
+            logger.info("RAG_VECTOR_BACKEND=pgvector seçildi; bu sürümde vektör katmanı hazırlık modunda. BM25/keyword arama kullanılacak.")
+            self._chroma_available = False
+        elif self._chroma_available:
             self._init_chroma()
 
         # BM25 (SQLite FTS5) Başlatma
@@ -824,7 +829,9 @@ class DocumentStore:
 
     def status(self) -> str:
         engines = []
-        if self._chroma_available:
+        if self._vector_backend == "pgvector":
+            engines.append("pgvector (hazırlık modu)")
+        elif self._chroma_available:
             gpu_tag = f"GPU cuda:{self._gpu_device}" if self._use_gpu else "CPU"
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         if self._bm25_available:

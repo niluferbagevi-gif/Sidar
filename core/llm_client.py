@@ -53,6 +53,8 @@ def build_provider_json_mode_config(provider: str) -> Dict[str, Any]:
     if provider == "openai":
         # Chat Completions endpointi için yaygın JSON object modu.
         return {"response_format": {"type": "json_object"}}
+    if provider == "litellm":
+        return {"response_format": {"type": "json_object"}}
     if provider == "gemini":
         return {"generation_config": {"response_mime_type": "application/json"}}
     if provider == "anthropic":
@@ -707,6 +709,132 @@ class OpenAIClient(BaseLLMClient):
                 await client.aclose()
 
 
+class LiteLLMClient(BaseLLMClient):
+    """LiteLLM Gateway istemcisi (OpenAI uyumlu Chat Completions)."""
+
+    def json_mode_config(self) -> Dict[str, Any]:
+        return {"response_format": {"type": "json_object"}}
+
+    def _candidate_models(self, requested_model: Optional[str]) -> List[str]:
+        primary = (requested_model or getattr(self.config, "LITELLM_MODEL", "") or getattr(self.config, "OPENAI_MODEL", "gpt-4o-mini")).strip()
+        fallbacks = [m.strip() for m in getattr(self.config, "LITELLM_FALLBACK_MODELS", []) if str(m).strip()]
+        ordered = [primary] + fallbacks
+        dedup: List[str] = []
+        for m in ordered:
+            if m and m not in dedup:
+                dedup.append(m)
+        return dedup
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        stream: bool = False,
+        json_mode: bool = True,
+    ) -> Union[str, AsyncIterator[str]]:
+        base_url = (getattr(self.config, "LITELLM_GATEWAY_URL", "") or "").strip().rstrip("/")
+        api_key = (getattr(self.config, "LITELLM_API_KEY", "") or "").strip()
+        if not base_url:
+            msg = json.dumps({
+                "tool": "final_answer",
+                "argument": "[HATA] LITELLM_GATEWAY_URL ayarlanmamış.",
+                "thought": "Gateway URL eksik",
+            })
+            return _fallback_stream(msg) if stream else msg
+
+        if json_mode:
+            messages = self._inject_json_instruction(messages)
+
+        headers: Dict[str, str] = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        timeout = httpx.Timeout(max(10, int(getattr(self.config, "LITELLM_TIMEOUT", 60))), connect=10.0)
+        models = self._candidate_models(model)
+        started_at = time.monotonic()
+        last_error: Optional[Exception] = None
+
+        for idx, model_name in enumerate(models):
+            payload: Dict[str, Any] = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if json_mode:
+                payload.update(self.json_mode_config())
+
+            endpoint = f"{base_url}/chat/completions"
+            try:
+                if stream:
+                    payload["stream"] = True
+                    stream_iter = self._stream_openai_compatible(endpoint, payload, headers, timeout, json_mode)
+                    return _track_stream_completion(stream_iter, provider="litellm", model=model_name, started_at=started_at)
+
+                async def _do_request():
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(endpoint, json=payload, headers=headers)
+                        resp.raise_for_status()
+                        return resp.json()
+
+                data = await _retry_with_backoff("litellm", _do_request, config=self.config, retry_hint="LiteLLM isteği başarısız")
+                prompt_tokens, completion_tokens = _extract_usage_tokens(data)
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                _record_llm_metric(provider="litellm", model=model_name, started_at=started_at, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, success=True)
+                return _ensure_json_text(content, "LiteLLM") if json_mode else content
+            except Exception as exc:
+                last_error = exc
+                logger.warning("LiteLLM modeli başarısız oldu (%s): %s", model_name, exc)
+                if idx == len(models) - 1:
+                    break
+
+        _record_llm_metric(provider="litellm", model=models[0] if models else "unknown", started_at=started_at, success=False, error=str(last_error or "unknown"))
+        raise LLMAPIError("litellm", f"LiteLLM hata: {last_error}", retryable=False)
+
+    async def _stream_openai_compatible(
+        self,
+        endpoint: str,
+        payload: dict,
+        headers: dict,
+        timeout: httpx.Timeout,
+        json_mode: bool,
+    ) -> AsyncGenerator[str, None]:
+        client = None
+        stream_cm = None
+        try:
+            async def _open_stream():
+                stream_client = httpx.AsyncClient(timeout=timeout)
+                cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
+                response = await cm.__aenter__()
+                response.raise_for_status()
+                return stream_client, cm, response
+
+            client, stream_cm, resp = await _retry_with_backoff("litellm", _open_stream, config=self.config, retry_hint="LiteLLM stream başlatma başarısız")
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    body = json.loads(data)
+                    delta = body.get("choices", [{}])[0].get("delta", {})
+                    text = delta.get("content", "")
+                    if text:
+                        yield text
+                except json.JSONDecodeError:
+                    continue
+        except Exception as exc:
+            msg = json.dumps({"tool": "final_answer", "argument": f"\n[HATA] LiteLLM akış hatası: {exc}", "thought": "Hata"})
+            yield _ensure_json_text(msg, "LiteLLM") if json_mode else msg
+        finally:
+            if stream_cm is not None:
+                await stream_cm.__aexit__(*sys.exc_info())
+            if client is not None and hasattr(client, "aclose"):
+                await client.aclose()
+
+
 class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""
 
@@ -905,6 +1033,8 @@ class LLMClient:
             self._client = OpenAIClient(config)
         elif self.provider == "anthropic":
             self._client = AnthropicClient(config)
+        elif self.provider == "litellm":
+            self._client = LiteLLMClient(config)
         else:
             raise ValueError(f"Bilinmeyen AI sağlayıcısı: {self.provider}")
 

@@ -256,7 +256,7 @@ class Config:
     REQUIRED_DIRS: List[Path] = [BASE_DIR / "temp", BASE_DIR / "logs", BASE_DIR / "data"]
 
     # ─── AI Sağlayıcı ────────────────────────────────────────
-    AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini" | "openai" | "anthropic"
+    AI_PROVIDER:    str = os.getenv("AI_PROVIDER", "ollama")   # "ollama" | "gemini" | "openai" | "anthropic" | "litellm"
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL:   str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -268,6 +268,13 @@ class Config:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     ANTHROPIC_MODEL:   str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
     ANTHROPIC_TIMEOUT: int = get_int_env("ANTHROPIC_TIMEOUT", 60)
+
+    # ─── LiteLLM Gateway ─────────────────────────────────────
+    LITELLM_GATEWAY_URL: str = os.getenv("LITELLM_GATEWAY_URL", "")
+    LITELLM_API_KEY: str = os.getenv("LITELLM_API_KEY", "")
+    LITELLM_MODEL: str = os.getenv("LITELLM_MODEL", "")
+    LITELLM_FALLBACK_MODELS: List[str] = get_list_env("LITELLM_FALLBACK_MODELS", [])
+    LITELLM_TIMEOUT: int = get_int_env("LITELLM_TIMEOUT", 60)
 
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL:     str = os.getenv("OLLAMA_URL", "http://localhost:11434/api")
@@ -372,6 +379,8 @@ class Config:
     # Büyük dosya eşiği: bu karakter sayısını geçen dosyalar okunduğunda
     # RAG deposuna ekleme önerilir (varsayılan ≈ 400 satır / ~20 KB).
     RAG_FILE_THRESHOLD: int = get_int_env("RAG_FILE_THRESHOLD", 20000)
+    RAG_VECTOR_BACKEND: str = os.getenv("RAG_VECTOR_BACKEND", "chroma")  # chroma | pgvector
+    PGVECTOR_TABLE: str = os.getenv("PGVECTOR_TABLE", "rag_embeddings")
 
     # ─── Docker REPL Sandbox ─────────────────────────────────
     SANDBOX_LIMITS: Dict[str, Any] = dict(SANDBOX_LIMITS)
@@ -452,6 +461,7 @@ class Config:
             "online": "gemini", "gemini": "gemini",
             "local":  "ollama", "ollama": "ollama",
             "anthropic": "anthropic",
+            "litellm": "litellm",
         }
         m_lower = mode.lower()
         if m_lower in mode_map:
@@ -510,6 +520,13 @@ class Config:
         if cls.AI_PROVIDER == "anthropic" and not cls.ANTHROPIC_API_KEY:
             logger.error(
                 "❌ Anthropic modu seçili ama ANTHROPIC_API_KEY ayarlanmamış!\n"
+                "   .env dosyasını kontrol edin."
+            )
+            is_valid = False
+
+        if cls.AI_PROVIDER == "litellm" and not cls.LITELLM_GATEWAY_URL:
+            logger.error(
+                "❌ LiteLLM modu seçili ama LITELLM_GATEWAY_URL ayarlanmamış!\n"
                 "   .env dosyasını kontrol edin."
             )
             is_valid = False
@@ -594,6 +611,9 @@ class Config:
             print(f"  Gemini Modeli    : {cls.GEMINI_MODEL}")
         elif cls.AI_PROVIDER == "openai":
             print(f"  OpenAI Modeli    : {cls.OPENAI_MODEL}")
+        elif cls.AI_PROVIDER == "litellm":
+            print(f"  LiteLLM Gateway  : {cls.LITELLM_GATEWAY_URL or '-'}")
+            print(f"  LiteLLM Modeli   : {cls.LITELLM_MODEL or cls.OPENAI_MODEL}")
         else:
             print(f"  Anthropic Modeli : {cls.ANTHROPIC_MODEL}")
         print(f"  RAG Dizini       : {cls.RAG_DIR.relative_to(BASE_DIR)}")
