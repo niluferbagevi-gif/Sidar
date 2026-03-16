@@ -1094,6 +1094,19 @@ def test_vendor_index_and_file_content_guard_paths(tmp_path, monkeypatch):
     assert ok_file.status_code == 200
     assert "content" in ok_file.content
 
+    # K-1 güvenlik düzeltmesi: .env ve .example dosyaları erişilemez olmalı (415)
+    tmp_env = Path("tests") / "_tmp_secret.env"
+    tmp_env.write_text("SECRET_KEY=abc123", encoding="utf-8")
+    env_resp = asyncio.run(mod.file_content(str(tmp_env)))
+    assert env_resp.status_code == 415, ".env dosyaları /file-content üzerinden okunamaz olmalı"
+    tmp_env.unlink(missing_ok=True)
+
+    tmp_example = Path("tests") / "_tmp_secret.example"
+    tmp_example.write_text("API_KEY=abc123", encoding="utf-8")
+    example_resp = asyncio.run(mod.file_content(str(tmp_example)))
+    assert example_resp.status_code == 415, ".example dosyaları /file-content üzerinden okunamaz olmalı"
+    tmp_example.unlink(missing_ok=True)
+
     tmp_large = Path("tests") / "_tmp_large.txt"
     tmp_large.write_text("x" * (mod.MAX_FILE_CONTENT_BYTES + 1), encoding="utf-8")
     too_large = asyncio.run(mod.file_content(str(tmp_large)))

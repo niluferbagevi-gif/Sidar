@@ -867,8 +867,8 @@ Aşağıdaki bulgular tüm kaynak dosyaların satır satır incelenmesiyle ortay
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| K-1 | `web_server.py` | 876 | **`.env` uzantısı `_SAFE_EXTENSIONS` içinde** | `_SAFE_EXTENSIONS` kümesine `.env` ve `.example` eklenmiş; `/file-content` endpoint'i aracılığıyla `.env` dosyası (API anahtarları, DB şifreleri) okunabilir durumda. `.env` ve `.example` bu kümeden kaldırılmalıdır. |
-| K-2 | `managers/code_manager.py` | 383–395 | **Docker çıkış kodu kontrolü hatalı** | `container.wait()` bir sözlük (`{"StatusCode": 0}`) döndürür; ancak kod `if exit_code not in (None, 0)` ile kontrol eder. Başarılı konteynerler de daima hata olarak raporlanır — Docker REPL çalışmıyor gibi görünür. |
+| ~~K-1~~ | `web_server.py` | 876 | **[ÇÖZÜLDÜ] `.env` ve `.example` uzantıları `_SAFE_EXTENSIONS`'dan kaldırıldı** | `.env` ve `.example` kümeden çıkarıldı; artık `/file-content` endpoint'i bu dosyalara `415 Unsupported Media Type` döndürüyor. Regresyon testi `test_vendor_index_and_file_content_guard_paths`'e eklendi. |
+| ~~K-2~~ | ~~`managers/code_manager.py`~~ | ~~383–395~~ | **[YANLIŞ POZİTİF — Düzeltildi]** | Kod `isinstance(wait_result, dict)` ile `wait_result.get("StatusCode")` kullanıyor; zaten doğru çalışıyor. Denetim sırasında hatalı yorumlanmıştır. |
 
 #### 🟠 YÜKSEK
 
