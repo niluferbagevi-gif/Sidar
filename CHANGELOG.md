@@ -4,6 +4,41 @@
 
 ---
 
+## [v3.0.9] - 2026-03-16
+YN3 serisi kapatma — v3.0.7 doğrulama turunda tespit edilen 6 bulgunun tamamı giderildi.
+
+### ✅ YN3-O-4 — Yanlış Pozitif Teyit Edildi
+`agent/sidar_agent.py:96,321` — `threading.Lock()` `_load_instruction_files()` sync metodunda doğru kullanılıyor; metot `asyncio.to_thread()` ile thread pool'da çalışıyor. `asyncio.Lock()` thread-safe olmadığından değişiklik gerekmez.
+
+### ✅ YN3-O-1 — `_ANYIO_CLOSED` Artık Kullanılıyor
+**Dosya:** `web_server.py`
+`_ANYIO_CLOSED` WebSocket handler dış `except` bloğuna eklendi. `anyio.ClosedResourceError` artık `WebSocketDisconnect` ile eşdeğer biçimde işleniyor; beklenmedik diğer istisnalar ise `logger.warning` ile iletilir.
+
+### ✅ YN3-O-2 — `_rate_lock` Dead Code Kaldırıldı
+**Dosyalar:** `web_server.py`, `tests/test_targeted_coverage_additions.py`, `tests/test_sidar.py`
+* `_rate_lock: asyncio.Lock | None = None` satırı kaldırıldı (`web_server.py:467`).
+* Test dosyalarındaki `web_server._rate_lock = asyncio.Lock()` ifadeleri (6 adet, 2 dosya) `web_server._local_rate_lock = asyncio.Lock()` olarak güncellendi. Artık testler üretim kodunun gerçekten kullandığı kilidi sıfırlıyor; test izolasyonu tamamlandı.
+* `_rate_data` alias'ı korundu — `_local_rate_limits` sözlüğü için geçerli test temizleme noktası.
+
+### ✅ YN3-O-3 — `isinstance(payload, dict)` Redundant Kaldırıldı
+**Dosya:** `web_server.py` — `/auth/register` (satır 365-366) ve `/auth/login` (satır 382-383)
+FastAPI Pydantic doğrulaması `payload`'ı her zaman model örneği olarak sağlar; `isinstance(payload, dict)` dalı hiçbir zaman `True` olmuyordu. `payload.username` / `payload.password` doğrudan kullanılıyor.
+
+### ✅ YN3-D-1 — JWT_SECRET_KEY Config'e Taşındı + Kritik Uyarı Eklendi
+**Dosyalar:** `config.py`, `web_server.py`, `.env.example`
+* `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS` `config.py` `Web Arayüzü` bölümüne eklendi.
+* `web_server.py`'de `_get_jwt_secret()` yardımcı fonksiyonu oluşturuldu; `JWT_SECRET_KEY` boşsa `logger.critical(...)` ile açık uyarı verilir.
+* `.env.example`'a JWT bölümü ve güvenlik notu eklendi.
+
+### ✅ YN3-D-2 — Grafana URL Dinamik Injection
+**Dosyalar:** `config.py`, `web_server.py`, `web_ui/index.html`, `.env.example`
+* `GRAFANA_URL` env değişkeni `config.py`'ye eklendi (varsayılan: `http://localhost:3000`).
+* `index()` route'u artık `window.__SIDAR_CONFIG__ = {"grafanaUrl": "..."}` config script'ini `<head>` içine inject ediyor.
+* `web_ui/index.html:286` Grafana butonu `window.__SIDAR_CONFIG__.grafanaUrl` değerini kullanıyor; fallback olarak yine `http://localhost:3000` korunuyor.
+* `.env.example`'a `GRAFANA_URL` ve açıklaması eklendi.
+
+---
+
 ## [v3.0.8] - 2026-03-16
 YN2 serisi kapatma — v3.0.6 doğrulama turunda tespit edilen her iki operasyonel uyumsuzluk giderildi.
 

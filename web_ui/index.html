@@ -283,7 +283,7 @@
       <div id="admin-panel-container" style="display:none;">
         <div class="admin-panel-header">
           <h2>Admin Paneli</h2>
-          <button class="btn-ghost" onclick="window.open('http://localhost:3000', '_blank')">Grafana'yı Aç</button>
+          <button class="btn-ghost" onclick="window.open((window.__SIDAR_CONFIG__||{}).grafanaUrl||'http://localhost:3000','_blank')">Grafana'yı Aç</button>
         </div>
         <div class="admin-cards">
           <div class="admin-card">

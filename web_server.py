@@ -192,8 +192,21 @@ def _build_user_from_jwt_payload(payload: dict):
     return SimpleNamespace(id=user_id, username=username, role=role)
 
 
+def _get_jwt_secret() -> str:
+    """Config'ten JWT secret'ı oku. Ayarlanmamışsa CRITICAL uyarısı ver."""
+    key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "")
+    if not key:
+        logger.critical(
+            "JWT_SECRET_KEY yapılandırılmamış! Geliştirme ortamında geçici bir "
+            "anahtar kullanılıyor. Üretim ortamında .env dosyasına güçlü bir "
+            "JWT_SECRET_KEY değeri eklemelisiniz."
+        )
+        key = "sidar-dev-secret"
+    return key
+
+
 async def _resolve_user_from_token(_agent: SidarAgent, token: str):
-    secret_key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+    secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
         payload = jwt.decode(token, secret_key, algorithms=[algorithm])
@@ -204,7 +217,7 @@ async def _resolve_user_from_token(_agent: SidarAgent, token: str):
 
 async def _issue_auth_token(agent: SidarAgent, user) -> str:
     del agent  # Stateless JWT üretiminde DB bağımlılığı yok.
-    secret_key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+    secret_key = _get_jwt_secret()
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     ttl_days = max(1, int(getattr(cfg, "JWT_TTL_DAYS", 7) or 7))
     now = datetime.now(timezone.utc)
@@ -362,8 +375,8 @@ def _serialize_prompt(record) -> dict:
 
 @app.post("/auth/register")
 async def register_user(payload: _RegisterRequest):
-    username = (payload.get("username", "") if isinstance(payload, dict) else payload.username).strip()
-    password = payload.get("password", "") if isinstance(payload, dict) else payload.password
+    username = payload.username.strip()
+    password = payload.password
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -379,8 +392,8 @@ async def register_user(payload: _RegisterRequest):
 
 @app.post("/auth/login")
 async def login_user(payload: _LoginRequest):
-    username = (payload.get("username", "") if isinstance(payload, dict) else payload.username).strip()
-    password = payload.get("password", "") if isinstance(payload, dict) else payload.password
+    username = payload.username.strip()
+    password = payload.password
     agent = await get_agent()
     user = await agent.memory.db.authenticate_user(username=username, password=password)
     if not user:
@@ -462,9 +475,8 @@ _redis_lock: asyncio.Lock | None = None
 _local_rate_limits: dict[str, list[float]] = {}
 _local_rate_lock: asyncio.Lock | None = None
 
-# Test uyumluluğu için takma adlar; _local_rate_limits ile aynı sözlük nesnesini paylaşır
+# Test temizliği için takma ad; _local_rate_limits ile aynı sözlük nesnesini paylaşır
 _rate_data: dict[str, list[float]] = _local_rate_limits
-_rate_lock: asyncio.Lock | None = None
 
 _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
@@ -620,11 +632,17 @@ async def serve_vendor(file_path: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """Ana sayfa — chat arayüzü."""
+    """Ana sayfa — chat arayüzü. Sunucu tarafı config değerleri HTML'e enjekte edilir."""
     html_file = WEB_DIR / "index.html"
     if not html_file.exists():
         return HTMLResponse("<h1>Hata: web_ui/index.html bulunamadı.</h1>", status_code=500)
-    return html_file.read_text(encoding="utf-8")
+    grafana_url = str(getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000")
+    config_script = (
+        f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url)}}};</script>'
+    )
+    html = html_file.read_text(encoding="utf-8")
+    html = html.replace("</head>", f"{config_script}\n</head>", 1)
+    return HTMLResponse(html)
 
 
 async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
@@ -768,6 +786,15 @@ async def websocket_chat(websocket: WebSocket):
         logger.info("İstemci WebSocket bağlantısını kesti.")
         if active_task and not active_task.done():
             active_task.cancel()
+    except Exception as _ws_exc:
+        # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
+        # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
+        if _ANYIO_CLOSED is not None and isinstance(_ws_exc, _ANYIO_CLOSED):
+            logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
+            if active_task and not active_task.done():
+                active_task.cancel()
+        else:
+            logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
 
 
 @app.get(

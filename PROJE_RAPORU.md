@@ -915,44 +915,39 @@ monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
 
 ---
 
-### 11.4 2026-03-16 v3.0.7/v3.0.8 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
+### 11.4 2026-03-16 v3.0.7/v3.0.9 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
 
-v3.0.7/v3.0.8 doğrulama turlarında tüm kaynak dosyalar yeniden satır satır incelenmiştir.
-YN2-Y-1 ve YN2-O-1'in her ikisi de kapatılmıştır. Ayrıca 6 yeni bulgu tespit edilmiştir.
+> **Güncelleme (v3.0.9 — 2026-03-16):** Bu turda tespit edilen 6 bulgunun tamamı giderilmiştir.
+> YN3-O-4 yanlış pozitif olarak teyit edilmiştir.
 
 #### ✅ v3.0.6 Bulgu Kapatma Durumu
 
 | # | Önceki Durum | Güncel Durum | Açıklama |
 |---|-------------|-------------|----------|
-| YN2-Y-1 | 🟠 AÇIK | ✅ ÇÖZÜLDÜ | `ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi). `requirements-dev.txt` → `-e .[...,dev]` ile `pytest-asyncio` güvenilir biçimde yüklenir. |
-| YN2-O-1 | 🟡 AÇIK | ✅ ÇÖZÜLDÜ | `test_code_manager_runtime.py:281-285` satırlarında `os.stat()` ve `stat.S_ISSOCK()` tam mock'lanmış; `docker_available is True` beklentisi deterministik hale getirildi. |
+| YN2-Y-1 | 🟠 AÇIK | ✅ ÇÖZÜLDÜ | `ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi). |
+| YN2-O-1 | 🟡 AÇIK | ✅ ÇÖZÜLDÜ | `test_code_manager_runtime.py:281-285` mock'ları zaten mevcuttu; doğrulandı. |
 
-#### 🟠 YÜKSEK
+#### ✅ YN3 Serisi — Kapatma Durumu (v3.0.9)
 
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| YN3-O-4 | `agent/sidar_agent.py` | `96`, `321` | **`threading.Lock()` async bağlamda kullanım** | `_instructions_lock = threading.Lock()` senkron kilit olarak tanımlanmış (satır 96); `with self._instructions_lock:` bloğu async bir fonksiyon içinde kullanılıyor (satır 321). Senkron kilit, async event loop'u anlık bloklar. Mtime/cache karşılaştırması gibi küçük bir bölüm olsa da, pattern `asyncio.Lock()` ile değiştirilmelidir. |
+| # | Eski Durum | Güncel Durum | Uygulanan Düzeltme |
+|---|-----------|-------------|-------------------|
+| YN3-O-4 | 🟠 Orta | ✅ YANLIŞ POZİTİF | `_load_instruction_files` sync metot — `asyncio.to_thread()` ile çağrılıyor. Thread pool'da `threading.Lock()` kullanımı **doğru** pattern. `asyncio.Lock()` thread-safe değildir. Değişiklik gerekmez. |
+| YN3-O-1 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_ANYIO_CLOSED` WebSocket handler'ın dış `except` blokuna eklendi (`web_server.py`). `anyio.ClosedResourceError` artık `WebSocketDisconnect` gibi normal çıkış olarak işleniyor. |
+| YN3-O-2 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_rate_lock` dead code kaldırıldı (`web_server.py:467`). Test dosyalarında (`test_targeted_coverage_additions.py`, `test_sidar.py`) `_rate_lock` → `_local_rate_lock` güncellendi; artık asıl production kilidi sıfırlanıyor. |
+| YN3-O-3 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `register_user` ve `login_user` endpoint'lerindeki `isinstance(payload, dict)` dalları kaldırıldı. `payload.username` / `payload.password` doğrudan kullanılıyor. |
+| YN3-D-1 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `_get_jwt_secret()` yardımcı fonksiyonu eklendi. `JWT_SECRET_KEY` boşsa `logger.critical(...)` ile uyarı verilir; `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS` `config.py`'ye taşındı. `.env.example`'a dokümantasyon eklendi. |
+| YN3-D-2 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `GRAFANA_URL` `config.py`'ye eklendi. `index()` route'u `window.__SIDAR_CONFIG__.grafanaUrl` değerini `<head>` içine inject ediyor. `index.html:286` butonu artık bu değeri kullanıyor; `.env.example`'a dokümantasyon eklendi. |
 
-#### 🟡 ORTA
+#### v3.0.9 Değişen Dosyalar
 
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| YN3-O-1 | `web_server.py` | `32-35` | **`_ANYIO_CLOSED` dead code** | `anyio.ClosedResourceError` import ediliyor, `_ANYIO_CLOSED` değişkenine atanıyor ancak dosyanın hiçbir yerinde kullanılmıyor. Gereksiz import yükü ve yanıltıcı değişken. |
-| YN3-O-2 | `web_server.py` | `466-467` | **`_rate_data` / `_rate_lock` dead code** | `_rate_data: dict[str, list[float]] = _local_rate_limits` atanmış ama kullanılmıyor; `_rate_lock: asyncio.Lock \| None = None` tanımlı ama asıl kullanılan `_local_rate_lock` değişkeni. İsimlendirme/alias karışıklığı okuyucu yanıltır. |
-| YN3-O-3 | `web_server.py` | `365-366`, `382-383` | **`isinstance(payload, dict)` redundant tip kontrolü** | `/auth/register` ve `/auth/login` endpoint'leri Pydantic `_RegisterRequest`/`_LoginRequest` modeliyle tanımlı; FastAPI otomatik doğrulama yapar. `isinstance(payload, dict)` dal her zaman `False`; `.get()` Pydantic model üzerinde çalışmaz. Yanıltıcı dallanma kaldırılmalıdır. |
-
-#### 🟡 DÜŞÜK
-
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| YN3-D-1 | `web_server.py` | `196`, `207` | **`"sidar-dev-secret"` hardcoded JWT fallback** | `JWT_SECRET_KEY` config'den alınamadığında `"sidar-dev-secret"` sabit değerine düşülüyor. Production ortamında `.env`'de `JWT_SECRET_KEY` tanımlanmazsa HMAC imzaları tahmin edilebilir hale gelir. Bu değerin `secrets.token_urlsafe(32)` ile değiştirilmesi ya da uygulama başlangıcında zorunlu config kontrolüne eklenmesi gerekir. |
-| YN3-D-2 | `web_ui/index.html` | `286` | **Grafana URL hardcoded** | Grafana paneli açma butonu `http://localhost:3000` sabit değerine bağlı. Konteyner ortamında Grafana farklı bir adres/port'ta çalışıyorsa buton işe yaramaz. `GRAFANA_URL` env değişkeninden okunmalı ya da sunucu tarafından dinamik inject edilmelidir. |
-
-#### v3.0.7 Test ve Doğrulama Notu
-
-* YN2-O-1: `test_code_manager_runtime.py:281-285` — `os.stat()` ve `stat.S_ISSOCK()` mock'ları doğrulandı. **KAPANDI.**
-* YN2-Y-1: `pyproject.toml[dev]` + `environment.yml` incelendi. Conda ortamında çalışıyor; bare `pip install -e .` ortamında eksik. **AÇIK.**
-* YN3 serisi bulgular tespit edildi, kapatma testleri önerilir (bkz. Borç #YN3-O-1..YN3-D-2).
+| Dosya | Değişiklik |
+|-------|-----------|
+| `config.py` | `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS`, `GRAFANA_URL` eklendi |
+| `web_server.py` | `_get_jwt_secret()` eklendi; `_rate_lock` kaldırıldı; `isinstance` dalları kaldırıldı; WS handler `_ANYIO_CLOSED` exception bloğu eklendi; `index()` Grafana URL inject ediyor |
+| `web_ui/index.html` | Grafana butonu `window.__SIDAR_CONFIG__.grafanaUrl` kullanıyor |
+| `tests/test_targeted_coverage_additions.py` | `_rate_lock` → `_local_rate_lock` (3 yerde) |
+| `tests/test_sidar.py` | `_rate_lock` → `_local_rate_lock` (3 yerde) |
+| `.env.example` | `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS`, `GRAFANA_URL` belgelendi |
 
 ---
 
@@ -1516,5 +1511,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.6** | **2026-03-16** | **Doğrulama turunda önceki K/Y/O/D + YN bulguları tekrar teyit edildi; test/operasyon katmanında iki yeni uyumsuzluk kayıt altına alındı: YN2-Y-1 (async test plugin bağımlılık uyumsuzluğu), YN2-O-1 (Docker socket fallback test beklenti drift'i).** |
 | **v3.0.7** | **2026-03-16** | **Tüm kaynak dosyalar yeniden satır satır incelendi. YN2-O-1 çözüldü (mock doğrulandı). YN2-Y-1 hâlâ açık. 6 yeni bulgu tespit edildi: YN3-O-4 (threading.Lock async bağlam), YN3-O-1 (_ANYIO_CLOSED dead code), YN3-O-2 (_rate_data/_rate_lock dead code), YN3-O-3 (isinstance dict redundant check), YN3-D-1 (JWT hardcoded fallback), YN3-D-2 (Grafana URL hardcoded).** |
 | **v3.0.8** | **2026-03-16** | **YN2-Y-1 giderildi: `.github/workflows/ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi); `requirements-dev.txt` tek kurulum kaynağı olarak bırakıldı. §11.3 her iki bulgu kapatıldı.** |
+| **v3.0.9** | **2026-03-16** | **YN3 serisi (6 bulgu) kapatıldı: YN3-O-4 yanlış pozitif; YN3-O-1 (_ANYIO_CLOSED WS handler); YN3-O-2 (_rate_lock dead code + test düzeltmesi); YN3-O-3 (isinstance redundant); YN3-D-1 (JWT_SECRET_KEY config + uyarı); YN3-D-2 (Grafana URL dinamik injection). config.py, web_server.py, index.html, .env.example, 2 test dosyası güncellendi.** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
