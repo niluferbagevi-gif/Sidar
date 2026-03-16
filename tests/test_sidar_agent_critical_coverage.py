@@ -339,3 +339,46 @@ def test_build_context_uses_gemini_line_for_non_ollama_provider(tmp_path):
 
     ctx = asyncio.run(agent._build_context())
     assert "Gemini Modeli: g-1.5" in ctx
+
+def test_build_context_truncates_for_local_provider(tmp_path):
+    agent = SidarAgent.__new__(SidarAgent)
+    agent.cfg = SimpleNamespace(
+        PROJECT_NAME="P",
+        VERSION="1",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="ollama",
+        CODING_MODEL="qwen",
+        TEXT_MODEL="qwen",
+        OLLAMA_URL="http://localhost:11434/api",
+        ACCESS_LEVEL="sandbox",
+        USE_GPU=False,
+        GPU_INFO="cpu",
+        CUDA_VERSION="N/A",
+        GITHUB_REPO="o/r",
+        LOCAL_INSTRUCTION_MAX_CHARS=100,
+        LOCAL_AGENT_CONTEXT_MAX_CHARS=350,
+    )
+    agent.security = SimpleNamespace(level_name="sandbox")
+    agent.github = SimpleNamespace(is_available=lambda: False)
+    agent.web = SimpleNamespace(is_available=lambda: False)
+    agent.docs = SimpleNamespace(status=lambda: "ok")
+    agent.code = SimpleNamespace(get_metrics=lambda: {"files_read": 10, "files_written": 2})
+    agent.memory = SimpleNamespace(get_last_file=lambda: "very/long/path.py")
+
+    class _Todo:
+        def __len__(self):
+            return 0
+
+    agent.todo = _Todo()
+    agent._instructions_cache = ""
+    agent._instructions_mtimes = {}
+    import threading
+
+    agent._instructions_lock = threading.Lock()
+    agent._load_instruction_files = lambda: "X" * 1000
+
+    ctx = asyncio.run(agent._build_context())
+    assert "[Not]" in ctx
+    assert "Dizin" not in ctx
+    assert "Ollama URL" not in ctx
+    assert "Okunan" not in ctx

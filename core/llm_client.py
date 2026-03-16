@@ -1209,6 +1209,59 @@ class LLMClient:
         timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
+    def _truncate_messages_for_local_model(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Yerel modellerde bağlam taşmasını azaltmak için mesajları karakter bazlı kırp."""
+        max_chars = max(1200, int(getattr(self.config, "OLLAMA_CONTEXT_MAX_CHARS", 12000) or 12000))
+        if not messages:
+            return messages
+
+        normalized: List[Dict[str, str]] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = str(msg.get("content") or "")
+            normalized.append({"role": role, "content": content})
+
+        total = sum(len(m["content"]) for m in normalized)
+        if total <= max_chars:
+            return normalized
+
+        # Önce en son mesajı tam tutmaya çalış, ardından system mesajını sınırlı tut,
+        # sonra geçmişi sondan başa doğru doldur.
+        result: List[Dict[str, str]] = []
+        used = 0
+
+        last_msg = normalized[-1]
+        last_keep = max(400, min(len(last_msg["content"]), max_chars // 2))
+        last_content = last_msg["content"][-last_keep:]
+        result.insert(0, {"role": last_msg["role"], "content": last_content})
+        used += len(last_content)
+
+        system_idx = next((i for i, m in enumerate(normalized) if m["role"] == "system"), None)
+        if system_idx is not None and system_idx != len(normalized) - 1 and used < max_chars:
+            system_msg = normalized[system_idx]
+            budget = max(200, min(max_chars - used, max_chars // 3))
+            system_content = system_msg["content"][:budget]
+            if system_content:
+                result.insert(0, {"role": "system", "content": system_content})
+                used += len(system_content)
+
+        for msg in reversed(normalized[:-1]):
+            if used >= max_chars:
+                break
+            if msg["role"] == "system":
+                continue
+            remaining = max_chars - used
+            if remaining <= 0:
+                break
+            content = msg["content"]
+            if len(content) > remaining:
+                content = content[-remaining:]
+            if content:
+                result.insert(1 if result and result[0]["role"] == "system" else 0, {"role": msg["role"], "content": content})
+                used += len(content)
+
+        return result
+
     async def chat(
         self,
         messages: List[Dict[str, str]],
@@ -1220,6 +1273,9 @@ class LLMClient:
     ) -> Union[str, AsyncIterator[str]]:
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + list(messages)
+
+        if self.provider == "ollama":
+            messages = self._truncate_messages_for_local_model(messages)
 
         user_prompt = ""
         for message in reversed(messages):
