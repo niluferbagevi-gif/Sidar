@@ -1,12 +1,12 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-16 (v3.0.4 — Tam kapsamlı kaynak denetimi: test istatistikleri güncellendi (103 modül, %100 kapsama), tüm kaynak dosya satır sayıları yeniden ölçüldü, 8 yeni güvenlik/hata bulgusunun tespiti, çözülen teknik borçlar kayıt altına alındı, kapsama kalite kapısı %99.9'a yükseltildi)
+> **Son Güncelleme:** 2026-03-16 (v3.0.5 — Tam kapsamlı kaynak denetimi: v3.0.4'te tespit edilen K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6 bulgularının tamamı doğrulandı/çözüldü; satır sayıları yeniden ölçüldü (105 test modülü, 21.290 test satırı); 5 yeni bulgu (YN-K-1, YN-Y-1..YN-Y-3, YN-O-1) tespit edilerek kayıt altına alındı)
 > **Proje Sürümü:** 3.0.0
 
 > **Önceki Kayıt:** 3.0.3
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.714** satır (tests hariç, güncel ölçüm); Test: **21.277** satır; Web UI: **4.240** satır.
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **12.727** satır (tests hariç, güncel ölçüm); Test: **21.290** satır; Web UI: **4.240** satır.
 
 ---
 
@@ -59,6 +59,8 @@
 - [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
   - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
   - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
+  - [11.3 2026-03-16 v3.0.4 Denetimi — Tüm Bulgular (Çözüldü)](#113-2026-03-16-denetiminde-tespit-edilen-yeni-bulgular)
+  - [11.4 2026-03-16 v3.0.5 Denetimi — Yeni Bulgular](#114-2026-03-16-v305-denetiminde-tespit-edilen-yeni-bulgular)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -553,23 +555,23 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `config.py` | 607 |
 | `main.py` | 369 |
 | `cli.py` | 289 |
-| `web_server.py` | 1.401 |
-| `agent/sidar_agent.py` | 557 |
-| `agent/auto_handle.py` | 608 |
+| `web_server.py` | 1.406 |
+| `agent/sidar_agent.py` | 555 |
+| `agent/auto_handle.py` | 612 |
 | `agent/definitions.py` | 165 |
 | `agent/tooling.py` | 117 |
 | `agent/base_agent.py` | 55 |
-| `core/llm_client.py` | 960 |
+| `core/llm_client.py` | 961 |
 | `core/memory.py` | 299 |
-| `core/rag.py` | 809 |
-| `core/db.py` | 1.003 |
-| `core/llm_metrics.py` | 235 |
+| `core/rag.py` | 810 |
+| `core/db.py` | 1.012 |
+| `core/llm_metrics.py` | 245 |
 | `managers/security.py` | 290 |
-| `managers/code_manager.py` | 888 |
+| `managers/code_manager.py` | 898 |
 | `managers/github_manager.py` | 644 |
 | `managers/system_health.py` | 475 |
 | `managers/web_search.py` | 387 |
-| `managers/package_info.py` | 322 |
+| `managers/package_info.py` | 326 |
 | `managers/todo_manager.py` | 451 |
 | `github_upload.py` | 294 |
 | `gui_launcher.py` | 97 |
@@ -578,14 +580,14 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `agent/core/supervisor.py` | 164 |
+| `agent/core/supervisor.py` | 168 |
 | `agent/core/contracts.py` | 56 |
 | `agent/core/event_stream.py` | 45 |
 | `agent/core/memory_hub.py` | 54 |
-| `agent/core/registry.py` | 25 |
+| `agent/core/registry.py` | 29 |
 | `agent/roles/coder_agent.py` | 134 |
 | `agent/roles/researcher_agent.py` | 79 |
-| `agent/roles/reviewer_agent.py` | 181 |
+| `agent/roles/reviewer_agent.py` | 183 |
 
 ### 8.3 Migration / Operasyon / Altyapı
 
@@ -619,7 +621,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | **Web UI Toplamı** | **4.240** |
 | **Test modülü (`tests/test_*.py`)** | **103** |
 | **`tests/*.py` toplam dosya** | **105** |
-| **`tests/*.py` toplam satır** | **21.277** |
+| **`tests/*.py` toplam satır** | **21.290** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
@@ -627,7 +629,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 |---|---|---:|
 | `tests/` | `test_*.py` modül sayısı | 103 |
 | `tests/` | `*.py` toplam dosya | 105 |
-| `tests/` | `*.py` toplam satır | 21.277 |
+| `tests/` | `*.py` toplam satır | 21.290 |
 | `scripts/` | dosya sayısı | 6 |
 | `scripts/` | toplam satır | 443 |
 | `migrations/` | dosya sayısı (tüm migration dosyaları) | 3 |
@@ -840,7 +842,7 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-> **Not (2026-03-16 Denetim Güncellemesi):** Proje, tekil-senkron yapıdan modern çoklu ajan (Multi-Agent / Supervisor) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Test kapsama kalitesi %100'e ulaşmış, 33 eski/geçersiz test temizlenmiş, kapsama kalite kapısı %99.9'a yükseltilmiştir. **2026-03-16 tarihli tam kaynak denetiminde yeni güvenlik ve işlevsellik bulguları tespit edilmiştir; bunlar §11.3'te listelenmiştir.**
+> **Not (2026-03-16 Denetim Güncellemesi — v3.0.5):** Proje, tekil-senkron yapıdan modern çoklu ajan (Multi-Agent / Supervisor) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Test kapsama kalitesi %100'e ulaşmış, 33 eski/geçersiz test temizlenmiş, kapsama kalite kapısı %99.9'a yükseltilmiştir. **v3.0.4 denetiminde tespit edilen tüm K/Y/O/D bulgular çözülmüş; v3.0.5 denetiminde 5 yeni bulgu tespit edilmiştir (§11.4). Öncelik sırası: YN-K-1 (kritik), YN-Y-1..Y-3 (yüksek), YN-O-1 (orta).**
 
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
@@ -884,24 +886,50 @@ Aşağıdaki bulgular tüm kaynak dosyaların satır satır incelenmesiyle ortay
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| O-1 | `agent/auto_handle.py` | 56–60 | **ReDoS (Regex DoS) açığı** | `_MULTI_STEP_RE` içindeki `.{1,60}` niceleyicisi çok adımlı alternasyon ile kullanıldığında katastrofik geri izleme (catastrophic backtracking) riski taşır. Özellikle uzun/kontrol edilmemiş kullanıcı girdilerinde DoS potansiyeli vardır. Girdi uzunluğu sınırlandırılmalı veya regex yeniden yazılmalıdır. |
-| O-2 | `managers/security.py` | 30 | **Windows yol korumasında büyük/küçük harf duyarsızlığı eksik** | `_DANGEROUS_PATH_RE` yalnızca küçük `windows` ve `program files` değerlerini eşleştirir; `C:\WINDOWS` veya `C:\PROGRAM FILES` gibi büyük harfli varyantlar engellenmez. Regex `re.IGNORECASE` ile derlenmeli veya `\.lower()` ile normalize edilmelidir. |
-| O-3 | `web_server.py` | 314–321 | **Webhook imzası opsiyonel** | `GITHUB_WEBHOOK_SECRET` boş bırakılırsa imza doğrulaması atlanır; sahte webhook isteği gönderilebilir. Üretim ortamında zorunlu hale getirilmelidir. |
-| O-4 | `core/llm_client.py` | 272–303, 707, 853 | **Manuel context manager yönetimi** | Stream context manager'ları `async with` yerine `__aenter__`/`__exit__` doğrudan çağrısıyla yönetiliyor (3 ayrı yerde). İstisna durumlarında temizlik (cleanup) garanti altında değil. |
-| O-5 | `agent/sidar_agent.py` | 112–121 | **`initialize()` çağrısı yapılmadan `respond()` kullanımı riski** | `__init__` memory nesnesini oluşturur ama `initialize()` coroutine'inin await edilmesi çağıran koda bırakılmış. Erken çağrıda `MemoryAuthError` veya `AttributeError` üretilebilir. |
-| O-6 | `supervisor.py` | 85–95 | **P2P delegasyon timeout yok** | `_route_p2p` içindeki ajan delegasyonunda bireysel görev için zaman aşımı tanımlanmamış. Yanıt vermeyen ajan supervisor'ı sonsuza kadar bloke edebilir. |
-| O-7 | `managers/code_manager.py` | 169–181 | **Docker socket yolu doğrulaması yok** | WSL2 socket yolları (`/var/run/docker.sock`, `/mnt/wsl/.../backend.sock`) sahiplik/izin doğrulaması yapılmadan bağlanılıyor. Sahte socket oluşturulursa bağlantı çalınabilir. |
+| ~~O-1~~ | `agent/auto_handle.py` | 56–60 | **[ÇÖZÜLDÜ] ReDoS (Regex DoS) açığı** | `_MULTI_STEP_RE` içindeki `\bfirst\b.*\bthen\b` → `.{0,200}` ile sınırlandırıldı; `handle()` başına 2000 karakter erken-dönüş koruması eklendi. |
+| ~~O-2~~ | ~~`managers/security.py`~~ | ~~30~~ | **[YANLIŞ POZİTİF]** | `_DANGEROUS_PATH_RE` zaten `re.IGNORECASE` ile derleniyor; `WINDOWS`, `PROGRAM FILES` varyantları yakalanıyor. |
+| ~~O-3~~ | `web_server.py` | 1294 | **[ÇÖZÜLDÜ] Webhook imzası opsiyonel** | `GITHUB_WEBHOOK_SECRET` yapılandırılmadığında artık `logger.warning(...)` üretiliyor; operatörler uyarılıyor. |
+| ~~O-4~~ | `core/llm_client.py` | 303, 383, 542, 705, 890 | **[ÇÖZÜLDÜ] Manuel context manager yönetimi** | `import sys` eklendi; 5 adet `__exit__/__aexit__(None, None, None)` çağrısı `sys.exc_info()` ile değiştirildi — yayılan istisna bağlamı context manager'a iletiliyor. |
+| ~~O-5~~ | `agent/sidar_agent.py` | 101 | **[ÇÖZÜLDÜ] `_init_lock` lazy None başlatma** | `self._init_lock = asyncio.Lock()` `__init__` içinde önceden oluşturuluyor; `initialize()` içindeki None-guard kaldırıldı. |
+| ~~O-6~~ | `agent/core/supervisor.py` | 86–95 | **[ÇÖZÜLDÜ] P2P delegasyon timeout yok** | `asyncio` import edildi; `_route_p2p` içindeki `_delegate()` çağrısı `asyncio.wait_for(..., timeout=self.cfg.REACT_TIMEOUT)` ile sarıldı. |
+| ~~O-7~~ | `managers/code_manager.py` | 173–185 | **[ÇÖZÜLDÜ] Docker socket yolu doğrulaması yok** | `import stat` eklendi; WSL2 fallback döngüsünde `os.stat()` + `stat.S_ISSOCK()` kontrolü eklendi — yalnızca gerçek socket dosyaları deneniyor. |
 
 #### 🔵 DÜŞÜK / İYİLEŞTİRME
 
 | # | Dosya | Satır | Bulgu |
 |---|-------|-------|-------|
-| D-1 | `agent/core/memory_hub.py` | 45–55 | Async sarmalayan metodlar gerçekten async değil; `async def` kaldırılmalı ya da gerçek async I/O eklenmeli. |
-| D-2 | `managers/package_info.py` | 175–180 | Versiyon karşılaştırması string karşılaştırması; `packaging.version.Version` nesneleri kullanılmalı. |
-| D-3 | `core/llm_metrics.py` | 194 | `daily_usage_usd` ve `total_usage_usd` aynı snapshot değerini gösteriyor; kümülatif toplam ile pencere değeri ayrı tutulmalı. |
-| D-4 | `managers/todo_manager.py` | 76 | `todo_path.parent.mkdir(...)` başarısız olursa `_load()` `self._tasks` başlatmadan dönüyor; sonraki çağrılarda `AttributeError` riski. |
-| D-5 | `agent/core/registry.py` | 20 | `get(role)` tanımsız role için `KeyError` fırlatıyor; özel istisna veya `None` dönüşü daha açıklayıcı olur. |
-| D-6 | `core/rag.py` | 207 | `check_same_thread=False` ile FTS SQLite bağlantısı açılıyor; asyncio + threading karışımında güvenli erişim garanti edilmiyor. `asyncio.to_thread` sarmalı önerilen yaklaşım. |
+| ~~D-1~~ | `agent/core/memory_hub.py` | 45–54 | **[ÇÖZÜLDÜ]** 4 `async def` shim metodu (`aadd_global`, `aadd_role_note`, `aglobal_context`, `arole_context`) düz `def`'e dönüştürüldü; test dosyasındaki `await` çağrıları kaldırıldı. |
+| ~~D-2~~ | `managers/package_info.py` | 175–182 | **[ÇÖZÜLDÜ]** `current_version == latest` string eşitliği → `Version(current_version) < Version(latest)` + `InvalidVersion` fallback; `packaging` zaten import edilmişti. |
+| ~~D-3~~ | `core/llm_metrics.py` | 188–210 | **[ÇÖZÜLDÜ]** `daily_usage_usd` artık `timestamp >= time.time() - 86400` filtresinden hesaplanıyor; `total_usage_usd` penceredeki tam toplamı gösteriyor — iki değer artık farklı. |
+| ~~D-4~~ | ~~`managers/todo_manager.py`~~ | ~~76~~ | **[YANLIŞ POZİTİF]** `self._tasks = []`, `__init__`'te `_load()` çağrılmadan önce satır 65'te başlatılıyor; `AttributeError` riski yok. |
+| ~~D-5~~ | `agent/core/registry.py` | 19–23 | **[ÇÖZÜLDÜ]** `get(role)` artık mevcut rolleri listeleyen açıklayıcı `KeyError` fırlatıyor: `"'{role}' rolü kayıtlı değil. Mevcut: ..."`. |
+| ~~D-6~~ | `core/rag.py` | 661–666 | **[ÇÖZÜLDÜ]** FTS okuma sorgusu (`_bm25_search`) `_write_lock` ile korunmaya alındı — asyncio + threading karışımında SQLite bağlantısına eşzamanlı erişim güvence altına alındı. |
+
+### 11.4 2026-03-16 v3.0.5 Denetiminde Tespit Edilen Yeni Bulgular
+
+v3.0.4 bulgularının tümü doğrulandıktan sonra aynı tam kaynak incelemesinde aşağıdaki yeni bulgular tespit edilmiştir.
+
+#### 🔴 KRİTİK
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN-K-1 | `core/rag.py` | 428 | **`.env` ve `.example` uzantıları `_TEXT_EXTS` içinde (K-1 bypass)** | `add_document_from_file` içindeki `_TEXT_EXTS` kümesi `.env` ve `.example` uzantılarını içeriyor. `/rag/add-file` HTTP endpoint'i path traversal engeller ama uzantı kısıtlaması yapmaz; `{"path": ".env"}` gönderildiğinde `.env` dosyası RAG vektör deposuna indekslenir ve içeriği (API anahtarları, şifreler) sorgu yoluyla geri alınabilir. K-1 düzeltmesinin kapsamının bu fonksiyona genişletilmesi gerekiyor. |
+
+#### 🟠 YÜKSEK
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN-Y-1 | `agent/sidar_agent.py` | 53, 139–140 | **`_lock` lazy None başlatma (O-5 ile tutarsız)** | `self._lock = None` satır 53'te atanıyor, `respond()` içinde lazy oluşturuluyor (`if self._lock is None: self._lock = asyncio.Lock()`). O-5'te `_init_lock` için uygulanan aynı düzeltme (pre-create in `__init__`) bu lock için yapılmadı. |
+| YN-Y-2 | `core/rag.py` | 409–425 | **`add_document_from_url` SSRF koruması yok** | `httpx.AsyncClient(follow_redirects=True)` URL doğrulaması olmadan kullanılıyor. `/rag/add-url` endpoint'i URL'yi hiçbir filtreleme yapmadan doğrudan `add_document_from_url`'a iletiyor. `http://169.254.169.254/` (AWS metadata), `http://localhost:*` veya iç ağ hizmetlerine erişim mümkün (SSRF). |
+| YN-Y-3 | `managers/github_manager.py` | 36 | **`SAFE_TEXT_EXTENSIONS` kümesinde `.env` ve `.example`** | GitHub Manager, depo dosyalarını okurken `.env` ve `.example` uzantılarına izin veriyor. K-1'in güvenlik gerekçesi (hassas ortam değişkeni dosyaları) bu sınıf için de geçerli; uzantılar kümeden çıkarılmalı. |
+
+#### 🟡 ORTA
+
+| # | Dosya | Satır | Bulgu | Açıklama |
+|---|-------|-------|-------|----------|
+| YN-O-1 | `web_server.py` | 270, 287 | **Auth endpoint'lerinde `payload: dict` tipi, Pydantic model yok** | `/auth/register` ve `/auth/login` endpoint'leri `payload: dict` ile tanımlı; elle `payload.get(...)` ile alan okunuyor. FastAPI'nin Pydantic tabanlı model validasyonu (alan tipi, min_length, zorunlu alanlar) devreye girmiyor. Hatalı JSON veya eksik alan `None` döndürerek `str(None)` şeklinde veritabanına ulaşabiliyor. |
+
+---
 
 ## 12. `.env` Tam Değişken Referansı
 
@@ -1451,6 +1479,7 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | v3.0.1 | 2026-03-14 | İlk kapsamlı audit; PBKDF2 iterasyon eksikliği, event-loop blokaj riski, zombie process riski tespit edildi |
 | v3.0.2 | 2026-03-15 | PBKDF2 600K doğrulandı; RAG async geçişi, multi-agent test kapsaması genişletildi |
 | v3.0.3 | 2026-03-15 | Child-process sonlandırma güvenliği, OpenTelemetry async context sızıntı riski doğrulandı |
-| **v3.0.4** | **2026-03-16** | **Test kapsama %100, 33 legacy skip testi temizlendi, kapsama kalite kapısı %99.9, kaynak dosya satır sayıları yeniden ölçüldü, 8 yeni güvenlik/işlevsellik bulgusu (K-1, K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) kayıt altına alındı** |
-- **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %95 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
+| v3.0.4 | 2026-03-16 | Test kapsama %100, 33 legacy skip testi temizlendi, kapsama kalite kapısı %99.9, kaynak dosya satır sayıları yeniden ölçüldü, 8 yeni güvenlik/işlevsellik bulgusu (K-1, K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) kayıt altına alındı |
+| **v3.0.5** | **2026-03-16** | **v3.0.4 bulgularının tamamı (K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) doğrulandı/çözüldü; 3 yanlış pozitif (K-2, Y-4, O-2, D-4) teyit edildi; 5 yeni bulgu tespit edildi: YN-K-1 (rag.py _TEXT_EXTS bypass), YN-Y-1 (sidar_agent _lock lazy init), YN-Y-2 (SSRF in add_document_from_url), YN-Y-3 (github_manager .env izin), YN-O-1 (auth endpoint Pydantic eksik)** |
+- **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
