@@ -17,4 +17,4 @@ dependencies:
   #   PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
   - pip:
       - uv
-      - -e .[rag,postgres,telemetry]
+      - -e .[rag,postgres,telemetry,dev]
