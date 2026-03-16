@@ -14,11 +14,10 @@ npm run dev         # http://localhost:5173 — FastAPI'ye proxy
 ## Production Build
 
 ```bash
-npm run build       # ../web_ui_built/ dizinine derler
+npm run build       # web_ui_react/dist/ dizinine derler
 ```
 
-`web_server.py` `web_ui_built/` dizinini de mount edecek şekilde güncellendiğinde
-React build doğrudan `/` adresinden sunulur.
+`web_server.py` otomatik olarak `web_ui_react/dist/` varsa onu, yoksa legacy `web_ui/` dizinini sunar.
 
 ## Proje Yapısı
 
