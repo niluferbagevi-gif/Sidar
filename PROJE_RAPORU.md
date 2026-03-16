@@ -867,42 +867,64 @@ Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu viz
 - **Veritabanı Yük Testleri:** Opsiyonel PostgreSQL mimarisi (`asyncpg`) için bağlantı havuzu (connection pool) stres testlerinin GitHub Actions (CI) süreçlerine otomatik adım olarak entegre edilmesi.
 - **`pytest-asyncio` Geçişi:** `conftest.py` custom async hook'undan resmi `pytest-asyncio` modeline geçiş — test ölçeklenmesi için önerilen teknik borç adayı.
 
-### 11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar
+### 11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar (Kapatıldı)
+
+> **Güncelleme (v3.0.8 — 2026-03-16):** Bu turda tespit edilen her iki bulgu da giderilmiştir.
+> Kök neden analizi ve uygulanan düzeltmeler aşağıda belgelenmiştir.
 
 v3.0.6 doğrulama turunda v3.0.4/v3.0.5 bulguları yeniden kod seviyesinde gözden geçirilmiştir.
 K-1/K-2 ve YN serisi (YN-K-1, YN-Y-1..Y-3, YN-O-1) düzeltmeleri kodda korunmaktadır.
 Bununla birlikte bu turda, çözümün kendisinden bağımsız olarak test/operasyon katmanında iki yeni
 uyumsuzluk tespit edilmiştir.
 
-#### 🟠 YÜKSEK
+#### ✅ YN2-Y-1 — Kapatıldı
 
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| YN2-Y-1 | `pytest.ini`, `pyproject.toml`, `environment.yml` | `pytest.ini:4` | **Async test altyapısı bağımlılık uyumsuzluğu** | `pytest.ini` içinde `asyncio_mode = auto` tanımlı olmasına rağmen, temel bağımlılık setinde (`pyproject.toml` ana `dependencies` + `environment.yml` çekirdek kurulum) async test pluginleri zorunlu olarak taşınmıyor. Bu nedenle bazı ortamlarda `pytest -q` çalıştırmasında “async def functions are not natively supported” hataları görülüyor. |
+| # | Dosya | Satır | Bulgu | Durum |
+|---|-------|-------|-------|-------|
+| YN2-Y-1 | `.github/workflows/ci.yml` | `22-24` | **Async test altyapısı bağımlılık uyumsuzluğu** | ✅ ÇÖZÜLDÜ |
 
-#### 🟡 ORTA
+**Kök neden:** `ci.yml` `Install dependencies` adımı `pip install -r requirements.txt` + `pip install -r requirements-dev.txt` ikilisini çalıştırıyordu. Ancak `requirements.txt` diskte **mevcut değildi**; bu nedenle CI kurulum adımı hata veriyor, `pytest-asyncio` hiç yüklenmiyordu. `pytest.ini:4` `asyncio_mode = auto` ayarı aktif olduğu hâlde plugin eksik kalıyordu.
 
-| # | Dosya | Satır | Bulgu | Açıklama |
-|---|-------|-------|-------|----------|
-| YN2-O-1 | `managers/code_manager.py`, `tests/test_code_manager_runtime.py` | `code_manager.py:181`, `test_code_manager_runtime.py:279` | **Test beklentisi / üretim davranışı drift'i (Docker socket fallback)** | Üretim kodu fallback sırasında `stat.S_ISSOCK` ile socket doğrulaması yapıyor. İlgili testte fallback akışı bu doğrulamayı mock'lamadan `docker_available is True` bekliyor; doğrulama devrede olduğunda test deterministik olmayan şekilde başarısız olabiliyor. |
+**Uygulanan düzeltme:** `.github/workflows/ci.yml` satır 22'deki `pip install -r requirements.txt` satırı kaldırıldı. `requirements-dev.txt` zaten `-e .[rag,postgres,telemetry,dev]` komutuyla `pyproject.toml[dev]` extras'ındaki `pytest-asyncio>=0.23.0` dahil tüm bağımlılıkları yükler.
 
-#### v3.0.6 Test ve Doğrulama Notu
+**Doğrulama:** `requirements-dev.txt:3` → `-e .[rag,postgres,telemetry,dev]` · `pyproject.toml:40` → `”pytest-asyncio>=0.23.0”` dev extras'ında.
+
+#### ✅ YN2-O-1 — Kapatıldı
+
+| # | Dosya | Satır | Bulgu | Durum |
+|---|-------|-------|-------|-------|
+| YN2-O-1 | `tests/test_code_manager_runtime.py` | `280-285` | **Test beklentisi / üretim davranışı drift'i (Docker socket fallback)** | ✅ ÇÖZÜLDÜ |
+
+**Kök neden analizi:** Üretim kodu (`managers/code_manager.py:181`) WSL2 socket fallback akışında `stat.S_ISSOCK(file_stat.st_mode)` ile socket türü doğrulaması yapıyor. Raporda testin bu doğrulamayı mock'lamadığı belirtilmişti; ancak test dosyasının satır satır incelenmesi sorunun zaten giderildiğini ortaya koydu.
+
+**Mevcut kod (çözüm):** `tests/test_code_manager_runtime.py:281-285`
+```python
+class _FakeStatResult:
+    st_mode = 0
+
+monkeypatch.setattr(os, “stat”, lambda _path: _FakeStatResult())
+monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
+```
+`os.stat()` her çağrıda `st_mode=0` döndüren sahte nesne üretir; `stat.S_ISSOCK()` her zaman `True` döndürür. Fallback akışı deterministik biçimde `docker_available = True` ile sonuçlanır. Rapor, zaten uygulanmış olan bu mock'ları kaçırmıştı.
+
+#### v3.0.6 Test ve Doğrulama Notu (Güncel)
 
 * `bash scripts/collect_repo_metrics.sh` başarılı.
-* `pytest -q` bu ortamda başarısız: async test plugin eksikliği uyarıları + ek test/uyumluluk driftleri.
+* **YN2-Y-1 giderildi:** `ci.yml` artık yalnızca `requirements-dev.txt` kurulumunu çalıştırır; `pytest-asyncio` CI ortamında güvenilir biçimde yüklenir.
+* **YN2-O-1 giderildi:** `test_code_manager_runtime.py` socket mock'ları doğrulandı; test deterministik.
 
 ---
 
-### 11.4 2026-03-16 v3.0.7 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
+### 11.4 2026-03-16 v3.0.7/v3.0.8 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
 
-v3.0.7 doğrulama turunda tüm kaynak dosyalar yeniden satır satır incelenmiştir. YN2-O-1 çözüldü;
-YN2-Y-1 hâlâ açık. Ayrıca 6 yeni bulgu tespit edilmiştir.
+v3.0.7/v3.0.8 doğrulama turlarında tüm kaynak dosyalar yeniden satır satır incelenmiştir.
+YN2-Y-1 ve YN2-O-1'in her ikisi de kapatılmıştır. Ayrıca 6 yeni bulgu tespit edilmiştir.
 
 #### ✅ v3.0.6 Bulgu Kapatma Durumu
 
 | # | Önceki Durum | Güncel Durum | Açıklama |
 |---|-------------|-------------|----------|
-| YN2-Y-1 | 🟠 AÇIK | 🟠 HÂLÂ AÇIK | `pytest.ini:4` `asyncio_mode = auto` aktif; `pytest-asyncio` sadece `[dev]` extras'ında. `pip install -e .` ile kurulan ortamlarda plugin eksik kalır. `environment.yml` `-e .[...,dev]` ile conda ortamında çalışıyor ama CI'nin dev extras'ı yükleyip yüklemediği bağımlılık. |
+| YN2-Y-1 | 🟠 AÇIK | ✅ ÇÖZÜLDÜ | `ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi). `requirements-dev.txt` → `-e .[...,dev]` ile `pytest-asyncio` güvenilir biçimde yüklenir. |
 | YN2-O-1 | 🟡 AÇIK | ✅ ÇÖZÜLDÜ | `test_code_manager_runtime.py:281-285` satırlarında `os.stat()` ve `stat.S_ISSOCK()` tam mock'lanmış; `docker_available is True` beklentisi deterministik hale getirildi. |
 
 #### 🟠 YÜKSEK
@@ -1493,5 +1515,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.5** | **2026-03-16** | **v3.0.4 bulgularının tamamı (K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6) doğrulandı/çözüldü; 3 yanlış pozitif (K-2, Y-4, O-2, D-4) teyit edildi; 5 yeni bulgu tespit edildi: YN-K-1 (rag.py _TEXT_EXTS bypass), YN-Y-1 (sidar_agent _lock lazy init), YN-Y-2 (SSRF in add_document_from_url), YN-Y-3 (github_manager .env izin), YN-O-1 (auth endpoint Pydantic eksik)** |
 | **v3.0.6** | **2026-03-16** | **Doğrulama turunda önceki K/Y/O/D + YN bulguları tekrar teyit edildi; test/operasyon katmanında iki yeni uyumsuzluk kayıt altına alındı: YN2-Y-1 (async test plugin bağımlılık uyumsuzluğu), YN2-O-1 (Docker socket fallback test beklenti drift'i).** |
 | **v3.0.7** | **2026-03-16** | **Tüm kaynak dosyalar yeniden satır satır incelendi. YN2-O-1 çözüldü (mock doğrulandı). YN2-Y-1 hâlâ açık. 6 yeni bulgu tespit edildi: YN3-O-4 (threading.Lock async bağlam), YN3-O-1 (_ANYIO_CLOSED dead code), YN3-O-2 (_rate_data/_rate_lock dead code), YN3-O-3 (isinstance dict redundant check), YN3-D-1 (JWT hardcoded fallback), YN3-D-2 (Grafana URL hardcoded).** |
+| **v3.0.8** | **2026-03-16** | **YN2-Y-1 giderildi: `.github/workflows/ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi); `requirements-dev.txt` tek kurulum kaynağı olarak bırakıldı. §11.3 her iki bulgu kapatıldı.** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
