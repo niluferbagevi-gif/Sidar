@@ -29,7 +29,7 @@
 - [4. Mimari Değerlendirme](#4-mimari-değerlendirme)
   - [4.1 Güçlü Yönler](#41-güçlü-yönler)
   - [4.2 Kısıtlamalar](#42-kısıtlamalar)
-  - [4.3 Kurumsal v3.0 Mimari Sütunlar (Enterprise Lens)](#43-kurumsal-v30-mimari-sütunlar-enterprise-lens)
+  - [4.3 v4.0 Kurumsal Mimari Sütunlar (Enterprise Lens)](#43-v40-kurumsal-mimari-sütunlar-enterprise-lens)
 - [5. Güvenlik Analizi](#5-güvenlik-analizi)
   - [5.1 Güvenlik Kontrolleri Özeti](#51-güvenlik-kontrolleri-özeti)
   - [5.2 Güvenlik Seviyeleri Davranışı](#52-güvenlik-seviyeleri-davranışı)
@@ -81,7 +81,7 @@
   - [12.11 Telemetri ve Zero-Trust Sandbox](#1211-telemetri-ve-zero-trust-sandbox)
   - [12.12 Çeşitli](#1212-çeşitli)
   - [12.13 Docker Compose Override Değişkenleri](#1213-docker-compose-override-değişkenleri)
-- [13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)](#13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası)
+- [13. v4.0 Kurumsal Sürüm İyileştirmeleri (Tamamlandı)](#13-v40-kurumsal-sürüm-i̇yileştirmeleri-tamamlandı)
 - [14. Geliştirme Yol Haritası](#14-geliştirme-yol-haritası)
 - [15. Özellik-Gereksinim Matrisi](#15-özellik-gereksinim-matrisi)
   - [15.1 Çekirdek Özellikler (Her Zaman Zorunlu)](#151-çekirdek-özellikler-her-zaman-zorunlu)
@@ -350,7 +350,7 @@ Bu bölüm sadeleştirilmiştir. Her modülün detaylı incelemesi doğrudan `do
 | **QA Overhead** | Reviewer doğrulama adımları kaliteyi artırırken ek LLM çağrısı/latency maliyeti üretir |
 | **Operasyonel Karmaşıklık** | PostgreSQL + Prometheus + Grafana + migration süreçleri kurulum/işletim maliyetini yükseltir |
 
-### 4.3 Kurumsal v3.0 Mimari Sütunlar (Enterprise Lens)
+### 4.3 v4.0 Kurumsal Mimari Sütunlar (Enterprise Lens)
 
 #### 4.3.1 Asenkron + Event-Driven Çekirdek
 - Servisler `asyncio` temelli non-blocking çalışma modeline geçirilmiş; LLM, web ve DB katmanında eşzamanlılık ölçeklenebilirliği artırılmıştır.
@@ -372,6 +372,18 @@ Bu bölüm sadeleştirilmiştir. Her modülün detaylı incelemesi doğrudan `do
 #### 4.3.5 Observability + SaaS Veri Katmanı
 - OpenTelemetry izleri, Prometheus metrik ihracı ve Grafana panoları ile latency/token/maliyet görünürlüğü uçtan uca sağlanır.
 - SQLite kökenli tekil modelden, async pool destekli PostgreSQL ve multi-tenant kullanıcı izolasyonuna geçiş mimari olgunluk seviyesini yükseltir.
+
+#### 4.3.6 Dinamik Swarm ve Plugin Mimarisi
+- `AgentRegistry` çalışma zamanında (runtime) ajan kayıtlarını destekler; HTTP tabanlı plugin yükleme ile üçüncü parti ajanlar sisteme sıcak eklenebilir.
+- `SwarmOrchestrator` ile paralel/pipeline görev dağıtımı, rol/yetenek bazlı yönlendirme ve görev izlenebilirliği kurumsal iş yükleri için ölçeklenebilir bir orkestrasyon modeli sunar.
+
+#### 4.3.7 Single Page Application (Vite/React) Arayüzü
+- React tabanlı SPA katmanı, canlı P2P ajan diyaloğu, swarm görev akışı ve yönetim odaklı panelleri tek bir reaktif kullanıcı deneyiminde birleştirir.
+- Sunucu tarafında React build (`web_ui_react/dist`) öncelikli servis modeli ile legacy arayüzle geriye dönük uyumluluk korunurken modern UI teslimatı sağlanır.
+
+#### 4.3.8 Tenant Bazlı Erişim Kontrol Listeleri (ACL)
+- JWT içine `tenant_id` taşınarak kimlik bağlamı tenant seviyesinde doğrulanır; erişim kararları kullanıcı+tenant+poliçe ekseninde alınır.
+- `access_policies` modeli ile kaynak türü/aksiyon/resource-id bazlı allow/deny kuralları uygulanır ve middleware katmanında istek anında enforce edilir.
 
 ---
 
@@ -868,6 +880,8 @@ Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-
 > **Not (2026-03-16 Denetim Güncellemesi — v3.0.6):** Proje, tekil-senkron yapıdan modern çoklu ajan (Multi-Agent / Supervisor) yapısına ve kurumsal asenkron standartlarına başarıyla geçmiştir. Test kapsama kalitesi %100'e ulaşmış, 33 eski/geçersiz test temizlenmiş, kapsama kalite kapısı %99.9'a yükseltilmiştir. **v3.0.4 ve v3.0.5 denetimlerinde tespit edilen bulgular çözülmüş ve CHANGELOG'a taşınmıştır; raporda yalnızca aktif/açık bulgular bırakılmıştır.**
 
 ### 11.1 Ödenmiş Teknik Borçlar (Resolved)
+- **[Çözüldü] Legacy Statik Web UI'den React SPA'ya Geçiş:** Sunucu tarafında React build önceliklendirmesi ve modern bileşen tabanlı arayüz ile eski statik akışın teknik borcu kapatıldı.
+- **[Çözüldü] Temel Admin Kontrolden Tenant Bazlı RBAC'a Geçiş:** Sadece rol kontrolüne dayalı yetkilendirme yaklaşımı, tenant/policy tabanlı ince taneli ACL middleware modeli ile kurumsal seviyeye taşındı.
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
 - **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** Toplam 9 paket (`chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg` ve `opentelemetry-*` ailesi) çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
 - **[Çözüldü] Modern Paketleme (PEP 621) Geçişi:** Projenin tüm temel bağımlılıkları `requirements.txt` standardından `pyproject.toml` içindeki `dependencies` dizisine aktarılarak PEP 621 standardına tam uyum sağlandı. Ağır kütüphaneler (GPU, RAG, Telemetri) `optional-dependencies` altına alınarak kurulum profilleri hafifletildi.
@@ -1154,9 +1168,15 @@ Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
 ---
 
 <a id="13-olası-i̇yileştirmeler-v40-kurumsal-yol-haritası"></a>
-## 13. Olası İyileştirmeler (v4.0 Kurumsal Yol Haritası)
+## 13. v4.0 Kurumsal Sürüm İyileştirmeleri (Tamamlandı)
 
 [⬆ İçindekilere Dön](#içindekiler)
+
+> **Durum Notu (Güncel):** Bu bölümde önceki sürümlerde “ileri faz / temel oluşturuldu” olarak izlenen maddeler, v4.0 kapanış turunda üretim standardında tamamlanmıştır.
+> - ✅ Dinamik ajan pazaryeri ve HTTP plugin registry API canlıdır (`/api/agents/register`, `/api/agents/register-file`).
+> - ✅ Reaktif React SPA arayüzü ve ileri düzey yönetim panelleri (P2P diyalog, swarm akışı, tenant yönetimi) devrededir.
+> - ✅ Tenant/policy bazlı ince taneli RBAC/ACL katmanı (DB + middleware + admin policy endpointleri) aktiftir.
+> - ✅ Helm üzerinde Jaeger/Zipkin + OTel Collector APM hattı ve SLO dashboard provisioning’i tamamlanmıştır.
 
 Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agent, sandbox, observability) tekrar etmek yerine, bir sonraki kurumsal sıçrama için **yalnızca v4.0 hedeflerini** listeler.
 
@@ -1168,10 +1188,10 @@ Bu bölüm, v3.0 ile **zaten tamamlanan** kazanımları (DB geçişi, multi-agen
 | **Kurumsal Vektör Veri Katmanı** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/rag.py` içinde aktif `pgvector` başlatma, upsert/delete yaşam döngüsü, `<=>` (cosine distance) araması ve RRF entegrasyonu uygulanmıştır | pgvector için migration/versioning, index tuning (IVFFLAT/HNSW) ve kapasite planının runbook seviyesinde sertleştirilmesi | RAG doğruluğunu artırır, halüsinasyon oranını azaltır ve mevcut PostgreSQL yatırımıyla tekil veri platformu yaklaşımını destekler. |
 | **Anlamsal Önbellekleme (Semantic Caching)** | ✅ **Tamamlandı / Gerçekleştirildi:** `core/llm_client.py` içinde `_SemanticCacheManager` sınıfı aktif; Redis arka ucu, cosine similarity eşleşmesi (embedding), LRU eviction, TTL ve `ENABLE_SEMANTIC_CACHE` / `SEMANTIC_CACHE_THRESHOLD` / `SEMANTIC_CACHE_TTL` / `SEMANTIC_CACHE_MAX_ITEMS` konfigürasyonları tam çalışır durumda | Yüksek trafikte cache hit oranı izlemesi ve Grafana dashboard entegrasyonunun derinleştirilmesi (ileri faz) | Token maliyetlerini düşürür, p95 yanıt sürelerini iyileştirir ve yoğun trafikte altyapı yükünü azaltır. |
 | **Dinamik Prompt ve Model Yönetimi** | ✅ **Tamamlandı / Gerçekleştirildi:** `migrations/versions/0002_prompt_registry.py` ile `prompt_registry` DB tablosu aktif; `web_server.py` üzerinde `GET /admin/prompts`, `GET /admin/prompts/active`, `POST /admin/prompts`, `POST /admin/prompts/activate` REST uç noktaları çalışıyor; `web_ui/index.html` + `app.js` üzerinde yönetim paneli (rol filtresi, tablo görünümü, prompt formu) eklendi | Çoklu prompt versiyonlama ve otomatik A/B test mekanizması ile derinleştirilmesi (ileri faz) | Kod dağıtımı olmadan A/B test ve hızlı iterasyon sağlar; ürün ekiplerinin deneysel geliştirme hızını artırır. |
-| **Dinamik Agent Swarm + Marketplace** | 🔄 **Temel Oluşturuldu:** `agent/registry.py` — `AgentRegistry` + `AgentSpec` ile çalışma zamanı ajan keşfi ve eklenti kaydı; `agent/swarm.py` — `SwarmOrchestrator` (paralel + sıralı pipeline), `TaskRouter` (intent→yetenek→ajan eşlemesi); yerleşik 3 rol otomatik kayıtlı | Göreve göre dinamik uzman ajan türetimi tam swarm motoru; araç/ajan eklenti pazaryeri ve HTTP plugin registry API (ileri faz) | Karmaşık görevleri alt uzmanlıklara bölerek başarı oranını yükseltir; ekosistem büyümesi için platform etkisi oluşturur. |
-| **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | ✅ **Tamamlandı / Gerçekleştirildi:** Tüm 5 LLM sağlayıcısında (Ollama, Gemini, OpenAI, Anthropic, LiteLLM) ve RAG `search()` katmanında OpenTelemetry span enstrümantasyonu aktif; `sidar.llm.provider`, `sidar.llm.model`, `sidar.llm.total_ms`, `sidar.rag.mode`, `sidar.rag.query_len` span attribute'ları raporlanıyor | Jaeger/Zipkin exporter entegrasyonunun prod ortamına alınması ve SLO dashboard'larının oluşturulması (ileri faz) | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
-| **Reaktif Frontend ve Gelişmiş Admin UI** | 🔄 **Temel Oluşturuldu:** `web_ui_react/` — Vite + React 18 scaffold; `useWebSocket` hook (akış, chunk, done sinyali); `useChatStore` (Zustand); `ChatWindow`, `ChatMessage` (Markdown/highlight), `ChatInput`, `StatusBar` bileşenleri; FastAPI WebSocket API ile tam uyumlu; `npm run dev` → proxy ile hazır | Canlı P2P ajan diyaloğu görselleştirme, swarm görev akışı UI, tenant yönetim paneli (ileri faz) | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
-| **Stateless Auth, RBAC ve JWT Entegrasyonu** | ✅ **Tamamlandı / Gerçekleştirildi:** PyJWT tabanlı stateless token doğrulama ve middleware'de yerel imza kontrolü aktif (DB hit kaldırıldı) | RBAC kapsamının tenant/policy bazlı ince taneli yetkilendirme ile derinleştirilmesi (ileri faz) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
+| **Dinamik Agent Swarm + Marketplace** | ✅ **Tamamlandı / Gerçekleştirildi:** `AgentRegistry` + `SwarmOrchestrator` üzerine runtime plugin yükleme (`/api/agents/register`, `/api/agents/register-file`) ve HTTP registry akışı aktif; üçüncü parti ajanlar çalışma zamanında sisteme kaydedilip orkestrasyona dahil edilebiliyor | Eklenti güvenlik sertleştirmesi (imza doğrulama/sandbox) ve topluluk marketplace governance modeli (v4.x+) | Karmaşık görevleri alt uzmanlıklara bölerek başarı oranını yükseltir; ekosistem büyümesi için platform etkisi oluşturur. |
+| **Dağıtık İzlenebilirlik (Distributed Tracing/APM)** | ✅ **Tamamlandı / Gerçekleştirildi:** OpenTelemetry span enstrümantasyonu + Helm tabanlı OTel Collector, Jaeger/Zipkin backend deployment'ları ve OTLP endpoint yönlendirmesi aktif; üretim için SLO dashboard provisioning eklendi | Alerting SLO/SLI eşikleri ve long-term trace retention politikalarının operasyonel olgunlaştırılması (v4.x+) | Sorun izolasyon süresini kısaltır; DB, RAG ve LLM gecikmelerinin kök nedenini waterfall seviyesinde görünür kılar. |
+| **Reaktif Frontend ve Gelişmiş Admin UI** | ✅ **Tamamlandı / Gerçekleştirildi:** React SPA üretim yönlendirmesi aktif (`web_ui_react/dist` öncelikli); canlı P2P ajan diyaloğu, swarm görev akışı ve tenant yönetim paneli bileşenleri devrede | Çok-tenant operasyonları için kurumsal tema/rol bazlı görünüm ayrımı ve ileri raporlama ekranları (v4.x+) | Çok kiracılı ürünleşmede yönetim ve gözlemlenebilirlik deneyimini güçlendirir, operasyon ekiplerinin iş yükünü azaltır. |
+| **Stateless Auth, RBAC ve JWT Entegrasyonu** | ✅ **Tamamlandı / Gerçekleştirildi:** JWT + tenant claim + policy tabanlı ACL modeli (`access_policies`, admin policy API'leri, request-time middleware enforcement) aktif | Policy engine standardizasyonu (OPA/Cedar vb.) ve merkezi audit/forensics genişletmesi (v4.x+) | Multi-tenant izolasyonu güçlendirir, entegrasyon kabiliyetini artırır ve ince taneli erişim kontrolü sağlar. |
 | **Bağımlılık Extras Grupları** | ✅ **Tamamlandı / Gerçekleştirildi:** `[gemini]`, `[anthropic]`, `[gpu]`, `[sandbox]`, `[gui]` extras eklendi; `openai` SDK (kullanılmıyor) kaldırıldı; `opentelemetry-instrumentation-httpx` `[telemetry]`'e eklendi; `[all]` kolaylık profili + `requirements-dev.txt` → `-e .[all,dev]`; `uv.lock` güncellendi | LiteLLM, Ollama ve OpenAI (httpx ile) için ek sağlayıcı extras (ileri faz) | Kurulum friksiyonunu azaltır; farklı kullanım senaryoları için hafif ve maliyet etkin dağıtım profilleri sunar. |
 | **Paket Yöneticisi Modernizasyonu** | ✅ **Tamamlandı / Gerçekleştirildi:** bağımlılık yönetimi `pyproject.toml` (PEP 621) + `environment.yml` üzerinde birleştirildi; `requirements.txt` devre dışı | Lock dosyası ve dağıtım profilleri (`uv`/`poetry`) ile kurumsal tekrar üretilebilirlik katmanının güçlendirilmesi (ileri faz) | Kurulum ve bağımlılık çözümleme sürelerini hızlandırır, versiyon çakışmalarını kilit (lock) dosyalarıyla kesin olarak çözer. |
 
