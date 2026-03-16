@@ -21,6 +21,10 @@ import secrets
 import subprocess
 import time
 import tempfile
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import jwt
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -179,25 +183,39 @@ async def _app_lifespan(_app: FastAPI):
 
 
 
-async def _resolve_user_from_token(agent: SidarAgent, token: str):
-    db = agent.memory.db
-    verifier = getattr(db, "verify_auth_token", None)
-    if callable(verifier):
-        return verifier(token)
+def _build_user_from_jwt_payload(payload: dict):
+    user_id = str(payload.get("sub", "") or "").strip()
+    username = str(payload.get("username", "") or "").strip()
+    role = str(payload.get("role", "user") or "user").strip() or "user"
+    if not user_id or not username:
+        return None
+    return SimpleNamespace(id=user_id, username=username, role=role)
 
-    legacy = getattr(db, "get_user_by_token", None)
-    if callable(legacy):
-        return await legacy(token)
-    return None
+
+async def _resolve_user_from_token(_agent: SidarAgent, token: str):
+    secret_key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
+    try:
+        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+    except jwt.PyJWTError:
+        return None
+    return _build_user_from_jwt_payload(payload)
 
 
 async def _issue_auth_token(agent: SidarAgent, user) -> str:
-    creator = agent.memory.db.create_auth_token
-    try:
-        record = await creator(user.id, role=user.role, username=user.username)
-    except TypeError:
-        record = await creator(user.id)
-    return record.token
+    del agent  # Stateless JWT üretiminde DB bağımlılığı yok.
+    secret_key = str(getattr(cfg, "JWT_SECRET_KEY", "") or "sidar-dev-secret")
+    algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
+    ttl_days = max(1, int(getattr(cfg, "JWT_TTL_DAYS", 7) or 7))
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "username": str(user.username),
+        "role": str(getattr(user, "role", "user") or "user"),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=ttl_days)).timestamp()),
+    }
+    return jwt.encode(payload, secret_key, algorithm=algorithm)
 
 
 app = FastAPI(
@@ -238,11 +256,11 @@ async def basic_auth_middleware(request: Request, call_next):
     if not token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
 
-    agent = await get_agent()
-    user = await _resolve_user_from_token(agent, token)
+    user = await _resolve_user_from_token(None, token)
     if not user:
         return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
 
+    agent = await get_agent()
     request.state.user = user
     await agent.memory.set_active_user(user.id, user.username)
     token = set_current_metrics_user_id(user.id)

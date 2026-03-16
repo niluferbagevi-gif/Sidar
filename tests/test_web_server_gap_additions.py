@@ -3,6 +3,7 @@ import json
 import sys
 import types
 
+import jwt
 import pytest
 
 from tests.test_web_server_runtime import _FakeRequest, _load_web_server
@@ -28,12 +29,8 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
     async def _auth(**_):
         return types.SimpleNamespace(id="u1", username="alice", role="user")
 
-    async def _token(_uid):
-        return types.SimpleNamespace(token="tok-1")
-
     db = types.SimpleNamespace(
         authenticate_user=_auth,
-        create_auth_token=_token,
     )
     agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=db))
 
@@ -44,7 +41,11 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
 
     # lines 295-296
     login_resp = asyncio.run(mod.login_user({"username": "alice", "password": "123456"}))
-    assert login_resp.content["access_token"] == "tok-1"
+    token = login_resp.content["access_token"]
+    decoded = jwt.decode(token, "sidar-dev-secret", algorithms=["HS256"])
+    assert decoded["sub"] == "u1"
+    assert decoded["username"] == "alice"
+    assert decoded["role"] == "user"
 
     # line 301
     user = types.SimpleNamespace(id="u1", username="alice", role="user")
