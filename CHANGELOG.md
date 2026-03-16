@@ -4,6 +4,26 @@
 
 ---
 
+## [v3.0.8] - 2026-03-16
+YN2 serisi kapatma — v3.0.6 doğrulama turunda tespit edilen her iki operasyonel uyumsuzluk giderildi.
+
+### ✅ YN2-Y-1 Kapatıldı — CI Kurulum Adımı Düzeltildi
+
+**[YN2-Y-1 Çözüldü] `.github/workflows/ci.yml` — `pip install -r requirements.txt` satırı kaldırıldı**
+* **Kök neden:** `ci.yml` `Install dependencies` adımı var olmayan `requirements.txt` dosyasını yüklemeye çalışıyordu. Bu, CI kurulumunu hata ile sonlandırıyor ve `pytest-asyncio` hiç yüklenmiyordu. `pytest.ini:4` `asyncio_mode = auto` ayarı aktif olmasına rağmen plugin eksikliği nedeniyle async testler çalışamıyordu.
+* **Uygulanan düzeltme:** `pip install -r requirements.txt` satırı kaldırıldı. `requirements-dev.txt` zaten `-e .[rag,postgres,telemetry,dev]` komutuyla `pyproject.toml[dev]`'daki `pytest-asyncio>=0.23.0` dahil tüm bağımlılıkları yükler.
+* **Değişen dosya:** `.github/workflows/ci.yml` satır 22 (eski satır silindi)
+* **Doğrulama zinciri:** `requirements-dev.txt:3` → `pyproject.toml:40` `pytest-asyncio>=0.23.0`
+
+### ✅ YN2-O-1 Kapatıldı — Mock Varlığı Doğrulandı
+
+**[YN2-O-1 Doğrulandı] `tests/test_code_manager_runtime.py:280-285` — socket mock'ları zaten mevcut**
+* `os.stat()` ve `stat.S_ISSOCK()` satır satır incelemeyle tam mock'lanmış olduğu teyit edildi.
+* Rapor, mevcut mock'ları gözden kaçırmıştı; test deterministik olduğu onaylandı.
+* Ek kod değişikliği gerektirmedi.
+
+---
+
 ## [v3.0.7] - 2026-03-16
 Tam kaynak denetimi (v3.0.7) — tüm kaynak dosyalar yeniden satır satır incelendi; YN2-O-1 kapatıldı; YN2-Y-1 hâlâ açık; 6 yeni bulgu (YN3 serisi) kayıt altına alındı.
 
