@@ -8,6 +8,19 @@ services:
     volumes:
       - redis_data:/data
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: sidar_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-sidar}
+      - POSTGRES_USER=${POSTGRES_USER:-sidar}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sidar}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   # ── CLI Modu — CPU (Varsayılan) ────────────────────────────────
   sidar-ai:
     build:
@@ -127,6 +140,8 @@ services:
 
     depends_on:
       - redis
+      - postgres
+      - jaeger
 
     environment:
       - ACCESS_LEVEL=sandbox
@@ -136,6 +151,10 @@ services:
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
+      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://sidar:sidar@postgres:5432/sidar}
 
     env_file:
       - .env
