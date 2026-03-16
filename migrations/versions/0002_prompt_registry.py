@@ -21,7 +21,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "prompt_registry",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("role_name", sa.Text(), nullable=False),
         sa.Column("prompt_text", sa.Text(), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),

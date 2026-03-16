@@ -47,12 +47,12 @@ class ReviewerAgent(BaseAgent):
                 "    assert add_two(2) == 4\n"
             )
 
-        # repr() tüm özel karakterleri (tırnak, ters eğik çizgi, satır sonu) kaçışlar;
-        # üretilen .py dosyasına enjeksiyon mümkün olmaz.
-        safe_repr = repr((code_context or "")[:2000])
+        # Triple-single-quote delimiters ile sarılır; içindeki her ''' kaçışlanır.
+        # Bu sayede üretilen .py dosyasına enjeksiyon mümkün olmaz.
+        safe_text = (code_context or "")[:2000].replace("\\", "\\\\").replace("'''", "\\'\\'\\'")
         return (
             "def test_dynamic_context_not_empty():\n"
-            f"    context = {safe_repr}\n"
+            f"    context = '''{safe_text}'''\n"
             "    assert isinstance(context, str)\n"
             "    assert len(context.strip()) > 0\n"
         )

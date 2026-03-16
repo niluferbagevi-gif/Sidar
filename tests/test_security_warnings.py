@@ -35,9 +35,6 @@ def _ensure_stubs():
         sys.modules["pydantic"] = pydantic_stub
 
 
-_ensure_stubs()
-
-
 # ─── Config modülü yükleyici ──────────────────────────────────────────────
 
 def _load_config():

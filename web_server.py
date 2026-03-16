@@ -213,9 +213,15 @@ async def _resolve_user_from_token(_agent: SidarAgent, token: str):
     algorithm = str(getattr(cfg, "JWT_ALGORITHM", "HS256") or "HS256")
     try:
         payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+        return _build_user_from_jwt_payload(payload)
     except jwt.PyJWTError:
-        return None
-    return _build_user_from_jwt_payload(payload)
+        pass
+    # Fallback: DB token lookup (opak / oturum tabanlı token desteği)
+    if _agent and hasattr(_agent, "memory") and hasattr(_agent.memory, "db"):
+        db_user = await _agent.memory.db.get_user_by_token(token)
+        if db_user:
+            return db_user
+    return None
 
 
 async def _issue_auth_token(agent: SidarAgent, user) -> str:
