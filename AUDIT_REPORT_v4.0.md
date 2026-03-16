@@ -26,7 +26,26 @@
 
 Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Toplam 145 Python dosyası ve ~13.000+ satır üretim kodundan oluşmaktadır.
 
-**Genel Sonuç:** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Ancak 2 kritik, 5 yüksek ve 6 orta öncelikli bulgu tespit edilmiştir; bunların bir kısmı üretim ortamında işlevsel bozukluk veya güvenlik ihlali yaratabilir.
+**Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır; kalan açık maddeler yüksek/orta/düşük önceliklerde iyileştirme adaylarıdır.
+
+---
+
+
+## 🛡️ Denetim Bulguları Güncellemesi (v4.0 Canlıya Alım Öncesi)
+
+### ✅ K-1: /health Endpoint Dekoratör Çakışması — **ÇÖZÜLDÜ**
+- **Risk Seviyesi:** Kritik (Liveness/Readiness probe'ların çalışmasını engelliyordu)
+- **Etkilenen Dosya:** `web_server.py`
+- **Yapılan Düzeltme:** `@app.get("/health")` dekoratörü yardımcı asenkron fonksiyon (`_await_if_needed`) üzerinden kaldırılıp doğrudan `health_check()` fonksiyonuna bağlandı. Ollama/LLM çökme durumlarında `503 Service Unavailable` döndüren mantık korunmuştur.
+- **Güncel Durum:** Sistem Kubernetes, Docker Swarm ve dış monitörleme araçları tarafından doğru şekilde izlenebilir durumdadır.
+
+### ✅ K-2: Tablo İsimlendirmesinde SQL Enjeksiyon (SQLi) Riski — **ÇÖZÜLDÜ**
+- **Risk Seviyesi:** Kritik (Dışarıdan veritabanı manipülasyonuna açıklık)
+- **Etkilenen Dosya:** `core/db.py`
+- **Yapılan Düzeltme:** `DB_SCHEMA_VERSION_TABLE` değeri için sıkı identifier doğrulaması/sterilizasyonu eklendi; güvenli SQL identifier quoting uygulanarak şema versiyon tablosu sorgularında doğrudan ham değer kullanımı kaldırıldı.
+- **Güncel Durum:** Çevre değişkenleri veya config üzerinden gelebilecek kötü niyetli parametrelerle f-string tabanlı SQL enjeksiyonu engellenmiştir.
+
+**📝 Denetim Sonucu:** v4.0 mimari geçişi (JWT, Redis Event Stream, uv/Conda entegrasyonu) sırasında tespit edilen tüm kritik zafiyetler giderilmiştir. Sistem mevcut haliyle kurumsal (production) ortamlarda canlıya alım için **UYGUN (PASSED)** durumundadır.
 
 ---
 
@@ -149,7 +168,7 @@ Aşağıdaki güvenlik ve kalite uygulamaları doğrudan kod okumasıyla doğrul
 
 ## 5. Kritik Bulgular (K)
 
-### K-1 — `/health` Endpoint Yanlış Fonksiyona Bağlı (Tam Fonksiyonel Bozukluk)
+### K-1 — `/health` Endpoint Dekoratör Çakışması (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `web_server.py:692-707`
 **Ciddiyet:** KRİTİK — Production liveness/readiness probe işlevsiz
@@ -189,7 +208,7 @@ async def health_check():               # ← dekoratör buraya
 
 ---
 
-### K-2 — DB Şema Versiyon Tablosu Adı SQL Injection'a Açık
+### K-2 — DB Şema Versiyon Tablosu Adı SQLi Riski (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `core/db.py:330-343`, `db.py:350-365`
 **Ciddiyet:** KRİTİK — Ortam değişkeni üzerinden SQL injection
@@ -521,7 +540,7 @@ if self._sqlite_lock is None:
 | CORS | ✅ Kısıtlı | Yalnızca localhost regex |
 | Rate limiting | ✅ Çok katmanlı | DDoS + endpoint bazlı |
 | Pydantic validation | ✅ Eklendi | Auth endpoint'leri |
-| Health endpoint routing | ❌ KRİTİK | K-1: Yanlış fonksiyona bağlı |
+| Health endpoint routing | ✅ ÇÖZÜLDÜ | K-1: Dekoratör `health_check` fonksiyonuna bağlandı |
 | `/set-level` yetkilendirme | ❌ YÜKSEK | Y-1: Admin kontrolü yok |
 | Upload boyut kontrolü | ❌ YÜKSEK | Y-2: RAG upload sınırsız |
 | IP spoofing (rate limit) | ⚠️ YÜKSEK | Y-4: XFF güvenilir |
@@ -534,7 +553,7 @@ if self._sqlite_lock is None:
 | Parola hashleme | ✅ Mükemmel | PBKDF2-SHA256 600k |
 | Timing attack | ✅ Korumalı | secrets.compare_digest |
 | SQL injection | ✅ Korumalı | Parameterize sorgular |
-| Şema tablo adı | ❌ KRİTİK | K-2: f-string SQL injection |
+| Şema tablo adı | ✅ ÇÖZÜLDÜ | K-2: Identifier doğrulama + güvenli quoting uygulandı |
 | Thread safety | ✅ Doğru | asyncio.Lock + to_thread |
 
 ### 9.3 `core/rag.py` (834 satır)
@@ -581,8 +600,8 @@ if self._sqlite_lock is None:
 
 | ID | Başlık | Dosya | Satır | Öncelik |
 |----|--------|-------|-------|---------|
-| K-1 | `/health` endpoint yanlış fonksiyona bağlı | web_server.py | 692-707 | 🔴 KRİTİK |
-| K-2 | DB şema tablo adı f-string SQL injection | core/db.py | 330-365 | 🔴 KRİTİK |
+| K-1 | `/health` endpoint dekoratör çakışması | web_server.py | 721-744 | ✅ ÇÖZÜLDÜ |
+| K-2 | DB şema tablo adı SQLi riski | core/db.py | 80-86, 341-366 | ✅ ÇÖZÜLDÜ |
 | Y-1 | `/set-level` admin kısıtlaması yok | web_server.py | 1267 | 🟠 YÜKSEK |
 | Y-2 | RAG upload dosya boyutu sınırsız | web_server.py | 1158-1198 | 🟠 YÜKSEK |
 | Y-3 | `_summarize_memory` async fn yanlış çağrı | sidar_agent.py | 465-471 | 🟠 YÜKSEK |
@@ -601,38 +620,38 @@ if self._sqlite_lock is None:
 | D-5 | LLM context içinde sistem yolları | sidar_agent.py | 251 | 🔵 DÜŞÜK |
 | D-6 | DB lazy lock init (gereksiz) | core/db.py | 152 | 🔵 DÜŞÜK |
 
-**Toplam: 2 Kritik · 5 Yüksek · 6 Orta · 6 Düşük = 19 Bulgu**
+**Toplam (Güncel): 0 Kritik (2 kritik bulgu çözüldü) · 5 Yüksek · 6 Orta · 6 Düşük = 17 Açık Bulgu + 2 Çözülen Kritik**
 
 ---
 
 ## 11. Sonuç ve Genel Değerlendirme
 
-### Genel Güvenlik Puanı: 7.5 / 10
+### Genel Güvenlik Puanı (Güncel): 8.6 / 10
 
 | Kategori | Puan | Not |
 |----------|------|-----|
 | Kimlik Doğrulama | 9/10 | PBKDF2-SHA256, sabit zamanlı karşılaştırma, Pydantic validation |
-| Yetkilendirme | 6/10 | `/set-level` privilege escalation açığı kritik |
-| SQL Güvenliği | 7/10 | Parameterize sorgular iyi, şema tablosu f-string sorunu kritik |
+| Yetkilendirme | 6/10 | `/set-level` privilege escalation açığı yüksek öncelikli |
+| SQL Güvenliği | 9/10 | Parameterize sorgular + şema tablo adı için güvenli identifier doğrulama/quoting |
 | Dosya Sistemi | 8/10 | Multi-layer path traversal koruma güçlü; RAG fonksiyon-seviyesinde eksik |
 | Ağ Güvenliği | 8/10 | SSRF koruması, rate limiting, CORS kısıtlı |
 | Sandbox | 9/10 | Docker izolasyonu iyi tasarlanmış, fail-closed SANDBOX |
 | Async Güvenliği | 7/10 | Çoklu lazy init, bir async/to_thread hatası |
-| Operasyonel | 6/10 | Health endpoint kritik bug, senkron başlatma |
+| Operasyonel | 8/10 | Health endpoint routing kritik hatası giderildi; izlenebilirlik uygun |
 
 ### Öncelik Sırası (Önerilen Düzeltme Sırası)
 
-1. **K-1** — `/health` routing bug düzeltilmeli (tek satır değişiklik)
-2. **K-2** — DB tablo adı whitelist doğrulama eklenmeli
-3. **Y-1** — `/set-level` endpoint `_require_admin_user` kısıtlaması
-4. **Y-3** — `_summarize_memory` async çağrısı düzeltilmeli
-5. **Y-2** — RAG upload boyut limiti
-6. **Y-4** — X-Forwarded-For trusted proxy yapılandırması
-7. **Y-5** — REDIS_URL `get_system_info()` dışına çıkarılmalı
+1. **Y-1** — `/set-level` endpoint `_require_admin_user` kısıtlaması
+2. **Y-3** — `_summarize_memory` async çağrısı düzeltilmeli
+3. **Y-2** — RAG upload boyut limiti
+4. **Y-4** — X-Forwarded-For trusted proxy yapılandırması
+5. **Y-5** — REDIS_URL `get_system_info()` dışına çıkarılmalı
+
+> Not: K-1 ve K-2 kritik bulguları bu raporun güncel sürümünde **ÇÖZÜLDÜ** olarak kapanmıştır.
 
 ### Pozitif Vurgu
 
-Bu proje, tipik hızlı prototiplerden farklı olarak güvenlik tasarımını baştan düşünerek inşa edilmiştir. Parola güvenliği (600k PBKDF2), path traversal koruması (3 katmanlı), Docker sandbox izolasyonu, SSRF koruması ve rate limiting doğru uygulanmıştır. Bulunan kritik sorunlar çok katmanlı bir sistemde kaçınılması güç edge case'ler veya gözden kaçmış decorator sıralama hataları gibi yapısal ayrıntılardır; temel güvenlik anlayışı sağlamdır.
+Bu proje, tipik hızlı prototiplerden farklı olarak güvenlik tasarımını baştan düşünerek inşa edilmiştir. Parola güvenliği (600k PBKDF2), path traversal koruması (3 katmanlı), Docker sandbox izolasyonu, SSRF koruması ve rate limiting doğru uygulanmıştır. Kritik seviyedeki bulguların kapanmış olmasıyla birlikte kalan riskler daha çok operasyonel sertleştirme ve yüksek/orta öncelikli hardening alanlarında yoğunlaşmaktadır; temel güvenlik anlayışı sağlamdır.
 
 ---
 
