@@ -140,3 +140,140 @@ def test_anthropic_chat_span_and_error_paths(monkeypatch):
     with pytest.raises(llm_mod.LLMAPIError) as exc:
         asyncio.run(client.chat(messages=[{"role": "user", "content": "x"}], stream=False, json_mode=False))
     assert exc.value.provider == "anthropic"
+
+
+def test_anthropic_stream_and_tracing_paths(monkeypatch):
+    llm_mod = _load_llm_client_module()
+
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+            self.ended = False
+
+        def set_attribute(self, key, value):
+            self.attrs[key] = value
+
+        def end(self):
+            self.ended = True
+
+    class _Tracer:
+        def __init__(self):
+            self.span = _Span()
+
+        def start_span(self, _name):
+            return self.span
+
+        def start_as_current_span(self, _name):
+            raise AssertionError("stream modunda start_as_current_span kullanılmamalı")
+
+    tracer = _Tracer()
+    monkeypatch.setattr(llm_mod, "_get_tracer", lambda _cfg: tracer)
+
+    class _Evt:
+        def __init__(self, ev_type, delta_type=None, text=""):
+            self.type = ev_type
+            self.delta = SimpleNamespace(type=delta_type, text=text) if delta_type else None
+
+    class _Stream:
+        def __aiter__(self):
+            self._items = iter([
+                _Evt("ignored"),
+                _Evt("content_block_delta", "other", "x"),
+                _Evt("content_block_delta", "text_delta", "A"),
+                _Evt("content_block_delta", "text_delta", "B"),
+            ])
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._items)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class _StreamCM:
+        def __init__(self):
+            self.exited = False
+
+        async def __aenter__(self):
+            return _Stream()
+
+        async def __aexit__(self, *args):
+            self.exited = True
+            return False
+
+    class _Messages:
+        def __init__(self):
+            self.cm = _StreamCM()
+
+        def stream(self, **_kwargs):
+            return self.cm
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = _Messages()
+
+    anthropic_mod = types.ModuleType("anthropic")
+    anthropic_mod.AsyncAnthropic = _AsyncAnthropic
+    monkeypatch.setitem(sys.modules, "anthropic", anthropic_mod)
+
+    async def _passthrough_retry(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _passthrough_retry)
+
+    cfg = SimpleNamespace(ANTHROPIC_API_KEY="x", ANTHROPIC_TIMEOUT=10, ANTHROPIC_MODEL="claude", ENABLE_TRACING=True)
+    client = llm_mod.AnthropicClient(cfg)
+
+    async def _collect(aiter):
+        return [item async for item in aiter]
+
+    stream_iter = asyncio.run(client.chat(messages=[{"role": "user", "content": "selam"}], stream=True, json_mode=True))
+    chunks = asyncio.run(_collect(stream_iter))
+    assert chunks == ["A", "B"]
+    assert tracer.span.attrs["sidar.llm.provider"] == "anthropic"
+    assert tracer.span.attrs["sidar.llm.stream"] is True
+    assert "sidar.llm.ttft_ms" in tracer.span.attrs
+    assert "sidar.llm.total_ms" in tracer.span.attrs
+    assert tracer.span.ended is True
+
+
+def test_stream_anthropic_error_yields_safe_json(monkeypatch):
+    llm_mod = _load_llm_client_module()
+    client = llm_mod.AnthropicClient(SimpleNamespace(ANTHROPIC_API_KEY="x", ANTHROPIC_TIMEOUT=10, ANTHROPIC_MODEL="claude", ENABLE_TRACING=False))
+
+    class _BrokenMessages:
+        def stream(self, **_kwargs):
+            class _CM:
+                async def __aenter__(self):
+                    raise RuntimeError("stream open boom")
+
+                async def __aexit__(self, *args):
+                    return False
+
+            return _CM()
+
+    broken_client = SimpleNamespace(messages=_BrokenMessages())
+
+    async def _retry_passthrough(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _retry_passthrough)
+
+    async def _collect(aiter):
+        return [item async for item in aiter]
+
+    out = asyncio.run(
+        _collect(
+            client._stream_anthropic(
+                client=broken_client,
+                model_name="claude",
+                messages=[{"role": "user", "content": "x"}],
+                system_prompt="",
+                temperature=0.3,
+                json_mode=True,
+            )
+        )
+    )
+    payload = json.loads(out[0])
+    assert payload["tool"] == "final_answer"
+    assert "Anthropic akış hatası" in payload["argument"]
