@@ -150,6 +150,8 @@ class DocumentStore:
         self._index: Dict[str, Dict] = self._load_index()
 
         self._vector_backend = str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
+        self._is_local_llm_provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower() == "ollama"
+        self._local_hybrid_enabled = bool(getattr(self.cfg, "RAG_LOCAL_ENABLE_HYBRID", False))
 
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
@@ -732,6 +734,18 @@ class DocumentStore:
 
         has_vector = getattr(self, "_pgvector_available", False) or (self._chroma_available and self.collection)
 
+        # Yerel LLM + RAG birlikte çalışırken default olarak hibrid sorguyu kapatıp
+        # tek motorlu akışla CPU/SQLite baskısını azalt.
+        if mode == "auto" and getattr(self, "_is_local_llm_provider", False) and not getattr(self, "_local_hybrid_enabled", False):
+            if has_vector:
+                if getattr(self, "_pgvector_available", False):
+                    return self._pgvector_search(query, top_k, session_id)
+                if self._chroma_available and self.collection:
+                    return self._chroma_search(query, top_k, session_id)
+            if self._bm25_available:
+                return self._bm25_search(query, top_k, session_id)
+            return self._keyword_search(query, top_k, session_id)
+
         if has_vector and self._bm25_available:
             try: return self._rrf_search(query, top_k, session_id)
             except Exception as exc: logger.warning("RRF arama hatası (Fallback yapılıyor): %s", exc)
@@ -811,7 +825,11 @@ class DocumentStore:
                         ORDER BY embedding <=> CAST(:qvec AS vector) ASC
                         LIMIT :lim
                     """),
-                    {"qvec": qvec, "session_id": session_id, "lim": max(top_k * 3, top_k)},
+                    {
+                        "qvec": qvec,
+                        "session_id": session_id,
+                        "lim": max(top_k * (2 if getattr(self, "_is_local_llm_provider", False) else 3), top_k),
+                    },
                 ).fetchall()
 
             found_docs, seen_parents = [], set()
@@ -844,7 +862,10 @@ class DocumentStore:
         try: collection_size = self.collection.count()
         except Exception: collection_size = top_k * 2
 
-        n_results = min(top_k * 2, max(collection_size, 1))
+        local_multiplier = max(1, int(getattr(self.cfg, "RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER", 1) or 1))
+        default_multiplier = 2
+        multiplier = local_multiplier if getattr(self, "_is_local_llm_provider", False) else default_multiplier
+        n_results = min(top_k * multiplier, max(collection_size, 1))
 
         # Filtreleme ChromaDB düzeyinde Where parametresiyle yapılıyor
         results = self.collection.query(
