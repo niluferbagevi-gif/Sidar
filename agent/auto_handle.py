@@ -55,7 +55,7 @@ class AutoHandle:
     _MULTI_STEP_RE = re.compile(
         r"\bardından\b|\bsonrasında\b|\bönce\b.{1,60}\bsonra\b"
         r"|\b\d+\s*[\.\)]\s+\w|\bve\s+ardından\b|\bşunları\s+(yap|bul|göster|listele)\b"
-        r"|\bfirst\b.*\bthen\b|\bstep\s*\d|\bnext\b",
+        r"|\bfirst\b.{0,200}\bthen\b|\bstep\s*\d|\bnext\b",
         re.IGNORECASE | re.DOTALL,
     )
 
@@ -70,6 +70,10 @@ class AutoHandle:
             (False, "")    — LLM'e ilet
         """
         t = text.lower().strip()
+
+        # Çok uzun girdiler otomatik işlenemez → ReAct'a bırak (ReDoS koruması)
+        if len(text) > 2000:
+            return False, ""
 
         # Nokta önekli kısayol komutları (CLI standardı): .status, .health, .clear vb.
         result = await self._try_dot_command(text, t)

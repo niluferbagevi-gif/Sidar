@@ -8,6 +8,7 @@ from __future__ import annotations
 import codecs
 import asyncio
 import json
+import sys
 import logging
 import random
 import time
@@ -300,7 +301,7 @@ class OllamaClient(BaseLLMClient):
             raise LLMAPIError("ollama", f"Ollama hata: {exc}", retryable=False) from exc
         finally:
             if span_cm:
-                span_cm.__exit__(None, None, None)
+                span_cm.__exit__(*sys.exc_info())
 
     async def _stream_response(
         self,
@@ -379,7 +380,7 @@ class OllamaClient(BaseLLMClient):
             )
         finally:
             if stream_cm is not None:
-                await stream_cm.__aexit__(None, None, None)
+                await stream_cm.__aexit__(*sys.exc_info())
             if client is not None and hasattr(client, "aclose"):
                 await client.aclose()
 
@@ -538,7 +539,7 @@ class GeminiClient(BaseLLMClient):
             return _fallback_stream(msg) if stream else msg
         finally:
             if span_cm:
-                span_cm.__exit__(None, None, None)
+                span_cm.__exit__(*sys.exc_info())
 
     async def _stream_gemini_generator(self, response_stream) -> AsyncGenerator[str, None]:
         try:
@@ -701,7 +702,7 @@ class OpenAIClient(BaseLLMClient):
 
         finally:
             if stream_cm is not None:
-                await stream_cm.__aexit__(None, None, None)
+                await stream_cm.__aexit__(*sys.exc_info())
             if client is not None and hasattr(client, "aclose"):
                 await client.aclose()
 
@@ -886,7 +887,7 @@ class AnthropicClient(BaseLLMClient):
             yield _ensure_json_text(msg, "Anthropic") if json_mode else msg
         finally:
             if stream_cm is not None:
-                await stream_cm.__aexit__(None, None, None)
+                await stream_cm.__aexit__(*sys.exc_info())
 
 
 class LLMClient:

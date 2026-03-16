@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Optional
 
@@ -82,12 +83,15 @@ class SupervisorAgent(BaseAgent):
         while hop < max_hops:
             hop += 1
             await self.events.publish("supervisor", f"P2P yönlendirme: {current.reply_to} → {current.target_agent}")
-            result = await self._delegate(
-                current.target_agent,
-                current.payload,
-                intent="p2p",
-                parent_task_id=parent_task_id,
-                sender=current.reply_to,
+            result = await asyncio.wait_for(
+                self._delegate(
+                    current.target_agent,
+                    current.payload,
+                    intent="p2p",
+                    parent_task_id=parent_task_id,
+                    sender=current.reply_to,
+                ),
+                timeout=self.cfg.REACT_TIMEOUT,
             )
             if isinstance(result.summary, DelegationRequest):
                 current = result.summary

@@ -98,7 +98,7 @@ class SidarAgent:
         # Tek omurga: supervisor tabanlı multi-agent
         self._supervisor = None
         self._initialized = False
-        self._init_lock: Optional[asyncio.Lock] = None
+        self._init_lock = asyncio.Lock()
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
@@ -112,8 +112,6 @@ class SidarAgent:
     async def initialize(self) -> None:
         if self._initialized:
             return
-        if self._init_lock is None:
-            self._init_lock = asyncio.Lock()
         async with self._init_lock:
             if self._initialized:
                 return
