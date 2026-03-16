@@ -511,7 +511,12 @@ class Database:
                     now,
                     session_id,
                 )
-            return result.endswith("1")
+            # asyncpg "UPDATE N" veya "UPDATE 0" formatında string döndürür;
+            # endswith("1") 10+ satır güncellemelerinde hatalı False verebilir.
+            try:
+                return int(str(result).split()[-1]) > 0
+            except (ValueError, IndexError, AttributeError):
+                return False
 
         assert self._sqlite_conn is not None
 
@@ -534,7 +539,11 @@ class Database:
                     result = await conn.execute("DELETE FROM sessions WHERE id=$1 AND user_id=$2", session_id, user_id)
                 else:
                     result = await conn.execute("DELETE FROM sessions WHERE id=$1", session_id)
-            return result.endswith("1")
+            # asyncpg "DELETE N" formatında string döndürür; sayısal parse ile > 0 kontrolü.
+            try:
+                return int(str(result).split()[-1]) > 0
+            except (ValueError, IndexError, AttributeError):
+                return False
 
         assert self._sqlite_conn is not None
 

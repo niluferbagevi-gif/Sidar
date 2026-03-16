@@ -835,7 +835,7 @@ async def list_project_files(path: str = ""):
     Proje dizinindeki dosya ve klasörleri listeler.
     path parametresi boşsa proje kök dizinini listeler.
     """
-    _root = Path(__file__).parent
+    _root = Path(__file__).parent.resolve()
     target = (_root / path).resolve()
 
     # Güvenlik: proje kökünün dışına çıkma
@@ -876,7 +876,7 @@ async def file_content(path: str):
         ".toml", ".html", ".css", ".js", ".ts", ".sh",
         ".gitignore", ".dockerignore", ".sql", ".csv", ".xml",
     }
-    _root = Path(__file__).parent
+    _root = Path(__file__).parent.resolve()
     target = (_root / path).resolve()
 
     try:
@@ -1102,7 +1102,7 @@ async def rag_add_file(request: Request):
     if not path:
         return JSONResponse({"success": False, "error": "Dosya yolu boş."}, status_code=400)
 
-    _root = Path(__file__).parent
+    _root = Path(__file__).parent.resolve()
     target = (_root / path).resolve()
     try:
         target.relative_to(_root)

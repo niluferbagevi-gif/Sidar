@@ -86,10 +86,10 @@ class AutoHandle:
         if result[0]:
             return result
 
-        result = self._try_list_directory(t, text)
+        result = await asyncio.to_thread(self._try_list_directory, t, text)
         if result[0]: return result
 
-        result = self._try_read_file(t, text)
+        result = await asyncio.to_thread(self._try_read_file, t, text)
         if result[0]: return result
 
         result = await self._try_audit(t)
@@ -101,7 +101,7 @@ class AutoHandle:
         result = await self._try_gpu_optimize(t)
         if result[0]: return result
 
-        result = self._try_validate_file(t, text)
+        result = await asyncio.to_thread(self._try_validate_file, t, text)
         if result[0]: return result
 
         result = self._try_github_commits(t)
