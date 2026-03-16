@@ -312,6 +312,7 @@ class DocumentStore:
                 """))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_session ON {self._pg_table}(session_id)"))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_parent ON {self._pg_table}(parent_id)"))
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self._pg_table}_embedding_hnsw ON {self._pg_table} USING hnsw (embedding vector_cosine_ops)"))
 
             self._pg_embedding_model = SentenceTransformer(self._pg_embedding_model_name)
             self._pgvector_available = True
