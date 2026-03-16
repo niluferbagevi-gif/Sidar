@@ -141,6 +141,19 @@ def _reap_child_processes_nonblocking() -> int:
     return reaped
 
 
+def _terminate_ollama_child_pids(pids: list[int], *, grace_seconds: float = 0.15) -> None:
+    """Ollama child process'lerine önce TERM sonra KILL uygular."""
+    for pid in pids:
+        with contextlib.suppress(Exception):
+            os.kill(pid, signal.SIGTERM)
+
+    if pids and grace_seconds > 0:
+        time.sleep(grace_seconds)
+        for pid in pids:
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGKILL)
+
+
 def _force_shutdown_local_llm_processes() -> None:
     """Sunucu kapanırken yerel ollama child process'lerini zorla sonlandırır."""
     global _shutdown_cleanup_done
@@ -157,15 +170,7 @@ def _force_shutdown_local_llm_processes() -> None:
         return
 
     pids = _list_child_ollama_pids()
-    for pid in pids:
-        with contextlib.suppress(Exception):
-            os.kill(pid, signal.SIGTERM)
-
-    if pids:
-        time.sleep(0.15)
-        for pid in pids:
-            with contextlib.suppress(Exception):
-                os.kill(pid, signal.SIGKILL)
+    _terminate_ollama_child_pids(pids)
 
     reaped = _reap_child_processes_nonblocking()
     if pids or reaped:
@@ -173,6 +178,36 @@ def _force_shutdown_local_llm_processes() -> None:
 
 
 atexit.register(_force_shutdown_local_llm_processes)
+
+
+async def _async_force_shutdown_local_llm_processes() -> None:
+    """Lifespan kapanışında event-loop'u bloklamadan cleanup yap."""
+    global _shutdown_cleanup_done
+    if _shutdown_cleanup_done:
+        return
+    if str(getattr(cfg, "AI_PROVIDER", "") or "").lower() != "ollama":
+        _shutdown_cleanup_done = True
+        _reap_child_processes_nonblocking()
+        return
+    if not bool(getattr(cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)):
+        _shutdown_cleanup_done = True
+        _reap_child_processes_nonblocking()
+        return
+
+    pids = _list_child_ollama_pids()
+    for pid in pids:
+        with contextlib.suppress(Exception):
+            os.kill(pid, signal.SIGTERM)
+    if pids:
+        await asyncio.sleep(0.15)
+        for pid in pids:
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGKILL)
+
+    _shutdown_cleanup_done = True
+    reaped = _reap_child_processes_nonblocking()
+    if pids or reaped:
+        logger.info("Yerel LLM async shutdown cleanup: term=%d reap=%d", len(pids), reaped)
 
 
 def _bind_llm_usage_sink(agent: SidarAgent) -> None:
@@ -262,7 +297,7 @@ async def _app_lifespan(_app: FastAPI):
             except asyncio.CancelledError:
                 pass
         await _close_redis_client()
-        _force_shutdown_local_llm_processes()
+        await _async_force_shutdown_local_llm_processes()
 
 
 
