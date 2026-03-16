@@ -1,4 +1,8 @@
--r requirements.txt
+# Geliştirme ortamı: pyproject.toml tek bağımlılık kaynağıdır.
+# Runtime + opsiyonel paketler editable install ile gelir.
+-e .[rag,postgres,telemetry]
+
+# Dev/test araçları
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
 pytest-cov~=5.0.0
