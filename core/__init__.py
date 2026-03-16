@@ -10,6 +10,7 @@ Bu paket ajan altyapısının temel bileşenlerini dışa aktarır:
 __version__ = "2.7.0"
 
 from .llm_client import LLMClient
+from .llm_metrics import LLMMetricsCollector, get_llm_metrics_collector
 from .memory import ConversationMemory
 from .rag import DocumentStore
 from .db import Database
@@ -23,9 +24,11 @@ DatabaseManager = Database
 _EXPORTED_CORE_SYMBOLS = (
     ConversationMemory,
     LLMClient,
+    LLMMetricsCollector,
     DocumentStore,
     Database,
 )
 
 __all__ = [sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]
 __all__ += ["MemoryManager", "RAGManager", "DatabaseManager"]
+__all__ += ["get_llm_metrics_collector"]
