@@ -316,6 +316,73 @@
             </tbody>
           </table>
         </div>
+
+        <!-- ── Prompt Registry Yönetimi ───────────────────────────────── -->
+        <div class="admin-section-title" style="margin-top:28px;font-size:1.05rem;font-weight:600;color:var(--text-secondary,#8b95a1);letter-spacing:.04em;text-transform:uppercase;">Prompt Registry</div>
+        <div class="admin-cards" style="margin-top:10px;">
+          <div class="admin-card" style="flex:2;min-width:180px;">
+            <div class="admin-card-label">Aktif Prompt Rolü</div>
+            <div class="admin-card-value" id="prompt-active-role" style="font-size:1rem;">—</div>
+          </div>
+          <div class="admin-card" style="flex:1;min-width:120px;">
+            <div class="admin-card-label">Toplam Kayıt</div>
+            <div class="admin-card-value" id="prompt-total-count">0</div>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap" style="margin-top:10px;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <select id="prompt-role-filter" class="prompt-select" onchange="loadPromptRegistry()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border,#2a2d35);background:var(--surface,#1a1d23);color:var(--text,#e2e8f0);font-size:.88rem;">
+              <option value="">— Tüm Roller —</option>
+              <option value="system">system</option>
+              <option value="coder">coder</option>
+              <option value="researcher">researcher</option>
+              <option value="reviewer">reviewer</option>
+            </select>
+            <button class="btn-ghost" onclick="loadPromptRegistry()" style="padding:6px 14px;">Yenile</button>
+            <button class="btn-primary" onclick="showPromptForm()" style="padding:6px 14px;margin-left:auto;">+ Yeni Prompt</button>
+          </div>
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Rol</th>
+                <th>Versiyon</th>
+                <th>Durum</th>
+                <th>Güncellenme</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="prompt-registry-tbody">
+              <tr><td colspan="6" class="admin-empty">Yükleniyor…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Prompt oluştur/düzenle formu -->
+        <div id="prompt-form-container" style="display:none;margin-top:16px;background:var(--surface,#1a1d23);border:1px solid var(--border,#2a2d35);border-radius:10px;padding:18px;">
+          <h3 style="margin:0 0 12px;font-size:1rem;">Prompt Ekle / Güncelle</h3>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:140px;">
+              <label style="font-size:.82rem;color:var(--text-secondary,#8b95a1);">Rol Adı</label>
+              <select id="prompt-form-role" class="prompt-select" style="padding:7px 10px;border-radius:6px;border:1px solid var(--border,#2a2d35);background:var(--bg,#0f1117);color:var(--text,#e2e8f0);">
+                <option value="system">system</option>
+                <option value="coder">coder</option>
+                <option value="researcher">researcher</option>
+                <option value="reviewer">reviewer</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:20px;">
+              <input type="checkbox" id="prompt-form-activate" checked />
+              <label for="prompt-form-activate" style="font-size:.88rem;">Kaydedince etkinleştir</label>
+            </div>
+          </div>
+          <textarea id="prompt-form-text" rows="10" placeholder="Prompt metnini buraya yazın…" style="width:100%;box-sizing:border-box;padding:10px;border-radius:6px;border:1px solid var(--border,#2a2d35);background:var(--bg,#0f1117);color:var(--text,#e2e8f0);font-size:.88rem;resize:vertical;font-family:inherit;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn-primary" onclick="savePrompt()" style="padding:7px 20px;">Kaydet</button>
+            <button class="btn-ghost" onclick="hidePromptForm()" style="padding:7px 14px;">İptal</button>
+          </div>
+        </div>
       </div>
 
     </div></div></div>

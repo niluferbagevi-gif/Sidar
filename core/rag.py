@@ -27,6 +27,11 @@ from typing import Dict, List, Optional, Tuple
 
 from config import Config
 
+try:
+    from opentelemetry import trace as _otel_trace
+except Exception:
+    _otel_trace = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -749,6 +754,15 @@ class DocumentStore:
         mode: str = "auto",
         session_id: str = "global",
     ) -> Tuple[bool, str]:
+        tracer = _otel_trace.get_tracer(__name__) if _otel_trace else None
+        if tracer:
+            with tracer.start_as_current_span("rag.search") as span:
+                span.set_attribute("sidar.rag.mode", mode)
+                span.set_attribute("sidar.rag.session_id", session_id)
+                span.set_attribute("sidar.rag.query_len", len(query))
+                result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+                span.set_attribute("sidar.rag.success", result[0])
+                return result
         return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:

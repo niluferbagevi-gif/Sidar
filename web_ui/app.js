@@ -261,8 +261,93 @@ window.showAdminPanel = async function showAdminPanel() {
   }
   try {
     await loadAdminStats();
+    await loadPromptRegistry();
   } catch (err) {
     reportUIError(err, 'Admin panel verisi alınamadı');
+  }
+};
+
+// ── Prompt Registry ──────────────────────────────────────────────────────────
+
+window.loadPromptRegistry = async function loadPromptRegistry() {
+  const tbody = document.getElementById('prompt-registry-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="admin-empty">Yükleniyor…</td></tr>';
+  const role = document.getElementById('prompt-role-filter')?.value || '';
+  const url = role ? `/admin/prompts?role_name=${encodeURIComponent(role)}` : '/admin/prompts';
+  try {
+    const res = await fetchAPI(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Prompt listesi alınamadı');
+    const prompts = Array.isArray(data.prompts) ? data.prompts : [];
+    document.getElementById('prompt-total-count').textContent = prompts.length;
+    const activePrompt = prompts.find(p => p.is_active);
+    document.getElementById('prompt-active-role').textContent = activePrompt ? activePrompt.role_name : '—';
+    if (!prompts.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="admin-empty">Kayıt bulunamadı.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = prompts.map(p => `
+      <tr>
+        <td>${p.id}</td>
+        <td><code>${p.role_name}</code></td>
+        <td>v${p.version}</td>
+        <td>${p.is_active ? '<span style="color:#4ade80;font-weight:600;">● Aktif</span>' : '<span style="color:#64748b;">○ Pasif</span>'}</td>
+        <td style="font-size:.82rem;">${p.updated_at ? new Date(p.updated_at).toLocaleString('tr-TR') : '—'}</td>
+        <td>
+          <button class="btn-ghost" style="padding:3px 10px;font-size:.8rem;" onclick="activatePrompt(${p.id})"${p.is_active ? ' disabled' : ''}>Etkinleştir</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="admin-empty">${err.message}</td></tr>`;
+  }
+};
+
+window.showPromptForm = function showPromptForm() {
+  document.getElementById('prompt-form-container').style.display = 'block';
+  document.getElementById('prompt-form-text').value = '';
+  document.getElementById('prompt-form-activate').checked = true;
+};
+
+window.hidePromptForm = function hidePromptForm() {
+  document.getElementById('prompt-form-container').style.display = 'none';
+};
+
+window.savePrompt = async function savePrompt() {
+  const role_name = document.getElementById('prompt-form-role').value;
+  const prompt_text = document.getElementById('prompt-form-text').value.trim();
+  const activate = document.getElementById('prompt-form-activate').checked;
+  if (!prompt_text) { showUiNotice('Prompt metni boş olamaz.', 'warn'); return; }
+  try {
+    const res = await fetchAPI('/admin/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role_name, prompt_text, activate }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Prompt kaydedilemedi');
+    showUiNotice(`Prompt kaydedildi (${role_name} v${data.prompt?.version ?? '?'}).`, 'success');
+    hidePromptForm();
+    await loadPromptRegistry();
+  } catch (err) {
+    showUiNotice(err.message, 'error');
+  }
+};
+
+window.activatePrompt = async function activatePrompt(promptId) {
+  try {
+    const res = await fetchAPI('/admin/prompts/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt_id: promptId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Etkinleştirme başarısız');
+    showUiNotice('Prompt etkinleştirildi.', 'success');
+    await loadPromptRegistry();
+  } catch (err) {
+    showUiNotice(err.message, 'error');
   }
 };
 

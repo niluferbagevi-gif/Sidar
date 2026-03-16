@@ -4,6 +4,45 @@
 
 ---
 
+## [v3.0.11] - 2026-03-16
+§13 v4.0 Kurumsal Yol Haritası iyileştirmeleri uygulandı.
+
+### ✅ OTel Span Enstrümantasyonu — OpenAI ve LiteLLM Sağlayıcıları
+**Dosya:** `core/llm_client.py`
+Ollama ve Gemini sağlayıcılarında mevcut olan OpenTelemetry span enstrümantasyonu eksik olan iki sağlayıcıya eklendi:
+- **OpenAI client:** `llm.openai.chat` span; `sidar.llm.provider`, `sidar.llm.model`, `sidar.llm.stream`, `sidar.llm.total_ms` attribute'ları; streaming için `start_span`, non-streaming için `start_as_current_span` pattern'i uygulandı; her iki `except` bloğuna `span_cm.__exit__` eklendi.
+- **LiteLLM client:** `llm.litellm.chat` span; `sidar.llm.provider`, `sidar.llm.model`, `sidar.llm.stream`, `sidar.llm.total_ms` attribute'ları; fallback model döngüsü kapsamında hata yolları dahil tüm çıkış noktaları kapatıldı.
+- **Sonuç:** Tüm 5 LLM sağlayıcısı (Ollama, Gemini, OpenAI, Anthropic, LiteLLM) artık `sidar.llm.*` attribute'larıyla tam kapsamlı OTel izlemeye sahip.
+
+### ✅ OTel Span Enstrümantasyonu — RAG Arama Katmanı
+**Dosya:** `core/rag.py`
+- `opentelemetry` paketinin opsiyonel import'u eklendi (`try/except` — paket yoksa `None`).
+- `search()` async metodu `rag.search` span ile sarıldı; `sidar.rag.mode`, `sidar.rag.session_id`, `sidar.rag.query_len`, `sidar.rag.success` attribute'ları eklendi.
+- `asyncio.to_thread()` ile çağrılan `_search_sync` için span async sınırda (`search()` içinde) oluşturuldu — context propagation korundu.
+
+### ✅ Prompt Registry Admin UI
+**Dosyalar:** `web_ui/index.html`, `web_ui/app.js`
+- `index.html` admin paneline "Prompt Registry" bölümü eklendi: istatistik kartları (aktif rol, toplam sayım), rol filtresi, yenile/yeni prompt butonları, ID/Rol/Versiyon/Durum/Güncellenme/İşlem sütunlarından oluşan tablo, prompt oluşturma/düzenleme formu (rol seçici, etkinleştirme checkbox'ı, textarea).
+- `app.js`'e 5 yeni fonksiyon eklendi: `loadPromptRegistry()` (GET /admin/prompts), `showPromptForm()`, `hidePromptForm()`, `savePrompt()` (POST /admin/prompts), `activatePrompt(id)` (POST /admin/prompts/activate).
+- `showAdminPanel()` fonksiyonu `loadPromptRegistry()` çağrısını içerecek şekilde güncellendi.
+
+### ✅ `.env.example` Genişletildi
+**Dosya:** `.env.example`
+Eksik v4.0 konfigürasyon değişkenleri için yeni bölümler eklendi:
+- **LiteLLM Gateway:** `LITELLM_GATEWAY_URL`, `LITELLM_API_KEY`, `LITELLM_MODEL`, `LITELLM_FALLBACK_MODELS`, `LITELLM_TIMEOUT`
+- **Anlamsal Önbellekleme:** `ENABLE_SEMANTIC_CACHE`, `SEMANTIC_CACHE_THRESHOLD`, `SEMANTIC_CACHE_TTL`, `SEMANTIC_CACHE_MAX_ITEMS`
+- **pgvector RAG:** `RAG_VECTOR_BACKEND`, `PGVECTOR_TABLE`, `PGVECTOR_EMBEDDING_DIM`, `PGVECTOR_EMBEDDING_MODEL`
+- **Event Bus:** `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP`
+- **OTel genişletme:** `OTEL_SERVICE_NAME`, `OTEL_INSTRUMENT_FASTAPI`, `OTEL_INSTRUMENT_HTTPX`
+
+### ✅ PROJE_RAPORU.md v3.0.11 Güncellendi
+- §13'te Anlamsal Önbellekleme: 🟡 Kısmen → ✅ Tamamlandı (Redis + cosine similarity + LRU)
+- §13'te Dinamik Prompt ve Model Yönetimi: pending → ✅ Tamamlandı (migration 0002 + 4 API endpoint + Admin UI)
+- §13'te Dağıtık İzlenebilirlik: sınırlı → ✅ Tamamlandı (5 LLM sağlayıcısı + RAG OTel span)
+- v4.0 özet bloğuna 3 yeni tamamlama maddesi eklendi.
+
+---
+
 ## [v3.0.9] - 2026-03-16
 YN3 serisi kapatma — v3.0.7 doğrulama turunda tespit edilen 6 bulgunun tamamı giderildi.
 
