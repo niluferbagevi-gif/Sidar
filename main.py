@@ -329,6 +329,9 @@ def execute_command(cmd: List[str], capture_output: bool = False, child_log_path
         return 1
 
 def main() -> None:
+    if hasattr(cfg, "init_telemetry"):
+        cfg.init_telemetry(service_name="sidar-launcher")
+
     parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
     parser.add_argument("--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat")
     parser.add_argument("--provider", choices=["ollama", "gemini", "openai", "anthropic"], help="Hızlı başlat için AI sağlayıcı")
