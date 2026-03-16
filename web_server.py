@@ -1291,6 +1291,11 @@ async def github_webhook(
     payload_body = await request.body()
     secret = getattr(cfg, "GITHUB_WEBHOOK_SECRET", "").encode("utf-8")
 
+    if not secret:
+        logger.warning(
+            "GITHUB_WEBHOOK_SECRET yapılandırılmamış — webhook imza doğrulaması atlanıyor. "
+            "Üretim ortamında mutlaka ayarlayın."
+        )
     if secret:
         if not x_hub_signature_256:
             raise HTTPException(status_code=401, detail="X-Hub-Signature-256 başlığı eksik.")

@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -171,6 +172,15 @@ class CodeManager:
                 "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock",
             ]
             for socket_path in wsl_sockets:
+                # unix:// önekini kaldırarak dosya yolunu al
+                fs_path = socket_path.removeprefix("unix://")
+                try:
+                    file_stat = os.stat(fs_path)
+                except OSError:
+                    continue  # Dosya yok veya erişilemiyor
+                if not stat.S_ISSOCK(file_stat.st_mode):
+                    logger.warning("Beklenen socket değil, atlanıyor: %s", fs_path)
+                    continue
                 try:
                     self.docker_client = _docker_mod.DockerClient(base_url=socket_path)
                     self.docker_client.ping()
