@@ -50,7 +50,7 @@ class SidarAgent:
 
     def __init__(self, cfg: Config = None) -> None:
         self.cfg = cfg or Config()
-        self._lock = None  # Asenkron Lock, respond çağrıldığında yaratılacak
+        self._lock = asyncio.Lock()
 
         # Alt sistemler — temel (Senkron/Yerel)
         self.security = SecurityManager(cfg=self.cfg)
@@ -135,9 +135,6 @@ class SidarAgent:
 
         # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
-
-        if self._lock is None:
-            self._lock = asyncio.Lock()
 
         async with self._lock:
             await self._memory_add("user", user_input)

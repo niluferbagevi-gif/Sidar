@@ -33,7 +33,7 @@ class GitHubManager:
     SAFE_TEXT_EXTENSIONS = {
         ".py", ".txt", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg", ".toml",
         ".csv", ".xml", ".html", ".css", ".js", ".ts", ".sh", ".bash", ".bat",
-        ".sql", ".env", ".example", ".gitignore", ".dockerignore"
+        ".sql", ".gitignore", ".dockerignore"
     }
 
     # Uzantısız güvenli dosya isimleri (küçük harfle karşılaştırılır)

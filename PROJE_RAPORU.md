@@ -1,5 +1,10 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
+> ---
+> 📋 **CHANGELOG:** Tüm çözülen bulgular, sürüm geçmişi ve teknik borç kapanışları için → **[CHANGELOG.md](CHANGELOG.md)**
+> _(Her denetim sonrası §11 bulgu tablosu buraya aktarılır. Rapor yalnızca aktif/açık bulgular için referans noktasıdır.)_
+> ---
+
 > **Rapor Tarihi:** 2026-03-14
 > **Son Güncelleme:** 2026-03-16 (v3.0.5 — Tam kapsamlı kaynak denetimi: v3.0.4'te tespit edilen K-1..K-2, Y-1..Y-5, O-1..O-7, D-1..D-6 bulgularının tamamı doğrulandı/çözüldü; satır sayıları yeniden ölçüldü (105 test modülü, 21.290 test satırı); 5 yeni bulgu (YN-K-1, YN-Y-1..YN-Y-3, YN-O-1) tespit edilerek kayıt altına alındı)
 > **Proje Sürümü:** 3.0.0
@@ -913,21 +918,21 @@ v3.0.4 bulgularının tümü doğrulandıktan sonra aynı tam kaynak incelemesin
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| YN-K-1 | `core/rag.py` | 428 | **`.env` ve `.example` uzantıları `_TEXT_EXTS` içinde (K-1 bypass)** | `add_document_from_file` içindeki `_TEXT_EXTS` kümesi `.env` ve `.example` uzantılarını içeriyor. `/rag/add-file` HTTP endpoint'i path traversal engeller ama uzantı kısıtlaması yapmaz; `{"path": ".env"}` gönderildiğinde `.env` dosyası RAG vektör deposuna indekslenir ve içeriği (API anahtarları, şifreler) sorgu yoluyla geri alınabilir. K-1 düzeltmesinin kapsamının bu fonksiyona genişletilmesi gerekiyor. |
+| ~~YN-K-1~~ | `core/rag.py` | 446 | **[ÇÖZÜLDÜ] `.env`/`.example` `_TEXT_EXTS`'den kaldırıldı** | `_TEXT_EXTS` kümesinden `.env` ve `.example` çıkarıldı; artık bu uzantılara sahip dosyalar RAG deposuna indekslenemiyor. → [CHANGELOG.md](CHANGELOG.md#v305---2026-03-16) |
 
 #### 🟠 YÜKSEK
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| YN-Y-1 | `agent/sidar_agent.py` | 53, 139–140 | **`_lock` lazy None başlatma (O-5 ile tutarsız)** | `self._lock = None` satır 53'te atanıyor, `respond()` içinde lazy oluşturuluyor (`if self._lock is None: self._lock = asyncio.Lock()`). O-5'te `_init_lock` için uygulanan aynı düzeltme (pre-create in `__init__`) bu lock için yapılmadı. |
-| YN-Y-2 | `core/rag.py` | 409–425 | **`add_document_from_url` SSRF koruması yok** | `httpx.AsyncClient(follow_redirects=True)` URL doğrulaması olmadan kullanılıyor. `/rag/add-url` endpoint'i URL'yi hiçbir filtreleme yapmadan doğrudan `add_document_from_url`'a iletiyor. `http://169.254.169.254/` (AWS metadata), `http://localhost:*` veya iç ağ hizmetlerine erişim mümkün (SSRF). |
-| YN-Y-3 | `managers/github_manager.py` | 36 | **`SAFE_TEXT_EXTENSIONS` kümesinde `.env` ve `.example`** | GitHub Manager, depo dosyalarını okurken `.env` ve `.example` uzantılarına izin veriyor. K-1'in güvenlik gerekçesi (hassas ortam değişkeni dosyaları) bu sınıf için de geçerli; uzantılar kümeden çıkarılmalı. |
+| ~~YN-Y-1~~ | `agent/sidar_agent.py` | 53 | **[ÇÖZÜLDÜ] `_lock` lazy None init giderildi** | `self._lock = asyncio.Lock()` `__init__` içinde pre-create edildi; `respond()` içindeki `if self._lock is None:` guard kaldırıldı. → [CHANGELOG.md](CHANGELOG.md#v305---2026-03-16) |
+| ~~YN-Y-2~~ | `core/rag.py` | 411–431 | **[ÇÖZÜLDÜ] `add_document_from_url` SSRF koruması eklendi** | `_validate_url_safe()` ile yalnızca public http/https URL'lerine izin veriliyor; private/loopback/reserved IP'ler ve bilinen metadata hostname'leri engellendi. `max_redirects=5` sınırı eklendi. → [CHANGELOG.md](CHANGELOG.md#v305---2026-03-16) |
+| ~~YN-Y-3~~ | `managers/github_manager.py` | 33–36 | **[ÇÖZÜLDÜ] `SAFE_TEXT_EXTENSIONS`'dan `.env`/`.example` kaldırıldı** | K-1 güvenlik gerekçesiyle tutarlı hale getirildi. → [CHANGELOG.md](CHANGELOG.md#v305---2026-03-16) |
 
 #### 🟡 ORTA
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| YN-O-1 | `web_server.py` | 270, 287 | **Auth endpoint'lerinde `payload: dict` tipi, Pydantic model yok** | `/auth/register` ve `/auth/login` endpoint'leri `payload: dict` ile tanımlı; elle `payload.get(...)` ile alan okunuyor. FastAPI'nin Pydantic tabanlı model validasyonu (alan tipi, min_length, zorunlu alanlar) devreye girmiyor. Hatalı JSON veya eksik alan `None` döndürerek `str(None)` şeklinde veritabanına ulaşabiliyor. |
+| ~~YN-O-1~~ | `web_server.py` | 269–306 | **[ÇÖZÜLDÜ] Auth endpoint'leri Pydantic model kullanıyor** | `_RegisterRequest` ve `_LoginRequest` Pydantic modelleri eklendi; `payload: dict` yerine tip-güvenli model doğrulaması aktif. → [CHANGELOG.md](CHANGELOG.md#v305---2026-03-16) |
 
 ---
 

@@ -32,6 +32,7 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends
+from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -266,10 +267,20 @@ def _require_admin_user(user=Depends(_get_request_user)):
     return user
 
 
+class _RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class _LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
 @app.post("/auth/register")
-async def register_user(payload: dict):
-    username = str(payload.get("username", "")).strip()
-    password = str(payload.get("password", ""))
+async def register_user(payload: _RegisterRequest):
+    username = payload.username.strip()
+    password = payload.password
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -284,9 +295,9 @@ async def register_user(payload: dict):
 
 
 @app.post("/auth/login")
-async def login_user(payload: dict):
-    username = str(payload.get("username", "")).strip()
-    password = str(payload.get("password", ""))
+async def login_user(payload: _LoginRequest):
+    username = payload.username.strip()
+    password = payload.password
     agent = await get_agent()
     user = await agent.memory.db.authenticate_user(username=username, password=password)
     if not user:

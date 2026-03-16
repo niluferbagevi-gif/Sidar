@@ -1,5 +1,119 @@
 # Sürüm Geçmişi (Changelog)
 
+> **Not:** Bu dosya tam denetim ve çözüm geçmişini içerir. PROJE_RAPORU.md §11 bulgu tablosundan bu dosyaya bağlantı kurulmaktadır.
+
+---
+
+## [v3.0.5] - 2026-03-16
+Tam kaynak denetimi (v3.0.5) — v3.0.4 tüm bulgular doğrulandı/kapatıldı; 5 yeni bulgu tespit edilip giderildi.
+
+### ✅ v3.0.4 Bulgularının Doğrulanması ve Kapatılması
+
+Aşağıdaki bulgular satır satır kaynak incelemesiyle doğrulanmıştır.
+
+| Bulgu | Dosya | Durum |
+|-------|-------|-------|
+| K-1 — `.env`/`.example` `_SAFE_EXTENSIONS`'dan kaldırıldı | `web_server.py:876` | ✅ Doğrulandı |
+| K-2 — `container.wait()` dict dönüş tipi | `managers/code_manager.py:393` | ✅ Yanlış Pozitif Teyit |
+| Y-1 — Test kodu enjeksiyonu `repr()` ile giderildi | `agent/roles/reviewer_agent.py:52` | ✅ Doğrulandı |
+| Y-2 — asyncpg `endswith("1")` → `int(...split()[-1]) > 0` | `core/db.py:516–519` | ✅ Doğrulandı |
+| Y-3 — `handle()` blocking çağrıları `asyncio.to_thread` | `agent/auto_handle.py:93,96,108` | ✅ Doğrulandı |
+| Y-4 — `add_document_from_file` sync | `core/rag.py:427` | ✅ Yanlış Pozitif Teyit |
+| Y-5 — `_root = Path(__file__).parent.resolve()` | `web_server.py:838,879,1105` | ✅ Doğrulandı |
+| O-1 — ReDoS: `.{0,200}` + 2000 karakter guard | `agent/auto_handle.py:56,72` | ✅ Doğrulandı |
+| O-2 — `re.IGNORECASE` zaten mevcut | `managers/security.py:30` | ✅ Yanlış Pozitif Teyit |
+| O-3 — `logger.warning()` webhook secret eksikliği | `web_server.py:1294` | ✅ Doğrulandı |
+| O-4 — `__exit__(*sys.exc_info())` — 5 lokasyon | `core/llm_client.py:304,383,542,705,890` | ✅ Doğrulandı |
+| O-5 — `_init_lock = asyncio.Lock()` pre-created | `agent/sidar_agent.py:101` | ✅ Doğrulandı |
+| O-6 — `asyncio.wait_for(..., timeout=REACT_TIMEOUT)` | `agent/core/supervisor.py:86` | ✅ Doğrulandı |
+| O-7 — `stat.S_ISSOCK()` WSL2 socket doğrulaması | `managers/code_manager.py:173` | ✅ Doğrulandı |
+| D-1 — `async def` shim'ler `def`'e dönüştürüldü | `agent/core/memory_hub.py:45` | ✅ Doğrulandı |
+| D-2 — `Version()` sürüm karşılaştırması | `managers/package_info.py:176` | ✅ Doğrulandı |
+| D-3 — `daily_usage_usd` vs `total_usage_usd` ayrıldı | `core/llm_metrics.py:188` | ✅ Doğrulandı |
+| D-4 — `self._tasks = []` __init__'te başlatılıyor | `managers/todo_manager.py:65` | ✅ Yanlış Pozitif Teyit |
+| D-5 — Açıklayıcı `KeyError` mesajı | `agent/core/registry.py:19` | ✅ Doğrulandı |
+| D-6 — FTS read `_write_lock` ile korundu | `core/rag.py:661` | ✅ Doğrulandı |
+
+### ✅ v3.0.5 Yeni Bulgular — Giderilen
+
+**[YN-K-1 Çözüldü] `core/rag.py` — `.env`/`.example` `_TEXT_EXTS`'den kaldırıldı (K-1 bypass)**
+* `add_document_from_file` içindeki `_TEXT_EXTS` kümesinden `.env` ve `.example` uzantıları çıkarıldı.
+* Artık `{"path": ".env"}` ile `/rag/add-file` endpoint'i üzerinden gizli dosyalar RAG deposuna indekslenemiyor.
+* Referans: `core/rag.py:446`
+
+**[YN-Y-1 Çözüldü] `agent/sidar_agent.py` — `_lock` lazy None init giderildi**
+* `self._lock = None` → `self._lock = asyncio.Lock()` (`__init__` içinde).
+* `respond()` içindeki `if self._lock is None:` guard kaldırıldı.
+* O-5'te `_init_lock` için uygulanan aynı pattern `_lock` için de tamamlandı.
+* Referans: `agent/sidar_agent.py:53`
+
+**[YN-Y-2 Çözüldü] `core/rag.py` — `add_document_from_url` SSRF koruması eklendi**
+* `_validate_url_safe()` statik metodu eklendi:
+  - Yalnızca `http`/`https` şemalarına izin verilir.
+  - IP adresi private/loopback/link-local/reserved ise `ValueError` fırlatır.
+  - `localhost`, `169.254.169.254`, `metadata.google.internal` hostname'leri engellendi.
+* `max_redirects=5` sınırı eklendi.
+* `urllib.parse` ve `ipaddress` modülleri import edildi.
+* Referans: `core/rag.py:411–431`
+
+**[YN-Y-3 Çözüldü] `managers/github_manager.py` — `.env`/`.example` `SAFE_TEXT_EXTENSIONS`'dan kaldırıldı**
+* GitHub deposu dosyası okuma izninden `.env` ve `.example` uzantıları çıkarıldı.
+* K-1 güvenlik gerekçesiyle (hassas ortam değişkeni dosyaları) tutarlı hale getirildi.
+* Referans: `managers/github_manager.py:33`
+
+**[YN-O-1 Çözüldü] `web_server.py` — Auth endpoint'leri Pydantic model kullanıyor**
+* `_RegisterRequest` (`username` min_length=3/max_length=64, `password` min_length=6/max_length=128) modeli eklendi.
+* `_LoginRequest` (`username` max_length=64, `password` max_length=128) modeli eklendi.
+* `/auth/register` ve `/auth/login` endpoint'leri `payload: dict` yerine bu modelleri kullanıyor.
+* FastAPI'nin otomatik doğrulaması devreye girdiğinden `str(None)` DB'ye ulaşamaz.
+* Referans: `web_server.py:269–306`
+
+---
+
+## [v3.0.4] - 2026-03-16
+Tam kaynak denetimi — test istatistikleri güncellendi, kapsama kalite kapısı %99.9'a yükseltildi, 20 yeni güvenlik/işlevsellik bulgusu tespit edilip giderildi.
+
+### ✅ Güvenlik Düzeltmeleri
+
+**[K-1 Çözüldü] `web_server.py` — `.env`/`.example` `/file-content` endpoint'inden engellendi**
+* `_SAFE_EXTENSIONS` kümesinden `.env` ve `.example` kaldırıldı; bu uzantılara `415 Unsupported Media Type` döndürülüyor.
+* Regresyon testi `tests/test_web_server_runtime.py::test_vendor_index_and_file_content_guard_paths`'e eklendi.
+
+**[Y-1 Çözüldü] `agent/roles/reviewer_agent.py` — Test kodu enjeksiyonu engellendi**
+* Triple-quote string embed → `repr()` ile tüm özel karakterler kaçışlandı.
+
+**[Y-2 Çözüldü] `core/db.py` — asyncpg result `endswith("1")` kırılganlığı giderildi**
+* `int(str(result).split()[-1]) > 0` ile "UPDATE 10+" senaryoları doğru işleniyor.
+
+**[Y-3 Çözüldü] `agent/auto_handle.py` — Async bağlamda bloklayıcı senkron çağrılar**
+* `handle()` içinde `_try_*` çağrıları `await asyncio.to_thread(...)` ile sarmalandı.
+
+**[Y-5 Çözüldü] `web_server.py` — Symlink traversal tutarsızlığı**
+* 3 endpoint'te `_root = Path(__file__).parent.resolve()` yapıldı.
+
+### ✅ Asenkron / Yapısal Düzeltmeler
+
+| Bulgu | Değişiklik |
+|-------|-----------|
+| O-1 ReDoS | `\bfirst\b.{0,200}\bthen\b` + 2000 karakter guard |
+| O-3 Webhook | `logger.warning()` secret eksikliği için |
+| O-4 `__exit__` | `sys.exc_info()` ile 5 lokasyon güncellendi |
+| O-5 `_init_lock` | `asyncio.Lock()` pre-created in `__init__` |
+| O-6 P2P timeout | `asyncio.wait_for(..., REACT_TIMEOUT)` |
+| O-7 Docker socket | `stat.S_ISSOCK()` doğrulaması |
+
+### ✅ Kalite / Mimari Düzeltmeler
+
+| Bulgu | Değişiklik |
+|-------|-----------|
+| D-1 async shims | `async def` → `def` (4 metot) |
+| D-2 Version | `packaging.version.Version()` karşılaştırması |
+| D-3 daily/total | 24 saatlik pencere ayrımı |
+| D-5 KeyError | Açıklayıcı hata mesajı |
+| D-6 FTS read | `_write_lock` ile korundu |
+
+---
+
 ## [v3.0.1] - 2026-03-15
 Teknik borç temizleme + tam repo denetimi yayını — tüm v3.0 nesil teknik borç kalemleri kapatıldı, Bölüm 11.2 tablosu sıfırlandı; satır sayımları güncellendi; `SANDBOX_*` env var dokümantasyon boşluğu kapatıldı.
 
