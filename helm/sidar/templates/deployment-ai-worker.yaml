@@ -1,0 +1,38 @@
+{{- if .Values.aIWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sidar.fullname" . }}-ai-worker
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: ai-worker
+spec:
+  replicas: {{ .Values.aIWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: ai-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: ai-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: sidar-ai-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ toJson .Values.aIWorker.command }}
+          env:
+            - name: REDIS_URL
+              value: "redis://{{ include \"sidar.fullname\" . }}-redis:{{ .Values.redis.port }}/0"
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://{{ .Values.postgresql.username }}:{{ .Values.postgresql.password }}@{{ include \"sidar.fullname\" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.aIWorker.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,8 @@
+1. Web service:
+   kubectl get svc {{ include "sidar.fullname" . }}-web
+
+2. HPA status:
+   kubectl get hpa {{ include "sidar.fullname" . }}-web
+
+3. Redis/PostgreSQL statefulsets:
+   kubectl get sts {{ include "sidar.fullname" . }}-redis {{ include "sidar.fullname" . }}-postgresql
