@@ -874,11 +874,11 @@ Aşağıdaki bulgular tüm kaynak dosyaların satır satır incelenmesiyle ortay
 
 | # | Dosya | Satır | Bulgu | Açıklama |
 |---|-------|-------|-------|----------|
-| Y-1 | `agent/roles/reviewer_agent.py` | 40–56 | **Test kodu enjeksiyonu** | `code_context` içeriği `"""` kaçış yapılarak f-string ile `.py` dosyasına yazılıyor. Ancak `'''` ve satır sonu karakterleri kaçışlanmıyor; kötü niyetli/bozuk kod bağlamı pytest'in çalıştırdığı test dosyasına gömülebilir. |
-| Y-2 | `core/db.py` | 514, 537 | **PostgreSQL sonucu üzerinde `endswith()` çağrısı** | `asyncpg` UPDATE/DELETE komutları `"UPDATE 1"` gibi string döndürür; ancak bazı sürümlerde `None` veya integer dönebilir. `result.endswith("1")` çağrısı `AttributeError` ile çöker. |
-| Y-3 | `agent/auto_handle.py` | 200, 215, 276 | **Async bağlamda bloklayıcı senkron çağrılar** | `self.code.list_directory()`, `self.code.read_file()`, `self.code.validate_python_syntax()` async handler içinden `asyncio.to_thread()` sarmalı olmadan doğrudan çağrılıyor; event loop bloklanır. |
-| Y-4 | `core/rag.py` | 435 | **Async fonksiyon içinde bloklayıcı dosya okuma** | `add_document_from_file()` async fonksiyonu `pathlib.Path.read_text()` ile senkron I/O yapıyor. Büyük dosyalarda event loop bloklanır. `asyncio.to_thread()` ile sarmalanmalıdır. |
-| Y-5 | `web_server.py` | 839–885 | **Sembolik bağ (symlink) traversal riski** | `target.resolve()` işlemi `relative_to(_root)` kontrolünden önce çalıştığından sembolik bağlar proje kökü dışına çözülebilir; ancak `relative_to` kontrolü sembolik bağ sonrası konumu değil orijinal yolu karşılaştırmayabilir. |
+| ~~Y-1~~ | `agent/roles/reviewer_agent.py` | 50–53 | **[ÇÖZÜLDÜ] Test kodu enjeksiyonu** | Triple-quote embed yerine `repr()` kullanılarak tüm özel karakterler (tırnak, ters eğik çizgi, satır sonu) otomatik kaçışlanıyor. `reviewer_agent.py:50-53` güncellendi. |
+| ~~Y-2~~ | `core/db.py` | 514, 537 | **[ÇÖZÜLDÜ] PostgreSQL `endswith()` kırılganlığı** | `result.endswith("1")` yerine `int(str(result).split()[-1]) > 0` parse mantığı kullanıldı. "UPDATE 10" gibi çok satırlı güncellemeler de artık doğru `True` döndürüyor. Her iki satır güncellendi. |
+| ~~Y-3~~ | `agent/auto_handle.py` | 89, 92, 104 | **[ÇÖZÜLDÜ] Async bağlamda bloklayıcı senkron çağrılar** | `handle()` içinde `_try_list_directory`, `_try_read_file`, `_try_validate_file` çağrıları `await asyncio.to_thread(...)` ile sarmalandı. Metodlar sync kaldığından mevcut testler etkilenmedi. |
+| ~~Y-4~~ | ~~`core/rag.py`~~ | ~~435~~ | **[YANLIŞ POZİTİF]** | `add_document_from_file` sync fonksiyon; tüm çağrı noktaları (`web_server.py:1114`, `web_server.py:1168`) zaten `asyncio.to_thread()` kullanıyor. |
+| ~~Y-5~~ | `web_server.py` | 838, 879, 1105 | **[ÇÖZÜLDÜ] Symlink traversal tutarsızlığı** | `/files`, `/file-content` ve `/rag/add-file` endpoint'lerinde `_root = Path(__file__).parent` → `_root = Path(__file__).parent.resolve()` yapıldı. `_root` ve `target` artık her ikisi de gerçek yolla karşılaştırılıyor. |
 
 #### 🟡 ORTA
 

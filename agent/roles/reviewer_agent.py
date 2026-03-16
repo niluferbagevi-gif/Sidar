@@ -47,10 +47,12 @@ class ReviewerAgent(BaseAgent):
                 "    assert add_two(2) == 4\n"
             )
 
-        safe_context = (code_context or "").replace('"""', "'''")
+        # repr() tüm özel karakterleri (tırnak, ters eğik çizgi, satır sonu) kaçışlar;
+        # üretilen .py dosyasına enjeksiyon mümkün olmaz.
+        safe_repr = repr((code_context or "")[:2000])
         return (
             "def test_dynamic_context_not_empty():\n"
-            f"    context = \"\"\"{safe_context[:2000]}\"\"\"\n"
+            f"    context = {safe_repr}\n"
             "    assert isinstance(context, str)\n"
             "    assert len(context.strip()) > 0\n"
         )
