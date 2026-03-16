@@ -236,6 +236,9 @@ def test_validation_audit_status_and_repr(manager_factory, tmp_path):
 
 
 def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
+    import os
+    import stat
+
     sec = DummySecurity(tmp_path)
     original_init = CM_MOD.CodeManager._init_docker
     monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
@@ -273,6 +276,14 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
 
     monkeypatch.setattr(builtins, "__import__", real_import)
     monkeypatch.setitem(sys.modules, "docker", _DockerModule)
+
+    # Simulate socket validation path so fallback remains deterministic.
+    class _FakeStatResult:
+        st_mode = 0
+
+    monkeypatch.setattr(os, "stat", lambda _path: _FakeStatResult())
+    monkeypatch.setattr(stat, "S_ISSOCK", lambda _mode: True)
+
     mgr.docker_available = False
     mgr.docker_client = None
     original_init(mgr)
