@@ -96,6 +96,7 @@ def test_swarm_orchestrator_run_parallel_processes_all_tasks(monkeypatch, swarm_
             )
 
     monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role_name: _DummySpec(role_name))
     monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda role_name, **kwargs: _DummyAgent())
 
     tasks = [
@@ -155,3 +156,78 @@ def test_swarm_orchestrator_returns_failed_after_retry_limit(monkeypatch, swarm_
     assert call_counter["count"] == 2
     assert result.status == "failed"
     assert "kalıcı hata" in result.summary
+
+
+def test_swarm_orchestrator_follows_single_delegation(monkeypatch, swarm_module):
+    cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=4, SWARM_LOOP_GUARD_MAX_REPEAT=3)
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=cfg)
+
+    class _DelegatingCoder:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=swarm_module.DelegationRequest(
+                    task_id=envelope.task_id,
+                    reply_to="coder",
+                    target_agent="reviewer",
+                    payload="Kod incele",
+                    meta={"reason": "need_review"},
+                ),
+                evidence=[],
+            )
+
+    class _Reviewer:
+        async def handle(self, envelope):
+            assert envelope.receiver == "reviewer"
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="inceleme tamam",
+                evidence=["review-ok"],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role_name: _DummySpec(role_name))
+    monkeypatch.setattr(
+        swarm_module.AgentRegistry,
+        "create",
+        lambda role_name, **kwargs: _DelegatingCoder() if role_name == "coder" else _Reviewer(),
+    )
+
+    result = asyncio.run(orchestrator.run("Kod yaz", intent="code_generation", session_id="s-1"))
+    assert result.status == "success"
+    assert result.agent_role == "reviewer"
+    assert result.summary == "inceleme tamam"
+
+
+def test_swarm_orchestrator_loop_guard_stops_recursive_delegation(monkeypatch, swarm_module):
+    cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        SWARM_MAX_HANDOFF_HOPS=10,
+        SWARM_LOOP_GUARD_MAX_REPEAT=2,
+    )
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=cfg)
+
+    class _LoopingAgent:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=swarm_module.DelegationRequest(
+                    task_id=envelope.task_id,
+                    reply_to="coder",
+                    target_agent="coder",
+                    payload="Aynı işi tekrar yap",
+                    meta={"reason": "loop"},
+                ),
+                evidence=[],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role_name: _DummySpec(role_name))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda role_name, **kwargs: _LoopingAgent())
+
+    result = asyncio.run(orchestrator.run("Aynı işi tekrar yap", intent="code_generation", session_id="s-loop"))
+    assert result.status == "failed"
+    assert "Recursive loop guard" in result.summary

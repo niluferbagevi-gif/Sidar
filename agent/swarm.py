@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from agent.registry import AgentRegistry, AgentSpec
-from agent.core.contracts import TaskEnvelope, TaskResult
+from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,17 @@ class SwarmOrchestrator:
         self.router = TaskRouter()
         self._active_agents: Dict[str, object] = {}  # task_id → agent instance
 
+    def _loop_repeat_limit(self) -> int:
+        """Yerel modellerde daha sıkı, uzak modellerde daha esnek tekrar limiti."""
+        provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower()
+        default_limit = 2 if provider == "ollama" else 3
+        return max(1, int(getattr(self.cfg, "SWARM_LOOP_GUARD_MAX_REPEAT", default_limit) or default_limit))
+
+    @staticmethod
+    def _goal_fingerprint(goal: str, *, max_chars: int = 180) -> str:
+        text = " ".join((goal or "").strip().lower().split())
+        return text[:max_chars]
+
     # ── Tek görev ────────────────────────────────────────────────────────
 
     async def run(self, goal: str, *, intent: str = "mixed", session_id: str = "") -> SwarmResult:
@@ -168,11 +179,32 @@ class SwarmOrchestrator:
 
     # ── İç yürütme ────────────────────────────────────────────────────────
 
-    async def _execute_task(self, task: SwarmTask, *, session_id: str = "") -> SwarmResult:
+    async def _execute_task(
+        self,
+        task: SwarmTask,
+        *,
+        session_id: str = "",
+        _hop: int = 0,
+        _route_trace: Optional[List[str]] = None,
+    ) -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
         started_at = time.monotonic()
         max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
+        max_hops = max(1, int(getattr(self.cfg, "SWARM_MAX_HANDOFF_HOPS", 4) or 4))
+        route_trace = list(_route_trace or [])
+
+        if _hop > max_hops:
+            return SwarmResult(
+                task_id=task.task_id,
+                agent_role=task.preferred_agent or "unknown",
+                status="failed",
+                summary=(
+                    "Recursive loop guard devreye girdi: "
+                    f"maksimum devir sayısı aşıldı (hop={_hop}, limit={max_hops})."
+                ),
+                elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            )
 
         # Ajan seçimi
         spec = (
@@ -190,6 +222,29 @@ class SwarmOrchestrator:
                 summary="Uygun ajan bulunamadı.",
                 elapsed_ms=0,
             )
+
+        fingerprint = self._goal_fingerprint(task.goal)
+        current_step = f"{spec.role_name}|{task.intent}|{fingerprint}"
+        step_count = route_trace.count(current_step)
+        if step_count >= self._loop_repeat_limit():
+            logger.warning(
+                "SwarmOrchestrator: loop guard [%s] step=%s tekrar=%d",
+                task.task_id,
+                current_step,
+                step_count,
+            )
+            return SwarmResult(
+                task_id=task.task_id,
+                agent_role=spec.role_name,
+                status="failed",
+                summary=(
+                    "Recursive loop guard: aynı ajan/intente aynı görev tekrarlandı "
+                    f"(count={step_count + 1})."
+                ),
+                elapsed_ms=int((time.monotonic() - started_at) * 1000),
+            )
+
+        next_trace = route_trace + [current_step]
 
         # Ajan örneği oluştur (hafif — konfigürasyon paylaşılır)
         try:
@@ -211,7 +266,12 @@ class SwarmOrchestrator:
             receiver=spec.role_name,
             goal=task.goal,
             intent=task.intent,
-            context={**task.context, "session_id": session_id},
+            context={
+                **task.context,
+                "session_id": session_id,
+                "swarm_hop": str(_hop),
+                "swarm_trace": " -> ".join(next_trace[-6:]),
+            },
         )
 
         # Görevi çalıştır
@@ -241,6 +301,37 @@ class SwarmOrchestrator:
 
             if result is None and last_exc is not None:
                 raise last_exc
+
+            if isinstance(result.summary, DelegationRequest):
+                delegation = result.summary
+                target_role = (delegation.target_agent or "").strip()
+                if not target_role:
+                    raise RuntimeError("DelegationRequest target_agent boş")
+
+                delegated_task = SwarmTask(
+                    goal=str(delegation.payload or task.goal),
+                    intent=task.intent,
+                    context={
+                        **task.context,
+                        "delegated_by": spec.role_name,
+                        "delegation_reason": str(delegation.meta.get("reason", "")),
+                    },
+                    task_id=task.task_id,
+                    preferred_agent=target_role,
+                )
+                logger.info(
+                    "SwarmOrchestrator: [%s] delegasyon %s → %s (hop=%d)",
+                    task.task_id,
+                    spec.role_name,
+                    target_role,
+                    _hop + 1,
+                )
+                return await self._execute_task(
+                    delegated_task,
+                    session_id=session_id,
+                    _hop=_hop + 1,
+                    _route_trace=next_trace,
+                )
 
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.info(
