@@ -873,7 +873,7 @@ async def file_content(path: str):
     """
     _SAFE_EXTENSIONS = {
         ".py", ".txt", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg",
-        ".toml", ".html", ".css", ".js", ".ts", ".sh", ".env", ".example",
+        ".toml", ".html", ".css", ".js", ".ts", ".sh",
         ".gitignore", ".dockerignore", ".sql", ".csv", ".xml",
     }
     _root = Path(__file__).parent
