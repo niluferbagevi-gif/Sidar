@@ -8,19 +8,8 @@ import jwt
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
-
-VALID_TEST_TOKEN = jwt.encode(
-    {
-        "sub": "u1",
-        "username": "alice",
-        "role": "admin",
-        "tenant_id": "default",
-        "exp": 9999999999,
-    },
-    "sidar-dev-secret",
-    algorithm="HS256",
-)
 
 
 class _FakeResponse:
@@ -190,6 +179,10 @@ def _install_web_server_stubs():
         @classmethod
         def register_type(cls, **_kwargs):
             return None
+
+        @classmethod
+        def get(cls, name):
+            return {"name": name, "role_name": name, "agent_class": object}
 
     registry_mod.AgentRegistry = _AgentRegistry
 
@@ -405,9 +398,11 @@ def test_basic_auth_middleware_flow():
     unauthorized = asyncio.run(mod.basic_auth_middleware(bad, _next))
     assert unauthorized.status_code == 401
 
-    good = _FakeRequest(path="/status", headers={"Authorization": f"Bearer {VALID_TEST_TOKEN}"})
-    ok = asyncio.run(mod.basic_auth_middleware(good, _next))
-    assert ok.status_code == 200
+    fake_payload = {"sub": "u1", "username": "alice", "role": "admin", "tenant_id": "default"}
+    with patch("jwt.decode", return_value=fake_payload):
+        good = _FakeRequest(path="/status", headers={"Authorization": "Bearer sahte-token"})
+        ok = asyncio.run(mod.basic_auth_middleware(good, _next))
+        assert ok.status_code == 200
 
 
 
@@ -2030,12 +2025,14 @@ def test_basic_auth_middleware_resets_metrics_context_on_exception(monkeypatch):
     async def _boom(_request):
         raise RuntimeError("next failed")
 
-    req = _FakeRequest(path="/status", headers={"Authorization": f"Bearer {VALID_TEST_TOKEN}"})
-    try:
-        asyncio.run(mod.basic_auth_middleware(req, _boom))
-        assert False, "expected RuntimeError"
-    except RuntimeError:
-        pass
+    fake_payload = {"sub": "u1", "username": "alice", "role": "admin", "tenant_id": "default"}
+    with patch("jwt.decode", return_value=fake_payload):
+        req = _FakeRequest(path="/status", headers={"Authorization": "Bearer sahte-token"})
+        try:
+            asyncio.run(mod.basic_auth_middleware(req, _boom))
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
 
     assert seen["reset"] == 1
 
