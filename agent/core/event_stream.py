@@ -187,8 +187,9 @@ class AgentEventBus:
             try:
                 q.put_nowait(evt)
             except asyncio.QueueFull:
-                if sid in self._buffered_events:
-                    self._buffered_events[sid].append(evt)
+                buf = self._buffered_events.get(sid)
+                if buf is not None and (buf.maxlen is None or len(buf) < buf.maxlen):
+                    buf.append(evt)
                 else:
                     dropped_subscribers.append(sid)
 
