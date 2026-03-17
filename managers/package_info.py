@@ -37,15 +37,21 @@ class PackageInfoManager:
             self.TIMEOUT = getattr(config, "PACKAGE_INFO_TIMEOUT", self.TIMEOUT)
             self.CACHE_TTL_SECONDS = getattr(config, "PACKAGE_INFO_CACHE_TTL", self.CACHE_TTL_SECONDS)
 
-        self.cache_ttl = timedelta(seconds=max(60, int(self.CACHE_TTL_SECONDS)))
+        cache_ttl_seconds = self.CACHE_TTL_SECONDS
+        self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))
         self._cache: Dict[str, Tuple[Dict, datetime]] = {}
 
-        timeout_seconds = float(self.TIMEOUT)
+        self.TIMEOUT = float(self.TIMEOUT)
+        timeout_seconds = self.TIMEOUT
         try:
-            self.timeout = httpx.Timeout(timeout=timeout_seconds, connect=5.0)
+            self.timeout = httpx.Timeout(float(self.TIMEOUT), connect=5.0)
         except TypeError:
-            # Bazı test stub'larında/versiyonlarda keyword-only imzası olmayabilir.
-            self.timeout = httpx.Timeout(timeout_seconds)
+            # Bazı test stub'larında/versiyonlarda imza farklı olabilir.
+            try:
+                self.timeout = httpx.Timeout(timeout_seconds)
+            except TypeError:
+                # En kısıtlı stub'larda (örn. Timeout=object) yalnızca argümansız çağrı çalışır.
+                self.timeout = httpx.Timeout()
 
         version = getattr(config, "VERSION", "2.7.0") if config is not None else "2.7.0"
         self.headers = {
