@@ -176,18 +176,43 @@ def _install_web_server_stubs():
     registry_mod = types.ModuleType("agent.registry")
 
     class _AgentRegistry:
+        _registry = {}
+
         @classmethod
-        def register_type(cls, **_kwargs):
+        def register_type(cls, **kwargs):
+            role_name = kwargs.get("role_name", "")
+            cls._registry[role_name] = types.SimpleNamespace(
+                role_name=role_name,
+                agent_class=kwargs.get("agent_class"),
+                capabilities=kwargs.get("capabilities", ["crypto_price", "demo"]),
+                description=kwargs.get("description", "Mock description"),
+                version=kwargs.get("version", "1.0.0"),
+                is_builtin=kwargs.get("is_builtin", False),
+            )
             return None
 
         @classmethod
         def get(cls, name):
-            return types.SimpleNamespace(
-                capabilities=["crypto_price", "demo"],
-                description="Mock description",
-                version="1.0.0",
-                is_builtin=False,
+            return cls._registry.get(
+                name,
+                types.SimpleNamespace(
+                    capabilities=["crypto_price", "demo"],
+                    description="Mock description",
+                    version="1.0.0",
+                    is_builtin=False,
+                ),
             )
+
+        @classmethod
+        def create(cls, role_name, **kwargs):
+            spec = cls._registry.get(role_name)
+            if spec is None or spec.agent_class is None:
+                raise KeyError(role_name)
+            return spec.agent_class(**kwargs)
+
+        @classmethod
+        def unregister(cls, role_name):
+            return cls._registry.pop(role_name, None) is not None
 
     registry_mod.AgentRegistry = _AgentRegistry
 

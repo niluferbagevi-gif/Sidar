@@ -19,6 +19,7 @@ class _Upload:
 
 def test_register_file_plugin_and_execute_task():
     mod = _load_web_server()
+    from agent.registry import AgentRegistry
     plugin_path = Path("plugins/crypto_price_agent.py")
     upload = _Upload(plugin_path.name, plugin_path.read_bytes())
 
@@ -41,7 +42,7 @@ def test_register_file_plugin_and_execute_task():
     assert agent_meta["is_builtin"] is False
     assert Path("plugins/crypto_price_agent.py").exists()
 
-    instance = mod.AgentRegistry.create("crypto_price_agent")
+    instance = AgentRegistry.create("crypto_price_agent")
     result = asyncio.run(instance.run_task("btc fiyatı nedir?"))
     assert "BTC" in result
-    mod.AgentRegistry.unregister("crypto_price_agent")
+    AgentRegistry.unregister("crypto_price_agent")
