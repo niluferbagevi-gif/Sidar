@@ -240,3 +240,48 @@ def test_is_prerelease_npm_semver_regex_fallback():
         assert PKG.PackageInfoManager._is_prerelease("1.2.3-unknown_format!") is False
     finally:
         PKG.Version = real_version
+
+def test_init_timeout_fallbacks_and_pypi_compare_invalid_version(monkeypatch):
+    import importlib.util
+
+    class _TimeoutWeird:
+        def __init__(self, *args, **kwargs):
+            if kwargs:
+                raise TypeError("kwargs not supported")
+            if args:
+                raise TypeError("args not supported")
+
+    old_httpx = sys.modules.get("httpx")
+    try:
+        sys.modules["httpx"] = types.SimpleNamespace(
+            Timeout=_TimeoutWeird,
+            TimeoutException=Exception,
+            RequestError=Exception,
+            AsyncClient=object,
+        )
+        spec = importlib.util.spec_from_file_location("package_info_under_test_timeout_fallback", Path("managers/package_info.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+
+        mgr = mod.PackageInfoManager()
+        assert isinstance(mgr.timeout, _TimeoutWeird)
+
+        async def _fetch(_pkg):
+            return True, {"info": {"version": "1.0.0"}, "releases": {"1.0.0": {}}}, ""
+
+        async def _info(_pkg):
+            return True, "info"
+
+        monkeypatch.setattr(mgr, "_fetch_pypi_json", _fetch)
+        monkeypatch.setattr(mgr, "pypi_info", _info)
+        monkeypatch.setattr(mod, "Version", lambda _v: (_ for _ in ()).throw(mod.InvalidVersion("bad")))
+
+        ok, out = asyncio.run(mgr.pypi_compare("pkg", "not-semver"))
+        assert ok is True
+        assert "Güncelleme mevcut" in out
+    finally:
+        if old_httpx is None:
+            sys.modules.pop("httpx", None)
+        else:
+            sys.modules["httpx"] = old_httpx
