@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, Dict, Optional
 
-from agent.core.contracts import DelegationRequest
+from agent.core.contracts import DelegationRequest, is_delegation_request
 
 from config import Config
 from core.llm_client import LLMClient
@@ -48,7 +48,7 @@ class BaseAgent(ABC):
 
     @staticmethod
     def is_delegation_message(result: object) -> bool:
-        return isinstance(result, DelegationRequest)
+        return is_delegation_request(result)
 
 
     @abstractmethod
