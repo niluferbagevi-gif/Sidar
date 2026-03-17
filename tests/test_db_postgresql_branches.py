@@ -291,3 +291,38 @@ def test_postgresql_prompt_and_policy_branches_with_filters_and_validation():
             )
 
     asyncio.run(_run())
+
+def test_connect_postgresql_pool_creation_failure_bubbles(monkeypatch):
+    cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@localhost/db", DB_POOL_SIZE=2)
+    db = Database(cfg=cfg)
+
+    class _Asyncpg:
+        @staticmethod
+        async def create_pool(**_kwargs):
+            raise RuntimeError("pool init failed")
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "asyncpg":
+            return _Asyncpg
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(db.connect())
+
+
+def test_postgresql_session_create_and_delete_parse_edge_cases():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        created = await db.create_session("u-1", "title")
+        assert created.user_id == "u-1"
+
+        conn.execute_queue.append("DELETE ???")
+        deleted = await db.delete_session(created.id)
+        assert deleted is False
+
+    asyncio.run(_run())

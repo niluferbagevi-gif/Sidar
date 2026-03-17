@@ -24,6 +24,10 @@ httpx_mod.AsyncClient = object
 httpx_mod.Timeout = object
 sys.modules.setdefault("httpx", httpx_mod)
 
+bs4_mod = types.ModuleType("bs4")
+bs4_mod.BeautifulSoup = object
+sys.modules.setdefault("bs4", bs4_mod)
+
 from tests.test_web_server_runtime import _FakeHTTPException, _FakeRequest, _load_web_server
 
 
@@ -67,6 +71,7 @@ def test_websocket_disconnect_cancels_running_active_task():
         async def receive_text(self):
             if self._payloads:
                 return self._payloads.pop(0)
+            await asyncio.sleep(0.01)
             raise mod.WebSocketDisconnect()
 
         async def send_json(self, _payload):
@@ -170,3 +175,115 @@ def test_github_webhook_requires_signature_when_secret_is_set():
         assert False, "expected 401"
     except _FakeHTTPException as exc:
         assert exc.status_code == 401
+
+def test_websocket_chat_skips_invalid_json_payload_then_processes_auth_and_send():
+    mod = _load_web_server()
+    mod.jwt.PyJWTError = Exception
+    mod.jwt.decode = lambda token, *_a, **_k: {"sub": "u1", "username": "alice"} if token else {}
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            yield "tamam"
+
+    class _WebSocket:
+        def __init__(self):
+            self._payloads = [
+                "{broken-json}",
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "merhaba"}),
+            ]
+            self.sent = []
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(0.01)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+
+    ws = _WebSocket()
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert any(item.get("auth_ok") is True for item in ws.sent)
+    assert any(item.get("chunk") == "tamam" for item in ws.sent)
+    assert any(item.get("done") is True for item in ws.sent)
+
+
+def test_app_lifespan_cancels_prewarm_and_runs_shutdown_hooks():
+    mod = _load_web_server()
+
+    class _FakeTask:
+        def __init__(self):
+            self.cancel_called = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancel_called = True
+
+        def __await__(self):
+            async def _inner():
+                raise asyncio.CancelledError
+
+            return _inner().__await__()
+
+    fake_task = _FakeTask()
+    called = {"close_redis": 0, "force_shutdown": 0}
+
+    real_create_task = mod.asyncio.create_task
+    mod.asyncio.create_task = lambda coro: (coro.close(), fake_task)[1]
+
+    async def _close_redis():
+        called["close_redis"] += 1
+
+    async def _force_shutdown():
+        called["force_shutdown"] += 1
+
+    mod._close_redis_client = _close_redis
+    mod._async_force_shutdown_local_llm_processes = _force_shutdown
+
+    async def _run():
+        async with mod._app_lifespan(mod.app):
+            return None
+
+    try:
+        asyncio.run(_run())
+    finally:
+        mod.asyncio.create_task = real_create_task
+
+    assert fake_task.cancel_called is True
+    assert called["close_redis"] == 1
+    assert called["force_shutdown"] == 1

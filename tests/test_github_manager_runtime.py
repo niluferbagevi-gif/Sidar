@@ -490,3 +490,39 @@ def test_github_manager_error_and_guard_branches_matrix(monkeypatch):
     bd = _manager(repo=_RepoBadDetailed(), gh=types.SimpleNamespace(search_code=lambda *_: []), available=True, token="t")
     ok, prs, err = bd.get_pull_requests_detailed()
     assert ok is False and prs == [] and "detailed fail" in err
+
+def test_init_client_success_sets_available_and_loads_repo(monkeypatch):
+    class _Repo:
+        pass
+
+    class _GH:
+        def __init__(self, auth=None):
+            self.auth = auth
+
+        def get_user(self):
+            return types.SimpleNamespace(login="tester")
+
+        def get_repo(self, name):
+            assert name == "org/repo"
+            return _Repo()
+
+    fake_mod = types.SimpleNamespace(
+        Auth=types.SimpleNamespace(Token=lambda tok: f"T:{tok}"),
+        Github=_GH,
+    )
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "github":
+            return fake_mod
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    m = GM.GitHubManager(token="x", repo_name="org/repo", require_token=False)
+    assert m.is_available() is True
+    assert m.repo_name == "org/repo"
+    assert m._repo is not None
