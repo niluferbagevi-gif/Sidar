@@ -329,3 +329,38 @@ def test_swarm_available_agents_lists_role_names(monkeypatch, swarm_module):
     orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
     monkeypatch.setattr(swarm_module.AgentRegistry, "list_all", lambda: [_DummySpec("coder"), _DummySpec("reviewer")])
     assert orchestrator.available_agents() == ["coder", "reviewer"]
+
+
+def test_swarm_loop_repeat_limit_respects_provider_defaults_and_minimum(swarm_module):
+    local = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace(AI_PROVIDER="ollama"))
+    remote = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace(AI_PROVIDER="openai"))
+    forced_min = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace(AI_PROVIDER="openai", SWARM_LOOP_GUARD_MAX_REPEAT=-2))
+
+    assert local._loop_repeat_limit() == 2
+    assert remote._loop_repeat_limit() == 3
+    assert forced_min._loop_repeat_limit() == 1
+
+
+def test_swarm_pipeline_only_carries_successful_results_to_next_context(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    seen = []
+
+    class _Agent:
+        async def handle(self, envelope):
+            seen.append(dict(envelope.context))
+            if envelope.goal == "first":
+                return swarm_module.TaskResult(task_id=envelope.task_id, status="failed", summary="nope", evidence=[])
+            return swarm_module.TaskResult(task_id=envelope.task_id, status="success", summary="ok", evidence=[])
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _Agent())
+
+    tasks = [
+        swarm_module.SwarmTask(goal="first", intent="code_generation", context={"seed": "1"}),
+        swarm_module.SwarmTask(goal="second", intent="code_review", context={}),
+    ]
+    results = asyncio.run(orchestrator.run_pipeline(tasks))
+
+    assert results[0].status == "failed"
+    assert results[1].status == "success"
+    assert "prev_coder" not in seen[1]
