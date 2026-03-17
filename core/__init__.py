@@ -29,6 +29,23 @@ def _optional_import(module_name: str, attr_name: str):
         return _MissingDependencyProxy
 
 
+def _optional_module(module_name: str):
+    """Alt modül import'u başarısız olsa da çekirdek paketinin yüklenmesini engellemez."""
+    try:
+        return import_module(module_name)
+    except Exception:
+        return None
+
+
+# Testlerde monkeypatch("core.<module>....") kullanımını desteklemek için
+# alt modülleri paket seviyesinde erişilebilir kıl.
+memory = _optional_module("core.memory")
+llm_client = _optional_module("core.llm_client")
+db = _optional_module("core.db")
+rag = _optional_module("core.rag")
+llm_metrics = _optional_module("core.llm_metrics")
+
+
 LLMClient = _optional_import("core.llm_client", "LLMClient")
 ConversationMemory = _optional_import("core.memory", "ConversationMemory")
 DocumentStore = _optional_import("core.rag", "DocumentStore")
