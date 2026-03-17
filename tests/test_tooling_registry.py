@@ -1,12 +1,13 @@
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
-
 pytest.importorskip("pydantic")
-spec = importlib.util.spec_from_file_location("sidar_tooling", Path("agent/tooling.py"))
+spec = importlib.util.spec_from_file_location("agent.tooling", Path("agent/tooling.py"))
 tooling = importlib.util.module_from_spec(spec)
+sys.modules["agent.tooling"] = tooling
 assert spec and spec.loader
 spec.loader.exec_module(tooling)
 
