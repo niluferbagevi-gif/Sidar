@@ -291,3 +291,41 @@ def test_swarm_orchestrator_loop_guard_stops_at_max_hops(monkeypatch, swarm_modu
 
     assert result.status == "failed"
     assert "maksimum devir sayısı aşıldı" in result.summary
+
+def test_task_router_fallback_and_route_by_role(monkeypatch, swarm_module):
+    router = swarm_module.TaskRouter()
+    monkeypatch.setattr(swarm_module.AgentRegistry, "find_by_capability", lambda _c: [])
+    monkeypatch.setattr(swarm_module.AgentRegistry, "list_all", lambda: [_DummySpec("coder")])
+    monkeypatch.setattr(swarm_module.AgentRegistry, "get", lambda role: _DummySpec(role))
+
+    spec = router.route("unknown_intent")
+    assert spec.role_name == "coder"
+    by_role = router.route_by_role("reviewer")
+    assert by_role.role_name == "reviewer"
+
+
+def test_swarm_handles_agent_create_failure_and_empty_delegation_target(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    task = swarm_module.SwarmTask(goal="x", intent="mixed")
+    monkeypatch.setattr(orchestrator.router, "route", lambda _i: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    failed = asyncio.run(orchestrator._execute_task(task, session_id="s"))
+    assert failed.status == "failed"
+    assert "Ajan oluşturulamadı" in failed.summary
+
+    class _DelegatingAgent:
+        async def handle(self, envelope):
+            req = swarm_module.DelegationRequest(task_id=envelope.task_id, reply_to="coder", target_agent="  ", payload="p")
+            return swarm_module.TaskResult(task_id=envelope.task_id, status="success", summary=req, evidence=[])
+
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _DelegatingAgent())
+    failed2 = asyncio.run(orchestrator._execute_task(task, session_id="s"))
+    assert failed2.status == "failed"
+    assert "target_agent boş" in failed2.summary
+
+
+def test_swarm_available_agents_lists_role_names(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    monkeypatch.setattr(swarm_module.AgentRegistry, "list_all", lambda: [_DummySpec("coder"), _DummySpec("reviewer")])
+    assert orchestrator.available_agents() == ["coder", "reviewer"]

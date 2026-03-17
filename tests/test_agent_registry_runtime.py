@@ -63,3 +63,21 @@ def test_agent_registry_create_missing_role_raises_key_error(monkeypatch):
         assert False, "KeyError bekleniyordu"
     except KeyError as exc:
         assert "does_not_exist" in str(exc)
+
+def test_register_builtin_agents_importerror_paths(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name in {
+            "agent.roles.coder_agent",
+            "agent.roles.researcher_agent",
+            "agent.roles.reviewer_agent",
+        }:
+            raise ImportError("missing role module")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    mod = _load_registry_module("agent_registry_under_test_import_errors")
+    assert mod.AgentRegistry.list_all() == []

@@ -606,3 +606,94 @@ def test_tool_github_smart_pr_success_branch_returns_created_message():
 
     out = asyncio.run(a._tool_github_smart_pr("Başlık|||main|||not"))
     assert out == "✓ PR oluşturuldu: https://example/pr/1"
+
+def test_initialize_applies_active_system_prompt_from_memory_db():
+    a = _make_agent_for_runtime()
+    a._initialized = False
+    a._init_lock = asyncio.Lock()
+    a.system_prompt = "default"
+
+    class _Prompt:
+        prompt_text = "  özel prompt  "
+
+    class _DB:
+        async def get_active_prompt(self, _name):
+            return _Prompt()
+
+    class _Mem:
+        db = _DB()
+
+        async def initialize(self):
+            return None
+
+    a.memory = _Mem()
+    asyncio.run(a.initialize())
+    assert a.system_prompt == "  özel prompt  "
+
+
+def test_build_context_includes_last_file_for_remote_provider(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        PROJECT_NAME="Sidar",
+        VERSION="3.0",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="openai",
+        CODING_MODEL="code",
+        TEXT_MODEL="text",
+        OLLAMA_URL="http://localhost:11434",
+        ACCESS_LEVEL="full",
+        USE_GPU=True,
+        GPU_INFO="RTX",
+        CUDA_VERSION="12.0",
+        GITHUB_REPO="org/repo",
+        GEMINI_MODEL="gemini",
+    )
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 1})
+    a.github = SimpleNamespace(is_available=lambda: True)
+    a.web = SimpleNamespace(is_available=lambda: True)
+    a.docs = SimpleNamespace(status=lambda: "ok")
+    a.security = SimpleNamespace(level_name="full")
+    a.todo = []
+    a.memory = SimpleNamespace(get_last_file=lambda: "demo.py")
+    a._instructions_lock = threading.Lock()
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._load_instruction_files = lambda: ""
+
+    txt = asyncio.run(a._build_context())
+    assert "Son dosya  : demo.py" in txt
+
+
+def test_build_context_truncates_for_local_provider(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        PROJECT_NAME="Sidar",
+        VERSION="3.0",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="ollama",
+        CODING_MODEL="code",
+        TEXT_MODEL="text",
+        OLLAMA_URL="http://localhost:11434",
+        ACCESS_LEVEL="full",
+        USE_GPU=True,
+        GPU_INFO="RTX",
+        CUDA_VERSION="12.0",
+        GITHUB_REPO="org/repo",
+        GEMINI_MODEL="gemini",
+        LOCAL_AGENT_CONTEXT_MAX_CHARS=300,
+        LOCAL_INSTRUCTION_MAX_CHARS=5000,
+    )
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 1})
+    a.github = SimpleNamespace(is_available=lambda: True)
+    a.web = SimpleNamespace(is_available=lambda: True)
+    a.docs = SimpleNamespace(status=lambda: "ok")
+    a.security = SimpleNamespace(level_name="full")
+    a.todo = []
+    a.memory = SimpleNamespace(get_last_file=lambda: "demo.py")
+    a._instructions_lock = threading.Lock()
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._load_instruction_files = lambda: "X" * 6000
+
+    txt = asyncio.run(a._build_context())
+    assert txt.endswith("[Not] Bağlam yerel model için kırpıldı.")

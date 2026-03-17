@@ -608,3 +608,18 @@ def test_init_telemetry_happy_path_and_runtime_exception(monkeypatch):
     )
     assert failed is False
     assert any("başlatılamadı" in line for line in logs["warning"])
+
+def test_config_env_helper_functions_runtime(monkeypatch):
+    cfg_mod = _load_config_module()
+
+    monkeypatch.setenv("BOOL_X", "   ")
+    assert cfg_mod.get_bool_env("BOOL_X", True) is True
+
+    monkeypatch.setenv("INT_X", "bad")
+    assert cfg_mod.get_int_env("INT_X", 7) == 7
+
+    monkeypatch.setenv("FLOAT_X", "bad")
+    assert cfg_mod.get_float_env("FLOAT_X", 1.25) == 1.25
+
+    monkeypatch.setenv("LIST_X", "a|b| |c")
+    assert cfg_mod.get_list_env("LIST_X", separator="|") == ["a", "b", "c"]

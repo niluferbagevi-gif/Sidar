@@ -110,3 +110,18 @@ def test_estimate_cost_usd_is_case_insensitive_and_unknown_model_zero():
 
     assert mixed_case == lower_case
     assert c.estimate_cost_usd("openai", "unknown-model", 10_000, 10_000) == 0.0
+
+def test_env_float_handles_none_empty_nan_inf_and_invalid(monkeypatch):
+    from core.llm_metrics import _env_float
+
+    monkeypatch.setenv("LLM_F", "")
+    assert _env_float("LLM_F", None) == 0.0
+
+    monkeypatch.setenv("LLM_F", "NaN")
+    assert _env_float("LLM_F", 1.5) == 1.5
+
+    monkeypatch.setenv("LLM_F", "inf")
+    assert _env_float("LLM_F", 2.5) == 2.5
+
+    monkeypatch.setenv("LLM_F", "abc")
+    assert _env_float("LLM_F", 3.5) == 3.5

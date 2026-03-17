@@ -829,3 +829,43 @@ def test_execute_code_network_disabled_blocks_outbound_http(manager_factory, mon
     ok, msg = mgr.execute_code("import requests; requests.get('https://google.com')")
     assert ok is False
     assert "ConnectionError" in msg or "Network is unreachable" in msg
+
+def test_init_docker_skips_non_socket_path(monkeypatch, tmp_path):
+    sec = DummySecurity(tmp_path)
+    original_init = CM_MOD.CodeManager._init_docker
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    mgr = CM_MOD.CodeManager(sec, tmp_path)
+
+    class _DockerClient:
+        def __init__(self, base_url=None):
+            self.base_url = base_url
+
+        def ping(self):
+            raise RuntimeError("down")
+
+    class _DockerModule:
+        DockerClient = _DockerClient
+
+        @staticmethod
+        def from_env():
+            raise RuntimeError("daemon down")
+
+    import builtins
+    import stat as _stat
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "docker":
+            return _DockerModule
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    class _FakeStat:
+        st_mode = _stat.S_IFREG
+
+    monkeypatch.setattr(CM_MOD.os, "stat", lambda _p: _FakeStat())
+
+    original_init(mgr)
+    assert mgr.docker_available is False

@@ -227,3 +227,65 @@ def test_event_bus_fanout_unsubscribes_when_queue_full_and_no_buffer_space():
     bus._fanout_local(AgentEvent(ts=1.0, source="x", message="y"))
 
     assert 1 not in bus._subscribers
+
+def test_ensure_listener_busygroup_and_publish_success_and_cleanup_cancel(monkeypatch):
+    bus = AgentEventBus()
+
+    class _FakeRedis:
+        async def ping(self):
+            return True
+
+        async def xgroup_create(self, **_kwargs):
+            raise _event_stream.ResponseError("BUSYGROUP Consumer Group name already exists")
+
+        async def xadd(self, *_args, **_kwargs):
+            return "1-0"
+
+        async def close(self):
+            return None
+
+    class _DoneFalseTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def __await__(self):
+            async def _inner():
+                return None
+
+            return _inner().__await__()
+
+    fake_listener_task = _DoneFalseTask()
+    monkeypatch.setattr(_event_stream.Redis, "from_url", lambda *_a, **_k: _FakeRedis())
+    monkeypatch.setattr(asyncio, "create_task", lambda _coro: (_coro.close(), fake_listener_task)[1])
+
+    asyncio.run(bus._ensure_redis_listener())
+    assert bus._redis_available is True
+    assert bus._redis_listener_task is fake_listener_task
+
+    ok = asyncio.run(bus._publish_via_redis(AgentEvent(ts=1.0, source="s", message="m")))
+    assert ok is True
+
+    asyncio.run(bus._cleanup_redis())
+    assert fake_listener_task.cancelled is True
+    assert bus._redis_client is None
+
+
+def test_ensure_listener_returns_early_when_disabled_or_already_running():
+    bus = AgentEventBus()
+    bus._redis_available = False
+    asyncio.run(bus._ensure_redis_listener())
+
+    bus2 = AgentEventBus()
+
+    class _Task:
+        def done(self):
+            return False
+
+    bus2._redis_listener_task = _Task()
+    asyncio.run(bus2._ensure_redis_listener())

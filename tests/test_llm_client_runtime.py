@@ -1002,3 +1002,23 @@ def test_openai_stream_ignores_invalid_json_chunks_then_continues(llm_mod, monke
         )
     )
     assert out == ["B"]
+
+def test_openai_chat_handles_missing_json_shape_and_http_500_error(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-4o-mini", OPENAI_TIMEOUT=10, ENABLE_TRACING=False)
+    client = llm_mod.OpenAIClient(cfg)
+
+    async def _missing_shape(*_args, **_kwargs):
+        return {"id": "resp-1"}
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", lambda *_a, **_k: _missing_shape())
+    out = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=False))
+    assert out == ""
+
+    async def _raise_500(*_args, **_kwargs):
+        raise llm_mod.LLMAPIError("openai", "server error", status_code=500, retryable=True)
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", lambda *_a, **_k: _raise_500())
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True))
+    assert exc.value.status_code == 500
+    assert exc.value.retryable is True
