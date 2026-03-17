@@ -5,6 +5,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -66,8 +67,9 @@ llm = _load_llm_module()
 
 
 def test_import_fallback_sets_redis_none_when_redis_import_fails():
-    mod = _load_llm_module(break_redis=True)
-    assert mod.Redis is None
+    with patch.dict(sys.modules, {"redis": None, "redis.asyncio": None, "redis.exceptions": None}):
+        mod = _load_llm_module(break_redis=True)
+        assert getattr(mod, "Redis", None) is None
 
 
 class _FakePipe:
