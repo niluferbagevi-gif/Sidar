@@ -2421,3 +2421,40 @@ def test_github_webhook_valid_hmac_invalid_json_additional(monkeypatch):
     req = _FakeRequest(body_bytes=payload)
     resp = asyncio.run(mod.github_webhook(req, x_github_event="issues", x_hub_signature_256=signature))
     assert resp.status_code == 400
+
+
+def test_github_webhook_signature_mismatch_returns_401_specific_hash():
+    mod = _load_web_server()
+    mod.cfg.GITHUB_WEBHOOK_SECRET = "secret"
+    req = _FakeRequest(body_bytes=b'{"action":"opened"}')
+
+    try:
+        asyncio.run(mod.github_webhook(req, x_github_event="issues", x_hub_signature_256="sha256=yanlishash123"))
+        assert False, "expected signature mismatch"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 401
+        assert "Geçersiz imza" in str(exc.detail)
+
+
+def test_async_force_shutdown_swallows_missing_process_errors(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = True
+
+    monkeypatch.setattr(mod, "_list_child_ollama_pids", lambda: [1234])
+
+    calls = {"kill": 0}
+
+    def _kill(_pid, _sig):
+        calls["kill"] += 1
+        raise ProcessLookupError("already gone")
+
+    monkeypatch.setattr(mod.os, "kill", _kill)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(mod.asyncio, "sleep", lambda *_a, **_k: real_sleep(0))
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: 0)
+
+    asyncio.run(mod._async_force_shutdown_local_llm_processes())
+    assert mod._shutdown_cleanup_done is True
+    assert calls["kill"] >= 1
