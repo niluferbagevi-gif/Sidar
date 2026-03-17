@@ -142,3 +142,74 @@ def test_websocket_disconnect_cancels_active_task_and_generate_cancelled_cleanup
 
     assert cancel_seen["cancelled"] is True
     assert cancel_seen["reset"] >= 0
+
+
+def test_reap_child_processes_handles_unexpected_waitpid_error(monkeypatch):
+    mod = _load_web_server()
+
+    def _boom(_pid, _flags):
+        raise RuntimeError("waitpid boom")
+
+    monkeypatch.setattr(mod.os, "waitpid", _boom)
+    assert mod._reap_child_processes_nonblocking() == 0
+
+
+def test_force_shutdown_returns_immediately_when_cleanup_already_done(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = True
+
+    calls = {"reap": 0}
+
+    def _reap():
+        calls["reap"] += 1
+        return 0
+
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", _reap)
+    mod._force_shutdown_local_llm_processes()
+
+    assert calls["reap"] == 0
+
+
+def test_sanitize_capabilities_returns_empty_list_for_none_or_empty_inputs():
+    mod = _load_web_server()
+    assert mod._sanitize_capabilities(None) == []
+    assert mod._sanitize_capabilities([]) == []
+
+
+def test_admin_list_policies_passes_none_tenant_when_blank(monkeypatch):
+    mod = _load_web_server()
+
+    seen = {}
+
+    class _DB:
+        async def list_access_policies(self, user_id, tenant_id=None):
+            seen["user_id"] = user_id
+            seen["tenant_id"] = tenant_id
+            return [
+                types.SimpleNamespace(
+                    id=1,
+                    user_id=user_id,
+                    tenant_id="default",
+                    resource_type="github",
+                    resource_id="*",
+                    action="read",
+                    effect="allow",
+                    created_at="now",
+                    updated_at="now",
+                )
+            ]
+
+    class _Mem:
+        db = _DB()
+
+    class _Agent:
+        memory = _Mem()
+
+    async def _get_agent():
+        return _Agent()
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+
+    response = asyncio.run(mod.admin_list_policies("u-1", "   ", _user=object()))
+    assert seen == {"user_id": "u-1", "tenant_id": None}
+    assert response.content["items"][0]["user_id"] == "u-1"
