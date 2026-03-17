@@ -1,15 +1,8 @@
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
 
+
 pytest.importorskip("pydantic")
-spec = importlib.util.spec_from_file_location("agent.tooling", Path("agent/tooling.py"))
-tooling = importlib.util.module_from_spec(spec)
-sys.modules["agent.tooling"] = tooling
-assert spec and spec.loader
-spec.loader.exec_module(tooling)
+import agent.tooling as tooling
 
 
 def test_parse_tool_argument_supports_json_schema_payloads():

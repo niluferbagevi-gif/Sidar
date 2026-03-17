@@ -623,3 +623,63 @@ def test_config_env_helper_functions_runtime(monkeypatch):
 
     monkeypatch.setenv("LIST_X", "a|b| |c")
     assert cfg_mod.get_list_env("LIST_X", separator="|") == ["a", "b", "c"]
+
+
+def test_config_import_dev_alias_uses_base_env_message(monkeypatch):
+    load_calls = []
+    printed = []
+
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: load_calls.append((a, k))
+
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setenv("SIDAR_ENV", "development")
+        monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+
+        def _exists(path_obj):
+            p = str(path_obj)
+            return p.endswith(".env")
+
+        monkeypatch.setattr(Path, "exists", _exists)
+
+        spec = importlib.util.spec_from_file_location("config_runtime_dev_alias_under_test", Path("config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+
+        assert any("temel .env ayarları kullanılacak" in m for m in printed)
+        assert len(load_calls) == 1
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+
+
+def test_validate_critical_settings_for_openai_anthropic_and_litellm_missing_env(monkeypatch):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config._hardware_loaded = True
+    cfg_mod.Config.initialize_directories = classmethod(lambda cls: True)
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
+
+    errors = []
+    monkeypatch.setattr(cfg_mod.logger, "error", lambda msg, *args: errors.append(msg % args if args else msg))
+
+    cfg_mod.Config.AI_PROVIDER = "openai"
+    cfg_mod.Config.OPENAI_API_KEY = ""
+    assert cfg_mod.Config.validate_critical_settings() is False
+    assert any("OPENAI_API_KEY" in e for e in errors)
+
+    errors.clear()
+    cfg_mod.Config.AI_PROVIDER = "anthropic"
+    cfg_mod.Config.ANTHROPIC_API_KEY = ""
+    assert cfg_mod.Config.validate_critical_settings() is False
+    assert any("ANTHROPIC_API_KEY" in e for e in errors)
+
+    errors.clear()
+    cfg_mod.Config.AI_PROVIDER = "litellm"
+    cfg_mod.Config.LITELLM_GATEWAY_URL = ""
+    assert cfg_mod.Config.validate_critical_settings() is False
+    assert any("LITELLM_GATEWAY_URL" in e for e in errors)

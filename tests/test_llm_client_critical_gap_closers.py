@@ -324,3 +324,89 @@ def test_llm_client_ollama_truncation_path_and_message_budget():
 
 async def _collect(aiter):
     return [x async for x in aiter]
+
+
+def test_openai_chat_wraps_timeout_and_bad_json_errors(monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_MODEL="m", OPENAI_TIMEOUT=30)
+    client = llm.OpenAIClient(cfg)
+
+    async def _raise_timeout(*_args, **_kwargs):
+        raise llm.httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _raise_timeout)
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    with pytest.raises(llm.LLMAPIError) as timeout_exc:
+        asyncio.run(client.chat(messages=[{"role": "user", "content": "x"}], stream=False, json_mode=False))
+    assert timeout_exc.value.provider == "openai"
+    assert "timeout" in str(timeout_exc.value)
+
+    async def _raise_bad_json(*_args, **_kwargs):
+        raise ValueError("invalid json payload")
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _raise_bad_json)
+    with pytest.raises(llm.LLMAPIError) as json_exc:
+        asyncio.run(client.chat(messages=[{"role": "user", "content": "x"}], stream=False, json_mode=False))
+    assert "invalid json payload" in str(json_exc.value)
+
+
+def test_litellm_stream_skips_invalid_json_lines_and_yields_valid_delta(monkeypatch):
+    cfg = SimpleNamespace(LITELLM_TIMEOUT=20)
+    client = llm.LiteLLMClient(cfg)
+
+    class _Resp:
+        async def aiter_lines(self):
+            yield "data: not-json"
+            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+            yield "data: [DONE]"
+
+    class _CM:
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Client:
+        async def aclose(self):
+            return None
+
+    async def _ok(*_args, **_kwargs):
+        return _Client(), _CM(), _Resp()
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _ok)
+    out = asyncio.run(_collect(client._stream_openai_compatible("u", {}, {}, llm.httpx.Timeout(10), json_mode=False)))
+    assert out == ["ok"]
+
+
+def test_anthropic_stream_exception_yields_fallback_and_closes_context(monkeypatch):
+    cfg = SimpleNamespace(ANTHROPIC_API_KEY="k", ANTHROPIC_TIMEOUT=20)
+    client = llm.AnthropicClient(cfg)
+
+    class _CM:
+        def __init__(self):
+            self.closed = False
+
+        async def __aexit__(self, *_args):
+            self.closed = True
+
+    cm = _CM()
+
+    async def _open_fail(*_args, **_kwargs):
+        raise RuntimeError("stream broken")
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _open_fail)
+    out = asyncio.run(_collect(client._stream_anthropic(object(), "m", [], "", 0.2, json_mode=True)))
+    assert len(out) == 1
+    payload = json.loads(out[0])
+    assert "Anthropic akış hatası" in payload["argument"]
+
+    async def _open_ok(*_args, **_kwargs):
+        async def _iter():
+            raise RuntimeError("iter fail")
+            yield None
+        return cm, _iter()
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _open_ok)
+    out2 = asyncio.run(_collect(client._stream_anthropic(object(), "m", [], "", 0.2, json_mode=False)))
+    assert len(out2) == 1
+    payload2 = json.loads(out2[0])
+    assert "Anthropic akış hatası" in payload2["argument"]
+    assert cm.closed is True
