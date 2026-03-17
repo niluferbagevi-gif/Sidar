@@ -182,7 +182,7 @@ def _install_web_server_stubs():
 
         @classmethod
         def get(cls, name):
-            return {"name": name, "role_name": name, "agent_class": object}
+            return None
 
     registry_mod.AgentRegistry = _AgentRegistry
 
