@@ -43,7 +43,6 @@ class AgentEventBus:
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
         sub_id = int(time.time() * 1000) ^ id(object())
         self._subscribers[sub_id] = asyncio.Queue(maxsize=max(10, maxsize))
-        self._buffered_events[sub_id] = deque(maxlen=100)
         self._schedule_redis_bootstrap()
         return sub_id, self._subscribers[sub_id]
 
