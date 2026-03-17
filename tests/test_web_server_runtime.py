@@ -182,7 +182,12 @@ def _install_web_server_stubs():
 
         @classmethod
         def get(cls, name):
-            return None
+            return types.SimpleNamespace(
+                capabilities=["crypto_price", "demo"],
+                description="Mock description",
+                version="1.0.0",
+                is_builtin=False,
+            )
 
     registry_mod.AgentRegistry = _AgentRegistry
 
@@ -2295,3 +2300,99 @@ def test_web_server_targeted_missing_branches(monkeypatch):
     # /rag/search: boş sorgu -> 400
     empty_q = asyncio.run(mod.rag_search(q=""))
     assert empty_q.status_code == 400
+
+def test_websocket_chat_full_disconnect_cleanup_additional():
+    mod = _load_web_server()
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        async def set_active_user(self, *_):
+            return None
+
+        async def update_title(self, *_):
+            return None
+
+    async def _respond(_msg):
+        yield "ok"
+
+    async def _ga():
+        async def _get_user_by_token(_t):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+        db = types.SimpleNamespace(get_user_by_token=_get_user_by_token)
+        mem = _Memory()
+        mem.db = db
+        return types.SimpleNamespace(memory=mem, respond=_respond)
+
+    async def _not_limited(*_):
+        return False
+
+    mod.get_agent = _ga
+    mod._redis_is_rate_limited = _not_limited
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._n = 0
+            self.sent = []
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            self._n += 1
+            if self._n == 1:
+                return json.dumps({"action": "auth", "token": "tok"})
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    # should complete without exception on disconnect cleanup path
+    asyncio.run(mod.websocket_chat(_WS()))
+
+
+def test_force_shutdown_local_llm_processes_all_edges_additional(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = True
+
+    monkeypatch.setattr(mod.os, "getpid", lambda: 1234)
+    monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: b" 9999 1234 ollama ollama serve\n 8888 1234 ollama ollama serve\n")
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+
+    killed = []
+
+    def _kill(pid, _sig):
+        killed.append(pid)
+        if pid == 8888:
+            raise ProcessLookupError("No such process")
+
+    monkeypatch.setattr(mod.os, "kill", _kill)
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: 0)
+
+    mod._force_shutdown_local_llm_processes()
+    assert 9999 in killed and 8888 in killed
+
+    mod._shutdown_cleanup_done = False
+
+    def _check_output_error(*_a, **_k):
+        raise mod.subprocess.CalledProcessError(1, "ps")
+
+    monkeypatch.setattr(mod.subprocess, "check_output", _check_output_error)
+    mod._force_shutdown_local_llm_processes()
+
+
+def test_github_webhook_valid_hmac_invalid_json_additional(monkeypatch):
+    mod = _load_web_server()
+    mod.cfg.GITHUB_WEBHOOK_SECRET = "testsecret"
+
+    payload = b"not-a-valid-json"
+    signature = "sha256=" + mod.hmac.new(b"testsecret", payload, mod.hashlib.sha256).hexdigest()
+
+    req = _FakeRequest(body_bytes=payload)
+    resp = asyncio.run(mod.github_webhook(req, x_github_event="issues", x_hub_signature_256=signature))
+    assert resp.status_code == 400

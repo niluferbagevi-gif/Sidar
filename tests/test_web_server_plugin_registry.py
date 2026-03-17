@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -21,7 +22,13 @@ class DemoAgent(BaseAgent):
     async def run_task(self, task_prompt: str) -> str:
         return f"ok:{task_prompt}"
 '''
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
+    fake_spec = SimpleNamespace(
+        capabilities=["demo", "tooling"],
+        description="Demo plugin",
+        version="1.2.3",
+        is_builtin=False,
+    )
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=fake_spec, create=True):
         result = mod._register_plugin_agent(
             role_name="demo_plugin",
             source_code=src,
@@ -52,7 +59,13 @@ class FileAgent(BaseAgent):
         description="",
         version="1.0.0",
     )
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
+    fake_spec = SimpleNamespace(
+        capabilities=["x"],
+        description="",
+        version="1.0.0",
+        is_builtin=False,
+    )
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=fake_spec, create=True):
         resp = asyncio.run(mod.register_agent_plugin(payload, _user=object()))
     assert resp.content["success"] is True
     assert resp.content["agent"]["role_name"] == "json_agent"
@@ -70,7 +83,13 @@ class FileAgent(BaseAgent):
         async def close(self):
             self.closed = True
 
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
+    fake_upload_spec = SimpleNamespace(
+        capabilities=["c1", "c2"],
+        description="uploaded",
+        version="2.0.0",
+        is_builtin=False,
+    )
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=fake_upload_spec, create=True):
         upload_resp = asyncio.run(
             mod.register_agent_plugin_file(
                 file=_Upload(src.encode("utf-8")),
