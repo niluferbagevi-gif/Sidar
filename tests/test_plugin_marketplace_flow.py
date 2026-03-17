@@ -1,7 +1,6 @@
 import asyncio
 from pathlib import Path
 
-from agent.registry import AgentRegistry
 from tests.test_web_server_runtime import _load_web_server
 
 
@@ -40,9 +39,9 @@ def test_register_file_plugin_and_execute_task():
     assert agent_meta["role_name"] == "crypto_price_agent"
     assert "crypto_price" in agent_meta["capabilities"]
     assert agent_meta["is_builtin"] is False
+    assert Path("plugins/crypto_price_agent.py").exists()
 
-    instance = AgentRegistry.create("crypto_price_agent")
+    instance = mod.AgentRegistry.create("crypto_price_agent")
     result = asyncio.run(instance.run_task("btc fiyatı nedir?"))
     assert "BTC" in result
-
-    AgentRegistry.unregister("crypto_price_agent")
+    mod.AgentRegistry.unregister("crypto_price_agent")
