@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -20,14 +21,15 @@ class DemoAgent(BaseAgent):
     async def run_task(self, task_prompt: str) -> str:
         return f"ok:{task_prompt}"
 '''
-    result = mod._register_plugin_agent(
-        role_name="demo_plugin",
-        source_code=src,
-        class_name="DemoAgent",
-        capabilities=["demo", "tooling"],
-        description="Demo plugin",
-        version="1.2.3",
-    )
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True):
+        result = mod._register_plugin_agent(
+            role_name="demo_plugin",
+            source_code=src,
+            class_name="DemoAgent",
+            capabilities=["demo", "tooling"],
+            description="Demo plugin",
+            version="1.2.3",
+        )
     assert result["role_name"] == "demo_plugin"
     assert result["is_builtin"] is False
     assert "demo" in result["capabilities"]
@@ -50,7 +52,8 @@ class FileAgent(BaseAgent):
         description="",
         version="1.0.0",
     )
-    resp = asyncio.run(mod.register_agent_plugin(payload, _user=object()))
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True):
+        resp = asyncio.run(mod.register_agent_plugin(payload, _user=object()))
     assert resp.content["success"] is True
     assert resp.content["agent"]["role_name"] == "json_agent"
 
@@ -67,17 +70,18 @@ class FileAgent(BaseAgent):
         async def close(self):
             self.closed = True
 
-    upload_resp = asyncio.run(
-        mod.register_agent_plugin_file(
-            file=_Upload(src.encode("utf-8")),
-            role_name="",
-            class_name="FileAgent",
-            capabilities="c1,c2",
-            description="uploaded",
-            version="2.0.0",
-            _user=object(),
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True):
+        upload_resp = asyncio.run(
+            mod.register_agent_plugin_file(
+                file=_Upload(src.encode("utf-8")),
+                role_name="",
+                class_name="FileAgent",
+                capabilities="c1,c2",
+                description="uploaded",
+                version="2.0.0",
+                _user=object(),
+            )
         )
-    )
     assert upload_resp.content["success"] is True
     assert upload_resp.content["agent"]["role_name"] == "upload_agent"
     assert upload_resp.content["agent"]["version"] == "2.0.0"
