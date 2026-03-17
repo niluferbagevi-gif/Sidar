@@ -21,29 +21,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 def _load_pkg():
     """Load PackageInfoManager fresh with httpx stub."""
-    if "httpx" not in sys.modules:
-        class _Timeout:
-            def __init__(self, *a, **kw): pass
+    class _Timeout:
+        def __init__(self, *a, **kw): pass
 
-        class _TimeoutException(Exception): pass
-        class _RequestError(Exception): pass
+    class _TimeoutException(Exception): pass
+    class _RequestError(Exception): pass
 
-        class _AsyncClient:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): return None
-            async def get(self, url):
-                return types.SimpleNamespace(
-                    status_code=200, json=lambda: {},
-                    raise_for_status=lambda: None,
-                )
+    class _AsyncClient:
+        def __init__(self, *a, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return None
+        async def get(self, url):
+            return types.SimpleNamespace(
+                status_code=200, json=lambda: {},
+                raise_for_status=lambda: None,
+            )
 
-        sys.modules["httpx"] = types.SimpleNamespace(
-            Timeout=_Timeout,
-            TimeoutException=_TimeoutException,
-            RequestError=_RequestError,
-            AsyncClient=_AsyncClient,
-        )
+    sys.modules["httpx"] = types.SimpleNamespace(
+        Timeout=_Timeout,
+        TimeoutException=_TimeoutException,
+        RequestError=_RequestError,
+        AsyncClient=_AsyncClient,
+    )
 
     spec = importlib.util.spec_from_file_location(
         "pkg_info_ext", Path("managers/package_info.py")
