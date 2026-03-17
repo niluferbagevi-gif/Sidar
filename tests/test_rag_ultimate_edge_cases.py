@@ -41,3 +41,31 @@ def test_recursive_chunk_text_zero_size_hits_force_split(tmp_path):
 
     assert result
     assert all(isinstance(c, str) for c in result)
+
+
+def test_recursive_chunk_text_handles_overlap_larger_than_chunk_size(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    chunks = store._recursive_chunk_text("one two three four five", size=5, overlap=99)
+
+    assert chunks
+    assert all(isinstance(c, str) and c for c in chunks)
+    assert any("five" in c for c in chunks)
+
+
+def test_recursive_chunk_text_preserves_class_and_def_boundaries(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    text = """class A:
+    pass
+
+def f():
+    return 1
+"""
+    chunks = store._recursive_chunk_text(text, size=14, overlap=3)
+
+    assert chunks
+    assert any("class" in c for c in chunks)
+    assert any("def" in c for c in chunks)

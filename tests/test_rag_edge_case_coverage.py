@@ -336,3 +336,112 @@ def test_embed_texts_semantic_cache_success_with_tolist_and_iterable(monkeypatch
     monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=_SentenceTransformerList))
     vecs2 = rag_mod.embed_texts_for_semantic_cache(["x"])
     assert vecs2 == [[0.3, 0.4]]
+
+
+def test_search_auto_fallback_chain_recovers_to_bm25(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_fallback_chain")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_fallback_chain",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    store._index = {"d1": {"session_id": "s1", "title": "Doc", "source": "", "tags": []}}
+    store._pgvector_available = True
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = True
+
+    def _boom_rrf(*_a, **_k):
+        raise RuntimeError("rrf boom")
+
+    def _boom_pg(*_a, **_k):
+        raise RuntimeError("pg boom")
+
+    def _boom_chroma(*_a, **_k):
+        raise RuntimeError("chroma boom")
+
+    store._rrf_search = _boom_rrf
+    store._pgvector_search = _boom_pg
+    store._chroma_search = _boom_chroma
+    store._bm25_search = lambda *_a, **_k: (True, "bm25-fallback")
+
+    assert store._search_sync("needle", top_k=2, mode="auto", session_id="s1") == (True, "bm25-fallback")
+
+
+def test_fetch_chroma_uses_count_exception_fallback_and_session_filter(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_chroma_count_fail")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_chroma_count_fail",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    seen = {}
+
+    class _Collection:
+        def count(self):
+            raise RuntimeError("count failed")
+
+        def query(self, **kwargs):
+            seen.update(kwargs)
+            return {
+                "ids": [["c1", "c2"]],
+                "documents": [["chunk 1", "chunk 2"]],
+                "metadatas": [[
+                    {"parent_id": "p1", "title": "T1", "source": "s"},
+                    {"parent_id": "p2", "title": "T2", "source": "s"},
+                ]],
+            }
+
+    store.collection = _Collection()
+    out = store._fetch_chroma("hello", top_k=2, session_id="session-x")
+
+    assert len(out) == 2
+    assert seen["where"] == {"session_id": "session-x"}
+    assert seen["n_results"] == 4
+
+
+def test_chunk_text_prefers_explicit_args_over_config(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_chunk_config_override")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_chunk_config_override",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=100, RAG_CHUNK_OVERLAP=30, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    chunks = store._chunk_text("a" * 120, chunk_size=40, chunk_overlap=5)
+    assert chunks
+    assert all(len(c) <= 40 for c in chunks)
+
+
+def test_search_auto_local_provider_prefers_single_engine(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_local_auto")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    cfg = types.SimpleNamespace(
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        HF_TOKEN="",
+        HF_HUB_OFFLINE=False,
+        AI_PROVIDER="ollama",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+    )
+    store = DocumentStore(tmp_path / "rag_local_auto", cfg=cfg)
+
+    store._index = {"d1": {"session_id": "s1", "title": "Doc", "source": "", "tags": []}}
+    store._pgvector_available = False
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = True
+    store._bm25_search = lambda *_a, **_k: (True, "bm25-local")
+
+    assert store._search_sync("q", top_k=1, mode="auto", session_id="s1") == (True, "bm25-local")
