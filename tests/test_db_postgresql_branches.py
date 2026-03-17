@@ -326,3 +326,51 @@ def test_postgresql_session_create_and_delete_parse_edge_cases():
         assert deleted is False
 
     asyncio.run(_run())
+
+
+def test_connect_postgresql_normalizes_asyncpg_scheme(monkeypatch):
+    seen = {}
+    cfg = SimpleNamespace(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", DB_POOL_SIZE=4)
+    db = Database(cfg=cfg)
+
+    class _Asyncpg:
+        @staticmethod
+        async def create_pool(**kwargs):
+            seen.update(kwargs)
+            return _FakePool(_FakeConn())
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "asyncpg":
+            return _Asyncpg
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    asyncio.run(db.connect())
+
+    assert seen["dsn"].startswith("postgresql://")
+    assert "+asyncpg" not in seen["dsn"]
+
+
+def test_postgresql_update_session_title_parse_failure_returns_false():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        conn.execute_queue.append("UPDATE not-a-number")
+        ok = await db.update_session_title("s1", "new")
+        assert ok is False
+
+    asyncio.run(_run())
+
+
+def test_postgresql_schema_version_early_return_when_already_current():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        conn.fetchval_queue.append(2)
+        await db._ensure_schema_version_postgresql()
+
+    asyncio.run(_run())
+    inserts = [q for q, _args in conn.execute_calls if "INSERT INTO" in q]
+    assert inserts == []

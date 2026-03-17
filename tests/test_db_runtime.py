@@ -66,3 +66,55 @@ def test_db_schema_version_table_initialized(tmp_path: Path):
 
     max_v = asyncio.run(_run())
     assert max_v == 2
+
+
+def test_run_sqlite_op_raises_if_not_connected(tmp_path: Path):
+    class _Cfg:
+        DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+        DB_POOL_SIZE = 2
+        DB_SCHEMA_VERSION_TABLE = "schema_versions"
+        DB_SCHEMA_TARGET_VERSION = 1
+        BASE_DIR = tmp_path
+
+    db = Database(cfg=_Cfg())
+
+    async def _run():
+        return await db._run_sqlite_op(lambda: 1)
+
+    try:
+        asyncio.run(_run())
+        raised = False
+    except RuntimeError as exc:
+        raised = True
+        assert "SQLite bağlantısı başlatılmadı" in str(exc)
+    assert raised is True
+
+
+def test_ensure_default_prompt_registry_swallows_upsert_errors(tmp_path: Path, monkeypatch):
+    class _Cfg:
+        DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+        DB_POOL_SIZE = 2
+        DB_SCHEMA_VERSION_TABLE = "schema_versions"
+        DB_SCHEMA_TARGET_VERSION = 1
+        BASE_DIR = tmp_path
+
+    db = Database(cfg=_Cfg())
+
+    async def _run():
+        await db.connect()
+        await db.init_schema()
+
+        async def _no_prompt(_role):
+            return None
+
+        async def _boom(**_kwargs):
+            raise RuntimeError("upsert failed")
+
+        monkeypatch.setattr(db, "get_active_prompt", _no_prompt)
+        monkeypatch.setattr(db, "upsert_prompt", _boom)
+
+        # should not raise due to internal exception swallow
+        await db.ensure_default_prompt_registry()
+        await db.close()
+
+    asyncio.run(_run())
