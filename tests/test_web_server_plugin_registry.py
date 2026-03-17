@@ -21,7 +21,7 @@ class DemoAgent(BaseAgent):
     async def run_task(self, task_prompt: str) -> str:
         return f"ok:{task_prompt}"
 '''
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value={"name": "test"}, create=True):
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
         result = mod._register_plugin_agent(
             role_name="demo_plugin",
             source_code=src,
@@ -52,7 +52,7 @@ class FileAgent(BaseAgent):
         description="",
         version="1.0.0",
     )
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value={"name": "test"}, create=True):
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
         resp = asyncio.run(mod.register_agent_plugin(payload, _user=object()))
     assert resp.content["success"] is True
     assert resp.content["agent"]["role_name"] == "json_agent"
@@ -70,7 +70,7 @@ class FileAgent(BaseAgent):
         async def close(self):
             self.closed = True
 
-    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value={"name": "test"}, create=True):
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=None, create=True):
         upload_resp = asyncio.run(
             mod.register_agent_plugin_file(
                 file=_Upload(src.encode("utf-8")),

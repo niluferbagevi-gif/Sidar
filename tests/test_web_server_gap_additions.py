@@ -41,13 +41,9 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
     monkeypatch.setattr(mod, "get_agent", _get_agent)
 
     # lines 295-296
-    with patch("jwt.decode", return_value={"sub": "u1", "username": "alice", "role": "user", "tenant_id": "default"}):
+    with patch.object(mod.jwt, "encode", return_value="sahte.jwt.token"):
         login_resp = asyncio.run(mod.login_user({"username": "alice", "password": "123456"}))
-        token = login_resp.content["access_token"]
-        decoded = jwt.decode(token, "sidar-dev-secret", algorithms=["HS256"])
-        assert decoded["sub"] == "u1"
-        assert decoded["username"] == "alice"
-        assert decoded["role"] == "user"
+        assert login_resp.content["access_token"] == "sahte.jwt.token"
 
     # line 301
     user = types.SimpleNamespace(id="u1", username="alice", role="user")
