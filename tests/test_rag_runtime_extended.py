@@ -362,3 +362,36 @@ def test_search_sync_auto_disables_rrf_for_local_provider(monkeypatch, tmp_path)
     ok, msg = mod.DocumentStore._search_sync(st, "q", mode="auto", session_id="s1")
     assert ok is True
     assert msg == "bm25"
+
+def test_search_auto_falls_back_when_vector_backends_raise(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    store._index = {"d1": {"session_id": "global", "title": "doc", "source": "s", "tags": []}}
+    store._bm25_available = True
+    store._chroma_available = True
+    store.collection = object()
+    store._pgvector_available = True
+
+    monkeypatch.setattr(store, "_rrf_search", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rrf down")))
+    monkeypatch.setattr(store, "_pgvector_search", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("pg down")))
+    monkeypatch.setattr(store, "_chroma_search", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("chroma down")))
+    monkeypatch.setattr(store, "_bm25_search", lambda q, k, sid: (True, f"bm25:{q}:{k}:{sid}"))
+
+    ok, text = store._search_sync("kritik sorgu", top_k=3, mode="auto", session_id="global")
+    assert ok is True
+    assert text == "bm25:kritik sorgu:3:global"
+
+
+def test_recursive_chunk_text_forced_split_when_no_separator_possible(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    # separators içinde hiçbirinin işe yaramadığı tek-parça uzun metin
+    huge = "x" * 350
+    chunks = store._recursive_chunk_text(huge, size=100, overlap=10)
+
+    assert len(chunks) >= 3
+    assert all(len(c) <= 100 for c in chunks)
+    # overlap etkisi: ikinci parça öncekinin sonundan taşıma içerir
+    assert chunks[1].startswith("x" * 10)
