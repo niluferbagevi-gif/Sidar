@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 *.pyc
+*.egg
+*.egg-info/
+dist/
+build/
 
 # Virtual environments
 .venv/
@@ -56,3 +60,7 @@ htmlcov/
 # Notebook / modern tool artifacts
 .ipynb_checkpoints/
 .ruff_cache/
+
+# React / Node (web_ui_react)
+web_ui_react/node_modules/
+web_ui_react/dist/
