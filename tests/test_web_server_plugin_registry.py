@@ -117,3 +117,58 @@ def test_register_plugin_agent_validation_errors(mod):
             version="1.0.0",
         )
     assert exc.value.status_code == 400
+
+
+def test_register_plugin_file_persists_and_imports_module(mod, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    src = b"from agent.base_agent import BaseAgent\n\nclass UploadAgent(BaseAgent):\n    async def run_task(self, task_prompt: str) -> str:\n        return task_prompt\n"
+
+    class _Upload:
+        filename = "upload_agent"
+
+        def __init__(self, data: bytes):
+            self._data = data
+            self.closed = False
+
+        async def read(self):
+            return self._data
+
+        async def close(self):
+            self.closed = True
+
+    fake_upload_spec = SimpleNamespace(
+        capabilities=["c1"],
+        description="uploaded",
+        version="2.0.0",
+        is_builtin=False,
+    )
+    with patch.object(mod.AgentRegistry, "register_type", return_value=None, create=True), patch.object(mod.AgentRegistry, "get", return_value=fake_upload_spec, create=True):
+        upload_resp = asyncio.run(
+            mod.register_agent_plugin_file(
+                file=_Upload(src),
+                role_name="",
+                class_name="UploadAgent",
+                capabilities="c1",
+                description="uploaded",
+                version="2.0.0",
+                _user=object(),
+            )
+        )
+
+    assert upload_resp.content["success"] is True
+    assert (tmp_path / "plugins" / "upload_agent.py").exists()
+
+
+def test_persist_and_import_plugin_file_import_error(mod, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(mod.HTTPException) as exc:
+        mod._persist_and_import_plugin_file(
+            "broken.py",
+            b"raise RuntimeError('boom')\n",
+            "sidar_uploaded_plugin_broken",
+        )
+
+    assert exc.value.status_code == 400
+    assert "import edilemedi" in exc.value.detail
