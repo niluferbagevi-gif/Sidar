@@ -174,7 +174,7 @@ def main():
         print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
         repo_url = input(
             f"{Colors.OKBLUE}Lütfen GitHub Depo URL'sini girin\n"
-            f"(Örn: https://github.com/niluferbagevi-gif/sidar_project): {Colors.ENDC}"
+            f"(Örn: https://github.com/niluferbagevi-gif/Sidar): {Colors.ENDC}"
         ).strip()
 
         if not _is_valid_repo_url(repo_url):

@@ -5,10 +5,10 @@
 # Hata durumunda betiği durdur
 set -euo pipefail
 
-PROJECT_NAME="sidar_project"
+PROJECT_NAME="Sidar"
 ENV_NAME="sidar-ai"
 # Gerekirse kendi SİDAR repo URL'nizle değiştirin
-REPO_URL="https://github.com/niluferbagevi-gif/sidar_project"
+REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
 PROJECT_DIR="$HOME/$PROJECT_NAME"
 MINICONDA_DIR="$HOME/miniconda3"
 MINICONDA_SH="$MINICONDA_DIR/miniconda.sh"
