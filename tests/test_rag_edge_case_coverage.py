@@ -284,3 +284,55 @@ def test_pgvector_upsert_and_delete_exception_paths_are_swallowed(tmp_path, monk
     # should not raise
     store._upsert_pgvector_chunks("d1", "p1", "s1", "t", "src", ["x"])
     store._delete_pgvector_parent("p1", "s1")
+
+
+
+def test_rag_module_sets_otel_trace_none_when_opentelemetry_missing(monkeypatch):
+    real_import = __import__
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("opentelemetry"):
+            raise ImportError("otel missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _blocked_import)
+    rag_mod = _load_rag_module("rag_edge_no_otel")
+    assert rag_mod._otel_trace is None
+
+
+def test_embed_texts_semantic_cache_empty_input_short_circuit():
+    rag_mod = _load_rag_module("rag_edge_semantic_empty")
+    assert rag_mod.embed_texts_for_semantic_cache([]) == []
+
+
+def test_embed_texts_semantic_cache_success_with_tolist_and_iterable(monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_semantic_success")
+
+    class _WithToList:
+        def __init__(self, data):
+            self._data = data
+
+        def tolist(self):
+            return self._data
+
+    class _SentenceTransformer:
+        def __init__(self, _model_name):
+            pass
+
+        def encode(self, texts, normalize_embeddings=True):
+            return _WithToList([[0.1, 0.2] for _ in texts])
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=_SentenceTransformer))
+    vecs = rag_mod.embed_texts_for_semantic_cache(["a", "b"])
+    assert vecs == [[0.1, 0.2], [0.1, 0.2]]
+
+    class _SentenceTransformerList:
+        def __init__(self, _model_name):
+            pass
+
+        def encode(self, texts, normalize_embeddings=True):
+            return [(0.3, 0.4) for _ in texts]
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=_SentenceTransformerList))
+    vecs2 = rag_mod.embed_texts_for_semantic_cache(["x"])
+    assert vecs2 == [[0.3, 0.4]]
