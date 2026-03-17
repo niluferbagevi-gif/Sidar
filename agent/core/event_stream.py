@@ -182,14 +182,15 @@ class AgentEventBus:
         return any_progress
 
     def _fanout_local(self, evt: AgentEvent) -> None:
-        for sid, q in self._subscribers.items():
+        dropped_subscribers: list[int] = []
+        for sid, q in list(self._subscribers.items()):
             try:
                 q.put_nowait(evt)
             except asyncio.QueueFull:
-                buffer = self._buffered_events.get(sid)
-                if buffer is None:
-                    continue
-                buffer.append(evt)
+                dropped_subscribers.append(sid)
+
+        for sid in dropped_subscribers:
+            self.unsubscribe(sid)
 
     async def _cleanup_redis(self) -> None:
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
