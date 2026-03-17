@@ -17,7 +17,7 @@ def test_prerelease_detection_uses_packaging_version_and_semver_fallback():
 
 def test_package_info_has_timeout_headers_and_cache_layer():
     src = Path("managers/package_info.py").read_text(encoding="utf-8")
-    assert "self.timeout = httpx.Timeout(float(self.TIMEOUT), connect=5.0)" in src
+    assert "self.timeout = httpx.Timeout(timeout=timeout_seconds, connect=5.0)" in src
     assert "User-Agent" in src
     assert "self._cache: Dict[str, Tuple[Dict, datetime]] = {}" in src
     assert "self.cache_ttl = timedelta(seconds=max(60, int(cache_ttl_seconds)))" in src
