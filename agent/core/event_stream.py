@@ -187,13 +187,8 @@ class AgentEventBus:
             try:
                 q.put_nowait(evt)
             except asyncio.QueueFull:
-                # Buffer varsa ve kapasitesi dolmadıysa event kaybolmadan sakla.
-                buf = self._buffered_events.get(sid)
-                if buf is not None and (buf.maxlen is None or len(buf) < buf.maxlen):
-                    buf.append(evt)
-                else:
-                    # Buffer yoksa veya tam dolduysa subscriber düşürülür.
-                    dropped_subscribers.append(sid)
+                # Abone kendi kuyruğunu tüketemiyorsa sistemi bloklamaması için düşür.
+                dropped_subscribers.append(sid)
 
         for sid in dropped_subscribers:
             self.unsubscribe(sid)
