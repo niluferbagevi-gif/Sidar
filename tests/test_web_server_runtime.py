@@ -1870,6 +1870,43 @@ def test_import_fallbacks_for_anyio_and_opentelemetry():
     assert mod.BatchSpanProcessor is None
 
 
+def test_opentelemetry_import_success_path_with_stubbed_modules(monkeypatch):
+    _install_web_server_stubs()
+
+    otel_root = types.ModuleType("opentelemetry")
+    otel_root.trace = types.SimpleNamespace(get_tracer=lambda *_a, **_k: None)
+    otel_exporter = types.ModuleType("opentelemetry.exporter.otlp.proto.grpc.trace_exporter")
+    otel_exporter.OTLPSpanExporter = type("_Exporter", (), {})
+    otel_fastapi = types.ModuleType("opentelemetry.instrumentation.fastapi")
+    otel_fastapi.FastAPIInstrumentor = type("_FastAPIInstr", (), {})
+    otel_httpx = types.ModuleType("opentelemetry.instrumentation.httpx")
+    otel_httpx.HTTPXClientInstrumentor = type("_HTTPXInstr", (), {})
+    otel_resources = types.ModuleType("opentelemetry.sdk.resources")
+    otel_resources.Resource = type("_Resource", (), {})
+    otel_trace = types.ModuleType("opentelemetry.sdk.trace")
+    otel_trace.TracerProvider = type("_Provider", (), {})
+    otel_trace_export = types.ModuleType("opentelemetry.sdk.trace.export")
+    otel_trace_export.BatchSpanProcessor = type("_Batch", (), {})
+
+    monkeypatch.setitem(sys.modules, "opentelemetry", otel_root)
+    monkeypatch.setitem(sys.modules, "opentelemetry.exporter.otlp.proto.grpc.trace_exporter", otel_exporter)
+    monkeypatch.setitem(sys.modules, "opentelemetry.instrumentation.fastapi", otel_fastapi)
+    monkeypatch.setitem(sys.modules, "opentelemetry.instrumentation.httpx", otel_httpx)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.resources", otel_resources)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace", otel_trace)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace.export", otel_trace_export)
+
+    spec = importlib.util.spec_from_file_location("web_server_under_test_otel_ok", Path("web_server.py"))
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+
+    assert mod.trace is otel_root.trace
+    assert mod.Resource is otel_resources.Resource
+    assert mod.TracerProvider is otel_trace.TracerProvider
+    assert mod.BatchSpanProcessor is otel_trace_export.BatchSpanProcessor
+
+
 def test_lifespan_closes_redis_client():
     mod = _load_web_server()
 
@@ -1890,6 +1927,23 @@ def test_lifespan_closes_redis_client():
     asyncio.run(_run())
     assert client.closed is True
     assert mod._redis_client is None
+
+
+def test_lifespan_triggers_async_shutdown_cleanup(monkeypatch):
+    mod = _load_web_server()
+    called = {"shutdown": 0}
+
+    async def _shutdown():
+        called["shutdown"] += 1
+
+    monkeypatch.setattr(mod, "_async_force_shutdown_local_llm_processes", _shutdown)
+
+    async def _run():
+        async with mod._app_lifespan(mod.app):
+            pass
+
+    asyncio.run(_run())
+    assert called["shutdown"] == 1
 
 
 
@@ -2376,6 +2430,67 @@ def test_websocket_chat_full_disconnect_cleanup_additional():
             self.sent.append(payload)
 
     # should complete without exception on disconnect cleanup path
+    asyncio.run(mod.websocket_chat(_WS()))
+
+
+def test_websocket_chat_anyio_closed_resource_branch_cancels_active_task():
+    mod = _load_web_server()
+
+    class _AnyioClosed(Exception):
+        pass
+
+    mod._ANYIO_CLOSED = _AnyioClosed
+
+    class _Memory:
+        def __len__(self):
+            return 0
+
+        async def set_active_user(self, *_):
+            return None
+
+        async def update_title(self, *_):
+            return None
+
+        class _DB:
+            async def get_user_by_token(self, _token):
+                return types.SimpleNamespace(id="u1", username="alice")
+
+        def __init__(self):
+            self.db = self._DB()
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            await asyncio.sleep(1)
+            yield "late"
+
+    async def _ga():
+        return _Agent()
+
+    mod.get_agent = _ga
+    mod._redis_is_rate_limited = lambda *_a, **_k: asyncio.sleep(0, result=False)
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self._idx = 0
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            self._idx += 1
+            if self._idx == 1:
+                return json.dumps({"action": "auth", "token": "tok"})
+            if self._idx == 2:
+                return json.dumps({"action": "send", "message": "merhaba"})
+            raise _AnyioClosed()
+
+        async def send_json(self, _payload):
+            return None
+
     asyncio.run(mod.websocket_chat(_WS()))
 
 
