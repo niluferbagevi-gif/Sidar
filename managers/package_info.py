@@ -44,7 +44,7 @@ class PackageInfoManager:
         self.TIMEOUT = float(self.TIMEOUT)
         timeout_seconds = self.TIMEOUT
         try:
-            self.timeout = httpx.Timeout(float(self.TIMEOUT), connect=5.0)
+            self.timeout = httpx.Timeout(timeout=timeout_seconds, connect=5.0)
         except TypeError:
             # Bazı test stub'larında/versiyonlarda imza farklı olabilir.
             try:
