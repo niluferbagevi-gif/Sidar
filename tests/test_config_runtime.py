@@ -505,3 +505,106 @@ def test_config_enforces_supervisor_mode(monkeypatch):
 
     c = cfg_mod.Config()
     assert c.ENABLE_MULTI_AGENT is True
+
+
+def test_init_telemetry_returns_false_when_opentelemetry_imports_fail(monkeypatch):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config.ENABLE_TRACING = True
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("opentelemetry"):
+            raise ImportError("otel missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    logs = []
+    logger_obj = types.SimpleNamespace(warning=lambda msg, *a: logs.append(msg % a if a else msg))
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+    assert cfg_mod.Config.init_telemetry(logger_obj=logger_obj) is False
+    assert any("OpenTelemetry bağımlılıkları" in line for line in logs)
+
+
+def test_init_telemetry_happy_path_and_runtime_exception(monkeypatch):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config.ENABLE_TRACING = True
+    cfg_mod.Config.OTEL_INSTRUMENT_FASTAPI = True
+    cfg_mod.Config.OTEL_INSTRUMENT_HTTPX = True
+    cfg_mod.Config.OTEL_EXPORTER_ENDPOINT = "http://otel:4317"
+
+    calls = {"set_provider": 0, "instrument_app": 0, "instrument_httpx": 0}
+
+    class _Trace:
+        @staticmethod
+        def set_tracer_provider(_provider):
+            calls["set_provider"] += 1
+
+    class _Resource:
+        @staticmethod
+        def create(_attrs):
+            return {"service.name": "sidar"}
+
+    class _Provider:
+        def __init__(self, resource=None):
+            self.resource = resource
+
+        def add_span_processor(self, _processor):
+            return None
+
+    class _Exporter:
+        def __init__(self, endpoint=None, insecure=True):
+            self.endpoint = endpoint
+            self.insecure = insecure
+
+    class _Batch:
+        def __init__(self, _exporter):
+            return None
+
+    class _FastAPIInstrumentor:
+        @staticmethod
+        def instrument_app(_app):
+            calls["instrument_app"] += 1
+
+    class _HTTPXInstrumentor:
+        def instrument(self):
+            calls["instrument_httpx"] += 1
+
+    logs = {"info": [], "warning": []}
+    logger_obj = types.SimpleNamespace(
+        info=lambda msg, *a: logs["info"].append(msg % a if a else msg),
+        warning=lambda msg, *a: logs["warning"].append(msg % a if a else msg),
+    )
+
+    ok = cfg_mod.Config.init_telemetry(
+        service_name="sidar",
+        fastapi_app=object(),
+        logger_obj=logger_obj,
+        trace_module=_Trace,
+        otlp_exporter_cls=_Exporter,
+        tracer_provider_cls=_Provider,
+        resource_cls=_Resource,
+        batch_span_processor_cls=_Batch,
+        fastapi_instrumentor_cls=_FastAPIInstrumentor,
+        httpx_instrumentor_cls=_HTTPXInstrumentor,
+    )
+    assert ok is True
+    assert calls["set_provider"] == 1
+    assert calls["instrument_app"] == 1
+    assert calls["instrument_httpx"] == 1
+    assert any("OpenTelemetry aktif" in line for line in logs["info"])
+
+    class _BrokenExporter:
+        def __init__(self, endpoint=None, insecure=True):
+            raise RuntimeError("exporter init failed")
+
+    failed = cfg_mod.Config.init_telemetry(
+        logger_obj=logger_obj,
+        trace_module=_Trace,
+        otlp_exporter_cls=_BrokenExporter,
+        tracer_provider_cls=_Provider,
+        resource_cls=_Resource,
+        batch_span_processor_cls=_Batch,
+    )
+    assert failed is False
+    assert any("başlatılamadı" in line for line in logs["warning"])
