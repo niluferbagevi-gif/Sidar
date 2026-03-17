@@ -24,6 +24,11 @@ temp/
 data/*
 !data/.gitkeep
 
+# Database
+sidar_memory.db
+sidar_memory.db-shm
+sidar_memory.db-wal
+
 # Local documentation (keep in local workspace, do not push to GitHub)
 docs/
 
@@ -47,6 +52,7 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
 # Notebook / modern tool artifacts
 .ipynb_checkpoints/
 .ruff_cache/
