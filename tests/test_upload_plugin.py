@@ -37,3 +37,7 @@ def test_upload_agent_run_task_handles_empty_and_normal_prompt():
     assert none_result == "Boş görev alındı."
     assert empty_result == "Boş görev alındı."
     assert normal_result == "UploadAgent: dosyayı işle"
+
+def test_upload_agent_import_path_via_stubbed_base_agent():
+    UploadAgent = _import_upload_agent_with_stubbed_base_agent()
+    assert UploadAgent.__module__ == "plugins.upload_agent"

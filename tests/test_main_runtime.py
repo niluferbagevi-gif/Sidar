@@ -380,3 +380,21 @@ def test_run_with_streaming_terminates_and_kills_when_still_running(monkeypatch)
     assert rc == 0
     assert state["terminated"] is True
     assert state["killed"] is True
+
+def test_main_calls_init_telemetry_when_available(monkeypatch):
+    MAIN = _load_main_module()
+    called = {}
+
+    def _init_telemetry(*, service_name):
+        called["service_name"] = service_name
+
+    monkeypatch.setattr(MAIN.cfg, "init_telemetry", _init_telemetry, raising=False)
+    monkeypatch.setattr(MAIN, "execute_command", lambda *a, **k: 0)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--quick", "cli", "--provider", "ollama", "--level", "full"] )
+
+    try:
+        MAIN.main()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    assert called["service_name"] == "sidar-launcher"

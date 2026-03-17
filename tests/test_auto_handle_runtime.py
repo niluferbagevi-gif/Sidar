@@ -538,3 +538,9 @@ def test_try_read_file_success_sets_last_file_and_adds_80_line_suffix():
     assert resp.startswith("[demo.txt]\n```")
     assert "... (5 satır daha)" in resp
     assert auto.memory.get_last_file() == "demo.txt"
+
+def test_handle_returns_false_for_very_long_input():
+    auto = _make_auto()
+    handled, msg = asyncio.run(auto.handle("x" * 2001))
+    assert handled is False
+    assert msg == ""
