@@ -180,3 +180,107 @@ def test_search_auto_falls_back_when_chroma_query_raises(tmp_path, monkeypatch):
     ok, out = store._search_sync("needle", top_k=2, mode="auto", session_id="s1")
     assert ok is True
     assert "needle" in out.lower()
+
+
+
+def test_pgvector_init_and_upsert_paths_with_stubbed_dependencies(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_pgvector_init")
+    DocumentStore = rag_mod.DocumentStore
+
+    class _Conn:
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, stmt, params=None):
+            self.executed.append((str(stmt), params))
+
+    class _Begin:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __enter__(self):
+            return self._conn
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _Engine:
+        def __init__(self):
+            self.conn = _Conn()
+
+        def begin(self):
+            return _Begin(self.conn)
+
+    fake_engine = _Engine()
+
+    sqlalchemy_mod = types.SimpleNamespace(
+        create_engine=lambda *_a, **_k: fake_engine,
+        text=lambda s: s,
+    )
+
+    class _SentenceTransformer:
+        def __init__(self, _model_name):
+            pass
+
+        def encode(self, texts, normalize_embeddings=True):
+            return [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy_mod)
+    monkeypatch.setitem(sys.modules, "pgvector", types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=_SentenceTransformer))
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _m: True)
+
+    cfg = types.SimpleNamespace(
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        RAG_VECTOR_BACKEND="pgvector",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        PGVECTOR_TABLE="rag_embeddings",
+        PGVECTOR_EMBEDDING_DIM=2,
+        PGVECTOR_EMBEDDING_MODEL="stub",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        HF_TOKEN="",
+        HF_HUB_OFFLINE=False,
+    )
+
+    store = DocumentStore(tmp_path / "rag_pgvector_init", cfg=cfg)
+    assert store._pgvector_available is True
+
+    store._upsert_pgvector_chunks(
+        doc_id="doc1",
+        parent_id="parent1",
+        session_id="s1",
+        title="T",
+        source="src",
+        chunks=["chunk-a", "chunk-b"],
+    )
+
+    assert any("INSERT INTO rag_embeddings" in stmt for stmt, _ in fake_engine.conn.executed)
+
+
+def test_pgvector_upsert_and_delete_exception_paths_are_swallowed(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_pgvector_exceptions")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_pgvector_ex",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    store._pgvector_available = True
+
+    class _BoomEngine:
+        def begin(self):
+            raise RuntimeError("db down")
+
+    store.pg_engine = _BoomEngine()
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda s: s))
+    store._pgvector_embed_texts = lambda texts: [[0.1] for _ in texts]
+
+    # should not raise
+    store._upsert_pgvector_chunks("d1", "p1", "s1", "t", "src", ["x"])
+    store._delete_pgvector_parent("p1", "s1")
