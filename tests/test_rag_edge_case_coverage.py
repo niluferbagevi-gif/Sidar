@@ -106,3 +106,77 @@ def test_fetch_pgvector_gracefully_handles_malformed_embedding_result(tmp_path, 
     store._pgvector_embed_texts = lambda _texts: []
 
     assert store._fetch_pgvector("test", top_k=3, session_id="s1") == []
+
+
+
+def test_embed_texts_semantic_cache_missing_dependency_returns_empty(monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_semantic_cache")
+
+    real_import = __import__
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "sentence_transformers":
+            raise ImportError("missing sentence_transformers")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _blocked_import)
+    assert rag_mod.embed_texts_for_semantic_cache(["alpha", "beta"]) == []
+
+
+def test_document_store_missing_chromadb_module_falls_back(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_missing_chromadb")
+    DocumentStore = rag_mod.DocumentStore
+
+    monkeypatch.setitem(sys.modules, "chromadb", None)
+    store = DocumentStore(
+        tmp_path / "rag_no_chromadb",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    assert store._chroma_available is False
+
+
+def test_chunk_text_forces_split_on_very_long_single_word(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_chunk_word")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_chunk_word",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=50, RAG_CHUNK_OVERLAP=10, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    chunks = store._chunk_text("z" * 5000)
+    assert len(chunks) > 50
+    assert all(1 <= len(c) <= 50 for c in chunks)
+
+
+def test_search_auto_falls_back_when_chroma_query_raises(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_query_fail")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_query_fail",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=60, RAG_CHUNK_OVERLAP=10, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    doc_id = "d1"
+    content = "needle inside content"
+    (tmp_path / "rag_query_fail" / f"{doc_id}.txt").write_text(content, encoding="utf-8")
+    store._index = {doc_id: {"title": "Doc", "source": "", "tags": [], "session_id": "s1"}}
+
+    class _BrokenCollection:
+        def count(self):
+            return 1
+
+        def query(self, **_kwargs):
+            raise RuntimeError("collection dropped")
+
+    store.collection = _BrokenCollection()
+    store._chroma_available = True
+    store._bm25_available = False
+
+    ok, out = store._search_sync("needle", top_k=2, mode="auto", session_id="s1")
+    assert ok is True
+    assert "needle" in out.lower()
