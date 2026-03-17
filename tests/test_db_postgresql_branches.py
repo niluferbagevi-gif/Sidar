@@ -195,3 +195,99 @@ def test_postgresql_branches_for_schema_user_session_and_quota():
     asyncio.run(_run())
     assert pool.closed is True
     assert any("CREATE TABLE IF NOT EXISTS users" in q for q, _ in conn.execute_calls)
+
+
+def test_postgresql_prompt_and_policy_branches_with_filters_and_validation():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        conn.fetch_queue.append([
+            {
+                "id": 1,
+                "role_name": "system",
+                "prompt_text": "p",
+                "version": 1,
+                "is_active": True,
+                "created_at": "c",
+                "updated_at": "u",
+            }
+        ])
+        prompts = await db.list_prompts()
+        assert prompts[0].role_name == "system"
+
+        conn.fetch_queue.append([
+            {
+                "id": 2,
+                "role_name": "coder",
+                "prompt_text": "p2",
+                "version": 2,
+                "is_active": False,
+                "created_at": "c2",
+                "updated_at": "u2",
+            }
+        ])
+        filtered_prompts = await db.list_prompts("coder")
+        assert filtered_prompts[0].version == 2
+
+        conn.fetch_queue.append([
+            {
+                "id": 3,
+                "user_id": "u-1",
+                "tenant_id": "t1",
+                "resource_type": "rag",
+                "resource_id": "*",
+                "action": "read",
+                "effect": "allow",
+                "created_at": "c",
+                "updated_at": "u",
+            }
+        ])
+        policies = await db.list_access_policies("u-1")
+        assert policies[0].resource_type == "rag"
+
+        conn.fetch_queue.append([
+            {
+                "id": 4,
+                "user_id": "u-1",
+                "tenant_id": "t2",
+                "resource_type": "github",
+                "resource_id": "repo",
+                "action": "write",
+                "effect": "deny",
+                "created_at": "c",
+                "updated_at": "u",
+            }
+        ])
+        tenant_policies = await db.list_access_policies("u-1", tenant_id="t2")
+        assert tenant_policies[0].tenant_id == "t2"
+
+        await db.upsert_access_policy(
+            user_id="u-1",
+            tenant_id="t1",
+            resource_type="rag",
+            resource_id="*",
+            action="read",
+            effect="allow",
+        )
+
+        with pytest.raises(ValueError):
+            await db.upsert_access_policy(
+                user_id="u-1",
+                tenant_id="t1",
+                resource_type="rag",
+                resource_id="*",
+                action="read",
+                effect="bad",
+            )
+
+        with pytest.raises(ValueError):
+            await db.upsert_access_policy(
+                user_id="u-1",
+                tenant_id="t1",
+                resource_type="",
+                resource_id="*",
+                action="",
+                effect="allow",
+            )
+
+    asyncio.run(_run())
