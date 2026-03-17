@@ -4,7 +4,27 @@ import io
 import json
 from datetime import datetime, timedelta, timezone
 
-import jwt
+try:
+    import jwt
+except ModuleNotFoundError:  # test ortamında PyJWT olmayabilir
+    class _FallbackJWTError(Exception):
+        pass
+
+    class _FallbackJWTModule:
+        PyJWTError = _FallbackJWTError
+        InvalidTokenError = _FallbackJWTError
+        ExpiredSignatureError = _FallbackJWTError
+
+        @staticmethod
+        def decode(*_a, **_k):
+            raise _FallbackJWTError("jwt missing")
+
+        @staticmethod
+        def encode(payload, *_a, **_k):
+            return str(payload)
+
+    jwt = _FallbackJWTModule()
+
 import sys
 import types
 from pathlib import Path
@@ -130,6 +150,16 @@ def _install_web_server_stubs():
     static_mod = types.ModuleType("fastapi.staticfiles")
     static_mod.StaticFiles = lambda directory: types.SimpleNamespace(directory=directory)
 
+    pyd_mod = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    pyd_mod.BaseModel = _BaseModel
+    pyd_mod.Field = lambda default=None, **_k: default
+
     redis_mod = types.ModuleType("redis.asyncio")
 
     class _Redis:
@@ -144,6 +174,17 @@ def _install_web_server_stubs():
 
     uvicorn_mod = types.ModuleType("uvicorn")
     uvicorn_mod.run = lambda *a, **k: None
+
+    jwt_mod = types.ModuleType("jwt")
+
+    class _PyJWTError(Exception):
+        pass
+
+    jwt_mod.PyJWTError = _PyJWTError
+    jwt_mod.InvalidTokenError = _PyJWTError
+    jwt_mod.ExpiredSignatureError = _PyJWTError
+    jwt_mod.decode = lambda *_a, **_k: (_ for _ in ()).throw(_PyJWTError("invalid"))
+    jwt_mod.encode = lambda payload, *_a, **_k: str(payload)
 
     cfg_mod = types.ModuleType("config")
 
@@ -216,6 +257,11 @@ def _install_web_server_stubs():
 
     registry_mod.AgentRegistry = _AgentRegistry
 
+    managers_pkg = types.ModuleType("managers")
+    managers_pkg.__path__ = []
+    managers_health_mod = types.ModuleType("managers.system_health")
+    managers_health_mod.render_llm_metrics_prometheus = lambda *_a, **_k: ""
+
     core_metrics_mod = types.ModuleType("core.llm_metrics")
 
     class _Collector:
@@ -242,8 +288,10 @@ def _install_web_server_stubs():
     sys.modules["fastapi.middleware.cors"] = cors_mod
     sys.modules["fastapi.responses"] = resp_mod
     sys.modules["fastapi.staticfiles"] = static_mod
+    sys.modules["pydantic"] = pyd_mod
     sys.modules["redis.asyncio"] = redis_mod
     sys.modules["uvicorn"] = uvicorn_mod
+    sys.modules["jwt"] = jwt_mod
     sys.modules["config"] = cfg_mod
     if "agent" not in sys.modules:
         agent_pkg = types.ModuleType("agent")
@@ -278,6 +326,8 @@ def _install_web_server_stubs():
     sys.modules["agent.base_agent"] = base_agent_mod
     sys.modules["agent.registry"] = registry_mod
     sys.modules["agent.core.event_stream"] = event_stream_mod
+    sys.modules["managers"] = managers_pkg
+    sys.modules["managers.system_health"] = managers_health_mod
     sys.modules["core.llm_metrics"] = core_metrics_mod
     sys.modules["core.llm_client"] = llm_client_mod
 
@@ -2573,3 +2623,80 @@ def test_async_force_shutdown_swallows_missing_process_errors(monkeypatch):
     asyncio.run(mod._async_force_shutdown_local_llm_processes())
     assert mod._shutdown_cleanup_done is True
     assert calls["kill"] >= 1
+
+
+def test_resolve_user_from_token_handles_jwt_errors_and_db_fallback(monkeypatch):
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == "db-ok":
+                return types.SimpleNamespace(id="u-db", username="fromdb")
+            return None
+
+    mod._agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_DB()))
+
+    jwt_error = getattr(mod.jwt, "InvalidTokenError", Exception)
+    monkeypatch.setattr(mod.jwt, "decode", lambda *_a, **_k: (_ for _ in ()).throw(jwt_error("invalid")))
+
+    user = asyncio.run(mod._resolve_user_from_token(mod._agent, "db-ok"))
+    missing = asyncio.run(mod._resolve_user_from_token(mod._agent, "db-miss"))
+
+    assert user.username == "fromdb"
+    assert missing is None
+
+
+def test_setup_tracing_swallows_httpx_instrumentation_errors(monkeypatch):
+    mod = _load_web_server()
+
+    class _Res:
+        @staticmethod
+        def create(data):
+            return {"resource": data}
+
+    class _Provider:
+        def __init__(self, resource):
+            self.resource = resource
+
+        def add_span_processor(self, _proc):
+            return None
+
+    class _Exporter:
+        def __init__(self, endpoint, insecure):
+            self.endpoint = endpoint
+            self.insecure = insecure
+
+    class _Batch:
+        def __init__(self, exporter):
+            self.exporter = exporter
+
+    class _FastAPIInstr:
+        @staticmethod
+        def instrument_app(_app):
+            return None
+
+    class _HTTPXInstr:
+        def instrument(self):
+            raise RuntimeError("httpx instrumentation fail")
+
+    class _Trace:
+        @staticmethod
+        def set_tracer_provider(_provider):
+            return None
+
+    infos = []
+    monkeypatch.setattr(mod.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+
+    mod.cfg.ENABLE_TRACING = True
+    mod.cfg.OTEL_EXPORTER_ENDPOINT = "http://otel:4317"
+    mod.trace = _Trace
+    mod.Resource = _Res
+    mod.TracerProvider = _Provider
+    mod.OTLPSpanExporter = _Exporter
+    mod.BatchSpanProcessor = _Batch
+    mod.FastAPIInstrumentor = _FastAPIInstr
+    mod.HTTPXClientInstrumentor = _HTTPXInstr
+
+    mod._setup_tracing()
+
+    assert any("OpenTelemetry aktif" in item for item in infos)
