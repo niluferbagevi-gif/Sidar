@@ -1,6 +1,7 @@
 [run]
 omit =
     tests/*
+    */sidar_plugin_*
 
 [report]
 fail_under = 99.9
