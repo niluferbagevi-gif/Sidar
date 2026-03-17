@@ -9,7 +9,7 @@ from typing import Optional
 from config import Config
 
 from agent.base_agent import BaseAgent
-from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult
+from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 from agent.core.memory_hub import MemoryHub
 from agent.core.registry import AgentRegistry
 from agent.core.event_stream import get_agent_event_bus
@@ -108,7 +108,7 @@ class SupervisorAgent(BaseAgent):
                 ),
                 timeout=getattr(getattr(self, "cfg", None), "REACT_TIMEOUT", 60),
             )
-            if isinstance(result.summary, DelegationRequest):
+            if is_delegation_request(result.summary):
                 current = result.summary
                 continue
             return result
@@ -122,27 +122,27 @@ class SupervisorAgent(BaseAgent):
         if intent == "research":
             await self.events.publish("supervisor", "Researcher ajanına yönlendiriliyor...")
             result = await self._delegate("researcher", task_prompt, "research")
-            if isinstance(result.summary, DelegationRequest):
+            if is_delegation_request(result.summary):
                 result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
             return str(result.summary)
 
         if intent == "review":
             await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
             result = await self._delegate("reviewer", task_prompt, "review")
-            if isinstance(result.summary, DelegationRequest):
+            if is_delegation_request(result.summary):
                 result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
             return str(result.summary)
 
         await self.events.publish("supervisor", "Coder ajanı kod üzerinde çalışıyor...")
         code_result = await self._delegate("coder", task_prompt, "code")
-        if isinstance(code_result.summary, DelegationRequest):
+        if is_delegation_request(code_result.summary):
             code_result = await self._route_p2p(code_result.summary, parent_task_id=code_result.task_id)
 
         code_summary = str(code_result.summary)
         review_goal = f"review_code|{code_summary[:800]}"
         await self.events.publish("supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor...")
         review_result = await self._delegate("reviewer", review_goal, "review", parent_task_id=code_result.task_id)
-        if isinstance(review_result.summary, DelegationRequest):
+        if is_delegation_request(review_result.summary):
             review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
 
         review_summary = str(review_result.summary)
@@ -165,7 +165,7 @@ class SupervisorAgent(BaseAgent):
             )
             await self.events.publish("supervisor", f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self.MAX_QA_RETRIES})...")
             next_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
-            if isinstance(next_code.summary, DelegationRequest):
+            if is_delegation_request(next_code.summary):
                 next_code = await self._route_p2p(next_code.summary, parent_task_id=next_code.task_id)
 
             latest_code_summary = str(next_code.summary)
@@ -176,7 +176,7 @@ class SupervisorAgent(BaseAgent):
                 "review",
                 parent_task_id=next_code.task_id,
             )
-            if isinstance(review_result.summary, DelegationRequest):
+            if is_delegation_request(review_result.summary):
                 review_result = await self._route_p2p(review_result.summary, parent_task_id=review_result.task_id)
             review_summary = str(review_result.summary)
 

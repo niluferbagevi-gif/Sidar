@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from agent.registry import AgentRegistry, AgentSpec
-from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult
+from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +302,7 @@ class SwarmOrchestrator:
             if result is None and last_exc is not None:
                 raise last_exc
 
-            if isinstance(result.summary, DelegationRequest):
+            if is_delegation_request(result.summary):
                 delegation = result.summary
                 target_role = (delegation.target_agent or "").strip()
                 if not target_role:
