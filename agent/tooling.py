@@ -90,11 +90,6 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "scan_project_todos": ScanProjectTodosSchema,
 }
 
-# Pydantic v2: Optional alanları olan modellerde forward reference çözümlemesi için model_rebuild() gerekir.
-for _schema in TOOL_ARG_SCHEMAS.values():
-    _schema.model_rebuild()
-
-
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
     """Şema tanımlı araçlar için yalnızca JSON object argümanı typed modele dönüştür."""
     schema = TOOL_ARG_SCHEMAS.get(tool_name)
