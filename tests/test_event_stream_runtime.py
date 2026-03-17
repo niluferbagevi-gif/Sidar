@@ -139,3 +139,91 @@ def test_event_bus_drain_buffered_events_once_moves_waiting_events():
     moved, third = asyncio.run(_run())
     assert moved.message == "buffered"
     assert third is False
+
+
+def test_publish_via_redis_failure_sets_local_fallback(monkeypatch):
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _BadRedis:
+        async def xadd(self, *_a, **_k):
+            raise ConnectionError("redis down")
+
+    cleaned = {"called": False}
+
+    async def _ensure():
+        return None
+
+    async def _cleanup():
+        cleaned["called"] = True
+        bus._redis_client = None
+
+    bus._redis_client = _BadRedis()
+    monkeypatch.setattr(bus, "_ensure_redis_listener", _ensure)
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup)
+
+    evt = AgentEvent(ts=1.0, source="s", message="m")
+    ok = asyncio.run(bus._publish_via_redis(evt))
+    assert ok is False
+    assert bus._redis_available is False
+    assert cleaned["called"] is True
+
+
+def test_event_bus_listener_handles_invalid_payload_and_ack_failures(monkeypatch):
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _OneShotRedis:
+        def __init__(self):
+            self.acked = []
+            self.called = 0
+
+        async def xreadgroup(self, **_kwargs):
+            self.called += 1
+            if self.called == 1:
+                return [(
+                    "sidar:agent_events",
+                    [("1-0", {"payload": "{not-json}"}), ("2-0", {"payload": '{"sid":"other","ts":1,"source":"x","message":"y"}'})],
+                )]
+            raise RuntimeError("stop loop")
+
+        async def xack(self, _channel, _group, msg_id):
+            self.acked.append(msg_id)
+            if msg_id == "1-0":
+                raise RuntimeError("ack failed")
+
+    redis = _OneShotRedis()
+    bus._redis_client = redis
+
+    cleaned = {"called": False}
+
+    async def _cleanup_stub():
+        cleaned["called"] = True
+        bus._redis_client = None
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup_stub)
+
+    sid, q = bus.subscribe(maxsize=20)
+    try:
+        asyncio.run(bus._redis_listener_loop())
+    finally:
+        bus.unsubscribe(sid)
+
+    # invalid payload ignored; foreign sid payload faned out
+    evt = q.get_nowait()
+    assert evt.source == "x"
+    assert evt.message == "y"
+    assert "1-0" in redis.acked and "2-0" in redis.acked
+    assert cleaned["called"] is True
+
+
+def test_event_bus_fanout_unsubscribes_when_queue_full_and_no_buffer_space():
+    bus = AgentEventBus()
+    full_q = asyncio.Queue(maxsize=1)
+    full_q.put_nowait(AgentEvent(ts=0.0, source="seed", message="seed"))
+
+    bus._subscribers = {1: full_q}
+    bus._buffered_events = {}
+    bus._fanout_local(AgentEvent(ts=1.0, source="x", message="y"))
+
+    assert 1 not in bus._subscribers
