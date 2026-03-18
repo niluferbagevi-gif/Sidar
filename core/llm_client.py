@@ -25,7 +25,11 @@ except Exception:
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 from core.dlp import mask_messages as _dlp_mask_messages
 from core.router import CostAwareRouter, record_routing_cost
-from core.cache_metrics import _CacheMetrics, _cache_metrics, get_cache_metrics
+from core.cache_metrics import (
+    record_cache_hit,
+    record_cache_miss,
+    record_cache_skip,
+)
 
 try:
     from opentelemetry import trace
@@ -293,10 +297,10 @@ class _SemanticCacheManager:
 
             if best_response is not None and best_sim >= self.threshold:
                 logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
-                _cache_metrics.record_hit()
+                record_cache_hit()
                 return best_response
             logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
-            _cache_metrics.record_miss()
+            record_cache_miss()
             return None
         except Exception as exc:
             logger.debug("Semantic cache okuma hatası: %s", exc)
@@ -1316,7 +1320,7 @@ class LLMClient:
             if cached_response is not None:
                 return cached_response
         elif stream:
-            _cache_metrics.record_skip()
+            record_cache_skip()
 
         response = await self._client.chat(
             messages=messages,
