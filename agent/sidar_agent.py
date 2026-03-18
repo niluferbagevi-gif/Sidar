@@ -259,12 +259,11 @@ class SidarAgent:
         lines.append(f"  Proje        : {self.cfg.PROJECT_NAME} v{self.cfg.VERSION}")
         if include_verbose_runtime:
             lines.append(f"  Dizin        : {self.cfg.BASE_DIR}")
+        provider_name = (self.cfg.AI_PROVIDER or "").lower()
         lines.append(f"  AI Sağlayıcı : {self.cfg.AI_PROVIDER.upper()}")
-        if self.cfg.AI_PROVIDER == "ollama":
+        if provider_name == "ollama":
             lines.append(f"  Coding Modeli: {self.cfg.CODING_MODEL}")
             lines.append(f"  Text Modeli  : {self.cfg.TEXT_MODEL}")
-            if include_verbose_runtime:
-                lines.append(f"  Ollama URL   : {self.cfg.OLLAMA_URL}")
         else:
             lines.append(f"  Gemini Modeli: {self.cfg.GEMINI_MODEL}")
         lines.append(f"  Erişim Seviye: {self.cfg.ACCESS_LEVEL.upper()}")

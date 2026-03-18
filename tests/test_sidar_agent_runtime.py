@@ -754,6 +754,45 @@ def test_build_context_includes_last_file_for_remote_provider(tmp_path):
     assert "Son dosya  : demo.py" in txt
 
 
+def test_build_context_treats_mixed_case_ollama_as_local_provider(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        PROJECT_NAME="Sidar",
+        VERSION="3.0",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="Ollama",
+        CODING_MODEL="code",
+        TEXT_MODEL="text",
+        OLLAMA_URL="http://localhost:11434",
+        ACCESS_LEVEL="full",
+        USE_GPU=True,
+        GPU_INFO="RTX",
+        CUDA_VERSION="12.0",
+        GITHUB_REPO="org/repo",
+        GEMINI_MODEL="gemini",
+        LOCAL_AGENT_CONTEXT_MAX_CHARS=5000,
+        LOCAL_INSTRUCTION_MAX_CHARS=5000,
+    )
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 1})
+    a.github = SimpleNamespace(is_available=lambda: True)
+    a.web = SimpleNamespace(is_available=lambda: True)
+    a.docs = SimpleNamespace(status=lambda: "ok")
+    a.security = SimpleNamespace(level_name="full")
+    a.todo = []
+    a.memory = SimpleNamespace(get_last_file=lambda: "demo.py")
+    a._instructions_lock = threading.Lock()
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._load_instruction_files = lambda: ""
+
+    txt = asyncio.run(a._build_context())
+    assert "Coding Modeli: code" in txt
+    assert "Text Modeli  : text" in txt
+    assert "Gemini Modeli:" not in txt
+    assert "Ollama URL" not in txt
+    assert "Son dosya  : demo.py" not in txt
+
+
 def test_build_context_truncates_for_local_provider(tmp_path):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(
