@@ -214,28 +214,36 @@ class DatasetExporter:
             return {"path": output_path, "count": 0, "format": fmt}
 
         out = Path(output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
 
+        # Veriyi önce belleğe dönüştür, ardından asyncio.to_thread ile disk yazımı yap.
+        # Bulgu D: async fonksiyon içinde senkron open/write event loop'u bloklar.
         ids = []
-        with out.open("w", encoding="utf-8") as f:
-            for row in rows:
-                # Correction varsa onu ideal yanıt olarak kullan
-                completion = row["correction"] if row["correction"] else row["response"]
-                prompt = row["prompt"]
+        lines: List[str] = []
+        for row in rows:
+            completion = row["correction"] if row["correction"] else row["response"]
+            prompt = row["prompt"]
 
-                if fmt == "jsonl":
-                    obj = {"prompt": prompt, "completion": completion}
-                elif fmt == "alpaca":
-                    obj = {"instruction": prompt, "input": "", "output": completion}
-                else:  # sharegpt
-                    obj = {
-                        "conversations": [
-                            {"from": "human", "value": prompt},
-                            {"from": "gpt", "value": completion},
-                        ]
-                    }
-                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-                ids.append(row["id"])
+            if fmt == "jsonl":
+                obj = {"prompt": prompt, "completion": completion}
+            elif fmt == "alpaca":
+                obj = {"instruction": prompt, "input": "", "output": completion}
+            else:  # sharegpt
+                obj = {
+                    "conversations": [
+                        {"from": "human", "value": prompt},
+                        {"from": "gpt", "value": completion},
+                    ]
+                }
+            lines.append(json.dumps(obj, ensure_ascii=False) + "\n")
+            ids.append(row["id"])
+
+        content = "".join(lines)
+
+        def _write_file() -> None:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(content, encoding="utf-8")
+
+        await asyncio.to_thread(_write_file)
 
         if mark_done and ids:
             await self.store.mark_exported(ids)
