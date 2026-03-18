@@ -27,6 +27,7 @@ import os
 import signal
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Union
 
 import jwt
 from contextlib import asynccontextmanager
