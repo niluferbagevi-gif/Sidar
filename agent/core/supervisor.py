@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Optional
 
@@ -16,6 +17,30 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.roles.coder_agent import CoderAgent
 from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
+
+try:
+    from opentelemetry import trace as otel_trace
+    _tracer = otel_trace.get_tracer("sidar.supervisor")
+except Exception:  # pragma: no cover
+    _tracer = None  # type: ignore[assignment]
+
+try:
+    from core.agent_metrics import get_agent_metrics_collector as _get_agent_metrics
+except Exception:  # pragma: no cover
+    _get_agent_metrics = None  # type: ignore[assignment]
+
+
+class _NullSpan:
+    """OTel bağımlılığı yokken `with _tracer.start_as_current_span(...)` yerine kullanılır."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def set_attribute(self, *_args):
+        pass
 
 
 class SupervisorAgent(BaseAgent):
@@ -87,9 +112,40 @@ class SupervisorAgent(BaseAgent):
             parent_task_id=parent_task_id,
         )
         agent = self.registry.get(receiver)
-        summary = await agent.run_task(envelope.goal)
+
+        t0 = time.monotonic()
+        status = "done"
+        span_ctx = (
+            _tracer.start_as_current_span(
+                f"supervisor.delegate.{receiver}",
+                attributes={
+                    "sidar.receiver": receiver,
+                    "sidar.intent": intent,
+                    "sidar.task_id": task_id,
+                    "sidar.parent_task_id": parent_task_id or "",
+                },
+            )
+            if _tracer is not None
+            else _NullSpan()
+        )
+        try:
+            with span_ctx as span:
+                summary = await agent.run_task(envelope.goal)
+                if span is not None and hasattr(span, "set_attribute"):
+                    span.set_attribute("sidar.result_len", len(str(summary)))
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            duration_s = time.monotonic() - t0
+            if _get_agent_metrics is not None:
+                try:
+                    _get_agent_metrics().record(receiver, intent, status, duration_s)
+                except Exception:
+                    pass
+
         self.memory_hub.add_role_note(receiver, str(summary))
-        return TaskResult(task_id=task_id, status="done", summary=summary)
+        return TaskResult(task_id=task_id, status=status, summary=summary)
 
     async def _route_p2p(self, request: DelegationRequest, *, parent_task_id: Optional[str] = None, max_hops: int = 4) -> TaskResult:
         """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
