@@ -5,6 +5,10 @@ pytest.importorskip("pydantic")
 import agent.tooling as tooling
 
 
+class _DummySchema(tooling.BaseModel):
+    value: str | None = None
+
+
 def test_parse_tool_argument_supports_json_schema_payloads():
     parsed = tooling.parse_tool_argument(
         "write_file",
@@ -132,9 +136,6 @@ def test_parse_tool_argument_empty_and_json_edge_branches(monkeypatch):
 
     with pytest.raises(Exception):
         tooling.parse_tool_argument("github_pr_diff", "")
-
-    class _DummySchema(tooling.BaseModel):
-        value: str | None = None
 
     monkeypatch.setitem(tooling.TOOL_ARG_SCHEMAS, "dummy_tool", _DummySchema)
     with pytest.raises(ValueError):
