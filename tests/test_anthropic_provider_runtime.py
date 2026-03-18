@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_llm_client_runtime import _load_llm_client_module
+from tests.test_llm_client_runtime import _collect, _load_llm_client_module
 
 
 def test_anthropic_chat_without_key_returns_error_json():
@@ -277,3 +277,43 @@ def test_stream_anthropic_error_yields_safe_json(monkeypatch):
     payload = json.loads(out[0])
     assert payload["tool"] == "final_answer"
     assert "Anthropic akış hatası" in payload["argument"]
+
+def test_anthropic_chat_stream_without_key_and_default_message(monkeypatch):
+    llm_mod = _load_llm_client_module()
+
+    cfg_missing = SimpleNamespace(ANTHROPIC_API_KEY="", ANTHROPIC_TIMEOUT=60, ANTHROPIC_MODEL="claude")
+    missing_client = llm_mod.AnthropicClient(cfg_missing)
+    missing_stream = asyncio.run(missing_client.chat(messages=[{"role": "user", "content": "merhaba"}], stream=True, json_mode=True))
+    missing_payloads = asyncio.run(_collect(missing_stream))
+    assert "ANTHROPIC_API_KEY" in json.loads(missing_payloads[0])["argument"]
+
+    captured = {}
+
+    class _Response:
+        usage = SimpleNamespace(input_tokens=0, output_tokens=0)
+        content = [SimpleNamespace(text='{"tool":"final_answer","argument":"ok","thought":"t"}')]
+
+    class _Messages:
+        async def create(self, **kwargs):
+            captured["messages"] = kwargs["messages"]
+            captured["system"] = kwargs["system"]
+            return _Response()
+
+    class _AsyncAnthropic:
+        def __init__(self, **_kwargs):
+            self.messages = _Messages()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+
+    async def _retry_passthrough(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _retry_passthrough)
+
+    cfg = SimpleNamespace(ANTHROPIC_API_KEY="x", ANTHROPIC_TIMEOUT=10, ANTHROPIC_MODEL="claude", ENABLE_TRACING=False)
+    client = llm_mod.AnthropicClient(cfg)
+    out = asyncio.run(client.chat(messages=[{"role": "system", "content": "yalnızca sistem"}], stream=False, json_mode=False))
+
+    assert out == '{"tool":"final_answer","argument":"ok","thought":"t"}'
+    assert captured["messages"] == [{"role": "user", "content": "Merhaba"}]
+    assert captured["system"] == "yalnızca sistem"

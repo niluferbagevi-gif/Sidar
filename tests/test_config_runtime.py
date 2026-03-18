@@ -683,3 +683,44 @@ def test_validate_critical_settings_for_openai_anthropic_and_litellm_missing_env
     cfg_mod.Config.LITELLM_GATEWAY_URL = ""
     assert cfg_mod.Config.validate_critical_settings() is False
     assert any("LITELLM_GATEWAY_URL" in e for e in errors)
+
+def test_get_env_helpers_typeerror_and_profile_trimmed_override(monkeypatch):
+    cfg_mod = _load_config_module()
+
+    real_getenv = cfg_mod.os.getenv
+    monkeypatch.setattr(cfg_mod.os, "getenv", lambda *_a, **_k: object())
+    assert cfg_mod.get_int_env("TYPE_ERR_INT", 9) == 9
+    assert cfg_mod.get_float_env("TYPE_ERR_FLOAT", 1.75) == 1.75
+    monkeypatch.setattr(cfg_mod.os, "getenv", real_getenv)
+
+    load_calls = []
+    printed = []
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: load_calls.append((a, k))
+
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        monkeypatch.setenv("SIDAR_ENV", " Production ")
+        monkeypatch.setattr(builtins, "print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+
+        def _exists(path_obj):
+            path = str(path_obj)
+            return path.endswith(".env") or path.endswith(".env.production")
+
+        monkeypatch.setattr(Path, "exists", _exists)
+
+        spec = importlib.util.spec_from_file_location("config_runtime_trimmed_profile_under_test", Path("config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+
+        assert len(load_calls) == 2
+        assert load_calls[0][1].get("override") in (None, False)
+        assert load_calls[1][1].get("override") is True
+        assert any(".env.production" in msg for msg in printed)
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
