@@ -239,138 +239,97 @@ if not _SAFE_TABLE_NAME.match(self.schema_version_table):
 
 ## 6. Yüksek Öncelikli Bulgular (Y)
 
-### Y-1 — `/set-level` Endpoint Yetkisiz Güvenlik Seviyesi Yükseltmeye İzin Veriyor
+### Y-1 — `/set-level` Endpoint Yetkisiz Güvenlik Seviyesi Yükseltmeye İzin Veriyor (**ÇÖZÜLDÜ / RESOLVED**)
 
-**Dosya:** `web_server.py:1258-1284`
+**Dosya:** `web_server.py:1865`
 **Ciddiyet:** YÜKSEK — Yetki yükseltme (privilege escalation)
 
-**Sorun:** `/set-level` endpoint'i tüm kimlik doğrulamalı kullanıcılara açık, admin kısıtlaması yok:
+~~**Sorun:** `/set-level` endpoint'i tüm kimlik doğrulamalı kullanıcılara açık, admin kısıtlaması yok.~~
 
-```python
-# web_server.py:1267 — admin kısıtlaması EKSİK
-async def set_level_endpoint(request: Request):
-    # _require_admin_user Depends yok!
-    body = await request.json()
-    new_level = body.get("level", "").strip()
-    agent = await get_agent()
-    result_msg = await asyncio.to_thread(agent.set_access_level, new_level)
-```
-
-**Etki:** Herhangi bir kayıtlı kullanıcı sistemin erişim seviyesini `restricted`'tan `full`'a yükseltebilir; bu tam dosya yazma ve shell çalıştırma yetkisi verir. `_require_admin_user` bağımlılığı yalnızca `/admin/stats` endpoint'inde kullanılıyor, bu endpoint ise mevcut.
-
-**Düzeltme:**
-```python
-async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user)):
-```
+**Uygulanan Düzeltme:** `_user=Depends(_require_admin_user)` bağımlılığı eklendi. Doğrulama: `web_server.py:1865` satırında `async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user))` görünmektedir. Endpoint artık yalnızca admin rolündeki kullanıcılar tarafından çağrılabilir.
 
 ---
 
-### Y-2 — RAG Dosya Ekleme Endpoint'i Sınırsız Upload Boyutuna İzin Veriyor
+### Y-2 — RAG Dosya Ekleme Endpoint'i Sınırsız Upload Boyutuna İzin Veriyor (**ÇÖZÜLDÜ / RESOLVED**)
 
-**Dosya:** `web_server.py:1158-1198`
+**Dosya:** `web_server.py:1747`
 **Ciddiyet:** YÜKSEK — Disk doldurma (DoS)
 
-**Sorun:** `/api/rag/upload` endpoint'inde `MAX_FILE_CONTENT_BYTES` (1 MB) kontrolü uygulanmıyor. Dosya diske yazıldıktan SONRA RAG'a ekleme girişimi yapılıyor; ancak dosya boyutu hiç kontrol edilmiyor:
+~~**Sorun:** `/api/rag/upload` endpoint'inde boyut kontrolü uygulanmıyordu.~~
+
+**Uygulanan Düzeltme:** Diske yazmadan önce `await file.read(max_bytes + 1)` ile okuma yapılıp limit aşımında `413 Request Entity Too Large` döndürülüyor. `Config.MAX_RAG_UPLOAD_BYTES` (varsayılan 50 MB) kullanılıyor. Doğrulama: `web_server.py:1756-1762`.
 
 ```python
-# web_server.py:1174-1188 — boyut kontrolü YOK
-with open(tmp_path, "wb") as buffer:
-    shutil.copyfileobj(file.file, buffer)   # ← sınırsız write!
-# Dosya diske yazıldıktan SONRA kontrol yoktur
-ok, msg = await asyncio.to_thread(
-    agent.docs.add_document_from_file, str(tmp_path), ...
-)
+# web_server.py:1756-1762 — MEVCUT KOD (ÇÖZÜLDÜ)
+max_bytes = Config.MAX_RAG_UPLOAD_BYTES
+data = await file.read(max_bytes + 1)
+if len(data) > max_bytes:
+    raise HTTPException(
+        status_code=413,
+        detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB",
+    )
 ```
-
-`/file-content` endpoint'i `MAX_FILE_CONTENT_BYTES` kontrolü yaparken (`web_server.py:906`) bu endpoint yapmıyor.
-
-**Düzeltme:** `shutil.copyfileobj` öncesi:
-```python
-# Dosya boyutunu oku
-await file.seek(0, 2)
-file_size = await file.tell()
-await file.seek(0)
-if file_size > MAX_FILE_CONTENT_BYTES:
-    raise HTTPException(status_code=413, ...)
-```
-Veya `UploadFile` için chunk-bazlı yazmayla kümülatif boyut takibi.
 
 ---
 
-### Y-3 — `_summarize_memory()` İçinde Async Fonksiyon `asyncio.to_thread()` ile Yanlış Çağrılıyor
+### Y-3 — `_summarize_memory()` İçinde Async Fonksiyon `asyncio.to_thread()` ile Yanlış Çağrılıyor (**ÇÖZÜLDÜ / RESOLVED**)
 
-**Dosya:** `agent/sidar_agent.py:464-471`
+**Dosya:** `agent/sidar_agent.py:497`
 **Ciddiyet:** YÜKSEK — Sessiz veri kaybı (bellek arşivleme hiç çalışmıyor)
 
-**Sorun:** `docs.add_document` async bir fonksiyondur ancak `asyncio.to_thread()` ile çağrılıyor:
+~~**Sorun:** `docs.add_document` async fonksiyonu `asyncio.to_thread()` ile yanlış çağrılıyordu; sohbet arşivleme sessizce başarısız oluyordu.~~
+
+**Uygulanan Düzeltme:** `asyncio.to_thread(self.docs.add_document, ...)` kaldırılıp doğrudan `await self.docs.add_document(...)` kullanımına geçildi. Doğrulama: `agent/sidar_agent.py:497`.
 
 ```python
-# sidar_agent.py:465-471 — HATALI KULLANIM
-await asyncio.to_thread(
-    self.docs.add_document,          # ← async coroutine function
-    title=f"Sohbet Geçmişi Arşivi ...",
-    content=full_turns_text,
-    ...
-)
-```
-
-`asyncio.to_thread(async_fn, ...)` bir thread'de `async_fn(...)` çağırır, bu da bir coroutine nesnesi döndürür ama onu await etmez. Sonuç: sohbet arşivleme sessizce başarısız olur, "sonsuz hafıza" özelliği hiç çalışmaz.
-
-**Düzeltme:** Doğrudan await kullanılmalı:
-```python
+# sidar_agent.py:497 — MEVCUT KOD (ÇÖZÜLDÜ)
 await self.docs.add_document(
-    title=f"Sohbet Geçmişi Arşivi ...",
+    title=f"Sohbet Geçmişi Arşivi ({time.strftime('%Y-%m-%d %H:%M')})",
     content=full_turns_text,
     source="memory_archive",
     tags=["memory", "archive", "conversation"],
-    session_id="global",
 )
 ```
 
 ---
 
-### Y-4 — Rate Limiting IP Tespitinde X-Forwarded-For Güvenilir Kabul Ediliyor
+### Y-4 — Rate Limiting IP Tespitinde X-Forwarded-For Güvenilir Kabul Ediliyor (**ÇÖZÜLDÜ / RESOLVED**)
 
-**Dosya:** `web_server.py:404-413`
+**Dosya:** `web_server.py:938-955`
 **Ciddiyet:** YÜKSEK — Rate limit bypass
 
-**Sorun:** `_get_client_ip()` X-Forwarded-For başlığındaki ilk IP'yi doğrulama yapmadan alıyor:
+~~**Sorun:** `_get_client_ip()` XFF başlığını koşulsuz güvenilir kabul ediyordu.~~
+
+**Uygulanan Düzeltme:** `_get_client_ip()` fonksiyonu `TRUSTED_PROXIES` whitelist kontrolüne bağlandı: XFF başlığı yalnızca bağlantının gerçek IP'si `Config.TRUSTED_PROXIES` listesinde yer alıyorsa okunur; aksi halde doğrudan `request.client.host` döndürülür. Doğrulama: `web_server.py:945-955`.
 
 ```python
-# web_server.py:405-410 — ZAFIYET
-def _get_client_ip(request: Request) -> str:
+# web_server.py:945-955 — MEVCUT KOD (ÇÖZÜLDÜ)
+direct_ip = request.client.host if request.client else "unknown"
+if direct_ip in Config.TRUSTED_PROXIES:
     xff = request.headers.get("X-Forwarded-For", "")
     if xff:
-        first_ip = xff.split(",")[0].strip()  # ← kullanıcı bu değeri sahte yapabilir
+        first_ip = xff.split(",")[0].strip()
         if first_ip:
             return first_ip
+    ...
+return direct_ip
 ```
-
-Bir saldırgan `X-Forwarded-For: 1.2.3.4` başlığı göndererek her istekte farklı bir "IP" ile görünüp tüm rate limiting'i atlayabilir. DDoS koruma ve chat rate limiting tamamen devre dışı kalır.
-
-**Düzeltme:** Reverse proxy arkasında çalışıyorsa trusted proxy sayısına göre son IP alınmalı. Doğrudan erişimde başlık tamamen görmezden gelinmeli veya `trusted_proxies` listesi konfigüre edilmeli.
 
 ---
 
-### Y-5 — `config.py`'daki `get_system_info()` REDIS_URL'yi Sızdırıyor
+### Y-5 — `config.py`'daki `get_system_info()` REDIS_URL'yi Sızdırıyor (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `config.py:561`
 **Ciddiyet:** YÜKSEK — Gizli altyapı bilgisi ifşası
 
-**Sorun:** `get_system_info()` döndürdüğü sözlükte `redis_url` alanını içeriyor. Bu fonksiyonun dönüş değeri `/status` endpoint'i üzerinden de dolaylı olarak erişilebilir olabilir.
+~~**Sorun:** `get_system_info()` döndürdüğü sözlükte `redis_url` alanını içeriyordu. Redis URL şifre, host ve port bilgisi içerebilir.~~
+
+**Uygulanan Düzeltme:** `redis_url` alanı `get_system_info()` çıktısından tamamen kaldırıldı. Kısmi maskeleme (yalnızca şifre) yetersiz görüldüğünden alan bütünüyle çıkarıldı. Ayrıca artık kullanılmayan `import re` da kaldırıldı. Doğrulama: `config.py:561` (alan mevcut değil).
 
 ```python
-# config.py:561 — bilgi sızıntısı
-return {
-    ...
-    "redis_url": cls.REDIS_URL,   # ← Redis kimlik bilgisi/endpoint ifşa!
-    ...
-}
+# config.py — MEVCUT KOD (ÇÖZÜLDÜ)
+# REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
 ```
-
-Redis URL şifre içerebilir (örn. `redis://:password@host:6379/0`). Sistem bilgisi döndüren herhangi bir endpoint'te bu alanın görünmesi gereksiz risk oluşturur.
-
-**Düzeltme:** `redis_url` alanı `get_system_info()` çıktısından kaldırılmalı.
 
 ---
 
@@ -609,7 +568,7 @@ if self._sqlite_lock is None:
 | API key doğrulama | ✅ Doğru | Fernet, provider checks |
 | Donanım tespiti | ✅ İyi | Lazy-load, hata toleranslı |
 | GPU fraction validation | ✅ ÇÖZÜLDÜ (FAZ-3) | D-1: Yorum "0.1–0.99, 1.0 dahil değil" olarak güncellendi |
-| REDIS_URL ifşası | ⚠️ YÜKSEK | Y-5: get_system_info içinde |
+| REDIS_URL ifşası | ✅ ÇÖZÜLDÜ (FAZ-4) | Y-5: redis_url get_system_info'dan kaldırıldı |
 | Senkron Ollama check | ⚠️ ORTA | O-4: Bloklayan HTTP |
 
 ---
@@ -620,11 +579,11 @@ if self._sqlite_lock is None:
 |----|--------|-------|-------|---------|
 | K-1 | `/health` endpoint dekoratör çakışması | web_server.py | 721-744 | ✅ ÇÖZÜLDÜ |
 | K-2 | DB şema tablo adı SQLi riski | core/db.py | 80-86, 341-366 | ✅ ÇÖZÜLDÜ |
-| Y-1 | `/set-level` admin kısıtlaması yok | web_server.py | 1267 | 🟠 YÜKSEK |
-| Y-2 | RAG upload dosya boyutu sınırsız | web_server.py | 1158-1198 | 🟠 YÜKSEK |
-| Y-3 | `_summarize_memory` async fn yanlış çağrı | sidar_agent.py | 465-471 | 🟠 YÜKSEK |
-| Y-4 | X-Forwarded-For rate limit bypass | web_server.py | 404-413 | 🟠 YÜKSEK |
-| Y-5 | REDIS_URL get_system_info içinde ifşa | config.py | 561 | 🟠 YÜKSEK |
+| Y-1 | `/set-level` admin kısıtlaması yok | web_server.py | 1267 | ✅ ÇÖZÜLDÜ (FAZ-4) |
+| Y-2 | RAG upload dosya boyutu sınırsız | web_server.py | 1158-1198 | ✅ ÇÖZÜLDÜ (FAZ-4) |
+| Y-3 | `_summarize_memory` async fn yanlış çağrı | sidar_agent.py | 465-471 | ✅ ÇÖZÜLDÜ (FAZ-4) |
+| Y-4 | X-Forwarded-For rate limit bypass | web_server.py | 404-413 | ✅ ÇÖZÜLDÜ (FAZ-4) |
+| Y-5 | REDIS_URL get_system_info içinde ifşa | config.py | 561 | ✅ ÇÖZÜLDÜ (FAZ-4) |
 | O-1 | Çoklu lazy asyncio.Lock anti-pattern | web_server.py | 83,337,343 | 🟡 ORTA |
 | O-2 | RAG file add base dir kısıtlaması yok | core/rag.py | 451-468 | 🟡 ORTA |
 | O-3 | FULL modda Docker fallback ağ açık | code_manager.py | 443-495 | 🟡 ORTA |
@@ -638,34 +597,36 @@ if self._sqlite_lock is None:
 | D-5 | LLM context içinde sistem yolları | sidar_agent.py | 257 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-6 | DB lazy lock init (gereksiz) | core/db.py | 152 | 🔵 DÜŞÜK |
 
-**Toplam (Güncel — 2026-03-18): 0 Kritik · 5 Yüksek · 6 Orta · 1 Düşük = 12 Açık Bulgu + 2 Kritik + 5 Düşük Çözüldü**
+**Toplam (Güncel — 2026-03-18): 0 Kritik · 0 Yüksek · 6 Orta · 1 Düşük = 7 Açık Bulgu + 2 Kritik + 5 Yüksek + 5 Düşük Çözüldü**
 
 ---
 
 ## 11. Sonuç ve Genel Değerlendirme
 
-### Genel Güvenlik Puanı (Güncel — 2026-03-18): 8.9 / 10
+### Genel Güvenlik Puanı (Güncel — 2026-03-18): 9.2 / 10
 
 | Kategori | Puan | Not |
 |----------|------|-----|
 | Kimlik Doğrulama | 9/10 | PBKDF2-SHA256, sabit zamanlı karşılaştırma, Pydantic validation |
-| Yetkilendirme | 6/10 | `/set-level` privilege escalation açığı yüksek öncelikli |
+| Yetkilendirme | 9/10 | `_require_admin_user` tüm kritik endpoint'lerde; METRICS_TOKEN eklendi |
 | SQL Güvenliği | 9/10 | Parameterize sorgular + şema tablo adı için güvenli identifier doğrulama/quoting |
 | Dosya Sistemi | 8/10 | Multi-layer path traversal koruma güçlü; RAG fonksiyon-seviyesinde eksik |
-| Ağ Güvenliği | 8/10 | SSRF koruması, rate limiting, CORS kısıtlı |
+| Ağ Güvenliği | 9/10 | SSRF koruması, rate limiting, CORS kısıtlı; TRUSTED_PROXIES XFF bypass kapatıldı |
 | Sandbox | 9/10 | Docker izolasyonu iyi tasarlanmış, fail-closed SANDBOX |
-| Async Güvenliği | 7/10 | Çoklu lazy init, bir async/to_thread hatası |
+| Async Güvenliği | 9/10 | `await self.docs.add_document(...)` düzeltildi; lazy init anti-pattern hâlâ var (O-1) |
 | Operasyonel | 9/10 | Health endpoint routing, metrik endpoint auth (METRICS_TOKEN), bleach sanitizasyon, port validasyonu tamamlandı |
 
-### Öncelik Sırası (Önerilen Düzeltme Sırası)
+### Öncelik Sırası (Önerilen Düzeltme Sırası — Açık Bulgular)
 
-1. **Y-1** — `/set-level` endpoint `_require_admin_user` kısıtlaması
-2. **Y-3** — `_summarize_memory` async çağrısı düzeltilmeli
-3. **Y-2** — RAG upload boyut limiti
-4. **Y-4** — X-Forwarded-For trusted proxy yapılandırması
-5. **Y-5** — REDIS_URL `get_system_info()` dışına çıkarılmalı
+1. **O-1** — Çoklu lazy `asyncio.Lock` anti-pattern (`web_server.py`)
+2. **O-2** — RAG `add_document_from_file` base dir kısıtlaması yok
+3. **O-3** — FULL modda Docker olmadan ağ açık subprocess
+4. **O-4** — `validate_critical_settings()` senkron HTTP isteği
+5. **O-5** — WebSocket token JSON payload içinde
+6. **O-6** — `shell=True` + metakarakter bypass riski
+7. **D-6** — DB lazy lock init (gereksiz)
 
-> Not: K-1 ve K-2 kritik bulguları **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-3 turu (2026-03-18) ile D-1, D-2, D-3, D-4, D-5 düşük öncelikli bulgular ve §11.2 refactor kalıntıları da kapatılmıştır.
+> Not: K-1 ve K-2 kritik bulguları **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-3 turu (2026-03-18) ile D-1..D-5 düşük öncelikli bulgular kapatılmıştır. FAZ-4 turu (2026-03-18) ile Y-1..Y-5 yüksek öncelikli tüm bulgular **ÇÖZÜLDÜ** olarak kapanmıştır.
 
 ### Pozitif Vurgu
 

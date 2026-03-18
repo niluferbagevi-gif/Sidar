@@ -6,7 +6,6 @@ Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altya
 """
 
 import os
-import re
 import sys
 import logging
 import warnings
@@ -636,7 +635,7 @@ class Config:
             "rate_limit_chat":    cls.RATE_LIMIT_CHAT,
             "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
             "rate_limit_get_io":  cls.RATE_LIMIT_GET_IO,
-            "redis_url":          re.sub(r"//([^:@/]+):([^@/]+)@", r"//\1:***@", cls.REDIS_URL),
+            # REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
             "enable_tracing":     cls.ENABLE_TRACING,
             "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
             "enable_semantic_cache": cls.ENABLE_SEMANTIC_CACHE,

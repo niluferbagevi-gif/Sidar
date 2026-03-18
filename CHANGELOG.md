@@ -4,6 +4,37 @@
 
 ---
 
+## [v3.0.16] - 2026-03-18
+FAZ-4 Yüksek Öncelikli Güvenlik Hardening — Tüm Y-1..Y-5 bulgular doğrulandı ve kapatıldı.
+
+### ✅ FAZ-4 — Y-1 Doğrulama: `/set-level` Admin Kısıtlaması
+**Dosya:** `web_server.py`
+- `set_level_endpoint` zaten `_require_admin_user` Depends dependency'si ile korunuyor. Kod doğrulamasında bulgu önceden çözülmüş olarak tespit edildi.
+- Doğrulama: `web_server.py:1865` — `async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user))`
+
+### ✅ FAZ-4 — Y-2 Doğrulama: RAG Upload Boyut Limiti
+**Dosya:** `web_server.py`
+- Upload endpoint'i zaten `await file.read(max_bytes + 1)` ile diske yazmadan önce boyut kontrolü yapıyor; aşımda HTTP 413 döndürüyor.
+- Doğrulama: `web_server.py:1756-1762`
+
+### ✅ FAZ-4 — Y-3 Doğrulama: `_summarize_memory` Async Çağrısı
+**Dosya:** `agent/sidar_agent.py`
+- `docs.add_document` zaten `await self.docs.add_document(...)` ile doğru şekilde çağrılıyor; `asyncio.to_thread` anti-pattern yok.
+- Doğrulama: `agent/sidar_agent.py:497`
+
+### ✅ FAZ-4 — Y-4 Doğrulama: X-Forwarded-For TRUSTED_PROXIES
+**Dosya:** `web_server.py`
+- `_get_client_ip()` zaten `Config.TRUSTED_PROXIES` whitelist kontrolü yapıyor; XFF başlığı yalnızca güvenilir proxy IP'lerinden geliyorsa okunuyor.
+- Doğrulama: `web_server.py:945-955`
+
+### ✅ FAZ-4 — Y-5 Düzeltme: REDIS_URL get_system_info'dan Kaldırıldı
+**Dosya:** `config.py`
+- `get_system_info()` dönüş sözlüğünden `redis_url` alanı tamamen kaldırıldı. Kısmi şifre maskeleme yetersiz görüldüğünden (host/port da ifşa oluyordu) alan bütünüyle çıkarıldı.
+- Artık kullanılmayan `import re` de kaldırıldı.
+- Doğrulama: `config.py:561` — alan mevcut değil.
+
+---
+
 ## [v3.0.15] - 2026-03-18
 FAZ-3 Düşük Öncelikli Teknik Borç Temizliği — Tüm D-1..D-5 bulgular ve §11.2 refactor kalıntıları kapatıldı.
 
