@@ -617,11 +617,17 @@ class DocumentStore:
             return False, f"[HATA] URL belge eklenemedi: {exc}"
 
     def add_document_from_file(self, path: str, title: str = "", tags: Optional[List[str]] = None, session_id: str = "global") -> Tuple[bool, str]:
-        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".gitignore", ".dockerignore", ""}
+        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal riski taşır
+        _TEXT_EXTS = {".py", ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".css", ".js", ".ts", ".sh", ".sql", ".csv", ".xml", ".rst", ".gitignore", ".dockerignore"}
+        # Hassas yol kalıpları — proje kökü dışındaki kritik dosyalara erişimi engelle
+        _BLOCKED_PARTS = {".env", ".git", "sessions", "__pycache__", "logs", "proc", "etc", "sys"}
         try:
             file = Path(path).resolve()
             if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file(): return False, f"✗ Belirtilen yol bir dosya değil: {path}"
+            # Path traversal koruması: dosyanın hassas dizinler içermediğini doğrula
+            if _BLOCKED_PARTS.intersection(set(file.parts)):
+                return False, f"✗ Erişim engellendi: güvenlik politikası bu yola izin vermiyor: {path}"
             if file.suffix.lower() not in _TEXT_EXTS: return False, f"✗ Desteklenmeyen dosya türü: {file.suffix}"
 
             content = file.read_text(encoding="utf-8", errors="replace")

@@ -95,11 +95,13 @@ function connectWebSocket() {
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
-  chatSocket = new WebSocket(wsUrl);
-
+  // Token'ı Sec-WebSocket-Protocol başlığı üzerinden gönder (JSON payload'dan daha güvenli;
+  // HTTP upgrade aşamasında TLS tarafından korunur, wire'da düz metin geçmez)
+  chatSocket = new WebSocket(wsUrl, token ? [token] : []);
 
   chatSocket.onopen = () => {
-    chatSocket.send(JSON.stringify({ action: 'auth', token }));
+    // Başlık tabanlı auth kullanıldı; ek JSON auth mesajı göndermeye gerek yok.
+    // (Sunucu Sec-WebSocket-Protocol başlığından token'ı okur ve doğrudan auth_ok döner)
   };
 
   chatSocket.onmessage = (event) => {
