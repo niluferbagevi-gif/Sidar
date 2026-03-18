@@ -337,7 +337,9 @@ def test_coder_and_reviewer_run_task_routing_paths(monkeypatch):
     assert reviewer_req.target_agent == "reviewer"
 
     reviewer = ReviewerAgent()
-    assert "test_add_two_contract" in reviewer._build_dynamic_test_content("please add_two helper")
+    assert "test_add_two_contract" in asyncio.run(
+        reviewer._build_dynamic_test_content("please add_two helper")
+    )
     assert reviewer._extract_changed_paths("./a.py ./a.py ../x.py /abs/y.py docs/readme.md") == ["a.py", "x.py", "abs/y.py", "docs/readme.md"]
     cmds = reviewer._build_regression_commands("tests/test_a.py tests/test_a.py")
     assert any(c.startswith("pytest -q tests/test_a.py") for c in cmds)
