@@ -260,3 +260,65 @@ def test_supervisor_route_p2p_timeout_bubbles_for_unresponsive_subagent():
         asyncio.run(s._route_p2p(req, max_hops=2))
 
     assert published == [("supervisor", "P2P yönlendirme: reviewer → coder")]
+
+
+def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+
+    def _boom(*_args, **_kwargs):
+        raise TypeError("stubbed base init")
+
+    monkeypatch.setattr(supervisor_mod.BaseAgent, "__init__", _boom)
+    monkeypatch.setattr(supervisor_mod, "ResearcherAgent", object)
+    monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
+    monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
+
+    cfg = object()
+    s = SupervisorAgent(cfg=cfg)
+
+    assert s.cfg is cfg
+    assert s.role_name == "supervisor"
+    assert s.llm is None
+    assert s.tools == {}
+    assert s.researcher is None
+    assert s.coder is None
+    assert s.reviewer is None
+
+
+def test_supervisor_null_span_methods_are_safe():
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    span = supervisor_mod._NullSpan()
+
+    assert span.__enter__() is span
+    assert span.__exit__(None, None, None) is False
+    assert span.set_attribute("sidar.result_len", 12) is None
+
+
+def test_supervisor_delegate_reraises_agent_errors_even_if_metrics_fail(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    sup = object.__new__(SupervisorAgent)
+
+    class _BrokenAgent:
+        async def run_task(self, _prompt: str):
+            raise RuntimeError("agent boom")
+
+    class _Registry:
+        def get(self, _receiver):
+            return _BrokenAgent()
+
+    class _MemoryHub:
+        def add_role_note(self, *_args, **_kwargs):
+            raise AssertionError("memory should not be written on failure")
+
+    class _Collector:
+        def record(self, *_args, **_kwargs):
+            raise RuntimeError("metrics boom")
+
+    sup.registry = _Registry()
+    sup.memory_hub = _MemoryHub()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Collector())
+
+    with pytest.raises(RuntimeError, match="agent boom"):
+        asyncio.run(sup._delegate("coder", "görev", "code"))
