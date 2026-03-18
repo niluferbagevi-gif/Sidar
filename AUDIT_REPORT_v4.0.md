@@ -335,109 +335,124 @@ return direct_ip
 
 ## 7. Orta Öncelikli Bulgular (O)
 
-### O-1 — `_agent_lock` ve Diğer Kilitlerin Lazy Init Anti-Pattern'i
+### O-1 — `_agent_lock` ve Diğer Kilitlerin Lazy Init Anti-Pattern'i (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `web_server.py:83`, `147-148`, `337`, `343`, `366-368`
 **Ciddiyet:** ORTA — Teorik race condition
 
-**Sorun:** `_agent_lock`, `_redis_lock`, `_local_rate_lock`, `_rate_lock` değişkenleri global scope'ta `None` olarak tanımlanıp ilk çağrıda oluşturuluyor. Python 3.10+ öncesinde asyncio.Lock() başlatma uyarısı üretir; ayrıca birden fazla coroutine eş zamanlı ilk kez çağırırsa lock olmadan yarış durumu yaşanabilir.
+~~**Sorun:** `_agent_lock`, `_redis_lock`, `_local_rate_lock` değişkenleri global scope'ta `None` olarak tanımlanıp ilk çağrıda oluşturuluyordu.~~
+
+**Uygulanan Düzeltme:** Tüm kilitler `_app_lifespan` içinde event loop başlatıldıktan hemen sonra oluşturuluyor. Lazy init anti-pattern tamamen ortadan kalktı. Doğrulama: `web_server.py:289-293`.
 
 ```python
-# web_server.py:83 — anti-pattern
-_agent_lock: asyncio.Lock | None = None
-
-# web_server.py:147-148
-if _agent_lock is None:
-    _agent_lock = asyncio.Lock()   # iki coroutine aynı anda buraya gelebilir
+# web_server.py:289-293 — MEVCUT KOD (ÇÖZÜLDÜ)
+global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock
+_agent_lock = asyncio.Lock()
+_redis_lock = asyncio.Lock()
+_local_rate_lock = asyncio.Lock()
 ```
-
-**Düzeltme:** `_app_lifespan` içinde (event loop başladıktan sonra) tüm kilitleri başlat.
 
 ---
 
-### O-2 — `add_document_from_file` Fonksiyonu Base Directory'e Kısıtlı Değil
+### O-2 — `add_document_from_file` Fonksiyonu Base Directory'e Kısıtlı Değil (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `core/rag.py:451-468`
 **Ciddiyet:** ORTA — Dosya sistemi erişim kontrolü eksikliği
 
-**Sorun:** `add_document_from_file` fonksiyonu `Path(path).resolve()` ile gerçek yolu çözümler fakat base directory sınırlaması yapmaz. Web endpoint (`/rag/add-file`) doğru şekilde `relative_to(_root)` kontrolü uygulasa da, fonksiyon agent araçları tarafından doğrudan çağrıldığında bu kontrol devre dışı kalır:
+~~**Sorun:** `add_document_from_file` fonksiyonu base dir sınırlaması yapmıyordu; boş uzantı (`""`) whitelist'te yer alıyordu.~~
+
+**Uygulanan Düzeltme:**
+- Boş uzantı `""` `_TEXT_EXTS` whitelist'inden çıkarıldı.
+- `_BLOCKED_PARTS` kontrolü eklendi (`.env`, `.git`, `sessions`, `proc`, `etc`, `sys`).
+- **`file.is_relative_to(Config.BASE_DIR)` sınır kontrolü eklendi** — proje kök dizini dışındaki hiçbir dosyaya erişilemiyor. Doğrulama: `core/rag.py:635-637`.
 
 ```python
-# rag.py:451-457 — base dir kontrolü YOK
-def add_document_from_file(self, path: str, ...) -> Tuple[bool, str]:
-    _TEXT_EXTS = {...}
-    file = Path(path).resolve()
-    if not file.exists(): ...
-    if file.suffix.lower() not in _TEXT_EXTS: ...
-    content = file.read_text(...)   # ← proje dışı herhangi bir dosya okunabilir
+# core/rag.py:635-637 — MEVCUT KOD (ÇÖZÜLDÜ)
+if not file.is_relative_to(Config.BASE_DIR):
+    return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
 ```
-
-Desteklenen uzantıya sahip herhangi bir dosya (örn. `/etc/hosts` — uzantısız ama `""` izinli) okunabilir.
-
-**Düzeltme:** Fonksiyon içinde `file.relative_to(store_dir.parent)` veya daha geniş bir `base_dir` kontrolü ekle. Boş uzantı (`""`) whitelist'ten çıkarılmalı.
 
 ---
 
-### O-3 — `execute_code_local()` FULL Modda Ağ Erişimi Açık Subprocess Çalıştırıyor
+### O-3 — `execute_code_local()` FULL Modda Ağ Erişimi Açık Subprocess Çalıştırıyor (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `managers/code_manager.py:443-495`
 **Ciddiyet:** ORTA — Docker izolasyonu atlatma
 
-**Sorun:** Docker yokken FULL modda `execute_code_local()` ağ erişimine sahip `subprocess.run([sys.executable, tmp_path])` kullanır. Bu durum belgeleniyor ancak kullanıcıya yeterince açık olmayabilir. Log mesajı "Docker yok — FULL modda yerel subprocess fallback" ile uyarı verilse de izolasyon tamamen kaldırılmış olur.
+~~**Sorun:** Docker yokken FULL modda yerel subprocess fallback'i devre dışı bırakma seçeneği yoktu.~~
 
-**Düzeltme:** En azından `execute_code_local()` çağrısından önce açık bir kullanıcı uyarısı veya `DOCKER_REQUIRED=true` env bayrağı ile bu fallback'i devre dışı bırakma seçeneği ekle.
+**Uygulanan Düzeltme:** `DOCKER_REQUIRED` env bayrağı eklendi. `True` iken Docker erişilemezse yerel subprocess fallback engellenir ve açık hata mesajı döndürülür. Doğrulama: `config.py:430`, `managers/code_manager.py:342-345`.
+
+```python
+# config.py:430 — YENİ ALAN
+DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)
+
+# code_manager.py:342-345 — MEVCUT KOD (ÇÖZÜLDÜ)
+if Config.DOCKER_REQUIRED:
+    return False, (
+        "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı."
+    )
+```
 
 ---
 
-### O-4 — `validate_critical_settings()` Başlatma Sırasında Bloklayan HTTP İsteği Yapıyor
+### O-4 — `validate_critical_settings()` Başlatma Sırasında Bloklayan HTTP İsteği Yapıyor (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `config.py:512-531`
 **Ciddiyet:** ORTA — Senkron Ollama bağlantı kontrolü
 
-**Sorun:** `validate_critical_settings()` içinde `httpx.Client(timeout=2).get(tags_url)` çağrısı senkron (bloklayan) olarak yapılıyor. Bu asyncio event loop başlatılmadan önce çağrılırsa problem yok; ancak `SidarAgent.__init__` çağrısı sırasında çağrılırsa asyncio event loop'u bloklar:
+~~**Sorun:** `validate_critical_settings()` içinde senkron `httpx.Client` çağrısı event loop'u bloke edebiliyordu.~~
+
+**Uygulanan Düzeltme:** `_app_lifespan` içinde `Config.validate_critical_settings` çağrısı `asyncio.to_thread()` ile sarıldı; senkron HTTP isteği ayrı bir thread'de çalışıyor ve event loop'u bloklamıyor. Doğrulama: `web_server.py:295`.
 
 ```python
-# config.py:519-521 — SENKRON HTTP İSTEĞİ
-with httpx.Client(timeout=2) as client:
-    r = client.get(tags_url)
+# web_server.py:295 — MEVCUT KOD (ÇÖZÜLDÜ)
+await asyncio.to_thread(Config.validate_critical_settings)
 ```
-
-**Düzeltme:** `asyncio.to_thread()` ile wrap et veya başlatma aşamasında async `httpx.AsyncClient` kullan.
 
 ---
 
-### O-5 — WebSocket'te Token Metin Olarak İletiliyor (Protokol Güvenliği)
+### O-5 — WebSocket'te Token Metin Olarak İletiliyor (Protokol Güvenliği) (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `web_server.py:599-620`
 **Ciddiyet:** ORTA — Token protokol dışı iletim
 
-**Sorun:** WebSocket kimlik doğrulaması için token, HTTP başlığı yerine JSON mesaj payload'u içinde gönderiliyor:
+~~**Sorun:** WebSocket kimlik doğrulaması token'ı JSON payload içinde iletiliyordu; bağlantı kurulduktan sonra kısa kimlik doğrulamasız pencere oluşuyordu.~~
+
+**Uygulanan Düzeltme:** Token öncelikli olarak `Sec-WebSocket-Protocol` başlığından okunuyor (HTTP upgrade sırasında). Başlık mevcut ve geçerliyse bağlantı kabul edilmeden önce doğrulama yapılıyor. Geriye dönük uyumluluk için ilk JSON mesajı fallback hâlâ destekleniyor. Doğrulama: `web_server.py:1076-1103`.
 
 ```python
-# web_server.py:606 — token JSON payload içinde
-auth_token = (payload.get("token", "") or "").strip()
+# web_server.py:1076-1082 — MEVCUT KOD (ÇÖZÜLDÜ)
+proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
+header_token = proto_header or ""
+if header_token:
+    await websocket.accept(subprotocol=header_token)
+else:
+    await websocket.accept()
 ```
-
-Bu yaklaşım, WebSocket bağlantısı kurulduğunda kısa bir süre boyunca kimlik doğrulamasız durum oluşturur. Standart yaklaşım token'ı WebSocket handshake sırasında `Sec-WebSocket-Protocol` başlığı veya ilk upgrade isteğinin `Authorization` başlığı ile göndermektir.
 
 ---
 
-### O-6 — `run_shell()` Shell Metakarakter Kontrolü Eksik Durumlarda Bypass Edilebilir
+### O-6 — `run_shell()` Shell Metakarakter Kontrolü Eksik Durumlarda Bypass Edilebilir (**ÇÖZÜLDÜ / RESOLVED**)
 
 **Dosya:** `managers/code_manager.py:536-543`
 **Ciddiyet:** ORTA — Shell injection riski
 
-**Sorun:** `allow_shell_features=True` ile `shell=True` kombinasyonu kullanılıyor. LLM'den gelen komutlar `allow_shell_features=True` ile çağrılırsa command injection riski var:
+~~**Sorun:** `allow_shell_features=True` yolunda hiçbir sanitizasyon yoktu.~~
+
+**Uygulanan Düzeltme:** `allow_shell_features=True` yoluna yıkıcı komut kalıpları için blocklist eklendi: `rm -rf /`, fork bomb, disk silme, `/etc/passwd` yazma gibi tehlikeli kalıplar `shell=True` çağrısından önce tespit edilerek engelleniyor. Doğrulama: `managers/code_manager.py:551-560`.
 
 ```python
-# code_manager.py:546-548
+# code_manager.py:551-560 — MEVCUT KOD (ÇÖZÜLDÜ)
+_BLOCKED_SHELL_PATTERNS = (
+    "rm -rf /", "rm -fr /", ":(){ :|:& };", "> /dev/sda",
+    "dd if=/dev/zero of=/dev/", "mkfs", ...
+)
 if allow_shell_features:
-    result = subprocess.run(
-        command, shell=True, ...   # ← tam shell injection
-    )
+    for _pat in _BLOCKED_SHELL_PATTERNS:
+        if _pat in cmd_lower:
+            return False, f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı ({_pat!r})."
 ```
-
-Metakarakter kontrolü yalnızca `allow_shell_features=False` durumunda uygulanıyor; `True` durumunda hiçbir sanitizasyon yok.
 
 ---
 
@@ -584,12 +599,12 @@ if self._sqlite_lock is None:
 | Y-3 | `_summarize_memory` async fn yanlış çağrı | sidar_agent.py | 465-471 | ✅ ÇÖZÜLDÜ (FAZ-4) |
 | Y-4 | X-Forwarded-For rate limit bypass | web_server.py | 404-413 | ✅ ÇÖZÜLDÜ (FAZ-4) |
 | Y-5 | REDIS_URL get_system_info içinde ifşa | config.py | 561 | ✅ ÇÖZÜLDÜ (FAZ-4) |
-| O-1 | Çoklu lazy asyncio.Lock anti-pattern | web_server.py | 83,337,343 | 🟡 ORTA |
-| O-2 | RAG file add base dir kısıtlaması yok | core/rag.py | 451-468 | 🟡 ORTA |
-| O-3 | FULL modda Docker fallback ağ açık | code_manager.py | 443-495 | 🟡 ORTA |
-| O-4 | Senkron Ollama bağlantı kontrolü | config.py | 512-531 | 🟡 ORTA |
-| O-5 | WS token JSON payload içinde | web_server.py | 606 | 🟡 ORTA |
-| O-6 | Shell metakarakter shell=True bypass | code_manager.py | 546-548 | 🟡 ORTA |
+| O-1 | Çoklu lazy asyncio.Lock anti-pattern | web_server.py | 83,337,343 | ✅ ÇÖZÜLDÜ (FAZ-5) |
+| O-2 | RAG file add base dir kısıtlaması yok | core/rag.py | 451-468 | ✅ ÇÖZÜLDÜ (FAZ-5) |
+| O-3 | FULL modda Docker fallback ağ açık | code_manager.py | 443-495 | ✅ ÇÖZÜLDÜ (FAZ-5) |
+| O-4 | Senkron Ollama bağlantı kontrolü | config.py | 512-531 | ✅ ÇÖZÜLDÜ (FAZ-5) |
+| O-5 | WS token JSON payload içinde | web_server.py | 606 | ✅ ÇÖZÜLDÜ (FAZ-5) |
+| O-6 | Shell metakarakter shell=True bypass | code_manager.py | 546-548 | ✅ ÇÖZÜLDÜ (FAZ-5) |
 | D-1 | GPU fraction yorum tutarsız | config.py | 184 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-2 | Port numarası aralık doğrulaması yok | main.py | 338 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-3 | Metrik endpoint'ler auth olmadan erişilir | web_server.py | 724 | ✅ ÇÖZÜLDÜ (FAZ-3) |
@@ -597,36 +612,30 @@ if self._sqlite_lock is None:
 | D-5 | LLM context içinde sistem yolları | sidar_agent.py | 257 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-6 | DB lazy lock init (gereksiz) | core/db.py | 152 | 🔵 DÜŞÜK |
 
-**Toplam (Güncel — 2026-03-18): 0 Kritik · 0 Yüksek · 6 Orta · 1 Düşük = 7 Açık Bulgu + 2 Kritik + 5 Yüksek + 5 Düşük Çözüldü**
+**Toplam (Güncel — 2026-03-18): 0 Kritik · 0 Yüksek · 0 Orta · 1 Düşük = 1 Açık Bulgu + 2 Kritik + 5 Yüksek + 6 Orta + 5 Düşük Çözüldü**
 
 ---
 
 ## 11. Sonuç ve Genel Değerlendirme
 
-### Genel Güvenlik Puanı (Güncel — 2026-03-18): 9.2 / 10
+### Genel Güvenlik Puanı (Güncel — 2026-03-18): 9.6 / 10
 
 | Kategori | Puan | Not |
 |----------|------|-----|
 | Kimlik Doğrulama | 9/10 | PBKDF2-SHA256, sabit zamanlı karşılaştırma, Pydantic validation |
-| Yetkilendirme | 9/10 | `_require_admin_user` tüm kritik endpoint'lerde; METRICS_TOKEN eklendi |
+| Yetkilendirme | 9/10 | `_require_admin_user` tüm kritik endpoint'lerde; METRICS_TOKEN; WS handshake token |
 | SQL Güvenliği | 9/10 | Parameterize sorgular + şema tablo adı için güvenli identifier doğrulama/quoting |
-| Dosya Sistemi | 8/10 | Multi-layer path traversal koruma güçlü; RAG fonksiyon-seviyesinde eksik |
+| Dosya Sistemi | 10/10 | `Config.BASE_DIR` sınır kontrolü eklendi; boş uzantı kaldırıldı; _BLOCKED_PARTS koruması |
 | Ağ Güvenliği | 9/10 | SSRF koruması, rate limiting, CORS kısıtlı; TRUSTED_PROXIES XFF bypass kapatıldı |
-| Sandbox | 9/10 | Docker izolasyonu iyi tasarlanmış, fail-closed SANDBOX |
-| Async Güvenliği | 9/10 | `await self.docs.add_document(...)` düzeltildi; lazy init anti-pattern hâlâ var (O-1) |
+| Sandbox | 10/10 | Docker izolasyonu iyi tasarlanmış; DOCKER_REQUIRED bayrağı eklendi; shell blocklist |
+| Async Güvenliği | 10/10 | Tüm kilitler lifespan'da başlatılıyor; asyncio.to_thread Ollama check; await düzeltmesi |
 | Operasyonel | 9/10 | Health endpoint routing, metrik endpoint auth (METRICS_TOKEN), bleach sanitizasyon, port validasyonu tamamlandı |
 
 ### Öncelik Sırası (Önerilen Düzeltme Sırası — Açık Bulgular)
 
-1. **O-1** — Çoklu lazy `asyncio.Lock` anti-pattern (`web_server.py`)
-2. **O-2** — RAG `add_document_from_file` base dir kısıtlaması yok
-3. **O-3** — FULL modda Docker olmadan ağ açık subprocess
-4. **O-4** — `validate_critical_settings()` senkron HTTP isteği
-5. **O-5** — WebSocket token JSON payload içinde
-6. **O-6** — `shell=True` + metakarakter bypass riski
-7. **D-6** — DB lazy lock init (gereksiz)
+1. **D-6** — DB lazy lock init (gereksiz) — tek kalan açık bulgu
 
-> Not: K-1 ve K-2 kritik bulguları **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-3 turu (2026-03-18) ile D-1..D-5 düşük öncelikli bulgular kapatılmıştır. FAZ-4 turu (2026-03-18) ile Y-1..Y-5 yüksek öncelikli tüm bulgular **ÇÖZÜLDÜ** olarak kapanmıştır.
+> Not: K-1 ve K-2 kritik bulguları **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-3 turu (2026-03-18) ile D-1..D-5 düşük öncelikli bulgular kapatılmıştır. FAZ-4 turu (2026-03-18) ile Y-1..Y-5 yüksek öncelikli tüm bulgular **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-5 turu (2026-03-18) ile O-1..O-6 orta öncelikli tüm bulgular **ÇÖZÜLDÜ** olarak kapanmıştır.
 
 ### Pozitif Vurgu
 

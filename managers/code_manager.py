@@ -339,6 +339,11 @@ class CodeManager:
                     "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
                     "yerel (unsafe) çalıştırma engellendi."
                 )
+            if Config.DOCKER_REQUIRED:
+                return False, (
+                    "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı. "
+                    "Docker daemon'ı başlatın veya DOCKER_REQUIRED=false olarak ayarlayın."
+                )
             logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
             return self.execute_code_local(code)
 
@@ -547,6 +552,21 @@ class CodeManager:
                 "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
                 "Gerekliyse allow_shell_features=True ile tekrar deneyin."
             )
+
+        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle
+        _BLOCKED_SHELL_PATTERNS = (
+            "rm -rf /", "rm -fr /", ":(){ :|:& };", "> /dev/sda", "dd if=/dev/zero of=/dev/",
+            "mkfs", "chmod -R 777 /", "chown -R root /", "> /etc/passwd", "> /etc/shadow",
+            "shred /dev/", "wipefs /dev/",
+        )
+        if allow_shell_features:
+            cmd_lower = command.lower()
+            for _pat in _BLOCKED_SHELL_PATTERNS:
+                if _pat in cmd_lower:
+                    return False, (
+                        f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_pat!r}). "
+                        "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
+                    )
 
         try:
             if allow_shell_features:
