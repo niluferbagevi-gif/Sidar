@@ -582,3 +582,60 @@ def test_pgvector_init_failure_disables_backend_when_embedding_model_load_fails(
     assert store._vector_backend == "pgvector"
     assert store._pgvector_available is False
     assert any("pgvector başlatma hatası" in msg for msg in errors)
+
+
+def test_rag_module_uses_bleach_when_available(monkeypatch):
+    bleach_stub = types.SimpleNamespace(
+        clean=lambda html, **_kwargs: "  kept <b>text</b>  &amp; more  "
+    )
+    monkeypatch.setitem(sys.modules, "bleach", bleach_stub)
+
+    rag_mod = _load_rag_module("rag_edge_bleach_present")
+
+    assert rag_mod._BLEACH_AVAILABLE is True
+    assert rag_mod.DocumentStore._clean_html("<p>ignored</p>") == "kept <b>text</b> &amp; more"
+
+
+def test_add_document_from_file_rejects_paths_outside_allowed_roots(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_file_outside_roots")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    project_root = tmp_path / "project"
+    temp_root = tmp_path / "sandbox-temp"
+    project_root.mkdir()
+    temp_root.mkdir()
+
+    monkeypatch.setattr(rag_mod.Config, "BASE_DIR", project_root, raising=False)
+    monkeypatch.setattr(rag_mod.tempfile, "gettempdir", lambda: str(temp_root))
+
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("external content", encoding="utf-8")
+
+    store = DocumentStore(project_root / "rag_store", cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False))
+    ok, message = store.add_document_from_file(str(outside_file))
+
+    assert ok is False
+    assert "proje dizini dışında" in message
+
+
+def test_add_document_from_file_rejects_blocked_sensitive_paths(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_file_blocked_parts")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+
+    monkeypatch.setattr(rag_mod.Config, "BASE_DIR", project_root, raising=False)
+    monkeypatch.setattr(rag_mod.tempfile, "gettempdir", lambda: str(tmp_path / "sandbox-temp"))
+
+    blocked_file = project_root / "sessions" / "notes.txt"
+    blocked_file.parent.mkdir()
+    blocked_file.write_text("sensitive", encoding="utf-8")
+
+    store = DocumentStore(project_root / "rag_store", cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False))
+    ok, message = store.add_document_from_file(str(blocked_file))
+
+    assert ok is False
+    assert "güvenlik politikası" in message
