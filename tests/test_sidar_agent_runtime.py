@@ -577,6 +577,68 @@ def test_memory_archive_context_stops_at_top_k_break():
     assert "T2" not in out
 
 
+def test_tool_subtask_validation_error_and_tool_exception_paths():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"eksik","tool":"list_dir"}',
+        '{"thought":"done","tool":"final_answer","argument":"kurtarıldı"}',
+    ])
+
+    class _LLMValidation:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    async def _should_not_run(_tool, _arg):
+        raise AssertionError("tool should not execute on schema failure")
+
+    a.llm = _LLMValidation()
+    a._execute_tool = _should_not_run
+
+    out = asyncio.run(a._tool_subtask("şema testi"))
+    assert out == "✓ Alt Görev Tamamlandı: kurtarıldı"
+
+    a2 = _make_agent_for_runtime()
+    a2.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+    replies2 = iter([
+        '{"thought":"t","tool":"dangerous","argument":"bad-param"}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLMToolError:
+        async def chat(self, **kwargs):
+            return next(replies2)
+
+    calls = []
+
+    async def _boom(tool, arg):
+        calls.append((tool, arg))
+        raise RuntimeError("unexpected db response")
+
+    a2.llm = _LLMToolError()
+    a2._execute_tool = _boom
+
+    out2 = asyncio.run(a2._tool_subtask("araç hatası"))
+    assert out2 == "✓ Alt Görev Tamamlandı: tamam"
+    assert calls == [("dangerous", "bad-param")]
+
+
+def test_tool_subtask_returns_max_steps_after_non_string_llm_output():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return {"tool": "list_dir"}
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("should not run"))
+
+    out = asyncio.run(a._tool_subtask("ham çıktı"))
+    assert "Maksimum adım sınırına ulaşıldı" in out
+
+
 def test_tool_subtask_empty_and_execute_tool_then_final_answer():
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=4, TEXT_MODEL="tm", CODING_MODEL="cm")
