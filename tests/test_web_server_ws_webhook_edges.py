@@ -112,6 +112,121 @@ def test_websocket_disconnect_cancels_running_active_task():
     assert fake_task.cancel_called is True
 
 
+
+
+def test_websocket_anyio_closed_resource_cancels_running_task():
+    mod = _load_web_server()
+    mod.jwt.PyJWTError = Exception
+    mod.jwt.decode = lambda token, *_a, **_k: {"sub": "u1", "username": "alice"} if token else {}
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def set_active_user(self, _uid, _uname=None):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            if False:
+                yield None
+
+    class _Closed(Exception):
+        pass
+
+    mod._ANYIO_CLOSED = _Closed
+
+    class _WebSocket:
+        def __init__(self):
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "merhaba"}),
+            ]
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            raise _Closed()
+
+        async def send_json(self, _payload):
+            return None
+
+    class _FakeTask:
+        def __init__(self):
+            self.cancel_called = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancel_called = True
+
+    fake_task = _FakeTask()
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    real_create_task = mod.asyncio.create_task
+
+    def _create_task_stub(_coro):
+        _coro.close()
+        return fake_task
+
+    mod.get_agent = _get_agent
+    mod._redis_is_rate_limited = _not_limited
+    mod.asyncio.create_task = _create_task_stub
+    try:
+        asyncio.run(mod.websocket_chat(_WebSocket()))
+    finally:
+        mod.asyncio.create_task = real_create_task
+
+    assert fake_task.cancel_called is True
+
+
+def test_ddos_rate_limit_middleware_uses_local_fallback_after_redis_disconnect(monkeypatch):
+    mod = _load_web_server()
+
+    class _RedisBoom:
+        async def incr(self, _key):
+            raise RuntimeError("redis connection dropped")
+
+    local_calls = []
+
+    async def _fake_get_redis():
+        return _RedisBoom()
+
+    async def _fake_local(key, limit, window):
+        local_calls.append((key, limit, window))
+        return True
+
+    async def _next(_request):
+        return types.SimpleNamespace(status_code=200, content={"ok": True})
+
+    monkeypatch.setattr(mod, "_get_redis", _fake_get_redis)
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _fake_local)
+
+    resp = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path="/api/runtime"), _next))
+
+    assert resp.status_code == 429
+    assert local_calls and local_calls[0][0].startswith("sidar:rl:ddos:")
+
 def test_github_webhook_hmac_invalid_signature_rejected_and_valid_accepted():
     mod = _load_web_server()
     mod.cfg.GITHUB_WEBHOOK_SECRET = "secret"
