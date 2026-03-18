@@ -468,6 +468,26 @@ class Config:
     JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
     JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or "0.2")
 
+    # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
+    ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
+    # 0.0–1.0: Bu eşiğin altındaki sorgular lokal modele yönlendirilir
+    COST_ROUTING_COMPLEXITY_THRESHOLD: float = get_float_env("COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55)
+    # Lokal sağlayıcı (basit sorgular için)
+    COST_ROUTING_LOCAL_PROVIDER: str = os.getenv("COST_ROUTING_LOCAL_PROVIDER", "ollama")
+    COST_ROUTING_LOCAL_MODEL: str = os.getenv("COST_ROUTING_LOCAL_MODEL", "")
+    # Bulut sağlayıcı (karmaşık sorgular için; boşsa varsayılan sağlayıcı kullanılır)
+    COST_ROUTING_CLOUD_PROVIDER: str = os.getenv("COST_ROUTING_CLOUD_PROVIDER", "")
+    COST_ROUTING_CLOUD_MODEL: str = os.getenv("COST_ROUTING_CLOUD_MODEL", "")
+    # Bu günlük bütçe (USD) aşılırsa tüm sorgular lokal modele yönlendirilir
+    COST_ROUTING_DAILY_BUDGET_USD: float = get_float_env("COST_ROUTING_DAILY_BUDGET_USD", 1.0)
+
+    # ─── Entity/Persona Memory (v5.0) ─────────────────────────
+    ENABLE_ENTITY_MEMORY: bool = get_bool_env("ENABLE_ENTITY_MEMORY", True)
+    # Güncellenmemiş kayıtların saklanma süresi (gün); 0 = sonsuz
+    ENTITY_MEMORY_TTL_DAYS: int = get_int_env("ENTITY_MEMORY_TTL_DAYS", 90)
+    # Kullanıcı başına maksimum persona anahtarı sayısı (LRU eviction)
+    ENTITY_MEMORY_MAX_PER_USER: int = get_int_env("ENTITY_MEMORY_MAX_PER_USER", 100)
+
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
     # ─────────────────────────────────────────────────────────

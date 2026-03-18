@@ -36,6 +36,12 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
         '# TYPE sidar_llm_tokens_total counter',
         '# HELP sidar_llm_failures_total Toplam başarısız LLM çağrısı',
         '# TYPE sidar_llm_failures_total counter',
+        '# HELP sidar_cache_hits_total Semantic cache isabet sayısı',
+        '# TYPE sidar_cache_hits_total counter',
+        '# HELP sidar_cache_misses_total Semantic cache ıskalama sayısı',
+        '# TYPE sidar_cache_misses_total counter',
+        '# HELP sidar_cache_hit_rate Semantic cache isabet oranı (0.0–1.0)',
+        '# TYPE sidar_cache_hit_rate gauge',
     ]
 
     totals = (snapshot or {}).get('totals', {}) if isinstance(snapshot, dict) else {}
@@ -43,6 +49,12 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     lines.append(f"sidar_llm_cost_total_usd {float(totals.get('cost_usd', 0.0) or 0.0)}")
     lines.append(f"sidar_llm_tokens_total {int(totals.get('total_tokens', 0) or 0)}")
     lines.append(f"sidar_llm_failures_total {int(totals.get('failures', 0) or 0)}")
+
+    # Semantic cache metrikleri
+    cache = (snapshot or {}).get('cache', {}) if isinstance(snapshot, dict) else {}
+    lines.append(f"sidar_cache_hits_total {int(cache.get('hits', 0) or 0)}")
+    lines.append(f"sidar_cache_misses_total {int(cache.get('misses', 0) or 0)}")
+    lines.append(f"sidar_cache_hit_rate {float(cache.get('hit_rate', 0.0) or 0.0)}")
 
     by_provider = snapshot.get('by_provider', {}) if isinstance(snapshot, dict) else {}
     for provider, row in by_provider.items():

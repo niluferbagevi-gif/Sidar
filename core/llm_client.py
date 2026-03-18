@@ -24,6 +24,8 @@ except Exception:
     Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 from core.dlp import mask_messages as _dlp_mask_messages
+from core.router import CostAwareRouter
+from core.cache_metrics import _CacheMetrics, _cache_metrics, get_cache_metrics
 
 try:
     from opentelemetry import trace
@@ -291,8 +293,10 @@ class _SemanticCacheManager:
 
             if best_response is not None and best_sim >= self.threshold:
                 logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
+                _cache_metrics.record_hit()
                 return best_response
             logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
+            _cache_metrics.record_miss()
             return None
         except Exception as exc:
             logger.debug("Semantic cache okuma hatası: %s", exc)
@@ -1182,6 +1186,7 @@ class LLMClient:
         self.provider = provider.lower()
         self.config = config
         self._semantic_cache = _SemanticCacheManager(config)
+        self._router = CostAwareRouter(config)
 
         if self.provider == "ollama":
             self._client: BaseLLMClient = OllamaClient(config)
@@ -1273,6 +1278,27 @@ class LLMClient:
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + list(messages)
 
+        # Cost-Aware Routing: karmaşıklık + bütçeye göre provider/model seç
+        routed_provider, routed_model = self._router.select(
+            messages, self.provider, model
+        )
+        if routed_provider != self.provider:
+            # Farklı sağlayıcıya yönlendirme — geçici istemci oluştur
+            try:
+                routed_client = LLMClient(routed_provider, self.config)
+                return await routed_client.chat(
+                    messages=messages,
+                    model=routed_model or model,
+                    system_prompt=None,
+                    temperature=temperature,
+                    stream=stream,
+                    json_mode=json_mode,
+                )
+            except Exception as exc:
+                logger.warning("CostRouter yönlendirme başarısız (%s): %s — varsayılana dönülüyor.", routed_provider, exc)
+        else:
+            model = routed_model or model
+
         if self.provider == "ollama":
             messages = self._truncate_messages_for_local_model(messages)
 
@@ -1289,6 +1315,8 @@ class LLMClient:
             cached_response = await self._semantic_cache.get(user_prompt)
             if cached_response is not None:
                 return cached_response
+        elif stream:
+            _cache_metrics.record_skip()
 
         response = await self._client.chat(
             messages=messages,
