@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import shlex
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -148,24 +147,6 @@ class ReviewerAgent(BaseAgent):
         commands.append(self.cfg.REVIEWER_TEST_COMMAND)
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
-    def _build_sandbox_test_command(self, command: str) -> str:
-        limits = self.code._resolve_sandbox_limits()
-        workspace = shlex.quote(str(self.cfg.BASE_DIR))
-        inner_command = shlex.quote(command)
-        docker_image = shlex.quote(self.code.docker_image)
-        runtime = self.code._resolve_runtime()
-        runtime_part = f" --runtime {shlex.quote(runtime)}" if runtime else ""
-        return (
-            "docker run --rm"
-            f" --memory={shlex.quote(str(limits['memory']))}"
-            f" --cpus={shlex.quote(str(limits['cpus']))}"
-            f" --pids-limit={int(limits['pids_limit'])}"
-            f" --network={shlex.quote(str(limits['network_mode']))}"
-            f" -v {workspace}:/workspace"
-            " -w /workspace"
-            f"{runtime_part} {docker_image} sh -lc {inner_command}"
-        )
-
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
         return out if ok else f"[HATA] {out}"
@@ -192,24 +173,15 @@ class ReviewerAgent(BaseAgent):
         allowed_prefixes = ("bash run_tests.sh", "pytest", "python -m pytest")
         if not command.startswith(allowed_prefixes):
             return "⚠ Kullanım: run_tests|bash run_tests.sh veya run_tests|pytest ..."
-        if not self.code.docker_available:
-            return (
-                f"[TEST:FAIL-CLOSED] komut={command}\n"
-                "[STDOUT]\n-\n"
-                "[STDERR]\nDocker sandbox erişilemedi; Reviewer host shell fallback kullanmadan durduruldu."
-            )
-
-        sandbox_command = self._build_sandbox_test_command(command)
         ok, out = await asyncio.to_thread(
-            self.code.run_shell,
-            sandbox_command,
+            self.code.run_shell_in_sandbox,
+            command,
             str(self.cfg.BASE_DIR),
-            False,
         )
         status = "OK" if ok else "FAIL-CLOSED"
         return (
             f"[TEST:{status}] komut={command}\n"
-            f"[SANDBOX]\n{sandbox_command}\n"
+            f"[SANDBOX]\nDocker CLI sandbox üzerinden çalıştırıldı.\n"
             f"[OUTPUT]\n{out or '-'}"
         )
 

@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -301,14 +302,14 @@ class CodeManager:
             return False, content
 
         count = content.count(target_block)
-        
+
         if count == 0:
             return False, (
                 "⚠ Yama uygulanamadı: 'Hedef kod bloğu' dosyada bulunamadı.\n"
                 "Lütfen boşluklara ve girintilere (indentation) dikkat ederek, "
                 "dosyada var olan kodu birebir kopyaladığından emin ol."
             )
-        
+
         if count > 1:
             return False, (
                 f"⚠ Yama uygulanamadı: Hedef kod bloğu dosyada {count} kez geçiyor.\n"
@@ -349,7 +350,7 @@ class CodeManager:
 
         try:
             import docker
-            
+
             # Kodu konteynere komut satırı argümanı olarak gönderiyoruz
             # 'python -c "kod"' formatında çalışacak
             command = ["python", "-c", code]
@@ -403,7 +404,7 @@ class CodeManager:
                         exit_code = wait_result.get("StatusCode")
                 except Exception:
                     exit_code = None
-            
+
             # İşimiz bitti, konteyneri sil
             container.remove(force=True)
 
@@ -508,6 +509,83 @@ class CodeManager:
     # ─────────────────────────────────────────────
     #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
     # ─────────────────────────────────────────────
+
+    def run_shell_in_sandbox(
+        self,
+        command: str,
+        cwd: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """Kabuk komutunu Docker sandbox içinde shell yetkisine ihtiyaç duymadan çalıştırır."""
+        if not self.security.can_execute():
+            return False, "[OpenClaw] Sandbox komutu çalıştırma yetkisi yok."
+
+        if not command or not command.strip():
+            return False, "⚠ Çalıştırılacak komut belirtilmedi."
+
+        work_dir = Path(cwd or self.base_dir).resolve()
+        if not work_dir.exists() or not work_dir.is_dir():
+            return False, f"Geçersiz çalışma dizini: {work_dir}"
+        if not self.security.is_path_under(str(work_dir), self.base_dir):
+            return False, f"[OpenClaw] Sandbox çalışma dizini proje kökü dışında: {work_dir}"
+
+        docker_bin = shutil.which("docker")
+        if not docker_bin:
+            return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
+
+        limits = self._resolve_sandbox_limits()
+        docker_cmd = [
+            docker_bin,
+            "run",
+            "--rm",
+            f"--memory={limits['memory']}",
+            f"--cpus={limits['cpus']}",
+            f"--pids-limit={limits['pids_limit']}",
+            f"--network={limits['network_mode']}",
+            "-v",
+            f"{work_dir}:/workspace",
+            "-w",
+            "/workspace",
+        ]
+
+        runtime = self._resolve_runtime()
+        if runtime:
+            docker_cmd.extend(["--runtime", runtime])
+
+        docker_cmd.extend([self.docker_image, "sh", "-lc", command])
+
+        try:
+            result = subprocess.run(
+                docker_cmd,
+                capture_output=True,
+                text=True,
+                timeout=int(limits["timeout"]),
+                cwd=str(self.base_dir),
+            )
+        except FileNotFoundError:
+            return False, "Docker CLI bulunamadı; sandbox komutu çalıştırılamadı."
+        except subprocess.TimeoutExpired:
+            return False, (
+                f"⚠ Zaman aşımı! Sandbox komutu {limits['timeout']} saniyeden uzun sürdü ve durduruldu."
+            )
+        except Exception as exc:
+            return False, f"Sandbox komutu hatası: {exc}"
+
+        output_parts = []
+        if result.stdout.strip():
+            output_parts.append(result.stdout.strip())
+        if result.stderr.strip():
+            output_parts.append(f"[stderr]\n{result.stderr.strip()}")
+
+        combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
+        if len(combined) > self.max_output_chars:
+            combined = combined[:self.max_output_chars] + (
+                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+            )
+
+        if result.returncode != 0:
+            return False, f"Sandbox komutu başarısız (çıkış kodu: {result.returncode}):\n{combined}"
+        return True, combined
+
 
     def run_shell(
         self,
@@ -930,4 +1008,4 @@ class CodeManager:
             f"writes={m['files_written']} "
             f"checks={m['syntax_checks']} "
             f"docker={'on' if self.docker_available else 'off'}>"
-        )  
+        )

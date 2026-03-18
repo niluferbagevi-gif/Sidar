@@ -46,29 +46,35 @@ def test_reviewer_agent_run_tests_tool_rejects_unsafe_command():
     assert "Kullanım" in out
 
 
-def test_reviewer_agent_run_tests_uses_code_manager_shell(monkeypatch):
+def test_reviewer_agent_run_tests_uses_code_manager_sandbox_runner(monkeypatch):
     a = ReviewerAgent()
-    a.code.docker_available = True
 
-    def fake_run_shell(command: str, cwd=None, allow_shell_features=False):
-        assert command.startswith("docker run --rm")
-        assert "pytest -q tests/test_reviewer_agent.py" in command
+    def fake_run_shell_in_sandbox(command: str, cwd=None):
+        assert command == "pytest -q tests/test_reviewer_agent.py"
         assert cwd == str(a.cfg.BASE_DIR)
-        assert allow_shell_features is False
         return True, "ok"
 
-    monkeypatch.setattr(a.code, "run_shell", fake_run_shell)
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("run_shell should not be used for reviewer sandbox tests")
+
+    monkeypatch.setattr(a.code, "run_shell_in_sandbox", fake_run_shell_in_sandbox)
+    monkeypatch.setattr(a.code, "run_shell", fail_if_called)
     out = asyncio.run(a.call_tool("run_tests", "pytest -q tests/test_reviewer_agent.py"))
     assert "[TEST:OK]" in out
-    assert "docker run --rm" in out
+    assert "Docker CLI sandbox" in out
 
 
-def test_reviewer_agent_run_tests_fail_closed_without_docker():
+def test_reviewer_agent_run_tests_fail_closed_when_sandbox_runner_fails(monkeypatch):
     a = ReviewerAgent()
-    a.code.docker_available = False
+
+    def fake_run_shell_in_sandbox(command: str, cwd=None):
+        assert command == "pytest -q tests/test_reviewer_agent.py"
+        return False, "Docker CLI bulunamadı"
+
+    monkeypatch.setattr(a.code, "run_shell_in_sandbox", fake_run_shell_in_sandbox)
     out = asyncio.run(a.call_tool("run_tests", "pytest -q tests/test_reviewer_agent.py"))
     assert "FAIL-CLOSED" in out
-    assert "Docker sandbox erişilemedi" in out
+    assert "Docker CLI bulunamadı" in out
 
 
 def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
