@@ -81,13 +81,10 @@ class _HITLStore:
         self._index: Dict[str, HITLRequest] = {}
         self._lock: Optional[asyncio.Lock] = None
 
-    async def _get_lock(self) -> asyncio.Lock:
+    async def add(self, req: HITLRequest) -> None:
         if self._lock is None:
             self._lock = asyncio.Lock()
-        return self._lock
-
-    async def add(self, req: HITLRequest) -> None:
-        async with await self._get_lock():
+        async with self._lock:
             # Eski sürülen eleman index'ten kaldırılır (deque maxlen aşılınca)
             if len(self._requests) == self._requests.maxlen:
                 oldest = self._requests[0]
@@ -96,11 +93,15 @@ class _HITLStore:
             self._index[req.request_id] = req
 
     async def get(self, request_id: str) -> Optional[HITLRequest]:
-        async with await self._get_lock():
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
             return self._index.get(request_id)
 
     async def pending(self) -> List[HITLRequest]:
-        async with await self._get_lock():
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
             now = time.time()
             result = []
             for r in self._requests:
@@ -112,7 +113,9 @@ class _HITLStore:
             return list(result)
 
     async def all_recent(self, limit: int = 50) -> List[HITLRequest]:
-        async with await self._get_lock():
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
             return list(self._requests)[-limit:]
 
 
