@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -52,9 +51,6 @@ if importlib.util.find_spec("jwt") is None:
     sys.modules["jwt"] = _jwt
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Tüm test session'ı için tek bir event loop garantisi (DB testleri için şarttır)."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# pytest-asyncio >= 0.21+ ile session kapsamlı event loop pytest.ini üzerinden
+# `asyncio_default_fixture_loop_scope = session` ayarıyla sağlanır.
+# Özel event_loop fixture override'ı artık gerekli değildir ve deprecated'dır.

@@ -351,6 +351,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # --port değeri verilmişse 1-65535 aralığında olduğunu doğrula
+    if args.port is not None:
+        try:
+            _port_val = int(args.port)
+            if not (1 <= _port_val <= 65535):
+                raise ValueError
+        except ValueError:
+            parser.error(f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})")
+
     # Eğer --quick argümanı verilmediyse etkileşimli sihirbazı çalıştır
     if not args.quick:
         sys.exit(run_wizard())

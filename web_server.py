@@ -384,7 +384,6 @@ async def basic_auth_middleware(request: Request, call_next):
     open_paths = {
         "/", "/health", "/docs", "/redoc", "/openapi.json",
         "/auth/login", "/auth/register",
-        "/metrics", "/metrics/llm", "/metrics/llm/prometheus", "/api/budget",
     }
     if (
         request.method == "OPTIONS"
@@ -473,6 +472,18 @@ def _require_admin_user(user=Depends(_get_request_user)):
     if not _is_admin_user(user):
         raise HTTPException(status_code=403, detail="Bu işlem için admin yetkisi gerekiyor")
     return user
+
+
+def _require_metrics_access(request: Request, user=Depends(_get_request_user)):
+    """Metrics endpoint'lerine erişim: admin kullanıcı VEYA geçerli METRICS_TOKEN."""
+    metrics_token = str(getattr(cfg, "METRICS_TOKEN", "") or "").strip()
+    if metrics_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer ") and auth_header[7:].strip() == metrics_token:
+            return user
+    if _is_admin_user(user):
+        return user
+    raise HTTPException(status_code=403, detail="Metrics erişimi için admin yetkisi veya METRICS_TOKEN gerekiyor")
 
 
 def _get_user_tenant(user) -> str:
@@ -660,9 +671,9 @@ def _register_plugin_agent(
 
 @app.post("/auth/register")
 async def register_user(payload: _RegisterRequest):
-    username = (payload.username if hasattr(payload, "username") else payload.get("username", "")).strip()
-    password = payload.password if hasattr(payload, "password") else payload.get("password", "")
-    tenant_id = (payload.tenant_id if hasattr(payload, "tenant_id") else payload.get("tenant_id", "default")).strip() or "default"
+    username = payload.username.strip()
+    password = payload.password
+    tenant_id = payload.tenant_id.strip() or "default"
     if len(username) < 3 or len(password) < 6:
         raise HTTPException(status_code=400, detail="Geçersiz kullanıcı adı veya şifre")
 
@@ -678,8 +689,8 @@ async def register_user(payload: _RegisterRequest):
 
 @app.post("/auth/login")
 async def login_user(payload: _LoginRequest):
-    username = (payload.username if hasattr(payload, "username") else payload.get("username", "")).strip()
-    password = payload.password if hasattr(payload, "password") else payload.get("password", "")
+    username = payload.username.strip()
+    password = payload.password
     agent = await get_agent()
     user = await agent.memory.db.authenticate_user(username=username, password=password)
     if not user:
@@ -1300,9 +1311,9 @@ async def health_check():
 
 
 @app.get("/metrics")
-async def metrics(request: Request):
+async def metrics(request: Request, _user=Depends(_require_metrics_access)):
     """
-    Temel operasyonel metrikler.
+    Temel operasyonel metrikler (admin veya METRICS_TOKEN gerektirir).
     - Varsayılan: JSON formatı (her istemci için çalışır).
     - 'Accept: text/plain' başlığı + prometheus_client kurulu ise Prometheus formatı döner.
     """
@@ -1354,16 +1365,16 @@ async def metrics(request: Request):
 
 
 @app.get("/metrics/llm/prometheus")
-async def llm_prometheus_metrics():
-    """LLM metriklerini Prometheus text/plain formatında döndürür."""
+async def llm_prometheus_metrics(_user=Depends(_require_metrics_access)):
+    """LLM metriklerini Prometheus text/plain formatında döndürür (admin veya METRICS_TOKEN gerektirir)."""
     snapshot = get_llm_metrics_collector().snapshot()
     return Response(content=render_llm_metrics_prometheus(snapshot), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/metrics/llm")
 @app.get("/api/budget")
-async def llm_budget_metrics():
-    """LLM token/latency/rate-limit metriklerini JSON olarak döndürür."""
+async def llm_budget_metrics(_user=Depends(_require_metrics_access)):
+    """LLM token/latency/rate-limit metriklerini JSON olarak döndürür (admin veya METRICS_TOKEN gerektirir)."""
     collector = get_llm_metrics_collector()
     return JSONResponse(collector.snapshot())
 
