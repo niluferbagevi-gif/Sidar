@@ -195,7 +195,7 @@ def check_hardware() -> HardwareInfo:
                 frac = legacy_frac
             if not (0.1 <= frac < 1.0):
                 logger.warning(
-                    "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–1.0 bekleniyor) "
+                    "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) "
                     "— varsayılan 0.8 kullanılıyor.",
                     frac,
                 )
@@ -329,7 +329,7 @@ class Config:
     # Çoklu GPU dağıtık mod
     MULTI_GPU: bool = get_bool_env("MULTI_GPU", False)
 
-    # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–1.0)
+    # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
     # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
     LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
@@ -367,6 +367,8 @@ class Config:
     )
     # RAG yükleme boyut limiti (varsayılan 50 MB)
     MAX_RAG_UPLOAD_BYTES: int = get_int_env("MAX_RAG_UPLOAD_BYTES", 50 * 1024 * 1024)
+    # Metrics endpoint'leri için statik Bearer token (boşsa yalnızca admin kullanıcılar erişebilir)
+    METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db")

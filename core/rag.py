@@ -32,6 +32,13 @@ try:
 except Exception:
     _otel_trace = None  # type: ignore[assignment]
 
+try:
+    import bleach as _bleach
+    _BLEACH_AVAILABLE = True
+except ImportError:
+    _bleach = None  # type: ignore[assignment]
+    _BLEACH_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -1069,7 +1076,18 @@ class DocumentStore:
 
     @staticmethod
     def _clean_html(html: str) -> str:
-        """HTML'yi temiz metne dönüştür."""
+        """HTML'yi temiz metne dönüştür.
+
+        bleach kütüphanesi mevcutsa güvenilir DOM tabanlı sanitizasyon kullanılır;
+        yoksa regex tabanlı fallback devreye girer.
+        """
+        if _BLEACH_AVAILABLE:
+            # Tüm HTML etiketlerini strip et, içerik metnini koru
+            clean = _bleach.clean(html, tags=[], attributes={}, strip=True, strip_comments=True)
+            clean = re.sub(r"\s+", " ", clean)
+            return clean.strip()
+
+        # Fallback: regex tabanlı sanitizasyon (bleach yoksa)
         clean = re.sub(
             r"<(script|style)[^>]*>.*?</(script|style)>",
             "",

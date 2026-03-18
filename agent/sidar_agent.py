@@ -255,10 +255,13 @@ class SidarAgent:
         include_verbose_runtime = not is_local_provider
 
         # ── Proje Ayarları (gerçek değerler — hallucination önleme) ──
+        # GÜVENLİK: BASE_DIR ve sistem config değerleri LLM context'ine açık metin
+        # olarak verilmez; prompt injection saldırılarına karşı gizlenir.
         lines.append("[Proje Ayarları — GERÇEK RUNTIME DEĞERLERİ]")
         lines.append(f"  Proje        : {self.cfg.PROJECT_NAME} v{self.cfg.VERSION}")
+        # BASE_DIR tam yolu yerine yalnızca klasör adı gösterilir
         if include_verbose_runtime:
-            lines.append(f"  Dizin        : {self.cfg.BASE_DIR}")
+            lines.append(f"  Dizin        : [proje dizini]")
         provider_name = (self.cfg.AI_PROVIDER or "").lower()
         lines.append(f"  AI Sağlayıcı : {self.cfg.AI_PROVIDER.upper()}")
         if provider_name == "ollama":
@@ -275,7 +278,13 @@ class SidarAgent:
         lines.append("")
         lines.append("[Araç Durumu]")
         lines.append(f"  Güvenlik   : {self.security.level_name.upper()}")
-        gh_status = f"Bağlı — {self.cfg.GITHUB_REPO}" if self.github.is_available() else "Bağlı değil"
+        # GITHUB_REPO tam URL yerine yalnızca owner/repo formatında gösterilir
+        if self.github.is_available():
+            _repo_raw = str(self.cfg.GITHUB_REPO or "")
+            _repo_display = _repo_raw.split("/")[-2] + "/" + _repo_raw.split("/")[-1] if "/" in _repo_raw else _repo_raw
+            gh_status = f"Bağlı — {_repo_display}"
+        else:
+            gh_status = "Bağlı değil"
         lines.append(f"  GitHub     : {gh_status}")
         lines.append(f"  WebSearch  : {'Aktif' if self.web.is_available() else 'Kurulu değil'}")
         lines.append(f"  RAG        : {self.docs.status()}")
@@ -286,7 +295,8 @@ class SidarAgent:
 
             last_file = self.memory.get_last_file()
             if last_file:
-                lines.append(f"  Son dosya  : {last_file}")
+                # Tam yol yerine yalnızca dosya adı (basename) gösterilir
+                lines.append(f"  Son dosya  : {Path(last_file).name}")
 
         # ── Görev Listesi (aktif görev varsa ekle) ──────────────────────
         if len(self.todo) > 0:
