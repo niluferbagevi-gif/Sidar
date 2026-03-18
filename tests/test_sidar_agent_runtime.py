@@ -369,6 +369,53 @@ def test_summarize_memory_success_and_exception_paths(monkeypatch):
     a.llm = _BrokenLLM()
     # sadece exception path'leri çalışsın, raise etmesin
     asyncio.run(a._summarize_memory())
+
+
+def test_summarize_memory_logs_vector_archive_success(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _Mem:
+        def __init__(self):
+            self.summary = None
+
+        async def get_history(self):
+            return [
+                {"role": "user", "content": "u1", "timestamp": 1},
+                {"role": "assistant", "content": "a1", "timestamp": 2},
+                {"role": "user", "content": "u2", "timestamp": 3},
+                {"role": "assistant", "content": "a2", "timestamp": 4},
+            ]
+
+        async def apply_summary(self, s):
+            self.summary = s
+
+    class _Docs:
+        def __init__(self):
+            self.calls = []
+
+        async def add_document(self, **kwargs):
+            self.calls.append(kwargs)
+            return "doc-1"
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return "özet"
+
+    infos = []
+    monkeypatch.setattr(SA_MOD.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
+
+    a.memory = _Mem()
+    a.docs = _Docs()
+    a.llm = _LLM()
+
+    asyncio.run(a._summarize_memory())
+
+    assert a.docs.calls and a.docs.calls[0]["source"] == "memory_archive"
+    assert a.memory.summary == "özet"
+    assert any("RAG (Vektör) belleğine arşivlendi" in msg for msg in infos)
+
+
 def test_instruction_file_loader_stat_and_read_failures_and_summarize_short_history(tmp_path, monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(BASE_DIR=tmp_path)

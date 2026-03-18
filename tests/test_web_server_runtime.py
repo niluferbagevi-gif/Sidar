@@ -225,13 +225,16 @@ def _install_web_server_stubs():
 
     registry_mod = types.ModuleType("agent.registry")
 
+    class _AgentSpec(types.SimpleNamespace):
+        pass
+
     class _AgentRegistry:
         _registry = {}
 
         @classmethod
         def register_type(cls, **kwargs):
             role_name = kwargs.get("role_name", "")
-            cls._registry[role_name] = types.SimpleNamespace(
+            cls._registry[role_name] = _AgentSpec(
                 role_name=role_name,
                 agent_class=kwargs.get("agent_class"),
                 capabilities=kwargs.get("capabilities", ["crypto_price", "demo"]),
@@ -245,13 +248,21 @@ def _install_web_server_stubs():
         def get(cls, name):
             return cls._registry.get(
                 name,
-                types.SimpleNamespace(
+                _AgentSpec(
                     capabilities=["crypto_price", "demo"],
                     description="Mock description",
                     version="1.0.0",
                     is_builtin=False,
                 ),
             )
+
+        @classmethod
+        def find_by_capability(cls, capability):
+            return [spec for spec in cls._registry.values() if capability in getattr(spec, "capabilities", [])]
+
+        @classmethod
+        def list_all(cls):
+            return list(cls._registry.values())
 
         @classmethod
         def create(cls, role_name, **kwargs):
@@ -265,6 +276,7 @@ def _install_web_server_stubs():
             return cls._registry.pop(role_name, None) is not None
 
     registry_mod.AgentRegistry = _AgentRegistry
+    registry_mod.AgentSpec = _AgentSpec
 
     managers_pkg = types.ModuleType("managers")
     managers_pkg.__path__ = []

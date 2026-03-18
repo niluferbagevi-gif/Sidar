@@ -67,6 +67,7 @@ from config import Config
 from agent.base_agent import BaseAgent
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
+from agent.swarm import SwarmOrchestrator, SwarmTask
 from agent.core.event_stream import get_agent_event_bus
 from managers.system_health import render_llm_metrics_prometheus
 from core.llm_metrics import get_llm_metrics_collector
@@ -275,7 +276,7 @@ async def get_agent() -> SidarAgent:
     async with _agent_lock:
         if _agent is None:
             _agent = SidarAgent(cfg)
-            await _agent.memory.initialize()
+            await _agent.initialize()
             _bind_llm_usage_sink(_agent)
     return _agent
 
@@ -515,6 +516,8 @@ def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
         return ("github", action, "*")
     if path.startswith("/api/agents/register"):
         return ("agents", "register", "*")
+    if path.startswith("/api/swarm/"):
+        return ("swarm", "execute", "*")
     if path.startswith("/admin/"):
         return ("admin", "manage", "*")
     if path.startswith("/ws/"):
@@ -561,6 +564,20 @@ class _AgentPluginRegisterRequest(BaseModel):
     version: str = Field(default="1.0.0", max_length=32)
 
 
+class _SwarmTaskRequest(BaseModel):
+    goal: str = Field(..., min_length=1)
+    intent: str = Field(default="mixed", min_length=1, max_length=64)
+    context: dict[str, str] = Field(default_factory=dict)
+    preferred_agent: str | None = Field(default=None, max_length=64)
+
+
+class _SwarmExecuteRequest(BaseModel):
+    mode: str = Field(default="parallel", pattern="^(parallel|pipeline)$")
+    tasks: list[_SwarmTaskRequest] = Field(..., min_length=1)
+    session_id: str = Field(default="", max_length=128)
+    max_concurrency: int = Field(default=4, ge=1, le=16)
+
+
 def _serialize_prompt(record) -> dict:
     return {
         "id": int(record.id),
@@ -570,6 +587,17 @@ def _serialize_prompt(record) -> dict:
         "is_active": bool(record.is_active),
         "created_at": str(record.created_at),
         "updated_at": str(record.updated_at),
+    }
+
+
+def _serialize_swarm_result(record) -> dict:
+    return {
+        "task_id": str(getattr(record, "task_id", "") or ""),
+        "agent_role": str(getattr(record, "agent_role", "") or ""),
+        "status": str(getattr(record, "status", "") or ""),
+        "summary": str(getattr(record, "summary", "") or ""),
+        "elapsed_ms": int(getattr(record, "elapsed_ms", 0) or 0),
+        "evidence": list(getattr(record, "evidence", []) or []),
     }
 
 
@@ -822,6 +850,43 @@ async def register_agent_plugin_file(
         version=version,
     )
     return JSONResponse({"success": True, "agent": result})
+
+
+@app.post("/api/swarm/execute")
+async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request_user)):
+    agent = await get_agent()
+    orchestrator = SwarmOrchestrator(getattr(agent, "cfg", cfg))
+    session_id = payload.session_id.strip() or f"swarm-{getattr(user, 'id', 'anon')}"
+    tasks = [
+        SwarmTask(
+            goal=item.goal.strip(),
+            intent=item.intent.strip() or "mixed",
+            context=dict(item.context or {}),
+            preferred_agent=(item.preferred_agent or "").strip() or None,
+        )
+        for item in payload.tasks
+        if item.goal.strip()
+    ]
+    if not tasks:
+        raise HTTPException(status_code=400, detail="En az bir geçerli task gereklidir")
+
+    if payload.mode == "pipeline":
+        results = await orchestrator.run_pipeline(tasks, session_id=session_id)
+    else:
+        results = await orchestrator.run_parallel(
+            tasks,
+            session_id=session_id,
+            max_concurrency=payload.max_concurrency,
+        )
+
+    return JSONResponse({
+        "success": True,
+        "mode": payload.mode,
+        "session_id": session_id,
+        "task_count": len(tasks),
+        "results": [_serialize_swarm_result(item) for item in results],
+    })
+
 
 
 @app.middleware("http")
