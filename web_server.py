@@ -935,7 +935,7 @@ async def hitl_create_request(payload: dict, user=Depends(_get_request_user)):
     hitl_payload = dict(payload.get("payload") or {})
     requested_by = str(payload.get("requested_by", getattr(user, "username", "api"))).strip()
 
-    from core.hitl import HITLRequest, get_hitl_store as _store, _notify
+    from core.hitl import HITLRequest, get_hitl_store as _store, notify
     import time, uuid
     now = time.time()
     req = HITLRequest(
@@ -948,7 +948,7 @@ async def hitl_create_request(payload: dict, user=Depends(_get_request_user)):
         expires_at=now + gate.timeout,
     )
     await _store().add(req)
-    await _notify(req)
+    await notify(req)
     return JSONResponse({"request_id": req.request_id, "expires_at": req.expires_at})
 
 

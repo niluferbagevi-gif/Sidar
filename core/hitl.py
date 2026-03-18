@@ -151,6 +151,11 @@ async def _notify(req: HITLRequest) -> None:
         logger.debug("HITL broadcast hatası: %s", exc)
 
 
+async def notify(req: HITLRequest) -> None:
+    """HITL isteğini kayıtlı broadcast hook'a iletir."""
+    await _notify(req)
+
+
 # ─── HITLGate — iş mantığı ───────────────────────────────────────────────────
 
 class HITLGate:
@@ -204,7 +209,7 @@ class HITLGate:
 
         store = get_hitl_store()
         await store.add(req)
-        await _notify(req)
+        await notify(req)
 
         logger.info(
             "HITL onay bekleniyor — action=%s, id=%s, timeout=%ds",
@@ -262,7 +267,7 @@ class HITLGate:
         req.decided_by = decided_by
         req.rejection_reason = rejection_reason if not approved else ""
 
-        await _notify(req)
+        await notify(req)
         return req
 
 
