@@ -149,12 +149,18 @@ class FeedbackStore:
         now = time.time()
         async with self._engine.begin() as conn:
             for chunk in _chunked(ids, 500):
-                placeholders = ",".join(str(i) for i in chunk)
+                params = {"now": now}
+                placeholders = []
+                for idx, feedback_id in enumerate(chunk):
+                    param_name = f"id_{idx}"
+                    placeholders.append(f":{param_name}")
+                    params[param_name] = int(feedback_id)
                 await conn.execute(
                     sql_text(
-                        f"UPDATE finetune_feedback SET exported_at = :now WHERE id IN ({placeholders})"
+                        "UPDATE finetune_feedback"
+                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"
                     ),
-                    {"now": now},
+                    params,
                 )
 
     async def stats(self) -> Dict[str, int]:
