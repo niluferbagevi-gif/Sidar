@@ -364,3 +364,33 @@ def test_swarm_pipeline_only_carries_successful_results_to_next_context(monkeypa
     assert results[0].status == "failed"
     assert results[1].status == "success"
     assert "prev_coder" not in seen[1]
+
+def test_swarm_orchestrator_loop_guard_stops_repeated_same_route(monkeypatch, swarm_module):
+    cfg = SimpleNamespace(SWARM_LOOP_GUARD_MAX_REPEAT=2, AI_PROVIDER="openai")
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=cfg)
+
+    class _Agent:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="ok",
+                evidence=[],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _Agent())
+
+    task = swarm_module.SwarmTask(goal="aynı görev", intent="mixed")
+    result = asyncio.run(
+        orchestrator._execute_task(
+            task,
+            _route_trace=[
+                "coder|mixed|aynı görev",
+                "coder|mixed|aynı görev",
+            ],
+        )
+    )
+
+    assert result.status == "failed"
+    assert "aynı ajan/intente aynı görev tekrarlandı" in result.summary

@@ -289,3 +289,16 @@ def test_ensure_listener_returns_early_when_disabled_or_already_running():
 
     bus2._redis_listener_task = _Task()
     asyncio.run(bus2._ensure_redis_listener())
+
+def test_publish_skips_redis_when_bootstrap_marks_it_unavailable(monkeypatch):
+    bus = AgentEventBus()
+
+    async def _ensure():
+        bus._redis_available = False
+
+    bus._redis_available = None
+    monkeypatch.setattr(bus, "_ensure_redis_listener", _ensure)
+
+    ok = asyncio.run(bus._publish_via_redis(AgentEvent(ts=1.0, source="s", message="m")))
+    assert ok is False
+    assert bus._redis_client is None

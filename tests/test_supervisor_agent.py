@@ -1,7 +1,121 @@
 import asyncio
+import importlib.util
+import sys
+import types
+from pathlib import Path
 
-from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult
-from agent.core.supervisor import SupervisorAgent
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_supervisor_module():
+    saved = {
+        name: sys.modules.get(name)
+        for name in (
+            "agent",
+            "agent.core",
+            "agent.core.contracts",
+            "agent.core.memory_hub",
+            "agent.core.registry",
+            "agent.core.event_stream",
+            "agent.base_agent",
+            "agent.roles",
+            "agent.roles.coder_agent",
+            "agent.roles.researcher_agent",
+            "agent.roles.reviewer_agent",
+            "config",
+            "core",
+            "core.llm_client",
+        )
+    }
+
+    agent_pkg = types.ModuleType("agent")
+    agent_pkg.__path__ = [str(ROOT / "agent")]
+    core_pkg = types.ModuleType("agent.core")
+    core_pkg.__path__ = [str(ROOT / "agent" / "core")]
+    roles_pkg = types.ModuleType("agent.roles")
+    roles_pkg.__path__ = [str(ROOT / "agent" / "roles")]
+    root_core_pkg = types.ModuleType("core")
+    llm_client_mod = types.ModuleType("core.llm_client")
+    config_mod = types.ModuleType("config")
+
+    class _Config:
+        AI_PROVIDER = "test"
+        REACT_TIMEOUT = 0.1
+
+    class _LLMClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _EventBus:
+        def __init__(self):
+            self.messages = []
+
+        async def publish(self, source, message):
+            self.messages.append((source, message))
+
+    class _RoleAgent:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def run_task(self, task_prompt: str):
+            return task_prompt
+
+    config_mod.Config = _Config
+    llm_client_mod.LLMClient = _LLMClient
+    root_core_pkg.llm_client = llm_client_mod
+
+    sys.modules["agent"] = agent_pkg
+    sys.modules["agent.core"] = core_pkg
+    sys.modules["agent.roles"] = roles_pkg
+    sys.modules["config"] = config_mod
+    sys.modules["core"] = root_core_pkg
+    sys.modules["core.llm_client"] = llm_client_mod
+
+    event_stream_mod = types.ModuleType("agent.core.event_stream")
+    event_stream_mod.get_agent_event_bus = lambda: _EventBus()
+    sys.modules["agent.core.event_stream"] = event_stream_mod
+
+    for module_name, class_name in (
+        ("agent.roles.coder_agent", "CoderAgent"),
+        ("agent.roles.researcher_agent", "ResearcherAgent"),
+        ("agent.roles.reviewer_agent", "ReviewerAgent"),
+    ):
+        role_mod = types.ModuleType(module_name)
+        role_mod.__dict__[class_name] = type(class_name, (_RoleAgent,), {})
+        sys.modules[module_name] = role_mod
+
+    try:
+        for name, rel_path in (
+            ("agent.core.contracts", "agent/core/contracts.py"),
+            ("agent.core.memory_hub", "agent/core/memory_hub.py"),
+            ("agent.base_agent", "agent/base_agent.py"),
+            ("agent.core.registry", "agent/core/registry.py"),
+            ("agent.core.supervisor", "agent/core/supervisor.py"),
+        ):
+            spec = importlib.util.spec_from_file_location(name, ROOT / rel_path)
+            mod = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            sys.modules[name] = mod
+            spec.loader.exec_module(mod)
+
+        return (
+            sys.modules["agent.core.contracts"],
+            sys.modules["agent.core.supervisor"].SupervisorAgent,
+        )
+    finally:
+        for name, previous in saved.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+
+
+contracts_mod, SupervisorAgent = _load_supervisor_module()
+DelegationRequest = contracts_mod.DelegationRequest
+TaskEnvelope = contracts_mod.TaskEnvelope
+TaskResult = contracts_mod.TaskResult
 
 
 def test_contract_models_basic_shape():
@@ -52,6 +166,7 @@ def test_supervisor_routes_code_intent_to_coder(monkeypatch):
     out = asyncio.run(s.run_task("test.py isimli bir dosyaya 'print(hello)' yaz"))
     assert out.startswith("CODER:")
 
+
 def test_supervisor_retries_coder_when_review_fails(monkeypatch):
     s = SupervisorAgent()
     calls = {"coder": 0}
@@ -72,6 +187,7 @@ def test_supervisor_retries_coder_when_review_fails(monkeypatch):
 
     assert calls["coder"] == 2
     assert "2. tur" in out
+
 
 def test_supervisor_routes_p2p_delegation_from_reviewer_to_coder(monkeypatch):
     s = SupervisorAgent()
@@ -94,3 +210,33 @@ def test_supervisor_routes_p2p_delegation_from_reviewer_to_coder(monkeypatch):
 
     out = asyncio.run(s.run_task("bir kod görevi"))
     assert "CODER:" in out or "ack" in out
+
+
+def test_supervisor_route_p2p_timeout_bubbles_for_unresponsive_subagent():
+    s = object.__new__(SupervisorAgent)
+    s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 0.01})()
+
+    published = []
+
+    class _Events:
+        async def publish(self, source, message):
+            published.append((source, message))
+
+    async def _delegate(*_args, **_kwargs):
+        await asyncio.sleep(1)
+        return TaskResult(task_id="late", status="done", summary="never")
+
+    s.events = _Events()
+    s._delegate = _delegate
+
+    req = DelegationRequest(
+        task_id="p2p-timeout",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="fix",
+    )
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(s._route_p2p(req, max_hops=2))
+
+    assert published == [("supervisor", "P2P yönlendirme: reviewer → coder")]

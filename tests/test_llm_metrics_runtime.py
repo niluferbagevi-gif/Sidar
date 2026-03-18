@@ -125,3 +125,13 @@ def test_env_float_handles_none_empty_nan_inf_and_invalid(monkeypatch):
 
     monkeypatch.setenv("LLM_F", "abc")
     assert _env_float("LLM_F", 3.5) == 3.5
+
+def test_llm_metrics_record_handles_empty_metric_payload_without_user_bucket():
+    collector = LLMMetricsCollector(max_events=5)
+    collector.record(provider="", model="", latency_ms=0, prompt_tokens=None, completion_tokens=None, user_id="   ")
+
+    snap = collector.snapshot()
+    assert snap["totals"]["calls"] == 1
+    assert snap["totals"]["total_tokens"] == 0
+    assert snap["by_user"] == {}
+    assert "" in snap["by_provider"]
