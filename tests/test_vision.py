@@ -22,7 +22,7 @@ from core.vision import (
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ─── Yardımcı: küçük PNG oluştur ─────────────────────────────────────────────
@@ -47,26 +47,26 @@ def _tiny_png_bytes() -> bytes:
 class TestLoadImageAsBase64:
     def test_file_not_found_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            load_image_as_base64(tmp_path / "nonexistent.png")
+            _run(load_image_as_base64(tmp_path / "nonexistent.png"))
 
     def test_unsupported_format_raises(self, tmp_path):
         p = tmp_path / "img.bmp"
         p.write_bytes(b"\x00" * 10)
         with pytest.raises(ValueError, match="Desteklenmeyen"):
-            load_image_as_base64(p)
+            _run(load_image_as_base64(p))
 
     def test_file_too_large_raises(self, tmp_path):
         p = tmp_path / "big.png"
         # 11 MB
         p.write_bytes(b"\x00" * (11 * 1024 * 1024))
         with pytest.raises(ValueError, match="büyük"):
-            load_image_as_base64(p)
+            _run(load_image_as_base64(p))
 
     def test_valid_png_returns_base64(self, tmp_path):
         p = tmp_path / "test.png"
         raw = _tiny_png_bytes()
         p.write_bytes(raw)
-        b64, mime = load_image_as_base64(p)
+        b64, mime = _run(load_image_as_base64(p))
         assert mime == "image/png"
         assert base64.b64decode(b64) == raw
 
@@ -74,7 +74,7 @@ class TestLoadImageAsBase64:
         p = tmp_path / "test.jpg"
         raw = b"\xff\xd8\xff\xe0" + b"\x00" * 20  # minimal JPEG header
         p.write_bytes(raw)
-        b64, mime = load_image_as_base64(p)
+        b64, mime = _run(load_image_as_base64(p))
         assert mime == "image/jpeg"
 
 
