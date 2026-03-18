@@ -1022,3 +1022,53 @@ def test_openai_chat_handles_missing_json_shape_and_http_500_error(llm_mod, monk
         asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True))
     assert exc.value.status_code == 500
     assert exc.value.retryable is True
+
+def test_openai_chat_without_key_returns_error_json_and_stream(llm_mod):
+    config = SimpleNamespace(OPENAI_API_KEY="", OPENAI_TIMEOUT=60, OPENAI_MODEL="gpt-x")
+    client = llm_mod.OpenAIClient(config)
+
+    payload = json.loads(asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True)))
+    assert payload["tool"] == "final_answer"
+    assert "OPENAI_API_KEY" in payload["argument"]
+
+    stream_iter = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=True, json_mode=True))
+    stream_payloads = asyncio.run(_collect(stream_iter))
+    assert "OPENAI_API_KEY" in json.loads(stream_payloads[0])["argument"]
+
+
+def test_gemini_chat_uses_default_prompt_when_only_system_message(llm_mod, monkeypatch):
+    calls = {}
+
+    class _Resp:
+        text = "plain"
+
+    class _Session:
+        async def send_message_async(self, prompt, stream=False):
+            calls["prompt"] = prompt
+            calls["stream"] = stream
+            return _Resp()
+
+    class _Model:
+        def __init__(self, **kwargs):
+            calls["model_kwargs"] = kwargs
+
+        def start_chat(self, history):
+            calls["history"] = history
+            return _Session()
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda api_key: calls.setdefault("api_key", api_key)
+    fake_genai.GenerativeModel = _Model
+
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.delitem(sys.modules, "google.generativeai.types", raising=False)
+
+    cfg = SimpleNamespace(GEMINI_API_KEY="k", GEMINI_MODEL="gm", ENABLE_TRACING=False)
+    client = llm_mod.GeminiClient(cfg)
+
+    out = asyncio.run(client.chat([{"role": "system", "content": "sys"}], stream=False, json_mode=False))
+    assert out == "plain"
+    assert calls["prompt"] == "Merhaba"
+    assert calls["history"] == []
+    assert calls["model_kwargs"]["system_instruction"] == "sys"
