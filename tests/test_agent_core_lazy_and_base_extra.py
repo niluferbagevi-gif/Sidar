@@ -8,8 +8,11 @@ from agent.core.memory_hub import MemoryHub
 
 
 class _MiniAgent(BaseAgent):
-    def __init__(self, cfg=None, role_name="base"):
-        super().__init__(cfg=cfg, role_name=role_name)
+    def __init__(self, cfg=None, role_name="mini"):
+        self.cfg = cfg
+        self.role_name = role_name
+        self.system_prompt = ""
+        self.tools = {}
 
     async def run_task(self, task_prompt: str) -> str:
         return task_prompt
