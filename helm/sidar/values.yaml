@@ -113,3 +113,22 @@ apm:
 monitoring:
   sloDashboard:
     enabled: true
+
+# --- Üretim Dayanıklılık Ayarları ---
+podDisruptionBudget:
+  web:
+    enabled: true
+    minAvailable: 1
+  aiWorker:
+    enabled: false
+
+networkPolicy:
+  enabled: true
+  # İzin verilen ingress kaynakları (boş = tüm namespace'ler)
+  ingressNamespaceSelector: {}
+  # Sidar web pod'larına yalnızca bu portlardan erişim izni verilir
+  allowedIngressPorts:
+    - 7860  # FastAPI web
+    - 8080  # (opsiyonel reverse-proxy)
+  # Egress: Sidar'ın dışarıya açabileceği hedefler
+  allowAllEgress: true

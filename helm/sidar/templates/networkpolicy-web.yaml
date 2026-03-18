@@ -1,0 +1,70 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sidar.fullname" . }}-web-netpol
+  labels:
+    app.kubernetes.io/name: {{ include "sidar.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: web
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: web
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    {{- if not .Values.networkPolicy.allowAllEgress }}
+    - Egress
+    {{- end }}
+  ingress:
+    - ports:
+        {{- range .Values.networkPolicy.allowedIngressPorts }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+      {{- if .Values.networkPolicy.ingressNamespaceSelector }}
+      from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+      {{- end }}
+  {{- if not .Values.networkPolicy.allowAllEgress }}
+  egress:
+    # Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: redis
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: {{ .Values.redis.port }}
+          protocol: TCP
+    # PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgresql
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: {{ .Values.postgresql.port }}
+          protocol: TCP
+    # OTel Collector (tracing)
+    {{- if .Values.apm.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: otel-collector
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: {{ .Values.apm.collector.service.grpcPort }}
+          protocol: TCP
+    {{- end }}
+    # DNS
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+  {{- end }}
+{{- end }}

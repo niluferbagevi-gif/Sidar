@@ -1366,9 +1366,18 @@ async def metrics(request: Request, _user=Depends(_require_metrics_access)):
 
 @app.get("/metrics/llm/prometheus")
 async def llm_prometheus_metrics(_user=Depends(_require_metrics_access)):
-    """LLM metriklerini Prometheus text/plain formatında döndürür (admin veya METRICS_TOKEN gerektirir)."""
+    """LLM + ajan delegasyon metriklerini Prometheus text/plain formatında döndürür."""
     snapshot = get_llm_metrics_collector().snapshot()
-    return Response(content=render_llm_metrics_prometheus(snapshot), media_type="text/plain; version=0.0.4")
+    llm_part = render_llm_metrics_prometheus(snapshot)
+
+    delegation_part = ""
+    try:
+        from core.agent_metrics import get_agent_metrics_collector
+        delegation_part = get_agent_metrics_collector().render_prometheus()
+    except Exception:
+        pass
+
+    return Response(content=llm_part + delegation_part, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/metrics/llm")
