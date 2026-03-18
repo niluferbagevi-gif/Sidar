@@ -27,6 +27,9 @@ class LLMMetricEvent:
     rate_limited: bool
     user_id: str = ""
     error: str = ""
+    # LLM-as-a-Judge alanları (opsiyonel; yalnızca judge değerlendirmesi yapılan olaylarda dolu)
+    judge_score: Optional[float] = None       # RAG alaka puanı 0.0–1.0
+    hallucination_risk: Optional[float] = None  # Halüsinasyon riski 0.0–1.0
 
 
 def _env_float(key: str, default: float) -> float:
@@ -103,6 +106,8 @@ class LLMMetricsCollector:
         success: bool = True,
         error: str = "",
         user_id: str = "",
+        judge_score: Optional[float] = None,
+        hallucination_risk: Optional[float] = None,
     ) -> None:
         prompt_tokens = max(0, int(prompt_tokens or 0))
         completion_tokens = max(0, int(completion_tokens or 0))
@@ -126,6 +131,8 @@ class LLMMetricsCollector:
             success=bool(success),
             rate_limited=rate_limited,
             error=err[:500],
+            judge_score=float(judge_score) if judge_score is not None else None,
+            hallucination_risk=float(hallucination_risk) if hallucination_risk is not None else None,
         )
         with self._lock:
             self._events.append(event)
