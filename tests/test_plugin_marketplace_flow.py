@@ -17,11 +17,14 @@ class _Upload:
         self.closed = True
 
 
-def test_register_file_plugin_and_execute_task():
+def test_register_file_plugin_and_execute_task(tmp_path, monkeypatch):
     mod = _load_web_server()
     from agent.registry import AgentRegistry
-    plugin_path = Path("plugins/crypto_price_agent.py")
-    upload = _Upload(plugin_path.name, plugin_path.read_bytes())
+
+    monkeypatch.chdir(tmp_path)
+
+    source_path = Path("/workspace/Sidar/plugins/crypto_price_agent.py")
+    upload = _Upload("marketplace_crypto_price_agent.py", source_path.read_bytes())
 
     response = asyncio.run(
         mod.register_agent_plugin_file(
@@ -37,12 +40,12 @@ def test_register_file_plugin_and_execute_task():
 
     assert response.content["success"] is True
     agent_meta = response.content["agent"]
-    assert agent_meta["role_name"] == "crypto_price_agent"
+    assert agent_meta["role_name"] == "marketplace_crypto_price_agent"
     assert "crypto_price" in agent_meta["capabilities"]
     assert agent_meta["is_builtin"] is False
-    assert Path("plugins/crypto_price_agent.py").exists()
+    assert Path("plugins/marketplace_crypto_price_agent.py").exists()
 
-    instance = AgentRegistry.create("crypto_price_agent")
+    instance = AgentRegistry.create("marketplace_crypto_price_agent")
     result = asyncio.run(instance.run_task("btc fiyatı nedir?"))
     assert "BTC" in result
-    AgentRegistry.unregister("crypto_price_agent")
+    AgentRegistry.unregister("marketplace_crypto_price_agent")

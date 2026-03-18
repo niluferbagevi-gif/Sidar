@@ -42,7 +42,9 @@ class DemoAgent(BaseAgent):
     assert "demo" in result["capabilities"]
 
 
-def test_register_plugin_agent_endpoint_and_file_upload(mod):
+def test_register_plugin_agent_endpoint_and_file_upload(mod, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     src = '''
 from agent.base_agent import BaseAgent
 
@@ -71,7 +73,7 @@ class FileAgent(BaseAgent):
     assert resp.content["agent"]["role_name"] == "json_agent"
 
     class _Upload:
-        filename = "upload_agent.py"
+        filename = "mock_file_agent.py"
 
         def __init__(self, data: bytes):
             self._data = data
@@ -102,7 +104,8 @@ class FileAgent(BaseAgent):
             )
         )
     assert upload_resp.content["success"] is True
-    assert upload_resp.content["agent"]["role_name"] == "upload_agent"
+    assert upload_resp.content["agent"]["role_name"] == "mock_file_agent"
+    assert (tmp_path / "plugins" / "mock_file_agent.py").exists()
     assert upload_resp.content["agent"]["version"] == "2.0.0"
 
 
