@@ -21,10 +21,12 @@ def test_register_file_plugin_and_execute_task(tmp_path, monkeypatch):
     mod = _load_web_server()
     from agent.registry import AgentRegistry
 
+    project_root = Path(__file__).resolve().parent.parent
+    source_bytes = (project_root / "plugins" / "crypto_price_agent.py").read_bytes()
+
     monkeypatch.chdir(tmp_path)
 
-    source_path = Path("/workspace/Sidar/plugins/crypto_price_agent.py")
-    upload = _Upload("marketplace_crypto_price_agent.py", source_path.read_bytes())
+    upload = _Upload("marketplace_crypto_price_agent.py", source_bytes)
 
     response = asyncio.run(
         mod.register_agent_plugin_file(
