@@ -488,6 +488,41 @@ class Config:
     # Kullanıcı başına maksimum persona anahtarı sayısı (LRU eviction)
     ENTITY_MEMORY_MAX_PER_USER: int = get_int_env("ENTITY_MEMORY_MAX_PER_USER", 100)
 
+    # ─── Active Learning + LoRA/QLoRA (v6.0) ────────────────────
+    ENABLE_ACTIVE_LEARNING: bool = get_bool_env("ENABLE_ACTIVE_LEARNING", True)
+    # Minimum geri bildirim puanı (bu değer ve üzeri export edilir)
+    AL_MIN_RATING_FOR_TRAIN: int = get_int_env("AL_MIN_RATING_FOR_TRAIN", 1)
+    # LoRA eğitimini etkinleştir (peft/transformers gerektirir)
+    ENABLE_LORA_TRAINING: bool = get_bool_env("ENABLE_LORA_TRAINING", False)
+    # Fine-tuning için temel model (HuggingFace hub ID)
+    LORA_BASE_MODEL: str = os.getenv("LORA_BASE_MODEL", "")
+    LORA_RANK: int = get_int_env("LORA_RANK", 8)
+    LORA_ALPHA: int = get_int_env("LORA_ALPHA", 16)
+    LORA_DROPOUT: float = get_float_env("LORA_DROPOUT", 0.05)
+    LORA_EPOCHS: int = get_int_env("LORA_EPOCHS", 3)
+    LORA_BATCH_SIZE: int = get_int_env("LORA_BATCH_SIZE", 4)
+    LORA_USE_4BIT: bool = get_bool_env("LORA_USE_4BIT", True)
+    LORA_OUTPUT_DIR: str = os.getenv("LORA_OUTPUT_DIR", "data/lora_adapters")
+
+    # ─── Multimodal Vision (v6.0) ───────────────────────────────
+    ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)
+    # Maksimum görsel boyutu (byte) — varsayılan 10 MB
+    VISION_MAX_IMAGE_BYTES: int = get_int_env("VISION_MAX_IMAGE_BYTES", 10485760)
+
+    # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
+    SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
+    SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    SLACK_DEFAULT_CHANNEL: str = os.getenv("SLACK_DEFAULT_CHANNEL", "")
+
+    # ─── Jira Entegrasyonu (v6.0) ───────────────────────────────
+    JIRA_URL: str = os.getenv("JIRA_URL", "")
+    JIRA_TOKEN: str = os.getenv("JIRA_TOKEN", "")
+    JIRA_EMAIL: str = os.getenv("JIRA_EMAIL", "")
+    JIRA_DEFAULT_PROJECT: str = os.getenv("JIRA_DEFAULT_PROJECT", "")
+
+    # ─── Microsoft Teams Entegrasyonu (v6.0) ────────────────────
+    TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
     # ─────────────────────────────────────────────────────────
