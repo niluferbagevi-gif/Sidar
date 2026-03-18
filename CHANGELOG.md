@@ -4,6 +4,53 @@
 
 ---
 
+## [v3.0.15] - 2026-03-18
+FAZ-3 Düşük Öncelikli Teknik Borç Temizliği — Tüm D-1..D-5 bulgular ve §11.2 refactor kalıntıları kapatıldı.
+
+### ✅ FAZ-3-1 — web_server.py Dead-Code Temizliği (§11.2 / YN3-O-3 Kapatma)
+**Dosya:** `web_server.py`
+- `/auth/register` endpoint'inde `hasattr(payload, "username")` + `payload.get("username", "")` dead-code deseni kaldırıldı; `payload.username.strip()` ile doğrudan Pydantic model alanına erişildi.
+- `/auth/login` endpoint'inde aynı pattern temizlendi; `payload.username.strip()` / `payload.password` doğrudan kullanım.
+- `_RegisterRequest` ve `_LoginRequest` Pydantic modelleri zaten tüm doğrulamayı yapmaktadır; `hasattr`/`.get()` artık gerekmiyordu.
+
+### ✅ FAZ-3-2 — Açık Metrik Endpoint Auth Koruması (D-3)
+**Dosyalar:** `web_server.py`, `config.py`, `.env.example`
+- `/metrics`, `/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget` endpoint'leri `open_paths` whitelist'inden çıkarıldı.
+- `_require_metrics_access(request, user)` Depends dependency eklendi: admin kullanıcı **veya** `METRICS_TOKEN` Bearer token ile erişim.
+- `config.py`'ye `METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")` alanı eklendi.
+- `.env.example`'a `METRICS_TOKEN=` belgesi ve açıklaması eklendi.
+
+### ✅ FAZ-3-3 — Test Altyapısı Standardizasyonu (§11.2 Yol Haritası)
+**Dosyalar:** `tests/conftest.py`, `pytest.ini`, `.github/workflows/ci.yml`
+- `conftest.py`: Deprecated `event_loop` session fixture override kaldırıldı; `asyncio` import temizlendi.
+- `pytest.ini`: `asyncio_default_fixture_loop_scope = session` eklendi (pytest-asyncio ≥ 0.21 standart yolu); `slow` ve `pg_stress` marker tanımları eklendi.
+- `ci.yml`: `pg-stress` job eklendi — PostgreSQL 16 service container, `alembic upgrade head` migration adımı ve `pytest -m pg_stress` bağlantı havuzu stres testi otomatikleştirildi.
+
+### ✅ FAZ-3-4a — config.py GPU Fraction Yorum Düzeltmesi (D-1)
+**Dosya:** `config.py`
+- GPU bellek fraksiyonu hata mesajı: `"(0.1–1.0 bekleniyor)"` → `"(0.1–0.99 bekleniyor, 1.0 dahil değil)"` — `frac < 1.0` validation kuralıyla tutarlı hale getirildi.
+- Satır 332 yorum da güncellendi: `# Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)`
+
+### ✅ FAZ-3-4b — main.py Port Validasyonu (D-2)
+**Dosya:** `main.py`
+- `--port` argümanı için `parse_args()` sonrasına 1–65535 aralık doğrulayıcısı eklendi.
+- Aralık dışı değer için `parser.error(f"--port değeri 1-65535 arasında...")` ile kullanıcı dostu hata mesajı.
+
+### ✅ FAZ-3-4c — core/rag.py bleach HTML Sanitizasyonu (D-4)
+**Dosyalar:** `core/rag.py`, `pyproject.toml`
+- `bleach` kütüphanesi opsiyonel import olarak eklendi (`try/except ImportError`).
+- `_clean_html()` metodu güncellendi: `bleach` varsa `bleach.clean(html, tags=[], strip=True, strip_comments=True)` ile DOM tabanlı sanitizasyon; yoksa mevcut regex fallback korunur.
+- `pyproject.toml` çekirdek bağımlılıklarına `"bleach~=6.1.0"` eklendi.
+
+### ✅ FAZ-3-4d — agent/sidar_agent.py Prompt Injection Koruması (D-5)
+**Dosya:** `agent/sidar_agent.py`
+- `BASE_DIR` tam dosya sistemi yolu `_build_context()` içinde LLM'e artık gönderilmiyor; `"[proje dizini]"` placeholder kullanılıyor.
+- `GITHUB_REPO` tam URL yerine `owner/repo` formatına indirgendi.
+- `Son dosya` alanı tam yol yerine `Path(last_file).name` (basename) ile sınırlandırıldı.
+- Kod bloğuna güvenlik açıklama yorumu eklendi.
+
+---
+
 ## [v3.0.12] - 2026-03-16
 §13 kalan maddeler: Extras fine-tuning tamamlandı; Swarm + React UI temeli oluşturuldu.
 
