@@ -292,6 +292,76 @@ def test_swarm_orchestrator_loop_guard_stops_at_max_hops(monkeypatch, swarm_modu
     assert result.status == "failed"
     assert "maksimum devir sayısı aşıldı" in result.summary
 
+
+
+def test_task_router_prefers_first_capability_match(monkeypatch, swarm_module):
+    router = swarm_module.TaskRouter()
+    monkeypatch.setattr(
+        swarm_module.AgentRegistry,
+        "find_by_capability",
+        lambda _c: [_DummySpec("reviewer"), _DummySpec("coder")],
+    )
+
+    spec = router.route("review")
+
+    assert spec.role_name == "reviewer"
+
+
+def test_swarm_orchestrator_skips_when_no_agent_matches(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: None)
+
+    result = asyncio.run(orchestrator.run("eşleşme yok", intent="unknown"))
+
+    assert result.status == "skipped"
+    assert result.agent_role == "none"
+    assert result.summary == "Uygun ajan bulunamadı."
+
+
+def test_swarm_orchestrator_treats_unexpected_summary_string_as_plain_result(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+
+    class _OddAgent:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="DELEGATE?? target=coder but malformed",
+                evidence=["raw-string"],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _OddAgent())
+
+    result = asyncio.run(orchestrator.run("garip çıktı", intent="mixed"))
+
+    assert result.status == "success"
+    assert result.agent_role == "coder"
+    assert result.summary == "DELEGATE?? target=coder but malformed"
+    assert result.evidence == ["raw-string"]
+
+
+def test_swarm_orchestrator_raises_last_retry_error_when_retry_loop_exits_without_result(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=0))
+
+    class _AlwaysFailAgent:
+        async def handle(self, envelope):
+            raise RuntimeError("yarım kalan retry döngüsü")
+
+    def _single_attempt_range(*args):
+        if args == (2,):
+            return iter([0])
+        return range(*args)
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _AlwaysFailAgent())
+    monkeypatch.setattr(swarm_module, "range", _single_attempt_range, raising=False)
+
+    result = asyncio.run(orchestrator.run("retry anomalisi", intent="mixed"))
+
+    assert result.status == "failed"
+    assert "yarım kalan retry döngüsü" in result.summary
+
 def test_task_router_fallback_and_route_by_role(monkeypatch, swarm_module):
     router = swarm_module.TaskRouter()
     monkeypatch.setattr(swarm_module.AgentRegistry, "find_by_capability", lambda _c: [])
