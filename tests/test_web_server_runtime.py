@@ -2026,6 +2026,44 @@ def test_lifespan_triggers_async_shutdown_cleanup(monkeypatch):
     assert called["shutdown"] == 1
 
 
+def test_metrics_access_guard_accepts_token_or_admin_and_rejects_others():
+    mod = _load_web_server()
+    mod.cfg.METRICS_TOKEN = "metrics-secret"
+
+    token_user = types.SimpleNamespace(role="user", username="alice")
+    req = _FakeRequest(headers={"Authorization": "Bearer metrics-secret"})
+    assert mod._require_metrics_access(req, user=token_user) is token_user
+
+    admin_user = types.SimpleNamespace(role="admin", username="root")
+    assert mod._require_metrics_access(_FakeRequest(headers={}), user=admin_user) is admin_user
+
+    try:
+        mod._require_metrics_access(_FakeRequest(headers={"Authorization": "Bearer wrong"}), user=token_user)
+        assert False, "expected metrics access denial"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 403
+
+
+def test_execute_swarm_rejects_payloads_without_valid_tasks():
+    mod = _load_web_server()
+    mod.get_agent = lambda: asyncio.sleep(0, result=types.SimpleNamespace(cfg=types.SimpleNamespace()))
+
+    payload = types.SimpleNamespace(
+        tasks=[types.SimpleNamespace(goal="   ", intent="", context=None, preferred_agent="")],
+        session_id="",
+        mode="parallel",
+        max_concurrency=2,
+    )
+    user = types.SimpleNamespace(id="u1")
+
+    try:
+        asyncio.run(mod.execute_swarm(payload=payload, user=user))
+        assert False, "expected invalid swarm task payload"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "En az bir geçerli task" in exc.detail
+
+
 
 def test_websocket_chat_cancellederror_pass_branch_with_running_task():
     mod = _load_web_server()
@@ -2578,6 +2616,87 @@ def test_websocket_chat_anyio_closed_resource_branch_cancels_active_task():
     asyncio.run(mod.websocket_chat(_WS()))
 
 
+def test_websocket_chat_header_token_auth_success_and_invalid_close():
+    mod = _load_web_server()
+
+    class _Memory:
+        class _DB:
+            async def get_user_by_token(self, token):
+                if token == "valid-token":
+                    return types.SimpleNamespace(id="u1", username="alice")
+                return None
+
+        def __init__(self):
+            self.db = self._DB()
+            self.active = []
+
+        async def set_active_user(self, user_id, username=None):
+            self.active.append((user_id, username))
+
+        def __len__(self):
+            return 0
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            if False:
+                yield ""
+
+    agent = _Agent()
+    mod.get_agent = lambda: asyncio.sleep(0, result=agent)
+
+    class _WSOk:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "valid-token"}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.accepted = None
+            self.sent = []
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive_text(self):
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    ws_ok = _WSOk()
+    asyncio.run(mod.websocket_chat(ws_ok))
+    assert ws_ok.accepted == "valid-token"
+    assert {"auth_ok": True} in ws_ok.sent
+    assert agent.memory.active == [("u1", "alice")]
+
+    class _WSBad:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "bad-token"}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.accepted = None
+            self.closed = None
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def close(self, code=None, reason=None):
+            self.closed = (code, reason)
+
+        async def receive_text(self):
+            raise AssertionError("receive_text should not be called after invalid token")
+
+        async def send_json(self, payload):
+            raise AssertionError(f"unexpected payload: {payload}")
+
+    ws_bad = _WSBad()
+    asyncio.run(mod.websocket_chat(ws_bad))
+    assert ws_bad.accepted == "bad-token"
+    assert ws_bad.closed == (1008, "Invalid or expired token")
+
+
 
 
 def test_process_shutdown_reap_and_async_non_ollama_paths(monkeypatch):
@@ -2655,6 +2774,42 @@ def test_async_shutdown_returns_immediately_when_cleanup_already_done(monkeypatc
 
     assert calls == {"reap": 0, "list": 0, "kill": 0}
     assert mod._shutdown_cleanup_done is True
+
+
+def test_llm_prometheus_metrics_swallows_agent_metric_import_errors(monkeypatch):
+    mod = _load_web_server()
+    real_import = __import__
+
+    def _broken_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.agent_metrics":
+            raise RuntimeError("agent metrics missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _broken_import)
+
+    resp = asyncio.run(mod.llm_prometheus_metrics())
+
+    assert resp.status_code == 200
+    assert resp.media_type == "text/plain; version=0.0.4"
+
+
+def test_upload_rag_file_rejects_oversized_payload():
+    mod = _load_web_server()
+    mod.Config.MAX_RAG_UPLOAD_BYTES = 1
+    mod.get_agent = lambda: asyncio.sleep(
+        0,
+        result=types.SimpleNamespace(
+            memory=types.SimpleNamespace(active_session_id="sess-1"),
+            docs=types.SimpleNamespace(add_document_from_file=lambda *_a, **_k: (True, "ok")),
+        ),
+    )
+
+    file = _FakeUploadFile("big.txt", b"abc")
+    resp = asyncio.run(mod.upload_rag_file(file))
+
+    assert resp.status_code == 500
+    assert "Dosya çok büyük" in resp.content["error"]
+    assert file.closed is True
 
 
 def test_policy_resolution_jwt_payload_and_plugin_loader_error_paths(monkeypatch):
