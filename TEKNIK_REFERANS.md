@@ -142,21 +142,30 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/auth/login` | Giriş + token |
 | GET | `/auth/me` | Token doğrulama |
 | GET | `/admin/stats` | Admin istatistik |
+| GET | `/admin/prompts` | Prompt registry listesi (admin) |
+| GET | `/admin/prompts/active` | Aktif prompt kaydı (admin) |
+| POST | `/admin/prompts` | Prompt ekle / güncelle (admin) |
+| POST | `/admin/prompts/activate` | Prompt aktifleştir (admin) |
+| GET | `/admin/policies/{user_id}` | Kullanıcı erişim politika listesi (admin) |
+| POST | `/admin/policies` | Erişim politikası ekle / güncelle (admin) |
+| POST | `/api/agents/register` | Plugin ajan kayıt (source_code) (admin) |
+| POST | `/api/agents/register-file` | Plugin ajan kayıt (dosya yolu) (admin) |
+| POST | `/api/swarm/execute` | SwarmOrchestrator görevi çalıştır |
 | GET | `/favicon.ico` | 204 |
 | GET | `/vendor/{file_path:path}` | Vendor statik servis |
 | GET | `/` | UI index |
 | GET | `/status` | Ajan durum özeti |
 | GET | `/health` | Sağlık kontrolü |
-| GET | `/metrics` | Sistem metrikleri |
-| GET | `/metrics/llm/prometheus` | OpenMetrics text |
-| GET | `/metrics/llm` | LLM metrik JSON |
-| GET | `/api/budget` | LLM bütçe JSON |
+| GET | `/metrics` | Sistem metrikleri (admin veya METRICS_TOKEN) |
+| GET | `/metrics/llm/prometheus` | OpenMetrics text (admin veya METRICS_TOKEN) |
+| GET | `/metrics/llm` | LLM metrik JSON (admin veya METRICS_TOKEN) |
+| GET | `/api/budget` | LLM bütçe JSON (admin veya METRICS_TOKEN) |
 | GET | `/sessions` | Kullanıcı oturum listesi |
 | GET | `/sessions/{session_id}` | Oturum geçmişi |
 | POST | `/sessions/new` | Yeni oturum |
 | DELETE | `/sessions/{session_id}` | Oturum sil |
 | GET | `/files` | Proje içi dosya listesi |
-| GET | `/file-content` | Güvenli dosya okuma (uzantı + boyut limiti) |
+| GET | `/file-content` | Güvenli dosya okuma (uzantı + 1 MB boyut limiti) |
 | GET | `/git-info` | branch/repo/default-branch |
 | GET | `/git-branches` | branch listesi |
 | POST | `/set-branch` | branch değiştir |
@@ -168,20 +177,21 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/rag/add-file` | RAG’e yerel dosya ekle |
 | POST | `/rag/add-url` | RAG’e URL ekle |
 | DELETE | `/rag/docs/{doc_id}` | RAG doküman sil |
-| POST | `/api/rag/upload` | upload ile RAG ekleme |
+| POST | `/api/rag/upload` | upload ile RAG ekleme (max 50 MB, HTTP 413 limit) |
 | GET | `/rag/search` | RAG arama |
 | GET | `/todo` | görev listesi |
 | POST | `/clear` | bellek temizleme |
-| POST | `/set-level` | güvenlik seviyesi değişimi |
-| POST | `/api/webhook` | GitHub webhook (HMAC doğrulama) |
+| POST | `/set-level` | güvenlik seviyesi değişimi (yalnızca admin) |
+| POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
 
 ### 3.3 WebSocket protokolü: `/ws/chat`
 
 - Endpoint: `/ws/chat`
-- Bağlantı kabulünden sonra ilk zorunlu aksiyon: `{"action":"auth","token":"..."}`
+- **Öncelikli kimlik doğrulama:** HTTP upgrade sırasında `Sec-WebSocket-Protocol` başlığında Bearer token gönderilir; bağlantı kabul edilmeden önce doğrulama yapılır (O-5 çözümü).
+- **Fallback:** Başlık yoksa bağlantı kurulduktan sonraki ilk JSON mesajında `{"action":"auth","token":"..."}` beklenir.
 - Geçersiz veya eksik auth → `1008 Policy Violation`
 - Başlıca istemci aksiyonları:
-  - `auth`
+  - `auth` (fallback kimlik doğrulama)
   - `message` (metin)
   - `cancel` (aktif task iptali)
 - Sunucu stream eventleri:
@@ -223,13 +233,13 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 Ana gruplar:
 
 - Dosya/kod: `list_dir`, `read_file`, `write_file`, `patch_file`, `execute_code`, `audit`
-- GitHub PR: `github_list_prs`, `github_get_pr`, `github_create_pr`, `github_comment_pr`, `github_close_pr`, `github_pr_diff`, `github_smart_pr`
+- GitHub PR: `github_list_prs`, `github_get_pr`, `github_create_pr`, `github_comment_pr`, `github_close_pr`, `github_pr_diff`, `github_smart_pr`, `github_pr_files`
 - GitHub Issue: `github_list_issues`, `github_create_issue`, `github_comment_issue`, `github_close_issue`
 - RAG/Web: `web_search`, `fetch_url`, `docs_add`, `docs_search`, `docs_list`, `docs_delete`
 - Paket sorguları: `pypi`, `pypi_compare`, `npm`, `gh_releases`, `gh_latest`
 - Shell/yardımcı: `run_shell` (`bash`, `shell` alias), `glob_search`, `grep_files`, `get_config`
 - Todo/plan: `todo_write`, `todo_read`, `todo_update`, `scan_project_todos`
-- Delegasyon: `subtask` (`agent` alias)
+- Delegasyon: `subtask` (`agent` alias), `parallel`
 
 ### 4.3 Reviewer/QA döngüsü
 

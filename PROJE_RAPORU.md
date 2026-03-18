@@ -13,7 +13,7 @@
 
 > **Önceki Kayıt:** 3.0.13
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **15.027** satır (tests hariç, güncel ölçüm; `agent/registry.py` +186, `agent/swarm.py` +370, `plugins/upload_agent.py` +10 dahil); Test: **30.613** satır (**130** test modülü / **132** tests/*.py dosyası); Web UI: **4.392** satır; Runbook: **4** kılavuz dosyası (production-cutover + observability_simulation + plugin_marketplace_demo + tenant_rbac_scenarios).
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **~15.305** satır (tests hariç, güncel ölçüm; `web_server.py` +129, `agent/core/supervisor.py` +56, `managers/code_manager.py` +34, `core/rag.py` +30, `agent/sidar_agent.py` +9, `main.py` +9, `config.py` +10, `core/db.py` +1 dahil toplam delta: +278); Test: **31.302** satır (**132** test modülü / **132** tests/*.py dosyası); Web UI: **4.392** satır; Runbook: **4** kılavuz dosyası (production-cutover + observability_simulation + plugin_marketplace_demo + tenant_rbac_scenarios).
 
 ---
 
@@ -244,7 +244,7 @@ sidar_project/
 │   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                 # RAG belge UI
 │   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                 # Uygulama başlatma, auth, bütçe yönetimi
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (109 test_*.py modülü / 111 tests/*.py dosyası)
+├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (132 test_*.py modülü / 132 tests/*.py dosyası)
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
 ├── docs/                      # Proje belgeleri ve modül notları
 │   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
@@ -469,9 +469,9 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **130**
+- **`test_*.py` modül sayısı:** **132**
 - **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **132**
-- **Toplam test satırı (`tests/*.py`):** **30.613**
+- **Toplam test satırı (`tests/*.py`):** **31.302**
 - **Atlanan test (skip) sayısı:** **0** — Tüm eski mimariye ait 33 legacy/skip testi temizlenmiştir.
 
 **v3.0 Öne Çıkan Test Kategorileri:**
@@ -503,12 +503,12 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 - `.coveragerc` içinde `fail_under = 99.9` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
 - CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `--cov-fail-under=99.9` parametresiyle çalıştırır; eşik altı durumda pipeline fail olur.
 - `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği uygular.
-- Mevcut durum: **%100 kapsama** — tüm testler başarılı, 0 atlanan test, 130 test modülü aktif.
+- Mevcut durum: **%100 kapsama** — tüm testler başarılı, 0 atlanan test, 132 test modülü aktif.
 - Bu model, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir ve eksik kapsanan satırların görünür kalmasını sağlar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **130 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **132** adettir.
+- Güncel depoda `test_*.py` desenine uyan **132 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **132** adettir.
 - Testler yalnızca birim doğrulama ile sınırlı değildir; edge-case, provider retry/fallback, migration/DB branch ayrışmaları, sandbox profilleri ve web güvenliği gibi alanlara bölünmüş modüler paketler içerir.
 - Örnek kurumsal odak alanları: `test_missing_edge_case_coverage.py`, `test_llm_client_retry_helpers.py`, `test_db_postgresql_branches.py`, `test_sandbox_runtime_profiles.py`.
 
@@ -598,11 +598,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 749 |
-| `main.py` | 372 |
+| `config.py` | 759 |
+| `main.py` | 381 |
 | `cli.py` | 289 |
-| `web_server.py` | 1.960 |
-| `agent/sidar_agent.py` | 574 |
+| `web_server.py` | 2.089 |
+| `agent/sidar_agent.py` | 583 |
 | `agent/auto_handle.py` | 612 |
 | `agent/definitions.py` | 168 |
 | `agent/tooling.py` | 112 |
@@ -611,11 +611,11 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `agent/swarm.py` | 370 |
 | `core/llm_client.py` | 1.319 |
 | `core/memory.py` | 299 |
-| `core/rag.py` | 1.092 |
-| `core/db.py` | 1.634 |
+| `core/rag.py` | 1.122 |
+| `core/db.py` | 1.635 |
 | `core/llm_metrics.py` | 256 |
 | `managers/security.py` | 290 |
-| `managers/code_manager.py` | 898 |
+| `managers/code_manager.py` | 932 |
 | `managers/github_manager.py` | 644 |
 | `managers/system_health.py` | 475 |
 | `managers/web_search.py` | 387 |
@@ -628,7 +628,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `agent/core/supervisor.py` | 183 |
+| `agent/core/supervisor.py` | 239 |
 | `agent/core/contracts.py` | 63 |
 | `agent/core/event_stream.py` | 217 |
 | `agent/core/memory_hub.py` | 54 |
@@ -673,17 +673,17 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `web_ui/rag.js` | 131 |
 | `web_ui/app.js` | 818 |
 | **Web UI Toplamı** | **4.392** |
-| **Test modülü (`tests/test_*.py`)** | **130** |
+| **Test modülü (`tests/test_*.py`)** | **132** |
 | **`tests/*.py` toplam dosya** | **132** |
-| **`tests/*.py` toplam satır** | **30.613** |
+| **`tests/*.py` toplam satır** | **31.302** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 130 |
+| `tests/` | `test_*.py` modül sayısı | 132 |
 | `tests/` | `*.py` toplam dosya | 132 |
-| `tests/` | `*.py` toplam satır | 30.613 |
+| `tests/` | `*.py` toplam satır | 31.302 |
 | `scripts/` | dosya sayısı | 6 |
 | `scripts/` | toplam satır | 443 |
 | `migrations/` | `.py` dosya sayısı (env.py + 2 versions) | 3 |
@@ -1600,5 +1600,6 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.16** | **2026-03-18** | **FAZ-4 yüksek öncelikli güvenlik hardening tamamlandı: Y-1..Y-5 tüm AUDIT_REPORT_v4.0.md bulguları doğrulandı ve kapatıldı. Y-1: set_level_endpoint _require_admin_user (teyit); Y-2: RAG upload 50 MB + HTTP 413 (teyit); Y-3: docs.add_document await (teyit); Y-4: TRUSTED_PROXIES XFF (teyit); Y-5: config.py get_system_info() redis_url tamamen kaldırıldı + import re temizlendi. Güvenlik puanı 8.9→9.2. AUDIT_REPORT v4.0.1 §9.6, §10, §11 güncellendi.** |
 | **v3.0.15** | **2026-03-18** | **FAZ-3 teknik borç temizliği tamamlandı: web_server.py dead-code (hasattr/payload.get) kaldırıldı; /metrics endpoint'leri METRICS_TOKEN/admin korumasına alındı; conftest.py deprecated event_loop fixture → asyncio_default_fixture_loop_scope=session; CI'ya PostgreSQL 16 bağlantı havuzu stres testi eklendi; config.py GPU fraction yorum düzeltildi; main.py port 1-65535 validasyonu eklendi; core/rag.py bleach DOM sanitizasyonu; agent/sidar_agent.py prompt injection koruması. D-1..D-5 tüm bulgular kapatıldı.** |
 | **v3.0.14** | **2026-03-18** | **Kapsamlı yeniden ölçüm ve rapor düzeltme turu: Tüm Python kaynak dosyaları satır satır yeniden ölçüldü. Eksik dosyalar §2 dosya ağacına eklendi: `agent/registry.py` (186 satır — AgentRegistry marketplace), `agent/swarm.py` (370 satır — SwarmOrchestrator/TaskRouter), `plugins/upload_agent.py` (10 satır). Güncellenen satır sayıları: `web_server.py` 1.568→1.960, `core/db.py` 1.353→1.634, `core/llm_client.py` 1.235→1.319, `config.py` 722→749, `core/rag.py` 1.057→1.092, `agent/core/event_stream.py` 189→217, `agent/core/supervisor.py` 168→183, `agent/core/contracts.py` 56→63, `core/llm_metrics.py` 245→256, `managers/package_info.py` 326→343, `agent/sidar_agent.py` 557→574, `agent/tooling.py` 117→112, `web_ui/index.html` 572→639, `web_ui/app.js` 733→818. Test sayımları güncellendi: 109→130 modül, 111→132 dosya, 21.765→30.613 satır. Web UI toplamı 4.240→4.392. Python kaynak toplamı 13.552→15.027. §9.1 bağımlılık haritasına `agent/registry.py` ve `agent/swarm.py` eklendi.** |
+| **v3.0.20** | **2026-03-18** | **Tüm kaynak dosyalar satır satır yeniden ölçüldü (mevcut yapıya göre). Güncellenen satır sayıları: `web_server.py` 1.960→2.089, `core/rag.py` 1.092→1.122, `agent/core/supervisor.py` 183→239, `agent/sidar_agent.py` 574→583, `managers/code_manager.py` 898→932, `config.py` 749→759, `main.py` 372→381, `core/db.py` 1.634→1.635. Test modülü 130→132, toplam test satırı 30.613→31.302. Python kaynak toplamı ~15.027→~15.305. §2 tests satırı 109/111→132/132 olarak güncellendi. AUDIT_REPORT_v4.0.md v4.0.2 olarak revize edildi; §2.1, §2.2 ve §9 modül tabloları mevcut koda uyarlandı.** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
