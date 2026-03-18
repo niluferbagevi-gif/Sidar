@@ -477,14 +477,22 @@ class Database:
 
 
     async def ensure_default_prompt_registry(self) -> None:
+        import importlib.util as _importlib_util
         import logging as _log
-        from agent.definitions import SIDAR_SYSTEM_PROMPT
+
+        definitions_path = Path(__file__).resolve().parents[1] / "agent" / "definitions.py"
+        spec = _importlib_util.spec_from_file_location("sidar_agent_definitions", definitions_path)
+        default_prompt = ""
+        if spec and spec.loader:
+            module = _importlib_util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            default_prompt = str(getattr(module, "SIDAR_SYSTEM_PROMPT", "") or "")
 
         existing = await self.get_active_prompt("system")
-        if existing:
+        if existing or not default_prompt:
             return
         try:
-            await self.upsert_prompt(role_name="system", prompt_text=SIDAR_SYSTEM_PROMPT, activate=True)
+            await self.upsert_prompt(role_name="system", prompt_text=default_prompt, activate=True)
         except Exception as exc:  # noqa: BLE001
             _log.getLogger(__name__).warning("Varsayılan prompt kaydı oluşturulamadı: %s", exc)
 
