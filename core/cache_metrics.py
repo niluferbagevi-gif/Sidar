@@ -45,6 +45,21 @@ class _CacheMetrics:
 _cache_metrics = _CacheMetrics()
 
 
+def record_cache_hit() -> None:
+    """Semantic cache için hit sayacını artırır."""
+    _cache_metrics.record_hit()
+
+
+def record_cache_miss() -> None:
+    """Semantic cache için miss sayacını artırır."""
+    _cache_metrics.record_miss()
+
+
+def record_cache_skip() -> None:
+    """Semantic cache için skip sayacını artırır."""
+    _cache_metrics.record_skip()
+
+
 def get_cache_metrics() -> Dict[str, object]:
     """Semantic cache hit/miss istatistiklerini döner."""
     return _cache_metrics.snapshot()
