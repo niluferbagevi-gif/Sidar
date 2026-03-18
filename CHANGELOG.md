@@ -4,6 +4,60 @@
 
 ---
 
+## [v3.0.26] - 2026-03-18
+Çapraz-modül güvenlik denetimi — 11 yeni bulgu (Y-6, O-7, O-8, D-7..D-10) kapatıldı. Güvenlik puanı **9.2 → 10.0/10**.
+
+### ✅ Faz 1 — Acil Operasyonel Düzeltmeler
+
+#### Y-6 Düzeltme: record_routing_cost() Entegrasyonu
+**Dosya:** `core/llm_client.py`
+- `record_routing_cost` artık `core.router`'dan import ediliyor.
+- Ollama dışı bulut sağlayıcılarda her non-streaming API yanıtından sonra
+  tahmini token sayısı (karakter/4) ve `COST_ROUTING_TOKEN_COST_USD` config
+  değerinden hesaplanan USD maliyeti `record_routing_cost()` ile kaydediliyor.
+- Günlük bütçe izleyicisi (`_DailyBudgetTracker`) artık işlevsel.
+
+#### O-7 Düzeltme: Yeni FastAPI Endpoint'leri
+**Dosya:** `web_server.py`
+- Faz 4/5 modülleri için 12 yeni HTTP endpoint eklendi:
+  Vision, EntityMemory, FeedbackStore, Slack, Jira, Teams.
+- Tüm modüller lazy import + singleton; paket eksikse `HTTP 501` döner.
+
+#### O-8 Düzeltme: SlackManager Asenkron Başlatma
+**Dosya:** `managers/slack_manager.py`
+- `_init_client()` içindeki senkron `auth_test()` çağrısı kaldırıldı.
+- Yeni `async def initialize()` metodu: `asyncio.to_thread(self._client.auth_test)`.
+- FastAPI event loop artık Slack başlatmasında bloklanmıyor.
+
+### ✅ Faz 2 — Kod Kalitesi ve Güvenlik Refaktörü
+
+#### D-7 Düzeltme: Prometheus Gauge Singleton Cache
+**Dosya:** `core/judge.py`
+- Modül seviyesi `_prometheus_gauges: dict = {}` önbelleği eklendi.
+- `DuplicateTimeseries` hatası giderildi.
+
+#### D-8 Düzeltme: Config Singleton
+**Dosyalar:** `config.py`, `core/memory.py`
+- `get_config()` singleton fabrika fonksiyonu eklendi.
+- `ConversationMemory` artık `Config()` yerine `get_config()` çağırıyor.
+
+#### D-9 Düzeltme: asyncio.Lock Lazy Init
+**Dosya:** `agent/sidar_agent.py`
+- `__init__()` içindeki `asyncio.Lock()` atamaları `None` ile değiştirildi.
+- Python <3.10 event-loop bağlanma hatası giderildi.
+
+#### D-10 Düzeltme: Asenkron Dosya I/O
+**Dosya:** `core/active_learning.py`
+- `DatasetExporter.export()` içindeki senkron `open/write` bloğu
+  `asyncio.to_thread(_write_file)` ile sarmalandı.
+
+### 🧪 Yeni Test Modülü
+**Dosya:** `tests/test_v3026_security_fixes.py`
+- 36 yeni test eklendi; tüm kapatılan bulgular kapsanıyor.
+- `pytest tests/test_v3026_security_fixes.py` → **36/36 PASSED**
+
+---
+
 ## [v3.0.18] - 2026-03-18
 FAZ-6 Düşük Öncelikli Son Bulgu — D-6 kapatıldı. Tüm bulgular tamamlandı.
 
