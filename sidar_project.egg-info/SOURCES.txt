@@ -33,6 +33,7 @@ managers/system_health.py
 managers/todo_manager.py
 managers/web_search.py
 plugins/crypto_price_agent.py
+plugins/upload_agent.py
 sidar_project.egg-info/PKG-INFO
 sidar_project.egg-info/SOURCES.txt
 sidar_project.egg-info/dependency_links.txt
@@ -41,7 +42,9 @@ sidar_project.egg-info/top_level.txt
 tests/test_agent_and_anthropic_coverage.py
 tests/test_agent_core_components.py
 tests/test_agent_core_lazy_and_base_extra.py
+tests/test_agent_core_registry_runtime.py
 tests/test_agent_init_improvements.py
+tests/test_agent_registry_runtime.py
 tests/test_agent_routing_edge_cases_round4.py
 tests/test_agent_subtask.py
 tests/test_anthropic_provider_runtime.py
@@ -68,6 +71,7 @@ tests/test_core_runtime_focus.py
 tests/test_coverage_final_push.py
 tests/test_coverage_gap_closers.py
 tests/test_coverage_policy.py
+tests/test_crypto_plugin.py
 tests/test_db_additional_coverage.py
 tests/test_db_postgresql_branches.py
 tests/test_db_runtime.py
@@ -86,6 +90,7 @@ tests/test_grafana_dashboard_provisioning.py
 tests/test_gui_launcher_runtime.py
 tests/test_host_sandbox_installer_assets.py
 tests/test_llm_client_core_gap_additions.py
+tests/test_llm_client_critical_gap_closers.py
 tests/test_llm_client_improvements.py
 tests/test_llm_client_retry_helpers.py
 tests/test_llm_client_runtime.py
@@ -116,6 +121,8 @@ tests/test_quality_tooling_config.py
 tests/test_quick_100.py
 tests/test_quick_coverage_push.py
 tests/test_rag_core_gap_additions.py
+tests/test_rag_edge_case_coverage.py
+tests/test_rag_gpu_fts_pgvector_paths.py
 tests/test_rag_improvements.py
 tests/test_rag_runtime_extended.py
 tests/test_rag_ultimate_edge_cases.py
@@ -135,6 +142,7 @@ tests/test_sidar_agent_runtime.py
 tests/test_sidar_improvements.py
 tests/test_sidar_md_improvements.py
 tests/test_supervisor_agent.py
+tests/test_swarm_orchestrator.py
 tests/test_system_health_improvements.py
 tests/test_system_health_runtime.py
 tests/test_targeted_coverage_additions.py
@@ -144,13 +152,17 @@ tests/test_todo_manager_runtime.py
 tests/test_tooling_registry.py
 tests/test_tooling_runtime.py
 tests/test_ultimate_coverage.py
+tests/test_upload_plugin.py
 tests/test_web_search_gap_additions.py
 tests/test_web_search_improvements.py
 tests/test_web_search_runtime.py
+tests/test_web_server_critical_gap_closers.py
 tests/test_web_server_edge_cases_targeted.py
 tests/test_web_server_gap_additions.py
 tests/test_web_server_improvements.py
 tests/test_web_server_plugin_registry.py
 tests/test_web_server_runtime.py
+tests/test_web_server_shutdown_hook_static.py
+tests/test_web_server_ws_webhook_edges.py
 tests/test_web_ui_runtime_improvements.py
 tests/test_web_ui_security_improvements.py

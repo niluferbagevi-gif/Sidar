@@ -1,6 +1,6 @@
 import asyncio
 
-from agent.core.contracts import DelegationRequest
+from agent.core.contracts import DelegationRequest, is_delegation_request
 from agent.roles.reviewer_agent import ReviewerAgent
 
 
@@ -57,7 +57,7 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
     a.tools["run_tests"] = fake_run_tests
 
     out = asyncio.run(a.run_task("review_code|tests/test_reviewer_agent.py"))
-    assert isinstance(out, DelegationRequest)
+    assert is_delegation_request(out)
     assert out.target_agent == "coder"
     assert out.payload.startswith("qa_feedback|")
     assert any(c.startswith("pytest -q tests/test_reviewer_agent.py") for c in calls)

@@ -55,3 +55,10 @@ class DelegationResult:
     target_agent: str
     status: str
     content: str
+
+def is_delegation_request(value: object) -> bool:
+    """DelegationRequest benzeri nesneleri sınıf-referans farklarına rağmen tanımlar."""
+    if isinstance(value, DelegationRequest):
+        return True
+    required = ("task_id", "reply_to", "target_agent", "payload")
+    return type(value).__name__ == "DelegationRequest" and all(hasattr(value, attr) for attr in required)

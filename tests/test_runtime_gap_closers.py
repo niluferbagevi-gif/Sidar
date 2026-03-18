@@ -163,7 +163,7 @@ def test_web_server_auth_and_main_arg_overrides(monkeypatch):
             else:
                 sys.modules[name] = value
 
-from agent.core.contracts import DelegationRequest, TaskResult
+from agent.core.contracts import DelegationRequest, is_delegation_request, TaskResult
 from agent.core.supervisor import SupervisorAgent
 from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
@@ -333,7 +333,7 @@ def test_coder_and_reviewer_run_task_routing_paths(monkeypatch):
     assert "REWORK_REQUIRED" in asyncio.run(coder.run_task("qa_feedback|decision=reject"))
 
     reviewer_req = asyncio.run(coder.run_task("request_review|diff body"))
-    assert isinstance(reviewer_req, DelegationRequest)
+    assert is_delegation_request(reviewer_req)
     assert reviewer_req.target_agent == "reviewer"
 
     reviewer = ReviewerAgent()

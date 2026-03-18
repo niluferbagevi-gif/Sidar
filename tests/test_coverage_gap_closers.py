@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.core.contracts import DelegationRequest, TaskResult
+from agent.core.contracts import DelegationRequest, is_delegation_request, TaskResult
 from agent.core.supervisor import SupervisorAgent
 from agent.roles.coder_agent import CoderAgent
 from core.llm_client import LLMClient, OllamaClient, AnthropicClient
@@ -66,7 +66,7 @@ def test_coder_agent_qa_feedback_approved_branch():
 def test_coder_agent_request_review_delegation_branch():
     agent = CoderAgent()
     out = asyncio.run(agent.run_task("request_review|print('ok')"))
-    assert isinstance(out, DelegationRequest)
+    assert is_delegation_request(out)
     assert out.target_agent == "reviewer"
 
 
