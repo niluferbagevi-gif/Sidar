@@ -632,6 +632,9 @@ class DocumentStore:
             file = Path(path).resolve()
             if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file(): return False, f"✗ Belirtilen yol bir dosya değil: {path}"
+            # Base directory sınırı: yalnızca proje kök dizini altındaki dosyalara izin ver
+            if not file.is_relative_to(Config.BASE_DIR):
+                return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
             # Path traversal koruması: dosyanın hassas dizinler içermediğini doğrula
             if _BLOCKED_PARTS.intersection(set(file.parts)):
                 return False, f"✗ Erişim engellendi: güvenlik politikası bu yola izin vermiyor: {path}"

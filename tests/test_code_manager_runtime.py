@@ -17,6 +17,7 @@ def _load_modules():
         class _DummyConfig:
             ACCESS_LEVEL = "full"
             BASE_DIR = Path(".")
+            DOCKER_REQUIRED = False
             SANDBOX_LIMITS = {
                 "memory": "256m",
                 "cpus": "0.5",

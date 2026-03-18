@@ -4,6 +4,44 @@
 
 ---
 
+## [v3.0.17] - 2026-03-18
+FAZ-5 Orta Öncelikli Güvenlik Hardening — Tüm O-1..O-6 bulgular kapatıldı.
+
+### ✅ FAZ-5 — O-1 Doğrulama: Tüm Kilitleri `_app_lifespan`'da Başlat
+**Dosya:** `web_server.py`
+- `_agent_lock`, `_redis_lock`, `_local_rate_lock` tümü `_app_lifespan` içinde event loop başlatıldıktan hemen sonra oluşturuluyor. Lazy init anti-pattern yok.
+- Doğrulama: `web_server.py:289-293`
+
+### ✅ FAZ-5 — O-2 Düzeltme: `add_document_from_file` Base Directory Kısıtlaması
+**Dosya:** `core/rag.py`
+- `file.is_relative_to(Config.BASE_DIR)` sınır kontrolü eklendi. Proje kök dizini dışındaki tüm dosyalara erişim engellendi.
+- Boş uzantı (`""`) `_TEXT_EXTS` whitelist'inden zaten kaldırılmıştı; `_BLOCKED_PARTS` koruması da eklendi.
+- Doğrulama: `core/rag.py:635-637`
+
+### ✅ FAZ-5 — O-3 Düzeltme: `DOCKER_REQUIRED` Bayrağı
+**Dosyalar:** `config.py`, `managers/code_manager.py`, `.env.example`
+- `DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)` alanı config.py'ye eklendi.
+- `execute_code` fonksiyonunda Docker erişilemezken `Config.DOCKER_REQUIRED` kontrol ediliyor; `True` ise yerel subprocess fallback engelleniyor.
+- `.env.example`'a `DOCKER_REQUIRED=false` belgesi eklendi.
+
+### ✅ FAZ-5 — O-4 Doğrulama: Senkron Ollama Check `asyncio.to_thread` ile Sarıldı
+**Dosya:** `web_server.py`
+- `Config.validate_critical_settings()` zaten `await asyncio.to_thread(Config.validate_critical_settings)` ile sarılmış durumda.
+- Doğrulama: `web_server.py:295`
+
+### ✅ FAZ-5 — O-5 Doğrulama: WebSocket Token `Sec-WebSocket-Protocol` Başlığından Okunuyor
+**Dosya:** `web_server.py`
+- WebSocket handshake sırasında `sec-websocket-protocol` başlığından token okunuyor; JSON payload fallback ikincil konuma düşürüldü.
+- Doğrulama: `web_server.py:1076-1103`
+
+### ✅ FAZ-5 — O-6 Düzeltme: `run_shell` Tehlikeli Komut Blocklist
+**Dosya:** `managers/code_manager.py`
+- `allow_shell_features=True` yoluna yıkıcı komut kalıpları için blocklist eklendi (`rm -rf /`, fork bomb, disk silme, vb.).
+- Blocklist `shell=True` subprocess çağrısından önce uygulanıyor.
+- Doğrulama: `managers/code_manager.py:551-560`
+
+---
+
 ## [v3.0.16] - 2026-03-18
 FAZ-4 Yüksek Öncelikli Güvenlik Hardening — Tüm Y-1..Y-5 bulgular doğrulandı ve kapatıldı.
 

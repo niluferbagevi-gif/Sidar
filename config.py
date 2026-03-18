@@ -427,6 +427,8 @@ class Config:
     DOCKER_NANO_CPUS: int = get_int_env("DOCKER_NANO_CPUS", 1_000_000_000)
     # Maksimum Docker sandbox çalışma süresi (saniye) — sonsuz döngü koruması
     DOCKER_EXEC_TIMEOUT: int = get_int_env("DOCKER_EXEC_TIMEOUT", 10)
+    # Docker zorunlu mod: True ise Docker erişilemezse yerel subprocess fallback engellenir
+    DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)
 
     # ─── Bellek Şifrelemesi ───────────────────────────────────────
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
