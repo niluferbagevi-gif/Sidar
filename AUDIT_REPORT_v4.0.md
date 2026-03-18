@@ -1,7 +1,7 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu
 **Sürüm:** 4.0.5
 **Tarih:** 2026-03-18
-**Son Güncelleme:** 2026-03-18 (v4.0.5: Son committe yapılan entegrasyon sertleştirmeleri denetime işlendi. `record_routing_cost()` çağrısı, Vision/EntityMemory/FeedbackStore/Slack/Jira/Teams HTTP endpoint’leri, Slack async initialize akışı ve Judge Prometheus gauge singleton düzeltmesi doğrulandı. Ölçümler takipli dosyalara göre yeniden alındı: 57 üretim Python dosyası / 19.287 satır, 142 test modülü / 34.056 satır. Açık bulgu sayısı 11→7’ye düştü; açık Yüksek/Orta bulgu kalmadı.)
+**Son Güncelleme:** 2026-03-18 (v4.0.5: Son committe yapılan entegrasyon sertleştirmeleri denetime işlendi. `record_routing_cost()` çağrısı, Vision/EntityMemory/FeedbackStore/Slack/Jira/Teams HTTP endpoint’leri, Slack async initialize akışı ve Judge Prometheus gauge singleton düzeltmesi doğrulandı. Ölçümler takipli dosyalara göre yeniden alındı: 57 üretim Python dosyası / 19.287 satır, 142 test modülü / 34.056 satır. Açık bulgu sayısı 11→7’ye düştü; açık Yüksek/Orta bulgu kalmadı. Son çapraz doğrulamada D-8 ve D-9 için önerilen düzeltmelerin koda tam yansımadığı ayrıca teyit edildi.)
 **Denetçi:** Claude Sonnet 4.6 (Bağımsız, önceki raporlardan bağımsız sıfırdan inceleme)
 **Kapsam:** Tüm Python kaynak dosyaları — satır satır doğrudan okuma
 
@@ -27,7 +27,7 @@
 
 Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Takipli üretim kodu 57 Python dosyası ve 19.287 satırdan oluşmaktadır; `tests/` dahil toplam takipli Python hacmi 201 dosya / 53.343 satırdır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır.
 
-**Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları ile v4.0.4 turunda açılan Y-6, O-7, O-8 ve D-7 bulguları da yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır. Güncel durumda açık kritik/yüksek/orta bulgu bulunmamaktadır; yalnızca 7 düşük öncelikli kalite borcu (D-8, D-9, D-10, D-11, D-12, D-13/D-14 kümesinden 7 aktif madde) kalmıştır.
+**Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları ile v4.0.4 turunda açılan Y-6, O-7, O-8 ve D-7 bulguları da yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır. Güncel durumda açık kritik/yüksek/orta bulgu bulunmamaktadır; yalnızca 7 düşük öncelikli kalite borcu (D-8, D-9, D-10, D-11, D-12, D-13 ve D-14) kalmıştır. Özellikle D-8 ve D-9 için çözüm iddiası çapraz doğrulamada doğrulanmamış, bu nedenle açık statü korunmuştur.
 
 ---
 
