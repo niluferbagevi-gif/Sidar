@@ -186,8 +186,8 @@ class Database:
         initialize() çağrılmadan bu metot kullanılmamalıdır."""
         if self._sqlite_conn is None:
             raise RuntimeError("SQLite bağlantısı başlatılmadı.")
-        # _connect_sqlite() her zaman _sqlite_lock'u da oluşturur; conn varsa lock da var.
-        assert self._sqlite_lock is not None
+        if self._sqlite_lock is None:
+            self._sqlite_lock = asyncio.Lock()
         async with self._sqlite_lock:
             return await asyncio.to_thread(operation)
 

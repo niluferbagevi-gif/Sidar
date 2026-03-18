@@ -121,6 +121,9 @@ class _FakeUploadFile:
         self.file = io.BytesIO(data)
         self.closed = False
 
+    async def read(self, size: int = -1) -> bytes:
+        return self.file.read(size)
+
     async def close(self):
         self.closed = True
 
@@ -201,9 +204,15 @@ def _install_web_server_stubs():
         WEB_PORT = 7860
         GITHUB_WEBHOOK_SECRET = ""
         GITHUB_REPO = ""
+        TRUSTED_PROXIES: list = []
+        MAX_RAG_UPLOAD_BYTES: int = 50 * 1024 * 1024  # 50 MB
 
         @staticmethod
         def initialize_directories():
+            return None
+
+        @staticmethod
+        def validate_critical_settings():
             return None
 
     cfg_mod.Config = _Config
@@ -720,7 +729,7 @@ def test_agent_lifecycle_get_agent_singleton_and_shutdown_close():
 
     mod.SidarAgent = _Agent
     mod._agent = None
-    mod._agent_lock = None
+    mod._agent_lock = asyncio.Lock()
 
     a1 = asyncio.run(mod.get_agent())
     a2 = asyncio.run(mod.get_agent())
@@ -843,6 +852,7 @@ def test_websocket_chat_cancel_and_disconnect_paths():
             self.sent = []
             self.client = types.SimpleNamespace(host="127.0.0.1")
             self.accepted = False
+            self.headers = {}
 
         async def accept(self):
             self.accepted = True
@@ -1009,6 +1019,7 @@ def test_websocket_chat_generate_response_cancelled_error_branch():
             self._disconnect_exc = disconnect_exc
             self.sent = []
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -1072,6 +1083,7 @@ def test_websocket_chat_send_json_failure_is_swallowed():
         def __init__(self):
             self._payloads = [json.dumps({"action": "auth", "token": "tok"}), json.dumps({"message": "m", "action": "send"})]
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -1131,6 +1143,7 @@ def test_websocket_chat_cancels_previous_active_task_line():
             ]
             self.client = types.SimpleNamespace(host="127.0.0.1")
             self.sent = []
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -1637,7 +1650,7 @@ def test_upload_rag_file_error_and_bad_add_path(monkeypatch):
     assert resp.content["success"] is False
     assert up.closed is True
 
-    monkeypatch.setattr(mod.shutil, "copyfileobj", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("disk")))
+    monkeypatch.setattr(mod.tempfile, "mkdtemp", lambda: (_ for _ in ()).throw(RuntimeError("disk full")))
     up2 = _FakeUploadFile("boom.txt", b"x")
     resp2 = asyncio.run(mod.upload_rag_file(up2))
     assert resp2.status_code == 500
@@ -1703,7 +1716,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
             raise RuntimeError("redis unavailable")
 
     mod._redis_client = None
-    mod._redis_lock = None
+    mod._redis_lock = asyncio.Lock()
     monkeypatch.setattr(mod, "Redis", _RedisFailFactory)
     assert asyncio.run(mod._get_redis()) is None
 
@@ -1749,6 +1762,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     class _Ws:
         def __init__(self):
             self.client = types.SimpleNamespace(host="1.2.3.4")
+            self.headers = {}
             self.sent = []
             self._messages = [
                 "not-json",
@@ -1789,6 +1803,7 @@ def test_web_server_additional_uncovered_branches(monkeypatch):
     class _WsRate:
         def __init__(self):
             self.client = types.SimpleNamespace(host="1.2.3.4")
+            self.headers = {}
             self.sent = []
             self._messages = [json.dumps({"action": "auth", "token": "tok"}), json.dumps({"message": "limited", "action": "send"})]
 
@@ -2035,6 +2050,7 @@ def test_websocket_chat_cancellederror_pass_branch_with_running_task():
             self.client = types.SimpleNamespace(host='127.0.0.1')
             self.sent = []
             self.calls = 0
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -2350,6 +2366,7 @@ def test_web_server_targeted_missing_branches(monkeypatch):
     class _WebSocket:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"action": "send", "message": "hello"}),
@@ -2464,6 +2481,7 @@ def test_websocket_chat_full_disconnect_cleanup_additional():
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._n = 0
             self.sent = []
 
@@ -2525,6 +2543,7 @@ def test_websocket_chat_anyio_closed_resource_branch_cancels_active_task():
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._idx = 0
 
         async def accept(self):
@@ -2772,13 +2791,12 @@ def test_register_plugin_upload_access_policy_bypass_and_admin_policy_paths(monk
 
 def test_local_rate_lock_initializes_and_get_redis_ping_failure_falls_back(monkeypatch):
     mod = _load_web_server()
-    mod._local_rate_lock = None
+    mod._local_rate_lock = asyncio.Lock()
     mod._local_rate_limits.clear()
 
     blocked1 = asyncio.run(mod._local_is_rate_limited("k", 1, 60))
     blocked2 = asyncio.run(mod._local_is_rate_limited("k", 1, 60))
 
-    assert mod._local_rate_lock is not None
     assert blocked1 is False
     assert blocked2 is True
 
@@ -2787,7 +2805,7 @@ def test_local_rate_lock_initializes_and_get_redis_ping_failure_falls_back(monke
             raise RuntimeError("redis unavailable")
 
     mod._redis_client = None
-    mod._redis_lock = None
+    mod._redis_lock = asyncio.Lock()
     monkeypatch.setattr(mod.Redis, "from_url", lambda *_a, **_k: _BadRedis())
 
     assert asyncio.run(mod._get_redis()) is None

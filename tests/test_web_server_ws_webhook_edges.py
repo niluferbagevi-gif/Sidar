@@ -64,6 +64,7 @@ def test_websocket_disconnect_cancels_running_active_task():
                 json.dumps({"action": "send", "message": "çalış"}),
             ]
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -153,6 +154,7 @@ def test_websocket_anyio_closed_resource_cancels_running_task():
                 json.dumps({"action": "send", "message": "merhaba"}),
             ]
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
 
         async def accept(self):
             return None
@@ -326,6 +328,7 @@ def test_websocket_chat_skips_invalid_json_payload_then_processes_auth_and_send(
             ]
             self.sent = []
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
 
         async def accept(self):
             return None

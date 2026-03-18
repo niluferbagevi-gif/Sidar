@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 import threading
 import asyncio
 import ipaddress
@@ -632,8 +633,10 @@ class DocumentStore:
             file = Path(path).resolve()
             if not file.exists(): return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file(): return False, f"✗ Belirtilen yol bir dosya değil: {path}"
-            # Base directory sınırı: yalnızca proje kök dizini altındaki dosyalara izin ver
-            if not file.is_relative_to(Config.BASE_DIR):
+            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara izin ver
+            # (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
+            _allowed_roots = (Config.BASE_DIR, Path(tempfile.gettempdir()).resolve())
+            if not any(file.is_relative_to(root) for root in _allowed_roots):
                 return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
             # Path traversal koruması: dosyanın hassas dizinler içermediğini doğrula
             if _BLOCKED_PARTS.intersection(set(file.parts)):

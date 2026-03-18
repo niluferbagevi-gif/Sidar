@@ -25,5 +25,5 @@ def test_cli_supports_level_command_with_argument():
 def test_web_server_exposes_set_level_endpoint():
     src = Path("web_server.py").read_text(encoding="utf-8")
     assert '"/set-level"' in src
-    assert "async def set_level_endpoint(request: Request):" in src
+    assert "async def set_level_endpoint(" in src
     assert "await asyncio.to_thread(agent.set_access_level, new_level)" in src

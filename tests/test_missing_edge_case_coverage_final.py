@@ -91,7 +91,7 @@ def test_web_server_missing_error_and_guard_paths(monkeypatch):
 
     # /auth/register exception -> 409
     try:
-        asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
+        asyncio.run(mod.register_user(types.SimpleNamespace(username="alice", password="123456", tenant_id="default")))
         raise AssertionError("expected HTTPException")
     except Exception as exc:
         assert getattr(exc, "status_code", None) == 409
@@ -149,7 +149,13 @@ def test_web_server_remaining_edge_case_endpoints(monkeypatch):
 
     # _get_client_ip: X-Real-IP header path and missing client fallback
     real_ip_req = _FakeRequest(headers={"X-Real-IP": " 10.10.10.10 "})
-    assert mod._get_client_ip(real_ip_req) == "10.10.10.10"
+    real_ip_req.client = types.SimpleNamespace(host="127.0.0.1")
+    orig_proxies = mod.Config.TRUSTED_PROXIES
+    mod.Config.TRUSTED_PROXIES = ["127.0.0.1"]
+    try:
+        assert mod._get_client_ip(real_ip_req) == "10.10.10.10"
+    finally:
+        mod.Config.TRUSTED_PROXIES = orig_proxies
 
     unknown_req = _FakeRequest(headers={})
     unknown_req.client = None
@@ -199,10 +205,10 @@ def test_web_server_remaining_edge_case_endpoints(monkeypatch):
     # /api/rag/upload: unexpected exception path -> 500
     up = _FakeUploadFile("doc.txt", b"payload")
 
-    def _raise_copy(*_args, **_kwargs):
-        raise Exception("copy failed")
+    def _raise_mkdtemp(*_args, **_kwargs):
+        raise Exception("mkdtemp failed")
 
-    monkeypatch.setattr(mod.shutil, "copyfileobj", _raise_copy)
+    monkeypatch.setattr(mod.tempfile, "mkdtemp", _raise_mkdtemp)
     upload_err = asyncio.run(mod.upload_rag_file(up))
     assert upload_err.status_code == 500
     assert upload_err.content["success"] is False
@@ -218,7 +224,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
             raise RuntimeError("Redis down")
 
     mod._redis_client = None
-    mod._redis_lock = None
+    mod._redis_lock = asyncio.Lock()
     monkeypatch.setattr(mod, "Redis", _RedisCtorFail)
     assert asyncio.run(mod._get_redis()) is None
 
@@ -304,6 +310,7 @@ def test_web_server_requested_edge_case_coverage(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self.delay = 0.01
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
@@ -384,7 +391,7 @@ def test_web_server_auth_and_register_success_paths():
 
     mod.get_agent = _get_agent
     mod._issue_auth_token = _fake_issue_auth_token
-    resp = asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
+    resp = asyncio.run(mod.register_user(types.SimpleNamespace(username="alice", password="123456", tenant_id="default")))
     assert resp.status_code == 200
     assert resp.content["access_token"] == "tok-1"
 
@@ -445,6 +452,7 @@ def test_websocket_runtime_uncovered_branches(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self.sent = []
             self.closed = []
             self.delay = 0.15
@@ -610,6 +618,7 @@ def test_websocket_llm_error_and_cleanup_lines(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self.sent = []
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
@@ -702,6 +711,7 @@ def test_websocket_status_timeout_and_cancelled_error_lines(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"action": "send", "message": "iptal"}),
@@ -763,6 +773,7 @@ def test_websocket_llm_error_send_json_failure_swallowed(monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"action": "send", "message": "hata"}),

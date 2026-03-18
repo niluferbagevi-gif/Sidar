@@ -55,6 +55,7 @@ def _load_rag_module(tmp_path: Path):
         RAG_CHUNK_OVERLAP = 20
         HF_TOKEN = ""
         HF_HUB_OFFLINE = False
+        BASE_DIR = tmp_path
 
     cfg_mod.Config = _Cfg
     with _temp_module("config", cfg_mod):

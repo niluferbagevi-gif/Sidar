@@ -70,11 +70,11 @@ def test_web_server_auth_error_paths_raise_http_exceptions(monkeypatch):
     monkeypatch.setattr(mod, "get_agent", _fake_get_agent)
 
     with pytest.raises(Exception) as reg_exc:
-        asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
+        asyncio.run(mod.register_user(SimpleNamespace(username="alice", password="123456", tenant_id="default")))
     assert getattr(reg_exc.value, "status_code", None) == 409
 
     with pytest.raises(Exception) as login_exc:
-        asyncio.run(mod.login_user({"username": "alice", "password": "bad"}))
+        asyncio.run(mod.login_user(SimpleNamespace(username="alice", password="bad")))
     assert getattr(login_exc.value, "status_code", None) == 401
 
 

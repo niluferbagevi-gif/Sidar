@@ -1121,28 +1121,38 @@ def test_config_validate_critical_settings_returns_bool():
 # ─────────────────────────────────────────────
 
 def test_get_client_ip_xff():
-    """web_server._get_client_ip(): X-Forwarded-For başlığından IP çeker."""
+    """web_server._get_client_ip(): Güvenilen proxy'den gelen X-Forwarded-For başlığından IP çeker."""
     from unittest.mock import MagicMock
     import web_server
 
     req = MagicMock()
     req.headers = {"X-Forwarded-For": "1.2.3.4, 10.0.0.1, 172.16.0.1"}
-    req.client = None
+    req.client = MagicMock(host="127.0.0.1")
 
-    ip = web_server._get_client_ip(req)
+    orig = web_server.Config.TRUSTED_PROXIES
+    web_server.Config.TRUSTED_PROXIES = ["127.0.0.1"]
+    try:
+        ip = web_server._get_client_ip(req)
+    finally:
+        web_server.Config.TRUSTED_PROXIES = orig
     assert ip == "1.2.3.4"
 
 
 def test_get_client_ip_xri():
-    """web_server._get_client_ip(): X-Real-IP başlığından IP çeker."""
+    """web_server._get_client_ip(): Güvenilen proxy'den gelen X-Real-IP başlığından IP çeker."""
     from unittest.mock import MagicMock
     import web_server
 
     req = MagicMock()
     req.headers = {"X-Real-IP": "5.6.7.8"}
-    req.client = None
+    req.client = MagicMock(host="127.0.0.1")
 
-    ip = web_server._get_client_ip(req)
+    orig = web_server.Config.TRUSTED_PROXIES
+    web_server.Config.TRUSTED_PROXIES = ["127.0.0.1"]
+    try:
+        ip = web_server._get_client_ip(req)
+    finally:
+        web_server.Config.TRUSTED_PROXIES = orig
     assert ip == "5.6.7.8"
 
 
