@@ -135,3 +135,19 @@ def test_llm_metrics_record_handles_empty_metric_payload_without_user_bucket():
     assert snap["totals"]["total_tokens"] == 0
     assert snap["by_user"] == {}
     assert "" in snap["by_provider"]
+
+def test_env_float_returns_default_for_getenv_none_and_invalid_text(monkeypatch):
+    from core.llm_metrics import _env_float
+
+    monkeypatch.setattr("core.llm_metrics.os.getenv", lambda _key: None)
+    assert _env_float("LLM_MISSING", 4.2) == 4.2
+
+    monkeypatch.setattr("core.llm_metrics.os.getenv", lambda _key: "12oops")
+    assert _env_float("LLM_INVALID", 6.7) == 6.7
+
+
+def test_env_float_returns_parsed_numeric_value(monkeypatch):
+    from core.llm_metrics import _env_float
+
+    monkeypatch.setattr("core.llm_metrics.os.getenv", lambda _key: "7.25")
+    assert _env_float("LLM_VALID", 1.0) == 7.25
