@@ -171,6 +171,70 @@ def test_supervisor_routes_review_intent_to_reviewer(monkeypatch):
     assert out.startswith("REVIEW:")
 
 
+
+
+def test_supervisor_routes_research_delegation_requests_through_p2p(monkeypatch):
+    s = SupervisorAgent()
+
+    req = DelegationRequest(
+        task_id="p2p-research",
+        reply_to="researcher",
+        target_agent="coder",
+        payload="araştırma bulgusunu koda dönüştür",
+    )
+
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor"):
+        assert receiver == "researcher"
+        assert intent == "research"
+        assert parent_task_id is None
+        return TaskResult(task_id="research-1", status="done", summary=req)
+
+    routed = []
+
+    async def fake_route(request, *, parent_task_id=None, max_hops=4):
+        routed.append((request, parent_task_id, max_hops))
+        return TaskResult(task_id="route-1", status="done", summary="RESEARCH:P2P")
+
+    monkeypatch.setattr(s, "_delegate", fake_delegate)
+    monkeypatch.setattr(s, "_route_p2p", fake_route)
+
+    out = asyncio.run(s.run_task("web araştır ve gerekiyorsa devret"))
+
+    assert out == "RESEARCH:P2P"
+    assert routed == [(req, "research-1", 4)]
+
+
+def test_supervisor_routes_review_delegation_requests_through_p2p(monkeypatch):
+    s = SupervisorAgent()
+
+    req = DelegationRequest(
+        task_id="p2p-review",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="review geri bildirimlerini uygula",
+    )
+
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor"):
+        assert receiver == "reviewer"
+        assert intent == "review"
+        assert parent_task_id is None
+        return TaskResult(task_id="review-1", status="done", summary=req)
+
+    routed = []
+
+    async def fake_route(request, *, parent_task_id=None, max_hops=4):
+        routed.append((request, parent_task_id, max_hops))
+        return TaskResult(task_id="route-2", status="done", summary="REVIEW:P2P")
+
+    monkeypatch.setattr(s, "_delegate", fake_delegate)
+    monkeypatch.setattr(s, "_route_p2p", fake_route)
+
+    out = asyncio.run(s.run_task("pull request review et ve gerekiyorsa devret"))
+
+    assert out == "REVIEW:P2P"
+    assert routed == [(req, "review-1", 4)]
+
+
 def test_supervisor_routes_code_intent_to_coder(monkeypatch):
     s = SupervisorAgent()
 
