@@ -445,3 +445,140 @@ def test_search_auto_local_provider_prefers_single_engine(tmp_path, monkeypatch)
     store._bm25_search = lambda *_a, **_k: (True, "bm25-local")
 
     assert store._search_sync("q", top_k=1, mode="auto", session_id="s1") == (True, "bm25-local")
+
+def test_fetch_pgvector_deduplicates_parent_rows_and_uses_local_limit(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_pg_fetch_success")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_pg_fetch_success",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    seen = {}
+
+    class _Result:
+        def fetchall(self):
+            return [
+                types.SimpleNamespace(parent_id="p1", title="Doc 1", source="src", chunk_content="chunk-1", distance=0.2),
+                types.SimpleNamespace(parent_id="p1", title="Doc 1 dupe", source="src", chunk_content="chunk-1b", distance=0.1),
+                types.SimpleNamespace(parent_id="p2", title=None, source=None, chunk_content=None, distance=1.4),
+            ]
+
+    class _Conn:
+        def execute(self, stmt, params):
+            seen["stmt"] = stmt
+            seen["params"] = params
+            return _Result()
+
+    class _Begin:
+        def __enter__(self):
+            return _Conn()
+
+        def __exit__(self, *args):
+            return False
+
+    class _Engine:
+        def begin(self):
+            return _Begin()
+
+    store._pgvector_available = True
+    store.pg_engine = _Engine()
+    store._pg_table = "rag_embeddings"
+    store._is_local_llm_provider = True
+    store._pgvector_embed_texts = lambda texts: [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda sql: sql))
+
+    out = store._fetch_pgvector("needle", top_k=2, session_id="s1")
+
+    assert [row["id"] for row in out] == ["p1", "p2"]
+    assert out[0]["score"] == 0.8
+    assert out[1]["title"] == "?"
+    assert out[1]["source"] == ""
+    assert out[1]["snippet"] == ""
+    assert out[1]["score"] == 0.0
+    assert seen["params"]["lim"] == 4
+    assert seen["params"]["session_id"] == "s1"
+    assert seen["params"]["qvec"] == "[0.10000000,0.20000000]"
+
+
+def test_fetch_pgvector_returns_empty_and_warns_on_engine_error(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_pg_fetch_error")
+    DocumentStore = rag_mod.DocumentStore
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+
+    store = DocumentStore(
+        tmp_path / "rag_pg_fetch_error",
+        cfg=types.SimpleNamespace(RAG_TOP_K=3, RAG_CHUNK_SIZE=64, RAG_CHUNK_OVERLAP=8, HF_TOKEN="", HF_HUB_OFFLINE=False),
+    )
+
+    warnings = []
+
+    class _BoomEngine:
+        def begin(self):
+            raise RuntimeError("db read failed")
+
+    store._pgvector_available = True
+    store.pg_engine = _BoomEngine()
+    store._pgvector_embed_texts = lambda texts: [[0.1] for _ in texts]
+
+    monkeypatch.setattr(rag_mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda sql: sql))
+
+    assert store._fetch_pgvector("needle", top_k=2, session_id="s1") == []
+    assert any("pgvector arama hatası" in msg for msg in warnings)
+
+
+def test_pgvector_init_failure_disables_backend_when_embedding_model_load_fails(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_edge_pg_init_fail")
+    DocumentStore = rag_mod.DocumentStore
+
+    errors = []
+
+    class _Conn:
+        def execute(self, *_args, **_kwargs):
+            return None
+
+    class _Begin:
+        def __enter__(self):
+            return _Conn()
+
+        def __exit__(self, *args):
+            return False
+
+    class _Engine:
+        def begin(self):
+            return _Begin()
+
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _name: True)
+    monkeypatch.setattr(rag_mod.logger, "error", lambda msg, *args: errors.append(msg % args if args else msg))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(create_engine=lambda *_a, **_k: _Engine(), text=lambda sql: sql))
+
+    class _BrokenSentenceTransformer:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("model load failed")
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=_BrokenSentenceTransformer))
+
+    cfg = types.SimpleNamespace(
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        RAG_VECTOR_BACKEND="pgvector",
+        DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+        PGVECTOR_TABLE="rag_embeddings",
+        PGVECTOR_EMBEDDING_DIM=2,
+        PGVECTOR_EMBEDDING_MODEL="broken-model",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        HF_TOKEN="",
+        HF_HUB_OFFLINE=False,
+    )
+
+    store = DocumentStore(tmp_path / "rag_pg_init_fail", cfg=cfg)
+
+    assert store._vector_backend == "pgvector"
+    assert store._pgvector_available is False
+    assert any("pgvector başlatma hatası" in msg for msg in errors)
