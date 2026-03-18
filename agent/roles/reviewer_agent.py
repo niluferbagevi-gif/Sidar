@@ -37,15 +37,16 @@ class ReviewerAgent(BaseAgent):
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="reviewer")
-        self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
+        self.config = self.cfg
+        self.github = GitHubManager(self.config.GITHUB_TOKEN, self.config.GITHUB_REPO)
         self.events = get_agent_event_bus()
-        self.security = SecurityManager(cfg=self.cfg)
+        self.security = SecurityManager(cfg=self.config)
         self.code = CodeManager(
             self.security,
-            self.cfg.BASE_DIR,
-            docker_image=getattr(self.cfg, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
-            docker_exec_timeout=getattr(self.cfg, "DOCKER_EXEC_TIMEOUT", 10),
-            cfg=self.cfg,
+            self.config.BASE_DIR,
+            docker_image=getattr(self.config, "DOCKER_PYTHON_IMAGE", "python:3.11-alpine"),
+            docker_exec_timeout=getattr(self.config, "DOCKER_EXEC_TIMEOUT", 10),
+            cfg=self.config,
         )
 
         self.register_tool("repo_info", self._tool_repo_info)
@@ -106,7 +107,7 @@ class ReviewerAgent(BaseAgent):
 
     async def _run_dynamic_tests(self, code_context: str) -> str:
         test_content = await self._build_dynamic_test_content(code_context)
-        temp_dir = Path(self.cfg.BASE_DIR) / "temp"
+        temp_dir = Path(self.config.BASE_DIR) / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
         dynamic_path = temp_dir / f"reviewer_dynamic_{uuid.uuid4().hex}.py"
         ok, write_msg = await asyncio.to_thread(self.code.write_file, str(dynamic_path), test_content, False)
@@ -116,7 +117,7 @@ class ReviewerAgent(BaseAgent):
                 f"[STDOUT]\n-\n[STDERR]\n{write_msg}"
             )
 
-        relative_path = dynamic_path.relative_to(self.cfg.BASE_DIR).as_posix()
+        relative_path = dynamic_path.relative_to(self.config.BASE_DIR).as_posix()
         try:
             return await self.call_tool("run_tests", f"pytest -q {relative_path}")
         finally:
@@ -144,7 +145,7 @@ class ReviewerAgent(BaseAgent):
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        commands.append(self.cfg.REVIEWER_TEST_COMMAND)
+        commands.append(self.config.REVIEWER_TEST_COMMAND)
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
     async def _tool_repo_info(self, _arg: str) -> str:
@@ -169,14 +170,14 @@ class ReviewerAgent(BaseAgent):
         return str(out) if ok else f"[HATA] {out}"
 
     async def _tool_run_tests(self, arg: str) -> str:
-        command = (arg or "").strip() or self.cfg.REVIEWER_TEST_COMMAND
+        command = (arg or "").strip() or self.config.REVIEWER_TEST_COMMAND
         allowed_prefixes = ("bash run_tests.sh", "pytest", "python -m pytest")
         if not command.startswith(allowed_prefixes):
             return "⚠ Kullanım: run_tests|bash run_tests.sh veya run_tests|pytest ..."
         ok, out = await asyncio.to_thread(
             self.code.run_shell_in_sandbox,
             command,
-            str(self.cfg.BASE_DIR),
+            str(self.config.BASE_DIR),
         )
         status = "OK" if ok else "FAIL-CLOSED"
         return (
@@ -203,7 +204,7 @@ class ReviewerAgent(BaseAgent):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
             return await self.call_tool("list_issues", arg)
         if lower.startswith("run_tests"):
-            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.cfg.REVIEWER_TEST_COMMAND
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.config.REVIEWER_TEST_COMMAND
             return await self.call_tool("run_tests", arg)
 
         if lower.startswith("review_code|"):
