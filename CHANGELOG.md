@@ -4,6 +4,26 @@
 
 ---
 
+## [v3.0.26] - 2026-03-18
+FAZ-7 — Slack entegrasyonu ve çekirdek modül iyileştirmeleri gerçekleştirildi.
+
+### ✅ O-8 Düzeltme: SlackManager Senkron Blokajı Giderildi
+**Dosya:** `managers/slack_manager.py`
+- `_init_client()` içindeki senkron `auth_test()` kaldırıldı.
+- İşlem asenkron `initialize()` fonksiyonuna taşındı ve `await asyncio.to_thread(self._client.auth_test)` ile sarıldı.
+- Event loop blokajı engellendi.
+
+### ✅ D-7, D-8, D-9 Düzeltmeleri: Metrik ve Bellek Optimizasyonları
+- **D-7:** `core/judge.py` içine Prometheus gauge önbelleği eklendi; aynı metrik adının yalnızca bir kez kaydedilmesi sağlandı ve `Duplicated timeseries` riski giderildi.
+- **D-8:** `core/entity_memory.py` içindeki ölü kod / no-op atama temizlendi, akış sadeleştirildi.
+- **D-9:** `core/cache_metrics.py` modülüne thread-safe `record_hit`, `record_miss` ve `record_skip` metotları dahil edildi.
+
+### ⚠️ Açık Kalan Bulgular
+- **D-10:** `core/judge.py` içinde `Config()` örneği hâlâ `_call_llm()` içinde oluşturuluyor; singleton taşıma eksik.
+- **D-11:** `core/vision.py` içinde `load_image_as_base64()` hâlâ senkron `read_bytes()` kullanıyor; `asyncio.to_thread` sarmalaması henüz uygulanmadı.
+
+---
+
 ## [v3.0.18] - 2026-03-18
 FAZ-6 Düşük Öncelikli Son Bulgu — D-6 kapatıldı. Tüm bulgular tamamlandı.
 
