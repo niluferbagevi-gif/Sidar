@@ -2585,6 +2585,44 @@ def test_process_shutdown_reap_and_async_non_ollama_paths(monkeypatch):
     assert reaped["async"] == 1
 
 
+def test_assets_mount_added_when_assets_directory_exists(monkeypatch):
+    recorded = []
+    original_mount = _FakeFastAPI.mount
+    original_exists = Path.exists
+
+    def _mount(self, path, app, name=None):
+        recorded.append((path, getattr(app, "directory", None), name))
+        return None
+
+    def _exists(self):
+        path = str(self).replace("\\", "/")
+        if path.endswith("/web_ui/assets"):
+            return True
+        return original_exists(self)
+
+    monkeypatch.setattr(_FakeFastAPI, "mount", _mount)
+    monkeypatch.setattr(Path, "exists", _exists)
+    _load_web_server()
+
+    assert any(path == "/assets" and str(directory).replace("\\", "/").endswith("/web_ui/assets") and name == "assets" for path, directory, name in recorded)
+
+
+def test_async_shutdown_returns_immediately_when_cleanup_already_done(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = True
+
+    calls = {"reap": 0, "list": 0, "kill": 0}
+
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: calls.__setitem__("reap", calls["reap"] + 1) or 0)
+    monkeypatch.setattr(mod, "_list_child_ollama_pids", lambda: calls.__setitem__("list", calls["list"] + 1) or [123])
+    monkeypatch.setattr(mod.os, "kill", lambda *_a, **_k: calls.__setitem__("kill", calls["kill"] + 1))
+
+    asyncio.run(mod._async_force_shutdown_local_llm_processes())
+
+    assert calls == {"reap": 0, "list": 0, "kill": 0}
+    assert mod._shutdown_cleanup_done is True
+
+
 def test_policy_resolution_jwt_payload_and_plugin_loader_error_paths(monkeypatch):
     mod = _load_web_server()
 
@@ -2628,6 +2666,14 @@ def test_policy_resolution_jwt_payload_and_plugin_loader_error_paths(monkeypatch
     except _FakeHTTPException as exc:
         assert exc.status_code == 400
         assert "BaseAgent türevi" in str(exc.detail)
+
+    monkeypatch.setattr(mod, "BaseAgent", sys.modules["agent.base_agent"].BaseAgent)
+    discovered = mod._load_plugin_agent_class(
+        "from agent.base_agent import BaseAgent\n\nclass AutoOne(BaseAgent):\n    pass\n\nclass AutoTwo(BaseAgent):\n    pass\n",
+        None,
+        "plug_auto_discover",
+    )
+    assert discovered.__name__ == "AutoOne"
 
     monkeypatch.setattr(mod.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
     plugin_path = Path("plugins") / "demo.py"
