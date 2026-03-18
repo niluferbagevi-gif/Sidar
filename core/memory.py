@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from config import Config
+from config import Config, get_config
 from core.db import Database
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,8 @@ class ConversationMemory:
         self.keep_last = keep_last
         self._lock = threading.RLock()
 
-        self.cfg = Config()
+        # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; singleton kullanılıyor.
+        self.cfg = get_config()
         resolved_database_url = database_url
         if not resolved_database_url:
             resolved_database_url = getattr(self.cfg, "DATABASE_URL", "")

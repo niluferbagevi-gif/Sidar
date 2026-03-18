@@ -51,7 +51,10 @@ class SidarAgent:
 
     def __init__(self, cfg: Config = None) -> None:
         self.cfg = cfg or Config()
-        self._lock = asyncio.Lock()
+        # Bulgu D: asyncio.Lock() __init__ içinde (senkron bağlam) oluşturulmamalı.
+        # Python <3.10'da event loop bağlanma hatalarına yol açar.
+        # Lazy init: ilk async çağrıda oluşturulur (respond() içindeki guard).
+        self._lock: Optional[asyncio.Lock] = None
 
         # Alt sistemler — temel (Senkron/Yerel)
         self.security = SecurityManager(cfg=self.cfg)
@@ -100,7 +103,8 @@ class SidarAgent:
         # Tek omurga: supervisor tabanlı multi-agent
         self._supervisor = None
         self._initialized = False
-        self._init_lock = asyncio.Lock()
+        # Bulgu D: asyncio.Lock() lazy init — async bağlamda oluşturulur.
+        self._init_lock: Optional[asyncio.Lock] = None
 
         logger.info(
             "SidarAgent v%s başlatıldı — sağlayıcı=%s model=%s erişim=%s (VECTOR MEMORY + ASYNC)",
