@@ -1251,8 +1251,6 @@ class LLMClient:
             if msg["role"] == "system":
                 continue
             remaining = max_chars - used
-            if remaining <= 0:
-                break
             content = msg["content"]
             if len(content) > remaining:
                 content = content[-remaining:]
