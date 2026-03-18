@@ -21,11 +21,13 @@ export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, o
     }
 
     setStatus("connecting");
-    const ws = new WebSocket(WS_URL());
+    // Token'ı Sec-WebSocket-Protocol başlığı üzerinden gönder (JSON payload'dan daha güvenli)
+    const ws = new WebSocket(WS_URL(), token ? [token] : undefined);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ action: "auth", token }));
+      // Başlık tabanlı auth kullanılıyor; onopen'da ek JSON auth mesajı gönderilmez.
+      // Sunucu token'ı HTTP upgrade başlığından okuyarak auth_ok döner.
     };
 
     ws.onmessage = (event) => {

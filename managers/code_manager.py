@@ -447,6 +447,12 @@ class CodeManager:
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
         """
+        # Güvenlik uyarısı: Docker sandbox yok, kod izole edilmeden çalışıyor
+        logger.warning(
+            "[GÜVENLİK] Kod Docker izolasyonu OLMADAN yerel subprocess ile çalıştırılıyor. "
+            "Ağ erişimi, dosya sistemi ve kaynak limitleri kısıtlı değil. "
+            "Üretim ortamında Docker daemon'ın erişilebilir olduğundan emin olun."
+        )
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
 
@@ -544,6 +550,14 @@ class CodeManager:
 
         try:
             if allow_shell_features:
+                # Güvenlik uyarısı: shell=True ile komut yorumlanıyor, injection riski mevcut.
+                # Bu mod yalnızca FULL seviyede ve güvenilir kaynaklardan gelen komutlar için kullanılmalıdır.
+                logger.warning(
+                    "[GÜVENLİK] Shell özellikleri etkin (shell=True). "
+                    "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
+                    "Komut (ilk 200 kar): %.200s",
+                    command,
+                )
                 result = subprocess.run(
                     command,
                     shell=True,

@@ -267,16 +267,16 @@ async def _prewarm_rag_embeddings() -> None:
 
 
 async def get_agent() -> SidarAgent:
-    """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur)."""
-    global _agent, _agent_lock
-    if _agent_lock is None:
-        _agent_lock = asyncio.Lock()   # event loop başladıktan sonra oluştur
-    if _agent is None:
-        async with _agent_lock:
-            if _agent is None:
-                _agent = SidarAgent(cfg)
-                await _agent.memory.initialize()
-                _bind_llm_usage_sink(_agent)
+    """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
+    _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
+    global _agent
+    if _agent is not None:
+        return _agent
+    async with _agent_lock:
+        if _agent is None:
+            _agent = SidarAgent(cfg)
+            await _agent.memory.initialize()
+            _bind_llm_usage_sink(_agent)
     return _agent
 
 
@@ -286,7 +286,13 @@ async def get_agent() -> SidarAgent:
 
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
-    global _rag_prewarm_task
+    global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock
+    # Kilitleri event loop ayaktayken kesin olarak başlat (lazy başlatma race-condition'ı önler)
+    _agent_lock = asyncio.Lock()
+    _redis_lock = asyncio.Lock()
+    _local_rate_lock = asyncio.Lock()
+    # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
+    await asyncio.to_thread(Config.validate_critical_settings)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
     try:
         yield
@@ -868,9 +874,7 @@ _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
 async def _get_redis() -> Redis | None:
-    global _redis_client, _redis_lock
-    if _redis_lock is None:
-        _redis_lock = asyncio.Lock()
+    global _redis_client
     if _redis_client is None:
         async with _redis_lock:
             if _redis_client is None:
@@ -885,9 +889,6 @@ async def _get_redis() -> Redis | None:
 
 
 async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
-    global _local_rate_lock
-    if _local_rate_lock is None:
-        _local_rate_lock = asyncio.Lock()
     now = time.time()
     async with _local_rate_lock:
         timestamps = _local_rate_limits.get(key, [])
@@ -1056,13 +1057,39 @@ async def websocket_chat(websocket: WebSocket):
     Çift yönlü WebSocket chat arayüzü.
     Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
     ve anlık iptal (cancel) isteklerini yönetir.
+
+    Kimlik Doğrulama (tercih sırası):
+    1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
+    2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
     """
-    await websocket.accept()
+    # Sec-WebSocket-Protocol başlığından token'ı oku (JSON payload'dan daha güvenli)
+    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
+    header_token = proto_header or ""
+
+    if header_token:
+        # Subprotocol echo-back zorunlu; aksi hâlde tarayıcı bağlantıyı kapatır
+        await websocket.accept(subprotocol=header_token)
+    else:
+        await websocket.accept()
+
     agent = await get_agent()
     active_task: asyncio.Task | None = None
     ws_user_id = ""
     ws_username = ""
     ws_authenticated = False
+
+    # Başlık token'ı varsa bağlantı açılır açılmaz doğrula
+    if header_token:
+        ws_user = await _resolve_user_from_token(agent, header_token)
+        if not ws_user:
+            await _ws_close_policy_violation(websocket, "Invalid or expired token")
+            return
+        ws_user_id = ws_user.id
+        ws_username = ws_user.username
+        ws_authenticated = True
+        await agent.memory.set_active_user(ws_user_id, ws_username)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({'auth_ok': True})
 
     async def generate_response(msg: str) -> None:
         sub_id = None
