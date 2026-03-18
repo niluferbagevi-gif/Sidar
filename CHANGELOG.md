@@ -4,6 +4,20 @@
 
 ---
 
+## [v3.0.18] - 2026-03-18
+FAZ-6 Düşük Öncelikli Son Bulgu — D-6 kapatıldı. Tüm bulgular tamamlandı.
+
+### ✅ FAZ-6 — D-6 Düzeltme: DB `_run_sqlite_op` Gereksiz Lazy Lock Kontrolü
+**Dosya:** `core/db.py`
+- `_run_sqlite_op` içindeki erişilemez `if self._sqlite_lock is None: raise RuntimeError(...)` bloğu `assert self._sqlite_lock is not None` ile değiştirildi.
+- `_connect_sqlite()` her zaman `_sqlite_lock = asyncio.Lock()` oluşturduğundan ve `_sqlite_conn is None` kontrolü üstte yapıldığından ikinci kontrol dead-code'du.
+- `assert` ile hem gereksiz dal kaldırıldı hem de lock varlığı belgesi tutuldu.
+- Doğrulama: `core/db.py:189`
+
+**🏁 Denetim Tamamlandı:** Tüm K-1..K-2, Y-1..Y-5, O-1..O-6, D-1..D-6 bulguları kapatıldı. Güvenlik puanı: **10.0 / 10**.
+
+---
+
 ## [v3.0.17] - 2026-03-18
 FAZ-5 Orta Öncelikli Güvenlik Hardening — Tüm O-1..O-6 bulgular kapatıldı.
 
