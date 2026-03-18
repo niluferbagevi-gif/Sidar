@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -80,7 +82,7 @@ def test_event_bus_listener_switches_to_local_fallback_on_redis_disconnect(monke
 
     class _FailingRedis:
         async def xreadgroup(self, **kwargs):
-            raise RuntimeError("redis bağlantısı koptu")
+            raise _event_stream.ResponseError("redis bağlantısı koptu")
 
     async def _cleanup_stub():
         cleaned["value"] = True
@@ -147,7 +149,7 @@ def test_publish_via_redis_failure_sets_local_fallback(monkeypatch):
 
     class _BadRedis:
         async def xadd(self, *_a, **_k):
-            raise ConnectionError("redis down")
+            raise _event_stream.ResponseError("redis down")
 
     cleaned = {"called": False}
 
@@ -216,6 +218,115 @@ def test_event_bus_listener_handles_invalid_payload_and_ack_failures(monkeypatch
     assert "1-0" in redis.acked and "2-0" in redis.acked
     assert cleaned["called"] is True
 
+
+
+
+def test_ensure_listener_falls_back_when_consumer_group_create_errors(monkeypatch):
+    bus = AgentEventBus()
+
+    class _FailingRedis:
+        async def ping(self):
+            return True
+
+        async def xgroup_create(self, **_kwargs):
+            raise _event_stream.ResponseError("NOGROUP cannot create consumer group")
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(_event_stream.Redis, "from_url", lambda *_a, **_k: _FailingRedis())
+
+    asyncio.run(bus._ensure_redis_listener())
+
+    assert bus._redis_available is False
+    assert bus._redis_client is None
+    assert bus._redis_listener_task is None
+
+
+def test_event_bus_listener_retries_after_empty_poll_then_falls_back(monkeypatch):
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    cleaned = {"value": False}
+
+    class _PollingRedis:
+        def __init__(self):
+            self.calls = 0
+
+        async def xreadgroup(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return []
+            raise _event_stream.ResponseError("listen failed after idle poll")
+
+    async def _cleanup_stub():
+        cleaned["value"] = True
+        bus._redis_client = None
+
+    redis = _PollingRedis()
+    bus._redis_client = redis
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup_stub)
+
+    asyncio.run(bus._redis_listener_loop())
+
+    assert redis.calls == 2
+    assert bus._redis_available is False
+    assert cleaned["value"] is True
+
+
+
+
+def test_event_bus_listener_propagates_task_cancellation():
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _CancelledRedis:
+        async def xreadgroup(self, **_kwargs):
+            raise asyncio.CancelledError()
+
+    bus._redis_client = _CancelledRedis()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(bus._redis_listener_loop())
+
+
+def test_cleanup_redis_swallows_cancelled_listener_task_and_closes_client():
+    bus = AgentEventBus()
+
+    class _CancelledTask:
+        def __init__(self):
+            self.cancel_called = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancel_called = True
+
+        def __await__(self):
+            async def _inner():
+                raise asyncio.CancelledError()
+
+            return _inner().__await__()
+
+    class _ClosableRedis:
+        def __init__(self):
+            self.closed = False
+
+        async def aclose(self):
+            self.closed = True
+
+    task = _CancelledTask()
+    redis = _ClosableRedis()
+    bus._redis_listener_task = task
+    bus._redis_client = redis
+
+    asyncio.run(bus._cleanup_redis())
+
+    assert task.cancel_called is True
+    assert redis.closed is True
+    assert bus._redis_listener_task is None
+    assert bus._redis_client is None
 
 def test_event_bus_fanout_unsubscribes_when_queue_full_and_no_buffer_space():
     bus = AgentEventBus()

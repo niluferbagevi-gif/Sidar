@@ -200,7 +200,7 @@ class AgentEventBus:
     async def _cleanup_redis(self) -> None:
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
             self._redis_listener_task.cancel()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._redis_listener_task
         self._redis_listener_task = None
 
