@@ -255,9 +255,10 @@ def test_coder_agent_tool_get_package_info_path():
 def test_reviewer_agent_edge_paths_and_defaults():
     reviewer = object.__new__(ReviewerAgent)
     reviewer.events = _DummyEvents()
-    reviewer.cfg = SimpleNamespace(REVIEWER_TEST_COMMAND="pytest -q")
+    reviewer.cfg = SimpleNamespace(REVIEWER_TEST_COMMAND="pytest -q", BASE_DIR=".")
+    reviewer.config = reviewer.cfg
 
-    escaped = reviewer._build_dynamic_test_content('bad """ marker')
+    escaped = asyncio.run(reviewer._build_dynamic_test_content('bad """ marker'))
     assert "'''" in escaped
 
     paths = reviewer._extract_changed_paths("a/../x.py ok.py")
@@ -275,11 +276,17 @@ def test_reviewer_agent_edge_paths_and_defaults():
 
 def test_reviewer_run_dynamic_tests_invokes_pytest_path():
     reviewer = object.__new__(ReviewerAgent)
+    reviewer.config = SimpleNamespace(BASE_DIR=".")
 
     async def _call_tool(name, arg):
         return f"{name}|{arg}"
 
+    async def _build_dynamic(_ctx: str) -> str:
+        return "def test_temp():\n    assert True\n"
+
     reviewer.call_tool = _call_tool
+    reviewer._build_dynamic_test_content = _build_dynamic
+    reviewer.code = SimpleNamespace(write_file=lambda *_args, **_kwargs: (True, "ok"))
     out = asyncio.run(reviewer._run_dynamic_tests("ctx"))
     assert out.startswith("run_tests|pytest -q ")
     assert "test_temp.py" in out
