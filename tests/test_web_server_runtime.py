@@ -732,6 +732,9 @@ def test_agent_lifecycle_get_agent_singleton_and_shutdown_close():
             created["count"] += 1
             self.memory = _Memory()
 
+        async def initialize(self):
+            return None
+
     class _RedisConn:
         def __init__(self):
             self.closed = False
