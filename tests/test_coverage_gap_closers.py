@@ -172,7 +172,7 @@ def test_web_server_register_conflict_admin_stats_and_rate_limit_fallback(monkey
     mod.get_agent = _get_agent
 
     with pytest.raises(mod.HTTPException) as exc:
-        asyncio.run(mod.register_user({"username": "alice", "password": "123456"}))
+        asyncio.run(mod.register_user(types.SimpleNamespace(username="alice", password="123456", tenant_id="default")))
     assert exc.value.status_code == 409
 
     resp = asyncio.run(mod.admin_stats(_user=types.SimpleNamespace(role="admin", username="root")))
@@ -241,6 +241,7 @@ def test_web_server_usage_sink_prewarm_and_websocket_auth_edges(monkeypatch):
         def __init__(self):
             self.closed = None
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._messages = iter(["not-json", json.dumps({"action": "auth"})])
 
         async def accept(self):

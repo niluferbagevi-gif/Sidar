@@ -22,9 +22,10 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
         mod._get_request_user(req)
     assert exc.value.status_code == 401
 
-    # line 274
+    # line 274 — payload Pydantic modeli gibi davranmalı (username/password attr)
+    short_payload = types.SimpleNamespace(username="ab", password="123", tenant_id="default")
     with pytest.raises(mod.HTTPException) as exc2:
-        asyncio.run(mod.register_user({"username": "ab", "password": "123"}))
+        asyncio.run(mod.register_user(short_payload))
     assert exc2.value.status_code == 400
 
     async def _auth(**_):
@@ -42,7 +43,7 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
 
     # lines 295-296
     with patch.object(mod.jwt, "encode", return_value="sahte.jwt.token"):
-        login_resp = asyncio.run(mod.login_user({"username": "alice", "password": "123456"}))
+        login_resp = asyncio.run(mod.login_user(types.SimpleNamespace(username="alice", password="123456")))
         assert login_resp.content["access_token"] == "sahte.jwt.token"
 
     # line 301
@@ -53,7 +54,7 @@ def test_auth_helpers_and_endpoints_success_and_validation(mod, monkeypatch):
 
 def test_rate_limit_redis_success_and_fallback_paths(mod, monkeypatch):
     mod._redis_client = None
-    mod._redis_lock = None
+    mod._redis_lock = asyncio.Lock()
 
     class _RedisOK:
         async def ping(self):
@@ -208,6 +209,7 @@ def test_websocket_send_json_error_swallowed_and_disconnect(mod, monkeypatch):
     class _WS:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._i = 0
 
         async def accept(self):

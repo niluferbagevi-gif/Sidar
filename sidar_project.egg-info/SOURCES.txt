@@ -73,6 +73,7 @@ tests/test_coverage_gap_closers.py
 tests/test_coverage_policy.py
 tests/test_crypto_plugin.py
 tests/test_db_additional_coverage.py
+tests/test_db_exception_and_gap_coverage.py
 tests/test_db_postgresql_branches.py
 tests/test_db_runtime.py
 tests/test_definitions_prompt.py
@@ -92,6 +93,7 @@ tests/test_host_sandbox_installer_assets.py
 tests/test_llm_client_core_gap_additions.py
 tests/test_llm_client_critical_gap_closers.py
 tests/test_llm_client_improvements.py
+tests/test_llm_client_provider_error_coverage.py
 tests/test_llm_client_retry_helpers.py
 tests/test_llm_client_runtime.py
 tests/test_llm_metrics_runtime.py
@@ -122,6 +124,7 @@ tests/test_quick_100.py
 tests/test_quick_coverage_push.py
 tests/test_rag_core_gap_additions.py
 tests/test_rag_edge_case_coverage.py
+tests/test_rag_gap_targeted_coverage.py
 tests/test_rag_gpu_fts_pgvector_paths.py
 tests/test_rag_improvements.py
 tests/test_rag_runtime_extended.py

@@ -95,6 +95,7 @@ def test_websocket_disconnect_cancels_active_task_and_generate_cancelled_cleanup
     class _WebSocket:
         def __init__(self):
             self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
             self._payloads = [
                 json.dumps({"action": "auth", "token": "tok"}),
                 json.dumps({"action": "send", "message": "hello"}),

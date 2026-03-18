@@ -19,6 +19,7 @@ prometheus-client~=0.21.0
 tiktoken~=0.8.0
 rank-bm25==0.2.2
 beautifulsoup4~=4.12.3
+bleach~=6.1.0
 PyGithub~=2.4.0
 duckduckgo-search~=6.2.13
 

@@ -466,7 +466,7 @@ def test_get_redis_connection_failure_returns_none(monkeypatch):
     """Redis ping başarısız olursa _get_redis() None döner ve warning loglar."""
     mod = _load_web_server_standalone()
     mod._redis_client = None
-    mod._redis_lock = None
+    mod._redis_lock = asyncio.Lock()
 
     warnings_logged = []
     monkeypatch.setattr(mod.logger, "warning",
