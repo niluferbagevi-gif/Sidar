@@ -277,7 +277,5 @@ def get_entity_memory(config=None) -> EntityMemory:
         from config import Config
         cfg = config or Config()
         db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
-        if db_url.endswith("data/sidar.db"):
-            db_url = db_url  # Ana DB'ye entity_memory tablosu ekliyoruz
         _instance = EntityMemory(database_url=db_url, config=cfg)
     return _instance
