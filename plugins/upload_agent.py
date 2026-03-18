@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - testlerde ve hafif ortamlarda güvenli f
         pass
 
 
+
 class UploadAgent(BaseAgent):
     """Yüklenen plugin akışları için minimum demo ajan."""
 
