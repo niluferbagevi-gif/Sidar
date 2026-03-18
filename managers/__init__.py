@@ -1,9 +1,12 @@
 """Sidar Project - Manager Modülleri"""
 from .code_manager import CodeManager
 from .github_manager import GitHubManager
+from .jira_manager import JiraManager
 from .package_info import PackageInfoManager
 from .security import SecurityManager
+from .slack_manager import SlackManager
 from .system_health import SystemHealthManager
+from .teams_manager import TeamsManager
 from .todo_manager import TodoManager
 from .web_search import WebSearchManager
 
@@ -13,6 +16,9 @@ _EXPORTED_MANAGERS = (
     CodeManager,
     SystemHealthManager,
     GitHubManager,
+    JiraManager,
+    SlackManager,
+    TeamsManager,
     SecurityManager,
     WebSearchManager,
     PackageInfoManager,
