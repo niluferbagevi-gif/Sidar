@@ -230,6 +230,13 @@ class LLMMetricsCollector:
         global_daily = _env_float("LLM_BUDGET_DAILY_USD", 5.0)
         global_total = _env_float("LLM_BUDGET_TOTAL_USD", 20.0)
 
+        # Semantic cache istatistikleri (modül düzeyinde sayaçtan)
+        try:
+            from core.cache_metrics import get_cache_metrics as _get_cache_metrics
+            cache_stats = _get_cache_metrics()
+        except Exception:
+            cache_stats = {"hits": 0, "misses": 0, "skips": 0, "total_lookups": 0, "hit_rate": 0.0}
+
         return {
             "window_events": total_calls,
             "totals": {
@@ -251,6 +258,7 @@ class LLMMetricsCollector:
                 "daily_exceeded": total_cost > global_daily,
                 "total_exceeded": total_cost > global_total,
             },
+            "cache": cache_stats,
             "by_provider": by_provider,
             "by_user": by_user,
             "recent": [asdict(e) for e in events[-20:]],
