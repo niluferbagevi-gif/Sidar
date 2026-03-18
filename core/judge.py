@@ -94,10 +94,13 @@ class LLMJudge:
     """
 
     def __init__(self) -> None:
+        from config import Config
+
         self.enabled = os.getenv("JUDGE_ENABLED", "false").lower() in ("1", "true", "yes")
         self.model = os.getenv("JUDGE_MODEL", "").strip() or None
         self.provider = os.getenv("JUDGE_PROVIDER", "ollama").strip().lower()
         self.sample_rate = max(0.0, min(1.0, float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or 0.2)))
+        self.config = Config()
 
     def _should_evaluate(self) -> bool:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
@@ -106,11 +109,9 @@ class LLMJudge:
     async def _call_llm(self, system: str, user_message: str) -> Optional[float]:
         """Judge modelini çağır, 0.0–1.0 arası float döndür."""
         try:
-            from config import Config
             from core.llm_client import LLMClient
-            config = Config()
-            model = self.model or getattr(config, "TEXT_MODEL", None) or getattr(config, "CODING_MODEL", None)
-            client = LLMClient(provider=self.provider, config=config)
+            model = self.model or getattr(self.config, "TEXT_MODEL", None) or getattr(self.config, "CODING_MODEL", None)
+            client = LLMClient(provider=self.provider, config=self.config)
             response = await client.chat(
                 messages=[{"role": "user", "content": user_message}],
                 model=model,
