@@ -289,7 +289,7 @@ def test_reviewer_run_dynamic_tests_invokes_pytest_path():
     reviewer.code = SimpleNamespace(write_file=lambda *_args, **_kwargs: (True, "ok"))
     out = asyncio.run(reviewer._run_dynamic_tests("ctx"))
     assert out.startswith("run_tests|pytest -q ")
-    assert "test_temp.py" in out
+    assert "reviewer_dynamic_" in out
 
 
 def test_llm_metrics_env_and_context_helpers_and_sink_edges(monkeypatch):
