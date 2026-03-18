@@ -724,3 +724,142 @@ def test_get_env_helpers_typeerror_and_profile_trimmed_override(monkeypatch):
             sys.modules.pop("dotenv", None)
         else:
             sys.modules["dotenv"] = saved
+
+def test_hardware_detection_invalid_fraction_env_falls_back_to_safe_default(monkeypatch):
+    cfg_mod = _load_config_module()
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("GPU_MEMORY_FRACTION", "harfli")
+    monkeypatch.setenv("LLM_GPU_MEMORY_FRACTION", "yanlis")
+    monkeypatch.setenv("RAG_GPU_MEMORY_FRACTION", "bozuk")
+
+    calls = {"frac": None}
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(_dev):
+            return "Mocked RTX"
+
+        @staticmethod
+        def set_per_process_memory_fraction(frac, device):
+            calls["frac"] = (frac, device)
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+        class version:
+            cuda = "12.x"
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
+    hw = cfg_mod.check_hardware()
+    assert hw.has_cuda is True
+    assert calls["frac"] == (0.8, 0)
+
+
+def test_init_telemetry_imported_classes_and_missing_httpx_instrumentor(monkeypatch):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config.ENABLE_TRACING = True
+    cfg_mod.Config.OTEL_INSTRUMENT_FASTAPI = True
+    cfg_mod.Config.OTEL_INSTRUMENT_HTTPX = True
+    cfg_mod.Config.OTEL_EXPORTER_ENDPOINT = "http://otel:4317"
+
+    calls = {"provider": 0, "fastapi": 0}
+
+    class _TraceModule:
+        @staticmethod
+        def set_tracer_provider(_provider):
+            calls["provider"] += 1
+
+    class _Exporter:
+        def __init__(self, endpoint=None, insecure=True):
+            self.endpoint = endpoint
+            self.insecure = insecure
+
+    class _Provider:
+        def __init__(self, resource=None):
+            self.resource = resource
+
+        def add_span_processor(self, _processor):
+            return None
+
+    class _Resource:
+        @staticmethod
+        def create(attrs):
+            return attrs
+
+    class _BatchSpanProcessor:
+        def __init__(self, _exporter):
+            return None
+
+    class _FastAPIInstrumentor:
+        @staticmethod
+        def instrument_app(_app):
+            calls["fastapi"] += 1
+
+    import types as _types
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "opentelemetry.exporter.otlp.proto.grpc.trace_exporter":
+            mod = _types.ModuleType(name)
+            mod.OTLPSpanExporter = _Exporter
+            return mod
+        if name == "opentelemetry.sdk.trace":
+            mod = _types.ModuleType(name)
+            mod.TracerProvider = _Provider
+            return mod
+        if name == "opentelemetry.sdk.resources":
+            mod = _types.ModuleType(name)
+            mod.Resource = _Resource
+            return mod
+        if name == "opentelemetry.sdk.trace.export":
+            mod = _types.ModuleType(name)
+            mod.BatchSpanProcessor = _BatchSpanProcessor
+            return mod
+        if name == "opentelemetry.instrumentation.fastapi":
+            mod = _types.ModuleType(name)
+            mod.FastAPIInstrumentor = _FastAPIInstrumentor
+            return mod
+        if name == "opentelemetry.instrumentation.httpx":
+            raise ImportError("httpx instrumentor missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    logs = {"info": [], "warning": []}
+    logger_obj = _types.SimpleNamespace(
+        info=lambda msg, *a: logs["info"].append(msg % a if a else msg),
+        warning=lambda msg, *a: logs["warning"].append(msg % a if a else msg),
+    )
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    ok = cfg_mod.Config.init_telemetry(
+        fastapi_app=object(),
+        logger_obj=logger_obj,
+        trace_module=_TraceModule,
+    )
+
+    assert ok is True
+    assert calls["provider"] == 1
+    assert calls["fastapi"] == 1
+    assert any("OpenTelemetry aktif" in line for line in logs["info"])
+
+
+def test_config_summary_prints_litellm_gateway_and_model(capsys):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config.AI_PROVIDER = "litellm"
+    cfg_mod.Config.LITELLM_GATEWAY_URL = "http://gateway:4000"
+    cfg_mod.Config.LITELLM_MODEL = "gpt-4o-mini"
+    cfg_mod.Config.OPENAI_MODEL = "fallback-openai"
+
+    cfg_mod.Config.print_config_summary()
+    out, _ = capsys.readouterr()
+    assert "LiteLLM Gateway" in out
+    assert "http://gateway:4000" in out
+    assert "LiteLLM Modeli" in out
+    assert "gpt-4o-mini" in out
