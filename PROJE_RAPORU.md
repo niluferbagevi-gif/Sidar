@@ -1272,6 +1272,13 @@ Bu bölüm, v4.0 ileri faz doğrulamasında tamamlanan kurumsal geliştirmeleri 
 - **Dış sistem ve CI/CD otonomisi:** GitHub dışındaki kurumsal araçlara (Jira, Slack, Teams, GitLab/Jenkins) native entegrasyon ve görevden PR’a uçtan uca otonom akışlar.
 - **LLM gateway ve cost-aware model routing:** Sorgu karmaşıklığına göre lokal/uzak model seçimi yapan, maliyet ve SLA odaklı akıllı yönlendirme katmanı.
 
+#### Faz 5: Kurumsal Otonomi Kontrolü, Veri Güvenliği ve Kalite Ölçümü (v5.x Vizyonu)
+*Sistemin tam otonom yapısında güvenliği maksimuma çıkarmak, insan denetimini entegre etmek ve yanıt kalitesini sürekli ölçümlemek.*
+- **Veri Sızıntısı Önleme (DLP & PII Maskeleme):** Kullanıcı mesajlarında veya işlenen dosyalarda yer alabilecek API anahtarı, şifre veya kişisel verilerin (PII) bulut LLM'lere (OpenAI/Anthropic vb.) gitmeden önce tespit edilip `[REDACTED]` formatında maskelenmesini sağlayan DLP middleware entegrasyonu.
+- **İnsan Onayı Geçidi (Human-in-the-Loop - HITL):** Swarm ajanlarının dış sistemlerde (GitHub'da PR açma, veritabanı şeması değiştirme vb.) yapacağı kritik ve yıkıcı işlemler öncesinde süreci duraklatarak, Web UI üzerinden kullanıcıdan "Onay/Red" bekleyen asenkron güvenlik akışının kurulması.
+- **Sürekli Yanıt Kalitesi Değerlendirmesi (LLM-as-a-Judge):** RAGAS veya benzeri değerlendirme çatıları kullanılarak; RAG katmanından dönen dokümanların alakalılığının ve ajanların halüsinasyon oranlarının arka planda periyodik olarak puanlanıp yönetici paneline (Grafana/UI) yansıtılması.
+- **Kişiselleştirilmiş Geliştirici Belleği (Persona & Entity Memory):** Oturum bazlı belleğe ek olarak, kullanıcının kodlama stilini, framework tercihlerini ve mimari kararlarını uzun vadeli bir "Varlık Belleği" (Entity Memory - Mem0/Zep benzeri) içinde tutarak ajanların bağlama özel, kişiselleştirilmiş çıktılar üretmesi.
+
 ---
 ## 15. Özellik-Gereksinim Matrisi
 
