@@ -18,7 +18,7 @@
 
 ## Proje Hakkında
 
-**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **44+ çekirdek araç** üzerinden LLM destekli kararlar alır.
+**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır.
 
 ### Karakter Profili
 
@@ -159,7 +159,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ---
 
-## Araç Listesi (50+ Çekirdek Araç)
+## Araç Listesi (60+ Çekirdek Araç)
 
 | Araç | Açıklama | Argüman |
 |------|----------|---------|
@@ -458,22 +458,33 @@ sidar_project/
 │       └── reviewer_agent.py   # Test koşturan QA ajanı (183 satır)
 ├── core/
 │   ├── db.py               # Veritabanı bağlantısı, kullanıcı, kota tabloları (1.635 satır)
-│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi (1.319 satır)
-│   ├── llm_metrics.py      # Token, maliyet ve Prometheus metrik toplayıcısı (256 satır)
+│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi (1.351 satır)
+│   ├── llm_metrics.py      # Token, maliyet ve Prometheus metrik toplayıcısı (271 satır)
 │   ├── memory.py           # Çoklu oturum (session) yönetimi — DB destekli (299 satır)
-│   └── rag.py              # ChromaDB + BM25 hibrit RAG motoru (1.122 satır)
+│   ├── rag.py              # ChromaDB + BM25 hibrit RAG motoru (1.142 satır)
+│   ├── dlp.py              # DLP & PII maskeleme: token, key, TC kimlik no, JWT vb. (320 satır)
+│   ├── hitl.py             # Human-in-the-Loop onay geçidi: async polling, web API (274 satır)
+│   ├── judge.py            # LLM-as-a-Judge: RAG alaka + halüsinasyon riski (257 satır)
+│   ├── router.py           # Cost-Aware Model Routing: karmaşıklık skoru + bütçe (211 satır)
+│   ├── entity_memory.py    # Entity/Persona Memory: TTL + LRU kişisel bellek (283 satır)
+│   ├── cache_metrics.py    # Semantic cache hit/miss + Prometheus metrikleri (50 satır)
+│   ├── active_learning.py  # Active Learning + LoRA/QLoRA: FeedbackStore, Exporter (419 satır)
+│   └── vision.py           # Multimodal Vision Pipeline: UI mockup → kod (294 satır)
 ├── managers/
 │   ├── code_manager.py     # Dosya operasyonları, AST, Docker REPL sandbox (932 satır)
 │   ├── security.py         # OpenClaw 3 seviyeli erişim kontrol sistemi (290 satır)
 │   ├── github_manager.py   # GitHub API entegrasyonu — PR + Issue + Release (644 satır)
-│   ├── system_health.py    # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback) (475 satır)
+│   ├── system_health.py    # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback) (487 satır)
 │   ├── web_search.py       # Tavily + Google + DuckDuckGo (async, çoklu motor) (387 satır)
 │   ├── package_info.py     # PyPI + npm + GitHub Releases (async) (343 satır)
-│   └── todo_manager.py     # Görev listesi yönetimi + proje TODO taraması (451 satır)
+│   ├── todo_manager.py     # Görev listesi yönetimi + proje TODO taraması (451 satır)
+│   ├── slack_manager.py    # Slack Bot SDK + Webhook fallback, Block Kit (205 satır)
+│   ├── jira_manager.py     # Jira Cloud REST API v3, Basic/Bearer auth (245 satır)
+│   └── teams_manager.py    # Teams MessageCard + Adaptive Card v1.4, HITL (234 satır)
 ├── plugins/                # Plugin / Marketplace ajanları
 │   ├── crypto_price_agent.py  # CryptoPriceAgent: CoinGecko BTC/ETH/SOL fiyat sorgusu (49 satır)
 │   └── upload_agent.py        # UploadAgent: temel upload şablon ajanı (10 satır)
-├── tests/                  # 132 test modülü — tam kapsam, 0 atlanan test
+├── tests/                  # 142 test modülü — tam kapsam, 0 atlanan test
 ├── web_ui/                 # Vanilla JS web arayüzü (SSE, session, export, mobil)
 │   ├── index.html, app.js, chat.js, sidebar.js, rag.js, style.css
 ├── web_ui_react/           # React + Vite modern UI (react-router-dom tabanlı)
@@ -484,10 +495,11 @@ sidar_project/
 ├── helm/sidar/             # Kubernetes Helm chart (16 şablon, staging + prod values)
 ├── docker/                 # Grafana/Prometheus observability konfigürasyonları
 ├── docs/module-notes/      # Otomatik üretilen modül notları
-├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği (759 satır)
+├── grafana/                # Grafana dashboard + provisioning (sidar_overview.json)
+├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği (828 satır)
 ├── main.py                 # Etkileşimli launcher (wizard + quick start) (381 satır)
 ├── cli.py                  # Terminal tabanlı CLI giriş noktası (async loop) (289 satır)
-├── web_server.py           # FastAPI + WebSocket + Rate limiting + Admin API (2.089 satır)
+├── web_server.py           # FastAPI + WebSocket + Rate limiting + Admin API (2.168 satır)
 ├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği (294 satır)
 ├── gui_launcher.py         # Eel tabanlı masaüstü başlatıcı (97 satır)
 ├── Dockerfile              # CPU/GPU dual-mode build (python:3.11-slim)
@@ -507,7 +519,7 @@ pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-**Test paketi (132 modül):**
+**Test paketi (142 modül):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
 - `test_web_server_runtime.py` — FastAPI endpoint ve WebSocket senaryoları
 - `test_db_runtime.py` / `test_db_postgresql_branches.py` — SQLite/PostgreSQL yönetimi
@@ -518,6 +530,16 @@ pytest tests/ -v --cov=. --cov-report=term-missing
 - `test_tenant_rbac_scenarios.py` — Çok kullanıcı izin matrisi doğrulaması
 - `test_observability_stack_compose.py` — Jaeger/Prometheus/Grafana sağlık kontrolü
 - `test_swarm_execute_api.py` — `/api/swarm/execute` endpoint testleri
+- `test_dlp_masking.py` — DLP & PII maskeleme senaryoları
+- `test_hitl_approval.py` — Human-in-the-Loop onay geçidi akışları
+- `test_llm_judge.py` — LLM-as-a-Judge alaka + halüsinasyon ölçümü
+- `test_env_parity.py` — config.py ↔ .env.example parite doğrulaması
+- `test_cost_aware_routing.py` — Cost-Aware Model Routing ve bütçe mantığı
+- `test_entity_persona_memory.py` — Entity/Persona Memory TTL + LRU testleri
+- `test_semantic_cache_metrics.py` — Cache hit/miss sayaçları + Prometheus metrikleri
+- `test_active_learning.py` — FeedbackStore, DatasetExporter, LoRATrainer testleri
+- `test_vision.py` — Vision Pipeline provider formatları + mockup→kod
+- `test_slack_jira_teams.py` — Slack/Jira/Teams entegrasyon testleri
 - Ve daha 122 modül — edge-case, retry/fallback, migration, webhook, auth…
 
 ---
@@ -596,6 +618,10 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v3.0.24** | Faz 4 tamamlama: Slack Bot SDK + Webhook (`slack_manager`), Jira Cloud REST API v3 (`jira_manager`), Teams Adaptive Card v1.4 + HITL onay kartı (`teams_manager`); 44 yeni test; 142 test modülü, ~18.200+ Python kaynak satırı |
+| **v3.0.23** | Faz 4: Active Learning + LoRA/QLoRA (`core/active_learning.py`), Multimodal Vision Pipeline (`core/vision.py`); 66 yeni test |
+| **v3.0.22** | Faz 5 devam: Cost-Aware Model Routing (`core/router.py`), Entity/Persona Memory (`core/entity_memory.py`), Semantic Cache Grafana Hit Rate (`core/cache_metrics.py` + Grafana dashboard); 62 yeni test |
+| **v3.0.21** | Faz 5 başlangıç: DLP & PII Maskeleme (`core/dlp.py`), Human-in-the-Loop (`core/hitl.py`), LLM-as-a-Judge (`core/judge.py`), .env.example↔config.py parite sertleştirmesi; 60 yeni test |
 | **v3.0.20** | Kapsamlı rapor güncelleme turu: AUDIT_REPORT_v4.0.2, PROJE_RAPORU.md, README.md tüm satır sayıları ve araç envanteri mevcut koda göre yeniden ölçüldü ve güncellendi |
 | **v3.0.19** | React SPA react-router-dom navigasyonu, PromptAdminPanel/SwarmFlowPanel/P2PDialoguePanel bileşenleri, `/api/swarm/execute` endpoint, DB destekli sistem promptu yükleme |
 | **v3.0.18** | FAZ-6: D-6 `core/db.py` lazy lock dead-code kapatıldı. Tüm 18 güvenlik bulgusu (K/Y/O/D) kapatıldı. Güvenlik puanı 10.0/10 |

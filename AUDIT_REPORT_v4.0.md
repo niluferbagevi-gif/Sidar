@@ -1,7 +1,7 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu
-**Sürüm:** 4.0.2
+**Sürüm:** 4.0.3
 **Tarih:** 2026-03-18
-**Son Güncelleme:** 2026-03-18 (Tüm dosya satır sayıları mevcut kaynak koduna göre yeniden ölçüldü; 180 Python dosyası, 132 test modülü; bölüm 9 modül analiz tabloları gerçek duruma göre güncellendi)
+**Son Güncelleme:** 2026-03-18 (v3.0.21-v3.0.24 özellik turları yansıtıldı: 8 yeni core/ modülü (dlp, hitl, judge, router, entity_memory, cache_metrics, active_learning, vision), 3 yeni managers/ modülü (slack, jira, teams), 10 yeni test modülü. ~202 Python dosyası, 142 test modülü; §2, §3 ve §9 güncel koda uyarlandı.)
 **Denetçi:** Claude Sonnet 4.6 (Bağımsız, önceki raporlardan bağımsız sıfırdan inceleme)
 **Kapsam:** Tüm Python kaynak dosyaları — satır satır doğrudan okuma
 
@@ -25,7 +25,7 @@
 
 ## 1. Yönetici Özeti
 
-Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Toplam 145 Python dosyası ve ~13.000+ satır üretim kodundan oluşmaktadır.
+Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Toplam ~202 Python dosyası ve ~18.200+ satır üretim kodundan oluşmaktadır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır.
 
 **Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır; kalan açık maddeler yüksek/orta/düşük önceliklerde iyileştirme adaylarıdır.
 
@@ -57,32 +57,44 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 | Kategori | Dosya Sayısı | Toplam Satır |
 |----------|-------------|-------------|
 | Ana modüller (root) | 5 | ~3.613 |
-| `core/` | 5 | ~4.831 |
-| `managers/` | 8 | ~3.831 |
+| `core/` | 17 | ~8.400+ |
+| `managers/` | 10 | ~4.515+ |
 | `agent/` (tüm alt dizinler) | ~25 | ~3.640 |
-| `tests/` | 132 | ~31.302+ |
+| `tests/` | 142 | ~33.868+ |
 | `plugins/` | 2 | ~59 |
 | Diğer `.py` | ~5 | ~590 |
-| **TOPLAM** | **180** | **~47.000+** |
+| **TOPLAM** | **~202+** | **~54.000+** |
 
 ### 2.2 Ana Dosya Satır Sayıları (Doğrudan Ölçüm)
 
 | Dosya | Satır |
 |-------|-------|
-| `web_server.py` | 2.089 |
-| `core/llm_client.py` | 1.319 |
+| `web_server.py` | 2.168 |
+| `core/llm_client.py` | 1.351 |
 | `core/db.py` | 1.635 |
 | `managers/code_manager.py` | 932 |
 | `managers/github_manager.py` | 644 |
-| `managers/system_health.py` | 475 |
+| `managers/system_health.py` | 487 |
 | `managers/todo_manager.py` | 451 |
 | `managers/web_search.py` | 387 |
-| `core/rag.py` | 1.122 |
-| `config.py` | 759 |
+| `core/rag.py` | 1.142 |
+| `config.py` | 828 |
 | `managers/package_info.py` | 343 |
 | `managers/security.py` | 290 |
 | `core/memory.py` | 299 |
-| `core/llm_metrics.py` | 256 |
+| `core/llm_metrics.py` | 271 |
+| `core/active_learning.py` | 419 |
+| `core/dlp.py` | 320 |
+| `core/entity_memory.py` | 283 |
+| `core/vision.py` | 294 |
+| `core/hitl.py` | 274 |
+| `core/judge.py` | 257 |
+| `core/router.py` | 211 |
+| `managers/jira_manager.py` | 245 |
+| `managers/teams_manager.py` | 234 |
+| `managers/slack_manager.py` | 205 |
+| `core/agent_metrics.py` | 117 |
+| `core/cache_metrics.py` | 50 |
 | `agent/sidar_agent.py` | 583 |
 | `agent/core/supervisor.py` | 239 |
 | `agent/core/event_stream.py` | 217 |
@@ -103,28 +115,46 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 ## 3. Mimari Genel Bakış
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  web_server.py (FastAPI)                             │
-│  ├── auth middleware (Bearer token)                  │
-│  ├── rate limit middleware (Redis + local fallback)  │
-│  └── CORS middleware (localhost-only)                │
-└───────────────────┬─────────────────────────────────┘
-                    │
-         ┌──────────▼──────────┐
-         │  SidarAgent          │
-         │  ├── SecurityManager │
-         │  ├── CodeManager     │
-         │  ├── DocumentStore   │
-         │  ├── ConversationMemory│
-         │  ├── LLMClient       │
-         │  └── SupervisorAgent │
-         └──────────────────────┘
-                    │
-      ┌─────────────┼─────────────┐
-      │             │             │
-  Database       LLM APIs    Docker Sandbox
-  (SQLite/PG)  (Ollama/Gemini/ (Python REPL)
-               OpenAI/Anthropic)
+┌─────────────────────────────────────────────────────────────────┐
+│  web_server.py (FastAPI)                                         │
+│  ├── auth middleware (Bearer token / JWT)                        │
+│  ├── rate limit middleware (Redis + local fallback)              │
+│  ├── CORS middleware (localhost-only)                            │
+│  ├── DLP hook (PII maskeleme — LLM çağrısı öncesi)              │
+│  └── HITL endpoints (/api/hitl/request, /respond, /pending)     │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+         ┌──────────────▼──────────────┐
+         │  SidarAgent                  │
+         │  ├── SecurityManager         │
+         │  ├── CodeManager             │
+         │  ├── DocumentStore           │
+         │  ├── ConversationMemory      │
+         │  ├── LLMClient               │
+         │  │   ├── CostAwareRouter     │  ← lokal/bulut seçimi
+         │  │   ├── SemanticCache       │  ← Redis hit/miss
+         │  │   └── DLPFilter           │  ← PII maskeleme
+         │  ├── EntityMemory            │  ← kullanıcı persona
+         │  └── SupervisorAgent         │
+         └──────────────────────────────┘
+                        │
+      ┌─────────────────┼─────────────────┬──────────────────┐
+      │                 │                 │                  │
+  Database           LLM APIs       Docker Sandbox    External APIs
+  (SQLite/PG)   (Ollama/Gemini/    (Python REPL)   (Slack/Jira/Teams
+               OpenAI/Anthropic)                    GitHub/Tavily)
+      │
+  ┌───┴──────────────────────────────────┐
+  │  Judge + Active Learning pipeline    │
+  │  ├── LLMJudge (alaka + halüsinasyon) │
+  │  ├── FeedbackStore (SQLite/PG)       │
+  │  └── LoRATrainer (PEFT)              │
+  └──────────────────────────────────────┘
+
+  ┌───────────────────────────────────────┐
+  │  Vision Pipeline (core/vision.py)     │
+  │  └── UI mockup/görsel → kod (tüm prov)│
+  └───────────────────────────────────────┘
 ```
 
 ---
@@ -544,7 +574,7 @@ async with self._sqlite_lock:
 
 ## 9. Modül Bazlı Analiz
 
-### 9.1 `web_server.py` (2.089 satır)
+### 9.1 `web_server.py` (2.168 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -559,6 +589,7 @@ async with self._sqlite_lock:
 | IP spoofing (rate limit) | ✅ ÇÖZÜLDÜ | Y-4: TRUSTED_PROXIES whitelist kontrolü |
 | WebSocket auth | ✅ ÇÖZÜLDÜ | O-5: `Sec-WebSocket-Protocol` başlığından token; JSON fallback ikincil |
 | `/api/swarm/execute` | ✅ YENİ | SwarmOrchestrator API endpoint'i eklendi (v3.0.19) |
+| HITL endpoint'leri | ✅ YENİ (v3.0.21) | POST `/api/hitl/request`, POST `/api/hitl/respond/{id}`, GET `/api/hitl/pending` |
 
 ### 9.2 `core/db.py` (1.635 satır)
 
@@ -571,7 +602,7 @@ async with self._sqlite_lock:
 | Thread safety | ✅ Doğru | asyncio.Lock + to_thread |
 | Lazy lock dead-code | ✅ ÇÖZÜLDÜ | D-6: `assert self._sqlite_lock is not None` ile değiştirildi |
 
-### 9.3 `core/rag.py` (1.122 satır)
+### 9.3 `core/rag.py` (1.142 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -599,7 +630,7 @@ async with self._sqlite_lock:
 | FULL modda fallback | ✅ ÇÖZÜLDÜ | O-3: `DOCKER_REQUIRED=true` bayrağı ile yerel subprocess fallback engellenir |
 | Shell features | ✅ ÇÖZÜLDÜ | O-6: `_BLOCKED_SHELL_PATTERNS` blocklist; `shell=True` öncesi tetiklenir |
 
-### 9.6 `config.py` (759 satır)
+### 9.6 `config.py` (828 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -609,6 +640,23 @@ async with self._sqlite_lock:
 | REDIS_URL ifşası | ✅ ÇÖZÜLDÜ (FAZ-4) | Y-5: redis_url get_system_info'dan kaldırıldı |
 | Senkron Ollama check | ✅ ÇÖZÜLDÜ | O-4: `asyncio.to_thread(Config.validate_critical_settings)` ile sarıldı |
 | DOCKER_REQUIRED bayrağı | ✅ YENİ | O-3 düzeltmesinin parçası; `get_bool_env("DOCKER_REQUIRED", False)` |
+| Yeni feature config | ✅ YENİ (v3.0.21-24) | DLP_ENABLED, HITL_ENABLED, JUDGE_ENABLED, ENABLE_COST_ROUTING, ENABLE_ENTITY_MEMORY, ENABLE_ACTIVE_LEARNING, ENABLE_VISION + Slack/Jira/Teams parametreleri eklendi |
+
+### 9.7 Yeni Modüller (v3.0.21-v3.0.24)
+
+| Modül | Satır | Konu | Güvenlik/Kalite Notu |
+|-------|-------|------|----------------------|
+| `core/dlp.py` | 320 | DLP & PII maskeleme | ✅ Regex pattern compilation: compile() ile ön-derleme; `re.IGNORECASE` flag doğru kullanım |
+| `core/hitl.py` | 274 | Human-in-the-Loop onay geçidi | ✅ Async polling; pending dict UUID-keyed; timeout temizliği |
+| `core/judge.py` | 257 | LLM-as-a-Judge kalite ölçümü | ✅ Arka plan görev (background task); exception graceful-degraded |
+| `core/router.py` | 211 | Cost-Aware Model Routing | ✅ Daily budget: thread-safe counter; günlük sıfırlama mantığı |
+| `core/entity_memory.py` | 283 | Entity/Persona Memory (KV) | ✅ TTL + LRU eviction; asyncio.Lock ile thread-safe SQLite/PG |
+| `core/cache_metrics.py` | 50 | Semantic cache sayaçları | ✅ Thread-safe `_CacheMetrics`; Prometheus gauge entegrasyonu |
+| `core/active_learning.py` | 419 | Active Learning + LoRA döngüsü | ✅ PEFT graceful degrade (optional dep); FeedbackStore async |
+| `core/vision.py` | 294 | Multimodal Vision Pipeline | ✅ Provider format izolasyonu; base64 sanitizasyon |
+| `managers/slack_manager.py` | 205 | Slack Bot SDK + Webhook | ✅ Webhook fallback; Block Kit yardımcı metodlar |
+| `managers/jira_manager.py` | 245 | Jira Cloud REST API v3 | ✅ Basic Auth / Bearer; timeout kontrolü |
+| `managers/teams_manager.py` | 234 | Teams MessageCard + Adaptive Card | ✅ HITL onay kartı; Adaptive Card v1.4 schema |
 
 ---
 
