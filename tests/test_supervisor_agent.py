@@ -127,6 +127,26 @@ def test_contract_models_basic_shape():
     assert res.status == "done"
 
 
+def test_supervisor_init_falls_back_when_base_and_role_agents_are_object_stubs(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+
+    monkeypatch.setattr(supervisor_mod.BaseAgent, "__init__", object.__init__)
+    monkeypatch.setattr(supervisor_mod, "ResearcherAgent", object)
+    monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
+    monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
+
+    cfg = object()
+    s = SupervisorAgent(cfg=cfg)
+
+    assert s.cfg is cfg
+    assert s.role_name == "supervisor"
+    assert s.llm is None
+    assert s.tools == {}
+    assert s.researcher is None
+    assert s.coder is None
+    assert s.reviewer is None
+
+
 def test_supervisor_routes_research_to_researcher(monkeypatch):
     s = SupervisorAgent()
 
