@@ -924,15 +924,23 @@ async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_se
 
 
 def _get_client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        first_ip = xff.split(",")[0].strip()
-        if first_ip:
-            return first_ip
-    xri = request.headers.get("X-Real-IP", "")
-    if xri:
-        return xri.strip()
-    return request.client.host if request.client else "unknown"
+    """İstemci IP'sini döndürür.
+
+    Proxy başlıkları (X-Forwarded-For, X-Real-IP) yalnızca direkt bağlantının
+    Config.TRUSTED_PROXIES listesindeki bir adresten gelmesi durumunda okunur.
+    Bu sayede saldırganın bu başlıkları taklit ederek rate-limit'i atlatması engellenir.
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    if direct_ip in Config.TRUSTED_PROXIES:
+        xff = request.headers.get("X-Forwarded-For", "")
+        if xff:
+            first_ip = xff.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+        xri = request.headers.get("X-Real-IP", "")
+        if xri:
+            return xri.strip()
+    return direct_ip
 
 
 @app.middleware("http")
@@ -1706,6 +1714,15 @@ async def upload_rag_file(file: UploadFile = File(...)):
 
     temp_dir = None
     try:
+        # Dosya boyutunu diske yazmadan önce kontrol et (DoS / disk doldurma koruması)
+        max_bytes = Config.MAX_RAG_UPLOAD_BYTES
+        data = await file.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB",
+            )
+
         # Dosyayı orijinal adıyla güvenli bir geçici klasöre kaydet
         temp_dir = Path(tempfile.mkdtemp())
         original_name = file.filename or "uploaded_file.txt"
@@ -1715,7 +1732,7 @@ async def upload_rag_file(file: UploadFile = File(...)):
         tmp_path = temp_dir / safe_filename
 
         with open(tmp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(data)
 
         # RAG deposuna ekle (İzolasyon korumalı)
         ok, msg = await asyncio.to_thread(
@@ -1807,8 +1824,8 @@ async def clear():
     ),
     responses={200: {"description": "Seviye başarıyla değiştirildi"}},
 )
-async def set_level_endpoint(request: Request):
-    """Güvenlik seviyesini çalışma zamanında değiştirir."""
+async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user)):
+    """Güvenlik seviyesini çalışma zamanında değiştirir (yalnızca admin)."""
     body = await request.json()
     new_level = body.get("level", "").strip()
     if not new_level:

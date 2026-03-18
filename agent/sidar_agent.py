@@ -484,8 +484,7 @@ class SidarAgent:
         )
         
         try:
-            await asyncio.to_thread(
-                self.docs.add_document,
+            await self.docs.add_document(
                 title=f"Sohbet Geçmişi Arşivi ({time.strftime('%Y-%m-%d %H:%M')})",
                 content=full_turns_text,
                 source="memory_archive",
