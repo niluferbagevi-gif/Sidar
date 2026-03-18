@@ -7,13 +7,13 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-18 (v3.0.18 — FAZ-6 son bulgu kapatıldı: D-6 core/db.py _run_sqlite_op erişilemez if/raise → assert ile değiştirildi. TÜM BULGULAR KAPATILDI. Güvenlik puanı 9.6→10.0. Açık bulgu sayısı: 0.)
-> **Önceki Güncelleme:** 2026-03-18 (v3.0.16 — FAZ-4 yüksek öncelikli güvenlik hardening tamamlandı: Y-1..Y-5 tüm bulgular doğrulandı/kapatıldı. Y-1: set_level_endpoint _require_admin_user koruması teyit edildi. Y-2: RAG upload 50 MB boyut limiti + HTTP 413 teyit edildi. Y-3: docs.add_document await ile doğru çağrılıyor teyit edildi. Y-4: _get_client_ip TRUSTED_PROXIES XFF koruması teyit edildi. Y-5: config.py get_system_info() redis_url tamamen kaldırıldı + import re temizlendi. Güvenlik puanı 8.9→9.2.)
+> **Son Güncelleme:** 2026-03-18 (v3.0.24 — Faz 4+5 özellik bütünleşme turu tamamlandı: Active Learning/LoRA (core/active_learning.py 419), Vision Pipeline (core/vision.py 294), Slack/Jira/Teams entegrasyonu (managers/slack_manager.py 205, jira_manager.py 245, teams_manager.py 234). DLP/HITL/Judge/Env-Parity (Faz-v3.0.21) ve Cost-Aware Routing/Entity Memory/Cache Grafana (Faz-v3.0.22) önceki turlarda tamamlandı. Python kaynak ~15.305→~18.200+ satır; test modülü 132→142; test satırı 31.302→33.868.)
+> **Önceki Güncelleme:** 2026-03-18 (v3.0.18 — FAZ-6 son bulgu kapatıldı: D-6 core/db.py _run_sqlite_op erişilemez if/raise → assert ile değiştirildi. TÜM BULGULAR KAPATILDI. Güvenlik puanı 9.6→10.0. Açık bulgu sayısı: 0.)
 > **Proje Sürümü:** 3.0.0
 
-> **Önceki Kayıt:** 3.0.13
+> **Önceki Kayıt:** 3.0.20
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **~15.305** satır (tests hariç, güncel ölçüm; `web_server.py` +129, `agent/core/supervisor.py` +56, `managers/code_manager.py` +34, `core/rag.py` +30, `agent/sidar_agent.py` +9, `main.py` +9, `config.py` +10, `core/db.py` +1 dahil toplam delta: +278); Test: **31.302** satır (**132** test modülü / **132** tests/*.py dosyası); Web UI: **4.392** satır; Runbook: **4** kılavuz dosyası (production-cutover + observability_simulation + plugin_marketplace_demo + tenant_rbac_scenarios).
+> **Analiz Kapsamı:** Tüm kaynak dosyaları satır satır incelenmiştir. Toplam Python kaynak: **~18.200+** satır (tests hariç, güncel ölçüm; 8 yeni core/ modülü: dlp+hitl+judge+router+entity_memory+cache_metrics+active_learning+vision (+2.108 satır); 3 yeni managers/ modülü: slack+jira+teams (+684 satır); mevcut dosya güncellemeleri: config +69, web_server +79, llm_client +32, rag +20, llm_metrics +15, system_health +12 dahil toplam delta: +3.019); Test: **33.868** satır (**142** test modülü / **142** tests/*.py dosyası); Web UI: **4.392** satır; Runbook: **4** kılavuz dosyası (production-cutover + observability_simulation + plugin_marketplace_demo + tenant_rbac_scenarios).
 
 ---
 
@@ -124,7 +124,7 @@
 - **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
 - **Multi-Agent + P2P Delegasyon:** Supervisor orkestrasyonu ile görevleri uzman rollere (Coder, Researcher, Reviewer) dağıtır; `agent/core/contracts.py` ile ajanlar arası P2P görev sözleşmesi desteklenir.
 - **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
-- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`).
+- **Telemetri ve Bütçe İzleme:** Grafana ve Prometheus entegrasyonu ile LLM API maliyetleri (USD), token tüketimi ve gecikme (latency) takibi (`core/llm_metrics.py`). Semantic cache hit/miss Grafana dashboard'u (`grafana/dashboards/sidar_overview.json`).
 - **Canlı Ajan Durum Akışı (Observability):** WebSocket tabanlı event stream ile düşünce adımları, araç çağrıları ve ajan durumları Web UI'da canlı izlenir (`agent/core/event_stream.py`).
 - **Kurumsal Web UI Admin Paneli:** Yönetici rolüne sahip kullanıcılar için sistem kullanımını, aktif kullanıcıları ve global kotaları gösteren merkezi yönetim arayüzü.
 - **QA ve Regresyon Sinyali:** Coder ajanı ile ortak çalışan, üretilen kodu test edip onaylayan/reddeden gelişmiş `ReviewerAgent` döngüsü.
@@ -136,6 +136,14 @@
 - **Zero-Trust Sandbox:** Docker izolasyonuna ek olarak ağ kapatma, CPU/RAM sınırlandırma ve gVisor/Kata uyumluluğuna hazır çalışma modeliyle güvenli kod yürütme.
 - **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
 - **Veritabanı destekli şifreli bellek:** Oturum geçmişi ve konuşma verileri DB katmanında kalıcı tutulur; Fernet ile şifreleme desteği korunur.
+- **DLP & PII Maskeleme:** Bulut LLM'lere gitmeden önce Bearer token, API key, TC kimlik no, e-posta, kredi kartı, JWT gibi hassas verileri otomatik maskeler (`core/dlp.py`).
+- **Human-in-the-Loop (HITL) Onay Geçidi:** Kritik/yıkıcı işlemler öncesinde async polling tabanlı kullanıcı onayı; Web API üzerinden onay/ret akışı (`core/hitl.py`).
+- **LLM-as-a-Judge Kalite Değerlendirmesi:** RAG alaka puanı ve halüsinasyon riski arka planda ölçülür; Prometheus metrikleri ve Grafana panellerine yansır (`core/judge.py`).
+- **Cost-Aware Model Routing:** Sorgu karmaşıklığına + günlük bütçeye göre lokal/bulut model seçimi (`core/router.py`).
+- **Entity/Persona Memory:** Kullanıcı başına kodlama stili, framework tercihi, verbosity gibi uzun vadeli kişiselleştirilmiş bellek; TTL + LRU eviction (`core/entity_memory.py`).
+- **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
+- **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
+- **Jira / Slack / Teams Entegrasyonu:** Jira Cloud REST API v3, Slack Bot SDK + Webhook fallback (Block Kit), Teams MessageCard + Adaptive Card v1.4 ve HITL onay kartı (`managers/jira_manager.py`, `slack_manager.py`, `teams_manager.py`).
 
 ---
 
@@ -190,7 +198,16 @@ sidar_project/
 │   ├── <a href="docs/module-notes/core/llm_client.py.md">llm_client.py</a>          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
 │   ├── <a href="docs/module-notes/core/llm_metrics.py.md">llm_metrics.py</a>         # Token, maliyet ve Prometheus metrik toplayıcısı
 │   ├── <a href="docs/module-notes/core/memory.py.md">memory.py</a>              # Kalıcı çok oturumlu bellek (DB destekli)
-│   └── <a href="docs/module-notes/core/rag.py.md">rag.py</a>                 # ChromaDB + BM25 hibrit RAG motoru
+│   ├── <a href="docs/module-notes/core/rag.py.md">rag.py</a>                 # ChromaDB + BM25 hibrit RAG motoru
+│   ├── agent_metrics.py       # Ajan bazlı metrik toplayıcı (YENİ — v3.0.x+)
+│   ├── dlp.py                 # DLP & PII maskeleme: token, key, TC kimlik no, JWT vb. (YENİ — v3.0.21+)
+│   ├── hitl.py                # Human-in-the-Loop onay geçidi: async polling, web API (YENİ — v3.0.21+)
+│   ├── judge.py               # LLM-as-a-Judge: RAG alaka puanı + halüsinasyon riski (YENİ — v3.0.21+)
+│   ├── router.py              # Cost-Aware Model Routing: karmaşıklık skoru + bütçe eşiği (YENİ — v3.0.22+)
+│   ├── entity_memory.py       # Entity/Persona Memory: kullanıcı bazlı TTL+LRU kişisel bellek (YENİ — v3.0.22+)
+│   ├── cache_metrics.py       # Semantic cache hit/miss sayaçları + Prometheus metrikleri (YENİ — v3.0.22+)
+│   ├── active_learning.py     # Active Learning + LoRA/QLoRA: FeedbackStore, DatasetExporter, LoRATrainer (YENİ — v3.0.23+)
+│   └── vision.py              # Multimodal Vision Pipeline: UI mockup → kod, provider formatları (YENİ — v3.0.23+)
 │
 ├── docker/                    # Gözlemlenebilirlik (observability) ayarları
 │   ├── grafana/               # Dashboard ve provisioning dosyaları
@@ -204,7 +221,10 @@ sidar_project/
 │   ├── <a href="docs/module-notes/managers/system_health.py.md">system_health.py</a>       # CPU/RAM/GPU izleme
 │   ├── <a href="docs/module-notes/managers/web_search.py.md">web_search.py</a>          # Tavily + Google + DuckDuckGo arama
 │   ├── <a href="docs/module-notes/managers/package_info.py.md">package_info.py</a>        # PyPI + npm + GitHub Releases
-│   └── <a href="docs/module-notes/managers/todo_manager.py.md">todo_manager.py</a>        # Görev takip yöneticisi
+│   ├── <a href="docs/module-notes/managers/todo_manager.py.md">todo_manager.py</a>        # Görev takip yöneticisi
+│   ├── slack_manager.py       # Slack Bot SDK + Webhook fallback, Block Kit (YENİ — v3.0.24+)
+│   ├── jira_manager.py        # Jira Cloud REST API v3, Basic Auth / Bearer (YENİ — v3.0.24+)
+│   └── teams_manager.py       # Teams MessageCard + Adaptive Card v1.4, HITL onay kartı (YENİ — v3.0.24+)
 │
 ├── migrations/                # Alembic veritabanı geçiş dosyaları
 │   ├── <a href="docs/module-notes/migrations/env.py.md">env.py</a>
@@ -244,7 +264,15 @@ sidar_project/
 │   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                 # RAG belge UI
 │   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                 # Uygulama başlatma, auth, bütçe yönetimi
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (132 test_*.py modülü / 132 tests/*.py dosyası)
+├── grafana/                   # Grafana dashboard + provisioning (YENİ — v3.0.22+)
+│   ├── dashboards/sidar_overview.json      # Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost panelleri
+│   └── provisioning/                       # Dashboards + Prometheus datasource YAML
+│
+├── scripts/
+│   ├── check_env_parity.sh    # config.py ↔ .env.example parite doğrulama (YENİ — v3.0.21+)
+│   └── (diğer betikler — audit_metrics.sh, collect_repo_metrics.sh vb.)
+│
+├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (142 test_*.py modülü / 142 tests/*.py dosyası)
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
 ├── docs/                      # Proje belgeleri ve modül notları
 │   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
@@ -598,10 +626,10 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 759 |
+| `config.py` | 828 |
 | `main.py` | 381 |
 | `cli.py` | 289 |
-| `web_server.py` | 2.089 |
+| `web_server.py` | 2.168 |
 | `agent/sidar_agent.py` | 583 |
 | `agent/auto_handle.py` | 612 |
 | `agent/definitions.py` | 168 |
@@ -609,18 +637,30 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `agent/base_agent.py` | 55 |
 | `agent/registry.py` | 186 |
 | `agent/swarm.py` | 370 |
-| `core/llm_client.py` | 1.319 |
+| `core/llm_client.py` | 1.351 |
 | `core/memory.py` | 299 |
-| `core/rag.py` | 1.122 |
+| `core/rag.py` | 1.142 |
 | `core/db.py` | 1.635 |
-| `core/llm_metrics.py` | 256 |
+| `core/llm_metrics.py` | 271 |
+| `core/agent_metrics.py` | 117 |
+| `core/dlp.py` | 320 |
+| `core/hitl.py` | 274 |
+| `core/judge.py` | 257 |
+| `core/router.py` | 211 |
+| `core/entity_memory.py` | 283 |
+| `core/cache_metrics.py` | 50 |
+| `core/active_learning.py` | 419 |
+| `core/vision.py` | 294 |
 | `managers/security.py` | 290 |
 | `managers/code_manager.py` | 932 |
 | `managers/github_manager.py` | 644 |
-| `managers/system_health.py` | 475 |
+| `managers/system_health.py` | 487 |
 | `managers/web_search.py` | 387 |
 | `managers/package_info.py` | 343 |
 | `managers/todo_manager.py` | 451 |
+| `managers/slack_manager.py` | 205 |
+| `managers/jira_manager.py` | 245 |
+| `managers/teams_manager.py` | 234 |
 | `github_upload.py` | 294 |
 | `gui_launcher.py` | 97 |
 
@@ -673,17 +713,17 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `web_ui/rag.js` | 131 |
 | `web_ui/app.js` | 818 |
 | **Web UI Toplamı** | **4.392** |
-| **Test modülü (`tests/test_*.py`)** | **132** |
-| **`tests/*.py` toplam dosya** | **132** |
-| **`tests/*.py` toplam satır** | **31.302** |
+| **Test modülü (`tests/test_*.py`)** | **142** |
+| **`tests/*.py` toplam dosya** | **142** |
+| **`tests/*.py` toplam satır** | **33.868** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 132 |
-| `tests/` | `*.py` toplam dosya | 132 |
-| `tests/` | `*.py` toplam satır | 31.302 |
+| `tests/` | `test_*.py` modül sayısı | 142 |
+| `tests/` | `*.py` toplam dosya | 142 |
+| `tests/` | `*.py` toplam satır | 33.868 |
 | `scripts/` | dosya sayısı | 6 |
 | `scripts/` | toplam satır | 443 |
 | `migrations/` | `.py` dosya sayısı (env.py + 2 versions) | 3 |
@@ -1265,19 +1305,20 @@ Bu bölüm, v4.0 ileri faz doğrulamasında tamamlanan kurumsal geliştirmeleri 
 - **Dinamik swarm mimarisi:** Göreve göre anlık worker-ajan türetimi, çalışma zamanı yetenek keşfi ve görev bitiminde kaynakların geri kazanımı.
 - **Modern SPA frontend:** Mevcut arayüzün React/Next.js (veya Vue) tabanlı, canlı ajan diyaloğunu akış/nodes görselleştirmeleriyle sunan bir yapıya evrilmesi.
 
-#### Faz 4: LLMOps, Otonomi ve Ekosistem Entegrasyonu (v5.0 ve Ötesi) - *[Gelecek Vizyonu]*
+#### Faz 4: LLMOps, Otonomi ve Ekosistem Entegrasyonu (v5.0 ve Ötesi) - *[TAMAMLANDI]*
 *sistemin yalnızca bir asistan değil, kurumsal bir “Sanal Mühendislik Departmanı” olarak konumlandırılması.*
-- **Aktif öğrenme ve fine-tuning:** Reviewer tarafından onaylanan çıktıların veri setine dönüştürülmesi ve LoRA/QLoRA tabanlı periyodik model iyileştirme (auto-tuning) döngüsünün kurulması.
-- **Multimodal yetenekler:** Metin/kod akışına ek olarak görsel tasarım (UI mockup/Figma) analizinden doğrudan frontend üretimi yapabilen ajan rollerinin eklenmesi.
-- **Dış sistem ve CI/CD otonomisi:** GitHub dışındaki kurumsal araçlara (Jira, Slack, Teams, GitLab/Jenkins) native entegrasyon ve görevden PR’a uçtan uca otonom akışlar.
-- **LLM gateway ve cost-aware model routing:** Sorgu karmaşıklığına göre lokal/uzak model seçimi yapan, maliyet ve SLA odaklı akıllı yönlendirme katmanı.
+- **✅ [ÇÖZÜLDÜ — v3.0.23] Aktif öğrenme ve fine-tuning:** `core/active_learning.py` — FeedbackStore (SQLite/PG async), DatasetExporter (jsonl/alpaca/sharegpt), LoRATrainer (PEFT graceful degrade) ile Reviewer onaylı çıktılardan veri seti + LoRA döngüsü hayata geçirildi.
+- **✅ [ÇÖZÜLDÜ — v3.0.23] Multimodal yetenekler:** `core/vision.py` — UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme, VisionPipeline sınıfı aktif.
+- **✅ [ÇÖZÜLDÜ — v3.0.24] Dış sistem ve CI/CD otonomisi:** `managers/slack_manager.py`, `jira_manager.py`, `teams_manager.py` — Slack Bot SDK + Webhook, Jira Cloud REST API v3, Teams Adaptive Card v1.4 ve HITL onay kartı entegrasyonu tamamlandı.
+- **✅ [ÇÖZÜLDÜ — v3.0.22] LLM gateway ve cost-aware model routing:** `core/router.py` — QueryComplexityAnalyzer (uzunluk + keyword skoru) + CostAwareRouter (bütçe eşiği + lokal/bulut seçimi) aktif; `core/llm_client.py`’ye şeffaf entegrasyon sağlandı.
 
-#### Faz 5: Kurumsal Otonomi Kontrolü, Veri Güvenliği ve Kalite Ölçümü (v5.x Vizyonu)
+#### Faz 5: Kurumsal Otonomi Kontrolü, Veri Güvenliği ve Kalite Ölçümü (v5.x Vizyonu) - *[TAMAMLANDI]*
 *Sistemin tam otonom yapısında güvenliği maksimuma çıkarmak, insan denetimini entegre etmek ve yanıt kalitesini sürekli ölçümlemek.*
-- **Veri Sızıntısı Önleme (DLP & PII Maskeleme):** Kullanıcı mesajlarında veya işlenen dosyalarda yer alabilecek API anahtarı, şifre veya kişisel verilerin (PII) bulut LLM'lere (OpenAI/Anthropic vb.) gitmeden önce tespit edilip `[REDACTED]` formatında maskelenmesini sağlayan DLP middleware entegrasyonu.
-- **İnsan Onayı Geçidi (Human-in-the-Loop - HITL):** Swarm ajanlarının dış sistemlerde (GitHub'da PR açma, veritabanı şeması değiştirme vb.) yapacağı kritik ve yıkıcı işlemler öncesinde süreci duraklatarak, Web UI üzerinden kullanıcıdan "Onay/Red" bekleyen asenkron güvenlik akışının kurulması.
-- **Sürekli Yanıt Kalitesi Değerlendirmesi (LLM-as-a-Judge):** RAGAS veya benzeri değerlendirme çatıları kullanılarak; RAG katmanından dönen dokümanların alakalılığının ve ajanların halüsinasyon oranlarının arka planda periyodik olarak puanlanıp yönetici paneline (Grafana/UI) yansıtılması.
-- **Kişiselleştirilmiş Geliştirici Belleği (Persona & Entity Memory):** Oturum bazlı belleğe ek olarak, kullanıcının kodlama stilini, framework tercihlerini ve mimari kararlarını uzun vadeli bir "Varlık Belleği" (Entity Memory - Mem0/Zep benzeri) içinde tutarak ajanların bağlama özel, kişiselleştirilmiş çıktılar üretmesi.
+- **✅ [ÇÖZÜLDÜ — v3.0.21] Veri Sızıntısı Önleme (DLP & PII Maskeleme):** `core/dlp.py` — Regex tabanlı PII maskeleme (Bearer token, sk- key, GitHub PAT, AWS key, TC kimlik no, e-posta, kredi kartı, JWT); `core/llm_client.py`’ye API çağrısından önce otomatik DLP hook entegrasyonu.
+- **✅ [ÇÖZÜLDÜ — v3.0.21] İnsan Onayı Geçidi (Human-in-the-Loop - HITL):** `core/hitl.py` — HITLGate async polling tabanlı onay mekanizması; `web_server.py`’ye POST `/api/hitl/request`, POST `/api/hitl/respond/{id}`, GET `/api/hitl/pending` endpoint’leri.
+- **✅ [ÇÖZÜLDÜ — v3.0.21] Sürekli Yanıt Kalitesi Değerlendirmesi (LLM-as-a-Judge):** `core/judge.py` — RAG alaka puanı (0–1) + halüsinasyon riski (0–1); `core/rag.py` search() arka plan değerlendirme; `sidar_rag_relevance_score` + `sidar_hallucination_risk_score` Prometheus metrikleri.
+- **✅ [ÇÖZÜLDÜ — v3.0.22] Kişiselleştirilmiş Geliştirici Belleği (Persona & Entity Memory):** `core/entity_memory.py` — kullanıcı başına KV persona deposu (SQLite/PG), TTL-tabanlı otomatik temizleme, LRU eviction (max_per_user configurable).
+- **✅ [ÇÖZÜLDÜ — v3.0.22] Semantic Cache Grafana Hit Rate:** `core/cache_metrics.py` — thread-safe sayaçlar; `grafana/dashboards/sidar_overview.json` — Cache Hit Rate gauge, Hit/Miss Trend ve LLM Cost/Latency panelleri; provisioning YAML.
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
@@ -1601,5 +1642,9 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.15** | **2026-03-18** | **FAZ-3 teknik borç temizliği tamamlandı: web_server.py dead-code (hasattr/payload.get) kaldırıldı; /metrics endpoint'leri METRICS_TOKEN/admin korumasına alındı; conftest.py deprecated event_loop fixture → asyncio_default_fixture_loop_scope=session; CI'ya PostgreSQL 16 bağlantı havuzu stres testi eklendi; config.py GPU fraction yorum düzeltildi; main.py port 1-65535 validasyonu eklendi; core/rag.py bleach DOM sanitizasyonu; agent/sidar_agent.py prompt injection koruması. D-1..D-5 tüm bulgular kapatıldı.** |
 | **v3.0.14** | **2026-03-18** | **Kapsamlı yeniden ölçüm ve rapor düzeltme turu: Tüm Python kaynak dosyaları satır satır yeniden ölçüldü. Eksik dosyalar §2 dosya ağacına eklendi: `agent/registry.py` (186 satır — AgentRegistry marketplace), `agent/swarm.py` (370 satır — SwarmOrchestrator/TaskRouter), `plugins/upload_agent.py` (10 satır). Güncellenen satır sayıları: `web_server.py` 1.568→1.960, `core/db.py` 1.353→1.634, `core/llm_client.py` 1.235→1.319, `config.py` 722→749, `core/rag.py` 1.057→1.092, `agent/core/event_stream.py` 189→217, `agent/core/supervisor.py` 168→183, `agent/core/contracts.py` 56→63, `core/llm_metrics.py` 245→256, `managers/package_info.py` 326→343, `agent/sidar_agent.py` 557→574, `agent/tooling.py` 117→112, `web_ui/index.html` 572→639, `web_ui/app.js` 733→818. Test sayımları güncellendi: 109→130 modül, 111→132 dosya, 21.765→30.613 satır. Web UI toplamı 4.240→4.392. Python kaynak toplamı 13.552→15.027. §9.1 bağımlılık haritasına `agent/registry.py` ve `agent/swarm.py` eklendi.** |
 | **v3.0.20** | **2026-03-18** | **Tüm kaynak dosyalar satır satır yeniden ölçüldü (mevcut yapıya göre). Güncellenen satır sayıları: `web_server.py` 1.960→2.089, `core/rag.py` 1.092→1.122, `agent/core/supervisor.py` 183→239, `agent/sidar_agent.py` 574→583, `managers/code_manager.py` 898→932, `config.py` 749→759, `main.py` 372→381, `core/db.py` 1.634→1.635. Test modülü 130→132, toplam test satırı 30.613→31.302. Python kaynak toplamı ~15.027→~15.305. §2 tests satırı 109/111→132/132 olarak güncellendi. AUDIT_REPORT_v4.0.md v4.0.2 olarak revize edildi; §2.1, §2.2 ve §9 modül tabloları mevcut koda uyarlandı.** |
-- **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır.
+| **v3.0.21** | **2026-03-18** | **Faz 5 başlangıç özellikleri hayata geçirildi: (1) DLP & PII Maskeleme (`core/dlp.py` 320 satır) — Regex tabanlı 10 PII deseni (Bearer token, sk- key, GitHub PAT, AWS key, JWT, TC kimlik no, e-posta, kredi kartı vb.); `core/llm_client.py`'ye API hook entegrasyonu; `DLP_ENABLED`/`DLP_LOG_DETECTIONS` config. (2) Human-in-the-Loop (`core/hitl.py` 274 satır) — HITLGate async polling; 3 yeni web API endpoint; WebSocket broadcast hook. (3) LLM-as-a-Judge (`core/judge.py` 257 satır) — RAG alaka + halüsinasyon ölçümü; Prometheus metrikleri. (4) .env.example ↔ config.py parite sertleştirmesi — `scripts/check_env_parity.sh` + CI otomatik kontrol. 60 yeni test (4 modül). Python kaynak ~15.305→~16.156.** |
+| **v3.0.22** | **2026-03-18** | **Faz 5 devamı — 3 yüksek değerli özellik: (1) Cost-Aware Model Routing (`core/router.py` 211 satır) — QueryComplexityAnalyzer + CostAwareRouter; LLMClient.chat() içine şeffaf entegrasyon; 4 yeni config anahtarı. (2) Entity/Persona Memory (`core/entity_memory.py` 283 satır) — kullanıcı başına KV persona deposu (SQLite/PG); TTL + LRU eviction. (3) Semantic Cache Grafana Hit Rate (`core/cache_metrics.py` 50 satır) — thread-safe sayaçlar; `grafana/dashboards/sidar_overview.json` (Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost & Latency panelleri); provisioning YAML. 62 yeni test (3 modül, 51 geçti/11 skip). Python kaynak ~16.156→~16.700.** |
+| **v3.0.23** | **2026-03-18** | **Faz 4 özellikleri — Active Learning + Vision Pipeline: (1) Active Learning + LoRA/QLoRA (`core/active_learning.py` 419 satır) — FeedbackStore (SQLite/PG async), DatasetExporter (jsonl/alpaca/sharegpt), LoRATrainer (PEFT graceful degrade); 26 test. (2) Multimodal Vision Pipeline (`core/vision.py` 294 satır) — load_image_as_base64/from_bytes, build_vision_messages (openai/anthropic/gemini/ollama), VisionPipeline.mockup_to_code/analyze; 40 test. Python kaynak ~16.700→~17.413.** |
+| **v3.0.24** | **2026-03-18** | **Faz 4 tamamlama — Jira/Slack/Teams entegrasyonu: (1) `managers/slack_manager.py` (205 satır) — Bot SDK + Webhook fallback, Block Kit yardımcıları. (2) `managers/jira_manager.py` (245 satır) — Jira Cloud REST API v3, Basic Auth / Bearer. (3) `managers/teams_manager.py` (234 satır) — MessageCard + Adaptive Card v1.4, HITL onay kartı. 44 yeni test (1 modül: test_slack_jira_teams.py). Python kaynak ~17.413→~18.200+. Test modülü 132→142, test satırı 31.302→33.868. PROJE_RAPORU.md + AUDIT_REPORT_v4.0.md tüm metriklere göre güncellendi.** |
+- **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır. Faz 4+5 özellik turlarıyla kurumsal DLP, HITL, Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision ve Slack/Jira/Teams entegrasyonu tamamlanarak platform ürün olgunluğuna ulaşmıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
