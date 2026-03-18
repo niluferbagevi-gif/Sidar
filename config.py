@@ -454,6 +454,20 @@ class Config:
     # ─── Multi-Agent geçiş ayarları ─────────────────────────
     REVIEWER_TEST_COMMAND: str = os.getenv("REVIEWER_TEST_COMMAND", "python -m pytest")
 
+    # ─── DLP — Veri Kaybı Önleme ─────────────────────────────
+    DLP_ENABLED: bool = get_bool_env("DLP_ENABLED", True)
+    DLP_LOG_DETECTIONS: bool = get_bool_env("DLP_LOG_DETECTIONS", False)
+
+    # ─── HITL — Human-in-the-Loop Onay Geçidi ────────────────
+    HITL_ENABLED: bool = get_bool_env("HITL_ENABLED", False)
+    HITL_TIMEOUT_SECONDS: int = get_int_env("HITL_TIMEOUT_SECONDS", 120)
+
+    # ─── LLM-as-a-Judge Kalite Değerlendirmesi ────────────────
+    JUDGE_ENABLED: bool = get_bool_env("JUDGE_ENABLED", False)
+    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "")
+    JUDGE_PROVIDER: str = os.getenv("JUDGE_PROVIDER", "ollama")
+    JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or "0.2")
+
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
     # ─────────────────────────────────────────────────────────

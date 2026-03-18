@@ -72,6 +72,7 @@ from agent.core.event_stream import get_agent_event_bus
 from managers.system_health import render_llm_metrics_prometheus
 from core.llm_metrics import get_llm_metrics_collector
 from core.llm_client import LLMAPIError
+from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 
 try:
     from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
@@ -83,6 +84,25 @@ except Exception:  # test stub/fallback
         return None
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────
+#  HITL WebSocket Yayın Kümesi
+# ─────────────────────────────────────────────
+_hitl_ws_clients: set = set()
+
+
+async def _hitl_broadcast(payload: dict) -> None:
+    """HITL olaylarını bağlı tüm admin WebSocket bağlantılarına gönder."""
+    dead = set()
+    for ws in list(_hitl_ws_clients):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            dead.add(ws)
+    _hitl_ws_clients.difference_update(dead)
+
+
+set_hitl_broadcast_hook(_hitl_broadcast)
 
 # ─────────────────────────────────────────────
 #  UYGULAMA BAŞLATMA
@@ -887,6 +907,65 @@ async def execute_swarm(payload: _SwarmExecuteRequest, user=Depends(_get_request
         "results": [_serialize_swarm_result(item) for item in results],
     })
 
+
+# ─────────────────────────────────────────────
+#  HITL — Human-in-the-Loop Onay Geçidi
+# ─────────────────────────────────────────────
+
+class _HITLRespondRequest(BaseModel):
+    approved: bool
+    decided_by: str = "operator"
+    rejection_reason: str = ""
+
+
+@app.get("/api/hitl/pending")
+async def hitl_pending(user=Depends(_get_request_user)):
+    """Bekleyen HITL onay isteklerini listeler."""
+    store = get_hitl_store()
+    pending = await store.pending()
+    return JSONResponse({"pending": [r.to_dict() for r in pending], "count": len(pending)})
+
+
+@app.post("/api/hitl/request")
+async def hitl_create_request(payload: dict, user=Depends(_get_request_user)):
+    """Yeni bir HITL onay isteği oluşturur (iç API / test amaçlı)."""
+    gate = get_hitl_gate()
+    action = str(payload.get("action", "manual")).strip()
+    description = str(payload.get("description", "Manuel onay isteği")).strip()
+    hitl_payload = dict(payload.get("payload") or {})
+    requested_by = str(payload.get("requested_by", getattr(user, "username", "api"))).strip()
+
+    from core.hitl import HITLRequest, get_hitl_store as _store, _notify
+    import time, uuid
+    now = time.time()
+    req = HITLRequest(
+        request_id=str(uuid.uuid4()),
+        action=action,
+        description=description,
+        payload=hitl_payload,
+        requested_by=requested_by,
+        created_at=now,
+        expires_at=now + gate.timeout,
+    )
+    await _store().add(req)
+    await _notify(req)
+    return JSONResponse({"request_id": req.request_id, "expires_at": req.expires_at})
+
+
+@app.post("/api/hitl/respond/{request_id}")
+async def hitl_respond(request_id: str, payload: _HITLRespondRequest, user=Depends(_get_request_user)):
+    """Bir HITL isteğini onayla veya reddet."""
+    gate = get_hitl_gate()
+    decided_by = payload.decided_by or getattr(user, "username", "operator")
+    req = await gate.respond(
+        request_id,
+        approved=payload.approved,
+        decided_by=decided_by,
+        rejection_reason=payload.rejection_reason,
+    )
+    if req is None:
+        raise HTTPException(status_code=404, detail="HITL isteği bulunamadı")
+    return JSONResponse({"request_id": req.request_id, "decision": req.decision.value})
 
 
 @app.middleware("http")

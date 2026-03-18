@@ -795,8 +795,28 @@ class DocumentStore:
                 span.set_attribute("sidar.rag.query_len", len(query))
                 result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
                 span.set_attribute("sidar.rag.success", result[0])
+                self._schedule_judge(query, result[1])
                 return result
-        return await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+        result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
+        self._schedule_judge(query, result[1])
+        return result
+
+    @staticmethod
+    def _schedule_judge(query: str, answer_text: str) -> None:
+        """LLM-as-a-Judge değerlendirmesini arka planda zamanla."""
+        try:
+            from core.judge import get_llm_judge
+            judge = get_llm_judge()
+            if not judge.enabled:
+                return
+            # answer_text'ten kısa bir özet al; tam metin yerine ilk 600 karakter
+            judge.schedule_background_evaluation(
+                query=query,
+                documents=[answer_text[:1200]] if answer_text else [],
+                answer=answer_text[:600] if answer_text else None,
+            )
+        except Exception as exc:
+            logger.debug("Judge zamanlama hatası: %s", exc)
 
     def _rrf_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
         vector_results = self._fetch_pgvector(query, top_k, session_id) if getattr(self, "_pgvector_available", False) else self._fetch_chroma(query, top_k, session_id)

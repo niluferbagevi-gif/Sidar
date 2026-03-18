@@ -23,6 +23,7 @@ try:
 except Exception:
     Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
+from core.dlp import mask_messages as _dlp_mask_messages
 
 try:
     from opentelemetry import trace
@@ -1274,6 +1275,9 @@ class LLMClient:
 
         if self.provider == "ollama":
             messages = self._truncate_messages_for_local_model(messages)
+
+        # DLP: hassas verileri API çağrısından önce maskele
+        messages = _dlp_mask_messages(messages)
 
         user_prompt = ""
         for message in reversed(messages):
