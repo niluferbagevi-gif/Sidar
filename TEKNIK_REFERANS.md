@@ -134,7 +134,7 @@ Rate-limit katmanı Redis erişemezse local bellek fallback mekanizmasıyla çal
 
 ### 3.2 REST endpoint envanteri (tam)
 
-Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir:
+Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **60 REST endpoint** bulunmaktadır; v3.0.26 turunda Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyon yüzeyleri de HTTP katmanına bağlanmıştır.
 
 | Method | Path | Not |
 |---|---|---|
@@ -151,6 +151,9 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/api/agents/register` | Plugin ajan kayıt (source_code) (admin) |
 | POST | `/api/agents/register-file` | Plugin ajan kayıt (dosya yolu) (admin) |
 | POST | `/api/swarm/execute` | SwarmOrchestrator görevi çalıştır |
+| GET | `/api/hitl/pending` | Bekleyen HITL istekleri |
+| POST | `/api/hitl/request` | Yeni HITL isteği oluştur |
+| POST | `/api/hitl/respond/{request_id}` | HITL onay/red yanıtı |
 | GET | `/favicon.ico` | 204 |
 | GET | `/vendor/{file_path:path}` | Vendor statik servis |
 | GET | `/` | UI index |
@@ -182,6 +185,18 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | GET | `/todo` | görev listesi |
 | POST | `/clear` | bellek temizleme |
 | POST | `/set-level` | güvenlik seviyesi değişimi (yalnızca admin) |
+| POST | `/api/vision/analyze` | Base64 görüntü analizi |
+| POST | `/api/vision/mockup` | Mockup → kod dönüşümü |
+| POST | `/api/memory/entity/upsert` | Persona/Entity kaydı ekle-güncelle |
+| GET | `/api/memory/entity/{user_id}` | Kullanıcı entity profili |
+| DELETE | `/api/memory/entity/{user_id}/{key}` | Entity kaydı sil |
+| POST | `/api/feedback/record` | Active Learning geri bildirimi kaydet |
+| GET | `/api/feedback/stats` | FeedbackStore istatistikleri |
+| POST | `/api/integrations/slack/send` | Slack mesaj gönder |
+| GET | `/api/integrations/slack/channels` | Slack kanal listesi |
+| POST | `/api/integrations/jira/issue` | Jira issue oluştur |
+| GET | `/api/integrations/jira/issues` | Jira issue ara (JQL) |
+| POST | `/api/integrations/teams/send` | Teams mesaj gönder |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
 
 ### 3.3 WebSocket protokolü: `/ws/chat`

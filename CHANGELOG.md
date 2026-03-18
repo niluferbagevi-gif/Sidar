@@ -4,6 +4,36 @@
 
 ---
 
+## [v3.0.26] - 2026-03-18
+FAZ-7 — Slack entegrasyonu ve audit çapraz-doğrulama turu tamamlandı.
+
+### ✅ FAZ-7 — O-8 Düzeltme: SlackManager Senkron Blokajı Giderildi
+**Dosya:** `managers/slack_manager.py`
+- `_init_client()` içindeki senkron `auth_test()` çağrısı kaldırıldı.
+- Token doğrulaması asenkron `initialize()` fonksiyonuna taşındı ve `asyncio.to_thread(...)` ile event loop bloklaması önlendi.
+- Doğrulama: `managers/slack_manager.py:47-95`
+
+### ✅ FAZ-7 — D-7 Düzeltme: Judge Prometheus Gauge Tekrar Kayıt Riski Giderildi
+**Dosya:** `core/judge.py`
+- `_prometheus_gauges` modül düzeyi önbelleği eklendi.
+- `_inc_prometheus()` aynı metrik adını yeniden kaydetmek yerine mevcut Gauge nesnesini tekrar kullanıyor.
+- Doğrulama: `core/judge.py:49-63`
+
+### ✅ FAZ-7 — Önceden Kapatılan Entegrasyon Bulguları Yeniden Doğrulandı
+**Dosyalar:** `core/llm_client.py`, `web_server.py`
+- Y-6 için `record_routing_cost()` çağrısının aktif olduğu yeniden doğrulandı.
+- O-7 için Vision / EntityMemory / FeedbackStore / Slack / Jira / Teams endpoint'lerinin HTTP katmanına gerçekten bağlandığı yeniden doğrulandı.
+
+### ⚠️ FAZ-7 — Açık Kalan Düşük Öncelikli Bulgular
+**Dosyalar:** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `web_server.py`
+- `D-8` açık: `core/entity_memory.py` içinde `db_url = db_url` no-op satırı hâlâ mevcut.
+- `D-9` açık: `core/cache_metrics.py` yalnızca sınıf içi `record_*` metodlarına sahip; modül düzeyi public wrapper fonksiyonlar eklenmediği için `llm_client.py` private `_cache_metrics` nesnesini doğrudan kullanmaya devam ediyor.
+- `D-10` açık: `core/judge.py::_call_llm()` içinde `Config()` hâlâ her çağrıda yeniden oluşturuluyor.
+- `D-11` açık: `core/vision.py::load_image_as_base64()` hâlâ senkron `read_bytes()` kullanıyor.
+- `D-12`, `D-13`, `D-14` açık: önceki audit raporundaki durum değişmedi.
+
+---
+
 ## [v3.0.18] - 2026-03-18
 FAZ-6 Düşük Öncelikli Son Bulgu — D-6 kapatıldı. Tüm bulgular tamamlandı.
 
