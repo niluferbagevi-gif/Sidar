@@ -11,7 +11,7 @@ from core.judge import JudgeResult, LLMJudge, get_llm_judge
 
 def _run(coro):
     """Async coroutine'i senkron olarak çalıştır."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ─── JudgeResult ─────────────────────────────────────────────────────────────

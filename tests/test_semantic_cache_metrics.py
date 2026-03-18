@@ -81,7 +81,7 @@ import sys
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 def _load_render_fn():
     """managers.system_health modülünü ağır bağımlılıklar olmadan yükler."""
@@ -171,9 +171,6 @@ class TestMetricsCollectorCacheField:
 
 def test_cache_manager_records_hit():
     """Cache HIT olduğunda _cache_metrics.hits artar."""
-    import core.cache_metrics as cm_mod
-    original_hits = cm_mod._cache_metrics.hits
-
     try:
         import core.llm_client as llm_mod
         _SemanticCacheManager = llm_mod._SemanticCacheManager
@@ -196,20 +193,19 @@ def test_cache_manager_records_hit():
         "embedding": json.dumps(vec),
         "response": "cached answer",
     })
-    mgr._redis = fake_redis
-
-    with patch.object(mgr, "_embed_prompt", return_value=vec):
+    with patch.object(mgr, "_get_redis", AsyncMock(return_value=fake_redis)), patch.object(
+        mgr, "_embed_prompt", return_value=vec
+    ), patch.object(
+        llm_mod, "record_cache_hit"
+    ) as record_hit:
         result = _run(mgr.get("test query"))
 
     if result == "cached answer":
-        assert cm_mod._cache_metrics.hits > original_hits
+        record_hit.assert_called_once()
 
 
 def test_cache_manager_records_miss():
     """Cache MISS olduğunda _cache_metrics.misses artar."""
-    import core.cache_metrics as cm_mod
-    original_misses = cm_mod._cache_metrics.misses
-
     try:
         import core.llm_client as llm_mod
         _SemanticCacheManager = llm_mod._SemanticCacheManager
@@ -233,10 +229,12 @@ def test_cache_manager_records_miss():
         "embedding": json.dumps(vec_stored),
         "response": "some answer",
     })
-    mgr._redis = fake_redis
-
-    with patch.object(mgr, "_embed_prompt", return_value=vec_query):
+    with patch.object(mgr, "_get_redis", AsyncMock(return_value=fake_redis)), patch.object(
+        mgr, "_embed_prompt", return_value=vec_query
+    ), patch.object(
+        llm_mod, "record_cache_miss"
+    ) as record_miss:
         result = _run(mgr.get("unrelated query"))
 
     assert result is None
-    assert cm_mod._cache_metrics.misses > original_misses
+    record_miss.assert_called_once()
