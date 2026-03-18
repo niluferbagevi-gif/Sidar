@@ -33,6 +33,26 @@ class BaseAgent(ABC):
         return await self.tools[name](arg)
 
 
+    async def call_llm(
+        self,
+        messages,
+        *,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.3,
+        json_mode: bool = False,
+        model: Optional[str] = None,
+    ) -> str:
+        response = await self.llm.chat(
+            messages=messages,
+            model=model,
+            system_prompt=system_prompt or self.SYSTEM_PROMPT,
+            temperature=temperature,
+            stream=False,
+            json_mode=json_mode,
+        )
+        return str(response)
+
+
 
     def delegate_to(self, target_agent: str, payload: str, *, task_id: str = "", reason: str = "") -> DelegationRequest:
         """Uzman ajanın başka bir uzmana P2P delegasyon isteği oluşturmasını sağlar."""

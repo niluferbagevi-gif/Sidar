@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from typing import Optional
@@ -93,13 +94,35 @@ class SupervisorAgent(BaseAgent):
         revision_signals = (
             "fail(",
             "[test:fail",
+            "[test:fail-closed",
             "regresyon",
             "hata",
             "risk: yüksek",
             "iyileştirme gerekli",
             "düzelt",
+            "decision=reject",
+            "rework_required",
         )
         return any(sig in text for sig in revision_signals)
+
+    def _max_qa_retries(self) -> int:
+        return int(getattr(getattr(self, "cfg", None), "MAX_QA_RETRIES", self.MAX_QA_RETRIES))
+
+    @staticmethod
+    def _is_reject_feedback_payload(payload: object) -> bool:
+        text = str(payload or "")
+        if not text.startswith("qa_feedback|"):
+            return False
+        body = text.split("|", 1)[1].strip()
+        if not body:
+            return False
+        if body.startswith("{"):
+            try:
+                parsed = json.loads(body)
+            except json.JSONDecodeError:
+                return "decision=reject" in body.lower()
+            return str(parsed.get("decision", "")).strip().lower() == "reject"
+        return "decision=reject" in body.lower()
 
     async def _delegate(self, receiver: str, goal: str, intent: str, parent_task_id: Optional[str] = None, sender: str = "supervisor") -> TaskResult:
         task_id = str(uuid.uuid4())
@@ -150,9 +173,21 @@ class SupervisorAgent(BaseAgent):
     async def _route_p2p(self, request: DelegationRequest, *, parent_task_id: Optional[str] = None, max_hops: int = 4) -> TaskResult:
         """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
         hop = 0
+        qa_retries = 0
         current = request
         while hop < max_hops:
             hop += 1
+            if current.target_agent == "coder" and self._is_reject_feedback_payload(current.payload):
+                qa_retries += 1
+                if qa_retries > self._max_qa_retries():
+                    return TaskResult(
+                        task_id=str(uuid.uuid4()),
+                        status="failed",
+                        summary=(
+                            f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self._max_qa_retries()}). "
+                            "Reviewer red zinciri fail-closed sonlandırıldı."
+                        ),
+                    )
             await self.events.publish("supervisor", f"P2P yönlendirme: {current.reply_to} → {current.target_agent}")
             result = await asyncio.wait_for(
                 self._delegate(
@@ -207,11 +242,11 @@ class SupervisorAgent(BaseAgent):
 
         while self._review_requires_revision(review_summary):
             retries += 1
-            if retries > self.MAX_QA_RETRIES:
+            if retries > self._max_qa_retries():
                 return (
                     f"{latest_code_summary}\n\n---\n"
                     f"Reviewer QA Özeti (limit aşıldı):\n{review_summary}\n"
-                    f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self.MAX_QA_RETRIES})."
+                    f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self._max_qa_retries()})."
                 )
 
             revise_prompt = (
@@ -219,7 +254,7 @@ class SupervisorAgent(BaseAgent):
                 f"Orijinal görev: {task_prompt}\n"
                 f"Reviewer notu: {review_summary[:800]}"
             )
-            await self.events.publish("supervisor", f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self.MAX_QA_RETRIES})...")
+            await self.events.publish("supervisor", f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self._max_qa_retries()})...")
             next_code = await self._delegate("coder", revise_prompt, "code", parent_task_id=review_result.task_id)
             if is_delegation_request(next_code.summary):
                 next_code = await self._route_p2p(next_code.summary, parent_task_id=next_code.task_id)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from typing import Optional
 
@@ -98,6 +99,26 @@ class CoderAgent(BaseAgent):
         directory = arg.strip() or str(self.cfg.BASE_DIR)
         return await asyncio.to_thread(self.todo.scan_project_todos, directory, None)
 
+    @staticmethod
+    def _parse_qa_feedback(raw_feedback: str) -> dict:
+        payload = (raw_feedback or "").strip()
+        if not payload:
+            return {}
+        if payload.startswith("{"):
+            try:
+                parsed = json.loads(payload)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                return {"raw": payload}
+        result: dict[str, str] = {"raw": payload}
+        for chunk in payload.split(";"):
+            if "=" not in chunk:
+                continue
+            key, value = chunk.split("=", 1)
+            result[key.strip().lower()] = value.strip()
+        return result
+
     async def run_task(self, task_prompt: str) -> str:
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
@@ -117,9 +138,21 @@ class CoderAgent(BaseAgent):
 
         if lower.startswith("qa_feedback|"):
             feedback = prompt.split("|", 1)[1].strip()
-            if "decision=reject" in feedback.lower():
-                return f"[CODER:REWORK_REQUIRED] Reviewer geri bildirimi alındı: {feedback}"
-            return f"[CODER:APPROVED] Reviewer onayı alındı: {feedback}"
+            parsed_feedback = self._parse_qa_feedback(feedback)
+            decision = str(parsed_feedback.get("decision", "approve")).strip().lower()
+            summary = str(parsed_feedback.get("summary", feedback)).strip()
+            dynamic_output = str(parsed_feedback.get("dynamic_test_output", "")).strip()
+            regression_output = str(parsed_feedback.get("regression_test_output", "")).strip()
+            failing_excerpt = "\n\n".join(part for part in (dynamic_output, regression_output) if part)[:1500]
+
+            if decision == "reject":
+                return (
+                    "[CODER:REWORK_REQUIRED] Reviewer geri bildirimi alındı. "
+                    f"Özet: {summary}\n"
+                    f"[QA_FEEDBACK] {feedback}\n"
+                    f"[FAILED_TESTS] {failing_excerpt or '-'}"
+                )
+            return f"[CODER:APPROVED] Reviewer onayı alındı: {summary}"
 
         if lower.startswith("request_review|"):
             payload = prompt.split("|", 1)[1].strip()
