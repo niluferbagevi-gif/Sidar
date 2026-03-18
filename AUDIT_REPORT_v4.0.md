@@ -1,7 +1,7 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu
-**Sürüm:** 4.0.4
+**Sürüm:** 4.0.5
 **Tarih:** 2026-03-18
-**Son Güncelleme:** 2026-03-18 (v3.0.21-v3.0.24 özellik turları yansıtıldı: 8 yeni core/ modülü (dlp, hitl, judge, router, entity_memory, cache_metrics, active_learning, vision), 3 yeni managers/ modülü (slack, jira, teams), 10 yeni test modülü. ~202 Python dosyası, 142 test modülü; §2, §3 ve §9 güncel koda uyarlandı. v4.0.4: Kapsamlı çapraz-modül tutarsızlık ve entegrasyon denetimi tamamlandı; 1 Yüksek (Y-6), 2 Orta (O-7, O-8), 8 Düşük (D-7..D-14) yeni bulgu eklendi.)
+**Son Güncelleme:** 2026-03-18 (v4.0.5: Son committe yapılan entegrasyon sertleştirmeleri denetime işlendi. `record_routing_cost()` çağrısı, Vision/EntityMemory/FeedbackStore/Slack/Jira/Teams HTTP endpoint’leri, Slack async initialize akışı ve Judge Prometheus gauge singleton düzeltmesi doğrulandı. Ölçümler takipli dosyalara göre yeniden alındı: 57 üretim Python dosyası / 19.287 satır, 142 test modülü / 34.056 satır. Açık bulgu sayısı 11→7’ye düştü; açık Yüksek/Orta bulgu kalmadı.)
 **Denetçi:** Claude Sonnet 4.6 (Bağımsız, önceki raporlardan bağımsız sıfırdan inceleme)
 **Kapsam:** Tüm Python kaynak dosyaları — satır satır doğrudan okuma
 
@@ -25,9 +25,9 @@
 
 ## 1. Yönetici Özeti
 
-Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Toplam ~202 Python dosyası ve ~18.200+ satır üretim kodundan oluşmaktadır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır.
+Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Takipli üretim kodu 57 Python dosyası ve 19.287 satırdan oluşmaktadır; `tests/` dahil toplam takipli Python hacmi 201 dosya / 53.343 satırdır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır.
 
-**Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır. v4.0.4 kapsamlı çapraz-modül denetiminde (2026-03-18) **11 yeni bulgu** tespit edilmiştir: 1 Yüksek (Y-6: günlük bütçe izleyici işlevsiz), 2 Orta (O-7: v6 modülleri web_server'a bağlanmamış; O-8: Slack init event loop) ve 8 Düşük (D-7..D-14: Prometheus kayıt, ölü kod, private API, senkron IO vb.).
+**Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Kritik seviyedeki K-1 ve K-2 bulguları ile v4.0.4 turunda açılan Y-6, O-7, O-8 ve D-7 bulguları da yamalanmış ve **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır. Güncel durumda açık kritik/yüksek/orta bulgu bulunmamaktadır; yalnızca 7 düşük öncelikli kalite borcu (D-8, D-9, D-10, D-11, D-12, D-13/D-14 kümesinden 7 aktif madde) kalmıştır.
 
 ---
 
@@ -46,7 +46,7 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 - **Yapılan Düzeltme:** `DB_SCHEMA_VERSION_TABLE` değeri için sıkı identifier doğrulaması/sterilizasyonu eklendi; güvenli SQL identifier quoting uygulanarak şema versiyon tablosu sorgularında doğrudan ham değer kullanımı kaldırıldı.
 - **Güncel Durum:** Çevre değişkenleri veya config üzerinden gelebilecek kötü niyetli parametrelerle f-string tabanlı SQL enjeksiyonu engellenmiştir.
 
-**📝 Denetim Sonucu:** v4.0 mimari geçişi (JWT, Redis Event Stream, uv/Conda entegrasyonu) sırasında tespit edilen tüm kritik zafiyetler giderilmiştir. FAZ-3..FAZ-6 kapsamlı hardening turları (2026-03-18) ile toplam **18 bulgu** (2K + 5Y + 6O + 5D + D-6) tamamıyla kapatılmıştır. Sistemde **açık güvenlik bulgusu kalmamaktadır**. Sistem mevcut haliyle kurumsal (production) ortamlarda canlıya alım için **UYGUN (PASSED — TAM PUAN: 10.0/10)** durumundadır.
+**📝 Denetim Sonucu:** v4.0 mimari geçişi (JWT, Redis Event Stream, uv/Conda entegrasyonu) sırasında tespit edilen kritik ve orta/yüksek öncelikli entegrasyon kusurları giderilmiştir. FAZ-3..FAZ-6 hardening turlarına ek olarak v4.0.5 entegrasyon düzeltmeleriyle toplam **22 bulgu** kapanmıştır (önceki 18 bulgu + Y-6 + O-7 + O-8 + D-7). Sistemde **açık kritik, yüksek veya orta bulgu kalmamaktadır**. Mevcut halde sistem production için **UYGUN (PASSED)**, ancak kalan 7 düşük öncelikli kalite borcunun bir sonraki bakım turunda temizlenmesi önerilir.
 
 ---
 
@@ -56,59 +56,59 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 
 | Kategori | Dosya Sayısı | Toplam Satır |
 |----------|-------------|-------------|
-| Ana modüller (root) | 5 | ~3.613 |
-| `core/` | 17 | ~8.400+ |
-| `managers/` | 10 | ~4.515+ |
-| `agent/` (tüm alt dizinler) | ~25 | ~3.640 |
-| `tests/` | 142 | ~33.868+ |
-| `plugins/` | 2 | ~59 |
-| Diğer `.py` | ~5 | ~590 |
-| **TOPLAM** | **~202+** | **~54.000+** |
+| Ana modüller (root) | 6 | 4.376 |
+| `core/` | 15 | 7.030 |
+| `managers/` | 11 | 4.282 |
+| `agent/` (tüm alt dizinler) | 18 | 3.154 |
+| `tests/` | 144 | 34.056 |
+| `plugins/` | 2 | 61 |
+| Diğer `.py` | 5 | 444 |
+| **TOPLAM** | **201 takipli Python dosyası** | **53.343 satır** |
 
 ### 2.2 Ana Dosya Satır Sayıları (Doğrudan Ölçüm)
 
 | Dosya | Satır |
 |-------|-------|
-| `web_server.py` | 2.168 |
-| `core/llm_client.py` | 1.351 |
-| `core/db.py` | 1.635 |
-| `managers/code_manager.py` | 932 |
-| `managers/github_manager.py` | 644 |
-| `managers/system_health.py` | 487 |
-| `managers/todo_manager.py` | 451 |
-| `managers/web_search.py` | 387 |
-| `core/rag.py` | 1.142 |
-| `config.py` | 828 |
-| `managers/package_info.py` | 343 |
-| `managers/security.py` | 290 |
-| `core/memory.py` | 299 |
-| `core/llm_metrics.py` | 271 |
-| `core/active_learning.py` | 419 |
+| `web_server.py` | 2.468 |
+| `core/llm_client.py` | 1.361 |
+| `core/db.py` | 1.636 |
+| `managers/code_manager.py` | 933 |
+| `managers/github_manager.py` | 645 |
+| `managers/system_health.py` | 488 |
+| `managers/todo_manager.py` | 452 |
+| `managers/web_search.py` | 388 |
+| `core/rag.py` | 1.143 |
+| `config.py` | 843 |
+| `managers/package_info.py` | 344 |
+| `managers/security.py` | 291 |
+| `core/memory.py` | 301 |
+| `core/llm_metrics.py` | 272 |
+| `core/active_learning.py` | 427 |
 | `core/dlp.py` | 320 |
 | `core/entity_memory.py` | 283 |
 | `core/vision.py` | 294 |
 | `core/hitl.py` | 274 |
-| `core/judge.py` | 257 |
+| `core/judge.py` | 265 |
 | `core/router.py` | 211 |
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
-| `managers/slack_manager.py` | 205 |
-| `core/agent_metrics.py` | 117 |
+| `managers/slack_manager.py` | 234 |
+| `core/agent_metrics.py` | 118 |
 | `core/cache_metrics.py` | 50 |
-| `agent/sidar_agent.py` | 583 |
-| `agent/core/supervisor.py` | 239 |
-| `agent/core/event_stream.py` | 217 |
-| `agent/core/contracts.py` | 63 |
-| `agent/core/memory_hub.py` | 54 |
-| `agent/core/registry.py` | 29 |
-| `agent/roles/coder_agent.py` | 134 |
-| `agent/roles/researcher_agent.py` | 79 |
-| `agent/roles/reviewer_agent.py` | 183 |
-| `agent/swarm.py` | 370 |
-| `agent/registry.py` | 186 |
-| `agent/auto_handle.py` | 612 |
-| `agent/tooling.py` | 112 |
-| `main.py` | 381 |
+| `agent/sidar_agent.py` | 588 |
+| `agent/core/supervisor.py` | 240 |
+| `agent/core/event_stream.py` | 218 |
+| `agent/core/contracts.py` | 64 |
+| `agent/core/memory_hub.py` | 55 |
+| `agent/core/registry.py` | 30 |
+| `agent/roles/coder_agent.py` | 135 |
+| `agent/roles/researcher_agent.py` | 80 |
+| `agent/roles/reviewer_agent.py` | 184 |
+| `agent/swarm.py` | 371 |
+| `agent/registry.py` | 187 |
+| `agent/auto_handle.py` | 613 |
+| `agent/tooling.py` | 113 |
+| `main.py` | 382 |
 
 ---
 
@@ -574,14 +574,14 @@ async with self._sqlite_lock:
 
 ---
 
-## 6a. Yüksek Öncelikli Yeni Bulgular (v4.0.4 — Çapraz-Modül Denetimi)
+## 6a. Yüksek Öncelikli Yeni Bulgular (v4.0.5 — Güncel Durum)
 
-### Y-6 — `record_routing_cost()` Hiç Çağrılmıyor — Günlük Bütçe İzleyici İşlevsiz
+### Y-6 — `record_routing_cost()` çağrısı eksikti — **ÇÖZÜLDÜ / RESOLVED**
 
 **Dosya:** `core/router.py:121` · `core/llm_client.py:1285-1296`
 **Ciddiyet:** YÜKSEK — Özellik tamamen işlevsiz; yanlış güvenlik beklentisi oluşturabilir
 
-**Sorun:** `core/router.py`'de tanımlı `record_routing_cost(cost_usd)` fonksiyonu ve `_DailyBudgetTracker` sınıfı, günlük bulut API maliyetini izleyerek `COST_ROUTING_DAILY_BUDGET_USD` sınırı aşıldığında yerel modele yönlendirmeyi amaçlamaktadır. Ancak `core/llm_client.py:1285-1296` içindeki bulut yönlendirme kodu, başarılı bir bulut çağrısı yapıldıktan sonra `record_routing_cost()` fonksiyonunu **hiç çağırmamaktadır**. Sonuç olarak `_DailyBudgetTracker._daily_cost` daima `0.0` kalır ve bütçe kesim noktası (`exceeded()`) asla tetiklenmez.
+**Güncel Durum:** `core/llm_client.py` artık non-stream bulut yanıtı sonrası yaklaşık token maliyetini hesaplayıp `record_routing_cost()` ile günlük bütçe izleyicisine yazmaktadır. Böylece `CostAwareRouter` yalnızca sorgu karmaşıklığını değil, günlük bulut harcamasını da gerçek kullanım üzerinden dikkate alabilmektedir.
 
 ```python
 # core/llm_client.py:1285-1296 — SORUNLU KOD
@@ -594,20 +594,20 @@ if routed_provider != self.provider:
         logger.warning(...)
 ```
 
-**Önerilen Düzeltme:** Cloud routing başarıyla tamamlandığında tahmini maliyeti `record_routing_cost(estimated_cost)` çağrısıyla kaydedin. En basit yaklaşım: `routed_client.chat()` çağrısından sonra `from core.router import record_routing_cost; record_routing_cost(config.COST_ROUTING_CLOUD_CALL_COST_USD)` eklenmesidir.
+**Doğrulanan Düzeltme:** `core/llm_client.py:1336` satırında `record_routing_cost(_est_tokens * _cost_per_token)` çağrısı yer almaktadır. Maliyet yalnızca streaming dışı ve Ollama dışı sağlayıcılarda kaydedilir; bu da yerel çağrılarda yanlış bütçe tüketimi yazılmasını önler.
 
-**Etki:** `ENABLE_COST_ROUTING=true` ve `COST_ROUTING_DAILY_BUDGET_USD` ayarı yapılmış tüm ortamlar.
+**Kapanış Notu:** Y-6 bulgusu kapatılmıştır.
 
 ---
 
-## 7a. Orta Öncelikli Yeni Bulgular (v4.0.4 — Çapraz-Modül Denetimi)
+## 7a. Orta Öncelikli Yeni Bulgular (v4.0.5 — Güncel Durum)
 
-### O-7 — v6.0 Yeni Modülleri `web_server.py`'ye Bağlanmamış (HTTP API Yok)
+### O-7 — Yeni modüller `web_server.py`'ye bağlanmamıştı — **ÇÖZÜLDÜ / RESOLVED**
 
 **Dosya:** `web_server.py` · `core/vision.py` · `core/entity_memory.py` · `core/active_learning.py` · `managers/slack_manager.py` · `managers/jira_manager.py` · `managers/teams_manager.py`
 **Ciddiyet:** ORTA — Özellikler erişilemez; birim testleri geçiyor fakat üretim akışında kullanılamıyor
 
-**Sorun:** v3.0.22-v3.0.24 turlarında eklenen 6 modül (`VisionPipeline`, `EntityMemory/get_entity_memory`, `FeedbackStore/get_feedback_store`, `SlackManager`, `JiraManager`, `TeamsManager`) birim test kapsamı, Config anahtarları ve `managers/__init__.py` dışa aktarımı ile tam olarak implemente edilmiş olsa da `web_server.py`'de bu modüllere yönelik **hiçbir HTTP endpoint** bulunmamaktadır.
+**Güncel Durum:** `web_server.py` artık Vision, EntityMemory, FeedbackStore, Slack, Jira ve Teams modülleri için doğrudan FastAPI endpoint’leri sunmaktadır. Lazy singleton örnekleme, config tabanlı başlatma ve uygun `503/502/501` hata dönüştürmeleri eklenmiştir.
 
 | Modül | Beklenen Endpoint (Yok) |
 |-------|------------------------|
@@ -618,16 +618,16 @@ if routed_provider != self.provider:
 | `JiraManager` | `POST /api/jira/issue` · `GET /api/jira/search` |
 | `TeamsManager` | `POST /api/notify/teams` |
 
-**Önerilen Düzeltme:** Her modül için web_server.py'ye ilgili FastAPI router/endpoint bloklarını ekleyin ve Config anahtarlarından modül örneklerini lifespan içinde başlatın.
+**Doğrulanan Düzeltme:** `/api/vision/analyze`, `/api/vision/mockup`, `/api/memory/entity/*`, `/api/feedback/*`, `/api/integrations/slack/*`, `/api/integrations/jira/*` ve `/api/integrations/teams/send` endpoint’leri eklendi. Bu sayede v3.0.22-v3.0.24 turlarındaki modüller artık HTTP yüzeyinden erişilebilir durumdadır.
 
 ---
 
-### O-8 — `SlackManager._init_client()` Senkron `auth_test()` Çağrısı Event Loop'u Blokluyor
+### O-8 — `SlackManager._init_client()` senkron doğrulama yapıyordu — **ÇÖZÜLDÜ / RESOLVED**
 
 **Dosya:** `managers/slack_manager.py:57`
 **Ciddiyet:** ORTA — Slack SDK token doğrulaması `__init__` içinde senkron çağrılıyor
 
-**Sorun:** `SlackManager._init_client()` metodu, Slack SDK kullanıldığında `self._client.auth_test()` fonksiyonunu doğrudan ve senkron olarak çağırır (satır 57). `SlackManager` nesnesi bir FastAPI lifespan, dependency injection ya da `asyncio.run()` gibi async bir bağlamda örneklendirildiğinde bu çağrı event loop thread'ini bloklar.
+**Güncel Durum:** `SlackManager._init_client()` yalnızca SDK istemcisini hazırlar; ağ erişimi yapan `auth_test()` çağrısı kaldırılmıştır. Yeni `async initialize()` metodu doğrulamayı `asyncio.to_thread()` ile çalıştırır ve başarısızlık halinde webhook moduna geri düşer.
 
 ```python
 # managers/slack_manager.py:51-61 — SORUNLU BÖLGE
@@ -639,20 +639,20 @@ def _init_client(self) -> None:
             resp = self._client.auth_test()  # ← Senkron bloklamalı network çağrısı
 ```
 
-**Önerilen Düzeltme:** `auth_test()` çağrısını `_init_client()` içinden kaldırın; bunun yerine `async def verify()` metodu ekleyip lifespan içinde `await asyncio.to_thread(self._client.auth_test)` şeklinde çağırın.
+**Doğrulanan Düzeltme:** `managers/slack_manager.py:73` itibarıyla `initialize()` async akışı mevcuttur; `web_server.py` içindeki `_get_slack_manager()` de bu initialize aşamasını await etmektedir.
 
 ---
 
-## 8a. Düşük / İyileştirme Önerileri — Yeni Bulgular (v4.0.4)
+## 8a. Düşük / İyileştirme Önerileri — Yeni Bulgular (v4.0.5)
 
-### D-7 — `core/judge.py` Prometheus `Gauge()` Tekrar Kayıt Riski
+### D-7 — `core/judge.py` Prometheus `Gauge()` tekrar kayıt riski — **ÇÖZÜLDÜ / RESOLVED**
 
 **Dosya:** `core/judge.py` — `_inc_prometheus()` metodu
 **Ciddiyet:** DÜŞÜK — İkinci çağrıda `ValueError: Duplicated timeseries` istisna riski
 
-**Sorun:** `_inc_prometheus()` her çağrıda `prometheus_client.Gauge(name, ...)` ile yeni bir gauge nesnesi oluşturmaya çalışır. Prometheus istemci kütüphanesi aynı isimde kayıtlı bir metrik zaten varsa `ValueError` fırlatır. `JUDGE_ENABLED=true` ortamında uzun süre çalışan bir süreçte ikinci `_inc_prometheus()` çağrısında bu hata tetiklenecektir.
+**Güncel Durum:** `core/judge.py` modülünde `_prometheus_gauges` önbelleği eklenmiş; `_inc_prometheus()` artık aynı metric adı için Gauge nesnesini yalnızca bir kez kaydeder ve sonraki çağrılarda mevcut nesneyi yeniden kullanır.
 
-**Önerilen Düzeltme:** `_PROM_GAUGES: Dict[str, Any] = {}` modül düzeyinde bir önbellek tanımlayın; `_inc_prometheus()` içinde `if name not in _PROM_GAUGES: _PROM_GAUGES[name] = Gauge(...)` şeklinde tek seferlik kayıt yapın.
+**Doğrulanan Düzeltme:** `core/judge.py:52-63` aralığında singleton gauge önbelleği uygulanmıştır. D-7 bulgusu kapatılmıştır.
 
 ---
 
@@ -747,7 +747,7 @@ raw = p.read_bytes()  # ← Senkron, bloklamalı
 
 ## 9. Modül Bazlı Analiz
 
-### 9.1 `web_server.py` (2.168 satır)
+### 9.1 `web_server.py` (2.468 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -817,35 +817,35 @@ raw = p.read_bytes()  # ← Senkron, bloklamalı
 
 ### 9.7 Yeni Modüller (v3.0.21-v3.0.24)
 
-| Modül | Satır | Konu | Güvenlik/Kalite Notu | v4.0.4 Bulgu |
+| Modül | Satır | Konu | Güvenlik/Kalite Notu | v4.0.5 Durum |
 |-------|-------|------|----------------------|-------------|
 | `core/dlp.py` | 320 | DLP & PII maskeleme | ✅ Regex compile(); `re.IGNORECASE` doğru | ✅ `llm_client.py:1306`'da doğru entegre |
-| `core/hitl.py` | 274 | Human-in-the-Loop onay geçidi | ✅ Async polling; UUID-keyed; timeout | ⚠️ D-13: asyncio.Lock erken init; D-14: `_notify` private dışa aktarma |
-| `core/judge.py` | 257 | LLM-as-a-Judge kalite ölçümü | ✅ Background task; graceful-degraded | ⚠️ D-7: Prometheus tekrar kayıt riski; D-10: Config() her çağrıda |
-| `core/router.py` | 211 | Cost-Aware Model Routing | ✅ Thread-safe daily budget counter | 🔴 Y-6: `record_routing_cost()` hiç çağrılmıyor — bütçe izleyici işlevsiz |
-| `core/entity_memory.py` | 283 | Entity/Persona Memory (KV) | ✅ TTL + LRU eviction; async SQLite/PG | ⚠️ D-8: satır 281'de `db_url = db_url` no-op; O-7: web_server endpoint yok |
+| `core/hitl.py` | 274 | Human-in-the-Loop onay geçidi | ✅ Async polling; UUID-keyed; timeout | ⚠️ D-13/D-14 kümesinden kalan düşük seviye kapsülleme ve lazy-lock borçları mevcut |
+| `core/judge.py` | 265 | LLM-as-a-Judge kalite ölçümü | ✅ Background task; graceful-degraded; Gauge singleton düzeltildi | ⚠️ D-10: Config() her çağrıda |
+| `core/router.py` | 211 | Cost-Aware Model Routing | ✅ Thread-safe daily budget counter | ✅ Y-6 kapatıldı: maliyet yazımı `llm_client.py` üzerinden aktif |
+| `core/entity_memory.py` | 283 | Entity/Persona Memory (KV) | ✅ TTL + LRU eviction; async SQLite/PG; HTTP API bağlandı | ⚠️ D-8: satır 281'de `db_url = db_url` no-op |
 | `core/cache_metrics.py` | 50 | Semantic cache sayaçları | ✅ Thread-safe `_CacheMetrics` | ⚠️ D-9: `_cache_metrics` private object dışa aktarılıyor |
-| `core/active_learning.py` | 419 | Active Learning + LoRA döngüsü | ✅ PEFT graceful degrade; FeedbackStore async | ⚠️ D-12: f-string SQL kural dışı; O-7: web_server endpoint yok |
-| `core/vision.py` | 294 | Multimodal Vision Pipeline | ✅ Provider format izolasyonu | ⚠️ D-11: senkron `read_bytes()` async bağlamda; O-7: web_server endpoint yok |
-| `managers/slack_manager.py` | 205 | Slack Bot SDK + Webhook | ✅ Webhook fallback; Block Kit | 🔴 O-8: `auth_test()` senkron — event loop bloğu riski; O-7: endpoint yok |
-| `managers/jira_manager.py` | 245 | Jira Cloud REST API v3 | ✅ Basic Auth / Bearer; timeout | ⚠️ O-7: web_server endpoint yok |
-| `managers/teams_manager.py` | 234 | Teams MessageCard + Adaptive Card | ✅ HITL onay kartı şablonu | ⚠️ O-7: web_server endpoint yok |
+| `core/active_learning.py` | 427 | Active Learning + LoRA döngüsü | ✅ PEFT graceful degrade; FeedbackStore async; HTTP API bağlandı | ⚠️ D-12: f-string SQL kural dışı |
+| `core/vision.py` | 294 | Multimodal Vision Pipeline | ✅ Provider format izolasyonu; HTTP API bağlandı | ⚠️ D-11: senkron `read_bytes()` async bağlamda |
+| `managers/slack_manager.py` | 234 | Slack Bot SDK + Webhook | ✅ Webhook fallback; Block Kit; async initialize | ✅ O-7/O-8 kapatıldı |
+| `managers/jira_manager.py` | 245 | Jira Cloud REST API v3 | ✅ Basic Auth / Bearer; timeout; HTTP API bağlandı | ✅ O-7 kapatıldı |
+| `managers/teams_manager.py` | 234 | Teams MessageCard + Adaptive Card | ✅ HITL onay kartı şablonu; HTTP API bağlandı | ✅ O-7 kapatıldı |
 
-### 9.8 Çapraz-Modül Entegrasyon Matrisi (v4.0.4)
+### 9.8 Çapraz-Modül Entegrasyon Matrisi (v4.0.5)
 
 | Modül | llm_client.py | web_server.py | config.py | Bulgu |
 |-------|--------------|---------------|-----------|-------|
 | `core/dlp.py` | ✅ `_dlp_mask_messages` satır 1306 | ❌ Doğrudan erişim yok | ✅ `DLP_ENABLED`, `DLP_LOG_DETECTIONS` | Entegre ✅ |
 | `core/hitl.py` | ❌ | ✅ 3 endpoint + broadcast hook | ✅ `HITL_ENABLED`, `HITL_TIMEOUT_SECONDS` | Kısmen entegre; D-13, D-14 |
 | `core/judge.py` | ❌ | ❌ | ✅ `JUDGE_ENABLED`, `JUDGE_MODEL` vb. | ⚠️ RAG/llm_client entegrasyon noktası belirsiz |
-| `core/router.py` | ✅ `CostAwareRouter` satır 1282 | ❌ | ✅ `ENABLE_COST_ROUTING` vb. | 🔴 Y-6: `record_routing_cost()` eksik çağrı |
-| `core/entity_memory.py` | ❌ | ❌ | ✅ `ENABLE_ENTITY_MEMORY` vb. | ⚠️ O-7: HTTP API yok |
+| `core/router.py` | ✅ `CostAwareRouter` + maliyet kaydı | ❌ | ✅ `ENABLE_COST_ROUTING` vb. | ✅ Y-6 kapatıldı |
+| `core/entity_memory.py` | ❌ | ✅ `/api/memory/entity/*` | ✅ `ENABLE_ENTITY_MEMORY` vb. | ⚠️ D-8 kalite borcu sürüyor |
 | `core/cache_metrics.py` | ✅ `record_hit/miss/skip` | ❌ | ✅ (implicit via ENABLE_SEMANTIC_CACHE) | ⚠️ D-9: private singleton import |
-| `core/active_learning.py` | ❌ | ❌ | ✅ `ENABLE_ACTIVE_LEARNING`, `AL_*`, `LORA_*` | ⚠️ O-7: HTTP API yok |
-| `core/vision.py` | ✅ `llm_client` parametre olarak alınıyor | ❌ | ✅ `ENABLE_VISION`, `VISION_MAX_IMAGE_BYTES` | ⚠️ O-7: HTTP API yok |
-| `managers/slack_manager.py` | ❌ | ❌ | ✅ `SLACK_TOKEN`, `SLACK_WEBHOOK_URL` vb. | 🔴 O-7: HTTP API yok; O-8: sync init |
-| `managers/jira_manager.py` | ❌ | ❌ | ✅ `JIRA_URL`, `JIRA_TOKEN` vb. | ⚠️ O-7: HTTP API yok |
-| `managers/teams_manager.py` | ❌ | ❌ | ✅ `TEAMS_WEBHOOK_URL` | ⚠️ O-7: HTTP API yok |
+| `core/active_learning.py` | ❌ | ✅ `/api/feedback/*` | ✅ `ENABLE_ACTIVE_LEARNING`, `AL_*`, `LORA_*` | ⚠️ D-12 kalite borcu sürüyor |
+| `core/vision.py` | ✅ `llm_client` parametre olarak alınıyor | ✅ `/api/vision/*` | ✅ `ENABLE_VISION`, `VISION_MAX_IMAGE_BYTES` | ⚠️ D-11 kalite borcu sürüyor |
+| `managers/slack_manager.py` | ❌ | ✅ `/api/integrations/slack/*` | ✅ `SLACK_TOKEN`, `SLACK_WEBHOOK_URL` vb. | ✅ O-7/O-8 kapatıldı |
+| `managers/jira_manager.py` | ❌ | ✅ `/api/integrations/jira/*` | ✅ `JIRA_URL`, `JIRA_TOKEN` vb. | ✅ O-7 kapatıldı |
+| `managers/teams_manager.py` | ❌ | ✅ `/api/integrations/teams/send` | ✅ `TEAMS_WEBHOOK_URL` | ✅ O-7 kapatıldı |
 
 ---
 
@@ -872,10 +872,10 @@ raw = p.read_bytes()  # ← Senkron, bloklamalı
 | D-4 | HTML sanitization regex tabanlı | core/rag.py | 1071 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-5 | LLM context içinde sistem yolları | sidar_agent.py | 257 | ✅ ÇÖZÜLDÜ (FAZ-3) |
 | D-6 | DB lazy lock init (gereksiz) | core/db.py | 152 | ✅ ÇÖZÜLDÜ (FAZ-6) |
-| Y-6 | `record_routing_cost()` hiç çağrılmıyor — bütçe izleyici işlevsiz | core/router.py · llm_client.py | 121 · 1285-1296 | 🔴 AÇIK |
-| O-7 | 6 v6.0 modülü web_server.py'ye HTTP endpoint bağlanmamış | web_server.py · vision/entity/al/slack/jira/teams | — | 🔴 AÇIK |
-| O-8 | SlackManager.auth_test() event loop'u blokluyor | managers/slack_manager.py | 57 | 🔴 AÇIK |
-| D-7 | judge.py Prometheus Gauge() tekrar kayıt riski | core/judge.py | _inc_prometheus() | 🟡 AÇIK |
+| Y-6 | `record_routing_cost()` çağrısı eksikti | core/router.py · llm_client.py | 121 · 1336 | ✅ ÇÖZÜLDÜ |
+| O-7 | 6 v6.0 modülü için HTTP endpoint eksikti | web_server.py · vision/entity/al/slack/jira/teams | 2060-2328 | ✅ ÇÖZÜLDÜ |
+| O-8 | SlackManager.auth_test() event loop'u blokluyordu | managers/slack_manager.py | 73-97 | ✅ ÇÖZÜLDÜ |
+| D-7 | judge.py Prometheus Gauge() tekrar kayıt riski | core/judge.py | 52-63 | ✅ ÇÖZÜLDÜ |
 | D-8 | entity_memory.py:281 no-op atama (ölü kod) | core/entity_memory.py | 281 | 🟡 AÇIK |
 | D-9 | cache_metrics.py özel singleton dışa aktarılıyor | core/cache_metrics.py · llm_client.py | — · 28 | 🟡 AÇIK |
 | D-10 | judge.py Config() her LLM çağrısında yeniden örneklendirme | core/judge.py | _call_llm() | 🟡 AÇIK |
@@ -884,51 +884,43 @@ raw = p.read_bytes()  # ← Senkron, bloklamalı
 | D-13 | hitl.py asyncio.Lock() event loop dışı init | core/hitl.py | _HITLStore.__init__ | 🟡 AÇIK |
 | D-14 | web_server.py özel _notify() import ediyor | web_server.py · core/hitl.py | 938 · 137 | 🟡 AÇIK |
 
-**Toplam (v4.0.4 — 2026-03-18): 0 Kritik · 1 Yüksek · 2 Orta · 8 Düşük = 11 Açık Bulgu (v3.0.21-v3.0.24 yeni modüllerden)**
+**Toplam (v4.0.5 — 2026-03-18): 0 Kritik · 0 Yüksek · 0 Orta · 7 Düşük = 7 Açık Bulgu**
 **Önceki bulgular (K-1..D-6): TÜM 18 BULGU KAPATILDI ✅**
 
 ---
 
 ## 11. Sonuç ve Genel Değerlendirme
 
-### Genel Güvenlik Puanı (v4.0.4 — 2026-03-18): 9.2 / 10
+### Genel Güvenlik Puanı (v4.0.5 — 2026-03-18): 9.6 / 10
 
 | Kategori | Puan | Not |
 |----------|------|-----|
 | Kimlik Doğrulama | 9/10 | PBKDF2-SHA256, sabit zamanlı karşılaştırma, Pydantic validation |
 | Yetkilendirme | 9/10 | `_require_admin_user` tüm kritik endpoint'lerde; METRICS_TOKEN; WS handshake token |
-| SQL Güvenliği | 8/10 | Parameterize sorgular ✅; D-12: active_learning'de f-string SQL kural dışı ⚠️ |
+| SQL Güvenliği | 9/10 | Parameterize sorgular güçlü; yalnızca D-12 f-string SQL stil borcu kaldı ⚠️ |
 | Dosya Sistemi | 10/10 | `Config.BASE_DIR` sınır kontrolü; boş uzantı kaldırıldı; _BLOCKED_PARTS koruması |
 | Ağ Güvenliği | 9/10 | SSRF koruması, rate limiting, CORS kısıtlı; TRUSTED_PROXIES XFF bypass kapatıldı |
 | Sandbox | 10/10 | Docker izolasyonu; DOCKER_REQUIRED bayrağı; shell blocklist |
-| Async Güvenliği | 8/10 | Lifespan kilitler doğru; O-8: Slack sync init ⚠️; D-11: vision sync read ⚠️; D-13: asyncio.Lock erken init |
-| Operasyonel | 8/10 | HITL entegre ✅; Y-6: bütçe izleyici işlevsiz 🔴; O-7: 6 yeni modül HTTP endpoint bekliyor ⚠️ |
-| Modül Entegrasyonu | 7/10 | DLP/router/cache_metrics doğru entegre; vision/entity/AL/slack/jira/teams endpoint yok |
+| Async Güvenliği | 9/10 | Lifespan kilitler doğru; Slack async init ile O-8 kapandı; D-11 ve D-13 kalan küçük borçlar |
+| Operasyonel | 9/10 | HITL entegre ✅; bütçe izleyici ve yeni HTTP yüzeyleri aktif; yalnızca düşük seviye bakım işleri kaldı |
+| Modül Entegrasyonu | 9/10 | Vision/entity/AL/slack/jira/teams HTTP yüzeyleri bağlandı; kalan sorunlar kalite/kapsülleme düzeyinde |
 
 ### Öncelik Sırası (Önerilen Düzeltme Sırası — Açık Bulgular)
 
-**YÜKSEK (Önce Yapılmalı):**
-1. **Y-6** — `core/llm_client.py` içinde cloud routing sonrası `record_routing_cost()` çağrısı ekle
+Açık yüksek/orta bulgu kalmadığı için sonraki bakım turu aşağıdaki düşük öncelikli kalite borçlarına odaklanmalıdır:
 
-**ORTA:**
-2. **O-7** — `web_server.py`'ye VisionPipeline, EntityMemory, FeedbackStore, Slack/Jira/Teams endpoint'leri ekle
-3. **O-8** — `SlackManager._init_client()` içindeki senkron `auth_test()` çağrısını async yap
+1. **D-10** — `core/judge.py` içinde `Config()` örneğini `LLMJudge.__init__()` düzeyine taşıyın.
+2. **D-11** — `core/vision.py` dosya okumasını `asyncio.to_thread()` ile non-blocking hale getirin.
+3. **D-12** — `core/active_learning.py` içindeki f-string SQL ifadesini named-param / SQLAlchemy `in_()` desenine dönüştürün.
+4. **D-13** — `core/hitl.py` içindeki `asyncio.Lock()` oluşturmasını lazy-init yapın.
+5. **D-14** — `core/hitl.py` için public bildirim wrapper'ı ekleyip `web_server.py` private `_notify` importunu kaldırın.
+6. **D-8 / D-9** — küçük kapsülleme ve ölü kod temizliklerini (`entity_memory` no-op satırı, `cache_metrics` public yazma API'si) tamamlayın.
 
-**DÜŞÜK:**
-4. **D-7** — `judge.py` Prometheus gauge singleton önbelleği ekle
-5. **D-8** — `entity_memory.py:281` no-op satır sil
-6. **D-9** — `cache_metrics.py`'ye public `record_*()` fonksiyonları ekle; private import kaldır
-7. **D-10** — `judge.py` `Config()` singleton olarak `__init__`'e taşı
-8. **D-11** — `vision.py` `load_image_as_base64()` → `asyncio.to_thread` ile async yap
-9. **D-12** — `active_learning.py` f-string SQL → SQLAlchemy parameterize dönüştür
-10. **D-13** — `hitl.py` `asyncio.Lock()` lazy-init uygula
-11. **D-14** — `hitl.py`'ye public `notify_pending_request()` ekle; `web_server.py`'den özel import kaldır
-
-> Not: K-1 ve K-2 kritik bulguları **ÇÖZÜLDÜ** olarak kapanmıştır. FAZ-3..FAZ-6 turlarında K-1..K-2, Y-1..Y-5, O-1..O-6, D-1..D-6 toplam 18 bulgu **ÇÖZÜLDÜ** olarak kapatılmıştır. v4.0.4 çapraz-modül denetiminde (2026-03-18) 11 yeni bulgu tespit edilmiştir.
+> Not: K-1 ve K-2 kritik bulguları ile birlikte FAZ-3..FAZ-6 döneminde açılan K-1..D-6 bulgularının tamamı kapatılmıştır. v4.0.4'te açılan Y-6, O-7, O-8 ve D-7 bulguları da v4.0.5 güncellemesiyle kapanmıştır; raporda yalnızca hâlen açık olan düşük öncelikli maddeler bırakılmıştır.
 
 ### Pozitif Vurgu
 
-Bu proje, tipik hızlı prototiplerden farklı olarak güvenlik tasarımını baştan düşünerek inşa edilmiştir. Parola güvenliği (600k PBKDF2), path traversal koruması (3 katmanlı), Docker sandbox izolasyonu, SSRF koruması ve rate limiting doğru uygulanmıştır. v3.0.21-v3.0.24 özellik turlarında eklenen DLP hook'u (`llm_client.py:1306`) ve HITL endpoint'leri (`web_server.py:912-967`) doğru entegre edilmiştir. Yeni modüller için Config anahtarları eksiksiz ve tutarlıdır. Tespit edilen 11 yeni bulgunun tamamı **fonksiyonel/kalite** kategorisinde olup güvenlik açığı değildir; 1 Yüksek bulgu (Y-6) ise güvenlik değil **özellik işlevsizliği** niteliğindedir.
+Bu proje, tipik hızlı prototiplerden farklı olarak güvenlik tasarımını baştan düşünerek inşa edilmiştir. Parola güvenliği (600k PBKDF2), path traversal koruması (3 katmanlı), Docker sandbox izolasyonu, SSRF koruması ve rate limiting doğru uygulanmıştır. v3.0.21-v3.0.24 özellik turlarında eklenen DLP hook'u (`llm_client.py:1306`) ve HITL endpoint'leri (`web_server.py:912-967`) doğru entegre edilmiştir. Yeni modüller için Config anahtarları eksiksiz ve tutarlıdır. Güncel açık maddelerin tamamı **düşük öncelikli kalite / bakım** kategorisindedir; güvenliği veya temel fonksiyonelliği bloklayan aktif bir bulgu kalmamıştır.
 
 ---
 
