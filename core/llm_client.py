@@ -24,7 +24,7 @@ except Exception:
     Redis = None  # type: ignore[assignment]
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
 from core.dlp import mask_messages as _dlp_mask_messages
-from core.router import CostAwareRouter
+from core.router import CostAwareRouter, record_routing_cost
 from core.cache_metrics import _CacheMetrics, _cache_metrics, get_cache_metrics
 
 try:
@@ -1325,6 +1325,15 @@ class LLMClient:
             stream=stream,
             json_mode=json_mode,
         )
+
+        # Bulgu Y-6: Günlük bütçe izleyicisine maliyet kaydı — yalnızca bulut sağlayıcıları için
+        if (not stream) and isinstance(response, str) and self.provider != "ollama":
+            _msg_chars = sum(len(m.get("content") or "") for m in messages)
+            _est_tokens = (_msg_chars + len(response)) // 4
+            _cost_per_token = float(
+                getattr(self.config, "COST_ROUTING_TOKEN_COST_USD", 2e-6) or 2e-6
+            )
+            record_routing_cost(_est_tokens * _cost_per_token)
 
         if (not stream) and user_prompt and isinstance(response, str):
             await self._semantic_cache.set(user_prompt, response)

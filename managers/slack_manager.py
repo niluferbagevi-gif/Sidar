@@ -49,20 +49,19 @@ class SlackManager:
     # ─────────────────────────────────────────────
 
     def _init_client(self) -> None:
+        """SDK istemcisini hazırlar; token doğrulaması initialize() ile asenkron yapılır."""
         if self.token:
             try:
                 from slack_sdk import WebClient  # type: ignore
                 self._client = WebClient(token=self.token)
-                # Token doğrulama
-                resp = self._client.auth_test()
-                if resp["ok"]:
-                    self._available = True
-                    logger.info("Slack bağlantısı kuruldu (SDK). Workspace: %s", resp.get("team"))
-                    return
+                # Bulgu O-8: auth_test() burada çağrılmıyor — event loop'u bloklar.
+                # Doğrulama initialize() içinde asyncio.to_thread ile yapılır.
+                logger.debug("Slack SDK istemcisi oluşturuldu; token doğrulaması initialize() ile yapılacak.")
+                return
             except ImportError:
                 logger.warning("slack-sdk paketi kurulu değil. pip install slack-sdk")
             except Exception as exc:
-                logger.error("Slack token doğrulama hatası: %s", exc)
+                logger.error("Slack istemcisi oluşturma hatası: %s", exc)
 
         if self.webhook_url:
             self._available = True
@@ -70,6 +69,36 @@ class SlackManager:
             logger.info("Slack Webhook modu aktif.")
         elif not self.token:
             logger.debug("Slack token ve webhook URL ayarlanmamış. Slack özellikleri devre dışı.")
+
+    async def initialize(self) -> None:
+        """Token doğrulamasını asyncio.to_thread ile asenkron yapar (event loop bloklanmaz).
+
+        Bu metot, SlackManager oluşturulduktan sonra bir async bağlamda çağrılmalıdır.
+        Örnek: await slack_manager.initialize()
+        """
+        import asyncio as _asyncio
+
+        if not self._client or self._webhook_only:
+            return
+        try:
+            resp = await _asyncio.to_thread(self._client.auth_test)
+            if resp["ok"]:
+                self._available = True
+                logger.info("Slack bağlantısı kuruldu (SDK). Workspace: %s", resp.get("team"))
+            else:
+                self._available = False
+                logger.error("Slack token doğrulama başarısız: %s", resp.get("error"))
+                if self.webhook_url:
+                    self._available = True
+                    self._webhook_only = True
+                    logger.info("SDK doğrulama başarısız; Webhook moduna geçildi.")
+        except Exception as exc:
+            logger.error("Slack token doğrulama hatası: %s", exc)
+            self._available = False
+            if self.webhook_url:
+                self._available = True
+                self._webhook_only = True
+                logger.info("SDK doğrulama başarısız; Webhook moduna geçildi.")
 
     def is_available(self) -> bool:
         return self._available
