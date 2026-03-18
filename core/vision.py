@@ -32,7 +32,7 @@ _DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 # Görsel Ön İşleme
 # ──────────────────────────────────────────────────────────────────────────────
 
-def load_image_as_base64(path: Union[str, Path]) -> tuple[str, str]:
+async def load_image_as_base64(path: Union[str, Path]) -> tuple[str, str]:
     """
     Görseli okuyup (base64_data, mime_type) döner.
     Hatalı format veya boyut aşımında ValueError fırlatır.
@@ -45,7 +45,7 @@ def load_image_as_base64(path: Union[str, Path]) -> tuple[str, str]:
     if mime_type not in SUPPORTED_MIME_TYPES:
         raise ValueError(f"Desteklenmeyen görsel formatı: {mime_type}. Desteklenenler: {SUPPORTED_MIME_TYPES}")
 
-    raw = p.read_bytes()
+    raw = await asyncio.to_thread(p.read_bytes)
     if len(raw) > _DEFAULT_MAX_BYTES:
         mb = len(raw) / (1024 * 1024)
         raise ValueError(f"Görsel çok büyük: {mb:.1f} MB (limit: {_DEFAULT_MAX_BYTES / 1024 / 1024:.0f} MB)")
@@ -230,7 +230,7 @@ class VisionPipeline:
 
         try:
             if image_path:
-                b64, mime = load_image_as_base64(image_path)
+                b64, mime = await load_image_as_base64(image_path)
             elif image_bytes:
                 b64, mime = load_image_from_bytes(image_bytes, mime_type)
             else:
@@ -271,7 +271,7 @@ class VisionPipeline:
 
         try:
             if image_path:
-                b64, mime = load_image_as_base64(image_path)
+                b64, mime = await load_image_as_base64(image_path)
             elif image_bytes:
                 b64, mime = load_image_from_bytes(image_bytes, mime_type)
             else:
