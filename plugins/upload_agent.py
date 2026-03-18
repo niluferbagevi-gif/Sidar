@@ -1,9 +1,4 @@
-"""Basit upload plugin ajanı."""
-
-from __future__ import annotations
-
 from agent.base_agent import BaseAgent
-
 
 class UploadAgent(BaseAgent):
     """Yüklenen plugin akışları için minimum demo ajan."""

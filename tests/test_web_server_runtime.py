@@ -2544,6 +2544,208 @@ def test_websocket_chat_anyio_closed_resource_branch_cancels_active_task():
     asyncio.run(mod.websocket_chat(_WS()))
 
 
+
+
+def test_process_shutdown_reap_and_async_non_ollama_paths(monkeypatch):
+    mod = _load_web_server()
+
+    child_calls = {"n": 0}
+    generic_calls = {"n": 0}
+
+    def _raise_child(*_args, **_kwargs):
+        child_calls["n"] += 1
+        raise ChildProcessError()
+
+    monkeypatch.setattr(mod.os, "waitpid", _raise_child)
+    assert mod._reap_child_processes_nonblocking() == 0
+    assert child_calls["n"] == 1
+
+    def _raise_generic(*_args, **_kwargs):
+        generic_calls["n"] += 1
+        raise RuntimeError("waitpid boom")
+
+    monkeypatch.setattr(mod.os, "waitpid", _raise_generic)
+    assert mod._reap_child_processes_nonblocking() == 0
+    assert generic_calls["n"] == 1
+
+    reaped = {"sync": 0, "async": 0}
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("sync", reaped["sync"] + 1) or 7)
+
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "openai"
+    mod._force_shutdown_local_llm_processes()
+    assert reaped["sync"] == 1
+
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: reaped.__setitem__("async", reaped["async"] + 1) or 3)
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = False
+    asyncio.run(mod._async_force_shutdown_local_llm_processes())
+    assert mod._shutdown_cleanup_done is True
+    assert reaped["async"] == 1
+
+
+def test_policy_resolution_jwt_payload_and_plugin_loader_error_paths(monkeypatch):
+    mod = _load_web_server()
+
+    assert mod._build_user_from_jwt_payload({"sub": "", "username": "alice"}) is None
+    assert mod._build_user_from_jwt_payload({"sub": "u1", "username": ""}) is None
+
+    assert mod._resolve_policy_from_request(_FakeRequest(path="/api/agents/register", method="POST")) == ("agents", "register", "*")
+    assert mod._resolve_policy_from_request(_FakeRequest(path="/admin/stats", method="GET")) == ("admin", "manage", "*")
+    assert mod._resolve_policy_from_request(_FakeRequest(path="/ws/chat", method="GET")) == ("swarm", "execute", "*")
+    assert mod._resolve_policy_from_request(_FakeRequest(path="/unknown", method="GET")) == ("", "", "")
+
+    try:
+        mod._load_plugin_agent_class("raise RuntimeError('boom')", None, "plug_bad_compile")
+        assert False, "expected compile/runtime failure"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "derlenemedi" in str(exc.detail)
+
+    try:
+        mod._load_plugin_agent_class("class Demo: pass", "Missing", "plug_missing_class")
+        assert False, "expected missing class"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "Belirtilen sınıf bulunamadı" in str(exc.detail)
+
+    class _StrictBaseAgent:
+        pass
+
+    monkeypatch.setattr(mod, "BaseAgent", _StrictBaseAgent)
+
+    try:
+        mod._load_plugin_agent_class("class Demo: pass", "Demo", "plug_not_agent")
+        assert False, "expected BaseAgent type error"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "BaseAgent" in str(exc.detail)
+
+    try:
+        mod._load_plugin_agent_class("x = 1", None, "plug_none_found")
+        assert False, "expected no discovered agent class"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "BaseAgent türevi" in str(exc.detail)
+
+    monkeypatch.setattr(mod.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
+    plugin_path = Path("plugins") / "demo.py"
+    plugin_path.unlink(missing_ok=True)
+    try:
+        mod._persist_and_import_plugin_file("demo.py", b"print('x')", "plug_no_spec")
+        assert False, "expected spec failure"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "import edilemedi" in str(exc.detail)
+    finally:
+        plugin_path.unlink(missing_ok=True)
+
+
+def test_register_plugin_upload_access_policy_bypass_and_admin_policy_paths(monkeypatch):
+    mod = _load_web_server()
+
+    async def _next(_request):
+        return _FakeJSONResponse({"ok": True}, status_code=200)
+
+    opt_resp = asyncio.run(mod.access_policy_middleware(_FakeRequest(method="OPTIONS", path="/admin/stats"), _next))
+    assert opt_resp.status_code == 200
+
+    anon_resp = asyncio.run(mod.access_policy_middleware(_FakeRequest(method="GET", path="/admin/stats"), _next))
+    assert anon_resp.status_code == 200
+
+    no_resource_req = _FakeRequest(method="GET", path="/status")
+    no_resource_req.state.user = types.SimpleNamespace(id="u1", username="alice", role="user", tenant_id="t1")
+    no_resource_resp = asyncio.run(mod.access_policy_middleware(no_resource_req, _next))
+    assert no_resource_resp.status_code == 200
+
+    class _DbNoChecker:
+        pass
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_DbNoChecker()))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    missing_checker_req = _FakeRequest(method="POST", path="/admin/policies")
+    missing_checker_req.state.user = types.SimpleNamespace(id="u2", username="bob", role="user", tenant_id="t2")
+    missing_checker_resp = asyncio.run(mod.access_policy_middleware(missing_checker_req, _next))
+    assert missing_checker_resp.status_code == 200
+
+    class _DbPolicies:
+        def __init__(self):
+            self.upserted = None
+
+        async def upsert_access_policy(self, **kwargs):
+            self.upserted = kwargs
+
+        async def list_access_policies(self, **kwargs):
+            return [types.SimpleNamespace(**self.upserted, created_at="now", updated_at="now")]
+
+    db = _DbPolicies()
+    agent.memory.db = db
+    payload = mod._PolicyUpsertRequest(
+        user_id=" u1 ", tenant_id=" ", resource_type=" GITHUB ", resource_id=" ", action=" WRITE ", effect=" ALLOW "
+    )
+    policy_resp = asyncio.run(mod.admin_upsert_policy(payload, _user=types.SimpleNamespace(role="admin", username="default_admin")))
+    assert policy_resp.status_code == 200
+    assert db.upserted["tenant_id"] == "default"
+    assert db.upserted["resource_type"] == "github"
+    assert db.upserted["action"] == "write"
+    assert db.upserted["effect"] == "allow"
+
+    class _Upload(_FakeUploadFile):
+        async def read(self):
+            return self.file.getvalue()
+
+    empty_file = _Upload("plug.py", b"")
+    try:
+        asyncio.run(mod.register_agent_plugin_file(empty_file, _user=types.SimpleNamespace(role="admin", username="default_admin")))
+        assert False, "expected empty upload"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "boş" in str(exc.detail)
+
+    big_file = _Upload("plug.py", b"x" * (mod.MAX_FILE_CONTENT_BYTES + 1))
+    try:
+        asyncio.run(mod.register_agent_plugin_file(big_file, _user=types.SimpleNamespace(role="admin", username="default_admin")))
+        assert False, "expected too large upload"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 413
+
+    bad_utf = _Upload("plug.py", bytes([0xFF, 0xFE]))
+    try:
+        asyncio.run(mod.register_agent_plugin_file(bad_utf, _user=types.SimpleNamespace(role="admin", username="default_admin")))
+        assert False, "expected utf-8 error"
+    except _FakeHTTPException as exc:
+        assert exc.status_code == 400
+        assert "UTF-8" in str(exc.detail)
+
+
+def test_local_rate_lock_initializes_and_get_redis_ping_failure_falls_back(monkeypatch):
+    mod = _load_web_server()
+    mod._local_rate_lock = None
+    mod._local_rate_limits.clear()
+
+    blocked1 = asyncio.run(mod._local_is_rate_limited("k", 1, 60))
+    blocked2 = asyncio.run(mod._local_is_rate_limited("k", 1, 60))
+
+    assert mod._local_rate_lock is not None
+    assert blocked1 is False
+    assert blocked2 is True
+
+    class _BadRedis:
+        async def ping(self):
+            raise RuntimeError("redis unavailable")
+
+    mod._redis_client = None
+    mod._redis_lock = None
+    monkeypatch.setattr(mod.Redis, "from_url", lambda *_a, **_k: _BadRedis())
+
+    assert asyncio.run(mod._get_redis()) is None
+
 def test_force_shutdown_local_llm_processes_all_edges_additional(monkeypatch):
     mod = _load_web_server()
     mod._shutdown_cleanup_done = False
