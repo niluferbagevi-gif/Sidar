@@ -494,6 +494,34 @@ def test_load_instruction_files_stat_error_is_swallowed(tmp_path, monkeypatch):
     monkeypatch.setattr(pathlib.Path, 'stat', _boom_stat)
     out = a._load_instruction_files()
     assert 'SIDAR.md' in out and 'kural' in out
+
+
+def test_load_instruction_files_permission_error_on_one_file_is_ignored(tmp_path, monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._instructions_lock = threading.Lock()
+
+    readable = tmp_path / "SIDAR.md"
+    readable.write_text("root rules", encoding="utf-8")
+    denied = tmp_path / "CLAUDE.md"
+    denied.write_text("secret", encoding="utf-8")
+
+    real_read_text = Path.read_text
+
+    def _read_text(self, *args, **kwargs):
+        if self.name == "CLAUDE.md":
+            raise PermissionError("permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    out = a._load_instruction_files()
+    assert "SIDAR.md" in out
+    assert "root rules" in out
+    assert "secret" not in out
+
 def test_try_multi_agent_always_uses_supervisor(monkeypatch):
     mod = _load_sidar_agent_module()
 
