@@ -134,6 +134,22 @@ def test_base_agent_tool_dispatch_and_delegation_helpers():
         assert _MiniAgent.is_delegation_message("not-delegation") is False
 
 
+
+
+def test_base_agent_delegate_to_includes_reason_metadata_when_present():
+    with _load_real_agent_modules() as (BaseAgent, _, _):
+
+        class _MiniAgent(BaseAgent):
+            async def run_task(self, task_prompt: str) -> str:
+                return task_prompt
+
+        agent = _MiniAgent(role_name="mini")
+        req = agent.delegate_to("reviewer", "payload", reason="needs-review")
+
+        assert req.task_id == "p2p-mini"
+        assert req.meta == {"reason": "needs-review"}
+
+
 def test_agent_core_lazy_getattr_exports_and_error_paths():
     with _load_real_agent_modules() as (_, agent_core, MemoryHub):
         core = importlib.reload(agent_core)

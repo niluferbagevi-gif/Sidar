@@ -32,10 +32,12 @@ def test_upload_agent_run_task_handles_empty_and_normal_prompt():
 
     none_result = asyncio.run(agent.run_task(None))
     empty_result = asyncio.run(agent.run_task("   "))
+    blank_result = asyncio.run(agent.run_task(""))
     normal_result = asyncio.run(agent.run_task("dosyayı işle"))
 
     assert none_result == "Boş görev alındı."
     assert empty_result == "Boş görev alındı."
+    assert blank_result == "Boş görev alındı."
     assert normal_result == "UploadAgent: dosyayı işle"
 
 def test_upload_agent_import_path_via_stubbed_base_agent():
