@@ -398,3 +398,31 @@ def test_main_calls_init_telemetry_when_available(monkeypatch):
         assert exc.code == 0
 
     assert called["service_name"] == "sidar-launcher"
+
+
+def test_main_rejects_non_integer_port_argument(monkeypatch, capsys):
+    MAIN = _load_main_module()
+    monkeypatch.setattr(sys, "argv", ["main.py", "--quick", "web", "--port", "abc"])
+
+    try:
+        MAIN.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 2
+
+    _, err = capsys.readouterr()
+    assert "--port değeri 1-65535 arasında tam sayı olmalıdır" in err
+
+
+def test_main_rejects_out_of_range_port_argument(monkeypatch, capsys):
+    MAIN = _load_main_module()
+    monkeypatch.setattr(sys, "argv", ["main.py", "--quick", "web", "--port", "70000"])
+
+    try:
+        MAIN.main()
+        assert False
+    except SystemExit as exc:
+        assert exc.code == 2
+
+    _, err = capsys.readouterr()
+    assert "--port değeri 1-65535 arasında tam sayı olmalıdır" in err
