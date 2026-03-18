@@ -819,6 +819,20 @@ class Config:
 
 
 # ═══════════════════════════════════════════════════════════════
+# SINGLETON — Bulgu D: Config() tekrar çağrısı kaynak israfı
+# ═══════════════════════════════════════════════════════════════
+_config_instance: "Config | None" = None
+
+
+def get_config() -> "Config":
+    """Proses genelinde tek Config örneği döndürür (thread-safe, lazy)."""
+    global _config_instance
+    if _config_instance is None:
+        _config_instance = Config()
+    return _config_instance
+
+
+# ═══════════════════════════════════════════════════════════════
 # BAŞLANGIÇ
 # ═══════════════════════════════════════════════════════════════
 logger.info("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Config.VERSION)

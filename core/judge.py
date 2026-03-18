@@ -47,11 +47,19 @@ _HALLUCINATION_SYSTEM = (
 
 # ─── Prometheus sayaçları (opsiyonel) ─────────────────────────────────────────
 
+# Bulgu D: Her çağrıda yeni Gauge() oluşturmak "Duplicated timeseries" hatasına yol açar.
+# Çözüm: Modül düzeyi önbellek — her metrik adı yalnızca bir kez kaydedilir.
+_prometheus_gauges: dict = {}
+
+
 def _inc_prometheus(metric_name: str, value: float) -> None:
-    """Prometheus kütüphanesi kuruluysa metrikleri günceller."""
+    """Prometheus kütüphanesi kuruluysa metrikleri günceller (singleton Gauge)."""
     try:
-        from prometheus_client import Gauge
-        gauge = Gauge(metric_name, metric_name.replace("_", " "))
+        gauge = _prometheus_gauges.get(metric_name)
+        if gauge is None:
+            from prometheus_client import Gauge
+            gauge = Gauge(metric_name, metric_name.replace("_", " "))
+            _prometheus_gauges[metric_name] = gauge
         gauge.set(value)
     except Exception:
         pass

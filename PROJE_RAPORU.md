@@ -7,8 +7,8 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-18 (v3.0.25 — Kapsamlı çapraz-modül tutarsızlık ve entegrasyon denetimi tamamlandı (AUDIT_REPORT_v4.0.4). 11 yeni bulgu tespit edildi: 1 Yüksek (Y-6: record_routing_cost() hiç çağrılmıyor — günlük bütçe izleyici işlevsiz), 2 Orta (O-7: VisionPipeline/EntityMemory/FeedbackStore/Slack/Jira/Teams web_server.py'de HTTP endpoint yok; O-8: SlackManager senkron auth_test event loop bloğu), 8 Düşük (D-7..D-14). Önceki tüm bulgular (K-1..D-6 — 18 adet) kapalı durumdadır. Güvenlik puanı 10.0→9.2 olarak revize edildi.)
-> **Önceki Güncelleme:** 2026-03-18 (v3.0.24 — Faz 4+5 özellik bütünleşme turu tamamlandı: Active Learning/LoRA (core/active_learning.py 419), Vision Pipeline (core/vision.py 294), Slack/Jira/Teams entegrasyonu. Python kaynak ~18.200+ satır; test modülü 132→142; test satırı 31.302→33.868.)
+> **Son Güncelleme:** 2026-03-18 (v3.0.27 — v3.0.26 güvenlik/kalite düzeltmeleri denetlendi (AUDIT_REPORT_v4.0.5). Y-6/O-7/O-8/D-7/D-13 ÇÖZÜLDÜ; D-10/D-11 kısmen çözüldü; D-8/D-9/D-12/D-14 açık. 1 yeni bulgu (N-1: COST_ROUTING_TOKEN_COST_USD config.py'de eksik). web_server.py 2168→2467 satır, 11 yeni endpoint. config.py 828→842, get_config() singleton. Yeni test: tests/test_v3026_security_fixes.py (36 test). Güvenlik puanı 9.2→9.4.)
+> **Önceki Güncelleme:** 2026-03-18 (v3.0.25 — Kapsamlı çapraz-modül denetimi (AUDIT_REPORT_v4.0.4): 11 yeni bulgu; Y-6/O-7/O-8/D-7..D-14. Güvenlik puanı 10.0→9.2.)
 > **Proje Sürümü:** 3.0.0
 
 > **Önceki Kayıt:** 3.0.20
@@ -626,30 +626,30 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 828 |
+| `config.py` | 842 |
 | `main.py` | 381 |
 | `cli.py` | 289 |
-| `web_server.py` | 2.168 |
-| `agent/sidar_agent.py` | 583 |
+| `web_server.py` | 2.467 |
+| `agent/sidar_agent.py` | 587 |
 | `agent/auto_handle.py` | 612 |
 | `agent/definitions.py` | 168 |
 | `agent/tooling.py` | 112 |
 | `agent/base_agent.py` | 55 |
 | `agent/registry.py` | 186 |
 | `agent/swarm.py` | 370 |
-| `core/llm_client.py` | 1.351 |
-| `core/memory.py` | 299 |
+| `core/llm_client.py` | 1.360 |
+| `core/memory.py` | 300 |
 | `core/rag.py` | 1.142 |
 | `core/db.py` | 1.635 |
 | `core/llm_metrics.py` | 271 |
 | `core/agent_metrics.py` | 117 |
 | `core/dlp.py` | 320 |
 | `core/hitl.py` | 274 |
-| `core/judge.py` | 257 |
+| `core/judge.py` | 264 |
 | `core/router.py` | 211 |
 | `core/entity_memory.py` | 283 |
 | `core/cache_metrics.py` | 50 |
-| `core/active_learning.py` | 419 |
+| `core/active_learning.py` | 426 |
 | `core/vision.py` | 294 |
 | `managers/security.py` | 290 |
 | `managers/code_manager.py` | 932 |
@@ -658,7 +658,7 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `managers/web_search.py` | 387 |
 | `managers/package_info.py` | 343 |
 | `managers/todo_manager.py` | 451 |
-| `managers/slack_manager.py` | 205 |
+| `managers/slack_manager.py` | 233 |
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
 | `github_upload.py` | 294 |
@@ -714,16 +714,16 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `web_ui/app.js` | 818 |
 | **Web UI Toplamı** | **4.392** |
 | **Test modülü (`tests/test_*.py`)** | **142** |
-| **`tests/*.py` toplam dosya** | **142** |
-| **`tests/*.py` toplam satır** | **33.868** |
+| **`tests/*.py` toplam dosya** | **143** |
+| **`tests/*.py` toplam satır** | **34.375** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
 | `tests/` | `test_*.py` modül sayısı | 142 |
-| `tests/` | `*.py` toplam dosya | 142 |
-| `tests/` | `*.py` toplam satır | 33.868 |
+| `tests/` | `*.py` toplam dosya | 143 |
+| `tests/` | `*.py` toplam satır | 34.375 |
 | `scripts/` | dosya sayısı | 6 |
 | `scripts/` | toplam satır | 443 |
 | `migrations/` | `.py` dosya sayısı (env.py + 2 versions) | 3 |
@@ -1646,6 +1646,8 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.22** | **2026-03-18** | **Faz 5 devamı — 3 yüksek değerli özellik: (1) Cost-Aware Model Routing (`core/router.py` 211 satır) — QueryComplexityAnalyzer + CostAwareRouter; LLMClient.chat() içine şeffaf entegrasyon; 4 yeni config anahtarı. (2) Entity/Persona Memory (`core/entity_memory.py` 283 satır) — kullanıcı başına KV persona deposu (SQLite/PG); TTL + LRU eviction. (3) Semantic Cache Grafana Hit Rate (`core/cache_metrics.py` 50 satır) — thread-safe sayaçlar; `grafana/dashboards/sidar_overview.json` (Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost & Latency panelleri); provisioning YAML. 62 yeni test (3 modül, 51 geçti/11 skip). Python kaynak ~16.156→~16.700.** |
 | **v3.0.23** | **2026-03-18** | **Faz 4 özellikleri — Active Learning + Vision Pipeline: (1) Active Learning + LoRA/QLoRA (`core/active_learning.py` 419 satır) — FeedbackStore (SQLite/PG async), DatasetExporter (jsonl/alpaca/sharegpt), LoRATrainer (PEFT graceful degrade); 26 test. (2) Multimodal Vision Pipeline (`core/vision.py` 294 satır) — load_image_as_base64/from_bytes, build_vision_messages (openai/anthropic/gemini/ollama), VisionPipeline.mockup_to_code/analyze; 40 test. Python kaynak ~16.700→~17.413.** |
 | **v3.0.24** | **2026-03-18** | **Faz 4 tamamlama — Jira/Slack/Teams entegrasyonu: (1) `managers/slack_manager.py` (205 satır) — Bot SDK + Webhook fallback, Block Kit yardımcıları. (2) `managers/jira_manager.py` (245 satır) — Jira Cloud REST API v3, Basic Auth / Bearer. (3) `managers/teams_manager.py` (234 satır) — MessageCard + Adaptive Card v1.4, HITL onay kartı. 44 yeni test (1 modül: test_slack_jira_teams.py). Python kaynak ~17.413→~18.200+. Test modülü 132→142, test satırı 31.302→33.868. PROJE_RAPORU.md + AUDIT_REPORT_v4.0.md tüm metriklere göre güncellendi.** |
-| **v3.0.25** | **2026-03-18** | **Kapsamlı çapraz-modül tutarsızlık ve entegrasyon denetimi (AUDIT_REPORT_v4.0.4): Tüm yeni modüller (core/dlp, hitl, judge, router, entity_memory, cache_metrics, active_learning, vision) ve yöneticiler (slack, jira, teams) satır satır incelendi; llm_client.py, web_server.py, config.py entegrasyon noktaları doğrulandı. 11 yeni bulgu: Y-6 (record_routing_cost hiç çağrılmıyor), O-7 (6 modülde HTTP endpoint yok), O-8 (SlackManager sync init), D-7..D-14 (Prometheus tekrar kayıt, no-op kod, private singleton, Config() her çağrıda, senkron IO, f-string SQL, asyncio.Lock erken init, private _notify import). Önceki 18 bulgu (K-1..D-6) kapalı. Güvenlik puanı 9.2 olarak revize edildi.** |
+| **v3.0.25** | **2026-03-18** | **Kapsamlı çapraz-modül tutarsızlık ve entegrasyon denetimi (AUDIT_REPORT_v4.0.4): Tüm yeni modüller (core/dlp, hitl, judge, router, entity_memory, cache_metrics, active_learning, vision) ve yöneticiler (slack, jira, teams) satır satır incelendi; llm_client.py, web_server.py, config.py entegrasyon noktaları doğrulandı. 11 yeni bulgu: Y-6 (record_routing_cost hiç çağrılmıyor), O-7 (6 modülde HTTP endpoint yok), O-8 (SlackManager sync init), D-7..D-14. Önceki 18 bulgu (K-1..D-6) kapalı. Güvenlik puanı 9.2 olarak revize edildi.** |
+| **v3.0.26** | **2026-03-18** | **Güvenlik ve kalite düzeltme turu: 5 bulgu kapatıldı. (1) Y-6: `core/llm_client.py` — `record_routing_cost()` token tahmini + USD hesaplama ile entegre edildi. (2) O-7: `web_server.py` — 11 yeni FastAPI endpoint (Vision analyze/mockup, EntityMemory upsert/get/delete, FeedbackStore record/stats, Slack send/channels, Jira create/search, Teams send); +299 satır (2168→2467). (3) O-8: `managers/slack_manager.py` — `async initialize()` eklendi; `_init_client()` senkron auth_test kaldırıldı. (4) D-7: `core/judge.py` — `_prometheus_gauges` dict Gauge singleton önbelleği. (5) D-13: `agent/sidar_agent.py` — `asyncio.Lock` lazy-init (None başlangıç). Ek: `config.py` `get_config()` singleton, `core/active_learning.py` async file write, `core/memory.py` get_config() kullanımı. 36 yeni test (tests/test_v3026_security_fixes.py). D-8/D-9/D-12/D-14 açık; D-10/D-11 kısmen açık.** |
+| **v3.0.27** | **2026-03-18** | **Denetim güncelleme turu (AUDIT_REPORT_v4.0.5): v3.0.26 değişiklikleri satır satır doğrulandı. Y-6/O-7/O-8/D-7/D-13 ÇÖZÜLDÜ teyit edildi. D-10/D-11 kısmen çözüldü (vision.py:48 senkron IO ve judge.py:111 Config() doğrudan çağrısı hâlâ açık). 1 yeni bulgu: N-1 (COST_ROUTING_TOKEN_COST_USD config.py'de tanımsız — hardcoded 2e-6 USD/token). §9.7/§9.8 entegrasyon matrisi, §9.9 değişiklik tablosu, §10 bulgu tablosu ve §11 güvenlik puanı (9.2→9.4) güncellendi. Toplam 23 bulgu kapatıldı; 7 açık madde kaldı (hepsi Düşük seviye).** |
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır. Faz 4+5 özellik turlarıyla kurumsal DLP, HITL, Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision ve Slack/Jira/Teams entegrasyonu tamamlanarak platform ürün olgunluğuna ulaşmıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
