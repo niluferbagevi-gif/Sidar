@@ -1,6 +1,7 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu
-**Sürüm:** 4.0.1
+**Sürüm:** 4.0.2
 **Tarih:** 2026-03-18
+**Son Güncelleme:** 2026-03-18 (Tüm dosya satır sayıları mevcut kaynak koduna göre yeniden ölçüldü; 180 Python dosyası, 132 test modülü; bölüm 9 modül analiz tabloları gerçek duruma göre güncellendi)
 **Denetçi:** Claude Sonnet 4.6 (Bağımsız, önceki raporlardan bağımsız sıfırdan inceleme)
 **Kapsam:** Tüm Python kaynak dosyaları — satır satır doğrudan okuma
 
@@ -55,36 +56,47 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 
 | Kategori | Dosya Sayısı | Toplam Satır |
 |----------|-------------|-------------|
-| Ana modüller (root) | 3 | ~2.393 |
-| `core/` | 5 | ~3.351 |
-| `managers/` | 8 | ~3.797 |
-| `agent/` (tüm alt dizinler) | ~20 | ~2.297 |
-| `tests/` | 105 | ~21.000+ |
-| Diğer `.py` | ~109 | ~3.000+ |
-| **TOPLAM** | **145** | **~35.000+** |
+| Ana modüller (root) | 5 | ~3.613 |
+| `core/` | 5 | ~4.831 |
+| `managers/` | 8 | ~3.831 |
+| `agent/` (tüm alt dizinler) | ~25 | ~3.640 |
+| `tests/` | 132 | ~31.302+ |
+| `plugins/` | 2 | ~59 |
+| Diğer `.py` | ~5 | ~590 |
+| **TOPLAM** | **180** | **~47.000+** |
 
 ### 2.2 Ana Dosya Satır Sayıları (Doğrudan Ölçüm)
 
 | Dosya | Satır |
 |-------|-------|
-| `web_server.py` | 1.417 |
-| `core/llm_client.py` | 961 |
-| `core/db.py` | 1.012 |
-| `managers/code_manager.py` | 898 |
+| `web_server.py` | 2.089 |
+| `core/llm_client.py` | 1.319 |
+| `core/db.py` | 1.635 |
+| `managers/code_manager.py` | 932 |
 | `managers/github_manager.py` | 644 |
 | `managers/system_health.py` | 475 |
 | `managers/todo_manager.py` | 451 |
 | `managers/web_search.py` | 387 |
-| `core/rag.py` | 834 |
-| `config.py` | 607 |
-| `managers/package_info.py` | 326 |
+| `core/rag.py` | 1.122 |
+| `config.py` | 759 |
+| `managers/package_info.py` | 343 |
 | `managers/security.py` | 290 |
 | `core/memory.py` | 299 |
-| `core/llm_metrics.py` | 245 |
-| `agent/sidar_agent.py` | 552 |
-| `agent/core/supervisor.py` | 168 |
+| `core/llm_metrics.py` | 256 |
+| `agent/sidar_agent.py` | 583 |
+| `agent/core/supervisor.py` | 239 |
+| `agent/core/event_stream.py` | 217 |
+| `agent/core/contracts.py` | 63 |
+| `agent/core/memory_hub.py` | 54 |
 | `agent/core/registry.py` | 29 |
-| `main.py` | 369 |
+| `agent/roles/coder_agent.py` | 134 |
+| `agent/roles/researcher_agent.py` | 79 |
+| `agent/roles/reviewer_agent.py` | 183 |
+| `agent/swarm.py` | 370 |
+| `agent/registry.py` | 186 |
+| `agent/auto_handle.py` | 612 |
+| `agent/tooling.py` | 112 |
+| `main.py` | 381 |
 
 ---
 
@@ -532,7 +544,7 @@ async with self._sqlite_lock:
 
 ## 9. Modül Bazlı Analiz
 
-### 9.1 `web_server.py` (1.417 satır)
+### 9.1 `web_server.py` (2.089 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -542,12 +554,13 @@ async with self._sqlite_lock:
 | Pydantic validation | ✅ Eklendi | Auth endpoint'leri; dead-code hasattr/get kaldırıldı (FAZ-3) |
 | Health endpoint routing | ✅ ÇÖZÜLDÜ | K-1: Dekoratör `health_check` fonksiyonuna bağlandı |
 | Metrik endpoint auth | ✅ ÇÖZÜLDÜ (FAZ-3) | D-3: _require_metrics_access + METRICS_TOKEN |
-| `/set-level` yetkilendirme | ❌ YÜKSEK | Y-1: Admin kontrolü yok |
-| Upload boyut kontrolü | ❌ YÜKSEK | Y-2: RAG upload sınırsız |
-| IP spoofing (rate limit) | ⚠️ YÜKSEK | Y-4: XFF güvenilir |
-| WebSocket auth | ⚠️ ORTA | O-5: Payload içinde token |
+| `/set-level` yetkilendirme | ✅ ÇÖZÜLDÜ | Y-1: `_require_admin_user` Depends bağımlılığı aktif |
+| Upload boyut kontrolü | ✅ ÇÖZÜLDÜ | Y-2: RAG upload 50 MB sınırı + HTTP 413 |
+| IP spoofing (rate limit) | ✅ ÇÖZÜLDÜ | Y-4: TRUSTED_PROXIES whitelist kontrolü |
+| WebSocket auth | ✅ ÇÖZÜLDÜ | O-5: `Sec-WebSocket-Protocol` başlığından token; JSON fallback ikincil |
+| `/api/swarm/execute` | ✅ YENİ | SwarmOrchestrator API endpoint'i eklendi (v3.0.19) |
 
-### 9.2 `core/db.py` (1.012 satır)
+### 9.2 `core/db.py` (1.635 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -556,15 +569,16 @@ async with self._sqlite_lock:
 | SQL injection | ✅ Korumalı | Parameterize sorgular |
 | Şema tablo adı | ✅ ÇÖZÜLDÜ | K-2: Identifier doğrulama + güvenli quoting uygulandı |
 | Thread safety | ✅ Doğru | asyncio.Lock + to_thread |
+| Lazy lock dead-code | ✅ ÇÖZÜLDÜ | D-6: `assert self._sqlite_lock is not None` ile değiştirildi |
 
-### 9.3 `core/rag.py` (834 satır)
+### 9.3 `core/rag.py` (1.122 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
 | SSRF koruması | ✅ Doğru | ipaddress modülü, blocked_hosts |
 | File extension whitelist | ✅ Güncellendi | .env/.example yok |
-| Base dir kısıtlama | ⚠️ ORTA | O-2: add_document_from_file |
-| Boş uzantı izni | ⚠️ DÜŞÜK | `""` hâlâ izinli |
+| Base dir kısıtlama | ✅ ÇÖZÜLDÜ | O-2: `file.is_relative_to(Config.BASE_DIR)` kontrolü eklendi |
+| Boş uzantı izni | ✅ ÇÖZÜLDÜ | `""` `_TEXT_EXTS` whitelist'inden kaldırıldı |
 | HTML sanitization | ✅ ÇÖZÜLDÜ (FAZ-3) | D-4: bleach DOM sanitizasyonu; regex fallback korundu |
 
 ### 9.4 `managers/security.py` (290 satır)
@@ -576,16 +590,16 @@ async with self._sqlite_lock:
 | Erişim seviyeleri | ✅ Doğru | RESTRICTED/SANDBOX/FULL |
 | Bilinmeyen seviye fallback | ✅ Güvenli | SANDBOX varsayılanı |
 
-### 9.5 `managers/code_manager.py` (898 satır)
+### 9.5 `managers/code_manager.py` (932 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
 | Docker sandbox | ✅ Sağlam | Ağ kapalı, kota, timeout |
 | Fail-closed | ✅ SANDBOX modda | Docker yoksa reddeder |
-| FULL modda fallback | ⚠️ ORTA | O-3: Ağ açık |
-| Shell features | ⚠️ ORTA | O-6: allow_shell_features=True |
+| FULL modda fallback | ✅ ÇÖZÜLDÜ | O-3: `DOCKER_REQUIRED=true` bayrağı ile yerel subprocess fallback engellenir |
+| Shell features | ✅ ÇÖZÜLDÜ | O-6: `_BLOCKED_SHELL_PATTERNS` blocklist; `shell=True` öncesi tetiklenir |
 
-### 9.6 `config.py` (607 satır)
+### 9.6 `config.py` (759 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -593,7 +607,8 @@ async with self._sqlite_lock:
 | Donanım tespiti | ✅ İyi | Lazy-load, hata toleranslı |
 | GPU fraction validation | ✅ ÇÖZÜLDÜ (FAZ-3) | D-1: Yorum "0.1–0.99, 1.0 dahil değil" olarak güncellendi |
 | REDIS_URL ifşası | ✅ ÇÖZÜLDÜ (FAZ-4) | Y-5: redis_url get_system_info'dan kaldırıldı |
-| Senkron Ollama check | ⚠️ ORTA | O-4: Bloklayan HTTP |
+| Senkron Ollama check | ✅ ÇÖZÜLDÜ | O-4: `asyncio.to_thread(Config.validate_critical_settings)` ile sarıldı |
+| DOCKER_REQUIRED bayrağı | ✅ YENİ | O-3 düzeltmesinin parçası; `get_bool_env("DOCKER_REQUIRED", False)` |
 
 ---
 

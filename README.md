@@ -159,7 +159,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ---
 
-## Araç Listesi (44+ Çekirdek Araç)
+## Araç Listesi (50+ Çekirdek Araç)
 
 | Araç | Açıklama | Argüman |
 |------|----------|---------|
@@ -181,13 +181,18 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `github_list_files` | Uzak dizin içeriği listele | `path[\|\|\|branch]` |
 | `github_write` | Uzak depoya dosya yaz/commit | `path\|\|\|content\|\|\|commit[\|\|\|branch]` |
 | `github_create_branch` | Yeni branch oluştur | `branch[\|\|\|source]` |
-| `github_create_pr` | PR oluştur | `title\|\|\|body\|\|\|head[\|\|\|base]` |
+| `github_create_pr` | PR oluştur | `{"title":"...","body":"...","head":"..."}` |
 | `github_smart_pr` | Diff analizli akıllı PR aç | `[head[\|\|\|base[\|\|\|notes]]]` |
-| `github_list_prs` | PR listesini getir | `state[\|\|\|limit]` |
+| `github_list_prs` | PR listesini getir | `{"state":"open","limit":10}` |
 | `github_get_pr` | PR detayını getir | pr_no |
+| `github_pr_diff` | PR diff kodunu getir | `{"number": pr_no}` |
 | `github_comment_pr` | PR'a yorum ekle | `pr_no\|\|\|comment` |
 | `github_close_pr` | PR kapat | pr_no |
 | `github_pr_files` | PR dosya değişikliklerini listele | pr_no |
+| `github_list_issues` | Issue listesini getir | `{"state":"open","limit":10}` |
+| `github_create_issue` | Yeni issue aç | `{"title":"...","body":"..."}` |
+| `github_comment_issue` | Issue'ya yorum ekle | `{"number":no,"body":"..."}` |
+| `github_close_issue` | Issue kapat | `{"number": no}` |
 | `github_search_code` | Depoda kod ara | sorgu |
 | `web_search` | Tavily/Google/DDG ile ara | sorgu |
 | `fetch_url` | URL içeriğini çek | url |
@@ -206,6 +211,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `todo_write` | Görev listesi oluştur/güncelle | `görev:::durum\|\|\|...` |
 | `todo_read` | Görev listesini oku | — |
 | `todo_update` | Görev durumunu güncelle | `id\|\|\|durum` |
+| `scan_project_todos` | Proje genelinde TODO/FIXME tara | `{"directory":null,"extensions":null}` |
 | `subtask` (`agent`) | Alt ajan görevi çalıştır | alt_görev |
 | `parallel` | Birden çok alt görevi paralel yürüt | `görev1\|\|\|görev2...` |
 | `final_answer` | Kullanıcıya yanıt ver | yanıt_metni |
@@ -433,41 +439,61 @@ python cli.py --provider gemini -c "FastAPI nedir?"
 ```
 sidar_project/
 ├── agent/
-│   ├── __init__.py
-│   ├── definitions.py      # Sidar karakter profili ve sistem talimatı (25 araç)
-│   ├── sidar_agent.py      # Ana ajan (ReAct, Pydantic v2, dispatcher, araç sentinel)
-│   └── auto_handle.py      # Örüntü tabanlı hızlı komut eşleyici (async)
+│   ├── sidar_agent.py      # Ana ajan bağlayıcısı (583 satır)
+│   ├── auto_handle.py      # Örüntü tabanlı hızlı komut eşleyici (612 satır)
+│   ├── definitions.py      # Sidar karakter profili ve sistem talimatı (168 satır)
+│   ├── tooling.py          # Araç kayıt + Pydantic argüman şema yöneticisi (112 satır)
+│   ├── registry.py         # AgentRegistry + @register dekoratörü — plugin marketplace (186 satır)
+│   ├── swarm.py            # SwarmOrchestrator: parallel/pipeline, TaskRouter (370 satır)
+│   ├── base_agent.py       # BaseAgent soyut sınıfı (55 satır)
+│   ├── core/
+│   │   ├── supervisor.py   # Yönlendirici ve orkestrasyon ajanı (239 satır)
+│   │   ├── contracts.py    # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri (63 satır)
+│   │   ├── event_stream.py # Ajan olay veriyolu — canlı durum akışı (217 satır)
+│   │   ├── memory_hub.py   # Multi-agent bellek yönetim merkezi (54 satır)
+│   │   └── registry.py     # Ajan ve yetenek kayıt defteri (29 satır)
+│   └── roles/
+│       ├── coder_agent.py      # Dosya/kod odaklı uzman ajan (134 satır)
+│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan (79 satır)
+│       └── reviewer_agent.py   # Test koşturan QA ajanı (183 satır)
 ├── core/
-│   ├── __init__.py
-│   ├── memory.py           # Çoklu oturum (session) yönetimi — thread-safe JSON
-│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi
-│   └── rag.py              # Hibrit RAG (ChromaDB + BM25), Recursive Chunking, GPU
+│   ├── db.py               # Veritabanı bağlantısı, kullanıcı, kota tabloları (1.635 satır)
+│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi (1.319 satır)
+│   ├── llm_metrics.py      # Token, maliyet ve Prometheus metrik toplayıcısı (256 satır)
+│   ├── memory.py           # Çoklu oturum (session) yönetimi — DB destekli (299 satır)
+│   └── rag.py              # ChromaDB + BM25 hibrit RAG motoru (1.122 satır)
 ├── managers/
-│   ├── __init__.py
-│   ├── code_manager.py     # Dosya operasyonları, AST, Docker REPL sandbox
-│   ├── system_health.py    # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback)
-│   ├── github_manager.py   # GitHub API entegrasyonu (binary koruma, branch)
-│   ├── security.py         # OpenClaw 3 seviyeli erişim kontrol sistemi
-│   ├── web_search.py       # Tavily + Google + DuckDuckGo (async, çoklu motor)
-│   ├── package_info.py     # PyPI + npm + GitHub Releases (async)
-│   └── todo_manager.py     # Görev listesi yönetimi (pending/in_progress/completed)
-├── tests/
-│   ├── __init__.py
-│   └── test_sidar.py       # 11 test sınıfı (GPU + Chunking + Pydantic testleri dahil)
-├── web_ui/
-│   └── index.html          # Tam özellikli web arayüzü (SSE, session, export, mobil)
-├── data/                   # Oturum JSON'ları ve RAG veritabanı (gitignore'da)
-├── temp/                   # Sandbox modunda yazma dizini (gitignore'da)
-├── logs/                   # Log dosyaları — RotatingFileHandler (gitignore'da)
-├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği
-├── main.py                 # Etkileşimli launcher (wizard + quick start)
-├── cli.py                  # Asıl terminal tabanlı CLI giriş noktası (async loop)
-├── web_server.py           # FastAPI + SSE + Rate limiting + Session API + /set-branch
-├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği
+│   ├── code_manager.py     # Dosya operasyonları, AST, Docker REPL sandbox (932 satır)
+│   ├── security.py         # OpenClaw 3 seviyeli erişim kontrol sistemi (290 satır)
+│   ├── github_manager.py   # GitHub API entegrasyonu — PR + Issue + Release (644 satır)
+│   ├── system_health.py    # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback) (475 satır)
+│   ├── web_search.py       # Tavily + Google + DuckDuckGo (async, çoklu motor) (387 satır)
+│   ├── package_info.py     # PyPI + npm + GitHub Releases (async) (343 satır)
+│   └── todo_manager.py     # Görev listesi yönetimi + proje TODO taraması (451 satır)
+├── plugins/                # Plugin / Marketplace ajanları
+│   ├── crypto_price_agent.py  # CryptoPriceAgent: CoinGecko BTC/ETH/SOL fiyat sorgusu (49 satır)
+│   └── upload_agent.py        # UploadAgent: temel upload şablon ajanı (10 satır)
+├── tests/                  # 132 test modülü — tam kapsam, 0 atlanan test
+├── web_ui/                 # Vanilla JS web arayüzü (SSE, session, export, mobil)
+│   ├── index.html, app.js, chat.js, sidebar.js, rag.js, style.css
+├── web_ui_react/           # React + Vite modern UI (react-router-dom tabanlı)
+│   └── src/components/     # ChatPanel, P2PDialoguePanel, SwarmFlowPanel, AgentManagerPanel…
+├── migrations/             # Alembic veritabanı geçiş dosyaları
+├── scripts/                # Operasyon, metrik ve test betikleri
+├── runbooks/               # 4 operasyonel kılavuz (production-cutover, observability, plugin, rbac)
+├── helm/sidar/             # Kubernetes Helm chart (16 şablon, staging + prod values)
+├── docker/                 # Grafana/Prometheus observability konfigürasyonları
+├── docs/module-notes/      # Otomatik üretilen modül notları
+├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği (759 satır)
+├── main.py                 # Etkileşimli launcher (wizard + quick start) (381 satır)
+├── cli.py                  # Terminal tabanlı CLI giriş noktası (async loop) (289 satır)
+├── web_server.py           # FastAPI + WebSocket + Rate limiting + Admin API (2.089 satır)
+├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği (294 satır)
+├── gui_launcher.py         # Eel tabanlı masaüstü başlatıcı (97 satır)
 ├── Dockerfile              # CPU/GPU dual-mode build (python:3.11-slim)
-├── docker-compose.yml      # 4 servis: CPU/GPU × CLI/Web
+├── docker-compose.yml      # 7 servis: redis, ai, gpu, web, web-gpu, prometheus, grafana
 ├── environment.yml         # Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio
-├── .env.example            # Açıklamalı ortam değişkeni şablonu
+├── .env.example            # Açıklamalı ortam değişkeni şablonu (70+ değişken)
 └── install_sidar.sh        # Ubuntu/WSL sıfırdan kurulum scripti
 ```
 
@@ -481,18 +507,18 @@ pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-**Test sınıfları (11 adet):**
-- `TestCodeManager` — Dosya yazma/okuma ve AST doğrulama
-- `TestToolCallPydantic` — Pydantic v2 ToolCall şeması doğrulama
-- `TestWebSearchManager` — Motor seçimi ve durum (async)
-- `TestDocumentStore` — Chunking + retrieve + GPU parametreleri
-- `TestSidarAgentInit` — SidarAgent başlatma (async)
-- `TestHardwareInfo` — HardwareInfo dataclass alanları
-- `TestConfigGPU` — Config GPU alanları
-- `TestSystemHealthManager` — CPU-only rapor
-- `TestSystemHealthGPU` — GPU bilgi yapısı
-- `TestRAGGPU` — DocumentStore GPU parametreleri
-- `TestSecurityManager` — OpenClaw izin sistemi
+**Test paketi (132 modül):**
+- `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
+- `test_web_server_runtime.py` — FastAPI endpoint ve WebSocket senaryoları
+- `test_db_runtime.py` / `test_db_postgresql_branches.py` — SQLite/PostgreSQL yönetimi
+- `test_supervisor_agent.py` / `test_reviewer_agent.py` — Multi-agent orkestrasyon
+- `test_sandbox_runtime_profiles.py` — Docker sandbox güvenlik profilleri
+- `test_llm_metrics_runtime.py` / `test_grafana_dashboard_provisioning.py` — Telemetri
+- `test_plugin_marketplace_flow.py` — `CryptoPriceAgent` + `AgentRegistry` akışı
+- `test_tenant_rbac_scenarios.py` — Çok kullanıcı izin matrisi doğrulaması
+- `test_observability_stack_compose.py` — Jaeger/Prometheus/Grafana sağlık kontrolü
+- `test_swarm_execute_api.py` — `/api/swarm/execute` endpoint testleri
+- Ve daha 122 modül — edge-case, retry/fallback, migration, webhook, auth…
 
 ---
 
@@ -570,12 +596,18 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v3.0.20** | Kapsamlı rapor güncelleme turu: AUDIT_REPORT_v4.0.2, PROJE_RAPORU.md, README.md tüm satır sayıları ve araç envanteri mevcut koda göre yeniden ölçüldü ve güncellendi |
+| **v3.0.19** | React SPA react-router-dom navigasyonu, PromptAdminPanel/SwarmFlowPanel/P2PDialoguePanel bileşenleri, `/api/swarm/execute` endpoint, DB destekli sistem promptu yükleme |
+| **v3.0.18** | FAZ-6: D-6 `core/db.py` lazy lock dead-code kapatıldı. Tüm 18 güvenlik bulgusu (K/Y/O/D) kapatıldı. Güvenlik puanı 10.0/10 |
+| **v3.0.17** | FAZ-5: O-1..O-6 tüm orta öncelikli bulgular kapatıldı (BASE_DIR kısıtlama, DOCKER_REQUIRED, shell blocklist) |
+| **v3.0.16** | FAZ-4: Y-1..Y-5 tüm yüksek öncelikli bulgular doğrulandı/kapatıldı |
+| **v3.0.15** | FAZ-3: D-1..D-5 teknik borç temizliği, metric auth, bleach sanitizasyon, CI pg-stress job |
+| **v3.0.14** | Kapsamlı yeniden ölçüm; `agent/registry.py`, `agent/swarm.py`, `plugins/` eklendi; 132 test modülü, 30.613 test satırı |
+| **v3.0.13** | Plugin marketplace, runbook turu, observability simülasyonu, tenant RBAC senaryoları |
+| **v3.0.12** | AgentRegistry + SwarmOrchestrator, React/Vite frontend scaffold, dependency extras grupları |
 | **v3.0.0** | Kurumsal/SaaS sürümü: Multi-Agent mimari, Bearer Auth + Admin Panel, Alembic/PostgreSQL cutover, Grafana/Prometheus observability, gVisor/Kata runtime hazırlıkları |
-| **v2.7.0** | Launcher/CLI ayrımı (`main.py` launcher, `cli.py` async terminal), canlı aktivite paneli, THOUGHT sentinel, hibrit RAG belge yönetimi ve ek doğrulama düzeltmeleri |
-| **v2.6.1** | Web UI düzeltmeleri: dışa aktarma, araç görselleştirme, mobil menü, dinamik model adı, gerçek git checkout, CancelledError düzeltmesi |
-| **v2.6.0** | GPU hızlandırma, Docker REPL sandbox, çoklu oturum, Recursive Chunking, Pydantic v2, rate limiting, WSL2 desteği |
-| **v2.5.0** | Async mimari (httpx, asyncio.Lock), dispatcher tablosu, pytest-asyncio |
-| **v2.3.2** | İlk kararlı sürüm |
+| **v2.7.0** | Launcher/CLI ayrımı, canlı aktivite paneli, hibrit RAG belge yönetimi |
+| **v2.6.0** | GPU hızlandırma, Docker REPL sandbox, çoklu oturum, Recursive Chunking, Pydantic v2 |
 
 ---
 
