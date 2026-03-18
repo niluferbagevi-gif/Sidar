@@ -159,6 +159,16 @@ def test_execute_code_paths_and_local_timeout(manager_factory, monkeypatch):
     assert "Zaman aşımı" in msg
 
 
+def test_execute_code_respects_docker_required_fail_closed(manager_factory, monkeypatch):
+    mgr = manager_factory(can_execute=True, level=FULL)
+    monkeypatch.setattr(CM_MOD.Config, "DOCKER_REQUIRED", True, raising=False)
+
+    ok, msg = mgr.execute_code("print('x')")
+
+    assert ok is False
+    assert "DOCKER_REQUIRED=true" in msg
+
+
 def test_run_shell_guards_and_success_output(manager_factory, monkeypatch):
     mgr_no_shell = manager_factory(can_shell=False)
     ok, msg = mgr_no_shell.run_shell("echo hi")
@@ -183,6 +193,15 @@ def test_run_shell_guards_and_success_output(manager_factory, monkeypatch):
     assert "out" in msg
     assert called["shell"] is False
     assert isinstance(called["cmd"], list)
+
+
+def test_run_shell_blocks_dangerous_patterns_even_when_shell_features_allowed(manager_factory):
+    mgr = manager_factory(can_shell=True)
+
+    ok, msg = mgr.run_shell("echo ok && rm -rf /", allow_shell_features=True)
+
+    assert ok is False
+    assert "tehlikeli kabuk komutu kalıbı" in msg
 
 
 def test_glob_grep_and_list_directory(manager_factory, tmp_path):
