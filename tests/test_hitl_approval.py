@@ -235,7 +235,7 @@ class TestHITLGate:
             monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
             monkeypatch.setattr(hitl_mod, "notify", _notify)
             monkeypatch.setattr(time, "time", lambda: clock["now"])
-            monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
+            monkeypatch.setattr(asyncio, "sleep", _sleep)
 
             approved = await gate.request_approval(
                 action="dangerous_write",
@@ -289,7 +289,7 @@ def test_set_hitl_broadcast_hook_and_notify_success():
             seen.append(payload)
 
         hitl_mod.set_hitl_broadcast_hook(_hook)
-        await hitl_mod.notify(req)
+        await hitl_mod._notify(req)
 
         assert seen == [{"type": "hitl_request", "data": req.to_dict()}]
 
@@ -317,7 +317,7 @@ def test_notify_swallows_broadcast_errors(caplog):
             raise RuntimeError("boom")
 
         hitl_mod.set_hitl_broadcast_hook(_hook)
-        await hitl_mod.notify(req)
+        await hitl_mod._notify(req)
         hitl_mod.set_hitl_broadcast_hook(None)
 
     with caplog.at_level("DEBUG"):
@@ -374,7 +374,7 @@ def test_request_approval_returns_true_when_request_is_approved(monkeypatch):
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
-        monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
+        monkeypatch.setattr(asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
             action="dangerous_write",
@@ -413,7 +413,7 @@ def test_request_approval_returns_false_when_request_disappears(monkeypatch):
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
-        monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
+        monkeypatch.setattr(asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
             action="dangerous_write",
@@ -450,7 +450,7 @@ def test_request_approval_returns_false_when_request_is_rejected(monkeypatch):
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
-        monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
+        monkeypatch.setattr(asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
             action="dangerous_write",
