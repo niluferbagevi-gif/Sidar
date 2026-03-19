@@ -234,7 +234,7 @@ class TestHITLGate:
 
             monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
             monkeypatch.setattr(hitl_mod, "notify", _notify)
-            monkeypatch.setattr(hitl_mod.time, "time", lambda: clock["now"])
+            monkeypatch.setattr(time, "time", lambda: clock["now"])
             monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
 
             approved = await gate.request_approval(
@@ -373,7 +373,7 @@ def test_request_approval_returns_true_when_request_is_approved(monkeypatch):
 
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
-        monkeypatch.setattr(hitl_mod.time, "time", lambda: clock["now"])
+        monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
@@ -412,7 +412,7 @@ def test_request_approval_returns_false_when_request_disappears(monkeypatch):
 
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
-        monkeypatch.setattr(hitl_mod.time, "time", lambda: clock["now"])
+        monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
@@ -449,7 +449,7 @@ def test_request_approval_returns_false_when_request_is_rejected(monkeypatch):
 
         monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
-        monkeypatch.setattr(hitl_mod.time, "time", lambda: clock["now"])
+        monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
 
         approved = await gate.request_approval(
