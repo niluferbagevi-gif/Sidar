@@ -18,11 +18,36 @@
 
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Sidar env parity checker
+
+Kullanım:
+  ./scripts/check_env_parity.sh [--warn-only] [--help]
+
+Seçenekler:
+  --warn-only  Eksik anahtarları uyarı olarak göster, exit 0 dön.
+  --help       Bu yardım metnini göster.
+EOF
+}
+
 # ─── Argümanlar ───────────────────────────────────────────────────────────────
 WARN_ONLY=0
 for arg in "$@"; do
   case "$arg" in
-    --warn-only) WARN_ONLY=1 ;;
+    --warn-only)
+      WARN_ONLY=1
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "HATA: bilinmeyen argüman → $arg" >&2
+      echo >&2
+      usage >&2
+      exit 1
+      ;;
   esac
 done
 
