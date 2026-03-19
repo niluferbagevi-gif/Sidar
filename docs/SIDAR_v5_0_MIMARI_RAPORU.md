@@ -25,8 +25,8 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 
 | Başlık | Güncel Durum | Not |
 |---|---|---|
-| Algı katmanının genişletilmesi (MVP) | **✅ Faz A: Tamamlandı / Alpha** | `core/multimodal.py`, `/ws/voice` ve `core/voice.py` üzerinden medya bağlamı + TTS segmentasyon hattı repo içinde çalışır durumda. |
-| Tarayıcı otomasyonu başlangıcı | **✅ Faz A: Tamamlandı / Alpha** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü ve HITL onay kapısı eklendi. |
+| Algı katmanının genişletilmesi (MVP) | **✅ Faz A: Tamamlandı / Beta'ya Hazır** | `core/multimodal.py`, `/ws/voice` ve `core/voice.py` üzerinden medya bağlamı + TTS segmentasyon hattı repo içinde çalışır durumda. |
+| Tarayıcı otomasyonu başlangıcı | **✅ Faz A: Tamamlandı / Beta'ya Hazır** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü ve HITL onay kapısı eklendi. |
 | GraphRAG başlangıcı | **➡️ Faz B odağına taşındı** | `core/rag.py` içinde modül bağımlılık grafiği arama/yol açıklama akışı mevcut; sıradaki derinleştirme reviewer etki analizi entegrasyonu. |
 | Reviewer + LSP anlamsal denetim | **✅ Faz B eşiği aşıldı** | Reviewer ajan refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlayabiliyor. |
 | Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
@@ -382,13 +382,13 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 
 ## 8. Önceliklendirme ve Fazlama
 
-### Faz A — Elzem v5.0 Çekirdeği (**Tamamlandı / Alpha**)
+### Faz A — Elzem v5.0 Çekirdeği (**Tamamlandı / Beta'ya Hazır**)
 
-> Faz A hedefleri tamamlandı. `core/multimodal.py`, `core/voice.py`, `/ws/voice`, `managers/browser_manager.py` ve etkileşimli `main.py` ile algı/etkileşim iskeleti ürünleşmiş durumda.
+> Faz A hedefleri tamamlandı. `core/multimodal.py`, `core/voice.py`, `/ws/voice`, `managers/browser_manager.py` ve etkileşimli `main.py` ile algı/etkileşim iskeleti ürünleşmiş; ilgili voice/browser/launcher regresyon testleri de repoda yerini almış durumda.
 
 1. `docs` + mimari karar kaydı ile v5.0 hedeflerinin netleştirilmesi **(tamamlandı)**
 2. `core/multimodal.py` başlangıcı (video frame + STT) **(✅ tamamlandı / alpha)**
-3. `managers/browser_manager.py` + temel Playwright araçları **(✅ tamamlandı / alpha)**
+3. `managers/browser_manager.py` + temel Playwright araçları **(✅ tamamlandı / beta'ya hazır)**
 4. `agent/tooling.py` içine browser/LSP tool şemaları **(başlatıldı)**
 5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(✅ tamamlandı)**
 6. `SwarmFlowPanel.jsx` için graph veri modeli **(✅ tamamlandı)**
@@ -396,7 +396,7 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 
 ### Faz B — Güvenli Otonomi ve GraphRAG Derinleşmesi
 
-> Güncel geliştirme odağı artık resmi olarak Faz B'dedir: güvenli otonomi, HITL/audit sertleştirmesi ve GraphRAG'in reviewer/etki analizi tarafında derinleştirilmesi.
+> Güncel geliştirme odağı artık resmi olarak Faz B'dedir: GraphRAG'in reviewer/etki analizi tarafında derinleştirilmesi, proaktif remediation ve daha ileri co-worker otonomisi.
 
 1. GraphRAG indeksleyicinin reviewer/etki analizi ile derinleştirilmesi
 2. LSP entegrasyonunun Reviewer ajan kalite kapısına bağlanması **(✅ tamamlandı)**
