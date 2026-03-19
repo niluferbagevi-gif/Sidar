@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -77,6 +78,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     BatchSpanProcessor = None
 
 from agent.base_agent import BaseAgent
+from agent.core.contracts import ExternalTrigger, FederationTaskEnvelope, FederationTaskResult
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
@@ -128,6 +130,8 @@ _agent: SidarAgent | None = None
 # DeprecationWarning üretir. Lazy başlatma ile bu risk tamamen ortadan kalkar.
 _agent_lock: asyncio.Lock | None = None
 _rag_prewarm_task: asyncio.Task | None = None
+_autonomy_cron_task: asyncio.Task | None = None
+_autonomy_cron_stop: asyncio.Event | None = None
 _shutdown_cleanup_done = False
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
@@ -314,13 +318,78 @@ async def get_agent() -> SidarAgent:
     return _agent
 
 
+async def _collect_agent_response(agent: SidarAgent, prompt: str) -> str:
+    """Ajanın stream çıktısını tek metinde birleştir."""
+    chunks: list[str] = []
+    async for chunk in agent.respond(prompt):
+        chunks.append(chunk)
+    return "".join(chunks).strip()
+
+
+async def _dispatch_autonomy_trigger(
+    *,
+    trigger_source: str,
+    event_name: str,
+    payload: dict[str, Any],
+    meta: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
+    agent = await get_agent()
+    trigger = ExternalTrigger(
+        trigger_id=f"trigger-{secrets.token_hex(6)}",
+        source=trigger_source,
+        event_name=event_name,
+        payload=payload,
+        meta=dict(meta or {}),
+    )
+    summary = await _collect_agent_response(agent, trigger.to_prompt())
+    return {
+        "trigger_id": trigger.trigger_id,
+        "source": trigger.source,
+        "event_name": trigger.event_name,
+        "summary": summary,
+    }
+
+
+async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
+    """Yapılandırılmış aralıklarla otonom değerlendirme tetikler."""
+    interval = max(30, int(getattr(cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 900) or 900))
+    prompt = str(
+        getattr(
+            cfg,
+            "AUTONOMOUS_CRON_PROMPT",
+            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
+        )
+        or ""
+    ).strip()
+    if not prompt:
+        logger.info("Autonomous cron prompt boş; cron loop başlatılmadı.")
+        return
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            try:
+                result = await _dispatch_autonomy_trigger(
+                    trigger_source="cron",
+                    event_name="scheduled_tick",
+                    payload={"prompt": prompt, "interval_seconds": interval},
+                    meta={"mode": "autonomous_cron"},
+                )
+                logger.info("Autonomous cron tetiklendi: %s", result["trigger_id"])
+            except Exception as exc:
+                logger.warning("Autonomous cron tetikleme hatası: %s", exc)
+
+
 # ─────────────────────────────────────────────
 #  FASTAPI UYGULAMASI
 # ─────────────────────────────────────────────
 
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
-    global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock
+    global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock, _autonomy_cron_task, _autonomy_cron_stop
     # Kilitleri event loop ayaktayken kesin olarak başlat (lazy başlatma race-condition'ı önler)
     _agent_lock = asyncio.Lock()
     _redis_lock = asyncio.Lock()
@@ -328,9 +397,18 @@ async def _app_lifespan(_app: FastAPI):
     # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
     await asyncio.to_thread(Config.validate_critical_settings)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
+    if bool(getattr(cfg, "ENABLE_AUTONOMOUS_CRON", False)):
+        _autonomy_cron_stop = asyncio.Event()
+        _autonomy_cron_task = asyncio.create_task(_autonomous_cron_loop(_autonomy_cron_stop))
     try:
         yield
     finally:
+        if _autonomy_cron_stop is not None:
+            _autonomy_cron_stop.set()
+        if _autonomy_cron_task and not _autonomy_cron_task.done():
+            _autonomy_cron_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await _autonomy_cron_task
         if _rag_prewarm_task and not _rag_prewarm_task.done():
             _rag_prewarm_task.cancel()
             try:
@@ -2619,6 +2697,117 @@ async def api_teams_send(req: _TeamsSendRequest):
 
 
 # ─────────────────────────────────────────────
+#  Proaktif Otonomi / Federation
+# ─────────────────────────────────────────────
+
+
+class _FederationTaskRequest(BaseModel):
+    task_id: str = Field(..., description="Dış platform tarafından verilen görev kimliği")
+    source_system: str = Field(..., description="Gönderen swarm platformu (örn. crewai, autogen)")
+    source_agent: str = Field(..., description="Gönderen ajan veya workflow adı")
+    target_agent: str = Field("supervisor", description="Sidar içinde hedef ajan/rol")
+    goal: str = Field(..., description="Sidar'ın çalıştıracağı hedef görev")
+    intent: str = Field("mixed", description="Görev intent tipi")
+    context: dict[str, str] = Field(default_factory=dict, description="Yapısal bağlam")
+    inputs: list[str] = Field(default_factory=list, description="Ek girdiler")
+    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
+
+
+def _verify_hmac_signature(payload_body: bytes, secret_value: str, signature_header: str, *, label: str) -> None:
+    secret = str(secret_value or "").encode("utf-8")
+    if not secret:
+        return
+    if not signature_header:
+        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
+    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, signature_header):
+        raise HTTPException(status_code=401, detail="Geçersiz imza.")
+
+
+@app.post(
+    "/api/autonomy/webhook/{source}",
+    summary="Otonom Webhook Tetikleyicisi",
+    description="Harici sistem olaylarını Sidar'a otonom trigger olarak iletir.",
+)
+async def autonomy_webhook(
+    source: str,
+    request: Request,
+    x_sidar_signature: str = Header(default=""),
+):
+    """Genel amaçlı webhook olaylarını ajanın proaktif değerlendirmesine iletir."""
+    if not bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
+        raise HTTPException(status_code=503, detail="Event webhook özelliği devre dışı.")
+
+    payload_body = await request.body()
+    _verify_hmac_signature(
+        payload_body,
+        str(getattr(cfg, "AUTONOMY_WEBHOOK_SECRET", "") or ""),
+        x_sidar_signature,
+        label="Autonomy webhook",
+    )
+
+    try:
+        data = json.loads(payload_body.decode("utf-8")) if payload_body else {}
+    except json.JSONDecodeError:
+        return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
+
+    result = await _dispatch_autonomy_trigger(
+        trigger_source=f"webhook:{source}",
+        event_name=str(data.get("event_name", source) or source),
+        payload=data if isinstance(data, dict) else {"payload": data},
+        meta={"source": source},
+    )
+    return JSONResponse({"success": True, "result": result})
+
+
+@app.post(
+    "/api/swarm/federation",
+    summary="Dış Swarm Federation Görevi",
+    description="CrewAI/AutoGen gibi dış platformlardan gelen görevleri Sidar içinde çalıştırır.",
+)
+async def swarm_federation_execute(
+    req: _FederationTaskRequest,
+    x_sidar_signature: str = Header(default=""),
+):
+    """Federasyon görevlerini Sidar içinde çalıştırıp yapısal sonuç döndürür."""
+    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
+        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
+
+    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    _verify_hmac_signature(
+        raw_body,
+        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
+        x_sidar_signature,
+        label="Federation",
+    )
+
+    envelope = FederationTaskEnvelope(
+        task_id=req.task_id,
+        source_system=req.source_system,
+        source_agent=req.source_agent,
+        target_system="sidar",
+        target_agent=req.target_agent,
+        goal=req.goal,
+        intent=req.intent,
+        context=dict(req.context or {}),
+        inputs=list(req.inputs or []),
+        meta=dict(req.meta or {}),
+    )
+    summary = await _collect_agent_response(await get_agent(), envelope.to_prompt())
+    result = FederationTaskResult(
+        task_id=envelope.task_id,
+        source_system="sidar",
+        source_agent=envelope.target_agent,
+        target_system=envelope.source_system,
+        target_agent=envelope.source_agent,
+        status="success" if summary else "failed",
+        summary=summary or "Sidar görev için çıktı üretemedi.",
+        meta={"protocol": envelope.protocol},
+    )
+    return JSONResponse({"success": True, "result": asdict(result)})
+
+
+# ─────────────────────────────────────────────
 #  GitHub Webhook
 # ─────────────────────────────────────────────
 
@@ -2687,6 +2876,14 @@ async def github_webhook(
                 "GitHub bildirimini kayıtlarıma aldım. İstenirse 'github_commits' veya PR/Issue araçlarımla detayları inceleyebilirim.",
             )
         )
+        if bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
+            with contextlib.suppress(Exception):
+                await _dispatch_autonomy_trigger(
+                    trigger_source="webhook:github",
+                    event_name=x_github_event,
+                    payload=data if isinstance(data, dict) else {"payload": data},
+                    meta={"provider": "github"},
+                )
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
 

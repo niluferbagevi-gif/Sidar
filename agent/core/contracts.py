@@ -1,9 +1,10 @@
-"""Multi-agent iletişim kontratları (Supervisor <-> Specialist + direct P2P)."""
+"""Multi-agent iletişim kontratları (Supervisor <-> Specialist + direct P2P + federation)."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -15,9 +16,9 @@ class TaskEnvelope:
     receiver: str
     goal: str
     intent: str = "mixed"
-    parent_task_id: Optional[str] = None
-    context: Dict[str, str] = field(default_factory=dict)
-    inputs: List[str] = field(default_factory=list)
+    parent_task_id: str | None = None
+    context: dict[str, str] = field(default_factory=dict)
+    inputs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -27,8 +28,8 @@ class TaskResult:
     task_id: str
     status: str
     summary: str | P2PMessage
-    evidence: List[str] = field(default_factory=list)
-    next_actions: List[str] = field(default_factory=list)
+    evidence: list[str] = field(default_factory=list)
+    next_actions: list[str] = field(default_factory=list)
 
 @dataclass
 class P2PMessage:
@@ -39,10 +40,10 @@ class P2PMessage:
     target_agent: str
     payload: str
     intent: str = "mixed"
-    parent_task_id: Optional[str] = None
+    parent_task_id: str | None = None
     handoff_depth: int = 0
     protocol: str = "p2p.v1"
-    meta: Dict[str, str] = field(default_factory=dict)
+    meta: dict[str, str] = field(default_factory=dict)
 
     @property
     def sender(self) -> str:
@@ -52,7 +53,7 @@ class P2PMessage:
     def receiver(self) -> str:
         return self.target_agent
 
-    def bumped(self) -> "P2PMessage":
+    def bumped(self) -> P2PMessage:
         return type(self)(
             task_id=self.task_id,
             reply_to=self.reply_to,
@@ -82,6 +83,91 @@ class DelegationResult:
     content: str
 
 
+@dataclass
+class ExternalTrigger:
+    """Webhook/cron gibi dış olaylar için standart tetik zarfı."""
+
+    trigger_id: str
+    source: str
+    event_name: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    protocol: str = "trigger.v1"
+    meta: dict[str, str] = field(default_factory=dict)
+
+    def to_prompt(self) -> str:
+        payload_blob = json.dumps(self.payload, ensure_ascii=False, sort_keys=True)
+        meta_blob = json.dumps(self.meta, ensure_ascii=False, sort_keys=True)
+        return (
+            f"[TRIGGER]\n"
+            f"source={self.source}\n"
+            f"event={self.event_name}\n"
+            f"protocol={self.protocol}\n"
+            f"meta={meta_blob}\n"
+            f"payload={payload_blob}"
+        )
+
+
+@dataclass
+class FederationTaskEnvelope:
+    """Sidar ile dış ajan platformları arasındaki federasyon görevi."""
+
+    task_id: str
+    source_system: str
+    source_agent: str
+    target_system: str
+    target_agent: str
+    goal: str
+    intent: str = "mixed"
+    parent_task_id: str | None = None
+    context: dict[str, str] = field(default_factory=dict)
+    inputs: list[str] = field(default_factory=list)
+    protocol: str = "swarm.federation.v1"
+    meta: dict[str, str] = field(default_factory=dict)
+
+    def to_task_envelope(self) -> TaskEnvelope:
+        return TaskEnvelope(
+            task_id=self.task_id,
+            sender=f"{self.source_system}:{self.source_agent}",
+            receiver=f"{self.target_system}:{self.target_agent}",
+            goal=self.goal,
+            intent=self.intent,
+            parent_task_id=self.parent_task_id,
+            context=dict(self.context),
+            inputs=list(self.inputs),
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[FEDERATION TASK]\n"
+            f"source_system={self.source_system}\n"
+            f"source_agent={self.source_agent}\n"
+            f"target_system={self.target_system}\n"
+            f"target_agent={self.target_agent}\n"
+            f"intent={self.intent}\n"
+            f"goal={self.goal}\n"
+            f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True)}\n"
+            f"inputs={json.dumps(self.inputs, ensure_ascii=False)}\n"
+            f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+@dataclass
+class FederationTaskResult:
+    """Federasyon üzerinden dönen yapısal sonuç."""
+
+    task_id: str
+    source_system: str
+    source_agent: str
+    target_system: str
+    target_agent: str
+    status: str
+    summary: str
+    protocol: str = "swarm.federation.v1"
+    evidence: list[str] = field(default_factory=list)
+    next_actions: list[str] = field(default_factory=list)
+    meta: dict[str, str] = field(default_factory=dict)
+
+
 def is_p2p_message(value: object) -> bool:
     """P2PMessage/DelegationRequest benzeri nesneleri sınıf farklarından bağımsız tanımlar."""
     if isinstance(value, P2PMessage):
@@ -97,3 +183,21 @@ def is_delegation_request(value: object) -> bool:
     if isinstance(value, DelegationRequest):
         return True
     return type(value).__name__ == "DelegationRequest" and is_p2p_message(value)
+
+
+def is_external_trigger(value: object) -> bool:
+    """ExternalTrigger benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, ExternalTrigger):
+        return True
+    required = ("trigger_id", "source", "event_name", "payload")
+    return type(value).__name__ == "ExternalTrigger" and all(hasattr(value, attr) for attr in required)
+
+
+def is_federation_task_envelope(value: object) -> bool:
+    """FederationTaskEnvelope benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, FederationTaskEnvelope):
+        return True
+    required = ("task_id", "source_system", "source_agent", "target_system", "target_agent", "goal")
+    return type(value).__name__ == "FederationTaskEnvelope" and all(
+        hasattr(value, attr) for attr in required
+    )
