@@ -1,7 +1,7 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu
 **Sürüm:** 4.0.8 (Zero Debt + Compliance Rollout)
 **Tarih:** 2026-03-19
-**Son Güncelleme:** 2026-03-19 (v4.0.8: Zero Debt sonrasında kurumsal uyum rollout'u yeniden doğrulandı ve Faz 4 Autonomous LLMOps kapanış anlatısı ile senkronize edildi. `migrations/versions/0003_audit_trail.py`, `core/db.py` ve `web_server.py` üzerinden tenant RBAC kararlarının `audit_logs` trail'ine kullanıcı, tenant, kaynak, IP ve allow/deny sonucu ile yazıldığı teyit edildi. Aynı turda `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` direct `p2p.v1` handoff protokolü açısından tekrar incelendi; sender/receiver, reason ve handoff depth bağlamının Supervisor + Swarm yollarında korunduğu doğrulandı. Böylece Active Learning, Vision, cost-aware routing ve dış sistem orkestrasyonu ile tanımlanan Faz 4 kabiliyetlerinin denetlenebilir kurumsal omurga üzerinde kalıcı hale geldiği teyit edilmiş oldu. Ölçümler değişmemiştir: 57 üretim Python dosyası / 19.554 satır, 142 test modülü / 34.121 satır, toplam takipli Python 53.675 satır. Açık bulgu bulunmamaktadır; güvenlik/operasyon puanı 10.0/10 korunmuştur.)
+**Son Güncelleme:** 2026-03-19 (v4.0.8: Zero Debt sonrasında kurumsal uyum rollout'u yeniden doğrulandı ve Faz 4 Autonomous LLMOps kapanış anlatısı ile senkronize edildi. `migrations/versions/0003_audit_trail.py`, `core/db.py` ve `web_server.py` üzerinden tenant RBAC kararlarının `audit_logs` trail'ine kullanıcı, tenant, kaynak, IP ve allow/deny sonucu ile yazıldığı teyit edildi. Aynı turda `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` direct `p2p.v1` handoff protokolü açısından tekrar incelendi; sender/receiver, reason ve handoff depth bağlamının Supervisor + Swarm yollarında korunduğu doğrulandı. Böylece Active Learning, Vision, cost-aware routing ve dış sistem orkestrasyonu ile tanımlanan Faz 4 kabiliyetlerinin denetlenebilir kurumsal omurga üzerinde kalıcı hale geldiği teyit edilmiş oldu. Ölçümler güncellenmiştir: 58 üretim Python dosyası / 20.582 satır, 149 test modülü / 39.147 satır, toplam takipli Python 59.729 satır. Açık bulgu bulunmamaktadır; güvenlik/operasyon puanı 10.0/10 korunmuştur.)
 **Denetçi:** Claude Sonnet 4.6 (Bağımsız, önceki raporlardan bağımsız sıfırdan inceleme)
 **Kapsam:** Tüm Python kaynak dosyaları — satır satır doğrudan okuma
 
@@ -25,7 +25,7 @@
 
 ## 1. Yönetici Özeti
 
-Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Takipli üretim kodu 57 Python dosyası ve 19.554 satırdan oluşmaktadır; `tests/` dahil toplam takipli Python hacmi 201 dosya / 53.675 satırdır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır. Son dokümantasyon turunda bu Faz 4 kümesi, `v3.2.0` ürün anlatısı ve `v4.2.0` operasyonel kapanış diliyle **Autonomous LLMOps** katmanı olarak konsolide edilmiştir.
+Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod çalıştırma, RAG tabanlı belge arama, multi-agent orkestrasyon ve tam REST/WebSocket API'ye sahip kurumsal düzeyde bir AI ajanı altyapısıdır. Takipli üretim kodu 58 Python dosyası ve 20.582 satırdan oluşmaktadır; `tests/` dahil toplam takipli Python hacmi 209 dosya / 59.729 satırdır. v3.0.21-v3.0.24 özellik turlarıyla DLP/HITL/Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision Pipeline ve Slack/Jira/Teams entegrasyonu tamamlanarak platform kurumsal üretim olgunluğuna ulaşmıştır. Son dokümantasyon turunda bu Faz 4 kümesi, `v3.2.0` ürün anlatısı ve `v4.2.0` operasyonel kapanış diliyle **Autonomous LLMOps** katmanı olarak konsolide edilmiştir.
 
 **Genel Sonuç (Güncel):** Proje altyapısı sağlam ve güvenlik bilincine sahip bir ekip tarafından geliştirilmiştir. Parola hashleme, SQL parameterization, path traversal koruması ve rate limiting gibi temel güvenlik önlemleri doğru uygulanmıştır. Son revizyonlarla birlikte tespit edilen **tüm** bulgular (Kritik, Yüksek, Orta ve Düşük öncelikli) **ÇÖZÜLDÜ (RESOLVED)** durumuna alınmıştır. Güncel durumda projenin teknik borcu sıfırlanmıştır ve mimari olarak tam "Enterprise Production Ready" standartlarındadır.
 
@@ -56,25 +56,26 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 
 | Kategori | Dosya Sayısı | Toplam Satır |
 |----------|-------------|-------------|
-| Ana modüller (root) | 6 | 4.377 |
-| `core/` | 15 | 7.067 |
-| `managers/` | 11 | 4.360 |
-| `agent/` (tüm alt dizinler) | 18 | 3.305 |
-| `tests/` | 144 | 34.121 |
+| Ana modüller (root) | 6 | 4.440 |
+| `core/` | 15 | 7.724 |
+| `managers/` | 11 | 4.410 |
+| `agent/` (tüm alt dizinler) | 18 | 3.525 |
+| `migrations/` | 4 | 256 |
+| `scripts/*.py` | 2 | 166 |
 | `plugins/` | 2 | 61 |
-| Diğer `.py` | 5 | 384 |
-| **TOPLAM** | **201 takipli Python dosyası** | **53.675 satır** |
+| `tests/` | 151 | 39.147 |
+| **TOPLAM** | **209 takipli Python dosyası** | **59.729 satır** |
 
 ### 2.2 Ana Dosya Satır Sayıları (Doğrudan Ölçüm)
 
 | Dosya | Satır |
 |-------|-------|
-| `web_server.py` | 2.469 |
-| `core/llm_client.py` | 1.361 |
-| `core/db.py` | 1.636 |
-| `managers/code_manager.py` | 933 |
+| `web_server.py` | 2.532 |
+| `core/llm_client.py` | 1.388 |
+| `core/db.py` | 1.861 |
+| `managers/code_manager.py` | 1.011 |
 | `managers/github_manager.py` | 645 |
-| `managers/system_health.py` | 488 |
+| `managers/system_health.py` | 538 |
 | `managers/todo_manager.py` | 452 |
 | `managers/web_search.py` | 388 |
 | `core/rag.py` | 1.143 |
@@ -82,29 +83,29 @@ Sidar projesi, çoklu LLM sağlayıcısını destekleyen, Docker sandbox'lı kod
 | `managers/package_info.py` | 344 |
 | `managers/security.py` | 291 |
 | `core/memory.py` | 301 |
-| `core/llm_metrics.py` | 272 |
-| `core/active_learning.py` | 427 |
+| `core/llm_metrics.py` | 282 |
+| `core/active_learning.py` | 505 |
 | `core/dlp.py` | 320 |
-| `core/entity_memory.py` | 283 |
+| `core/entity_memory.py` | 281 |
 | `core/vision.py` | 294 |
-| `core/hitl.py` | 274 |
-| `core/judge.py` | 265 |
+| `core/hitl.py` | 287 |
+| `core/judge.py` | 469 |
 | `core/router.py` | 211 |
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
 | `managers/slack_manager.py` | 234 |
 | `core/agent_metrics.py` | 118 |
-| `core/cache_metrics.py` | 50 |
+| `core/cache_metrics.py` | 189 |
 | `agent/sidar_agent.py` | 588 |
-| `agent/core/supervisor.py` | 240 |
+| `agent/core/supervisor.py` | 291 |
 | `agent/core/event_stream.py` | 218 |
-| `agent/core/contracts.py` | 64 |
+| `agent/core/contracts.py` | 99 |
 | `agent/core/memory_hub.py` | 55 |
 | `agent/core/registry.py` | 30 |
-| `agent/roles/coder_agent.py` | 135 |
+| `agent/roles/coder_agent.py` | 168 |
 | `agent/roles/researcher_agent.py` | 80 |
-| `agent/roles/reviewer_agent.py` | 184 |
-| `agent/swarm.py` | 371 |
+| `agent/roles/reviewer_agent.py` | 247 |
+| `agent/swarm.py` | 504 |
 | `agent/registry.py` | 187 |
 | `agent/auto_handle.py` | 613 |
 | `agent/tooling.py` | 113 |
@@ -211,6 +212,13 @@ Aşağıdaki güvenlik ve kalite uygulamaları doğrudan kod okumasıyla doğrul
 - `core/db.py` içinde `record_audit_log()` / `list_audit_logs()` ile hem SQLite hem PostgreSQL audit trail erişimi sağlandı
 - `web_server.py::access_policy_middleware` RBAC allow/deny kararlarını kullanıcı, tenant, kaynak ve istemci IP bağlamıyla kaydediyor
 - `agent/core/contracts.py` + `agent/swarm.py` direct `p2p.v1` handoff zincirinde sender/receiver/reason/handoff_depth bilgisini koruyor
+
+### 4.9 Prompt Registry, Migration Cutover ve Observability ✅
+- `migrations/versions/0002_prompt_registry.py`, `prompt_registry` tablosunu role/version/is_active modeliyle ekliyor; `web_server.py` admin prompt endpoint'leri ve React `PromptAdminPanel` bu tabloyu runtime'da kullanıyor
+- `scripts/migrate_sqlite_to_pg.py`, SQLite -> PostgreSQL taşıma ve dry-run prova akışını destekliyor; `runbooks/production-cutover-playbook.md` ile birlikte cutover standardı tanımlanmış durumda
+- `core/dlp.py`, Bearer token, API key, GitHub PAT, AWS key, TC kimlik, e-posta, kredi kartı ve JWT örüntülerini LLM çağrısından önce maskeleyerek veri sızıntısı yüzeyini düşürüyor
+- `grafana/dashboards/sidar_overview.json`, semantic cache hit/miss, Redis latency, LLM cost ve latency görünürlüğünü aynı dashboard'da topluyor; `runbooks/observability_simulation.md` bu hattın Jaeger + Prometheus + Grafana ile nasıl doğrulanacağını adım adım belgeliyor
+- Test/QA tarafında `.coveragerc`, `run_tests.sh` ve `.github/workflows/ci.yml` ile **%99.9 coverage hard gate** zorunlu; ek olarak `.github/workflows/migration-cutover-checks.yml` migration zinciri ve DB pool smoke yükünü otomatik doğruluyor
 
 ---
 
@@ -701,7 +709,7 @@ def _init_client(self) -> None:
 
 ## 9. Modül Bazlı Analiz
 
-### 9.1 `web_server.py` (2.469 satır)
+### 9.1 `web_server.py` (2.532 satır)
 
 
 | Konu | Durum | Bulgu |
@@ -719,7 +727,7 @@ def _init_client(self) -> None:
 | `/api/swarm/execute` | ✅ YENİ | SwarmOrchestrator API endpoint'i eklendi (v3.0.19) |
 | HITL endpoint'leri | ✅ YENİ (v3.0.21) | POST `/api/hitl/request`, POST `/api/hitl/respond/{id}`, GET `/api/hitl/pending` |
 
-### 9.2 `core/db.py` (1.635 satır)
+### 9.2 `core/db.py` (1.861 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -730,7 +738,7 @@ def _init_client(self) -> None:
 | Thread safety | ✅ Doğru | asyncio.Lock + to_thread |
 | Lazy lock dead-code | ✅ ÇÖZÜLDÜ | D-6: `assert self._sqlite_lock is not None` ile değiştirildi |
 
-### 9.3 `core/rag.py` (1.142 satır)
+### 9.3 `core/rag.py` (1.143 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -740,7 +748,7 @@ def _init_client(self) -> None:
 | Boş uzantı izni | ✅ ÇÖZÜLDÜ | `""` `_TEXT_EXTS` whitelist'inden kaldırıldı |
 | HTML sanitization | ✅ ÇÖZÜLDÜ (FAZ-3) | D-4: bleach DOM sanitizasyonu; regex fallback korundu |
 
-### 9.4 `managers/security.py` (290 satır)
+### 9.4 `managers/security.py` (291 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -749,7 +757,7 @@ def _init_client(self) -> None:
 | Erişim seviyeleri | ✅ Doğru | RESTRICTED/SANDBOX/FULL |
 | Bilinmeyen seviye fallback | ✅ Güvenli | SANDBOX varsayılanı |
 
-### 9.5 `managers/code_manager.py` (932 satır)
+### 9.5 `managers/code_manager.py` (1.011 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
@@ -758,7 +766,7 @@ def _init_client(self) -> None:
 | FULL modda fallback | ✅ ÇÖZÜLDÜ | O-3: `DOCKER_REQUIRED=true` bayrağı ile yerel subprocess fallback engellenir |
 | Shell features | ✅ ÇÖZÜLDÜ | O-6: `_BLOCKED_SHELL_PATTERNS` blocklist; `shell=True` öncesi tetiklenir |
 
-### 9.6 `config.py` (828 satır)
+### 9.6 `config.py` (843 satır)
 
 | Konu | Durum | Bulgu |
 |------|-------|-------|
