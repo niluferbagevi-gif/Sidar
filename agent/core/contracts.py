@@ -1,4 +1,4 @@
-"""Multi-agent iletişim kontratları (Supervisor <-> Specialist)."""
+"""Multi-agent iletişim kontratları (Supervisor <-> Specialist + direct P2P)."""
 
 from __future__ import annotations
 
@@ -32,13 +32,38 @@ class TaskResult:
 
 @dataclass
 class P2PMessage:
-    """Ajanlar arası doğrudan delegasyon mesajı."""
+    """Ajanlar arası doğrudan handoff mesajı için ortak protokol."""
 
     task_id: str
     reply_to: str
     target_agent: str
     payload: str
+    intent: str = "mixed"
+    parent_task_id: Optional[str] = None
+    handoff_depth: int = 0
+    protocol: str = "p2p.v1"
     meta: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def sender(self) -> str:
+        return self.reply_to
+
+    @property
+    def receiver(self) -> str:
+        return self.target_agent
+
+    def bumped(self) -> "P2PMessage":
+        return type(self)(
+            task_id=self.task_id,
+            reply_to=self.reply_to,
+            target_agent=self.target_agent,
+            payload=self.payload,
+            intent=self.intent,
+            parent_task_id=self.parent_task_id,
+            handoff_depth=self.handoff_depth + 1,
+            protocol=self.protocol,
+            meta=dict(self.meta),
+        )
 
 
 @dataclass
@@ -56,9 +81,19 @@ class DelegationResult:
     status: str
     content: str
 
+
+def is_p2p_message(value: object) -> bool:
+    """P2PMessage/DelegationRequest benzeri nesneleri sınıf farklarından bağımsız tanımlar."""
+    if isinstance(value, P2PMessage):
+        return True
+    required = ("task_id", "reply_to", "target_agent", "payload")
+    return type(value).__name__ in {"P2PMessage", "DelegationRequest"} and all(
+        hasattr(value, attr) for attr in required
+    )
+
+
 def is_delegation_request(value: object) -> bool:
     """DelegationRequest benzeri nesneleri sınıf-referans farklarına rağmen tanımlar."""
     if isinstance(value, DelegationRequest):
         return True
-    required = ("task_id", "reply_to", "target_agent", "payload")
-    return type(value).__name__ == "DelegationRequest" and all(hasattr(value, attr) for attr in required)
+    return type(value).__name__ == "DelegationRequest" and is_p2p_message(value)

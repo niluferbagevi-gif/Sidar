@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Optional
+from typing import Dict, Optional
 
 from config import Config
 
@@ -124,7 +124,15 @@ class SupervisorAgent(BaseAgent):
             return str(parsed.get("decision", "")).strip().lower() == "reject"
         return "decision=reject" in body.lower()
 
-    async def _delegate(self, receiver: str, goal: str, intent: str, parent_task_id: Optional[str] = None, sender: str = "supervisor") -> TaskResult:
+    async def _delegate(
+        self,
+        receiver: str,
+        goal: str,
+        intent: str,
+        parent_task_id: Optional[str] = None,
+        sender: str = "supervisor",
+        context: Optional[Dict[str, str]] = None,
+    ) -> TaskResult:
         task_id = str(uuid.uuid4())
         envelope = TaskEnvelope(
             task_id=task_id,
@@ -133,6 +141,7 @@ class SupervisorAgent(BaseAgent):
             goal=goal,
             intent=intent,
             parent_task_id=parent_task_id,
+            context=dict(context or {}),
         )
         agent = self.registry.get(receiver)
 
@@ -193,14 +202,21 @@ class SupervisorAgent(BaseAgent):
                 self._delegate(
                     current.target_agent,
                     current.payload,
-                    intent="p2p",
-                    parent_task_id=parent_task_id,
+                    intent=current.intent or "p2p",
+                    parent_task_id=current.parent_task_id or parent_task_id or current.task_id,
                     sender=current.reply_to,
+                    context={
+                        "p2p_protocol": current.protocol,
+                        "p2p_sender": current.reply_to,
+                        "p2p_receiver": current.target_agent,
+                        "p2p_reason": str(current.meta.get("reason", "")),
+                        "p2p_handoff_depth": str(current.handoff_depth),
+                    },
                 ),
                 timeout=getattr(getattr(self, "cfg", None), "REACT_TIMEOUT", 60),
             )
             if is_delegation_request(result.summary):
-                current = result.summary
+                current = result.summary.bumped() if hasattr(result.summary, "bumped") else result.summary
                 continue
             return result
         return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary="[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı.")

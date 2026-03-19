@@ -183,7 +183,7 @@ def test_supervisor_routes_research_delegation_requests_through_p2p(monkeypatch)
         payload="araştırma bulgusunu koda dönüştür",
     )
 
-    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor"):
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor", context=None):
         assert receiver == "researcher"
         assert intent == "research"
         assert parent_task_id is None
@@ -214,7 +214,7 @@ def test_supervisor_routes_review_delegation_requests_through_p2p(monkeypatch):
         payload="review geri bildirimlerini uygula",
     )
 
-    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor"):
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor", context=None):
         assert receiver == "reviewer"
         assert intent == "review"
         assert parent_task_id is None
@@ -324,6 +324,51 @@ def test_supervisor_route_p2p_timeout_bubbles_for_unresponsive_subagent():
         asyncio.run(s._route_p2p(req, max_hops=2))
 
     assert published == [("supervisor", "P2P yönlendirme: reviewer → coder")]
+
+
+def test_supervisor_route_p2p_preserves_direct_handoff_context():
+    s = object.__new__(SupervisorAgent)
+    s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 1})()
+
+    class _Events:
+        async def publish(self, *_args):
+            return None
+
+    captured = {}
+
+    async def _delegate(receiver, goal, intent, parent_task_id=None, sender="supervisor", context=None):
+        captured["receiver"] = receiver
+        captured["goal"] = goal
+        captured["intent"] = intent
+        captured["parent_task_id"] = parent_task_id
+        captured["sender"] = sender
+        captured["context"] = dict(context or {})
+        return TaskResult(task_id="ok", status="done", summary="P2P:DONE")
+
+    s.events = _Events()
+    s._delegate = _delegate
+
+    req = DelegationRequest(
+        task_id="p2p-ctx",
+        reply_to="coder",
+        target_agent="reviewer",
+        payload="review_code|diff",
+        intent="review",
+        parent_task_id="root-1",
+        handoff_depth=2,
+        meta={"reason": "coder_request_review"},
+    )
+
+    result = asyncio.run(s._route_p2p(req, max_hops=2))
+
+    assert result.summary == "P2P:DONE"
+    assert captured["receiver"] == "reviewer"
+    assert captured["sender"] == "coder"
+    assert captured["intent"] == "review"
+    assert captured["parent_task_id"] == "root-1"
+    assert captured["context"]["p2p_reason"] == "coder_request_review"
+    assert captured["context"]["p2p_sender"] == "coder"
+    assert captured["context"]["p2p_receiver"] == "reviewer"
 
 
 def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch):
