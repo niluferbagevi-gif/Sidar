@@ -811,6 +811,25 @@ def test_schedule_background_evaluation_skips_when_sampling_disables_it(monkeypa
     judge.schedule_background_evaluation("q", ["d1"], "yanıt")
 
 
+def test_inc_prometheus_swallows_gauge_errors(monkeypatch):
+    import core.judge as judge_mod
+
+    class _Gauge:
+        def __init__(self, _name, _description):
+            raise RuntimeError("prometheus unavailable")
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("prometheus_client")
+    fake_mod.Gauge = _Gauge
+    monkeypatch.setitem(sys.modules, "prometheus_client", fake_mod)
+    monkeypatch.setattr(judge_mod, "_prometheus_gauges", {})
+
+    judge_mod._inc_prometheus("sidar_broken_metric", 1.0)
+    assert judge_mod._prometheus_gauges == {}
+
+
 def test_inc_prometheus_creates_and_reuses_gauge(monkeypatch):
     import core.judge as judge_mod
 
