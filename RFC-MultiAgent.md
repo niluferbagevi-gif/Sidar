@@ -326,4 +326,28 @@ Her alt göreve span:
 
 ## 16) Uygulama Sonucu ve Kapanış
 
-Bu RFC'de tasarlanan Supervisor, Coder, Researcher ve Reviewer ajan mimarisi **v3.0.0** ile devreye alınmış, **v3.2.0** ile Autonomous LLMOps anlatısının merkezine yerleşmiş ve **v4.2.0** itibarıyla audit trail + direct handoff doğrulamalarıyla kurumsal olarak kapanış almıştır. Eski tekli ajan (SidarAgent) akışı tamamen kullanımdan kaldırılmıştır (deprecated).
+Bu RFC artık yalnızca "çok ajanlı mimariye geçildi" bilgisini taşıyan tarihsel bir kapanış notu değildir; depo içindeki gerçek işletim modeli **telemetry-first gözlemlenebilirlik**, **swarm tabanlı hata izolasyonu** ve **audit-log ile denetlenebilir yürütüm** ilkeleri etrafında kalıcı olarak şekillenmiştir. Supervisor/Coder/Researcher/Reviewer ayrımı korunurken, operasyonel güvenceyi sağlayan katman artık rollerin varlığından çok bu rollerin nasıl izlendiği, birbirine nasıl görev devrettiği ve başarısızlıkların nasıl çevrelendiğidir.
+
+### 16.1 Telemetry-first işletim modeli
+
+- Her kullanıcı isteği, supervisor planlama adımı, swarm alt görevi ve sentez aşaması span/metric üretimine uygun şekilde ele alınır.
+- `cfg.init_telemetry(...)` ile başlatılan OpenTelemetry hattı; FastAPI istekleri, `httpx` istemci çağrıları ve uygulama içi supervisor/swarm akışlarını aynı iz üzerinde ilişkilendirecek şekilde kullanılır.
+- Hedef artık yalnızca "istek başarılı mı" sorusunu yanıtlamak değil; **hangi role neden route edildi**, **hangi alt görev ne kadar sürdü**, **hangi araç/handoff gecikme veya hata üretti** sorularını da üretim sırasında cevaplayabilmektir.
+- Bu nedenle bu RFC'nin kapanış kriteri, mimarinin devreye alınmış olması kadar, Jaeger/OTEL üzerinden uçtan uca iz bırakabilen ve olay sonrası inceleme yapılabilen bir yürütüm modelinin yerleşmesidir.
+
+### 16.2 Swarm ile hata izolasyonu ve kontrollü delegasyon
+
+- `SwarmOrchestrator` artık mimarinin deneysel eki değil; karma görevleri tekil `SwarmTask` birimlerine bölerek ajan seçimi, paralel yürütüm ve doğrudan rol→rol handoff akışını yöneten operasyonel çekirdektir.
+- Hata izolasyonu, bir alt görevin başarısız olmasının tüm kullanıcı isteğini körlemesine düşürmesi yerine, başarısızlığı ilgili task/route üzerinde sınırlandırmak ve geri kalan görevleri ölçülebilir biçimde sürdürmek üzerine kuruludur.
+- `p2p.v1` bağlamı, `route_trace`, hop sınırları ve loop guard mekanizmaları; delegasyonun gözlenebilir, tekrar üretilebilir ve kendi üstüne çöken sonsuz yönlendirme döngülerine karşı dayanıklı olmasını sağlar.
+- Böylece kapanış notu yalnızca "multi-agent tamamlandı" değil; **başarısızlık alanı küçültülmüş**, **fallback davranışı tanımlanmış** ve **swarm yürütümü testlerle çevrelenmiş** bir orkestrasyon katmanının kalıcı hale geldiğini ifade eder.
+
+### 16.3 Audit logging ve kurumsal denetlenebilirlik
+
+- Web/API erişim yolu, RBAC/policy çözümlemesi ve kaynak erişimi sonrasında `_schedule_access_audit_log(...)` üzerinden kullanıcı, tenant, kaynak, aksiyon ve allow/deny sonucunu kalıcı audit trail'e yazar.
+- Audit kaydı burada yalnızca güvenlik eki değildir; supervisor/swarm mimarisinin kurumsal kabulü için gerekli olan "kim, neye, hangi yetki kararıyla erişti" sorusunun temel veri kaynağıdır.
+- Çok ajanlı yürütümün kurumsal kapanışı; telemetry'nin olay akışını, swarm'ın görev izolasyonunu ve audit log'un yetki/erişim izini birlikte sunabildiği noktada anlam kazanır. Bu üçlüden biri eksik olduğunda mimari teknik olarak çalışsa bile operasyonel olarak tamamlanmış sayılmaz.
+
+### 16.4 Son karar
+
+Bu nedenle RFC-0001'in güncel kapanış kararı şudur: Sidar'da supervisor-first ve swarm destekli çok ajanlı mimari **uygulanmış**, **varsayılan hale gelmiş** ve **telemetry + audit trail + direct handoff doğrulamaları** ile üretim/kurumsal kullanım için denetlenebilir bir işletim modeline dönüştürülmüştür. `SidarAgent` geriye dönük uyumluluk yüzeyi olarak yaşamaya devam etse de mimarinin özü artık tekli ajan akışı değil; izlenebilir, ölçülebilir ve hata alanı sınırlandırılmış çok ajanlı orkestrasyondur.
