@@ -822,60 +822,65 @@ Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v3.0 mimarisindeki bağımlılıkları yalnızca “dosya import ediyor mu?” seviyesinde değil; **event bus**, **güvenlik zinciri**, **DB merkezli state** ve **P2P delegasyon köprüleri** ile birlikte açıklar.
+Bu bölüm artık yalnızca doğrusal import ilişkilerini değil; v4.3.0 ile belirginleşen **katmanlı Swarm mimarisini**, **güvenlik/middleware akışını**, **veri + LLM servis katmanını** ve tüm sistemi saran **observability omurgasını** birlikte açıklar.
 
-### 9.1 Statik Bağımlılık Matrisi (Import Grafı)
+### 9.1 Katmanlı Swarm Bağımlılık ve Veri Akışı Haritası
 
-Aşağıdaki harita güncel iç bağımlılık yönünü gösterir (ok yönü: bağımlı modül → bağımlı olunan modül).
+Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü ve katmanlar arası akışı özetler:
 
 ```
-config.py              ←── (bağımlılık YOK — kök konfigürasyon)
+[ 1. Arayüz Katmanı (Frontend & Entry) ]
+  ├── web_server.py (FastAPI, WebSocket) <---> web_ui_react/ (React SPA)
+  ├── cli.py (Terminal)
+  └── gui_launcher.py (Masaüstü başlatıcı)
 
-core/db.py             ←── config.py
-core/llm_client.py     ←── config.py
-core/llm_metrics.py    ←── core/db.py, config.py
-core/memory.py         ←── core/db.py, config.py
-core/rag.py            ←── config.py
+                 | (istekler / oturum / ws akışı)
+                 v
 
-managers/security.py       ←── config.py
-managers/code_manager.py   ←── managers/security.py, config.py
-managers/github_manager.py ←── (yalnızca dış: PyGithub)
-managers/system_health.py  ←── config.py
-managers/web_search.py     ←── config.py
-managers/package_info.py   ←── (yalnızca dış: httpx, packaging)
-managers/todo_manager.py   ←── config.py
+[ 2. Güvenlik ve Yönlendirme Katmanı (Middleware) ]
+  ├── core/dlp.py (Hassas veri / PII maskeleme)
+  ├── core/router.py (Maliyet / model yönlendirme)
+  ├── core/hitl.py (Kritik eylemler için insan onayı)
+  └── managers/security.py (Dosya / komut / erişim seviyesi kontrolleri)
 
-agent/definitions.py       ←── (salt metin sabiti)
-agent/tooling.py           ←── pydantic (dış)
-agent/base_agent.py        ←── config.py, core/llm_client.py, agent/tooling.py
+                 | (onaylanmış görevler)
+                 v
 
-agent/core/contracts.py    ←── (veri sözleşmeleri)
-agent/core/event_stream.py ←── (event bus)
-agent/core/memory_hub.py   ←── (hafif role/global bağlam merkezi)
-agent/core/registry.py     ←── agent/base_agent.py
-agent/core/supervisor.py   ←── agent/roles/*, agent/core/contracts.py,
-                              agent/core/event_stream.py, agent/core/memory_hub.py
+[ 3. Orkestrasyon Katmanı (Multi-Agent Swarm) ]
+  ├── agent/swarm.py (SwarmOrchestrator)
+  ├── agent/core/supervisor.py (Görev dağıtıcı / handoff kararları)
+  ├── agent/registry.py + agent/core/registry.py (ajan kayıt defteri)
+  ├── agent/core/contracts.py (delegasyon sözleşmeleri)
+  ├── agent/core/event_stream.py (canlı event bus)
+  ├── agent/roles/coder_agent.py (yazılım geliştirme)
+  ├── agent/roles/researcher_agent.py (araştırma & RAG)
+  ├── agent/roles/reviewer_agent.py (kod inceleme / QA)
+  └── plugins/ (dinamik ajan pazaryeri / runtime eklentiler)
 
-agent/roles/coder_agent.py      ←── agent/base_agent.py, managers/code_manager.py, agent/tooling.py
-agent/roles/researcher_agent.py ←── agent/base_agent.py, managers/web_search.py, core/rag.py, agent/tooling.py
-agent/roles/reviewer_agent.py   ←── agent/base_agent.py
+                 | (LLM, bellek ve veri ihtiyacı)
+                 v
 
-agent/registry.py          ←── agent/base_agent.py (AgentRegistry + @register marketplace)
-agent/swarm.py             ←── agent/registry.py, agent/core/supervisor.py,
-                              agent/core/contracts.py, agent/core/event_stream.py
-                              (SwarmOrchestrator: parallel/pipeline/TaskRouter)
+[ 4. Çekirdek AI ve Veri Servisleri ]
+  ├── core/llm_client.py (Ollama, Gemini, Anthropic, OpenAI-uyumlu, LiteLLM gateway)
+  ├── core/rag.py (pgvector, ChromaDB, BM25 hibrit arama)
+  ├── core/memory.py + core/entity_memory.py (kalıcı oturum + persona belleği)
+  ├── core/db.py (oturum, kullanıcı, kota, prompt, policy, audit)
+  └── redis (semantic cache / rate-limit altyapısı)
 
-agent/auto_handle.py       ←── managers/*, core/memory.py, core/rag.py
-agent/sidar_agent.py       ←── config.py, core/*, managers/*, agent/auto_handle.py,
-                              agent/definitions.py, agent/tooling.py,
-                              agent/core/supervisor.py, agent/core/event_stream.py,
-                              agent/roles/reviewer_agent.py
+                 | (araçlar ve dış dünya eylemleri)
+                 v
 
-main.py                    ←── cli.py / web_server.py başlatımı (legacy tekli ajan akışı YOK)
-cli.py                     ←── config.py, agent/sidar_agent.py
-web_server.py              ←── config.py, agent/sidar_agent.py, core/*, managers/*,
-                              agent/core/event_stream.py, agent/registry.py
-github_upload.py           ←── (bağımsız araç)
+[ 5. Dış Entegrasyonlar ve Tooling ]
+  ├── managers/code_manager.py, managers/github_manager.py
+  ├── managers/jira_manager.py, managers/slack_manager.py, managers/teams_manager.py
+  ├── managers/web_search.py, managers/package_info.py, managers/todo_manager.py
+  └── managers/system_health.py
+
+======================================================================
+[ Çapraz Kesen Katman: Gözlemlenebilirlik (Observability) ]
+  * core/llm_metrics.py, core/agent_metrics.py, core/cache_metrics.py
+  * OpenTelemetry span/metric export → Jaeger / OTLP / Prometheus / Grafana
+  * web_server.py ve event stream üzerinden canlı durum + bütçe / metrik yüzeyleri
 ```
 
 ### 9.2 Olay Güdümlü Pub/Sub Omurgası (AgentEventBus)
