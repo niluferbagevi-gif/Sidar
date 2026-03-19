@@ -4,6 +4,23 @@
 
 ---
 
+## [v3.0.30] - 2026-03-19
+FAZ-8 — Son düşük öncelikli kalite borçları kapatıldı; Zero Debt doğrulama turu tamamlandı.
+
+### ✅ FAZ-8 — D-8..D-14 Kapanış Doğrulaması
+**Dosyalar:** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `core/llm_client.py`, `web_server.py`
+- **D-8 Çözüldü:** `core/entity_memory.py` içindeki no-op / dead-code satırı kaldırıldı; `get_entity_memory()` artık yalnızca gerçek `db_url` çözümlemesi yapıyor.
+- **D-9 Çözüldü:** `core/cache_metrics.py` içine modül düzeyinde public `record_cache_hit()`, `record_cache_miss()` ve `record_cache_skip()` sarmalayıcıları eklendi; `core/llm_client.py` private singleton yerine bu public API'yi kullanıyor.
+- **D-10 Çözüldü:** `core/judge.py` içinde `Config()` nesnesi `LLMJudge.__init__()` içine alındı; `_call_llm()` artık aynı config örneğini yeniden kullanıyor.
+- **D-11 Çözüldü:** `core/vision.py` içindeki görsel okuma akışı `await asyncio.to_thread(p.read_bytes)` ile event loop'u bloklamayacak şekilde güncellendi.
+- **D-12 Çözüldü:** `core/active_learning.py` içindeki `IN (...)` SQL güncellemesi named placeholder (`:id_0`, `:id_1`, ...) yaklaşımına taşındı; veri bind parametreleriyle geçiriliyor.
+- **D-13 Çözüldü:** `core/hitl.py` içindeki `_HITLStore` kilidi event loop dışında oluşturulmak yerine `None` ile başlatılıp ilk kullanımda lazy-init ediliyor.
+- **D-14 Çözüldü:** `core/hitl.py` içine public `notify()` wrapper'ı eklendi; `web_server.py` artık private `_notify()` yerine bu public arayüzü çağırıyor.
+
+**🏁 Zero Debt Sonucu:** Audit kapsamındaki tüm bulgular (`K-1..K-2`, `Y-1..Y-6`, `O-1..O-8`, `D-1..D-14`) kapatıldı. Açık kritik, yüksek, orta veya düşük öncelikli bulgu kalmadı; güvenlik/operasyon puanı **10.0/10** olarak teyit edildi.
+
+---
+
 ## [v3.0.26] - 2026-03-18
 FAZ-7 — Slack entegrasyonu ve audit çapraz-doğrulama turu tamamlandı.
 
