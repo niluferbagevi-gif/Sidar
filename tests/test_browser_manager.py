@@ -1,4 +1,5 @@
 import importlib.util
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,3 +113,126 @@ def test_browser_manager_rejects_urls_outside_allowlist():
 
     with pytest.raises(ValueError):
         manager._validate_url("https://openai.com")
+
+
+def test_browser_manager_high_risk_actions_require_hitl_and_write_audit(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+
+    class _Page:
+        def click(self, selector, timeout):
+            calls.append(("click", selector, timeout))
+
+        def fill(self, selector, value, timeout):
+            calls.append(("fill", selector, value, timeout))
+
+        def select_option(self, selector, value, timeout):
+            calls.append(("select", selector, value, timeout))
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-hitl",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/jira/issue/SID-1",
+    )
+    manager._sessions[session.session_id] = session
+
+    approvals = []
+
+    class _Gate:
+        async def request_approval(self, **kwargs):
+            approvals.append(kwargs)
+            return True
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _Gate())
+
+    ok_click, _ = asyncio.run(
+        manager.click_element_hitl(session.session_id, "button[type='submit']", reason="Jira issue güncelle")
+    )
+    ok_fill, _ = asyncio.run(
+        manager.fill_form_hitl(session.session_id, "#summary", "Yeni özet", reason="Issue alanı güncelle")
+    )
+    ok_select, _ = asyncio.run(
+        manager.select_option_hitl(session.session_id, "#priority", "high", reason="Öncelik değiştir")
+    )
+
+    assert ok_click is True
+    assert ok_fill is True
+    assert ok_select is True
+    assert len(approvals) == 3
+    assert approvals[0]["action"] == "browser_click"
+    assert approvals[1]["payload"]["value_preview"].endswith(f"(len={len('Yeni özet')})")
+    assert ("click", "button[type='submit']", 5000) in calls
+    assert ("fill", "#summary", "Yeni özet", 5000) in calls
+    assert ("select", "#priority", "high", 5000) in calls
+
+    audit_log = manager.list_audit_log()
+    assert [entry["status"] for entry in audit_log] == [
+        "pending_approval",
+        "approved",
+        "executed",
+        "pending_approval",
+        "approved",
+        "executed",
+        "pending_approval",
+        "approved",
+        "executed",
+    ]
+
+
+def test_browser_manager_hitl_rejection_blocks_execution(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+
+    class _Page:
+        def click(self, selector, timeout):
+            calls.append(("click", selector, timeout))
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-reject",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/jira/issue/SID-2",
+    )
+    manager._sessions[session.session_id] = session
+
+    class _Gate:
+        async def request_approval(self, **kwargs):
+            return False
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _Gate())
+
+    ok, msg = asyncio.run(manager.click_element_hitl(session.session_id, "button[type='submit']"))
+
+    assert ok is False
+    assert "reddedildi" in msg
+    assert calls == []
+    assert [entry["status"] for entry in manager.list_audit_log()] == ["pending_approval", "rejected"]
+
+
+def test_browser_manager_blocks_sync_mutations_when_hitl_enabled(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    manager._sessions["sess-guard"] = BM_MOD.BrowserSession(
+        session_id="sess-guard",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(click=lambda *_a, **_k: None, fill=lambda *_a, **_k: None, select_option=lambda *_a, **_k: None),
+    )
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=True))
+
+    ok_click, msg_click = manager.click_element("sess-guard", "button[type='submit']")
+    ok_fill, msg_fill = manager.fill_form("sess-guard", "#summary", "demo")
+    ok_select, msg_select = manager.select_option("sess-guard", "#priority", "high")
+
+    assert ok_click is False and "click_element_hitl" in msg_click
+    assert ok_fill is False and "fill_form_hitl" in msg_fill
+    assert ok_select is False and "select_option_hitl" in msg_select

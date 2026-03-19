@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from config import Config
+from core.hitl import get_hitl_gate
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class BrowserSession:
     context: Any = None
     driver: Any = None
     runtime: Any = None
+    current_url: str = ""
 
 
 class BrowserManager:
@@ -49,6 +51,121 @@ class BrowserManager:
         self.artifact_dir = Path(tempfile.gettempdir()) / "sidar_browser_artifacts"
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, BrowserSession] = {}
+        self._audit_log: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _is_high_risk_click(selector: str) -> bool:
+        normalized = (selector or "").strip().lower()
+        risk_markers = (
+            "submit",
+            "save",
+            "update",
+            "delete",
+            "remove",
+            "confirm",
+            "publish",
+            "create",
+            "jira",
+        )
+        return any(marker in normalized for marker in risk_markers)
+
+    @staticmethod
+    def _summarize_value(value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            return ""
+        if len(text) <= 8:
+            return "*" * len(text)
+        return f"{text[:2]}***{text[-2:]} (len={len(text)})"
+
+    def _record_audit_event(
+        self,
+        *,
+        session_id: str,
+        action: str,
+        status: str,
+        selector: str = "",
+        current_url: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        entry = {
+            "timestamp": time.time(),
+            "session_id": session_id,
+            "action": action,
+            "status": status,
+            "selector": selector,
+            "url": current_url,
+            "details": dict(details or {}),
+        }
+        self._audit_log.append(entry)
+        logger.info(
+            "Browser audit: session=%s action=%s status=%s selector=%s url=%s",
+            session_id,
+            action,
+            status,
+            selector,
+            current_url,
+        )
+        return entry
+
+    def list_audit_log(self) -> list[dict[str, Any]]:
+        return list(self._audit_log)
+
+    def _session_url(self, session: BrowserSession) -> str:
+        if session.current_url:
+            return session.current_url
+        if session.provider == "playwright" and getattr(session.page, "url", None):
+            return str(session.page.url)
+        if session.provider == "selenium":
+            return str(getattr(session.driver, "current_url", "") or "")
+        return ""
+
+    async def _request_hitl_approval(
+        self,
+        *,
+        session: BrowserSession,
+        action: str,
+        description: str,
+        payload: dict[str, Any],
+        selector: str,
+    ) -> bool:
+        current_url = self._session_url(session)
+        self._record_audit_event(
+            session_id=session.session_id,
+            action=action,
+            status="pending_approval",
+            selector=selector,
+            current_url=current_url,
+            details=payload,
+        )
+        approved = await get_hitl_gate().request_approval(
+            action=action,
+            description=description,
+            payload=payload,
+            requested_by="BrowserManager",
+        )
+        self._record_audit_event(
+            session_id=session.session_id,
+            action=action,
+            status="approved" if approved else "rejected",
+            selector=selector,
+            current_url=current_url,
+            details=payload,
+        )
+        return approved
+
+    def _sync_hitl_guard(self, action: str, selector: str, *, force_block: bool = False) -> tuple[bool, str] | None:
+        gate = get_hitl_gate()
+        if not getattr(gate, "enabled", False):
+            return None
+        if not force_block and action == "browser_click" and not self._is_high_risk_click(selector):
+            return None
+        async_method = {
+            "browser_click": "click_element_hitl",
+            "browser_fill_form": "fill_form_hitl",
+            "browser_select_option": "select_option_hitl",
+        }.get(action, "HITL-korumalı async API")
+        return False, f"HITL etkin; bu işlem için {async_method} kullanılmalı: {selector}"
 
     def _provider_candidates(self) -> list[str]:
         if self.provider == "auto":
@@ -180,12 +297,14 @@ class BrowserManager:
 
         if session.provider == "playwright":
             session.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+            session.current_url = url
             return True, f"Açıldı: {url}"
 
         session.driver.get(url)
+        session.current_url = url
         return True, f"Açıldı: {url}"
 
-    def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
+    def _click_element_impl(self, session_id: str, selector: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
         if session.provider == "playwright":
             session.page.click(selector, timeout=self.timeout_ms)
@@ -196,7 +315,57 @@ class BrowserManager:
         session.driver.find_element(By.CSS_SELECTOR, selector).click()
         return True, f"Tıklandı: {selector}"
 
-    def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
+    def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
+        blocked = self._sync_hitl_guard("browser_click", selector)
+        if blocked is not None:
+            return blocked
+        return self._click_element_impl(session_id, selector)
+
+    async def click_element_hitl(
+        self,
+        session_id: str,
+        selector: str,
+        *,
+        reason: str = "",
+        require_confirmation: bool | None = None,
+    ) -> tuple[bool, str]:
+        session = self._require_session(session_id)
+        must_confirm = self._is_high_risk_click(selector) if require_confirmation is None else bool(require_confirmation)
+        if not must_confirm:
+            return self.click_element(session_id, selector)
+
+        payload = {
+            "session_id": session_id,
+            "selector": selector,
+            "url": self._session_url(session),
+            "reason": reason.strip(),
+        }
+        description = (
+            f"Tarayıcıda yüksek riskli tıklama yapılacak: {selector}"
+            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        )
+        approved = await self._request_hitl_approval(
+            session=session,
+            action="browser_click",
+            description=description,
+            payload=payload,
+            selector=selector,
+        )
+        if not approved:
+            return False, f"HITL onayı beklenirken/sonucunda işlem reddedildi: {selector}"
+
+        ok, message = self._click_element_impl(session_id, selector)
+        self._record_audit_event(
+            session_id=session_id,
+            action="browser_click",
+            status="executed" if ok else "execution_failed",
+            selector=selector,
+            current_url=self._session_url(session),
+            details=payload,
+        )
+        return ok, message
+
+    def _fill_form_impl(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
         session = self._require_session(session_id)
         if session.provider == "playwright":
             if clear:
@@ -213,7 +382,56 @@ class BrowserManager:
         element.send_keys(value)
         return True, f"Form dolduruldu: {selector}"
 
-    def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+    def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
+        blocked = self._sync_hitl_guard("browser_fill_form", selector, force_block=True)
+        if blocked is not None:
+            return blocked
+        return self._fill_form_impl(session_id, selector, value, clear=clear)
+
+    async def fill_form_hitl(
+        self,
+        session_id: str,
+        selector: str,
+        value: str,
+        *,
+        clear: bool = True,
+        reason: str = "",
+    ) -> tuple[bool, str]:
+        session = self._require_session(session_id)
+        payload = {
+            "session_id": session_id,
+            "selector": selector,
+            "url": self._session_url(session),
+            "value_preview": self._summarize_value(value),
+            "clear": bool(clear),
+            "reason": reason.strip(),
+        }
+        description = (
+            f"Tarayıcı form alanı doldurulacak: {selector}"
+            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        )
+        approved = await self._request_hitl_approval(
+            session=session,
+            action="browser_fill_form",
+            description=description,
+            payload=payload,
+            selector=selector,
+        )
+        if not approved:
+            return False, f"HITL onayı beklenirken/sonucunda form doldurma reddedildi: {selector}"
+
+        ok, message = self._fill_form_impl(session_id, selector, value, clear=clear)
+        self._record_audit_event(
+            session_id=session_id,
+            action="browser_fill_form",
+            status="executed" if ok else "execution_failed",
+            selector=selector,
+            current_url=self._session_url(session),
+            details=payload,
+        )
+        return ok, message
+
+    def _select_option_impl(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
         if session.provider == "playwright":
             session.page.select_option(selector, value=value, timeout=self.timeout_ms)
@@ -224,6 +442,53 @@ class BrowserManager:
 
         Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
         return True, f"Seçim yapıldı: {selector}={value}"
+
+    def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+        blocked = self._sync_hitl_guard("browser_select_option", selector, force_block=True)
+        if blocked is not None:
+            return blocked
+        return self._select_option_impl(session_id, selector, value)
+
+    async def select_option_hitl(
+        self,
+        session_id: str,
+        selector: str,
+        value: str,
+        *,
+        reason: str = "",
+    ) -> tuple[bool, str]:
+        session = self._require_session(session_id)
+        payload = {
+            "session_id": session_id,
+            "selector": selector,
+            "url": self._session_url(session),
+            "value_preview": self._summarize_value(value),
+            "reason": reason.strip(),
+        }
+        description = (
+            f"Tarayıcı seçim alanı güncellenecek: {selector}"
+            + (f" | Gerekçe: {reason.strip()}" if reason.strip() else "")
+        )
+        approved = await self._request_hitl_approval(
+            session=session,
+            action="browser_select_option",
+            description=description,
+            payload=payload,
+            selector=selector,
+        )
+        if not approved:
+            return False, f"HITL onayı beklenirken/sonucunda seçim reddedildi: {selector}"
+
+        ok, message = self._select_option_impl(session_id, selector, value)
+        self._record_audit_event(
+            session_id=session_id,
+            action="browser_select_option",
+            status="executed" if ok else "execution_failed",
+            selector=selector,
+            current_url=self._session_url(session),
+            details=payload,
+        )
+        return ok, message
 
     def capture_dom(self, session_id: str, selector: str = "html") -> tuple[bool, str]:
         session = self._require_session(session_id)
