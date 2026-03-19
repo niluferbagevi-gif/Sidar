@@ -11,6 +11,7 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 3. Fallback: Basit anahtar kelime eşleşmesi
 """
 
+import ast
 import hashlib
 import json
 import logging
@@ -24,7 +25,7 @@ import ipaddress
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from config import Config
 
@@ -44,15 +45,26 @@ logger = logging.getLogger(__name__)
 
 
 class GraphIndex:
-    """Kod tabanı içi modül bağımlılıklarını basit bir yönlü grafik olarak tutar."""
+    """Kod tabanı içi modül, endpoint ve çağrı ilişkilerini yönlü grafik olarak tutar."""
 
     SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+    ROUTE_DECORATOR_METHODS = {
+        "get": "GET",
+        "post": "POST",
+        "put": "PUT",
+        "delete": "DELETE",
+        "patch": "PATCH",
+        "websocket": "WS",
+    }
+    HTTP_CALL_METHODS = {"get", "post", "put", "delete", "patch"}
 
     def __init__(self, root_dir: Path, *, max_files: int = 5000) -> None:
         self.root_dir = Path(root_dir).resolve()
         self.max_files = max_files
-        self.nodes: Dict[str, Dict[str, str]] = {}
-        self.edges: Dict[str, set[str]] = {}
+        self.nodes: Dict[str, Dict[str, Any]] = {}
+        self.edges: Dict[str, Set[str]] = {}
+        self.reverse_edges: Dict[str, Set[str]] = {}
+        self.edge_kinds: Dict[Tuple[str, str], Set[str]] = {}
 
     @staticmethod
     def _normalize_node_id(root_dir: Path, path: Path) -> str:
@@ -61,14 +73,26 @@ class GraphIndex:
     def clear(self) -> None:
         self.nodes.clear()
         self.edges.clear()
+        self.reverse_edges.clear()
+        self.edge_kinds.clear()
 
-    def add_node(self, node_id: str, *, file_type: str) -> None:
-        self.nodes.setdefault(node_id, {"file_type": file_type})
+    def add_node(self, node_id: str, **attributes: Any) -> None:
+        current = self.nodes.setdefault(node_id, {})
+        current.update({key: value for key, value in attributes.items() if value is not None})
         self.edges.setdefault(node_id, set())
+        self.reverse_edges.setdefault(node_id, set())
 
-    def add_edge(self, source: str, target: str) -> None:
+    def add_edge(self, source: str, target: str, *, kind: str = "depends_on") -> None:
         self.edges.setdefault(source, set()).add(target)
         self.edges.setdefault(target, set())
+        self.reverse_edges.setdefault(source, set())
+        self.reverse_edges.setdefault(target, set()).add(source)
+        self.edge_kinds.setdefault((source, target), set()).add(kind)
+
+    @classmethod
+    def _endpoint_node_id(cls, method: str, path: str) -> str:
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        return f"endpoint:{method.upper()} {normalized_path}"
 
     def _iter_source_files(self, root_dir: Path) -> List[Path]:
         files: List[Path] = []
@@ -115,28 +139,143 @@ class GraphIndex:
         ]
         return [candidate for candidate in candidates if candidate.exists() and candidate.is_file() and candidate.is_relative_to(root_dir)]
 
-    def _extract_dependencies(self, file_path: Path, content: str) -> List[Path]:
+    @staticmethod
+    def _extract_str_literal(node: Any) -> Optional[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value.strip()
+        if isinstance(node, ast.Str):
+            return node.s.strip()
+        return None
+
+    @staticmethod
+    def _normalize_endpoint_path(raw_url: str) -> Optional[str]:
+        value = (raw_url or "").strip().strip("'\"")
+        if not value or "${" in value or "{" in value:
+            return None
+        if value.startswith(("ws://", "wss://", "http://", "https://")):
+            parsed = urllib.parse.urlparse(value)
+            hostname = (parsed.hostname or "").lower()
+            if hostname and hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                return None
+            value = parsed.path or "/"
+        if not value.startswith("/"):
+            return None
+        return value or "/"
+
+    def _parse_python_source(self, file_path: Path, content: str) -> Tuple[List[Path], List[Dict[str, str]], List[Dict[str, str]]]:
         deps: List[Path] = []
+        endpoint_defs: List[Dict[str, str]] = []
+        endpoint_calls: List[Dict[str, str]] = []
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            return deps, endpoint_defs, endpoint_calls
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    deps.extend(self._python_import_candidates(file_path, alias.name, 0, self.root_dir))
+                continue
+
+            if isinstance(node, ast.ImportFrom):
+                deps.extend(self._python_import_candidates(file_path, node.module or "", int(node.level or 0), self.root_dir))
+                continue
+
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                        continue
+                    method = self.ROUTE_DECORATOR_METHODS.get(decorator.func.attr.lower())
+                    if not method or not decorator.args:
+                        continue
+                    route_path = self._extract_str_literal(decorator.args[0])
+                    normalized_path = self._normalize_endpoint_path(route_path or "")
+                    if not normalized_path:
+                        continue
+                    endpoint_defs.append(
+                        {
+                            "endpoint_id": self._endpoint_node_id(method, normalized_path),
+                            "method": method,
+                            "path": normalized_path,
+                            "handler": node.name,
+                        }
+                    )
+                continue
+
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+
+            call_method = node.func.attr.lower()
+            if call_method not in self.HTTP_CALL_METHODS:
+                continue
+
+            base_name = ""
+            if isinstance(node.func.value, ast.Name):
+                base_name = node.func.value.id.lower()
+            elif isinstance(node.func.value, ast.Attribute):
+                base_name = node.func.value.attr.lower()
+            if base_name in {"app", "router"}:
+                continue
+
+            if not node.args:
+                continue
+            target = self._extract_str_literal(node.args[0])
+            normalized_path = self._normalize_endpoint_path(target or "")
+            if not normalized_path:
+                continue
+            endpoint_calls.append(
+                {
+                    "endpoint_id": self._endpoint_node_id(call_method.upper(), normalized_path),
+                    "method": call_method.upper(),
+                    "path": normalized_path,
+                }
+            )
+
+        return deps, endpoint_defs, endpoint_calls
+
+    def _extract_script_endpoint_calls(self, content: str) -> List[Dict[str, str]]:
+        calls: List[Dict[str, str]] = []
+        seen: Set[Tuple[str, str]] = set()
+
+        fetch_pattern = re.compile(
+            r"""fetch\(\s*['"](?P<url>[^'"]+)['"]\s*(?:,\s*\{(?P<opts>.*?)\})?\s*\)""",
+            re.DOTALL,
+        )
+        for match in fetch_pattern.finditer(content):
+            path = self._normalize_endpoint_path(match.group("url"))
+            if not path:
+                continue
+            opts = match.group("opts") or ""
+            method_match = re.search(r"""method\s*:\s*['"]([A-Za-z]+)['"]""", opts)
+            method = (method_match.group(1) if method_match else "GET").upper()
+            key = (method, path)
+            if key in seen:
+                continue
+            seen.add(key)
+            calls.append({"endpoint_id": self._endpoint_node_id(method, path), "method": method, "path": path})
+
+        for match in re.finditer(r"""new\s+WebSocket\(\s*['"](?P<url>[^'"]+)['"]\s*\)""", content):
+            path = self._normalize_endpoint_path(match.group("url"))
+            if not path:
+                continue
+            key = ("WS", path)
+            if key in seen:
+                continue
+            seen.add(key)
+            calls.append({"endpoint_id": self._endpoint_node_id("WS", path), "method": "WS", "path": path})
+
+        return calls
+
+    def _extract_dependencies(self, file_path: Path, content: str) -> Tuple[List[Path], List[Dict[str, str]], List[Dict[str, str]]]:
         if file_path.suffix.lower() == ".py":
-            try:
-                import ast
+            return self._parse_python_source(file_path, content)
 
-                tree = ast.parse(content)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for alias in node.names:
-                            deps.extend(self._python_import_candidates(file_path, alias.name, 0, self.root_dir))
-                    elif isinstance(node, ast.ImportFrom):
-                        deps.extend(self._python_import_candidates(file_path, node.module or "", int(node.level or 0), self.root_dir))
-            except SyntaxError:
-                return deps
-            return deps
-
+        deps: List[Path] = []
         import_refs = re.findall(r"""(?:from|import)\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)""", content)
         for pair in import_refs:
             ref = next((item for item in pair if item), "")
             deps.extend(self._script_import_candidates(file_path, ref, self.root_dir))
-        return deps
+        return deps, [], self._extract_script_endpoint_calls(content)
 
     def rebuild(self, root_dir: Optional[Path] = None) -> Dict[str, int]:
         scan_root = Path(root_dir or self.root_dir).resolve()
@@ -145,26 +284,67 @@ class GraphIndex:
         files = self._iter_source_files(scan_root)
         for file_path in files:
             node_id = self._normalize_node_id(scan_root, file_path)
-            self.add_node(node_id, file_type=file_path.suffix.lower())
+            self.add_node(node_id, file_type=file_path.suffix.lower(), node_type="file")
         for file_path in files:
             source_id = self._normalize_node_id(scan_root, file_path)
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 continue
-            for dep_path in self._extract_dependencies(file_path, content):
+            dep_paths, endpoint_defs, endpoint_calls = self._extract_dependencies(file_path, content)
+            for dep_path in dep_paths:
                 target_id = self._normalize_node_id(scan_root, dep_path)
                 if target_id in self.nodes:
-                    self.add_edge(source_id, target_id)
+                    self.add_edge(source_id, target_id, kind="imports")
+            for endpoint in endpoint_defs:
+                endpoint_id = endpoint["endpoint_id"]
+                self.add_node(
+                    endpoint_id,
+                    node_type="endpoint",
+                    method=endpoint["method"],
+                    path=endpoint["path"],
+                    handler=endpoint.get("handler"),
+                    file_type="endpoint",
+                )
+                self.add_edge(endpoint_id, source_id, kind="handled_by")
+            for endpoint in endpoint_calls:
+                endpoint_id = endpoint["endpoint_id"]
+                self.add_node(
+                    endpoint_id,
+                    node_type="endpoint",
+                    method=endpoint["method"],
+                    path=endpoint["path"],
+                    file_type="endpoint",
+                )
+                self.add_edge(source_id, endpoint_id, kind="calls_endpoint")
         edge_count = sum(len(targets) for targets in self.edges.values())
         return {"nodes": len(self.nodes), "edges": edge_count}
 
     def neighbors(self, node_id: str) -> List[str]:
         return sorted(self.edges.get(node_id, set()))
 
+    def reverse_neighbors(self, node_id: str) -> List[str]:
+        return sorted(self.reverse_edges.get(node_id, set()))
+
+    def resolve_node_id(self, query: str) -> Optional[str]:
+        normalized = query.strip()
+        if not normalized:
+            return None
+        if normalized in self.nodes:
+            return normalized
+        lowered = normalized.lower()
+        exact_matches = [node_id for node_id in self.nodes if node_id.lower() == lowered]
+        if len(exact_matches) == 1:
+            return exact_matches[0]
+        suffix_matches = [
+            node_id for node_id in self.nodes
+            if node_id.lower().endswith(lowered) or lowered in node_id.lower()
+        ]
+        return sorted(suffix_matches, key=len)[0] if len(suffix_matches) == 1 else None
+
     def explain_dependency_path(self, source: str, target: str) -> List[str]:
-        source_id = source.strip()
-        target_id = target.strip()
+        source_id = self.resolve_node_id(source) or source.strip()
+        target_id = self.resolve_node_id(target) or target.strip()
         if source_id not in self.nodes or target_id not in self.nodes:
             return []
         queue: List[List[str]] = [[source_id]]
@@ -181,6 +361,55 @@ class GraphIndex:
                 queue.append(path + [neighbor])
         return []
 
+    def _collect_bfs(self, start: str, adjacency: Dict[str, Set[str]], max_depth: int) -> Dict[str, int]:
+        if start not in adjacency:
+            return {}
+        queue: List[Tuple[str, int]] = [(start, 0)]
+        seen = {start}
+        distances: Dict[str, int] = {}
+        while queue:
+            node_id, depth = queue.pop(0)
+            if depth >= max_depth:
+                continue
+            for neighbor in sorted(adjacency.get(node_id, set())):
+                if neighbor in seen:
+                    continue
+                seen.add(neighbor)
+                distances[neighbor] = depth + 1
+                queue.append((neighbor, depth + 1))
+        return distances
+
+    def impact_analysis(self, target: str, *, max_depth: int = 4, top_k: int = 10) -> Dict[str, Any]:
+        node_id = self.resolve_node_id(target)
+        if not node_id or node_id not in self.nodes:
+            return {}
+
+        forward = self._collect_bfs(node_id, self.edges, max_depth)
+        reverse = self._collect_bfs(node_id, self.reverse_edges, max_depth)
+        direct_dependents = self.reverse_neighbors(node_id)
+        endpoint_impacts = [item for item in reverse if str(item).startswith("endpoint:")]
+        caller_files = [
+            item for item in reverse
+            if self.nodes.get(item, {}).get("node_type") == "file"
+        ]
+        dependency_samples: List[List[str]] = []
+        sample_candidates = endpoint_impacts[:3] + caller_files[:3]
+        for candidate in sample_candidates[:3]:
+            path = self.explain_dependency_path(candidate, node_id)
+            if path:
+                dependency_samples.append(path)
+
+        return {
+            "target": node_id,
+            "node_type": self.nodes.get(node_id, {}).get("node_type", "file"),
+            "direct_dependents": direct_dependents[:top_k],
+            "transitive_dependents": sorted(reverse, key=lambda item: (reverse[item], item))[:top_k],
+            "dependencies": sorted(forward, key=lambda item: (forward[item], item))[:top_k],
+            "impacted_endpoints": sorted(endpoint_impacts)[:top_k],
+            "caller_files": sorted(caller_files)[:top_k],
+            "dependency_paths": dependency_samples[:3],
+        }
+
     def search_related(self, query: str, top_k: int = 5) -> List[Dict[str, object]]:
         tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
         scored: List[Tuple[str, int]] = []
@@ -188,6 +417,7 @@ class GraphIndex:
             lowered = node_id.lower()
             score = sum(lowered.count(token) * 2 for token in tokens)
             score += len(self.edges.get(node_id, set()))
+            score += len(self.reverse_edges.get(node_id, set()))
             if score > 0:
                 scored.append((node_id, score))
         scored.sort(key=lambda item: item[1], reverse=True)
@@ -196,6 +426,8 @@ class GraphIndex:
                 "id": node_id,
                 "score": score,
                 "neighbors": self.neighbors(node_id)[:5],
+                "reverse_neighbors": self.reverse_neighbors(node_id)[:5],
+                "node_type": self.nodes.get(node_id, {}).get("node_type", "file"),
             }
             for node_id, score in scored[:top_k]
         ]
@@ -925,6 +1157,9 @@ class DocumentStore:
         if not normalized:
             return False, "GraphRAG için boş sorgu gönderilemez."
 
+        if normalized.lower().startswith("impact:"):
+            return self.analyze_graph_impact(normalized.split(":", 1)[1].strip(), top_k=top_k)
+
         if "->" in normalized:
             source, target = [part.strip() for part in normalized.split("->", 1)]
             return self.explain_dependency_path(source, target)
@@ -939,6 +1174,9 @@ class DocumentStore:
             neighbors = item.get("neighbors") or []
             if neighbors:
                 lines.append(f"  Komşular: {', '.join(neighbors)}")
+            reverse_neighbors = item.get("reverse_neighbors") or []
+            if reverse_neighbors:
+                lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
         return True, "\n".join(lines)
 
     def explain_dependency_path(self, source: str, target: str) -> Tuple[bool, str]:
@@ -954,6 +1192,42 @@ class DocumentStore:
         lines = [f"[GraphRAG Path] {source} -> {target}", ""]
         for index, node_id in enumerate(path, start=1):
             lines.append(f"{index}. {node_id}")
+        return True, "\n".join(lines)
+
+    def analyze_graph_impact(self, target: str, top_k: int = 10) -> Tuple[bool, str]:
+        """Bir modül veya endpoint değişiminin olası etki alanını açıklar."""
+        if not self._graph_rag_enabled:
+            return False, "GraphRAG devre dışı."
+
+        self._ensure_graph_ready()
+        normalized = target.strip()
+        if not normalized:
+            return False, "Etki analizi için hedef belirtilmedi."
+
+        analysis = self._graph_index.impact_analysis(normalized, top_k=top_k)
+        if not analysis:
+            return False, f"GraphRAG içinde '{target}' için etki analizi üretilemedi."
+
+        lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
+        impacted_endpoints = analysis.get("impacted_endpoints") or []
+        caller_files = analysis.get("caller_files") or []
+        direct_dependents = analysis.get("direct_dependents") or []
+        dependencies = analysis.get("dependencies") or []
+        dependency_paths = analysis.get("dependency_paths") or []
+
+        lines.append(f"- Düğüm tipi: {analysis.get('node_type', 'file')}")
+        if direct_dependents:
+            lines.append(f"- Doğrudan bağımlılar: {', '.join(direct_dependents)}")
+        if dependencies:
+            lines.append(f"- Aşağı akış bağımlılıklar: {', '.join(dependencies)}")
+        if impacted_endpoints:
+            lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
+        if caller_files:
+            lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
+        if dependency_paths:
+            lines.append("- Örnek etki zincirleri:")
+            for idx, path in enumerate(dependency_paths, start=1):
+                lines.append(f"  {idx}. {' -> '.join(path)}")
         return True, "\n".join(lines)
 
     def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:

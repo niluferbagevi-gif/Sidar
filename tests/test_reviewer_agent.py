@@ -7,7 +7,7 @@ from agent.roles.reviewer_agent import ReviewerAgent
 
 def test_reviewer_agent_initializes_expected_tools():
     a = ReviewerAgent()
-    assert set(a.tools.keys()) == {"repo_info", "list_prs", "pr_diff", "list_issues", "run_tests", "lsp_diagnostics"}
+    assert set(a.tools.keys()) == {"repo_info", "list_prs", "pr_diff", "list_issues", "run_tests", "lsp_diagnostics", "graph_impact"}
     assert hasattr(a, "code")
 
 
@@ -31,6 +31,14 @@ def test_reviewer_builds_lsp_candidate_paths():
     a = ReviewerAgent()
     paths = a._build_lsp_candidate_paths(
         "changed agent/roles/reviewer_agent.py web_ui_react/src/App.jsx docs/README.md core/db.py"
+    )
+    assert paths == ["agent/roles/reviewer_agent.py", "web_ui_react/src/App.jsx", "core/db.py"]
+
+
+def test_reviewer_builds_graph_candidate_paths():
+    a = ReviewerAgent()
+    paths = a._build_graph_candidate_paths(
+        "changed agent/roles/reviewer_agent.py docs/README.md web_ui_react/src/App.jsx core/db.py"
     )
     assert paths == ["agent/roles/reviewer_agent.py", "web_ui_react/src/App.jsx", "core/db.py"]
 
@@ -66,6 +74,22 @@ def test_reviewer_lsp_diagnostics_tool_uses_code_manager(monkeypatch):
     payload = json.loads(out)
     assert payload["status"] == "clean"
     assert payload["summary"] == "LSP diagnostics temiz."
+
+
+def test_reviewer_graph_impact_tool_uses_graph_store(monkeypatch):
+    a = ReviewerAgent()
+
+    class _FakeDocs:
+        def analyze_graph_impact(self, target, top_k=10):
+            assert top_k == 8
+            return True, f"[GraphRAG Impact] {target}"
+
+    monkeypatch.setattr(a, "_get_graph_store", lambda: _FakeDocs())
+    out = asyncio.run(a.call_tool("graph_impact", "core/db.py docs/README.md web_ui_react/src/App.jsx"))
+    payload = json.loads(out)
+    assert payload["status"] == "ok"
+    assert payload["targets"] == ["core/db.py", "web_ui_react/src/App.jsx"]
+    assert payload["reports"][0]["report"].startswith("[GraphRAG Impact]")
 
 
 def test_reviewer_build_dynamic_test_content_uses_llm(monkeypatch):
@@ -140,6 +164,12 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
         "issues": [],
         "summary": "LSP diagnostics temiz.",
     }, ensure_ascii=False))
+    a.tools["graph_impact"] = lambda _arg: asyncio.sleep(0, result=json.dumps({
+        "status": "ok",
+        "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+        "targets": ["tests/test_reviewer_agent.py"],
+        "reports": [{"target": "tests/test_reviewer_agent.py", "ok": True, "report": "[GraphRAG Impact] tests/test_reviewer_agent.py"}],
+    }, ensure_ascii=False))
 
     out = asyncio.run(a.run_task("review_code|tests/test_reviewer_agent.py"))
     assert is_delegation_request(out)
@@ -148,6 +178,7 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
     payload = json.loads(out.payload.split("|", 1)[1])
     assert payload["decision"] == "APPROVE"
     assert payload["semantic_risk_report"]["status"] == "clean"
+    assert payload["graph_impact_report"]["status"] == "ok"
     assert any(c.startswith("pytest -q tests/test_reviewer_agent.py") for c in calls)
     assert any(c == a.cfg.REVIEWER_TEST_COMMAND for c in calls)
 
@@ -170,6 +201,12 @@ def test_reviewer_review_code_rejects_on_fail_closed(monkeypatch):
         "counts": {},
         "issues": [],
         "summary": "LSP diagnostics temiz.",
+    }, ensure_ascii=False))
+    a.tools["graph_impact"] = lambda _arg: asyncio.sleep(0, result=json.dumps({
+        "status": "ok",
+        "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+        "targets": ["core/db.py"],
+        "reports": [{"target": "core/db.py", "ok": True, "report": "[GraphRAG Impact] core/db.py"}],
     }, ensure_ascii=False))
 
     out = asyncio.run(a.run_task("review_code|core/db.py"))
@@ -200,6 +237,12 @@ def test_reviewer_review_code_rejects_on_lsp_semantic_error(monkeypatch):
     monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
     a.tools["run_tests"] = fake_run_tests
     a.tools["lsp_diagnostics"] = fake_lsp
+    a.tools["graph_impact"] = lambda _arg: asyncio.sleep(0, result=json.dumps({
+        "status": "ok",
+        "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+        "targets": ["core/db.py"],
+        "reports": [{"target": "core/db.py", "ok": True, "report": "[GraphRAG Impact] core/db.py"}],
+    }, ensure_ascii=False))
 
     out = asyncio.run(a.run_task("review_code|core/db.py"))
     payload = json.loads(out.payload.split("|", 1)[1])

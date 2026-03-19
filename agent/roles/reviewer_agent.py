@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import Config
+from core.rag import DocumentStore
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
 from managers.security import SecurityManager
@@ -49,6 +50,7 @@ class ReviewerAgent(BaseAgent):
             docker_exec_timeout=getattr(self.config, "DOCKER_EXEC_TIMEOUT", 10),
             cfg=self.config,
         )
+        self._graph_docs: Optional[DocumentStore] = None
 
         self.register_tool("repo_info", self._tool_repo_info)
         self.register_tool("list_prs", self._tool_list_prs)
@@ -56,6 +58,7 @@ class ReviewerAgent(BaseAgent):
         self.register_tool("list_issues", self._tool_list_issues)
         self.register_tool("run_tests", self._tool_run_tests)
         self.register_tool("lsp_diagnostics", self._tool_lsp_diagnostics)
+        self.register_tool("graph_impact", self._tool_graph_impact)
 
     @staticmethod
     def _extract_python_code_block(raw_text: str) -> str:
@@ -158,6 +161,15 @@ class ReviewerAgent(BaseAgent):
             path for path in ReviewerAgent._extract_changed_paths(code_context)
             if path.endswith(supported_suffixes)
         ][:32]
+
+    @staticmethod
+    def _build_graph_candidate_paths(code_context: str) -> list[str]:
+        """GraphRAG etki analizi için anlamlı dosya adaylarını çıkarır."""
+        supported_suffixes = (".py", ".ts", ".tsx", ".js", ".jsx")
+        return [
+            path for path in ReviewerAgent._extract_changed_paths(code_context)
+            if path.endswith(supported_suffixes)
+        ][:12]
 
     @staticmethod
     def _summarize_lsp_diagnostics(output: str) -> dict[str, object]:
@@ -294,6 +306,58 @@ class ReviewerAgent(BaseAgent):
         payload.setdefault("targets", paths or ["workspace:auto"])
         return json.dumps(payload, ensure_ascii=False)
 
+    def _get_graph_store(self) -> DocumentStore:
+        if self._graph_docs is None:
+            self._graph_docs = DocumentStore(
+                Path(self.config.RAG_DIR),
+                top_k=self.config.RAG_TOP_K,
+                chunk_size=self.config.RAG_CHUNK_SIZE,
+                chunk_overlap=self.config.RAG_CHUNK_OVERLAP,
+                use_gpu=self.config.USE_GPU,
+                gpu_device=self.config.GPU_DEVICE,
+                mixed_precision=self.config.GPU_MIXED_PRECISION,
+                cfg=self.config,
+            )
+        return self._graph_docs
+
+    async def _tool_graph_impact(self, arg: str) -> str:
+        candidates = self._build_graph_candidate_paths(arg)
+        if not candidates:
+            raw_target = (arg or "").strip()
+            candidates = [raw_target] if raw_target else []
+        if not candidates:
+            return json.dumps(
+                {
+                    "status": "no-targets",
+                    "summary": "GraphRAG etki analizi için uygun hedef bulunamadı.",
+                    "targets": [],
+                    "reports": [],
+                },
+                ensure_ascii=False,
+            )
+
+        docs = self._get_graph_store()
+        reports = []
+        for target in candidates:
+            ok, report = await asyncio.to_thread(docs.analyze_graph_impact, target, 8)
+            reports.append({"target": target, "ok": ok, "report": report})
+
+        status = "ok" if any(item["ok"] for item in reports) else "no-signal"
+        summary = (
+            f"GraphRAG etki analizi {sum(1 for item in reports if item['ok'])} hedef için üretildi."
+            if status == "ok"
+            else "GraphRAG etki analizi üretilemedi."
+        )
+        return json.dumps(
+            {
+                "status": status,
+                "summary": summary,
+                "targets": candidates,
+                "reports": reports,
+            },
+            ensure_ascii=False,
+        )
+
     async def run_task(self, task_prompt: str):
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
@@ -317,6 +381,9 @@ class ReviewerAgent(BaseAgent):
         if lower.startswith("lsp_diagnostics"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""
             return await self.call_tool("lsp_diagnostics", arg)
+        if lower.startswith("graph_impact"):
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""
+            return await self.call_tool("graph_impact", arg)
 
         if lower.startswith("review_code|"):
             context = prompt.split("|", 1)[1].strip()
@@ -333,6 +400,12 @@ class ReviewerAgent(BaseAgent):
             await self.events.publish("reviewer", "LSP tabanlı semantik denetim çalıştırılıyor...")
             lsp_output = await self.call_tool("lsp_diagnostics", context)
             semantic_report = self._summarize_lsp_diagnostics(lsp_output)
+
+            await self.events.publish("reviewer", "GraphRAG etki analizi hazırlanıyor...")
+            graph_output = await self.call_tool("graph_impact", context)
+            graph_payload = {"status": "tool-error", "summary": "GraphRAG çıktısı çözümlenemedi.", "reports": []}
+            with contextlib.suppress(json.JSONDecodeError):
+                graph_payload = json.loads(graph_output)
 
             combo = f"{dynamic_test_output}\n\n{regression_output}\n\n{lsp_output}".lower()
             status = "PASS"
@@ -362,6 +435,8 @@ class ReviewerAgent(BaseAgent):
                     "regression_test_output": regression_output,
                     "lsp_diagnostics_output": lsp_output,
                     "semantic_risk_report": semantic_report,
+                    "graph_impact_output": graph_output,
+                    "graph_impact_report": graph_payload,
                 },
                 ensure_ascii=False,
             )

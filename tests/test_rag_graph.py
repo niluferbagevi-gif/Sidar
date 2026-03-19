@@ -60,3 +60,27 @@ def test_document_store_supports_graph_mode_search_and_path_queries(tmp_path, mo
     assert ok_path is True
     assert "1. alpha.py" in path_text
     assert "3. gamma.py" in path_text
+
+
+def test_graph_index_tracks_endpoints_and_impact_analysis(tmp_path):
+    (tmp_path / "service.py").write_text(
+        "from fastapi import FastAPI\n"
+        "import helper\n"
+        "app = FastAPI()\n"
+        "@app.get('/api/items')\n"
+        "async def list_items():\n"
+        "    return helper.VALUE\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "helper.py").write_text("VALUE = 7\n", encoding="utf-8")
+    (tmp_path / "client.js").write_text("fetch('/api/items')\n", encoding="utf-8")
+
+    index = RAG_MOD.GraphIndex(tmp_path, max_files=10)
+    summary = index.rebuild()
+    impact = index.impact_analysis("helper.py", top_k=5)
+
+    assert summary["nodes"] >= 4
+    assert "endpoint:GET /api/items" in index.nodes
+    assert "client.js" in impact["caller_files"]
+    assert "endpoint:GET /api/items" in impact["impacted_endpoints"]
+    assert any(path[-1] == "helper.py" for path in impact["dependency_paths"])
