@@ -151,3 +151,24 @@ def test_env_float_returns_parsed_numeric_value(monkeypatch):
 
     monkeypatch.setattr("core.llm_metrics.os.getenv", lambda _key: "7.25")
     assert _env_float("LLM_VALID", 1.0) == 7.25
+
+def test_llm_metrics_snapshot_uses_zero_cache_stats_when_cache_metrics_import_fails(monkeypatch):
+    import builtins
+
+    collector = LLMMetricsCollector(max_events=5)
+    collector.record(provider="openai", model="unknown-model-v1", latency_ms=10, prompt_tokens=10, completion_tokens=5)
+
+    real_import = builtins.__import__
+
+    def _broken_import(name, *args, **kwargs):
+        if name == "core.cache_metrics":
+            raise RuntimeError("cache metrics unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _broken_import)
+
+    snap = collector.snapshot()
+
+    assert snap["totals"]["cost_usd"] == 0.0
+    assert snap["cache"]["hits"] == 0
+    assert snap["cache"]["redis_latency_ms"] == 0.0
