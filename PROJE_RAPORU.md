@@ -144,8 +144,8 @@
 - **Entity/Persona Memory:** Kullanıcı başına kodlama stili, framework tercihi, verbosity gibi uzun vadeli kişiselleştirilmiş bellek; TTL + LRU eviction (`core/entity_memory.py`).
 - **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
 - **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
-- **Multimodal Perception (Beta / v5.0 geçişi):** `core/multimodal.py` ile video frame çıkarma, ses ayıklama, Whisper tabanlı STT ve medya bağlamı oluşturma akışı iskelet seviyesinde kuruldu.
-- **Dynamic Browser Automation (Beta / v5.0 geçişi):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması ile kontrollü tarayıcı oturumları açmaya hazırlanıyor.
+- **Multimodal Perception (Tamamlandı / v5.0-alpha):** `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile medya ingestion, STT, VAD olayları ve TTS segmentasyon akışı ürünleşmiş durumda.
+- **Dynamic Browser Automation (Tamamlandı / v5.0-alpha):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, zorunlu HITL geçidi ve audit trail ile kontrollü tarayıcı oturumlarını yönetiyor.
 - **Proaktif Otonomi Başlangıcı:** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden proaktif modele genişliyor.
 - **Jira / Slack / Teams Entegrasyonu:** Jira Cloud REST API v3, Slack Bot SDK + Webhook fallback (Block Kit), Teams MessageCard + Adaptive Card v1.4 ve HITL onay kartı (`managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py`).
 - **Kök kontrol düzlemi doğrulaması (v3.0.29):** `main.py` sihirbaz + quick-start başlatma katmanı, `cli.py` tek event-loop CLI oturumu, `web_server.py` geniş FastAPI kontrol düzlemi (mevcut dosyada 61 route/websocket decorator), `config.py` bootstrap/telemetry yükleme yolu, `github_upload.py` güvenli `git ls-files` paketleme akışı ve `gui_launcher.py` Eel köprüsü mevcut repo durumu ile yeniden teyit edilmiştir.
@@ -1342,8 +1342,8 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%99.9` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
-| **Multimodal Perception** | Medya ingestion, frame/audio çıkarma ve sesli websocket MVP'si (`core/multimodal.py`, `web_server.py`) | 🟡 Beta / Geliştirmede |
-| **Dynamic Browser Automation** | Playwright/Selenium tabanlı kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | 🟡 Beta / Geliştirmede |
+| **Multimodal Perception** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, VAD olayları ve sesli websocket akışı (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
+| **Dynamic Browser Automation** | Playwright/Selenium tabanlı, HITL ve audit trail ile kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | ✅ Tamamlandı |
 
 > **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi repo kültürünün hedefini yansıtsa da, kod tabanında **resmî kalite kapısı** `.coveragerc` ve CI üzerinde `%99.9` olarak uygulanmaktadır; raporda bu nedenle doğrudan ölçülebilir kural esas alınmıştır.
 
