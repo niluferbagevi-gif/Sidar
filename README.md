@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v3.0.0** — ReAct + Multi-Agent kurumsal mimari üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v4.0.0** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║  Yazılım Mimarı & Baş Mühendis AI  v3.0.0  ║
+ ║  Yazılım Mimarı & Baş Mühendis AI  v4.0.0  ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -20,7 +20,7 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır.
 
-> **Güncel Ürün Durumu:** Başlangıçtaki `v3.0.0` kurumsal omurga korunurken, Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla konsolide edilmiştir. Bu çerçevede Sidar artık yalnızca bir yardımcı ajan değil; Active Learning, LLM-as-a-Judge, Direct P2P Swarm, audit trail ve derin observability katmanlarıyla kurumsal otonom mühendislik akışlarını destekleyen bir platform olarak tanımlanır.
+> **Güncel Ürün Durumu:** Runtime/paket baseline artık `v4.0.0` seviyesindedir. Bu sürüm; React tabanlı `web_ui_react/` deneyimini varsayılan arayüz, legacy `web_ui/` klasörünü geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanını ise standart kurumsal omurga olarak kabul eder. Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla ayrıca konsolide edilmiştir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
 
@@ -113,7 +113,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v3.0.0)
+### Web Arayüzü (v4.0.0 runtime baseline)
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)
