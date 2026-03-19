@@ -3,11 +3,13 @@
 Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (DB şeması, endpoint envanteri, WebSocket protokolü, agent akışı, operasyon parametreleri) toplar.
 
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
+> Son doğrulama turu: **2026-03-19** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
 
 ---
 
 ## İçindekiler
 - [1. Mimari Kapsam ve Bileşenler](#1-mimari-kapsam-ve-bileşenler)
+- [1.1 Kök başlatma ve kontrol düzlemi](#11-kök-başlatma-ve-kontrol-düzlemi)
 - [2. Veri Katmanı (core/db.py)](#2-veri-katmanı-coredbpy)
   - [2.1 Backend seçimi ve bağlantı modeli](#21-backend-seçimi-ve-bağlantı-modeli)
   - [2.2 Tablo şemaları ve ilişkiler](#22-tablo-şemaları-ve-ilişkiler)
@@ -45,6 +47,15 @@ Sidar v3.0.0 teknik akışının ana bileşenleri:
 - **Dağıtım:** `docker-compose.yml`
 
 Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre hazırlanmıştır.
+
+### 1.1 Kök başlatma ve kontrol düzlemi
+
+- **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
+- **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
+- **`web_server.py`**: FastAPI kontrol düzlemi 60 REST endpoint + `/ws/chat` WebSocket hattı sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır.
+- **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
+- **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
+- **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.
 
 ---
 
@@ -134,7 +145,7 @@ Rate-limit katmanı Redis erişemezse local bellek fallback mekanizmasıyla çal
 
 ### 3.2 REST endpoint envanteri (tam)
 
-Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **60 REST endpoint** bulunmaktadır; v3.0.26 turunda Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyon yüzeyleri de HTTP katmanına bağlanmıştır.
+Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **60 REST endpoint** bulunmaktadır; v3.0.29 doğrulamasında Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyon yüzeylerinin HTTP katmanına bağlı kaldığı tekrar teyit edilmiştir.
 
 | Method | Path | Not |
 |---|---|---|
