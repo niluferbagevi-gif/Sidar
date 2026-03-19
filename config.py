@@ -513,6 +513,15 @@ class Config:
     VOICE_STT_PROVIDER: str = os.getenv("VOICE_STT_PROVIDER", "whisper")
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     VOICE_WS_MAX_BYTES: int = get_int_env("VOICE_WS_MAX_BYTES", 10485760)
+    BROWSER_PROVIDER: str = os.getenv("BROWSER_PROVIDER", "auto")
+    BROWSER_HEADLESS: bool = get_bool_env("BROWSER_HEADLESS", True)
+    BROWSER_TIMEOUT_MS: int = get_int_env("BROWSER_TIMEOUT_MS", 15000)
+    BROWSER_ALLOWED_DOMAINS: list[str] = get_list_env("BROWSER_ALLOWED_DOMAINS", [])
+    ENABLE_LSP: bool = get_bool_env("ENABLE_LSP", True)
+    LSP_TIMEOUT_SECONDS: int = get_int_env("LSP_TIMEOUT_SECONDS", 15)
+    LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
+    PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
+    TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")

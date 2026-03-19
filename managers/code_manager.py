@@ -19,7 +19,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote, unquote, urlparse
 
 try:
     from config import Config, SANDBOX_LIMITS
@@ -29,6 +30,55 @@ except ImportError:
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
+
+
+class _LSPProtocolError(RuntimeError):
+    """Dil sunucusu oturum protokolü bozulduğunda yükseltilir."""
+
+
+def _path_to_file_uri(path: Path) -> str:
+    resolved = path.resolve()
+    return f"file://{quote(str(resolved).replace(os.sep, '/'))}"
+
+
+def _file_uri_to_path(uri: str) -> Path:
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        raise ValueError(f"Desteklenmeyen URI şeması: {uri}")
+    raw_path = unquote(parsed.path)
+    if os.name == "nt" and raw_path.startswith("/"):
+        raw_path = raw_path[1:]
+    return Path(raw_path)
+
+
+def _encode_lsp_message(payload: Dict[str, Any]) -> bytes:
+    body = json.dumps(payload).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+    return header + body
+
+
+def _decode_lsp_stream(raw: bytes) -> List[Dict[str, Any]]:
+    messages: List[Dict[str, Any]] = []
+    cursor = 0
+    while cursor < len(raw):
+        header_end = raw.find(b"\r\n\r\n", cursor)
+        if header_end == -1:
+            break
+        header_blob = raw[cursor:header_end].decode("ascii", errors="replace")
+        headers = {}
+        for line in header_blob.split("\r\n"):
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            headers[key.strip().lower()] = value.strip()
+        content_length = int(headers.get("content-length", "0") or 0)
+        cursor = header_end + 4
+        body = raw[cursor:cursor + content_length]
+        if len(body) < content_length:
+            raise _LSPProtocolError("Eksik LSP mesaj gövdesi alındı.")
+        cursor += content_length
+        messages.append(json.loads(body.decode("utf-8")))
+    return messages
 
 
 class CodeManager:
@@ -70,6 +120,14 @@ class CodeManager:
         self._files_written = 0
         self._syntax_checks = 0
         self._audits_done = 0
+        self.enable_lsp = bool(getattr(self.cfg, "ENABLE_LSP", True))
+        self.lsp_timeout_seconds = int(getattr(self.cfg, "LSP_TIMEOUT_SECONDS", 15) or 15)
+        self.lsp_max_references = int(getattr(self.cfg, "LSP_MAX_REFERENCES", 200) or 200)
+        self.python_lsp_server = str(getattr(self.cfg, "PYTHON_LSP_SERVER", "pyright-langserver") or "pyright-langserver")
+        self.typescript_lsp_server = str(
+            getattr(self.cfg, "TYPESCRIPT_LSP_SERVER", "typescript-language-server")
+            or "typescript-language-server"
+        )
 
         # Docker İstemcisi Bağlantısı
         self.docker_available = False
@@ -920,6 +978,372 @@ class CodeManager:
             return False, f"JSON hatası — Satır {exc.lineno}: {exc.msg}"
 
     # ─────────────────────────────────────────────
+    #  LSP (LANGUAGE SERVER PROTOCOL) YARDIMCILARI
+    # ─────────────────────────────────────────────
+
+    def _detect_language_id(self, path: Path) -> Optional[str]:
+        suffix = path.suffix.lower()
+        if suffix == ".py":
+            return "python"
+        if suffix in {".ts", ".tsx", ".js", ".jsx"}:
+            return "typescript"
+        return None
+
+    def _resolve_lsp_command(self, language_id: str) -> List[str]:
+        if language_id == "python":
+            binary = self.python_lsp_server
+            args = ["--stdio"]
+        elif language_id == "typescript":
+            binary = self.typescript_lsp_server
+            args = ["--stdio"]
+        else:
+            raise ValueError(f"LSP desteklenmeyen dil: {language_id}")
+
+        binary_path = shutil.which(binary)
+        if not binary_path:
+            raise FileNotFoundError(f"LSP binary bulunamadı: {binary}")
+        return [binary_path, *args]
+
+    def _normalize_lsp_path(self, path: str) -> Path:
+        target = Path(path)
+        if not target.is_absolute():
+            target = self.base_dir / target
+        return target.resolve()
+
+    def _build_lsp_initialize_payload(self, workspace_root: Path) -> Dict[str, Any]:
+        workspace_uri = _path_to_file_uri(workspace_root)
+        return {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "processId": os.getpid(),
+                "rootUri": workspace_uri,
+                "workspaceFolders": [
+                    {"uri": workspace_uri, "name": workspace_root.name or "workspace"}
+                ],
+                "capabilities": {
+                    "workspace": {
+                        "workspaceEdit": {"documentChanges": True},
+                    },
+                    "textDocument": {
+                        "definition": {"dynamicRegistration": False},
+                        "references": {"dynamicRegistration": False},
+                        "rename": {"dynamicRegistration": False},
+                        "publishDiagnostics": {"relatedInformation": True},
+                    },
+                },
+            },
+        }
+
+    def _run_lsp_sequence(
+        self,
+        *,
+        primary_path: Path,
+        request_method: Optional[str],
+        request_params: Optional[Dict[str, Any]] = None,
+        extra_open_files: Optional[List[Path]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not self.enable_lsp:
+            raise RuntimeError("ENABLE_LSP devre dışı.")
+
+        language_id = self._detect_language_id(primary_path)
+        if language_id is None:
+            raise ValueError(f"LSP için desteklenmeyen dosya türü: {primary_path.suffix}")
+
+        workspace_root = self.base_dir.resolve()
+        command = self._resolve_lsp_command(language_id)
+        open_files = [primary_path]
+        for extra_path in extra_open_files or []:
+            resolved_extra = extra_path.resolve()
+            if resolved_extra not in open_files and resolved_extra.exists():
+                open_files.append(resolved_extra)
+
+        messages: List[Dict[str, Any]] = [self._build_lsp_initialize_payload(workspace_root)]
+        messages.append({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+
+        for file_path in open_files:
+            language = self._detect_language_id(file_path)
+            if language is None:
+                continue
+            messages.append(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "textDocument/didOpen",
+                    "params": {
+                        "textDocument": {
+                            "uri": _path_to_file_uri(file_path),
+                            "languageId": language,
+                            "version": 1,
+                            "text": file_path.read_text(encoding="utf-8", errors="replace"),
+                        }
+                    },
+                }
+            )
+
+        if request_method is not None:
+            messages.append(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": request_method,
+                    "params": request_params or {},
+                }
+            )
+
+        messages.append({"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": None})
+        messages.append({"jsonrpc": "2.0", "method": "exit", "params": {}})
+
+        payload = b"".join(_encode_lsp_message(msg) for msg in messages)
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(workspace_root),
+        )
+        try:
+            stdout, stderr = proc.communicate(payload, timeout=self.lsp_timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            raise RuntimeError("LSP isteği zaman aşımına uğradı.") from exc
+
+        if proc.returncode not in (0, None):
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(stderr_text or f"LSP sunucusu hata kodu ile sonlandı: {proc.returncode}")
+
+        return _decode_lsp_stream(stdout)
+
+    @staticmethod
+    def _extract_lsp_result(messages: List[Dict[str, Any]], request_id: int = 2) -> Tuple[Any, List[Dict[str, Any]]]:
+        result = None
+        notifications: List[Dict[str, Any]] = []
+        for message in messages:
+            if message.get("id") == request_id:
+                if "error" in message:
+                    raise RuntimeError(str(message["error"]))
+                result = message.get("result")
+            elif "method" in message:
+                notifications.append(message)
+        return result, notifications
+
+    @staticmethod
+    def _format_lsp_locations(locations: Any, limit: int) -> str:
+        if not locations:
+            return "Sonuç bulunamadı."
+
+        normalized: List[Dict[str, Any]] = []
+        for item in locations:
+            if "targetUri" in item:
+                normalized.append(
+                    {
+                        "uri": item["targetUri"],
+                        "range": item.get("targetSelectionRange") or item.get("targetRange") or {},
+                    }
+                )
+            else:
+                normalized.append(item)
+
+        lines = []
+        for entry in normalized[:limit]:
+            uri = entry.get("uri", "")
+            rng = entry.get("range", {})
+            start = rng.get("start", {})
+            path = _file_uri_to_path(uri)
+            lines.append(
+                f"- {path}: satır {int(start.get('line', 0)) + 1}, sütun {int(start.get('character', 0)) + 1}"
+            )
+        if len(normalized) > limit:
+            lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _position_params(path: Path, line: int, character: int) -> Dict[str, Any]:
+        return {
+            "textDocument": {"uri": _path_to_file_uri(path)},
+            "position": {"line": line, "character": character},
+        }
+
+    def lsp_go_to_definition(self, path: str, line: int, character: int) -> Tuple[bool, str]:
+        """LSP üzerinden sembol tanımına gider."""
+        target = self._normalize_lsp_path(path)
+        try:
+            messages = self._run_lsp_sequence(
+                primary_path=target,
+                request_method="textDocument/definition",
+                request_params=self._position_params(target, line, character),
+            )
+            result, _ = self._extract_lsp_result(messages)
+            return True, self._format_lsp_locations(result if isinstance(result, list) else [result], limit=20)
+        except Exception as exc:
+            return False, f"LSP tanım sorgusu hatası: {exc}"
+
+    def lsp_find_references(
+        self,
+        path: str,
+        line: int,
+        character: int,
+        include_declaration: bool = True,
+    ) -> Tuple[bool, str]:
+        """LSP üzerinden tüm referansları listeler."""
+        target = self._normalize_lsp_path(path)
+        try:
+            params = self._position_params(target, line, character)
+            params["context"] = {"includeDeclaration": include_declaration}
+            messages = self._run_lsp_sequence(
+                primary_path=target,
+                request_method="textDocument/references",
+                request_params=params,
+            )
+            result, _ = self._extract_lsp_result(messages)
+            return True, self._format_lsp_locations(result or [], limit=self.lsp_max_references)
+        except Exception as exc:
+            return False, f"LSP referans sorgusu hatası: {exc}"
+
+    def _apply_workspace_edit(self, edit: Dict[str, Any]) -> Tuple[bool, str]:
+        changes: Dict[str, List[Dict[str, Any]]] = {}
+        for uri, items in (edit.get("changes") or {}).items():
+            changes[uri] = list(items or [])
+
+        for doc_change in edit.get("documentChanges") or []:
+            text_document = doc_change.get("textDocument") or {}
+            uri = text_document.get("uri")
+            edits = doc_change.get("edits") or []
+            if uri:
+                changes.setdefault(uri, []).extend(edits)
+
+        if not changes:
+            return False, "Workspace edit boş döndü."
+
+        changed_files = 0
+        for uri, edits in changes.items():
+            target = _file_uri_to_path(uri)
+            if not self.security.can_write(str(target)):
+                return False, f"[OpenClaw] LSP rename yazma yetkisi yok: {target}"
+
+            content = target.read_text(encoding="utf-8", errors="replace")
+            lines = content.splitlines(keepends=True)
+            line_offsets = [0]
+            running_offset = 0
+            for part in lines:
+                running_offset += len(part)
+                line_offsets.append(running_offset)
+
+            def _offset(line_no: int, char_no: int, *, _offsets: list[int] = line_offsets) -> int:
+                capped_line = max(0, min(line_no, len(_offsets) - 1))
+                return _offsets[capped_line] + char_no
+
+            ordered_edits = sorted(
+                edits,
+                key=lambda item: (
+                    int(item.get("range", {}).get("start", {}).get("line", 0)),
+                    int(item.get("range", {}).get("start", {}).get("character", 0)),
+                ),
+                reverse=True,
+            )
+            for item in ordered_edits:
+                rng = item.get("range", {})
+                start = rng.get("start", {})
+                end = rng.get("end", {})
+                start_offset = _offset(int(start.get("line", 0)), int(start.get("character", 0)))
+                end_offset = _offset(int(end.get("line", 0)), int(end.get("character", 0)))
+                new_text = str(item.get("newText", ""))
+                content = content[:start_offset] + new_text + content[end_offset:]
+
+            ok, msg = self.write_file(str(target), content, validate=target.suffix == ".py")
+            if not ok:
+                return False, msg
+            changed_files += 1
+
+        return True, f"LSP workspace edit uygulandı. Değişen dosya sayısı: {changed_files}"
+
+    def lsp_rename_symbol(
+        self,
+        path: str,
+        line: int,
+        character: int,
+        new_name: str,
+        apply: bool = False,
+    ) -> Tuple[bool, str]:
+        """LSP rename işlemini dry-run veya apply modunda yürütür."""
+        if not new_name.strip():
+            return False, "Yeni sembol adı boş olamaz."
+
+        target = self._normalize_lsp_path(path)
+        try:
+            workspace_files = [
+                candidate
+                for candidate in self.base_dir.rglob("*")
+                if candidate.is_file() and self._detect_language_id(candidate) == self._detect_language_id(target)
+            ]
+            messages = self._run_lsp_sequence(
+                primary_path=target,
+                request_method="textDocument/rename",
+                request_params={
+                    **self._position_params(target, line, character),
+                    "newName": new_name,
+                },
+                extra_open_files=workspace_files[:200],
+            )
+            result, _ = self._extract_lsp_result(messages)
+            if not result:
+                return False, "LSP rename değişiklik üretmedi."
+
+            changes = result.get("changes") or {}
+            affected_files = len(changes) + len(result.get("documentChanges") or [])
+            if not apply:
+                return True, (
+                    f"LSP rename dry-run hazır. Yeni ad: {new_name}. "
+                    f"Etkilenen dosya sayısı: {affected_files}."
+                )
+            return self._apply_workspace_edit(result)
+        except Exception as exc:
+            return False, f"LSP rename hatası: {exc}"
+
+    def lsp_workspace_diagnostics(self, paths: Optional[List[str]] = None) -> Tuple[bool, str]:
+        """Açılan dosyalar için publishDiagnostics bildirimlerini toplar."""
+        candidate_paths = [self._normalize_lsp_path(p) for p in (paths or [])]
+        if not candidate_paths:
+            candidate_paths = [
+                path for path in self.base_dir.rglob("*")
+                if path.is_file() and self._detect_language_id(path) in {"python", "typescript"}
+            ][:100]
+
+        if not candidate_paths:
+            return False, "LSP tanılaması için uygun dosya bulunamadı."
+
+        primary = candidate_paths[0]
+        try:
+            messages = self._run_lsp_sequence(
+                primary_path=primary,
+                request_method=None,
+                extra_open_files=candidate_paths,
+            )
+            _, notifications = self._extract_lsp_result(messages, request_id=-1)
+            diagnostics = [
+                item for item in notifications
+                if item.get("method") == "textDocument/publishDiagnostics"
+            ]
+            if not diagnostics:
+                return True, "LSP diagnostics bildirimi dönmedi."
+
+            lines = []
+            for item in diagnostics:
+                params = item.get("params", {})
+                path = _file_uri_to_path(params.get("uri", "file:///unknown"))
+                for diag in params.get("diagnostics", []):
+                    start = (diag.get("range") or {}).get("start", {})
+                    message = str(diag.get("message", "")).strip()
+                    severity = diag.get("severity", "n/a")
+                    lines.append(
+                        f"- {path}: satır {int(start.get('line', 0)) + 1}, "
+                        f"sütun {int(start.get('character', 0)) + 1} | severity={severity} | {message}"
+                    )
+            return True, "\n".join(lines) if lines else "LSP diagnostics temiz."
+        except Exception as exc:
+            return False, f"LSP diagnostics hatası: {exc}"
+
+    # ─────────────────────────────────────────────
     #  KOD DENETİMİ
     # ─────────────────────────────────────────────
 
@@ -997,9 +1421,10 @@ class CodeManager:
 
     def status(self) -> str:
         """Docker ve sandbox durumunu özetleyen durum satırı döndürür."""
+        lsp_status = "LSP on" if self.enable_lsp else "LSP off"
         if self.docker_available:
-            return f"CodeManager: Docker Sandbox Aktif (imaj: {self.docker_image})"
-        return "CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır)"
+            return f"CodeManager: Docker Sandbox Aktif (imaj: {self.docker_image}) | {lsp_status}"
+        return f"CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır) | {lsp_status}"
 
     def __repr__(self) -> str:
         m = self.get_metrics()
