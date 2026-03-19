@@ -210,6 +210,27 @@ class TestMetricsCollectorCacheField:
         assert isinstance(snap["cache"]["hit_rate"], float)
 
 
+def test_get_prometheus_metric_returns_none_when_import_fails(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda _name: (_ for _ in ()).throw(ImportError("missing prom")))
+
+    assert cm_mod._get_prometheus_metric("sidar_test_metric", "desc", "counter") is None
+
+
+
+def test_get_prometheus_metric_returns_none_when_factory_missing(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    fake_prom = types.SimpleNamespace(REGISTRY=types.SimpleNamespace(_names_to_collectors={}), Counter=None, Gauge=None)
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda name: fake_prom if name == "prometheus_client" else importlib.import_module(name))
+
+    assert cm_mod._get_prometheus_metric("sidar_test_metric", "desc", "counter") is None
+    assert cm_mod._get_prometheus_metric("sidar_test_gauge", "desc", "gauge") is None
+
+
 def test_cache_metrics_updates_prometheus_collectors_when_available(monkeypatch):
     import core.cache_metrics as cm_mod
 
