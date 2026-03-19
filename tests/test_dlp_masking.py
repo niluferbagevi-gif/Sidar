@@ -123,6 +123,29 @@ class TestMaskMessages:
         assert "x@y.com" not in result[0]["content"]
 
 
+
+
+    def test_message_with_non_string_content_is_preserved(self):
+        messages = [{"role": "tool", "content": {"token": "sk-secret-value"}}]
+        result = mask_messages(messages)
+        assert result == messages
+
+
+def test_get_dlp_engine_builds_disabled_engine_from_env(monkeypatch):
+    import core.dlp as dlp_mod
+
+    dlp_mod._ENGINE = None
+    monkeypatch.setattr(dlp_mod.os, "getenv", lambda key, default=None: "false" if key == "DLP_ENABLED" else default)
+
+    engine = dlp_mod.get_dlp_engine()
+    masked, dets = engine.mask("password=secret123 email=a@b.com")
+
+    assert masked == "password=secret123 email=a@b.com"
+    assert dets == []
+
+    dlp_mod._ENGINE = None
+
+
 # ─── Disabled engine ─────────────────────────────────────────────────────────
 
 class TestDisabledEngine:

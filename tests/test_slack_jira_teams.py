@@ -439,6 +439,54 @@ class TestJiraManagerNotAvailable:
         assert projects == []
 
 
+
+
+class TestJiraManagerRequestErrors:
+    def _mgr(self):
+        mgr = JiraManager.__new__(JiraManager)
+        mgr.url = "https://example.atlassian.net"
+        mgr.token = "t"
+        mgr.email = "u@x.com"
+        mgr.default_project = ""
+        mgr._available = True
+        mgr._auth = ("u@x.com", "t")
+        mgr._headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        return mgr
+
+    def test_request_http_500_returns_error(self):
+        mgr = self._mgr()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.text = "Internal Server Error"
+        mock_resp.content = b"boom"
+
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(return_value=mock_resp)
+
+        with patch.object(_jira_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, data, err = _run(mgr._request("GET", "issue/TEST-500"))
+
+        assert ok is False
+        assert data is None
+        assert "500" in err
+
+    def test_request_timeout_returns_exception_text(self):
+        mgr = self._mgr()
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(side_effect=TimeoutError("jira timeout"))
+
+        with patch.object(_jira_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, data, err = _run(mgr._request("GET", "search"))
+
+        assert ok is False
+        assert data is None
+        assert "jira timeout" in err
+
+
 class TestJiraManagerCreateIssue:
     def _mgr(self):
         mgr = JiraManager.__new__(JiraManager)
