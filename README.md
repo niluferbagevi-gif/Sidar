@@ -67,6 +67,7 @@
 - **Pydantic v2 Doğrulama**: JSON ayrıştırma hatası alındığında modele hata detayı + beklenen format geri beslenir
 - **Araç Görselleştirme**: Her tool çağrısı SSE eventi olarak istemciye iletilir; web UI'da badge olarak gösterilir
 - Streaming yanıt (daktilo efekti)
+- **Direct P2P Handoff:** Coder/Reviewer/Researcher ajanları `p2p.v1` sözleşmesiyle sender, receiver, reason ve hop derinliği korunarak doğrudan görev devredebilir.
 
 ### GPU Hızlandırma (v2.6.0+)
 - PyTorch CUDA 12.4 desteği (RTX / Ampere serisi)
@@ -132,6 +133,7 @@
 
 - **PostgreSQL ve Alembic:** Veritabanı izolasyonu ile çoklu kullanıcı oturum yönetimi (`core/db.py`).
 - **Kimlik Doğrulama:** JWT/Bearer Token tabanlı güvenli erişim ve yetkilendirme.
+- **Uyum / Denetim:** Tenant RBAC kararları `audit_logs` trail’ine kullanıcı, tenant, kaynak, IP ve allow/deny sonucu ile yazılır.
 - **Admin Paneli:** Sistem kullanımını, aktif kullanıcıları ve global kotaları izleyebileceğiniz Web UI yönetim arayüzü.
 - **Gözlemlenebilirlik (Observability):** Grafana ve Prometheus üzerinden anlık token tüketimi, USD maliyet ve LLM gecikme (latency) takibi.
 
@@ -618,6 +620,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v3.0.31** | Kurumsal rollout senkronizasyonu: `audit_logs` migration + DB audit trail yardımcıları + `access_policy_middleware` audit kaydı akışı raporlandı; direct `p2p.v1` handoff protokolü Supervisor ve Swarm katmanlarında belgelendi |
 | **v3.0.24** | Faz 4 tamamlama: Slack Bot SDK + Webhook (`slack_manager`), Jira Cloud REST API v3 (`jira_manager`), Teams Adaptive Card v1.4 + HITL onay kartı (`teams_manager`); 44 yeni test; 142 test modülü, ~18.200+ Python kaynak satırı |
 | **v3.0.23** | Faz 4: Active Learning + LoRA/QLoRA (`core/active_learning.py`), Multimodal Vision Pipeline (`core/vision.py`); 66 yeni test |
 | **v3.0.22** | Faz 5 devam: Cost-Aware Model Routing (`core/router.py`), Entity/Persona Memory (`core/entity_memory.py`), Semantic Cache Grafana Hit Rate (`core/cache_metrics.py` + Grafana dashboard); 62 yeni test |
