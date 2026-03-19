@@ -192,6 +192,8 @@ class LLMJudge:
                 val = float(match.group(1))
                 return max(0.0, min(1.0, val))
             return None
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             logger.debug("Judge LLM çağrısı başarısız: %s", exc)
             return None
@@ -215,6 +217,8 @@ class LLMJudge:
             parsed = json.loads(response)
             if isinstance(parsed, dict):
                 return parsed
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             logger.debug("Judge JSON LLM çağrısı başarısız: %s", exc)
         return None
@@ -386,6 +390,8 @@ class LLMJudge:
                     self.auto_feedback_threshold,
                 )
             return bool(ok)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             logger.debug("Judge auto-feedback kaydı başarısız: %s", exc)
             return False

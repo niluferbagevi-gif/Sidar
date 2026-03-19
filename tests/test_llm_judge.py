@@ -790,6 +790,29 @@ def test_call_llm_returns_none_when_client_raises(monkeypatch):
     assert result is None
 
 
+def test_call_llm_reraises_cancelled_error(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+
+    class _Client:
+        def __init__(self, provider, config):
+            self.provider = provider
+            self.config = config
+
+        async def chat(self, **_kwargs):
+            raise asyncio.CancelledError()
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("core.llm_client")
+    fake_mod.LLMClient = _Client
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_mod)
+
+    with pytest.raises(asyncio.CancelledError):
+        _run(judge._call_llm("sys", "msg"))
+
+
 def test_call_llm_json_returns_none_for_non_string_response(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True
@@ -813,6 +836,29 @@ def test_call_llm_json_returns_none_for_non_string_response(monkeypatch):
     assert result is None
 
 
+def test_call_llm_json_reraises_cancelled_error(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+
+    class _Client:
+        def __init__(self, provider, config):
+            self.provider = provider
+            self.config = config
+
+        async def chat(self, **_kwargs):
+            raise asyncio.CancelledError()
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("core.llm_client")
+    fake_mod.LLMClient = _Client
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_mod)
+
+    with pytest.raises(asyncio.CancelledError):
+        _run(judge._call_llm_json("sys", "msg", model="judge-test"))
+
+
 def test_maybe_record_feedback_returns_false_when_disabled():
     async def _inner():
         judge = LLMJudge()
@@ -826,6 +872,35 @@ def test_maybe_record_feedback_returns_false_when_disabled():
         )
 
         assert await judge._maybe_record_feedback(query="soru", documents=["doc"], answer="yanıt", result=result) is False
+
+    _run(_inner())
+
+
+def test_maybe_record_feedback_reraises_cancelled_error(monkeypatch):
+    async def _inner():
+        judge = LLMJudge()
+        judge.auto_feedback_enabled = True
+        judge.auto_feedback_threshold = 8.0
+        result = JudgeResult(
+            relevance_score=0.2,
+            hallucination_risk=0.9,
+            evaluated_at=time.time(),
+            model="judge",
+            provider="ollama",
+        )
+
+        class _Store:
+            async def flag_weak_response(self, **_kwargs):
+                raise asyncio.CancelledError()
+
+        with patch("core.active_learning.get_feedback_store", return_value=_Store()):
+            with pytest.raises(asyncio.CancelledError):
+                await judge._maybe_record_feedback(
+                    query="soru",
+                    documents=["doc"],
+                    answer="yanıt",
+                    result=result,
+                )
 
     _run(_inner())
 
