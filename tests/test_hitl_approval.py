@@ -196,6 +196,47 @@ class TestHITLGate:
         _run(_inner())
 
 
+    def test_request_approval_times_out_and_marks_request(self, monkeypatch):
+        async def _inner():
+            import core.hitl as hitl_mod
+
+            gate = HITLGate()
+            gate.enabled = True
+            gate.timeout = 10
+
+            store = _HITLStore()
+            clock = {"now": 1000.0}
+            notified = []
+
+            async def _notify(req):
+                notified.append(req.request_id)
+
+            async def _sleep(seconds):
+                clock["now"] += seconds + 10
+
+            monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+            monkeypatch.setattr(hitl_mod, "notify", _notify)
+            monkeypatch.setattr(hitl_mod.time, "time", lambda: clock["now"])
+            monkeypatch.setattr(hitl_mod.asyncio, "sleep", _sleep)
+
+            approved = await gate.request_approval(
+                action="dangerous_write",
+                description="Kritik dosya değişecek",
+                payload={"path": "/tmp/demo.py"},
+                requested_by="CodeManager",
+            )
+
+            assert approved is False
+            assert len(notified) == 1
+
+            req = store._requests[-1]
+            assert req.decision == HITLDecision.TIMEOUT
+            assert req.decided_at == clock["now"]
+            assert req.requested_by == "CodeManager"
+
+        _run(_inner())
+
+
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
 def test_get_hitl_gate_singleton():

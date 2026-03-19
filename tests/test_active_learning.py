@@ -2,6 +2,8 @@
 from __future__ import annotations
 import asyncio
 import json
+import sys
+import types
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -152,6 +154,159 @@ class TestFeedbackStoreWithSQLite:
         _run(store.close())
 
 
+def test_feedback_store_record_propagates_db_execute_errors(monkeypatch):
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+
+    class _DBError(Exception):
+        pass
+
+    class _Conn:
+        async def execute(self, *_args, **_kwargs):
+            raise _DBError("insert failed")
+
+    class _Begin:
+        async def __aenter__(self):
+            return _Conn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    store._engine = types.SimpleNamespace(begin=lambda: _Begin())
+    monkeypatch.setattr("core.active_learning.sql_text", lambda sql: sql, raising=False)
+
+    with pytest.raises(_DBError, match="insert failed"):
+        _run(store.record("prompt", "response", rating=1))
+
+
+def _install_training_stubs(monkeypatch, *, include_bitsandbytes=True):
+    records = {}
+
+    class _Tokenizer:
+        def __init__(self):
+            self.pad_token = None
+            self.eos_token = "<eos>"
+            self.saved = None
+
+        def __call__(self, text, truncation, max_length, padding):
+            records["tokenized_text"] = text
+            records["tokenize_kwargs"] = {
+                "truncation": truncation,
+                "max_length": max_length,
+                "padding": padding,
+            }
+            return {"input_ids": [1, 2, 3]}
+
+        def save_pretrained(self, out_dir):
+            self.saved = out_dir
+            records["tokenizer_saved"] = out_dir
+
+    class _AutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_name, trust_remote_code=True):
+            records["tokenizer_model"] = model_name
+            records["trust_remote_code"] = trust_remote_code
+            tok = _Tokenizer()
+            records["tokenizer"] = tok
+            return tok
+
+    class _Model:
+        def __init__(self):
+            self.saved = None
+            self.trainable_printed = False
+
+        def print_trainable_parameters(self):
+            self.trainable_printed = True
+            records["trainable_printed"] = True
+
+        def save_pretrained(self, out_dir):
+            self.saved = out_dir
+            records["model_saved"] = out_dir
+
+    class _AutoModel:
+        @staticmethod
+        def from_pretrained(model_name, **kwargs):
+            records["model_name"] = model_name
+            records["model_kwargs"] = kwargs
+            model = _Model()
+            records["model"] = model
+            return model
+
+    class _DataCollator:
+        def __init__(self, tokenizer, model=None, padding=True):
+            records["collator"] = {"tokenizer": tokenizer, "model": model, "padding": padding}
+
+    class _TrainingArguments:
+        def __init__(self, **kwargs):
+            records["training_args"] = kwargs
+            self.kwargs = kwargs
+
+    class _Trainer:
+        def __init__(self, model, args, train_dataset, data_collator):
+            records["trainer_init"] = {
+                "model": model,
+                "args": args,
+                "train_dataset": train_dataset,
+                "data_collator": data_collator,
+            }
+
+        def train(self):
+            records["trainer_trained"] = True
+            return types.SimpleNamespace(training_loss=0.123, global_step=7)
+
+    class _BitsAndBytesConfig:
+        def __init__(self, **kwargs):
+            records["bnb_kwargs"] = kwargs
+            self.kwargs = kwargs
+
+    class _Dataset:
+        column_names = ["instruction", "output"]
+
+        def map(self, fn, remove_columns):
+            records["remove_columns"] = remove_columns
+            mapped = fn({"instruction": "Komut", "output": "Yanıt"})
+            records["mapped"] = mapped
+            return [{"input_ids": mapped["input_ids"], "labels": mapped["labels"]}]
+
+    transformers_mod = types.ModuleType("transformers")
+    transformers_mod.AutoTokenizer = _AutoTokenizer
+    transformers_mod.AutoModelForCausalLM = _AutoModel
+    transformers_mod.TrainingArguments = _TrainingArguments
+    transformers_mod.Trainer = _Trainer
+    transformers_mod.DataCollatorForSeq2Seq = _DataCollator
+    if include_bitsandbytes:
+        transformers_mod.BitsAndBytesConfig = _BitsAndBytesConfig
+
+    peft_mod = types.ModuleType("peft")
+    peft_mod.TaskType = types.SimpleNamespace(CAUSAL_LM="causal-lm")
+
+    class _LoraConfig:
+        def __init__(self, **kwargs):
+            records["lora_kwargs"] = kwargs
+            self.kwargs = kwargs
+
+    def _get_peft_model(model, lora_config):
+        records["peft_wrapped"] = {"model": model, "config": lora_config}
+        return model
+
+    peft_mod.LoraConfig = _LoraConfig
+    peft_mod.get_peft_model = _get_peft_model
+
+    datasets_mod = types.ModuleType("datasets")
+    datasets_mod.load_dataset = lambda *args, **kwargs: records.__setitem__("load_dataset", {"args": args, "kwargs": kwargs}) or _Dataset()
+
+    torch_mod = types.ModuleType("torch")
+    torch_mod.float16 = "float16"
+
+    monkeypatch.setitem(sys.modules, "transformers", transformers_mod)
+    monkeypatch.setitem(sys.modules, "peft", peft_mod)
+    monkeypatch.setitem(sys.modules, "datasets", datasets_mod)
+    monkeypatch.setitem(sys.modules, "torch", torch_mod)
+    return records
+
+
 # ─── DatasetExporter ─────────────────────────────────────────────────────────
 
 class TestDatasetExporter:
@@ -271,6 +426,56 @@ class TestLoRATrainer:
         second = trainer._check_peft()
         assert first == second
         assert trainer._peft_available is not None
+
+
+    def test_train_returns_base_model_missing_after_peft_check(self, monkeypatch):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model=""))
+        monkeypatch.setattr(trainer, "_check_peft", lambda: True)
+        result = trainer.train("some/path.jsonl")
+        assert result == {"success": False, "reason": "LORA_BASE_MODEL ayarlanmamış"}
+
+    def test_train_returns_run_training_exception_reason(self, monkeypatch):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        monkeypatch.setattr(trainer, "_check_peft", lambda: True)
+        monkeypatch.setattr(trainer, "_run_training", lambda _path: (_ for _ in ()).throw(RuntimeError("trainer boom")))
+
+        result = trainer.train("dataset.jsonl")
+
+        assert result == {"success": False, "reason": "trainer boom"}
+
+    def test_run_training_success_with_mocked_transformers_and_peft(self, monkeypatch, tmp_path):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        trainer.output_dir = str(tmp_path / "adapters")
+        trainer.use_4bit = True
+
+        records = _install_training_stubs(monkeypatch, include_bitsandbytes=True)
+
+        result = trainer._run_training("dataset.jsonl")
+
+        assert result["success"] is True
+        assert result["train_loss"] == pytest.approx(0.123)
+        assert result["steps"] == 7
+        assert records["model_name"] == "mock/model"
+        assert records["model_kwargs"]["trust_remote_code"] is True
+        assert "quantization_config" in records["model_kwargs"]
+        assert records["lora_kwargs"]["target_modules"] == ["q_proj", "v_proj"]
+        assert records["mapped"]["labels"] == [1, 2, 3]
+        assert records["training_args"]["output_dir"] == str(tmp_path / "adapters")
+        assert records["trainer_trained"] is True
+        assert records["model_saved"] == str(tmp_path / "adapters")
+        assert records["tokenizer_saved"] == str(tmp_path / "adapters")
+
+    def test_run_training_without_bitsandbytes_falls_back_to_standard_model_kwargs(self, monkeypatch, tmp_path):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        trainer.output_dir = str(tmp_path / "adapters-no-bnb")
+        trainer.use_4bit = True
+
+        records = _install_training_stubs(monkeypatch, include_bitsandbytes=False)
+
+        result = trainer._run_training("dataset.jsonl")
+
+        assert result["success"] is True
+        assert records["model_kwargs"] == {"trust_remote_code": True}
 
 
 # ─── Yardımcı: _chunked ──────────────────────────────────────────────────────
