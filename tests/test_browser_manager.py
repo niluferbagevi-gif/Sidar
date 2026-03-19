@@ -1,5 +1,5 @@
-import importlib.util
 import asyncio
+import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -236,3 +236,78 @@ def test_browser_manager_blocks_sync_mutations_when_hitl_enabled(monkeypatch):
     assert ok_click is False and "click_element_hitl" in msg_click
     assert ok_fill is False and "fill_form_hitl" in msg_fill
     assert ok_select is False and "select_option_hitl" in msg_select
+
+
+def test_browser_manager_helper_methods_cover_non_happy_paths(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    assert manager._is_high_risk_click("button.save") is True
+    assert manager._is_high_risk_click("a.learn-more") is False
+    assert manager._summarize_value("") == ""
+    assert manager._summarize_value("short") == "*****"
+    assert manager._summarize_value("abcdefghijkl") == "ab***kl (len=12)"
+
+    session = BM_MOD.BrowserSession(
+        session_id="selenium-1",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=SimpleNamespace(current_url="https://example.com/dashboard"),
+    )
+    assert manager._session_url(session) == "https://example.com/dashboard"
+
+    with pytest.raises(KeyError):
+        manager._require_session("missing")
+
+    monkeypatch.setattr(manager, "is_available", lambda: True)
+    status = manager.status()
+    assert "available=yes" in status
+    assert "active_sessions=0" in status
+
+
+def test_browser_manager_click_hitl_can_skip_confirmation_for_low_risk(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+    session = BM_MOD.BrowserSession(
+        session_id="sess-low-risk",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(click=lambda selector, timeout: calls.append((selector, timeout))),
+        current_url="https://example.com/docs",
+    )
+    manager._sessions[session.session_id] = session
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=True))
+
+    ok, message = asyncio.run(manager.click_element_hitl(session.session_id, "a.learn-more", require_confirmation=False))
+
+    assert ok is True
+    assert "Tıklandı" in message
+    assert calls == [("a.learn-more", 5000)]
+
+
+def test_browser_manager_close_session_returns_error_when_cleanup_fails():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _BrokenContext:
+        def close(self):
+            raise RuntimeError("kapatılamadı")
+
+    manager._sessions["sess-broken"] = BM_MOD.BrowserSession(
+        session_id="sess-broken",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        context=_BrokenContext(),
+        browser=SimpleNamespace(close=lambda: None),
+        runtime=SimpleNamespace(stop=lambda: None),
+    )
+
+    ok, message = manager.close_session("sess-broken")
+
+    assert ok is False
+    assert "kapatılırken hata" in message
