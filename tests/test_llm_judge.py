@@ -6,7 +6,7 @@ import time
 import pytest
 from unittest.mock import patch
 
-from core.judge import JudgeResult, LLMJudge, get_llm_judge
+from core.judge import JudgeResult, LLMJudge, ResponseEvaluation, get_llm_judge
 
 
 def _run(coro):
@@ -67,6 +67,17 @@ class TestJudgeResult:
         )
         assert r.quality_score == pytest.approx(0.8)
         assert r.quality_score_10 == pytest.approx(8.0)
+
+
+def test_response_evaluation_weak_threshold():
+    result = ResponseEvaluation(
+        score=7,
+        reasoning="Eksik doğrulama",
+        evaluated_at=time.time(),
+        model="judge-mini",
+        provider="openai",
+    )
+    assert result.weak is True
 
 
 # ─── LLMJudge ────────────────────────────────────────────────────────────────
@@ -167,7 +178,7 @@ class TestLLMJudge:
                 async def initialize(self):
                     raise AssertionError("initialize should not run when engine exists")
 
-                async def record(self, **kwargs):
+                async def flag_weak_response(self, **kwargs):
                     calls.append(kwargs)
                     return True
 
@@ -187,8 +198,8 @@ class TestLLMJudge:
             assert result is not None
             assert result.quality_score_10 < 8.0
             assert len(calls) == 1
-            assert calls[0]["rating"] == -1
-            assert "weak_response" in calls[0]["tags"]
+            assert calls[0]["score"] <= 8
+            assert any(tag.startswith("quality_score:") for tag in calls[0]["tags"])
             assert calls[0]["session_id"] == "judge:auto"
 
         _run(_inner())
@@ -203,7 +214,7 @@ class TestLLMJudge:
                 async def initialize(self):
                     return None
 
-                async def record(self, **_kwargs):
+                async def flag_weak_response(self, **_kwargs):
                     raise AssertionError("high quality result should not be recorded")
 
             async def _fake_llm(system, _user_msg):
@@ -221,6 +232,40 @@ class TestLLMJudge:
 
             assert result is not None
             assert result.quality_score_10 >= 8.0
+
+        _run(_inner())
+
+    def test_evaluate_response_parses_score_and_reasoning_json(self):
+        async def _inner():
+            judge = self._make_judge(enabled=True, sample_rate=1.0)
+
+            async def _fake_json(_system, _payload, *, model=None):
+                assert model
+                return {"score": 7, "reasoning": "Yanıt eksik ama kısmen doğru."}
+
+            with patch.object(judge, "_call_llm_json", side_effect=_fake_json):
+                result = await judge.evaluate_response(
+                    prompt="Önbellek durumu nedir?",
+                    response="Cache iyi görünüyor.",
+                    context={"agent": "reviewer"},
+                )
+
+            assert result is not None
+            assert result.score == 7
+            assert result.reasoning == "Yanıt eksik ama kısmen doğru."
+            assert result.weak is True
+
+        _run(_inner())
+
+    def test_evaluate_response_returns_none_when_disabled(self):
+        async def _inner():
+            judge = self._make_judge(enabled=False, sample_rate=1.0)
+            result = await judge.evaluate_response(
+                prompt="durum",
+                response="yanıt",
+                context={},
+            )
+            assert result is None
 
         _run(_inner())
 

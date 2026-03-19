@@ -7,13 +7,14 @@ from unittest.mock import MagicMock, patch
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 from core.active_learning import (
     FeedbackStore,
     DatasetExporter,
     LoRATrainer,
+    flag_weak_response,
     get_feedback_store,
     _chunked,
 )
@@ -128,6 +129,26 @@ class TestFeedbackStoreWithSQLite:
         _run(store.record("Soru", "Yanlış cevap", rating=1, correction="Doğru cevap"))
         rows = _run(store.get_pending_export(min_rating=1))
         assert rows[0]["correction"] == "Doğru cevap"
+        _run(store.close())
+
+    def test_flag_weak_response_records_negative_feedback(self, tmp_path):
+        store = _make_store(tmp_path)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+        ok = _run(
+            store.flag_weak_response(
+                prompt="Özet çıkar",
+                response="Eksik cevap",
+                score=6,
+                reasoning="Bağlamdan önemli maddeler eksik.",
+                session_id="sess-weak",
+            )
+        )
+        assert ok is True
+        rows = _run(store.get_pending_export(min_rating=-1))
+        assert len(rows) == 1
+        assert rows[0]["rating"] == -1
+        assert rows[0]["correction"] == "Bağlamdan önemli maddeler eksik."
         _run(store.close())
 
 
@@ -281,3 +302,26 @@ def test_get_feedback_store_returns_instance():
         assert store is store2
     finally:
         al_mod._feedback_store = original
+
+
+def test_module_level_flag_weak_response_uses_singleton(monkeypatch):
+    calls = []
+
+    class _Store:
+        async def flag_weak_response(self, **kwargs):
+            calls.append(kwargs)
+            return True
+
+    monkeypatch.setattr("core.active_learning.get_feedback_store", lambda config=None: _Store())
+
+    ok = _run(
+        flag_weak_response(
+            prompt="prompt",
+            response="response",
+            score=5,
+            reasoning="neden",
+        )
+    )
+
+    assert ok is True
+    assert calls[0]["score"] == 5

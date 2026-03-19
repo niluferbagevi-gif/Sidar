@@ -125,6 +125,50 @@ class FeedbackStore:
         logger.debug("FeedbackStore.record: rating=%d uid=%s", rating, user_id)
         return True
 
+    async def flag_weak_response(
+        self,
+        prompt: str,
+        response: str,
+        score: int,
+        reasoning: str,
+        *,
+        user_id: str = "",
+        session_id: str = "judge:auto",
+        provider: str = "",
+        model: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> bool:
+        """Düşük puanlı yanıtı Active Learning havuzuna yazar."""
+        if not self.enabled:
+            return False
+        if self._engine is None:
+            await self.initialize()
+        if self._engine is None:
+            return False
+
+        merged_tags = list(tags or [])
+        merged_tags.extend(
+            [
+                "judge:auto",
+                "weak_response",
+                f"score:{max(1, min(10, int(score or 0)))}",
+            ]
+        )
+        if reasoning:
+            merged_tags.append("judge_reasoning")
+
+        return await self.record(
+            user_id=user_id,
+            session_id=session_id,
+            prompt=prompt,
+            response=response,
+            rating=-1,
+            correction=(reasoning or "").strip(),
+            provider=provider,
+            model=model,
+            tags=merged_tags,
+        )
+
     async def get_pending_export(self, min_rating: Optional[int] = None, limit: int = 10000) -> List[Dict]:
         """Henüz export edilmemiş kayıtları döner."""
         if not self.enabled or not self._engine:
@@ -431,3 +475,31 @@ def get_feedback_store(config=None) -> FeedbackStore:
             db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
             _feedback_store = FeedbackStore(database_url=db_url, config=cfg)
     return _feedback_store
+
+
+async def flag_weak_response(
+    prompt: str,
+    response: str,
+    score: int,
+    reasoning: str,
+    *,
+    config=None,
+    user_id: str = "",
+    session_id: str = "judge:auto",
+    provider: str = "",
+    model: str = "",
+    tags: Optional[List[str]] = None,
+) -> bool:
+    """Singleton FeedbackStore üzerinden düşük kaliteli yanıtı kaydeder."""
+    store = get_feedback_store(config)
+    return await store.flag_weak_response(
+        prompt=prompt,
+        response=response,
+        score=score,
+        reasoning=reasoning,
+        user_id=user_id,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        tags=tags,
+    )

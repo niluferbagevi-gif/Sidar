@@ -18,12 +18,14 @@ Yapılandırma (.env):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,15 @@ _HALLUCINATION_SYSTEM = (
     "Yanıttaki iddialar bağlam belgelerinde desteklenmiyor veya çelişiyorsa risk yüksek. "
     "Halüsinasyon riskini 0.0 (düşük risk, bağlamla uyumlu) ile 1.0 (yüksek risk, bağlamdan sapma) "
     "arasında bir ondalıklı sayı olarak döndür. Sadece sayıyı döndür. Örnek: 0.15"
+)
+
+_RESPONSE_REVIEW_SYSTEM = (
+    "Sen bir kalite denetleyici LLM'sin. "
+    "Kullanıcı istemini, mevcut bağlamı ve ajan yanıtını değerlendir. "
+    "Yanıtı 1 ile 10 arasında puanla. 10 = son derece doğru, eksiksiz ve güvenilir; "
+    "1 = zayıf, eksik, hatalı veya bağlamdan kopuk. "
+    "Yalnızca geçerli JSON döndür ve şu şemaya uy: "
+    '{"score": 1, "reasoning": "kısa açıklama"}.'
 )
 
 
@@ -94,6 +105,22 @@ class JudgeResult:
         return round(self.quality_score * 10.0, 2)
 
 
+@dataclass
+class ResponseEvaluation:
+    """Bağımsız yanıt değerlendirme sonucu (1–10 ölçeği)."""
+
+    score: int
+    reasoning: str
+    evaluated_at: float
+    model: str
+    provider: str
+    error: str = ""
+
+    @property
+    def weak(self) -> bool:
+        return self.score < 8
+
+
 # ─── LLMJudge ────────────────────────────────────────────────────────────────
 
 class LLMJudge:
@@ -122,6 +149,26 @@ class LLMJudge:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
         return self.enabled and random.random() < self.sample_rate
 
+    def should_evaluate(self) -> bool:
+        """Dış çağrılar için public örnekleme kararı."""
+        return self._should_evaluate()
+
+    def _response_eval_model(self) -> str:
+        override = os.getenv("JUDGE_RESPONSE_MODEL", "").strip()
+        if override:
+            return override
+        if self.model:
+            return self.model
+        if self.provider == "anthropic":
+            return "claude-3-5-haiku-20241022"
+        if self.provider in {"openai", "litellm"}:
+            return "gpt-4o-mini"
+        return (
+            str(getattr(self.config, "TEXT_MODEL", "") or "")
+            or str(getattr(self.config, "CODING_MODEL", "") or "")
+            or "judge-default"
+        )
+
     async def _call_llm(self, system: str, user_message: str) -> Optional[float]:
         """Judge modelini çağır, 0.0–1.0 arası float döndür."""
         try:
@@ -140,7 +187,6 @@ class LLMJudge:
                 return None
             text = response.strip()
             # Yanıtta sadece sayı bekliyoruz; güvenli parse
-            import re
             match = re.search(r"\b(0?\.\d+|[01](?:\.\d+)?)\b", text)
             if match:
                 val = float(match.group(1))
@@ -149,6 +195,80 @@ class LLMJudge:
         except Exception as exc:
             logger.debug("Judge LLM çağrısı başarısız: %s", exc)
             return None
+
+    async def _call_llm_json(self, system: str, user_message: str, *, model: Optional[str] = None) -> Optional[Dict[str, object]]:
+        """Judge modelini JSON mode'da çağırır."""
+        try:
+            from core.llm_client import LLMClient
+
+            client = LLMClient(provider=self.provider, config=self.config)
+            response = await client.chat(
+                messages=[{"role": "user", "content": user_message}],
+                model=model or self._response_eval_model(),
+                system_prompt=system,
+                temperature=0.0,
+                stream=False,
+                json_mode=True,
+            )
+            if not isinstance(response, str):
+                return None
+            parsed = json.loads(response)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception as exc:
+            logger.debug("Judge JSON LLM çağrısı başarısız: %s", exc)
+        return None
+
+    async def evaluate_response(
+        self,
+        prompt: str,
+        response: str,
+        context,
+    ) -> Optional[ResponseEvaluation]:
+        """Bağımsız yanıtı 1–10 ölçeğinde puanlar ve gerekçe döndürür."""
+        if not self.enabled or not prompt or not response:
+            return None
+
+        model_used = self._response_eval_model()
+        if isinstance(context, dict):
+            context_text = json.dumps(context, ensure_ascii=False, sort_keys=True)
+        elif isinstance(context, list):
+            context_text = "\n---\n".join(str(item) for item in context)
+        else:
+            context_text = str(context or "")
+
+        payload = (
+            f"Prompt:\n{prompt[:2000]}\n\n"
+            f"Context:\n{context_text[:2500]}\n\n"
+            f"Response:\n{response[:2500]}"
+        )
+        started_at = time.time()
+        reasoning = ""
+        score = 5
+        error = ""
+
+        parsed = await self._call_llm_json(_RESPONSE_REVIEW_SYSTEM, payload, model=model_used)
+        if parsed is None:
+            error = "judge_json_parse_failed"
+        else:
+            raw_score = parsed.get("score", 5)
+            reasoning = str(parsed.get("reasoning", "") or "").strip()
+            try:
+                score = int(round(float(raw_score)))
+            except Exception:
+                match = re.search(r"\b([1-9]|10)\b", str(raw_score))
+                score = int(match.group(1)) if match else 5
+
+        score = max(1, min(10, score))
+        _inc_prometheus("sidar_response_quality_score", float(score))
+        return ResponseEvaluation(
+            score=score,
+            reasoning=reasoning,
+            evaluated_at=started_at,
+            model=model_used,
+            provider=self.provider,
+            error=error,
+        )
 
     async def evaluate_rag(
         self,
@@ -241,26 +361,23 @@ class LLMJudge:
             from core.active_learning import get_feedback_store
 
             store = get_feedback_store(self.config)
-            if getattr(store, "_engine", None) is None:
-                await store.initialize()
-
-            tags = [
-                "judge:auto",
-                "weak_response",
-                f"quality_score:{result.quality_score_10:.2f}/10",
-                f"relevance:{result.relevance_score:.4f}",
-                f"hallucination_risk:{result.hallucination_risk:.4f}",
-            ]
-            ok = await store.record(
-                user_id="",
-                session_id="judge:auto",
+            ok = await store.flag_weak_response(
                 prompt=query,
                 response=response_text,
-                rating=-1,
-                correction="",
+                score=int(round(result.quality_score_10)),
+                reasoning=(
+                    "judge:auto relevance="
+                    f"{result.relevance_score:.4f} hallucination_risk={result.hallucination_risk:.4f}"
+                ),
+                user_id="",
+                session_id="judge:auto",
                 provider=result.provider,
                 model=result.model,
-                tags=tags,
+                tags=[
+                    f"quality_score:{result.quality_score_10:.2f}/10",
+                    f"relevance:{result.relevance_score:.4f}",
+                    f"hallucination_risk:{result.hallucination_risk:.4f}",
+                ],
             )
             if ok:
                 logger.info(

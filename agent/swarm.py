@@ -119,6 +119,76 @@ class SwarmOrchestrator:
         default_limit = 2 if provider == "ollama" else 3
         return max(1, int(getattr(self.cfg, "SWARM_LOOP_GUARD_MAX_REPEAT", default_limit) or default_limit))
 
+    async def _run_autonomous_feedback(
+        self,
+        *,
+        prompt: str,
+        response: str,
+        context: Dict[str, str],
+        session_id: str,
+        agent_role: str,
+        task_id: str,
+    ) -> None:
+        if not prompt or not response:
+            return
+        try:
+            from core.judge import get_llm_judge
+            from core.active_learning import flag_weak_response
+
+            judge = get_llm_judge()
+            if not judge.enabled:
+                return
+
+            evaluation = await judge.evaluate_response(prompt=prompt, response=response, context=context)
+            if evaluation is None or evaluation.score >= 8:
+                return
+
+            await flag_weak_response(
+                prompt=prompt,
+                response=response,
+                score=evaluation.score,
+                reasoning=evaluation.reasoning,
+                config=self.cfg,
+                session_id=session_id or task_id,
+                provider=evaluation.provider,
+                model=evaluation.model,
+                tags=[
+                    "swarm:auto",
+                    f"agent:{agent_role}",
+                    f"task_id:{task_id}",
+                ],
+            )
+        except Exception as exc:
+            logger.debug("Swarm autonomous feedback hatası [%s]: %s", task_id, exc)
+
+    def _schedule_autonomous_feedback(
+        self,
+        *,
+        prompt: str,
+        response: str,
+        context: Dict[str, str],
+        session_id: str,
+        agent_role: str,
+        task_id: str,
+    ) -> None:
+        if not prompt or not response:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                self._run_autonomous_feedback(
+                    prompt=prompt,
+                    response=response,
+                    context=context,
+                    session_id=session_id,
+                    agent_role=agent_role,
+                    task_id=task_id,
+                ),
+                name="sidar_swarm_autonomous_feedback",
+            )
+        except RuntimeError:
+            pass
+
     @staticmethod
     def _goal_fingerprint(goal: str, *, max_chars: int = 180) -> str:
         text = " ".join((goal or "").strip().lower().split())
@@ -387,6 +457,20 @@ class SwarmOrchestrator:
                 "SwarmOrchestrator: [%s] → %s tamamlandı (%dms, status=%s)",
                 task.task_id, spec.role_name, elapsed, result.status,
             )
+            if result.status == "success":
+                self._schedule_autonomous_feedback(
+                    prompt=task.goal,
+                    response=str(result.summary),
+                    context={
+                        **envelope.context,
+                        "intent": task.intent,
+                        "agent_role": spec.role_name,
+                        "evidence": "\n".join(result.evidence[:5]),
+                    },
+                    session_id=session_id,
+                    agent_role=spec.role_name,
+                    task_id=task.task_id,
+                )
             return SwarmResult(
                 task_id=task.task_id,
                 agent_role=spec.role_name,

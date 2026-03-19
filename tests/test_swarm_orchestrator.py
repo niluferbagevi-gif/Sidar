@@ -348,6 +348,75 @@ def test_swarm_direct_handoff_preserves_sender_and_p2p_context(monkeypatch, swar
     assert seen[1][3]["p2p_receiver"] == "reviewer"
 
 
+def test_swarm_success_schedules_autonomous_feedback(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    scheduled = []
+
+    class _DummyAgent:
+        async def handle(self, envelope):
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="otomasyon adayı yanıt",
+                evidence=["lint"],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("reviewer"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _DummyAgent())
+    monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", lambda **kwargs: scheduled.append(kwargs))
+
+    result = asyncio.run(orchestrator.run("yanıtı değerlendir", intent="review", session_id="sess-auto"))
+
+    assert result.status == "success"
+    assert len(scheduled) == 1
+    assert scheduled[0]["prompt"] == "yanıtı değerlendir"
+    assert scheduled[0]["agent_role"] == "reviewer"
+    assert scheduled[0]["session_id"] == "sess-auto"
+
+
+def test_swarm_autonomous_feedback_flags_only_weak_responses(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    calls = []
+
+    class _Judge:
+        enabled = True
+
+        async def evaluate_response(self, prompt, response, context):
+            assert prompt == "Görevi çöz"
+            assert response == "eksik özet"
+            assert context["agent_role"] == "coder"
+            return SimpleNamespace(score=7, reasoning="Kilit ayrıntılar eksik", provider="openai", model="gpt-4o-mini")
+
+    async def _flag_weak_response(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    judge_mod = types.ModuleType("core.judge")
+    judge_mod.get_llm_judge = lambda: _Judge()
+    active_mod = types.ModuleType("core.active_learning")
+    active_mod.flag_weak_response = _flag_weak_response
+
+    monkeypatch.setitem(sys.modules, "core.judge", judge_mod)
+    monkeypatch.setitem(sys.modules, "core.active_learning", active_mod)
+
+    asyncio.run(
+        orchestrator._run_autonomous_feedback(
+            prompt="Görevi çöz",
+            response="eksik özet",
+            context={"agent_role": "coder"},
+            session_id="sess-weak",
+            agent_role="coder",
+            task_id="task-1",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["score"] == 7
+    assert "swarm:auto" in calls[0]["tags"]
+    assert "agent:coder" in calls[0]["tags"]
+    assert calls[0]["session_id"] == "sess-weak"
+
+
 
 def test_task_router_prefers_first_capability_match(monkeypatch, swarm_module):
     router = swarm_module.TaskRouter()
