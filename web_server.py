@@ -1386,6 +1386,31 @@ async def _ws_stream_agent_text_response(websocket: WebSocket, agent: SidarAgent
     """Agent text çıktısını voice/chat benzeri websocket istemcisine aktar."""
     tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
     thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
+    voice_pipeline = getattr(websocket, "_sidar_voice_pipeline", None)
+    pending_voice_text = ""
+
+    async def _emit_voice_segments(*, flush: bool = False) -> None:
+        nonlocal pending_voice_text
+        if not voice_pipeline or not getattr(voice_pipeline, "enabled", False):
+            return
+        ready_segments, remainder = voice_pipeline.extract_ready_segments(pending_voice_text, flush=flush)
+        pending_voice_text = remainder
+        for segment in ready_segments:
+            tts_result = await voice_pipeline.synthesize_text(segment)
+            if not tts_result.get("success"):
+                continue
+            audio_bytes = bytes(tts_result.get("audio_bytes") or b"")
+            if not audio_bytes:
+                continue
+            await websocket.send_json(
+                {
+                    "audio_chunk": base64.b64encode(audio_bytes).decode("ascii"),
+                    "audio_text": segment,
+                    "audio_mime_type": tts_result.get("mime_type", "audio/wav"),
+                    "audio_provider": tts_result.get("provider", ""),
+                    "audio_voice": tts_result.get("voice", ""),
+                }
+            )
 
     async for chunk in agent.respond(prompt):
         m_tool = tool_sentinel.match(chunk)
@@ -1396,6 +1421,11 @@ async def _ws_stream_agent_text_response(websocket: WebSocket, agent: SidarAgent
             await websocket.send_json({"thought": m_thought.group(1)})
         else:
             await websocket.send_json({"chunk": chunk})
+            if voice_pipeline and getattr(voice_pipeline, "enabled", False):
+                pending_voice_text += chunk
+                await _emit_voice_segments()
+
+    await _emit_voice_segments(flush=True)
 
 
 @app.websocket("/ws/chat")
@@ -1596,8 +1626,14 @@ async def websocket_voice(websocket: WebSocket):
         await websocket.close(code=1011, reason="multimodal unavailable")
         return
 
+    try:
+        from core.voice import VoicePipeline
+    except ImportError:
+        VoicePipeline = None  # type: ignore[assignment]
+
     agent = await get_agent()
     pipeline = MultimodalPipeline(agent.llm, cfg)
+    voice_pipeline = VoicePipeline(cfg) if VoicePipeline is not None else None
     max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
 
     audio_buffer = bytearray()
@@ -1607,6 +1643,7 @@ async def websocket_voice(websocket: WebSocket):
     session_mime_type = "audio/webm"
     session_language: str | None = None
     session_prompt = ""
+    setattr(websocket, "_sidar_voice_pipeline", voice_pipeline)
 
     if header_token:
         ws_user = await _resolve_user_from_token(agent, header_token)
