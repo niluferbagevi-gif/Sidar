@@ -94,6 +94,79 @@ def test_execute_code_with_docker_cli_error_truncation_and_success(monkeypatch, 
     assert "kod çalıştı, çıktı yok" in msg2
 
 
+def test_run_shell_in_sandbox_guards_timeout_and_large_output(monkeypatch, tmp_path):
+    sec_blocked = DummySecurity(tmp_path, can_execute=False, level=FULL)
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    mgr_blocked = CM_MOD.CodeManager(sec_blocked, tmp_path)
+
+    ok, msg = mgr_blocked.run_shell_in_sandbox("echo hi")
+    assert ok is False
+    assert "Sandbox komutu çalıştırma yetkisi yok" in msg
+
+    sec = DummySecurity(tmp_path, can_execute=True, level=FULL)
+    mgr = CM_MOD.CodeManager(sec, tmp_path)
+    mgr.security.is_path_under = lambda path, base: True
+    mgr.max_output_chars = 70
+
+    ok, msg = mgr.run_shell_in_sandbox("   ")
+    assert ok is False
+    assert "belirtilmedi" in msg
+
+    ok, msg = mgr.run_shell_in_sandbox("echo hi", cwd=str(tmp_path / "missing"))
+    assert ok is False
+    assert "Geçersiz çalışma dizini" in msg
+
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: None)
+    ok, msg = mgr.run_shell_in_sandbox("echo hi")
+    assert ok is False
+    assert "Docker CLI bulunamadı" in msg
+
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: "/usr/bin/docker")
+
+    def _timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=12)
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", _timeout)
+    ok, msg = mgr.run_shell_in_sandbox("sleep 99")
+    assert ok is False
+    assert "Zaman aşımı" in msg
+
+    def _huge_logs(*_args, **_kwargs):
+        return SimpleNamespace(returncode=137, stdout="ok", stderr="e" * 120)
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", _huge_logs)
+    ok, msg = mgr.run_shell_in_sandbox("python script.py")
+    assert ok is False
+    assert "çıkış kodu: 137" in msg
+    assert "[stderr]" in msg
+    assert "ÇIKTI KIRPILDI" in msg
+
+
+def test_run_shell_in_sandbox_success_and_generic_exception_paths(monkeypatch, tmp_path):
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    sec = DummySecurity(tmp_path, can_execute=True, level=FULL)
+    mgr = CM_MOD.CodeManager(sec, tmp_path)
+    mgr.security.is_path_under = lambda path, base: True
+
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: "/usr/bin/docker")
+
+    def _success(*_args, **_kwargs):
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", _success)
+    ok, msg = mgr.run_shell_in_sandbox("echo hi")
+    assert ok is True
+    assert msg == "(komut çıktı üretmedi)"
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("sandbox boom")
+
+    monkeypatch.setattr(CM_MOD.subprocess, "run", _boom)
+    ok, msg = mgr.run_shell_in_sandbox("echo hi")
+    assert ok is False
+    assert "Sandbox komutu hatası" in msg
+
+
 def test_execute_code_full_mode_cli_timeout_branch(monkeypatch, tmp_path):
     sec = DummySecurity(tmp_path, can_execute=True, level=FULL)
     monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
