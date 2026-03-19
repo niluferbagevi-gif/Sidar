@@ -532,6 +532,8 @@ class Config:
     AUTONOMY_WEBHOOK_SECRET: str = os.getenv("AUTONOMY_WEBHOOK_SECRET", "")
     ENABLE_SWARM_FEDERATION: bool = get_bool_env("ENABLE_SWARM_FEDERATION", True)
     SWARM_FEDERATION_SHARED_SECRET: str = os.getenv("SWARM_FEDERATION_SHARED_SECRET", "")
+    ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
+    GRAPH_RAG_MAX_FILES: int = get_int_env("GRAPH_RAG_MAX_FILES", 5000)
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
