@@ -218,11 +218,13 @@ class TestHITLGate:
         async def _inner():
             import core.hitl as hitl_mod
 
+            store = _HITLStore()
+            monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+
             gate = HITLGate()
             gate.enabled = True
             gate.timeout = 10
 
-            store = _HITLStore()
             clock = {"now": 1000.0}
             notified = []
 
@@ -232,7 +234,6 @@ class TestHITLGate:
             async def _sleep(seconds):
                 clock["now"] += seconds + 10
 
-            monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
             monkeypatch.setattr(hitl_mod, "notify", _notify)
             monkeypatch.setattr(time, "time", lambda: clock["now"])
             monkeypatch.setattr(asyncio, "sleep", _sleep)
@@ -289,7 +290,7 @@ def test_set_hitl_broadcast_hook_and_notify_success():
             seen.append(payload)
 
         hitl_mod.set_hitl_broadcast_hook(_hook)
-        await hitl_mod._notify(req)
+        await hitl_mod.notify(req)
 
         assert seen == [{"type": "hitl_request", "data": req.to_dict()}]
 
@@ -317,7 +318,7 @@ def test_notify_swallows_broadcast_errors(caplog):
             raise RuntimeError("boom")
 
         hitl_mod.set_hitl_broadcast_hook(_hook)
-        await hitl_mod._notify(req)
+        await hitl_mod.notify(req)
         hitl_mod.set_hitl_broadcast_hook(None)
 
     with caplog.at_level("DEBUG"):
@@ -355,11 +356,13 @@ def test_request_approval_returns_true_when_request_is_approved(monkeypatch):
     async def _inner():
         import core.hitl as hitl_mod
 
+        store = _HITLStore()
+        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+
         gate = HITLGate()
         gate.enabled = True
         gate.timeout = 10
 
-        store = _HITLStore()
         clock = {"now": 2000.0}
 
         async def _notify(_req):
@@ -371,7 +374,6 @@ def test_request_approval_returns_true_when_request_is_approved(monkeypatch):
             req.decided_by = "operator"
             clock["now"] += 1
 
-        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(asyncio, "sleep", _sleep)
@@ -395,11 +397,13 @@ def test_request_approval_returns_false_when_request_disappears(monkeypatch):
     async def _inner():
         import core.hitl as hitl_mod
 
+        store = _HITLStore()
+        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+
         gate = HITLGate()
         gate.enabled = True
         gate.timeout = 10
 
-        store = _HITLStore()
         clock = {"now": 3000.0}
 
         async def _notify(_req):
@@ -410,7 +414,6 @@ def test_request_approval_returns_false_when_request_disappears(monkeypatch):
             store._index.pop(req.request_id, None)
             clock["now"] += 1
 
-        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(asyncio, "sleep", _sleep)
@@ -431,11 +434,13 @@ def test_request_approval_returns_false_when_request_is_rejected(monkeypatch):
     async def _inner():
         import core.hitl as hitl_mod
 
+        store = _HITLStore()
+        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+
         gate = HITLGate()
         gate.enabled = True
         gate.timeout = 10
 
-        store = _HITLStore()
         clock = {"now": 4000.0}
 
         async def _notify(_req):
@@ -447,7 +452,6 @@ def test_request_approval_returns_false_when_request_is_rejected(monkeypatch):
             req.rejection_reason = "manuel red"
             clock["now"] += 1
 
-        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
         monkeypatch.setattr(hitl_mod, "notify", _notify)
         monkeypatch.setattr(time, "time", lambda: clock["now"])
         monkeypatch.setattr(asyncio, "sleep", _sleep)
