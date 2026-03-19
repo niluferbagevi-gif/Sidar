@@ -4,6 +4,23 @@
 
 ---
 
+## [v4.2.0] - 2026-03-19
+FAZ-10 — Autonomous LLMOps kapanış anlatısı kurumsal operasyon seviyesiyle eşitlendi.
+
+### ✅ FAZ-10 — Faz 4 Operasyonel Olarak Kapatıldı
+**Dosyalar:** `PROJE_RAPORU.md`, `RFC-MultiAgent.md`, `AUDIT_REPORT_v4.0.md`, `README.md`
+- Faz 4; aktif öğrenme, vision, cost-aware routing ve dış sistem orkestrasyonunu kapsayan birleşik **Autonomous LLMOps** katmanı olarak yeniden çerçevelendi.
+- Audit trail ve direct `p2p.v1` handoff doğrulamaları bu kabiliyetlerin sadece mevcut değil, denetlenebilir ve rollout'a hazır olduğunu gösterecek şekilde dokümante edildi.
+- Proje raporu ve RFC tarafında `v4.2.0` operasyonel kapanış dili, audit ve README tarafında da görünür hâle getirildi.
+
+## [v3.2.0] - 2026-03-19
+FAZ-10 — Autonomous LLMOps ürün anlatısı konsolide edildi.
+
+### ✅ FAZ-10 — Faz 4 Ürün Hikâyesi Tek Çatı Altında Toplandı
+**Dosyalar:** `PROJE_RAPORU.md`, `README.md`
+- Active Learning/LoRA, Vision Pipeline, cost-aware routing ve Slack/Jira/Teams orkestrasyonu birlikte Faz 4 ürün hikâyesi olarak yeniden yazıldı.
+- Faz 4 artık tekil özellik listesi yerine kapalı döngü öğrenme + çok modlu üretim + otonom entegrasyon yönetimi ekseninde anlatılıyor.
+
 ## [v3.0.31] - 2026-03-19
 FAZ-9 — Kurumsal audit trail ve doğrudan P2P handoff rollout'u raporlarla senkronize edildi.
 

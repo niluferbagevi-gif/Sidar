@@ -620,6 +620,8 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v4.0.md` senkronize edildi |
+| **v3.2.0** | Autonomous LLMOps konsolidasyonu: Active Learning/LoRA, Vision Pipeline, Cost-Aware Routing ve Slack/Jira/Teams orkestrasyonu Faz 4’ün birleşik ürün anlatısı olarak toplandı |
 | **v3.0.31** | Kurumsal rollout senkronizasyonu: `audit_logs` migration + DB audit trail yardımcıları + `access_policy_middleware` audit kaydı akışı raporlandı; direct `p2p.v1` handoff protokolü Supervisor ve Swarm katmanlarında belgelendi |
 | **v3.0.24** | Faz 4 tamamlama: Slack Bot SDK + Webhook (`slack_manager`), Jira Cloud REST API v3 (`jira_manager`), Teams Adaptive Card v1.4 + HITL onay kartı (`teams_manager`); 44 yeni test; 142 test modülü, ~18.200+ Python kaynak satırı |
 | **v3.0.23** | Faz 4: Active Learning + LoRA/QLoRA (`core/active_learning.py`), Multimodal Vision Pipeline (`core/vision.py`); 66 yeni test |
