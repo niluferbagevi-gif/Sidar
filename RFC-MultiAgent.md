@@ -1,9 +1,9 @@
 # RFC: Multi-Agent / Supervisor Mimarisi
 
 - **Belge No:** RFC-0001
-- **Durum:** Tamamlandı (Implemented / v3.0.0 ile Aktif)
+- **Durum:** Tamamlandı (Implemented / v4.2.0 ile kurumsal olarak kapanış aldı)
 - **Tarih:** 2026-03-10
-- **Uygulanan Sürüm:** v3.0.0
+- **Uygulanan Sürüm:** v4.2.0
 - **Yazar:** Sidar Mühendislik
 
 ---
@@ -302,6 +302,8 @@ Her alt göreve span:
 
 - `ENABLE_MULTI_AGENT=true` default
 - legacy yol deprecate planı
+- **Kapanış Notu (v3.2.0):** Supervisor + role tabanlı mimari artık yalnız başına bir yönlendirme kabiliyeti değil; active learning, vision, cost-aware routing ve dış sistem entegrasyonlarıyla birlikte Autonomous LLMOps omurgasının orkestrasyon katmanı olarak tanımlanır.
+- **Operasyonel Teyit (v4.2.0):** `audit_logs` trail, direct `p2p.v1` handoff ve Supervisor/Swarm zinciri sayesinde çok ajanlı yapı denetlenebilir, kurumsal rollout'a hazır ve varsayılan mimari olarak kalıcıdır.
 
 ---
 
@@ -326,4 +328,4 @@ Her alt göreve span:
 
 ## 16) Uygulama Sonucu ve Kapanış
 
-Bu RFC'de tasarlanan Supervisor, Coder, Researcher ve Reviewer ajan mimarisi **v3.0.0** sürümü itibarıyla projenin varsayılan, tek omurgası haline gelmiştir. Eski tekli ajan (SidarAgent) akışı tamamen kullanımdan kaldırılmıştır (deprecated).
+Bu RFC'de tasarlanan Supervisor, Coder, Researcher ve Reviewer ajan mimarisi **v3.0.0** ile devreye alınmış, **v3.2.0** ile Autonomous LLMOps anlatısının merkezine yerleşmiş ve **v4.2.0** itibarıyla audit trail + direct handoff doğrulamalarıyla kurumsal olarak kapanış almıştır. Eski tekli ajan (SidarAgent) akışı tamamen kullanımdan kaldırılmıştır (deprecated).
