@@ -1,9 +1,10 @@
-# Sidar v3.0.0 — Teknik Referans ve Operasyon Kılavuzu
+# Sidar v4.3.0 — Teknik Referans ve Operasyon Kılavuzu
 
 Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (DB şeması, endpoint envanteri, WebSocket protokolü, agent akışı, operasyon parametreleri) toplar.
 
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
 > Son doğrulama turu: **2026-03-19** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
+> Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**60**), veri tabanı tabloları ve Config tarafından okunan env anahtarları tarafında yeni bir sözleşme farkı bulunmamıştır.
 
 ---
 
@@ -38,7 +39,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 
 ## 1. Mimari Kapsam ve Bileşenler
 
-Sidar v3.0.0 teknik akışının ana bileşenleri:
+Sidar v4.3.0 teknik akışının ana bileşenleri:
 
 - **Web/API katmanı:** `web_server.py` (FastAPI, WebSocket, middleware, auth, rate-limit, RAG/GitHub endpointleri)
 - **Agent katmanı:** `agent/sidar_agent.py` + `agent/core/supervisor.py` + `agent/roles/*`

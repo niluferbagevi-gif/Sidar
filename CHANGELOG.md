@@ -4,6 +4,22 @@
 
 ---
 
+## [4.3.0] - 2026-03-19
+Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipli kod tabanı ile senkronize edildi.
+
+### ✅ Dokümantasyon ve Sürüm Senkronizasyonu
+**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md`, `TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
+- Runtime, paket ve dağıtım yüzeyi `v4.3.0` sürüm çizgisine taşındı; README, teknik referans, proje raporu ve geliştirici rehberleri aynı baseline ile hizalandı.
+- Takipli depo ölçümleri yeniden doğrulandı: **58** üretim Python dosyası / **20.582** satır, **151** test dosyası / **39.147** satır, toplam takipli Python **209** dosya / **59.729** satır, Web UI toplamı **6.105** satır ve REST endpoint envanteri **60** olarak raporlara işlendi.
+- Teknik referans turunda API/DB/env sözleşmeleri tekrar kontrol edildi; bu sürümde yeni endpoint, tablo veya config anahtarı eklenmediği için envanter korunurken başlık ve senkronizasyon notları güncellendi.
+
+### ✅ Çözülen Bulgular
+**Dosyalar:** `scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`, `tests/test_release_version_bump.py`
+- Repo metrik betikleri Git deposu içinde öncelikle `git ls-files` kullanacak şekilde düzeltilerek `.venv`, `node_modules` ve benzeri takip dışı içeriklerin satır sayılarını şişirmesi engellendi.
+- Sürüm doğrulama testi, yeni `v4.3.0` baseline ve güncel proje raporu/changelog/SIDAR talimatlarıyla uyumlu hale getirildi.
+
+---
+
 ## [4.0.0] - 2026-03-19
 Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıyla senkronize edildi.
 
