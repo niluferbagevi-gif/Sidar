@@ -4,6 +4,18 @@
 
 ---
 
+## [4.0.0] - 2026-03-19
+Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıyla senkronize edildi.
+
+### ✅ Sürüm ve Mimari Senkronizasyonu
+**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `PROJE_RAPORU.md`, `README.md`
+- Runtime ve paket sürümleri `3.0.0` / `0.0.0` seviyelerinden `4.0.0` değerine yükseltildi; böylece config, paket metadata'sı ve v4 audit anlatısı aynı sürüm çizgisine taşındı.
+- React tabanlı `web_ui_react/` arayüzünün standart kullanıcı deneyimi olduğu, legacy `web_ui/` klasörünün ise geriye dönük uyumluluk/fallback amacıyla korunduğu dokümante edildi.
+- SQLite'tan PostgreSQL + `pgvector` altyapısına geçiş, Alembic migration zinciri ve kurumsal deployment yüzeyinin (Docker Compose + Helm/Redis/Jaeger/OTel) proje raporlarında daha açık biçimde özetlenmesi sağlandı.
+- Multi-agent swarm mimarisinin Coder/Researcher/Reviewer uzman rolleri, reviewer QA döngüsü ve token/maliyet gözlemlenebilirliğiyle birlikte ana dokümantasyonda öne çıkarılması tamamlandı.
+
+---
+
 ## [v4.2.1] - 2026-03-19
 FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut repo durumu ile senkronize edildi.
 

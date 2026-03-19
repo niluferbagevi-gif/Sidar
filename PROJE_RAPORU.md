@@ -9,7 +9,7 @@
 > **Rapor Tarihi:** 2026-03-14
 > **Son Güncelleme:** 2026-03-19 (v4.2.0 — Autonomous LLMOps faz kapanış ve kurumsal rollout senkronizasyonu tamamlandı. `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py`, `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` yeniden incelendi; tenant RBAC kararlarının `audit_logs` trail'ine yazıldığı, direct `p2p.v1` handoff protokolünün Supervisor + Swarm katmanlarında sender/receiver/handoff_depth bağlamını koruduğu ve Faz 4 LLMOps/ötonomi kabiliyetlerinin operasyonel olarak kalıcı hale geldiği doğrulandı. Takipli ölçümler güncellendi: üretim Python **20.582** satır, test havuzu **39.147** satır, toplam takipli Python **59.729** satır, Web UI toplamı **6.105** satır. Mevcut kod durumunda 60 REST endpoint, açık kritik/yüksek/orta/düşük bulgu bulunmadığı ve kurumsal uyum izlerinin operasyonel hale geldiği yeniden teyit edildi.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
-> **Proje Sürümü:** 4.2.0
+> **Proje Sürümü:** 4.0.0 (runtime/paket baseline) — rapor revizyonu: 4.2.0
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
@@ -117,7 +117,7 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-**Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
+**Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı web katmanı üzerinden hizmet verir. Standart web deneyimi React/Vite tabanlı `web_ui_react/` SPA'dır; eski `web_ui/` klasörü ise yalnızca geriye dönük uyumluluk/fallback amacıyla korunur.
 
 ### Temel Özellikler
 - **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + React SPA öncelikli `web_ui_react/dist`, fallback `web_ui/`)
@@ -165,8 +165,8 @@ Bu rapor turunda depo ağacı doğrudan mevcut repo üzerinden yeniden doğrulan
 ├── plugins/              # Örnek marketplace ajanları
 ├── scripts/              # Audit, env parity, sandbox ve migration yardımcı betikleri
 ├── tests/                # 149 test modülü + yardımcı test dosyaları
-├── web_ui/               # Vanilla Web UI
-├── web_ui_react/         # React/Vite yönetim ve operasyon arayüzü
+├── web_ui/               # Legacy Vanilla Web UI (fallback / backward compatibility)
+├── web_ui_react/         # Varsayılan React/Vite yönetim ve operasyon arayüzü
 ├── docker/ / grafana/ / helm/
 ├── runbooks/             # Operasyonel senaryolar ve cutover rehberleri
 └── README.md / PROJE_RAPORU.md / AUDIT_REPORT_v4.0.md / TEKNIK_REFERANS.md / CHANGELOG.md
@@ -263,6 +263,7 @@ Bu rapor revizyonunda modül özetleri, diskte bulunmayan yan not dosyaları yer
 | **DB Tabanlı Bellek + Fail-Closed** | `core/memory.py` bellek kalıcılığını DB'ye taşıyor; doğrulanmamış bağlamlar `MemoryAuthError` ile reddediliyor |
 | **Zero-Trust Sandbox** | `network_mode="none"`, `mem_limit`, `nano_cpus` ve mikro-VM runtime uyumu (`runsc`/`kata-runtime`) ile güvenli kod yürütme |
 | **QA Devre Kesici** | Coder ↔ Reviewer geri besleme döngüsünde `MAX_QA_RETRIES=3` sınırıyla sonsuz döngü ve maliyet patlaması riski kontrol ediliyor |
+| **Ajan Rolleri ve Maliyet Görünürlüğü** | `CoderAgent` kod üretim/düzenleme, `ResearcherAgent` web+RAG keşfi, `ReviewerAgent` dinamik test/sandbox QA görevlerini üstlenir; token ve USD maliyetleri `core/llm_metrics.py`, `core/router.py` ve Grafana dashboard'ları üzerinden izlenir |
 | **Yapısal LLM Çıktısı** | Sağlayıcı bazlı structured output + Pydantic doğrulaması ile tool çağrılarında format kararlılığı |
 | **Hata Toleransı** | ChromaDB/BM25/keyword fallback zinciri ve araç seviyesinde hata yakalama ile operasyon sürekliliği |
 | **Konfigürasyon Merkeziyeti** | `Config` üzerinden DB, güvenlik, sandbox ve tracing parametrelerinin tek merkezden yönetimi |
@@ -1172,6 +1173,9 @@ Bu bölüm, v4.0 ileri faz doğrulamasında tamamlanan kurumsal geliştirmeleri 
 > - ✅ **Plugin Marketplace Demo** tamamlandı: `plugins/crypto_price_agent.py` örnek plugin (CoinGecko API, BTC/ETH/SOL fiyat) oluşturuldu; `runbooks/plugin_marketplace_demo.md` uçtan uca kullanım kılavuzu eklendi; `test_plugin_marketplace_flow.py` ile `AgentRegistry` kayıt ve `run_task` akışı doğrulandı.
 > - ✅ **Tenant/RBAC Senaryo Doğrulaması** tamamlandı: `tenant_A` (rag:read) ve `tenant_B` (rag:read + swarm:execute) izin matrisi `access_policy_middleware` üzerinde doğrulandı; `runbooks/tenant_rbac_scenarios.md` curl tabanlı senaryo rehberi ve `test_tenant_rbac_scenarios.py` (132 satır) eklendi.
 > - ✅ **Access Audit Trail** operasyonel: `migrations/versions/0003_audit_trail.py` ile `audit_logs` tablosu şemaya eklendi; `core/db.py` audit trail CRUD yardımcıları ve `web_server.py::access_policy_middleware` entegrasyonu sayesinde RBAC allow/deny kararları kullanıcı, tenant, kaynak ve IP bağlamıyla kalıcı kayda yazılıyor.
+> - ✅ **Veritabanı ve Ölçeklenebilirlik geçişi** tamamlandı: SQLite temelli başlangıç mimarisi, `core/db.py`, `alembic.ini`, `migrations/` zinciri ve `scripts/migrate_sqlite_to_pg.py` ile PostgreSQL + `pgvector` omurgasına taşındı; Alembic şema versiyonlama ve cutover provası operasyon standardı haline geldi.
+> - ✅ **Kurulum yüzeyi eksiksiz**: `docker-compose.yml` üzerinde Redis, PostgreSQL, Jaeger, Prometheus, Grafana ve OTEL collector servisleri; `helm/sidar/` altında ise web, ai-worker, redis, PostgreSQL ve tracing bileşenleriyle Kubernetes dağıtım şablonları yer alıyor.
+> - ✅ **Güvenlik bulguları kapatıldı**: `core/dlp.py` PII/DLP maskelemesi ve `managers/security.py` erişim/sandbox savunmaları, audit bulgularında resolved olarak kapanmış durumda; GitHub Actions CI (`.github/workflows/ci.yml`) migration, coverage ve PostgreSQL stres kontrollerini otomatik yürütüyor.
 > - ✅ **Direct P2P Handoff** kurumsal akışa taşındı: `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` `p2p.v1` mesaj sözleşmesi üzerinde hizalandı; sender/receiver/reason/handoff depth alanları testlerle doğrulandı.
 > - ✅ **Observability Simülasyonu** tamamlandı: `runbooks/observability_simulation.md` Jaeger + Redis + PostgreSQL + Sidar entegre demo akışı (RAG ekleme, LLM tracing, span doğrulama) belgelendi; `test_observability_stack_compose.py` docker-compose sağlık testi eklendi; `docker-compose.yml`'e 19 satır ek servis/konfigürasyon eklendi.
 
