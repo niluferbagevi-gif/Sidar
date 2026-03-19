@@ -212,6 +212,39 @@ def test_feedback_store_record_propagates_db_execute_errors(monkeypatch):
         _run(store.record("prompt", "response", rating=1))
 
 
+def test_flag_weak_response_returns_false_when_store_disabled(monkeypatch):
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = False
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+
+    initialize_calls = []
+    record_calls = []
+
+    async def _initialize():
+        initialize_calls.append(True)
+
+    async def _record(**kwargs):
+        record_calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(store, "initialize", _initialize)
+    monkeypatch.setattr(store, "record", _record)
+
+    ok = _run(
+        store.flag_weak_response(
+            prompt="soru",
+            response="cevap",
+            score=2,
+            reasoning="eksik",
+        )
+    )
+
+    assert ok is False
+    assert initialize_calls == []
+    assert record_calls == []
+
+
 def test_flag_weak_response_returns_false_when_initialize_leaves_engine_unavailable(monkeypatch):
     cfg = MagicMock()
     cfg.ENABLE_ACTIVE_LEARNING = True
