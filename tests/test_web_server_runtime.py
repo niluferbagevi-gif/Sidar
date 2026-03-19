@@ -2898,6 +2898,37 @@ def test_assets_mount_added_when_assets_directory_exists(monkeypatch):
     assert any(path == "/assets" and str(directory).replace("\\", "/").endswith("/web_ui/assets") and name == "assets" for path, directory, name in recorded)
 
 
+def test_async_shutdown_non_ollama_marks_cleanup_done_and_reaps_once(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "openai"
+
+    calls = {"reap": 0, "list": 0, "kill": 0}
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: calls.__setitem__("reap", calls["reap"] + 1) or 4)
+    monkeypatch.setattr(mod, "_list_child_ollama_pids", lambda: calls.__setitem__("list", calls["list"] + 1) or [111])
+    monkeypatch.setattr(mod.os, "kill", lambda *_a, **_k: calls.__setitem__("kill", calls["kill"] + 1))
+
+    asyncio.run(mod._async_force_shutdown_local_llm_processes())
+
+    assert mod._shutdown_cleanup_done is True
+    assert calls == {"reap": 1, "list": 0, "kill": 0}
+
+
+def test_schedule_access_audit_log_returns_early_when_resource_empty(monkeypatch):
+    mod = _load_web_server()
+
+    monkeypatch.setattr(mod.asyncio, "get_running_loop", lambda: (_ for _ in ()).throw(AssertionError("get_running_loop should not be called")))
+
+    mod._schedule_access_audit_log(
+        user=types.SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="",
+        action="read",
+        resource_id="doc-1",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+
+
 def test_async_shutdown_returns_immediately_when_cleanup_already_done(monkeypatch):
     mod = _load_web_server()
     mod._shutdown_cleanup_done = True
@@ -3274,3 +3305,62 @@ def test_setup_tracing_swallows_httpx_instrumentation_errors(monkeypatch):
     mod._setup_tracing()
 
     assert any("OpenTelemetry aktif" in item for item in infos)
+
+def test_api_vision_analyze_wraps_pipeline_result(monkeypatch):
+    mod = _load_web_server()
+
+    class _Pipeline:
+        def __init__(self, llm, cfg):
+            self.llm = llm
+            self.cfg = cfg
+
+        async def analyze(self, **kwargs):
+            return {"success": True, "seen": kwargs}
+
+    vision_mod = types.ModuleType("core.vision")
+    vision_mod.VisionPipeline = _Pipeline
+    vision_mod.build_analyze_prompt = lambda analysis_type: f"prompt:{analysis_type}"
+    monkeypatch.setitem(sys.modules, "core.vision", vision_mod)
+
+    async def _get_agent():
+        return types.SimpleNamespace(llm="llm-client")
+
+    mod.get_agent = _get_agent
+    req = mod._VisionAnalyzeRequest(image_base64="abc123", mime_type="image/png", analysis_type="ux_review", prompt=None)
+
+    resp = asyncio.run(mod.api_vision_analyze(req))
+
+    assert resp.status_code == 200
+    assert resp.content["success"] is True
+    assert resp.content["result"]["seen"]["image_b64"] == "abc123"
+    assert resp.content["result"]["seen"]["prompt"] == "prompt:ux_review"
+
+
+def test_api_vision_mockup_wraps_pipeline_code_result(monkeypatch):
+    mod = _load_web_server()
+
+    class _Pipeline:
+        def __init__(self, llm, cfg):
+            self.llm = llm
+            self.cfg = cfg
+
+        async def mockup_to_code(self, **kwargs):
+            return {"success": True, "seen": kwargs}
+
+    vision_mod = types.ModuleType("core.vision")
+    vision_mod.VisionPipeline = _Pipeline
+    monkeypatch.setitem(sys.modules, "core.vision", vision_mod)
+
+    async def _get_agent():
+        return types.SimpleNamespace(llm="llm-client")
+
+    mod.get_agent = _get_agent
+    req = mod._VisionMockupRequest(image_base64="xyz789", mime_type="image/png", framework="vue", prompt="extra")
+
+    resp = asyncio.run(mod.api_vision_mockup(req))
+
+    assert resp.status_code == 200
+    assert resp.content["success"] is True
+    assert resp.content["code"]["seen"]["image_b64"] == "xyz789"
+    assert resp.content["code"]["seen"]["framework"] == "vue"
+    assert resp.content["code"]["seen"]["extra_instructions"] == "extra"
