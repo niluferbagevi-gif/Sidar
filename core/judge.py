@@ -402,10 +402,19 @@ class LLMJudge:
         """
         if not self._should_evaluate():
             return
+
+        async def _run_background_evaluation() -> None:
+            try:
+                await self.evaluate_rag(query, documents, answer)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("Arka plan judge değerlendirmesi başarısız: %s", exc)
+
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(
-                self.evaluate_rag(query, documents, answer),
+                _run_background_evaluation(),
                 name="sidar_judge_eval",
             )
         except RuntimeError:
