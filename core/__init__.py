@@ -45,6 +45,7 @@ db = _optional_module("core.db")
 rag = _optional_module("core.rag")
 llm_metrics = _optional_module("core.llm_metrics")
 multimodal = _optional_module("core.multimodal")
+voice = _optional_module("core.voice")
 
 
 LLMClient = _optional_import("core.llm_client", "LLMClient")
@@ -52,6 +53,7 @@ ConversationMemory = _optional_import("core.memory", "ConversationMemory")
 DocumentStore = _optional_import("core.rag", "DocumentStore")
 Database = _optional_import("core.db", "Database")
 MultimodalPipeline = _optional_import("core.multimodal", "MultimodalPipeline")
+VoicePipeline = _optional_import("core.voice", "VoicePipeline")
 
 # Metrik toplayıcı sembollerini doğrudan hedef modülden çöz.
 # Böylece __import__/fromlist kaynaklı kırılganlıklar ortadan kalkar.
@@ -70,6 +72,7 @@ _EXPORTED_CORE_SYMBOLS = (
     DocumentStore,
     Database,
     MultimodalPipeline,
+    VoicePipeline,
     LLMMetricsCollector,
 )
 

@@ -53,6 +53,7 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
     mod.get_agent = _get_agent
 
     multimodal_mod = types.ModuleType("core.multimodal")
+    voice_mod = types.ModuleType("core.voice")
 
     class _Pipeline:
         def __init__(self, *_args, **_kwargs):
@@ -69,6 +70,27 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
             }
 
     multimodal_mod.MultimodalPipeline = _Pipeline
+
+    class _VoicePipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.enabled = True
+
+        def extract_ready_segments(self, text, flush=False):
+            text = str(text or "").strip()
+            if not text:
+                return [], ""
+            return ([text], "") if flush else ([], text)
+
+        async def synthesize_text(self, text):
+            return {
+                "success": True,
+                "audio_bytes": b"tts:" + text.encode("utf-8"),
+                "mime_type": "audio/mock",
+                "provider": "mock",
+                "voice": "",
+            }
+
+    voice_mod.VoicePipeline = _VoicePipeline
 
     class _WebSocket:
         def __init__(self):
@@ -95,7 +117,7 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
             self.closed = (code, reason)
 
     ws = _WebSocket()
-    with _ModulePatch("core.multimodal", multimodal_mod):
+    with _ModulePatch("core.multimodal", multimodal_mod), _ModulePatch("core.voice", voice_mod):
         asyncio.run(mod.websocket_voice(ws))
 
     assert ws.accepted == "valid-token"
@@ -104,6 +126,13 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
     assert {"buffered_bytes": 7} in ws.sent
     assert {"transcript": "Sunucuyu yeniden başlat.", "language": "tr", "provider": "whisper"} in ws.sent
     assert {"chunk": "yanit:Sunucuyu yeniden başlat."} in ws.sent
+    assert {
+        "audio_chunk": "dHRzOnlhbml0OlN1bnVjdXl1IHllbmlkZW4gYmHFn2xhdC4=",
+        "audio_text": "yanit:Sunucuyu yeniden başlat.",
+        "audio_mime_type": "audio/mock",
+        "audio_provider": "mock",
+        "audio_voice": "",
+    } in ws.sent
     assert ws.sent[-1] == {"done": True}
 
 
