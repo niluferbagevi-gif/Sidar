@@ -368,6 +368,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 700;
   flex-shrink: 0;
 }
+.timeline__badge--success { background: rgba(34,197,94,0.18); color: #bbf7d0; }
+.timeline__badge--warning { background: rgba(245,158,11,0.18); color: #fde68a; }
 
 .swarm-graph {
   position: relative;
@@ -383,10 +385,18 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   overflow: auto;
 }
 
+.swarm-graph__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+
 .swarm-graph__canvas {
   position: relative;
-  min-width: 1040px;
-  min-height: 760px;
+  min-width: 1160px;
+  min-height: 920px;
   padding: 24px;
 }
 
@@ -449,6 +459,16 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .swarm-graph__node--task {
   border-color: rgba(148,163,184,0.28);
+}
+
+.swarm-graph__node--autonomy {
+  border-color: rgba(14,165,233,0.42);
+  background: linear-gradient(135deg, rgba(14,165,233,0.14), rgba(18,26,42,0.96));
+}
+
+.swarm-graph__node--autonomy-warning {
+  border-color: rgba(245,158,11,0.45);
+  background: linear-gradient(135deg, rgba(245,158,11,0.16), rgba(18,26,42,0.96));
 }
 
 .swarm-graph__node--result-success {

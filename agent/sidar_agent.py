@@ -5,10 +5,11 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 
 import logging
 import asyncio
+import json
 import time
 import threading
 from pathlib import Path
-from typing import Optional, AsyncIterator, Dict, List
+from typing import Optional, AsyncIterator, Dict, List, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -28,6 +29,7 @@ from managers.security import SecurityManager
 from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
+from agent.core.contracts import ExternalTrigger
 from agent.definitions import SIDAR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,8 @@ class SidarAgent:
         self._instructions_mtimes: Dict[str, float] = {}
         self._instructions_lock = threading.Lock()
         self.system_prompt: str = SIDAR_SYSTEM_PROMPT
+        self._autonomy_history: List[Dict[str, Any]] = []
+        self._autonomy_lock: Optional[asyncio.Lock] = None
 
 
         # Tek omurga: supervisor tabanlı multi-agent
@@ -155,6 +159,88 @@ class SidarAgent:
             await self._memory_add("assistant", multi_result)
 
         yield multi_result
+
+    def _ensure_autonomy_runtime_state(self) -> None:
+        if not hasattr(self, "_autonomy_history") or self._autonomy_history is None:
+            self._autonomy_history = []
+        if not hasattr(self, "_autonomy_lock"):
+            self._autonomy_lock = None
+
+    async def _append_autonomy_history(self, record: Dict[str, Any]) -> None:
+        self._ensure_autonomy_runtime_state()
+        if self._autonomy_lock is None:
+            self._autonomy_lock = asyncio.Lock()
+        async with self._autonomy_lock:
+            history = list(self._autonomy_history[-49:])
+            history.append(dict(record))
+            self._autonomy_history = history
+
+    async def handle_external_trigger(self, trigger: ExternalTrigger | Dict[str, Any]) -> Dict[str, Any]:
+        """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
+        await self.initialize()
+        self._ensure_autonomy_runtime_state()
+
+        if isinstance(trigger, dict):
+            trigger = ExternalTrigger(
+                trigger_id=str(trigger.get("trigger_id", f"trigger-{int(time.time())}")),
+                source=str(trigger.get("source", "external")),
+                event_name=str(trigger.get("event_name", "event")),
+                payload=dict(trigger.get("payload", {}) or {}),
+                meta=dict(trigger.get("meta", {}) or {}),
+            )
+
+        prompt = trigger.to_prompt()
+        started_at = time.time()
+        status = "success"
+        summary = ""
+        try:
+            summary = await self._try_multi_agent(prompt)
+            if not isinstance(summary, str) or not summary.strip():
+                status = "empty"
+                summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
+        except Exception as exc:
+            status = "failed"
+            summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
+
+        record = {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "status": status,
+            "summary": summary,
+            "payload": dict(trigger.payload or {}),
+            "meta": dict(trigger.meta or {}),
+            "prompt": prompt,
+            "created_at": started_at,
+            "completed_at": time.time(),
+        }
+
+        await self._append_autonomy_history(record)
+        await self._memory_add("user", f"[AUTONOMY_TRIGGER] {prompt}")
+        await self._memory_add("assistant", summary)
+        return record
+
+    def get_autonomy_activity(self, limit: int = 20) -> Dict[str, Any]:
+        """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
+        self._ensure_autonomy_runtime_state()
+        normalized_limit = max(1, int(limit or 20))
+        items = [dict(item) for item in self._autonomy_history[-normalized_limit:]]
+        counts_by_status: Dict[str, int] = {}
+        counts_by_source: Dict[str, int] = {}
+        for item in items:
+            status = str(item.get("status", "unknown") or "unknown")
+            source = str(item.get("source", "unknown") or "unknown")
+            counts_by_status[status] = counts_by_status.get(status, 0) + 1
+            counts_by_source[source] = counts_by_source.get(source, 0) + 1
+
+        return {
+            "items": items,
+            "total": len(self._autonomy_history),
+            "returned": len(items),
+            "counts_by_status": counts_by_status,
+            "counts_by_source": counts_by_source,
+            "latest_trigger_id": items[-1]["trigger_id"] if items else "",
+        }
 
 
     async def _try_multi_agent(self, user_input: str) -> str:
@@ -573,12 +659,15 @@ class SidarAgent:
         await self.memory.add(role, content)
 
     def status(self) -> str:
+        self._ensure_autonomy_runtime_state()
+        autonomy_total = len(self._autonomy_history)
         lines = [
             f"[SidarAgent v{self.VERSION}]",
             f"  Sağlayıcı    : {self.cfg.AI_PROVIDER}",
             f"  Model        : {self.cfg.CODING_MODEL}",
             f"  Erişim       : {self.cfg.ACCESS_LEVEL}",
             f"  Bellek       : {len(self.memory)} mesaj (Kalıcı)",
+            f"  Otonomi      : {autonomy_total} kayıt",
             f"  {self.github.status()}",
             f"  {self.web.status()}",
             f"  {self.pkg.status()}",

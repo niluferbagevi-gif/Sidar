@@ -22,6 +22,8 @@ def _load_sidar_agent_module(force_otel_import_error=False):
         "managers.web_search": types.ModuleType("managers.web_search"),
         "managers.package_info": types.ModuleType("managers.package_info"),
         "managers.todo_manager": types.ModuleType("managers.todo_manager"),
+        "agent.definitions": types.ModuleType("agent.definitions"),
+        "agent.core.contracts": types.ModuleType("agent.core.contracts"),
     }
 
     class ValidationError(Exception):
@@ -65,6 +67,21 @@ def _load_sidar_agent_module(force_otel_import_error=False):
         ("managers.todo_manager", "TodoManager"),
     ):
         setattr(stubs[mod_name], cls_name, object)
+
+    stubs["agent.definitions"].SIDAR_SYSTEM_PROMPT = "sys"
+
+    class ExternalTrigger:
+        def __init__(self, trigger_id="", source="", event_name="", payload=None, meta=None):
+            self.trigger_id = trigger_id
+            self.source = source
+            self.event_name = event_name
+            self.payload = payload or {}
+            self.meta = meta or {}
+
+        def to_prompt(self):
+            return f"[TRIGGER]\nsource={self.source}\nevent={self.event_name}"
+
+    stubs["agent.core.contracts"].ExternalTrigger = ExternalTrigger
 
     saved = {k: sys.modules.get(k) for k in stubs}
     saved_import = builtins.__import__

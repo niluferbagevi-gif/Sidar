@@ -342,12 +342,29 @@ async def _dispatch_autonomy_trigger(
         payload=payload,
         meta=dict(meta or {}),
     )
-    summary = await _collect_agent_response(agent, trigger.to_prompt())
+    if hasattr(agent, "handle_external_trigger"):
+        result = await agent.handle_external_trigger(trigger)
+    else:
+        summary = await _collect_agent_response(agent, trigger.to_prompt())
+        result = {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": summary,
+            "status": "success" if summary else "empty",
+            "meta": dict(trigger.meta or {}),
+            "created_at": time.time(),
+            "completed_at": time.time(),
+        }
     return {
-        "trigger_id": trigger.trigger_id,
-        "source": trigger.source,
-        "event_name": trigger.event_name,
-        "summary": summary,
+        "trigger_id": result["trigger_id"],
+        "source": result["source"],
+        "event_name": result["event_name"],
+        "summary": result["summary"],
+        "status": result["status"],
+        "meta": result.get("meta", {}),
+        "created_at": result.get("created_at"),
+        "completed_at": result.get("completed_at"),
     }
 
 
@@ -2713,6 +2730,14 @@ class _FederationTaskRequest(BaseModel):
     meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
 
 
+class _AutonomyWakeRequest(BaseModel):
+    event_name: str = Field("manual_wake", description="Manuel/proaktif tetik olay adı")
+    prompt: str = Field(..., description="Ajanın değerlendireceği proaktif prompt")
+    source: str = Field("manual", description="Tetik kaynağı etiketi")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Ek olay payload'u")
+    meta: dict[str, str] = Field(default_factory=dict, description="Ek meta verisi")
+
+
 def _verify_hmac_signature(payload_body: bytes, secret_value: str, signature_header: str, *, label: str) -> None:
     secret = str(secret_value or "").encode("utf-8")
     if not secret:
@@ -2758,6 +2783,35 @@ async def autonomy_webhook(
         meta={"source": source},
     )
     return JSONResponse({"success": True, "result": result})
+
+
+@app.post(
+    "/api/autonomy/wake",
+    summary="Manuel Otonomi Uyanışı",
+    description="SIDAR'ı kullanıcı veya sistem tarafından proaktif görev için uyandırır.",
+)
+async def autonomy_wake(req: _AutonomyWakeRequest):
+    """Webhook dışı manuel/proaktif tetik giriş noktası."""
+    payload = dict(req.payload or {})
+    payload["prompt"] = req.prompt.strip()
+    result = await _dispatch_autonomy_trigger(
+        trigger_source=f"manual:{req.source.strip() or 'manual'}",
+        event_name=req.event_name.strip() or "manual_wake",
+        payload=payload,
+        meta=dict(req.meta or {}),
+    )
+    return JSONResponse({"success": True, "result": result})
+
+
+@app.get(
+    "/api/autonomy/activity",
+    summary="Otonomi Aktivite Akışı",
+    description="Webhook/cron/manual kaynaklı son proaktif tetik geçmişini döndürür.",
+)
+async def autonomy_activity(limit: int = 20):
+    """Son proaktif tetik kayıtlarını UI ve operasyon panelleri için sunar."""
+    agent = await get_agent()
+    return JSONResponse({"success": True, "activity": agent.get_autonomy_activity(limit=limit)})
 
 
 @app.post(
