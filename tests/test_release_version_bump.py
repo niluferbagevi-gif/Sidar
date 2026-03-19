@@ -13,6 +13,6 @@ def test_core_docs_reference_v3_0_0():
     sidar_md = Path('SIDAR.md').read_text(encoding='utf-8')
 
     assert '**v3.0.0**' in readme
-    assert '**Proje Sürümü:** 3.0.0' in report
+    assert '**Proje Sürümü:** 4.2.0' in report
     assert '## [v3.0.0] - 2026-03-11' in changelog
     assert '(v3.0.0)' in sidar_md
