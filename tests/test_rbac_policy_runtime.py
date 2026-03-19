@@ -56,6 +56,38 @@ def test_db_access_policy_roundtrip(tmp_path):
     asyncio.run(_run())
 
 
+def test_db_audit_log_roundtrip(tmp_path):
+    cfg = _Cfg()
+    cfg.BASE_DIR = str(tmp_path)
+    cfg.DATABASE_URL = "sqlite+aiosqlite:///test_audit_trail.db"
+    db = Database(cfg)
+
+    async def _run():
+        await db.connect()
+        await db.init_schema()
+        user = await db.create_user("audit-user", password="123456", tenant_id="tenant-a")
+
+        await db.record_audit_log(
+            user_id=user.id,
+            tenant_id="tenant-a",
+            action="read",
+            resource="rag:*",
+            ip_address="10.0.0.5",
+            allowed=True,
+            timestamp="2026-03-19T00:00:00+00:00",
+        )
+
+        records = await db.list_audit_logs(user_id=user.id, limit=10)
+        assert len(records) == 1
+        assert records[0].tenant_id == "tenant-a"
+        assert records[0].resource == "rag:*"
+        assert records[0].ip_address == "10.0.0.5"
+        assert records[0].allowed is True
+        await db.close()
+
+    asyncio.run(_run())
+
+
 def test_web_server_access_policy_middleware_enforces():
     mod = _load_web_server()
 
@@ -75,3 +107,43 @@ def test_web_server_access_policy_middleware_enforces():
     resp = asyncio.run(mod.access_policy_middleware(req, _next))
     assert resp.status_code == 403
     assert resp.content["resource"] == "rag"
+
+
+def test_web_server_access_policy_middleware_writes_audit_logs():
+    mod = _load_web_server()
+    calls = []
+
+    async def _exercise():
+        req = _FakeRequest(path="/rag/docs", method="GET", host="10.1.2.3")
+        req.state.user = types.SimpleNamespace(id="u1", role="user", username="alice", tenant_id="tenant-a")
+
+        async def _next(_request):
+            return mod.JSONResponse({"ok": True})
+
+        class _Db:
+            async def check_access_policy(self, **_kwargs):
+                return True
+
+            async def record_audit_log(self, **kwargs):
+                calls.append(kwargs)
+
+        async def _get_agent():
+            db = _Db()
+            return types.SimpleNamespace(memory=types.SimpleNamespace(db=db))
+
+        mod.get_agent = _get_agent
+        resp = await mod.access_policy_middleware(req, _next)
+        assert resp.status_code == 200
+        await asyncio.sleep(0)
+
+    asyncio.run(_exercise())
+    assert calls == [
+        {
+            "user_id": "u1",
+            "tenant_id": "tenant-a",
+            "action": "read",
+            "resource": "rag:*",
+            "ip_address": "10.1.2.3",
+            "allowed": True,
+        }
+    ]
