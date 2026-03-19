@@ -369,6 +369,110 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   flex-shrink: 0;
 }
 
+.swarm-graph {
+  position: relative;
+  min-height: 620px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+    rgba(7, 12, 24, 0.72);
+  background-size: 28px 28px, 28px 28px, auto;
+  overflow: auto;
+}
+
+.swarm-graph__canvas {
+  position: relative;
+  min-width: 1040px;
+  min-height: 760px;
+  padding: 24px;
+}
+
+.swarm-graph__edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.swarm-graph__edge-path {
+  fill: none;
+  stroke: rgba(148,163,184,0.45);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.swarm-graph__edge-label {
+  fill: var(--text-muted);
+  font-size: 12px;
+  text-anchor: middle;
+}
+
+.swarm-graph__node {
+  position: absolute;
+  width: 210px;
+  min-height: 82px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(18, 26, 42, 0.96);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.24);
+}
+
+.swarm-graph__node p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.swarm-graph__node-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.swarm-graph__node-header span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.swarm-graph__node--root {
+  border-color: rgba(59,130,246,0.45);
+  background: linear-gradient(135deg, rgba(59,130,246,0.16), rgba(18,26,42,0.96));
+}
+
+.swarm-graph__node--task {
+  border-color: rgba(148,163,184,0.28);
+}
+
+.swarm-graph__node--result-success {
+  border-color: rgba(34,197,94,0.45);
+  background: linear-gradient(135deg, rgba(34,197,94,0.14), rgba(18,26,42,0.96));
+}
+
+.swarm-graph__node--result-warning {
+  border-color: rgba(245,158,11,0.45);
+  background: linear-gradient(135deg, rgba(245,158,11,0.14), rgba(18,26,42,0.96));
+}
+
+.swarm-graph__node--tool_call {
+  border-color: rgba(59,130,246,0.42);
+}
+
+.swarm-graph__node--thought {
+  border-color: rgba(168,85,247,0.42);
+}
+
+.swarm-graph__node--status {
+  border-color: rgba(148,163,184,0.42);
+}
+
 @media (max-width: 960px) {
   .grid-2,
   .tenant-grid {

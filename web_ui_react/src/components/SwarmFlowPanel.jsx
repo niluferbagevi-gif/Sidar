@@ -18,9 +18,90 @@ export function SwarmFlowPanel() {
   const [response, setResponse] = useState(null);
 
   const steps = useMemo(
-    () => telemetryEvents.filter((evt) => evt.kind === "tool_call" || evt.kind === "status").slice(-8),
+    () => telemetryEvents.filter((evt) => evt.kind === "tool_call" || evt.kind === "status" || evt.kind === "thought").slice(-12),
     [telemetryEvents],
   );
+
+  const graphData = useMemo(() => {
+    const taskNodes = tasks.map((task, index) => ({
+      id: `task-${index}`,
+      type: "task",
+      title: task.preferred_agent?.trim() ? task.preferred_agent.trim() : `Task ${index + 1}`,
+      subtitle: task.intent?.trim() || "mixed",
+      body: task.goal?.trim() || "Görev açıklaması bekleniyor",
+      x: 180,
+      y: 36 + index * 118,
+    }));
+
+    const resultNodes = (response?.results || []).map((item, index) => ({
+      id: `result-${item.task_id || index}`,
+      type: item.status === "success" ? "result-success" : "result-warning",
+      title: item.agent_role || "agent",
+      subtitle: item.status || "unknown",
+      body: item.summary || "Özet üretilmedi",
+      x: 470,
+      y: 36 + index * 118,
+    }));
+
+    const telemetryNodes = steps.map((step, index) => ({
+      id: `telemetry-${step.id}`,
+      type: step.kind,
+      title: step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Thought" : "Status",
+      subtitle: new Date(step.ts).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      body: step.content,
+      x: 760,
+      y: 36 + index * 92,
+    }));
+
+    const nodes = [
+      {
+        id: "supervisor",
+        type: "root",
+        title: "Supervisor",
+        subtitle: mode === "parallel" ? "run_parallel" : "run_pipeline",
+        body: sessionId.trim() || "ui-swarm-session",
+        x: 24,
+        y: 32,
+      },
+      ...taskNodes,
+      ...resultNodes,
+      ...telemetryNodes,
+    ];
+
+    const edges = [];
+    taskNodes.forEach((taskNode) => {
+      edges.push({ id: `edge-supervisor-${taskNode.id}`, from: "supervisor", to: taskNode.id, label: taskNode.subtitle });
+    });
+    resultNodes.forEach((resultNode, index) => {
+      const sourceTask = taskNodes[index] || taskNodes[taskNodes.length - 1];
+      if (sourceTask) {
+        edges.push({ id: `edge-task-result-${index}`, from: sourceTask.id, to: resultNode.id, label: "delegation" });
+      }
+    });
+    telemetryNodes.forEach((telemetryNode, index) => {
+      const previous = telemetryNodes[index - 1] || resultNodes[resultNodes.length - 1] || taskNodes[taskNodes.length - 1] || nodes[0];
+      edges.push({ id: `edge-telemetry-${index}`, from: previous.id, to: telemetryNode.id, label: telemetryNode.title.toLowerCase() });
+    });
+
+    return { nodes, edges };
+  }, [mode, response, sessionId, steps, tasks]);
+
+  const graphEdges = useMemo(() => {
+    const nodeMap = new Map(graphData.nodes.map((node) => [node.id, node]));
+    return graphData.edges
+      .map((edge) => {
+        const from = nodeMap.get(edge.from);
+        const to = nodeMap.get(edge.to);
+        if (!from || !to) return null;
+        const x1 = from.x + 210;
+        const y1 = from.y + 40;
+        const x2 = to.x;
+        const y2 = to.y + 40;
+        const curve = `M ${x1} ${y1} C ${x1 + 80} ${y1}, ${x2 - 80} ${y2}, ${x2} ${y2}`;
+        return { ...edge, curve, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 10 };
+      })
+      .filter(Boolean);
+  }, [graphData]);
 
   const updateTask = useCallback((index, field, value) => {
     setTasks((prev) => prev.map((task, idx) => (idx === index ? { ...task, [field]: value } : task)));
@@ -125,6 +206,43 @@ export function SwarmFlowPanel() {
 
         <div className="stack-list">
           <div className="card">
+            <div className="inline-controls inline-controls--compact">
+              <div>
+                <h3>Karar Grafiği</h3>
+                <p className="panel__hint">Supervisor → görev → ajan çıktısı → canlı telemetri akışını node-graph olarak izleyin.</p>
+              </div>
+              <span className="pill">{graphData.nodes.length} node / {graphData.edges.length} edge</span>
+            </div>
+            <div className="swarm-graph">
+              <svg className="swarm-graph__edges" viewBox="0 0 1080 760" preserveAspectRatio="none" aria-hidden="true">
+                {graphEdges.map((edge) => (
+                  <g key={edge.id}>
+                    <path d={edge.curve} className="swarm-graph__edge-path" />
+                    <text x={edge.labelX} y={edge.labelY} className="swarm-graph__edge-label">
+                      {edge.label}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+              <div className="swarm-graph__canvas">
+                {graphData.nodes.map((node) => (
+                  <article
+                    key={node.id}
+                    className={`swarm-graph__node swarm-graph__node--${node.type}`}
+                    style={{ left: `${node.x}px`, top: `${node.y}px` }}
+                  >
+                    <div className="swarm-graph__node-header">
+                      <strong>{node.title}</strong>
+                      <span>{node.subtitle}</span>
+                    </div>
+                    <p>{node.body}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
             <h3>Canlı Telemetri</h3>
             <ol className="timeline">
               {steps.length === 0 && <li className="empty-state">Akış verisi bulunamadı.</li>}
@@ -132,7 +250,7 @@ export function SwarmFlowPanel() {
                 <li key={step.id} className="timeline__item">
                   <span className="timeline__badge">{idx + 1}</span>
                   <div>
-                    <strong>{step.kind === "tool_call" ? "Tool Call" : "Durum"}</strong>
+                    <strong>{step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Thought" : "Durum"}</strong>
                     <p>{step.content}</p>
                   </div>
                 </li>
