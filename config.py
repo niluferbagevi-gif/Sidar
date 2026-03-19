@@ -508,6 +508,11 @@ class Config:
     ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)
     # Maksimum görsel boyutu (byte) — varsayılan 10 MB
     VISION_MAX_IMAGE_BYTES: int = get_int_env("VISION_MAX_IMAGE_BYTES", 10485760)
+    ENABLE_MULTIMODAL: bool = get_bool_env("ENABLE_MULTIMODAL", True)
+    MULTIMODAL_MAX_FILE_BYTES: int = get_int_env("MULTIMODAL_MAX_FILE_BYTES", 52428800)
+    VOICE_STT_PROVIDER: str = os.getenv("VOICE_STT_PROVIDER", "whisper")
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
+    VOICE_WS_MAX_BYTES: int = get_int_env("VOICE_WS_MAX_BYTES", 10485760)
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
     SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
