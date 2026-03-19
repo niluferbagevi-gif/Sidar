@@ -78,7 +78,13 @@ except Exception:  # OpenTelemetry opsiyoneldir
     BatchSpanProcessor = None
 
 from agent.base_agent import BaseAgent
-from agent.core.contracts import ExternalTrigger, FederationTaskEnvelope, FederationTaskResult
+from agent.core.contracts import (
+    ExternalTrigger,
+    FederationTaskEnvelope,
+    FederationTaskResult,
+    LEGACY_FEDERATION_PROTOCOL_V1,
+    normalize_federation_protocol,
+)
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
@@ -2763,6 +2769,7 @@ class _FederationTaskRequest(BaseModel):
     source_agent: str = Field(..., description="Gönderen ajan veya workflow adı")
     target_agent: str = Field("supervisor", description="Sidar içinde hedef ajan/rol")
     goal: str = Field(..., description="Sidar'ın çalıştıracağı hedef görev")
+    protocol: str = Field("federation.v1", description="Federation sözleşme sürümü")
     intent: str = Field("mixed", description="Görev intent tipi")
     context: dict[str, str] = Field(default_factory=dict, description="Yapısal bağlam")
     inputs: list[str] = Field(default_factory=list, description="Ek girdiler")
@@ -2881,6 +2888,7 @@ async def swarm_federation_execute(
         target_system="sidar",
         target_agent=req.target_agent,
         goal=req.goal,
+        protocol=normalize_federation_protocol(req.protocol),
         intent=req.intent,
         context=dict(req.context or {}),
         inputs=list(req.inputs or []),
@@ -2895,7 +2903,11 @@ async def swarm_federation_execute(
         target_agent=envelope.source_agent,
         status="success" if summary else "failed",
         summary=summary or "Sidar görev için çıktı üretemedi.",
-        meta={"protocol": envelope.protocol},
+        protocol=envelope.protocol,
+        meta={
+            "protocol": envelope.protocol,
+            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
+        },
     )
     return JSONResponse({"success": True, "result": asdict(result)})
 
