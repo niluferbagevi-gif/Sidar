@@ -478,6 +478,10 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | DDoS koruması | ✓ Aktif (IP başına hız sınırı) | `web_server.py` — `ddos_rate_limit_middleware` |
 | CORS kısıtlaması | ✓ Aktif (allowlist) | `web_server.py` — CORS middleware |
 | Rate limiting | ✓ Aktif (HTTP + WS + Redis fallback) | `web_server.py` |
+| DLP / PII Maskeleme | ✓ Aktif (`[MASKED]` temelli) | `core/dlp.py`, `core/llm_client.py` |
+| HITL Onay Geçidi | ✓ Aktif (yüksek riskli eylemler için duraklatma/onay) | `core/hitl.py`, `web_server.py` |
+| Tenant RBAC | ✓ Aktif (tenant + resource/action policy) | `web_server.py`, `core/db.py` |
+| Audit Trail | ✓ Aktif (DB kalıcılığı) | `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py` |
 | LLM QA Devre Kesici | ✓ Aktif (`MAX_QA_RETRIES=3`) | `agent/sidar_agent.py` |
 | GitHub binary engelleme | ✓ Aktif | `managers/github_manager.py` |
 | Git upload blacklist | ✓ Aktif | `github_upload.py` |
@@ -485,6 +489,8 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | Branch adı enjeksiyon koruması | ✓ Regex `_BRANCH_RE` | `managers/github_manager.py` |
 | GitHub Webhook İmzası | ✓ Aktif (HMAC-SHA256) | `web_server.py` — `/api/webhook` |
 | Büyük Dosya Okuma Limit | ✓ Aktif (boyut limiti) | `web_server.py` — `/file-content` |
+| K8s Network Policy İzolasyonu | ✓ Aktif (Helm şablonu mevcut) | `helm/sidar/templates/networkpolicy-web.yaml` |
+| K8s Secret Yönetimi | ✓ Aktif (Helm şablonu mevcut) | `helm/sidar/templates/secret-postgresql.yaml` |
 
 ### 5.2 Güvenlik Seviyeleri Davranışı
 
@@ -495,6 +501,8 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 ```
 
 **QA ve Kod Onay Bariyeri (ReviewerAgent Süzgeci):** Hangi erişim seviyesinde (Sandbox veya Full) çalışılırsa çalışılsın, CoderAgent çıktıları ReviewerAgent doğrulamasından geçer. Ek olarak `MAX_QA_RETRIES=3` sınırı ile Coder ↔ Reviewer geri besleme zinciri fail-safe biçimde sonlandırılır; sonsuz döngü ve maliyet artışı engellenir.
+
+**HITL Güvenlik Freni:** Yüksek riskli işlemler ayrıca Human-in-the-Loop kapısına alınabilir; sistem işlemi duraklatır ve admin/kullanıcı onayı olmadan kritik aksiyonu tamamlamaz.
 
 ### 5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)
 
@@ -521,6 +529,22 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 #### 5.3.5 Web UI XSS Sertleştirmesi
 - `marked` ile üretilen HTML, istemci tarafında `sanitizeRenderedHtml(...)` süzgecinden geçirilir.
 - `script/iframe/object/embed/form/meta/link` etiketleri ve `javascript:` gibi tehlikeli URL şemaları temizlenerek içerik render edilir.
+
+#### 5.3.6 DLP (Veri Sızıntısı Önleme / PII Maskeleme)
+- `core/dlp.py`, kullanıcı girdilerindeki kredi kartı, TC kimlik, e-posta, telefon, bearer token ve benzeri hassas desenleri regex/desen tanıma ile tespit eder.
+- Bu katman, içerik üçüncü parti LLM sağlayıcılarına gitmeden önce verileri `[MASKED]` benzeri güvenli temsillere dönüştürerek hassas veri sızıntısı riskini azaltır.
+
+#### 5.3.7 HITL (Human-in-the-Loop) Onay Katmanı
+- `core/hitl.py` ve Web API yüzeyi, yüksek riskli işlemleri doğrudan yürütmek yerine bekleme durumuna alır ve açık kullanıcı/onaycı kararı bekler.
+- Bu model; dosya silme, veritabanı değişikliği, yıkıcı komutlar veya üretim etkili eylemlerde ajan otonomisini kontrollü biçimde sınırlar.
+
+#### 5.3.8 Multi-Tenant RBAC ve Audit Trail
+- Çok kiracılı veri modeli ile kullanıcı/policy kayıtları tenant bağlamında değerlendirilir; `access_policy_middleware` rota, kaynak ve aksiyon bazlı karar üretir.
+- Kritik izin kararları ile policy değişiklikleri, `0003_audit_trail` migrasyonu sonrası kalıcı audit log tablosuna yazılarak denetlenebilirlik sağlanır.
+
+#### 5.3.9 Altyapı Ağ İzolasyonu ve Sırlar
+- Helm chart içindeki `networkpolicy-web.yaml`, Kubernetes pod'ları arasında yalnızca gerekli trafik yollarını açık bırakan sıkı ağ izolasyonu yaklaşımını belgeler.
+- Hassas bağlantı bilgileri ve veritabanı sırları, `secret-postgresql.yaml` ve ortam değişkenleri üzerinden izole edilerek uygulama katmanının dışında da savunma derinliği oluşturulur.
 
 ---
 
