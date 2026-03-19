@@ -270,6 +270,112 @@ class TestLLMJudge:
         _run(_inner())
 
 
+def test_call_llm_json_returns_none_on_malformed_json(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+
+    class _Client:
+        def __init__(self, provider, config):
+            self.provider = provider
+            self.config = config
+
+        async def chat(self, **_kwargs):
+            return "{broken-json"
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("core.llm_client")
+    fake_mod.LLMClient = _Client
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_mod)
+
+    result = _run(judge._call_llm_json("sys", "msg", model="judge-test"))
+    assert result is None
+
+
+def test_evaluate_response_marks_parse_failure_when_judge_returns_invalid_json(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+    judge.provider = "ollama"
+
+    async def _bad_json(*_args, **_kwargs):
+        return None
+
+    with patch.object(judge, "_call_llm_json", side_effect=_bad_json):
+        result = _run(
+            judge.evaluate_response(
+                prompt="Sistemde ne oldu?",
+                response="Bozuk değerlendirme yanıtı geldi.",
+                context=["satır-1", "satır-2"],
+            )
+        )
+
+    assert result is not None
+    assert result.score == 5
+    assert result.reasoning == ""
+    assert result.error == "judge_json_parse_failed"
+
+
+def test_evaluate_response_extracts_numeric_score_from_textual_score(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+    judge.provider = "ollama"
+
+    async def _fake_json(*_args, **_kwargs):
+        return {"score": "Toplam puan: 9/10", "reasoning": "Bağlam güçlü."}
+
+    with patch.object(judge, "_call_llm_json", side_effect=_fake_json):
+        result = _run(
+            judge.evaluate_response(
+                prompt="Özetle",
+                response="Yanıt başarılı.",
+                context="tek bağlam",
+            )
+        )
+
+    assert result is not None
+    assert result.score == 9
+    assert result.reasoning == "Bağlam güçlü."
+
+
+def test_schedule_background_evaluation_allows_task_cancellation(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+    judge.sample_rate = 1.0
+
+    state = {"started": asyncio.Event(), "cancelled": False}
+
+    async def _slow_eval(_query, _documents, _answer=None):
+        state["started"].set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            state["cancelled"] = True
+            raise
+
+    monkeypatch.setattr(judge, "evaluate_rag", _slow_eval)
+
+    async def _runner():
+        created = {}
+        loop = asyncio.get_running_loop()
+        real_create_task = loop.create_task
+
+        def _capture(coro, *args, **kwargs):
+            task = real_create_task(coro, *args, **kwargs)
+            created["task"] = task
+            return task
+
+        monkeypatch.setattr(loop, "create_task", _capture)
+        judge.schedule_background_evaluation("q", ["d1"], "yanıt")
+        await asyncio.wait_for(state["started"].wait(), timeout=1)
+        created["task"].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await created["task"]
+
+    _run(_runner())
+    assert state["cancelled"] is True
+
+
 # ─── Singleton ────────────────────────────────────────────────────────────────
 
 def test_get_llm_judge_singleton():

@@ -84,6 +84,37 @@ class TestSlackManagerInit:
         assert mgr.default_channel == "#genel"
 
 
+
+
+    def test_initialize_invalid_token_falls_back_to_webhook(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.token = "xoxb-invalid"
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr.default_channel = ""
+        mgr._client = types.SimpleNamespace(auth_test=lambda: {"ok": False, "error": "invalid_auth"})
+        mgr._available = False
+        mgr._webhook_only = False
+
+        _run(mgr.initialize())
+
+        assert mgr.is_available() is True
+        assert mgr._webhook_only is True
+
+    def test_initialize_auth_exception_falls_back_to_webhook(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.token = "xoxb-invalid"
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr.default_channel = ""
+        mgr._client = types.SimpleNamespace(auth_test=lambda: (_ for _ in ()).throw(RuntimeError("slack down")))
+        mgr._available = False
+        mgr._webhook_only = False
+
+        _run(mgr.initialize())
+
+        assert mgr.is_available() is True
+        assert mgr._webhook_only is True
+
+
 class TestSlackManagerSendMessage:
     def _webhook_mgr(self):
         mgr = SlackManager.__new__(SlackManager)
@@ -113,6 +144,41 @@ class TestSlackManagerSendMessage:
         with patch.object(mgr, "send_webhook", new=AsyncMock(return_value=(True, ""))):
             ok, _ = _run(mgr.send_message("Hi", channel="#channel"))
             assert ok is True
+
+
+
+
+    def _sdk_mgr(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.token = "xoxb-test"
+        mgr.webhook_url = ""
+        mgr.default_channel = "#sdk"
+        mgr._client = types.SimpleNamespace()
+        mgr._available = True
+        mgr._webhook_only = False
+        return mgr
+
+    def test_send_message_sdk_returns_api_error(self):
+        mgr = self._sdk_mgr()
+        mgr._client.chat_postMessage = lambda **_kwargs: {"ok": False, "error": "ratelimited"}
+
+        ok, err = _run(mgr.send_message("Merhaba"))
+
+        assert ok is False
+        assert err == "ratelimited"
+
+    def test_send_message_sdk_timeout_returns_error(self):
+        mgr = self._sdk_mgr()
+
+        def _boom(**_kwargs):
+            raise TimeoutError("request timed out")
+
+        mgr._client.chat_postMessage = _boom
+
+        ok, err = _run(mgr.send_message("Merhaba"))
+
+        assert ok is False
+        assert "timed out" in err
 
 
 class TestSlackManagerSendWebhook:
@@ -184,6 +250,48 @@ class TestSlackManagerSendWebhook:
         assert ok is False
 
 
+
+
+    def test_internal_server_error_webhook_post(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr._available = True
+        mgr._webhook_only = True
+        mgr._client = None
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.text = "internal_error"
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch.object(_slack_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr.send_webhook(text="Test"))
+        assert ok is False
+        assert "500" in err
+        assert "internal_error" in err
+
+    def test_webhook_timeout_returns_error(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr._available = True
+        mgr._webhook_only = True
+        mgr._client = None
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=TimeoutError("request timed out"))
+
+        with patch.object(_slack_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr.send_webhook(text="Test"))
+        assert ok is False
+        assert "timed out" in err
+
+
 class TestSlackManagerListChannels:
     def test_list_channels_no_sdk(self):
         mgr = SlackManager.__new__(SlackManager)
@@ -199,6 +307,37 @@ class TestSlackManagerListChannels:
         mgr._webhook_only = True
         ok, channels, err = _run(mgr.list_channels())
         assert ok is False
+
+
+
+
+    def test_list_channels_api_error(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr._client = types.SimpleNamespace(
+            conversations_list=lambda **_kwargs: {"ok": False, "error": "ratelimited"}
+        )
+        mgr._webhook_only = False
+
+        ok, channels, err = _run(mgr.list_channels(limit=999))
+
+        assert ok is False
+        assert channels == []
+        assert err == "ratelimited"
+
+    def test_list_channels_exception_returns_error(self):
+        mgr = SlackManager.__new__(SlackManager)
+
+        def _boom(**_kwargs):
+            raise RuntimeError("slack unavailable")
+
+        mgr._client = types.SimpleNamespace(conversations_list=_boom)
+        mgr._webhook_only = False
+
+        ok, channels, err = _run(mgr.list_channels())
+
+        assert ok is False
+        assert channels == []
+        assert "slack unavailable" in err
 
 
 class TestSlackManagerBuildBlocks:
