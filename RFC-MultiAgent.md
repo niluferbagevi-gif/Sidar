@@ -17,7 +17,7 @@ Bu RFC, `sidar_agent.py` içinde tek bir ReAct döngüsüne yüklenen çok sayı
 - **Supervisor Ajan:** Kullanıcı isteğini analiz eder, alt görevlere böler, doğru uzman ajana yönlendirir ve sonuçları birleştirir.
 - **Coder Ajan:** Dosya, kod üretim/çalıştırma, güvenli çalışma araçları.
 - **Researcher Ajan:** Web arama + RAG/doküman keşif araçları.
-- **Reviewer Ajan:** GitHub/PR/issue inceleme ve raporlama araçları.
+- **Reviewer Ajan:** Dinamik pytest üretimi, sandbox içinde regresyon çalıştırma, repo/PR/issue inceleme ve QA geri bildirimi.
 
 ---
 
@@ -197,10 +197,8 @@ agent/
 ### 8.1 Geriye Dönük Uyumluluk
 
 - `SidarAgent` dış API’si korunur.
-- İçeride `SupervisorAgent` delegasyonu yapılır.
-- Feature flag ile aç/kapa:
-  - `ENABLE_MULTI_AGENT=false` (varsayılan, ilk rollout)
-  - `ENABLE_MULTI_AGENT=true` (yeni orkestrasyon)
+- İçeride `SupervisorAgent` delegasyonu varsayılan çalışma yolu olarak kullanılır.
+- `ENABLE_MULTI_AGENT` artık rollout flag’i değil; mimari fiilen supervisor-first ve direct `p2p.v1` handoff ile çalışır.
 
 ---
 
@@ -287,7 +285,7 @@ Her alt göreve span:
 ### Faz 1 — Supervisor iskeleti + Coder role
 
 - `SidarAgent` → supervisor delegasyon
-- Sadece code tasks route edilir, diğerleri legacy
+- İlk üretim rollout’unda code ağırlıklı istekler öncelikli route edildi; bu faz artık tarihsel kayıt niteliğindedir
 
 ### Faz 2 — Researcher role
 
@@ -296,12 +294,12 @@ Her alt göreve span:
 
 ### Faz 3 — Reviewer role
 
-- GitHub/PR review iş akışı role bazlı taşınır
+- GitHub/PR review + dinamik QA test üretimi/sandbox regresyon akışı role bazlı taşınır
 
 ### Faz 4 — Varsayılan hale getirme
 
-- `ENABLE_MULTI_AGENT=true` default
-- legacy yol deprecate planı
+- Supervisor-first orkestrasyon varsayılan hale gelir
+- Legacy tekli akış yalnızca tarihsel/deprecated not olarak kalır
 - **Kapanış Notu (v3.2.0):** Supervisor + role tabanlı mimari artık yalnız başına bir yönlendirme kabiliyeti değil; active learning, vision, cost-aware routing ve dış sistem entegrasyonlarıyla birlikte Autonomous LLMOps omurgasının orkestrasyon katmanı olarak tanımlanır.
 - **Operasyonel Teyit (v4.2.0):** `audit_logs` trail, direct `p2p.v1` handoff ve Supervisor/Swarm zinciri sayesinde çok ajanlı yapı denetlenebilir, kurumsal rollout'a hazır ve varsayılan mimari olarak kalıcıdır.
 

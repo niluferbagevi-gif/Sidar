@@ -52,7 +52,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
 - **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
-- **`web_server.py`**: FastAPI kontrol düzlemi 60 REST endpoint + `/ws/chat` WebSocket hattı sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır.
+- **`web_server.py`**: FastAPI kontrol düzlemi 60 REST endpoint + `/ws/chat` WebSocket hattı sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
 - **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
 - **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
 - **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.
@@ -263,6 +263,11 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 - `SidarAgent.respond()` çağrıları Supervisor omurgasına yönlendirilir.
 - `SupervisorAgent` içinde QA geri besleme limiti `MAX_QA_RETRIES = 3` olarak sabittir.
 - `ENABLE_MULTI_AGENT` bayrağı config sınıfında `True` sabitlenmiş durumdadır (legacy toggle kaldırılmıştır).
+- Rol sorumlulukları kod düzeyinde şu şekilde ayrılmıştır:
+  - `SupervisorAgent`: intent analizi, coder↔reviewer QA döngüsü, P2P köprüsü ve retry bütçesi
+  - `CoderAgent`: dosya/kod düzenleme, denetim, paket bilgisi ve TODO tarama
+  - `ResearcherAgent`: web arama, URL fetch ve RAG/doküman araması
+  - `ReviewerAgent`: repo/PR/issue inceleme, LLM destekli dinamik test üretimi ve sandbox regresyon yürütme
 - Intent routing kuralları `SupervisorAgent._intent()` içinde anahtar kelime tabanlıdır:
   - `research`: "araştır", "web", "url", "doküman", "search"
   - `review`: "github", "pull request", "issue", "review", "incele"

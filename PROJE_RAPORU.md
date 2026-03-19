@@ -120,7 +120,7 @@
 **Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, tamamen asenkron bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic) ile çalışabilir; CLI ve FastAPI tabanlı Web arayüzü olmak üzere iki ayrı kullanıcı ara yüzü sunar.
 
 ### Temel Özellikler
-- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + `web_ui/static/`)
+- **Çift arayüz:** CLI (`cli.py`) ve Web (`web_server.py` + React SPA öncelikli `web_ui_react/dist`, fallback `web_ui/`)
 - **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI ve Anthropic (bulut)
 - **Multi-Agent + P2P Delegasyon:** Supervisor orkestrasyonu ile görevleri uzman rollere (Coder, Researcher, Reviewer) dağıtır; `agent/core/contracts.py` ile ajanlar arası P2P görev sözleşmesi desteklenir.
 - **Çoklu Kullanıcı (Multi-User) ve Veritabanı Altyapısı:** PostgreSQL/SQLite destekli kalıcı veri katmanı ile kullanıcı bazlı oturum izolasyonu ve kota yönetimi (`core/db.py`).
@@ -416,6 +416,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiş
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | Repo metrik/audit üretimi | ✅ Aktif | `scripts/collect_repo_metrics.sh`, `scripts/audit_metrics.sh` |
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
+| SQLite→PostgreSQL cutover provası | ✅ Aktif | `.github/workflows/migration-cutover-checks.yml`, `scripts/migrate_sqlite_to_pg.py`, `scripts/load_test_db_pool.py` |
 
 Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + güvenlik sertleştirme senaryoları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
 
@@ -424,12 +425,12 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 - `.coveragerc` içinde `fail_under = 99.9` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
 - CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `--cov-fail-under=99.9` parametresiyle çalıştırır; eşik altı durumda pipeline fail olur.
 - `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği uygular.
-- Mevcut durum: **%100 kapsama** — tüm testler başarılı, 0 atlanan test, 132 test modülü aktif.
+- Mevcut kalite kapısı: coverage eşiği **%99.9** olarak zorunludur; tam audit kayıtlarında tüm testler green tutulacak şekilde CI ve `run_tests.sh` buna göre fail-closed çalışır.
 - Bu model, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir ve eksik kapsanan satırların görünür kalmasını sağlar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **132 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **132** adettir.
+- Güncel depoda `test_*.py` desenine uyan **149 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **151** adettir.
 - Testler yalnızca birim doğrulama ile sınırlı değildir; edge-case, provider retry/fallback, migration/DB branch ayrışmaları, sandbox profilleri ve web güvenliği gibi alanlara bölünmüş modüler paketler içerir.
 - Örnek kurumsal odak alanları: `test_missing_edge_case_coverage.py`, `test_llm_client_retry_helpers.py`, `test_db_postgresql_branches.py`, `test_sandbox_runtime_profiles.py`.
 

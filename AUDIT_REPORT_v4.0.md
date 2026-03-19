@@ -213,6 +213,13 @@ Aşağıdaki güvenlik ve kalite uygulamaları doğrudan kod okumasıyla doğrul
 - `web_server.py::access_policy_middleware` RBAC allow/deny kararlarını kullanıcı, tenant, kaynak ve istemci IP bağlamıyla kaydediyor
 - `agent/core/contracts.py` + `agent/swarm.py` direct `p2p.v1` handoff zincirinde sender/receiver/reason/handoff_depth bilgisini koruyor
 
+### 4.9 Prompt Registry, Migration Cutover ve Observability ✅
+- `migrations/versions/0002_prompt_registry.py`, `prompt_registry` tablosunu role/version/is_active modeliyle ekliyor; `web_server.py` admin prompt endpoint'leri ve React `PromptAdminPanel` bu tabloyu runtime'da kullanıyor
+- `scripts/migrate_sqlite_to_pg.py`, SQLite -> PostgreSQL taşıma ve dry-run prova akışını destekliyor; `runbooks/production-cutover-playbook.md` ile birlikte cutover standardı tanımlanmış durumda
+- `core/dlp.py`, Bearer token, API key, GitHub PAT, AWS key, TC kimlik, e-posta, kredi kartı ve JWT örüntülerini LLM çağrısından önce maskeleyerek veri sızıntısı yüzeyini düşürüyor
+- `grafana/dashboards/sidar_overview.json`, semantic cache hit/miss, Redis latency, LLM cost ve latency görünürlüğünü aynı dashboard'da topluyor; `runbooks/observability_simulation.md` bu hattın Jaeger + Prometheus + Grafana ile nasıl doğrulanacağını adım adım belgeliyor
+- Test/QA tarafında `.coveragerc`, `run_tests.sh` ve `.github/workflows/ci.yml` ile **%99.9 coverage hard gate** zorunlu; ek olarak `.github/workflows/migration-cutover-checks.yml` migration zinciri ve DB pool smoke yükünü otomatik doğruluyor
+
 ---
 
 ## 5. Kritik Bulgular (K)
