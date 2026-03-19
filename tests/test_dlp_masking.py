@@ -2,6 +2,7 @@
 Tests for core/dlp.py — DLP & PII maskeleme modülü.
 """
 import pytest
+import core.dlp as dlp_mod
 from core.dlp import DLPEngine, mask_pii, mask_messages, _is_valid_tckn
 
 
@@ -20,6 +21,9 @@ class TestTCKNValidation:
 
     def test_invalid_tckn_bad_checksum(self):
         assert _is_valid_tckn("12345678900") is False
+
+    def test_invalid_tckn_fails_last_digit_checksum_guard(self):
+        assert _is_valid_tckn("10000000147") is False
 
 
 # ─── DLPEngine: temel maskeleme ──────────────────────────────────────────────
@@ -89,6 +93,18 @@ class TestDLPEngineMasking:
         assert dets == []
 
 
+    def test_log_detections_emits_warning_when_masking_occurs(self, monkeypatch):
+        engine = DLPEngine(replacement="[X]", log_detections=True)
+        warnings = []
+        monkeypatch.setattr(dlp_mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+        masked, dets = engine.mask("İletişim: user@example.com")
+
+        assert masked != "İletişim: user@example.com"
+        assert any(d.pattern_name == "email" for d in dets)
+        assert warnings and "hassas veri tespit edildi" in warnings[0]
+
+
 # ─── mask_messages ───────────────────────────────────────────────────────────
 
 class TestMaskMessages:
@@ -152,3 +168,14 @@ def test_mask_pii_convenience():
     result = mask_pii("Kullanıcı: admin@corp.com, token: sk-abcdefghijklmnopqrst12345")
     assert "admin@corp.com" not in result
     assert "sk-abcdefghijklmnopqrst12345" not in result
+
+def test_build_engine_from_env_returns_passive_engine_when_disabled(monkeypatch):
+    monkeypatch.setenv("DLP_ENABLED", "false")
+
+    engine = dlp_mod._build_engine_from_env()
+    masked, dets = engine.mask("email=user@example.com password=secret123")
+
+    assert masked == "email=user@example.com password=secret123"
+    assert dets == []
+    assert engine.mask_email is False
+    assert engine.mask_passwords is False
