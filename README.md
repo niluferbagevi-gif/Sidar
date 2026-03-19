@@ -20,6 +20,8 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır.
 
+> **Güncel Ürün Durumu:** Başlangıçtaki `v3.0.0` kurumsal omurga korunurken, Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla konsolide edilmiştir. Bu çerçevede Sidar artık yalnızca bir yardımcı ajan değil; Active Learning, LLM-as-a-Judge, Direct P2P Swarm, audit trail ve derin observability katmanlarıyla kurumsal otonom mühendislik akışlarını destekleyen bir platform olarak tanımlanır.
+
 ### Karakter Profili
 
 | Özellik | Değer |
@@ -128,6 +130,13 @@
 ---
 
 ## v3.0.0 Öne Çıkan Yetenekler
+
+### 🚀 Son Sürüm Öne Çıkan Özellikler (v3.2.0 / v4.2.0 dokümantasyon turu)
+
+- **Autonomous LLMOps / LLM-as-a-Judge:** `core/judge.py` zayıf yanıtları arka planda puanlayıp uygun durumlarda `core/active_learning.py` hattına aktarır; böylece insan müdahalesi olmadan kalite geri besleme döngüsü kurulabilir.
+- **P2P Swarm İletişimi:** Coder/Reviewer/Researcher ajanları `p2p.v1` sözleşmesiyle sender, receiver, reason ve handoff depth bağlamını koruyarak doğrudan görev devredebilir.
+- **Kurumsal Audit Trail:** `audit_logs` tablosu ve `access_policy_middleware` entegrasyonu sayesinde tenant bazlı allow/deny kararları asenkron biçimde kalıcı denetim izine yazılır.
+- **Derin Observability:** Semantic cache hit/miss/skip/eviction ve Redis latency metrikleri Prometheus/Grafana hattında görünür; maliyet, gecikme ve cache davranışı aynı operasyon yüzeyinde izlenir.
 
 ### ✅ Kurumsal SaaS Altyapısı ve Çoklu Kullanıcı
 
