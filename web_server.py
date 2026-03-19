@@ -8,30 +8,31 @@ Başlatmak için:
 """
 
 import argparse
-import atexit
 import asyncio
+import atexit
+import base64
 import contextlib
-import importlib.util
 import hashlib
 import hmac
+import importlib.util
 import inspect
 import json
 import logging
-import re
-import shutil
-import secrets
-import subprocess
-import time
-import tempfile
 import os
+import re
+import secrets
+import shutil
 import signal
+import subprocess
+import tempfile
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Union
 
 import jwt
-from contextlib import asynccontextmanager
-from pathlib import Path
 
 try:
     import anyio
@@ -40,12 +41,23 @@ except ImportError:  # anyio FastAPI/uvicorn bağımlılığıdır; normalde hep
     _ANYIO_CLOSED = None
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from redis.asyncio import Redis
 
 try:
     from opentelemetry import trace
@@ -64,16 +76,16 @@ except Exception:  # OpenTelemetry opsiyoneldir
     Resource = None
     BatchSpanProcessor = None
 
-from config import Config
 from agent.base_agent import BaseAgent
+from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
-from agent.core.event_stream import get_agent_event_bus
-from managers.system_health import render_llm_metrics_prometheus
-from core.llm_metrics import get_llm_metrics_collector
-from core.llm_client import LLMAPIError
+from config import Config
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
+from core.llm_client import LLMAPIError
+from core.llm_metrics import get_llm_metrics_collector
+from managers.system_health import render_llm_metrics_prometheus
 
 try:
     from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
@@ -981,8 +993,11 @@ async def hitl_create_request(payload: dict, user=Depends(_get_request_user)):
     hitl_payload = dict(payload.get("payload") or {})
     requested_by = str(payload.get("requested_by", getattr(user, "username", "api"))).strip()
 
-    from core.hitl import HITLRequest, get_hitl_store as _store, notify
-    import time, uuid
+    import time
+    import uuid
+
+    from core.hitl import HITLRequest, notify
+    from core.hitl import get_hitl_store as _store
     now = time.time()
     req = HITLRequest(
         request_id=str(uuid.uuid4()),
@@ -1270,6 +1285,22 @@ async def _ws_close_policy_violation(websocket: WebSocket, reason: str) -> None:
         await websocket.close(code=1008, reason=reason)
 
 
+async def _ws_stream_agent_text_response(websocket: WebSocket, agent: SidarAgent, prompt: str) -> None:
+    """Agent text çıktısını voice/chat benzeri websocket istemcisine aktar."""
+    tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
+    thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
+
+    async for chunk in agent.respond(prompt):
+        m_tool = tool_sentinel.match(chunk)
+        m_thought = thought_sentinel.match(chunk)
+        if m_tool:
+            await websocket.send_json({"tool_call": m_tool.group(1)})
+        elif m_thought:
+            await websocket.send_json({"thought": m_thought.group(1)})
+        else:
+            await websocket.send_json({"chunk": chunk})
+
+
 @app.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     """
@@ -1443,6 +1474,196 @@ async def websocket_chat(websocket: WebSocket):
             logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
 
 
+@app.websocket("/ws/voice")
+async def websocket_voice(websocket: WebSocket):
+    """
+    Gerçek zamanlı ses oturumu için websocket.
+
+    MVP davranışı:
+    - İstemci binary ses chunk'larını gönderir.
+    - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
+    - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
+    """
+    proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
+    header_token = proto_header or ""
+
+    if header_token:
+        await websocket.accept(subprotocol=header_token)
+    else:
+        await websocket.accept()
+
+    try:
+        from core.multimodal import MultimodalPipeline
+    except ImportError:
+        await websocket.send_json({"error": "core.multimodal modülü yüklenemedi.", "done": True})
+        await websocket.close(code=1011, reason="multimodal unavailable")
+        return
+
+    agent = await get_agent()
+    pipeline = MultimodalPipeline(agent.llm, cfg)
+    max_voice_bytes = int(getattr(cfg, "VOICE_WS_MAX_BYTES", 10 * 1024 * 1024) or 10 * 1024 * 1024)
+
+    audio_buffer = bytearray()
+    ws_user_id = ""
+    ws_username = ""
+    ws_authenticated = False
+    session_mime_type = "audio/webm"
+    session_language: str | None = None
+    session_prompt = ""
+
+    if header_token:
+        ws_user = await _resolve_user_from_token(agent, header_token)
+        if not ws_user:
+            await _ws_close_policy_violation(websocket, "Invalid or expired token")
+            return
+        ws_user_id = ws_user.id
+        ws_username = ws_user.username
+        ws_authenticated = True
+        await agent.memory.set_active_user(ws_user_id, ws_username)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"auth_ok": True})
+
+    try:
+        while True:
+            packet = await websocket.receive()
+            packet_type = packet.get("type")
+            if packet_type == "websocket.disconnect":
+                raise WebSocketDisconnect()
+
+            bytes_payload = packet.get("bytes")
+            if bytes_payload is not None:
+                if not ws_authenticated:
+                    await _ws_close_policy_violation(websocket, "Authentication required")
+                    return
+                if len(audio_buffer) + len(bytes_payload) > max_voice_bytes:
+                    await _ws_close_policy_violation(websocket, "Voice payload too large")
+                    return
+                audio_buffer.extend(bytes_payload)
+                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
+                continue
+
+            text_payload = packet.get("text")
+            if text_payload is None:
+                continue
+
+            try:
+                payload = json.loads(text_payload)
+            except json.JSONDecodeError:
+                continue
+
+            action = str(payload.get("action", "") or "").strip().lower()
+            if not ws_authenticated:
+                if action != "auth":
+                    await _ws_close_policy_violation(websocket, "Authentication required")
+                    return
+                auth_token = (payload.get("token", "") or "").strip()
+                if not auth_token:
+                    await _ws_close_policy_violation(websocket, "Authentication token missing")
+                    return
+                ws_user = await _resolve_user_from_token(agent, auth_token)
+                if not ws_user:
+                    await _ws_close_policy_violation(websocket, "Invalid or expired token")
+                    return
+                ws_user_id = ws_user.id
+                ws_username = ws_user.username
+                ws_authenticated = True
+                await agent.memory.set_active_user(ws_user_id, ws_username)
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"auth_ok": True})
+                continue
+
+            if action in {"start", "reset"}:
+                audio_buffer.clear()
+                session_mime_type = str(payload.get("mime_type", "audio/webm") or "audio/webm")
+                session_language = payload.get("language")
+                session_prompt = str(payload.get("prompt", "") or "")
+                await websocket.send_json({"voice_session": "ready", "mime_type": session_mime_type})
+                continue
+
+            if action == "append_base64":
+                encoded_chunk = str(payload.get("chunk", "") or "").strip()
+                if not encoded_chunk:
+                    continue
+                try:
+                    decoded_chunk = base64.b64decode(encoded_chunk, validate=True)
+                except Exception:
+                    await websocket.send_json({"error": "Geçersiz base64 ses parçası", "done": True})
+                    continue
+                if len(audio_buffer) + len(decoded_chunk) > max_voice_bytes:
+                    await _ws_close_policy_violation(websocket, "Voice payload too large")
+                    return
+                audio_buffer.extend(decoded_chunk)
+                await websocket.send_json({"buffered_bytes": len(audio_buffer)})
+                continue
+
+            if action == "cancel":
+                audio_buffer.clear()
+                await websocket.send_json({"cancelled": True, "done": True})
+                continue
+
+            if action not in {"commit", "process", "end"}:
+                continue
+
+            session_mime_type = str(payload.get("mime_type", session_mime_type) or session_mime_type)
+            session_language = payload.get("language", session_language)
+            session_prompt = str(payload.get("prompt", session_prompt) or session_prompt)
+
+            if not audio_buffer:
+                await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
+                continue
+
+            result = await pipeline.transcribe_bytes(
+                bytes(audio_buffer),
+                mime_type=session_mime_type,
+                language=session_language,
+                prompt=session_prompt,
+            )
+            audio_buffer.clear()
+
+            if not isinstance(result, dict) or not result.get("success"):
+                reason = "Ses transkripsiyonu başarısız oldu."
+                if isinstance(result, dict):
+                    reason = str(result.get("reason", reason) or reason)
+                await websocket.send_json({"error": reason, "done": True})
+                continue
+
+            transcript_text = str(result.get("text", "") or "").strip()
+            await websocket.send_json(
+                {
+                    "transcript": transcript_text,
+                    "language": result.get("language", ""),
+                    "provider": result.get("provider", ""),
+                }
+            )
+            if not transcript_text:
+                await websocket.send_json({"done": True})
+                continue
+
+            try:
+                await _ws_stream_agent_text_response(websocket, agent, transcript_text)
+            except LLMAPIError as exc:
+                await websocket.send_json(
+                    {
+                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
+                        "done": True,
+                    }
+                )
+                continue
+            except Exception as exc:
+                logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
+                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
+                continue
+
+            await websocket.send_json({"done": True})
+    except WebSocketDisconnect:
+        logger.info("İstemci voice WebSocket bağlantısını kesti.")
+    except Exception as exc:
+        if _ANYIO_CLOSED is not None and isinstance(exc, _ANYIO_CLOSED):
+            logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
+        else:
+            logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
+
+
 @app.get(
     "/status",
     summary="Ajan Durumunu Getir",
@@ -1556,7 +1777,10 @@ async def metrics(request: Request, _user=Depends(_require_metrics_access)):
     if "text/plain" in accept:
         try:
             from prometheus_client import (
-                CollectorRegistry, Gauge, generate_latest, CONTENT_TYPE_LATEST,
+                CONTENT_TYPE_LATEST,
+                CollectorRegistry,
+                Gauge,
+                generate_latest,
             )
             from starlette.responses import Response as _PromeResp
             reg = CollectorRegistry()
