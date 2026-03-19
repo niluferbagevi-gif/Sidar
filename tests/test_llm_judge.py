@@ -316,6 +316,64 @@ def test_call_llm_returns_none_on_unparseable_numeric_response(monkeypatch):
     assert result is None
 
 
+def test_call_llm_json_returns_none_for_non_dict_json(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+
+    class _Client:
+        def __init__(self, provider, config):
+            self.provider = provider
+            self.config = config
+
+        async def chat(self, **_kwargs):
+            return '[1, 2, 3]'
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("core.llm_client")
+    fake_mod.LLMClient = _Client
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_mod)
+
+    result = _run(judge._call_llm_json("sys", "msg", model="judge-test"))
+    assert result is None
+
+
+def test_evaluate_rag_returns_none_for_blank_query():
+    async def _inner():
+        judge = LLMJudge()
+        judge.enabled = True
+        judge.sample_rate = 1.0
+
+        result = await judge.evaluate_rag(query="", documents=["doc"])
+        assert result is None
+
+    _run(_inner())
+
+
+def test_maybe_record_feedback_returns_false_when_quality_meets_threshold():
+    async def _inner():
+        judge = LLMJudge()
+        judge.auto_feedback_enabled = True
+        judge.auto_feedback_threshold = 7.5
+        result = JudgeResult(
+            relevance_score=0.9,
+            hallucination_risk=0.1,
+            evaluated_at=time.time(),
+            model="judge",
+            provider="ollama",
+        )
+
+        assert await judge._maybe_record_feedback(
+            query="soru",
+            documents=["doc"],
+            answer="yanıt",
+            result=result,
+        ) is False
+
+    _run(_inner())
+
+
 def test_evaluate_response_marks_parse_failure_when_judge_returns_invalid_json(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True
