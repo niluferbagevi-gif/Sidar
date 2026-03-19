@@ -22,6 +22,8 @@
 
 > **Güncel Ürün Durumu:** Başlangıçtaki `v3.0.0` kurumsal omurga korunurken, Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla konsolide edilmiştir. Bu çerçevede Sidar artık yalnızca bir yardımcı ajan değil; Active Learning, LLM-as-a-Judge, Direct P2P Swarm, audit trail ve derin observability katmanlarıyla kurumsal otonom mühendislik akışlarını destekleyen bir platform olarak tanımlanır.
 
+> **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
+
 ### Karakter Profili
 
 | Özellik | Değer |
