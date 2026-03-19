@@ -443,7 +443,8 @@ def test_schedule_background_evaluation_allows_task_cancellation(monkeypatch):
 
         def _capture(coro, *args, **kwargs):
             task = real_create_task(coro, *args, **kwargs)
-            created["task"] = task
+            if kwargs.get("name") == "sidar_judge_eval":
+                created["task"] = task
             return task
 
         monkeypatch.setattr(loop, "create_task", _capture)
