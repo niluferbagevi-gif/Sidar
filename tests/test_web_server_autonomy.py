@@ -8,10 +8,19 @@ from tests.test_web_server_runtime import _FakeRequest, _load_web_server
 def test_autonomy_webhook_dispatches_trigger_to_agent():
     mod = _load_web_server()
 
-    async def _respond(prompt):
-        yield f"handled:{prompt}"
+    async def _handle_trigger(trigger):
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": f"handled:{trigger.to_prompt()}",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
 
-    agent = types.SimpleNamespace(respond=_respond)
+    agent = types.SimpleNamespace(handle_external_trigger=_handle_trigger)
 
     async def _get_agent():
         return agent
@@ -31,6 +40,56 @@ def test_autonomy_webhook_dispatches_trigger_to_agent():
     assert response.content["success"] is True
     assert response.content["result"]["source"] == "webhook:github"
     assert "handled:[TRIGGER]" in response.content["result"]["summary"]
+    assert response.content["result"]["status"] == "success"
+
+
+def test_autonomy_wake_and_activity_return_structured_payloads():
+    mod = _load_web_server()
+
+    async def _handle_trigger(trigger):
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": f"wake:{trigger.payload.get('prompt', '')}",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 10.0,
+            "completed_at": 11.0,
+        }
+
+    agent = types.SimpleNamespace(
+        handle_external_trigger=_handle_trigger,
+        get_autonomy_activity=lambda limit=20: {
+            "items": [{"trigger_id": "t-1", "source": "manual:ops", "event_name": "manual_wake", "status": "success"}],
+            "total": 1,
+            "returned": 1,
+            "counts_by_status": {"success": 1},
+            "counts_by_source": {"manual:ops": 1},
+            "latest_trigger_id": "t-1",
+        },
+    )
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    wake_req = mod._AutonomyWakeRequest(
+        event_name="manual_wake",
+        prompt="CI pipeline failure sinyalini değerlendir",
+        source="ops",
+        payload={"pipeline": "build"},
+        meta={"priority": "high"},
+    )
+    wake_response = asyncio.run(mod.autonomy_wake(wake_req))
+    activity_response = asyncio.run(mod.autonomy_activity(limit=5))
+
+    assert wake_response.content["success"] is True
+    assert wake_response.content["result"]["source"] == "manual:ops"
+    assert "CI pipeline failure" in wake_response.content["result"]["summary"]
+    assert activity_response.content["success"] is True
+    assert activity_response.content["activity"]["counts_by_status"]["success"] == 1
 
 
 def test_swarm_federation_execute_returns_structured_result():

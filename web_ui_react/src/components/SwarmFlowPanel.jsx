@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useChatStore } from "../hooks/useChatStore.js";
 import { fetchJson } from "../lib/api.js";
 
@@ -16,6 +16,25 @@ export function SwarmFlowPanel() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [response, setResponse] = useState(null);
+  const [autonomyActivity, setAutonomyActivity] = useState({ items: [], counts_by_status: {}, counts_by_source: {} });
+  const [activityLoading, setActivityLoading] = useState(false);
+
+  const loadAutonomyActivity = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const data = await fetchJson("/api/autonomy/activity?limit=8");
+      setAutonomyActivity(data.activity || { items: [], counts_by_status: {}, counts_by_source: {} });
+    } catch (err) {
+      setAutonomyActivity({ items: [], counts_by_status: {}, counts_by_source: {} });
+      setError((prev) => prev || err.message);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAutonomyActivity();
+  }, [loadAutonomyActivity]);
 
   const steps = useMemo(
     () => telemetryEvents.filter((evt) => evt.kind === "tool_call" || evt.kind === "status" || evt.kind === "thought").slice(-12),
@@ -23,13 +42,23 @@ export function SwarmFlowPanel() {
   );
 
   const graphData = useMemo(() => {
+    const autonomyNodes = (autonomyActivity.items || []).map((item, index) => ({
+      id: `autonomy-${item.trigger_id || index}`,
+      type: item.status === "failed" ? "autonomy-warning" : "autonomy",
+      title: item.event_name || "trigger",
+      subtitle: item.source || "manual",
+      body: item.summary || JSON.stringify(item.payload || {}),
+      x: 24,
+      y: 148 + index * 108,
+    }));
+
     const taskNodes = tasks.map((task, index) => ({
       id: `task-${index}`,
       type: "task",
       title: task.preferred_agent?.trim() ? task.preferred_agent.trim() : `Task ${index + 1}`,
       subtitle: task.intent?.trim() || "mixed",
       body: task.goal?.trim() || "Görev açıklaması bekleniyor",
-      x: 180,
+      x: 290,
       y: 36 + index * 118,
     }));
 
@@ -39,7 +68,7 @@ export function SwarmFlowPanel() {
       title: item.agent_role || "agent",
       subtitle: item.status || "unknown",
       body: item.summary || "Özet üretilmedi",
-      x: 470,
+      x: 580,
       y: 36 + index * 118,
     }));
 
@@ -49,7 +78,7 @@ export function SwarmFlowPanel() {
       title: step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Thought" : "Status",
       subtitle: new Date(step.ts).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
       body: step.content,
-      x: 760,
+      x: 870,
       y: 36 + index * 92,
     }));
 
@@ -63,14 +92,20 @@ export function SwarmFlowPanel() {
         x: 24,
         y: 32,
       },
+      ...autonomyNodes,
       ...taskNodes,
       ...resultNodes,
       ...telemetryNodes,
     ];
 
     const edges = [];
+    autonomyNodes.forEach((autonomyNode, index) => {
+      const sourceNode = index === 0 ? "supervisor" : autonomyNodes[index - 1].id;
+      edges.push({ id: `edge-autonomy-${autonomyNode.id}`, from: sourceNode, to: autonomyNode.id, label: autonomyNode.subtitle });
+    });
     taskNodes.forEach((taskNode) => {
-      edges.push({ id: `edge-supervisor-${taskNode.id}`, from: "supervisor", to: taskNode.id, label: taskNode.subtitle });
+      const sourceNode = autonomyNodes[autonomyNodes.length - 1]?.id || "supervisor";
+      edges.push({ id: `edge-supervisor-${taskNode.id}`, from: sourceNode, to: taskNode.id, label: taskNode.subtitle });
     });
     resultNodes.forEach((resultNode, index) => {
       const sourceTask = taskNodes[index] || taskNodes[taskNodes.length - 1];
@@ -84,7 +119,18 @@ export function SwarmFlowPanel() {
     });
 
     return { nodes, edges };
-  }, [mode, response, sessionId, steps, tasks]);
+  }, [autonomyActivity.items, mode, response, sessionId, steps, tasks]);
+
+  const autonomySummary = useMemo(() => {
+    const counts = autonomyActivity.counts_by_status || {};
+    const sources = autonomyActivity.counts_by_source || {};
+    return {
+      total: autonomyActivity.total || autonomyActivity.items?.length || 0,
+      success: counts.success || 0,
+      failed: counts.failed || 0,
+      sources: Object.keys(sources).length,
+    };
+  }, [autonomyActivity]);
 
   const graphEdges = useMemo(() => {
     const nodeMap = new Map(graphData.nodes.map((node) => [node.id, node]));
@@ -209,12 +255,21 @@ export function SwarmFlowPanel() {
             <div className="inline-controls inline-controls--compact">
               <div>
                 <h3>Karar Grafiği</h3>
-                <p className="panel__hint">Supervisor → görev → ajan çıktısı → canlı telemetri akışını node-graph olarak izleyin.</p>
+                <p className="panel__hint">Proaktif trigger → supervisor → görev → ajan çıktısı → canlı telemetri akışını node-graph olarak izleyin.</p>
               </div>
               <span className="pill">{graphData.nodes.length} node / {graphData.edges.length} edge</span>
             </div>
+            <div className="swarm-graph__legend">
+              <span className="pill">Autonomy {autonomySummary.total}</span>
+              <span className="pill pill--success">Success {autonomySummary.success}</span>
+              <span className="pill">{autonomySummary.failed} failed</span>
+              <span className="pill">{autonomySummary.sources} source</span>
+              <button type="button" className="button-secondary" onClick={loadAutonomyActivity} disabled={activityLoading}>
+                {activityLoading ? "Yükleniyor…" : "Aktiviteyi Yenile"}
+              </button>
+            </div>
             <div className="swarm-graph">
-              <svg className="swarm-graph__edges" viewBox="0 0 1080 760" preserveAspectRatio="none" aria-hidden="true">
+              <svg className="swarm-graph__edges" viewBox="0 0 1240 920" preserveAspectRatio="none" aria-hidden="true">
                 {graphEdges.map((edge) => (
                   <g key={edge.id}>
                     <path d={edge.curve} className="swarm-graph__edge-path" />
@@ -240,6 +295,30 @@ export function SwarmFlowPanel() {
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="card">
+            <div className="inline-controls inline-controls--compact">
+              <div>
+                <h3>Proaktif Aktivite Akışı</h3>
+                <p className="panel__hint">Webhook/cron/manual wake kayıtları son 8 olay üzerinden listelenir.</p>
+              </div>
+            </div>
+            <ol className="timeline">
+              {(autonomyActivity.items || []).length === 0 && <li className="empty-state">Henüz proaktif aktivite kaydı yok.</li>}
+              {(autonomyActivity.items || []).map((item, idx) => (
+                <li key={item.trigger_id || idx} className="timeline__item">
+                  <span className={`timeline__badge ${item.status === "success" ? "timeline__badge--success" : "timeline__badge--warning"}`}>
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <strong>{item.event_name || "trigger"}</strong>
+                    <p>{item.summary || "Özet yok."}</p>
+                    <small className="panel__hint">{item.source || "manual"} · {item.status || "unknown"}</small>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
 
           <div className="card">

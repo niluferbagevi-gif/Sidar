@@ -26,6 +26,7 @@ def _load_sidar_agent_module():
         "agent.auto_handle": types.ModuleType("agent.auto_handle"),
         "agent.definitions": types.ModuleType("agent.definitions"),
         "agent.tooling": types.ModuleType("agent.tooling"),
+        "agent.core.contracts": types.ModuleType("agent.core.contracts"),
     }
 
     class ValidationError(Exception):
@@ -79,6 +80,18 @@ def _load_sidar_agent_module():
         setattr(stubs[mod_name], cls_name, object)
 
     stubs["agent.definitions"].SIDAR_SYSTEM_PROMPT = "sys"
+    class ExternalTrigger:
+        def __init__(self, trigger_id="", source="", event_name="", payload=None, meta=None):
+            self.trigger_id = trigger_id
+            self.source = source
+            self.event_name = event_name
+            self.payload = payload or {}
+            self.meta = meta or {}
+
+        def to_prompt(self):
+            return f"[TRIGGER]\nsource={self.source}\nevent={self.event_name}"
+
+    stubs["agent.core.contracts"].ExternalTrigger = ExternalTrigger
 
     class _Schema:
         pass
@@ -123,6 +136,7 @@ def _load_sidar_agent_module():
 
 SA_MOD = _load_sidar_agent_module()
 SidarAgent = SA_MOD.SidarAgent
+ExternalTrigger = SA_MOD.ExternalTrigger
 
 
 async def _collect(aiter):
@@ -195,6 +209,26 @@ def test_respond_react_and_summarize_path():
 
     out = asyncio.run(_collect(a.respond("istek")))
     assert out == ["supervised"]
+
+
+def test_handle_external_trigger_records_activity_and_memory():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def fake_multi(prompt):
+        assert "[TRIGGER]" in prompt
+        return "proaktif-yanit"
+
+    a._try_multi_agent = fake_multi
+
+    trigger = ExternalTrigger(trigger_id="tr-1", source="webhook:ci", event_name="build_failed", payload={"job": "test"})
+    record = asyncio.run(a.handle_external_trigger(trigger))
+
+    assert record["trigger_id"] == "tr-1"
+    assert record["status"] == "success"
+    assert record["summary"] == "proaktif-yanit"
+    assert any(role == "user" and "[AUTONOMY_TRIGGER]" in text for role, text in a.memory.items)
+    assert a.get_autonomy_activity(limit=5)["counts_by_source"]["webhook:ci"] == 1
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 
