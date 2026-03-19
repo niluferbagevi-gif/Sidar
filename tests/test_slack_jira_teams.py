@@ -492,6 +492,84 @@ class TestJiraManagerCreateIssue:
         assert ok is True
 
 
+class TestJiraManagerRequestAndProjectEdges:
+    def _mgr(self):
+        mgr = JiraManager.__new__(JiraManager)
+        mgr.url = "https://example.atlassian.net"
+        mgr.token = "t"
+        mgr.email = "u@x.com"
+        mgr.default_project = "PROJ"
+        mgr._available = True
+        mgr._auth = ("u@x.com", "t")
+        mgr._headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        return mgr
+
+    def test_request_returns_error_on_httpx_exception(self):
+        mgr = self._mgr()
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(side_effect=TimeoutError("request timed out"))
+
+        with patch.object(_jira_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, data, err = _run(mgr._request("GET", "issue/PROJ-1"))
+
+        assert ok is False
+        assert data is None
+        assert "timed out" in err
+
+    def test_add_comment_builds_document_payload(self):
+        mgr = self._mgr()
+        captured = {}
+
+        async def _fake_request(method, endpoint, **kwargs):
+            captured["method"] = method
+            captured["endpoint"] = endpoint
+            captured["json"] = kwargs.get("json")
+            return True, {"id": "2001"}, ""
+
+        mgr._request = _fake_request
+        ok, data, err = _run(mgr.add_comment("PROJ-1", "Needs follow-up"))
+
+        assert ok is True
+        assert data == {"id": "2001"}
+        assert err == ""
+        assert captured["method"] == "POST"
+        assert captured["endpoint"] == "issue/PROJ-1/comment"
+        assert captured["json"]["body"]["content"][0]["content"][0]["text"] == "Needs follow-up"
+
+    def test_list_projects_returns_simplified_projects(self):
+        mgr = self._mgr()
+        mgr._request = AsyncMock(return_value=(
+            True,
+            [{"key": "ENG", "name": "Engineering", "id": "101"}],
+            "",
+        ))
+
+        ok, projects, err = _run(mgr.list_projects())
+
+        assert ok is True
+        assert err == ""
+        assert projects == [{"key": "ENG", "name": "Engineering", "id": "101"}]
+
+    def test_get_project_statuses_deduplicates_status_names(self):
+        mgr = self._mgr()
+        mgr._request = AsyncMock(return_value=(
+            True,
+            [
+                {"statuses": [{"name": "To Do"}, {"name": "Done"}]},
+                {"statuses": [{"name": "Done"}, {"name": "In Progress"}, {"name": ""}]},
+            ],
+            "",
+        ))
+
+        ok, statuses, err = _run(mgr.get_project_statuses("ENG"))
+
+        assert ok is True
+        assert err == ""
+        assert statuses == ["To Do", "Done", "In Progress"]
+
+
 class TestJiraManagerSearchIssues:
     def _mgr(self):
         mgr = JiraManager.__new__(JiraManager)
