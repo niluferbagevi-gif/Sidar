@@ -21,13 +21,22 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 
 ---
 
+## 1.1 Güncel Faz Durumu (2026-03-19)
+
+| Başlık | Güncel Durum | Not |
+|---|---|---|
+| Algı katmanının genişletilmesi (MVP) | **Faz A: İskelet Kuruldu** | `core/multimodal.py`, `/ws/voice` ve temel medya bağlamı hattı repo içinde mevcut. |
+| Tarayıcı otomasyonu başlangıcı | **Faz A: İskelet Kuruldu** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü eklendi. |
+| GraphRAG başlangıcı | **Faz A: İskelet Kuruldu** | `core/rag.py` içinde modül bağımlılık grafiği arama/yol açıklama akışı mevcut. |
+| Sıradaki kritik hedef | **Reviewer + LSP anlamsal denetim** | Reviewer ajanın refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlaması vurgulanmalıdır. |
+
 ## 2. Mevcut Mimari Dayanaklar
 
 v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut güçlü omurgayı genişletmek için hazırlanmıştır.
 
 ### 2.1 Bugün zaten güçlü olan alanlar
 
-- **Multimodal girişin ilk adımı hazır:** `core/vision.py` görsel yükleme, provider'a özel vision message üretimi ve `VisionPipeline` üzerinden görselden kod / analiz akışı sağlıyor.
+- **Multimodal girişin ilk adımı hazır:** `core/vision.py` görsel yükleme, provider'a özel vision message üretimi ve `VisionPipeline` üzerinden görselden kod / analiz akışı sağlıyor; ek olarak `core/multimodal.py` ve `/ws/voice` ile Faz A iskeleti kurulmuş durumda.
 - **Araç çağırma ve şema doğrulama altyapısı hazır:** `agent/tooling.py` JSON-object tabanlı typed tool argument doğrulaması ile yeni araçları güvenli biçimde eklemeye uygun.
 - **Swarm ve P2P delege zinciri hazır:** `agent/swarm.py` ve `agent/core/supervisor.py` görev yönlendirme, handoff depth, trace ve QA retry davranışlarını zaten yönetiyor.
 - **RAG katmanı hibrit aramaya uygun:** `core/rag.py` ChromaDB + BM25 tabanı üzerine yeni retrieval stratejileri eklemek için iyi bir temel sunuyor.
@@ -38,8 +47,8 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 
 - Video/ses odaklı hata bildirimleri doğrudan anlaşılamıyor.
 - Dinamik web uygulamalarında gerçek tarayıcı işlemi yapılamıyor.
-- Kod tabanındaki anlamsal/ilişkisel bağımlılıklar GraphRAG düzeyinde modellenmiyor.
-- IDE seviyesinde güvenli refactor işlemleri LSP desteği olmadan regex/grep temelli kalıyor.
+- Kod tabanındaki anlamsal/ilişkisel bağımlılıklar artık ilk GraphRAG iskeleti ile modellenmeye başladı; ancak etki analizi ve reviewer entegrasyonu henüz erken aşamada.
+- IDE seviyesinde güvenli refactor işlemleri için LSP araçları eklenmiş olsa da Reviewer ajanı bu çıktıları henüz tam anlamsal kalite kapısı olarak kullanmıyor.
 - Sistem kullanıcı yazmadan kendi kendine tetiklenen bir ajan mimarisine tam geçmedi.
 - Swarm karar süreçleri telemetri listesinde görülüyor, fakat görsel karar grafiği olarak keşfedilemiyor.
 
@@ -373,17 +382,17 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 
 ### Faz A — Elzem v5.0 Çekirdeği
 
-1. `docs` + mimari karar kaydı ile v5.0 hedeflerinin netleştirilmesi
-2. `core/multimodal.py` başlangıcı (video frame + STT)
-3. `managers/browser_manager.py` + temel Playwright araçları
-4. `agent/tooling.py` içine browser/LSP tool şemaları
-5. `web_server.py` webhook tabanlı proaktif trigger girişleri
-6. `SwarmFlowPanel.jsx` için graph veri modeli
+1. `docs` + mimari karar kaydı ile v5.0 hedeflerinin netleştirilmesi **(tamamlandı)**
+2. `core/multimodal.py` başlangıcı (video frame + STT) **(Faz A: iskelet kuruldu)**
+3. `managers/browser_manager.py` + temel Playwright araçları **(Faz A: iskelet kuruldu)**
+4. `agent/tooling.py` içine browser/LSP tool şemaları **(başlatıldı)**
+5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(başlatıldı)**
+6. `SwarmFlowPanel.jsx` için graph veri modeli **(başlatıldı)**
 
 ### Faz B — Güvenli Otonomi Derinleşmesi
 
-1. GraphRAG indeksleyici
-2. LSP entegrasyonu
+1. GraphRAG indeksleyicinin reviewer/etki analizi ile derinleştirilmesi
+2. LSP entegrasyonunun Reviewer ajan kalite kapısına bağlanması **(bir sonraki hedef)**
 3. HITL + audit ile yüksek riskli browser aksiyonları
 4. Proaktif CI remediation akışları
 
