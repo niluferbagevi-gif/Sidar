@@ -26,9 +26,13 @@ from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collec
 from core.dlp import mask_messages as _dlp_mask_messages
 from core.router import CostAwareRouter, record_routing_cost
 from core.cache_metrics import (
+    observe_cache_redis_latency,
+    record_cache_eviction,
     record_cache_hit,
     record_cache_miss,
+    record_cache_redis_error,
     record_cache_skip,
+    set_cache_items,
 )
 
 try:
@@ -231,6 +235,7 @@ class _SemanticCacheManager:
             return None
         if self._redis is not None:
             return self._redis
+        started = time.perf_counter()
         try:
             self._redis = Redis.from_url(
                 getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
@@ -238,9 +243,11 @@ class _SemanticCacheManager:
                 decode_responses=True,
             )
             await self._redis.ping()
+            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
             return self._redis
         except Exception as exc:
             logger.debug("Semantic cache Redis bağlantısı kurulamadı: %s", exc)
+            record_cache_redis_error()
             self._redis = None
             return None
 
@@ -275,10 +282,14 @@ class _SemanticCacheManager:
         if not query_vector:
             return None
 
+        started = time.perf_counter()
         try:
             keys = await redis.lrange(self.index_key, 0, -1)
             if not keys:
+                set_cache_items(0)
+                observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
                 return None
+            set_cache_items(len(keys))
 
             best_sim = -1.0
             best_response: Optional[str] = None
@@ -298,12 +309,15 @@ class _SemanticCacheManager:
             if best_response is not None and best_sim >= self.threshold:
                 logger.info("Semantic cache HIT (similarity=%.4f)", best_sim)
                 record_cache_hit()
+                observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
                 return best_response
             logger.debug("Semantic cache MISS (best_similarity=%.4f)", max(best_sim, 0.0))
             record_cache_miss()
+            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
             return None
         except Exception as exc:
             logger.debug("Semantic cache okuma hatası: %s", exc)
+            record_cache_redis_error()
             return None
 
     async def set(self, prompt: str, response: str) -> None:
@@ -322,7 +336,10 @@ class _SemanticCacheManager:
             "embedding": json.dumps(vector),
             "created_at": str(time.time()),
         }
+        started = time.perf_counter()
         try:
+            keys_before = await redis.lrange(self.index_key, 0, self.max_items)
+            had_existing = item_key in keys_before
             async with redis.pipeline(transaction=True) as pipe:
                 pipe.hset(item_key, mapping=payload)
                 pipe.expire(item_key, self.ttl)
@@ -330,8 +347,14 @@ class _SemanticCacheManager:
                 pipe.lpush(self.index_key, item_key)
                 pipe.ltrim(self.index_key, 0, self.max_items - 1)
                 await pipe.execute()
+            current_items = await redis.llen(self.index_key)
+            set_cache_items(current_items)
+            if not had_existing and len(keys_before) >= self.max_items:
+                record_cache_eviction()
+            observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)
         except Exception as exc:
             logger.debug("Semantic cache yazma hatası: %s", exc)
+            record_cache_redis_error()
 
 
 class BaseLLMClient(ABC):

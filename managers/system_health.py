@@ -40,8 +40,18 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
         '# TYPE sidar_cache_hits_total counter',
         '# HELP sidar_cache_misses_total Semantic cache ıskalama sayısı',
         '# TYPE sidar_cache_misses_total counter',
+        '# HELP sidar_cache_skips_total Semantic cache skip sayısı',
+        '# TYPE sidar_cache_skips_total counter',
+        '# HELP sidar_cache_evictions_total Semantic cache LRU eviction sayısı',
+        '# TYPE sidar_cache_evictions_total counter',
+        '# HELP sidar_cache_redis_errors_total Semantic cache Redis hata sayısı',
+        '# TYPE sidar_cache_redis_errors_total counter',
         '# HELP sidar_cache_hit_rate Semantic cache isabet oranı (0.0–1.0)',
         '# TYPE sidar_cache_hit_rate gauge',
+        '# HELP sidar_cache_items Semantic cache içindeki aktif kayıt sayısı',
+        '# TYPE sidar_cache_items gauge',
+        '# HELP sidar_cache_redis_latency_ms Semantic cache için son Redis erişim gecikmesi (ms)',
+        '# TYPE sidar_cache_redis_latency_ms gauge',
     ]
 
     totals = (snapshot or {}).get('totals', {}) if isinstance(snapshot, dict) else {}
@@ -54,7 +64,12 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
     cache = (snapshot or {}).get('cache', {}) if isinstance(snapshot, dict) else {}
     lines.append(f"sidar_cache_hits_total {int(cache.get('hits', 0) or 0)}")
     lines.append(f"sidar_cache_misses_total {int(cache.get('misses', 0) or 0)}")
+    lines.append(f"sidar_cache_skips_total {int(cache.get('skips', 0) or 0)}")
+    lines.append(f"sidar_cache_evictions_total {int(cache.get('evictions', 0) or 0)}")
+    lines.append(f"sidar_cache_redis_errors_total {int(cache.get('redis_errors', 0) or 0)}")
     lines.append(f"sidar_cache_hit_rate {float(cache.get('hit_rate', 0.0) or 0.0)}")
+    lines.append(f"sidar_cache_items {int(cache.get('items', 0) or 0)}")
+    lines.append(f"sidar_cache_redis_latency_ms {float(cache.get('redis_latency_ms', 0.0) or 0.0)}")
 
     by_provider = snapshot.get('by_provider', {}) if isinstance(snapshot, dict) else {}
     for provider, row in by_provider.items():
@@ -485,4 +500,4 @@ class SystemHealthManager:
             f"<SystemHealthManager gpu={self._gpu_available} "
             f"torch={self._torch_available} "
             f"pynvml={self._nvml_initialized}>"
-        )  
+        )

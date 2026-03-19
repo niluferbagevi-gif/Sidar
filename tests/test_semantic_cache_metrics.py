@@ -17,6 +17,10 @@ class TestCacheMetrics:
         assert snap["hits"] == 0
         assert snap["misses"] == 0
         assert snap["skips"] == 0
+        assert snap["evictions"] == 0
+        assert snap["redis_errors"] == 0
+        assert snap["items"] == 0
+        assert snap["redis_latency_ms"] == 0.0
         assert snap["total_lookups"] == 0
         assert snap["hit_rate"] == 0.0
 
@@ -60,6 +64,17 @@ class TestCacheMetrics:
         snap = self.cm.snapshot()
         assert snap["total_lookups"] == 1  # Yalnızca hit + miss
 
+    def test_eviction_redis_and_inventory_metrics_are_tracked(self):
+        self.cm.record_eviction(2)
+        self.cm.record_redis_error()
+        self.cm.set_items(7)
+        self.cm.observe_redis_latency(12.3456)
+        snap = self.cm.snapshot()
+        assert snap["evictions"] == 2
+        assert snap["redis_errors"] == 1
+        assert snap["items"] == 7
+        assert snap["redis_latency_ms"] == pytest.approx(12.3456, abs=1e-4)
+
 
 # ─── Modül düzeyinde get_cache_metrics ───────────────────────────────────────
 
@@ -70,6 +85,10 @@ def test_get_cache_metrics_returns_dict():
     assert "misses" in result
     assert "hit_rate" in result
     assert "total_lookups" in result
+    assert "evictions" in result
+    assert "redis_errors" in result
+    assert "items" in result
+    assert "redis_latency_ms" in result
 
 
 # ─── Prometheus renderer entegrasyonu ────────────────────────────────────────
@@ -104,7 +123,16 @@ class TestPrometheusRendererCacheMetrics:
             "totals": {"calls": 100, "cost_usd": 1.5, "total_tokens": 5000, "failures": 2},
             "by_provider": {},
             "by_user": {},
-            "cache": {"hits": hits, "misses": misses, "hit_rate": hit_rate},
+            "cache": {
+                "hits": hits,
+                "misses": misses,
+                "skips": 2,
+                "evictions": 3,
+                "redis_errors": 1,
+                "items": 9,
+                "redis_latency_ms": 17.5,
+                "hit_rate": hit_rate,
+            },
         }
 
     def test_cache_hits_total_present(self):
@@ -123,7 +151,17 @@ class TestPrometheusRendererCacheMetrics:
         output = render_llm_metrics_prometheus(self._snapshot())
         assert "# HELP sidar_cache_hits_total" in output
         assert "# HELP sidar_cache_misses_total" in output
+        assert "# HELP sidar_cache_evictions_total" in output
+        assert "# HELP sidar_cache_redis_latency_ms" in output
         assert "# HELP sidar_cache_hit_rate" in output
+
+    def test_extended_cache_metrics_present(self):
+        output = render_llm_metrics_prometheus(self._snapshot())
+        assert "sidar_cache_skips_total 2" in output
+        assert "sidar_cache_evictions_total 3" in output
+        assert "sidar_cache_redis_errors_total 1" in output
+        assert "sidar_cache_items 9" in output
+        assert "sidar_cache_redis_latency_ms 17.5" in output
 
     def test_zero_cache_snapshot(self):
         output = render_llm_metrics_prometheus(self._snapshot(0, 0, 0.0))
@@ -159,6 +197,10 @@ class TestMetricsCollectorCacheField:
         assert "misses" in cache
         assert "hit_rate" in cache
         assert "total_lookups" in cache
+        assert "evictions" in cache
+        assert "redis_errors" in cache
+        assert "items" in cache
+        assert "redis_latency_ms" in cache
 
     def test_cache_hit_rate_is_float(self):
         collector = LLMMetricsCollector()
@@ -241,3 +283,64 @@ def test_cache_manager_records_miss():
     assert result is None
     record_miss.assert_called_once()
     assert cm_mod._cache_metrics.misses >= original_misses
+
+
+def test_cache_manager_set_records_eviction_inventory_and_latency():
+    try:
+        import core.llm_client as llm_mod
+        _SemanticCacheManager = llm_mod._SemanticCacheManager
+    except Exception:
+        pytest.skip("llm_client import başarısız")
+
+    mgr = _SemanticCacheManager(MagicMock(
+        ENABLE_SEMANTIC_CACHE=True,
+        SEMANTIC_CACHE_THRESHOLD=0.95,
+        SEMANTIC_CACHE_TTL=3600,
+        SEMANTIC_CACHE_MAX_ITEMS=1,
+        REDIS_URL="redis://localhost:6379/0",
+    ))
+
+    class _Pipe:
+        def hset(self, *_a, **_k):
+            return self
+
+        def expire(self, *_a, **_k):
+            return self
+
+        def lrem(self, *_a, **_k):
+            return self
+
+        def lpush(self, *_a, **_k):
+            return self
+
+        def ltrim(self, *_a, **_k):
+            return self
+
+        async def execute(self):
+            return []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    fake_redis = MagicMock()
+    fake_redis.lrange = AsyncMock(return_value=["old-key"])
+    fake_redis.llen = AsyncMock(return_value=1)
+    fake_redis.pipeline.return_value = _Pipe()
+
+    with patch.object(mgr, "_get_redis", AsyncMock(return_value=fake_redis)), patch.object(
+        mgr, "_embed_prompt", return_value=[0.3, 0.7]
+    ), patch.object(
+        llm_mod, "record_cache_eviction"
+    ) as record_eviction, patch.object(
+        llm_mod, "set_cache_items"
+    ) as set_cache_items, patch.object(
+        llm_mod, "observe_cache_redis_latency"
+    ) as observe_latency:
+        _run(mgr.set("fresh prompt", "fresh response"))
+
+    record_eviction.assert_called_once()
+    set_cache_items.assert_called_once_with(1)
+    observe_latency.assert_called_once()
