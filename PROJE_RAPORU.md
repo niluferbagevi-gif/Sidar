@@ -381,6 +381,8 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 
 [⬆ İçindekilere Dön](#içindekiler)
 
+**Mimari özeti:** Proje mimarisi v4 sürümüyle birlikte tekil ajanlı daha basit bir RAG düzeninden; çoklu ajan (Swarm) destekli, OpenTelemetry ile tam gözlemlenebilir, anlamsal önbelleğe sahip ve çok kiracılı kurumsal bir orkestrasyon motoruna dönüşmüştür.
+
 ### 4.1 Güçlü Yönler
 
 | Alan | Değerlendirme |
@@ -394,9 +396,11 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | **Yapısal LLM Çıktısı** | Sağlayıcı bazlı structured output + Pydantic doğrulaması ile tool çağrılarında format kararlılığı |
 | **Hata Toleransı** | ChromaDB/BM25/keyword fallback zinciri ve araç seviyesinde hata yakalama ile operasyon sürekliliği |
 | **Konfigürasyon Merkeziyeti** | `Config` üzerinden DB, güvenlik, sandbox ve tracing parametrelerinin tek merkezden yönetimi |
-| **Gözlemlenebilirlik** | OpenTelemetry + Prometheus/Grafana + `/api/budget` ile latency/token/maliyet metriklerinin canlı takibi |
-| **Dağıtık Multi-Agent Orkestrasyonu** | Supervisor tabanlı görev yönlendirme (Coder/Researcher/Reviewer) ile modülerlik, hata izolasyonu ve kalite artışı |
-| **Çoklu LLM Ekosistemi** | Ollama, Gemini, OpenAI, Anthropic istemcilerinin ortak sözleşmeyle birlikte çalışması |
+| **Telemetry-First Gözlemlenebilirlik** | OpenTelemetry span'leri + Prometheus/Grafana + `/api/budget` ile LLM, RAG ve ajan görevlerinin latency/token/maliyet akışı canlı izlenir |
+| **Hiyerarşik / Paralel Swarm Orkestrasyonu** | Supervisor ve `SwarmOrchestrator`, görevleri alt parçalara ayırıp Coder/Researcher/Reviewer ajanlarına paralel veya pipeline modunda dağıtır |
+| **Kurumsal Veri Düzlemi** | PostgreSQL + pgvector, ChromaDB, Redis semantic cache ve tenant bazlı RBAC/audit trail birlikte çalışarak kurumsal veri erişim katmanı oluşturur |
+| **Gateway Güvenlik Katmanı** | DLP maskeleme ve HITL onay döngüsü, LLM çağrıları ile kritik araç aksiyonlarının giriş/çıkışında ek güvenlik bariyeri sağlar |
+| **Çoklu LLM Ekosistemi** | Ollama, Gemini, OpenAI, Anthropic ve LiteLLM istemcileri ortak sözleşmeyle birlikte çalışır |
 
 ### 4.2 Kısıtlamalar
 
@@ -407,7 +411,7 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | **BM25 Bellek Maliyeti** | Büyük doküman korpuslarında BM25 token verisinin RAM tüketimi artar |
 | **LLM Maliyet/Limit Baskısı** | Bulut sağlayıcılarda token maliyeti ve provider rate-limit yönetimi zorunludur |
 | **QA Overhead** | Reviewer doğrulama adımları kaliteyi artırırken ek LLM çağrısı/latency maliyeti üretir |
-| **Operasyonel Karmaşıklık** | PostgreSQL + Prometheus + Grafana + migration süreçleri kurulum/işletim maliyetini yükseltir |
+| **Operasyonel Karmaşıklık** | PostgreSQL + Redis + Prometheus/Grafana + Jaeger/OTel Collector + migration süreçleri kurulum/işletim maliyetini yükseltir |
 
 ### 4.3 v4.0 Kurumsal Mimari Sütunlar (Enterprise Lens)
 
@@ -428,21 +432,29 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 - Kod çalıştırma akışları Docker sandbox izolasyonu, kaynak limitleri ve ağ kapatma ilkeleriyle sınırlandırılır.
 - Path traversal/symlink denetimleri, hassas dosya blacklist kuralları ve fail-closed güvenlik kontrolleri kurumsal güvenlik çizgisini güçlendirir.
 
-#### 4.3.5 Observability + SaaS Veri Katmanı
-- OpenTelemetry izleri, Prometheus metrik ihracı ve Grafana panoları ile latency/token/maliyet görünürlüğü uçtan uca sağlanır.
-- SQLite kökenli tekil modelden, async pool destekli PostgreSQL ve multi-tenant kullanıcı izolasyonuna geçiş mimari olgunluk seviyesini yükseltir.
+#### 4.3.5 Telemetry-First Gözlemlenebilirlik
+- OpenTelemetry izleri ile her LLM isteği, RAG sorgusu ve uygun akışlarda swarm görevi span seviyesinde izlenebilir; bu hat Jaeger/OTel Collector ve Prometheus/Grafana panolarına beslenir.
+- Mimaride gözlemlenebilirlik yalnızca log toplamadan ibaret değildir; waterfall analizleri, token/maliyet sayaçları ve provider bazlı performans görünürlüğü operasyonun birinci sınıf girdisidir.
 
-#### 4.3.6 Dinamik Swarm ve Plugin Mimarisi
-- `web_server.py` üzerindeki `/api/agents/register` ve `/api/agents/register-file` uç noktaları ile dış kaynak plugin ajanları çalışma zamanında sisteme alınır.
-- `_register_plugin_agent` akışı, plugin kodunu güvenli derleme/yükleme adımından geçirip `AgentRegistry` üstünden canlı ajan envanterine kaydeder.
+#### 4.3.6 Kurumsal Veri Düzlemi ve Ölçeklenebilir Bellek
+- SQLite kökenli tekil modelden, async pool destekli PostgreSQL veri katmanı ve multi-tenant kullanıcı izolasyonuna geçiş mimari olgunluk seviyesini yükseltir.
+- RAG tarafında ChromaDB ile pgvector birlikte desteklenir; Redis tabanlı semantic cache maliyet/latency optimizasyonu sağlarken, tenant RBAC ve audit trail erişim yüzeyini kurumsal seviyeye taşır.
 
-#### 4.3.7 Single Page Application (Vite/React) Arayüzü
+#### 4.3.7 Dinamik Swarm ve Plugin Mimarisi
+- Mimari kalp artık yalnızca `sidar_agent.py` döngüsü değildir; Supervisor/Swarm katmanı görevleri analiz eder, alt görevlere böler ve bunları uzman ajanlara paralel veya pipeline biçiminde dağıtır.
+- `web_server.py` üzerindeki `/api/agents/register` ve `/api/agents/register-file` uç noktaları ile dış kaynak plugin ajanları çalışma zamanında sisteme alınır; `_register_plugin_agent` akışı bunları `AgentRegistry` üstünden canlı ajan envanterine kaydeder.
+
+#### 4.3.8 Single Page Application (Vite/React) Arayüzü
 - Sunum katmanı, React build'i mevcutsa `web_ui_react/dist` dizinini otomatik önceliklendiren akıllı statik servisleme modeline geçirilmiştir.
 - `web_ui_react/src/App.jsx` içinde P2PDialoguePanel ve SwarmFlowPanel bileşenleriyle canlı ajan diyaloğu ve görev akışı görünürlüğü SPA deneyiminde sunulur.
 
-#### 4.3.8 Tenant Bazlı Erişim Kontrol Listeleri (ACL)
+#### 4.3.9 Tenant Bazlı Erişim Kontrol Listeleri (ACL) ve Audit Trail
 - `access_policy_middleware` ve `_resolve_policy_from_request` ile rota/aksiyon bazlı kaynak sınıflandırması yapılarak tenant düzeyinde ince taneli yetkilendirme uygulanır.
-- `/admin/policies` uç noktaları üzerinden policy CRUD/inceleme yüzeyleri açılarak RBAC modeli operasyonel yönetim katmanına taşınır.
+- `/admin/policies` uç noktaları üzerinden policy CRUD/inceleme yüzeyleri açılır; izin kararları audit trail olarak kalıcı biçimde kaydedilerek RBAC modeli operasyonel yönetim katmanına taşınır.
+
+#### 4.3.10 DLP + HITL Güvenlik Geçidi
+- DLP katmanı, LLM'e çıkmadan önce hassas verileri (PII, token, kart numarası vb.) maskeleyerek mimarinin giriş/çıkışında veri sızıntısı riskini düşürür.
+- HITL döngüsü, üretim etkili veya yıkıcı işlemlerde insan onayı bekleyerek swarm/araç katmanının güvenli şekilde karar vermesini sağlar.
 
 ---
 
