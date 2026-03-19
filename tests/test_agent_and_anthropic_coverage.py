@@ -36,16 +36,12 @@ def test_reviewer_and_researcher_route_edge_paths(monkeypatch):
     usage = asyncio.run(reviewer.call_tool("pr_diff", "x"))
     assert "Kullanım" in usage
 
-    class _Proc:
-        returncode = 0
+    def _fake_run_shell_in_sandbox(command: str, cwd=None):
+        assert command == "pytest -q tests/test_reviewer_agent.py"
+        assert cwd == str(reviewer.cfg.BASE_DIR)
+        return True, "ok"
 
-        async def communicate(self):
-            return b"ok", b""
-
-    async def _fake_subprocess(*_args, **_kwargs):
-        return _Proc()
-
-    monkeypatch.setattr(asyncio, "create_subprocess_shell", _fake_subprocess)
+    monkeypatch.setattr(reviewer.code, "run_shell_in_sandbox", _fake_run_shell_in_sandbox)
     test_out = asyncio.run(reviewer.call_tool("run_tests", "pytest -q tests/test_reviewer_agent.py"))
     assert "[TEST:OK]" in test_out
 
