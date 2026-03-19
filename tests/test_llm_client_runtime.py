@@ -925,6 +925,35 @@ def test_llm_client_non_ollama_timeout_and_gemini_stream_fallback(llm_mod, monke
     assert out == ['wrapped:x', 'wrapped:y']
 
 
+def test_llmclient_chat_uses_redirected_provider_when_cost_router_succeeds(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12, USE_GPU=False, OPENAI_API_KEY="k", OPENAI_TIMEOUT=30)
+    client = llm_mod.LLMClient("ollama", cfg)
+
+    seen = {}
+
+    class _RedirectedClient:
+        async def chat(self, **kwargs):
+            seen.update(kwargs)
+            return "redirected-ok"
+
+    monkeypatch.setattr(client._router, "select", lambda messages, provider, model: ("openai", "gpt-route"))
+    monkeypatch.setattr(llm_mod, "LLMClient", lambda provider, config: _RedirectedClient())
+
+    result = asyncio.run(
+        client.chat(
+            [{"role": "user", "content": "route me"}],
+            model="base-model",
+            stream=False,
+            json_mode=False,
+        )
+    )
+
+    assert result == "redirected-ok"
+    assert seen["model"] == "gpt-route"
+    assert seen["system_prompt"] is None
+    assert seen["messages"][-1]["content"] == "route me"
+
+
 def test_llmclient_chat_falls_back_after_routing_failure_and_records_stream_cache_skip(llm_mod, monkeypatch):
     cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12, USE_GPU=False)
     client = llm_mod.LLMClient("ollama", cfg)
