@@ -114,6 +114,10 @@ def _load_web_server_module():
 
     llm_client = types.ModuleType("core.llm_client")
     llm_client.LLMAPIError = type("LLMAPIError", (Exception,), {})
+    hitl_mod = types.ModuleType("core.hitl")
+    hitl_mod.get_hitl_gate = lambda: types.SimpleNamespace()
+    hitl_mod.get_hitl_store = lambda: types.SimpleNamespace()
+    hitl_mod.set_hitl_broadcast_hook = lambda _hook: None
 
     uvicorn_mod = types.ModuleType("uvicorn")
     uvicorn_mod.run = lambda *a, **k: None
@@ -134,6 +138,7 @@ def _load_web_server_module():
         "managers.system_health": m_health,
         "core.llm_metrics": llm_metrics,
         "core.llm_client": llm_client,
+        "core.hitl": hitl_mod,
         "uvicorn": uvicorn_mod,
     })
 
@@ -145,6 +150,10 @@ def _load_web_server_module():
         pkg = types.ModuleType("agent.core")
         pkg.__path__ = [str(Path("agent/core").resolve())]
         sys.modules["agent.core"] = pkg
+    if "core" not in sys.modules:
+        pkg = types.ModuleType("core")
+        pkg.__path__ = []
+        sys.modules["core"] = pkg
 
     spec = importlib.util.spec_from_file_location("web_server_critical_under_test", Path("web_server.py"))
     mod = importlib.util.module_from_spec(spec)
