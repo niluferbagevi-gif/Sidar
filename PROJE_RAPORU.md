@@ -171,6 +171,7 @@ sidar_project/
 ├── <a href="docs/module-notes/docker-compose.yml.md">docker-compose.yml</a>         # 7 servis (redis, sidar-ai, sidar-gpu, sidar-web, sidar-web-gpu, prometheus, grafana)
 ├── <a href="docs/module-notes/environment.yml.md">environment.yml</a>            # Conda bağımlılıkları
 ├── <a href="docs/module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları (-e .[rag,postgres,telemetry,dev])
+├── uv.lock                    # uv paket yöneticisi kilit dosyası
 ├── <a href="docs/module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları
 ├── <a href="docs/module-notes/pytest.ini.md">pytest.ini</a>                 # Pytest konfigürasyonu
 ├── <a href="docs/module-notes/alembic.ini.md">alembic.ini</a>                # Veritabanı geçiş (migration) ayarları
@@ -238,7 +239,8 @@ sidar_project/
 │   ├── <a href="docs/module-notes/migrations/script.py.mako.md">script.py.mako</a>
 │   └── versions/
 │       ├── 0001_baseline_schema.py     # Temel şema (users, sessions, messages, quotas)
-│       └── 0002_prompt_registry.py     # Prompt registry tablosu (v3.0.9+)
+│       ├── 0002_prompt_registry.py     # Prompt registry tablosu (v3.0.9+)
+│       └── 0003_audit_trail.py         # Tenant RBAC audit trail geçişi
 │
 ├── scripts/                   # Operasyon, test ve metrik betikleri
 │   ├── <a href="docs/module-notes/scripts/audit_metrics.sh.md">audit_metrics.sh</a>       # Kod satır sayısı ve audit metrikleri üretici
@@ -263,13 +265,18 @@ sidar_project/
 │   ├── script.js              # Başlatıcı mantığı
 │   └── style.css              # Başlatıcı stilleri
 │
-├── web_ui/                    # Modüler Web UI
+├── web_ui_react/              # Modern React SPA arayüzü (Vite tabanlı)
+│   ├── src/                     # React bileşenleri, hook'lar ve API yardımcıları
+│   ├── package.json             # npm bağımlılıkları ve script'ler
+│   └── vite.config.js           # Vite build konfigürasyonu
+│
+├── web_ui/                      # Legacy / fallback Web UI
 │   ├── <a href="docs/module-notes/web_ui/index.html.md">index.html</a>
 │   ├── <a href="docs/module-notes/web_ui/style.css.md">style.css</a>
 │   ├── <a href="docs/module-notes/web_ui/chat.js.md">chat.js</a>                # WebSocket streaming, canlı durum akışı
-│   ├── <a href="docs/module-notes/web_ui/sidebar.js.md">sidebar.js</a>             # Oturum yönetimi
-│   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                 # RAG belge UI
-│   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                 # Uygulama başlatma, auth, bütçe yönetimi
+│   ├── <a href="docs/module-notes/web_ui/sidebar.js.md">sidebar.js</a>          # Oturum yönetimi
+│   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                  # RAG belge UI
+│   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                  # Uygulama başlatma, auth, bütçe yönetimi
 │
 ├── grafana/                   # Grafana dashboard + provisioning (YENİ — v3.0.22+)
 │   ├── dashboards/sidar_overview.json      # Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost panelleri
@@ -283,16 +290,21 @@ sidar_project/
 ├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
 ├── docs/                      # Proje belgeleri ve modül notları
 │   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
-├── helm/                      # Kubernetes Helm chart (v3.0.9+)
+├── helm/                      # Kubernetes Helm chart (v4.3.0 gözlemlenebilirlik genişletmeleri)
 │   └── sidar/
-│       ├── Chart.yaml         # Helm chart meta verisi
-│       ├── values.yaml        # Helm değerleri (image, replica, ingress, GPU vb.)
-│       └── templates/         # 11 Kubernetes kaynak şablonu
+│       ├── Chart.yaml          # Helm chart meta verisi
+│       ├── values.yaml         # Varsayılan Helm değerleri
+│       ├── values-staging.yaml # Staging ortamı değerleri
+│       ├── values-prod.yaml    # Prod ortamı değerleri
+│       └── templates/          # Kubernetes kaynak şablonları
 │           ├── _helpers.tpl, NOTES.txt
 │           ├── deployment-web.yaml, deployment-ai-worker.yaml
-│           ├── hpa-web.yaml                    # Horizontal Pod Autoscaler
-│           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
+│           ├── deployment-otel-collector.yaml, deployment-jaeger.yaml, deployment-zipkin.yaml
+│           ├── configmap-otel-collector.yaml, configmap-grafana-slo-dashboard.yaml
 │           ├── service-web.yaml, service-postgresql.yaml, service-redis.yaml
+│           ├── service-otel-collector.yaml, service-jaeger.yaml, service-zipkin.yaml
+│           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
+│           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
 ├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%99.9 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
