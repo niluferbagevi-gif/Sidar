@@ -97,18 +97,13 @@
   - [16.2 Metrik Toplama ve Uyarı Sistemleri (Prometheus & Grafana)](#162-metrik-toplama-ve-uyarı-sistemleri-prometheus--grafana)
   - [16.3 Sürü (Swarm) İçi Hata Toleransı ve Otomatik Telafi (Fallback)](#163-sürü-swarm-i̇çi-hata-toleransı-ve-otomatik-telafi-fallback)
   - [16.4 Kurumsal Denetim İzleri (Audit Logging)](#164-kurumsal-denetim-i̇zleri-audit-logging)
-- [17. Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
-  - [17.1 Ollama Bağlantı Sorunları](#171-ollama-bağlantı-sorunları)
-  - [17.2 GPU / CUDA Sorunları](#172-gpu-cuda-sorunları)
-  - [17.3 ChromaDB / RAG Sorunları](#173-chromadb-rag-sorunları)
-  - [17.4 Docker REPL Sorunları](#174-docker-repl-sorunları)
-  - [17.5 Bellek / Şifreleme Sorunları](#175-bellek-şifreleme-sorunları)
-  - [17.6 GitHub Entegrasyon Sorunları](#176-github-entegrasyon-sorunları)
-  - [17.7 Web Sunucu Sorunları](#177-web-sunucu-sorunları)
-  - [17.8 `.env` Dosyası Sorunları](#178-env-dosyası-sorunları)
-  - [17.9 Bulut LLM 429 (Rate Limit) Hatası](#179-bulut-llm-429-rate-limit-hatası)
-  - [17.10 Ajan Döngüsü / JSON Parse Hataları](#1710-ajan-döngüsü-json-parse-hataları)
-  - [17.11 Supervisor Devreye Girmiyor (Tekli Ajan Davranışı)](#1711-supervisor-devreye-girmiyor-tekli-ajan-davranışı)
+- [17. Yaygın Sorunlar ve Çözümleri (Troubleshooting)](#17-yaygın-sorunlar-ve-çözümleri-troubleshooting)
+  - [17.1 Redis / Anlamsal Önbellek (Semantic Cache) Bağlantı Hatası](#171-redis-anlamsal-önbellek-semantic-cache-bağlantı-hatası)
+  - [17.2 PostgreSQL ve pgvector Hataları](#172-postgresql-ve-pgvector-hataları)
+  - [17.3 Modern React (SPA) Arayüzüne Bağlanamama](#173-modern-react-spa-arayüzüne-bağlanamama)
+  - [17.4 HTTP 429 Too Many Requests (Hız Limitleri)](#174-http-429-too-many-requests-hız-limitleri)
+  - [17.5 Sistem Donması / Ajanların Tepki Vermemesi (HITL Beklemesi)](#175-sistem-donması-ajanların-tepki-vermemesi-hitl-beklemesi)
+  - [17.6 OpenTelemetry (OTel) Gecikme Uyarıları](#176-opentelemetry-otel-gecikme-uyarıları)
 - [18. Geliştirme Geçmişi ve Final Doğrulama Raporu](#18-geliştirme-geçmişi-ve-final-doğrulama-raporu)
 
 ---
@@ -1458,135 +1453,59 @@ Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok 
 Bu audit trail yaklaşımı, güvenlik kararlarının sonradan yeniden üretilebilmesini sağlar. İnsan onayı gerektiren işlemler için `core/hitl.py` ve ilgili API uçları üzerinden yürüyen Human-in-the-Loop (HITL) süreçlerinde reddedilen veya zaman aşımına uğrayan eylemler de görünür kalır. Sonuç olarak hata yönetimi, loglama ve observability katmanı; operasyonel arıza teşhisi, güvenlik denetimi ve tenant izolasyonu için ortak bir kurumsal kayıt sistemi haline gelmiştir.
 ---
 
-## 17. Yaygın Sorunlar ve Çözümleri
+## 17. Yaygın Sorunlar ve Çözümleri (Troubleshooting)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Kodun incelenmesinden türetilen, gerçek kullanıcı senaryolarında karşılaşılması muhtemel sorunlar ve kodu okuyarak tespit edilen kökenleri.
+Uygulama dağıtık (distributed) ve çoklu-ajanlı bir mimariye geçtiği için karşılaşılabilecek yaygın sorunlar artık çoğunlukla servisler arası iletişim, veri düzlemi bağımlılıkları ve orkestrasyon darboğazlarından kaynaklanmaktadır. Aşağıdaki maddeler v4.3.0 kurumsal mimarisindeki gerçek çalışma yüzeyine göre güncellenmiştir.
 
-### 17.1 Ollama Bağlantı Sorunları
+### 17.1 Redis / Anlamsal Önbellek (Semantic Cache) Bağlantı Hatası
 
-**Belirti:** `⚠️ Ollama'ya ulaşılamadı` uyarısı; LLM yanıt vermiyor.
+**Sorun:** Konsolda `Connection refused` benzeri Redis hataları görülür, semantic cache metrikleri üretilmez veya uygulama ilk açılışta cache erişimi yüzünden kararsız davranır.
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| `ollama serve` çalışmıyor | `config.py:437` httpx bağlantı hatası | `ollama serve` komutunu çalıştır |
-| `OLLAMA_URL` yanlış | `.env` veya varsayılan `http://localhost:11434/api` | URL'yi kontrol et, `/api` son ekini dahil et |
-| Timeout çok kısa | `OLLAMA_TIMEOUT=30` büyük modelde yetersiz | `.env`'de `OLLAMA_TIMEOUT=120` yap |
-| Model adı hatalı | `CODING_MODEL` / `TEXT_MODEL` | `ollama list` ile mevcut modelleri kontrol et |
+**Neden:** `USE_SEMANTIC_CACHE=true` iken Redis servisinin çalışmıyor olması ya da uygulamanın Redis'e erişebileceği host/port bilgisinin yanlış yapılandırılması. Kod tabanı semantic cache ve agent event stream tarafında Redis kullandığı için bu katman devre dışı kaldığında cache ve bazı canlı akış senaryoları fallback moduna düşer.
 
-### 17.2 GPU / CUDA Sorunları
+**Çözüm:** Docker tabanlı ortamda `docker compose up -d redis` komutuyla Redis'i başlatın. Yerel geliştirme sırasında Redis kullanmayacaksanız `.env` içinde `USE_SEMANTIC_CACHE=false` yaparak semantic cache'i geçici olarak kapatın. Dağıtık ortamda ayrıca Redis URL/host ayarlarının deployment dosyaları ile uyumlu olduğundan emin olun.
 
-**Belirti:** `CUDA bulunamadı — CPU modunda çalışılacak` veya embedding çok yavaş.
+### 17.2 PostgreSQL ve pgvector Hataları
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| PyTorch CUDA wheel kurulmamış | `config.py:174` | `pip install torch --index-url https://download.pytorch.org/whl/cu124` |
-| WSL2 + Windows sürücüsü eski | `config.py:130-131` WSL2 tespiti | NVIDIA Windows sürücüsünü güncelle |
-| `USE_GPU=false` ayarı | `config.py:133` | `.env`'de `USE_GPU=true` yap |
-| `GPU_MEMORY_FRACTION` aralık dışı | `config.py:151-157` | 0.1–0.99 arasında değer ver (1.0 dahil değil) |
+**Sorun:** RAG vektör aramaları sırasında çökme, `relation does not exist` hatası veya pgvector backend açılırken başlatma başarısızlığı görülür.
 
-### 17.3 ChromaDB / RAG Sorunları
+**Neden:** `RAG_VECTOR_BACKEND=pgvector` seçildiği halde PostgreSQL erişimi hazır değildir, `vector` eklentisi yüklenmemiştir veya Alembic migration'ları çalıştırılmadığı için temel tablolar ve audit trail şemaları oluşmamıştır.
 
-**Belirti:** Vektör arama çalışmıyor; `BM25'e düşülüyor` logu.
+**Çözüm:** Veritabanına bağlanıp `CREATE EXTENSION IF NOT EXISTS vector;` komutunu çalıştırın. Ardından repo kökünde `alembic upgrade head` komutu ile migration'ları uygulayın. Özellikle PostgreSQL/pgvector ve audit log kullanan kurulumlarda `DATABASE_URL` değerinin doğru olduğundan ve migration zincirinin tam geçtiğinden emin olun.
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| `chromadb` kurulmamış | `rag.py:129` import kontrolü | `pip install chromadb` |
-| `sentence-transformers` yok | `rag.py:46` GPU embedding başlatma | `pip install sentence-transformers` |
-| `all-MiniLM-L6-v2` indirilmemiş | İlk belgede uzun bekleme | `PRECACHE_RAG_MODEL=true` ile Docker build, veya `HF_HUB_OFFLINE=false` |
-| ChromaDB versiyon uyumsuzluğu | `rag.py:201` başlatma hatası | `pip install chromadb --upgrade` |
-| `chunk_size < chunk_overlap` | `rag.py:246` mantık hatası | `RAG_CHUNK_OVERLAP < RAG_CHUNK_SIZE` olduğundan emin ol |
+### 17.3 Modern React (SPA) Arayüzüne Bağlanamama
 
-### 17.4 Docker REPL Sorunları
+**Sorun:** Web arayüzü beyaz ekranda kalır, SPA hiç açılmaz veya WebSocket akışı sürekli kopuyor gibi görünür.
 
-**Belirti:** `execute_code` çalışmıyor; subprocess fallback devreye giriyor.
+**Neden:** Güncel mimaride backend (`web_server.py` / FastAPI) ile frontend (`web_ui_react/` / React + Vite) ayrı geliştirme süreçleri olarak çalışır. Yalnızca backend'i ayağa kaldırmak geliştirme modundaki SPA'yı otomatik başlatmaz; ayrıca tarayıcının yanlış porttan açılması ya da Vite proxy zincirinin çalışmaması bağlantı sorunlarına yol açar.
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Docker daemon çalışmıyor | `code_manager.py:_init_docker` | `docker ps` ile kontrol et, daemon'ı başlat |
-| WSL2 socket yolu hatalı | `code_manager.py` WSL2 socket fallback | Docker Desktop'ı kur veya `DOCKER_HOST` ayarla |
-| `python:3.11-alpine` imajı yok | İlk çalıştırmada uzun bekleme | `docker pull python:3.11-alpine` önceden çek |
-| Zaman aşımı çok kısa | `DOCKER_EXEC_TIMEOUT=10` | Uzun hesaplamalar için artır |
-| `ACCESS_LEVEL=restricted` | `security.py` erişim kontrolü | Seviyeyi `sandbox` veya `full` yap |
+**Çözüm:** Ayrı bir terminalde `cd web_ui_react && npm install && npm run dev` komutlarını çalıştırın ve geliştirme sırasında tarayıcıdan FastAPI portu yerine Vite sunucusuna (varsayılan `http://localhost:5173`) gidin. Production benzeri kullanımda `npm run build` sonrası oluşan `web_ui_react/dist/` klasörünün `web_server.py` tarafından otomatik servis edildiğini unutmayın.
 
-### 17.5 Bellek / Şifreleme Sorunları
+### 17.4 HTTP 429 Too Many Requests (Hız Limitleri)
 
-**Belirti:** `ValueError: MEMORY_ENCRYPTION_KEY geçersiz` veya oturum yüklenemiyor.
+**Sorun:** Çoklu-ajan (swarm) senaryolarında veya yoğun LLM kullanımında sistem sık sık `429 Too Many Requests` yanıtları üretir.
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Geçersiz Fernet anahtarı | `config.py:411-420` | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` ile yeni anahtar üret |
-| `cryptography` kurulmamış | `config.py:421-427` | `pip install cryptography` |
-| Eski şifresiz dosyalar | `memory.py` geçiş modu | Eski oturumlar `.broken` olarak işaretlenir; veri kaybı riski — yedekle |
-| `data/sessions/` izin sorunu | `memory.py` write hatası | Dizin yazma izinlerini kontrol et |
+**Neden:** Supervisor/swarm katmanı alt görevlere paralel yürütüm verdiğinde hem uygulama içi rate-limit middleware'i hem de dış LLM sağlayıcılarının RPM/TPM kotaları aynı anda baskı oluşturabilir. Özellikle `/api/swarm/execute` yolunda `max_concurrency` artırıldığında, OpenAI/Anthropic/LiteLLM geçidi tarafındaki limitler daha görünür hale gelir.
 
-### 17.6 GitHub Entegrasyon Sorunları
+**Çözüm:** Swarm görevlerinde eşzamanlılık düzeyini düşürün; UI veya API payload'ında `max_concurrency` değerini azaltın. LLM gateway kullanıyorsanız `LITELLM_GATEWAY_URL` ve fallback model ayarlarını gözden geçirerek yükü birden fazla model/anahtar arasında dağıtın. Gerekirse uygulama tarafındaki rate-limit eşiklerini ve sağlayıcı kota ayarlarını birlikte yeniden dengeleyin.
 
-**Belirti:** `⚠ GitHub token ayarlanmamış` veya repo bulunamadı.
+### 17.5 Sistem Donması / Ajanların Tepki Vermemesi (HITL Beklemesi)
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| `GITHUB_TOKEN` boş | `github_manager.py:61` | GitHub Settings → Developer settings → Personal access tokens |
-| Token yetkileri yetersiz | PyGithub 403 hatası | Token'a `repo`, `read:org` scopelarını ekle |
-| `GITHUB_REPO` formatı hatalı | `github_manager.py:80` | `owner/repo-name` formatında yaz |
-| Binary dosya okuma girişimi | `github_manager.py:33` whitelist | Yalnızca metin uzantılı dosyalar okunabilir |
-| Commit limiti aşıldı | `github_manager.py:296` | Maksimum 30 commit; daha fazlası sessizce kesilir |
+**Sorun:** Ajanlar bir kod veya veri işlemi sırasında aniden durmuş gibi görünür; UI akışı ilerlemez ve son kullanıcı yeni çıktı alamaz.
 
-### 17.7 Web Sunucu Sorunları
+**Neden:** Sistem tehlikeli veya yıkıcı kabul edilen bir işlemi `Human-in-the-Loop (HITL)` onay kapısına göndermiş olabilir. Bu durumda yürütüm aslında tamamen çökmemiştir; `pending` durumundaki bir insan onayı beklemektedir.
 
-**Belirti:** Rate limit hatası, CORS hatası veya WebSocket bağlantısı kopuyor.
+**Çözüm:** Yönetim yüzeyinden veya API üzerinden bekleyen işlemleri kontrol edin. `GET /api/hitl/pending` ile bekleyen istekleri listeleyin; uygun kararı vermek için `POST /api/hitl/respond/{request_id}` uç noktasını kullanarak işlemi approve/reject edin. Operasyonel olarak bu tür beklemeleri izlemek için admin paneli, audit kayıtları ve HITL bildirim akışlarının açık tutulması önerilir.
 
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Rate limit aşıldı | `web_server.py:83` | `RATE_LIMIT_CHAT` değerini artır veya sunucuyu yeniden başlat |
-| CORS reddedildi | `web_server.py:66` | Yalnızca localhost kökeninden erişilebilir; proxy için CORS origins güncelle |
-| Port kullanımda | `uvicorn` bind hatası | `WEB_PORT` farklı bir değere ayarla |
-| WebSocket bağlantısı kopuyor | Ağ/proxy kesintisi veya backend restart | İstemci tarafı otomatik yeniden bağlanma mantığı kullan |
+### 17.6 OpenTelemetry (OTel) Gecikme Uyarıları
 
-### 17.8 `.env` Dosyası Sorunları
+**Sorun:** Jaeger veya OTel Collector hattında span süreleri anormal derecede uzun görünür; örneğin bazı LLM veya RAG span'leri 15-20 saniyeyi aşar.
 
-**Belirti:** `⚠️ '.env' dosyası bulunamadı! Varsayılan ayarlar kullanılacak.`
+**Neden:** Sorun çoğu zaman tracing altyapısından değil, trace edilen iş yükünün kendisinden kaynaklanır. Yavaş internet bağlantısı, ağır model seçimi, fazla büyük prompt bağlamı veya RAG tarafından LLM'e gereğinden fazla belge taşınması toplam span süresini yükseltir.
 
-| Olası Neden | Çözüm |
-|-------------|-------|
-| `.env` dosyası yok | `.env.example`'ı kopyala: `cp .env.example .env` |
-| `.env` proje kökünde değil | `config.py:28` `BASE_DIR / ".env"` yolunu kullanır — dosyayı proje köküne taşı |
-| Boolean değer yanlış formatda | `get_bool_env` yalnızca `true/1/yes/on` kabul eder (büyük-küçük harf bağımsız) |
-
-### 17.9 Bulut LLM 429 (Rate Limit) Hatası
-
-**Belirti:** OpenAI/Anthropic kullanımında istekler aniden `429 Too Many Requests` veya `RateLimitError` ile kesiliyor.
-
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Free tier / düşük RPM limiti aşıldı | `core/llm_client.py` çağrılarında 429/RateLimit uyarıları | API hesabı kredi/kota durumunu kontrol et; bekleme penceresi sonrası yeniden dene |
-| Yoğun paralel istek yükü | Aynı oturumda kısa sürede çok sayıda sağlayıcı çağrısı | İstek yoğunluğunu azalt, yeniden deneme/backoff uygula, gerekirse daha yüksek kota planına geç |
-| Sağlayıcı geçici kısıtlama | Belirli zaman aralığında düzenli 429 dalgaları | Geçici olarak farklı sağlayıcıya geç (`AI_PROVIDER=ollama`) veya retry stratejisi uygula |
-
-### 17.10 Ajan Döngüsü / JSON Parse Hataları
-
-**Belirti:** Özellikle yerel Ollama ile ajan aynı aracı tekrar çağırıyor veya `JSONDecodeError` / `ValidationError` üretiyor.
-
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Model structured output talimatını zayıf takip ediyor | ReAct adımlarında bozuk JSON, eksik `thought/tool/argument` alanları | JSON uyumu güçlü modeller kullan (`llama3.1`, `qwen2.5` vb.) |
-| Model / sıcaklık kombinasyonu kararsız | Aynı girdide tutarsız/bozuk tool çağrıları | Daha stabil model seç; gerekirse bulut sağlayıcıya geç (`OPENAI_API_KEY`/`ANTHROPIC_API_KEY`) |
-| Araç argümanı format uyumsuzluğu | Pydantic doğrulama hataları (`ValidationError`) | `tooling.py` şema beklentilerine uygun argüman formatı kullan; promptu sadeleştir |
-
-### 17.11 Supervisor Devreye Girmiyor (Tekli Ajan Davranışı)
-
-**Belirti:** Coder/Researcher rol çağrıları beklenirken Supervisor izleri net görünmüyor.
-
-| Olası Neden | Nereden Anlaşılır | Çözüm |
-|-------------|-------------------|-------|
-| Günlük/izleme seviyesi yetersiz | Supervisor adımları loglarda görünmüyor | `LOG_LEVEL=DEBUG` ile yeniden çalıştır; `SupervisorAgent` izlerini doğrula |
-| Süreç yeniden başlatılmadı | Konfigürasyon değişikliği sonrası davranış netleşmiyor | Uygulamayı tamamen yeniden başlat (CLI/Web server) |
-| Yanlış ortam dosyası yükleniyor | `SIDAR_ENV` profili beklenenden farklı | Etkin `.env.<profile>` dosyasını ve `SIDAR_ENV` değerini kontrol et |
-
-> **Not:** Güncel mimaride `ENABLE_MULTI_AGENT` bayrağı kod içinde sabitlenmiştir (`True`); legacy tekli ajan akışına `.env` üzerinden dönüş desteklenmez.
-
----
+**Çözüm:** Önce model ve ağ gecikmesini kontrol edin; ardından RAG yükünü azaltmak için `RAG_TOP_K` değerini düşürün ve gereksiz uzun bağlamları daraltın. Böylece hem LLM'e gönderilen içerik küçülür hem de Jaeger üzerinde görülen span gecikmeleri daha yönetilebilir seviyeye iner.
 
 ## 18. Geliştirme Geçmişi ve Final Doğrulama Raporu
 
