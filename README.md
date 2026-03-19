@@ -483,9 +483,11 @@ sidar_project/
 ├── web_server.py           # 60 REST endpoint + `/ws/chat`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
-├── PROJE_RAPORU.md         # Mimari + kalite raporu
-├── AUDIT_REPORT_v4.0.md    # Güvenlik ve denetim raporu
-└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
+├── docs/
+│   ├── PROJE_RAPORU.md     # Mimari + kalite raporu
+│   ├── TEKNIK_REFERANS.md  # Operasyonel/uygulama seviyesi sözleşmeler
+│   ├── audits/             # Güvenlik ve denetim raporları
+│   └── rfcs/               # Tasarım önerileri ve mimari RFC'ler
 ```
 
 ---
@@ -600,7 +602,7 @@ mypy . --ignore-missing-imports
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
 | **v4.3.0** | Sürüm + metrik senkronizasyonu: `config.py`, `pyproject.toml`, `PKG-INFO`, Helm chart ve üst seviye dokümanlar 4.3.0 çizgisine taşındı; takipli dosya ölçümleri 58 üretim Python / 20.582 satır, 151 test dosyası / 39.147 satır ve 60 REST endpoint gerçekliğiyle güncellendi |
-| **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v4.0.md` senkronize edildi |
+| **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `docs/PROJE_RAPORU.md`, `docs/rfcs/RFC-MultiAgent.md` ve `docs/audits/AUDIT_REPORT.md` senkronize edildi |
 | **v3.2.0** | Autonomous LLMOps konsolidasyonu: Active Learning/LoRA, Vision Pipeline, Cost-Aware Routing ve Slack/Jira/Teams orkestrasyonu Faz 4’ün birleşik ürün anlatısı olarak toplandı |
 | **v3.0.31** | Kurumsal rollout senkronizasyonu: `audit_logs` migration + DB audit trail yardımcıları + `access_policy_middleware` audit kaydı akışı raporlandı; direct `p2p.v1` handoff protokolü Supervisor ve Swarm katmanlarında belgelendi |
 | **v3.0.24** | Faz 4 tamamlama: Slack Bot SDK + Webhook (`slack_manager`), Jira Cloud REST API v3 (`jira_manager`), Teams Adaptive Card v1.4 + HITL onay kartı (`teams_manager`); 44 yeni test; 142 test modülü, ~18.200+ Python kaynak satırı |
@@ -628,6 +630,6 @@ Bu proje LotusAI ekosisteminin bir parçasıdır.
 
 ## 🧹 Depo Hijyeni
 
-- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` kullanılmalıdır.
+- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `docs/PROJE_RAPORU.md` ve `docs/rfcs/RFC-MultiAgent.md` kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.

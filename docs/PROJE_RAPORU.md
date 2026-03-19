@@ -2,7 +2,7 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > ---
-> 📋 **CHANGELOG:** Tüm çözülen bulgular, sürüm geçmişi ve teknik borç kapanışları için → **[CHANGELOG.md](CHANGELOG.md)**
+> 📋 **CHANGELOG:** Tüm çözülen bulgular, sürüm geçmişi ve teknik borç kapanışları için → **[../CHANGELOG.md](../CHANGELOG.md)**
 > _(Her denetim sonrası §11 bulgu tablosu buraya aktarılır. Rapor yalnızca aktif/açık bulgular için referans noktasıdır.)_
 > ---
 
@@ -156,52 +156,52 @@
 <pre>
 sidar_project/
 ├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
-├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı başlatıcı (wizard + --quick mod)
-├── <a href="docs/module-notes/cli.py.md">cli.py</a>                     # CLI terminal arayüzü giriş noktası
-├── <a href="docs/module-notes/web_server.py.md">web_server.py</a>              # FastAPI web sunucusu (WebSocket streaming)
-├── <a href="docs/module-notes/config.py.md">config.py</a>                  # Merkezi yapılandırma (v4.3.0)
-├── <a href="docs/module-notes/github_upload.py.md">github_upload.py</a>           # GitHub otomatik yükleme aracı
-├── <a href="docs/module-notes/gui_launcher.py.md">gui_launcher.py</a>            # Eel tabanlı masaüstü başlatıcı giriş noktası
-├── <a href="docs/module-notes/Dockerfile.md">Dockerfile</a>                 # CPU + GPU çift mod Dockerfile
-├── <a href="docs/module-notes/docker-compose.yml.md">docker-compose.yml</a>         # 7 servis (redis, sidar-ai, sidar-gpu, sidar-web, sidar-web-gpu, prometheus, grafana)
-├── <a href="docs/module-notes/environment.yml.md">environment.yml</a>            # Conda bağımlılıkları
-├── <a href="docs/module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları (-e .[rag,postgres,telemetry,dev])
+├── <a href="module-notes/main.py.md">main.py</a>                    # Akıllı başlatıcı (wizard + --quick mod)
+├── <a href="module-notes/cli.py.md">cli.py</a>                     # CLI terminal arayüzü giriş noktası
+├── <a href="module-notes/web_server.py.md">web_server.py</a>              # FastAPI web sunucusu (WebSocket streaming)
+├── <a href="module-notes/config.py.md">config.py</a>                  # Merkezi yapılandırma (v4.3.0)
+├── <a href="module-notes/github_upload.py.md">github_upload.py</a>           # GitHub otomatik yükleme aracı
+├── <a href="module-notes/gui_launcher.py.md">gui_launcher.py</a>            # Eel tabanlı masaüstü başlatıcı giriş noktası
+├── <a href="module-notes/Dockerfile.md">Dockerfile</a>                 # CPU + GPU çift mod Dockerfile
+├── <a href="module-notes/docker-compose.yml.md">docker-compose.yml</a>         # 7 servis (redis, sidar-ai, sidar-gpu, sidar-web, sidar-web-gpu, prometheus, grafana)
+├── <a href="module-notes/environment.yml.md">environment.yml</a>            # Conda bağımlılıkları
+├── <a href="module-notes/requirements-dev.txt.md">requirements-dev.txt</a>       # Geliştirme ve test bağımlılıkları (-e .[rag,postgres,telemetry,dev])
 ├── uv.lock                    # uv paket yöneticisi kilit dosyası
-├── <a href="docs/module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları
-├── <a href="docs/module-notes/pytest.ini.md">pytest.ini</a>                 # Pytest konfigürasyonu
-├── <a href="docs/module-notes/alembic.ini.md">alembic.ini</a>                # Veritabanı geçiş (migration) ayarları
-├── <a href="docs/module-notes/run_tests.sh.md">run_tests.sh</a>               # Kapsam ve test çalıştırıcı betik
-├── <a href="docs/module-notes/install_sidar.sh.md">install_sidar.sh</a>           # Otomatik kurulum betiği
+├── <a href="module-notes/pyproject.toml.md">pyproject.toml</a>             # Ruff + Mypy kalite standartları
+├── <a href="module-notes/pytest.ini.md">pytest.ini</a>                 # Pytest konfigürasyonu
+├── <a href="module-notes/alembic.ini.md">alembic.ini</a>                # Veritabanı geçiş (migration) ayarları
+├── <a href="module-notes/run_tests.sh.md">run_tests.sh</a>               # Kapsam ve test çalıştırıcı betik
+├── <a href="module-notes/install_sidar.sh.md">install_sidar.sh</a>           # Otomatik kurulum betiği
 │
 ├── agent/
-│   ├── <a href="docs/module-notes/agent/__init__.py.md">__init__.py</a>
-│   ├── <a href="docs/module-notes/agent/sidar_agent.py.md">sidar_agent.py</a>         # Ana ajan bağlayıcısı
-│   ├── <a href="docs/module-notes/agent/base_agent.py.md">base_agent.py</a>          # BaseAgent soyut sınıfı (multi-agent iskeleti)
-│   ├── <a href="docs/module-notes/agent/auto_handle.py.md">auto_handle.py</a>         # Anahtar kelime tabanlı hızlı yönlendirici
-│   ├── <a href="docs/module-notes/agent/definitions.py.md">definitions.py</a>         # Sistem istemi ve ajan kimliği
-│   ├── <a href="docs/module-notes/agent/tooling.py.md">tooling.py</a>             # Araç kayıt + Pydantic şema yöneticisi
+│   ├── <a href="module-notes/agent/__init__.py.md">__init__.py</a>
+│   ├── <a href="module-notes/agent/sidar_agent.py.md">sidar_agent.py</a>         # Ana ajan bağlayıcısı
+│   ├── <a href="module-notes/agent/base_agent.py.md">base_agent.py</a>          # BaseAgent soyut sınıfı (multi-agent iskeleti)
+│   ├── <a href="module-notes/agent/auto_handle.py.md">auto_handle.py</a>         # Anahtar kelime tabanlı hızlı yönlendirici
+│   ├── <a href="module-notes/agent/definitions.py.md">definitions.py</a>         # Sistem istemi ve ajan kimliği
+│   ├── <a href="module-notes/agent/tooling.py.md">tooling.py</a>             # Araç kayıt + Pydantic şema yöneticisi
 │   ├── registry.py            # AgentRegistry + @register dekoratörü (plugin marketplace, dinamik ajan kaydı)
 │   ├── swarm.py               # SwarmOrchestrator: parallel/pipeline modları, TaskRouter (çoklu ajan koordinasyonu)
 │   ├── core/
-│   │   ├── <a href="docs/module-notes/agent/core/__init__.py.md">__init__.py</a>
-│   │   ├── <a href="docs/module-notes/agent/core/supervisor.py.md">supervisor.py</a>      # Yönlendirici ve orkestrasyon ajanı
-│   │   ├── <a href="docs/module-notes/agent/core/contracts.py.md">contracts.py</a>       # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri
-│   │   ├── <a href="docs/module-notes/agent/core/event_stream.py.md">event_stream.py</a>    # Ajan olay veriyolu (canlı durum akışı)
-│   │   ├── <a href="docs/module-notes/agent/core/memory_hub.py.md">memory_hub.py</a>      # Multi-agent bellek yönetim merkezi
-│   │   └── <a href="docs/module-notes/agent/core/registry.py.md">registry.py</a>        # Ajan ve yetenek kayıt defteri
+│   │   ├── <a href="module-notes/agent/core/__init__.py.md">__init__.py</a>
+│   │   ├── <a href="module-notes/agent/core/supervisor.py.md">supervisor.py</a>      # Yönlendirici ve orkestrasyon ajanı
+│   │   ├── <a href="module-notes/agent/core/contracts.py.md">contracts.py</a>       # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri
+│   │   ├── <a href="module-notes/agent/core/event_stream.py.md">event_stream.py</a>    # Ajan olay veriyolu (canlı durum akışı)
+│   │   ├── <a href="module-notes/agent/core/memory_hub.py.md">memory_hub.py</a>      # Multi-agent bellek yönetim merkezi
+│   │   └── <a href="module-notes/agent/core/registry.py.md">registry.py</a>        # Ajan ve yetenek kayıt defteri
 │   └── roles/
-│       ├── <a href="docs/module-notes/agent/roles/__init__.py.md">__init__.py</a>
-│       ├── <a href="docs/module-notes/agent/roles/coder_agent.py.md">coder_agent.py</a>     # Dosya/kod odaklı uzman ajan
-│       ├── <a href="docs/module-notes/agent/roles/researcher_agent.py.md">researcher_agent.py</a> # Web + RAG odaklı uzman ajan
-│       └── <a href="docs/module-notes/agent/roles/reviewer_agent.py.md">reviewer_agent.py</a>  # Test koşturan, kod kalitesini denetleyen QA ajanı
+│       ├── <a href="module-notes/agent/roles/__init__.py.md">__init__.py</a>
+│       ├── <a href="module-notes/agent/roles/coder_agent.py.md">coder_agent.py</a>     # Dosya/kod odaklı uzman ajan
+│       ├── <a href="module-notes/agent/roles/researcher_agent.py.md">researcher_agent.py</a> # Web + RAG odaklı uzman ajan
+│       └── <a href="module-notes/agent/roles/reviewer_agent.py.md">reviewer_agent.py</a>  # Test koşturan, kod kalitesini denetleyen QA ajanı
 │
 ├── core/
-│   ├── <a href="docs/module-notes/core/__init__.py.md">__init__.py</a>
-│   ├── <a href="docs/module-notes/core/db.py.md">db.py</a>                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
-│   ├── <a href="docs/module-notes/core/llm_client.py.md">llm_client.py</a>          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
-│   ├── <a href="docs/module-notes/core/llm_metrics.py.md">llm_metrics.py</a>         # Token, maliyet ve Prometheus metrik toplayıcısı
-│   ├── <a href="docs/module-notes/core/memory.py.md">memory.py</a>              # Kalıcı çok oturumlu bellek (DB destekli)
-│   ├── <a href="docs/module-notes/core/rag.py.md">rag.py</a>                 # ChromaDB + BM25 hibrit RAG motoru
+│   ├── <a href="module-notes/core/__init__.py.md">__init__.py</a>
+│   ├── <a href="module-notes/core/db.py.md">db.py</a>                  # Veritabanı bağlantısı, kullanıcı ve kota tabloları
+│   ├── <a href="module-notes/core/llm_client.py.md">llm_client.py</a>          # Ollama + Gemini + OpenAI + Anthropic asenkron istemci
+│   ├── <a href="module-notes/core/llm_metrics.py.md">llm_metrics.py</a>         # Token, maliyet ve Prometheus metrik toplayıcısı
+│   ├── <a href="module-notes/core/memory.py.md">memory.py</a>              # Kalıcı çok oturumlu bellek (DB destekli)
+│   ├── <a href="module-notes/core/rag.py.md">rag.py</a>                 # ChromaDB + BM25 hibrit RAG motoru
 │   ├── agent_metrics.py       # Ajan bazlı metrik toplayıcı (YENİ — v3.0.x+)
 │   ├── dlp.py                 # DLP & PII maskeleme: token, key, TC kimlik no, JWT vb. (YENİ — v3.0.21+)
 │   ├── hitl.py                # Human-in-the-Loop onay geçidi: async polling, web API (YENİ — v3.0.21+)
@@ -217,36 +217,36 @@ sidar_project/
 │   └── prometheus/            # Scrape yapılandırması
 │
 ├── managers/
-│   ├── <a href="docs/module-notes/managers/__init__.py.md">__init__.py</a>
-│   ├── <a href="docs/module-notes/managers/code_manager.py.md">code_manager.py</a>        # Dosya I/O + Docker REPL + denetim
-│   ├── <a href="docs/module-notes/managers/security.py.md">security.py</a>            # OpenClaw erişim kontrol sistemi
-│   ├── <a href="docs/module-notes/managers/github_manager.py.md">github_manager.py</a>      # GitHub API entegrasyonu
-│   ├── <a href="docs/module-notes/managers/system_health.py.md">system_health.py</a>       # CPU/RAM/GPU izleme
-│   ├── <a href="docs/module-notes/managers/web_search.py.md">web_search.py</a>          # Tavily + Google + DuckDuckGo arama
-│   ├── <a href="docs/module-notes/managers/package_info.py.md">package_info.py</a>        # PyPI + npm + GitHub Releases
-│   ├── <a href="docs/module-notes/managers/todo_manager.py.md">todo_manager.py</a>        # Görev takip yöneticisi
+│   ├── <a href="module-notes/managers/__init__.py.md">__init__.py</a>
+│   ├── <a href="module-notes/managers/code_manager.py.md">code_manager.py</a>        # Dosya I/O + Docker REPL + denetim
+│   ├── <a href="module-notes/managers/security.py.md">security.py</a>            # OpenClaw erişim kontrol sistemi
+│   ├── <a href="module-notes/managers/github_manager.py.md">github_manager.py</a>      # GitHub API entegrasyonu
+│   ├── <a href="module-notes/managers/system_health.py.md">system_health.py</a>       # CPU/RAM/GPU izleme
+│   ├── <a href="module-notes/managers/web_search.py.md">web_search.py</a>          # Tavily + Google + DuckDuckGo arama
+│   ├── <a href="module-notes/managers/package_info.py.md">package_info.py</a>        # PyPI + npm + GitHub Releases
+│   ├── <a href="module-notes/managers/todo_manager.py.md">todo_manager.py</a>        # Görev takip yöneticisi
 │   ├── slack_manager.py       # Slack Bot SDK + Webhook fallback, Block Kit (YENİ — v3.0.24+)
 │   ├── jira_manager.py        # Jira Cloud REST API v3, Basic Auth / Bearer (YENİ — v3.0.24+)
 │   └── teams_manager.py       # Teams MessageCard + Adaptive Card v1.4, HITL onay kartı (YENİ — v3.0.24+)
 │
 ├── migrations/                # Alembic veritabanı geçiş dosyaları
-│   ├── <a href="docs/module-notes/migrations/env.py.md">env.py</a>
-│   ├── <a href="docs/module-notes/migrations/script.py.mako.md">script.py.mako</a>
+│   ├── <a href="module-notes/migrations/env.py.md">env.py</a>
+│   ├── <a href="module-notes/migrations/script.py.mako.md">script.py.mako</a>
 │   └── versions/
 │       ├── 0001_baseline_schema.py     # Temel şema (users, sessions, messages, quotas)
 │       ├── 0002_prompt_registry.py     # Prompt registry tablosu (v3.0.9+)
 │       └── 0003_audit_trail.py         # Tenant RBAC audit trail geçişi
 │
 ├── scripts/                   # Operasyon, test ve metrik betikleri
-│   ├── <a href="docs/module-notes/scripts/audit_metrics.sh.md">audit_metrics.sh</a>       # Kod satır sayısı ve audit metrikleri üretici
-│   ├── <a href="docs/module-notes/scripts/check_empty_test_artifacts.sh.md">check_empty_test_artifacts.sh</a> # CI kalite kapısı kontrolleri
-│   ├── <a href="docs/module-notes/scripts/collect_repo_metrics.sh.md">collect_repo_metrics.sh</a>
-│   ├── <a href="docs/module-notes/scripts/install_host_sandbox.sh.md">install_host_sandbox.sh</a> # Zero-trust sandbox (gVisor/Kata) hazırlığı
-│   ├── <a href="docs/module-notes/scripts/load_test_db_pool.py.md">load_test_db_pool.py</a>   # DB bağlantı havuzu yük testi
-│   └── <a href="docs/module-notes/scripts/migrate_sqlite_to_pg.py.md">migrate_sqlite_to_pg.py</a> # SQLite'tan PostgreSQL'e geçiş aracı
+│   ├── <a href="module-notes/scripts/audit_metrics.sh.md">audit_metrics.sh</a>       # Kod satır sayısı ve audit metrikleri üretici
+│   ├── <a href="module-notes/scripts/check_empty_test_artifacts.sh.md">check_empty_test_artifacts.sh</a> # CI kalite kapısı kontrolleri
+│   ├── <a href="module-notes/scripts/collect_repo_metrics.sh.md">collect_repo_metrics.sh</a>
+│   ├── <a href="module-notes/scripts/install_host_sandbox.sh.md">install_host_sandbox.sh</a> # Zero-trust sandbox (gVisor/Kata) hazırlığı
+│   ├── <a href="module-notes/scripts/load_test_db_pool.py.md">load_test_db_pool.py</a>   # DB bağlantı havuzu yük testi
+│   └── <a href="module-notes/scripts/migrate_sqlite_to_pg.py.md">migrate_sqlite_to_pg.py</a> # SQLite'tan PostgreSQL'e geçiş aracı
 │
 ├── runbooks/                  # Operasyonel kılavuzlar
-│   ├── <a href="docs/module-notes/runbooks/production-cutover-playbook.md.md">production-cutover-playbook.md</a>  # Kurumsal sürüme geçiş yönergeleri
+│   ├── <a href="module-notes/runbooks/production-cutover-playbook.md.md">production-cutover-playbook.md</a>  # Kurumsal sürüme geçiş yönergeleri
 │   ├── observability_simulation.md                                           # Jaeger + Redis + PG izlenebilirlik demo rehberi (YENİ)
 │   ├── plugin_marketplace_demo.md                                            # Plugin API yükleme + ajan çağırma demo (YENİ)
 │   └── tenant_rbac_scenarios.md                                              # Tenant A/B RBAC senaryo uçtan uca rehberi (YENİ)
@@ -266,12 +266,12 @@ sidar_project/
 │   └── vite.config.js           # Vite build konfigürasyonu
 │
 ├── web_ui/                      # Legacy / fallback Web UI
-│   ├── <a href="docs/module-notes/web_ui/index.html.md">index.html</a>
-│   ├── <a href="docs/module-notes/web_ui/style.css.md">style.css</a>
-│   ├── <a href="docs/module-notes/web_ui/chat.js.md">chat.js</a>                # WebSocket streaming, canlı durum akışı
-│   ├── <a href="docs/module-notes/web_ui/sidebar.js.md">sidebar.js</a>          # Oturum yönetimi
-│   ├── <a href="docs/module-notes/web_ui/rag.js.md">rag.js</a>                  # RAG belge UI
-│   └── <a href="docs/module-notes/web_ui/app.js.md">app.js</a>                  # Uygulama başlatma, auth, bütçe yönetimi
+│   ├── <a href="module-notes/web_ui/index.html.md">index.html</a>
+│   ├── <a href="module-notes/web_ui/style.css.md">style.css</a>
+│   ├── <a href="module-notes/web_ui/chat.js.md">chat.js</a>                # WebSocket streaming, canlı durum akışı
+│   ├── <a href="module-notes/web_ui/sidebar.js.md">sidebar.js</a>          # Oturum yönetimi
+│   ├── <a href="module-notes/web_ui/rag.js.md">rag.js</a>                  # RAG belge UI
+│   └── <a href="module-notes/web_ui/app.js.md">app.js</a>                  # Uygulama başlatma, auth, bütçe yönetimi
 │
 ├── grafana/                   # Grafana dashboard + provisioning (YENİ — v3.0.22+)
 │   ├── dashboards/sidar_overview.json      # Cache Hit Rate gauge + Hit/Miss Trend + LLM Cost panelleri
@@ -281,8 +281,8 @@ sidar_project/
 │   ├── check_env_parity.sh    # config.py ↔ .env.example parite doğrulama (YENİ — v3.0.21+)
 │   └── (diğer betikler — audit_metrics.sh, collect_repo_metrics.sh vb.)
 │
-├── <a href="docs/module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (142 test_*.py modülü / 142 tests/*.py dosyası)
-├── <a href="docs/module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
+├── <a href="module-notes/tests.md">tests/</a>                     # Kapsamlı test paketi (142 test_*.py modülü / 142 tests/*.py dosyası)
+├── <a href="module-notes/data/gitkeep.md">data/</a>                      # RAG ve varsayılan yerel depolama dosyaları
 ├── docs/                      # Proje belgeleri ve modül notları
 │   └── module-notes/          # Her modül için ayrıntılı teknik not dosyaları
 ├── helm/                      # Kubernetes Helm chart (v4.3.0 gözlemlenebilirlik genişletmeleri)
@@ -301,15 +301,17 @@ sidar_project/
 │           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
 │           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
-├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%99.9 eşik)
-├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
-├── AUDIT_REPORT_v4.0.md       # v4.0 kurumsal geçiş denetim raporu
-├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
-├── <a href="docs/module-notes/CLAUDE.md.md">CLAUDE.md</a>                  # Geliştirici rehberi
-├── <a href="docs/module-notes/PROJE_RAPORU.md.md">PROJE_RAPORU.md</a>            # Ana mimari ve denetim raporu
-├── <a href="docs/module-notes/README.md.md">README.md</a>                  # Proje tanıtım ve kurulum belgesi
-├── <a href="docs/module-notes/RFC-MultiAgent.md.md">RFC-MultiAgent.md</a>          # Multi-agent mimari tasarım dokümanı
-└── <a href="docs/module-notes/SIDAR.md.md">SIDAR.md</a>                   # Sistem promptları ve proje kuralları
+├── <a href="module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%99.9 eşik)
+├── <a href="module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
+├── audits/
+│   └── AUDIT_REPORT.md      # v4.0 kurumsal geçiş denetim raporu
+├── <a href="../CHANGELOG.md">CHANGELOG.md</a>                       # Sürüm notları ve değişiklik geçmişi
+├── <a href="../CLAUDE.md">CLAUDE.md</a>                             # Geliştirici rehberi
+├── PROJE_RAPORU.md                                               # Ana mimari ve denetim raporu
+├── <a href="../README.md">README.md</a>                             # Proje tanıtım ve kurulum belgesi
+├── rfcs/
+│   └── <a href="rfcs/RFC-MultiAgent.md">RFC-MultiAgent.md</a>       # Multi-agent mimari tasarım dokümanı
+└── <a href="../SIDAR.md">SIDAR.md</a>                               # Sistem promptları ve proje kuralları
 </pre>
 
 ---
@@ -318,57 +320,57 @@ sidar_project/
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-agent swarm + OTel) genişlemelerini yansıtacak şekilde sadeleştirilmiş bir dizin sunar. Ayrıntılı modül notu bulunan dosyalar `docs/module-notes/` altına bağlanmış, henüz ayrı notu olmayan yeni modüller için ise doğrudan kaynak dosya adı belirtilmiştir.
+Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-agent swarm + OTel) genişlemelerini yansıtacak şekilde sadeleştirilmiş bir dizin sunar. Ayrıntılı modül notu bulunan dosyalar `module-notes/` altına bağlanmış, henüz ayrı notu olmayan yeni modüller için ise doğrudan kaynak dosya adı belirtilmiştir.
 
 ### 3.A Çekirdek Giriş Dosyaları
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.1 | `config.py` | [docs/module-notes/config.py.md](docs/module-notes/config.py.md) |
-| 3.2 | `main.py` | [docs/module-notes/main.py.md](docs/module-notes/main.py.md) |
-| 3.3 | `cli.py` | [docs/module-notes/cli.py.md](docs/module-notes/cli.py.md) |
-| 3.4 | `web_server.py` | [docs/module-notes/web_server.py.md](docs/module-notes/web_server.py.md) |
+| 3.1 | `config.py` | [module-notes/config.py.md](module-notes/config.py.md) |
+| 3.2 | `main.py` | [module-notes/main.py.md](module-notes/main.py.md) |
+| 3.3 | `cli.py` | [module-notes/cli.py.md](module-notes/cli.py.md) |
+| 3.4 | `web_server.py` | [module-notes/web_server.py.md](module-notes/web_server.py.md) |
 
 ### 3.B Çoklu Ajan (Multi-Agent Swarm) ve Dinamik Rol Mimarisi
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.5 | `agent/sidar_agent.py` | [docs/module-notes/agent/sidar_agent.py.md](docs/module-notes/agent/sidar_agent.py.md) |
-| 3.6 | `agent/auto_handle.py` | [docs/module-notes/agent/auto_handle.py.md](docs/module-notes/agent/auto_handle.py.md) |
-| 3.7 | `agent/definitions.py`, `agent/tooling.py`, `agent/base_agent.py` | [docs/module-notes/agent/definitions.py.md](docs/module-notes/agent/definitions.py.md) / [docs/module-notes/agent/tooling.py.md](docs/module-notes/agent/tooling.py.md) / [docs/module-notes/agent/base_agent.py.md](docs/module-notes/agent/base_agent.py.md) |
-| 3.8 | `agent/core/supervisor.py`, `agent/swarm.py` | [docs/module-notes/agent/core/supervisor.py.md](docs/module-notes/agent/core/supervisor.py.md); `agent/swarm.py` için ayrı modül notu henüz yok |
-| 3.9 | `agent/registry.py`, `agent/core/registry.py` | [docs/module-notes/agent/core/registry.py.md](docs/module-notes/agent/core/registry.py.md); `agent/registry.py` için ayrı modül notu henüz yok |
-| 3.10 | `agent/core/contracts.py`, `agent/core/event_stream.py`, `agent/core/memory_hub.py` | [docs/module-notes/agent/core/contracts.py.md](docs/module-notes/agent/core/contracts.py.md), [docs/module-notes/agent/core/event_stream.py.md](docs/module-notes/agent/core/event_stream.py.md), [docs/module-notes/agent/core/memory_hub.py.md](docs/module-notes/agent/core/memory_hub.py.md) |
-| 3.11 | `agent/roles/coder_agent.py`, `researcher_agent.py`, `reviewer_agent.py` | [docs/module-notes/agent/roles/coder_agent.py.md](docs/module-notes/agent/roles/coder_agent.py.md), [docs/module-notes/agent/roles/researcher_agent.py.md](docs/module-notes/agent/roles/researcher_agent.py.md), [docs/module-notes/agent/roles/reviewer_agent.py.md](docs/module-notes/agent/roles/reviewer_agent.py.md) |
+| 3.5 | `agent/sidar_agent.py` | [module-notes/agent/sidar_agent.py.md](module-notes/agent/sidar_agent.py.md) |
+| 3.6 | `agent/auto_handle.py` | [module-notes/agent/auto_handle.py.md](module-notes/agent/auto_handle.py.md) |
+| 3.7 | `agent/definitions.py`, `agent/tooling.py`, `agent/base_agent.py` | [module-notes/agent/definitions.py.md](module-notes/agent/definitions.py.md) / [module-notes/agent/tooling.py.md](module-notes/agent/tooling.py.md) / [module-notes/agent/base_agent.py.md](module-notes/agent/base_agent.py.md) |
+| 3.8 | `agent/core/supervisor.py`, `agent/swarm.py` | [module-notes/agent/core/supervisor.py.md](module-notes/agent/core/supervisor.py.md); `agent/swarm.py` için ayrı modül notu henüz yok |
+| 3.9 | `agent/registry.py`, `agent/core/registry.py` | [module-notes/agent/core/registry.py.md](module-notes/agent/core/registry.py.md); `agent/registry.py` için ayrı modül notu henüz yok |
+| 3.10 | `agent/core/contracts.py`, `agent/core/event_stream.py`, `agent/core/memory_hub.py` | [module-notes/agent/core/contracts.py.md](module-notes/agent/core/contracts.py.md), [module-notes/agent/core/event_stream.py.md](module-notes/agent/core/event_stream.py.md), [module-notes/agent/core/memory_hub.py.md](module-notes/agent/core/memory_hub.py.md) |
+| 3.11 | `agent/roles/coder_agent.py`, `researcher_agent.py`, `reviewer_agent.py` | [module-notes/agent/roles/coder_agent.py.md](module-notes/agent/roles/coder_agent.py.md), [module-notes/agent/roles/researcher_agent.py.md](module-notes/agent/roles/researcher_agent.py.md), [module-notes/agent/roles/reviewer_agent.py.md](module-notes/agent/roles/reviewer_agent.py.md) |
 | 3.12 | `plugins/` (`crypto_price_agent.py`, `upload_agent.py`) | Ayrı modül notu henüz yok; runtime plugin marketplace örnekleri |
 
 ### 3.C Core (Kurumsal Sistemler) ve Manager Katmanı
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.13 | `core/llm_client.py` | [docs/module-notes/core/llm_client.py.md](docs/module-notes/core/llm_client.py.md) |
+| 3.13 | `core/llm_client.py` | [module-notes/core/llm_client.py.md](module-notes/core/llm_client.py.md) |
 | 3.14 | `core/router.py` | Ayrı modül notu henüz yok; maliyet/bağlam odaklı model yönlendirme katmanı |
 | 3.15 | `core/dlp.py` | Ayrı modül notu henüz yok; DLP & PII maskeleme katmanı |
 | 3.16 | `core/hitl.py` | Ayrı modül notu henüz yok; Human-in-the-Loop onay akışı |
 | 3.17 | `core/judge.py`, `core/active_learning.py` | Ayrı modül notu henüz yok; LLM-as-a-Judge + aktif öğrenme geri besleme döngüsü |
-| 3.18 | `core/entity_memory.py`, `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
-| 3.19 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
-| 3.20 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
-| 3.21 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
+| 3.18 | `core/entity_memory.py`, `core/memory.py` | [module-notes/core/memory.py.md](module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
+| 3.19 | `core/rag.py` | [module-notes/core/rag.py.md](module-notes/core/rag.py.md) |
+| 3.20 | `core/db.py` | [module-notes/core/db.py.md](module-notes/core/db.py.md) |
+| 3.21 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [module-notes/core/llm_metrics.py.md](module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
 | 3.22 | `core/vision.py` | Ayrı modül notu henüz yok; multimodal mockup/görsel işleme hattı |
-| 3.23 | `managers/security.py`, `managers/code_manager.py` | [docs/module-notes/managers/security.py.md](docs/module-notes/managers/security.py.md), [docs/module-notes/managers/code_manager.py.md](docs/module-notes/managers/code_manager.py.md) |
-| 3.24 | `managers/github_manager.py`, `managers/package_info.py` | [docs/module-notes/managers/github_manager.py.md](docs/module-notes/managers/github_manager.py.md), [docs/module-notes/managers/package_info.py.md](docs/module-notes/managers/package_info.py.md) |
-| 3.25 | `managers/system_health.py`, `managers/web_search.py`, `managers/todo_manager.py` | [docs/module-notes/managers/system_health.py.md](docs/module-notes/managers/system_health.py.md), [docs/module-notes/managers/web_search.py.md](docs/module-notes/managers/web_search.py.md), [docs/module-notes/managers/todo_manager.py.md](docs/module-notes/managers/todo_manager.py.md) |
+| 3.23 | `managers/security.py`, `managers/code_manager.py` | [module-notes/managers/security.py.md](module-notes/managers/security.py.md), [module-notes/managers/code_manager.py.md](module-notes/managers/code_manager.py.md) |
+| 3.24 | `managers/github_manager.py`, `managers/package_info.py` | [module-notes/managers/github_manager.py.md](module-notes/managers/github_manager.py.md), [module-notes/managers/package_info.py.md](module-notes/managers/package_info.py.md) |
+| 3.25 | `managers/system_health.py`, `managers/web_search.py`, `managers/todo_manager.py` | [module-notes/managers/system_health.py.md](module-notes/managers/system_health.py.md), [module-notes/managers/web_search.py.md](module-notes/managers/web_search.py.md), [module-notes/managers/todo_manager.py.md](module-notes/managers/todo_manager.py.md) |
 | 3.26 | `managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py` | Ayrı modül notu henüz yok; kurumsal iletişim ve iş akışı entegrasyonları |
 
 ### 3.D UI, Altyapı ve Operasyon
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.27 | `web_ui/`, `web_ui_react/` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok |
-| 3.28 | `github_upload.py`, `gui_launcher.py` | [docs/module-notes/github_upload.py.md](docs/module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
-| 3.29 | `migrations/`, `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
-| 3.30 | `docker/`, `runbooks/`, `helm/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](docs/module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
+| 3.27 | `web_ui/`, `web_ui_react/` | [module-notes/web_ui/index.html.md](module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok |
+| 3.28 | `github_upload.py`, `gui_launcher.py` | [module-notes/github_upload.py.md](module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
+| 3.29 | `migrations/`, `scripts/` | [module-notes/migrations/env.py.md](module-notes/migrations/env.py.md) |
+| 3.30 | `docker/`, `runbooks/`, `helm/` | [module-notes/docker/prometheus/prometheus.yml.md](module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
 
 ---
 
@@ -1307,7 +1309,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu proje, v4.x serisi ile birlikte “kişisel asistan” ölçeğinden çıkarak **kurumsal otonom operasyon merkezi** niteliğine ulaşmıştır. `CHANGELOG.md` içindeki `4.0.0`, `v4.2.0`, `v4.2.1` ve `4.3.0` kilometre taşları; güncel kod tabanında aynı omurga üzerinde birleşen dört ana dönüşümü doğrular: **kurumsal veri düzlemi**, **çoklu-ajan swarm orkestrasyonu**, **dağıtık gözlemlenebilirlik** ve **modern React SPA yönetim yüzeyi**.
+Bu proje, v4.x serisi ile birlikte “kişisel asistan” ölçeğinden çıkarak **kurumsal otonom operasyon merkezi** niteliğine ulaşmıştır. `../CHANGELOG.md` içindeki `4.0.0`, `v4.2.0`, `v4.2.1` ve `4.3.0` kilometre taşları; güncel kod tabanında aynı omurga üzerinde birleşen dört ana dönüşümü doğrular: **kurumsal veri düzlemi**, **çoklu-ajan swarm orkestrasyonu**, **dağıtık gözlemlenebilirlik** ve **modern React SPA yönetim yüzeyi**.
 
 > **Kısa özet:** v4.0 ile güvenlik/veri temeli kuruldu; v4.2 ile Supervisor destekli Swarm, plugin marketplace ve OTel izlenebilirliği operasyonel hale geldi; v4.3.0 ile React SPA, sürüm/dokümantasyon senkronizasyonu ve sıfır borç kalitesini koruyan CI politikaları aynı baseline üzerinde birleştirildi.
 
@@ -1334,7 +1336,7 @@ Bu bantta proje, tekli ajan akışından kurumsal **Supervisor + Swarm** mimaris
 Bu bant, v4 mimarisinin yalnızca backend kabiliyeti olarak kalmayıp ürün seviyesinde operasyonel bir yüz kazanmasını temsil eder:
 
 - **Modern React SPA geçişi:** `web_ui_react/` artık standart kullanıcı deneyimidir; `web_server.py` derlenmiş React dağıtımını önceliklendirir, yönetim panelleri (Prompt Admin, Agent Manager, Swarm Flow, tenant ekranları) aynı SPA kabuğunda birleşir.
-- **Dokümantasyon/sürüm tekilleştirmesi:** `CHANGELOG.md`, `README.md`, `config.py`, teknik referanslar ve proje raporu `v4.3.0` çizgisine hizalanarak operasyonda tek bir sürüm gerçeği oluşturuldu.
+- **Dokümantasyon/sürüm tekilleştirmesi:** `../CHANGELOG.md`, `README.md`, `config.py`, teknik referanslar ve proje raporu `v4.3.0` çizgisine hizalanarak operasyonda tek bir sürüm gerçeği oluşturuldu.
 - **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%99.9` olarak kodlanmış olsa da, repo kültürü fiilî tam kapsama hedefiyle yürür; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
 - **Kurumsal kapanış yorumu:** Bu aşamada React SPA, swarm, semantic cache, OTel, tenant RBAC/audit, DLP/HITL ve kurumsal deployment yüzeyleri aynı sistem üzerinde bir araya gelmiş; v4.x serisi “özellik ekleme” aşamasını tamamlayıp **operasyonel enterprise platform** seviyesine ulaşmıştır.
 
@@ -1525,7 +1527,7 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 
 Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%99.9 coverage hard gate** uygular; bu değer depo kültüründeki fiilî tam kapsama hedefinin ölçülebilir ve repo içinde gerçekten kodlanmış karşılığıdır.
 
-Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v4.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
+Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `../CHANGELOG.md`, `audits/AUDIT_REPORT.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
 
 ### Güncel Kapanış Özeti (v4.3.0)
 
@@ -1533,4 +1535,4 @@ Son doğrulama turlarında migration akışları, swarm delegasyonları, audit t
 - **Operasyonel durum:** Güvenlik/operasyon puanı `10.0/10`; açık bulgu yok; audit trail, observability ve swarm orkestrasyonu birlikte doğrulanmış durumda.
 - **Kurumsal sonuç:** Sidar artık yalnızca “kod yazan ajan” değil; React SPA, PostgreSQL/pgvector, Redis semantic cache, DLP/HITL güvenlik duvarı, Supervisor-first swarm ve telemetry-first observability katmanlarını tek üründe birleştiren üretim adayı bir platformdur.
 
-> **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `CHANGELOG.md` ve `AUDIT_REPORT_v4.0.md` dosyalarına başvurulmalıdır.
+> **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `../CHANGELOG.md` ve `audits/AUDIT_REPORT.md` dosyalarına başvurulmalıdır.

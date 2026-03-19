@@ -1,14 +1,19 @@
 # Sürüm Geçmişi (Changelog)
 
-> **Not:** Bu dosya tam denetim ve çözüm geçmişini içerir. PROJE_RAPORU.md §11 bulgu tablosundan bu dosyaya bağlantı kurulmaktadır.
+> **Not:** Bu dosya tam denetim ve çözüm geçmişini içerir. docs/PROJE_RAPORU.md §11 bulgu tablosundan bu dosyaya bağlantı kurulmaktadır.
 
 ---
 
 ## [4.3.0] - 2026-03-19
 Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipli kod tabanı ile senkronize edildi.
 
+### ✅ Dokümantasyon Bilgi Mimarisi Temizliği
+**Dosyalar:** `README.md`, `CHANGELOG.md`, `SIDAR.md`, `docs/PROJE_RAPORU.md`, `docs/TEKNIK_REFERANS.md`, `docs/audits/AUDIT_REPORT.md`, `docs/rfcs/RFC-MultiAgent.md`, `tests/test_release_version_bump.py`
+- Kök dizindeki kapsamlı rapor ve referans belgeleri `docs/` altına taşınarak root bilgi mimarisi sadeleştirildi; README ve changelog içindeki tüm yönlendirmeler yeni yollarla hizalandı.
+- `PROJE_RAPORU.md` içindeki modül notu linkleri, RFC/audit referansları ve arşiv bağlantıları yeni `docs/` hiyerarşisine göre düzeltilerek taşınma sonrası bozuk relatif link oluşması engellendi.
+
 ### ✅ Dokümantasyon ve Sürüm Senkronizasyonu
-**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md`, `TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
+**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `docs/PROJE_RAPORU.md`, `docs/audits/AUDIT_REPORT.md`, `docs/TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
 - Runtime, paket ve dağıtım yüzeyi `v4.3.0` sürüm çizgisine taşındı; README, teknik referans, proje raporu ve geliştirici rehberleri aynı baseline ile hizalandı.
 - Takipli depo ölçümleri yeniden doğrulandı: **58** üretim Python dosyası / **20.582** satır, **151** test dosyası / **39.147** satır, toplam takipli Python **209** dosya / **59.729** satır, Web UI toplamı **6.105** satır ve REST endpoint envanteri **60** olarak raporlara işlendi.
 - Teknik referans turunda API/DB/env sözleşmeleri tekrar kontrol edildi; bu sürümde yeni endpoint, tablo veya config anahtarı eklenmediği için envanter korunurken başlık ve senkronizasyon notları güncellendi.
@@ -24,7 +29,7 @@ Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipl
 Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıyla senkronize edildi.
 
 ### ✅ Sürüm ve Mimari Senkronizasyonu
-**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `PROJE_RAPORU.md`, `README.md`
+**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `docs/PROJE_RAPORU.md`, `README.md`
 - Runtime ve paket sürümleri `3.0.0` / `0.0.0` seviyelerinden `4.0.0` değerine yükseltildi; böylece config, paket metadata'sı ve v4 audit anlatısı aynı sürüm çizgisine taşındı.
 - React tabanlı `web_ui_react/` arayüzünün standart kullanıcı deneyimi olduğu, legacy `web_ui/` klasörünün ise geriye dönük uyumluluk/fallback amacıyla korunduğu dokümante edildi.
 - SQLite'tan PostgreSQL + `pgvector` altyapısına geçiş, Alembic migration zinciri ve kurumsal deployment yüzeyinin (Docker Compose + Helm/Redis/Jaeger/OTel) proje raporlarında daha açık biçimde özetlenmesi sağlandı.
@@ -36,7 +41,7 @@ Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıy
 FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut repo durumu ile senkronize edildi.
 
 ### ✅ Dokümantasyon ve Operasyon Senkronizasyonu
-**Dosyalar:** `pyproject.toml`, `.github/workflows/migration-cutover-checks.yml`, `README.md`, `RFC-MultiAgent.md`, `TEKNIK_REFERANS.md`, `runbooks/production-cutover-playbook.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md`
+**Dosyalar:** `pyproject.toml`, `.github/workflows/migration-cutover-checks.yml`, `README.md`, `docs/rfcs/RFC-MultiAgent.md`, `docs/TEKNIK_REFERANS.md`, `runbooks/production-cutover-playbook.md`, `docs/PROJE_RAPORU.md`, `docs/audits/AUDIT_REPORT.md`
 - `pyproject.toml` paket sürümü `config.py` içindeki runtime sürümüyle uyumlu olacak şekilde `3.0.0` olarak düzeltildi.
 - PostgreSQL cutover workflow'undan diskte bulunmayan `requirements.txt` bağımlılığı kaldırıldı; migration provası artık `requirements-dev.txt + asyncpg` ile çalışır.
 - README, React/Vite geliştirme akışı, SPA öncelikli servisleme modeli, güncel proje ağacı ve 149 test modülü / 151 test dosyası gerçekliğiyle yenilendi.
@@ -47,7 +52,7 @@ FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut r
 FAZ-10 — Autonomous LLMOps kapanış anlatısı kurumsal operasyon seviyesiyle eşitlendi.
 
 ### ✅ FAZ-10 — Faz 4 Operasyonel Olarak Kapatıldı
-**Dosyalar:** `PROJE_RAPORU.md`, `RFC-MultiAgent.md`, `AUDIT_REPORT_v4.0.md`, `README.md`
+**Dosyalar:** `docs/PROJE_RAPORU.md`, `docs/rfcs/RFC-MultiAgent.md`, `docs/audits/AUDIT_REPORT.md`, `README.md`
 - Faz 4; aktif öğrenme, vision, cost-aware routing ve dış sistem orkestrasyonunu kapsayan birleşik **Autonomous LLMOps** katmanı olarak yeniden çerçevelendi.
 - Audit trail ve direct `p2p.v1` handoff doğrulamaları bu kabiliyetlerin sadece mevcut değil, denetlenebilir ve rollout'a hazır olduğunu gösterecek şekilde dokümante edildi.
 - Proje raporu ve RFC tarafında `v4.2.0` operasyonel kapanış dili, audit ve README tarafında da görünür hâle getirildi.
@@ -56,7 +61,7 @@ FAZ-10 — Autonomous LLMOps kapanış anlatısı kurumsal operasyon seviyesiyle
 FAZ-10 — Autonomous LLMOps ürün anlatısı konsolide edildi.
 
 ### ✅ FAZ-10 — Faz 4 Ürün Hikâyesi Tek Çatı Altında Toplandı
-**Dosyalar:** `PROJE_RAPORU.md`, `README.md`
+**Dosyalar:** `docs/PROJE_RAPORU.md`, `README.md`
 - Active Learning/LoRA, Vision Pipeline, cost-aware routing ve Slack/Jira/Teams orkestrasyonu birlikte Faz 4 ürün hikâyesi olarak yeniden yazıldı.
 - Faz 4 artık tekil özellik listesi yerine kapalı döngü öğrenme + çok modlu üretim + otonom entegrasyon yönetimi ekseninde anlatılıyor.
 
@@ -323,7 +328,7 @@ Eksik v4.0 konfigürasyon değişkenleri için yeni bölümler eklendi:
 - **Event Bus:** `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP`
 - **OTel genişletme:** `OTEL_SERVICE_NAME`, `OTEL_INSTRUMENT_FASTAPI`, `OTEL_INSTRUMENT_HTTPX`
 
-### ✅ PROJE_RAPORU.md v3.0.11 Güncellendi
+### ✅ docs/PROJE_RAPORU.md v3.0.11 Güncellendi
 - §13'te Anlamsal Önbellekleme: 🟡 Kısmen → ✅ Tamamlandı (Redis + cosine similarity + LRU)
 - §13'te Dinamik Prompt ve Model Yönetimi: pending → ✅ Tamamlandı (migration 0002 + 4 API endpoint + Admin UI)
 - §13'te Dağıtık İzlenebilirlik: sınırlı → ✅ Tamamlandı (5 LLM sağlayıcısı + RAG OTel span)
@@ -420,7 +425,7 @@ Tam kaynak denetimi (v3.0.7) — tüm kaynak dosyalar yeniden satır satır ince
 ## [v3.0.6] - 2026-03-16
 Doğrulama turu — v3.0.4/v3.0.5 bulguları kod üzerinde yeniden teyit edildi; 2 yeni operasyonel uyumsuzluk tespit edildi (YN2-Y-1, YN2-O-1).
 
-_(Ayrıntılar PROJE_RAPORU.md §11.3'te kayıtlıdır.)_
+_(Ayrıntılar docs/PROJE_RAPORU.md §11.3'te kayıtlıdır.)_
 
 ---
 
@@ -565,7 +570,7 @@ Teknik borç temizleme + tam repo denetimi yayını — tüm v3.0 nesil teknik b
 * Web UI toplamı: 4.239 → 4.240 satır; Python kaynak toplamı: ~12.160 → 12.185 satır
 
 **`SANDBOX_*` ortam değişkeni dokümantasyon boşluğu (kapatıldı):**
-* `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_NETWORK`, `SANDBOX_PIDS_LIMIT`, `SANDBOX_TIMEOUT` değişkenleri `config.py::SANDBOX_LIMITS` sözlüğünde tanımlı olmasına rağmen `.env.example`'da ve PROJE_RAPORU.md §12.11'de yer almıyordu.
+* `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_NETWORK`, `SANDBOX_PIDS_LIMIT`, `SANDBOX_TIMEOUT` değişkenleri `config.py::SANDBOX_LIMITS` sözlüğünde tanımlı olmasına rağmen `.env.example`'da ve docs/PROJE_RAPORU.md §12.11'de yer almıyordu.
 * Her iki dosyaya da eklenip belgelenmiştir.
 
 **Denetim tespitleri (eylem gerektirmeyen / temiz):**
