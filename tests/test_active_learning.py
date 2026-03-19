@@ -312,7 +312,8 @@ def test_module_level_flag_weak_response_uses_singleton(monkeypatch):
             calls.append(kwargs)
             return True
 
-    monkeypatch.setattr("core.active_learning.get_feedback_store", lambda config=None: _Store())
+    import core.active_learning
+    monkeypatch.setattr(core.active_learning, "get_feedback_store", lambda config=None: _Store())
 
     ok = _run(
         flag_weak_response(
