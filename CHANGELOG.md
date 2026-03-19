@@ -4,6 +4,25 @@
 
 ---
 
+## [v3.0.31] - 2026-03-19
+FAZ-9 — Kurumsal audit trail ve doğrudan P2P handoff rollout'u raporlarla senkronize edildi.
+
+### ✅ FAZ-9 — Tenant RBAC Audit Trail Kayıtları Operasyonel Olarak Doğrulandı
+**Dosyalar:** `core/db.py`, `migrations/versions/0003_audit_trail.py`, `web_server.py`, `tests/test_rbac_policy_runtime.py`
+- `audit_logs` tablosu Alembic migration `0003_audit_trail` ile şemaya eklendi; kullanıcı/zaman damgası indeksleri hazırlandı.
+- `core/db.py` içine `record_audit_log()` ve `list_audit_logs()` yardımcıları eklenerek hem SQLite hem PostgreSQL yollarında denetim kaydı okunur/yazılır hale geldi.
+- `web_server.py::access_policy_middleware` artık RBAC kararlarından sonra `user_id`, `tenant_id`, `action`, `resource`, `ip_address` ve `allowed` alanlarını audit trail'e asenkron olarak yazıyor.
+- `tests/test_rbac_policy_runtime.py` hem DB round-trip'ini hem de middleware'in izin verilen erişimleri audit tablosuna kaydettiğini doğruluyor.
+
+### ✅ FAZ-9 — Direct Agent Handoff Protokolü Swarm Katmanına Taşındı
+**Dosyalar:** `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py`, `agent/swarm.py`, `tests/test_swarm_orchestrator.py`, `tests/test_supervisor_agent.py`
+- `P2PMessage` / `DelegationRequest` sözleşmeleri `handoff_depth`, `protocol` ve `meta.reason` alanlarıyla kurumsal direct handoff protokolünü standartlaştırdı.
+- `BaseAgent.delegate_to(...)` ve `SupervisorAgent._route_p2p(...)`, sender/receiver bağlamını ve hop sayısını koruyarak fail-closed P2P delegasyonu sürdürüyor.
+- `SwarmOrchestrator._direct_handoff(...)` aynı sözleşmeyi runtime orchestration akışına taşıdı; coder → reviewer → coder zincirinde bağlam kaybı olmadan uzmanlar arası el değiştirme mümkün hale geldi.
+- İlgili testler sender/receiver, `p2p_reason`, `p2p_protocol` ve `handoff_depth` alanlarının korunduğunu doğruluyor.
+
+---
+
 ## [v3.0.30] - 2026-03-19
 FAZ-8 — Son düşük öncelikli kalite borçları kapatıldı; Zero Debt doğrulama turu tamamlandı.
 
