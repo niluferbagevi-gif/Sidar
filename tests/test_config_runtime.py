@@ -127,6 +127,43 @@ def test_hardware_detection_torch_cuda_available(monkeypatch):
     assert calls["frac"] == (0.8, 0)
 
 
+def test_hardware_detection_uses_legacy_gpu_fraction_when_split_values_are_unset(monkeypatch):
+    cfg_mod = _load_config_module()
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("GPU_MEMORY_FRACTION", "0.65")
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+
+    calls = {"frac": None}
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(_dev):
+            return "Mocked RTX"
+
+        @staticmethod
+        def set_per_process_memory_fraction(frac, device):
+            calls["frac"] = (frac, device)
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+        class version:
+            cuda = "12.x"
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
+    _ = cfg_mod.check_hardware()
+    assert calls["frac"] == (0.65, 0)
+
+
 def test_hardware_detection_uses_split_llm_rag_gpu_fraction(monkeypatch):
     cfg_mod = _load_config_module()
     monkeypatch.setenv("USE_GPU", "true")
