@@ -1,9 +1,13 @@
 import asyncio
 import importlib
+import importlib.util
 import sys
 import types
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @contextmanager
@@ -64,6 +68,12 @@ def _make_sidar_agent_stub():
     return sidar_agent_stub
 
 
+def _make_researcher_agent_stub():
+    researcher_agent_stub = types.ModuleType("agent.roles.researcher_agent")
+    researcher_agent_stub.ResearcherAgent = type("ResearcherAgent", (), {})
+    return researcher_agent_stub
+
+
 def _make_bs4_stub():
     bs4_stub = types.ModuleType("bs4")
 
@@ -80,26 +90,87 @@ def _make_bs4_stub():
 
 @contextmanager
 def _load_agent_test_symbols():
+    saved_modules = {
+        name: sys.modules.get(name)
+        for name in (
+            "agent",
+            "agent.auto_handle",
+            "agent.base_agent",
+            "agent.core",
+            "agent.core.contracts",
+            "agent.core.event_stream",
+            "agent.core.memory_hub",
+            "agent.core.registry",
+            "agent.core.supervisor",
+            "agent.registry",
+            "agent.roles",
+            "agent.roles.coder_agent",
+            "agent.roles.researcher_agent",
+            "agent.roles.reviewer_agent",
+            "agent.sidar_agent",
+            "agent.swarm",
+            "bs4",
+            "core",
+            "core.llm_client",
+            "httpx",
+        )
+    }
+
+    agent_pkg = types.ModuleType("agent")
+    agent_pkg.__path__ = [str(ROOT / "agent")]
+    core_pkg = types.ModuleType("agent.core")
+    core_pkg.__path__ = [str(ROOT / "agent" / "core")]
+    roles_pkg = types.ModuleType("agent.roles")
+    roles_pkg.__path__ = [str(ROOT / "agent" / "roles")]
+    root_core_pkg = types.ModuleType("core")
+    llm_client_mod = types.ModuleType("core.llm_client")
+
+    class _LLMClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def chat(self, *args, **kwargs):
+            return {"args": args, "kwargs": kwargs}
+
+    llm_client_mod.LLMClient = _LLMClient
+    root_core_pkg.llm_client = llm_client_mod
+
     stub_pairs = (
-        ("httpx", _make_httpx_stub()),
+        ("agent", agent_pkg),
         ("agent.auto_handle", _make_auto_handle_stub()),
+        ("agent.core", core_pkg),
         ("agent.core.event_stream", _make_event_stream_stub()),
+        ("agent.roles", roles_pkg),
+        ("agent.roles.researcher_agent", _make_researcher_agent_stub()),
         ("agent.sidar_agent", _make_sidar_agent_stub()),
         ("bs4", _make_bs4_stub()),
+        ("core", root_core_pkg),
+        ("core.llm_client", llm_client_mod),
+        ("httpx", _make_httpx_stub()),
     )
-    module_names = (
-        "agent.base_agent",
-        "agent.core.contracts",
-        "agent.core.supervisor",
-        "agent.roles.coder_agent",
-        "agent.roles.reviewer_agent",
-        "agent.swarm",
+    module_specs = (
+        ("agent.core.contracts", "agent/core/contracts.py"),
+        ("agent.core.memory_hub", "agent/core/memory_hub.py"),
+        ("agent.base_agent", "agent/base_agent.py"),
+        ("agent.core.registry", "agent/core/registry.py"),
+        ("agent.roles.coder_agent", "agent/roles/coder_agent.py"),
+        ("agent.roles.reviewer_agent", "agent/roles/reviewer_agent.py"),
+        ("agent.core.supervisor", "agent/core/supervisor.py"),
+        ("agent.registry", "agent/registry.py"),
+        ("agent.swarm", "agent/swarm.py"),
     )
-    saved_modules = {name: sys.modules.get(name) for name in module_names}
 
     try:
         with _patched_modules(*stub_pairs):
-            loaded = {name: importlib.import_module(name) for name in module_names}
+            importlib.invalidate_caches()
+            loaded = {}
+            for name, rel_path in module_specs:
+                spec = importlib.util.spec_from_file_location(name, ROOT / rel_path)
+                mod = importlib.util.module_from_spec(spec)
+                assert spec and spec.loader
+                sys.modules[name] = mod
+                spec.loader.exec_module(mod)
+                loaded[name] = mod
             yield {
                 "BaseAgent": loaded["agent.base_agent"].BaseAgent,
                 "DelegationRequest": loaded["agent.core.contracts"].DelegationRequest,
