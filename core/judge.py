@@ -82,6 +82,17 @@ class JudgeResult:
         """Kalite eşiğini geçti mi? (relevance ≥ 0.5 ve risk ≤ 0.5)"""
         return self.relevance_score >= 0.5 and self.hallucination_risk <= 0.5
 
+    @property
+    def quality_score(self) -> float:
+        """Bileşik kalite skoru (0.0–1.0)."""
+        value = (self.relevance_score + (1.0 - self.hallucination_risk)) / 2.0
+        return round(max(0.0, min(1.0, value)), 4)
+
+    @property
+    def quality_score_10(self) -> float:
+        """Bileşik kalite skoru (0–10 ölçeği)."""
+        return round(self.quality_score * 10.0, 2)
+
 
 # ─── LLMJudge ────────────────────────────────────────────────────────────────
 
@@ -101,6 +112,11 @@ class LLMJudge:
         self.provider = os.getenv("JUDGE_PROVIDER", "ollama").strip().lower()
         self.sample_rate = max(0.0, min(1.0, float(os.getenv("JUDGE_SAMPLE_RATE", "0.2") or 0.2)))
         self.config = Config()
+        self.auto_feedback_enabled = os.getenv("JUDGE_AUTO_FEEDBACK_ENABLED", "true").lower() in ("1", "true", "yes")
+        self.auto_feedback_threshold = max(
+            0.0,
+            min(10.0, float(os.getenv("JUDGE_AUTO_FEEDBACK_THRESHOLD", "8.0") or 8.0)),
+        )
 
     def _should_evaluate(self) -> bool:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
@@ -195,12 +211,67 @@ class LLMJudge:
 
         # LLMMetrics'e kaydet
         _record_judge_metrics(result)
+        await self._maybe_record_feedback(query=query, documents=documents, answer=answer, result=result)
 
         logger.debug(
             "Judge değerlendirmesi — relevance=%.3f, hallucination_risk=%.3f",
             result.relevance_score, result.hallucination_risk,
         )
         return result
+
+    async def _maybe_record_feedback(
+        self,
+        *,
+        query: str,
+        documents: List[str],
+        answer: Optional[str],
+        result: JudgeResult,
+    ) -> bool:
+        """Zayıf kalite sinyalini Active Learning FeedbackStore'a yazar."""
+        if not self.auto_feedback_enabled:
+            return False
+        if result.quality_score_10 >= self.auto_feedback_threshold:
+            return False
+
+        response_text = (answer or "\n---\n".join(documents[:3])).strip()
+        if not query or not response_text:
+            return False
+
+        try:
+            from core.active_learning import get_feedback_store
+
+            store = get_feedback_store(self.config)
+            if getattr(store, "_engine", None) is None:
+                await store.initialize()
+
+            tags = [
+                "judge:auto",
+                "weak_response",
+                f"quality_score:{result.quality_score_10:.2f}/10",
+                f"relevance:{result.relevance_score:.4f}",
+                f"hallucination_risk:{result.hallucination_risk:.4f}",
+            ]
+            ok = await store.record(
+                user_id="",
+                session_id="judge:auto",
+                prompt=query,
+                response=response_text,
+                rating=-1,
+                correction="",
+                provider=result.provider,
+                model=result.model,
+                tags=tags,
+            )
+            if ok:
+                logger.info(
+                    "Judge auto-feedback kaydedildi: quality_score=%.2f/10 threshold=%.2f",
+                    result.quality_score_10,
+                    self.auto_feedback_threshold,
+                )
+            return bool(ok)
+        except Exception as exc:
+            logger.debug("Judge auto-feedback kaydı başarısız: %s", exc)
+            return False
 
     def schedule_background_evaluation(
         self,
