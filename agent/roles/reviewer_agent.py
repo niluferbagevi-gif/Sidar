@@ -54,6 +54,7 @@ class ReviewerAgent(BaseAgent):
         self.register_tool("pr_diff", self._tool_pr_diff)
         self.register_tool("list_issues", self._tool_list_issues)
         self.register_tool("run_tests", self._tool_run_tests)
+        self.register_tool("lsp_diagnostics", self._tool_lsp_diagnostics)
 
     @staticmethod
     def _extract_python_code_block(raw_text: str) -> str:
@@ -148,6 +149,93 @@ class ReviewerAgent(BaseAgent):
         commands.append(self.config.REVIEWER_TEST_COMMAND)
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
+    @staticmethod
+    def _build_lsp_candidate_paths(code_context: str) -> list[str]:
+        """LSP semantik denetimi için uygun dosya adaylarını çıkarır."""
+        supported_suffixes = (".py", ".ts", ".tsx", ".js", ".jsx")
+        return [
+            path for path in ReviewerAgent._extract_changed_paths(code_context)
+            if path.endswith(supported_suffixes)
+        ][:32]
+
+    @staticmethod
+    def _summarize_lsp_diagnostics(output: str) -> dict[str, object]:
+        """LSP diagnostics çıktısını semantik risk özetine dönüştürür."""
+        text = (output or "").strip()
+        if not text:
+            return {
+                "status": "clean",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {},
+                "summary": "LSP diagnostics çıktısı boş; semantik bulgu tespit edilmedi.",
+            }
+
+        normalized = text.lower()
+        if "temiz" in normalized and "severity=" not in normalized:
+            return {
+                "status": "clean",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {},
+                "summary": "LSP diagnostics temiz.",
+            }
+        if "bildirimi dönmedi" in normalized:
+            return {
+                "status": "no-signal",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {},
+                "summary": "LSP diagnostics sinyali alınamadı; semantik denetim tamamlanamadı.",
+            }
+        if "hatası:" in normalized:
+            return {
+                "status": "tool-error",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {},
+                "summary": "LSP diagnostics çalıştırılırken araç hatası oluştu.",
+            }
+
+        severity_counts: dict[int, int] = {}
+        for line in text.splitlines():
+            match = re.search(r"severity=(\d+)", line)
+            if match:
+                level = int(match.group(1))
+                severity_counts[level] = severity_counts.get(level, 0) + 1
+
+        total = sum(severity_counts.values())
+        errors = severity_counts.get(1, 0)
+        warnings = severity_counts.get(2, 0)
+        infos = severity_counts.get(3, 0) + severity_counts.get(4, 0)
+
+        if errors or warnings:
+            risk = "yüksek" if errors else "orta"
+            decision = "REJECT" if errors else "APPROVE"
+            status = "issues-found"
+            summary = (
+                f"LSP semantik denetimi {total} bulgu üretti "
+                f"(error={errors}, warning={warnings}, info={infos})."
+            )
+        elif total:
+            risk = "düşük"
+            decision = "APPROVE"
+            status = "info-only"
+            summary = f"LSP diagnostics yalnızca bilgilendirici {total} bulgu üretti."
+        else:
+            risk = "düşük"
+            decision = "APPROVE"
+            status = "clean"
+            summary = "LSP diagnostics temiz."
+
+        return {
+            "status": status,
+            "risk": risk,
+            "decision": decision,
+            "counts": severity_counts,
+            "summary": summary,
+        }
+
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
         return out if ok else f"[HATA] {out}"
@@ -186,6 +274,15 @@ class ReviewerAgent(BaseAgent):
             f"[OUTPUT]\n{out or '-'}"
         )
 
+    async def _tool_lsp_diagnostics(self, arg: str) -> str:
+        paths = self._build_lsp_candidate_paths(arg)
+        ok, output = await asyncio.to_thread(self.code.lsp_workspace_diagnostics, paths or None)
+        status = "OK" if ok else "FAIL-CLOSED"
+        return (
+            f"[LSP:{status}] hedefler={','.join(paths) if paths else 'workspace:auto'}\n"
+            f"[OUTPUT]\n{output or '-'}"
+        )
+
     async def run_task(self, task_prompt: str):
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
@@ -206,6 +303,9 @@ class ReviewerAgent(BaseAgent):
         if lower.startswith("run_tests"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.config.REVIEWER_TEST_COMMAND
             return await self.call_tool("run_tests", arg)
+        if lower.startswith("lsp_diagnostics"):
+            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""
+            return await self.call_tool("lsp_diagnostics", arg)
 
         if lower.startswith("review_code|"):
             context = prompt.split("|", 1)[1].strip()
@@ -219,7 +319,11 @@ class ReviewerAgent(BaseAgent):
                 regression_chunks.append(await self.call_tool("run_tests", command))
             regression_output = "\n\n".join(regression_chunks)
 
-            combo = f"{dynamic_test_output}\n\n{regression_output}".lower()
+            await self.events.publish("reviewer", "LSP tabanlı semantik denetim çalıştırılıyor...")
+            lsp_output = await self.call_tool("lsp_diagnostics", context)
+            semantic_report = self._summarize_lsp_diagnostics(lsp_output)
+
+            combo = f"{dynamic_test_output}\n\n{regression_output}\n\n{lsp_output}".lower()
             status = "PASS"
             risk = "düşük"
             decision = "APPROVE"
@@ -227,15 +331,26 @@ class ReviewerAgent(BaseAgent):
                 status = "FAIL"
                 risk = "yüksek"
                 decision = "REJECT"
+            elif semantic_report["decision"] == "REJECT":
+                status = "FAIL"
+                risk = str(semantic_report["risk"])
+                decision = "REJECT"
+            elif semantic_report["risk"] == "orta":
+                risk = "orta"
 
             await self.events.publish("reviewer", "QA kararı coder ajanına P2P ile iletiliyor...")
             feedback_payload = json.dumps(
                 {
                     "decision": decision,
                     "risk": risk,
-                    "summary": f"[REVIEW:{status}] Dinamik + regresyon testleri değerlendirildi.",
+                    "summary": (
+                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
+                        f"{semantic_report['summary']}"
+                    ),
                     "dynamic_test_output": dynamic_test_output,
                     "regression_test_output": regression_output,
+                    "lsp_diagnostics_output": lsp_output,
+                    "semantic_risk_report": semantic_report,
                 },
                 ensure_ascii=False,
             )
