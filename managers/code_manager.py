@@ -1300,8 +1300,55 @@ class CodeManager:
         except Exception as exc:
             return False, f"LSP rename hatası: {exc}"
 
-    def lsp_workspace_diagnostics(self, paths: Optional[List[str]] = None) -> Tuple[bool, str]:
-        """Açılan dosyalar için publishDiagnostics bildirimlerini toplar."""
+    @staticmethod
+    def _summarize_lsp_diagnostic_entries(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Ham diagnostic girişlerini kalite kapısı için özetler."""
+        severity_counts: Dict[int, int] = {}
+        for item in entries:
+            try:
+                severity = int(item.get("severity", 0) or 0)
+            except (TypeError, ValueError):
+                severity = 0
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+        errors = severity_counts.get(1, 0)
+        warnings = severity_counts.get(2, 0)
+        infos = severity_counts.get(3, 0) + severity_counts.get(4, 0)
+        total = len(entries)
+
+        if errors:
+            risk = "yüksek"
+            decision = "REJECT"
+            status = "issues-found"
+        elif warnings:
+            risk = "orta"
+            decision = "APPROVE"
+            status = "issues-found"
+        elif total:
+            risk = "düşük"
+            decision = "APPROVE"
+            status = "info-only"
+        else:
+            risk = "düşük"
+            decision = "APPROVE"
+            status = "clean"
+
+        summary = (
+            "LSP diagnostics temiz."
+            if total == 0
+            else f"LSP semantik denetimi {total} bulgu üretti (error={errors}, warning={warnings}, info={infos})."
+        )
+        return {
+            "status": status,
+            "risk": risk,
+            "decision": decision,
+            "counts": severity_counts,
+            "total": total,
+            "summary": summary,
+        }
+
+    def lsp_semantic_audit(self, paths: Optional[List[str]] = None) -> Tuple[bool, Dict[str, Any]]:
+        """Reviewer kalite kapısı için yapılandırılmış LSP semantik denetim raporu üretir."""
         candidate_paths = [self._normalize_lsp_path(p) for p in (paths or [])]
         if not candidate_paths:
             candidate_paths = [
@@ -1310,7 +1357,15 @@ class CodeManager:
             ][:100]
 
         if not candidate_paths:
-            return False, "LSP tanılaması için uygun dosya bulunamadı."
+            return False, {
+                "status": "no-targets",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {},
+                "issues": [],
+                "scanned_paths": [],
+                "summary": "LSP tanılaması için uygun dosya bulunamadı.",
+            }
 
         primary = candidate_paths[0]
         try:
@@ -1325,23 +1380,61 @@ class CodeManager:
                 if item.get("method") == "textDocument/publishDiagnostics"
             ]
             if not diagnostics:
-                return True, "LSP diagnostics bildirimi dönmedi."
+                return True, {
+                    "status": "no-signal",
+                    "risk": "orta",
+                    "decision": "APPROVE",
+                    "counts": {},
+                    "issues": [],
+                    "scanned_paths": [str(path) for path in candidate_paths],
+                    "summary": "LSP diagnostics bildirimi dönmedi.",
+                }
 
-            lines = []
+            issues: List[Dict[str, Any]] = []
             for item in diagnostics:
                 params = item.get("params", {})
                 path = _file_uri_to_path(params.get("uri", "file:///unknown"))
                 for diag in params.get("diagnostics", []):
                     start = (diag.get("range") or {}).get("start", {})
-                    message = str(diag.get("message", "")).strip()
-                    severity = diag.get("severity", "n/a")
-                    lines.append(
-                        f"- {path}: satır {int(start.get('line', 0)) + 1}, "
-                        f"sütun {int(start.get('character', 0)) + 1} | severity={severity} | {message}"
+                    issues.append(
+                        {
+                            "path": str(path),
+                            "line": int(start.get("line", 0)) + 1,
+                            "character": int(start.get("character", 0)) + 1,
+                            "severity": int(diag.get("severity", 0) or 0),
+                            "message": str(diag.get("message", "")).strip(),
+                        }
                     )
-            return True, "\n".join(lines) if lines else "LSP diagnostics temiz."
+
+            summary = self._summarize_lsp_diagnostic_entries(issues)
+            return True, {
+                **summary,
+                "issues": issues,
+                "scanned_paths": [str(path) for path in candidate_paths],
+            }
         except Exception as exc:
-            return False, f"LSP diagnostics hatası: {exc}"
+            return False, {
+                "status": "tool-error",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {},
+                "issues": [],
+                "scanned_paths": [str(path) for path in candidate_paths],
+                "summary": f"LSP diagnostics hatası: {exc}",
+            }
+
+    def lsp_workspace_diagnostics(self, paths: Optional[List[str]] = None) -> Tuple[bool, str]:
+        """Açılan dosyalar için publishDiagnostics bildirimlerini toplar."""
+        ok, audit = self.lsp_semantic_audit(paths)
+        issues = list(audit.get("issues", []) or [])
+        if issues:
+            lines = [
+                f"- {item['path']}: satır {item['line']}, sütun {item['character']} | "
+                f"severity={item['severity']} | {item['message']}"
+                for item in issues
+            ]
+            return ok, "\n".join(lines)
+        return ok, str(audit.get("summary", "") or "LSP diagnostics temiz.")
 
     # ─────────────────────────────────────────────
     #  KOD DENETİMİ
