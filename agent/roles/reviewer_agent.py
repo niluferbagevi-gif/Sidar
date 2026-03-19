@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import uuid
@@ -171,6 +172,18 @@ class ReviewerAgent(BaseAgent):
                 "summary": "LSP diagnostics çıktısı boş; semantik bulgu tespit edilmedi.",
             }
 
+        with contextlib.suppress(json.JSONDecodeError):
+            payload = json.loads(text)
+            if isinstance(payload, dict) and payload.get("summary"):
+                return {
+                    "status": str(payload.get("status", "clean")),
+                    "risk": str(payload.get("risk", "düşük")),
+                    "decision": str(payload.get("decision", "APPROVE")),
+                    "counts": dict(payload.get("counts", {}) or {}),
+                    "summary": str(payload.get("summary", "")),
+                    "issues": list(payload.get("issues", []) or []),
+                }
+
         normalized = text.lower()
         if "temiz" in normalized and "severity=" not in normalized:
             return {
@@ -276,12 +289,10 @@ class ReviewerAgent(BaseAgent):
 
     async def _tool_lsp_diagnostics(self, arg: str) -> str:
         paths = self._build_lsp_candidate_paths(arg)
-        ok, output = await asyncio.to_thread(self.code.lsp_workspace_diagnostics, paths or None)
-        status = "OK" if ok else "FAIL-CLOSED"
-        return (
-            f"[LSP:{status}] hedefler={','.join(paths) if paths else 'workspace:auto'}\n"
-            f"[OUTPUT]\n{output or '-'}"
-        )
+        _ok, audit = await asyncio.to_thread(self.code.lsp_semantic_audit, paths or None)
+        payload = dict(audit or {})
+        payload.setdefault("targets", paths or ["workspace:auto"])
+        return json.dumps(payload, ensure_ascii=False)
 
     async def run_task(self, task_prompt: str):
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")

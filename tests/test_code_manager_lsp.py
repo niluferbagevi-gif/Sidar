@@ -108,3 +108,37 @@ def test_lsp_workspace_diagnostics_formats_publish_notifications(monkeypatch, tm
     assert ok is True
     assert "diag.py" in output
     assert "unknown_name" in output
+
+
+def test_lsp_semantic_audit_returns_structured_summary(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "diag.py"
+    target.write_text("print(unknown_name)\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_kwargs: [
+            {
+                "method": "textDocument/publishDiagnostics",
+                "params": {
+                    "uri": CM_MOD._path_to_file_uri(target),
+                    "diagnostics": [
+                        {
+                            "message": "\"unknown_name\" is not defined",
+                            "severity": 1,
+                            "range": {"start": {"line": 0, "character": 6}},
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    ok, audit = manager.lsp_semantic_audit([str(target)])
+
+    assert ok is True
+    assert audit["decision"] == "REJECT"
+    assert audit["risk"] == "yüksek"
+    assert audit["counts"] == {1: 1}
+    assert audit["issues"][0]["path"].endswith("diag.py")

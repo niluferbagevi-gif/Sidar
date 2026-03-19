@@ -74,6 +74,18 @@ class ScanProjectTodosSchema(BaseModel):
     extensions: Optional[List[str]] = Field(default=None, description="Taranacak dosya uzantıları listesi (Örn: ['.py', '.js'])")
 
 
+class LspDiagnosticsSchema(BaseModel):
+    paths: Optional[List[str]] = Field(default=None, description="LSP diagnostics çalıştırılacak dosya yolları")
+
+
+class LspRenameSchema(BaseModel):
+    path: str
+    line: int
+    character: int
+    new_name: str
+    apply: bool = False
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -88,6 +100,8 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "github_close_issue": GithubCloseIssueSchema,
     "github_pr_diff": GithubPRDiffSchema,
     "scan_project_todos": ScanProjectTodosSchema,
+    "lsp_diagnostics": LspDiagnosticsSchema,
+    "lsp_rename": LspRenameSchema,
 }
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
