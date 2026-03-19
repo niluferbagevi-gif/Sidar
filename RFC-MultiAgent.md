@@ -32,7 +32,7 @@ Bu RFC, `sidar_agent.py` içinde tek bir ReAct döngüsüne yüklenen çok sayı
 | `agent/roles/reviewer_agent.py` | ✅ Implement edildi | PR/issue/repo review akışı eklendi. |
 | `agent/core/registry.py` | ✅ Implement edildi | Role kayıt/keşif merkezi eklendi. |
 | `agent/core/memory_hub.py` | ✅ Implement edildi | Global + role-local notlar eklendi. |
-| P2P role handoff | 🟡 Planlandı (kısmi) | İlk sürümde supervisor kontrollü delege; doğrudan role-to-role protokol bir sonraki faz. |
+| P2P role handoff | ✅ Implement edildi | `P2PMessage` protokolü + direct handoff hattı ile ajanlar Swarm içinde rol→rol doğrudan görev devredebiliyor. |
 | Legacy single-agent akışı | 🟡 Deprecation | `SidarAgent` varsayılan olarak supervisor yolunu kullanıyor. |
 
 ## 2) Problem Tanımı

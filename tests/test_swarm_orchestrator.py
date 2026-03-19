@@ -293,6 +293,61 @@ def test_swarm_orchestrator_loop_guard_stops_at_max_hops(monkeypatch, swarm_modu
     assert "maksimum devir sayısı aşıldı" in result.summary
 
 
+def test_swarm_direct_handoff_preserves_sender_and_p2p_context(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=3))
+    seen = []
+
+    class _CoderAgent:
+        async def handle(self, envelope):
+            seen.append(("coder", envelope.sender, envelope.receiver, dict(envelope.context)))
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary=swarm_module.DelegationRequest(
+                    task_id=envelope.task_id,
+                    reply_to="coder",
+                    target_agent="reviewer",
+                    payload="review_code|patch-v1",
+                    intent="review",
+                    parent_task_id="root-task",
+                    handoff_depth=0,
+                    meta={"reason": "coder_request_review"},
+                ),
+                evidence=[],
+            )
+
+    class _ReviewerAgent:
+        async def handle(self, envelope):
+            seen.append(("reviewer", envelope.sender, envelope.receiver, dict(envelope.context)))
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="review:ok",
+                evidence=["qa"],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role_name: _DummySpec(role_name))
+    monkeypatch.setattr(
+        swarm_module.AgentRegistry,
+        "create",
+        lambda role_name, **_kwargs: _CoderAgent() if role_name == "coder" else _ReviewerAgent(),
+    )
+
+    result = asyncio.run(orchestrator.run("patch hazırla", intent="code", session_id="sess-p2p"))
+
+    assert result.status == "success"
+    assert result.agent_role == "reviewer"
+    assert result.summary == "review:ok"
+    assert seen[0][0] == "coder"
+    assert seen[1][0] == "reviewer"
+    assert seen[1][1] == "coder"
+    assert seen[1][2] == "reviewer"
+    assert seen[1][3]["p2p_reason"] == "coder_request_review"
+    assert seen[1][3]["p2p_sender"] == "coder"
+    assert seen[1][3]["p2p_receiver"] == "reviewer"
+
+
 
 def test_task_router_prefers_first_capability_match(monkeypatch, swarm_module):
     router = swarm_module.TaskRouter()

@@ -124,6 +124,70 @@ class SwarmOrchestrator:
         text = " ".join((goal or "").strip().lower().split())
         return text[:max_chars]
 
+    @staticmethod
+    def _p2p_context(
+        base_context: Dict[str, str],
+        message: DelegationRequest,
+        *,
+        session_id: str,
+        hop: int,
+        route_trace: List[str],
+    ) -> Dict[str, str]:
+        return {
+            **base_context,
+            "session_id": session_id,
+            "swarm_hop": str(hop),
+            "swarm_trace": " -> ".join(route_trace[-6:]),
+            "p2p_protocol": str(getattr(message, "protocol", "p2p.v1") or "p2p.v1"),
+            "p2p_sender": str(message.reply_to or ""),
+            "p2p_receiver": str(message.target_agent or ""),
+            "p2p_intent": str(getattr(message, "intent", "") or ""),
+            "p2p_reason": str((message.meta or {}).get("reason", "")),
+            "p2p_handoff_depth": str(int(getattr(message, "handoff_depth", 0) or 0)),
+        }
+
+    async def _direct_handoff(
+        self,
+        task: SwarmTask,
+        delegation: DelegationRequest,
+        *,
+        session_id: str,
+        hop: int,
+        route_trace: List[str],
+    ) -> SwarmResult:
+        target_role = (delegation.target_agent or "").strip()
+        if not target_role:
+            raise RuntimeError("DelegationRequest target_agent boş")
+
+        delegated_task = SwarmTask(
+            goal=str(delegation.payload or task.goal),
+            intent=str(getattr(delegation, "intent", "") or task.intent),
+            context=self._p2p_context(
+                task.context,
+                delegation,
+                session_id=session_id,
+                hop=hop,
+                route_trace=route_trace,
+            ),
+            task_id=task.task_id,
+            preferred_agent=target_role,
+        )
+        logger.info(
+            "SwarmOrchestrator: [%s] direct handoff %s → %s (hop=%d)",
+            task.task_id,
+            delegation.reply_to,
+            target_role,
+            hop,
+        )
+        return await self._execute_task(
+            delegated_task,
+            session_id=session_id,
+            _hop=hop,
+            _route_trace=route_trace,
+            _sender=delegation.reply_to,
+            _parent_task_id=delegation.parent_task_id or task.task_id,
+        )
+
     # ── Tek görev ────────────────────────────────────────────────────────
 
     async def run(self, goal: str, *, intent: str = "mixed", session_id: str = "") -> SwarmResult:
@@ -186,6 +250,8 @@ class SwarmOrchestrator:
         session_id: str = "",
         _hop: int = 0,
         _route_trace: Optional[List[str]] = None,
+        _sender: str = "swarm_orchestrator",
+        _parent_task_id: Optional[str] = None,
     ) -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
         started_at = time.monotonic()
@@ -262,10 +328,11 @@ class SwarmOrchestrator:
         # Görev zarfı oluştur
         envelope = TaskEnvelope(
             task_id=task.task_id,
-            sender="swarm_orchestrator",
+            sender=_sender,
             receiver=spec.role_name,
             goal=task.goal,
             intent=task.intent,
+            parent_task_id=_parent_task_id,
             context={
                 **task.context,
                 "session_id": session_id,
@@ -304,33 +371,15 @@ class SwarmOrchestrator:
 
             if is_delegation_request(result.summary):
                 delegation = result.summary
-                target_role = (delegation.target_agent or "").strip()
-                if not target_role:
-                    raise RuntimeError("DelegationRequest target_agent boş")
-
-                delegated_task = SwarmTask(
-                    goal=str(delegation.payload or task.goal),
-                    intent=task.intent,
-                    context={
-                        **task.context,
-                        "delegated_by": spec.role_name,
-                        "delegation_reason": str(delegation.meta.get("reason", "")),
-                    },
-                    task_id=task.task_id,
-                    preferred_agent=target_role,
-                )
-                logger.info(
-                    "SwarmOrchestrator: [%s] delegasyon %s → %s (hop=%d)",
-                    task.task_id,
-                    spec.role_name,
-                    target_role,
-                    _hop + 1,
-                )
-                return await self._execute_task(
-                    delegated_task,
+                if not getattr(delegation, "reply_to", ""):
+                    delegation.reply_to = spec.role_name
+                bumped = delegation.bumped() if hasattr(delegation, "bumped") else delegation
+                return await self._direct_handoff(
+                    task,
+                    bumped,
                     session_id=session_id,
-                    _hop=_hop + 1,
-                    _route_trace=next_trace,
+                    hop=_hop + 1,
+                    route_trace=next_trace,
                 )
 
             elapsed = int((time.monotonic() - started_at) * 1000)
