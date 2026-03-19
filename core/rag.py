@@ -43,6 +43,164 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class GraphIndex:
+    """Kod tabanı içi modül bağımlılıklarını basit bir yönlü grafik olarak tutar."""
+
+    SUPPORTED_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+
+    def __init__(self, root_dir: Path, *, max_files: int = 5000) -> None:
+        self.root_dir = Path(root_dir).resolve()
+        self.max_files = max_files
+        self.nodes: Dict[str, Dict[str, str]] = {}
+        self.edges: Dict[str, set[str]] = {}
+
+    @staticmethod
+    def _normalize_node_id(root_dir: Path, path: Path) -> str:
+        return path.resolve().relative_to(root_dir.resolve()).as_posix()
+
+    def clear(self) -> None:
+        self.nodes.clear()
+        self.edges.clear()
+
+    def add_node(self, node_id: str, *, file_type: str) -> None:
+        self.nodes.setdefault(node_id, {"file_type": file_type})
+        self.edges.setdefault(node_id, set())
+
+    def add_edge(self, source: str, target: str) -> None:
+        self.edges.setdefault(source, set()).add(target)
+        self.edges.setdefault(target, set())
+
+    def _iter_source_files(self, root_dir: Path) -> List[Path]:
+        files: List[Path] = []
+        for path in root_dir.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+                continue
+            if any(part in {".git", "node_modules", "__pycache__", ".venv", "dist", "build"} for part in path.parts):
+                continue
+            files.append(path)
+            if len(files) >= self.max_files:
+                break
+        return sorted(files)
+
+    @staticmethod
+    def _python_import_candidates(current_file: Path, module_name: str, level: int, root_dir: Path) -> List[Path]:
+        base_dir = current_file.parent
+        if level > 0:
+            for _ in range(max(0, level - 1)):
+                base_dir = base_dir.parent
+        module_parts = [part for part in (module_name or "").split(".") if part]
+        base_target = base_dir.joinpath(*module_parts) if module_parts else base_dir
+        candidates = [
+            base_target.with_suffix(".py"),
+            base_target / "__init__.py",
+        ]
+        return [candidate.resolve() for candidate in candidates if candidate.exists() and candidate.is_relative_to(root_dir)]
+
+    @staticmethod
+    def _script_import_candidates(current_file: Path, import_ref: str, root_dir: Path) -> List[Path]:
+        import_ref = import_ref.strip()
+        if not import_ref.startswith("."):
+            return []
+        base_target = (current_file.parent / import_ref).resolve()
+        candidates = [
+            base_target,
+            base_target.with_suffix(".js"),
+            base_target.with_suffix(".jsx"),
+            base_target.with_suffix(".ts"),
+            base_target.with_suffix(".tsx"),
+            base_target / "index.js",
+            base_target / "index.ts",
+            base_target / "index.jsx",
+            base_target / "index.tsx",
+        ]
+        return [candidate for candidate in candidates if candidate.exists() and candidate.is_file() and candidate.is_relative_to(root_dir)]
+
+    def _extract_dependencies(self, file_path: Path, content: str) -> List[Path]:
+        deps: List[Path] = []
+        if file_path.suffix.lower() == ".py":
+            try:
+                import ast
+
+                tree = ast.parse(content)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            deps.extend(self._python_import_candidates(file_path, alias.name, 0, self.root_dir))
+                    elif isinstance(node, ast.ImportFrom):
+                        deps.extend(self._python_import_candidates(file_path, node.module or "", int(node.level or 0), self.root_dir))
+            except SyntaxError:
+                return deps
+            return deps
+
+        import_refs = re.findall(r"""(?:from|import)\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)""", content)
+        for pair in import_refs:
+            ref = next((item for item in pair if item), "")
+            deps.extend(self._script_import_candidates(file_path, ref, self.root_dir))
+        return deps
+
+    def rebuild(self, root_dir: Optional[Path] = None) -> Dict[str, int]:
+        scan_root = Path(root_dir or self.root_dir).resolve()
+        self.root_dir = scan_root
+        self.clear()
+        files = self._iter_source_files(scan_root)
+        for file_path in files:
+            node_id = self._normalize_node_id(scan_root, file_path)
+            self.add_node(node_id, file_type=file_path.suffix.lower())
+        for file_path in files:
+            source_id = self._normalize_node_id(scan_root, file_path)
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+            for dep_path in self._extract_dependencies(file_path, content):
+                target_id = self._normalize_node_id(scan_root, dep_path)
+                if target_id in self.nodes:
+                    self.add_edge(source_id, target_id)
+        edge_count = sum(len(targets) for targets in self.edges.values())
+        return {"nodes": len(self.nodes), "edges": edge_count}
+
+    def neighbors(self, node_id: str) -> List[str]:
+        return sorted(self.edges.get(node_id, set()))
+
+    def explain_dependency_path(self, source: str, target: str) -> List[str]:
+        source_id = source.strip()
+        target_id = target.strip()
+        if source_id not in self.nodes or target_id not in self.nodes:
+            return []
+        queue: List[List[str]] = [[source_id]]
+        seen = {source_id}
+        while queue:
+            path = queue.pop(0)
+            last = path[-1]
+            if last == target_id:
+                return path
+            for neighbor in sorted(self.edges.get(last, set())):
+                if neighbor in seen:
+                    continue
+                seen.add(neighbor)
+                queue.append(path + [neighbor])
+        return []
+
+    def search_related(self, query: str, top_k: int = 5) -> List[Dict[str, object]]:
+        tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
+        scored: List[Tuple[str, int]] = []
+        for node_id in self.nodes:
+            lowered = node_id.lower()
+            score = sum(lowered.count(token) * 2 for token in tokens)
+            score += len(self.edges.get(node_id, set()))
+            if score > 0:
+                scored.append((node_id, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return [
+            {
+                "id": node_id,
+                "score": score,
+                "neighbors": self.neighbors(node_id)[:5],
+            }
+            for node_id, score in scored[:top_k]
+        ]
+
+
 def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = None) -> List[List[float]]:
     """Semantic cache için metinleri normalize edilmiş embedding vektörlerine dönüştürür."""
     if not texts:
@@ -160,6 +318,13 @@ class DocumentStore:
         self._vector_backend = str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
         self._is_local_llm_provider = str(getattr(self.cfg, "AI_PROVIDER", "") or "").lower() == "ollama"
         self._local_hybrid_enabled = bool(getattr(self.cfg, "RAG_LOCAL_ENABLE_HYBRID", False))
+        self._graph_rag_enabled = bool(getattr(self.cfg, "ENABLE_GRAPH_RAG", True))
+        self._graph_root_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()) or Path.cwd()).resolve()
+        self._graph_index = GraphIndex(
+            self._graph_root_dir,
+            max_files=int(getattr(self.cfg, "GRAPH_RAG_MAX_FILES", 5000) or 5000),
+        )
+        self._graph_ready = False
 
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
@@ -733,12 +898,73 @@ class DocumentStore:
     #  ARAMA (HİBRİT)
     # ─────────────────────────────────────────────
 
+    def rebuild_graph_index(self, root_dir: Optional[str] = None) -> Tuple[bool, str]:
+        """Kod tabanı için modül bağımlılık grafiğini yeniden oluştur."""
+        if not self._graph_rag_enabled:
+            return False, "GraphRAG devre dışı."
+        target_root = Path(root_dir).resolve() if root_dir else self._graph_root_dir
+        summary = self._graph_index.rebuild(target_root)
+        self._graph_ready = True
+        return True, (
+            f"GraphIndex hazırlandı: root={target_root} "
+            f"nodes={summary['nodes']} edges={summary['edges']}"
+        )
+
+    def _ensure_graph_ready(self) -> None:
+        if self._graph_ready or not self._graph_rag_enabled:
+            return
+        self.rebuild_graph_index()
+
+    def search_graph(self, query: str, top_k: int = 5) -> Tuple[bool, str]:
+        """GraphRAG üzerinden modül ilişkilerini ve ilgili düğümleri arar."""
+        if not self._graph_rag_enabled:
+            return False, "GraphRAG devre dışı."
+
+        self._ensure_graph_ready()
+        normalized = query.strip()
+        if not normalized:
+            return False, "GraphRAG için boş sorgu gönderilemez."
+
+        if "->" in normalized:
+            source, target = [part.strip() for part in normalized.split("->", 1)]
+            return self.explain_dependency_path(source, target)
+
+        results = self._graph_index.search_related(normalized, top_k=top_k)
+        if not results:
+            return False, f"GraphRAG içinde '{query}' için ilgili modül bulunamadı."
+
+        lines = [f"[GraphRAG: {query}]", ""]
+        for item in results:
+            lines.append(f"- {item['id']} (score={item['score']})")
+            neighbors = item.get("neighbors") or []
+            if neighbors:
+                lines.append(f"  Komşular: {', '.join(neighbors)}")
+        return True, "\n".join(lines)
+
+    def explain_dependency_path(self, source: str, target: str) -> Tuple[bool, str]:
+        """İki modül arasındaki en kısa bağımlılık yolunu açıklar."""
+        if not self._graph_rag_enabled:
+            return False, "GraphRAG devre dışı."
+
+        self._ensure_graph_ready()
+        path = self._graph_index.explain_dependency_path(source.strip(), target.strip())
+        if not path:
+            return False, f"Bağımlılık yolu bulunamadı: {source} -> {target}"
+
+        lines = [f"[GraphRAG Path] {source} -> {target}", ""]
+        for index, node_id in enumerate(path, start=1):
+            lines.append(f"{index}. {node_id}")
+        return True, "\n".join(lines)
+
     def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
         if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
 
         session_docs = [k for k, v in self._index.items() if v.get("session_id", "global") == session_id]
-        if not session_docs:
+        if mode != "graph" and not session_docs:
             return False, "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>"
+
+        if mode == "graph":
+            return self.search_graph(query, top_k)
 
         if mode == "vector":
             if getattr(self, "_pgvector_available", False): return self._pgvector_search(query, top_k, session_id)
@@ -1137,7 +1363,9 @@ class DocumentStore:
             engines.append(f"ChromaDB (Chunking + {gpu_tag})")
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
-        if not engines:
-            engines.append("Anahtar Kelime")
+        engines.append("Anahtar Kelime")
+        if self._graph_rag_enabled:
+            graph_state = "hazır" if self._graph_ready else "pasif"
+            engines.append(f"GraphRAG ({graph_state})")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"  
