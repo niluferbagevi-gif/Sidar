@@ -374,6 +374,42 @@ def test_swarm_success_schedules_autonomous_feedback(monkeypatch, swarm_module):
     assert scheduled[0]["session_id"] == "sess-auto"
 
 
+def test_swarm_run_autonomous_feedback_returns_early_for_empty_prompt_or_response(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    seen = []
+    real_import = __import__
+
+    def _tracking_import(name, *args, **kwargs):
+        if name.startswith("core."):
+            seen.append(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _tracking_import)
+
+    asyncio.run(
+        orchestrator._run_autonomous_feedback(
+            prompt="",
+            response="hazır yanıt",
+            context={"agent_role": "coder"},
+            session_id="sess-empty-prompt",
+            agent_role="coder",
+            task_id="task-empty-prompt",
+        )
+    )
+    asyncio.run(
+        orchestrator._run_autonomous_feedback(
+            prompt="Görevi çöz",
+            response="",
+            context={"agent_role": "coder"},
+            session_id="sess-empty-response",
+            agent_role="coder",
+            task_id="task-empty-response",
+        )
+    )
+
+    assert seen == []
+
+
 def test_swarm_autonomous_feedback_flags_only_weak_responses(monkeypatch, swarm_module):
     orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
     calls = []
@@ -416,6 +452,36 @@ def test_swarm_autonomous_feedback_flags_only_weak_responses(monkeypatch, swarm_
     assert "agent:coder" in calls[0]["tags"]
     assert calls[0]["session_id"] == "sess-weak"
 
+
+
+def test_swarm_schedule_autonomous_feedback_returns_early_for_empty_prompt_or_response(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    calls = []
+
+    def _unexpected_loop_lookup():
+        calls.append("called")
+        raise AssertionError("get_running_loop should not be reached for empty prompt/response")
+
+    monkeypatch.setattr(swarm_module.asyncio, "get_running_loop", _unexpected_loop_lookup)
+
+    orchestrator._schedule_autonomous_feedback(
+        prompt="",
+        response="hazır yanıt",
+        context={"intent": "review"},
+        session_id="sess-empty-prompt",
+        agent_role="reviewer",
+        task_id="task-empty-prompt",
+    )
+    orchestrator._schedule_autonomous_feedback(
+        prompt="Kod incele",
+        response="",
+        context={"intent": "review"},
+        session_id="sess-empty-response",
+        agent_role="reviewer",
+        task_id="task-empty-response",
+    )
+
+    assert calls == []
 
 
 def test_task_router_prefers_first_capability_match(monkeypatch, swarm_module):
