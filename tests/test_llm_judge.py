@@ -419,6 +419,27 @@ def test_evaluate_response_extracts_numeric_score_from_textual_score(monkeypatch
     assert result.reasoning == "Bağlam güçlü."
 
 
+def test_evaluate_response_falls_back_to_default_score_when_score_has_no_numeric_value(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+    judge.provider = "ollama"
+
+    async def _fake_json(*_args, **_kwargs):
+        return {"score": "tamamen belirsiz", "reasoning": "Puan üretilemedi."}
+
+    with patch.object(judge, "_call_llm_json", side_effect=_fake_json):
+        result = _run(
+            judge.evaluate_response(
+                prompt="Değerlendir",
+                response="Yanıt",
+                context="bağlam",
+            )
+        )
+
+    assert result is not None
+    assert result.score == 5
+    assert result.reasoning == "Puan üretilemedi."
+
 def test_schedule_background_evaluation_allows_task_cancellation(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True

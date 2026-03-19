@@ -924,6 +924,127 @@ def test_llm_client_non_ollama_timeout_and_gemini_stream_fallback(llm_mod, monke
     out = asyncio.run(_collect(fac._stream_gemini_generator(_source())))
     assert out == ['wrapped:x', 'wrapped:y']
 
+
+def test_llmclient_chat_falls_back_after_routing_failure_and_records_stream_cache_skip(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12, USE_GPU=False)
+    client = llm_mod.LLMClient("ollama", cfg)
+
+    warnings = []
+    monkeypatch.setattr(client._router, "select", lambda messages, provider, model: ("openai", "gpt-route"))
+    monkeypatch.setattr(llm_mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(llm_mod, "LLMClient", lambda provider, config: (_ for _ in ()).throw(RuntimeError(f"route boom:{provider}")))
+    monkeypatch.setattr(llm_mod, "record_cache_skip", lambda: warnings.append("cache-skip"))
+
+    async def _client_chat(**kwargs):
+        async def _gen():
+            yield f"stream:{kwargs['messages'][-1]['content']}"
+
+        return _gen()
+
+    monkeypatch.setattr(client._client, "chat", _client_chat)
+
+    stream_iter = asyncio.run(
+        client.chat(
+            [{"role": "user", "content": "route me"}],
+            stream=True,
+            json_mode=False,
+        )
+    )
+    out = asyncio.run(_collect(stream_iter))
+
+    assert out == ["stream:route me"]
+    assert "cache-skip" in warnings
+    assert any("CostRouter yönlendirme başarısız" in msg for msg in warnings)
+
+
+def test_openai_stream_yields_error_payload_when_network_drops_mid_stream(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30)
+    client = llm_mod.OpenAIClient(cfg)
+    llm_mod.httpx.ReadTimeout = type("ReadTimeout", (Exception,), {})
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"ilk"}}]}'
+            raise llm_mod.httpx.ReadTimeout("stream timeout")
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def stream(self, method, url, json, headers):
+            return _StreamCtx()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    out = asyncio.run(
+        _collect(
+            client._stream_openai(
+                payload={"stream": True},
+                headers={"Authorization": "Bearer k"},
+                timeout=llm_mod.httpx.Timeout(10),
+                json_mode=False,
+            )
+        )
+    )
+
+    assert out[0] == "ilk"
+    err = json.loads(out[1])
+    assert "OpenAI akış hatası: stream timeout" in err["argument"]
+
+
+def test_ollama_stream_yields_error_payload_when_network_drops_mid_stream(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False)
+    client = llm_mod.OllamaClient(cfg)
+    llm_mod.httpx.ConnectError = type("ConnectError", (Exception,), {})
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"message":{"content":"parca-1"}}\n'
+            raise llm_mod.httpx.ConnectError("socket closed")
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def stream(self, method, url, json):
+            return _StreamCtx()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    out = asyncio.run(
+        _collect(client._stream_response("http://localhost/api/chat", {"x": 1}, timeout=llm_mod.httpx.Timeout(10)))
+    )
+
+    assert out[0] == "parca-1"
+    err = json.loads(out[1])
+    assert "Akış kesildi: socket closed" in err["argument"]
+
 def test_llmclient_non_ollama_fallback_helpers_and_stream_bridge(monkeypatch):
     llm_mod = _load_llm_client_module()
 
