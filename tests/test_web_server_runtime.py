@@ -205,6 +205,8 @@ def _install_web_server_stubs():
         GITHUB_WEBHOOK_SECRET = ""
         GITHUB_REPO = ""
         TRUSTED_PROXIES: list = []
+        ACCESS_LEVEL = "sandbox"
+        AI_PROVIDER = "ollama"
         MAX_RAG_UPLOAD_BYTES: int = 50 * 1024 * 1024  # 50 MB
 
         @staticmethod
@@ -222,6 +224,27 @@ def _install_web_server_stubs():
 
     base_agent_mod = types.ModuleType("agent.base_agent")
     base_agent_mod.BaseAgent = object
+
+    swarm_mod = types.ModuleType("agent.swarm")
+
+    class _SwarmOrchestrator:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        async def run_parallel(self, tasks, session_id=None, max_concurrency=None):
+            return []
+
+        async def run_pipeline(self, tasks, session_id=None):
+            return []
+
+    swarm_mod.SwarmOrchestrator = _SwarmOrchestrator
+
+    class _SwarmTask:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    swarm_mod.SwarmTask = _SwarmTask
 
     registry_mod = types.ModuleType("agent.registry")
 
@@ -343,14 +366,24 @@ def _install_web_server_stubs():
 
     llm_client_mod.LLMClient = _LLMClient
 
+    hitl_mod = types.ModuleType("core.hitl")
+    hitl_mod._broadcast_hook = None
+    hitl_mod.set_hitl_broadcast_hook = lambda hook: setattr(hitl_mod, "_broadcast_hook", hook)
+    hitl_mod.get_hitl_gate = lambda: types.SimpleNamespace(respond=lambda *a, **k: None, submit=lambda *a, **k: None)
+    hitl_mod.get_hitl_store = lambda: types.SimpleNamespace(list_pending=lambda: [], get=lambda *_a, **_k: None)
+    hitl_mod.HITLRequest = lambda **kwargs: types.SimpleNamespace(**kwargs)
+    hitl_mod.notify = lambda *_a, **_k: None
+
     sys.modules["agent.sidar_agent"] = agent_mod
     sys.modules["agent.base_agent"] = base_agent_mod
     sys.modules["agent.registry"] = registry_mod
+    sys.modules["agent.swarm"] = swarm_mod
     sys.modules["agent.core.event_stream"] = event_stream_mod
     sys.modules["managers"] = managers_pkg
     sys.modules["managers.system_health"] = managers_health_mod
     sys.modules["core.llm_metrics"] = core_metrics_mod
     sys.modules["core.llm_client"] = llm_client_mod
+    sys.modules["core.hitl"] = hitl_mod
 
 
 def _load_web_server():
@@ -1564,6 +1597,37 @@ def test_git_info_branches_set_branch_and_main_paths(monkeypatch):
     assert created["cfg"].ACCESS_LEVEL == "full"
     assert created["cfg"].AI_PROVIDER == "gemini"
     assert created["uvicorn"] == ("0.0.0.0", 9999, "debug")
+
+
+def test_main_uses_defaults_and_formats_banner_without_agent_initialize(monkeypatch):
+    mod = _load_web_server()
+    created = {"cfg": None, "uvicorn": None, "prints": []}
+
+    class _Agent:
+        VERSION = ""
+
+        def __init__(self, cfg):
+            created["cfg"] = cfg
+            self.memory = types.SimpleNamespace()
+
+    def _run(app, host, port, log_level):
+        created["uvicorn"] = (app, host, port, log_level)
+
+    def _print(*args, **kwargs):
+        created["prints"].append(" ".join(str(arg) for arg in args))
+
+    monkeypatch.setattr(mod, "SidarAgent", _Agent)
+    monkeypatch.setattr(mod.uvicorn, "run", _run)
+    monkeypatch.setattr("builtins.print", _print)
+    monkeypatch.setattr(sys, "argv", ["web_server.py", "--host", "0.0.0.0", "--port", "8080"])
+
+    mod.main()
+
+    assert created["cfg"].ACCESS_LEVEL == "sandbox"
+    assert created["cfg"].AI_PROVIDER == "ollama"
+    assert created["uvicorn"] == (mod.app, "0.0.0.0", 8080, "info")
+    assert any("http://localhost:8080" in line for line in created["prints"])
+    assert any("Sürüm: v?" in line for line in created["prints"])
 
 
 def test_list_files_metrics_rag_docs_todo_clear_and_github_repos_success(monkeypatch):
