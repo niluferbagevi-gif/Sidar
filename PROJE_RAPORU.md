@@ -2,8 +2,8 @@
 # SİDAR Projesi — Kapsamlı Kod Analiz Raporu (Güncel)
 
 > ---
-> 📋 **CHANGELOG:** Tüm çözülen bulgular, sürüm geçmişi ve teknik borç kapanışları için → **[CHANGELOG.md](CHANGELOG.md)**
-> _(Her denetim sonrası §11 bulgu tablosu buraya aktarılır. Rapor yalnızca aktif/açık bulgular için referans noktasıdır.)_
+> 📋 **Durum Akışı:** Sürüm farkları için **[CHANGELOG.md](CHANGELOG.md)**, ayrıntılı çözüm geçmişi için **[docs/archive/](docs/archive/)** dizinine bakınız.
+> _(Ana rapor yalnızca aktif durum özeti ve stratejik kurumsal görünüm için referans noktasıdır.)_
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
@@ -64,10 +64,10 @@
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
 - [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
-  - [11.1 Ödenmiş Teknik Borçlar (Resolved)](#111-ödenmiş-teknik-borçlar-resolved)
-  - [11.2 Gelecek İyileştirmeler (Continuous Improvement)](#112-gelecek-iyileştirmeler-continuous-improvement)
-  - [11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar](#113-2026-03-16-v306-doğrulama-turu--operasyonel-uyumsuzluklar)
-  - [11.4 2026-03-16 v3.0.7 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu](#114-2026-03-16-v307-doğrulama-turu--yeni-bulgular-ve-kapatma-durumu)
+  - [11.1 Durum Özeti Paneli](#111-durum-özeti-paneli)
+  - [11.2 Arşiv ve Yönlendirme](#112-arşiv-ve-yönlendirme)
+  - [11.3 Operasyonel İzleme Başlıkları](#113-operasyonel-i̇zleme-başlıkları)
+  - [11.4 Gelecek İyileştirmeler (Continuous Improvement)](#114-gelecek-i̇yileştirmeler-continuous-improvement)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
   - [12.1 AI Sağlayıcı](#121-ai-sağlayıcı)
   - [12.2 Güvenlik ve Erişim](#122-güvenlik-ve-erişim)
@@ -1026,147 +1026,50 @@ docs_add / docs_add_file
 
 ## 11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)
 
-> **Güncel Durum (2026-03-19 — v4.3.0):** Bu sürümde kod tabanı için “aktif teknik borç” ifadesi, klasik anlamda açık bug/backlog değil; CI kalite kapıları, telemetri ve agresif regresyon testleriyle sürekli bastırılan bir risk kategorisidir. Bu nedenle bu bölüm artık “hangi borçlar açık?” sorusundan çok, **sıfır borç durumunun nasıl korunduğunu** ve **hangi sınırların koddan değil işletim ortamından kaynaklandığını** belgelendirir.
+> **Güncel Durum (2026-03-19 — v4.3.0):** v4.3.0 itibarıyla tüm bilinen mimari ve güvenlik sorunları çözülmüş ve ilgili arşiv dosyalarına taşınmıştır. Bu bölüm artık aktif riskleri hızlıca göstermek ve tarihsel ayrıntıları doğru arşive yönlendirmek için sadeleştirilmiştir.
 
-### 11.1 Sürdürülebilir Sıfır Borcun Matematiksel Kanıtı
+### 11.1 Durum Özeti Paneli
 
-✅ **Sıfır teknik borç durumu bir söylem değil, otomatik kalite kapısıdır.** Repository’deki zorlayıcı kalite zinciri yeni kodun kapsama dışı kalmasını pratikte engeller:
+| Gösterge | Durum |
+|---|---|
+| Aktif Kritik Bulgu | **0** |
+| Aktif Sorun | **YOK** |
+| Açık Teknik Borç | **YOK** |
+| Denetim Durumu | **Zero Debt / Production Ready** |
+| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı** |
 
-- **CI doğrulaması zorunludur:** `.github/workflows/ci.yml` ana test işinde önce `run_tests.sh`, ardından ayrıca açık bir “Enforce coverage quality gate (99.9%)” adımı ile `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9` komutu çalıştırılır. Kapsamayı düşüren bir PR bu kapıda otomatik olarak reddedilir.
-- **Aynı eşik depo içinde de sabittir:** `.coveragerc` ve `run_tests.sh` aynı `99.9` kalite eşiğini tekrarlar; yani kural yalnızca CI ekranında değil, depo içindeki test komutlarının kendisinde de kodlanmıştır.
-- **Pytest keşfi merkezileştirilmiştir:** `pytest.ini` tüm `tests/` ağacını standart `test_*.py` deseniyle toplar; `pg_stress` gibi marker'lar ayrı altyapı gerektiren testleri kontrollü ama görünür biçimde çalıştırır. Böylece “test edilmeyen yeni yüzey” ihtimali minimize edilir.
-- **Kalite politikasının kendisi de test edilir:** `tests/test_coverage_policy.py` doğrudan `pytest.ini`, `run_tests.sh`, `.coveragerc` ve `ci.yml` dosyalarını okuyup kalite kapısının kaldırılmadığını doğrular. Yani sadece ürün kodu değil, kalite kuralı da regresyon testine tabidir.
-- **%100 kapsamaya yakın/fonksiyonel hedef ayrı regresyon dosyalarıyla korunur:** `tests/test_ultimate_coverage.py` ve `tests/test_missing_edge_case_coverage_final.py` gibi dosyalar uç yolları zorlayarak kapsama boşluğu bırakmama felsefesini sürdürür. Pratikte yazılı quality gate `99.9` olsa da, repo kültürü ve test isimlendirmesi “fiilî tam kapsama” hedefiyle hareket eder.
+- **Stratejik özet:** Ana rapor artık açık riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur.
+- **Versiyon durumu:** `v4.3.0` itibarıyla tüm bilinen mimari ve güvenlik sorunları çözülmüş, proje “aktif teknik borç yok” durumuna alınmıştır.
 
-> Sonuç: Bu projede “teknik borç sıfır” ifadesi, manuel iyimserlikten değil; **tekrar edilebilir test matematiğinden, otomatik coverage reddinden ve kalite politikasının da test edilmesinden** doğar.
+### 11.2 Arşiv ve Yönlendirme
 
-### 11.2 Gözlemlenebilirlik ile Gizli Borçların Proaktif Engellenmesi
+Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi için `docs/archive/` dizinindeki belgelere bakınız:
 
-Kod tabanında açık bug kalmaması tek başına yeterli değildir; kurumsal mimaride asıl risk, zamanla biriken **gizli performans borcu**dur. v4.3.0 bu borcu OpenTelemetry tabanlı gözlemlenebilirlikle erken yakalar:
+- [`docs/archive/resolved_issues_v3.md`](docs/archive/resolved_issues_v3.md) — v3.0 serisindeki teknik borç, kalite ve hata kapanışları.
+- [`docs/archive/audit_history.md`](docs/archive/audit_history.md) — v4.0 öncesi denetim geçmişi, kapanan kritik bulgular ve audit faz özetleri.
+- [`CHANGELOG.md`](CHANGELOG.md) — yalnızca sürümler arası farklar, kısa düzeltme notları ve “Teknik Borç Kapanışı” özetleri.
 
-- `web_server.py` içinde tracing etkinse uygulama FastAPI + HTTPX enstrümantasyonu ile OTLP exporter'a bağlanır; varsayılan Helm yardımcısı OTel hedefini APM collector'a, o yoksa `http://jaeger:4317` varsayılanına yönlendirir.
-- `core/llm_client.py` LiteLLM yolunda `llm.litellm.chat` span'leri üretir; provider, stream modu, model ve toplam süre gibi attribute'lar kaydedilir. Aynı desen OpenAI/Ollama/Anthropic yollarına da yayılmıştır.
-- `tests/test_otel_openai_litellm_spans.py` ve `tests/test_otel_rag_spans.py` bu span'lerin gerçekten açıldığını ve kritik attribute'ların yazıldığını doğrular; telemetri yalnızca “dokümante edilen” değil, testlenen bir davranıştır.
-- RAG tarafında yavaş sorgular, backend seçimi ve vektör yolunun davranışı span seviyesinde izlenebilir olduğu için gecikme bir “mimari borç” haline gelmeden tespit edilir; semantic cache ve router kararları bu yüzden yalnızca maliyet optimizasyonu değil, aynı zamanda borç önleme mekanizmasıdır.
+> Yönlendirme ilkesi: Ana rapor “mevcut risk ve kurumsal durum”, arşiv belgeleri ise “geçmiş çözüm hafızası” için kullanılmalıdır.
 
-> Kurumsal yorum: Bu mimaride observability sonradan eklenen dashboard katmanı değil; latent darboğazların Jaeger/OTLP/Prometheus yüzeylerinde görünür kılınması sayesinde **borç oluşumunu proaktif olarak engelleyen kontrol sistemi**dir.
+### 11.3 Operasyonel İzleme Başlıkları
 
-### 11.3 Teknik Borç Yok; Operasyonel Sınırlar Var
+Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyonel olarak düzenli izlenmelidir:
 
-Bilinen açık bug veya kronik kod borcu bulunmamakla birlikte, aşağıdaki başlıklar yazılım kusuru değil **operasyonel sınır** olarak değerlendirilmelidir:
+- **LLM kota ve hız limitleri:** Paralel multi-agent çağrıları dış sağlayıcı RPM/TPM sınırlarını etkileyebilir.
+- **Gateway / dış ağ erişimi:** LiteLLM gateway veya sağlayıcı erişim sorunları toplam yanıt süresini uzatabilir.
+- **Yerel model donanım sınırları:** Ollama, embedding ve vision akışlarında CPU/GPU/VRAM kapasitesi throughput'u belirler.
+- **Vektör veri katmanı ölçeği:** pgvector/ChromaDB indeks davranışı tenant ve belge hacmi arttıkça izlenmelidir.
+- **Redis bağımlılıkları:** Semantic cache ve event-stream yüzeyleri Redis kesintilerinde fail-safe çalışsa da gecikme profili değişebilir.
 
-- **LLM API hız limitleri ve kota sınırları:** Swarm mimarisinde uzman ajanlar paralel çağrı açabildiği için OpenAI, Anthropic veya benzeri dış sağlayıcılarda RPM/TPM limitlerine daha hızlı ulaşılabilir. Bu durum mimari hata değil, çoklu ajan paralelliğinin dış servis kotasıyla etkileşimidir.
-- **LiteLLM Gateway / dış ağ bağımlılığı:** `core/llm_client.py` gateway tabanlı bir OpenAI-uyumlu yol sunar; ancak gateway URL erişilemezse, proxy gecikirse veya dış ağda kesinti oluşursa toplam yanıt süresi uzar. Özellikle OpenRouter benzeri ara katmanlar kullanıldığında bu etki daha görünür hale gelir.
-- **Yerel model çalıştırmada donanım limiti:** Ollama/yerel embedding akışında performansı doğrudan CPU/GPU ve özellikle VRAM kapasitesi belirler. `core/rag.py` FP16/mixed-precision ile VRAM tasarrufu yapabilse de, düşük bellekli GPU'larda ajan hızı ve eşzamanlılık seviyesi doğal olarak sınırlanır.
-- **Vektör veri katmanının ölçek davranışı:** pgvector/ChromaDB hibrit arama güçlüdür; ancak tenant sayısı ve belge hacmi arttıkça vektör indeksleri ile embedding tablosunun RAM/IO davranışı yakından izlenmelidir. Büyük kurulumlarda pgvector index tuning (ör. IVFFlat/HNSW seçimi), vacuum ve kapasite planı operasyon ekibinin sorumluluğundadır.
-- **Redis ve event-stream bağımlılıkları:** Semantic cache ve event stream katmanları Redis mevcutken daha hızlı ve daha düşük maliyetli çalışır; Redis kesintisinde sistem fail-safe/fallback yollarına düşse de, latency profili değişebilir.
+### 11.4 Gelecek İyileştirmeler (Continuous Improvement)
 
-### 11.4 Ödenmiş Teknik Borçlar (Arşiv / Resolved)
+Projede aktif teknik borç kalmamaktadır; bundan sonraki iyileştirme başlıkları kapasite ve görünürlük eksenindedir:
 
-Aşağıdaki maddeler geçmişte kapanmış ve sıfır borç durumuna ulaşılmasını sağlayan başlıca düzeltmelerdir:
+- **Gelişmiş telemetri görselleştirmesi:** Ajanlar arası delegasyon sürelerinin Grafana panellerinde daha ayrıntılı kırılımlarla izlenmesi.
+- **Kurumsal kapasite planlama notları:** pgvector indeks stratejileri, Redis kapasitesi ve uzun dönem maliyet trendlerinin düzenli arşivlenmesi.
+- **Arşiv hijyeni:** Yeni kapanan bulguların ana rapora yığılmadan doğrudan `docs/archive/` altında versiyonlu biçimde tutulması.
 
-- **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
-- **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** Toplam 9 paket (`chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg` ve `opentelemetry-*` ailesi) çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
-- **[Çözüldü] Modern Paketleme (PEP 621) Geçişi:** Projenin tüm temel bağımlılıkları `requirements.txt` standardından `pyproject.toml` içindeki `dependencies` dizisine aktarılarak PEP 621 standardına tam uyum sağlandı. Ağır kütüphaneler (GPU, RAG, Telemetri) `optional-dependencies` altına alınarak kurulum profilleri hafifletildi.
-- **[Çözüldü] RAG / `DocumentStore` Senkron Blokajı:** Vektör arama işlemleri asenkron yürütme desenine geçirildi.
-- **[Çözüldü] API İmzası Kalıntıları:** Bellek başlatıcısı (`ConversationMemory`) modern veritabanı URL mimarisine uyarlandı.
-- **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
-- **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç (child process) sonlandırmaları güvenlik altına alındı.
-- **[Çözüldü] PBKDF2 Iterasyon Sayısı:** `core/db.py` satır 60'ta OWASP uyumlu 600.000 iterasyon kullanılmaktadır. Eski sürümde 120.000 olan değer güncellendi; `secrets.compare_digest` ile sabit-zamanlı karşılaştırma da aktif.
-- **[Çözüldü] Test Kapsama ve Skip Temizliği:** Legacy/skip test yükü temizlendi, kritik dallar kapsamaya alındı ve kapsama kalite kapısı depo genelinde 99.9'a sabitlendi.
-- **[Çözüldü] Legacy Web UI → React SPA Geçişi:** `web_ui_react/` Vite + React tabanlı canlı arayüz üretime alındı; `web_server.py` statik servisleme katmanı React build varsa yeni SPA'yı önceliklendirerek geriye dönük uyumlulukla çalışır hale getirildi.
-- **[Çözüldü] Temel Yetki Kontrolünden Tenant-Policy RBAC'a Geçiş:** `access_policy_middleware`, `_resolve_policy_from_request` ve `/admin/policies` uç noktalarıyla tenant/policy bazlı ince taneli erişim denetimi aktif edilerek yetkilendirme modeli derinleştirildi.
 
-### 11.5 Gelecek İyileştirmeler (Continuous Improvement)
-Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
-- **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
-- **✅ [ÇÖZÜLDÜ — FAZ-3-3] Veritabanı Yük Testleri:** PostgreSQL bağlantı havuzu stres testleri `pg-stress` CI job'ı olarak otomatikleştirildi (`ci.yml`). PostgreSQL 16 service container, Alembic migration ve `pg_stress` marker'lı testler GitHub Actions üzerinde çalışır.
-- **✅ [ÇÖZÜLDÜ — FAZ-3-3] `pytest-asyncio` Geçişi:** `conftest.py` deprecated `event_loop` fixture override kaldırıldı; `pytest.ini`'ye `asyncio_default_fixture_loop_scope = session` eklendi. Standart `pytest-asyncio` mimarisine tam geçiş tamamlandı.
-- **✅ [ÇÖZÜLDÜ — FAZ-3-1] Pydantic Model Geçişi Kalıntıları:** `web_server.py` `/auth/register` ve `/auth/login` endpoint'lerindeki `hasattr(...)` + `payload.get(...)` dead-code desenleri kaldırıldı; `payload.username` / `payload.password` alanlarına doğrudan erişime geçildi.
-
-### 11.6 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar (Kapatıldı)
-
-> **Güncelleme (v3.0.8 — 2026-03-16):** Bu turda tespit edilen her iki bulgu da giderilmiştir.
-> Kök neden analizi ve uygulanan düzeltmeler aşağıda belgelenmiştir.
-
-v3.0.6 doğrulama turunda v3.0.4/v3.0.5 bulguları yeniden kod seviyesinde gözden geçirilmiştir.
-K-1/K-2 ve YN serisi (YN-K-1, YN-Y-1..Y-3, YN-O-1) düzeltmeleri kodda korunmaktadır.
-Bununla birlikte bu turda, çözümün kendisinden bağımsız olarak test/operasyon katmanında iki yeni
-uyumsuzluk tespit edilmiştir.
-
-#### ✅ YN2-Y-1 — Kapatıldı
-
-| # | Dosya | Satır | Bulgu | Durum |
-|---|-------|-------|-------|-------|
-| YN2-Y-1 | `.github/workflows/ci.yml` | `22-24` | **Async test altyapısı bağımlılık uyumsuzluğu** | ✅ ÇÖZÜLDÜ |
-
-**Kök neden:** `ci.yml` `Install dependencies` adımı `pip install -r requirements.txt` + `pip install -r requirements-dev.txt` ikilisini çalıştırıyordu. Ancak `requirements.txt` diskte **mevcut değildi**; bu nedenle CI kurulum adımı hata veriyor, `pytest-asyncio` hiç yüklenmiyordu. `pytest.ini:4` `asyncio_mode = auto` ayarı aktif olduğu hâlde plugin eksik kalıyordu.
-
-**Uygulanan düzeltme:** `.github/workflows/ci.yml` satır 22'deki `pip install -r requirements.txt` satırı kaldırıldı. `requirements-dev.txt` zaten `-e .[rag,postgres,telemetry,dev]` komutuyla `pyproject.toml[dev]` extras'ındaki `pytest-asyncio>=0.23.0` dahil tüm bağımlılıkları yükler.
-
-**Doğrulama:** `requirements-dev.txt:3` → `-e .[rag,postgres,telemetry,dev]` · `pyproject.toml:40` → `”pytest-asyncio>=0.23.0”` dev extras'ında.
-
-#### ✅ YN2-O-1 — Kapatıldı
-
-| # | Dosya | Satır | Bulgu | Durum |
-|---|-------|-------|-------|-------|
-| YN2-O-1 | `tests/test_code_manager_runtime.py` | `280-285` | **Test beklentisi / üretim davranışı drift'i (Docker socket fallback)** | ✅ ÇÖZÜLDÜ |
-
-**Kök neden analizi:** Üretim kodu (`managers/code_manager.py:181`) WSL2 socket fallback akışında `stat.S_ISSOCK(file_stat.st_mode)` ile socket türü doğrulaması yapıyor. Raporda testin bu doğrulamayı mock'lamadığı belirtilmişti; ancak test dosyasının satır satır incelenmesi sorunun zaten giderildiğini ortaya koydu.
-
-**Mevcut kod (çözüm):** `tests/test_code_manager_runtime.py:281-285`
-```python
-class _FakeStatResult:
-    st_mode = 0
-
-monkeypatch.setattr(os, “stat”, lambda _path: _FakeStatResult())
-monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
-```
-`os.stat()` her çağrıda `st_mode=0` döndüren sahte nesne üretir; `stat.S_ISSOCK()` her zaman `True` döndürür. Fallback akışı deterministik biçimde `docker_available = True` ile sonuçlanır. Rapor, zaten uygulanmış olan bu mock'ları kaçırmıştı.
-
-#### v3.0.6 Test ve Doğrulama Notu (Güncel)
-
-* `bash scripts/collect_repo_metrics.sh` başarılı.
-* **YN2-Y-1 giderildi:** `ci.yml` artık yalnızca `requirements-dev.txt` kurulumunu çalıştırır; `pytest-asyncio` CI ortamında güvenilir biçimde yüklenir.
-* **YN2-O-1 giderildi:** `test_code_manager_runtime.py` socket mock'ları doğrulandı; test deterministik.
-
----
-
-### 11.7 2026-03-16 v3.0.7/v3.0.9 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
-
-> **Güncelleme (v3.0.9 — 2026-03-16):** Bu turda tespit edilen 6 bulgunun tamamı giderilmiştir.
-> YN3-O-4 yanlış pozitif olarak teyit edilmiştir.
-
-#### ✅ v3.0.6 Bulgu Kapatma Durumu
-
-| # | Önceki Durum | Güncel Durum | Açıklama |
-|---|-------------|-------------|----------|
-| YN2-Y-1 | 🟠 AÇIK | ✅ ÇÖZÜLDÜ | `ci.yml` `pip install -r requirements.txt` satırı kaldırıldı (dosya mevcut değildi). |
-| YN2-O-1 | 🟡 AÇIK | ✅ ÇÖZÜLDÜ | `test_code_manager_runtime.py:281-285` mock'ları zaten mevcuttu; doğrulandı. |
-
-#### ✅ YN3 Serisi — Kapatma Durumu (v3.0.9)
-
-| # | Eski Durum | Güncel Durum | Uygulanan Düzeltme |
-|---|-----------|-------------|-------------------|
-| YN3-O-4 | 🟠 Orta | ✅ YANLIŞ POZİTİF | `_load_instruction_files` sync metot — `asyncio.to_thread()` ile çağrılıyor. Thread pool'da `threading.Lock()` kullanımı **doğru** pattern. `asyncio.Lock()` thread-safe değildir. Değişiklik gerekmez. |
-| YN3-O-1 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_ANYIO_CLOSED` WebSocket handler'ın dış `except` blokuna eklendi (`web_server.py`). `anyio.ClosedResourceError` artık `WebSocketDisconnect` gibi normal çıkış olarak işleniyor. |
-| YN3-O-2 | 🟡 Orta | ✅ ÇÖZÜLDÜ | `_rate_lock` dead code kaldırıldı (`web_server.py:467`). Test dosyalarında (`test_targeted_coverage_additions.py`, `test_sidar.py`) `_rate_lock` → `_local_rate_lock` güncellendi; artık asıl production kilidi sıfırlanıyor. |
-| YN3-O-3 | 🟡 Orta | ✅ ÇÖZÜLDÜ (FAZ-3-1) | `isinstance(payload, dict)` dalları önceden kaldırılmıştı; kalan `hasattr(...)` + `payload.get(...)` dead-code desenleri de temizlendi. `/auth/register` ve `/auth/login` endpoint'lerinde artık doğrudan `payload.username` / `payload.password` erişimi kullanılıyor. |
-| YN3-D-1 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `_get_jwt_secret()` yardımcı fonksiyonu eklendi. `JWT_SECRET_KEY` boşsa `logger.critical(...)` ile uyarı verilir; `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS` `config.py`'ye taşındı. `.env.example`'a dokümantasyon eklendi. |
-| YN3-D-2 | 🟡 Düşük | ✅ ÇÖZÜLDÜ | `GRAFANA_URL` `config.py`'ye eklendi. `index()` route'u `window.__SIDAR_CONFIG__.grafanaUrl` değerini `<head>` içine inject ediyor. `index.html:286` butonu artık bu değeri kullanıyor; `.env.example`'a dokümantasyon eklendi. |
-
-#### v3.0.9 Değişen Dosyalar
-
-| Dosya | Değişiklik |
-|-------|-----------|
-| `config.py` | `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS`, `GRAFANA_URL` eklendi |
-| `web_server.py` | `_get_jwt_secret()` eklendi; `_rate_lock` kaldırıldı; `isinstance` dalları kaldırıldı; WS handler `_ANYIO_CLOSED` exception bloğu eklendi; `index()` Grafana URL inject ediyor |
-| `web_ui/index.html` | Grafana butonu `window.__SIDAR_CONFIG__.grafanaUrl` kullanıyor |
-| `tests/test_targeted_coverage_additions.py` | `_rate_lock` → `_local_rate_lock` (3 yerde) |
-| `tests/test_sidar.py` | `_rate_lock` → `_local_rate_lock` (3 yerde) |
-| `.env.example` | `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS`, `GRAFANA_URL` belgelendi |
-
----
 
 ## 12. `.env` Tam Değişken Referansı (v4.3.0 Kurumsal Sürüm)
 
