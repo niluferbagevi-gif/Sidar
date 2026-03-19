@@ -612,7 +612,7 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml` dosyalarına göre v3.0 bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; tüm bağımlılıklar `pyproject.toml` PEP 621 standardında yönetilir.)
+Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` ve `web_ui_react/package.json` dosyalarına göre v4.3.0 bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında, React SPA bağımlılıkları ise `web_ui_react/package.json` içinde yönetilir.)
 
 ### 7.1 Asenkron Altyapı ve Uygulama Çekirdeği
 
@@ -623,18 +623,21 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml
 | `python-dotenv`, `pydantic`, `cachetools`, `anyio` | ✓ Zorunlu | Konfigürasyon, doğrulama, rate-limit yardımcıları |
 | `redis` | Opsiyonel (önerilen) | Dağıtık/persist rate-limit altyapısı |
 
-### 7.2 Veritabanı, Migrasyon ve Telemetri
+### 7.2 Veritabanı, Önbellek, Migrasyon ve Telemetri
 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `SQLAlchemy` + `asyncpg` | `SQLAlchemy` çekirdek; `asyncpg` opsiyonel (`[project.optional-dependencies].postgres`) | Async PostgreSQL veri katmanı |
-| `alembic` | ✓ Zorunlu (v3.0) | Şema sürümleme ve migration zinciri |
-| `prometheus-client` | ✓ Zorunlu (v3.0) | `/metrics` ve LLM telemetri export |
-| `opentelemetry-*` | Opsiyonel (`[project.optional-dependencies].telemetry`), `ENABLE_TRACING=false` varsayılan | Tracing + OTLP export |
-| `tiktoken` | ✓ Zorunlu (v3.0) | Token ölçümü ve özetleme eşikleri |
+| `redis` | Çekirdek bağımlılık | Semantic cache ve dağıtık rate-limit altyapısı |
+| `alembic` | ✓ Zorunlu | Şema sürümleme ve migration zinciri |
+| `prometheus-client` | ✓ Zorunlu | `/metrics` ve LLM telemetri export |
+| `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` | Opsiyonel (`[project.optional-dependencies].telemetry`) | Distributed tracing + OTLP export |
+| `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-httpx` | Opsiyonel (`telemetry`) | FastAPI/HTTPX span enstrümantasyonu |
+| `tiktoken` | ✓ Zorunlu | Token ölçümü ve özetleme eşikleri |
 
 #### 7.2.1 Performans ve Ölçeklenebilirlik Notu (SQLite)
 - **SQLite Concurrency Yönetimi:** SQLite modunda çalışırken, ASGI (FastAPI) eşzamanlılığında thread çakışmalarını önlemek için global bağlantı kullanımı yerine sıralı erişim/izolasyon stratejisi zorunlu kabul edilir. Kurumsal ölçekte önerilen hedef mimari doğrudan PostgreSQL (`asyncpg` pool) işletimidir; SQLite yalnızca edge/dev senaryolarında düşünülmelidir.
+- **pgvector / psycopg2 Notu:** Kod tabanı pgvector backend desteği içerir; ancak mevcut `pyproject.toml` içinde `pgvector` veya `psycopg2` ayrı pinli bağımlılık olarak yer almaz. Kurumsal PostgreSQL kurulumunda bu destek ek runtime paketleri ile etkinleştirilir.
 
 ### 7.3 Güvenlik, Sandbox ve Donanım Gözlemlenebilirliği
 
@@ -645,17 +648,30 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml
 | `cryptography` | Opsiyonel | Fernet tabanlı şifreleme yardımcıları |
 | `python-multipart`, `packaging`, `pyyaml` | ✓ Zorunlu | Yardımcı runtime bileşenleri |
 
-### 7.4 AI Sağlayıcıları ve RAG Katmanı
+### 7.4 AI Sağlayıcıları, Gateway Desteği ve RAG Katmanı
 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
-| `openai`, `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Çoklu LLM istemci katmanı |
+| `anthropic`, `google-generativeai` | Opsiyonel (sağlayıcıya göre) | Sağlayıcıya özel resmi SDK entegrasyonları |
+| `openai` | Ayrı paket pinli değil | OpenAI ve OpenAI-uyumlu uç noktalar mevcut kodda `httpx` tabanlı istemci üzerinden kullanılır |
+| `litellm` | Ayrı paket pinli değil | LiteLLM Gateway desteği vardır; ancak mevcut repo bunu `litellm` Python SDK yerine HTTP/OpenAI-uyumlu gateway sözleşmesiyle tüketir |
 | `chromadb` + `sentence-transformers` | Opsiyonel (`[project.optional-dependencies].rag`) | Vektör tabanlı RAG ve embedding |
-| `rank-bm25` | Opsiyonel (mevcut) | BM25 tabanlı hibrit arama uyumluluğu |
-| `duckduckgo-search` + `beautifulsoup4` + `bleach` + `PyGithub` | Opsiyonel | Web/GitHub entegrasyonları; `bleach` DOM tabanlı HTML sanitizasyonu (`core/rag.py`) |
+| `rank-bm25` | Çekirdek bağımlılık | BM25 tabanlı hibrit arama uyumluluğu |
+| `duckduckgo-search` + `beautifulsoup4` + `bleach` + `PyGithub` | Opsiyonel/çekirdek karışık kullanım | Web/GitHub entegrasyonları ve HTML sanitizasyonu |
 | `torch` + `torchvision` | Opsiyonel (`[project.optional-dependencies].rag`) | Embedding ve GPU hızlandırmalı iş yükleri |
 
 **Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
+
+#### 7.4.1 Frontend (React / Node.js) Paketleri
+
+| Paket | Durum | Kullanım Yeri |
+|-------|-------|---------------|
+| `react`, `react-dom` | ✓ Zorunlu (`web_ui_react/package.json`) | Modern React SPA çekirdeği |
+| `react-router-dom` | ✓ Zorunlu | Route tabanlı SPA navigasyonu |
+| `react-markdown`, `remark-gfm`, `rehype-highlight` | ✓ Zorunlu | Sohbet/RAG çıktılarının zengin render edilmesi |
+| `zustand` | ✓ Zorunlu | React durum yönetimi |
+| `vite`, `@vitejs/plugin-react` | ✓ Zorunlu (frontend build) | Geliştirme sunucusu ve üretim build zinciri |
+| `eslint` | ✓ Zorunlu (frontend QA) | React UI lint/kalite kapısı |
 
 ### 7.5 Test ve Kalite Kapıları (Dev Bağımlılıkları)
 
@@ -663,6 +679,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml
 |-------|-------|---------------|
 | `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-benchmark` | ✓ Zorunlu (CI/QA) | Test yürütme, async test, coverage gate, benchmark |
 | `ruff`, `mypy`, `black`, `flake8` | ✓ Zorunlu (CI/QA) | Lint, statik analiz, format kalite kapıları |
+| `uv` | Ortam/araç bağımlılığı | `environment.yml` ve `uv.lock` ile hızlı kilit/paket yönetimi iş akışı |
 
 **Geçiş Notu (v3.0):**
 - `requests` bağımlılığı doğrudan runtime listesinde yer almamaktadır; ana HTTP akışı `httpx` ile asenkron modele taşınmıştır.
