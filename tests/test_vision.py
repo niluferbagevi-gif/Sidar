@@ -265,6 +265,13 @@ class TestVisionPipelineFromBytes:
         assert result["framework"] == "Vue"
         assert result["provider"] == "openai"
 
+    def test_analyze_unsupported_mime_returns_error(self):
+        vp = _make_pipeline()
+        result = _run(vp.analyze(image_bytes=b"\x00" * 10, mime_type="image/bmp"))
+        assert result["success"] is False
+        assert "Desteklenmeyen" in result["reason"]
+
+
     def test_analyze_from_bytes_success(self):
         vp = _make_pipeline()
         data = _tiny_png_bytes()
@@ -318,6 +325,21 @@ class TestVisionPipelineLLMError:
         result = _run(vp.mockup_to_code(image_bytes=_tiny_png_bytes(), mime_type="image/png"))
         assert result["success"] is False
         assert "LLM down" in result["reason"]
+
+    def test_analyze_llm_exception_returns_error(self):
+        cfg = MagicMock()
+        cfg.ENABLE_VISION = True
+        cfg.VISION_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+        llm = MagicMock()
+        llm.provider = "gemini"
+        llm.chat = AsyncMock(side_effect=RuntimeError("vision provider failed"))
+        vp = VisionPipeline(llm_client=llm, config=cfg)
+
+        result = _run(vp.analyze(image_bytes=_tiny_png_bytes(), analysis_type="ux_review"))
+
+        assert result["success"] is False
+        assert "vision provider failed" in result["reason"]
+
 
     def test_analyze_anthropic_provider(self):
         vp = _make_pipeline(provider="anthropic")

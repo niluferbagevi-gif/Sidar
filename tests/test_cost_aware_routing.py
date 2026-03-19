@@ -86,6 +86,16 @@ class TestDailyBudgetTracker:
         self.tracker.add(-1.0)
         assert self.tracker.daily_usage() == 0.0
 
+    def test_daily_usage_resets_after_new_day(self, monkeypatch):
+        import core.router as router_mod
+
+        self.tracker._daily_cost = 2.5
+        self.tracker._day_start = 100.0
+        monkeypatch.setattr(router_mod.time, "time", lambda: 100.0 + 86400.0)
+
+        assert self.tracker.daily_usage() == 0.0
+        assert self.tracker._day_start == 100.0 + 86400.0
+
 
 # ─── CostAwareRouter ────────────────────────────────────────────────────────
 
@@ -163,6 +173,21 @@ class TestCostAwareRouter:
         router = self._router()
         score = router.complexity_score(_msgs("what is this?"))
         assert 0.0 <= score <= 1.0
+
+    def test_missing_local_provider_falls_back_to_default_when_budget_exceeded(self):
+        router = self._router(COST_ROUTING_DAILY_BUDGET_USD=0.001)
+        router.local_provider = ""
+        import core.router as r_mod
+        original = r_mod._budget_tracker
+        r_mod._budget_tracker = _DailyBudgetTracker()
+        r_mod._budget_tracker.add(1.0)
+        try:
+            provider, model = router.select(_msgs("analyze compare refactor"), "openai", "gpt-4o-mini")
+            assert provider == "openai"
+            assert model == "gpt-4o-mini"
+        finally:
+            r_mod._budget_tracker = original
+
 
     def test_no_cloud_model_uses_default(self):
         router = self._router(COST_ROUTING_CLOUD_MODEL="")
