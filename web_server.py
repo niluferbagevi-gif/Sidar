@@ -1650,6 +1650,7 @@ async def websocket_voice(websocket: WebSocket):
     session_language: str | None = None
     session_prompt = ""
     voice_sequence = 0
+    active_response_task: asyncio.Task | None = None
     setattr(websocket, "_sidar_voice_pipeline", voice_pipeline)
 
     async def _emit_voice_state(event: str) -> None:
@@ -1663,6 +1664,8 @@ async def websocket_voice(websocket: WebSocket):
                     "sequence": voice_sequence,
                     "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)) if voice_pipeline is not None else False,
                     "auto_commit_ready": False,
+                    "duplex_enabled": bool(getattr(voice_pipeline, "duplex_enabled", False)) if voice_pipeline is not None else False,
+                    "interrupt_ready": False,
                     "tts_enabled": bool(getattr(voice_pipeline, "enabled", False)) if voice_pipeline is not None else False,
                 }
             )
@@ -1675,19 +1678,34 @@ async def websocket_voice(websocket: WebSocket):
             )
         )
 
-    async def _process_audio_commit() -> None:
-        nonlocal session_mime_type, session_language, session_prompt
-        if not audio_buffer:
+    async def _cancel_active_response(reason: str, *, notify: bool = True) -> None:
+        nonlocal active_response_task
+        if active_response_task is None or active_response_task.done():
+            return
+        active_response_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await active_response_task
+        if notify:
+            await websocket.send_json({"voice_interruption": reason, "cancelled": True})
+        active_response_task = None
+
+    async def _run_voice_turn(
+        *,
+        audio_bytes: bytes,
+        mime_type: str,
+        language: str | None,
+        prompt: str,
+    ) -> None:
+        if not audio_bytes:
             await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
             return
 
         result = await pipeline.transcribe_bytes(
-            bytes(audio_buffer),
-            mime_type=session_mime_type,
-            language=session_language,
-            prompt=session_prompt,
+            audio_bytes,
+            mime_type=mime_type,
+            language=language,
+            prompt=prompt,
         )
-        audio_buffer.clear()
         await _emit_voice_state("processed")
 
         if not isinstance(result, dict) or not result.get("success"):
@@ -1725,6 +1743,26 @@ async def websocket_voice(websocket: WebSocket):
             return
 
         await websocket.send_json({"done": True})
+
+    async def _process_audio_commit() -> None:
+        nonlocal audio_buffer, active_response_task
+        if not audio_buffer:
+            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
+            return
+
+        if active_response_task and not active_response_task.done():
+            await _cancel_active_response("superseded_by_new_turn", notify=True)
+
+        commit_audio = bytes(audio_buffer)
+        audio_buffer.clear()
+        active_response_task = asyncio.create_task(
+            _run_voice_turn(
+                audio_bytes=commit_audio,
+                mime_type=session_mime_type,
+                language=session_language,
+                prompt=session_prompt,
+            )
+        )
 
     if header_token:
         ws_user = await _resolve_user_from_token(agent, header_token)
@@ -1823,6 +1861,7 @@ async def websocket_voice(websocket: WebSocket):
 
             if action == "cancel":
                 audio_buffer.clear()
+                await _cancel_active_response("user_cancelled", notify=True)
                 await _emit_voice_state("cancelled")
                 await websocket.send_json({"cancelled": True, "done": True})
                 continue
@@ -1830,6 +1869,12 @@ async def websocket_voice(websocket: WebSocket):
             if action == "vad_event":
                 vad_state = str(payload.get("state", "") or "unknown")
                 await _emit_voice_state(vad_state)
+                if (
+                    voice_pipeline
+                    and hasattr(voice_pipeline, "should_interrupt_response")
+                    and voice_pipeline.should_interrupt_response(len(audio_buffer), event=vad_state)
+                ):
+                    await _cancel_active_response("barge_in", notify=True)
                 if voice_pipeline and voice_pipeline.should_commit_audio(len(audio_buffer), event=vad_state):
                     await _process_audio_commit()
                 continue
@@ -1843,9 +1888,15 @@ async def websocket_voice(websocket: WebSocket):
             await _process_audio_commit()
     except WebSocketDisconnect:
         logger.info("İstemci voice WebSocket bağlantısını kesti.")
+        if active_response_task and not active_response_task.done():
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await active_response_task
     except Exception as exc:
         if _ANYIO_CLOSED is not None and isinstance(exc, _ANYIO_CLOSED):
             logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
+            if active_response_task and not active_response_task.done():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await active_response_task
         else:
             logger.warning("Voice WebSocket beklenmedik hata: %s", exc)
 
