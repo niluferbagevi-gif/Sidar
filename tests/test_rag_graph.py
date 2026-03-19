@@ -124,3 +124,40 @@ def test_document_store_graph_impact_includes_reviewer_targets(tmp_path, monkeyp
     assert "Risk seviyesi: high" in report
     assert "Etkilenen endpoint handler dosyaları: service.py" in report
     assert "Reviewer için önerilen hedefler:" in report
+
+
+def test_document_store_graph_impact_details_returns_structured_analysis(tmp_path, monkeypatch):
+    (tmp_path / "service.py").write_text(
+        "from fastapi import FastAPI\n"
+        "import helper\n"
+        "app = FastAPI()\n"
+        "@app.get('/api/items')\n"
+        "async def list_items():\n"
+        "    return helper.VALUE\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "helper.py").write_text("VALUE = 42\n", encoding="utf-8")
+    (tmp_path / "client.js").write_text("fetch('/api/items')\n", encoding="utf-8")
+
+    monkeypatch.setattr(RAG_MOD.DocumentStore, "_check_import", lambda self, _: False)
+    cfg = types.SimpleNamespace(
+        RAG_TOP_K=5,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        HF_TOKEN="",
+        HF_HUB_OFFLINE=False,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        BASE_DIR=tmp_path,
+        ENABLE_GRAPH_RAG=True,
+        GRAPH_RAG_MAX_FILES=20,
+    )
+    store = RAG_MOD.DocumentStore(tmp_path / "rag_store", cfg=cfg)
+
+    ok, details = store.graph_impact_details("helper.py", top_k=5)
+
+    assert ok is True
+    assert details["risk_level"] == "high"
+    assert "service.py" in details["review_targets"]
+    assert "client.js" in details["caller_files"]

@@ -43,6 +43,60 @@ def test_reviewer_builds_graph_candidate_paths():
     assert paths == ["agent/roles/reviewer_agent.py", "web_ui_react/src/App.jsx", "core/db.py"]
 
 
+def test_reviewer_collects_graph_followup_paths_from_structured_payload():
+    payload = {
+        "status": "ok",
+        "reports": [
+            {
+                "target": "core/db.py",
+                "ok": True,
+                "details": {
+                    "review_targets": ["core/db.py", "agent/roles/reviewer_agent.py"],
+                    "impacted_endpoint_handlers": ["web_server.py"],
+                    "caller_files": ["web_ui_react/src/App.jsx"],
+                    "direct_dependents": ["README.md", "core/db.py"],
+                },
+            }
+        ],
+    }
+
+    paths = ReviewerAgent._collect_graph_followup_paths(payload)
+
+    assert paths == [
+        "core/db.py",
+        "agent/roles/reviewer_agent.py",
+        "web_server.py",
+        "web_ui_react/src/App.jsx",
+    ]
+
+
+def test_reviewer_summarize_graph_payload_marks_high_risk():
+    summary = ReviewerAgent._summarize_graph_payload(
+        {
+            "status": "ok",
+            "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+            "reports": [
+                {
+                    "target": "core/db.py",
+                    "ok": True,
+                    "details": {
+                        "risk_level": "high",
+                        "review_targets": ["core/db.py", "web_server.py"],
+                        "impacted_endpoint_handlers": ["web_server.py"],
+                        "caller_files": [],
+                        "direct_dependents": [],
+                        "impacted_endpoints": ["endpoint:GET /health"],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert summary["risk"] == "orta"
+    assert summary["high_risk_targets"] == ["core/db.py"]
+    assert "web_server.py" in summary["followup_paths"]
+
+
 def test_reviewer_summarize_lsp_diagnostics_rejects_errors():
     summary = ReviewerAgent._summarize_lsp_diagnostics(
         "[LSP:OK] hedefler=core/db.py\n"
@@ -80,6 +134,18 @@ def test_reviewer_graph_impact_tool_uses_graph_store(monkeypatch):
     a = ReviewerAgent()
 
     class _FakeDocs:
+        def graph_impact_details(self, target, top_k=10):
+            assert top_k == 8
+            return True, {
+                "target": target,
+                "risk_level": "high",
+                "review_targets": [target, "web_server.py"],
+                "impacted_endpoint_handlers": ["web_server.py"],
+                "caller_files": [],
+                "direct_dependents": [],
+                "impacted_endpoints": ["endpoint:GET /health"],
+            }
+
         def analyze_graph_impact(self, target, top_k=10):
             assert top_k == 8
             return True, f"[GraphRAG Impact] {target}"
@@ -90,6 +156,7 @@ def test_reviewer_graph_impact_tool_uses_graph_store(monkeypatch):
     assert payload["status"] == "ok"
     assert payload["targets"] == ["core/db.py", "web_ui_react/src/App.jsx"]
     assert payload["reports"][0]["report"].startswith("[GraphRAG Impact]")
+    assert payload["reports"][0]["details"]["risk_level"] == "high"
 
 
 def test_reviewer_build_dynamic_test_content_uses_llm(monkeypatch):
@@ -179,6 +246,7 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
     assert payload["decision"] == "APPROVE"
     assert payload["semantic_risk_report"]["status"] == "clean"
     assert payload["graph_impact_report"]["status"] == "ok"
+    assert "tests/test_reviewer_agent.py" in payload["lsp_scope_paths"]
     assert any(c.startswith("pytest -q tests/test_reviewer_agent.py") for c in calls)
     assert any(c == a.cfg.REVIEWER_TEST_COMMAND for c in calls)
 
@@ -249,3 +317,57 @@ def test_reviewer_review_code_rejects_on_lsp_semantic_error(monkeypatch):
     assert payload["decision"] == "REJECT"
     assert payload["semantic_risk_report"]["risk"] == "yüksek"
     assert "LSP semantik denetimi" in payload["summary"]
+
+
+def test_reviewer_review_code_escalates_risk_from_graph_scope(monkeypatch):
+    a = ReviewerAgent()
+
+    async def fake_dynamic(_ctx: str) -> str:
+        return "[TEST:OK] dynamic"
+
+    async def fake_run_tests(arg: str) -> str:
+        return f"[TEST:OK] {arg}"
+
+    captured_args = []
+
+    async def fake_lsp(arg: str) -> str:
+        captured_args.append(arg)
+        return json.dumps({
+            "status": "clean",
+            "risk": "düşük",
+            "decision": "APPROVE",
+            "counts": {},
+            "issues": [],
+            "summary": "LSP diagnostics temiz.",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
+    a.tools["run_tests"] = fake_run_tests
+    a.tools["lsp_diagnostics"] = fake_lsp
+    a.tools["graph_impact"] = lambda _arg: asyncio.sleep(0, result=json.dumps({
+        "status": "ok",
+        "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+        "targets": ["core/db.py"],
+        "reports": [{
+            "target": "core/db.py",
+            "ok": True,
+            "report": "[GraphRAG Impact] core/db.py",
+            "details": {
+                "risk_level": "high",
+                "review_targets": ["core/db.py", "web_server.py"],
+                "impacted_endpoint_handlers": ["web_server.py"],
+                "caller_files": ["web_ui_react/src/App.jsx"],
+                "direct_dependents": [],
+                "impacted_endpoints": ["endpoint:GET /health"],
+            },
+        }],
+    }, ensure_ascii=False))
+
+    out = asyncio.run(a.run_task("review_code|core/db.py"))
+    payload = json.loads(out.payload.split("|", 1)[1])
+    assert payload["decision"] == "APPROVE"
+    assert payload["risk"] == "orta"
+    assert payload["graph_review_scope"]["risk"] == "orta"
+    assert "web_server.py" in payload["lsp_scope_paths"]
+    assert "web_ui_react/src/App.jsx" in payload["lsp_scope_paths"]
+    assert captured_args and "web_server.py" in captured_args[0]

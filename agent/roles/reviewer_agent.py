@@ -172,6 +172,84 @@ class ReviewerAgent(BaseAgent):
         ][:12]
 
     @staticmethod
+    def _merge_candidate_paths(*path_groups: list[str]) -> list[str]:
+        """Birden çok aday listesini sırayı koruyarak birleştirir."""
+        merged: list[str] = []
+        for group in path_groups:
+            for path in group or []:
+                normalized = (path or "").strip().lstrip("./")
+                if not normalized or normalized in merged:
+                    continue
+                merged.append(normalized)
+        return merged
+
+    @staticmethod
+    def _collect_graph_followup_paths(graph_payload: dict[str, object]) -> list[str]:
+        """GraphRAG raporundan reviewer'ın genişletmesi gereken kod hedeflerini toplar."""
+        reports = graph_payload.get("reports", []) if isinstance(graph_payload, dict) else []
+        if not isinstance(reports, list):
+            return []
+
+        supported_suffixes = (".py", ".ts", ".tsx", ".js", ".jsx")
+        collected: list[str] = []
+        for item in reports:
+            if not isinstance(item, dict) or not item.get("ok"):
+                continue
+            details = item.get("details") or {}
+            if not isinstance(details, dict):
+                continue
+            for field in ("review_targets", "impacted_endpoint_handlers", "caller_files", "direct_dependents"):
+                values = details.get(field) or []
+                if not isinstance(values, list):
+                    continue
+                for path in values:
+                    normalized = str(path or "").strip().lstrip("./")
+                    if not normalized.endswith(supported_suffixes) or normalized in collected:
+                        continue
+                    collected.append(normalized)
+        return collected
+
+    @staticmethod
+    def _summarize_graph_payload(graph_payload: dict[str, object]) -> dict[str, object]:
+        """GraphRAG yapılandırılmış çıktısını reviewer kalite kapısı özeti hâline getirir."""
+        reports = graph_payload.get("reports", []) if isinstance(graph_payload, dict) else []
+        ok_reports = [item for item in reports if isinstance(item, dict) and item.get("ok")]
+        if not ok_reports:
+            return {
+                "status": str((graph_payload or {}).get("status", "no-signal")),
+                "risk": "düşük",
+                "high_risk_targets": [],
+                "followup_paths": [],
+                "summary": str((graph_payload or {}).get("summary", "GraphRAG etki analizi üretilemedi.")),
+            }
+
+        followup_paths = ReviewerAgent._collect_graph_followup_paths(graph_payload)
+        high_risk_targets: list[str] = []
+        impacted_endpoints = 0
+        for item in ok_reports:
+            details = item.get("details") or {}
+            if not isinstance(details, dict):
+                continue
+            if str(details.get("risk_level", "")).lower() == "high":
+                high_risk_targets.append(str(item.get("target", "")))
+            impacted_endpoints += len(details.get("impacted_endpoints") or [])
+
+        risk = "orta" if high_risk_targets else "düşük"
+        summary = (
+            f"GraphRAG {len(ok_reports)} hedefi analiz etti; "
+            f"yüksek riskli hedef={len(high_risk_targets)}, "
+            f"genişletilmiş inceleme yolu={len(followup_paths)}, "
+            f"etkilenen endpoint={impacted_endpoints}."
+        )
+        return {
+            "status": str(graph_payload.get("status", "ok")),
+            "risk": risk,
+            "high_risk_targets": high_risk_targets,
+            "followup_paths": followup_paths,
+            "summary": summary,
+        }
+
+    @staticmethod
     def _summarize_lsp_diagnostics(output: str) -> dict[str, object]:
         """LSP diagnostics çıktısını semantik risk özetine dönüştürür."""
         text = (output or "").strip()
@@ -339,8 +417,14 @@ class ReviewerAgent(BaseAgent):
         docs = self._get_graph_store()
         reports = []
         for target in candidates:
-            ok, report = await asyncio.to_thread(docs.analyze_graph_impact, target, 8)
-            reports.append({"target": target, "ok": ok, "report": report})
+            ok, details = await asyncio.to_thread(docs.graph_impact_details, target, 8)
+            report = ""
+            if ok:
+                _, report = await asyncio.to_thread(docs.analyze_graph_impact, target, 8)
+            else:
+                report = str(details)
+                details = {}
+            reports.append({"target": target, "ok": ok, "report": report, "details": details})
 
         status = "ok" if any(item["ok"] for item in reports) else "no-signal"
         summary = (
@@ -397,15 +481,23 @@ class ReviewerAgent(BaseAgent):
                 regression_chunks.append(await self.call_tool("run_tests", command))
             regression_output = "\n\n".join(regression_chunks)
 
-            await self.events.publish("reviewer", "LSP tabanlı semantik denetim çalıştırılıyor...")
-            lsp_output = await self.call_tool("lsp_diagnostics", context)
-            semantic_report = self._summarize_lsp_diagnostics(lsp_output)
-
             await self.events.publish("reviewer", "GraphRAG etki analizi hazırlanıyor...")
             graph_output = await self.call_tool("graph_impact", context)
             graph_payload = {"status": "tool-error", "summary": "GraphRAG çıktısı çözümlenemedi.", "reports": []}
             with contextlib.suppress(json.JSONDecodeError):
                 graph_payload = json.loads(graph_output)
+            graph_summary = self._summarize_graph_payload(graph_payload)
+
+            lsp_scope_paths = self._merge_candidate_paths(
+                self._build_lsp_candidate_paths(context),
+                list(graph_summary.get("followup_paths", []) or []),
+            )
+            await self.events.publish(
+                "reviewer",
+                f"LSP tabanlı semantik denetim çalıştırılıyor... hedef={len(lsp_scope_paths) or 1}",
+            )
+            lsp_output = await self.call_tool("lsp_diagnostics", " ".join(lsp_scope_paths))
+            semantic_report = self._summarize_lsp_diagnostics(lsp_output)
 
             combo = f"{dynamic_test_output}\n\n{regression_output}\n\n{lsp_output}".lower()
             status = "PASS"
@@ -421,6 +513,8 @@ class ReviewerAgent(BaseAgent):
                 decision = "REJECT"
             elif semantic_report["risk"] == "orta":
                 risk = "orta"
+            elif graph_summary["risk"] == "orta":
+                risk = "orta"
 
             await self.events.publish("reviewer", "QA kararı coder ajanına P2P ile iletiliyor...")
             feedback_payload = json.dumps(
@@ -429,7 +523,7 @@ class ReviewerAgent(BaseAgent):
                     "risk": risk,
                     "summary": (
                         f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
-                        f"{semantic_report['summary']}"
+                        f"{semantic_report['summary']} {graph_summary['summary']}"
                     ),
                     "dynamic_test_output": dynamic_test_output,
                     "regression_test_output": regression_output,
@@ -437,6 +531,8 @@ class ReviewerAgent(BaseAgent):
                     "semantic_risk_report": semantic_report,
                     "graph_impact_output": graph_output,
                     "graph_impact_report": graph_payload,
+                    "graph_review_scope": graph_summary,
+                    "lsp_scope_paths": lsp_scope_paths or ["workspace:auto"],
                 },
                 ensure_ascii=False,
             )
