@@ -1173,172 +1173,120 @@ monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
 
 ---
 
-## 12. `.env` Tam Değişken Referansı
+## 12. `.env` Tam Değişken Referansı (v4.3.0 Kurumsal Sürüm)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Aşağıdaki tablo projenin desteklediği tüm ortam değişkenlerini kapsar.
+Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API anahtarından ibaret değildir; çalışma zamanı yapılandırması `config.py` tarafından merkezi olarak okunur ve güvenlik, gözlemlenebilirlik, semantic cache, çoklu ajan orkestrasyonu ve entegrasyon katmanları mantıksal modüller halinde yönetilir.
 
-### 12.1 AI Sağlayıcı
+> **Önemli doğruluk notu:** Güncel kod tabanında `DEBUG` yerine `DEBUG_MODE`, `ENABLE_TELEMETRY` yerine `ENABLE_TRACING`, `OTEL_EXPORTER_OTLP_ENDPOINT` yerine `OTEL_EXPORTER_ENDPOINT`, `LITELLM_BASE_URL` yerine `LITELLM_GATEWAY_URL`, `OLLAMA_BASE_URL` yerine `OLLAMA_URL` kullanılmaktadır. Ayrıca ayrı bir `DEFAULT_TENANT_ID` değişkeni yoktur; tenant varsayılanı auth/DB katmanında çalışma zamanında `default` olarak uygulanır. Bunun yanında bazı ileri seviye anahtarlar (`DATABASE_URL`, `DB_SCHEMA_VERSION_TABLE`, `DOCKER_MEM_LIMIT`, `DOCKER_MICROVM_MODE`) `config.py` tarafından desteklenir ancak mevcut `.env.example` şablonunda ön tanımlı satır olarak henüz yer almaz.
 
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `AI_PROVIDER` | `ollama` | Aktif LLM sağlayıcı seçimi: `ollama`, `gemini`, `openai` veya `anthropic` |
-| `GEMINI_API_KEY` | `""` | Gemini modu için zorunlu |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Kullanılacak Gemini model adı |
-| `OLLAMA_URL` | `http://localhost:11434/api` | Ollama API adresi |
-| `OLLAMA_TIMEOUT` | `30` | Ollama istek zaman aşımı (sn) |
-| `CODING_MODEL` | `qwen2.5-coder:7b` | Ollama — kod görevleri modeli |
-| `TEXT_MODEL` | `gemma2:9b` | Ollama — metin görevleri modeli |
-| `OPENAI_API_KEY` | `""` | OpenAI (örn. GPT-4o ailesi) kullanımı için zorunlu API anahtarı |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model adı |
-| `OPENAI_TIMEOUT` | `60` | OpenAI istek zaman aşımı (sn) |
-| `LLM_MAX_RETRIES` | `2` | LLM çağrılarında maksimum yeniden deneme sayısı |
-| `LLM_RETRY_BASE_DELAY` | `0.4` | Exponential backoff başlangıç gecikmesi (sn) |
-| `LLM_RETRY_MAX_DELAY` | `4.0` | Yeniden deneme için üst gecikme sınırı (sn) |
-| `ANTHROPIC_API_KEY` | `""` | Anthropic/Claude (örn. Claude 3.5 Sonnet) için zorunlu API anahtarı |
-| `ANTHROPIC_MODEL` | `claude-3-5-sonnet-latest` | Anthropic model adı |
-| `ANTHROPIC_TIMEOUT` | `60` | Anthropic istek zaman aşımı (sn) |
-
-> **Sağlayıcı Seçimi Notu:** Kod içinde ayrı bir `DEFAULT_LLM_PROVIDER` veya `ACTIVE_PROVIDER` değişkeni kullanılmamaktadır; aktif sağlayıcı doğrudan `AI_PROVIDER` ile belirlenir.
-
-### 12.2 Güvenlik ve Erişim
+### 12.1 Temel Sistem Ayarları (Core Runtime)
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `ACCESS_LEVEL` | `full` | `restricted` / `sandbox` / `full` |
-| `API_KEY` | `""` | Web arayüzü/API için opsiyonel anahtar tabanlı yetkilendirme katmanı |
-| `MEMORY_ENCRYPTION_KEY` | `""` | Fernet anahtarı — boşsa şifreleme kapalı |
+| `SIDAR_ENV` | `development` (`.env.example`) / `""` (`config.py` fallback) | Ortam profili seçimi; varsa `.env.<profil>` dosyasını temel `.env` üzerine yükler |
+| `DEBUG_MODE` | `false` | Ayrıntılı debug davranışlarını ve yapılandırma özetini açar |
+| `LOG_LEVEL` | `INFO` | Uygulama geneli log seviyesi (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `RESPONSE_LANGUAGE` | `tr` | Nihai yanıt dili |
+| `REVIEWER_TEST_COMMAND` | `python -m pytest` | ReviewerAgent doğrulama safhasında koşturulan test komutu |
+| `AI_PROVIDER` | `ollama` | Birincil LLM sağlayıcı seçimi: `ollama`, `gemini`, `openai`, `anthropic`, `litellm` |
 
-### 12.3 GPU / Donanım
-
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `USE_GPU` | `true` | GPU kullanımını açar/kapar |
-| `GPU_DEVICE` | `0` | Çoklu GPU'da hedef cihaz indeksi |
-| `GPU_MEMORY_FRACTION` | `0.8` | VRAM fraksiyonu (0.1–1.0) |
-| `GPU_MIXED_PRECISION` | `false` | FP16 mixed precision |
-| `MULTI_GPU` | `false` | Dağıtık çoklu GPU modu |
-
-### 12.4 Web Arayüzü
+### 12.2 Yapay Zeka Sağlayıcıları ve Gateway
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `WEB_HOST` | `0.0.0.0` | Web sunucu bind adresi |
-| `WEB_PORT` | `7860` | CPU mod web portu |
-| `WEB_GPU_PORT` | `7861` | GPU mod web portu |
-| `JWT_SECRET_KEY` | `""` | **Zorunlu (üretim):** JWT imzalama anahtarı; boşsa `CRITICAL` uyarısı + geçici dev anahtarına düşer |
-| `JWT_ALGORITHM` | `HS256` | JWT imza algoritması (`HS256` veya `RS256`) |
-| `JWT_TTL_DAYS` | `7` | JWT token geçerlilik süresi (gün) |
-| `GRAFANA_URL` | `http://localhost:3000` | Web UI Admin panelindeki "Grafana'yı Aç" butonu için Grafana endpoint adresi |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_TIMEOUT` | `""` / `gpt-4o-mini` / `60` | OpenAI sağlayıcısı için kimlik bilgisi, model ve timeout |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `ANTHROPIC_TIMEOUT` | `""` / `claude-3-5-sonnet-latest` / `60` | Anthropic/Claude sağlayıcısı için ayarlar |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | `""` / `gemini-2.5-flash` | Google Gemini sağlayıcı ayarları |
+| `OLLAMA_URL` / `OLLAMA_TIMEOUT` | `http://localhost:11434/api` / `30` | Yerel Ollama API adresi ve timeout |
+| `CODING_MODEL` / `TEXT_MODEL` | `qwen2.5-coder:7b` / `gemma2:9b` | Yerel görevlerde kullanılan varsayılan kod ve metin modeli |
+| `LITELLM_GATEWAY_URL` / `LITELLM_API_KEY` | `http://localhost:4000` / `""` | LiteLLM/OpenRouter benzeri merkezi gateway erişimi |
+| `LITELLM_MODEL` / `LITELLM_FALLBACK_MODELS` / `LITELLM_TIMEOUT` | `gpt-4o-mini` / `gpt-4o-mini,claude-3-haiku-20240307` / `60` | Gateway üzerinden kullanılacak birincil model, fallback listesi ve timeout |
+| `LLM_MAX_RETRIES` / `LLM_RETRY_BASE_DELAY` / `LLM_RETRY_MAX_DELAY` | `2` / `0.4` / `4.0` | Sağlayıcı çağrılarında retry/backoff politikası |
 
-### 12.5 Web Arama
-
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `SEARCH_ENGINE` | `auto` | `auto` / `tavily` / `google` / `duckduckgo` |
-| `TAVILY_API_KEY` | `""` | Tavily API anahtarı |
-| `GOOGLE_SEARCH_API_KEY` | `""` | Google Custom Search API anahtarı |
-| `GOOGLE_SEARCH_CX` | `""` | Google Custom Search Engine ID |
-| `WEB_SEARCH_MAX_RESULTS` | `5` | Maksimum arama sonucu sayısı |
-| `WEB_FETCH_TIMEOUT` | `15` | URL çekme zaman aşımı (sn) |
-| `WEB_FETCH_MAX_CHARS` | `12000` | URL içerik karakter limiti (eski ad; `WEB_SCRAPE_MAX_CHARS` ile aynı değer) |
-| `WEB_SCRAPE_MAX_CHARS` | `12000` | URL içerik karakter limiti (yeni/tercih edilen ad; `WEB_FETCH_MAX_CHARS` yoksa geçerli) |
-
-### 12.6 RAG
+### 12.3 Veritabanı, RAG ve Vektör Bellek
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `RAG_DIR` | `data/rag` | Belge deposu dizini |
-| `RAG_TOP_K` | `3` | Arama sonucu sayısı |
-| `RAG_CHUNK_SIZE` | `1000` | Chunking karakter büyüklüğü |
-| `RAG_CHUNK_OVERLAP` | `200` | Chunk örtüşme miktarı |
-| `RAG_FILE_THRESHOLD` | `20000` | RAG deposuna ekleme önerisi eşiği (karakter) |
+| `DATABASE_URL` | `sqlite+aiosqlite:///data/sidar.db` | Kalıcı bellek, kullanıcı, tenant-policy, audit ve pgvector için ana DB bağlantısı |
+| `DB_POOL_SIZE` / `DB_SCHEMA_VERSION_TABLE` / `DB_SCHEMA_TARGET_VERSION` | `5` / `schema_versions` / `1` | Bağlantı havuzu ve şema sürümleme ayarları |
+| `RAG_DIR` | `data/rag` | Yerel belge deposu dizini; Chroma tabanlı kurulumlarda veri kökü olarak kullanılır |
+| `RAG_TOP_K` / `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` / `RAG_FILE_THRESHOLD` | `3` / `1000` / `200` / `20000` | Hibrit arama ve chunking ayarları |
+| `RAG_VECTOR_BACKEND` | `chroma` | Vektör arka ucu: `chroma` veya `pgvector` |
+| `PGVECTOR_TABLE` / `PGVECTOR_EMBEDDING_DIM` / `PGVECTOR_EMBEDDING_MODEL` | `rag_embeddings` / `384` / `all-MiniLM-L6-v2` | PostgreSQL/pgvector tarafında embedding tablo ve model ayarları |
+| `MEMORY_ENCRYPTION_KEY` | `""` | Bellek kayıtlarını Fernet ile şifrelemek için opsiyonel anahtar |
 
-### 12.7 Hafıza ve ReAct
+> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` ve şema versiyon anahtarları ise çalışma zamanında desteklenir; ancak bunların tamamı `.env.example` içinde hazır satır olarak bulunmayabilir.
 
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `MAX_MEMORY_TURNS` | `20` | Bellekte tutulan max konuşma turu |
-| `MEMORY_SUMMARY_KEEP_LAST` | `4` | Özetleme sırasında tam korunacak son mesaj sayısı (sliding window) |
-| `MAX_REACT_STEPS` | `10` | ReAct döngüsü max adım sayısı |
-| `REACT_TIMEOUT` | `60` | ReAct tek adım zaman aşımı (sn) |
-| `SUBTASK_MAX_STEPS` | `5` | Alt ajan max adım sayısı |
-| `AUTO_HANDLE_TIMEOUT` | `12` | AutoHandle araç zaman aşımı (sn) |
-
-### 12.8 Loglama
+### 12.4 Anlamsal Önbellek, Redis ve Event Bus
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-| `LOG_FILE` | `logs/sidar_system.log` | Log dosya yolu |
-| `LOG_MAX_BYTES` | `10485760` | Log dosya maksimum boyutu (10 MB) |
-| `LOG_BACKUP_COUNT` | `5` | Tutulan log yedek sayısı |
-| `DEBUG_MODE` | `false` | Açıksa Config özeti konsola yazdırılır |
+| `ENABLE_SEMANTIC_CACHE` | `false` | Redis tabanlı semantic cache'i aktif eder |
+| `SEMANTIC_CACHE_THRESHOLD` | `0.95` | Cache HIT kabulü için kosinüs benzerlik eşiği |
+| `SEMANTIC_CACHE_TTL` / `SEMANTIC_CACHE_MAX_ITEMS` | `3600` / `500` | Cache ömrü ve LRU kapasitesi |
+| `REDIS_URL` | `.env.example`: `redis://redis:6379/0`, `config.py` fallback: `redis://localhost:6379/0` | Semantic cache, rate limiting ve event-stream katmanının Redis bağlantısı |
+| `SIDAR_EVENT_BUS_CHANNEL` / `SIDAR_EVENT_BUS_GROUP` | `sidar:agent_events` / `sidar:agent_events:cg` | Swarm/event bus için Redis Streams kanal ve consumer group adları |
+| `RATE_LIMIT_WINDOW` / `RATE_LIMIT_CHAT` / `RATE_LIMIT_MUTATIONS` / `RATE_LIMIT_GET_IO` | `60` / `20` / `60` / `30` | API rate-limiting penceresi ve endpoint bazlı limitler |
+| `TRUSTED_PROXIES` | `""` | Güvenilir ters proxy IP listesi; boşsa proxy başlıkları güvenilmez sayılır |
+| `MAX_RAG_UPLOAD_BYTES` | `52428800` | RAG dosya yükleme üst limiti (50 MB) |
 
-### 12.9 Rate Limiting
-
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `RATE_LIMIT_WINDOW` | `60` | Pencere süresi (sn) |
-| `RATE_LIMIT_CHAT` | `20` | Chat endpoint limit (istek/pencere) |
-| `RATE_LIMIT_MUTATIONS` | `60` | Yazma endpoint limit |
-| `RATE_LIMIT_GET_IO` | `30` | Okuma endpoint limit |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis bağlantı adresi (kalıcı/distro rate limiting) |
-
-### 12.10 Veritabanı ve Auth (Kurumsal)
+### 12.5 Güvenlik, Kimlik Doğrulama, Tenant, DLP ve HITL
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///data/sidar.db` | Async DB bağlantı adresi (PostgreSQL için `postgresql+asyncpg://...`) |
-| `DB_POOL_SIZE` | `5` | Async bağlantı havuzu taban boyutu |
-| `DB_SCHEMA_VERSION_TABLE` | `schema_versions` | Uygulama şema sürüm tablosu adı |
-| `DB_SCHEMA_TARGET_VERSION` | `1` | Hedef şema sürümü |
+| `ACCESS_LEVEL` | `.env.example`: `sandbox`, `config.py` fallback: `full` | Araç/yürütme erişim seviyesi: `restricted`, `sandbox`, `full` |
+| `API_KEY` | `""` | Web/API için opsiyonel ek anahtar tabanlı koruma |
+| `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_TTL_DAYS` | `""` / `HS256` / `7` | SPA/API oturumları için JWT imzalama ve yaşam süresi ayarları |
+| `DLP_ENABLED` / `DLP_LOG_DETECTIONS` | `true` / `false` | PII/hassas veri maskeleme ve maskeleme loglama davranışı |
+| `HITL_ENABLED` / `HITL_TIMEOUT_SECONDS` | `false` / `120` | Yıkıcı işlemler öncesi human-in-the-loop onay kapısı ve bekleme süresi |
+| `METRICS_TOKEN` | `""` | `/metrics`, `/metrics/llm`, `/api/budget` gibi operasyonel endpoint'ler için statik bearer token |
 
-> **Auth Notu:** JWT kimlik doğrulama için `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `JWT_TTL_DAYS` değişkenleri §12.4'te tanımlıdır. Ayrıca `API_KEY` ile ek HTTP Basic Auth katmanı etkinleştirilebilir. Eski `SECRET_KEY` / `AUTH_SECRET` değişkenleri kullanılmamaktadır.
+> **Tenant notu:** Çoklu kiracı desteği runtime ve DB katmanında `tenant_id` alanı ile uygulanır; ancak yapılandırmada ayrı bir `DEFAULT_TENANT_ID` env değişkeni bulunmaz. Varsayılan tenant değeri auth ve veritabanı akışında `default` olarak üretilir.
 
-### 12.11 Telemetri ve Zero-Trust Sandbox
-
-| Değişken | Varsayılan | Açıklama |
-|----------|-----------|----------|
-| `ENABLE_TRACING` | `false` | OpenTelemetry tracing aç/kapat |
-| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP exporter endpoint (collector/Jaeger) |
-| `METRICS_TOKEN` | `""` | `/metrics`, `/metrics/llm`, `/api/budget` endpoint'leri için statik Bearer token; boşsa yalnızca admin kullanıcılar erişebilir |
-| `DOCKER_PYTHON_IMAGE` | `python:3.11-alpine` | REPL sandbox Docker imajı |
-| `DOCKER_EXEC_TIMEOUT` | `10` | Docker REPL zaman aşımı (sn) |
-| `DOCKER_RUNTIME` | `""` | Seçili container runtime (örn. `runsc`, `kata-runtime`) |
-| `DOCKER_ALLOWED_RUNTIMES` | `"",runc,runsc,kata-runtime` | İzin verilen runtime listesi |
-| `DOCKER_MICROVM_MODE` | `off` | Mikro-VM hazırlık modu (`off`,`gvisor`,`kata`) |
-| `DOCKER_MEM_LIMIT` | `256m` | Sandbox konteyner bellek limiti |
-| `DOCKER_NETWORK_DISABLED` | `true` | Sandbox için network kapatma anahtarı |
-| `DOCKER_NANO_CPUS` | `1000000000` | Sandbox CPU kotası (~1 vCPU) |
-| `SANDBOX_MEMORY` | `256m` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner bellek sınırı (override için) |
-| `SANDBOX_CPUS` | `0.5` | `config.py::SANDBOX_LIMITS` kaynak kotası — Docker konteyner CPU payı |
-| `SANDBOX_NETWORK` | `none` | `config.py::SANDBOX_LIMITS` kaynak kotası — ağ modu (`none` = kapalı, yalıtılmış) |
-| `SANDBOX_PIDS_LIMIT` | `64` | `config.py::SANDBOX_LIMITS` kaynak kotası — süreç sayısı sınırı |
-| `SANDBOX_TIMEOUT` | `10` | `config.py::SANDBOX_LIMITS` kaynak kotası — sandbox çalışma süresi limiti (sn) |
-
-> **Sandbox Kaynak Notu:** `SANDBOX_MEMORY/CPUS/NETWORK/PIDS_LIMIT/TIMEOUT` değerleri `config.py` içindeki `SANDBOX_LIMITS` sözlüğüne beslenir ve `CodeManager._resolve_sandbox_limits()` üzerinden Docker run çağrısına aktarılır. Bu değişkenler `.env.example`'da önceden yer almıyordu; v3.0.1 denetimiyle belgelenmiştir.
->
-> **Telemetri Notu:** Konfigürasyonda ayrı `ENABLE_TELEMETRY`/`METRICS_PORT` anahtarı yoktur; metrik ihracı uygulama endpoint'leri (`/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget`) üzerinden sağlanır. Bu endpoint'ler artık auth korumalıdır (admin kullanıcı veya `METRICS_TOKEN` Bearer token). Erişim için `.env` dosyasına `METRICS_TOKEN=<güçlü-token>` ekleyin.
-
-### 12.12 Çeşitli
+### 12.6 Gözlemlenebilirlik (Observability & OTel)
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `RESPONSE_LANGUAGE` | `tr` | LLM yanıt dili |
-| `SIDAR_ENV` | `""` | Ortam profili seçimi (`.env.<profil>` dosyasını temel `.env` üzerine yükler; örn. `production`) |
-| `HF_TOKEN` | `""` | HuggingFace token (özel modeller) |
-| `HF_HUB_OFFLINE` | `false` | HF Hub çevrimdışı mod |
-| `GITHUB_TOKEN` | `""` | GitHub API token |
-| `GITHUB_REPO` | `""` | Varsayılan GitHub repo (`owner/repo`) |
-| `GITHUB_WEBHOOK_SECRET` | `""` | GitHub webhook HMAC doğrulama gizli anahtarı |
-| `PACKAGE_INFO_TIMEOUT` | `12` | Paket bilgi HTTP zaman aşımı (sn) |
-| `PACKAGE_INFO_CACHE_TTL` | `1800` | Paket bilgi cache süresi (sn) |
-| `REVIEWER_TEST_COMMAND` | `python -m pytest` | ReviewerAgent doğrulama aşamasında çalıştırılacak test komutu (çapraz platform) |
-| `ENABLE_MULTI_AGENT` | `true` | **Sabitlenmiştir:** Legacy bayrak kaldırılmıştır; sistem daima Supervisor/Multi-Agent akışında çalışır (`.env` üzerinden değiştirilemez) |
+| `ENABLE_TRACING` | `false` | OpenTelemetry tracing'i açar/kapatır |
+| `OTEL_EXPORTER_ENDPOINT` | `.env.example`: `http://localhost:4317`, `config.py` fallback: `http://jaeger:4317` | OTLP exporter/collector/Jaeger adresi |
+| `OTEL_SERVICE_NAME` | `sidar` | Telemetri panellerinde servisin görünen adı |
+| `OTEL_INSTRUMENT_FASTAPI` / `OTEL_INSTRUMENT_HTTPX` | `true` / `true` | FastAPI ve HTTPX otomatik enstrümantasyon anahtarları |
+| `GRAFANA_URL` | `http://localhost:3000` | Web admin panelindeki Grafana bağlantı hedefi |
 
-### 12.13 Docker Compose Override Değişkenleri
+### 12.7 Dış Entegrasyonlar, Managers ve Plugin Yüzeyleri
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `GITHUB_TOKEN` / `GITHUB_REPO` / `GITHUB_WEBHOOK_SECRET` | `""` / `""` / `""` | GitHub repo erişimi, varsayılan repo ve webhook doğrulama ayarları |
+| `SLACK_TOKEN` / `SLACK_WEBHOOK_URL` / `SLACK_DEFAULT_CHANNEL` | `""` / `""` / `""` | Slack API veya webhook tabanlı bildirim ayarları |
+| `JIRA_URL` / `JIRA_TOKEN` / `JIRA_EMAIL` / `JIRA_DEFAULT_PROJECT` | `""` / `""` / `""` / `""` | Jira entegrasyonu ve varsayılan proje bilgileri |
+| `TEAMS_WEBHOOK_URL` | `""` | Microsoft Teams webhook bildirimi |
+| `SEARCH_ENGINE` / `TAVILY_API_KEY` / `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_CX` | `auto` / `""` / `""` / `""` | Web arama sağlayıcı seçimi ve harici arama API ayarları |
+| `WEB_SEARCH_MAX_RESULTS` / `WEB_FETCH_TIMEOUT` / `WEB_FETCH_MAX_CHARS` / `WEB_SCRAPE_MAX_CHARS` | `5` / `15` / `12000` / `12000` | Web içerik toplama ve scrape sınırları |
+| `PACKAGE_INFO_TIMEOUT` / `PACKAGE_INFO_CACHE_TTL` | `12` / `1800` | Paket metadata sorguları için timeout ve cache süresi |
+
+### 12.8 Donanım, Yerel Çalışma, Sandbox ve Gelişmiş Yetenekler
+
+| Değişken | Varsayılan | Açıklama |
+|----------|-----------|----------|
+| `USE_GPU` / `GPU_DEVICE` / `MULTI_GPU` | `false` (`.env.example`) / `0` / `false` | GPU kullanımı, cihaz seçimi ve çoklu GPU modu |
+| `GPU_MEMORY_FRACTION` / `LLM_GPU_MEMORY_FRACTION` / `RAG_GPU_MEMORY_FRACTION` | `0.8` / `0.8` / `0.3` | Yerel LLM ve RAG için VRAM bütçe ayarları |
+| `GPU_MIXED_PRECISION` | `false` | FP16/mixed precision ile VRAM optimizasyonu |
+| `DOCKER_PYTHON_IMAGE` / `DOCKER_EXEC_TIMEOUT` / `DOCKER_REQUIRED` | `python:3.11-alpine` / `10` / `false` | Kod çalıştırma sandbox'ının temel Docker davranışı |
+| `DOCKER_RUNTIME` / `DOCKER_ALLOWED_RUNTIMES` / `DOCKER_MICROVM_MODE` | `""` / `,runc,runsc,kata-runtime` / `off` | Zero-trust sandbox runtime ve mikro-VM hazırlık seçenekleri (`DOCKER_MICROVM_MODE` şu anda `config.py` destekli olup `.env.example` şablonunda ayrıca listelenmemektedir) |
+| `DOCKER_MEM_LIMIT` / `DOCKER_NETWORK_DISABLED` / `DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları (`DOCKER_MEM_LIMIT` şu anda `config.py` destekli olup `.env.example` şablonunda ayrıca listelenmemektedir) |
+| `SANDBOX_MEMORY` / `SANDBOX_CPUS` / `SANDBOX_NETWORK` / `SANDBOX_PIDS_LIMIT` / `SANDBOX_TIMEOUT` | `256m` / `0.5` / `none` / `64` / `10` | `config.py::SANDBOX_LIMITS` sözlüğüne beslenen detaylı çalışma kotaları |
+| `WEB_HOST` / `WEB_PORT` / `WEB_GPU_PORT` | `0.0.0.0` / `7860` / `7861` | Web sunucusunun bind adresi ve portları |
+| `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `0/false` | HuggingFace model erişimi ve offline cache davranışı |
+| `JUDGE_ENABLED` / `JUDGE_MODEL` / `JUDGE_PROVIDER` / `JUDGE_SAMPLE_RATE` | `false` / `""` / `ollama` / `0.2` | LLM-as-a-Judge kalite değerlendirme hattı |
+| `ENABLE_COST_ROUTING` ve `COST_ROUTING_*` | `false` / eşik ve model varsayılanları | Basit/karmaşık sorgular için maliyet odaklı model yönlendirmesi |
+| `ENABLE_ENTITY_MEMORY` / `ENTITY_MEMORY_TTL_DAYS` / `ENTITY_MEMORY_MAX_PER_USER` | `true` / `90` / `100` | Entity/persona memory kalıcılığı |
+| `ENABLE_ACTIVE_LEARNING`, `AL_MIN_RATING_FOR_TRAIN`, `ENABLE_LORA_TRAINING`, `LORA_*` | çeşitli | Geri bildirim toplama ve LoRA/QLoRA fine-tuning hazırlıkları |
+| `ENABLE_VISION` / `VISION_MAX_IMAGE_BYTES` | `true` / `10485760` | Çok modlu görsel girdi yetenekleri |
+
+### 12.9 Docker Compose Override Değişkenleri
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
