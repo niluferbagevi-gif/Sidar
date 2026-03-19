@@ -1324,6 +1324,7 @@ Bu bölüm, v4.0 ileri faz doğrulamasında tamamlanan kurumsal geliştirmeleri 
 
 #### Faz 5: Kurumsal Otonomi Kontrolü, Veri Güvenliği ve Kalite Ölçümü (v5.x Vizyonu) - *[TAMAMLANDI]*
 *Sistemin tam otonom yapısında güvenliği maksimuma çıkarmak, insan denetimini entegre etmek ve yanıt kalitesini sürekli ölçümlemek.*
+> **Yeni Vizyon Notu (2026-03-19):** v5.0 artık yalnızca güvenlik/HITL eksenli değil; SİDAR'ı tam bir **AI Co-Worker** seviyesine taşıyacak multimodal medya işleme, browser automation, GraphRAG, LSP, proaktif webhook/cron ajanları ve görsel swarm karar grafiği başlıkları ayrıca [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) dosyasında ürün/mimari backlog olarak detaylandırılmıştır.
 - **✅ [ÇÖZÜLDÜ — v3.0.21] Veri Sızıntısı Önleme (DLP & PII Maskeleme):** `core/dlp.py` — Regex tabanlı PII maskeleme (Bearer token, sk- key, GitHub PAT, AWS key, TC kimlik no, e-posta, kredi kartı, JWT); `core/llm_client.py`’ye API çağrısından önce otomatik DLP hook entegrasyonu.
 - **✅ [ÇÖZÜLDÜ — v3.0.21] İnsan Onayı Geçidi (Human-in-the-Loop - HITL):** `core/hitl.py` — HITLGate async polling tabanlı onay mekanizması; `web_server.py`’ye POST `/api/hitl/request`, POST `/api/hitl/respond/{id}`, GET `/api/hitl/pending` endpoint’leri.
 - **✅ [ÇÖZÜLDÜ — v3.0.21] Sürekli Yanıt Kalitesi Değerlendirmesi (LLM-as-a-Judge):** `core/judge.py` — RAG alaka puanı (0–1) + halüsinasyon riski (0–1); `core/rag.py` search() arka plan değerlendirme; `sidar_rag_relevance_score` + `sidar_hallucination_risk_score` Prometheus metrikleri.
