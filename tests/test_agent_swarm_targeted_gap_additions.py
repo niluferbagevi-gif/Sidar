@@ -88,6 +88,78 @@ def _make_bs4_stub():
     return bs4_stub
 
 
+def _make_managers_stub_pairs():
+    managers_pkg = types.ModuleType("managers")
+    managers_pkg.__path__ = [str(ROOT / "managers")]
+
+    code_manager_stub = types.ModuleType("managers.code_manager")
+    github_manager_stub = types.ModuleType("managers.github_manager")
+    package_info_stub = types.ModuleType("managers.package_info")
+    security_stub = types.ModuleType("managers.security")
+    todo_manager_stub = types.ModuleType("managers.todo_manager")
+
+    class _BaseManager:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class _CodeManager(_BaseManager):
+        def read_file(self, path):
+            return True, f"READ:{path}"
+
+        def write_file(self, path, content, _overwrite=True):
+            Path(path).write_text(content, encoding="utf-8")
+            return True, "ok"
+
+        def patch_file(self, path, _target, replacement):
+            Path(path).write_text(replacement, encoding="utf-8")
+            return True, "ok"
+
+        def execute_code(self, arg):
+            return True, f"EXEC:{arg}"
+
+        def list_directory(self, path):
+            return True, f"LIST:{path}"
+
+        def glob_search(self, pattern, base):
+            return True, f"GLOB:{pattern}@{base}"
+
+        def grep_files(self, pattern, path, file_glob, context_lines):
+            return True, f"GREP:{pattern}|{path}|{file_glob}|{context_lines}"
+
+        def audit_project(self, path):
+            return f"AUDIT:{path}"
+
+    class _GitHubManager(_BaseManager):
+        pass
+
+    class _PackageInfoManager(_BaseManager):
+        async def pypi_info(self, package_name):
+            return True, f"PKG:{package_name}"
+
+    class _SecurityManager(_BaseManager):
+        pass
+
+    class _TodoManager(_BaseManager):
+        def scan_project_todos(self, directory, _limit):
+            return f"TODOS:{directory}"
+
+    code_manager_stub.CodeManager = _CodeManager
+    github_manager_stub.GitHubManager = _GitHubManager
+    package_info_stub.PackageInfoManager = _PackageInfoManager
+    security_stub.SecurityManager = _SecurityManager
+    security_stub.SANDBOX = {}
+    todo_manager_stub.TodoManager = _TodoManager
+
+    return (
+        ("managers", managers_pkg),
+        ("managers.code_manager", code_manager_stub),
+        ("managers.github_manager", github_manager_stub),
+        ("managers.package_info", package_info_stub),
+        ("managers.security", security_stub),
+        ("managers.todo_manager", todo_manager_stub),
+    )
+
+
 @contextmanager
 def _load_agent_test_symbols():
     saved_modules = {
@@ -113,6 +185,12 @@ def _load_agent_test_symbols():
             "core",
             "core.llm_client",
             "httpx",
+            "managers",
+            "managers.code_manager",
+            "managers.github_manager",
+            "managers.package_info",
+            "managers.security",
+            "managers.todo_manager",
         )
     }
 
@@ -147,6 +225,7 @@ def _load_agent_test_symbols():
         ("core", root_core_pkg),
         ("core.llm_client", llm_client_mod),
         ("httpx", _make_httpx_stub()),
+        *_make_managers_stub_pairs(),
     )
     module_specs = (
         ("agent.core.contracts", "agent/core/contracts.py"),
