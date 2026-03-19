@@ -28,14 +28,16 @@ def test_memory_set_active_user_creates_session_and_persists_messages(tmp_path):
 
     assert mem.active_user_id
     assert mem.active_session_id
-    
+
+    initial_hist = asyncio.run(mem.get_history())
+
     asyncio.run(mem.add("user", "merhaba"))
     asyncio.run(mem.add("assistant", "selam"))
     asyncio.run(mem.add("user", "u1"))
     asyncio.run(mem.add("assistant", "a1"))
 
     hist = asyncio.run(mem.get_history())
-    assert len(hist) == 4
+    assert len(hist) == len(initial_hist) + 4
     assert hist[-1]["content"] == "a1"
 
 
