@@ -231,6 +231,88 @@ def test_get_prometheus_metric_returns_none_when_factory_missing(monkeypatch):
     assert cm_mod._get_prometheus_metric("sidar_test_gauge", "desc", "gauge") is None
 
 
+def test_get_prometheus_metric_returns_cached_value_populated_while_lock_is_held(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    metric = object()
+
+    class _LockThatPopulatesCache:
+        def __enter__(self):
+            cm_mod._prometheus_metric_cache["sidar_locked_metric"] = metric
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    import_calls = []
+
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_lock", _LockThatPopulatesCache())
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda name: import_calls.append(name) or None)
+
+    result = cm_mod._get_prometheus_metric("sidar_locked_metric", "desc", "counter")
+
+    assert result is metric
+    assert import_calls == []
+
+
+def test_get_prometheus_metric_uses_existing_registry_collector(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    existing = object()
+    fake_prom = types.SimpleNamespace(
+        REGISTRY=types.SimpleNamespace(_names_to_collectors={"sidar_existing_metric": existing}),
+        Counter=None,
+        Gauge=None,
+    )
+
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda name: fake_prom if name == "prometheus_client" else importlib.import_module(name))
+
+    result = cm_mod._get_prometheus_metric("sidar_existing_metric", "desc", "counter")
+
+    assert result is existing
+    assert cm_mod._prometheus_metric_cache["sidar_existing_metric"] is existing
+
+
+def test_inc_prometheus_counter_ignores_non_positive_counts(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    metric_calls = []
+    monkeypatch.setattr(cm_mod, "_get_prometheus_metric", lambda *args, **kwargs: metric_calls.append((args, kwargs)))
+
+    cm_mod._inc_prometheus_counter("sidar_zero_metric", "desc", count=0)
+    cm_mod._inc_prometheus_counter("sidar_negative_metric", "desc", count=-3)
+
+    assert metric_calls == []
+
+
+def test_record_cache_skip_updates_prometheus_collectors_when_available(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    class _Counter:
+        def __init__(self, *_args, **_kwargs):
+            self.value = 0
+
+        def inc(self, count=1):
+            self.value += count
+
+    fake_prom = types.SimpleNamespace(
+        Counter=_Counter,
+        Gauge=None,
+        REGISTRY=types.SimpleNamespace(_names_to_collectors={}),
+    )
+
+    monkeypatch.setattr(cm_mod, "_cache_metrics", cm_mod._CacheMetrics())
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda name: fake_prom if name == "prometheus_client" else importlib.import_module(name))
+
+    cm_mod.record_cache_skip()
+
+    assert cm_mod._cache_metrics.skips == 1
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_skips_total"].value == 1
+
+
 def test_cache_metrics_updates_prometheus_collectors_when_available(monkeypatch):
     import core.cache_metrics as cm_mod
 
