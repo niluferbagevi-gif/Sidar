@@ -7,13 +7,13 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-19 (v4.2.0 — Autonomous LLMOps faz kapanış ve kurumsal rollout senkronizasyonu tamamlandı. `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py`, `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` yeniden incelendi; tenant RBAC kararlarının `audit_logs` trail'ine yazıldığı, direct `p2p.v1` handoff protokolünün Supervisor + Swarm katmanlarında sender/receiver/handoff_depth bağlamını koruduğu ve Faz 4 LLMOps/ötonomi kabiliyetlerinin operasyonel olarak kalıcı hale geldiği doğrulandı. Takipli ölçümler değişmedi: üretim Python **19.554** satır, test havuzu **34.121** satır, toplam takipli Python **53.675** satır, Web UI toplamı **6.105** satır. Mevcut kod durumunda 60 REST endpoint, açık kritik/yüksek/orta/düşük bulgu bulunmadığı ve kurumsal uyum izlerinin operasyonel hale geldiği yeniden teyit edildi.)
+> **Son Güncelleme:** 2026-03-19 (v4.3.0 — Sürüm ve metrik senkronizasyonu tamamlandı. `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` Git-takipli dosyaları esas alacak şekilde düzeltilerek `.venv` / `node_modules` kaynaklı şişkin ölçümler elimine edildi; ardından `config.py`, paket metadata'sı, Helm chart ve üst seviye raporlar aynı sürüm çizgisine taşındı. Güncel takipli ölçümler: üretim Python **20.582** satır (**58** dosya), test havuzu **39.147** satır (**149** test modülü / **151** Python test dosyası), toplam takipli Python **59.729** satır (**209** dosya), Web UI toplamı **6.105** satır ve runbook kümesi **367** satır. Mevcut kod durumunda **60** REST endpoint, açık kritik/yüksek/orta/düşük bulgu bulunmadığı ve API/DB/env sözleşmelerinde yeni delta olmadığı yeniden teyit edildi.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
-> **Proje Sürümü:** 4.2.0
+> **Proje Sürümü:** 4.3.0
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. Güncel üretim Python hacmi **19.554** satır (**57** takipli `.py` dosyası; `tests/` hariç), test havuzu **34.121** satır (**142** test modülü / **144** Python test dosyası dahil yardımcı dosyalar), tüm takipli Python toplamı **53.675** satırdır. Web UI toplamı (`web_ui/` + `web_ui_react/`) **6.105** satır, runbook kümesi **4** dosya / **336** satırdır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`) satır satır yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i ve güvenli GitHub yükleme akışları raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. Güncel üretim Python hacmi **20.582** satır (**58** takipli `.py` dosyası; `tests/` hariç), test havuzu **39.147** satır (**149** test modülü / **151** Python test dosyası dahil yardımcı dosyalar), tüm takipli Python toplamı **59.729** satırdır. Web UI toplamı (`web_ui/` + `web_ui_react/`) **6.105** satır, runbook kümesi **4** dosya / **367** satırdır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
 
 ---
 
@@ -159,7 +159,7 @@ sidar_project/
 ├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı başlatıcı (wizard + --quick mod)
 ├── <a href="docs/module-notes/cli.py.md">cli.py</a>                     # CLI terminal arayüzü giriş noktası
 ├── <a href="docs/module-notes/web_server.py.md">web_server.py</a>              # FastAPI web sunucusu (WebSocket streaming)
-├── <a href="docs/module-notes/config.py.md">config.py</a>                  # Merkezi yapılandırma (v3.0.0)
+├── <a href="docs/module-notes/config.py.md">config.py</a>                  # Merkezi yapılandırma (v4.3.0)
 ├── <a href="docs/module-notes/github_upload.py.md">github_upload.py</a>           # GitHub otomatik yükleme aracı
 ├── <a href="docs/module-notes/gui_launcher.py.md">gui_launcher.py</a>            # Eel tabanlı masaüstü başlatıcı giriş noktası
 ├── <a href="docs/module-notes/Dockerfile.md">Dockerfile</a>                 # CPU + GPU çift mod Dockerfile
@@ -620,9 +620,9 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt` ve `environment.yml
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içerir.
+Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ile otomatik üretilmelidir.
+**Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` ile otomatik üretilmelidir. Her iki betik de Git deposu içinde varsayılan olarak yalnızca takipli dosyaları ölçer.
 
 ### 8.1 Çekirdek Modüller (Güncel)
 
@@ -631,32 +631,32 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `config.py` | 843 |
 | `main.py` | 382 |
 | `cli.py` | 290 |
-| `web_server.py` | 2.469 |
+| `web_server.py` | 2.532 |
 | `agent/sidar_agent.py` | 588 |
 | `agent/auto_handle.py` | 613 |
-| `agent/definitions.py` | 168 |
+| `agent/definitions.py` | 169 |
 | `agent/tooling.py` | 113 |
-| `agent/base_agent.py` | 55 |
+| `agent/base_agent.py` | 112 |
 | `agent/registry.py` | 187 |
-| `agent/swarm.py` | 371 |
-| `core/llm_client.py` | 1.361 |
+| `agent/swarm.py` | 504 |
+| `core/llm_client.py` | 1.388 |
 | `core/memory.py` | 301 |
 | `core/rag.py` | 1.143 |
-| `core/db.py` | 1.636 |
-| `core/llm_metrics.py` | 272 |
+| `core/db.py` | 1.861 |
+| `core/llm_metrics.py` | 282 |
 | `core/agent_metrics.py` | 118 |
 | `core/dlp.py` | 320 |
-| `core/hitl.py` | 274 |
-| `core/judge.py` | 265 |
+| `core/hitl.py` | 287 |
+| `core/judge.py` | 469 |
 | `core/router.py` | 211 |
-| `core/entity_memory.py` | 283 |
-| `core/cache_metrics.py` | 50 |
-| `core/active_learning.py` | 427 |
+| `core/entity_memory.py` | 281 |
+| `core/cache_metrics.py` | 189 |
+| `core/active_learning.py` | 505 |
 | `core/vision.py` | 294 |
 | `managers/security.py` | 291 |
-| `managers/code_manager.py` | 933 |
+| `managers/code_manager.py` | 1.011 |
 | `managers/github_manager.py` | 645 |
-| `managers/system_health.py` | 488 |
+| `managers/system_health.py` | 538 |
 | `managers/web_search.py` | 388 |
 | `managers/package_info.py` | 344 |
 | `managers/todo_manager.py` | 452 |
@@ -670,14 +670,14 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 
 | Dosya | Satır |
 |---|---:|
-| `agent/core/supervisor.py` | 240 |
-| `agent/core/contracts.py` | 64 |
+| `agent/core/supervisor.py` | 291 |
+| `agent/core/contracts.py` | 99 |
 | `agent/core/event_stream.py` | 218 |
 | `agent/core/memory_hub.py` | 55 |
 | `agent/core/registry.py` | 30 |
-| `agent/roles/coder_agent.py` | 135 |
+| `agent/roles/coder_agent.py` | 168 |
 | `agent/roles/researcher_agent.py` | 80 |
-| `agent/roles/reviewer_agent.py` | 184 |
+| `agent/roles/reviewer_agent.py` | 247 |
 
 ### 8.3 Migration / Operasyon / Altyapı
 
@@ -686,21 +686,22 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `migrations/env.py` | 66 |
 | `migrations/versions/0001_baseline_schema.py` | 99 |
 | `migrations/versions/0002_prompt_registry.py` | 53 |
+| `migrations/versions/0003_audit_trail.py` | 38 |
 | `scripts/migrate_sqlite_to_pg.py` | 92 |
 | `scripts/load_test_db_pool.py` | 74 |
-| `scripts/audit_metrics.sh` | 57 |
-| `scripts/collect_repo_metrics.sh` | 14 |
+| `scripts/audit_metrics.sh` | 84 |
+| `scripts/collect_repo_metrics.sh` | 35 |
 | `scripts/install_host_sandbox.sh` | 201 |
 | `docker/prometheus/prometheus.yml` | 8 |
 | `docker/grafana/provisioning/datasources/prometheus.yml` | 9 |
 | `docker/grafana/provisioning/dashboards/dashboards.yml` | 11 |
-| `docker/grafana/dashboards/sidar-llm-overview.json` | 666 |
-| `runbooks/production-cutover-playbook.md` | 151 |
+| `docker/grafana/dashboards/sidar-llm-overview.json` | 1.004 |
+| `runbooks/production-cutover-playbook.md` | 182 |
 | `runbooks/observability_simulation.md` | 87 |
 | `runbooks/plugin_marketplace_demo.md` | 32 |
 | `runbooks/tenant_rbac_scenarios.md` | 66 |
-| `plugins/crypto_price_agent.py` | 49 |
-| `plugins/upload_agent.py` | 10 |
+| `plugins/crypto_price_agent.py` | 50 |
+| `plugins/upload_agent.py` | 11 |
 | `Dockerfile` | 104 |
 | `docker-compose.yml` | 264 |
 
@@ -715,26 +716,26 @@ Bu bölüm, v3.0 final depo içeriği için güncel `wc -l` ölçümlerini içer
 | `web_ui/rag.js` | 132 |
 | `web_ui/app.js` | 819 |
 | **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.105** |
-| **Test modülü (`tests/test_*.py`)** | **142** |
-| **`tests/*.py` toplam dosya** | **144** |
-| **`tests/*.py` toplam satır** | **34.121** |
+| **Test modülü (`tests/test_*.py`)** | **149** |
+| **`tests/*.py` toplam dosya** | **151** |
+| **`tests/*.py` toplam satır** | **39.147** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 142 |
-| `tests/` | `*.py` toplam dosya | 144 |
-| `tests/` | `*.py` toplam satır | 34.121 |
+| `tests/` | `test_*.py` modül sayısı | 149 |
+| `tests/` | `*.py` toplam dosya | 151 |
+| `tests/` | `*.py` toplam satır | 39.147 |
 | `scripts/` | dosya sayısı | 7 |
-| `scripts/` | toplam satır | 565 |
-| `migrations/` | `.py` dosya sayısı (env.py + 2 versions) | 3 |
-| `migrations/` | `*.py` toplam satır | 218 |
+| `scripts/` | toplam satır | 613 |
+| `migrations/` | `.py` dosya sayısı (env.py + 3 versions) | 4 |
+| `migrations/` | `*.py` toplam satır | 256 |
 | `helm/sidar/` | şablon dosyası sayısı (templates/ dahil) | 25 |
+| `helm/sidar/` | toplam satır | 913 |
 | `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
-| `docker/` | ilgili telemetri dosyaları toplam satır | 694 |
+| `docker/` | ilgili telemetri dosyaları toplam satır | 1.032 |
 
----
 
 ## 9. Modül Bağımlılık Haritası
 
@@ -1666,6 +1667,7 @@ Bu bölüm, v3.0 final sürümü öncesi yapılan tüm audit ve doğrulama seans
 | **v3.0.31** | **2026-03-19** | **Kurumsal rollout senkronizasyonu: `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py`, `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` satır satır yeniden incelendi. `audit_logs` migration'ı, `record_audit_log()` / `list_audit_logs()` yardımcıları ve `access_policy_middleware` audit trail yazımı ile tenant RBAC kararlarının kalıcı uyum izi doğrulandı. Aynı turda direct `p2p.v1` handoff protokolünün Supervisor + Swarm akışlarında sender/receiver/reason/handoff_depth bağlamını koruduğu ve ilgili testlerle güvence altına alındığı rapora işlendi.** |
 | **v3.2.0** | **2026-03-19** | **Autonomous LLMOps anlatısının konsolidasyonu: Faz 4 kapsamı yeniden çerçevelenerek `core/active_learning.py`, `core/vision.py`, `core/router.py`, `managers/slack_manager.py`, `managers/jira_manager.py` ve `managers/teams_manager.py` üzerinden gelen aktif öğrenme, multimodal üretim, cost-aware routing ve dış sistem orkestrasyonu tek bir ürün hikâyesi altında birleştirildi. Böylece Faz 4 yalnızca “özellik eklendi” seviyesinde değil, kapalı döngü öğrenme + çok modlu çıktı + otonom entegrasyon yönetimi ekseninde Autonomous LLMOps katmanı olarak tanımlandı.** |
 | **v4.2.0** | **2026-03-19** | **Faz 4 tamamlandı notu kurumsal operasyon seviyesine yükseltildi: `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py`, `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py` ve `agent/swarm.py` ile doğrulanan audit trail + direct handoff omurgası, Faz 4 LLMOps yeteneklerinin denetlenebilir, rollout'a hazır ve kurumsal ölçek için kalıcı olduğunu teyit etti. Bu sürüm, Autonomous LLMOps vizyonunun teknik olarak tamamlanıp operasyonel olarak da kapanış aldığını belgeleyen rapor sürümüdür.** |
+| **v4.3.0** | **2026-03-19** | **Sürüm + metrik senkronizasyon turu: `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` Git takipli dosyaları baz alacak şekilde düzeltildi; ardından `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md` ve `TEKNIK_REFERANS.md` güncel ölçümlerle hizalandı. Yeni baz çizgisi 58 üretim Python dosyası / 20.582 satır, 151 test dosyası / 39.147 satır, toplam 209 takipli Python dosyası / 59.729 satır ve 60 REST endpoint olarak teyit edildi.** |
 
 - **Öne Çıkan Başarılar:** Multi-agent P2P delegasyon altyapısı ve %99.9 test kapsamı zorunluluğu projenin üretim kararlılığını garanti altına almıştır. Faz 4+5 özellik turlarıyla kurumsal DLP, HITL, Judge, Cost-Aware Routing, Entity Memory, Active Learning, Vision ve Slack/Jira/Teams entegrasyonu tamamlanarak platform ürün olgunluğuna ulaşmıştır.
 - **Arşiv Notu:** Detaylı sürüm bazlı değişiklik geçmişi ve çözülen teknik borçlar için `CHANGELOG.md` dosyasını referans alınız.
