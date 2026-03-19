@@ -4,7 +4,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
 > Son doğrulama turu: **2026-03-19** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
-> Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**60**), veri tabanı tabloları ve Config tarafından okunan env anahtarları tarafında yeni bir sözleşme farkı bulunmamıştır.
+> Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**62**) ve WebSocket yüzeyi (`/ws/chat`, `/ws/voice`) güncellenmiş, veri tabanı tabloları ile Config tarafından okunan env anahtarları yeni multimodal/browser/autonomy değişkenleri dahil yeniden senkronize edilmiştir.
 
 ---
 
@@ -19,7 +19,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 - [3. API Sunucusu (web_server.py)](#3-api-sunucusu-web_serverpy)
   - [3.1 Middleware sırası ve güvenlik davranışı](#31-middleware-sırası-ve-güvenlik-davranışı)
   - [3.2 REST endpoint envanteri (tam)](#32-rest-endpoint-envanteri-tam)
-  - [3.3 WebSocket protokolü: `/ws/chat`](#33-websocket-protokolü-wschat)
+  - [3.3 WebSocket protokolleri: `/ws/chat` ve `/ws/voice`](#33-websocket-protokolleri-wschat-ve-wsvoice)
   - [3.4 Telemetri ve metrik endpointleri](#34-telemetri-ve-metrik-endpointleri)
 - [4. Agent Orkestrasyonu ve Tooling](#4-agent-orkestrasyonu-ve-tooling)
   - [4.1 Supervisor-first çalışma modeli](#41-supervisor-first-çalışma-modeli)
@@ -53,7 +53,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
 - **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
-- **`web_server.py`**: FastAPI kontrol düzlemi 60 REST endpoint + `/ws/chat` WebSocket hattı sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
+- **`web_server.py`**: FastAPI kontrol düzlemi 62 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
 - **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
 - **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
 - **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.
@@ -158,7 +158,7 @@ Rate-limit katmanı Redis erişemezse local bellek fallback mekanizmasıyla çal
 
 ### 3.2 REST endpoint envanteri (tam)
 
-Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **60 REST endpoint** bulunmaktadır; v3.0.29 doğrulamasında Vision, EntityMemory, FeedbackStore ve Slack/Jira/Teams entegrasyon yüzeylerinin HTTP katmanına bağlı kaldığı tekrar teyit edilmiştir.
+Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **62 REST endpoint** bulunmaktadır; bu turda proaktif otonomi ve federation yüzeyleri de envantere eklenmiştir.
 
 | Method | Path | Not |
 |---|---|---|
@@ -222,10 +222,13 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | GET | `/api/integrations/jira/issues` | Jira issue ara (JQL) |
 | POST | `/api/integrations/teams/send` | Teams mesaj gönder |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
+| POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature`) |
+| POST | `/api/swarm/federation` | Dış swarm/CrewAI/AutoGen görevini Sidar içinde yürütür (`X-Sidar-Signature`) |
 
-### 3.3 WebSocket protokolü: `/ws/chat`
+### 3.3 WebSocket protokolleri: `/ws/chat` ve `/ws/voice`
 
-- Endpoint: `/ws/chat`
+#### `/ws/chat`
+
 - **Öncelikli kimlik doğrulama:** HTTP upgrade sırasında `Sec-WebSocket-Protocol` başlığında Bearer token gönderilir; bağlantı kabul edilmeden önce doğrulama yapılır (O-5 çözümü).
 - **Fallback:** Başlık yoksa bağlantı kurulduktan sonraki ilk JSON mesajında `{"action":"auth","token":"..."}` beklenir.
 - Geçersiz veya eksik auth → `1008 Policy Violation`
@@ -239,6 +242,14 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
   - `{"tool_call": "..."}` (`\x00TOOL:` sentinel)
   - `{"chunk": "..."}` (token/metin stream)
   - `{"done": true}`
+
+#### `/ws/voice`
+
+- Binary ses chunk'larını kabul eder; istemci `commit` / `end` aksiyonu ile biriken sesi işleme alır.
+- Kimlik doğrulama öncelikle `Sec-WebSocket-Protocol` başlığındaki bearer token ile yapılır; token yoksa oturum açılmadan ses kabul edilmez.
+- Sunucu `core.multimodal.MultimodalPipeline` üzerinden STT/transkript üretir ve ardından ajan yanıtını JSON event akışı olarak geri döner.
+- `VOICE_WS_MAX_BYTES` ile toplam kabul edilen ses boyutu sınırlandırılır; limit aşımı `1008 Policy Violation` ile kapatılır.
+- MVP kapsamı bugün **voice-to-text + text response** düzeyindedir; çift yönlü TTS hattı sonraki iterasyona bırakılmıştır.
 
 ### 3.4 Telemetri ve metrik endpointleri
 
@@ -433,6 +444,20 @@ WEB_SCRAPE_MAX_CHARS
 WEB_SEARCH_MAX_RESULTS
 ```
 
+### 5.2.1 Bu turda eklenen önemli env anahtarları
+
+- **Multimodal / ses:** `ENABLE_MULTIMODAL`, `MULTIMODAL_MAX_FILE_BYTES`, `VOICE_STT_PROVIDER`, `WHISPER_MODEL`, `VOICE_WS_MAX_BYTES`
+- **Browser automation:** `BROWSER_PROVIDER`, `BROWSER_HEADLESS`, `BROWSER_TIMEOUT_MS`, `BROWSER_ALLOWED_DOMAINS`
+- **LSP:** `ENABLE_LSP`, `LSP_TIMEOUT_SECONDS`, `LSP_MAX_REFERENCES`, `PYTHON_LSP_SERVER`, `TYPESCRIPT_LSP_SERVER`
+- **Proaktif otonomi:** `ENABLE_AUTONOMOUS_CRON`, `AUTONOMOUS_CRON_INTERVAL_SECONDS`, `AUTONOMOUS_CRON_PROMPT`
+- **Webhook / federation:** `ENABLE_EVENT_WEBHOOKS`, `AUTONOMY_WEBHOOK_SECRET`, `ENABLE_SWARM_FEDERATION`, `SWARM_FEDERATION_SHARED_SECRET`
+- **GraphRAG:** `ENABLE_GRAPH_RAG`, `GRAPH_RAG_MAX_FILES`
+
+**Otonom yapılandırma özeti:**
+- `ENABLE_AUTONOMOUS_CRON=false` ise arka plan zamanlayıcısı hiç başlatılmaz.
+- `AUTONOMOUS_CRON_INTERVAL_SECONDS=900` varsayılanı, cron tetikleyicisini en az 30 saniyelik alt sınır uygulanarak periyodik çalıştırır.
+- `AUTONOMOUS_CRON_PROMPT`, her zamanlayıcı turunda ajana gönderilecek varsayılan görev istemini tanımlar.
+
 ### 5.3 Docker Compose override değişkenleri
 
 `docker-compose.yml` üzerinden doğrudan kullanılan başlıca override’lar:
@@ -485,7 +510,14 @@ WEB_SEARCH_MAX_RESULTS
 - SQLite: `data/sidar.db` periyodik snapshot
 - RAG veri dizinleri (`data/rag` vb.) için düzenli volume backup
 
-### 7.4 Hızlı sorun giderme
+### 7.4 Çalışma zamanı gereksinimleri
+
+- **FFmpeg:** `core/multimodal.py` video frame çıkarma ve ses ayıklama için sistemde `ffmpeg` binary'sine ihtiyaç duyar.
+- **Playwright / Selenium:** `managers/browser_manager.py` seçilen sağlayıcıya göre ilgili Python paketlerini ve gerekirse tarayıcı binary kurulumlarını bekler.
+- **LSP sunucuları:** Python için varsayılan `pyright-langserver`, TypeScript için `typescript-language-server` süreçleri PATH üzerinde bulunmalıdır.
+- **Whisper/STT aracı:** varsayılan `VOICE_STT_PROVIDER=whisper` akışı için seçilen STT backend'inin erişilebilir olması gerekir.
+
+### 7.5 Hızlı sorun giderme
 
 - **WS `1008`**: auth handshake mesajı eksik/yanlış
 - **429 artışı**: DDoS limit + endpoint limit + günlük kota birlikte kontrol edilmeli
