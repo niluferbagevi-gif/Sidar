@@ -83,4 +83,44 @@ def test_graph_index_tracks_endpoints_and_impact_analysis(tmp_path):
     assert "endpoint:GET /api/items" in index.nodes
     assert "client.js" in impact["caller_files"]
     assert "endpoint:GET /api/items" in impact["impacted_endpoints"]
+    assert "service.py" in impact["impacted_endpoint_handlers"]
+    assert impact["risk_level"] == "high"
+    assert "service.py" in impact["review_targets"]
     assert any(path[-1] == "helper.py" for path in impact["dependency_paths"])
+
+
+def test_document_store_graph_impact_includes_reviewer_targets(tmp_path, monkeypatch):
+    (tmp_path / "service.py").write_text(
+        "from fastapi import FastAPI\n"
+        "import helper\n"
+        "app = FastAPI()\n"
+        "@app.post('/api/save')\n"
+        "async def save_item():\n"
+        "    return helper.persist()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "helper.py").write_text("def persist():\n    return {'ok': True}\n", encoding="utf-8")
+    (tmp_path / "client.js").write_text("fetch('/api/save', {method: 'POST'})\n", encoding="utf-8")
+
+    monkeypatch.setattr(RAG_MOD.DocumentStore, "_check_import", lambda self, _: False)
+    cfg = types.SimpleNamespace(
+        RAG_TOP_K=5,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        HF_TOKEN="",
+        HF_HUB_OFFLINE=False,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        BASE_DIR=tmp_path,
+        ENABLE_GRAPH_RAG=True,
+        GRAPH_RAG_MAX_FILES=20,
+    )
+    store = RAG_MOD.DocumentStore(tmp_path / "rag_store", cfg=cfg)
+
+    ok, report = store.analyze_graph_impact("helper.py", top_k=5)
+
+    assert ok is True
+    assert "Risk seviyesi: high" in report
+    assert "Etkilenen endpoint handler dosyaları: service.py" in report
+    assert "Reviewer için önerilen hedefler:" in report

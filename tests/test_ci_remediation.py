@@ -20,7 +20,7 @@ def test_workflow_run_failure_context_and_prompt_are_built():
             "html_url": "https://github.com/acme/sidar/actions/runs/42",
             "jobs_url": "https://api.github.com/jobs/42",
             "logs_url": "https://api.github.com/logs/42",
-            "display_title": "pytest failed on reviewer flow",
+            "display_title": "pytest failed on tests/test_reviewer_agent.py",
             "pull_requests": [{"base": {"ref": "main"}}],
         },
     }
@@ -31,10 +31,13 @@ def test_workflow_run_failure_context_and_prompt_are_built():
     assert context["repo"] == "acme/sidar"
     assert context["workflow_name"] == "CI"
     assert context["run_id"] == "42"
+    assert context["suspected_targets"] == ["tests/test_reviewer_agent.py"]
+    assert context["diagnostic_hints"]
 
     prompt = build_ci_failure_prompt(context)
     assert "[CI_REMEDIATION]" in prompt
     assert "logs_url=https://api.github.com/logs/42" in prompt
+    assert "suspected_targets=tests/test_reviewer_agent.py" in prompt
 
 
 def test_check_run_failure_generates_pr_proposal():
@@ -50,7 +53,7 @@ def test_check_run_failure_generates_pr_proposal():
             "html_url": "https://github.com/acme/sidar/checks/501",
             "output": {
                 "title": "2 tests failed",
-                "summary": "tests/test_reviewer_agent.py failed",
+                "summary": "tests/test_reviewer_agent.py failed while importing core/rag.py",
                 "text": "AssertionError: expected approve",
             },
         },
@@ -64,3 +67,4 @@ def test_check_run_failure_generates_pr_proposal():
     assert proposal["base_branch"] == "main"
     assert proposal["head_branch_suggestion"] == "ci-remediation/501"
     assert "Kök neden" in proposal["body"]
+    assert "tests/test_reviewer_agent.py" in proposal["body"]

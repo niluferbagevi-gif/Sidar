@@ -108,6 +108,24 @@ class BrowserManager:
         )
         return entry
 
+    def _audit_session_action(
+        self,
+        session: BrowserSession,
+        *,
+        action: str,
+        status: str,
+        selector: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self._record_audit_event(
+            session_id=session.session_id,
+            action=action,
+            status=status,
+            selector=selector,
+            current_url=self._session_url(session),
+            details=details,
+        )
+
     def list_audit_log(self) -> list[dict[str, Any]]:
         return list(self._audit_log)
 
@@ -279,6 +297,16 @@ class BrowserManager:
                     continue
 
                 self._sessions[session.session_id] = session
+                self._audit_session_action(
+                    session,
+                    action="browser_start_session",
+                    status="started",
+                    details={
+                        "provider": session.provider,
+                        "browser_name": session.browser_name,
+                        "headless": session.headless,
+                    },
+                )
                 return True, {
                     "session_id": session.session_id,
                     "provider": session.provider,
@@ -288,21 +316,41 @@ class BrowserManager:
             except Exception as exc:
                 logger.warning("Browser provider başlatılamadı (%s): %s", candidate, exc)
                 last_error = str(exc)
+                self._record_audit_event(
+                    session_id=f"startup:{candidate}",
+                    action="browser_start_session",
+                    status="failed",
+                    details={"provider": candidate, "browser_name": browser_name, "error": str(exc)},
+                )
 
         return False, {"error": last_error}
 
     def goto_url(self, session_id: str, url: str) -> tuple[bool, str]:
         self._validate_url(url)
         session = self._require_session(session_id)
+        try:
+            if session.provider == "playwright":
+                session.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+                session.current_url = url
+            else:
+                session.driver.get(url)
+                session.current_url = url
 
-        if session.provider == "playwright":
-            session.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
-            session.current_url = url
+            self._audit_session_action(
+                session,
+                action="browser_goto_url",
+                status="executed",
+                details={"url": url},
+            )
             return True, f"Açıldı: {url}"
-
-        session.driver.get(url)
-        session.current_url = url
-        return True, f"Açıldı: {url}"
+        except Exception as exc:
+            self._audit_session_action(
+                session,
+                action="browser_goto_url",
+                status="execution_failed",
+                details={"url": url, "error": str(exc)},
+            )
+            raise
 
     def _click_element_impl(self, session_id: str, selector: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
@@ -316,10 +364,35 @@ class BrowserManager:
         return True, f"Tıklandı: {selector}"
 
     def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
+        session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_click", selector)
         if blocked is not None:
+            self._audit_session_action(
+                session,
+                action="browser_click",
+                status="blocked_hitl",
+                selector=selector,
+                details={"reason": blocked[1]},
+            )
             return blocked
-        return self._click_element_impl(session_id, selector)
+        try:
+            ok, message = self._click_element_impl(session_id, selector)
+            self._audit_session_action(
+                session,
+                action="browser_click",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+            )
+            return ok, message
+        except Exception as exc:
+            self._audit_session_action(
+                session,
+                action="browser_click",
+                status="execution_failed",
+                selector=selector,
+                details={"error": str(exc)},
+            )
+            raise
 
     async def click_element_hitl(
         self,
@@ -354,16 +427,27 @@ class BrowserManager:
         if not approved:
             return False, f"HITL onayı beklenirken/sonucunda işlem reddedildi: {selector}"
 
-        ok, message = self._click_element_impl(session_id, selector)
-        self._record_audit_event(
-            session_id=session_id,
-            action="browser_click",
-            status="executed" if ok else "execution_failed",
-            selector=selector,
-            current_url=self._session_url(session),
-            details=payload,
-        )
-        return ok, message
+        try:
+            ok, message = self._click_element_impl(session_id, selector)
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_click",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details=payload,
+            )
+            return ok, message
+        except Exception as exc:
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_click",
+                status="execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details={**payload, "error": str(exc)},
+            )
+            raise
 
     def _fill_form_impl(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
         session = self._require_session(session_id)
@@ -383,10 +467,36 @@ class BrowserManager:
         return True, f"Form dolduruldu: {selector}"
 
     def fill_form(self, session_id: str, selector: str, value: str, clear: bool = True) -> tuple[bool, str]:
+        session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_fill_form", selector, force_block=True)
         if blocked is not None:
+            self._audit_session_action(
+                session,
+                action="browser_fill_form",
+                status="blocked_hitl",
+                selector=selector,
+                details={"reason": blocked[1], "clear": bool(clear)},
+            )
             return blocked
-        return self._fill_form_impl(session_id, selector, value, clear=clear)
+        try:
+            ok, message = self._fill_form_impl(session_id, selector, value, clear=clear)
+            self._audit_session_action(
+                session,
+                action="browser_fill_form",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+                details={"clear": bool(clear), "value_preview": self._summarize_value(value)},
+            )
+            return ok, message
+        except Exception as exc:
+            self._audit_session_action(
+                session,
+                action="browser_fill_form",
+                status="execution_failed",
+                selector=selector,
+                details={"clear": bool(clear), "value_preview": self._summarize_value(value), "error": str(exc)},
+            )
+            raise
 
     async def fill_form_hitl(
         self,
@@ -420,16 +530,27 @@ class BrowserManager:
         if not approved:
             return False, f"HITL onayı beklenirken/sonucunda form doldurma reddedildi: {selector}"
 
-        ok, message = self._fill_form_impl(session_id, selector, value, clear=clear)
-        self._record_audit_event(
-            session_id=session_id,
-            action="browser_fill_form",
-            status="executed" if ok else "execution_failed",
-            selector=selector,
-            current_url=self._session_url(session),
-            details=payload,
-        )
-        return ok, message
+        try:
+            ok, message = self._fill_form_impl(session_id, selector, value, clear=clear)
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_fill_form",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details=payload,
+            )
+            return ok, message
+        except Exception as exc:
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_fill_form",
+                status="execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details={**payload, "error": str(exc)},
+            )
+            raise
 
     def _select_option_impl(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
         session = self._require_session(session_id)
@@ -444,10 +565,36 @@ class BrowserManager:
         return True, f"Seçim yapıldı: {selector}={value}"
 
     def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+        session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_select_option", selector, force_block=True)
         if blocked is not None:
+            self._audit_session_action(
+                session,
+                action="browser_select_option",
+                status="blocked_hitl",
+                selector=selector,
+                details={"reason": blocked[1], "value_preview": self._summarize_value(value)},
+            )
             return blocked
-        return self._select_option_impl(session_id, selector, value)
+        try:
+            ok, message = self._select_option_impl(session_id, selector, value)
+            self._audit_session_action(
+                session,
+                action="browser_select_option",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+                details={"value_preview": self._summarize_value(value)},
+            )
+            return ok, message
+        except Exception as exc:
+            self._audit_session_action(
+                session,
+                action="browser_select_option",
+                status="execution_failed",
+                selector=selector,
+                details={"value_preview": self._summarize_value(value), "error": str(exc)},
+            )
+            raise
 
     async def select_option_hitl(
         self,
@@ -479,22 +626,41 @@ class BrowserManager:
         if not approved:
             return False, f"HITL onayı beklenirken/sonucunda seçim reddedildi: {selector}"
 
-        ok, message = self._select_option_impl(session_id, selector, value)
-        self._record_audit_event(
-            session_id=session_id,
-            action="browser_select_option",
-            status="executed" if ok else "execution_failed",
-            selector=selector,
-            current_url=self._session_url(session),
-            details=payload,
-        )
-        return ok, message
+        try:
+            ok, message = self._select_option_impl(session_id, selector, value)
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_select_option",
+                status="executed" if ok else "execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details=payload,
+            )
+            return ok, message
+        except Exception as exc:
+            self._record_audit_event(
+                session_id=session_id,
+                action="browser_select_option",
+                status="execution_failed",
+                selector=selector,
+                current_url=self._session_url(session),
+                details={**payload, "error": str(exc)},
+            )
+            raise
 
     def capture_dom(self, session_id: str, selector: str = "html") -> tuple[bool, str]:
         session = self._require_session(session_id)
         if session.provider == "playwright":
-            return True, session.page.locator(selector).inner_html(timeout=self.timeout_ms)
-        return True, session.driver.page_source
+            dom = session.page.locator(selector).inner_html(timeout=self.timeout_ms)
+        else:
+            dom = session.driver.page_source
+        self._audit_session_action(
+            session,
+            action="browser_capture_dom",
+            status="executed",
+            selector=selector,
+        )
+        return True, dom
 
     def capture_screenshot(
         self,
@@ -511,6 +677,12 @@ class BrowserManager:
         else:
             session.driver.save_screenshot(str(target))
 
+        self._audit_session_action(
+            session,
+            action="browser_capture_screenshot",
+            status="executed",
+            details={"path": str(target), "full_page": bool(full_page)},
+        )
         return True, str(target)
 
     def close_session(self, session_id: str) -> tuple[bool, str]:
@@ -530,6 +702,17 @@ class BrowserManager:
                 session.driver.quit()
         except Exception as exc:
             logger.warning("Tarayıcı oturumu kapatılırken hata: %s", exc)
+            self._audit_session_action(
+                session,
+                action="browser_close_session",
+                status="execution_failed",
+                details={"error": str(exc)},
+            )
             return False, f"Oturum kapatılırken hata: {exc}"
 
+        self._audit_session_action(
+            session,
+            action="browser_close_session",
+            status="executed",
+        )
         return True, f"Tarayıcı oturumu kapatıldı: {session_id}"

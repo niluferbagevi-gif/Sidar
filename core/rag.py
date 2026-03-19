@@ -392,6 +392,21 @@ class GraphIndex:
             item for item in reverse
             if self.nodes.get(item, {}).get("node_type") == "file"
         ]
+        impacted_endpoint_handlers: List[str] = []
+        for endpoint_id in sorted(endpoint_impacts):
+            for handler_file in self.neighbors(endpoint_id):
+                if self.nodes.get(handler_file, {}).get("node_type") == "file":
+                    impacted_endpoint_handlers.append(handler_file)
+        impacted_endpoint_handlers = sorted(dict.fromkeys(impacted_endpoint_handlers))
+
+        review_targets = sorted(
+            dict.fromkeys(
+                list(direct_dependents[:top_k])
+                + caller_files[:top_k]
+                + impacted_endpoint_handlers[:top_k]
+            )
+        )[:top_k]
+
         dependency_samples: List[List[str]] = []
         sample_candidates = endpoint_impacts[:3] + caller_files[:3]
         for candidate in sample_candidates[:3]:
@@ -399,14 +414,24 @@ class GraphIndex:
             if path:
                 dependency_samples.append(path)
 
+        if endpoint_impacts:
+            risk_level = "high"
+        elif len(caller_files) >= 3 or len(direct_dependents) >= 3:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+
         return {
             "target": node_id,
             "node_type": self.nodes.get(node_id, {}).get("node_type", "file"),
+            "risk_level": risk_level,
             "direct_dependents": direct_dependents[:top_k],
             "transitive_dependents": sorted(reverse, key=lambda item: (reverse[item], item))[:top_k],
             "dependencies": sorted(forward, key=lambda item: (forward[item], item))[:top_k],
             "impacted_endpoints": sorted(endpoint_impacts)[:top_k],
+            "impacted_endpoint_handlers": impacted_endpoint_handlers[:top_k],
             "caller_files": sorted(caller_files)[:top_k],
+            "review_targets": review_targets,
             "dependency_paths": dependency_samples[:3],
         }
 
@@ -842,7 +867,7 @@ class DocumentStore:
             """Recursive bölme fonksiyonu"""
             if len(text_part) <= size:
                 return [text_part]
-            
+
             if sep_idx >= len(separators):
                 # Hiçbir ayırıcı ile bölünemiyorsa zorla böl (character limit)
                 step = max(1, size - overlap)
@@ -880,10 +905,10 @@ class DocumentStore:
                     current_chunk = current_chunk[-overlap_len:] + part
                 else:
                     current_chunk += part
-            
+
             if current_chunk:
                 new_chunks.append(current_chunk)
-            
+
             return new_chunks
 
         return _split(text, 0)
@@ -1210,20 +1235,27 @@ class DocumentStore:
 
         lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
         impacted_endpoints = analysis.get("impacted_endpoints") or []
+        impacted_endpoint_handlers = analysis.get("impacted_endpoint_handlers") or []
         caller_files = analysis.get("caller_files") or []
         direct_dependents = analysis.get("direct_dependents") or []
         dependencies = analysis.get("dependencies") or []
+        review_targets = analysis.get("review_targets") or []
         dependency_paths = analysis.get("dependency_paths") or []
 
         lines.append(f"- Düğüm tipi: {analysis.get('node_type', 'file')}")
+        lines.append(f"- Risk seviyesi: {analysis.get('risk_level', 'low')}")
         if direct_dependents:
             lines.append(f"- Doğrudan bağımlılar: {', '.join(direct_dependents)}")
         if dependencies:
             lines.append(f"- Aşağı akış bağımlılıklar: {', '.join(dependencies)}")
         if impacted_endpoints:
             lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
+        if impacted_endpoint_handlers:
+            lines.append(f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}")
         if caller_files:
             lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
+        if review_targets:
+            lines.append(f"- Reviewer için önerilen hedefler: {', '.join(review_targets)}")
         if dependency_paths:
             lines.append("- Örnek etki zincirleri:")
             for idx, path in enumerate(dependency_paths, start=1):
@@ -1550,12 +1582,12 @@ class DocumentStore:
             lines.append(f"**[{res['id']}] {res['title']}**")
             if res['source']:
                 lines.append(f"  Kaynak: {res['source']}")
-            
+
             # Snippet uzunluğunu sınırla ve satır sonlarını temizle
             snippet = res['snippet'].replace("\n", " ").strip()
             if len(snippet) > 400:
                 snippet = snippet[:400] + "..."
-            
+
             lines.append(f"  {snippet}")
             lines.append("")
 
@@ -1566,7 +1598,7 @@ class DocumentStore:
         """Sorgudaki ilk anahtar kelimenin etrafındaki metni çıkar (BM25 ve Keyword için)."""
         keywords = query.lower().split()
         content_lower = content.lower()
-        
+
         # Önce tam eşleşme ara
         for kw in keywords:
             idx = content_lower.find(kw)
@@ -1575,7 +1607,7 @@ class DocumentStore:
                 end = min(len(content), idx + window)
                 snippet = content[start:end].strip()
                 return f"...{snippet}..." if start > 0 else snippet
-        
+
         # Bulunamazsa baş tarafı döndür
         return content[:window] + ("..." if len(content) > window else "")
 
@@ -1642,4 +1674,4 @@ class DocumentStore:
             graph_state = "hazır" if self._graph_ready else "pasif"
             engines.append(f"GraphRAG ({graph_state})")
 
-        return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"  
+        return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
