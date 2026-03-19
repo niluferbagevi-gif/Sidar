@@ -72,19 +72,27 @@ def test_web_server_ultimate_edge_cases(monkeypatch):
         pass
 
     # __main__ bloğunu güvenli şekilde tetikle
-    _install_web_server_stubs()
-    import agent.sidar_agent as _agent_mod
-    import uvicorn
-
-    _agent_mod.SidarAgent = MagicMock()
     calls = {"n": 0}
-    uvicorn.run = lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+    replaced_modules = _install_web_server_stubs()
+    try:
+        import agent.sidar_agent as _agent_mod
+        import uvicorn
 
-    with patch("sys.argv", ["web_server.py"]):
-        try:
-            ns = {"__name__": "__main__", "__file__": "web_server.py"}
-            exec(compile(open("web_server.py", "rb").read(), "web_server.py", "exec"), ns)
-        except Exception:
-            pass
+        _agent_mod.SidarAgent = MagicMock()
+        uvicorn.run = lambda *a, **k: calls.__setitem__("n", calls["n"] + 1)
+
+        with patch("sys.argv", ["web_server.py"]):
+            try:
+                ns = {"__name__": "__main__", "__file__": "web_server.py"}
+                exec(compile(open("web_server.py", "rb").read(), "web_server.py", "exec"), ns)
+            except Exception:
+                pass
+    finally:
+        from tests.test_web_server_runtime import _restore_modules
+
+        _restore_modules(
+            replaced_modules,
+            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+        )
 
     assert calls["n"] >= 0
