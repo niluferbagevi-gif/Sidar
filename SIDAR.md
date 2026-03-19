@@ -5,7 +5,7 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 ## ⚙️ Sistem Bilgileri
 - **API/Web Portu:** `7860` (varsayılan)
 - **Model Standardı:** Yerel (Ollama: `qwen2.5-coder:7b`) ve Bulut (Gemini: `gemini-2.5-flash`, OpenAI: `gpt-4o-mini`, Anthropic: `claude-3-5-sonnet`)
-- **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `PROJE_RAPORU.md` takip edilir.
+- **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `docs/PROJE_RAPORU.md` takip edilir.
 - **Rol Dağılımı:** Tüm görevler Supervisor ajan tarafından koordine edilir. Kodlama (Coder), araştırma (Researcher) ve kalite kontrol (Reviewer) süreçleri uzman ajanlara delege edilir.
 - **Güncel Durum:** `v4.3.0` runtime baseline üzerinde çalışan sistem; `v3.2.0` Autonomous LLMOps anlatısı ve `v4.2.0` operasyonel kapanış notlarını korurken güncel metrik/sürüm senkronizasyonu ile açık audit bulgusu olmadan ilerler.
 
@@ -25,4 +25,4 @@ LLM döngüsüne girmeden yakalanan sistem komutlarını bil:
 - `.audit`, `.gpu`: Denetim ve GPU optimizasyon kısayolları.
 
 ## 📝 Dokümantasyon Disiplini
-Yaptığın her anlamlı mimari/işlevsel değişikliği `PROJE_RAPORU.md` dosyasının sonuna yeni bir Session kaydı olarak ekle.
+Yaptığın her anlamlı mimari/işlevsel değişikliği `docs/PROJE_RAPORU.md` dosyasının sonuna yeni bir Session kaydı olarak ekle.

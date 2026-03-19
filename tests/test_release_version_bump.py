@@ -8,7 +8,7 @@ def test_config_version_is_4_3_0():
 
 def test_core_docs_reference_v4_3_0():
     readme = Path("README.md").read_text(encoding="utf-8")
-    report = Path("PROJE_RAPORU.md").read_text(encoding="utf-8")
+    report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
     sidar_md = Path("SIDAR.md").read_text(encoding="utf-8")
 

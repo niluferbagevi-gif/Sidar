@@ -5,6 +5,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
 > Son doğrulama turu: **2026-03-19** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
 > Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**60**), veri tabanı tabloları ve Config tarafından okunan env anahtarları tarafında yeni bir sözleşme farkı bulunmamıştır.
+> Ayrıca kurumsal mimarinin 6 kritik sütunu yeniden teyit edilmiştir: PostgreSQL + `pgvector` veri düzlemi, Supervisor/Coder/Researcher/Reviewer swarm hiyerarşisi, tenant-RBAC + HITL + DLP güvenlik katmanları, OpenTelemetry/Jaeger/Prometheus/Grafana gözlemlenebilirliği, Redis semantic cache davranışı ve React SPA'yı besleyen REST + `/ws/chat` sözleşmeleri mevcut kodla uyumludur.
 
 ---
 
@@ -317,7 +318,7 @@ Her üretim çağrısında prompt bağlamı katmanlı kurulur:
 4. Arşiv bağlamı (`_get_memory_archive_context()`)
    - ChromaDB'den `source=memory_archive` filtresiyle geri çağırma
 
-Ek olarak `SIDAR.md` / `CLAUDE.md` talimat dosyaları hiyerarşik şekilde okunup prompta enjekte edilir.
+Ek olarak `../SIDAR.md` / `../CLAUDE.md` talimat dosyaları hiyerarşik şekilde okunup prompta enjekte edilir.
 
 ### 4.5 Bellek sıkıştırma ve `memory_archive` akışı
 
