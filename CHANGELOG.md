@@ -4,6 +4,23 @@
 
 ---
 
+## [v5.0.0-alpha] - 2026-03-19
+v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal denetim ve akıllı başlatıcı yüzeyiyle görünür ürün fazına taşındı.
+
+### Eklenenler (Added)
+- **Ultimate Launcher (`main.py`):** Etkileşimli CLI arayüzü, ön kontrol (preflight) mekanizması ve akıllı yapılandırma doğrulama akışı dokümante edildi.
+- **LSP Entegrasyonu:** `managers/code_manager.py` içine Pyright ve TypeScript LSP desteği, yapılandırılmış semantik audit ve güvenli refactor yardımcıları eklendi.
+- **Reviewer Agent Yetenekleri:** Reviewer ajanına `lsp_diagnostics` aracı eklenerek anlamsal kod denetimi kalite kapısına bağlandı.
+- **Multimodal Medya İşleme:** `core/multimodal.py` ile FFmpeg tabanlı video frame analizi, ses kanalı ayırma ve STT tabanlı medya bağlamı üretimi eklendi.
+- **Voice WebSocket Arayüzü:** `web_server.py` üzerinde base64 ses verilerini işleyip LLM bağlamına katan gerçek zamanlı sesli iletişim endpoint'leri açıldı.
+- **Otonom Cron Loop:** SİDAR'ın kendi kendine uyanıp görevleri değerlendirmesini sağlayan `_autonomous_cron_loop` arka plan görevi eklendi.
+- **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`) ve oturum yaşam döngüsü eklendi.
+
+### Teknik Borç Kapanışı
+- v5.0-alpha geçişinde multimodal, LSP, voice ve proaktif otonomi kabiliyetleri dağınık backlog maddeleri olmaktan çıkarılıp resmi sürüm anlatısına taşındı.
+
+---
+
 ## [4.3.0] - 2026-03-19
 Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipli kod tabanı ile senkronize edildi.
 
