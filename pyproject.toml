@@ -71,10 +71,14 @@ sandbox = [
 gui = [
   "eel>=0.16.0",
 ]
+browser = [
+  "playwright~=1.51.0",
+  "selenium~=4.29.0",
+]
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar-project[gemini,anthropic,postgres,telemetry,rag,gpu,sandbox,gui]",
+  "sidar-project[gemini,anthropic,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
 ]
 dev = [
   "pytest>=8.0.0",
