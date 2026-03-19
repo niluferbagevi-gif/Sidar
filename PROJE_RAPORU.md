@@ -1031,10 +1031,44 @@ docs_add / docs_add_file
 
 ## 11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)
 
-> **Güncel Durum (2026-03-19 — v3.0.30):** Audit kapsamındaki son düşük öncelikli bulguların (D-8..D-14) da kapatılmasıyla birlikte projede aktif K/Y/O/D seviyesi bulgu kalmamıştır. Bu bölüm artık açık sorun listesi değil, kapatılan borçların ve ileriye dönük sürekli iyileştirme başlıklarının arşividir.
+> **Güncel Durum (2026-03-19 — v4.3.0):** Bu sürümde kod tabanı için “aktif teknik borç” ifadesi, klasik anlamda açık bug/backlog değil; CI kalite kapıları, telemetri ve agresif regresyon testleriyle sürekli bastırılan bir risk kategorisidir. Bu nedenle bu bölüm artık “hangi borçlar açık?” sorusundan çok, **sıfır borç durumunun nasıl korunduğunu** ve **hangi sınırların koddan değil işletim ortamından kaynaklandığını** belgelendirir.
 
-### 11.1 Ödenmiş Teknik Borçlar (Resolved)
-✅ **TÜM BULGULAR KAPATILMIŞTIR.** 19 Mart 2026 itibarıyla yapılan son satır satır denetimde bilinen hiçbir K, Y, O veya D seviyesi bulgu kalmamıştır. Zero-Trust sandbox, async güvenlik, SQL parameterization ve entegrasyon yüzeyleri kurumsal ölçekte doğrulanmıştır.
+### 11.1 Sürdürülebilir Sıfır Borcun Matematiksel Kanıtı
+
+✅ **Sıfır teknik borç durumu bir söylem değil, otomatik kalite kapısıdır.** Repository’deki zorlayıcı kalite zinciri yeni kodun kapsama dışı kalmasını pratikte engeller:
+
+- **CI doğrulaması zorunludur:** `.github/workflows/ci.yml` ana test işinde önce `run_tests.sh`, ardından ayrıca açık bir “Enforce coverage quality gate (99.9%)” adımı ile `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9` komutu çalıştırılır. Kapsamayı düşüren bir PR bu kapıda otomatik olarak reddedilir.
+- **Aynı eşik depo içinde de sabittir:** `.coveragerc` ve `run_tests.sh` aynı `99.9` kalite eşiğini tekrarlar; yani kural yalnızca CI ekranında değil, depo içindeki test komutlarının kendisinde de kodlanmıştır.
+- **Pytest keşfi merkezileştirilmiştir:** `pytest.ini` tüm `tests/` ağacını standart `test_*.py` deseniyle toplar; `pg_stress` gibi marker'lar ayrı altyapı gerektiren testleri kontrollü ama görünür biçimde çalıştırır. Böylece “test edilmeyen yeni yüzey” ihtimali minimize edilir.
+- **Kalite politikasının kendisi de test edilir:** `tests/test_coverage_policy.py` doğrudan `pytest.ini`, `run_tests.sh`, `.coveragerc` ve `ci.yml` dosyalarını okuyup kalite kapısının kaldırılmadığını doğrular. Yani sadece ürün kodu değil, kalite kuralı da regresyon testine tabidir.
+- **%100 kapsamaya yakın/fonksiyonel hedef ayrı regresyon dosyalarıyla korunur:** `tests/test_ultimate_coverage.py` ve `tests/test_missing_edge_case_coverage_final.py` gibi dosyalar uç yolları zorlayarak kapsama boşluğu bırakmama felsefesini sürdürür. Pratikte yazılı quality gate `99.9` olsa da, repo kültürü ve test isimlendirmesi “fiilî tam kapsama” hedefiyle hareket eder.
+
+> Sonuç: Bu projede “teknik borç sıfır” ifadesi, manuel iyimserlikten değil; **tekrar edilebilir test matematiğinden, otomatik coverage reddinden ve kalite politikasının da test edilmesinden** doğar.
+
+### 11.2 Gözlemlenebilirlik ile Gizli Borçların Proaktif Engellenmesi
+
+Kod tabanında açık bug kalmaması tek başına yeterli değildir; kurumsal mimaride asıl risk, zamanla biriken **gizli performans borcu**dur. v4.3.0 bu borcu OpenTelemetry tabanlı gözlemlenebilirlikle erken yakalar:
+
+- `web_server.py` içinde tracing etkinse uygulama FastAPI + HTTPX enstrümantasyonu ile OTLP exporter'a bağlanır; varsayılan Helm yardımcısı OTel hedefini APM collector'a, o yoksa `http://jaeger:4317` varsayılanına yönlendirir.
+- `core/llm_client.py` LiteLLM yolunda `llm.litellm.chat` span'leri üretir; provider, stream modu, model ve toplam süre gibi attribute'lar kaydedilir. Aynı desen OpenAI/Ollama/Anthropic yollarına da yayılmıştır.
+- `tests/test_otel_openai_litellm_spans.py` ve `tests/test_otel_rag_spans.py` bu span'lerin gerçekten açıldığını ve kritik attribute'ların yazıldığını doğrular; telemetri yalnızca “dokümante edilen” değil, testlenen bir davranıştır.
+- RAG tarafında yavaş sorgular, backend seçimi ve vektör yolunun davranışı span seviyesinde izlenebilir olduğu için gecikme bir “mimari borç” haline gelmeden tespit edilir; semantic cache ve router kararları bu yüzden yalnızca maliyet optimizasyonu değil, aynı zamanda borç önleme mekanizmasıdır.
+
+> Kurumsal yorum: Bu mimaride observability sonradan eklenen dashboard katmanı değil; latent darboğazların Jaeger/OTLP/Prometheus yüzeylerinde görünür kılınması sayesinde **borç oluşumunu proaktif olarak engelleyen kontrol sistemi**dir.
+
+### 11.3 Teknik Borç Yok; Operasyonel Sınırlar Var
+
+Bilinen açık bug veya kronik kod borcu bulunmamakla birlikte, aşağıdaki başlıklar yazılım kusuru değil **operasyonel sınır** olarak değerlendirilmelidir:
+
+- **LLM API hız limitleri ve kota sınırları:** Swarm mimarisinde uzman ajanlar paralel çağrı açabildiği için OpenAI, Anthropic veya benzeri dış sağlayıcılarda RPM/TPM limitlerine daha hızlı ulaşılabilir. Bu durum mimari hata değil, çoklu ajan paralelliğinin dış servis kotasıyla etkileşimidir.
+- **LiteLLM Gateway / dış ağ bağımlılığı:** `core/llm_client.py` gateway tabanlı bir OpenAI-uyumlu yol sunar; ancak gateway URL erişilemezse, proxy gecikirse veya dış ağda kesinti oluşursa toplam yanıt süresi uzar. Özellikle OpenRouter benzeri ara katmanlar kullanıldığında bu etki daha görünür hale gelir.
+- **Yerel model çalıştırmada donanım limiti:** Ollama/yerel embedding akışında performansı doğrudan CPU/GPU ve özellikle VRAM kapasitesi belirler. `core/rag.py` FP16/mixed-precision ile VRAM tasarrufu yapabilse de, düşük bellekli GPU'larda ajan hızı ve eşzamanlılık seviyesi doğal olarak sınırlanır.
+- **Vektör veri katmanının ölçek davranışı:** pgvector/ChromaDB hibrit arama güçlüdür; ancak tenant sayısı ve belge hacmi arttıkça vektör indeksleri ile embedding tablosunun RAM/IO davranışı yakından izlenmelidir. Büyük kurulumlarda pgvector index tuning (ör. IVFFlat/HNSW seçimi), vacuum ve kapasite planı operasyon ekibinin sorumluluğundadır.
+- **Redis ve event-stream bağımlılıkları:** Semantic cache ve event stream katmanları Redis mevcutken daha hızlı ve daha düşük maliyetli çalışır; Redis kesintisinde sistem fail-safe/fallback yollarına düşse de, latency profili değişebilir.
+
+### 11.4 Ödenmiş Teknik Borçlar (Arşiv / Resolved)
+
+Aşağıdaki maddeler geçmişte kapanmış ve sıfır borç durumuna ulaşılmasını sağlayan başlıca düzeltmelerdir:
 
 - **[Çözüldü] Legacy Test Kayması (Test Drift):** Eski senkron ajan yapısına ait testler, Supervisor-odaklı P2P ve delegasyon sözleşmelerine tam uyumlu olacak şekilde baştan yazıldı. Uç durum (edge case) testleri eklendi.
 - **[Çözüldü] Bağımlılık Şişkinliği ve Çelişkisi:** Toplam 9 paket (`chromadb`, `torch`, `torchvision`, `sentence-transformers`, `asyncpg` ve `opentelemetry-*` ailesi) çekirdek kurulumdan ayrıştırılıp `pyproject.toml` üzerinde ilgili extras gruplarında (`[rag]`, `[postgres]`, `[telemetry]`) yönetilir hale getirildi.
@@ -1044,18 +1078,18 @@ docs_add / docs_add_file
 - **[Çözüldü] Geriye Dönük Uyumluluk (isawaitable) Karmaşası:** Tüm ajan metotları asenkron standartlara (`async/await`) bağlandı.
 - **[Çözüldü] Event Loop Blokajı ve Zombie Süreç Koruması:** I/O sızıntıları engellendi, alt süreç (child process) sonlandırmaları güvenlik altına alındı.
 - **[Çözüldü] PBKDF2 Iterasyon Sayısı:** `core/db.py` satır 60'ta OWASP uyumlu 600.000 iterasyon kullanılmaktadır. Eski sürümde 120.000 olan değer güncellendi; `secrets.compare_digest` ile sabit-zamanlı karşılaştırma da aktif.
-- **[Çözüldü] Test Kapsama %100 ve Skip Temizliği:** 33 eski legacy/skip testi kaldırıldı; `core/llm_client.py` satır 355 dahil tüm dallar kapsamaya alındı; kapsama kalite kapısı %99.9'a yükseltildi. Sonuç: tüm testler başarılı, 0 atlanan.
+- **[Çözüldü] Test Kapsama ve Skip Temizliği:** Legacy/skip test yükü temizlendi, kritik dallar kapsamaya alındı ve kapsama kalite kapısı depo genelinde 99.9'a sabitlendi.
 - **[Çözüldü] Legacy Web UI → React SPA Geçişi:** `web_ui_react/` Vite + React tabanlı canlı arayüz üretime alındı; `web_server.py` statik servisleme katmanı React build varsa yeni SPA'yı önceliklendirerek geriye dönük uyumlulukla çalışır hale getirildi.
 - **[Çözüldü] Temel Yetki Kontrolünden Tenant-Policy RBAC'a Geçiş:** `access_policy_middleware`, `_resolve_policy_from_request` ve `/admin/policies` uç noktalarıyla tenant/policy bazlı ince taneli erişim denetimi aktif edilerek yetkilendirme modeli derinleştirildi.
 
-### 11.2 Gelecek İyileştirmeler (Continuous Improvement)
+### 11.5 Gelecek İyileştirmeler (Continuous Improvement)
 Projede kritik borç kalmamakla birlikte, gelecekteki ölçeklenme için şu vizyon maddeleri takip edilecektir:
 - **Gelişmiş Telemetri Görselleştirmesi:** Grafana dashboard'larına (`sidar-llm-overview.json`) ajanlar arası delegasyon sürelerinin daha detaylı kırılımlarının eklenmesi.
 - **✅ [ÇÖZÜLDÜ — FAZ-3-3] Veritabanı Yük Testleri:** PostgreSQL bağlantı havuzu stres testleri `pg-stress` CI job'ı olarak otomatikleştirildi (`ci.yml`). PostgreSQL 16 service container, Alembic migration ve `pg_stress` marker'lı testler GitHub Actions üzerinde çalışır.
 - **✅ [ÇÖZÜLDÜ — FAZ-3-3] `pytest-asyncio` Geçişi:** `conftest.py` deprecated `event_loop` fixture override kaldırıldı; `pytest.ini`'ye `asyncio_default_fixture_loop_scope = session` eklendi. Standart `pytest-asyncio` mimarisine tam geçiş tamamlandı.
 - **✅ [ÇÖZÜLDÜ — FAZ-3-1] Pydantic Model Geçişi Kalıntıları:** `web_server.py` `/auth/register` ve `/auth/login` endpoint'lerindeki `hasattr(...)` + `payload.get(...)` dead-code desenleri kaldırıldı; `payload.username` / `payload.password` alanlarına doğrudan erişime geçildi.
 
-### 11.3 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar (Kapatıldı)
+### 11.6 2026-03-16 v3.0.6 Doğrulama Turu — Operasyonel Uyumsuzluklar (Kapatıldı)
 
 > **Güncelleme (v3.0.8 — 2026-03-16):** Bu turda tespit edilen her iki bulgu da giderilmiştir.
 > Kök neden analizi ve uygulanan düzeltmeler aşağıda belgelenmiştir.
@@ -1103,7 +1137,7 @@ monkeypatch.setattr(stat, “S_ISSOCK”, lambda _mode: True)
 
 ---
 
-### 11.4 2026-03-16 v3.0.7/v3.0.9 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
+### 11.7 2026-03-16 v3.0.7/v3.0.9 Doğrulama Turu — Yeni Bulgular ve Kapatma Durumu
 
 > **Güncelleme (v3.0.9 — 2026-03-16):** Bu turda tespit edilen 6 bulgunun tamamı giderilmiştir.
 > YN3-O-4 yanlış pozitif olarak teyit edilmiştir.
