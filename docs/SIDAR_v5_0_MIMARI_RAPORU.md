@@ -25,10 +25,12 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 
 | Başlık | Güncel Durum | Not |
 |---|---|---|
-| Algı katmanının genişletilmesi (MVP) | **Faz A: İskelet Kuruldu** | `core/multimodal.py`, `/ws/voice` ve temel medya bağlamı hattı repo içinde mevcut. |
-| Tarayıcı otomasyonu başlangıcı | **Faz A: İskelet Kuruldu** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü eklendi. |
+| Algı katmanının genişletilmesi (MVP) | **✅ Faz A: Tamamlandı / Alpha** | `core/multimodal.py`, `/ws/voice` ve temel medya bağlamı hattı repo içinde çalışır durumda. |
+| Tarayıcı otomasyonu başlangıcı | **✅ Faz A: Tamamlandı / Alpha** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü eklendi. |
 | GraphRAG başlangıcı | **Faz A: İskelet Kuruldu** | `core/rag.py` içinde modül bağımlılık grafiği arama/yol açıklama akışı mevcut. |
-| Sıradaki kritik hedef | **Reviewer + LSP anlamsal denetim** | Reviewer ajanın refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlaması vurgulanmalıdır. |
+| Reviewer + LSP anlamsal denetim | **✅ Faz B eşiği aşıldı** | Reviewer ajan refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlayabiliyor. |
+| Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
+| Interactive CLI Launcher | **✅ Tamamlandı** | `main.py` ön kontrollü etkileşimli başlatıcı olarak ürünleşti. |
 
 ## 2. Mevcut Mimari Dayanaklar
 
@@ -383,16 +385,17 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 ### Faz A — Elzem v5.0 Çekirdeği
 
 1. `docs` + mimari karar kaydı ile v5.0 hedeflerinin netleştirilmesi **(tamamlandı)**
-2. `core/multimodal.py` başlangıcı (video frame + STT) **(Faz A: iskelet kuruldu)**
-3. `managers/browser_manager.py` + temel Playwright araçları **(Faz A: iskelet kuruldu)**
+2. `core/multimodal.py` başlangıcı (video frame + STT) **(✅ tamamlandı / alpha)**
+3. `managers/browser_manager.py` + temel Playwright araçları **(✅ tamamlandı / alpha)**
 4. `agent/tooling.py` içine browser/LSP tool şemaları **(başlatıldı)**
-5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(başlatıldı)**
-6. `SwarmFlowPanel.jsx` için graph veri modeli **(başlatıldı)**
+5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(✅ tamamlandı)**
+6. `SwarmFlowPanel.jsx` için graph veri modeli **(✅ tamamlandı)**
+7. `main.py` interactive CLI launcher **(✅ tamamlandı)**
 
 ### Faz B — Güvenli Otonomi Derinleşmesi
 
 1. GraphRAG indeksleyicinin reviewer/etki analizi ile derinleştirilmesi
-2. LSP entegrasyonunun Reviewer ajan kalite kapısına bağlanması **(bir sonraki hedef)**
+2. LSP entegrasyonunun Reviewer ajan kalite kapısına bağlanması **(✅ tamamlandı)**
 3. HITL + audit ile yüksek riskli browser aksiyonları
 4. Proaktif CI remediation akışları
 
@@ -422,12 +425,12 @@ v5.0 geliştirmeleri aşağıdaki ilkelere bağlı kalmalıdır:
 | Öncelik | İş kalemi | Ana dosyalar | Çıktı |
 |---|---|---|---|
 | P0 | v5.0 mimari raporunun repo içine alınması | `docs/`, `README.md`, `PROJE_RAPORU.md` | Ortak ürün vizyonu |
-| P0 | Multimodal medya ingestion MVP | `core/multimodal.py`, `core/vision.py` | Video + ses bağlam üretimi |
-| P0 | Browser automation manager | `managers/browser_manager.py`, `agent/tooling.py` | Dinamik web aksiyonları |
-| P1 | Webhook/proaktif ajan omurgası | `web_server.py`, `agent/sidar_agent.py` | Reaktif → proaktif geçiş |
-| P1 | Decision graph UI | `web_ui_react/src/components/SwarmFlowPanel.jsx` | Görsel swarm görünürlüğü |
+| P0 | Multimodal medya ingestion MVP | `core/multimodal.py`, `core/vision.py` | ✅ Video + ses bağlam üretimi |
+| P0 | Browser automation manager | `managers/browser_manager.py`, `agent/tooling.py` | ✅ Dinamik web aksiyonları |
+| P1 | Webhook/proaktif ajan omurgası | `web_server.py`, `agent/sidar_agent.py` | ✅ Reaktif → proaktif geçiş |
+| P1 | Decision graph UI | `web_ui_react/src/components/SwarmFlowPanel.jsx` | ✅ Görsel swarm görünürlüğü |
 | P1 | GraphRAG prototipi | `core/rag.py`, `managers/code_manager.py` | Mimari bağımlılık sorguları |
-| P2 | LSP entegrasyonu | `managers/code_manager.py` | Güvenli refactor |
+| P2 | LSP entegrasyonu | `managers/code_manager.py` | ✅ Güvenli refactor |
 | P2 | Voice WebSocket akışı | `core/voice.py`, `web_server.py` | Gerçek zamanlı konuşma |
 | P3 | External swarm federation | `agent/core/contracts.py`, `agent/swarm.py` | Kurumsal çoklu ajan federasyonu |
 | P3 | IDE eklentileri | yeni `extensions/` veya ayrı repo | Inline co-worker deneyimi |
