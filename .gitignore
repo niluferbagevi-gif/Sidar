@@ -34,7 +34,7 @@ sidar_memory.db-shm
 sidar_memory.db-wal
 
 # Local documentation (keep in local workspace, do not push to GitHub)
-docs/
+# docs/
 
 # Web vendor libraries (install_sidar.sh tarafından indirilir, repoya dahil edilmez)
 web_ui/vendor/
