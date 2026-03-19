@@ -7,7 +7,7 @@ from agent.roles.reviewer_agent import ReviewerAgent
 
 def test_reviewer_agent_initializes_expected_tools():
     a = ReviewerAgent()
-    assert set(a.tools.keys()) == {"repo_info", "list_prs", "pr_diff", "list_issues", "run_tests"}
+    assert set(a.tools.keys()) == {"repo_info", "list_prs", "pr_diff", "list_issues", "run_tests", "lsp_diagnostics"}
     assert hasattr(a, "code")
 
 
@@ -25,6 +25,39 @@ def test_reviewer_builds_targeted_plus_regression_commands():
     cmds = a._build_regression_commands("changed tests/test_reviewer_agent.py and core/db.py")
     assert cmds[0].startswith("pytest -q tests/test_reviewer_agent.py")
     assert any(c == a.cfg.REVIEWER_TEST_COMMAND for c in cmds)
+
+
+def test_reviewer_builds_lsp_candidate_paths():
+    a = ReviewerAgent()
+    paths = a._build_lsp_candidate_paths(
+        "changed agent/roles/reviewer_agent.py web_ui_react/src/App.jsx docs/README.md core/db.py"
+    )
+    assert paths == ["agent/roles/reviewer_agent.py", "web_ui_react/src/App.jsx", "core/db.py"]
+
+
+def test_reviewer_summarize_lsp_diagnostics_rejects_errors():
+    summary = ReviewerAgent._summarize_lsp_diagnostics(
+        "[LSP:OK] hedefler=core/db.py\n"
+        "[OUTPUT]\n"
+        "- /workspace/Sidar/core/db.py: satır 1, sütun 1 | severity=1 | name is not defined\n"
+        "- /workspace/Sidar/core/db.py: satır 2, sütun 4 | severity=2 | type mismatch"
+    )
+    assert summary["decision"] == "REJECT"
+    assert summary["risk"] == "yüksek"
+    assert summary["counts"] == {1: 1, 2: 1}
+
+
+def test_reviewer_lsp_diagnostics_tool_uses_code_manager(monkeypatch):
+    a = ReviewerAgent()
+
+    def fake_lsp_workspace_diagnostics(paths=None):
+        assert paths == ["core/db.py", "web_ui_react/src/App.jsx"]
+        return True, "LSP diagnostics temiz."
+
+    monkeypatch.setattr(a.code, "lsp_workspace_diagnostics", fake_lsp_workspace_diagnostics)
+    out = asyncio.run(a.call_tool("lsp_diagnostics", "core/db.py web_ui_react/src/App.jsx README.md"))
+    assert "[LSP:OK]" in out
+    assert "LSP diagnostics temiz." in out
 
 
 def test_reviewer_build_dynamic_test_content_uses_llm(monkeypatch):
@@ -91,6 +124,7 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
 
     monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
     a.tools["run_tests"] = fake_run_tests
+    a.tools["lsp_diagnostics"] = lambda _arg: asyncio.sleep(0, result="[LSP:OK] hedefler=tests/test_reviewer_agent.py\n[OUTPUT]\nLSP diagnostics temiz.")
 
     out = asyncio.run(a.run_task("review_code|tests/test_reviewer_agent.py"))
     assert is_delegation_request(out)
@@ -98,6 +132,7 @@ def test_reviewer_review_code_returns_p2p_feedback(monkeypatch):
     assert out.payload.startswith("qa_feedback|")
     payload = json.loads(out.payload.split("|", 1)[1])
     assert payload["decision"] == "APPROVE"
+    assert payload["semantic_risk_report"]["status"] == "clean"
     assert any(c.startswith("pytest -q tests/test_reviewer_agent.py") for c in calls)
     assert any(c == a.cfg.REVIEWER_TEST_COMMAND for c in calls)
 
@@ -113,8 +148,36 @@ def test_reviewer_review_code_rejects_on_fail_closed(monkeypatch):
 
     monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
     a.tools["run_tests"] = fake_run_tests
+    a.tools["lsp_diagnostics"] = lambda _arg: asyncio.sleep(0, result="[LSP:OK] hedefler=core/db.py\n[OUTPUT]\nLSP diagnostics temiz.")
 
     out = asyncio.run(a.run_task("review_code|core/db.py"))
     payload = json.loads(out.payload.split("|", 1)[1])
     assert payload["decision"] == "REJECT"
     assert payload["risk"] == "yüksek"
+
+
+def test_reviewer_review_code_rejects_on_lsp_semantic_error(monkeypatch):
+    a = ReviewerAgent()
+
+    async def fake_dynamic(_ctx: str) -> str:
+        return "[TEST:OK] dynamic"
+
+    async def fake_run_tests(arg: str) -> str:
+        return f"[TEST:OK] {arg}"
+
+    async def fake_lsp(_arg: str) -> str:
+        return (
+            "[LSP:OK] hedefler=core/db.py\n"
+            "[OUTPUT]\n"
+            "- /workspace/Sidar/core/db.py: satır 1, sütun 1 | severity=1 | name is not defined"
+        )
+
+    monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
+    a.tools["run_tests"] = fake_run_tests
+    a.tools["lsp_diagnostics"] = fake_lsp
+
+    out = asyncio.run(a.run_task("review_code|core/db.py"))
+    payload = json.loads(out.payload.split("|", 1)[1])
+    assert payload["decision"] == "REJECT"
+    assert payload["semantic_risk_report"]["risk"] == "yüksek"
+    assert "LSP semantik denetimi" in payload["summary"]
