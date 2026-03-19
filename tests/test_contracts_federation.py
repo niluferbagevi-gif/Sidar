@@ -54,4 +54,32 @@ def test_federation_task_envelope_converts_to_task_envelope():
     assert task_envelope.sender == "crewai:planner"
     assert task_envelope.receiver == "sidar:supervisor"
     assert task_envelope.goal == "Yeni issue için çözüm planı üret"
+    assert envelope.protocol == "federation.v1"
+    assert "protocol=federation.v1" in prompt
     assert '"repo": "Sidar"' in prompt
+
+
+def test_federation_protocol_normalizes_legacy_aliases():
+    envelope = CONTRACTS.FederationTaskEnvelope(
+        task_id="fed-legacy",
+        source_system="autogen",
+        source_agent="coordinator",
+        target_system="sidar",
+        target_agent="supervisor",
+        goal="Legacy alias ile gelen görevi normalize et",
+        protocol="swarm.federation.v1",
+    )
+    result = CONTRACTS.FederationTaskResult(
+        task_id="fed-legacy",
+        source_system="sidar",
+        source_agent="supervisor",
+        target_system="autogen",
+        target_agent="coordinator",
+        status="success",
+        summary="ok",
+        protocol="swarm.federation.v1",
+    )
+
+    assert envelope.protocol == "federation.v1"
+    assert result.protocol == "federation.v1"
+    assert CONTRACTS.normalize_federation_protocol("swarm.federation.v1") == "federation.v1"

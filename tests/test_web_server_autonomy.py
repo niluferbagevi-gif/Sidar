@@ -126,7 +126,41 @@ def test_swarm_federation_execute_returns_structured_result():
     assert result["task_id"] == "fed-1"
     assert result["source_system"] == "sidar"
     assert result["target_system"] == "autogen"
+    assert result["protocol"] == "federation.v1"
+    assert result["meta"]["protocol_legacy_alias"] == "swarm.federation.v1"
     assert "federated:[FEDERATION TASK]" in result["summary"]
+
+
+def test_swarm_federation_execute_normalizes_legacy_protocol_alias():
+    mod = _load_web_server()
+
+    async def _respond(prompt):
+        yield prompt
+
+    agent = types.SimpleNamespace(respond=_respond)
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+    mod.cfg.ENABLE_SWARM_FEDERATION = True
+    mod.cfg.SWARM_FEDERATION_SHARED_SECRET = ""
+
+    req = mod._FederationTaskRequest(
+        task_id="fed-legacy",
+        source_system="crewai",
+        source_agent="planner",
+        target_agent="supervisor",
+        goal="Legacy alias uyumluluğunu doğrula",
+        protocol="swarm.federation.v1",
+    )
+
+    response = asyncio.run(mod.swarm_federation_execute(req, ""))
+
+    assert response.content["success"] is True
+    result = response.content["result"]
+    assert result["protocol"] == "federation.v1"
+    assert "protocol=federation.v1" in result["summary"]
 
 
 def test_github_webhook_ci_failure_dispatches_remediation_trigger():

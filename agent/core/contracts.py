@@ -6,6 +6,18 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+FEDERATION_PROTOCOL_V1 = "federation.v1"
+LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
+FEDERATION_PROTOCOL_ALIASES = frozenset({FEDERATION_PROTOCOL_V1, LEGACY_FEDERATION_PROTOCOL_V1})
+
+
+def normalize_federation_protocol(protocol: object) -> str:
+    """Federation protokol etiketlerini kanonik `federation.v1` değerine indirger."""
+    value = str(protocol or "").strip().lower()
+    if not value or value in FEDERATION_PROTOCOL_ALIASES:
+        return FEDERATION_PROTOCOL_V1
+    return value
+
 
 @dataclass
 class TaskEnvelope:
@@ -121,8 +133,11 @@ class FederationTaskEnvelope:
     parent_task_id: str | None = None
     context: dict[str, str] = field(default_factory=dict)
     inputs: list[str] = field(default_factory=list)
-    protocol: str = "swarm.federation.v1"
+    protocol: str = FEDERATION_PROTOCOL_V1
     meta: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.protocol = normalize_federation_protocol(self.protocol)
 
     def to_task_envelope(self) -> TaskEnvelope:
         return TaskEnvelope(
@@ -143,6 +158,7 @@ class FederationTaskEnvelope:
             f"source_agent={self.source_agent}\n"
             f"target_system={self.target_system}\n"
             f"target_agent={self.target_agent}\n"
+            f"protocol={self.protocol}\n"
             f"intent={self.intent}\n"
             f"goal={self.goal}\n"
             f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True)}\n"
@@ -162,10 +178,13 @@ class FederationTaskResult:
     target_agent: str
     status: str
     summary: str
-    protocol: str = "swarm.federation.v1"
+    protocol: str = FEDERATION_PROTOCOL_V1
     evidence: list[str] = field(default_factory=list)
     next_actions: list[str] = field(default_factory=list)
     meta: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.protocol = normalize_federation_protocol(self.protocol)
 
 
 def is_p2p_message(value: object) -> bool:
