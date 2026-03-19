@@ -186,6 +186,30 @@ class FederationTaskResult:
     def __post_init__(self) -> None:
         self.protocol = normalize_federation_protocol(self.protocol)
 
+    def to_task_result(self) -> TaskResult:
+        return TaskResult(
+            task_id=self.task_id,
+            status=self.status,
+            summary=self.summary,
+            evidence=list(self.evidence),
+            next_actions=list(self.next_actions),
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[FEDERATION RESULT]\n"
+            f"source_system={self.source_system}\n"
+            f"source_agent={self.source_agent}\n"
+            f"target_system={self.target_system}\n"
+            f"target_agent={self.target_agent}\n"
+            f"protocol={self.protocol}\n"
+            f"status={self.status}\n"
+            f"summary={self.summary}\n"
+            f"evidence={json.dumps(self.evidence, ensure_ascii=False)}\n"
+            f"next_actions={json.dumps(self.next_actions, ensure_ascii=False)}\n"
+            f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
+        )
+
 
 def is_p2p_message(value: object) -> bool:
     """P2PMessage/DelegationRequest benzeri nesneleri sınıf farklarından bağımsız tanımlar."""
@@ -218,5 +242,15 @@ def is_federation_task_envelope(value: object) -> bool:
         return True
     required = ("task_id", "source_system", "source_agent", "target_system", "target_agent", "goal")
     return type(value).__name__ == "FederationTaskEnvelope" and all(
+        hasattr(value, attr) for attr in required
+    )
+
+
+def is_federation_task_result(value: object) -> bool:
+    """FederationTaskResult benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, FederationTaskResult):
+        return True
+    required = ("task_id", "source_system", "source_agent", "target_system", "target_agent", "status", "summary")
+    return type(value).__name__ == "FederationTaskResult" and all(
         hasattr(value, attr) for attr in required
     )

@@ -117,6 +117,8 @@ class VoicePipeline:
         provider = str(getattr(config, "VOICE_TTS_PROVIDER", "auto") or "auto")
         self.voice = str(getattr(config, "VOICE_TTS_VOICE", "") or "")
         self.segment_chars = max(20, int(getattr(config, "VOICE_TTS_SEGMENT_CHARS", 48) or 48))
+        self.vad_enabled = bool(getattr(config, "VOICE_VAD_ENABLED", True))
+        self.vad_min_speech_bytes = max(256, int(getattr(config, "VOICE_VAD_MIN_SPEECH_BYTES", 1024) or 1024))
         self.adapter = _build_tts_adapter(provider)
         self.provider = self.adapter.provider
 
@@ -150,6 +152,32 @@ class VoicePipeline:
             remainder = ""
 
         return segments, remainder
+
+    def should_commit_audio(self, buffered_bytes: int, *, event: str = "") -> bool:
+        """Basit VAD benzeri karar: speech_end/silence olayı ve yeterli buffer varsa işle."""
+        if not self.vad_enabled:
+            return False
+        normalized = str(event or "").strip().lower()
+        if normalized not in {"speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"}:
+            return False
+        return int(buffered_bytes or 0) >= self.vad_min_speech_bytes
+
+    def build_voice_state_payload(
+        self,
+        *,
+        event: str,
+        buffered_bytes: int,
+        sequence: int,
+    ) -> dict[str, Any]:
+        normalized = str(event or "").strip().lower() or "unknown"
+        return {
+            "voice_state": normalized,
+            "buffered_bytes": max(0, int(buffered_bytes or 0)),
+            "sequence": max(0, int(sequence or 0)),
+            "vad_enabled": self.vad_enabled,
+            "auto_commit_ready": self.should_commit_audio(buffered_bytes, event=normalized),
+            "tts_enabled": self.enabled,
+        }
 
     async def synthesize_text(self, text: str) -> dict[str, Any]:
         normalized = (text or "").strip()

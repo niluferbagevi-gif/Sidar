@@ -87,3 +87,24 @@ def test_pyttsx3_adapter_reports_import_failure(monkeypatch):
     assert result["success"] is False
     assert result["provider"] == "pyttsx3"
     assert result["reason"] == "pyttsx3 missing"
+
+
+def test_voice_pipeline_builds_vad_state_and_auto_commit_signal():
+    cfg = SimpleNamespace(
+        VOICE_TTS_PROVIDER="mock",
+        VOICE_TTS_VOICE="",
+        VOICE_TTS_SEGMENT_CHARS=24,
+        VOICE_VAD_ENABLED=True,
+        VOICE_VAD_MIN_SPEECH_BYTES=512,
+    )
+    pipeline = VoicePipeline(cfg)
+
+    payload = pipeline.build_voice_state_payload(event="speech_end", buffered_bytes=1024, sequence=3)
+
+    assert payload["voice_state"] == "speech_end"
+    assert payload["buffered_bytes"] == 1024
+    assert payload["sequence"] == 3
+    assert payload["vad_enabled"] is True
+    assert payload["auto_commit_ready"] is True
+    assert pipeline.should_commit_audio(1024, event="speech_end") is True
+    assert pipeline.should_commit_audio(128, event="speech_end") is False

@@ -1,7 +1,7 @@
 # SİDAR v5.0 — İleri Düzey Otonomi ve Yeni Yetenekler Geliştirme Raporu
 
-> **Durum:** Stratejik mimari öneri / ürünleşme planı  
-> **Hazırlanma Tarihi:** 2026-03-19  
+> **Durum:** Stratejik mimari öneri / ürünleşme planı
+> **Hazırlanma Tarihi:** 2026-03-19
 > **Kapsam:** `PROJE_RAPORU.md`, `README.md`, `core/vision.py`, `core/rag.py`, `agent/tooling.py`, `agent/swarm.py`, `agent/core/supervisor.py`, `managers/web_search.py`, `managers/code_manager.py`, `web_server.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`
 
 ---
@@ -435,8 +435,8 @@ v5.0 geliştirmeleri aşağıdaki ilkelere bağlı kalmalıdır:
 | P1 | Decision graph UI | `web_ui_react/src/components/SwarmFlowPanel.jsx` | ✅ Görsel swarm görünürlüğü |
 | P1 | GraphRAG prototipi | `core/rag.py`, `managers/code_manager.py` | Mimari bağımlılık sorguları |
 | P2 | LSP entegrasyonu | `managers/code_manager.py` | ✅ Güvenli refactor |
-| P2 | Voice WebSocket akışı | `core/voice.py`, `web_server.py` | Gerçek zamanlı konuşma |
-| P3 | External swarm federation | `agent/core/contracts.py`, `agent/swarm.py` | Kurumsal çoklu ajan federasyonu |
+| P2 | Voice WebSocket akışı | `core/voice.py`, `web_server.py` | ✅ Gerçek zamanlı konuşma + VAD olayları |
+| P3 | External swarm federation | `agent/core/contracts.py`, `agent/swarm.py` | ✅ `federation.v1` ile kurumsal çoklu ajan federasyonu |
 | P3 | IDE eklentileri | yeni `extensions/` veya ayrı repo | Inline co-worker deneyimi |
 
 ---
@@ -449,4 +449,4 @@ SİDAR bugün güçlü bir otonom mühendislik platformudur; ancak v5.0 ile hede
 - **Daha çok iş yapan** (browser, LSP, proaktif trigger, dış swarm)
 - **Daha çok güven veren** (graph görünürlük, audit, HITL, explainability)
 
-Bu rapordaki öneriler, mevcut dosya yapısını bozmadan SİDAR'ın bir sonraki büyük sıçramasını tanımlar: **gelişmiş AI asistanı → otonom AI takım arkadaşı**. 
+Bu rapordaki öneriler, mevcut dosya yapısını bozmadan SİDAR'ın bir sonraki büyük sıçramasını tanımlar: **gelişmiş AI asistanı → otonom AI takım arkadaşı**.

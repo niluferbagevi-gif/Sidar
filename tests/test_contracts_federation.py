@@ -83,3 +83,6 @@ def test_federation_protocol_normalizes_legacy_aliases():
     assert envelope.protocol == "federation.v1"
     assert result.protocol == "federation.v1"
     assert CONTRACTS.normalize_federation_protocol("swarm.federation.v1") == "federation.v1"
+    assert CONTRACTS.is_federation_task_result(result) is True
+    assert result.to_task_result().status == "success"
+    assert "protocol=federation.v1" in result.to_prompt()

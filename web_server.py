@@ -1649,7 +1649,82 @@ async def websocket_voice(websocket: WebSocket):
     session_mime_type = "audio/webm"
     session_language: str | None = None
     session_prompt = ""
+    voice_sequence = 0
     setattr(websocket, "_sidar_voice_pipeline", voice_pipeline)
+
+    async def _emit_voice_state(event: str) -> None:
+        nonlocal voice_sequence
+        voice_sequence += 1
+        if voice_pipeline is None or not hasattr(voice_pipeline, "build_voice_state_payload"):
+            await websocket.send_json(
+                {
+                    "voice_state": str(event or "").strip().lower() or "unknown",
+                    "buffered_bytes": len(audio_buffer),
+                    "sequence": voice_sequence,
+                    "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)) if voice_pipeline is not None else False,
+                    "auto_commit_ready": False,
+                    "tts_enabled": bool(getattr(voice_pipeline, "enabled", False)) if voice_pipeline is not None else False,
+                }
+            )
+            return
+        await websocket.send_json(
+            voice_pipeline.build_voice_state_payload(
+                event=event,
+                buffered_bytes=len(audio_buffer),
+                sequence=voice_sequence,
+            )
+        )
+
+    async def _process_audio_commit() -> None:
+        nonlocal session_mime_type, session_language, session_prompt
+        if not audio_buffer:
+            await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
+            return
+
+        result = await pipeline.transcribe_bytes(
+            bytes(audio_buffer),
+            mime_type=session_mime_type,
+            language=session_language,
+            prompt=session_prompt,
+        )
+        audio_buffer.clear()
+        await _emit_voice_state("processed")
+
+        if not isinstance(result, dict) or not result.get("success"):
+            reason = "Ses transkripsiyonu başarısız oldu."
+            if isinstance(result, dict):
+                reason = str(result.get("reason", reason) or reason)
+            await websocket.send_json({"error": reason, "done": True})
+            return
+
+        transcript_text = str(result.get("text", "") or "").strip()
+        await websocket.send_json(
+            {
+                "transcript": transcript_text,
+                "language": result.get("language", ""),
+                "provider": result.get("provider", ""),
+            }
+        )
+        if not transcript_text:
+            await websocket.send_json({"done": True})
+            return
+
+        try:
+            await _ws_stream_agent_text_response(websocket, agent, transcript_text)
+        except LLMAPIError as exc:
+            await websocket.send_json(
+                {
+                    "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
+                    "done": True,
+                }
+            )
+            return
+        except Exception as exc:
+            logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
+            await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
+            return
+
+        await websocket.send_json({"done": True})
 
     if header_token:
         ws_user = await _resolve_user_from_token(agent, header_token)
@@ -1680,6 +1755,7 @@ async def websocket_voice(websocket: WebSocket):
                     return
                 audio_buffer.extend(bytes_payload)
                 await websocket.send_json({"buffered_bytes": len(audio_buffer)})
+                await _emit_voice_state("chunk")
                 continue
 
             text_payload = packet.get("text")
@@ -1717,7 +1793,15 @@ async def websocket_voice(websocket: WebSocket):
                 session_mime_type = str(payload.get("mime_type", "audio/webm") or "audio/webm")
                 session_language = payload.get("language")
                 session_prompt = str(payload.get("prompt", "") or "")
-                await websocket.send_json({"voice_session": "ready", "mime_type": session_mime_type})
+                await websocket.send_json(
+                    {
+                        "voice_session": "ready",
+                        "mime_type": session_mime_type,
+                        "duplex": True,
+                        "vad_enabled": bool(getattr(voice_pipeline, "vad_enabled", False)),
+                    }
+                )
+                await _emit_voice_state("ready")
                 continue
 
             if action == "append_base64":
@@ -1734,67 +1818,29 @@ async def websocket_voice(websocket: WebSocket):
                     return
                 audio_buffer.extend(decoded_chunk)
                 await websocket.send_json({"buffered_bytes": len(audio_buffer)})
+                await _emit_voice_state("chunk")
                 continue
 
             if action == "cancel":
                 audio_buffer.clear()
+                await _emit_voice_state("cancelled")
                 await websocket.send_json({"cancelled": True, "done": True})
                 continue
 
-            if action not in {"commit", "process", "end"}:
+            if action == "vad_event":
+                vad_state = str(payload.get("state", "") or "unknown")
+                await _emit_voice_state(vad_state)
+                if voice_pipeline and voice_pipeline.should_commit_audio(len(audio_buffer), event=vad_state):
+                    await _process_audio_commit()
+                continue
+
+            if action not in {"commit", "process", "end", "vad_commit"}:
                 continue
 
             session_mime_type = str(payload.get("mime_type", session_mime_type) or session_mime_type)
             session_language = payload.get("language", session_language)
             session_prompt = str(payload.get("prompt", session_prompt) or session_prompt)
-
-            if not audio_buffer:
-                await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
-                continue
-
-            result = await pipeline.transcribe_bytes(
-                bytes(audio_buffer),
-                mime_type=session_mime_type,
-                language=session_language,
-                prompt=session_prompt,
-            )
-            audio_buffer.clear()
-
-            if not isinstance(result, dict) or not result.get("success"):
-                reason = "Ses transkripsiyonu başarısız oldu."
-                if isinstance(result, dict):
-                    reason = str(result.get("reason", reason) or reason)
-                await websocket.send_json({"error": reason, "done": True})
-                continue
-
-            transcript_text = str(result.get("text", "") or "").strip()
-            await websocket.send_json(
-                {
-                    "transcript": transcript_text,
-                    "language": result.get("language", ""),
-                    "provider": result.get("provider", ""),
-                }
-            )
-            if not transcript_text:
-                await websocket.send_json({"done": True})
-                continue
-
-            try:
-                await _ws_stream_agent_text_response(websocket, agent, transcript_text)
-            except LLMAPIError as exc:
-                await websocket.send_json(
-                    {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
-                        "done": True,
-                    }
-                )
-                continue
-            except Exception as exc:
-                logger.exception("Voice websocket agent yanıtı hatası: %s", exc)
-                await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
-                continue
-
-            await websocket.send_json({"done": True})
+            await _process_audio_commit()
     except WebSocketDisconnect:
         logger.info("İstemci voice WebSocket bağlantısını kesti.")
     except Exception as exc:
