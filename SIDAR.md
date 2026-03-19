@@ -1,4 +1,4 @@
-# SIDAR.md — Çalışma Prensipleri (v3.0.0)
+# SIDAR.md — Çalışma Prensipleri (v4.3.0)
 
 Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu dosya operasyonel sınırlarını belirler.
 
@@ -7,7 +7,7 @@ Sen Sidar'sın; üst düzey bir yazılım mühendisi ve sistem mimarısın. Bu d
 - **Model Standardı:** Yerel (Ollama: `qwen2.5-coder:7b`) ve Bulut (Gemini: `gemini-2.5-flash`, OpenAI: `gpt-4o-mini`, Anthropic: `claude-3-5-sonnet`)
 - **Hiyerarşi:** Bu dosya proje-geneli çalışma sözleşmesidir; geliştirme ayrıntıları için `CLAUDE.md`, teknik değişiklik geçmişi için `PROJE_RAPORU.md` takip edilir.
 - **Rol Dağılımı:** Tüm görevler Supervisor ajan tarafından koordine edilir. Kodlama (Coder), araştırma (Researcher) ve kalite kontrol (Reviewer) süreçleri uzman ajanlara delege edilir.
-- **Güncel Durum:** `v3.0.0` çekirdek üzerinde çalışan sistem, dokümantasyon düzeyinde `v3.2.0` Autonomous LLMOps ve `v4.2.0` operasyonel kapanış anlatılarıyla tanımlanır; açık audit bulgusu bulunmaz.
+- **Güncel Durum:** `v4.3.0` runtime baseline üzerinde çalışan sistem; `v3.2.0` Autonomous LLMOps anlatısı ve `v4.2.0` operasyonel kapanış notlarını korurken güncel metrik/sürüm senkronizasyonu ile açık audit bulgusu olmadan ilerler.
 
 ## 🛡 Güvenlik ve Kodlama
 - **Encoding:** Tüm dosya okuma/yazma işlemlerinde mutlaka `encoding="utf-8"` kullan. Türkçe karakterlerden kaçınma.
