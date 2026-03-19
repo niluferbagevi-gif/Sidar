@@ -96,6 +96,7 @@ def test_get_cache_metrics_returns_dict():
 import asyncio
 import importlib
 import sys
+import types
 
 
 def _run(coro):
@@ -137,40 +138,41 @@ class TestPrometheusRendererCacheMetrics:
 
     def test_cache_hits_total_present(self):
         output = render_llm_metrics_prometheus(self._snapshot())
-        assert "sidar_cache_hits_total 10" in output
+        assert "sidar_semantic_cache_hits_total 10" in output
 
     def test_cache_misses_total_present(self):
         output = render_llm_metrics_prometheus(self._snapshot())
-        assert "sidar_cache_misses_total 5" in output
+        assert "sidar_semantic_cache_misses_total 5" in output
 
     def test_cache_hit_rate_present(self):
         output = render_llm_metrics_prometheus(self._snapshot(hit_rate=0.667))
+        assert "sidar_semantic_cache_hit_rate 0.667" in output
         assert "sidar_cache_hit_rate 0.667" in output
 
     def test_cache_metrics_help_lines(self):
         output = render_llm_metrics_prometheus(self._snapshot())
-        assert "# HELP sidar_cache_hits_total" in output
-        assert "# HELP sidar_cache_misses_total" in output
-        assert "# HELP sidar_cache_evictions_total" in output
-        assert "# HELP sidar_cache_redis_latency_ms" in output
-        assert "# HELP sidar_cache_hit_rate" in output
+        assert "# HELP sidar_semantic_cache_hits_total" in output
+        assert "# HELP sidar_semantic_cache_misses_total" in output
+        assert "# HELP sidar_semantic_cache_evictions_total" in output
+        assert "# HELP sidar_semantic_cache_redis_latency_ms" in output
+        assert "# HELP sidar_semantic_cache_hit_rate" in output
 
     def test_extended_cache_metrics_present(self):
         output = render_llm_metrics_prometheus(self._snapshot())
-        assert "sidar_cache_skips_total 2" in output
-        assert "sidar_cache_evictions_total 3" in output
-        assert "sidar_cache_redis_errors_total 1" in output
-        assert "sidar_cache_items 9" in output
-        assert "sidar_cache_redis_latency_ms 17.5" in output
+        assert "sidar_semantic_cache_skips_total 2" in output
+        assert "sidar_semantic_cache_evictions_total 3" in output
+        assert "sidar_semantic_cache_redis_errors_total 1" in output
+        assert "sidar_semantic_cache_items 9" in output
+        assert "sidar_semantic_cache_redis_latency_ms 17.5" in output
 
     def test_zero_cache_snapshot(self):
         output = render_llm_metrics_prometheus(self._snapshot(0, 0, 0.0))
-        assert "sidar_cache_hits_total 0" in output
-        assert "sidar_cache_hit_rate 0.0" in output
+        assert "sidar_semantic_cache_hits_total 0" in output
+        assert "sidar_semantic_cache_hit_rate 0.0" in output
 
     def test_empty_snapshot_no_crash(self):
         output = render_llm_metrics_prometheus({})
-        assert "sidar_cache_hits_total 0" in output
+        assert "sidar_semantic_cache_hits_total 0" in output
 
     def test_none_snapshot_no_crash(self):
         output = render_llm_metrics_prometheus(None)
@@ -206,6 +208,45 @@ class TestMetricsCollectorCacheField:
         collector = LLMMetricsCollector()
         snap = collector.snapshot()
         assert isinstance(snap["cache"]["hit_rate"], float)
+
+
+def test_cache_metrics_updates_prometheus_collectors_when_available(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    class _Counter:
+        def __init__(self, *_args, **_kwargs):
+            self.value = 0
+
+        def inc(self, count=1):
+            self.value += count
+
+    class _Gauge:
+        def __init__(self, *_args, **_kwargs):
+            self.value = None
+
+        def set(self, value):
+            self.value = value
+
+    fake_prom = types.SimpleNamespace(
+        Counter=_Counter,
+        Gauge=_Gauge,
+        REGISTRY=types.SimpleNamespace(_names_to_collectors={}),
+    )
+
+    monkeypatch.setattr(cm_mod, "_prometheus_metric_cache", {})
+    monkeypatch.setattr(cm_mod.importlib, "import_module", lambda name: fake_prom if name == "prometheus_client" else importlib.import_module(name))
+
+    cm_mod.record_cache_hit()
+    cm_mod.record_cache_miss()
+    cm_mod.record_cache_eviction(2)
+    cm_mod.set_cache_items(5)
+    cm_mod.observe_cache_redis_latency(9.5)
+
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_hits_total"].value == 1
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_misses_total"].value == 1
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_evictions_total"].value == 2
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_items"].value == 5
+    assert cm_mod._prometheus_metric_cache["sidar_semantic_cache_redis_latency_ms"].value == 9.5
 
 
 # ─── _SemanticCacheManager hit/miss kayıt entegrasyonu ───────────────────────
