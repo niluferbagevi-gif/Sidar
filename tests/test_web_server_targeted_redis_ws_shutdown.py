@@ -5,21 +5,32 @@ import sys
 import types
 from pathlib import Path
 
-from tests.test_web_server_runtime import _install_web_server_stubs
+from tests.test_web_server_runtime import _install_web_server_stubs, _restore_modules
 
 
 def _load_web_server():
-    _install_web_server_stubs()
+    replaced_modules = _install_web_server_stubs()
     hitl_mod = types.ModuleType("core.hitl")
     hitl_mod.get_hitl_gate = lambda: types.SimpleNamespace()
     hitl_mod.get_hitl_store = lambda: types.SimpleNamespace()
     hitl_mod.set_hitl_broadcast_hook = lambda _hook: None
+    previous_hitl = sys.modules.get("core.hitl")
     sys.modules["core.hitl"] = hitl_mod
 
     spec = importlib.util.spec_from_file_location("web_server_targeted_under_test", Path("web_server.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        if previous_hitl is None:
+            sys.modules.pop("core.hitl", None)
+        else:
+            sys.modules["core.hitl"] = previous_hitl
+        _restore_modules(
+            replaced_modules,
+            names=("core.llm_metrics", "core.llm_client"),
+        )
     return mod
 
 
