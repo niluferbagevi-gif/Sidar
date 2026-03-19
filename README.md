@@ -335,8 +335,8 @@ python web_server.py
 Tarayıcıda açılır: **http://localhost:7860**
 
 ```bash
-# Özel host/port
-python web_server.py --host 0.0.0.0 --port 8080
+# Varsayılan kurumsal port ile dışarı aç
+python web_server.py --host 0.0.0.0 --port 7860
 
 # Erişim seviyesi ile
 python web_server.py --level sandbox
@@ -345,14 +345,29 @@ python web_server.py --level sandbox
 python web_server.py --provider gemini --port 7860
 ```
 
+> `web_server.py`, `web_ui_react/dist/` mevcutsa React SPA'yı öncelikli sunar; build yoksa geriye dönük uyumluluk için legacy `web_ui/` arayüzüne düşer.
+
+### ⚛️ React/Vite Geliştirme Arayüzü
+
+```bash
+cd web_ui_react
+npm install
+npm run dev
+```
+
+Geliştirme sunucusu varsayılan olarak **http://localhost:5173** adresinde açılır. Production için:
+
+```bash
+npm run build
+```
+
+Build çıktısı `web_ui_react/dist/` altına yazılır ve `web_server.py` tarafından otomatik servis edilir.
+
 Web arayüzü özellikleri:
+- React SPA rotaları: sohbet, P2P diyalog, swarm akışı, prompt admin, agent manager, tenant admin
 - Streaming chat (daktilo efekti) + araç görselleştirmesi
-- Çoklu oturum yönetimi (sidebar)
-- Sohbet geçmişini MD/JSON olarak dışa aktarma
-- Markdown ve kod bloğu renklendirme (highlight.js)
-- Sistem durumu paneli (model, versiyon, GitHub, RAG, GPU)
-- Dal seçimi (gerçek git checkout)
-- Mobil uyumlu hamburger menüsü
+- Çoklu oturum yönetimi, markdown/kod blokları ve Bearer token toolbar
+- Legacy `web_ui/` için geriye dönük fallback desteği
 
 ### 🚀 Akıllı Launcher (main.py)
 
@@ -451,75 +466,26 @@ python cli.py --provider gemini -c "FastAPI nedir?"
 
 ```
 sidar_project/
-├── agent/
-│   ├── sidar_agent.py      # Ana ajan bağlayıcısı (583 satır)
-│   ├── auto_handle.py      # Örüntü tabanlı hızlı komut eşleyici (612 satır)
-│   ├── definitions.py      # Sidar karakter profili ve sistem talimatı (168 satır)
-│   ├── tooling.py          # Araç kayıt + Pydantic argüman şema yöneticisi (112 satır)
-│   ├── registry.py         # AgentRegistry + @register dekoratörü — plugin marketplace (186 satır)
-│   ├── swarm.py            # SwarmOrchestrator: parallel/pipeline, TaskRouter (370 satır)
-│   ├── base_agent.py       # BaseAgent soyut sınıfı (55 satır)
-│   ├── core/
-│   │   ├── supervisor.py   # Yönlendirici ve orkestrasyon ajanı (239 satır)
-│   │   ├── contracts.py    # TaskEnvelope/TaskResult + P2P delegasyon sözleşmeleri (63 satır)
-│   │   ├── event_stream.py # Ajan olay veriyolu — canlı durum akışı (217 satır)
-│   │   ├── memory_hub.py   # Multi-agent bellek yönetim merkezi (54 satır)
-│   │   └── registry.py     # Ajan ve yetenek kayıt defteri (29 satır)
-│   └── roles/
-│       ├── coder_agent.py      # Dosya/kod odaklı uzman ajan (134 satır)
-│       ├── researcher_agent.py # Web + RAG odaklı uzman ajan (79 satır)
-│       └── reviewer_agent.py   # Test koşturan QA ajanı (183 satır)
-├── core/
-│   ├── db.py               # Veritabanı bağlantısı, kullanıcı, kota tabloları (1.635 satır)
-│   ├── llm_client.py       # Ollama + Gemini + OpenAI + Anthropic async istemcisi (1.351 satır)
-│   ├── llm_metrics.py      # Token, maliyet ve Prometheus metrik toplayıcısı (271 satır)
-│   ├── memory.py           # Çoklu oturum (session) yönetimi — DB destekli (299 satır)
-│   ├── rag.py              # ChromaDB + BM25 hibrit RAG motoru (1.142 satır)
-│   ├── dlp.py              # DLP & PII maskeleme: token, key, TC kimlik no, JWT vb. (320 satır)
-│   ├── hitl.py             # Human-in-the-Loop onay geçidi: async polling, web API (274 satır)
-│   ├── judge.py            # LLM-as-a-Judge: RAG alaka + halüsinasyon riski (257 satır)
-│   ├── router.py           # Cost-Aware Model Routing: karmaşıklık skoru + bütçe (211 satır)
-│   ├── entity_memory.py    # Entity/Persona Memory: TTL + LRU kişisel bellek (283 satır)
-│   ├── cache_metrics.py    # Semantic cache hit/miss + Prometheus metrikleri (50 satır)
-│   ├── active_learning.py  # Active Learning + LoRA/QLoRA: FeedbackStore, Exporter (419 satır)
-│   └── vision.py           # Multimodal Vision Pipeline: UI mockup → kod (294 satır)
-├── managers/
-│   ├── code_manager.py     # Dosya operasyonları, AST, Docker REPL sandbox (932 satır)
-│   ├── security.py         # OpenClaw 3 seviyeli erişim kontrol sistemi (290 satır)
-│   ├── github_manager.py   # GitHub API entegrasyonu — PR + Issue + Release (644 satır)
-│   ├── system_health.py    # CPU/RAM/GPU izleme (pynvml + nvidia-smi fallback) (487 satır)
-│   ├── web_search.py       # Tavily + Google + DuckDuckGo (async, çoklu motor) (387 satır)
-│   ├── package_info.py     # PyPI + npm + GitHub Releases (async) (343 satır)
-│   ├── todo_manager.py     # Görev listesi yönetimi + proje TODO taraması (451 satır)
-│   ├── slack_manager.py    # Slack Bot SDK + Webhook fallback, Block Kit (205 satır)
-│   ├── jira_manager.py     # Jira Cloud REST API v3, Basic/Bearer auth (245 satır)
-│   └── teams_manager.py    # Teams MessageCard + Adaptive Card v1.4, HITL (234 satır)
-├── plugins/                # Plugin / Marketplace ajanları
-│   ├── crypto_price_agent.py  # CryptoPriceAgent: CoinGecko BTC/ETH/SOL fiyat sorgusu (49 satır)
-│   └── upload_agent.py        # UploadAgent: temel upload şablon ajanı (10 satır)
-├── tests/                  # 145 test modülü — tam kapsam, 0 atlanan test
-├── web_ui/                 # Vanilla JS web arayüzü (SSE, session, export, mobil)
-│   ├── index.html, app.js, chat.js, sidebar.js, rag.js, style.css
-├── web_ui_react/           # React + Vite modern UI (react-router-dom tabanlı)
-│   └── src/components/     # ChatPanel, P2PDialoguePanel, SwarmFlowPanel, AgentManagerPanel…
-├── migrations/             # Alembic veritabanı geçiş dosyaları
-├── scripts/                # Operasyon, metrik ve test betikleri
-├── runbooks/               # 4 operasyonel kılavuz (production-cutover, observability, plugin, rbac)
-├── helm/sidar/             # Kubernetes Helm chart (16 şablon, staging + prod values)
-├── docker/                 # Grafana/Prometheus observability konfigürasyonları
-├── docs/module-notes/      # Otomatik üretilen modül notları
-├── grafana/                # Grafana dashboard + provisioning (sidar_overview.json)
-├── config.py               # Merkezi yapılandırma + GPU tespiti + WSL2 desteği (828 satır)
-├── main.py                 # Etkileşimli launcher (wizard + quick start) (381 satır)
-├── cli.py                  # Terminal tabanlı CLI giriş noktası (async loop) (289 satır)
-├── web_server.py           # FastAPI + WebSocket + Rate limiting + Admin API (2.168 satır)
-├── github_upload.py        # GitHub'a otomatik yükleme yardımcı betiği (294 satır)
-├── gui_launcher.py         # Eel tabanlı masaüstü başlatıcı (97 satır)
-├── Dockerfile              # CPU/GPU dual-mode build (python:3.11-slim)
-├── docker-compose.yml      # 7 servis: redis, ai, gpu, web, web-gpu, prometheus, grafana
-├── environment.yml         # Conda — PyTorch CUDA 12.4 (cu124) wheel, pytest-asyncio
-├── .env.example            # Açıklamalı ortam değişkeni şablonu (70+ değişken)
-└── install_sidar.sh        # Ubuntu/WSL sıfırdan kurulum scripti
+├── agent/                  # Supervisor + swarm + uzman roller (coder/researcher/reviewer)
+├── core/                   # LLM istemcisi, DB, RAG, DLP, HITL, Judge, Vision, metrics
+├── managers/               # Kod, güvenlik, GitHub, sistem sağlığı, paket ve web arama yöneticileri
+├── plugins/                # Marketplace ajan örnekleri
+├── tests/                  # 149 test modülü / 151 Python test dosyası
+├── web_ui/                 # Legacy vanilla JS arayüzü (fallback)
+├── web_ui_react/           # React + Vite SPA (Chat, P2P, Swarm, Prompt/Agent/Tenant admin)
+├── migrations/             # Alembic zinciri: 0001_baseline_schema, 0002_prompt_registry, 0003_audit_trail
+├── scripts/                # Audit, env parity, SQLite→PostgreSQL migration, DB load test betikleri
+├── runbooks/               # Production cutover, observability, plugin marketplace, tenant RBAC kılavuzları
+├── helm/sidar/             # Kubernetes chart; web, ai-worker, redis, PostgreSQL, otel-collector, Jaeger, Zipkin
+├── docker/                 # Prometheus + Grafana provisioning dosyaları
+├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
+├── config.py               # Merkezi yapılandırma; runtime sürümü `3.0.0`
+├── web_server.py           # 60 REST endpoint + `/ws/chat`
+├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
+├── README.md               # Ürün ve kurulum rehberi
+├── PROJE_RAPORU.md         # Mimari + kalite raporu
+├── AUDIT_REPORT_v4.0.md    # Güvenlik ve denetim raporu
+└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
 ---
@@ -530,9 +496,10 @@ sidar_project/
 cd sidar_project
 pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
+bash run_tests.sh
 ```
 
-**Test paketi (145 modül):**
+**Test paketi (149 modül / 151 dosya):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
 - `test_web_server_runtime.py` — FastAPI endpoint ve WebSocket senaryoları
 - `test_web_server_api_focus_additions.py` — WebSocket auth kapanışları, HITL broadcast temizliği ve Slack/Jira/Teams + EntityMemory/Feedback API fallback senaryoları

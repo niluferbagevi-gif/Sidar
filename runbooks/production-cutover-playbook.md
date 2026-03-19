@@ -3,6 +3,37 @@
 
 Bu rehber, SİDAR'ın üretim ortamında PostgreSQL'e güvenli geçişi için minimum adımları tanımlar.
 
+## 0) Güncel dağıtım yüzeyi özeti
+
+### Docker Compose servisleri
+
+| Servis | Amaç | Varsayılan Port |
+|---|---|---:|
+| `redis` | rate limiting / cache | 6379 |
+| `postgres` | uygulama veritabanı | 5432 |
+| `sidar-web` | CPU web/API | 7860 |
+| `sidar-web-gpu` | GPU web/API | 7861→7860 |
+| `sidar-ai` | CPU CLI/worker | - |
+| `sidar-gpu` | GPU CLI/worker | - |
+| `jaeger` | trace UI + OTLP gRPC | 16686 / 4317 |
+| `prometheus` | metrics scrape | 9090 |
+| `grafana` | dashboard | 3000 |
+
+> Not: Compose dosyası Zipkin veya OTel Collector servisini başlatmaz; bu bileşenler Helm chart tarafında üretim/staging overlay'leriyle devreye alınır.
+
+### Helm / production overlay yüzeyi
+
+| Bileşen | Durum | Not |
+|---|---|---|
+| `web` | aktif | servis portu `7860`, production overlay'de 3 replika |
+| `ai-worker` | aktif | production overlay'de 2 replika |
+| `redis` | aktif | varsayılan persistent volume |
+| `postgresql` | aktif | pgvector/kurumsal DB omurgası için temel katman |
+| `otel-collector` | aktif | OTLP gRPC `4317`, HTTP `4318` |
+| `jaeger` | aktif | query UI `16686` |
+| `zipkin` | opsiyonel aktif | UI `9411` |
+| Grafana SLO dashboard | aktif | `monitoring.sloDashboard.enabled=true` |
+
 ## 1) Alembic migration zinciri
 
 1. Bağımlılıkları kurun:
