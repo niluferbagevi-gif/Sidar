@@ -10,6 +10,39 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def test_initialize_logs_warning_and_stays_disabled_when_sqlalchemy_unavailable(monkeypatch):
+    import core.entity_memory as em_mod
+
+    cfg = MagicMock()
+    cfg.ENABLE_ENTITY_MEMORY = True
+    cfg.ENTITY_MEMORY_TTL_DAYS = 90
+    cfg.ENTITY_MEMORY_MAX_PER_USER = 100
+    em = EntityMemory(config=cfg)
+    warnings = []
+
+    monkeypatch.setattr(em_mod, "_SA_AVAILABLE", False)
+    monkeypatch.setattr(em_mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    _run(em.initialize())
+
+    assert em._engine is None
+    assert warnings and "bellek devre dışı" in warnings[0]
+
+
+def test_upsert_returns_false_for_blank_user_or_key_when_engine_exists():
+    cfg = MagicMock()
+    cfg.ENABLE_ENTITY_MEMORY = True
+    cfg.ENTITY_MEMORY_TTL_DAYS = 90
+    cfg.ENTITY_MEMORY_MAX_PER_USER = 100
+    em = EntityMemory(config=cfg)
+    em._engine = object()
+
+    assert _run(em.upsert("   ", "coding_style", "functional")) is False
+    assert _run(em.upsert("user1", "   ", "functional")) is False
+
+
+
+
 # ─── EntityMemory birim testleri ────────────────────────────────────────────
 
 from core.entity_memory import EntityMemory, WELL_KNOWN_KEYS, get_entity_memory
