@@ -497,7 +497,7 @@ sidar_project/
 ├── plugins/                # Plugin / Marketplace ajanları
 │   ├── crypto_price_agent.py  # CryptoPriceAgent: CoinGecko BTC/ETH/SOL fiyat sorgusu (49 satır)
 │   └── upload_agent.py        # UploadAgent: temel upload şablon ajanı (10 satır)
-├── tests/                  # 142 test modülü — tam kapsam, 0 atlanan test
+├── tests/                  # 145 test modülü — tam kapsam, 0 atlanan test
 ├── web_ui/                 # Vanilla JS web arayüzü (SSE, session, export, mobil)
 │   ├── index.html, app.js, chat.js, sidebar.js, rag.js, style.css
 ├── web_ui_react/           # React + Vite modern UI (react-router-dom tabanlı)
@@ -532,9 +532,10 @@ pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-**Test paketi (142 modül):**
+**Test paketi (145 modül):**
 - `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
 - `test_web_server_runtime.py` — FastAPI endpoint ve WebSocket senaryoları
+- `test_web_server_api_focus_additions.py` — WebSocket auth kapanışları, HITL broadcast temizliği ve Slack/Jira/Teams + EntityMemory/Feedback API fallback senaryoları
 - `test_db_runtime.py` / `test_db_postgresql_branches.py` — SQLite/PostgreSQL yönetimi
 - `test_supervisor_agent.py` / `test_reviewer_agent.py` — Multi-agent orkestrasyon
 - `test_sandbox_runtime_profiles.py` — Docker sandbox güvenlik profilleri
