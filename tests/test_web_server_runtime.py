@@ -574,6 +574,47 @@ def test_access_policy_middleware_policy_checker_error_denies_access():
     assert resp.content["action"] == "read"
 
 
+def test_access_policy_middleware_denied_attempt_is_audited():
+    mod = _load_web_server()
+    calls = []
+
+    class _Db:
+        async def check_access_policy(self, **_kwargs):
+            return False
+
+        async def record_audit_log(self, **kwargs):
+            calls.append(kwargs)
+
+    agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_Db()))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    async def _next(_request):
+        return _FakeResponse("ok", status_code=200)
+
+    async def _exercise():
+        req = _FakeRequest(method="POST", path="/rag/add", host="192.168.1.5")
+        req.state.user = types.SimpleNamespace(id="u-deny", username="eve", role="user", tenant_id="tenant-z")
+        resp = await mod.access_policy_middleware(req, _next)
+        assert resp.status_code == 403
+        await asyncio.sleep(0)
+
+    asyncio.run(_exercise())
+    assert calls == [
+        {
+            "user_id": "u-deny",
+            "tenant_id": "tenant-z",
+            "action": "write",
+            "resource": "rag:*",
+            "ip_address": "192.168.1.5",
+            "allowed": False,
+        }
+    ]
+
+
 def test_core_endpoints_health_status_and_sessions_basics():
     mod = _load_web_server()
 

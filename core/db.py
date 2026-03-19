@@ -76,6 +76,18 @@ class PromptRecord:
     updated_at: str
 
 
+@dataclass
+class AuditLogRecord:
+    id: int
+    user_id: str
+    tenant_id: str
+    action: str
+    resource: str
+    ip_address: str
+    allowed: bool
+    timestamp: str
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -218,11 +230,13 @@ class Database:
         if self._backend == "postgresql":
             await self._init_schema_postgresql()
             await self._ensure_access_control_schema_postgresql()
+            await self._ensure_audit_log_schema_postgresql()
             await self._ensure_schema_version_postgresql()
             await self.ensure_default_prompt_registry()
             return
         await self._init_schema_sqlite()
         await self._ensure_access_control_schema_sqlite()
+        await self._ensure_audit_log_schema_sqlite()
         await self._ensure_schema_version_sqlite()
         await self.ensure_default_prompt_registry()
 
@@ -279,6 +293,59 @@ class Database:
                 """
             )
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)")
+
+    async def _ensure_audit_log_schema_sqlite(self) -> None:
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL DEFAULT '',
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    action TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    allowed INTEGER NOT NULL DEFAULT 0,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+            self._sqlite_conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+            )
+            self._sqlite_conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
+            )
+            self._sqlite_conn.commit()
+
+        await self._run_sqlite_op(_run)
+
+    async def _ensure_audit_log_schema_postgresql(self) -> None:
+        assert self._pg_pool is not None
+        async with self._pg_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL DEFAULT '',
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    action TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    allowed BOOLEAN NOT NULL DEFAULT FALSE,
+                    timestamp TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
+            )
 
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
@@ -359,6 +426,18 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant
             ON access_policies(user_id, tenant_id, resource_type, action);
 
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            action TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            allowed INTEGER NOT NULL DEFAULT 0,
+            timestamp TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 
         CREATE TABLE IF NOT EXISTS prompt_registry (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -457,6 +536,20 @@ class Database:
             );
             """,
             "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action);",
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id BIGSERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT '',
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                action TEXT NOT NULL,
+                resource TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                allowed BOOLEAN NOT NULL DEFAULT FALSE,
+                timestamp TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);",
 
             """
             CREATE TABLE IF NOT EXISTS prompt_registry (
@@ -1301,6 +1394,138 @@ class Database:
         if any(p.effect == "deny" for p in matched):
             return False
         return any(p.effect == "allow" for p in matched)
+
+    async def record_audit_log(
+        self,
+        *,
+        user_id: str = "",
+        tenant_id: str = "default",
+        action: str,
+        resource: str,
+        ip_address: str,
+        allowed: bool,
+        timestamp: Optional[str] = None,
+    ) -> None:
+        event_time = (timestamp or _utc_now_iso()).strip() or _utc_now_iso()
+        tenant = (tenant_id or "default").strip() or "default"
+        user = (user_id or "").strip()
+        act = (action or "").strip().lower()
+        res = (resource or "").strip()
+        ip = (ip_address or "unknown").strip() or "unknown"
+        if not act or not res:
+            raise ValueError("action and resource are required")
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    user,
+                    tenant,
+                    act,
+                    res,
+                    ip,
+                    bool(allowed),
+                    event_time,
+                )
+            return
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> None:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user, tenant, act, res, ip, int(bool(allowed)), event_time),
+            )
+            self._sqlite_conn.commit()
+
+        await self._run_sqlite_op(_run)
+
+    async def list_audit_logs(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[AuditLogRecord]:
+        max_items = max(1, min(int(limit or 100), 1000))
+        normalized_user = (user_id or "").strip() or None
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp "
+                "FROM audit_logs"
+            )
+            args: tuple[Any, ...]
+            if normalized_user is not None:
+                query += " WHERE user_id=$1 ORDER BY timestamp DESC LIMIT $2"
+                args = (normalized_user, max_items)
+            else:
+                query += " ORDER BY timestamp DESC LIMIT $1"
+                args = (max_items,)
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+            return [
+                AuditLogRecord(
+                    id=int(r["id"]),
+                    user_id=str(r["user_id"]),
+                    tenant_id=str(r["tenant_id"]),
+                    action=str(r["action"]),
+                    resource=str(r["resource"]),
+                    ip_address=str(r["ip_address"]),
+                    allowed=bool(r["allowed"]),
+                    timestamp=str(r["timestamp"]),
+                )
+                for r in rows
+            ]
+
+        assert self._sqlite_conn is not None
+
+        def _run():
+            assert self._sqlite_conn is not None
+            if normalized_user is not None:
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
+                    FROM audit_logs
+                    WHERE user_id=?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """,
+                    (normalized_user, max_items),
+                )
+            else:
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, user_id, tenant_id, action, resource, ip_address, allowed, timestamp
+                    FROM audit_logs
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """,
+                    (max_items,),
+                )
+            return cur.fetchall()
+
+        rows = await self._run_sqlite_op(_run)
+        return [
+            AuditLogRecord(
+                id=int(r["id"]),
+                user_id=str(r["user_id"]),
+                tenant_id=str(r["tenant_id"]),
+                action=str(r["action"]),
+                resource=str(r["resource"]),
+                ip_address=str(r["ip_address"]),
+                allowed=bool(r["allowed"]),
+                timestamp=str(r["timestamp"]),
+            )
+            for r in rows
+        ]
 
     async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:
         tokens = max(0, int(daily_token_limit or 0))
