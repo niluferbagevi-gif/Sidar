@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import json
 import sys
 import types
@@ -295,6 +296,9 @@ def test_slack_jira_and_teams_api_wrappers_cover_success_unavailable_and_backend
         with pytest.raises(_FakeHTTPException) as slack_unavailable:
             asyncio.run(mod.api_slack_send(mod._SlackSendRequest(text="x", channel=None, thread_ts=None)))
         assert slack_unavailable.value.status_code == 503
+        with pytest.raises(_FakeHTTPException) as slack_channels_unavailable:
+            asyncio.run(mod.api_slack_channels())
+        assert slack_channels_unavailable.value.status_code == 503
 
         mod._slack_mgr_instance.available = True
         mod._slack_mgr_instance.fail_send = True
@@ -316,6 +320,9 @@ def test_slack_jira_and_teams_api_wrappers_cover_success_unavailable_and_backend
                 )
             )
         assert jira_unavailable.value.status_code == 503
+        with pytest.raises(_FakeHTTPException) as jira_search_unavailable:
+            asyncio.run(mod.api_jira_search_issues(jql="project=SID", max_results=10))
+        assert jira_search_unavailable.value.status_code == 503
 
         mod._jira_mgr_instance.available = True
         mod._jira_mgr_instance.fail_create = True
@@ -343,3 +350,158 @@ def test_slack_jira_and_teams_api_wrappers_cover_success_unavailable_and_backend
         with pytest.raises(_FakeHTTPException) as teams_backend_error:
             asyncio.run(mod.api_teams_send(mod._TeamsSendRequest(text="x", title="Alert")))
         assert teams_backend_error.value.status_code == 502
+
+
+def test_access_audit_logging_handles_empty_resource_missing_loop_and_persist_failures(monkeypatch):
+    mod = _load_web_server()
+
+    assert mod._build_audit_resource("", "abc") == ""
+
+    debug_logs = []
+    monkeypatch.setattr(mod.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+
+    def _no_loop():
+        raise RuntimeError("event loop yok")
+
+    monkeypatch.setattr(mod.asyncio, "get_running_loop", _no_loop)
+    mod._schedule_access_audit_log(
+        user=types.SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="github",
+        action="read",
+        resource_id="repo-1",
+        ip_address="127.0.0.1",
+        allowed=True,
+    )
+    assert any("event loop yok" in msg for msg in debug_logs)
+
+    captured = {}
+
+    class _Loop:
+        def create_task(self, coro):
+            captured["coro"] = coro
+            return types.SimpleNamespace()
+
+    async def _bad_record(**_kwargs):
+        raise RuntimeError("audit persist boom")
+
+    async def _get_agent():
+        return types.SimpleNamespace(memory=types.SimpleNamespace(db=types.SimpleNamespace(record_audit_log=_bad_record)))
+
+    monkeypatch.setattr(mod.asyncio, "get_running_loop", lambda: _Loop())
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+
+    mod._schedule_access_audit_log(
+        user=types.SimpleNamespace(id="u1", tenant_id="t1"),
+        resource_type="rag",
+        action="write",
+        resource_id="doc-1",
+        ip_address="127.0.0.1",
+        allowed=False,
+    )
+    asyncio.run(captured["coro"])
+    assert any("audit persist boom" in msg for msg in debug_logs)
+
+
+def test_hitl_api_wrappers_cover_pending_create_success_and_missing_request():
+    mod = _load_web_server()
+    added = []
+    notified = []
+
+    class _PendingRequest:
+        def __init__(self, request_id):
+            self.request_id = request_id
+
+        def to_dict(self):
+            return {"request_id": self.request_id}
+
+    class _Store:
+        async def pending(self):
+            return [_PendingRequest("req-1")]
+
+        async def add(self, req):
+            added.append(req)
+
+    store = _Store()
+
+    class _Gate:
+        timeout = 30
+
+        async def respond(self, request_id, **_kwargs):
+            if request_id == "missing":
+                return None
+            return types.SimpleNamespace(request_id=request_id, decision=types.SimpleNamespace(value="approved"))
+
+    hitl_mod = types.ModuleType("core.hitl")
+    hitl_mod.get_hitl_store = lambda: store
+    hitl_mod.get_hitl_gate = lambda: _Gate()
+    hitl_mod.HITLRequest = lambda **kwargs: types.SimpleNamespace(**kwargs)
+
+    async def _notify(req):
+        notified.append(req.request_id)
+
+    hitl_mod.notify = _notify
+    mod.get_hitl_store = hitl_mod.get_hitl_store
+    mod.get_hitl_gate = hitl_mod.get_hitl_gate
+
+    with _ApiModulePatch("core.hitl", hitl_mod):
+        pending = asyncio.run(mod.hitl_pending(user=types.SimpleNamespace(username="alice")))
+        created = asyncio.run(
+            mod.hitl_create_request(
+                {"action": "approve", "description": "Deploy onayı", "payload": {"id": 7}},
+                user=types.SimpleNamespace(username="alice"),
+            )
+        )
+        decided = asyncio.run(
+            mod.hitl_respond(
+                "req-1",
+                mod._HITLRespondRequest(approved=True, decided_by="admin", rejection_reason=""),
+                user=types.SimpleNamespace(username="alice"),
+            )
+        )
+
+        with pytest.raises(_FakeHTTPException) as missing:
+            asyncio.run(
+                mod.hitl_respond(
+                    "missing",
+                    mod._HITLRespondRequest(approved=False, decided_by="admin", rejection_reason="hayır"),
+                    user=types.SimpleNamespace(username="alice"),
+                )
+            )
+
+    assert pending.content == {"pending": [{"request_id": "req-1"}], "count": 1}
+    assert created.content["request_id"]
+    assert "expires_at" in created.content
+    assert len(added) == 1
+    assert notified == [added[0].request_id]
+    assert decided.content == {"request_id": "req-1", "decision": "approved"}
+    assert missing.value.status_code == 404
+
+
+def test_vision_endpoints_raise_501_when_core_vision_import_fails():
+    mod = _load_web_server()
+    real_import = builtins.__import__
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.vision":
+            raise ImportError("blocked for test")
+        return real_import(name, globals, locals, fromlist, level)
+
+    try:
+        builtins.__import__ = _blocked_import
+        with pytest.raises(_FakeHTTPException) as analyze_exc:
+            asyncio.run(
+                mod.api_vision_analyze(
+                    mod._VisionAnalyzeRequest(image_base64="ZmFrZQ==", mime_type="image/png", analysis_type="ui", prompt=None)
+                )
+            )
+        with pytest.raises(_FakeHTTPException) as mockup_exc:
+            asyncio.run(
+                mod.api_vision_mockup(
+                    mod._VisionMockupRequest(image_base64="ZmFrZQ==", mime_type="image/png", framework="html", prompt=None)
+                )
+            )
+    finally:
+        builtins.__import__ = real_import
+
+    assert analyze_exc.value.status_code == 501
+    assert mockup_exc.value.status_code == 501
