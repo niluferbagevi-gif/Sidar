@@ -323,7 +323,7 @@ sidar_project/
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm sadeleştirilmiştir. Her modülün detaylı incelemesi doğrudan `docs/module-notes/` altındaki ilgili not dosyasına taşınmıştır.
+Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-agent swarm + OTel) genişlemelerini yansıtacak şekilde sadeleştirilmiş bir dizin sunar. Ayrıntılı modül notu bulunan dosyalar `docs/module-notes/` altına bağlanmış, henüz ayrı notu olmayan yeni modüller için ise doğrudan kaynak dosya adı belirtilmiştir.
 
 ### 3.A Çekirdek Giriş Dosyaları
 
@@ -334,44 +334,46 @@ Bu bölüm sadeleştirilmiştir. Her modülün detaylı incelemesi doğrudan `do
 | 3.3 | `cli.py` | [docs/module-notes/cli.py.md](docs/module-notes/cli.py.md) |
 | 3.4 | `web_server.py` | [docs/module-notes/web_server.py.md](docs/module-notes/web_server.py.md) |
 
-### 3.B Agent Katmanı
+### 3.B Çoklu Ajan (Multi-Agent Swarm) ve Dinamik Rol Mimarisi
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
 | 3.5 | `agent/sidar_agent.py` | [docs/module-notes/agent/sidar_agent.py.md](docs/module-notes/agent/sidar_agent.py.md) |
 | 3.6 | `agent/auto_handle.py` | [docs/module-notes/agent/auto_handle.py.md](docs/module-notes/agent/auto_handle.py.md) |
-| 3.7 | `agent/definitions.py` | [docs/module-notes/agent/definitions.py.md](docs/module-notes/agent/definitions.py.md) |
-| 3.7b | `agent/tooling.py` | [docs/module-notes/agent/tooling.py.md](docs/module-notes/agent/tooling.py.md) |
-| 3.7c | `agent/base_agent.py` | [docs/module-notes/agent/base_agent.py.md](docs/module-notes/agent/base_agent.py.md) |
-| 3.7d | `agent/core/supervisor.py` | [docs/module-notes/agent/core/supervisor.py.md](docs/module-notes/agent/core/supervisor.py.md) |
-| 3.7e | `agent/core/contracts.py`, `event_stream.py`, `memory_hub.py`, `registry.py` | [docs/module-notes/agent/core/contracts.py.md](docs/module-notes/agent/core/contracts.py.md) |
-| 3.7f | `agent/roles/` | [docs/module-notes/agent/roles/__init__.py.md](docs/module-notes/agent/roles/__init__.py.md) |
+| 3.7 | `agent/definitions.py`, `agent/tooling.py`, `agent/base_agent.py` | [docs/module-notes/agent/definitions.py.md](docs/module-notes/agent/definitions.py.md) / [docs/module-notes/agent/tooling.py.md](docs/module-notes/agent/tooling.py.md) / [docs/module-notes/agent/base_agent.py.md](docs/module-notes/agent/base_agent.py.md) |
+| 3.8 | `agent/core/supervisor.py`, `agent/swarm.py` | [docs/module-notes/agent/core/supervisor.py.md](docs/module-notes/agent/core/supervisor.py.md); `agent/swarm.py` için ayrı modül notu henüz yok |
+| 3.9 | `agent/registry.py`, `agent/core/registry.py` | [docs/module-notes/agent/core/registry.py.md](docs/module-notes/agent/core/registry.py.md); `agent/registry.py` için ayrı modül notu henüz yok |
+| 3.10 | `agent/core/contracts.py`, `agent/core/event_stream.py`, `agent/core/memory_hub.py` | [docs/module-notes/agent/core/contracts.py.md](docs/module-notes/agent/core/contracts.py.md), [docs/module-notes/agent/core/event_stream.py.md](docs/module-notes/agent/core/event_stream.py.md), [docs/module-notes/agent/core/memory_hub.py.md](docs/module-notes/agent/core/memory_hub.py.md) |
+| 3.11 | `agent/roles/coder_agent.py`, `researcher_agent.py`, `reviewer_agent.py` | [docs/module-notes/agent/roles/coder_agent.py.md](docs/module-notes/agent/roles/coder_agent.py.md), [docs/module-notes/agent/roles/researcher_agent.py.md](docs/module-notes/agent/roles/researcher_agent.py.md), [docs/module-notes/agent/roles/reviewer_agent.py.md](docs/module-notes/agent/roles/reviewer_agent.py.md) |
+| 3.12 | `plugins/` (`crypto_price_agent.py`, `upload_agent.py`) | Ayrı modül notu henüz yok; runtime plugin marketplace örnekleri |
 
-### 3.C Core ve Manager Katmanı
+### 3.C Core (Kurumsal Sistemler) ve Manager Katmanı
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.8 | `core/llm_client.py` | [docs/module-notes/core/llm_client.py.md](docs/module-notes/core/llm_client.py.md) |
-| 3.9 | `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md) |
-| 3.10 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
-| 3.11 | `managers/security.py` | [docs/module-notes/managers/security.py.md](docs/module-notes/managers/security.py.md) |
-| 3.12 | `managers/code_manager.py` | [docs/module-notes/managers/code_manager.py.md](docs/module-notes/managers/code_manager.py.md) |
-| 3.13 | `managers/github_manager.py` | [docs/module-notes/managers/github_manager.py.md](docs/module-notes/managers/github_manager.py.md) |
-| 3.14 | `managers/system_health.py` | [docs/module-notes/managers/system_health.py.md](docs/module-notes/managers/system_health.py.md) |
-| 3.15 | `managers/web_search.py` | [docs/module-notes/managers/web_search.py.md](docs/module-notes/managers/web_search.py.md) |
-| 3.16 | `managers/package_info.py` | [docs/module-notes/managers/package_info.py.md](docs/module-notes/managers/package_info.py.md) |
-| 3.17 | `managers/todo_manager.py` | [docs/module-notes/managers/todo_manager.py.md](docs/module-notes/managers/todo_manager.py.md) |
+| 3.13 | `core/llm_client.py` | [docs/module-notes/core/llm_client.py.md](docs/module-notes/core/llm_client.py.md) |
+| 3.14 | `core/router.py` | Ayrı modül notu henüz yok; maliyet/bağlam odaklı model yönlendirme katmanı |
+| 3.15 | `core/dlp.py` | Ayrı modül notu henüz yok; DLP & PII maskeleme katmanı |
+| 3.16 | `core/hitl.py` | Ayrı modül notu henüz yok; Human-in-the-Loop onay akışı |
+| 3.17 | `core/judge.py`, `core/active_learning.py` | Ayrı modül notu henüz yok; LLM-as-a-Judge + aktif öğrenme geri besleme döngüsü |
+| 3.18 | `core/entity_memory.py`, `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
+| 3.19 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
+| 3.20 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
+| 3.21 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
+| 3.22 | `core/vision.py` | Ayrı modül notu henüz yok; multimodal mockup/görsel işleme hattı |
+| 3.23 | `managers/security.py`, `managers/code_manager.py` | [docs/module-notes/managers/security.py.md](docs/module-notes/managers/security.py.md), [docs/module-notes/managers/code_manager.py.md](docs/module-notes/managers/code_manager.py.md) |
+| 3.24 | `managers/github_manager.py`, `managers/package_info.py` | [docs/module-notes/managers/github_manager.py.md](docs/module-notes/managers/github_manager.py.md), [docs/module-notes/managers/package_info.py.md](docs/module-notes/managers/package_info.py.md) |
+| 3.25 | `managers/system_health.py`, `managers/web_search.py`, `managers/todo_manager.py` | [docs/module-notes/managers/system_health.py.md](docs/module-notes/managers/system_health.py.md), [docs/module-notes/managers/web_search.py.md](docs/module-notes/managers/web_search.py.md), [docs/module-notes/managers/todo_manager.py.md](docs/module-notes/managers/todo_manager.py.md) |
+| 3.26 | `managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py` | Ayrı modül notu henüz yok; kurumsal iletişim ve iş akışı entegrasyonları |
 
 ### 3.D UI, Altyapı ve Operasyon
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.18 | `web_ui/` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md) |
-| 3.19 | `github_upload.py` | [docs/module-notes/github_upload.py.md](docs/module-notes/github_upload.py.md) |
-| 3.20 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
-| 3.21 | `core/llm_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md) |
-| 3.22 | `migrations/` ve `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
-| 3.23 | `docker/` ve `runbooks/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](docs/module-notes/docker/prometheus/prometheus.yml.md) |
+| 3.27 | `web_ui/`, `web_ui_react/` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok |
+| 3.28 | `github_upload.py`, `gui_launcher.py` | [docs/module-notes/github_upload.py.md](docs/module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
+| 3.29 | `migrations/`, `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
+| 3.30 | `docker/`, `runbooks/`, `helm/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](docs/module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
 
 ---
 
