@@ -1,6 +1,8 @@
 import asyncio
 import types
 
+import pytest
+
 from core.db import Database
 from tests.test_web_server_runtime import _FakeRequest, _load_web_server
 
@@ -83,6 +85,42 @@ def test_db_audit_log_roundtrip(tmp_path):
         assert records[0].resource == "rag:*"
         assert records[0].ip_address == "10.0.0.5"
         assert records[0].allowed is True
+        await db.close()
+
+    asyncio.run(_run())
+
+
+def test_db_audit_log_requires_fields_and_lists_all_records_without_user_filter(tmp_path):
+    cfg = _Cfg()
+    cfg.BASE_DIR = str(tmp_path)
+    cfg.DATABASE_URL = "sqlite+aiosqlite:///test_audit_trail_all.db"
+    db = Database(cfg)
+
+    async def _run():
+        await db.connect()
+        await db.init_schema()
+
+        with pytest.raises(ValueError):
+            await db.record_audit_log(
+                action=" ",
+                resource="rag:*",
+                ip_address="127.0.0.1",
+                allowed=False,
+            )
+
+        await db.record_audit_log(
+            user_id="",
+            tenant_id="tenant-a",
+            action="write",
+            resource="github:*",
+            ip_address="127.0.0.1",
+            allowed=False,
+            timestamp="2026-03-20T00:00:00+00:00",
+        )
+
+        records = await db.list_audit_logs(limit=5)
+        assert len(records) == 1
+        assert records[0].resource == "github:*"
         await db.close()
 
     asyncio.run(_run())

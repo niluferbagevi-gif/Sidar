@@ -1,7 +1,10 @@
 """Testler: Active Learning + LoRA/QLoRA Fine-tuning Döngüsü (Özellik 8)"""
 from __future__ import annotations
 import asyncio
+import builtins
+import importlib.util
 import json
+from pathlib import Path
 import sys
 import types
 import pytest
@@ -49,6 +52,31 @@ class TestFeedbackStoreDisabled:
     def test_stats_empty(self):
         result = _run(self.store.stats())
         assert result == {}
+
+
+def test_active_learning_module_sets_sa_unavailable_when_sqlalchemy_import_fails(monkeypatch):
+    real_import = builtins.__import__
+
+    def _blocked(name, *args, **kwargs):
+        if name.startswith("sqlalchemy"):
+            raise ImportError("sqlalchemy missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked)
+
+    spec = importlib.util.spec_from_file_location("active_learning_no_sa", Path("core/active_learning.py"))
+    mod = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(mod)
+
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = mod.FeedbackStore(config=cfg)
+    _run(store.initialize())
+
+    assert mod._SA_AVAILABLE is False
+    assert store._engine is None
 
 
 # ─── FeedbackStore — SQLite entegrasyon ──────────────────────────────────────
@@ -182,6 +210,45 @@ def test_feedback_store_record_propagates_db_execute_errors(monkeypatch):
 
     with pytest.raises(_DBError, match="insert failed"):
         _run(store.record("prompt", "response", rating=1))
+
+
+def test_flag_weak_response_returns_false_when_initialize_leaves_engine_unavailable(monkeypatch):
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+
+    async def _no_engine():
+        return None
+
+    monkeypatch.setattr(store, "initialize", _no_engine)
+    record_calls = []
+
+    async def _record(**kwargs):
+        record_calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(store, "record", _record)
+
+    ok = _run(
+        store.flag_weak_response(
+            prompt="soru",
+            response="cevap",
+            score=3,
+            reasoning="eksik",
+        )
+    )
+
+    assert ok is False
+    assert record_calls == []
+
+
+def test_mark_exported_returns_immediately_when_ids_empty(tmp_path):
+    store = _make_store(tmp_path)
+    if not _try_init(store):
+        pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+    _run(store.mark_exported([]))
+    _run(store.close())
 
 
 def _install_training_stubs(monkeypatch, *, include_bitsandbytes=True):
@@ -429,6 +496,18 @@ class TestLoRATrainer:
         second = trainer._check_peft()
         assert first == second
         assert trainer._peft_available is not None
+
+    def test_check_peft_marks_available_when_all_training_deps_exist(self, monkeypatch):
+        cfg = self._cfg(enabled=True)
+        trainer = LoRATrainer(config=cfg)
+        trainer._peft_available = None
+
+        monkeypatch.setitem(sys.modules, "peft", types.ModuleType("peft"))
+        monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+        monkeypatch.setitem(sys.modules, "datasets", types.ModuleType("datasets"))
+
+        assert trainer._check_peft() is True
+        assert trainer._peft_available is True
 
 
     def test_train_returns_base_model_missing_after_peft_check(self, monkeypatch):

@@ -1,4 +1,5 @@
 import asyncio
+import types
 from unittest.mock import patch
 
 import pytest
@@ -59,6 +60,17 @@ def test_memory_async_roundtrip_load_and_delete(tmp_path):
     assert ok is True
     assert deleted is True
     assert isinstance(sessions, list)
+
+
+def test_memory_defaults_database_url_into_base_dir_when_config_is_blank(tmp_path, monkeypatch):
+    import core.memory as memory_mod
+
+    cfg = types.SimpleNamespace(DATABASE_URL="", BASE_DIR=None)
+    monkeypatch.setattr(memory_mod, "get_config", lambda: cfg)
+
+    mem = memory_mod.ConversationMemory(base_dir=tmp_path / "memory_base", max_turns=10)
+
+    assert mem.cfg.DATABASE_URL == f"sqlite+aiosqlite:///{(tmp_path / 'memory_base' / 'sidar_memory.db').as_posix()}"
 
 
 def test_apply_summary_keeps_last_turns(tmp_path):

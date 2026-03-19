@@ -395,3 +395,29 @@ def test_recursive_chunk_text_forced_split_when_no_separator_possible(tmp_path):
     assert all(len(c) <= 100 for c in chunks)
     # overlap etkisi: ikinci parça öncekinin sonundan taşıma içerir
     assert chunks[1].startswith("x" * 10)
+
+
+def test_schedule_judge_skips_disabled_judge_and_swallows_runtime_errors(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    debug_logs = []
+    monkeypatch.setattr(mod.logger, "debug", lambda msg, *args: debug_logs.append(msg % args if args else msg))
+
+    disabled_mod = types.ModuleType("core.judge")
+    disabled_mod.get_llm_judge = lambda: types.SimpleNamespace(enabled=False)
+    monkeypatch.setitem(sys.modules, "core.judge", disabled_mod)
+    mod.DocumentStore._schedule_judge("sorgu", "yanıt")
+    assert debug_logs == []
+
+    failing_mod = types.ModuleType("core.judge")
+
+    class _Judge:
+        enabled = True
+
+        def schedule_background_evaluation(self, **_kwargs):
+            raise RuntimeError("judge schedule boom")
+
+    failing_mod.get_llm_judge = lambda: _Judge()
+    monkeypatch.setitem(sys.modules, "core.judge", failing_mod)
+    mod.DocumentStore._schedule_judge("sorgu", "yanıt")
+
+    assert any("judge schedule boom" in msg for msg in debug_logs)
