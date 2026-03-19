@@ -8,16 +8,18 @@
 v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal denetim ve akıllı başlatıcı yüzeyiyle görünür ürün fazına taşındı.
 
 ### Eklenenler (Added)
-- **Ultimate Launcher (`main.py`):** Etkileşimli CLI arayüzü, ön kontrol (preflight) mekanizması ve akıllı yapılandırma doğrulama akışı dokümante edildi.
+- **Ultimate Launcher (`main.py`):** Etkileşimli CLI arayüzü, ön kontrol (preflight) mekanizması, `--capture-output`/`--child-log` desteği ve thread tabanlı alt süreç log akışı ile daha güvenli launcher davranışı sağlandı.
 - **LSP Entegrasyonu:** `managers/code_manager.py` içine Pyright ve TypeScript LSP desteği, yapılandırılmış semantik audit ve güvenli refactor yardımcıları eklendi.
 - **Reviewer Agent Yetenekleri:** Reviewer ajanına `lsp_diagnostics` aracı eklenerek anlamsal kod denetimi kalite kapısına bağlandı.
 - **Multimodal Medya İşleme:** `core/multimodal.py` ile FFmpeg tabanlı video frame analizi, ses kanalı ayırma ve STT tabanlı medya bağlamı üretimi eklendi.
-- **Voice WebSocket Arayüzü:** `web_server.py` üzerinde base64 ses verilerini işleyip LLM bağlamına katan gerçek zamanlı sesli iletişim endpoint'leri açıldı.
+- **Voice WebSocket Arayüzü:** `web_server.py` üzerinde base64 ses verilerini işleyip LLM bağlamına katan gerçek zamanlı sesli iletişim endpoint'leri açıldı; VAD olayları ve duplex voice state payload'ları testlerle doğrulandı.
 - **Otonom Cron Loop:** SİDAR'ın kendi kendine uyanıp görevleri değerlendirmesini sağlayan `_autonomous_cron_loop` arka plan görevi eklendi.
-- **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`) ve oturum yaşam döngüsü eklendi.
+- **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`), yüksek riskli aksiyonlar için audit trail ve HITL korumalarıyla ürünleşti.
+- **GraphRAG Etki Analizi:** `core/rag.py` içindeki impact analizi; risk seviyesi, etkilenen endpoint handler'ları ve reviewer hedeflerini üreten daha yönlendirici bir raporlama katmanına genişletildi.
 
 ### Teknik Borç Kapanışı
-- v5.0-alpha geçişinde multimodal, LSP, voice ve proaktif otonomi kabiliyetleri dağınık backlog maddeleri olmaktan çıkarılıp resmi sürüm anlatısına taşındı.
+- `core/voice.py`, `web_server.py`, `managers/browser_manager.py`, `main.py`, `core/ci_remediation.py`, `agent/core/contracts.py` ve `core/rag.py` çevresindeki v5.0-alpha test kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_ci_remediation.py`, `tests/test_contracts_federation.py` ve `tests/test_rag_graph.py` ile kapatıldı.
+- Böylece belgelerde daha önce izlenen v5.0-alpha coverage/test borcu kapanmış oldu; aktif teknik borç yerine sürdürülen regresyon güvenliği statüsüne geçildi.
 
 ---
 

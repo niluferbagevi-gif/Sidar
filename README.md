@@ -20,7 +20,7 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır.
 
-> **Güncel Ürün Durumu:** Runtime/paket baseline artık `v4.3.0` seviyesindedir. Bu sürüm; React tabanlı `web_ui_react/` deneyimini varsayılan arayüz, legacy `web_ui/` klasörünü geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanını ise standart kurumsal omurga olarak kabul eder. Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla ayrıca konsolide edilmiştir. Aynı anda **v5.0 mimari geçişi başlatılmıştır**: multimodal medya hattı, browser automation, GraphRAG, `/ws/voice` ve proaktif webhook/cron tetikleyicileri şu anda erken ürünleşme evresindedir.
+> **Güncel Ürün Durumu:** Runtime/paket baseline artık `v4.3.0` seviyesindedir. Bu sürüm; React tabanlı `web_ui_react/` deneyimini varsayılan arayüz, legacy `web_ui/` klasörünü geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanını ise standart kurumsal omurga olarak kabul eder. Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla ayrıca konsolide edilmiştir. Aynı anda **v5.0 mimari geçişi aktif olarak ilerletilmiştir**: multimodal medya hattı, browser automation, GraphRAG, `/ws/voice` ve proaktif webhook/cron tetikleyicileri artık Faz A teslimatı olarak repo içinde çalışır durumdadır; sonraki odak GraphRAG derinleştirmesi ve AI Co-Worker seviyesi otonomidir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
 
@@ -96,15 +96,15 @@
 - Kütüphane dokümantasyon araması (`search_docs`)
 - Stack Overflow araması (`search_stackoverflow`)
 
-### Multimodal Algı ve Sesli Etkileşim (Beta)
+### Multimodal Algı ve Sesli Etkileşim (Alpha / Testlerle Doğrulandı)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
-- `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü ve transcript→ajan yanıtı MVP akışı
+- `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü, VAD olayları ve transcript→ajan yanıtı akışı
 - FFmpeg sistem bağımlılığı ile medya dönüştürme; büyük dosyalar için byte limitleri ile korunur
 
-### Dinamik Tarayıcı Otomasyonu (Beta)
+### Dinamik Tarayıcı Otomasyonu (Alpha / Testlerle Doğrulandı)
 - `managers/browser_manager.py` üzerinden Playwright/Selenium sağlayıcı soyutlaması
 - Headless/headful çalışma, timeout ve allowlist domain sınırlarıyla kontrollü web etkileşimi
-- v5.0 geçişi kapsamında erken ürünleşme aşamasında; yüksek riskli aksiyonlar için audit/HITL sertleştirmesi hedeflenir
+- Yüksek riskli aksiyonlar için audit trail + HITL korumaları uygulanmıştır; sonraki odak reviewer sinyalleriyle daha derin otonomi entegrasyonudur
 
 ### Paket Bilgi Sistemi (PackageInfoManager)
 - PyPI paket bilgisi ve sürüm karşılaştırma (`pypi`, `pypi_compare`)
@@ -610,6 +610,7 @@ mypy . --ignore-missing-imports
 
 | Versiyon | Önemli Değişiklikler |
 |----------|----------------------|
+| **v5.0.0-alpha** | Faz 6 görünür ürün geçişi: multimodal medya hattı, `/ws/voice`, tarayıcı otomasyonu, proaktif cron/webhook akışları, GraphRAG etki analizi ve launcher stabilizasyonu testlerle doğrulandı; aktif v5.0 coverage borcu kapatıldı |
 | **v4.3.0** | Sürüm + metrik senkronizasyonu: `config.py`, `pyproject.toml`, `PKG-INFO`, Helm chart ve üst seviye dokümanlar 4.3.0 çizgisine taşındı; takipli dosya ölçümleri 58 üretim Python / 20.582 satır, 151 test dosyası / 39.147 satır ve 62 REST endpoint gerçekliğiyle güncellendi. Aynı baz çizgide v5.0 geçişi için multimodal, browser automation ve proaktif trigger iskeletleri devreye alındı |
 | **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v4.0.md` senkronize edildi |
 | **v3.2.0** | Autonomous LLMOps konsolidasyonu: Active Learning/LoRA, Vision Pipeline, Cost-Aware Routing ve Slack/Jira/Teams orkestrasyonu Faz 4’ün birleşik ürün anlatısı olarak toplandı |

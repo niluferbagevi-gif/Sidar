@@ -7,13 +7,13 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-19 (v5.0.0-alpha — SİDAR, otonom operasyon merkezi hedefine ulaşmak için başlattığı **v5.0.0-alpha (Faz 6)** geçişini büyük oranda tamamlamıştır. Sisteme Çoklu Algı (Multimodal Perception) yetenekleri kazandırılmış, sesli girdi kabul eden `/ws/voice` WebSocket rotaları ile `core/voice.py` tabanlı TTS/segmentasyon omurgası eklenmiş ve tarayıcı otomasyon altyapısı `managers/browser_manager.py` üzerinden HITL-korumalı hale getirilmiştir. En önemlisi, Proaktif Otonomi (cron tabanlı kendi kendine uyanma) ve LSP (Language Server Protocol) tabanlı anlamsal kod denetimi yetenekleri Reviewer ajana entegre edilmiştir. `main.py`, etkileşimli bir terminal arayüzü ve preflight doğrulama katmanı ile sistemin giriş kapısı olarak zenginleştirilmiştir. `scripts/collect_repo_metrics.sh` ile yenilenen takipli ölçümler: üretim Python **24.185** satır (**62** dosya), test havuzu **40.628** satır (**159** Python test dosyası), toplam takipli Python **64.813** satır (**223** dosya) ve takipli Markdown havuzu **8.245** satır (**97** dosya).)
+> **Son Güncelleme:** 2026-03-19 (v5.0.0-alpha — SİDAR, otonom operasyon merkezi hedefine ulaşmak için başlattığı **v5.0.0-alpha (Faz 6)** geçişini büyük oranda tamamlamıştır. Sisteme Çoklu Algı (Multimodal Perception) yetenekleri kazandırılmış, sesli girdi kabul eden `/ws/voice` WebSocket rotaları ile `core/voice.py` tabanlı TTS/segmentasyon omurgası eklenmiş ve tarayıcı otomasyon altyapısı `managers/browser_manager.py` üzerinden HITL-korumalı hale getirilmiştir. En önemlisi, Proaktif Otonomi (cron tabanlı kendi kendine uyanma) ve LSP (Language Server Protocol) tabanlı anlamsal kod denetimi yetenekleri Reviewer ajana entegre edilmiştir. `main.py`, etkileşimli bir terminal arayüzü ve preflight doğrulama katmanı ile sistemin giriş kapısı olarak zenginleştirilmiştir. `scripts/collect_repo_metrics.sh` ile yenilenen takipli ölçümler: üretim Python **24.560** satır (**62** dosya), test havuzu **41.029** satır (**159** Python test dosyası), toplam takipli Python **65.589** satır (**223** dosya) ve takipli Markdown havuzu **8.260** satır (**97** dosya).)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** 5.0.0-alpha
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **24.185** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **40.628** satır (**159** Python test dosyası) ve tüm takipli Python toplamı **64.813** satırdır. Aynı ölçümde takipli Markdown havuzu **8.245** satır (**97** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`), tarayıcı otomasyon katmanı (`managers/browser_manager.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i, ses/TTS akışı ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **24.560** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **41.029** satır (**159** Python test dosyası) ve tüm takipli Python toplamı **65.589** satırdır. Aynı ölçümde takipli Markdown havuzu **8.260** satır (**97** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`), tarayıcı otomasyon katmanı (`managers/browser_manager.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i, ses/TTS akışı ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
 
 ---
 
@@ -66,7 +66,7 @@
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
   - [11.1 Durum Özeti Paneli](#111-durum-özeti-paneli)
   - [11.2 Arşiv ve Yönlendirme](#112-arşiv-ve-yönlendirme)
-  - [11.3 v5.0 Faz-6 Test Borcu](#113-v50-faz-6-test-borcu)
+  - [11.3 v5.0 Faz-6 Coverage Kapanışı](#113-v50-faz-6-coverage-kapanışı)
   - [11.4 Operasyonel İzleme Başlıkları](#114-operasyonel-i̇zleme-başlıkları)
   - [11.5 Gelecek İyileştirmeler (Continuous Improvement)](#115-gelecek-i̇yileştirmeler-continuous-improvement)
 - [12. `.env` Tam Değişken Referansı](#12-env-tam-değişken-referansı)
@@ -1036,20 +1036,20 @@ docs_add / docs_add_file
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-> **Güncel Durum (2026-03-19 — v5.0.0-alpha):** Kritik mimari ve güvenlik açıkları kapalı kalmakla birlikte, v5.0.0-alpha ile eklenen ses/tarayıcı akışlarının coverage borcu aktif teknik kalite başlığı olarak izlenmektedir. Bu bölüm, aktif riskleri ve arşiv yönlendirmesini birlikte sunar.
+> **Güncel Durum (2026-03-19 — v5.0.0-alpha):** Kritik mimari, güvenlik ve coverage borçları kapalıdır. Bu bölüm artık aktif kusur listesinden ziyade, sürdürülen operasyonel izleme başlıklarını ve arşiv yönlendirmesini özetler.
 
 ### 11.1 Durum Özeti Paneli
 
 | Gösterge | Durum |
 |---|---|
 | Aktif Kritik Bulgu | **0** |
-| Aktif Sorun | **Sınırlı: v5.0 coverage borcu** |
-| Açık Teknik Borç | **Var: `core/voice.py` / `managers/browser_manager.py` / `main.py` testleri** |
-| Denetim Durumu | **Production Ready (Alpha) / Test Borcu İzleniyor** |
-| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı; v5.0-alpha test borcu ana raporda tutuluyor** |
+| Aktif Sorun | **0 — açık ürün/bloklayıcı kusur yok** |
+| Açık Teknik Borç | **0 — v5.0-alpha coverage borcu kapatıldı** |
+| Denetim Durumu | **Production Ready (Alpha) / Zero Debt korunuyor** |
+| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı; v5.0-alpha coverage kapanışı CHANGELOG ve test dosyalarıyla teyit edildi** |
 
 - **Stratejik özet:** Ana rapor aktif riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur.
-- **Versiyon durumu:** `v5.0.0-alpha` itibarıyla kritik güvenlik/mimari borç bulunmamakla birlikte, yeni ses ve browser modülleri için test kapsamı borcu aktif olarak takip edilmektedir.
+- **Versiyon durumu:** `v5.0.0-alpha` itibarıyla kritik güvenlik/mimari borç bulunmamaktadır; ses, browser ve launcher kapsamındaki coverage kapanışı repo içindeki test dosyalarıyla doğrulanmıştır.
 
 ### 11.2 Arşiv ve Yönlendirme
 
@@ -1061,10 +1061,10 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 > Yönlendirme ilkesi: Ana rapor “mevcut risk ve kurumsal durum”, arşiv belgeleri ise “geçmiş çözüm hafızası” için kullanılmalıdır.
 
-### 11.3 v5.0 Faz-6 Test Borcu
+### 11.3 v5.0 Faz-6 Coverage Kapanışı
 
-- `v5.0.0-alpha` ile eklenen `core/voice.py`, `managers/browser_manager.py` ve güncellenen `main.py` için `%99.9` coverage hedefini sağlamak adına unit testlerin (özellikle `test_voice_pipeline.py`) yazılması gerekmektedir.
-- Opsiyonel `pyttsx3` bağımlılığı, HITL onay akışları ve terminal etkileşimleri için mocking/fake adapter tabanlı test stratejisi dokümante edilmelidir.
+- `core/voice.py`, `managers/browser_manager.py` ve `main.py` için beklenen test kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py` ve `tests/test_main_launcher_improvements.py` ile repoda mevcuttur.
+- Opsiyonel `pyttsx3` bağımlılığı, HITL onay akışları ve launcher alt süreç davranışı için mocking/fake adapter stratejileri test dosyalarında uygulanmış durumdadır; bu başlık artık aktif borç değil, sürdürülen regresyon korumasıdır.
 
 ### 11.4 Operasyonel İzleme Başlıkları
 
