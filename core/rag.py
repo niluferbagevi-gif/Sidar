@@ -1221,18 +1221,11 @@ class DocumentStore:
 
     def analyze_graph_impact(self, target: str, top_k: int = 10) -> Tuple[bool, str]:
         """Bir modül veya endpoint değişiminin olası etki alanını açıklar."""
-        if not self._graph_rag_enabled:
-            return False, "GraphRAG devre dışı."
+        ok, analysis = self.graph_impact_details(target, top_k=top_k)
+        if not ok:
+            return False, str(analysis)
 
-        self._ensure_graph_ready()
-        normalized = target.strip()
-        if not normalized:
-            return False, "Etki analizi için hedef belirtilmedi."
-
-        analysis = self._graph_index.impact_analysis(normalized, top_k=top_k)
-        if not analysis:
-            return False, f"GraphRAG içinde '{target}' için etki analizi üretilemedi."
-
+        assert isinstance(analysis, dict)
         lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
         impacted_endpoints = analysis.get("impacted_endpoints") or []
         impacted_endpoint_handlers = analysis.get("impacted_endpoint_handlers") or []
@@ -1261,6 +1254,21 @@ class DocumentStore:
             for idx, path in enumerate(dependency_paths, start=1):
                 lines.append(f"  {idx}. {' -> '.join(path)}")
         return True, "\n".join(lines)
+
+    def graph_impact_details(self, target: str, top_k: int = 10) -> Tuple[bool, Dict[str, Any] | str]:
+        """GraphRAG etki analizini yapılandırılmış veri olarak döndürür."""
+        if not self._graph_rag_enabled:
+            return False, "GraphRAG devre dışı."
+
+        self._ensure_graph_ready()
+        normalized = target.strip()
+        if not normalized:
+            return False, "Etki analizi için hedef belirtilmedi."
+
+        analysis = self._graph_index.impact_analysis(normalized, top_k=top_k)
+        if not analysis:
+            return False, f"GraphRAG içinde '{target}' için etki analizi üretilemedi."
+        return True, analysis
 
     def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
         if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)
