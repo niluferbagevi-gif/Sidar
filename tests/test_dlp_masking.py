@@ -123,6 +123,12 @@ class TestMaskMessages:
         assert "x@y.com" not in result[0]["content"]
 
 
+    def test_non_string_content_is_left_untouched(self):
+        messages = [{"role": "user", "content": ["api_key=secret"]}]
+        result = mask_messages(messages)
+        assert result == messages
+
+
 # ─── Disabled engine ─────────────────────────────────────────────────────────
 
 class TestDisabledEngine:
