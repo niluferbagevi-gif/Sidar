@@ -129,6 +129,12 @@ class _FakeUploadFile:
 
 
 def _install_web_server_stubs():
+    replaced_modules = {}
+
+    def _set_module(name, module):
+        replaced_modules.setdefault(name, sys.modules.get(name))
+        sys.modules[name] = module
+
     fastapi_mod = types.ModuleType("fastapi")
     fastapi_mod.FastAPI = _FakeFastAPI
     fastapi_mod.Request = _FakeRequest
@@ -328,27 +334,27 @@ def _install_web_server_stubs():
             return None
 
     event_stream_mod.get_agent_event_bus = lambda: _EventBus()
-    sys.modules["fastapi"] = fastapi_mod
-    sys.modules["fastapi.middleware.cors"] = cors_mod
-    sys.modules["fastapi.responses"] = resp_mod
-    sys.modules["fastapi.staticfiles"] = static_mod
-    sys.modules["pydantic"] = pyd_mod
-    sys.modules["redis.asyncio"] = redis_mod
-    sys.modules["uvicorn"] = uvicorn_mod
-    sys.modules["jwt"] = jwt_mod
-    sys.modules["config"] = cfg_mod
+    _set_module("fastapi", fastapi_mod)
+    _set_module("fastapi.middleware.cors", cors_mod)
+    _set_module("fastapi.responses", resp_mod)
+    _set_module("fastapi.staticfiles", static_mod)
+    _set_module("pydantic", pyd_mod)
+    _set_module("redis.asyncio", redis_mod)
+    _set_module("uvicorn", uvicorn_mod)
+    _set_module("jwt", jwt_mod)
+    _set_module("config", cfg_mod)
     if "agent" not in sys.modules:
         agent_pkg = types.ModuleType("agent")
         agent_pkg.__path__ = [str(Path("agent").resolve())]
-        sys.modules["agent"] = agent_pkg
+        _set_module("agent", agent_pkg)
     if "agent.core" not in sys.modules:
         core_pkg = types.ModuleType("agent.core")
         core_pkg.__path__ = [str(Path("agent/core").resolve())]
-        sys.modules["agent.core"] = core_pkg
+        _set_module("agent.core", core_pkg)
     if "core" not in sys.modules:
         core_pkg = types.ModuleType("core")
         core_pkg.__path__ = []
-        sys.modules["core"] = core_pkg
+        _set_module("core", core_pkg)
     llm_client_mod = types.ModuleType("core.llm_client")
 
     class _LLMAPIError(Exception):
@@ -374,24 +380,41 @@ def _install_web_server_stubs():
     hitl_mod.HITLRequest = lambda **kwargs: types.SimpleNamespace(**kwargs)
     hitl_mod.notify = lambda *_a, **_k: None
 
-    sys.modules["agent.sidar_agent"] = agent_mod
-    sys.modules["agent.base_agent"] = base_agent_mod
-    sys.modules["agent.registry"] = registry_mod
-    sys.modules["agent.swarm"] = swarm_mod
-    sys.modules["agent.core.event_stream"] = event_stream_mod
-    sys.modules["managers"] = managers_pkg
-    sys.modules["managers.system_health"] = managers_health_mod
-    sys.modules["core.llm_metrics"] = core_metrics_mod
-    sys.modules["core.llm_client"] = llm_client_mod
-    sys.modules["core.hitl"] = hitl_mod
+    _set_module("agent.sidar_agent", agent_mod)
+    _set_module("agent.base_agent", base_agent_mod)
+    _set_module("agent.registry", registry_mod)
+    _set_module("agent.swarm", swarm_mod)
+    _set_module("agent.core.event_stream", event_stream_mod)
+    _set_module("managers", managers_pkg)
+    _set_module("managers.system_health", managers_health_mod)
+    _set_module("core.llm_metrics", core_metrics_mod)
+    _set_module("core.llm_client", llm_client_mod)
+    _set_module("core.hitl", hitl_mod)
+    return replaced_modules
+
+
+def _restore_modules(replaced_modules, names=None):
+    module_names = names or replaced_modules.keys()
+    for name in module_names:
+        original = replaced_modules.get(name)
+        if original is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original
 
 
 def _load_web_server():
-    _install_web_server_stubs()
+    replaced_modules = _install_web_server_stubs()
     spec = importlib.util.spec_from_file_location("web_server_under_test", Path("web_server.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        _restore_modules(
+            replaced_modules,
+            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+        )
     return mod
 
 
@@ -407,7 +430,7 @@ def _load_web_server_with_blocked_imports():
             raise ImportError(f"blocked: {name}")
         return real_import(name, globals, locals, fromlist, level)
 
-    _install_web_server_stubs()
+    replaced_modules = _install_web_server_stubs()
     spec = importlib.util.spec_from_file_location("web_server_under_test_blocked", Path("web_server.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
@@ -416,6 +439,10 @@ def _load_web_server_with_blocked_imports():
         spec.loader.exec_module(mod)
     finally:
         builtins.__import__ = real_import
+        _restore_modules(
+            replaced_modules,
+            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+        )
     return mod
 
 def _make_agent(ai_provider="ollama", ollama_online=True):
@@ -2056,7 +2083,7 @@ def test_import_fallbacks_for_anyio_and_opentelemetry():
 
 
 def test_opentelemetry_import_success_path_with_stubbed_modules(monkeypatch):
-    _install_web_server_stubs()
+    replaced_modules = _install_web_server_stubs()
 
     otel_root = types.ModuleType("opentelemetry")
     otel_root.trace = types.SimpleNamespace(get_tracer=lambda *_a, **_k: None)
@@ -2081,15 +2108,21 @@ def test_opentelemetry_import_success_path_with_stubbed_modules(monkeypatch):
     monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace", otel_trace)
     monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace.export", otel_trace_export)
 
-    spec = importlib.util.spec_from_file_location("web_server_under_test_otel_ok", Path("web_server.py"))
-    mod = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(mod)
+    try:
+        spec = importlib.util.spec_from_file_location("web_server_under_test_otel_ok", Path("web_server.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
 
-    assert mod.trace is otel_root.trace
-    assert mod.Resource is otel_resources.Resource
-    assert mod.TracerProvider is otel_trace.TracerProvider
-    assert mod.BatchSpanProcessor is otel_trace_export.BatchSpanProcessor
+        assert mod.trace is otel_root.trace
+        assert mod.Resource is otel_resources.Resource
+        assert mod.TracerProvider is otel_trace.TracerProvider
+        assert mod.BatchSpanProcessor is otel_trace_export.BatchSpanProcessor
+    finally:
+        _restore_modules(
+            replaced_modules,
+            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+        )
 
 
 def test_lifespan_closes_redis_client():
