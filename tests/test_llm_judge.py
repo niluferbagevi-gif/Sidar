@@ -57,6 +57,17 @@ class TestJudgeResult:
         )
         assert r.passed is True
 
+    def test_quality_score_scales_to_ten(self):
+        r = JudgeResult(
+            relevance_score=0.7,
+            hallucination_risk=0.1,
+            evaluated_at=time.time(),
+            model="m",
+            provider="p",
+        )
+        assert r.quality_score == pytest.approx(0.8)
+        assert r.quality_score_10 == pytest.approx(8.0)
+
 
 # ─── LLMJudge ────────────────────────────────────────────────────────────────
 
@@ -66,6 +77,8 @@ class TestLLMJudge:
         j.enabled = enabled
         j.sample_rate = sample_rate
         j.provider = "ollama"
+        j.auto_feedback_enabled = True
+        j.auto_feedback_threshold = 8.0
         return j
 
     def test_disabled_judge_should_not_evaluate(self):
@@ -142,6 +155,74 @@ class TestLLMJudge:
             documents=["belge"],
             answer="yanıt",
         )
+
+    def test_evaluate_rag_records_weak_feedback_when_quality_low(self):
+        async def _inner():
+            judge = self._make_judge(enabled=True, sample_rate=1.0)
+            calls = []
+
+            class _Store:
+                _engine = object()
+
+                async def initialize(self):
+                    raise AssertionError("initialize should not run when engine exists")
+
+                async def record(self, **kwargs):
+                    calls.append(kwargs)
+                    return True
+
+            async def _fake_llm(_system, user_msg):
+                return 0.6 if "Belge" in user_msg else 0.7
+
+            with patch.object(judge, "_call_llm", side_effect=_fake_llm), patch(
+                "core.active_learning.get_feedback_store",
+                return_value=_Store(),
+            ):
+                result = await judge.evaluate_rag(
+                    query="RAG cevabı neden zayıf?",
+                    documents=["Belge içeriği"],
+                    answer="Kısa ama eksik yanıt",
+                )
+
+            assert result is not None
+            assert result.quality_score_10 < 8.0
+            assert len(calls) == 1
+            assert calls[0]["rating"] == -1
+            assert "weak_response" in calls[0]["tags"]
+            assert calls[0]["session_id"] == "judge:auto"
+
+        _run(_inner())
+
+    def test_evaluate_rag_skips_autofeedback_when_quality_high(self):
+        async def _inner():
+            judge = self._make_judge(enabled=True, sample_rate=1.0)
+
+            class _Store:
+                _engine = object()
+
+                async def initialize(self):
+                    return None
+
+                async def record(self, **_kwargs):
+                    raise AssertionError("high quality result should not be recorded")
+
+            async def _fake_llm(system, _user_msg):
+                return 0.95 if "RAG kalite" in system else 0.05
+
+            with patch.object(judge, "_call_llm", side_effect=_fake_llm), patch(
+                "core.active_learning.get_feedback_store",
+                return_value=_Store(),
+            ):
+                result = await judge.evaluate_rag(
+                    query="İyi yanıt",
+                    documents=["Belgeler güçlü ve yeterli"],
+                    answer="Bağlamla uyumlu yanıt",
+                )
+
+            assert result is not None
+            assert result.quality_score_10 >= 8.0
+
+        _run(_inner())
 
 
 # ─── Singleton ────────────────────────────────────────────────────────────────
