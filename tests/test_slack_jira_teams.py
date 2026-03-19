@@ -83,6 +83,33 @@ class TestSlackManagerInit:
         )
         assert mgr.default_channel == "#genel"
 
+    def test_sdk_client_init_logs_debug_and_initialize_success_marks_available(self):
+        class _WebClient:
+            def __init__(self, token):
+                self.token = token
+
+            def auth_test(self):
+                return {"ok": True, "team": "OpenAI"}
+
+        fake_sdk = types.ModuleType("slack_sdk")
+        fake_sdk.WebClient = _WebClient
+
+        with patch.dict(sys.modules, {"slack_sdk": fake_sdk}):
+            with patch.object(_slack_mod.logger, "debug") as debug_log, patch.object(_slack_mod.logger, "info") as info_log:
+                mgr = SlackManager(token="xoxb-valid")
+                _run(mgr.initialize())
+
+        assert mgr.is_available() is True
+        assert mgr._webhook_only is False
+        debug_log.assert_called()
+        info_log.assert_called()
+
+    def test_initialize_returns_early_for_webhook_only_manager(self):
+        mgr = SlackManager(webhook_url="https://hooks.slack.com/test")
+        _run(mgr.initialize())
+        assert mgr.is_available() is True
+        assert mgr._webhook_only is True
+
 
 
 
@@ -144,6 +171,37 @@ class TestSlackManagerSendMessage:
         with patch.object(mgr, "send_webhook", new=AsyncMock(return_value=(True, ""))):
             ok, _ = _run(mgr.send_message("Hi", channel="#channel"))
             assert ok is True
+
+    def test_send_message_sdk_requires_channel_when_not_webhook_only(self):
+        mgr = self._sdk_mgr()
+        mgr.default_channel = ""
+        ok, err = _run(mgr.send_message("Merhaba", channel=None))
+        assert ok is False
+        assert err == "Kanal belirtilmedi"
+
+    def test_send_message_sdk_success_passes_blocks_and_thread_ts(self):
+        mgr = self._sdk_mgr()
+        captured = {}
+
+        def _post_message(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True, "ts": "123.456"}
+
+        mgr._client.chat_postMessage = _post_message
+
+        ok, ts = _run(
+            mgr.send_message(
+                "Merhaba",
+                channel="#ops",
+                blocks=[{"type": "section"}],
+                thread_ts="111.222",
+            )
+        )
+
+        assert ok is True
+        assert ts == "123.456"
+        assert captured["blocks"] == [{"type": "section"}]
+        assert captured["thread_ts"] == "111.222"
 
 
 
@@ -290,6 +348,52 @@ class TestSlackManagerSendWebhook:
             ok, err = _run(mgr.send_webhook(text="Test"))
         assert ok is False
         assert "timed out" in err
+
+    def test_webhook_requesterror_returns_error(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr._available = True
+        mgr._webhook_only = True
+        mgr._client = None
+
+        request_error = type("RequestError", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=request_error("network down"))
+
+        with patch.object(_slack_mod, "httpx") as mock_httpx:
+            mock_httpx.RequestError = request_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(
+                mgr.send_webhook(
+                    text="Test",
+                    blocks=[{"type": "section"}],
+                    attachments=[{"text": "Ek"}],
+                )
+            )
+
+        assert ok is False
+        assert "network down" in err
+
+    def test_webhook_timeoutexception_returns_error(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.webhook_url = "https://hooks.slack.com/test"
+        mgr._available = True
+        mgr._webhook_only = True
+        mgr._client = None
+
+        timeout_error = type("TimeoutException", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=timeout_error("slack timeout"))
+
+        with patch.object(_slack_mod, "httpx") as mock_httpx:
+            mock_httpx.TimeoutException = timeout_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr.send_webhook(text="Test"))
+
+        assert ok is False
+        assert "slack timeout" in err
 
 
 class TestSlackManagerListChannels:
@@ -546,6 +650,38 @@ class TestJiraManagerRequestAndProjectEdges:
         assert data is None
         assert "timed out" in err
 
+    def test_request_returns_error_on_httpx_requesterror(self):
+        mgr = self._mgr()
+        request_error = type("RequestError", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(side_effect=request_error("jira offline"))
+
+        with patch.object(_jira_mod, "httpx") as mock_httpx:
+            mock_httpx.RequestError = request_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, data, err = _run(mgr._request("GET", "issue/PROJ-1"))
+
+        assert ok is False
+        assert data is None
+        assert "jira offline" in err
+
+    def test_request_returns_error_on_httpx_timeoutexception(self):
+        mgr = self._mgr()
+        timeout_error = type("TimeoutException", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(side_effect=timeout_error("jira timeout"))
+
+        with patch.object(_jira_mod, "httpx") as mock_httpx:
+            mock_httpx.TimeoutException = timeout_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, data, err = _run(mgr._request("POST", "issue"))
+
+        assert ok is False
+        assert data is None
+        assert "jira timeout" in err
+
     def test_add_comment_builds_document_payload(self):
         mgr = self._mgr()
         captured = {}
@@ -596,6 +732,28 @@ class TestJiraManagerRequestAndProjectEdges:
         assert ok is True
         assert err == ""
         assert statuses == ["To Do", "Done", "In Progress"]
+
+    def test_update_issue_propagates_request_error_message(self):
+        mgr = self._mgr()
+        mgr._request = AsyncMock(return_value=(False, None, "update failed"))
+        ok, err = _run(mgr.update_issue("PROJ-1", {"summary": "Yeni"}))
+        assert ok is False
+        assert err == "update failed"
+
+    def test_transition_issue_returns_error_when_transition_fetch_fails(self):
+        mgr = self._mgr()
+        mgr._request = AsyncMock(return_value=(False, None, "transition fetch failed"))
+        ok, err = _run(mgr.transition_issue("PROJ-1", "Done"))
+        assert ok is False
+        assert err == "transition fetch failed"
+
+    def test_get_project_statuses_returns_error_when_request_fails(self):
+        mgr = self._mgr()
+        mgr._request = AsyncMock(return_value=(False, None, "statuses unavailable"))
+        ok, statuses, err = _run(mgr.get_project_statuses("ENG"))
+        assert ok is False
+        assert statuses == []
+        assert err == "statuses unavailable"
 
 
 class TestJiraManagerSearchIssues:
@@ -882,3 +1040,50 @@ class TestTeamsManagerPost:
             ok, err = _run(mgr._post({}))
         assert ok is False
         assert "Network down" in err
+
+    def test_post_requesterror_returns_error(self):
+        mgr = TeamsManager(webhook_url="https://example.com/hook")
+        request_error = type("RequestError", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=request_error("teams offline"))
+
+        with patch.object(_teams_mod, "httpx") as mock_httpx:
+            mock_httpx.RequestError = request_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr._post({"text": "test"}))
+
+        assert ok is False
+        assert "teams offline" in err
+
+    def test_post_timeoutexception_returns_error(self):
+        mgr = TeamsManager(webhook_url="https://example.com/hook")
+        timeout_error = type("TimeoutException", (Exception,), {})
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=timeout_error("teams timeout"))
+
+        with patch.object(_teams_mod, "httpx") as mock_httpx:
+            mock_httpx.TimeoutException = timeout_error
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr._post({"text": "test"}))
+
+        assert ok is False
+        assert "teams timeout" in err
+
+    def test_post_accepts_success_status_with_nonstandard_body(self):
+        mgr = TeamsManager(webhook_url="https://example.com/hook")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 202
+        mock_resp.text = "accepted"
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch.object(_teams_mod, "httpx") as mock_httpx:
+            mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+            ok, err = _run(mgr._post({"text": "test"}))
+
+        assert ok is True
+        assert err == ""
