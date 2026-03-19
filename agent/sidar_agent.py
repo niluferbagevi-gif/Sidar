@@ -19,6 +19,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None
 
 from config import Config
+from core.ci_remediation import build_ci_failure_context, build_ci_failure_prompt, build_pr_proposal
 from core.memory import ConversationMemory
 from core.llm_client import LLMClient
 from core.rag import DocumentStore
@@ -189,15 +190,27 @@ class SidarAgent:
                 meta=dict(trigger.get("meta", {}) or {}),
             )
 
-        prompt = trigger.to_prompt()
+        payload_dict = dict(trigger.payload or {})
+        ci_context = (
+            payload_dict
+            if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"} and payload_dict.get("workflow_name")
+            else build_ci_failure_context(trigger.event_name, payload_dict)
+        )
+        prompt = build_ci_failure_prompt(ci_context) if ci_context else trigger.to_prompt()
         started_at = time.time()
         status = "success"
         summary = ""
+        remediation: Dict[str, Any] | None = None
         try:
             summary = await self._try_multi_agent(prompt)
             if not isinstance(summary, str) or not summary.strip():
                 status = "empty"
                 summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
+            elif ci_context:
+                remediation = {
+                    "context": ci_context,
+                    "pr_proposal": build_pr_proposal(ci_context, summary),
+                }
         except Exception as exc:
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
@@ -214,6 +227,8 @@ class SidarAgent:
             "created_at": started_at,
             "completed_at": time.time(),
         }
+        if remediation:
+            record["remediation"] = remediation
 
         await self._append_autonomy_history(record)
         await self._memory_add("user", f"[AUTONOMY_TRIGGER] {prompt}")

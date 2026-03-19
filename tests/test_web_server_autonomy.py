@@ -127,3 +127,62 @@ def test_swarm_federation_execute_returns_structured_result():
     assert result["source_system"] == "sidar"
     assert result["target_system"] == "autogen"
     assert "federated:[FEDERATION TASK]" in result["summary"]
+
+
+def test_github_webhook_ci_failure_dispatches_remediation_trigger():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["source"] = trigger.source
+        captured["event_name"] = trigger.event_name
+        captured["payload"] = dict(trigger.payload or {})
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "ci remediation scheduled",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+            "remediation": {"pr_proposal": {"title": "CI remediation: stabilize CI"}},
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(
+            handle_external_trigger=_handle_trigger,
+            memory=types.SimpleNamespace(add=lambda *_args, **_kwargs: None),
+        )
+
+    mod.get_agent = _get_agent
+    mod.cfg.GITHUB_WEBHOOK_SECRET = ""
+    mod.cfg.ENABLE_EVENT_WEBHOOKS = True
+
+    body = json.dumps(
+        {
+            "repository": {"full_name": "acme/sidar", "default_branch": "main"},
+            "workflow_run": {
+                "id": 88,
+                "run_number": 3,
+                "name": "CI",
+                "status": "completed",
+                "conclusion": "failure",
+                "head_branch": "feature/failing",
+                "head_sha": "deadbeef",
+                "html_url": "https://github.com/acme/sidar/actions/runs/88",
+                "jobs_url": "https://github.com/acme/sidar/actions/runs/88/jobs",
+                "logs_url": "https://github.com/acme/sidar/actions/runs/88/logs",
+                "display_title": "pytest failure",
+            },
+        }
+    ).encode("utf-8")
+    request = _FakeRequest(method="POST", path="/api/webhook", body_bytes=body)
+
+    response = asyncio.run(mod.github_webhook(request, "workflow_run", ""))
+
+    assert response.content["success"] is True
+    assert captured["source"] == "webhook:github:ci_failure"
+    assert captured["event_name"] == "ci_failure_remediation"
+    assert captured["payload"]["workflow_name"] == "CI"
+    assert captured["payload"]["logs_url"].endswith("/88/logs")
