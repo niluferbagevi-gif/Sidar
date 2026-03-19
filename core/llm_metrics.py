@@ -235,7 +235,17 @@ class LLMMetricsCollector:
             from core.cache_metrics import get_cache_metrics as _get_cache_metrics
             cache_stats = _get_cache_metrics()
         except Exception:
-            cache_stats = {"hits": 0, "misses": 0, "skips": 0, "total_lookups": 0, "hit_rate": 0.0}
+            cache_stats = {
+                "hits": 0,
+                "misses": 0,
+                "skips": 0,
+                "total_lookups": 0,
+                "hit_rate": 0.0,
+                "evictions": 0,
+                "redis_errors": 0,
+                "items": 0,
+                "redis_latency_ms": 0.0,
+            }
 
         return {
             "window_events": total_calls,
