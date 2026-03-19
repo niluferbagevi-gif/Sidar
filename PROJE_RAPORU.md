@@ -92,11 +92,11 @@
   - [15.5 Kod Yürütme](#155-kod-yürütme)
   - [15.6 Özellik Profilleri](#156-özellik-profilleri)
   - [15.7 v3.0 Vizyon Gereksinimleri (Planlanan)](#157-v30-vizyon-gereksinimleri-planlanan)
-- [16. Hata Yönetimi ve Loglama Stratejisi](#16-hata-yönetimi-ve-loglama-stratejisi)
-  - [16.1 Hata Yönetimi Kalıpları](#161-hata-yönetimi-kalıpları)
-  - [16.2 Loglama Stratejisi](#162-loglama-stratejisi)
-  - [16.3 Asenkron Hata Yönetimi](#163-asenkron-hata-yönetimi)
-  - [16.4 Bozuk Veri Karantinası](#164-bozuk-veri-karantinası)
+- [16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi](#16-gözlemlenebilirlik-observability-loglama-ve-hata-yönetimi)
+  - [16.1 Dağıtık İzlenebilirlik (Distributed Tracing)](#161-dağıtık-i̇zlenebilirlik-distributed-tracing)
+  - [16.2 Metrik Toplama ve Uyarı Sistemleri (Prometheus & Grafana)](#162-metrik-toplama-ve-uyarı-sistemleri-prometheus--grafana)
+  - [16.3 Sürü (Swarm) İçi Hata Toleransı ve Otomatik Telafi (Fallback)](#163-sürü-swarm-i̇çi-hata-toleransı-ve-otomatik-telafi-fallback)
+  - [16.4 Kurumsal Denetim İzleri (Audit Logging)](#164-kurumsal-denetim-i̇zleri-audit-logging)
 - [17. Yaygın Sorunlar ve Çözümleri](#17-yaygın-sorunlar-ve-çözümleri)
   - [17.1 Ollama Bağlantı Sorunları](#171-ollama-bağlantı-sorunları)
   - [17.2 GPU / CUDA Sorunları](#172-gpu-cuda-sorunları)
@@ -1427,72 +1427,35 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 > **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi repo kültürünün hedefini yansıtsa da, kod tabanında **resmî kalite kapısı** `.coveragerc` ve CI üzerinde `%99.9` olarak uygulanmaktadır; raporda bu nedenle doğrudan ölçülebilir kural esas alınmıştır.
 
 ---
-## 16. Hata Yönetimi ve Loglama Stratejisi
+## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-### 16.1 Hata Yönetimi Kalıpları
+Projenin v4.3.0 kurumsal sürümü ile birlikte geleneksel metin tabanlı loglama stratejisi genişletilerek **"Telemetry-First" gözlemlenebilirlik mimarisine** geçilmiştir. Bu yapı yalnızca konsola hata yazan bir uygulama modeli değil; LLM çağrıları, RAG akışları, ajan delegasyonları, oran sınırlama (rate limit) olayları ve denetim izlerini aynı operasyon yüzeyinde ilişkilendiren bütüncül bir işletim modelidir. `web_server.py`, `core/llm_client.py`, `agent/core/supervisor.py`, `core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`, `managers/system_health.py`, `helm/sidar/` ve `docker/` altındaki gözlemlenebilirlik bileşenleri bu katmanı birlikte oluşturur.
 
-Kod tabanı boyunca dört farklı hata yönetimi deseni kullanılmaktadır:
+### 16.1 Dağıtık İzlenebilirlik (Distributed Tracing)
 
-**1. Tuple Dönüş Deseni** (`Tuple[bool, str]`)
-Araçların ve manager metodlarının büyük çoğunluğu `(başarı, mesaj)` tuple'ı döndürür. İstisna dışarıya sızmaz; hata durumu dönüş değerinden okunur. Bu, ReAct döngüsünün araç hatasını kolayca işlemesini sağlar.
-```
-(True, "sonuç metni")   → başarı
-(False, "hata mesajı")  → hata
-```
-Kullanım yeri: `CodeManager`, `GitHubManager`, `WebSearchManager`, `DocumentStore`, `TodoManager`
+Basit `print` veya salt metin logları yerine; LLM API istekleri, FastAPI girişleri, `httpx` tabanlı dış servis çağrıları, RAG erişimleri ve Supervisor merkezli swarm görev delegasyonları OpenTelemetry (OTel) span'leri ile izlenir. `web_server.py` içindeki telemetry başlatma hattı ve `core/llm_client.py` ile `agent/core/supervisor.py` içindeki opsiyonel tracer kullanımı sayesinde hata, gecikme (latency) ve görev zinciri ilişkileri tek bir iz (trace) üzerinde toplanır.
 
-**2. Loglama + Sessiz Fallback**
-Opsiyonel bağımlılıklar (ChromaDB, BM25, psutil, pynvml, torch) yüklenemezse sistem çökmez; `logger.warning` ile kayıt alınır ve bir sonraki motora/moda geçilir.
-```
-ChromaDB başlatılamadı → _chroma_available = False → BM25'e düş
-BM25 yok              → _bm25_available = False   → Keyword'e düş
-```
-Kullanım yeri: `DocumentStore.__init__`, `SystemHealthManager.__init__`
+Bu yaklaşımın operasyonel çıktısı Jaeger/OTel Collector hattıdır: bir kullanıcı isteğinin hangi role neden yönlendirildiği, hangi alt görevin ne kadar sürdüğü, hangi LLM veya araç çağrısının yavaşladığı ve hatanın tam olarak hangi span üzerinde üretildiği waterfall görünümünde milisaniye ayrıntısıyla incelenebilir. Böylece hata analizi artık yalnızca log satırı arama işi değil, dağıtık yürütümün uçtan uca izlenmesi haline gelmiştir.
 
-**3. Fail-Closed Güvenlik Deseni**
-Güvenlik kararlarında belirsizlik varsa operasyon reddedilir. Erişim seviyesi tanımsızsa `sandbox`'a normalize edilir. Fernet anahtarı geçersizse `ValueError` ile sistem başlatılmaz.
-```
-bilinmeyen seviye → sandbox (daha kısıtlayıcı)
-geçersiz şifreleme anahtarı → ValueError, sistem durur
-```
-Kullanım yeri: `SecurityManager`, `ConversationMemory`
+### 16.2 Metrik Toplama ve Uyarı Sistemleri (Prometheus & Grafana)
 
-**4. Unified LLM API Hata Sarmalama Deseni**
-`core/llm_client.py`, sağlayıcıya özgü hataları (ör. `401 AuthenticationError`, `429 RateLimitError`, `ConnectionTimeout`) tek tip bir hata sözleşmesine (örn. `LLMAPIError`) dönüştürerek üst katmanlara iletir. Böylece kullanıcı mesajları ve log kayıtları OpenAI, Anthropic, Gemini ve Ollama için tutarlı kalır.
+Sistem sağlığı yalnızca exception sayımıyla değil, sürekli ölçülen metriklerle yönetilir. `core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py` ve `managers/system_health.py`; LLM maliyet/latency verilerini, ajan delegasyon sürelerini, semantic cache hit-miss oranlarını, Redis hata sayılarını, API başarısızlıklarını ve servis sağlığı göstergelerini Prometheus uyumlu formatta dışarı açar. `web_server.py` üzerindeki metrics endpoint'leri bu verileri toplu biçimde yayınlar.
 
-Kullanım yeri: `core/llm_client.py`, `agent/sidar_agent.py`, `web_server.py`
+Bu metrik yüzeyi özellikle hata durumlarının görünürlüğünü artırır: 429 rate limit olayları, 5xx sınıfı sağlayıcı hataları, cache redis hataları, ajan bazlı başarısız delegasyonlar ve yanıt süresi bozulmaları gerçek zamanlı olarak izlenir. `docker/grafana/dashboards/sidar-llm-overview.json`, `docker/grafana/provisioning/` ve `helm/sidar/templates/configmap-grafana-slo-dashboard.yaml` dosyaları sayesinde Prometheus tarafından toplanan veriler Grafana panellerine, SLO göstergelerine ve operasyonel alarm yüzeylerine dönüştürülür.
 
-### 16.2 Loglama Stratejisi
+### 16.3 Sürü (Swarm) İçi Hata Toleransı ve Otomatik Telafi (Fallback)
 
-| Seviye | Ne Zaman Kullanılır | Örnekler |
-|--------|--------------------|---------|
-| `DEBUG` | Geliştirici detayları, başarılı rutin işlemler | Dizin hazır, VRAM fraksiyon atlandı |
-| `INFO` | Başarılı sistem olayları | GPU aktif, ChromaDB başlatıldı, belge eklendi |
-| `WARNING` | Düşürülmüş modda çalışma, eksik opsiyonel bağımlılık | PyTorch yok, Ollama'ya ulaşılamadı |
-| `ERROR` | Başarısız operasyon, kullanıcıya görünür hata | Dizin oluşturulamadı, ChromaDB hatası, geçersiz API key |
+Kurumsal hata yönetimi tek bir ajan veya tek bir model başarısız olduğunda tüm sistemi durdurmamak üzerine kuruludur. **Model düzeyinde** `core/llm_client.py` ve `core/router.py`, sağlayıcı veya LiteLLM gateway tarafında 429/5xx sınıfı sorunlar, timeout'lar ya da bütçe/rate-limit kısıtları oluştuğunda alternatif modele veya yerel fallback akışına geçerek hizmet sürekliliğini korur.
 
-**Logger İsimlendirme Tutarlılığı:**
-- `config.py` → `Sidar.Config`
-- Diğer tüm modüller → `logging.getLogger(__name__)` (modül adı)
+**Ajan düzeyinde** ise Supervisor merkezli swarm mimarisi hatayı izole eder. `agent/core/supervisor.py`, alt görevleri role ajanlara bölerek delegasyon yapar; bir uzman ajan hata verdiğinde başarısızlık ilgili görev sınırları içinde tutulur, metriklere ve trace'lere işlenir, ardından görev aynı veya farklı bir ajana yeniden yönlendirilebilir. Bu graceful degradation yaklaşımı sayesinde tek bir Coder/Researcher/Reviewer ajanının çökmesi tüm kullanıcı isteğinin kontrolsüz biçimde düşmesine neden olmaz; sistem ölçülebilir şekilde kısmi sonuç, fallback veya yeniden deneme davranışı üretir.
 
-**RotatingFileHandler:** 10 MB / 5 yedek, UTF-8 — Türkçe log mesajları güvenle yazılır.
+### 16.4 Kurumsal Denetim İzleri (Audit Logging)
 
-**Ajan Bazlı Bağlam (Contextual Logging):** Multi-Agent akışında log satırlarına ajan bağlamı (`[Supervisor]`, `[CoderAgent]`, `[ResearcherAgent]`) eklenerek hatanın hangi orkestrasyon adımında üretildiği izlenebilir hale getirilir.
+Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok kiracılı (multi-tenant) kurumsal denetlenebilirlik için de tasarlanmıştır. `web_server.py` içindeki `_schedule_access_audit_log(...)` akışı ve `core/db.py` içindeki `audit_logs` şeması; kullanıcı, tenant, kaynak, aksiyon, IP adresi ve allow/deny sonucunu kalıcı denetim izi olarak kaydeder.
 
-### 16.3 Asenkron Hata Yönetimi
-
-`AutoHandle` içindeki her araç çağrısı `asyncio.wait_for()` ile `AUTO_HANDLE_TIMEOUT` (12 sn) içine alınmıştır. `TimeoutError` yakalanarak kullanıcıya anlamlı mesaj döndürülür; event loop bloklanmaz.
-
-ReAct döngüsünde araç exception'ı `_FMT_TOOL_ERR` formatına sarılarak belleğe yazılır ve LLM'e iletilir. LLM bir sonraki adımda farklı strateji deneyebilir.
-
-**Döngü ve Limit Koruması (Graceful Degradation):** ReAct/Multi-Agent adımlarında `MAX_REACT_STEPS` sınırına ulaşıldığında döngü kontrollü şekilde sonlandırılır; sistem sonsuz döngüye girmek yerine o ana kadar toplanan kısmi sonucu ve açıklayıcı hata/uyarı bağlamını kullanıcıya döndürür.
-
-### 16.4 Bozuk Veri Karantinası
-
-`ConversationMemory` JSON okuma hatası veya şifre çözme başarısızlığı durumunda dosyayı `.json.broken` uzantısıyla yeniden adlandırır ve temiz bir oturum başlatır. 7 günden eski `.broken` dosyaları (en fazla 50 tutulur) otomatik temizlenir. Bu mekanizma disk üzerindeki kalıcı veri bozulmasının sistemi tamamen durdurmasını önler.
-
+Bu audit trail yaklaşımı, güvenlik kararlarının sonradan yeniden üretilebilmesini sağlar. İnsan onayı gerektiren işlemler için `core/hitl.py` ve ilgili API uçları üzerinden yürüyen Human-in-the-Loop (HITL) süreçlerinde reddedilen veya zaman aşımına uğrayan eylemler de görünür kalır. Sonuç olarak hata yönetimi, loglama ve observability katmanı; operasyonel arıza teşhisi, güvenlik denetimi ve tenant izolasyonu için ortak bir kurumsal kayıt sistemi haline gelmiştir.
 ---
 
 ## 17. Yaygın Sorunlar ve Çözümleri
