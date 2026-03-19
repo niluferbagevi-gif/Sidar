@@ -696,6 +696,13 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
+**Hacimsel özet (yönetici görünümü):** Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
+
+- **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
+- **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
+- **Modern frontend katmanı:** Legacy `web_ui/` korunurken `web_ui_react/` altındaki React/Vite SPA projeye ek JavaScript/JSX/CSS hacmi kazandırır.
+- **Altyapı ve dokümantasyon:** Helm chart'ları, Docker/Grafana/Prometheus dosyaları, CI akışları ve runbook'lar üretim işletimini kod olarak tanımlar.
+
 **Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` ile otomatik üretilmelidir. Her iki betik de Git deposu içinde varsayılan olarak yalnızca takipli dosyaları ölçer.
 
 ### 8.1 Çekirdek Modüller (Güncel)
@@ -792,7 +799,7 @@ Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden
 | **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.105** |
 | **Test modülü (`tests/test_*.py`)** | **149** |
 | **`tests/*.py` toplam dosya** | **151** |
-| **`tests/*.py` toplam satır** | **39.147** |
+| **`tests/*.py` toplam satır** | **39.148** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
@@ -800,7 +807,7 @@ Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden
 |---|---|---:|
 | `tests/` | `test_*.py` modül sayısı | 149 |
 | `tests/` | `*.py` toplam dosya | 151 |
-| `tests/` | `*.py` toplam satır | 39.147 |
+| `tests/` | `*.py` toplam satır | 39.148 |
 | `scripts/` | dosya sayısı | 7 |
 | `scripts/` | toplam satır | 613 |
 | `migrations/` | `.py` dosya sayısı (env.py + 3 versions) | 4 |
