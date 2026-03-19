@@ -102,6 +102,11 @@ def test_browser_manager_playwright_flow(monkeypatch, tmp_path):
     ok, message = manager.close_session("sess-1")
     assert ok is True
     assert "kapatıldı" in message
+    audit_actions = [(entry["action"], entry["status"]) for entry in manager.list_audit_log()]
+    assert ("browser_start_session", "started") in audit_actions
+    assert ("browser_goto_url", "executed") in audit_actions
+    assert ("browser_capture_screenshot", "executed") in audit_actions
+    assert ("browser_close_session", "executed") in audit_actions
     assert ("goto", "https://example.com", "domcontentloaded", 5000) in calls
     assert ("close", "context") in calls
     assert ("close", "browser") in calls
@@ -236,6 +241,11 @@ def test_browser_manager_blocks_sync_mutations_when_hitl_enabled(monkeypatch):
     assert ok_click is False and "click_element_hitl" in msg_click
     assert ok_fill is False and "fill_form_hitl" in msg_fill
     assert ok_select is False and "select_option_hitl" in msg_select
+    assert [entry["status"] for entry in manager.list_audit_log()] == [
+        "blocked_hitl",
+        "blocked_hitl",
+        "blocked_hitl",
+    ]
 
 
 def test_browser_manager_helper_methods_cover_non_happy_paths(monkeypatch):
@@ -311,3 +321,4 @@ def test_browser_manager_close_session_returns_error_when_cleanup_fails():
 
     assert ok is False
     assert "kapatılırken hata" in message
+    assert manager.list_audit_log()[-1]["status"] == "execution_failed"

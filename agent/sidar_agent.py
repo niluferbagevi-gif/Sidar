@@ -69,7 +69,7 @@ class SidarAgent:
         )
         self.health = SystemHealthManager(self.cfg.USE_GPU, cfg=self.cfg)
         self.github = GitHubManager(self.cfg.GITHUB_TOKEN, self.cfg.GITHUB_REPO)
-        
+
         self.memory = ConversationMemory(
             database_url=getattr(self.cfg, "DATABASE_URL", ""),
             base_dir=self.cfg.BASE_DIR,
@@ -78,7 +78,7 @@ class SidarAgent:
             encryption_key=getattr(self.cfg, "MEMORY_ENCRYPTION_KEY", ""),
             keep_last=getattr(self.cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
         )
-        
+
         self.llm = LLMClient(self.cfg.AI_PROVIDER, self.cfg)
 
         # Alt sistemler — yeni (Asenkron)
@@ -209,6 +209,9 @@ class SidarAgent:
             elif ci_context:
                 remediation = {
                     "context": ci_context,
+                    "prompt": prompt,
+                    "suspected_targets": list(ci_context.get("suspected_targets") or []),
+                    "diagnostic_hints": list(ci_context.get("diagnostic_hints") or []),
                     "pr_proposal": build_pr_proposal(ci_context, summary),
                 }
         except Exception as exc:
@@ -597,7 +600,7 @@ class SidarAgent:
             f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t.get('timestamp', time.time())))}] {t['role'].upper()}:\n{t['content']}"
             for t in history
         )
-        
+
         try:
             await self.docs.add_document(
                 title=f"Sohbet Geçmişi Arşivi ({time.strftime('%Y-%m-%d %H:%M')})",
@@ -689,4 +692,4 @@ class SidarAgent:
             f"  {self.docs.status()}",
             self.health.full_report(),
         ]
-        return "\n".join(lines)  
+        return "\n".join(lines)
