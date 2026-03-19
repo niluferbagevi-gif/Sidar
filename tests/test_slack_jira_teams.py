@@ -311,6 +311,34 @@ class TestSlackManagerListChannels:
 
 
 
+    def test_list_channels_success_parses_channel_payload(self):
+        captured = {}
+
+        def _list(**kwargs):
+            captured.update(kwargs)
+            return {
+                "ok": True,
+                "channels": [
+                    {"id": "C1", "name": "general"},
+                    {"id": "G1", "name": "secret", "is_private": True},
+                ],
+            }
+
+        mgr = SlackManager.__new__(SlackManager)
+        mgr._client = types.SimpleNamespace(conversations_list=_list)
+        mgr._webhook_only = False
+
+        ok, channels, err = _run(mgr.list_channels(limit=999))
+
+        assert ok is True
+        assert err == ""
+        assert captured == {"limit": 200, "types": "public_channel,private_channel"}
+        assert channels == [
+            {"id": "C1", "name": "general", "is_private": False},
+            {"id": "G1", "name": "secret", "is_private": True},
+        ]
+
+
     def test_list_channels_api_error(self):
         mgr = SlackManager.__new__(SlackManager)
         mgr._client = types.SimpleNamespace(
