@@ -1355,53 +1355,52 @@ Bu bant, v4 mimarisinin yalnızca backend kabiliyeti olarak kalmayıp ürün sev
 
 ---
 
-## 14. Geliştirme Yol Haritası
+## 14. Gelecek Vizyonu ve Geliştirme Yol Haritası (Faz 6 / v5.x)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-> **Not (v3.0.0 Sonrası Durum):** Projenin v3.0 vizyon hedeflerinin (Multi-agent geçişi, Çoklu Kullanıcı, DB kalıcılığı, Telemetri ve Zero-Trust Sandbox) tamamı gerçekleştirilmiş ve tarihsel kayıt olarak `CHANGELOG.md` dosyasına taşınmıştır. 
-> 
-> *Yeni nesil (v4.0 ve ötesi) geliştirme hedefleri ve yol haritası aşağıdaki fazlar halinde planlanmıştır.*
+Projenin temel kurumsal altyapısı, swarm mimarisi, güvenlik kontrol noktaları ve arayüz modernizasyonu v4.x serisi ile tamamlanmıştır. Bu nedenle gelecek sürümlerin odağı artık “eksik temel özellikleri tamamlama” değil; **ileri Ar-Ge, dağıtık ölçeklenme ve otonomi derinleştirmesi** olacaktır.
 
-#### Faz 1: Stabilizasyon ve Teknik Borç Temizliği (v3.1) - *[Kısa Vade]*
-*v3.0 mimarisinin pürüzlerinin giderilmesi ve test/runtime stabilitesinin kurumsal seviyede sabitlenmesi.*
-- **Kritik bugfix ve legacy temizlik:** Legacy test kayması sonrası kalan kırık testlerin kapanması ve CI hattında %100 green hedefi.
-- **Asenkron optimizasyon:** `ConversationMemory` içinde senkron API kalıntılarının ve RAG katmanındaki bloklayıcı akışların native async yaklaşımlarla giderilmesi.
-- **Bağımlılık ayrıştırma:** Toplam 9 opsiyonel paketin (`asyncpg`, `opentelemetry-*`, `chromadb`, `torch`, `torchvision`, `sentence-transformers`) extras profillerine taşınarak kurulum profillerinin sadeleştirilmesi.
-- **Test altyapısı standardizasyonu:** ✅ `conftest.py` deprecated `event_loop` fixture override kaldırıldı; `pytest.ini` üzerinden `asyncio_default_fixture_loop_scope = session` ile standart `pytest-asyncio` mimarisine tam geçiş yapıldı. CI'da `pg-stress` job'ı ile PostgreSQL connection pool stres testleri otomatikleştirildi. **FAZ-3-3 ile tamamlandı.**
-- **Env parite sertleştirmesi:** `.env.example` dosyasının `config.py` ile birebir senkronizasyonu, etkisiz legacy anahtarların kaldırılması ve CI'da env parity kontrolünün otomatikleştirilmesi.
-- **Runtime I/O ve süreç güvenliği:** talimat dosyası yükleme akışının non-blocking hâle getirilmesi, launcher child-process sonlandırma davranışının regresyon testleriyle garanti altına alınması.
+> **Yön belirleyici ilke:** v5.x serisi, mevcut enterprise omurgayı koruyarak Sidar'ı daha güçlü akıl yürütme, dağıtık çalışma, sürekli öğrenme ve gerçek zamanlı çoklu modalite eksenlerinde ileri taşıyan Faz 6 yol haritasıdır.
 
-#### Faz 2: Kurumsal Ölçeklenme ve Stateless Güvenlik (v4.0) - *[Orta Vade]*
-*sistemin gerçek bir dağıtık SaaS platformuna dönüştürülmesi ve güvenlik modelinin modernize edilmesi.*
-- **Stateless güvenlik (JWT + RBAC):** DB sorgusu gerektiren stateful token akışından access/refresh JWT + rol bazlı yetkilendirme modeline geçiş.
-- **Message broker entegrasyonu:** ✅ Redis Streams consumer-group modeli tamamlandı; bir sonraki adım çoklu broker stratejisi (Kafka/NATS) ve operasyonel retention/claim runbook'ları.
-- **Gelişmiş vektör + semantic cache:** ✅ pgvector retrieval hattı aktif; sıradaki adım semantic cache runtime katmanının (Redis/GPTCache) devreye alınması ve maliyet/latency optimizasyonunun ölçülmesi.
-- **Operasyonel mükemmellik temeli:** ✅ `Config.init_telemetry()` ile merkezi OTel bootstrap (FastAPI/HTTPX opsiyonel instrument) hazır; sıradaki adım Jaeger/Zipkin arka uçlarıyla tam APM hattı ve K8s/Helm release standardı.
+### 14.1 GraphRAG ve Bilgi Grafikleri (Knowledge Graphs)
 
-#### Faz 3: Dinamik Ajan Ekosistemi ve Ürünleşme (v4.x) - *[Uzun Vade]*
-*kullanıcı deneyimi, yönetilebilirlik ve AI esnekliğinin ürün düzeyinde maksimize edilmesi.*
-- **Dinamik prompt/model yönetimi:** Ajan promptlarının koddan çıkarılıp Prompt Registry + Admin UI üzerinden canlı yönetilmesi.
-- **Dinamik swarm mimarisi:** Göreve göre anlık worker-ajan türetimi, çalışma zamanı yetenek keşfi ve görev bitiminde kaynakların geri kazanımı.
-- **Modern SPA frontend:** Mevcut arayüzün React/Next.js (veya Vue) tabanlı, canlı ajan diyaloğunu akış/nodes görselleştirmeleriyle sunan bir yapıya evrilmesi.
+- Mevcut `pgvector` + BM25 + keyword hibrit aramasına, varlıklar ve ilişkiler arasındaki bağlantıları modelleyen **graph tabanlı bellek katmanı** eklenecektir.
+- Bu katman; entity memory, prompt registry ve RAG akışlarını yalnızca benzerlik aramasıyla değil, **ilişki/topoloji tabanlı çıkarım** ile zenginleştirecektir.
+- Olası teknoloji yönü; Neo4j benzeri bir grafik veri katmanı veya PostgreSQL üzerinde graph-benzeri ilişki indeksleriyle hibrit yaklaşım kurulmasıdır.
+- Beklenen kazanım: çok adımlı reasoning, kurumsal bilgi keşfi ve belge/kişi/sistem bağıntılarının daha doğru modellenmesi.
 
-#### Faz 4: LLMOps, Otonomi ve Ekosistem Entegrasyonu (v3.2.0 → v4.2.0) - *[TAMAMLANDI]*
-*sistemin yalnızca bir asistan değil, kurumsal bir “Sanal Mühendislik Departmanı” olarak konumlandırılması.*
-- **✅ [ÇÖZÜLDÜ — v3.0.23] Aktif öğrenme ve fine-tuning:** `core/active_learning.py` — FeedbackStore (SQLite/PG async), DatasetExporter (jsonl/alpaca/sharegpt), LoRATrainer (PEFT graceful degrade) ile Reviewer onaylı çıktılardan veri seti + LoRA döngüsü hayata geçirildi.
-- **✅ [ÇÖZÜLDÜ — v3.0.23] Multimodal yetenekler:** `core/vision.py` — UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme, VisionPipeline sınıfı aktif.
-- **✅ [ÇÖZÜLDÜ — v3.0.24] Dış sistem ve CI/CD otonomisi:** `managers/slack_manager.py`, `jira_manager.py`, `teams_manager.py` — Slack Bot SDK + Webhook, Jira Cloud REST API v3, Teams Adaptive Card v1.4 ve HITL onay kartı entegrasyonu tamamlandı.
-- **✅ [ÇÖZÜLDÜ — v3.0.22] LLM gateway ve cost-aware model routing:** `core/router.py` — QueryComplexityAnalyzer (uzunluk + keyword skoru) + CostAwareRouter (bütçe eşiği + lokal/bulut seçimi) aktif; `core/llm_client.py`’ye şeffaf entegrasyon sağlandı.
-- **✅ [KONSOLİDE EDİLDİ — v3.2.0] Autonomous LLMOps anlatısı:** Faz 4 kapsamı, tekil özellik yayını olmaktan çıkarılıp **aktif öğrenme + multimodal üretim + cost-aware yönlendirme + dış sistem orkestrasyonu** birleşimi olarak ürün seviyesinde “Autonomous LLMOps” kabiliyeti şeklinde yeniden çerçevelendi.
-- **✅ [OPERASYONELLEŞTİRİLDİ — v4.2.0] Faz 4 kapanış teyidi:** Audit trail, direct P2P handoff ve supervisor/swarm orchestration doğrulama turları sonucunda Faz 4 yeteneklerinin yalnızca mevcut değil, kurumsal rollout ve denetlenebilirlik katmanlarıyla birlikte operasyonel olarak kalıcı olduğu rapora işlendi.
+### 14.2 Dağıtık Sürü Orkestrasyonu (Distributed Swarm via Message Brokers)
 
-#### Faz 5: Kurumsal Otonomi Kontrolü, Veri Güvenliği ve Kalite Ölçümü (v5.x Vizyonu) - *[TAMAMLANDI]*
-*Sistemin tam otonom yapısında güvenliği maksimuma çıkarmak, insan denetimini entegre etmek ve yanıt kalitesini sürekli ölçümlemek.*
-> **Yeni Vizyon Notu (2026-03-19):** v5.0 artık yalnızca güvenlik/HITL eksenli değil; SİDAR'ı tam bir **AI Co-Worker** seviyesine taşıyacak multimodal medya işleme, browser automation, GraphRAG, LSP, proaktif webhook/cron ajanları ve görsel swarm karar grafiği başlıkları ayrıca [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) dosyasında ürün/mimari backlog olarak detaylandırılmıştır.
-- **✅ [ÇÖZÜLDÜ — v3.0.21] Veri Sızıntısı Önleme (DLP & PII Maskeleme):** `core/dlp.py` — Regex tabanlı PII maskeleme (Bearer token, sk- key, GitHub PAT, AWS key, TC kimlik no, e-posta, kredi kartı, JWT); `core/llm_client.py`’ye API çağrısından önce otomatik DLP hook entegrasyonu.
-- **✅ [ÇÖZÜLDÜ — v3.0.21] İnsan Onayı Geçidi (Human-in-the-Loop - HITL):** `core/hitl.py` — HITLGate async polling tabanlı onay mekanizması; `web_server.py`’ye POST `/api/hitl/request`, POST `/api/hitl/respond/{id}`, GET `/api/hitl/pending` endpoint’leri.
-- **✅ [ÇÖZÜLDÜ — v3.0.21] Sürekli Yanıt Kalitesi Değerlendirmesi (LLM-as-a-Judge):** `core/judge.py` — RAG alaka puanı (0–1) + halüsinasyon riski (0–1); `core/rag.py` search() arka plan değerlendirme; `sidar_rag_relevance_score` + `sidar_hallucination_risk_score` Prometheus metrikleri.
-- **✅ [ÇÖZÜLDÜ — v3.0.22] Kişiselleştirilmiş Geliştirici Belleği (Persona & Entity Memory):** `core/entity_memory.py` — kullanıcı başına KV persona deposu (SQLite/PG), TTL-tabanlı otomatik temizleme, LRU eviction (max_per_user configurable).
-- **✅ [ÇÖZÜLDÜ — v3.0.22] Semantic Cache Grafana Hit Rate:** `core/cache_metrics.py` — thread-safe sayaçlar; `grafana/dashboards/sidar_overview.json` — Cache Hit Rate gauge, Hit/Miss Trend ve LLM Cost/Latency panelleri; provisioning YAML.
+- Bugünkü Supervisor + Swarm akışı tek bir Python runtime içinde güçlü biçimde çalışsa da, Faz 6 hedefi ajanların bağımsız worker servislerine ayrılmasıdır.
+- Uzman ajanların Kafka, RabbitMQ veya benzeri broker'lar üzerinden haberleşen **ayrı mikroservis/pod** yapısına taşınması planlanmaktadır.
+- Bu dönüşüm; görevlerin kuyruklanması, yatay ölçekleme, izolasyon, yeniden deneme politikaları ve tenancy sınırlarının pod seviyesinde sertleştirilmesini sağlayacaktır.
+- Beklenen kazanım: daha büyük swarm'ların Kubernetes üzerinde bölgesel ve tenant bazlı ölçeklenebilmesi.
+
+### 14.3 Sürekli Öğrenme ve RLHF/DPO Boru Hattı
+
+- `core/judge.py`, aktif öğrenme ve kullanıcı geri bildirimi modüllerinin ürettiği kalite sinyalleri, düzenli model iyileştirme döngülerine bağlanacaktır.
+- Hedef; yerel modeller için LoRA/QLoRA altyapısını yalnızca manuel fine-tuning aracı olmaktan çıkarıp **sürekli öğrenen RLHF/DPO pipeline**'ının parçası hâline getirmektir.
+- Reviewer, HITL ve judge sinyalleri birlikte değerlendirilerek hangi örneklerin eğitim veri setine alınacağı otomatikleştirilecektir.
+- Beklenen kazanım: zaman içinde kurumsal stile uyum sağlayan, daha isabetli ve daha düşük maliyetli yerel model davranışı.
+
+### 14.4 Gerçek Zamanlı Çoklu Modalite (Realtime WebRTC)
+
+- Bugünkü `core/vision.py` yetenekleri görsel tabanlı üretimi desteklemektedir; Faz 6 hedefi bunun **gerçek zamanlı ses + video + ekran akışı** katmanına genişletilmesidir.
+- WebRTC tabanlı çift yönlü iletişim ile ajanların yalnızca metin ve yüklenmiş dosyalarla değil, canlı konuşma ve canlı görüntü üzerinden de etkileşime girmesi amaçlanmaktadır.
+- Bu genişleme, React SPA tarafında streaming UI, düşük gecikmeli medya taşıma ve olay bazlı swarm kararlarının eşzamanlı görselleştirilmesini gerektirecektir.
+- Beklenen kazanım: Sidar'ın chat tabanlı bir asistandan, gerçek zamanlı çok modlu bir AI co-worker/ağ operatörü deneyimine dönüşmesi.
+
+### 14.5 Faz 6 Yol Haritası Özeti
+
+| Faz 6 Alanı | Teknik Yön | Hedef Çıktı |
+|---|---|---|
+| **GraphRAG** | Knowledge graph + entity relation memory | Çok adımlı reasoning ve kurumsal bilgi keşfi |
+| **Distributed Swarm** | Broker tabanlı mikroservis ajanlar | Yatay ölçeklenen, pod-seviyesinde izole swarm |
+| **Continuous Learning** | Judge + feedback + LoRA/QLoRA + RLHF/DPO | Sürekli iyileşen yerel model kalitesi |
+| **Realtime Multimodality** | WebRTC + vision + streaming SPA | Ses/video destekli gerçek zamanlı ajan etkileşimi |
+
+> **Sonuç:** v4.x serisi Sidar'ın enterprise temelini tamamlamıştır; v5.x/Faz 6 ise bu temelin üstüne **daha derin akıl yürütme, daha dağıtık yürütme, daha güçlü öğrenme ve daha doğal insan-makine etkileşimi** katmanlarını eklemeyi hedeflemektedir.
 
 ---
 ## 15. Özellik-Gereksinim Matrisi
