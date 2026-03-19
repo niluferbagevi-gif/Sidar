@@ -403,6 +403,28 @@ def test_supervisor_null_span_methods_are_safe():
     assert span.set_attribute("sidar.result_len", 12) is None
 
 
+def test_supervisor_delegate_raises_key_error_for_unknown_role(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    sup = object.__new__(SupervisorAgent)
+
+    class _Registry:
+        def get(self, receiver):
+            raise KeyError(f"missing role: {receiver}")
+
+    class _MemoryHub:
+        def add_role_note(self, *_args, **_kwargs):
+            raise AssertionError("memory should not be written when delegation fails early")
+
+    sup.registry = _Registry()
+    sup.memory_hub = _MemoryHub()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", None)
+
+    with pytest.raises(KeyError, match="missing role: ghost"):
+        asyncio.run(sup._delegate("ghost", "görev", "code"))
+
+
 def test_supervisor_delegate_reraises_agent_errors_even_if_metrics_fail(monkeypatch):
     supervisor_mod = sys.modules["agent.core.supervisor"]
     sup = object.__new__(SupervisorAgent)
