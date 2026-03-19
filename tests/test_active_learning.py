@@ -175,7 +175,10 @@ def test_feedback_store_record_propagates_db_execute_errors(monkeypatch):
             return False
 
     store._engine = types.SimpleNamespace(begin=lambda: _Begin())
-    monkeypatch.setattr("core.active_learning.sql_text", lambda sql: sql, raising=False)
+
+    import core.active_learning as active_learning_module
+
+    monkeypatch.setattr(active_learning_module, "sql_text", lambda sql: sql, raising=False)
 
     with pytest.raises(_DBError, match="insert failed"):
         _run(store.record("prompt", "response", rating=1))
