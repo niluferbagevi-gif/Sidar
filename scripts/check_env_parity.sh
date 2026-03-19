@@ -2,6 +2,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidar — .env.example ↔ config.py Parite Kontrolü
 #
+# Not: Bu dosya doğrudan çalıştırılabilir olmalıdır; test_env_parity bunu doğrular.
+#
 # config.py'deki tüm os.getenv(...) çağrılarını tarar ve karşılığının
 # .env.example'da tanımlı olup olmadığını doğrular.
 #
