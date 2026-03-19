@@ -1,35 +1,106 @@
+import importlib.util
+import sys
+import types
+from contextlib import contextmanager
 from pathlib import Path
 
-
-def test_main_dummy_config_defaults_are_aligned():
-    src = Path("main.py").read_text(encoding="utf-8")
-    assert 'WEB_HOST = "0.0.0.0"' in src
-    assert 'WEB_PORT = 7860' in src
-    assert 'CODING_MODEL = "qwen2.5-coder:7b"' in src
-    assert 'OLLAMA_URL = "http://localhost:11434/api"' in src
+import pytest
 
 
-def test_main_uses_lowercase_log_levels_for_web_compatibility():
-    src = Path("main.py").read_text(encoding="utf-8")
-    assert '("INFO (Standart)", "info")' in src
-    assert '("DEBUG (Detaylı Geliştirici Logları)", "debug")' in src
-    assert '("WARNING (Sadece Uyarılar ve Hatalar)", "warning")' in src
-    assert 'args.log.lower()' in src
-    assert 'parser.add_argument("--log", default="info"' in src
+@contextmanager
+def _temporary_config_module(config_module):
+    prev = sys.modules.get("config")
+    sys.modules["config"] = config_module
+    try:
+        yield
+    finally:
+        if prev is None:
+            sys.modules.pop("config", None)
+        else:
+            sys.modules["config"] = prev
 
 
-def test_main_quick_mode_fallbacks_match_config_defaults():
-    src = Path("main.py").read_text(encoding="utf-8")
-    assert 'getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b")' in src
-    assert 'getattr(cfg, "WEB_HOST", "0.0.0.0")' in src
-    assert 'getattr(cfg, "WEB_PORT", 7860)' in src
+def _load_main_module():
+    cfg_mod = types.ModuleType("config")
+
+    class _Cfg:
+        AI_PROVIDER = "ollama"
+        ACCESS_LEVEL = "full"
+        WEB_HOST = "0.0.0.0"
+        WEB_PORT = 7860
+        CODING_MODEL = "qwen2.5-coder:7b"
+        GEMINI_API_KEY = ""
+        OLLAMA_URL = "http://localhost:11434/api"
+        BASE_DIR = "."
+
+        @staticmethod
+        def initialize_directories():
+            return None
+
+    cfg_mod.Config = _Cfg
+    with _temporary_config_module(cfg_mod):
+        spec = importlib.util.spec_from_file_location("main_under_test_improvements", Path("main.py"))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        return mod
 
 
+def test_dummy_config_defaults_are_aligned():
+    main_mod = _load_main_module()
 
-def test_main_wizard_fallbacks_match_config_defaults():
-    src = Path("main.py").read_text(encoding="utf-8")
-    assert "Kullanılacak Ollama modeli" in src
-    assert "getattr(cfg, \"CODING_MODEL\", \"qwen2.5-coder:7b\")" in src
-    assert "Web Sunucu Host IP'si" in src
-    assert "getattr(cfg, \"WEB_HOST\", \"0.0.0.0\")" in src
-    assert "ask_text(\"Web Sunucu Portu\", str(getattr(cfg, \"WEB_PORT\", 7860)))" in src
+    cfg = main_mod.DummyConfig()
+
+    assert cfg.WEB_HOST == "0.0.0.0"
+    assert cfg.WEB_PORT == 7860
+    assert cfg.CODING_MODEL == "qwen2.5-coder:7b"
+    assert cfg.OLLAMA_URL == "http://localhost:11434/api"
+
+
+def test_quick_mode_normalizes_log_level_and_uses_config_fallbacks(monkeypatch):
+    main_mod = _load_main_module()
+    captured = {}
+
+    def _fake_execute(cmd, capture_output=False, child_log_path=None):
+        captured["cmd"] = cmd
+        captured["capture_output"] = capture_output
+        captured["child_log_path"] = child_log_path
+        return 0
+
+    monkeypatch.setattr(main_mod, "execute_command", _fake_execute)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--quick", "web", "--log", "INFO", "--capture-output", "--child-log", "logs/child.log"],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main_mod.main()
+
+    assert exc.value.code == 0
+    assert captured["cmd"] == [
+        sys.executable,
+        "web_server.py",
+        "--provider",
+        "ollama",
+        "--level",
+        "full",
+        "--log",
+        "info",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "7860",
+    ]
+    assert captured["capture_output"] is True
+    assert captured["child_log_path"] == "logs/child.log"
+
+
+def test_main_rejects_invalid_port_value(monkeypatch):
+    main_mod = _load_main_module()
+    monkeypatch.setattr(sys, "argv", ["main.py", "--quick", "web", "--port", "70000"])
+
+    with pytest.raises(SystemExit) as exc:
+        main_mod.main()
+
+    assert exc.value.code == 2
