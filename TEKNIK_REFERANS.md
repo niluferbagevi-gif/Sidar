@@ -106,6 +106,18 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 - `idx_auth_tokens_user_id`
 - `idx_provider_usage_daily_user_id`
 
+#### Denetim ve uyum tablosu
+
+7. `audit_logs`
+   - Alanlar: `user_id`, `tenant_id`, `action`, `resource`, `ip_address`, `allowed`, `timestamp`
+   - Yazım yolu: `web_server.py::access_policy_middleware` karar sonrası asenkron arka plan görevi ile `record_audit_log(...)` çağırır
+   - Okuma yolu: `list_audit_logs(...)` hem SQLite hem PostgreSQL backend'lerinde tenant/policy sonrası erişim izini sorgulanabilir kılar
+
+#### Audit indeksleri
+
+- `idx_audit_logs_user_timestamp`
+- `idx_audit_logs_timestamp`
+
 ### 2.3 Kimlik doğrulama ve token yaşam döngüsü
 
 - Şifre hash: `PBKDF2-HMAC-SHA256` (`pbkdf2_sha256$<salt>$<digest>`)
@@ -236,6 +248,11 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
   - LLM collector snapshot’unu text/plain olarak döndürür
 - `/metrics/llm` ve `/api/budget`:
   - Aynı handler, collector snapshot JSON döner
+- Semantic cache gözlemlenebilirliği:
+  - `core/cache_metrics.py` modül düzeyi sayaç/Gauge yardımcıları (`record_cache_hit/miss/skip/eviction`, `set_cache_items`, `observe_cache_redis_latency`) üzerinden güncellenir
+  - `/metrics` yüzeyinde Prometheus'a açılır; Grafana dashboard'ları semantic cache hit/miss oranı, aktif öğe sayısı ve Redis latency panellerini tüketir
+- Operasyonel anlam:
+  - LLM maliyeti, semantic cache davranışı ve Redis erişim gecikmesi aynı observability hattında birleştiği için Autonomous LLMOps operasyonu tek panelden izlenebilir
 
 ---
 
@@ -251,6 +268,9 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
   - `review`: "github", "pull request", "issue", "review", "incele"
   - diğer tüm istekler varsayılan olarak `code`
 - Legacy tekli ReAct akışı dosyada yardımcı/yedek kod olarak dursa da üretim omurgası Supervisor zinciridir.
+- Direct P2P handoff:
+  - `P2PMessage` / `DelegationRequest` sözleşmeleri sender, receiver, reason, protocol ve `handoff_depth` bağlamını taşır
+  - Supervisor ve Swarm zinciri gerekli olduğunda ajanların birbirine doğrudan görev devretmesine izin verir; bu akış supervisor otoyoluna dönmeden uzmanlar arası koordinasyon sağlar
 
 ### 4.2 Tool dispatch envanteri
 
@@ -273,6 +293,9 @@ Ana gruplar:
 - Güvenli kullanım kısıtı:
   - `bash run_tests.sh` veya `pytest ...` desenleri dışına çıkılmaz.
 - Supervisor, reviewer geri bildirimi sonrası coder turunu sınırlı sayıda tekrarlar.
+- Otonom kalite döngüsü:
+  - Swarm görev tamamlandıktan sonra judge/active-learning değerlendirmesi kullanıcıyı bloklamayacak şekilde arka planda planlanabilir
+  - Zayıf yanıt sinyalleri uygun olduğunda Active Learning veri havuzuna aktarılır; bu akış Faz 4 Autonomous LLMOps anlatısının kapalı döngü kalite katmanını oluşturur
 
 ### 4.4 Prompt/Context inşası (`sidar_agent.py`)
 
