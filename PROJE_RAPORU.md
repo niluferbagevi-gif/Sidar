@@ -7,13 +7,13 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-19 (v5.0.0-alpha — SİDAR, otonom operasyon merkezi hedefine ulaşmak için başlattığı **v5.0.0-alpha (Faz 6)** geçişini büyük oranda tamamlamıştır. Sisteme Çoklu Algı (Multimodal Perception) yetenekleri kazandırılmış, sesli girdi kabul eden `/ws/voice` WebSocket rotaları oluşturulmuş ve tarayıcı otomasyon altyapısı ayağa kaldırılmıştır. En önemlisi, Proaktif Otonomi (cron tabanlı kendi kendine uyanma) ve LSP (Language Server Protocol) tabanlı anlamsal kod denetimi yetenekleri Reviewer ajana entegre edilmiştir. `main.py`, etkileşimli bir terminal arayüzü ve preflight doğrulama katmanı ile sistemin giriş kapısı olarak zenginleştirilmiştir. Güncel takipli ölçümler korunmuştur: üretim Python **20.582** satır (**58** dosya), test havuzu **39.147** satır (**149** test modülü / **151** Python test dosyası), toplam takipli Python **59.729** satır (**209** dosya), Web UI toplamı **6.105** satır ve runbook kümesi **367** satırdır.)
+> **Son Güncelleme:** 2026-03-19 (v5.0.0-alpha — SİDAR, otonom operasyon merkezi hedefine ulaşmak için başlattığı **v5.0.0-alpha (Faz 6)** geçişini büyük oranda tamamlamıştır. Sisteme Çoklu Algı (Multimodal Perception) yetenekleri kazandırılmış, sesli girdi kabul eden `/ws/voice` WebSocket rotaları oluşturulmuş ve `core/voice.py` üzerinden TTS destekli ses segmentasyonu iskeleti kurulmuştur. Tarayıcı otomasyon altyapısı HITL ve audit izleriyle genişletilmiş, Proaktif Otonomi (cron tabanlı kendi kendine uyanma) ve LSP (Language Server Protocol) tabanlı anlamsal kod denetimi yetenekleri Reviewer ajana entegre edilmiştir. `main.py`, etkileşimli bir terminal arayüzü ve preflight doğrulama katmanı ile sistemin giriş kapısı olarak zenginleştirilmiştir. Güncel takipli ölçümler yeniden toplandı: üretim Python **24.185** satır (**62** dosya), test havuzu **40.628** satır (**159** test modülü / **161** Python test dosyası), toplam takipli Python **64.813** satır (**223** dosya), Web UI toplamı **6.426** satır ve runbook kümesi **367** satırdır.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** 5.0.0-alpha
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. Güncel üretim Python hacmi **20.582** satır (**58** takipli `.py` dosyası; `tests/` hariç), test havuzu **39.147** satır (**149** test modülü / **151** Python test dosyası dahil yardımcı dosyalar), tüm takipli Python toplamı **59.729** satırdır. Web UI toplamı (`web_ui/` + `web_ui_react/`) **6.105** satır, runbook kümesi **4** dosya / **367** satırdır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. Güncel üretim Python hacmi **24.185** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **40.628** satır (**159** test modülü / **161** Python test dosyası dahil yardımcı dosyalar), tüm takipli Python toplamı **64.813** satırdır. Web UI toplamı (`web_ui/` + `web_ui_react/`) **6.426** satır, runbook kümesi **4** dosya / **367** satırdır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, ses/TTS akışı, konfigürasyon bootstrap'i ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
 
 ---
 
@@ -63,7 +63,7 @@
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
-- [11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)](#11-mevcut-sorunlar-ve-teknik-borç-sıfır-borç-durumu)
+- [11. Mevcut Sorunlar ve Teknik Borç (Güncel Durum)](#11-mevcut-sorunlar-ve-teknik-borç-güncel-durum)
   - [11.1 Durum Özeti Paneli](#111-durum-özeti-paneli)
   - [11.2 Arşiv ve Yönlendirme](#112-arşiv-ve-yönlendirme)
   - [11.3 Operasyonel İzleme Başlıkları](#113-operasyonel-i̇zleme-başlıkları)
@@ -144,7 +144,8 @@
 - **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
 - **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
 - **Multimodal Perception (Beta / v5.0 geçişi):** `core/multimodal.py` ile video frame çıkarma, ses ayıklama, Whisper tabanlı STT ve medya bağlamı oluşturma akışı iskelet seviyesinde kuruldu.
-- **Dynamic Browser Automation (Beta / v5.0 geçişi):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması ile kontrollü tarayıcı oturumları açmaya hazırlanıyor.
+- **Dynamic Browser Automation + HITL Audit (Alpha / v5.0 geçişi):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, yüksek riskli aksiyon tespiti, HITL onay akışı ve audit kayıtları ile kontrollü tarayıcı oturumları yürütebiliyor.
+- **Voice/TTS Pipeline (Alpha / v5.0 geçişi):** `core/voice.py` metin segmentleme, TTS adaptörleri ve WebSocket ses akışı için kademeli yanıt üretim omurgasını sağlıyor.
 - **Proaktif Otonomi Başlangıcı:** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden proaktif modele genişliyor.
 - **Jira / Slack / Teams Entegrasyonu:** Jira Cloud REST API v3, Slack Bot SDK + Webhook fallback (Block Kit), Teams MessageCard + Adaptive Card v1.4 ve HITL onay kartı (`managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py`).
 - **Kök kontrol düzlemi doğrulaması (v3.0.29):** `main.py` sihirbaz + quick-start başlatma katmanı, `cli.py` tek event-loop CLI oturumu, `web_server.py` geniş FastAPI kontrol düzlemi (mevcut dosyada 61 route/websocket decorator), `config.py` bootstrap/telemetry yükleme yolu, `github_upload.py` güvenli `git ls-files` paketleme akışı ve `gui_launcher.py` Eel köprüsü mevcut repo durumu ile yeniden teyit edilmiştir.
@@ -159,7 +160,7 @@
 <pre>
 sidar_project/
 ├── .github/workflows/         # CI/CD süreçleri (ci.yml, migration-cutover-checks.yml)
-├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı başlatıcı (wizard + --quick mod)
+├── <a href="docs/module-notes/main.py.md">main.py</a>                    # Akıllı Başlatıcı (Ultimate Launcher - TUI entegre)
 ├── <a href="docs/module-notes/cli.py.md">cli.py</a>                     # CLI terminal arayüzü giriş noktası
 ├── <a href="docs/module-notes/web_server.py.md">web_server.py</a>              # FastAPI web sunucusu (WebSocket streaming)
 ├── <a href="docs/module-notes/config.py.md">config.py</a>                  # Merkezi yapılandırma (v4.3.0)
@@ -354,10 +355,12 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 | 3.15 | `core/dlp.py` | Ayrı modül notu henüz yok; DLP & PII maskeleme katmanı |
 | 3.16 | `core/hitl.py` | Ayrı modül notu henüz yok; Human-in-the-Loop onay akışı |
 | 3.17 | `core/judge.py`, `core/active_learning.py` | Ayrı modül notu henüz yok; LLM-as-a-Judge + aktif öğrenme geri besleme döngüsü |
-| 3.18 | `core/entity_memory.py`, `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
-| 3.19 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
-| 3.20 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
-| 3.21 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
+| 3.18 | `core/voice.py` | Ayrı modül notu henüz yok; TTS adaptörleri ve WebSocket ses segmentasyonu (v5.0-alpha) |
+| 3.19 | `core/entity_memory.py`, `core/memory.py` | [docs/module-notes/core/memory.py.md](docs/module-notes/core/memory.py.md); `entity_memory.py` için ayrı modül notu henüz yok |
+| 3.20 | `core/rag.py` | [docs/module-notes/core/rag.py.md](docs/module-notes/core/rag.py.md) |
+| 3.21 | `core/db.py` | [docs/module-notes/core/db.py.md](docs/module-notes/core/db.py.md) |
+| 3.22 | `core/llm_metrics.py`, `core/cache_metrics.py`, `core/agent_metrics.py` | [docs/module-notes/core/llm_metrics.py.md](docs/module-notes/core/llm_metrics.py.md); diğer metrik modülleri için ayrı not henüz yok |
+| 3.23 | `managers/browser_manager.py` | Ayrı modül notu henüz yok; HITL/audit destekli dinamik tarayıcı otomasyonu |
 | 3.22 | `core/vision.py` | Ayrı modül notu henüz yok; multimodal mockup/görsel işleme hattı |
 | 3.23 | `managers/security.py`, `managers/code_manager.py` | [docs/module-notes/managers/security.py.md](docs/module-notes/managers/security.py.md), [docs/module-notes/managers/code_manager.py.md](docs/module-notes/managers/code_manager.py.md) |
 | 3.24 | `managers/github_manager.py`, `managers/package_info.py` | [docs/module-notes/managers/github_manager.py.md](docs/module-notes/managers/github_manager.py.md), [docs/module-notes/managers/package_info.py.md](docs/module-notes/managers/package_info.py.md) |
@@ -707,38 +710,40 @@ Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 843 |
+| `config.py` | 880 |
 | `main.py` | 382 |
 | `cli.py` | 290 |
-| `web_server.py` | 2.532 |
-| `agent/sidar_agent.py` | 588 |
+| `web_server.py` | 3.066 |
+| `agent/sidar_agent.py` | 692 |
 | `agent/auto_handle.py` | 613 |
 | `agent/definitions.py` | 169 |
-| `agent/tooling.py` | 113 |
+| `agent/tooling.py` | 127 |
 | `agent/base_agent.py` | 112 |
 | `agent/registry.py` | 187 |
 | `agent/swarm.py` | 504 |
 | `core/llm_client.py` | 1.388 |
 | `core/memory.py` | 301 |
-| `core/rag.py` | 1.143 |
+| `core/rag.py` | 1.645 |
 | `core/db.py` | 1.861 |
 | `core/llm_metrics.py` | 282 |
 | `core/agent_metrics.py` | 118 |
 | `core/dlp.py` | 320 |
 | `core/hitl.py` | 287 |
-| `core/judge.py` | 469 |
+| `core/judge.py` | 476 |
 | `core/router.py` | 211 |
 | `core/entity_memory.py` | 281 |
 | `core/cache_metrics.py` | 189 |
-| `core/active_learning.py` | 505 |
+| `core/active_learning.py` | 772 |
 | `core/vision.py` | 294 |
+| `core/voice.py` | 165 |
 | `managers/security.py` | 291 |
-| `managers/code_manager.py` | 1.011 |
+| `managers/code_manager.py` | 1.529 |
 | `managers/github_manager.py` | 645 |
 | `managers/system_health.py` | 538 |
 | `managers/web_search.py` | 388 |
 | `managers/package_info.py` | 344 |
 | `managers/todo_manager.py` | 452 |
+| `managers/browser_manager.py` | 535 |
 | `managers/slack_manager.py` | 234 |
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
@@ -794,10 +799,10 @@ Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden
 | `web_ui/sidebar.js` | 413 |
 | `web_ui/rag.js` | 132 |
 | `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.105** |
-| **Test modülü (`tests/test_*.py`)** | **149** |
-| **`tests/*.py` toplam dosya** | **151** |
-| **`tests/*.py` toplam satır** | **39.148** |
+| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.426** |
+| **Test modülü (`tests/test_*.py`)** | **159** |
+| **`tests/*.py` toplam dosya** | **161** |
+| **`tests/*.py` toplam satır** | **40.628** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
@@ -1027,22 +1032,22 @@ docs_add / docs_add_file
 
 ---
 
-## 11. Mevcut Sorunlar ve Teknik Borç (Sıfır Borç Durumu)
+## 11. Mevcut Sorunlar ve Teknik Borç (Güncel Durum)
 
-> **Güncel Durum (2026-03-19 — v4.3.0):** v4.3.0 itibarıyla tüm bilinen mimari ve güvenlik sorunları çözülmüş ve ilgili arşiv dosyalarına taşınmıştır. Bu bölüm artık aktif riskleri hızlıca göstermek ve tarihsel ayrıntıları doğru arşive yönlendirmek için sadeleştirilmiştir.
+> **Güncel Durum (2026-03-19 — v5.0.0-alpha):** Büyük mimari ve güvenlik açıkları kapatılmış olsa da, v5.0.0-alpha ile eklenen yeni modüller için kapsama/sertleştirme odaklı sınırlı bir Faz-6 test borcu bulunmaktadır. Bu bölüm aktif riskleri ve özellikle yeni alpha yüzeylerinin kalite kapanışlarını görünür tutmak için güncellenmiştir.
 
 ### 11.1 Durum Özeti Paneli
 
 | Gösterge | Durum |
 |---|---|
 | Aktif Kritik Bulgu | **0** |
-| Aktif Sorun | **YOK** |
-| Açık Teknik Borç | **YOK** |
-| Denetim Durumu | **Zero Debt / Production Ready** |
-| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı** |
+| Aktif Sorun | **Sınırlı / Alpha sertleştirme** |
+| Açık Teknik Borç | **Var — v5.0 Faz-6 test borcu** |
+| Denetim Durumu | **Production Ready çekirdek + hedefli coverage kapanışı gerekli** |
+| Son Arşivleme Notu | **v4.3.0 ile tarihsel çözüm listeleri `docs/archive/` altına taşındı; v5.0-alpha yeni yüzeyler burada aktif izleniyor** |
 
-- **Stratejik özet:** Ana rapor artık açık riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur.
-- **Versiyon durumu:** `v4.3.0` itibarıyla tüm bilinen mimari ve güvenlik sorunları çözülmüş, proje “aktif teknik borç yok” durumuna alınmıştır.
+- **Stratejik özet:** Ana rapor artık açık riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur, yeni alpha modüller için kalan kapsama işleri ise burada görünür tutulur.
+- **Versiyon durumu:** `v5.0.0-alpha` itibarıyla çekirdek mimari borç büyük ölçüde kapanmıştır; ancak yeni ses/TTS, tarayıcı otomasyonu ve launcher yüzeyleri için hedefli test tamamlama işi aktif teknik borç olarak izlenmektedir.
 
 ### 11.2 Arşiv ve Yönlendirme
 
@@ -1056,7 +1061,7 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 ### 11.3 Operasyonel İzleme Başlıkları
 
-Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyonel olarak düzenli izlenmelidir:
+Kritik üretim kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyonel olarak düzenli izlenmelidir:
 
 - **LLM kota ve hız limitleri:** Paralel multi-agent çağrıları dış sağlayıcı RPM/TPM sınırlarını etkileyebilir.
 - **Gateway / dış ağ erişimi:** LiteLLM gateway veya sağlayıcı erişim sorunları toplam yanıt süresini uzatabilir.
@@ -1066,11 +1071,12 @@ Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyone
 
 ### 11.4 Gelecek İyileştirmeler (Continuous Improvement)
 
-Projede aktif teknik borç kalmamaktadır; bundan sonraki iyileştirme başlıkları kapasite ve görünürlük eksenindedir:
+Projede büyük ölçekli mimari borç kalmamaktadır; bundan sonraki iyileştirme başlıkları kapasite, kapsama ve görünürlük eksenindedir:
 
 - **Gelişmiş telemetri görselleştirmesi:** Ajanlar arası delegasyon sürelerinin Grafana panellerinde daha ayrıntılı kırılımlarla izlenmesi.
 - **Kurumsal kapasite planlama notları:** pgvector indeks stratejileri, Redis kapasitesi ve uzun dönem maliyet trendlerinin düzenli arşivlenmesi.
 - **Arşiv hijyeni:** Yeni kapanan bulguların ana rapora yığılmadan doğrudan `docs/archive/` altında versiyonlu biçimde tutulması.
+- **v5.0 Faz-6 Test Borcu:** `v5.0.0-alpha` ile eklenen `core/voice.py`, `managers/browser_manager.py` ve güncellenen `main.py` için `%99.9` coverage hedefini sağlamak adına unit testlerin (özellikle `tests/test_voice_pipeline.py`) yazılması gerekmektedir.
 
 
 
@@ -1330,8 +1336,8 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%99.9` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
-| **Multimodal Perception** | Medya ingestion, frame/audio çıkarma ve sesli websocket MVP'si (`core/multimodal.py`, `web_server.py`) | 🟡 Beta / Geliştirmede |
-| **Dynamic Browser Automation** | Playwright/Selenium tabanlı kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | 🟡 Beta / Geliştirmede |
+| **Multimodal Perception + Voice/TTS** | Medya ingestion, frame/audio çıkarma, `/ws/voice` hattı ve `core/voice.py` TTS segmentasyonu (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | 🟡 Alpha / Genişliyor |
+| **Dynamic Browser Automation** | Playwright/Selenium tabanlı kontrollü tarayıcı yönetimi, HITL onayı ve audit izleri (`managers/browser_manager.py`) | 🟡 Alpha / Sertleştirme |
 
 > **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi repo kültürünün hedefini yansıtsa da, kod tabanında **resmî kalite kapısı** `.coveragerc` ve CI üzerinde `%99.9` olarak uygulanmaktadır; raporda bu nedenle doğrudan ölçülebilir kural esas alınmıştır.
 
@@ -1435,16 +1441,17 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 - **Faz 5.5 — Arayüz Modernizasyonu:** Legacy statik web yüzeyi geri uyumluluk için korunurken, `web_ui_react/` altında React + Vite + WebSocket tabanlı modern SPA kullanıcı deneyimi varsayılan yönetim ve operasyon yüzeyi haline geldi.
 - **v4.3.0 — Sürüm ve Ölçüm Senkronizasyonu:** Runtime, paket metadata'sı, Helm chart ve üst seviye dokümantasyon aynı sürüm çizgisine taşındı; repo metrikleri yalnızca Git takipli dosyalar üzerinden yeniden doğrulanarak üretim ölçümleri güvenilir hale getirildi.
 
-### Final Doğrulama ve Sıfır Teknik Borç Durumu
+### Final Doğrulama ve Güncel Teknik Borç Durumu
 
 Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%99.9 coverage hard gate** uygular; bu değer depo kültüründeki fiilî tam kapsama hedefinin ölçülebilir ve repo içinde gerçekten kodlanmış karşılığıdır.
 
-Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v4.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
+Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v4.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör mimari borç kalmamıştır**; ancak v5.0.0-alpha ile genişleyen ses/TTS, browser HITL ve launcher yüzeyleri için hedefli coverage kapanışı hâlâ aktif bir Faz-6 kalite işi olarak izlenmektedir.
 
-### Güncel Kapanış Özeti (v4.3.0)
+### Güncel Kapanış Özeti (v5.0.0-alpha)
 
-- **Güncel baz çizgisi:** 58 üretim Python dosyası / 20.582 satır, 151 test dosyası / 39.147 satır, toplam 209 takipli Python dosyası / 59.729 satır ve 62 REST endpoint.
+- **Güncel baz çizgisi:** 62 üretim Python dosyası / 24.185 satır, 161 test dosyası / 40.628 satır, toplam 223 takipli Python dosyası / 64.813 satır ve 62 REST endpoint.
 - **Operasyonel durum:** Güvenlik/operasyon puanı `10.0/10`; açık bulgu yok; audit trail, observability ve swarm orkestrasyonu birlikte doğrulanmış durumda.
-- **Kurumsal sonuç:** Sidar artık yalnızca “kod yazan ajan” değil; React SPA, PostgreSQL/pgvector, Redis semantic cache, DLP/HITL güvenlik duvarı, Supervisor-first swarm ve telemetry-first observability katmanlarını tek üründe birleştiren üretim adayı bir platformdur.
+- **Kurumsal sonuç:** Sidar artık yalnızca “kod yazan ajan” değil; React SPA, PostgreSQL/pgvector, Redis semantic cache, DLP/HITL güvenlik duvarı, Supervisor-first swarm, voice/TTS omurgası ve telemetry-first observability katmanlarını tek üründe birleştiren üretim adayı bir platformdur.
+- **Aktif kalite işi:** `core/voice.py`, `managers/browser_manager.py` ve güncellenen `main.py` için `%99.9` coverage hedefini kapatacak ek unit testler Faz-6 teknik borç başlığı altında takip edilmektedir.
 
 > **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `CHANGELOG.md` ve `AUDIT_REPORT_v4.0.md` dosyalarına başvurulmalıdır.

@@ -25,12 +25,14 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 
 | Başlık | Güncel Durum | Not |
 |---|---|---|
-| Algı katmanının genişletilmesi (MVP) | **✅ Faz A: Tamamlandı / Alpha** | `core/multimodal.py`, `/ws/voice` ve temel medya bağlamı hattı repo içinde çalışır durumda. |
+| Algı katmanının genişletilmesi (MVP) | **✅ Faz A: Tamamlandı / Alpha** | `core/multimodal.py`, `/ws/voice` ve temel medya bağlamı hattı repo içinde çalışır durumda; `core/voice.py` ile full-duplex ses deneyiminin TTS bacağı iskelet seviyesinde kurulmuştur. |
 | Tarayıcı otomasyonu başlangıcı | **✅ Faz A: Tamamlandı / Alpha** | `managers/browser_manager.py` ile Playwright/Selenium tabanlı yaşam döngüsü eklendi. |
-| GraphRAG başlangıcı | **Faz A: İskelet Kuruldu** | `core/rag.py` içinde modül bağımlılık grafiği arama/yol açıklama akışı mevcut. |
+| GraphRAG başlangıcı | **🚧 Faz B: Aktif Geliştirme Odağı** | `core/rag.py` içinde modül bağımlılık grafiği arama/yol açıklama akışı mevcut; sonraki resmi odak reviewer etki analizi ve güvenli otonomi bağlarıdır. |
 | Reviewer + LSP anlamsal denetim | **✅ Faz B eşiği aşıldı** | Reviewer ajan refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlayabiliyor. |
 | Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
 | Interactive CLI Launcher | **✅ Tamamlandı** | `main.py` ön kontrollü etkileşimli başlatıcı olarak ürünleşti. |
+
+> **Faz geçiş notu:** Faz A (Algı ve Etkileşim İskeleti) hedefleri fiilen tamamlanmıştır. Resmî geliştirme odağı artık **Faz B — Güvenli Otonomi ve GraphRAG** eksenine kaymıştır; bundan sonraki iterasyonlarda reviewer-etki analizi, HITL sertleştirmesi ve proaktif aksiyon zincirleri önceliklidir.
 
 ## 2. Mevcut Mimari Dayanaklar
 
@@ -38,7 +40,7 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 
 ### 2.1 Bugün zaten güçlü olan alanlar
 
-- **Multimodal girişin ilk adımı hazır:** `core/vision.py` görsel yükleme, provider'a özel vision message üretimi ve `VisionPipeline` üzerinden görselden kod / analiz akışı sağlıyor; ek olarak `core/multimodal.py` ve `/ws/voice` ile Faz A iskeleti kurulmuş durumda.
+- **Multimodal girişin ilk adımı hazır:** `core/vision.py` görsel yükleme, provider'a özel vision message üretimi ve `VisionPipeline` üzerinden görselden kod / analiz akışı sağlıyor; ek olarak `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile Faz A iskeleti tamamlanmış durumda.
 - **Araç çağırma ve şema doğrulama altyapısı hazır:** `agent/tooling.py` JSON-object tabanlı typed tool argument doğrulaması ile yeni araçları güvenli biçimde eklemeye uygun.
 - **Swarm ve P2P delege zinciri hazır:** `agent/swarm.py` ve `agent/core/supervisor.py` görev yönlendirme, handoff depth, trace ve QA retry davranışlarını zaten yönetiyor.
 - **RAG katmanı hibrit aramaya uygun:** `core/rag.py` ChromaDB + BM25 tabanı üzerine yeni retrieval stratejileri eklemek için iyi bir temel sunuyor.
@@ -391,13 +393,16 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 5. `web_server.py` webhook tabanlı proaktif trigger girişleri **(✅ tamamlandı)**
 6. `SwarmFlowPanel.jsx` için graph veri modeli **(✅ tamamlandı)**
 7. `main.py` interactive CLI launcher **(✅ tamamlandı)**
+8. `core/voice.py` ile full-duplex ses/TTS bacağı iskeleti **(✅ tamamlandı / alpha)**
+
+> **Durum:** Faz A hedefleri tamamlandı; ürünleşme yönü artık Faz B güvenli otonomi, GraphRAG ve reviewer kalite kapısı derinleşmesine resmen geçmiştir.
 
 ### Faz B — Güvenli Otonomi Derinleşmesi
 
-1. GraphRAG indeksleyicinin reviewer/etki analizi ile derinleştirilmesi
+1. GraphRAG indeksleyicinin reviewer/etki analizi ile derinleştirilmesi **(aktif odak)**
 2. LSP entegrasyonunun Reviewer ajan kalite kapısına bağlanması **(✅ tamamlandı)**
-3. HITL + audit ile yüksek riskli browser aksiyonları
-4. Proaktif CI remediation akışları
+3. HITL + audit ile yüksek riskli browser aksiyonları **(✅ alpha tamamlandı, sertleştirme sürüyor)**
+4. Proaktif CI remediation akışları **(✅ alpha tamamlandı)**
 
 ### Faz C — AI Co-Worker Deneyimi
 
