@@ -113,12 +113,20 @@ def _build_tts_adapter(provider: str) -> _BaseTTSAdapter:
 class VoicePipeline:
     """Websocket voice akışı için TTS adaptörü ve segmentleme yardımcıları."""
 
+    INTERRUPT_EVENTS = {"speech_start", "speech", "user_speaking", "barge_in", "interrupt"}
+    COMMIT_EVENTS = {"speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"}
+
     def __init__(self, config: Any = None) -> None:
         provider = str(getattr(config, "VOICE_TTS_PROVIDER", "auto") or "auto")
         self.voice = str(getattr(config, "VOICE_TTS_VOICE", "") or "")
         self.segment_chars = max(20, int(getattr(config, "VOICE_TTS_SEGMENT_CHARS", 48) or 48))
         self.vad_enabled = bool(getattr(config, "VOICE_VAD_ENABLED", True))
         self.vad_min_speech_bytes = max(256, int(getattr(config, "VOICE_VAD_MIN_SPEECH_BYTES", 1024) or 1024))
+        self.duplex_enabled = bool(getattr(config, "VOICE_DUPLEX_ENABLED", True))
+        self.vad_interrupt_min_bytes = max(
+            128,
+            int(getattr(config, "VOICE_VAD_INTERRUPT_MIN_BYTES", 384) or 384),
+        )
         self.adapter = _build_tts_adapter(provider)
         self.provider = self.adapter.provider
 
@@ -158,9 +166,18 @@ class VoicePipeline:
         if not self.vad_enabled:
             return False
         normalized = str(event or "").strip().lower()
-        if normalized not in {"speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"}:
+        if normalized not in self.COMMIT_EVENTS:
             return False
         return int(buffered_bytes or 0) >= self.vad_min_speech_bytes
+
+    def should_interrupt_response(self, buffered_bytes: int, *, event: str = "") -> bool:
+        """Full-duplex akışta yeni kullanıcı konuşması mevcut yanıtı kesmeli mi?"""
+        if not self.vad_enabled or not self.duplex_enabled:
+            return False
+        normalized = str(event or "").strip().lower()
+        if normalized not in self.INTERRUPT_EVENTS:
+            return False
+        return int(buffered_bytes or 0) >= self.vad_interrupt_min_bytes
 
     def build_voice_state_payload(
         self,
@@ -176,6 +193,8 @@ class VoicePipeline:
             "sequence": max(0, int(sequence or 0)),
             "vad_enabled": self.vad_enabled,
             "auto_commit_ready": self.should_commit_audio(buffered_bytes, event=normalized),
+            "duplex_enabled": self.duplex_enabled,
+            "interrupt_ready": self.should_interrupt_response(buffered_bytes, event=normalized),
             "tts_enabled": self.enabled,
         }
 

@@ -96,6 +96,8 @@ def test_voice_pipeline_builds_vad_state_and_auto_commit_signal():
         VOICE_TTS_SEGMENT_CHARS=24,
         VOICE_VAD_ENABLED=True,
         VOICE_VAD_MIN_SPEECH_BYTES=512,
+        VOICE_DUPLEX_ENABLED=True,
+        VOICE_VAD_INTERRUPT_MIN_BYTES=256,
     )
     pipeline = VoicePipeline(cfg)
 
@@ -106,5 +108,25 @@ def test_voice_pipeline_builds_vad_state_and_auto_commit_signal():
     assert payload["sequence"] == 3
     assert payload["vad_enabled"] is True
     assert payload["auto_commit_ready"] is True
+    assert payload["duplex_enabled"] is True
+    assert payload["interrupt_ready"] is False
     assert pipeline.should_commit_audio(1024, event="speech_end") is True
     assert pipeline.should_commit_audio(128, event="speech_end") is False
+
+
+def test_voice_pipeline_detects_barge_in_interrupt_signal():
+    cfg = SimpleNamespace(
+        VOICE_TTS_PROVIDER="mock",
+        VOICE_TTS_VOICE="",
+        VOICE_VAD_ENABLED=True,
+        VOICE_DUPLEX_ENABLED=True,
+        VOICE_VAD_INTERRUPT_MIN_BYTES=300,
+    )
+    pipeline = VoicePipeline(cfg)
+
+    payload = pipeline.build_voice_state_payload(event="speech_start", buffered_bytes=384, sequence=4)
+
+    assert payload["voice_state"] == "speech_start"
+    assert payload["interrupt_ready"] is True
+    assert pipeline.should_interrupt_response(384, event="speech_start") is True
+    assert pipeline.should_interrupt_response(128, event="speech_start") is False

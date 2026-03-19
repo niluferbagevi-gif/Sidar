@@ -291,3 +291,134 @@ def test_websocket_voice_vad_event_auto_commits_buffered_audio():
     assert any(item["voice_state"] == "speech_end" and item["auto_commit_ready"] is True for item in voice_states)
     assert any(item["voice_state"] == "processed" for item in voice_states)
     assert {"transcript": "Otomatik commit denemesi.", "language": "tr", "provider": "whisper"} in ws.sent
+
+
+def test_websocket_voice_barge_in_cancels_active_duplex_response():
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == "valid-token":
+                return types.SimpleNamespace(id="u1", username="alice")
+            return None
+
+    class _Memory:
+        def __len__(self):
+            return 1
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+        db = _DB()
+
+    async def _respond(prompt):
+        yield f"yanit:{prompt}"
+        await asyncio.sleep(0.05)
+        yield "uzun-devam"
+
+    agent = types.SimpleNamespace(memory=_Memory(), llm=object(), respond=_respond)
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    multimodal_mod = types.ModuleType("core.multimodal")
+    voice_mod = types.ModuleType("core.voice")
+
+    class _Pipeline:
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+        async def transcribe_bytes(self, audio_bytes, **kwargs):
+            if audio_bytes == b"a" * 900:
+                return {
+                    "success": True,
+                    "text": "İlk konuşma",
+                    "language": "tr",
+                    "provider": "whisper",
+                }
+            return {
+                "success": True,
+                "text": "İkinci konuşma",
+                "language": "tr",
+                "provider": "whisper",
+            }
+
+    multimodal_mod.MultimodalPipeline = _Pipeline
+
+    class _VoicePipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.enabled = True
+            self.vad_enabled = True
+            self.duplex_enabled = True
+
+        def extract_ready_segments(self, text, flush=False):
+            text = str(text or "").strip()
+            if not text:
+                return [], ""
+            return ([text], "") if flush else ([], text)
+
+        async def synthesize_text(self, text):
+            return {
+                "success": True,
+                "audio_bytes": b"tts:" + text.encode("utf-8"),
+                "mime_type": "audio/mock",
+                "provider": "mock",
+                "voice": "",
+            }
+
+        def should_commit_audio(self, buffered_bytes, *, event=""):
+            return event == "speech_end" and buffered_bytes >= 700
+
+        def should_interrupt_response(self, buffered_bytes, *, event=""):
+            return event == "speech_start" and buffered_bytes >= 300
+
+        def build_voice_state_payload(self, *, event, buffered_bytes, sequence):
+            return {
+                "voice_state": event,
+                "buffered_bytes": buffered_bytes,
+                "sequence": sequence,
+                "vad_enabled": True,
+                "auto_commit_ready": self.should_commit_audio(buffered_bytes, event=event),
+                "duplex_enabled": True,
+                "interrupt_ready": self.should_interrupt_response(buffered_bytes, event=event),
+                "tts_enabled": True,
+            }
+
+    voice_mod.VoicePipeline = _VoicePipeline
+
+    class _WebSocket:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "valid-token"}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self._events = [
+                {"type": "websocket.receive", "bytes": b"a" * 900},
+                {"type": "websocket.receive", "text": json.dumps({"action": "commit", "mime_type": "audio/webm"})},
+                {"type": "websocket.receive", "bytes": b"b" * 400},
+                {"type": "websocket.receive", "text": json.dumps({"action": "vad_event", "state": "speech_start"})},
+                {"type": "websocket.disconnect"},
+            ]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            await asyncio.sleep(0)
+            return self._events.pop(0)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    ws = _WebSocket()
+    with _ModulePatch("core.multimodal", multimodal_mod), _ModulePatch("core.voice", voice_mod):
+        asyncio.run(mod.websocket_voice(ws))
+
+    assert {"transcript": "İlk konuşma", "language": "tr", "provider": "whisper"} in ws.sent
+    assert {"voice_interruption": "barge_in", "cancelled": True} in ws.sent
+    voice_states = [item for item in ws.sent if item.get("voice_state") == "speech_start"]
+    assert voice_states and voice_states[0]["interrupt_ready"] is True
