@@ -237,6 +237,32 @@ def test_base_agent_handle_backfills_delegation_metadata_from_envelope():
         assert result.summary.handoff_depth == 3
 
 
+def test_base_agent_handle_leaves_plain_summary_unchanged():
+    with _load_agent_test_symbols() as symbols:
+        BaseAgent = symbols["BaseAgent"]
+        TaskEnvelope = symbols["TaskEnvelope"]
+
+        class _MiniAgent(BaseAgent):
+            async def run_task(self, task_prompt: str):
+                return f"done:{task_prompt}"
+
+        agent = _MiniAgent(cfg=SimpleNamespace(AI_PROVIDER="ollama"), role_name="mini")
+        envelope = TaskEnvelope(
+            task_id="task-plain",
+            sender="supervisor",
+            receiver="mini",
+            goal="plain work",
+            context={},
+        )
+
+        result = asyncio.run(agent.handle(envelope))
+
+        assert result.task_id == "task-plain"
+        assert result.status == "success"
+        assert result.summary == "done:plain work"
+        assert result.evidence == []
+
+
 def test_supervisor_reject_feedback_payload_handles_empty_invalid_and_valid_json():
     with _load_agent_test_symbols() as symbols:
         SupervisorAgent = symbols["SupervisorAgent"]
@@ -246,6 +272,30 @@ def test_supervisor_reject_feedback_payload_handles_empty_invalid_and_valid_json
         assert SupervisorAgent._is_reject_feedback_payload('qa_feedback|{"decision":"reject", decision=reject') is True
         assert SupervisorAgent._is_reject_feedback_payload('qa_feedback|{"decision":"approve"}') is False
         assert SupervisorAgent._is_reject_feedback_payload('qa_feedback|{"decision":"reject"}') is True
+
+
+def test_supervisor_route_p2p_stops_when_qa_retry_limit_is_exceeded():
+    with _load_agent_test_symbols() as symbols:
+        SupervisorAgent = symbols["SupervisorAgent"]
+        DelegationRequest = symbols["DelegationRequest"]
+
+        supervisor = object.__new__(SupervisorAgent)
+        supervisor.cfg = SimpleNamespace(MAX_QA_RETRIES=0, REACT_TIMEOUT=0.01)
+        supervisor.events = SimpleNamespace(publish=lambda *_args, **_kwargs: asyncio.sleep(0))
+
+        result = asyncio.run(
+            supervisor._route_p2p(
+                DelegationRequest(
+                    task_id="p2p-1",
+                    reply_to="reviewer",
+                    target_agent="coder",
+                    payload='qa_feedback|{"decision":"reject"}',
+                )
+            )
+        )
+
+        assert result.status == "failed"
+        assert "Maksimum QA retry limiti aşıldı" in result.summary
 
 
 def test_swarm_autonomous_feedback_short_circuits_and_swallows_judge_errors(caplog):
@@ -311,6 +361,21 @@ def test_swarm_autonomous_feedback_short_circuits_and_swallows_judge_errors(capl
         assert "judge boom" in caplog.text
 
 
+def test_swarm_schedule_autonomous_feedback_no_running_loop_is_noop():
+    with _load_agent_test_symbols() as symbols:
+        SwarmOrchestrator = symbols["SwarmOrchestrator"]
+        orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+
+        orchestrator._schedule_autonomous_feedback(
+            prompt="fix bug",
+            response="done",
+            context={"intent": "code"},
+            session_id="sess-1",
+            agent_role="coder",
+            task_id="task-1",
+        )
+
+
 def test_swarm_execute_task_skips_missing_preferred_agent_and_backfills_reply_to(monkeypatch):
     with _load_agent_test_symbols() as symbols:
         SwarmOrchestrator = symbols["SwarmOrchestrator"]
@@ -364,6 +429,51 @@ def test_swarm_execute_task_skips_missing_preferred_agent_and_backfills_reply_to
         assert seen["kwargs"]["hop"] == 1
 
 
+def test_swarm_execute_task_stops_self_delegation_after_hop_limit(monkeypatch):
+    with _load_agent_test_symbols() as symbols:
+        SwarmOrchestrator = symbols["SwarmOrchestrator"]
+        SwarmTask = symbols["SwarmTask"]
+        AgentRegistry = symbols["AgentRegistry"]
+        TaskResult = symbols["TaskResult"]
+        DelegationRequest = symbols["DelegationRequest"]
+
+        orchestrator = SwarmOrchestrator(
+            cfg=SimpleNamespace(
+                SWARM_MAX_HANDOFF_HOPS=1,
+                SWARM_TASK_MAX_RETRIES=0,
+                SWARM_TASK_RETRY_DELAY_MS=0,
+            )
+        )
+
+        class _SelfDelegatingAgent:
+            async def handle(self, envelope):
+                return TaskResult(
+                    task_id=envelope.task_id,
+                    status="success",
+                    summary=DelegationRequest(
+                        task_id=envelope.task_id,
+                        reply_to="coder",
+                        target_agent="coder",
+                        payload=envelope.goal,
+                    ),
+                    evidence=[],
+                )
+
+        monkeypatch.setattr(orchestrator.router, "route", lambda _intent: SimpleNamespace(role_name="coder"))
+        monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: SimpleNamespace(role_name="coder"))
+        monkeypatch.setattr(AgentRegistry, "create", lambda *_args, **_kwargs: _SelfDelegatingAgent())
+
+        result = asyncio.run(
+            orchestrator._execute_task(
+                SwarmTask(goal="loop forever", intent="code"),
+                session_id="sess-loop",
+            )
+        )
+
+        assert result.status == "failed"
+        assert "maksimum devir sayısı aşıldı" in result.summary.lower()
+
+
 def test_coder_agent_parse_qa_feedback_preserves_raw_invalid_json_payload():
     with _load_agent_test_symbols() as symbols:
         CoderAgent = symbols["CoderAgent"]
@@ -376,6 +486,17 @@ def test_coder_agent_parse_qa_feedback_preserves_raw_invalid_json_payload():
         output = asyncio.run(agent.run_task('qa_feedback|{"decision":"reject"'))
         assert output.startswith("[CODER:APPROVED]")
         assert '{"decision":"reject"' in output
+
+
+def test_coder_agent_parse_qa_feedback_handles_empty_and_valid_dict_payloads():
+    with _load_agent_test_symbols() as symbols:
+        CoderAgent = symbols["CoderAgent"]
+
+        assert CoderAgent._parse_qa_feedback("") == {}
+        assert CoderAgent._parse_qa_feedback('{"decision":"reject","summary":"x"}') == {
+            "decision": "reject",
+            "summary": "x",
+        }
 
 
 def test_reviewer_dynamic_test_generation_fail_closes_for_plain_text_and_llm_error(monkeypatch):
@@ -396,3 +517,74 @@ def test_reviewer_dynamic_test_generation_fail_closes_for_plain_text_and_llm_err
         monkeypatch.setattr(reviewer, "call_llm", _llm_boom)
         errored = asyncio.run(reviewer._build_dynamic_test_content("core logic"))
         assert "Reviewer LLM dinamik test üretimi başarısız oldu: llm down" in errored
+
+
+def test_reviewer_dynamic_test_generation_fail_closes_on_empty_context():
+    with _load_agent_test_symbols() as symbols:
+        ReviewerAgent = symbols["ReviewerAgent"]
+        reviewer = object.__new__(ReviewerAgent)
+
+        output = asyncio.run(reviewer._build_dynamic_test_content("   "))
+
+        assert "Reviewer dinamik test üretimi için boş bağlam aldı." in output
+
+
+def test_reviewer_run_dynamic_tests_fail_closed_when_write_fails(tmp_path):
+    with _load_agent_test_symbols() as symbols:
+        ReviewerAgent = symbols["ReviewerAgent"]
+        reviewer = object.__new__(ReviewerAgent)
+        reviewer.config = SimpleNamespace(BASE_DIR=tmp_path)
+        reviewer.code = SimpleNamespace(write_file=lambda *_args, **_kwargs: (False, "disk full"))
+
+        async def _build_dynamic_test_content(_context):
+            return "def test_placeholder():\n    assert True\n"
+
+        reviewer._build_dynamic_test_content = _build_dynamic_test_content
+
+        output = asyncio.run(reviewer._run_dynamic_tests("core logic"))
+
+        assert "[TEST:FAIL-CLOSED] komut=dynamic_pytest" in output
+        assert "disk full" in output
+
+
+def test_reviewer_run_dynamic_tests_swallows_unlink_error_and_run_task_defaults_run_tests(monkeypatch, tmp_path):
+    with _load_agent_test_symbols() as symbols:
+        ReviewerAgent = symbols["ReviewerAgent"]
+        reviewer = object.__new__(ReviewerAgent)
+        reviewer.config = SimpleNamespace(BASE_DIR=tmp_path, REVIEWER_TEST_COMMAND="pytest -q default")
+        reviewer.events = SimpleNamespace(publish=lambda *_args, **_kwargs: asyncio.sleep(0))
+
+        async def _build_dynamic_test_content(_context):
+            return "def test_placeholder():\n    assert True\n"
+
+        def _write_file(path, content, _overwrite=False):
+            Path(path).write_text(content, encoding="utf-8")
+            return True, "ok"
+
+        calls = []
+
+        async def _call_tool(name, arg):
+            calls.append((name, arg))
+            return "[TEST:OK]"
+
+        reviewer._build_dynamic_test_content = _build_dynamic_test_content
+        reviewer.code = SimpleNamespace(write_file=_write_file)
+        reviewer.call_tool = _call_tool
+
+        original_unlink = Path.unlink
+
+        def _boom_unlink(path_obj, *args, **kwargs):
+            if path_obj.name.startswith("reviewer_dynamic_"):
+                raise OSError("busy")
+            return original_unlink(path_obj, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", _boom_unlink)
+
+        dynamic_output = asyncio.run(reviewer._run_dynamic_tests("core logic"))
+        default_run_output = asyncio.run(reviewer.run_task("run_tests"))
+
+        assert dynamic_output == "[TEST:OK]"
+        assert calls and calls[0][0] == "run_tests"
+        assert calls[0][1].startswith("pytest -q temp/reviewer_dynamic_")
+        assert default_run_output == "[TEST:OK]"
+        assert calls[-1] == ("run_tests", "pytest -q default")
