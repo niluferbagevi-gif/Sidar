@@ -552,22 +552,23 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiştir:
+Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **132**
-- **`tests/*.py` toplamı ( `conftest.py` + `__init__.py` dahil ):** **132**
-- **Toplam test satırı (`tests/*.py`):** **31.302**
-- **Atlanan test (skip) sayısı:** **0** — Tüm eski mimariye ait 33 legacy/skip testi temizlenmiştir.
+- **`test_*.py` modül sayısı:** **149**
+- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **151**
+- **Toplam test satırı (`tests/*.py`):** **39.148**
+- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%99.9 hard gate**
 
-**v3.0 Öne Çıkan Test Kategorileri:**
-- **Veritabanı & Migration:** `test_db_runtime.py`, `test_db_postgresql_branches.py`, `test_migration_assets.py`, `test_migration_ci_guards.py`
-- **Zero-Trust Sandbox:** `test_sandbox_runtime_profiles.py`, `test_host_sandbox_installer_assets.py`, `test_dockerfile_runtime_improvements.py`
-- **Telemetri & Bütçe:** `test_llm_metrics_runtime.py`, `test_grafana_dashboard_provisioning.py`
-- **Multi-Agent & Reviewer:** `test_reviewer_agent.py`, `test_supervisor_agent.py`, `test_event_stream_runtime.py`, `test_agent_core_components.py`
-- **Güvenlik ve WebSocket/Auth:** `test_security_level_transition.py`, `test_github_webhook.py`, `test_web_server_runtime.py`, `test_web_ui_security_improvements.py`
-- **Observability Stack (YENİ):** `test_observability_stack_compose.py` — Docker Compose servis sağlık kontrolü, Jaeger + Prometheus + Grafana endpoint doğrulaması (34 satır)
-- **Plugin Marketplace (YENİ):** `test_plugin_marketplace_flow.py` — `CryptoPriceAgent` yükleme, `AgentRegistry` kaydı, `run_task` çağrısı, desteklenmeyen sembol edge-case (47 satır)
-- **Tenant RBAC (YENİ):** `test_tenant_rbac_scenarios.py` — `tenant_A` (rag:read izni var, swarm:execute yok) vs `tenant_B` (tam yetki) senaryoları, `access_policy_middleware` 403 davranışı, policy matris doğrulaması (132 satır)
+**Öne çıkan test kategorileri (v4.3.0):**
+- **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
+- **Kurumsal izolasyon ve RBAC:** `test_tenant_rbac_scenarios.py`, `test_rbac_policy_runtime.py`, `test_db_postgresql_branches.py`
+- **Güvenlik (DLP & HITL):** `test_dlp_masking.py`, `test_hitl_approval.py`, `test_github_webhook.py`, `test_web_ui_security_improvements.py`
+- **Semantic Cache / Redis:** `test_semantic_cache_runtime.py`, `test_llm_client_retry_helpers.py`
+- **Çoklu ajan ve Swarm:** `test_swarm_orchestrator.py`, `test_supervisor_agent.py`, `test_reviewer_agent.py`, `test_event_stream_runtime.py`
+- **Plugin Marketplace:** `test_plugin_marketplace_flow.py` — dinamik ajan yükleme, `AgentRegistry` kaydı ve çağrı akışı doğrulaması
+- **Observability / OTel:** `test_otel_rag_spans.py`, `test_observability_stack_compose.py`, `test_llm_metrics_runtime.py`, `test_grafana_dashboard_provisioning.py`
+- **LLM-as-a-Judge ve Active Learning:** `test_llm_judge.py`, `test_active_learning.py`
+- **Altyapı ve migration:** `test_migration_assets.py`, `test_migration_ci_guards.py`, `test_observability_stack_compose.py`, `test_sandbox_runtime_profiles.py`
 
 > Not: Önceki audit notlarında geçen 0 bayt test artifact uyarıları tarihsel kayıt niteliğindedir; güncel pipeline `find tests -type f -size 0` kontrolüyle bu durumu bloklayıcı kalite kapısı olarak yönetir.
 
@@ -575,34 +576,35 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre genişletilmiş
 
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
-| Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml` |
-| Coverage Quality Gate (`fail_under=99.9`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `ci.yml` |
+| Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
+| Coverage Quality Gate (`fail_under=99.9`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml` |
+| Ayrı coverage adımı (`--cov-fail-under=99.9`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
-| Repo metrik/audit üretimi | ✅ Aktif | `scripts/collect_repo_metrics.sh`, `scripts/audit_metrics.sh` |
+| `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
 
-Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + güvenlik sertleştirme senaryoları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
+Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + enterprise senaryo regresyonları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
 
 ### 6.2 Coverage Hard Gate (%99.9)
 
 - `.coveragerc` içinde `fail_under = 99.9` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
-- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `--cov-fail-under=99.9` parametresiyle çalıştırır; eşik altı durumda pipeline fail olur.
-- `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği uygular.
-- Mevcut durum: **%100 kapsama** — tüm testler başarılı, 0 atlanan test, 132 test modülü aktif.
-- Bu model, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir ve eksik kapsanan satırların görünür kalmasını sağlar.
+- `pytest.ini`, `python_files = test_*.py` ve `asyncio_mode = auto` ayarlarıyla aynı test evrenini deterministik biçimde çalıştırır.
+- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9` komutu ile coverage eşiğini uygular.
+- `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği yerelde tekrarlar.
+- Depoda `test_quick_100.py` ve `test_ultimate_coverage.py` gibi agresif kapsama odaklı testler bulunur; bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **132 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **132** adettir.
-- Testler yalnızca birim doğrulama ile sınırlı değildir; edge-case, provider retry/fallback, migration/DB branch ayrışmaları, sandbox profilleri ve web güvenliği gibi alanlara bölünmüş modüler paketler içerir.
-- Örnek kurumsal odak alanları: `test_missing_edge_case_coverage.py`, `test_llm_client_retry_helpers.py`, `test_db_postgresql_branches.py`, `test_sandbox_runtime_profiles.py`.
+- Güncel depoda `test_*.py` desenine uyan **149 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **151** adettir.
+- Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
+- Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
 
 ### 6.4 Asenkron Test Altyapısı
 
 - `pytest.ini` içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = session` ayarları ile tüm async testler otomatik olarak session kapsamlı event loop'ta çalışır.
-- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: Deprecated `event_loop` session fixture override kaldırılmış, session kapsamlı event loop yönetimi tamamen `pytest.ini` üzerinden yapılandırılmaktadır. ✅ **FAZ-3-3 ile tamamlandı.**
-- `pytest.ini`'ye `slow` ve `pg_stress` marker'ları eklendi; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
-- CI (`ci.yml`) üzerinde ayrı bir `pg-stress` job'ı aktif edildi: PostgreSQL 16 service container, Alembic migration ve `tests/test_db_postgresql_branches.py` üzerinde bağlantı havuzu yük testi otomatik olarak çalışır. ✅ **FAZ-3-3 ile tamamlandı.**
+- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, session kapsamlı event loop yönetimi `pytest.ini` üzerinden yapılandırılmıştır.
+- `pytest.ini`'ye `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
+- CI (`.github/workflows/ci.yml`) üzerinde ayrı `pg-stress` job'ı yer alır; PostgreSQL 16 service container, Alembic migration ve `tests/test_db_postgresql_branches.py` üstünden bağlantı havuzu yük testi otomatik olarak çalışır.
 
 ---
 
