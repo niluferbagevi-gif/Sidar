@@ -6,7 +6,7 @@ import time
 import pytest
 from unittest.mock import patch
 
-from core.judge import JudgeResult, LLMJudge, ResponseEvaluation, get_llm_judge
+from core.judge import JudgeResult, LLMJudge, ResponseEvaluation, _record_judge_metrics, get_llm_judge
 
 
 def _run(coro):
@@ -293,6 +293,29 @@ def test_call_llm_json_returns_none_on_malformed_json(monkeypatch):
     assert result is None
 
 
+def test_call_llm_returns_none_on_unparseable_numeric_response(monkeypatch):
+    judge = LLMJudge()
+    judge.enabled = True
+
+    class _Client:
+        def __init__(self, provider, config):
+            self.provider = provider
+            self.config = config
+
+        async def chat(self, **_kwargs):
+            return "Bozuk yanit { parse edilemez"
+
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("core.llm_client")
+    fake_mod.LLMClient = _Client
+    monkeypatch.setitem(sys.modules, "core.llm_client", fake_mod)
+
+    result = _run(judge._call_llm("sys", "msg"))
+    assert result is None
+
+
 def test_evaluate_response_marks_parse_failure_when_judge_returns_invalid_json(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True
@@ -424,6 +447,66 @@ def test_llm_metric_event_judge_fields_optional():
     )
     assert event.judge_score is None
     assert event.hallucination_risk is None
+
+
+def test_record_judge_metrics_ignores_usage_sink_errors(monkeypatch):
+    import sys
+    import types
+
+    class _Collector:
+        def __init__(self):
+            self._usage_sink = lambda _payload: (_ for _ in ()).throw(RuntimeError("sink failed"))
+
+    fake_mod = types.ModuleType("core.llm_metrics")
+    fake_mod.get_llm_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", fake_mod)
+
+    result = JudgeResult(
+        relevance_score=0.8,
+        hallucination_risk=0.1,
+        evaluated_at=time.time(),
+        model="judge-mini",
+        provider="ollama",
+    )
+
+    _record_judge_metrics(result)
+
+
+
+def test_record_judge_metrics_ignores_missing_running_loop_for_async_sink(monkeypatch):
+    import sys
+    import types
+
+    state = {"created": False}
+
+    class _Awaitable:
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    def _sink(_payload):
+        state["created"] = True
+        return _Awaitable()
+
+    class _Collector:
+        def __init__(self):
+            self._usage_sink = _sink
+
+    fake_mod = types.ModuleType("core.llm_metrics")
+    fake_mod.get_llm_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", fake_mod)
+
+    result = JudgeResult(
+        relevance_score=0.7,
+        hallucination_risk=0.2,
+        evaluated_at=time.time(),
+        model="judge-mini",
+        provider="ollama",
+    )
+
+    _record_judge_metrics(result)
+    assert state["created"] is True
 
 
 def test_llm_metrics_collector_record_with_judge():
