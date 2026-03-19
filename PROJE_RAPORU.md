@@ -920,45 +920,40 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-### 10.1 Bir Chat Mesajının Ömrü
+### 10.1 Bir Chat Mesajının Ömrü (v4.x Katmanlı Akış)
 
 ```
 [Kullanıcı]
-    │ mesaj gönderir (CLI / Web)
+    │ mesaj gönderir (React SPA / CLI / GUI)
     ▼
-[Auth Katmanı]
-    │ HTTP: Bearer token middleware
-    │ WS: zorunlu auth handshake (aksi: 1008 policy violation)
+[web_server.py / CLI Entry]
+    │ HTTP Bearer token / WS auth handshake
     ▼
-[SidarAgent.respond(...)]
-    │
-    ├─► [SupervisorAgent.route(...)]   ← v3.0 Supervisor-first (legacy tekli akış YOK)
-    │        │
-    │        ├─► Araştırma/RAG görevi → ResearcherAgent
-    │        └─► Kod görevi           → CoderAgent
-    │                                   │
-    │                                   ├─► (gerekirse) ReviewerAgent QA süzgeci
-    │                                   │      ├─► Approve → devam
-    │                                   │      └─► Reject  → Coder'a geri dönüş
-    │                                   │                (MAX_QA_RETRIES=3 devre kesici)
-    │                                   ▼
-    │                          Tool dispatch (`agent/tooling.py`)
-    │                                   │
-    │                                   ├─► code_manager / security
-    │                                   ├─► web_search / package_info
-    │                                   ├─► github_manager
-    │                                   ├─► rag / docs_* işlemleri
-    │                                   └─► health / todo
-    │
-    ├─► [ConversationMemory.aadd(...)]
-    │        └─► core/db.py → `messages`/`sessions` (user_id izolasyonlu)
-    │
-    ├─► [AgentEventBus.publish(...)]
-    │        └─► WebSocket ile canlı thought/tool/status akışı
-    │
-    ├─► [LLM Metrics Collector]
-    │        └─► token/latency/cost kaydı → `/api/budget`, `/metrics/llm`
-    │
+[DLP Katmanı]
+    │ hassas veri / PII maskeleme
+    ▼
+[Semantic Cache Kontrolü]
+    │ Redis + cosine similarity
+    ├─► HIT varsa → önbellekten erken yanıt (early exit)
+    └─► MISS ise → orkestrasyon hattına devam
+    ▼
+[Supervisor / Swarm]
+    │ intent analizi + alt görevlere bölme
+    ├─► ResearcherAgent → RAG / web / entity memory bağlamı
+    ├─► CoderAgent      → code_manager / github / tools
+    ├─► ReviewerAgent   → QA / güvenlik / revizyon döngüsü
+    └─► Plugin Agent    → marketplace üzerinden dinamik görevler
+    ▼
+[Router + LLM Client]
+    │ maliyet/karmaşıklık yönlendirmesi + sağlayıcı seçimi
+    ▼
+[HITL / Action Gate]
+    │ yüksek riskli işlem varsa onay bekle
+    ▼
+[Streaming + Persistence]
+    ├─► AgentEventBus → WebSocket canlı durum akışı
+    ├─► ConversationMemory / DB → oturum + mesaj kalıcılığı
+    ├─► Metrics / OTel → latency, token, cost, span export
     └─► Nihai yanıt kullanıcıya döner
 ```
 
@@ -1004,30 +999,33 @@ docs_add / docs_add_file
 
 > RAG yolu tüm uzman ajanlar tarafından ortak kullanılır; erişim kontrolü ve gözlemlenebilirlik katmanlarıyla birlikte çalışır.
 
-### 10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)
+### 10.4 Adım Adım Veri Yaşam Döngüsü (v4.x Kurumsal Akış)
 
-Aşağıdaki fazlar, v3.0'ın gerçek çalışma desenini (auth + async + event-driven + observability) özetler:
+1. **İstek Karşılama ve Güvenlik Filtresi (Auth + DLP):**
+   - Kullanıcının React SPA, CLI veya GUI üzerinden gönderdiği mesaj sisteme ulaşır.
+   - Web tarafında HTTP bearer token / WebSocket auth handshake uygulanır; içerik ardından `core/dlp.py` katmanından geçerek kredi kartı, TC kimlik, e-posta, telefon ve benzeri hassas veriler maskelenir.
 
-1. **Faz 1 — Ingestion & Auth Gate (CLI/HTTP/WS):**
-   - İstek girişleri web tarafında zorunlu auth kontrollerinden (özellikle WebSocket `action=auth` handshake) geçer.
-   - Doğrulama sonrası istek ajan yürütme hattına alınır; durum olayları `AgentEventBus` üzerinden yayınlanmaya başlar.
+2. **Anlamsal Önbellek (Semantic Cache) Kontrolü:**
+   - Maskelenmiş sorgu Redis tabanlı semantic cache hattına girer.
+   - Kosinüs benzerliği ile anlamca yakın bir kayıt bulunursa akış burada tamamlanır ve önbellekten yanıt dönülür; bulunamazsa maliyetli orkestrasyon/LLM yoluna geçilir.
 
-2. **Faz 2 — State & Context (DB + Token Budget):**
-   - `ConversationMemory` kullanıcı bağlamını (`user_id`) doğrular, geçmiş oturum/mesajları DB katmanından yönetir.
-   - Bağlam token boyutu izlenir; eşik aşımlarında özetleme/sıkıştırma adımlarıyla LLM'e taşınacak yük optimize edilir.
+3. **Swarm Supervisor ve Görev Bölüşümü:**
+   - Gelen görev `agent/swarm.py` ve `agent/core/supervisor.py` tarafından analiz edilir.
+   - İhtiyaca göre alt görevlere ayrılan iş; Coder, Researcher, Reviewer veya plugin ajanlarına paralel ya da pipeline modunda dağıtılır.
 
-3. **Faz 3 — Supervisor Routing + P2P QA Loop:**
-   - Supervisor niyet analizi sonrası işi `TaskEnvelope` ile uzman ajana yönlendirir.
-   - Kod odaklı işlerde Coder çıktısı Reviewer süzgecinden geçer; gerekirse `DelegationRequest` + `_route_p2p` köprüsüyle Coder'a revizyon döner (`MAX_QA_RETRIES` devre kesici).
-   - Swarm yolu kullanıldığında aynı senaryo `p2p.v1` direct handoff protokolü ile `sender`, `receiver`, `reason` ve `handoff_depth` alanları korunarak orchestration katmanında tekrar üretilebilir.
+4. **RAG, Bellek ve Bağlam Zenginleştirme:**
+   - Bilgi yoğun görevlerde Researcher hattı pgvector + ChromaDB + BM25 hibrit arama yapar; sonuçlar RRF ile birleştirilir.
+   - `core/memory.py` oturum geçmişini, `core/entity_memory.py` ise kullanıcı/persona çıkarımlarını bağlama ekler; böylece ajanlar daha zengin context ile çalışır.
 
-4. **Faz 4 — Zero-Trust Tool Execution Path:**
-   - Araç çağrıları güvenlik denetiminden geçer (path/erişim seviyesi kontrolleri).
-   - Web aramada motor fallback zinciri (Tavily → Google → DuckDuckGo), kod yürütmede Docker sandbox izolasyonu ve politika bazlı fallback uygulanır.
+5. **Router ve LLM Üretim Katmanı:**
+   - `core/router.py`, görev karmaşıklığı ve maliyet sinyaline göre uygun model/sağlayıcı yolunu seçer.
+   - `core/llm_client.py`, Ollama/Gemini/Anthropic/OpenAI-uyumlu/LiteLLM gateway yollarından uygun olanına isteği iletir ve gerekirse structured output / retry / fallback mantığını uygular.
 
-5. **Faz 5 — Observability Split + Persistence + Broadcast:**
-   - LLM akışı yalnızca son kullanıcı yanıtı üretmez; paralelde telemetri (token/latency/cost) `core/llm_metrics.py` ile toplanır.
-   - Bu metrikler `/api/budget` ve Prometheus format yüzeylerine aktarılır; event bus/WebSocket üzerinden canlı durum yayınları sürerken nihai içerik DB'ye kalıcı yazılır.
+6. **HITL, Yayın ve Kalıcılık:**
+   - Üretilen eylem planı sistem bütünlüğünü etkiliyorsa `core/hitl.py` devreye girer ve akış açık onay gelene kadar duraklar.
+   - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db.py` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
+
+> **Not:** Bu 6 adımın tamamı boyunca OpenTelemetry ve metrik toplayıcıları (`core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`) arka planda span, maliyet, gecikme ve cache davranışını Jaeger / OTLP / Prometheus yüzeylerine aktarır.
 
 ---
 
