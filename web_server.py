@@ -84,6 +84,7 @@ from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from config import Config
+from core.ci_remediation import build_ci_failure_context
 from core.hitl import get_hitl_gate, get_hitl_store, set_hitl_broadcast_hook
 from core.llm_client import LLMAPIError
 from core.llm_metrics import get_llm_metrics_collector
@@ -365,6 +366,7 @@ async def _dispatch_autonomy_trigger(
         "meta": result.get("meta", {}),
         "created_at": result.get("created_at"),
         "completed_at": result.get("completed_at"),
+        "remediation": result.get("remediation"),
     }
 
 
@@ -2921,6 +2923,14 @@ async def github_webhook(
         issue_num = data.get("issue", {}).get("number", "")
         msg = f"[GITHUB BİLDİRİMİ] Issue #{issue_num} durumu güncellendi ({action}): {issue_title}"
 
+    ci_context = build_ci_failure_context(x_github_event, data if isinstance(data, dict) else {})
+    if ci_context:
+        msg = (
+            "[GITHUB CI] Başarısız pipeline algılandı: "
+            f"{ci_context.get('workflow_name', x_github_event)} "
+            f"(run_id={ci_context.get('run_id', '-')}, conclusion={ci_context.get('conclusion', '-')})"
+        )
+
     if msg:
         logger.info("Webhook işlendi: %s", msg)
         await _await_if_needed(agent.memory.add("user", msg))
@@ -2933,10 +2943,10 @@ async def github_webhook(
         if bool(getattr(cfg, "ENABLE_EVENT_WEBHOOKS", True)):
             with contextlib.suppress(Exception):
                 await _dispatch_autonomy_trigger(
-                    trigger_source="webhook:github",
-                    event_name=x_github_event,
-                    payload=data if isinstance(data, dict) else {"payload": data},
-                    meta={"provider": "github"},
+                    trigger_source="webhook:github:ci_failure" if ci_context else "webhook:github",
+                    event_name="ci_failure_remediation" if ci_context else x_github_event,
+                    payload=ci_context if ci_context else (data if isinstance(data, dict) else {"payload": data}),
+                    meta={"provider": "github", "ci_failure": "true" if ci_context else "false"},
                 )
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})

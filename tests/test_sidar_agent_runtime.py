@@ -229,6 +229,45 @@ def test_handle_external_trigger_records_activity_and_memory():
     assert record["summary"] == "proaktif-yanit"
     assert any(role == "user" and "[AUTONOMY_TRIGGER]" in text for role, text in a.memory.items)
     assert a.get_autonomy_activity(limit=5)["counts_by_source"]["webhook:ci"] == 1
+
+
+def test_handle_external_trigger_builds_ci_remediation_payload():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def fake_multi(prompt):
+        assert "[CI_REMEDIATION]" in prompt
+        assert "logs_url=https://github.com/acme/sidar/actions/runs/77/logs" in prompt
+        return "Kök neden pytest failure. Önerilen patch: flaky assertion düzelt."
+
+    a._try_multi_agent = fake_multi
+
+    trigger = ExternalTrigger(
+        trigger_id="tr-ci-1",
+        source="webhook:github:ci_failure",
+        event_name="workflow_run",
+        payload={
+            "repository": {"full_name": "acme/sidar", "default_branch": "main"},
+            "workflow_run": {
+                "id": 77,
+                "run_number": 14,
+                "name": "CI",
+                "status": "completed",
+                "conclusion": "failure",
+                "head_branch": "feature/remediate",
+                "head_sha": "abc123",
+                "html_url": "https://github.com/acme/sidar/actions/runs/77",
+                "jobs_url": "https://github.com/acme/sidar/actions/runs/77/jobs",
+                "logs_url": "https://github.com/acme/sidar/actions/runs/77/logs",
+                "display_title": "pytest failure",
+            },
+        },
+    )
+    record = asyncio.run(a.handle_external_trigger(trigger))
+
+    assert record["status"] == "success"
+    assert record["remediation"]["context"]["workflow_name"] == "CI"
+    assert record["remediation"]["pr_proposal"]["head_branch_suggestion"] == "ci-remediation/77"
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 
