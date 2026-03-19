@@ -503,6 +503,14 @@ class Config:
     LORA_BATCH_SIZE: int = get_int_env("LORA_BATCH_SIZE", 4)
     LORA_USE_4BIT: bool = get_bool_env("LORA_USE_4BIT", True)
     LORA_OUTPUT_DIR: str = os.getenv("LORA_OUTPUT_DIR", "data/lora_adapters")
+    # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
+    ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
+    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env("CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20)
+    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = get_int_env("CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10)
+    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = get_int_env("CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000)
+    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = get_int_env("CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600)
+    CONTINUOUS_LEARNING_OUTPUT_DIR: str = os.getenv("CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning")
+    CONTINUOUS_LEARNING_SFT_FORMAT: str = os.getenv("CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca")
 
     # ─── Multimodal Vision (v6.0) ───────────────────────────────
     ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)

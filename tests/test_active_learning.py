@@ -16,11 +16,14 @@ def _run(coro):
 
 
 from core.active_learning import (
+    ContinuousLearningPipeline,
     FeedbackStore,
     DatasetExporter,
     LoRATrainer,
     flag_weak_response,
     get_feedback_store,
+    get_continuous_learning_pipeline,
+    schedule_continuous_learning_cycle,
     _chunked,
 )
 
@@ -86,6 +89,22 @@ def _make_store(tmp_path, enabled=True):
     cfg = MagicMock()
     cfg.ENABLE_ACTIVE_LEARNING = enabled
     cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    cfg.ENABLE_CONTINUOUS_LEARNING = False
+    cfg.CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES = 20
+    cfg.CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES = 10
+    cfg.CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS = 5000
+    cfg.CONTINUOUS_LEARNING_COOLDOWN_SECONDS = 3600
+    cfg.CONTINUOUS_LEARNING_OUTPUT_DIR = str(tmp_path / "continuous_learning")
+    cfg.CONTINUOUS_LEARNING_SFT_FORMAT = "alpaca"
+    cfg.ENABLE_LORA_TRAINING = False
+    cfg.LORA_BASE_MODEL = ""
+    cfg.LORA_RANK = 8
+    cfg.LORA_ALPHA = 16
+    cfg.LORA_DROPOUT = 0.05
+    cfg.LORA_EPOCHS = 1
+    cfg.LORA_BATCH_SIZE = 1
+    cfg.LORA_USE_4BIT = False
+    cfg.LORA_OUTPUT_DIR = str(tmp_path / "lora")
     return FeedbackStore(database_url=f"sqlite+aiosqlite:///{db}", config=cfg)
 
 
@@ -593,6 +612,98 @@ class TestLoRATrainer:
         assert records["model_kwargs"] == {"trust_remote_code": True}
 
 
+class TestContinuousLearningPipeline:
+    def _cfg(self, tmp_path, **overrides):
+        cfg = MagicMock()
+        cfg.ENABLE_ACTIVE_LEARNING = True
+        cfg.AL_MIN_RATING_FOR_TRAIN = 1
+        cfg.ENABLE_CONTINUOUS_LEARNING = overrides.get("enabled", True)
+        cfg.CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES = overrides.get("min_sft", 2)
+        cfg.CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES = overrides.get("min_preference", 1)
+        cfg.CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS = overrides.get("max_pending", 100)
+        cfg.CONTINUOUS_LEARNING_COOLDOWN_SECONDS = overrides.get("cooldown", 0)
+        cfg.CONTINUOUS_LEARNING_OUTPUT_DIR = str(tmp_path / "cl")
+        cfg.CONTINUOUS_LEARNING_SFT_FORMAT = overrides.get("sft_format", "alpaca")
+        cfg.ENABLE_LORA_TRAINING = overrides.get("trainer_enabled", False)
+        cfg.LORA_BASE_MODEL = "mock/model"
+        cfg.LORA_RANK = 8
+        cfg.LORA_ALPHA = 16
+        cfg.LORA_DROPOUT = 0.05
+        cfg.LORA_EPOCHS = 1
+        cfg.LORA_BATCH_SIZE = 1
+        cfg.LORA_USE_4BIT = False
+        cfg.LORA_OUTPUT_DIR = str(tmp_path / "lora")
+        return cfg
+
+    def test_build_dataset_bundle_exports_sft_and_preference_sets(self, tmp_path):
+        cfg = self._cfg(tmp_path)
+        store = FeedbackStore(database_url=f"sqlite+aiosqlite:///{tmp_path/'cl.db'}", config=cfg)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+
+        _run(store.record("Prompt 1", "Yanıt 1", rating=1, correction="İyileştirilmiş 1"))
+        _run(store.record("Prompt 2", "Yanıt 2", rating=1))
+        _run(
+            store.record(
+                "Prompt 3",
+                "Zayıf yanıt",
+                rating=-1,
+                correction="Judge gerekçesi",
+                tags=["judge:auto", "weak_response", "judge_reasoning"],
+            )
+        )
+
+        pipeline = ContinuousLearningPipeline(store, config=cfg)
+        manifest = _run(pipeline.build_dataset_bundle())
+
+        assert manifest["counts"]["signals"] == 3
+        assert manifest["counts"]["sft_examples"] == 2
+        assert manifest["counts"]["preference_examples"] == 1
+        assert manifest["counts"]["triage_only"] == 1
+
+        sft_lines = Path(manifest["sft_path"]).read_text(encoding="utf-8").strip().splitlines()
+        pref_lines = Path(manifest["preference_path"]).read_text(encoding="utf-8").strip().splitlines()
+        assert len(sft_lines) == 2
+        assert len(pref_lines) == 1
+        assert json.loads(pref_lines[0])["chosen"] == "İyileştirilmiş 1"
+        _run(store.close())
+
+    def test_run_cycle_triggers_trainer_when_threshold_met(self, tmp_path):
+        cfg = self._cfg(tmp_path, trainer_enabled=True, min_sft=1)
+        store = FeedbackStore(database_url=f"sqlite+aiosqlite:///{tmp_path/'cl-train.db'}", config=cfg)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+
+        _run(store.record("Prompt", "Yanıt", rating=1, correction="Daha iyi yanıt"))
+        trainer = MagicMock()
+        trainer.enabled = True
+        trainer.train.return_value = {"success": True, "output_dir": str(tmp_path / "adapter")}
+
+        pipeline = ContinuousLearningPipeline(store, config=cfg, trainer=trainer)
+        result = _run(pipeline.run_cycle(reason="test"))
+
+        assert result["success"] is True
+        assert result["scheduled"] is True
+        trainer.train.assert_called_once()
+        assert result["training_result"]["success"] is True
+        _run(store.close())
+
+    def test_schedule_continuous_learning_cycle_uses_singleton(self, monkeypatch):
+        calls = []
+
+        class _Pipeline:
+            def schedule_cycle(self, *, reason):
+                calls.append(reason)
+                return True
+
+        from core import active_learning as al_mod
+
+        monkeypatch.setattr(al_mod, "get_continuous_learning_pipeline", lambda config=None: _Pipeline())
+
+        assert schedule_continuous_learning_cycle(reason="judge:auto_feedback") is True
+        assert calls == ["judge:auto_feedback"]
+
+
 # ─── Yardımcı: _chunked ──────────────────────────────────────────────────────
 
 def test_chunked_splits_correctly():
@@ -622,6 +733,22 @@ def test_get_feedback_store_returns_instance():
         assert store is store2
     finally:
         al_mod._feedback_store = original
+
+
+def test_get_continuous_learning_pipeline_returns_instance(monkeypatch):
+    import core.active_learning as al_mod
+
+    original_store = al_mod._feedback_store
+    original_pipeline = al_mod._continuous_learning_pipeline
+    al_mod._feedback_store = None
+    al_mod._continuous_learning_pipeline = None
+    try:
+        pipeline = get_continuous_learning_pipeline()
+        assert isinstance(pipeline, ContinuousLearningPipeline)
+        assert get_continuous_learning_pipeline() is pipeline
+    finally:
+        al_mod._feedback_store = original_store
+        al_mod._continuous_learning_pipeline = original_pipeline
 
 
 def test_module_level_flag_weak_response_uses_singleton(monkeypatch):

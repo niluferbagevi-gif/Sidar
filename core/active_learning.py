@@ -186,6 +186,30 @@ class FeedbackStore:
             )
             return [dict(r._mapping) for r in rows.fetchall()]
 
+    async def get_pending_signals(self, limit: int = 10000) -> List[Dict]:
+        """Sürekli öğrenme için henüz export edilmemiş tüm geri bildirim sinyallerini döner."""
+        if not self.enabled or not self._engine:
+            return []
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(
+                sql_text(
+                    "SELECT id, prompt, response, correction, rating, user_id, session_id,"
+                    " provider, model, tags, created_at"
+                    " FROM finetune_feedback"
+                    " WHERE exported_at IS NULL"
+                    " ORDER BY created_at DESC LIMIT :lim"
+                ),
+                {"lim": limit},
+            )
+            items = [dict(r._mapping) for r in rows.fetchall()]
+        for item in items:
+            raw_tags = item.get("tags", "[]")
+            try:
+                item["tags"] = json.loads(raw_tags) if isinstance(raw_tags, str) else list(raw_tags or [])
+            except Exception:
+                item["tags"] = []
+        return items
+
     async def mark_exported(self, ids: List[int]) -> None:
         """Verilen ID'leri export edildi olarak işaretle."""
         if not ids or not self._engine:
@@ -300,6 +324,226 @@ class DatasetExporter:
 
         logger.info("DatasetExporter: %d kayıt → %s (%s)", len(ids), output_path, fmt)
         return {"path": str(out.resolve()), "count": len(ids), "format": fmt}
+
+
+class ContinuousLearningPipeline:
+    """
+    Judge ve Active Learning sinyallerini SFT + preference dataset bundle'ına dönüştürür.
+
+    Amaç:
+    - İnsan düzeltmelerini LoRA/QLoRA için SFT dataseti'ne aktarmak
+    - Negatif/iyileştirilmiş örneklerden DPO/RLHF tercih çifti üretmek
+    - İsteğe bağlı olarak LoRA eğitimini arka planda tetiklemek
+    """
+
+    def __init__(
+        self,
+        store: FeedbackStore,
+        *,
+        trainer: Optional["LoRATrainer"] = None,
+        config=None,
+    ) -> None:
+        self.store = store
+        self.config = config
+        self.trainer = trainer or LoRATrainer(config=config)
+        self.enabled = bool(getattr(config, "ENABLE_CONTINUOUS_LEARNING", False))
+        self.output_dir = str(
+            getattr(config, "CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning")
+            or "data/continuous_learning"
+        )
+        self.min_sft_examples = int(getattr(config, "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20) or 20)
+        self.min_preference_examples = int(
+            getattr(config, "CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10) or 10
+        )
+        self.max_pending_signals = int(getattr(config, "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000) or 5000)
+        self.cooldown_seconds = int(getattr(config, "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600) or 3600)
+        self.sft_format = str(getattr(config, "CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca") or "alpaca").lower()
+        self._last_run_at = 0.0
+        self._run_lock = asyncio.Lock()
+
+    @staticmethod
+    def _normalize_tags(tags: object) -> list[str]:
+        if isinstance(tags, list):
+            return [str(tag) for tag in tags if str(tag).strip()]
+        if isinstance(tags, str):
+            try:
+                parsed = json.loads(tags)
+            except Exception:
+                return []
+            if isinstance(parsed, list):
+                return [str(tag) for tag in parsed if str(tag).strip()]
+        return []
+
+    @staticmethod
+    def _is_judge_reasoning_signal(row: Dict[str, Any]) -> bool:
+        tags = ContinuousLearningPipeline._normalize_tags(row.get("tags"))
+        return "judge_reasoning" in tags and "weak_response" in tags
+
+    def _build_sft_examples(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        examples: list[dict[str, Any]] = []
+        min_rating = int(getattr(self.store, "min_rating_for_train", 1))
+        for row in rows:
+            prompt = str(row.get("prompt", "") or "").strip()
+            response = str(row.get("response", "") or "").strip()
+            correction = str(row.get("correction", "") or "").strip()
+            rating = int(row.get("rating", 0) or 0)
+            if not prompt:
+                continue
+            if rating < min_rating:
+                continue
+            if self._is_judge_reasoning_signal(row):
+                continue
+            output = correction or response
+            if not output:
+                continue
+            examples.append(
+                {
+                    "instruction": prompt,
+                    "input": "",
+                    "output": output,
+                    "source": "correction" if correction else "response",
+                    "feedback_id": row.get("id"),
+                }
+            )
+        return examples
+
+    def _build_preference_examples(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        examples: list[dict[str, Any]] = []
+        for row in rows:
+            prompt = str(row.get("prompt", "") or "").strip()
+            response = str(row.get("response", "") or "").strip()
+            correction = str(row.get("correction", "") or "").strip()
+            rating = int(row.get("rating", 0) or 0)
+            if not prompt or not response or not correction:
+                continue
+            if correction == response:
+                continue
+            if self._is_judge_reasoning_signal(row):
+                continue
+            if rating >= 1 or rating < 0:
+                examples.append(
+                    {
+                        "prompt": prompt,
+                        "chosen": correction,
+                        "rejected": response,
+                        "feedback_id": row.get("id"),
+                    }
+                )
+        return examples
+
+    @staticmethod
+    def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    async def build_dataset_bundle(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
+        """Bekleyen sinyallerden SFT/DPO bundle üretir; eğitimi başlatmaz."""
+        rows = await self.store.get_pending_signals(limit=self.max_pending_signals)
+        sft_examples = self._build_sft_examples(rows)
+        preference_examples = self._build_preference_examples(rows)
+        triage_only = max(0, len(rows) - len({r.get("feedback_id") for r in sft_examples + preference_examples if r.get("feedback_id")}))
+
+        root = Path(output_dir or self.output_dir)
+        timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        bundle_dir = root / f"bundle-{timestamp}"
+        sft_path = bundle_dir / f"sft.{self.sft_format}.jsonl"
+        preference_path = bundle_dir / "preference.dpo.jsonl"
+        manifest_path = bundle_dir / "manifest.json"
+
+        await asyncio.to_thread(self._write_jsonl, sft_path, sft_examples)
+        await asyncio.to_thread(self._write_jsonl, preference_path, preference_examples)
+
+        manifest = {
+            "created_at": time.time(),
+            "bundle_dir": str(bundle_dir),
+            "sft_path": str(sft_path),
+            "preference_path": str(preference_path),
+            "counts": {
+                "signals": len(rows),
+                "sft_examples": len(sft_examples),
+                "preference_examples": len(preference_examples),
+                "triage_only": triage_only,
+            },
+            "training_ready": {
+                "sft": len(sft_examples) >= self.min_sft_examples,
+                "preference": len(preference_examples) >= self.min_preference_examples,
+            },
+            "sft_format": self.sft_format,
+        }
+        await asyncio.to_thread(
+            manifest_path.write_text,
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return manifest
+
+    async def run_cycle(self, *, reason: str = "manual") -> Dict[str, Any]:
+        """Bundle üretir ve yeterli veri varsa LoRA/QLoRA eğitimini tetikler."""
+        if not self.enabled:
+            return {"success": False, "scheduled": False, "reason": "continuous_learning_disabled"}
+
+        async with self._run_lock:
+            now = time.time()
+            if self.cooldown_seconds > 0 and (now - self._last_run_at) < self.cooldown_seconds:
+                return {
+                    "success": False,
+                    "scheduled": False,
+                    "reason": "cooldown_active",
+                    "retry_after": max(0, int(self.cooldown_seconds - (now - self._last_run_at))),
+                }
+
+            manifest = await self.build_dataset_bundle()
+            counts = manifest.get("counts", {})
+            if (
+                counts.get("sft_examples", 0) < self.min_sft_examples
+                and counts.get("preference_examples", 0) < self.min_preference_examples
+            ):
+                self._last_run_at = now
+                return {
+                    "success": False,
+                    "scheduled": False,
+                    "reason": "insufficient_signals",
+                    "manifest": manifest,
+                    "trigger_reason": reason,
+                }
+
+            training_result = {
+                "success": False,
+                "reason": "trainer_disabled_or_insufficient_sft",
+            }
+            if counts.get("sft_examples", 0) >= self.min_sft_examples and bool(getattr(self.trainer, "enabled", False)):
+                training_result = await asyncio.to_thread(self.trainer.train, manifest["sft_path"])
+
+            self._last_run_at = now
+            return {
+                "success": True,
+                "scheduled": True,
+                "manifest": manifest,
+                "training_result": training_result,
+                "trigger_reason": reason,
+            }
+
+    def schedule_cycle(self, *, reason: str = "background") -> bool:
+        """Event loop varsa sürekli öğrenme döngüsünü fire-and-forget biçimde planlar."""
+        if not self.enabled:
+            return False
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+
+        async def _runner() -> None:
+            try:
+                await self.run_cycle(reason=reason)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("ContinuousLearningPipeline schedule hatası: %s", exc)
+
+        loop.create_task(_runner(), name="sidar_continuous_learning")
+        return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -464,6 +708,7 @@ def _chunked(lst: List, size: int):
 
 _feedback_store: Optional[FeedbackStore] = None
 _store_lock = threading.Lock()
+_continuous_learning_pipeline: Optional[ContinuousLearningPipeline] = None
 
 
 def get_feedback_store(config=None) -> FeedbackStore:
@@ -475,6 +720,28 @@ def get_feedback_store(config=None) -> FeedbackStore:
             db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
             _feedback_store = FeedbackStore(database_url=db_url, config=cfg)
     return _feedback_store
+
+
+def get_continuous_learning_pipeline(config=None) -> ContinuousLearningPipeline:
+    """Süreç-geneli sürekli öğrenme pipeline singleton'ını döndürür."""
+    global _continuous_learning_pipeline
+    with _store_lock:
+        if _continuous_learning_pipeline is None:
+            from config import Config
+
+            cfg = config or Config()
+            _continuous_learning_pipeline = ContinuousLearningPipeline(
+                get_feedback_store(cfg),
+                trainer=LoRATrainer(config=cfg),
+                config=cfg,
+            )
+    return _continuous_learning_pipeline
+
+
+def schedule_continuous_learning_cycle(*, config=None, reason: str = "background") -> bool:
+    """Uygunsa sürekli öğrenme döngüsünü arka planda planlar."""
+    pipeline = get_continuous_learning_pipeline(config)
+    return pipeline.schedule_cycle(reason=reason)
 
 
 async def flag_weak_response(

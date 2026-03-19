@@ -362,7 +362,7 @@ class LLMJudge:
             return False
 
         try:
-            from core.active_learning import get_feedback_store
+            from core.active_learning import get_feedback_store, schedule_continuous_learning_cycle
 
             store = get_feedback_store(self.config)
             ok = await store.flag_weak_response(
@@ -389,6 +389,13 @@ class LLMJudge:
                     result.quality_score_10,
                     self.auto_feedback_threshold,
                 )
+                try:
+                    schedule_continuous_learning_cycle(
+                        config=self.config,
+                        reason="judge:auto_feedback",
+                    )
+                except Exception as exc:
+                    logger.debug("Continuous learning schedule başarısız: %s", exc)
             return bool(ok)
         except asyncio.CancelledError:
             raise
