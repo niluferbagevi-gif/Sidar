@@ -1,3 +1,8 @@
+import subprocess
+from pathlib import Path
+
+import pytest
+
 from tests.test_code_manager_runtime import CM_MOD, FULL, DummySecurity
 
 
@@ -142,3 +147,138 @@ def test_lsp_semantic_audit_returns_structured_summary(monkeypatch, tmp_path):
     assert audit["risk"] == "yüksek"
     assert audit["counts"] == {1: 1}
     assert audit["issues"][0]["path"].endswith("diag.py")
+
+
+def test_decode_lsp_stream_raises_protocol_error_on_truncated_body():
+    payload = b'Content-Length: 20\r\n\r\n{"jsonrpc":"2.0"}'
+
+    with pytest.raises(CM_MOD._LSPProtocolError, match="Eksik LSP mesaj gövdesi"):
+        CM_MOD._decode_lsp_stream(payload)
+
+
+def test_run_lsp_sequence_handles_timeout_and_server_failure(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "sample.py"
+    extra = tmp_path / "helper.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    extra.write_text("helper = 2\n", encoding="utf-8")
+
+    captured = {}
+
+    class _TimeoutProc:
+        returncode = None
+
+        def communicate(self, payload, timeout):
+            captured["payload"] = payload
+            captured["timeout"] = timeout
+            raise subprocess.TimeoutExpired(cmd="pyright-langserver", timeout=timeout)
+
+        def kill(self):
+            captured["killed"] = True
+
+    monkeypatch.setattr(CM_MOD.subprocess, "Popen", lambda *args, **kwargs: _TimeoutProc())
+
+    with pytest.raises(RuntimeError, match="zaman aşımına uğradı"):
+        manager._run_lsp_sequence(
+            primary_path=target,
+            request_method="textDocument/definition",
+            request_params=manager._position_params(target, 0, 0),
+            extra_open_files=[extra, extra, tmp_path / "missing.py"],
+        )
+
+    assert captured["timeout"] == manager.lsp_timeout_seconds
+    decoded_messages = CM_MOD._decode_lsp_stream(captured["payload"])
+    did_open_uris = [
+        item["params"]["textDocument"]["uri"]
+        for item in decoded_messages
+        if item.get("method") == "textDocument/didOpen"
+    ]
+    assert did_open_uris == [CM_MOD._path_to_file_uri(target), CM_MOD._path_to_file_uri(extra)]
+    assert captured["killed"] is True
+
+    class _FailingProc:
+        returncode = 9
+
+        def communicate(self, payload, timeout):
+            return b"", b"language server crashed"
+
+    monkeypatch.setattr(CM_MOD.subprocess, "Popen", lambda *args, **kwargs: _FailingProc())
+
+    with pytest.raises(RuntimeError, match="language server crashed"):
+        manager._run_lsp_sequence(primary_path=target, request_method=None)
+
+
+def test_run_lsp_sequence_propagates_protocol_error_from_stdout(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "sample.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+
+    class _Proc:
+        returncode = 0
+
+        def communicate(self, payload, timeout):
+            return b'Content-Length: 25\r\n\r\n{"jsonrpc":"2.0","id":2}', b""
+
+    monkeypatch.setattr(CM_MOD.subprocess, "Popen", lambda *args, **kwargs: _Proc())
+
+    with pytest.raises(CM_MOD._LSPProtocolError, match="Eksik LSP mesaj gövdesi"):
+        manager._run_lsp_sequence(primary_path=target, request_method="textDocument/definition")
+
+
+def test_lsp_find_references_reports_protocol_errors(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "sample.py"
+    target.write_text("value = 1\nprint(value)\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_kwargs: (_ for _ in ()).throw(CM_MOD._LSPProtocolError("broken stream")),
+    )
+
+    ok, output = manager.lsp_find_references(str(target), 1, 6)
+
+    assert ok is False
+    assert "broken stream" in output
+
+
+def test_apply_workspace_edit_rejects_when_security_cannot_write(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "rename_me.py"
+    target.write_text("old_name = 1\n", encoding="utf-8")
+    manager.security._can_write = False
+
+    ok, output = manager._apply_workspace_edit(
+        {
+            "changes": {
+                CM_MOD._path_to_file_uri(target): [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 8},
+                        },
+                        "newText": "new_name",
+                    }
+                ]
+            }
+        }
+    )
+
+    assert ok is False
+    assert "LSP rename yazma yetkisi yok" in output
+
+
+def test_summarize_lsp_diagnostic_entries_covers_warning_info_and_clean_states():
+    warning = CM_MOD.CodeManager._summarize_lsp_diagnostic_entries([{"severity": 2}, {"severity": "oops"}])
+    assert warning["status"] == "issues-found"
+    assert warning["risk"] == "orta"
+    assert warning["decision"] == "APPROVE"
+    assert warning["counts"] == {2: 1, 0: 1}
+
+    info_only = CM_MOD.CodeManager._summarize_lsp_diagnostic_entries([{"severity": 3}, {"severity": 4}])
+    assert info_only["status"] == "info-only"
+    assert info_only["risk"] == "düşük"
+
+    clean = CM_MOD.CodeManager._summarize_lsp_diagnostic_entries([])
+    assert clean["status"] == "clean"
+    assert clean["summary"] == "LSP diagnostics temiz."
