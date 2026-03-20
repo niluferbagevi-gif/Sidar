@@ -1000,9 +1000,7 @@ class CodeManager:
             raise ValueError(f"LSP desteklenmeyen dil: {language_id}")
 
         binary_path = shutil.which(binary)
-        if not binary_path:
-            raise FileNotFoundError(f"LSP binary bulunamadı: {binary}")
-        return [binary_path, *args]
+        return [binary_path or binary, *args]
 
     def _normalize_lsp_path(self, path: str) -> Path:
         target = Path(path)
@@ -1095,13 +1093,16 @@ class CodeManager:
         messages.append({"jsonrpc": "2.0", "method": "exit", "params": {}})
 
         payload = b"".join(_encode_lsp_message(msg) for msg in messages)
-        proc = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(workspace_root),
-        )
+        try:
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(workspace_root),
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"LSP binary bulunamadı: {command[0]}") from exc
         try:
             stdout, stderr = proc.communicate(payload, timeout=self.lsp_timeout_seconds)
         except subprocess.TimeoutExpired as exc:
