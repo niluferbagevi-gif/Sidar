@@ -18,7 +18,7 @@ import sys
 import tempfile
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath, PosixPath
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
@@ -41,14 +41,18 @@ def _path_to_file_uri(path: Path) -> str:
     return f"file://{quote(str(resolved).replace(os.sep, '/'))}"
 
 
-def _file_uri_to_path(uri: str) -> Path:
+def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
     parsed = urlparse(uri)
     if parsed.scheme != "file":
         raise ValueError(f"Desteklenmeyen URI şeması: {uri}")
     raw_path = unquote(parsed.path)
     if os.name == "nt" and raw_path.startswith("/"):
         raw_path = raw_path[1:]
-    return Path(raw_path)
+    if os.name == "nt":
+        drive_path = re.match(r"^[A-Za-z]:[\\/]", raw_path)
+        if drive_path and sys.platform != "win32":
+            return PureWindowsPath(raw_path)
+    return Path(raw_path) if os.name == "nt" else PosixPath(raw_path)
 
 
 def _encode_lsp_message(payload: Dict[str, Any]) -> bytes:
