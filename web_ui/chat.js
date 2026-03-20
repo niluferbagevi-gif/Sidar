@@ -28,6 +28,168 @@ function showUiNotice(message, level = 'warn') {
   }, 4200);
 }
 
+const VOICE_STATE_LABELS = {
+  idle: 'Bekleniyor',
+  ready: 'Hazır',
+  chunk: 'Dinleniyor',
+  speech_start: 'Konuşma algılandı',
+  speech_end: 'Konuşma bitti',
+  processed: 'İşlendi',
+  cancelled: 'İptal edildi',
+  unknown: 'Bilinmeyen durum',
+};
+
+function getVoiceLiveDefaults() {
+  return {
+    lastTranscript: '',
+    lastState: 'idle',
+    summary: 'Ses websocket tanılama verisi bekleniyor.',
+    diagnostics: 'Henüz ek tanı verisi yok.',
+    badgeClass: 'idle',
+    badgeLabel: 'Bekleniyor',
+    log: [],
+  };
+}
+
+function getVoiceBadgeMeta(stateKey, payload = {}) {
+  const normalized = String(stateKey || 'idle').trim().toLowerCase() || 'idle';
+  if (payload.error) return { badgeClass: 'error', badgeLabel: 'Hata' };
+  if (payload.voice_interruption || normalized === 'cancelled') return { badgeClass: 'error', badgeLabel: 'Kesildi' };
+  if (normalized === 'processed' || payload.assistant_turn === 'completed' || payload.done) {
+    return { badgeClass: 'complete', badgeLabel: 'Tamamlandı' };
+  }
+  if (payload.transcript || payload.assistant_turn === 'started') {
+    return { badgeClass: 'processing', badgeLabel: 'İşleniyor' };
+  }
+  if (normalized === 'ready' || normalized === 'chunk' || normalized === 'speech_start' || normalized === 'speech_end') {
+    return { badgeClass: 'listening', badgeLabel: 'Canlı' };
+  }
+  return { badgeClass: 'idle', badgeLabel: VOICE_STATE_LABELS[normalized] || 'Bekleniyor' };
+}
+
+function buildVoiceDiagnosticsText(payload = {}) {
+  const parts = [];
+  if (payload.buffered_bytes !== undefined) parts.push(`buffer ${payload.buffered_bytes} B`);
+  if (payload.sequence !== undefined) parts.push(`seq ${payload.sequence}`);
+  if (payload.audio_sequence !== undefined) parts.push(`audio #${payload.audio_sequence}`);
+  if (payload.assistant_turn_id !== undefined) parts.push(`tur ${payload.assistant_turn_id}`);
+  if (payload.provider) parts.push(`sağlayıcı ${payload.provider}`);
+  if (payload.language) parts.push(`dil ${payload.language}`);
+  if (payload.audio_mime_type) parts.push(payload.audio_mime_type);
+  if (payload.last_interrupt_reason) parts.push(`kesinti ${payload.last_interrupt_reason}`);
+  if (payload.cancelled_audio_sequences !== undefined) parts.push(`iptal ses ${payload.cancelled_audio_sequences}`);
+  if (payload.auto_commit_ready !== undefined) parts.push(payload.auto_commit_ready ? 'otomatik commit hazır' : 'otomatik commit bekliyor');
+  if (payload.interrupt_ready !== undefined) parts.push(payload.interrupt_ready ? 'barge-in hazır' : 'barge-in pasif');
+  if (payload.error) parts.push(`hata ${payload.error}`);
+  return parts.length ? parts.join(' · ') : 'Henüz ek tanı verisi yok.';
+}
+
+function appendVoiceLog(log, label, value) {
+  const next = Array.isArray(log) ? [...log] : [];
+  next.unshift({ label, value });
+  return next.slice(0, 8);
+}
+
+function renderVoiceLivePanel(snapshot = null) {
+  const state = snapshot || _getState('voiceLive', getVoiceLiveDefaults());
+  const transcriptEl = _getEl('voice-live-transcript');
+  const stateEl = _getEl('voice-live-state');
+  const diagnosticsEl = _getEl('voice-live-diagnostics');
+  const summaryEl = _getEl('voice-live-summary');
+  const badgeEl = _getEl('voice-live-badge');
+  const logEl = _getEl('voice-live-log');
+
+  if (transcriptEl) transcriptEl.textContent = state.lastTranscript || 'Henüz transcript alınmadı.';
+  if (stateEl) stateEl.textContent = state.lastStateLabel || VOICE_STATE_LABELS[state.lastState] || 'Bekleniyor';
+  if (diagnosticsEl) diagnosticsEl.textContent = state.diagnostics || 'Henüz ek tanı verisi yok.';
+  if (summaryEl) summaryEl.textContent = state.summary || 'Ses websocket tanılama verisi bekleniyor.';
+  if (badgeEl) {
+    badgeEl.className = `voice-live-badge ${state.badgeClass || 'idle'}`;
+    badgeEl.textContent = state.badgeLabel || 'Bekleniyor';
+  }
+  if (logEl) {
+    logEl.innerHTML = (state.log || []).map((item) => `
+      <span class="voice-live-log-item"><strong>${escHtml(item.label)}</strong><span>${escHtml(item.value)}</span></span>
+    `).join('');
+  }
+}
+
+function handleVoiceWsEvent(payload = {}) {
+  if (!payload || typeof payload !== 'object') return false;
+  const looksLikeVoiceEvent = Boolean(
+    payload.transcript !== undefined
+    || payload.voice_state
+    || payload.voice_interruption
+    || payload.buffered_bytes !== undefined
+    || payload.audio_chunk
+    || payload.audio_text
+    || payload.assistant_turn
+  );
+  if (!looksLikeVoiceEvent) return false;
+
+  const prev = _getState('voiceLive', getVoiceLiveDefaults());
+  const next = { ...getVoiceLiveDefaults(), ...prev, log: Array.isArray(prev.log) ? [...prev.log] : [] };
+  const stateKey = String(payload.voice_state || prev.lastState || 'idle').trim().toLowerCase() || 'idle';
+  const badgeMeta = getVoiceBadgeMeta(stateKey, payload);
+
+  next.lastState = stateKey;
+  next.lastStateLabel = VOICE_STATE_LABELS[stateKey] || stateKey.replace(/_/g, ' ');
+  next.badgeClass = badgeMeta.badgeClass;
+  next.badgeLabel = badgeMeta.badgeLabel;
+  next.diagnostics = buildVoiceDiagnosticsText(payload);
+
+  if (payload.transcript) {
+    next.lastTranscript = String(payload.transcript || '').trim();
+    next.summary = 'Transcript alındı ve yanıt akışı başlatıldı.';
+    next.log = appendVoiceLog(next.log, 'Transcript', next.lastTranscript);
+  }
+  if (payload.voice_state) {
+    next.summary = `Voice state: ${VOICE_STATE_LABELS[stateKey] || stateKey}`;
+    next.log = appendVoiceLog(next.log, 'Durum', VOICE_STATE_LABELS[stateKey] || stateKey);
+  }
+  if (payload.buffered_bytes !== undefined) {
+    next.summary = `Ses buffer güncellendi (${payload.buffered_bytes} B).`;
+    next.log = appendVoiceLog(next.log, 'Buffer', `${payload.buffered_bytes} B`);
+  }
+  if (payload.assistant_turn === 'started') {
+    next.summary = `Asistan yanıtı hazırlanıyor (tur ${payload.assistant_turn_id || 0}).`;
+    next.log = appendVoiceLog(next.log, 'Asistan', `Tur ${payload.assistant_turn_id || 0} başladı`);
+  }
+  if (payload.assistant_turn === 'completed') {
+    next.summary = `Asistan yanıtı tamamlandı (tur ${payload.assistant_turn_id || 0}).`;
+    next.log = appendVoiceLog(next.log, 'Asistan', `Tur ${payload.assistant_turn_id || 0} tamamlandı`);
+  }
+  if (payload.audio_text) {
+    next.summary = 'Sesli yanıt segmenti üretildi.';
+    next.log = appendVoiceLog(next.log, 'Ses çıkışı', String(payload.audio_text || '').trim());
+  }
+  if (payload.voice_interruption) {
+    next.summary = `Voice akışı kesildi: ${payload.voice_interruption}`;
+    next.log = appendVoiceLog(next.log, 'Kesinti', String(payload.voice_interruption || 'bilinmiyor'));
+  }
+  if (payload.error) {
+    next.summary = `Voice hata: ${payload.error}`;
+    next.log = appendVoiceLog(next.log, 'Hata', String(payload.error || 'Bilinmeyen hata'));
+  }
+  if (payload.done && !payload.error && !payload.voice_interruption) {
+    next.summary = 'Voice turu tamamlandı.';
+    next.log = appendVoiceLog(next.log, 'Tur', 'Tamamlandı');
+  }
+
+  _setState('voiceLive', next);
+  renderVoiceLivePanel(next);
+  return true;
+}
+
+function resetVoiceLivePanel() {
+  const next = getVoiceLiveDefaults();
+  _setState('voiceLive', next);
+  renderVoiceLivePanel(next);
+}
+
+window.handleVoiceWsEvent = handleVoiceWsEvent;
+window.resetVoiceLivePanel = resetVoiceLivePanel;
+
 function handleExpiredSession(message = 'Oturumunuz sonlandı, lütfen tekrar giriş yapın.') {
   if (typeof clearAuthState === 'function') {
     clearAuthState();
@@ -115,6 +277,8 @@ function connectWebSocket() {
     if (data.auth_ok) {
       return;
     }
+
+    handleVoiceWsEvent(data);
 
     if (!currentStream) return;
 
@@ -709,3 +873,4 @@ window.addEventListener('load', () => {
 window.connectWebSocket = connectWebSocket;
 window.startTodoPoll = startTodoPoll;
 window.fetchTodo = fetchTodo;
+renderVoiceLivePanel();

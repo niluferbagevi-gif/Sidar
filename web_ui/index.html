@@ -206,6 +206,31 @@
               <a class="pr-view-btn" id="pr-view-btn" href="#" target="_blank" style="display:none">View PR</a>
             </div>
 
+            <div class="voice-live-panel" id="voice-live-panel" aria-live="polite">
+              <div class="voice-live-header">
+                <div>
+                  <div class="voice-live-title">Canlı Ses Tanı ve Durum</div>
+                  <div class="voice-live-subtitle" id="voice-live-summary">Ses websocket tanılama verisi bekleniyor.</div>
+                </div>
+                <span class="voice-live-badge idle" id="voice-live-badge">Bekleniyor</span>
+              </div>
+              <div class="voice-live-grid">
+                <div class="voice-live-card">
+                  <div class="voice-live-label">Transcript</div>
+                  <div class="voice-live-value voice-live-transcript" id="voice-live-transcript">Henüz transcript alınmadı.</div>
+                </div>
+                <div class="voice-live-card">
+                  <div class="voice-live-label">Son durum</div>
+                  <div class="voice-live-value" id="voice-live-state">Bekleniyor</div>
+                </div>
+                <div class="voice-live-card">
+                  <div class="voice-live-label">Tanı özeti</div>
+                  <div class="voice-live-value" id="voice-live-diagnostics">Henüz ek tanı verisi yok.</div>
+                </div>
+              </div>
+              <div class="voice-live-log" id="voice-live-log"></div>
+            </div>
+
             <div id="attached-file-preview"></div>
             <div class="chat-input-box">
               <label class="attach-label" title="Dosya ekle (metin/kod)">
