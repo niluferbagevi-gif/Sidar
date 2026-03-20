@@ -73,3 +73,18 @@ def test_web_ui_handles_auth_expiry_websocket_disconnect_gracefully():
     assert "Oturumunuz sonlandı, lütfen tekrar giriş yapın." in js
     assert "wsCode === 1008" in js
     assert "if (!authClosed)" in js
+
+def test_web_ui_renders_voice_live_panel_and_diagnostics_hooks():
+    html = Path("web_ui/index.html").read_text(encoding="utf-8")
+    js = Path("web_ui/chat.js").read_text(encoding="utf-8")
+    css = Path("web_ui/style.css").read_text(encoding="utf-8")
+    app_js = Path("web_ui/app.js").read_text(encoding="utf-8")
+
+    assert 'id="voice-live-panel"' in html
+    assert 'id="voice-live-transcript"' in html
+    assert 'id="voice-live-diagnostics"' in html
+    assert 'function handleVoiceWsEvent(payload = {})' in js
+    assert 'window.handleVoiceWsEvent = handleVoiceWsEvent' in js
+    assert 'handleVoiceWsEvent(data);' in js
+    assert '.voice-live-panel {' in css
+    assert 'voiceLive:' in app_js

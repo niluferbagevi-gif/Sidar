@@ -19,6 +19,15 @@ window.UIStore = window.UIStore || { state: {}, domCache: new Map() };
     allSessions:         [],
     cachedRepos:         null,
     cachedBranches:      null,
+    voiceLive:           {
+      lastTranscript: '',
+      lastState: 'idle',
+      summary: 'Ses websocket tanılama verisi bekleniyor.',
+      diagnostics: 'Henüz ek tanı verisi yok.',
+      badgeClass: 'idle',
+      badgeLabel: 'Bekleniyor',
+      log: [],
+    },
   };
   const s = window.UIStore.state;
   for (const [k, v] of Object.entries(defaults)) {
