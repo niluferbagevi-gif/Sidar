@@ -305,6 +305,34 @@ class TestVisionPipelineFromFile:
         assert result["success"] is True
         assert "analysis" in result
 
+    def test_analyze_file_not_found_returns_error(self, tmp_path):
+        vp = _make_pipeline()
+        result = _run(vp.analyze(image_path=str(tmp_path / "ghost.png")))
+        assert result["success"] is False
+        assert "Görsel bulunamadı" in result["reason"]
+
+
+class TestVisionPipelineAnalyzeErrors:
+    def test_analyze_unsupported_mime_returns_error(self):
+        vp = _make_pipeline()
+        result = _run(vp.analyze(image_bytes=b"\x00" * 10, mime_type="image/bmp"))
+        assert result["success"] is False
+        assert "Desteklenmeyen" in result["reason"]
+
+    def test_analyze_llm_exception_returns_error(self):
+        cfg = MagicMock()
+        cfg.ENABLE_VISION = True
+        cfg.VISION_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+        llm = MagicMock()
+        llm.provider = "openai"
+        llm.chat = AsyncMock(side_effect=RuntimeError("analysis failed"))
+        vp = VisionPipeline(llm_client=llm, config=cfg)
+
+        result = _run(vp.analyze(image_bytes=_tiny_png_bytes(), mime_type="image/png"))
+
+        assert result["success"] is False
+        assert result["reason"] == "analysis failed"
+
 
 class TestVisionPipelineLLMError:
     def test_mockup_llm_exception_returns_error(self):
