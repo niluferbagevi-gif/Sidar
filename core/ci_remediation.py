@@ -330,10 +330,87 @@ def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]
     }
 
 
+
+
+def _extract_validation_commands(context: Dict[str, Any], diagnosis: str) -> list[str]:
+    commands: list[str] = []
+    for source in (context.get("failure_summary"), context.get("log_excerpt"), diagnosis):
+        for line in str(source or "").splitlines():
+            normalized = line.strip().strip("`")
+            if not normalized:
+                continue
+            if re.match(
+                r"^(pytest(?:\s+(?:-|tests?/|\.))|python -m pytest(?:\s+(?:-|tests?/|\.))|bash run_tests\.sh(?:\s|$))",
+                normalized,
+            ) and normalized not in commands:
+                commands.append(normalized)
+    suspected_targets = list(context.get("suspected_targets") or [])
+    targeted_tests = [path for path in suspected_targets if str(path).startswith("tests/")]
+    if targeted_tests:
+        commands.append("pytest -q " + " ".join(targeted_tests[:6]))
+    commands.append("python -m pytest")
+    return list(dict.fromkeys(cmd for cmd in commands if cmd))[:5]
+
+
+def build_remediation_loop(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
+    info = dict(context or {})
+    diagnosis_text = str(diagnosis or "").strip()
+    suspected_targets = [str(item).strip() for item in list(info.get("suspected_targets") or []) if str(item).strip()]
+    failed_jobs = [str(item).strip() for item in list(info.get("failed_jobs") or []) if str(item).strip()]
+    root_cause = build_root_cause_summary(info, diagnosis_text)
+    validation_commands = _extract_validation_commands(info, diagnosis_text)
+    high_risk_keywords = ("syntaxerror", "modulenotfounderror", "importerror", "timeout", "typeerror", "valueerror")
+    combined_text = "\n".join(
+        filter(None, [diagnosis_text, root_cause, info.get("failure_summary", ""), info.get("log_excerpt", "")])
+    ).lower()
+    needs_human_approval = any(keyword in combined_text for keyword in high_risk_keywords) or len(suspected_targets) > 3
+    mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
+    status = "planned" if (diagnosis_text or suspected_targets) else "needs_diagnosis"
+    return {
+        "status": status,
+        "mode": mode,
+        "needs_human_approval": needs_human_approval,
+        "max_auto_attempts": 1 if needs_human_approval else 2,
+        "scope_paths": suspected_targets[:12],
+        "failed_jobs": failed_jobs[:6],
+        "validation_commands": validation_commands,
+        "steps": [
+            {
+                "name": "diagnose",
+                "status": "completed" if diagnosis_text else "pending",
+                "detail": root_cause,
+            },
+            {
+                "name": "patch",
+                "status": "pending" if suspected_targets else "blocked",
+                "detail": "Şüpheli dosyalar için minimal ve kontrollü patch hazırlanacak.",
+            },
+            {
+                "name": "validate",
+                "status": "pending" if validation_commands else "blocked",
+                "detail": "Hedefli testler ve tam regresyon komutları çalıştırılacak.",
+            },
+            {
+                "name": "handoff",
+                "status": "pending",
+                "detail": (
+                    "Riskli remediation önce HITL onayına gidecek."
+                    if needs_human_approval
+                    else "Doğrulama sonrası PR/proposal güncellenecek."
+                ),
+            },
+        ],
+        "summary": (
+            f"Remediation loop hazır: mod={mode}, hedef={len(suspected_targets[:12])} dosya, "
+            f"doğrulama={len(validation_commands)} komut, failed_jobs={len(failed_jobs[:6])}."
+        ),
+    }
+
 def build_ci_remediation_payload(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
     info = dict(context or {})
     pr_proposal = build_pr_proposal(info, diagnosis)
     root_cause = pr_proposal.get("root_cause_summary") or build_root_cause_summary(info, diagnosis)
+    remediation_loop = build_remediation_loop(info, diagnosis)
     return {
         "context": info,
         "prompt": build_ci_failure_prompt(info),
@@ -341,5 +418,6 @@ def build_ci_remediation_payload(context: Dict[str, Any], diagnosis: str) -> Dic
         "diagnostic_hints": list(info.get("diagnostic_hints") or []),
         "failed_jobs": list(info.get("failed_jobs") or []),
         "root_cause_summary": str(root_cause or ""),
+        "remediation_loop": remediation_loop,
         "pr_proposal": pr_proposal,
     }
