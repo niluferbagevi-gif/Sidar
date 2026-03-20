@@ -6,14 +6,14 @@
 > _(Ana rapor yalnızca aktif durum özeti ve stratejik kurumsal görünüm için referans noktasıdır.)_
 > ---
 
-> **Rapor Tarihi:** 2026-03-14
-> **Son Güncelleme:** 2026-03-19 (v5.0.0-alpha — SİDAR, otonom operasyon merkezi hedefine ulaşmak için başlattığı **v5.0.0-alpha (Faz 6)** geçişini büyük oranda tamamlamıştır. Sisteme Çoklu Algı (Multimodal Perception) yetenekleri kazandırılmış, sesli girdi kabul eden `/ws/voice` WebSocket rotaları ile `core/voice.py` tabanlı TTS/segmentasyon omurgası eklenmiş ve tarayıcı otomasyon altyapısı `managers/browser_manager.py` üzerinden HITL-korumalı hale getirilmiştir. En önemlisi, Proaktif Otonomi (cron tabanlı kendi kendine uyanma) ve LSP (Language Server Protocol) tabanlı anlamsal kod denetimi yetenekleri Reviewer ajana entegre edilmiştir. `main.py`, etkileşimli bir terminal arayüzü ve preflight doğrulama katmanı ile sistemin giriş kapısı olarak zenginleştirilmiştir. `scripts/collect_repo_metrics.sh` ile yenilenen takipli ölçümler: üretim Python **24.560** satır (**62** dosya), test havuzu **41.029** satır (**159** Python test dosyası), toplam takipli Python **65.589** satır (**223** dosya) ve takipli Markdown havuzu **8.260** satır (**97** dosya).)
+> **Rapor Tarihi:** 2026-03-20
+> **Son Güncelleme:** 2026-03-20 (v5.0.0-alpha — SİDAR, **v5.0.0-alpha (Faz 6)** geçişi kapsamında reaktif asistandan proaktif AI Co-Worker mimarisine yaklaşan güncel yetenek setini dokümantasyonla senkronize etmiştir. Ultimate Launcher (`main.py`) ön kontroller, zengin terminal UX'i ve thread tabanlı log akışıyla giriş kapısı haline gelmiş; Reviewer ajanı Pyright + TypeScript Language Server Protocol entegrasyonu sayesinde `lsp_diagnostics` tabanlı anlamsal kalite denetimi yapabilir duruma gelmiştir. `core/multimodal.py`, `core/voice.py` ve `/ws/voice` hattı WebSocket tabanlı gerçek zamanlı sesli asistan omurgasını; `managers/browser_manager.py` ise Playwright öncelikli HITL-korumalı dinamik tarayıcı otomasyonunu ürünleşmiş yetenekler olarak sunmaktadır. Ayrıca `_autonomous_cron_loop` ve webhook tetikleyicileri ile dış olaylar gelmeden kendi kendine uyanan proaktif otonomi omurgası belgeye eklenmiştir. `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile 2026-03-20 tarihinde yenilenen takipli ölçümler: üretim Python **24.855** satır (**62** dosya), test havuzu **41.426** satır (**159** Python test dosyası), toplam takipli Python **66.281** satır (**223** dosya), takipli Markdown havuzu **8.264** satır (**97** dosya) ve tüm ölçülen takipli havuz **80.077** satır (**337** dosya).)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** 5.0.0-alpha
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **24.560** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **41.029** satır (**159** Python test dosyası) ve tüm takipli Python toplamı **65.589** satırdır. Aynı ölçümde takipli Markdown havuzu **8.260** satır (**97** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`), tarayıcı otomasyon katmanı (`managers/browser_manager.py`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i, ses/TTS akışı ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **24.855** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **41.426** satır (**159** Python test dosyası) ve tüm takipli Python toplamı **66.281** satırdır. Aynı ölçümde takipli Markdown havuzu **8.264** satır (**97** dosya), `scripts/audit_metrics.sh` toplamında ise takipli ölçüm yüzeyi **80.077** satır (**337** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`), tarayıcı otomasyon katmanı (`managers/browser_manager.py`), LSP destekli kod denetim akışı ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i, ses/TTS akışı, proaktif otonomi ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
 
 ---
 
@@ -63,6 +63,7 @@
   - [10.2 Bellek Yazma Yolu (Ortak Bellek Havuzu)](#102-bellek-yazma-yolu-ortak-bellek-havuzu)
   - [10.3 RAG Belge Ekleme Yolu (Ortak Erişim)](#103-rag-belge-ekleme-yolu-ortak-erişim)
   - [10.4 Kurumsal v3.0 Uçtan Uca Veri Hattı (5 Faz)](#104-kurumsal-v30-uçtan-uca-veri-hattı-5-faz)
+  - [10.5 Proaktif Otonomi: Cron Wake + Webhook Tepki Döngüsü](#105-proaktif-otonomi-cron-wake--webhook-tepki-döngüsü)
 - [11. Mevcut Sorunlar ve Teknik Borç](#11-mevcut-sorunlar-ve-teknik-borç)
   - [11.1 Durum Özeti Paneli](#111-durum-özeti-paneli)
   - [11.2 Arşiv ve Yönlendirme](#112-arşiv-ve-yönlendirme)
@@ -697,9 +698,9 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, `v4.3.0` senkronizasyon turunda takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
+Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Hacimsel özet (yönetici görünümü):** Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
+**Hacimsel özet (yönetici görünümü):** 2026-03-20 ölçümünde takipli depo yüzeyi **337 dosya / 80.077 satır** seviyesindedir. Python tarafında üretim kodu **24.855 satır / 62 dosya**, test havuzu **41.426 satır / 159 dosya**, toplam Python hacmi ise **66.281 satır / 223 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **8.264 satır / 97 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
 
 - **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
@@ -1031,6 +1032,46 @@ docs_add / docs_add_file
    - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db.py` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
 
 > **Not:** Bu 6 adımın tamamı boyunca OpenTelemetry ve metrik toplayıcıları (`core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`) arka planda span, maliyet, gecikme ve cache davranışını Jaeger / OTLP / Prometheus yüzeylerine aktarır.
+
+### 10.5 Proaktif Otonomi: Cron Wake + Webhook Tepki Döngüsü
+
+```
+[Zamanlayıcı / Dış Olay]
+    │
+    ├─► ENABLE_AUTONOMOUS_CRON=true
+    │      └─► _autonomous_cron_loop periyodik uyanır
+    │
+    └─► /api/autonomy/webhook/{source}
+           └─► CI/CD, log, alert veya harici sistem olayı gelir
+                ▼
+[Doğrulama + Güvenlik]
+    │ webhook secret / allowlist / rate limit
+    ▼
+[Otonomi Girdi Normalizasyonu]
+    │ olay türü, payload özeti, önem derecesi, tenant bağı çıkarılır
+    ▼
+[SidarAgent Wake-Up]
+    │ sistem promptu + otonom görev şablonu ile yeni iş başlatılır
+    ├─► CI log analizi
+    ├─► hata kök neden araştırması
+    ├─► reviewer/coder/researcher swarm delegasyonu
+    └─► gerekirse browser / GitHub / RAG araçları çağrılır
+    ▼
+[HITL / Audit / Bildirim]
+    │ yüksek riskli aksiyonlarda insan onayı beklenir
+    ├─► audit trail + telemetry kaydı
+    └─► PR taslağı, özet rapor veya iyileştirme önerisi üretilir
+    ▼
+[Kurumsal Tepki Çıkışı]
+    ├─► kullanıcıya / dashboard'a bildirim
+    ├─► issue / PR / yorum oluşturma
+    └─► sonraki cron döngüsü için bağlamın belleğe yazılması
+```
+
+- **Cron tabanlı proaktif uyanma:** `ENABLE_AUTONOMOUS_CRON` açıkken sistem belirli aralıklarla kendi kendine uyanır, CI/CD kırıkları, log anomalileri veya bekleyen görev sinyallerini dış istem olmadan tarar.
+- **Webhook tabanlı anlık tepki:** `/api/autonomy/webhook/{source}` rotası, dış kaynaklardan gelen olayları doğrulayıp otonom görev başlatma zarfına dönüştürür.
+- **Swarm + güvenlik birleşimi:** Otonom başlatılan işlerde de aynı DLP, HITL, audit trail ve telemetry katmanları korunur; yani proaktiflik güvenlikten ödün vermez.
+- **Kurumsal denetim izi:** Her kendi kendine uyanma döngüsü, kaynak olay, alınan karar ve üretilen çıktı bakımından izlenebilir olacak şekilde tasarlanmıştır.
 
 ---
 
