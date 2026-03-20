@@ -74,6 +74,8 @@ class SwarmResult:
     summary: str
     elapsed_ms: int
     evidence: List[str] = field(default_factory=list)
+    handoffs: List[Dict[str, str]] = field(default_factory=list)
+    graph: Dict[str, str] = field(default_factory=dict)
 
 
 class TaskRouter:
@@ -224,6 +226,7 @@ class SwarmOrchestrator:
         session_id: str,
         hop: int,
         route_trace: List[str],
+        handoff_chain: List[Dict[str, str]],
     ) -> SwarmResult:
         target_role = (delegation.target_agent or "").strip()
         if not target_role:
@@ -249,6 +252,18 @@ class SwarmOrchestrator:
             target_role,
             hop,
         )
+        next_handoff_chain = [
+            *handoff_chain,
+            {
+                "task_id": task.task_id,
+                "sender": str(delegation.reply_to or ""),
+                "receiver": str(target_role or ""),
+                "reason": str((delegation.meta or {}).get("reason", "") or ""),
+                "intent": str(getattr(delegation, "intent", "") or task.intent),
+                "handoff_depth": str(int(getattr(delegation, "handoff_depth", 0) or 0)),
+                "swarm_hop": str(hop),
+            },
+        ]
         return await self._execute_task(
             delegated_task,
             session_id=session_id,
@@ -256,6 +271,7 @@ class SwarmOrchestrator:
             _route_trace=route_trace,
             _sender=delegation.reply_to,
             _parent_task_id=delegation.parent_task_id or task.task_id,
+            _handoff_chain=next_handoff_chain,
         )
 
     # ── Tek görev ────────────────────────────────────────────────────────
@@ -322,6 +338,7 @@ class SwarmOrchestrator:
         _route_trace: Optional[List[str]] = None,
         _sender: str = "swarm_orchestrator",
         _parent_task_id: Optional[str] = None,
+        _handoff_chain: Optional[List[Dict[str, str]]] = None,
     ) -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
         started_at = time.monotonic()
@@ -329,6 +346,7 @@ class SwarmOrchestrator:
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
         max_hops = max(1, int(getattr(self.cfg, "SWARM_MAX_HANDOFF_HOPS", 4) or 4))
         route_trace = list(_route_trace or [])
+        handoff_chain = list(_handoff_chain or [])
 
         if _hop > max_hops:
             return SwarmResult(
@@ -340,6 +358,7 @@ class SwarmOrchestrator:
                     f"maksimum devir sayısı aşıldı (hop={_hop}, limit={max_hops})."
                 ),
                 elapsed_ms=int((time.monotonic() - started_at) * 1000),
+                handoffs=handoff_chain,
             )
 
         # Ajan seçimi
@@ -357,6 +376,7 @@ class SwarmOrchestrator:
                 status="skipped",
                 summary="Uygun ajan bulunamadı.",
                 elapsed_ms=0,
+                handoffs=handoff_chain,
             )
 
         fingerprint = self._goal_fingerprint(task.goal)
@@ -378,6 +398,7 @@ class SwarmOrchestrator:
                     f"(count={step_count + 1})."
                 ),
                 elapsed_ms=int((time.monotonic() - started_at) * 1000),
+                handoffs=handoff_chain,
             )
 
         next_trace = route_trace + [current_step]
@@ -393,6 +414,7 @@ class SwarmOrchestrator:
                 status="failed",
                 summary=f"Ajan oluşturulamadı: {exc}",
                 elapsed_ms=0,
+                handoffs=handoff_chain,
             )
 
         # Görev zarfı oluştur
@@ -450,6 +472,7 @@ class SwarmOrchestrator:
                     session_id=session_id,
                     hop=_hop + 1,
                     route_trace=next_trace,
+                    handoff_chain=handoff_chain,
                 )
 
             elapsed = int((time.monotonic() - started_at) * 1000)
@@ -478,6 +501,19 @@ class SwarmOrchestrator:
                 summary=str(result.summary),
                 elapsed_ms=elapsed,
                 evidence=result.evidence,
+                handoffs=handoff_chain,
+                graph={
+                    "sender": str(envelope.sender or ""),
+                    "receiver": str(envelope.receiver or ""),
+                    "intent": str(task.intent or ""),
+                    "session_id": str(session_id or ""),
+                    "swarm_hop": str(_hop),
+                    "swarm_trace": " -> ".join(next_trace[-6:]),
+                    "p2p_sender": str(task.context.get("p2p_sender", "") or ""),
+                    "p2p_receiver": str(task.context.get("p2p_receiver", "") or ""),
+                    "p2p_reason": str(task.context.get("p2p_reason", "") or ""),
+                    "p2p_handoff_depth": str(task.context.get("p2p_handoff_depth", "") or ""),
+                },
             )
         except Exception as exc:
             elapsed = int((time.monotonic() - started_at) * 1000)
@@ -488,6 +524,7 @@ class SwarmOrchestrator:
                 status="failed",
                 summary=f"Görev başarısız: {exc}",
                 elapsed_ms=elapsed,
+                handoffs=handoff_chain,
             )
         finally:
             self._active_agents.pop(task.task_id, None)

@@ -779,6 +779,8 @@ def _serialize_swarm_result(record) -> dict:
         "summary": str(getattr(record, "summary", "") or ""),
         "elapsed_ms": int(getattr(record, "elapsed_ms", 0) or 0),
         "evidence": list(getattr(record, "evidence", []) or []),
+        "handoffs": list(getattr(record, "handoffs", []) or []),
+        "graph": dict(getattr(record, "graph", {}) or {}),
     }
 
 
