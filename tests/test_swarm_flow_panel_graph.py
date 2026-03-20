@@ -12,6 +12,11 @@ def test_swarm_flow_panel_renders_visual_decision_graph_markup():
     assert "swarm-graph__node" in src
     assert "graphData.edges.length" in src
     assert "Aktiviteyi Yenile" in src
+    assert "Live Operation Surface" in src
+    assert "Canlı Operasyon Yüzeyi" in src
+    assert "/api/hitl/pending" in src
+    assert "/api/hitl/respond/" in src
+    assert "Bu Node’u Çalıştır" in src
 
 
 def test_swarm_flow_panel_styles_define_graph_canvas_and_nodes():
