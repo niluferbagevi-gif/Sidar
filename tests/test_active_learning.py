@@ -849,3 +849,148 @@ def test_module_level_flag_weak_response_uses_singleton(monkeypatch):
 
     assert ok is True
     assert calls[0]["score"] == 5
+
+
+def test_feedback_store_get_pending_signals_handles_disabled_and_invalid_tags(tmp_path):
+    import core.active_learning as active_learning_module
+
+    disabled_cfg = MagicMock()
+    disabled_cfg.ENABLE_ACTIVE_LEARNING = False
+    disabled_cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    disabled_store = FeedbackStore(config=disabled_cfg)
+    assert _run(disabled_store.get_pending_signals()) == []
+
+    enabled_cfg = MagicMock()
+    enabled_cfg.ENABLE_ACTIVE_LEARNING = True
+    enabled_cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=enabled_cfg)
+
+    class _Row:
+        def __init__(self, mapping):
+            self._mapping = mapping
+
+    class _Result:
+        def fetchall(self):
+            return [
+                _Row({"id": 1, "prompt": "P1", "response": "R1", "tags": '["judge:auto", "weak_response"]'}),
+                _Row({"id": 2, "prompt": "P2", "response": "R2", "tags": "{broken-json"}),
+            ]
+
+    class _Conn:
+        async def execute(self, *_args, **_kwargs):
+            return _Result()
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Conn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    store._engine = types.SimpleNamespace(connect=lambda: _Ctx())
+    active_learning_module.sql_text = lambda sql: sql
+    rows = _run(store.get_pending_signals())
+
+    assert rows[0]["tags"] == ["judge:auto", "weak_response"]
+    assert rows[1]["tags"] == []
+
+
+def test_continuous_learning_pipeline_normalize_and_example_filters(tmp_path):
+    cfg = TestContinuousLearningPipeline()._cfg(tmp_path)
+    store = MagicMock()
+    store.min_rating_for_train = 1
+    pipeline = ContinuousLearningPipeline(store, config=cfg)
+
+    assert pipeline._normalize_tags('["a", "b"]') == ["a", "b"]
+    assert pipeline._normalize_tags("{bad json") == []
+
+    sft_examples = pipeline._build_sft_examples(
+        [
+            {"id": 1, "prompt": "", "response": "R1", "rating": 2, "correction": ""},
+            {"id": 2, "prompt": "P2", "response": "", "rating": 2, "correction": ""},
+            {"id": 3, "prompt": "P3", "response": "R3", "rating": 2, "correction": ""},
+        ]
+    )
+    assert sft_examples == [
+        {
+            "instruction": "P3",
+            "input": "",
+            "output": "R3",
+            "source": "response",
+            "feedback_id": 3,
+        }
+    ]
+
+    preference_examples = pipeline._build_preference_examples(
+        [
+            {"id": 10, "prompt": "P", "response": "same", "correction": "same", "rating": 1},
+            {"id": 11, "prompt": "P2", "response": "bad", "correction": "good", "rating": 0},
+        ]
+    )
+    assert preference_examples == []
+
+
+def test_continuous_learning_run_cycle_disabled_cooldown_and_insufficient_signals(tmp_path, monkeypatch):
+    disabled_cfg = TestContinuousLearningPipeline()._cfg(tmp_path, enabled=False)
+    disabled = ContinuousLearningPipeline(MagicMock(), config=disabled_cfg, trainer=MagicMock())
+    disabled_result = _run(disabled.run_cycle(reason="manual"))
+    assert disabled_result == {
+        "success": False,
+        "scheduled": False,
+        "reason": "continuous_learning_disabled",
+    }
+
+    cfg = TestContinuousLearningPipeline()._cfg(tmp_path, cooldown=60, min_sft=5, min_preference=5)
+    trainer = MagicMock()
+    trainer.enabled = False
+    pipeline = ContinuousLearningPipeline(MagicMock(), config=cfg, trainer=trainer)
+
+    pipeline._last_run_at = 100.0
+    monkeypatch.setattr("core.active_learning.time.time", lambda: 120.0)
+    cooldown_result = _run(pipeline.run_cycle(reason="cooldown"))
+    assert cooldown_result["reason"] == "cooldown_active"
+    assert cooldown_result["retry_after"] == 40
+
+    monkeypatch.setattr("core.active_learning.time.time", lambda: 500.0)
+
+    async def _bundle():
+        return {
+            "counts": {"sft_examples": 1, "preference_examples": 1},
+            "sft_path": str(tmp_path / "bundle.jsonl"),
+        }
+
+    pipeline.build_dataset_bundle = _bundle
+    insufficient = _run(pipeline.run_cycle(reason="low-signal"))
+    assert insufficient["reason"] == "insufficient_signals"
+    assert insufficient["trigger_reason"] == "low-signal"
+    assert pipeline._last_run_at == 500.0
+
+
+def test_continuous_learning_schedule_cycle_handles_missing_loop_and_cancelled_error(tmp_path, monkeypatch):
+    cfg = TestContinuousLearningPipeline()._cfg(tmp_path)
+    pipeline = ContinuousLearningPipeline(MagicMock(), config=cfg, trainer=MagicMock())
+
+    monkeypatch.setattr("core.active_learning.asyncio.get_running_loop", lambda: (_ for _ in ()).throw(RuntimeError("no loop")))
+    assert pipeline.schedule_cycle(reason="background") is False
+
+    async def _exercise_cancelled():
+        captured = {}
+
+        class _Loop:
+            def create_task(self, coro, name=None):
+                captured["coro"] = coro
+                captured["name"] = name
+                return "task"
+
+        monkeypatch.setattr("core.active_learning.asyncio.get_running_loop", lambda: _Loop())
+
+        async def _cancel(*, reason):
+            raise asyncio.CancelledError()
+
+        pipeline.run_cycle = _cancel
+        assert pipeline.schedule_cycle(reason="judge:auto_feedback") is True
+        assert captured["name"] == "sidar_continuous_learning"
+        with pytest.raises(asyncio.CancelledError):
+            await captured["coro"]
+
+    _run(_exercise_cancelled())
