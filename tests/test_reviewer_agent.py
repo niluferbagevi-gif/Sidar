@@ -7,7 +7,16 @@ from agent.roles.reviewer_agent import ReviewerAgent
 
 def test_reviewer_agent_initializes_expected_tools():
     a = ReviewerAgent()
-    assert set(a.tools.keys()) == {"repo_info", "list_prs", "pr_diff", "list_issues", "run_tests", "lsp_diagnostics", "graph_impact"}
+    assert set(a.tools.keys()) == {
+        "repo_info",
+        "list_prs",
+        "pr_diff",
+        "list_issues",
+        "run_tests",
+        "lsp_diagnostics",
+        "graph_impact",
+        "browser_signals",
+    }
     assert hasattr(a, "code")
 
 
@@ -546,3 +555,28 @@ def test_reviewer_build_remediation_loop_marks_hitl_for_indirect_breakage():
     assert "web_server.py" in loop["scope_paths"]
     assert "semantic_issues" in loop["blocked_by"]
     assert loop["validation_commands"][0] == "pytest -q tests/test_reviewer_agent.py"
+
+
+def test_reviewer_parse_review_payload_and_browser_summary():
+    payload = ReviewerAgent._parse_review_payload(
+        json.dumps(
+            {
+                "review_context": "core/db.py değişti",
+                "browser_session_id": "sess-42",
+                "browser_signals": {
+                    "status": "failed",
+                    "risk": "yüksek",
+                    "failed_actions": ["browser_click:#submit"],
+                    "summary": "Browser click başarısız.",
+                },
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    summary = ReviewerAgent._summarize_browser_signals(payload["browser_signals"])
+
+    assert payload["review_context"] == "core/db.py değişti"
+    assert payload["browser_session_id"] == "sess-42"
+    assert summary["status"] == "failed"
+    assert summary["risk"] == "yüksek"

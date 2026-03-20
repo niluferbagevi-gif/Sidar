@@ -188,6 +188,55 @@ def test_browser_manager_high_risk_actions_require_hitl_and_write_audit(monkeypa
     ]
 
 
+def test_browser_manager_collects_structured_session_signals(monkeypatch, tmp_path):
+    manager = BM_MOD.BrowserManager(_Config())
+    manager.artifact_dir = tmp_path
+
+    class _Locator:
+        def inner_html(self, timeout):
+            assert timeout == 5000
+            return "<main>browser state</main>"
+
+    class _Page:
+        def locator(self, selector):
+            assert selector == "html"
+            return _Locator()
+
+        def screenshot(self, path, full_page):
+            Path(path).write_bytes(b"png")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-signals",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/issues/1",
+    )
+    manager._sessions[session.session_id] = session
+    manager._record_audit_event(
+        session_id=session.session_id,
+        action="browser_click",
+        status="execution_failed",
+        selector="button[type='submit']",
+        current_url=session.current_url,
+    )
+
+    signal = manager.collect_session_signals(
+        session.session_id,
+        include_dom=True,
+        include_screenshot=True,
+    )
+
+    assert signal["status"] == "failed"
+    assert signal["risk"] == "yüksek"
+    assert signal["current_url"] == "https://example.com/issues/1"
+    assert signal["failed_actions"] == ["browser_click:button[type='submit']"]
+    assert signal["dom_capture"]["preview"] == "<main>browser state</main>"
+    assert Path(signal["screenshot"]["path"]).exists()
+
+
 def test_browser_manager_hitl_rejection_blocks_execution(monkeypatch):
     manager = BM_MOD.BrowserManager(_Config())
     calls = []

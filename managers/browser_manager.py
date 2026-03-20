@@ -129,6 +129,117 @@ class BrowserManager:
     def list_audit_log(self) -> list[dict[str, Any]]:
         return list(self._audit_log)
 
+    def summarize_audit_log(
+        self,
+        session_id: str | None = None,
+        *,
+        limit: int = 12,
+    ) -> dict[str, Any]:
+        """Tarayıcı audit akışını reviewer/swarm için yapılandırılmış sinyallere dönüştür."""
+        normalized_session_id = str(session_id or "").strip()
+        entries = [
+            dict(item)
+            for item in self._audit_log
+            if not normalized_session_id or str(item.get("session_id", "")).strip() == normalized_session_id
+        ]
+        recent_entries = entries[-max(1, int(limit or 12)):]
+
+        status_counts: dict[str, int] = {}
+        action_counts: dict[str, int] = {}
+        failed_actions: list[str] = []
+        pending_actions: list[str] = []
+        high_risk_actions: list[str] = []
+        urls: list[str] = []
+
+        for entry in entries:
+            status = str(entry.get("status", "") or "").strip()
+            action = str(entry.get("action", "") or "").strip()
+            selector = str(entry.get("selector", "") or "").strip()
+            url = str(entry.get("url", "") or "").strip()
+            if status:
+                status_counts[status] = status_counts.get(status, 0) + 1
+            if action:
+                action_counts[action] = action_counts.get(action, 0) + 1
+            if status in {"execution_failed", "failed", "rejected", "blocked_hitl"} and action:
+                label = f"{action}:{selector}" if selector else action
+                if label not in failed_actions:
+                    failed_actions.append(label)
+            if status == "pending_approval" and action and action not in pending_actions:
+                pending_actions.append(action)
+            if action in {"browser_click", "browser_fill_form", "browser_select_option"} and selector:
+                if self._is_high_risk_click(selector):
+                    label = f"{action}:{selector}"
+                    if label not in high_risk_actions:
+                        high_risk_actions.append(label)
+            if url and url not in urls:
+                urls.append(url)
+
+        if failed_actions:
+            risk = "yüksek"
+            status = "failed"
+        elif pending_actions or high_risk_actions:
+            risk = "orta"
+            status = "attention"
+        elif entries:
+            risk = "düşük"
+            status = "ok"
+        else:
+            risk = "düşük"
+            status = "no-signal"
+
+        summary = (
+            f"Browser sinyalleri: oturum={normalized_session_id or 'all'}, "
+            f"kayıt={len(entries)}, failed={len(failed_actions)}, pending={len(pending_actions)}, "
+            f"yüksek_risk={len(high_risk_actions)}."
+        )
+        return {
+            "session_id": normalized_session_id,
+            "status": status,
+            "risk": risk,
+            "entry_count": len(entries),
+            "status_counts": status_counts,
+            "action_counts": action_counts,
+            "failed_actions": failed_actions[:8],
+            "pending_actions": pending_actions[:8],
+            "high_risk_actions": high_risk_actions[:8],
+            "urls": urls[:8],
+            "recent_entries": recent_entries,
+            "summary": summary,
+        }
+
+    def collect_session_signals(
+        self,
+        session_id: str,
+        *,
+        include_dom: bool = False,
+        include_screenshot: bool = False,
+        dom_selector: str = "html",
+    ) -> dict[str, Any]:
+        """Reviewer ve swarm için oturumdan türetilmiş browser sinyali paketi üret."""
+        session = self._require_session(session_id)
+        signal = self.summarize_audit_log(session_id)
+        signal.update(
+            {
+                "provider": session.provider,
+                "browser_name": session.browser_name,
+                "current_url": self._session_url(session),
+            }
+        )
+
+        if include_dom:
+            ok, dom = self.capture_dom(session_id, dom_selector)
+            signal["dom_capture"] = {
+                "ok": ok,
+                "selector": dom_selector,
+                "preview": (dom[:1000] + "…") if len(dom) > 1000 else dom,
+            }
+
+        if include_screenshot:
+            ok, path = self.capture_screenshot(session_id, file_name=f"{session_id}.png")
+            signal["screenshot"] = {"ok": ok, "path": path}
+
+        return signal
+
     def _session_url(self, session: BrowserSession) -> str:
         if session.current_url:
             return session.current_url

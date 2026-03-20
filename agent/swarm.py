@@ -121,6 +121,33 @@ class SwarmOrchestrator:
         default_limit = 2 if provider == "ollama" else 3
         return max(1, int(getattr(self.cfg, "SWARM_LOOP_GUARD_MAX_REPEAT", default_limit) or default_limit))
 
+    @staticmethod
+    def _browser_context_snapshot(context: Dict[str, str]) -> Dict[str, str]:
+        session_id = str(context.get("browser_session_id", "") or "").strip()
+        summary = str(context.get("browser_signal_summary", "") or "").strip()
+        status = str(context.get("browser_signal_status", "") or "").strip()
+        risk = str(context.get("browser_signal_risk", "") or "").strip()
+        return {
+            "browser_session_id": session_id,
+            "browser_signal_summary": summary,
+            "browser_signal_status": status,
+            "browser_signal_risk": risk,
+        }
+
+    @classmethod
+    def _compose_goal_with_context(cls, goal: str, context: Dict[str, str]) -> str:
+        text = (goal or "").strip()
+        browser_context = cls._browser_context_snapshot(context)
+        if browser_context["browser_signal_summary"]:
+            text += (
+                "\n\n[BROWSER_SIGNALS]\n"
+                f"session_id={browser_context['browser_session_id']}\n"
+                f"status={browser_context['browser_signal_status']}\n"
+                f"risk={browser_context['browser_signal_risk']}\n"
+                f"summary={browser_context['browser_signal_summary']}"
+            )
+        return text
+
     async def _run_autonomous_feedback(
         self,
         *,
@@ -422,7 +449,7 @@ class SwarmOrchestrator:
             task_id=task.task_id,
             sender=_sender,
             receiver=spec.role_name,
-            goal=task.goal,
+            goal=self._compose_goal_with_context(task.goal, task.context),
             intent=task.intent,
             parent_task_id=_parent_task_id,
             context={
@@ -489,6 +516,7 @@ class SwarmOrchestrator:
                         "intent": task.intent,
                         "agent_role": spec.role_name,
                         "evidence": "\n".join(result.evidence[:5]),
+                        **self._browser_context_snapshot(task.context),
                     },
                     session_id=session_id,
                     agent_role=spec.role_name,
@@ -513,6 +541,10 @@ class SwarmOrchestrator:
                     "p2p_receiver": str(task.context.get("p2p_receiver", "") or ""),
                     "p2p_reason": str(task.context.get("p2p_reason", "") or ""),
                     "p2p_handoff_depth": str(task.context.get("p2p_handoff_depth", "") or ""),
+                    "browser_session_id": str(task.context.get("browser_session_id", "") or ""),
+                    "browser_signal_status": str(task.context.get("browser_signal_status", "") or ""),
+                    "browser_signal_risk": str(task.context.get("browser_signal_risk", "") or ""),
+                    "browser_signal_summary": str(task.context.get("browser_signal_summary", "") or "")[:300],
                 },
             )
         except Exception as exc:

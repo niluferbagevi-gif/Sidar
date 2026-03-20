@@ -12,6 +12,7 @@ from typing import Optional
 
 from config import Config
 from core.rag import DocumentStore
+from managers.browser_manager import BrowserManager
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
 from managers.security import SecurityManager
@@ -50,6 +51,7 @@ class ReviewerAgent(BaseAgent):
             docker_exec_timeout=getattr(self.config, "DOCKER_EXEC_TIMEOUT", 10),
             cfg=self.config,
         )
+        self.browser = BrowserManager(self.config)
         self._graph_docs: Optional[DocumentStore] = None
 
         self.register_tool("repo_info", self._tool_repo_info)
@@ -59,6 +61,7 @@ class ReviewerAgent(BaseAgent):
         self.register_tool("run_tests", self._tool_run_tests)
         self.register_tool("lsp_diagnostics", self._tool_lsp_diagnostics)
         self.register_tool("graph_impact", self._tool_graph_impact)
+        self.register_tool("browser_signals", self._tool_browser_signals)
 
     @staticmethod
     def _extract_python_code_block(raw_text: str) -> str:
@@ -488,6 +491,85 @@ class ReviewerAgent(BaseAgent):
         return recommendations[:8]
 
     @staticmethod
+    def _parse_review_payload(raw_context: str) -> dict[str, object]:
+        """review_code girdisinden kod bağlamı ve browser metadata çıkarır."""
+        text = (raw_context or "").strip()
+        if not text:
+            return {
+                "review_context": "",
+                "browser_session_id": "",
+                "browser_signals": {},
+                "browser_include_dom": False,
+                "browser_include_screenshot": False,
+            }
+        if text.startswith("{"):
+            with contextlib.suppress(json.JSONDecodeError):
+                payload = json.loads(text)
+                if isinstance(payload, dict):
+                    return {
+                        "review_context": str(
+                            payload.get("review_context")
+                            or payload.get("code_context")
+                            or payload.get("context")
+                            or payload.get("changes")
+                            or ""
+                        ).strip(),
+                        "browser_session_id": str(payload.get("browser_session_id") or "").strip(),
+                        "browser_signals": dict(payload.get("browser_signals") or {}),
+                        "browser_include_dom": bool(payload.get("browser_include_dom", False)),
+                        "browser_include_screenshot": bool(payload.get("browser_include_screenshot", False)),
+                    }
+        match = re.search(r"(?:browser_session_id|browser_session)=([A-Za-z0-9._:-]+)", text)
+        cleaned = re.sub(r"(?:browser_session_id|browser_session)=([A-Za-z0-9._:-]+)", "", text).strip()
+        return {
+            "review_context": cleaned or text,
+            "browser_session_id": match.group(1) if match else "",
+            "browser_signals": {},
+            "browser_include_dom": False,
+            "browser_include_screenshot": False,
+        }
+
+    @staticmethod
+    def _summarize_browser_signals(browser_payload: dict[str, object] | None) -> dict[str, object]:
+        payload = dict(browser_payload or {})
+        summary = str(payload.get("summary", "") or "").strip()
+        risk = str(payload.get("risk", "düşük") or "düşük")
+        status = str(payload.get("status", "no-signal") or "no-signal")
+        failed_actions = [str(item).strip() for item in list(payload.get("failed_actions", []) or []) if str(item).strip()]
+        pending_actions = [str(item).strip() for item in list(payload.get("pending_actions", []) or []) if str(item).strip()]
+        high_risk_actions = [str(item).strip() for item in list(payload.get("high_risk_actions", []) or []) if str(item).strip()]
+        return {
+            "status": status,
+            "risk": risk,
+            "failed_actions": failed_actions[:8],
+            "pending_actions": pending_actions[:8],
+            "high_risk_actions": high_risk_actions[:8],
+            "current_url": str(payload.get("current_url", "") or "").strip(),
+            "summary": summary or "Browser sinyali alınamadı.",
+        }
+
+    @staticmethod
+    def _build_browser_fix_recommendations(browser_summary: dict[str, object]) -> list[dict[str, object]]:
+        failed_actions = list(browser_summary.get("failed_actions", []) or [])
+        pending_actions = list(browser_summary.get("pending_actions", []) or [])
+        high_risk_actions = list(browser_summary.get("high_risk_actions", []) or [])
+        if not any((failed_actions, pending_actions, high_risk_actions)):
+            return []
+        return [
+            {
+                "path": str(browser_summary.get("current_url", "") or "browser:session"),
+                "reason": "browser-signal",
+                "action": (
+                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden üret; "
+                    "selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
+                ),
+                "failed_actions": failed_actions[:4],
+                "pending_actions": pending_actions[:4],
+                "high_risk_actions": high_risk_actions[:4],
+            }
+        ]
+
+    @staticmethod
     def _build_remediation_loop(
         semantic_report: dict[str, object],
         graph_summary: dict[str, object],
@@ -664,6 +746,29 @@ class ReviewerAgent(BaseAgent):
             ensure_ascii=False,
         )
 
+    async def _tool_browser_signals(self, arg: str) -> str:
+        request = self._parse_review_payload(arg)
+        session_id = str(request.get("browser_session_id", "") or "").strip()
+        inline_payload = dict(request.get("browser_signals", {}) or {})
+        if inline_payload:
+            return json.dumps(inline_payload, ensure_ascii=False)
+        if not session_id:
+            return json.dumps(
+                {
+                    "status": "no-signal",
+                    "risk": "düşük",
+                    "summary": "Browser session_id verilmediği için sinyal toplanamadı.",
+                },
+                ensure_ascii=False,
+            )
+        signal = await asyncio.to_thread(
+            self.browser.collect_session_signals,
+            session_id,
+            include_dom=bool(request.get("browser_include_dom", False)),
+            include_screenshot=bool(request.get("browser_include_screenshot", False)),
+        )
+        return json.dumps(signal, ensure_ascii=False)
+
     async def run_task(self, task_prompt: str):
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
@@ -692,7 +797,8 @@ class ReviewerAgent(BaseAgent):
             return await self.call_tool("graph_impact", arg)
 
         if lower.startswith("review_code|"):
-            context = prompt.split("|", 1)[1].strip()
+            payload = self._parse_review_payload(prompt.split("|", 1)[1].strip())
+            context = str(payload.get("review_context", "") or "").strip()
             await self.events.publish("reviewer", "LLM tabanlı dinamik QA testleri üretiliyor...")
             dynamic_test_output = await self._run_dynamic_tests(context)
 
@@ -709,6 +815,12 @@ class ReviewerAgent(BaseAgent):
             with contextlib.suppress(json.JSONDecodeError):
                 graph_payload = json.loads(graph_output)
             graph_summary = self._summarize_graph_payload(graph_payload)
+
+            browser_output = await self.call_tool("browser_signals", json.dumps(payload, ensure_ascii=False))
+            browser_payload = {"status": "no-signal", "risk": "düşük", "summary": "Browser sinyali alınamadı."}
+            with contextlib.suppress(json.JSONDecodeError):
+                browser_payload = json.loads(browser_output)
+            browser_summary = self._summarize_browser_signals(browser_payload)
 
             lsp_scope_paths = self._merge_candidate_paths(
                 self._build_lsp_candidate_paths(context),
@@ -731,6 +843,7 @@ class ReviewerAgent(BaseAgent):
                 graph_payload,
                 combined_impact,
             )
+            fix_recommendations.extend(self._build_browser_fix_recommendations(browser_summary))
             regression_commands = self._build_regression_commands(context)
             remediation_loop = self._build_remediation_loop(
                 semantic_report,
@@ -756,8 +869,14 @@ class ReviewerAgent(BaseAgent):
                 risk = "orta"
             elif graph_summary["risk"] == "orta":
                 risk = "orta"
+            elif browser_summary["risk"] in {"orta", "yüksek"}:
+                risk = str(browser_summary["risk"])
             if combined_impact["impact_level"] in {"high", "critical"} and risk == "düşük":
                 risk = "orta"
+            if browser_summary["status"] == "failed":
+                status = "FAIL"
+                decision = "REJECT"
+                risk = "yüksek"
 
             await self.events.publish("reviewer", "QA kararı coder ajanına P2P ile iletiliyor...")
             feedback_payload = json.dumps(
@@ -766,7 +885,8 @@ class ReviewerAgent(BaseAgent):
                     "risk": risk,
                     "summary": (
                         f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
-                        f"{semantic_report['summary']} {graph_summary['summary']} {combined_impact['summary']}"
+                        f"{semantic_report['summary']} {graph_summary['summary']} "
+                        f"{browser_summary['summary']} {combined_impact['summary']}"
                     ),
                     "dynamic_test_output": dynamic_test_output,
                     "regression_test_output": regression_output,
@@ -775,6 +895,9 @@ class ReviewerAgent(BaseAgent):
                     "graph_impact_output": graph_output,
                     "graph_impact_report": graph_payload,
                     "graph_review_scope": graph_summary,
+                    "browser_signals_output": browser_output,
+                    "browser_signals_report": browser_payload,
+                    "browser_signal_summary": browser_summary,
                     "combined_impact_report": combined_impact,
                     "fix_recommendations": fix_recommendations,
                     "remediation_loop": remediation_loop,
