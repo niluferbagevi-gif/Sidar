@@ -349,6 +349,103 @@ def test_handle_external_trigger_correlates_action_feedback_with_prior_record():
     assert second["correlation"]["correlation_id"] == "fed-1"
     assert second["correlation"]["matched_records"] == 1
     assert second["correlation"]["related_trigger_ids"] == ["tr-fed-1"]
+
+
+def test_build_trigger_prompt_prefers_explicit_federation_prompt():
+    trigger = ExternalTrigger(trigger_id="tr-fed-prompt", source="federation", event_name="federation_task")
+
+    prompt = SidarAgent._build_trigger_prompt(
+        trigger,
+        {
+            "kind": "federation_task",
+            "task_id": "fed-2",
+            "goal": "ignored",
+            "federation_prompt": "Doğrudan federation promptunu kullan",
+        },
+        None,
+    )
+
+    assert prompt == "Doğrudan federation promptunu kullan"
+
+
+def test_build_trigger_correlation_matches_related_trigger_and_task_and_deduplicates():
+    a = _make_agent_for_runtime()
+    a._autonomy_history = [
+        {
+            "trigger_id": "dup-1",
+            "source": "federation:a",
+            "status": "done",
+            "payload": {"task_id": "task-1"},
+            "meta": {},
+            "correlation": {"correlation_id": ""},
+        },
+        {
+            "trigger_id": "dup-1",
+            "source": "federation:a",
+            "status": "done",
+            "payload": {"task_id": "task-1"},
+            "meta": {},
+            "correlation": {"correlation_id": ""},
+        },
+        {
+            "trigger_id": "other-2",
+            "source": "federation:b",
+            "status": "queued",
+            "payload": {"task_id": "task-2"},
+            "meta": {},
+            "correlation": {"correlation_id": ""},
+        },
+    ]
+
+    correlation = a._build_trigger_correlation(
+        ExternalTrigger(trigger_id="new-1", source="external", event_name="feedback"),
+        {"related_trigger_id": "dup-1", "related_task_id": "task-2"},
+    )
+
+    assert correlation["matched_records"] == 2
+    assert correlation["related_trigger_ids"] == ["other-2", "dup-1"]
+    assert correlation["related_sources"] == ["federation:b", "federation:a"]
+    assert correlation["latest_related_status"] == "queued"
+
+
+def test_handle_external_trigger_marks_empty_output_when_multi_agent_returns_blank():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def _blank_multi(_prompt):
+        return "   "
+
+    a._try_multi_agent = _blank_multi
+
+    record = asyncio.run(
+        a.handle_external_trigger(
+            ExternalTrigger(trigger_id="tr-empty", source="cron", event_name="tick", payload={"job": "noop"})
+        )
+    )
+
+    assert record["status"] == "empty"
+    assert record["summary"] == "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
+    assert a.memory.items[-1] == ("assistant", "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi.")
+
+
+def test_handle_external_trigger_marks_failed_status_when_multi_agent_raises():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def _boom(_prompt):
+        raise RuntimeError("llm unavailable")
+
+    a._try_multi_agent = _boom
+
+    record = asyncio.run(
+        a.handle_external_trigger(
+            ExternalTrigger(trigger_id="tr-fail", source="webhook", event_name="deploy_failed", payload={"job": "deploy"})
+        )
+    )
+
+    assert record["status"] == "failed"
+    assert record["summary"] == "⚠ Proaktif tetik işlenemedi: llm unavailable"
+    assert a.memory.items[-1] == ("assistant", "⚠ Proaktif tetik işlenemedi: llm unavailable")
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 
