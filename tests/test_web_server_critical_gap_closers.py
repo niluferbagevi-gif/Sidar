@@ -100,6 +100,9 @@ def _load_web_server_module():
     base_agent_mod.BaseAgent = object
     reg_mod = types.ModuleType("agent.registry")
     reg_mod.AgentRegistry = object
+    swarm_mod = types.ModuleType("agent.swarm")
+    swarm_mod.SwarmOrchestrator = object
+    swarm_mod.SwarmTask = object
 
     event_mod = types.ModuleType("agent.core.event_stream")
     event_mod.get_agent_event_bus = lambda: types.SimpleNamespace(subscribe=lambda: ("sub", asyncio.Queue()), unsubscribe=lambda _sid: None)
@@ -114,6 +117,8 @@ def _load_web_server_module():
 
     llm_client = types.ModuleType("core.llm_client")
     llm_client.LLMAPIError = type("LLMAPIError", (Exception,), {})
+    ci_mod = types.ModuleType("core.ci_remediation")
+    ci_mod.build_ci_failure_context = lambda *_a, **_k: {}
     hitl_mod = types.ModuleType("core.hitl")
     hitl_mod.get_hitl_gate = lambda: types.SimpleNamespace()
     hitl_mod.get_hitl_store = lambda: types.SimpleNamespace()
@@ -134,10 +139,12 @@ def _load_web_server_module():
         "agent.sidar_agent": agent_mod,
         "agent.base_agent": base_agent_mod,
         "agent.registry": reg_mod,
+        "agent.swarm": swarm_mod,
         "agent.core.event_stream": event_mod,
         "managers.system_health": m_health,
         "core.llm_metrics": llm_metrics,
         "core.llm_client": llm_client,
+        "core.ci_remediation": ci_mod,
         "core.hitl": hitl_mod,
         "uvicorn": uvicorn_mod,
     })
@@ -164,12 +171,51 @@ def _load_web_server_module():
 
 def test_shutdown_and_subprocess_parse_edges(monkeypatch):
     mod = _load_web_server_module()
+    monkeypatch.setitem(sys.modules, "psutil", None)
     monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "ps")))
     assert mod._list_child_ollama_pids() == []
 
     monkeypatch.setattr(mod.os, "getpid", lambda: 7)
     monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: b"bad\n 10 xx ollama ollama\n 11 7 ollama ollama serve\n")
     assert mod._list_child_ollama_pids() == [11]
+
+
+def test_shutdown_pid_discovery_prefers_psutil_and_skips_ps_on_windows(monkeypatch):
+    mod = _load_web_server_module()
+
+    class _Child:
+        def __init__(self, pid, name, cmdline):
+            self.pid = pid
+            self._name = name
+            self._cmdline = cmdline
+
+        def name(self):
+            return self._name
+
+        def cmdline(self):
+            return self._cmdline
+
+    class _Process:
+        def __init__(self, pid):
+            assert pid == 77
+
+        def children(self, recursive=False):
+            assert recursive is False
+            return [
+                _Child(41, "ollama", ["ollama", "serve"]),
+                _Child(42, "python", ["python", "worker.py"]),
+            ]
+
+    fake_psutil = types.SimpleNamespace(Process=_Process)
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+    monkeypatch.setattr(mod.os, "getpid", lambda: 77)
+    monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: (_ for _ in ()).throw(AssertionError("ps fallback should not run")))
+    assert mod._list_child_ollama_pids() == [41]
+
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    monkeypatch.setattr(mod.os, "name", "nt")
+    monkeypatch.setattr(mod.subprocess, "check_output", lambda *a, **k: (_ for _ in ()).throw(AssertionError("ps should not run on Windows")))
+    assert mod._list_child_ollama_pids() == []
 
 
 def test_async_shutdown_swallows_oserror_and_marks_done(monkeypatch):
