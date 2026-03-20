@@ -145,45 +145,70 @@ def test_init_chroma_and_init_fts_migration_paths(tmp_path, monkeypatch):
     assert st2._chroma_available is False
 
 
-@pytest.mark.asyncio
-async def test_document_and_search_error_and_fallback_paths(tmp_path):
+def test_document_and_search_error_and_fallback_paths(tmp_path):
     mod = _load_rag_module(tmp_path)
     st = _new_store(mod, tmp_path)
 
-    # chunk/text helpers
-    assert st._recursive_chunk_text("", size=10, overlap=2) == []
-    assert st._recursive_chunk_text("abcdef", size=2, overlap=2)
+    async def _exercise():
+        # chunk/text helpers
+        assert st._recursive_chunk_text("", size=10, overlap=2) == []
+        assert st._recursive_chunk_text("abcdef", size=2, overlap=2)
 
-    # add_document chroma exception lines 390-391
-    class _BrokenCol:
-        def delete(self, **kwargs):
-            raise RuntimeError("chroma add fail")
+        # add_document chroma exception lines 390-391
+        class _BrokenCol:
+            def delete(self, **kwargs):
+                raise RuntimeError("chroma add fail")
 
-    st._chroma_available = True
-    st.collection = _BrokenCol()
-    doc_id = await st.add_document("T", "content", session_id="s1")
-    assert doc_id
+        st._chroma_available = True
+        st.collection = _BrokenCol()
+        doc_id = await st.add_document("T", "content", session_id="s1")
+        assert doc_id
 
-    # add_document_from_url exception lines 410-412
-    httpx_mod = types.ModuleType("httpx")
+        # add_document_from_url exception lines 410-412
+        httpx_mod = types.ModuleType("httpx")
 
-    class _FailClient:
-        def __init__(self, *args, **kwargs):
-            pass
+        class _FailClient:
+            def __init__(self, *args, **kwargs):
+                pass
 
-        async def __aenter__(self):
-            return self
+            async def __aenter__(self):
+                return self
 
-        async def __aexit__(self, *args):
-            return False
+            async def __aexit__(self, *args):
+                return False
 
-        async def get(self, _url):
-            raise RuntimeError("network fail")
+            async def get(self, _url):
+                raise RuntimeError("network fail")
 
-    httpx_mod.AsyncClient = _FailClient
-    sys.modules["httpx"] = httpx_mod
-    ok, msg = await st.add_document_from_url("https://example.invalid")
-    assert ok is False and "eklenemedi" in msg
+        httpx_mod.AsyncClient = _FailClient
+        sys.modules["httpx"] = httpx_mod
+        ok, msg = await st.add_document_from_url("https://example.invalid")
+        assert ok is False and "eklenemedi" in msg
+
+        # delete/get guards
+        assert "bulunamadı" in st.delete_document("none")
+        st._index[doc_id]["session_id"] = "other"
+        assert "yetkiniz yok" in st.delete_document(doc_id, session_id="s1")
+        assert st.get_document("none")[0] is False
+        assert st.get_document(doc_id, session_id="s1")[0] is False
+
+        # missing file branch in get_document
+        st._index[doc_id]["session_id"] = "s1"
+        f = st.store_dir / f"{doc_id}.txt"
+        if f.exists():
+            f.unlink()
+        assert "dosyası eksik" in st.get_document(doc_id, session_id="s1")[1]
+
+        # search mode guards and keyword fallback line 534
+        st._index = {"a": {"session_id": "s1", "title": "A", "tags": [], "source": ""}}
+        st._chroma_available = False
+        assert "kullanılamıyor" in (await st.search("q", mode="vector", session_id="s1"))[1]
+        st._bm25_available = False
+        assert "BM25 kullanılamıyor" in (await st.search("q", mode="bm25", session_id="s1"))[1]
+        st._bm25_available = False
+        st._chroma_available = False
+        st._keyword_search = lambda *args: (True, "kw")
+        assert await st.search("q", mode="auto", session_id="s1") == (True, "kw")
 
     # add_document_from_file exception lines 429-431
     orig_resolve = Path.resolve
@@ -193,31 +218,8 @@ async def test_document_and_search_error_and_fallback_paths(tmp_path):
     finally:
         Path.resolve = orig_resolve
     assert ok is False and "Dosya eklenemedi" in msg
-
-    # delete/get guards
-    assert "bulunamadı" in st.delete_document("none")
-    st._index[doc_id]["session_id"] = "other"
-    assert "yetkiniz yok" in st.delete_document(doc_id, session_id="s1")
-    assert st.get_document("none")[0] is False
-    assert st.get_document(doc_id, session_id="s1")[0] is False
-
-    # missing file branch in get_document
-    st._index[doc_id]["session_id"] = "s1"
-    f = st.store_dir / f"{doc_id}.txt"
-    if f.exists():
-        f.unlink()
-    assert "dosyası eksik" in st.get_document(doc_id, session_id="s1")[1]
-
-    # search mode guards and keyword fallback line 534
-    st._index = {"a": {"session_id": "s1", "title": "A", "tags": [], "source": ""}}
-    st._chroma_available = False
-    assert "kullanılamıyor" in (await st.search("q", mode="vector", session_id="s1"))[1]
-    st._bm25_available = False
-    assert "BM25 kullanılamıyor" in (await st.search("q", mode="bm25", session_id="s1"))[1]
-    st._bm25_available = False
-    st._chroma_available = False
-    st._keyword_search = lambda *args: (True, "kw")
-    assert await st.search("q", mode="auto", session_id="s1") == (True, "kw")
+    import asyncio
+    asyncio.run(_exercise())
 
 
 
@@ -229,12 +231,12 @@ def test_delete_document_returns_not_found_for_unknown_doc(tmp_path):
     assert "Belge bulunamadı" in msg
 
 
-@pytest.mark.asyncio
-async def test_delete_document_rejects_cross_session_deletion(tmp_path):
+def test_delete_document_rejects_cross_session_deletion(tmp_path):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
 
-    doc_id = await store.add_document("T", "icerik", session_id="A")
+    import asyncio
+    doc_id = asyncio.run(store.add_document("T", "icerik", session_id="A"))
     msg = store.delete_document(doc_id, session_id="B")
 
     assert "erişim yetkiniz yok" in msg
@@ -383,6 +385,29 @@ def test_search_auto_falls_back_when_vector_backends_raise(tmp_path, monkeypatch
     assert text == "bm25:kritik sorgu:3:global"
 
 
+def test_search_auto_logs_and_falls_back_to_bm25_on_pgvector_timeout(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    warnings = []
+    store._index = {"d1": {"session_id": "global", "title": "doc", "source": "s", "tags": []}}
+    store._pgvector_available = True
+    store._chroma_available = False
+    store.collection = None
+    store._bm25_available = True
+
+    monkeypatch.setattr(mod.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    monkeypatch.setattr(store, "_rrf_search", lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("rrf timeout")))
+    monkeypatch.setattr(store, "_pgvector_search", lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("pg timeout")))
+    monkeypatch.setattr(store, "_bm25_search", lambda q, k, sid: (True, f"bm25:{q}:{k}:{sid}"))
+
+    ok, text = store._search_sync("timeout sorgusu", top_k=2, mode="auto", session_id="global")
+
+    assert ok is True
+    assert text == "bm25:timeout sorgusu:2:global"
+    assert any("pgvector arama hatası (BM25'e düşülüyor)" in msg for msg in warnings)
+
+
 def test_recursive_chunk_text_forced_split_when_no_separator_possible(tmp_path):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
@@ -395,6 +420,57 @@ def test_recursive_chunk_text_forced_split_when_no_separator_possible(tmp_path):
     assert all(len(c) <= 100 for c in chunks)
     # overlap etkisi: ikinci parça öncekinin sonundan taşıma içerir
     assert chunks[1].startswith("x" * 10)
+
+
+def test_add_document_sync_handles_empty_chunk_output_without_chroma_upsert(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    called = {"chroma_upsert": False, "pgvector_chunks": None}
+
+    class _Collection:
+        def delete(self, **_kwargs):
+            return None
+
+        def upsert(self, **_kwargs):
+            called["chroma_upsert"] = True
+
+    store._chunk_text = lambda _content: []
+    store._save_index = lambda: None
+    store._update_bm25_cache_on_add = lambda *_a: None
+    store._chroma_available = True
+    store.collection = _Collection()
+    store._pgvector_available = True
+    store._upsert_pgvector_chunks = lambda _doc_id, _parent_id, _session_id, _title, _source, chunks: called.update(
+        pgvector_chunks=chunks
+    )
+
+    doc_id = store._add_document_sync("Bozuk", "   ", source="src", session_id="sess-1")
+
+    assert doc_id in store._index
+    assert store._index[doc_id]["size"] == 3
+    assert called["chroma_upsert"] is False
+    assert called["pgvector_chunks"] == []
+    assert (store.store_dir / f"{doc_id}.txt").read_text(encoding="utf-8") == "   "
+
+
+def test_fetch_bm25_returns_empty_when_query_terms_are_missing_from_corpus(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._bm25_available = True
+
+    class _Conn:
+        def execute(self, *_args):
+            class _Cur:
+                def fetchall(self):
+                    return []
+
+            return _Cur()
+
+    store.fts_conn = _Conn()
+    store._index = {"d1": {"title": "Doc", "source": "", "session_id": "global", "tags": []}}
+
+    assert store._fetch_bm25("olmayan terim", top_k=5, session_id="global") == []
 
 
 def test_schedule_judge_skips_disabled_judge_and_swallows_runtime_errors(tmp_path, monkeypatch):
