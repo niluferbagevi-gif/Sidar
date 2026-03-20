@@ -143,12 +143,17 @@ class CoderAgent(BaseAgent):
             summary = str(parsed_feedback.get("summary", feedback)).strip()
             dynamic_output = str(parsed_feedback.get("dynamic_test_output", "")).strip()
             regression_output = str(parsed_feedback.get("regression_test_output", "")).strip()
+            remediation_loop = parsed_feedback.get("remediation_loop") if isinstance(parsed_feedback, dict) else None
+            remediation_summary = ""
+            if isinstance(remediation_loop, dict):
+                remediation_summary = str(remediation_loop.get("summary", "")).strip()
             failing_excerpt = "\n\n".join(part for part in (dynamic_output, regression_output) if part)[:1500]
 
             if decision == "reject":
+                remediation_block = f"\n[REMEDIATION_LOOP] {remediation_summary}" if remediation_summary else ""
                 return (
                     "[CODER:REWORK_REQUIRED] Reviewer geri bildirimi alındı. "
-                    f"Özet: {summary}\n"
+                    f"Özet: {summary}{remediation_block}\n"
                     f"[QA_FEEDBACK] {feedback}\n"
                     f"[FAILED_TESTS] {failing_excerpt or '-'}"
                 )
