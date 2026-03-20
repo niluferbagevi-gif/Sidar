@@ -99,3 +99,16 @@ def test_coder_agent_run_task_qa_feedback_approved_and_direct_tool_routes():
     assert "Her şey harika" in approved_out
     assert read_out == "read-ok"
     assert patch_out == "patch-ok"
+
+
+def test_coder_agent_qa_feedback_reject_surfaces_remediation_loop():
+    a = CoderAgent()
+    payload = {
+        "decision": "reject",
+        "summary": "Reviewer semantic failure detected.",
+        "remediation_loop": {"summary": "Remediation loop hazır: mod=self_heal_with_hitl"},
+    }
+
+    out = asyncio.run(a.run_task(f"qa_feedback|{__import__('json').dumps(payload, ensure_ascii=False)}"))
+
+    assert "[REMEDIATION_LOOP] Remediation loop hazır" in out

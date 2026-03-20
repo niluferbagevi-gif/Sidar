@@ -487,6 +487,80 @@ class ReviewerAgent(BaseAgent):
 
         return recommendations[:8]
 
+    @staticmethod
+    def _build_remediation_loop(
+        semantic_report: dict[str, object],
+        graph_summary: dict[str, object],
+        combined_impact: dict[str, object],
+        fix_recommendations: list[dict[str, object]],
+        regression_commands: list[str],
+    ) -> dict[str, object]:
+        """Reviewer kalite kapısını kontrollü self-healing döngüsüne dönüştürür."""
+        scoped_paths = ReviewerAgent._merge_candidate_paths(
+            list(combined_impact.get("direct_scope_paths", []) or []),
+            list(combined_impact.get("graph_followup_paths", []) or []),
+            list(combined_impact.get("issue_paths", []) or []),
+            [str(item.get("path", "")).strip() for item in fix_recommendations if str(item.get("path", "")).strip()],
+        )
+        issue_count = sum(int(v or 0) for v in dict(semantic_report.get("counts", {}) or {}).values())
+        impact_level = str(combined_impact.get("impact_level", "low") or "low")
+        graph_risk = str(graph_summary.get("risk", "düşük") or "düşük")
+        needs_human_approval = impact_level in {"high", "critical"} or graph_risk == "orta"
+        is_blocked = bool(fix_recommendations) or issue_count > 0 or impact_level in {"high", "critical"}
+        mode = "self_heal_with_hitl" if needs_human_approval else "self_heal"
+        status = "planned" if is_blocked else "observe_only"
+        validation_commands = list(dict.fromkeys((regression_commands or []) + ["python -m pytest"]))[:4]
+        return {
+            "status": status,
+            "mode": mode,
+            "needs_human_approval": needs_human_approval,
+            "max_auto_attempts": 1 if needs_human_approval else 2,
+            "scope_paths": scoped_paths[:16],
+            "validation_commands": validation_commands,
+            "recommendation_count": len(fix_recommendations),
+            "blocked_by": [
+                reason for reason, active in (
+                    ("semantic_issues", issue_count > 0),
+                    ("graph_indirect_breakage", bool(combined_impact.get("indirect_breakage_paths"))),
+                    ("high_graph_risk", graph_risk == "orta"),
+                ) if active
+            ],
+            "steps": [
+                {
+                    "name": "diagnose",
+                    "status": "completed",
+                    "detail": semantic_report.get("summary") or graph_summary.get("summary") or "Kalite kapısı tamamlandı.",
+                },
+                {
+                    "name": "patch",
+                    "status": "pending" if fix_recommendations else "skipped",
+                    "detail": (
+                        "Öncelikli remediation önerileri hazırlandı."
+                        if fix_recommendations
+                        else "Otomatik düzeltme gerektiren bulgu tespit edilmedi."
+                    ),
+                },
+                {
+                    "name": "validate",
+                    "status": "pending" if is_blocked else "ready",
+                    "detail": "Hedefli regresyon ve global pytest komutları sıraya alındı.",
+                },
+                {
+                    "name": "handoff",
+                    "status": "pending" if is_blocked else "ready",
+                    "detail": (
+                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir plan devredilecek."
+                        if needs_human_approval
+                        else "Plan coder ajanına doğrudan uygulanabilir şekilde devredilecek."
+                    ),
+                },
+            ],
+            "summary": (
+                f"Remediation loop hazır: mod={mode}, kapsam={len(scoped_paths[:16])} dosya, "
+                f"öneri={len(fix_recommendations)}, doğrulama={len(validation_commands)} komut."
+            ),
+        }
+
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
         return out if ok else f"[HATA] {out}"
@@ -657,6 +731,14 @@ class ReviewerAgent(BaseAgent):
                 graph_payload,
                 combined_impact,
             )
+            regression_commands = self._build_regression_commands(context)
+            remediation_loop = self._build_remediation_loop(
+                semantic_report,
+                graph_summary,
+                combined_impact,
+                fix_recommendations,
+                regression_commands,
+            )
 
             combo = f"{dynamic_test_output}\n\n{regression_output}\n\n{lsp_output}".lower()
             status = "PASS"
@@ -695,6 +777,7 @@ class ReviewerAgent(BaseAgent):
                     "graph_review_scope": graph_summary,
                     "combined_impact_report": combined_impact,
                     "fix_recommendations": fix_recommendations,
+                    "remediation_loop": remediation_loop,
                     "lsp_scope_paths": lsp_scope_paths or ["workspace:auto"],
                 },
                 ensure_ascii=False,
