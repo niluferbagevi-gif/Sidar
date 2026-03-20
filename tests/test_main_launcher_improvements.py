@@ -121,3 +121,23 @@ def test_quick_mode_fails_fast_when_config_import_is_missing(monkeypatch, capsys
     out = capsys.readouterr().out
     assert exc.value.code == 2
     assert "config.py yüklenemediği için web_server.py güvenli şekilde başlatılamıyor" in out
+
+
+def test_run_wizard_fails_fast_when_runtime_dependencies_are_missing(monkeypatch, capsys):
+    main_mod = _load_main_module()
+    main_mod.CONFIG_IMPORT_OK = False
+
+    answers = iter(["1", "1", "1", "1", "127.0.0.1", "7860"])
+    monkeypatch.setattr(main_mod, "print_banner", lambda: None)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(main_mod, "preflight", lambda _provider: None)
+
+    def _unexpected_execute(*_args, **_kwargs):
+        raise AssertionError("execute_command should not run when runtime dependencies are missing")
+
+    monkeypatch.setattr(main_mod, "execute_command", _unexpected_execute)
+
+    assert main_mod.run_wizard() == 2
+
+    out = capsys.readouterr().out
+    assert "config.py yüklenemediği için web_server.py güvenli şekilde başlatılamıyor" in out
