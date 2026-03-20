@@ -58,6 +58,7 @@ const getTaskTargetRole = (task, responseResults, index) =>
 
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 104;
+const OPERATION_LOG_LIMIT = 10;
 
 const prettifyReason = (value) =>
   String(value || "")
@@ -73,6 +74,34 @@ const toDetailEntries = (record) =>
       value: Array.isArray(value) ? value.join(" · ") : String(value),
     }));
 
+const buildTaskDraftFromNode = (node) => {
+  if (!node) {
+    return { goal: "", intent: "mixed", preferred_agent: "" };
+  }
+  const intent = String(node.subtitle || "mixed")
+    .split("·")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_") || "mixed";
+  const preferredAgent = String(node.actor || node.laneId || "")
+    .trim()
+    .toLowerCase();
+  return {
+    goal: `${node.title}: ${node.body}`.trim(),
+    intent,
+    preferred_agent: preferredAgent,
+  };
+};
+
+const inferHitlActionFromNode = (node) => {
+  const type = String(node?.type || "manual").toLowerCase();
+  if (type.includes("handoff")) return "handoff_review";
+  if (type.includes("autonomy")) return "autonomy_review";
+  if (type.includes("result-warning")) return "result_review";
+  if (type.includes("task")) return "task_review";
+  return "graph_review";
+};
+
 export function SwarmFlowPanel() {
   const { telemetryEvents } = useChatStore();
   const [tasks, setTasks] = useState(DEFAULT_TASKS);
@@ -85,6 +114,34 @@ export function SwarmFlowPanel() {
   const [autonomyActivity, setAutonomyActivity] = useState({ items: [], counts_by_status: {}, counts_by_source: {} });
   const [activityLoading, setActivityLoading] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [hitlLoading, setHitlLoading] = useState(false);
+  const [operationLog, setOperationLog] = useState([]);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const pushOperationLog = useCallback((message, tone = "info") => {
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      tone,
+      message,
+      ts: new Date().toISOString(),
+    };
+    setOperationLog((prev) => [entry, ...prev].slice(0, OPERATION_LOG_LIMIT));
+  }, []);
+
+  const loadPendingApprovals = useCallback(async () => {
+    setHitlLoading(true);
+    try {
+      const data = await fetchJson("/api/hitl/pending");
+      setPendingApprovals(data.pending || []);
+    } catch (err) {
+      setPendingApprovals([]);
+      setError((prev) => prev || err.message);
+      pushOperationLog(`HITL bekleyen kayıtları alınamadı: ${err.message}`, "error");
+    } finally {
+      setHitlLoading(false);
+    }
+  }, [pushOperationLog]);
 
   const loadAutonomyActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -94,14 +151,16 @@ export function SwarmFlowPanel() {
     } catch (err) {
       setAutonomyActivity({ items: [], counts_by_status: {}, counts_by_source: {} });
       setError((prev) => prev || err.message);
+      pushOperationLog(`Autonomy aktivitesi alınamadı: ${err.message}`, "error");
     } finally {
       setActivityLoading(false);
     }
-  }, []);
+  }, [pushOperationLog]);
 
   useEffect(() => {
     loadAutonomyActivity();
-  }, [loadAutonomyActivity]);
+    loadPendingApprovals();
+  }, [loadAutonomyActivity, loadPendingApprovals]);
 
   const steps = useMemo(
     () => telemetryEvents
@@ -182,6 +241,13 @@ export function SwarmFlowPanel() {
         body: clampText(item.summary || JSON.stringify(item.payload || {}), 160),
         x: lane.x,
         y: rowY.autonomy + Math.floor(index / Math.max(lanes.length, 1)) * 122,
+        details: toDetailEntries({
+          trigger_id: item.trigger_id,
+          source: item.source,
+          status: item.status,
+          event_name: item.event_name,
+          summary: item.summary,
+        }),
       };
     });
 
@@ -193,6 +259,11 @@ export function SwarmFlowPanel() {
       body: clampText(sessionId.trim() || "ui-swarm-session", 80),
       x: laneMap.get("supervisor")?.x || 40,
       y: rowY.supervisor,
+      details: toDetailEntries({
+        session_id: sessionId.trim() || "ui-swarm-session",
+        mode,
+        max_concurrency: Number(maxConcurrency) || 1,
+      }),
     };
 
     const taskNodes = tasks.map((task, index) => {
@@ -207,6 +278,11 @@ export function SwarmFlowPanel() {
         laneId,
         x: lane.x,
         y: rowY.tasks + index * 18,
+        details: toDetailEntries({
+          goal: task.goal?.trim(),
+          intent: task.intent?.trim() || "mixed",
+          preferred_agent: task.preferred_agent?.trim() || laneId,
+        }),
       };
     });
 
@@ -222,6 +298,11 @@ export function SwarmFlowPanel() {
           : "Göreve atanmış veya telemetride gözlenen ajan rolü.",
         x: lane.x,
         y: rowY.agents,
+        actor: lane.id,
+        details: toDetailEntries({
+          role: lane.id,
+          lane: lane.label,
+        }),
       }));
 
     const handoffNodes = handoffEvents.map((handoff, index) => {
@@ -238,6 +319,7 @@ export function SwarmFlowPanel() {
         body: clampText(`${reason} · ${handoff.intent || "mixed"} intent`, 170),
         x: lane.x,
         y: rowY.handoffs + index * 18,
+        actor: receiverRole,
         details: toDetailEntries({
           reason,
           intent: handoff.intent || "mixed",
@@ -249,7 +331,8 @@ export function SwarmFlowPanel() {
     });
 
     const resultNodes = responseResults.map((item, index) => {
-      const lane = laneMap.get(String(item.agent_role || "").toLowerCase()) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const laneRole = String(item.agent_role || "").toLowerCase();
+      const lane = laneMap.get(laneRole) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
       const graph = item.graph || {};
       return {
         id: `result-${item.task_id || index}`,
@@ -259,6 +342,7 @@ export function SwarmFlowPanel() {
         body: clampText(item.summary || "Özet üretilmedi", 160),
         x: lane.x,
         y: rowY.results + index * 18,
+        actor: laneRole,
         details: toDetailEntries({
           task_id: item.task_id,
           status: item.status,
@@ -456,7 +540,7 @@ export function SwarmFlowPanel() {
 
     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
     return { nodes, edges, lanes, width, height, metrics, nodeMap };
-  }, [autonomyActivity.items, mode, response, sessionId, steps, tasks]);
+  }, [autonomyActivity.items, maxConcurrency, mode, response, sessionId, steps, tasks]);
 
   const autonomySummary = useMemo(() => {
     const counts = autonomyActivity.counts_by_status || {};
@@ -505,6 +589,11 @@ export function SwarmFlowPanel() {
     [graphData, selectedNodeId],
   );
 
+  const selectedTaskDraft = useMemo(
+    () => buildTaskDraftFromNode(selectedNode),
+    [selectedNode],
+  );
+
   const updateTask = useCallback((index, field, value) => {
     setTasks((prev) => prev.map((task, idx) => (idx === index ? { ...task, [field]: value } : task)));
   }, []);
@@ -517,18 +606,19 @@ export function SwarmFlowPanel() {
     setTasks((prev) => prev.filter((_, idx) => idx !== index));
   }, []);
 
-  const executeSwarm = useCallback(async () => {
-    const normalizedTasks = tasks
+  const executeSwarm = useCallback(async (overrideTasks = null, overrideMeta = {}) => {
+    const sourceTasks = overrideTasks || tasks;
+    const normalizedTasks = sourceTasks
       .map((task) => ({
-        goal: task.goal.trim(),
-        intent: task.intent.trim() || "mixed",
-        preferred_agent: task.preferred_agent.trim() || undefined,
+        goal: String(task.goal || "").trim(),
+        intent: String(task.intent || "").trim() || "mixed",
+        preferred_agent: String(task.preferred_agent || "").trim() || undefined,
       }))
       .filter((task) => task.goal);
 
     if (!normalizedTasks.length) {
       setError("En az bir görev girmelisiniz.");
-      return;
+      return false;
     }
 
     setRunning(true);
@@ -539,19 +629,109 @@ export function SwarmFlowPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mode,
-          session_id: sessionId.trim(),
-          max_concurrency: Number(maxConcurrency) || 1,
+          mode: overrideMeta.mode || mode,
+          session_id: overrideMeta.sessionId || sessionId.trim(),
+          max_concurrency: Number(overrideMeta.maxConcurrency || maxConcurrency) || 1,
           tasks: normalizedTasks,
         }),
       });
       setResponse(data);
+      return true;
     } catch (err) {
       setError(err.message);
+      pushOperationLog(`Swarm tetiklenemedi: ${err.message}`, "error");
+      return false;
     } finally {
       setRunning(false);
     }
-  }, [maxConcurrency, mode, sessionId, tasks]);
+  }, [maxConcurrency, mode, pushOperationLog, sessionId, tasks]);
+
+  const syncOperationSurface = useCallback(async () => {
+    await Promise.all([loadAutonomyActivity(), loadPendingApprovals()]);
+    pushOperationLog("Canlı operasyon yüzeyi yenilendi.", "success");
+  }, [loadAutonomyActivity, loadPendingApprovals, pushOperationLog]);
+
+  const addDraftTaskFromSelected = useCallback(() => {
+    if (!selectedNode) return;
+    setTasks((prev) => [...prev, selectedTaskDraft]);
+    pushOperationLog(`Seçili düğüm görev taslağına eklendi: ${selectedNode.title}`, "success");
+  }, [pushOperationLog, selectedNode, selectedTaskDraft]);
+
+  const replaceFirstTaskFromSelected = useCallback(() => {
+    if (!selectedNode) return;
+    setTasks((prev) => {
+      if (!prev.length) return [selectedTaskDraft];
+      return prev.map((task, idx) => (idx === 0 ? selectedTaskDraft : task));
+    });
+    pushOperationLog(`İlk görev seçili düğümden yeniden yazıldı: ${selectedNode.title}`, "info");
+  }, [pushOperationLog, selectedNode, selectedTaskDraft]);
+
+  const runSelectedNode = useCallback(async () => {
+    if (!selectedNode) return;
+    setActionBusy(true);
+    const draft = buildTaskDraftFromNode(selectedNode);
+    const ok = await executeSwarm([draft], {
+      sessionId: `${sessionId.trim() || "ui-swarm-session"}-node`,
+      maxConcurrency: 1,
+    });
+    if (ok) {
+      pushOperationLog(`Seçili düğüm için hedefli swarm çalıştı: ${selectedNode.title}`, "success");
+    }
+    setActionBusy(false);
+  }, [executeSwarm, pushOperationLog, selectedNode, sessionId]);
+
+  const requestNodeReview = useCallback(async () => {
+    if (!selectedNode) return;
+    setActionBusy(true);
+    try {
+      const data = await fetchJson("/api/hitl/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: inferHitlActionFromNode(selectedNode),
+          description: `${selectedNode.title} düğümü için operatör incelemesi`,
+          requested_by: "swarm_flow_panel",
+          payload: {
+            node_id: selectedNode.id,
+            node_type: selectedNode.type,
+            title: selectedNode.title,
+            subtitle: selectedNode.subtitle,
+            body: selectedNode.body,
+            details: Object.fromEntries((selectedNode.details || []).map((item) => [item.key, item.value])),
+          },
+        }),
+      });
+      pushOperationLog(`HITL isteği oluşturuldu: ${data.request_id}`, "success");
+      await loadPendingApprovals();
+    } catch (err) {
+      setError(err.message);
+      pushOperationLog(`HITL isteği oluşturulamadı: ${err.message}`, "error");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [loadPendingApprovals, pushOperationLog, selectedNode]);
+
+  const respondToApproval = useCallback(async (requestId, approved) => {
+    setActionBusy(true);
+    try {
+      const data = await fetchJson(`/api/hitl/respond/${requestId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approved,
+          decided_by: "swarm_flow_panel",
+          rejection_reason: approved ? "" : "Swarm operasyon yüzeyi üzerinden reddedildi.",
+        }),
+      });
+      pushOperationLog(`HITL kararı işlendi: ${data.request_id} → ${data.decision}`, approved ? "success" : "warning");
+      await loadPendingApprovals();
+    } catch (err) {
+      setError(err.message);
+      pushOperationLog(`HITL kararı gönderilemedi: ${err.message}`, "error");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [loadPendingApprovals, pushOperationLog]);
 
   return (
     <section className="panel panel--stacked">
@@ -565,7 +745,7 @@ export function SwarmFlowPanel() {
             <option value="parallel">run_parallel</option>
             <option value="pipeline">run_pipeline</option>
           </select>
-          <button onClick={executeSwarm} disabled={running}>{running ? "Çalışıyor…" : "Swarm Başlat"}</button>
+          <button onClick={() => executeSwarm()} disabled={running}>{running ? "Çalışıyor…" : "Swarm Başlat"}</button>
         </div>
       </div>
 
@@ -675,6 +855,22 @@ export function SwarmFlowPanel() {
                       <span>{node.subtitle}</span>
                     </div>
                     <p>{node.body}</p>
+                    {selectedNodeId === node.id && (
+                      <div className="swarm-graph__node-actions">
+                        <button type="button" className="button-secondary" onClick={(event) => {
+                          event.stopPropagation();
+                          void runSelectedNode();
+                        }} disabled={actionBusy || running}>
+                          Run node
+                        </button>
+                        <button type="button" className="button-secondary" onClick={(event) => {
+                          event.stopPropagation();
+                          addDraftTaskFromSelected();
+                        }} disabled={actionBusy}>
+                          Task’e ekle
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -692,6 +888,38 @@ export function SwarmFlowPanel() {
                     <span>{selectedNode.subtitle}</span>
                   </div>
                   <p>{selectedNode.body}</p>
+                  <div className="swarm-graph__operation-surface">
+                    <div className="swarm-graph__operation-surface-header">
+                      <div>
+                        <strong>Live Operation Surface</strong>
+                        <p className="panel__hint">Grafikte seçili düğüm üzerinden follow-up, rerun ve HITL müdahalesi yapın.</p>
+                      </div>
+                      <button type="button" className="button-secondary" onClick={syncOperationSurface} disabled={activityLoading || hitlLoading || actionBusy}>
+                        {activityLoading || hitlLoading ? "Yüzey yenileniyor…" : "Yüzeyi Yenile"}
+                      </button>
+                    </div>
+
+                    <div className="swarm-graph__operation-grid">
+                      <div className="swarm-graph__operation-card">
+                        <span className="pill">Selected node draft</span>
+                        <p><strong>{selectedTaskDraft.intent}</strong> → {selectedTaskDraft.goal || "Taslak bekleniyor"}</p>
+                        <div className="swarm-graph__action-row">
+                          <button type="button" onClick={addDraftTaskFromSelected} disabled={actionBusy}>Takip Görevi Ekle</button>
+                          <button type="button" className="button-secondary" onClick={replaceFirstTaskFromSelected} disabled={actionBusy}>İlk Goal’ı Değiştir</button>
+                          <button type="button" className="button-secondary" onClick={() => void runSelectedNode()} disabled={actionBusy || running}>Bu Node’u Çalıştır</button>
+                        </div>
+                      </div>
+
+                      <div className="swarm-graph__operation-card">
+                        <span className="pill">Human-in-the-loop</span>
+                        <p>Seçili düğüm için operatör inceleme talebi üreterek otonom akışa kontrollü müdahale edin.</p>
+                        <div className="swarm-graph__action-row">
+                          <button type="button" onClick={() => void requestNodeReview()} disabled={actionBusy}>İnceleme İsteği Aç</button>
+                          <button type="button" className="button-secondary" onClick={loadPendingApprovals} disabled={hitlLoading}>Bekleyenleri Yenile</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <dl className="swarm-graph__detail-list">
                     {(selectedNode.details || toDetailEntries({
                       node_id: selectedNode.id,
@@ -709,6 +937,54 @@ export function SwarmFlowPanel() {
               ) : (
                 <div className="empty-state">İncelemek için grafikten bir düğüm seçin.</div>
               )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="inline-controls inline-controls--compact">
+              <div>
+                <h3>Canlı Operasyon Yüzeyi</h3>
+                <p className="panel__hint">Graf üstünden yapılan müdahaleler, HITL karar kuyruğu ve son operasyon günlükleri.</p>
+              </div>
+              <span className="pill">Pending HITL {pendingApprovals.length}</span>
+            </div>
+
+            <div className="swarm-graph__operation-grid">
+              <div className="swarm-graph__operation-card">
+                <strong>Bekleyen Onaylar</strong>
+                <div className="swarm-graph__approval-list">
+                  {pendingApprovals.length === 0 && <div className="empty-state">Bekleyen HITL kaydı yok.</div>}
+                  {pendingApprovals.map((item) => (
+                    <article key={item.request_id} className="swarm-graph__approval-item">
+                      <div>
+                        <strong>{item.action || "manual"}</strong>
+                        <p>{item.description || "Açıklama yok."}</p>
+                        <small className="panel__hint">{item.requested_by || "operator"}</small>
+                      </div>
+                      <div className="swarm-graph__action-row">
+                        <button type="button" onClick={() => void respondToApproval(item.request_id, true)} disabled={actionBusy}>Approve</button>
+                        <button type="button" className="button-secondary" onClick={() => void respondToApproval(item.request_id, false)} disabled={actionBusy}>Reject</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="swarm-graph__operation-card">
+                <strong>Operasyon Günlüğü</strong>
+                <ol className="timeline swarm-graph__operation-log">
+                  {operationLog.length === 0 && <li className="empty-state">Henüz kullanıcı aksiyonu kaydedilmedi.</li>}
+                  {operationLog.map((entry, idx) => (
+                    <li key={entry.id} className="timeline__item">
+                      <span className={`timeline__badge ${entry.tone === "success" ? "timeline__badge--success" : entry.tone === "warning" ? "timeline__badge--warning" : ""}`}>{idx + 1}</span>
+                      <div>
+                        <strong>{entry.message}</strong>
+                        <p>{formatTime(entry.ts)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             </div>
           </div>
 
@@ -777,15 +1053,6 @@ export function SwarmFlowPanel() {
                 </li>
               ))}
             </ol>
-          </div>
-
-          <div className="card">
-            <h3>Son Swarm Sonucu</h3>
-            {response ? (
-              <pre className="code-block">{JSON.stringify(response, null, 2)}</pre>
-            ) : (
-              <div className="empty-state">REST yanıtı burada gösterilir.</div>
-            )}
           </div>
         </div>
       </div>
