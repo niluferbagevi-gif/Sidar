@@ -9,6 +9,7 @@ v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal d
 
 ### Eklenenler (Added)
 - **Ultimate Launcher (`main.py`):** Etkileşimli CLI arayüzü, ön kontrol (preflight) mekanizması, `--capture-output`/`--child-log` desteği ve thread tabanlı alt süreç log akışı ile daha güvenli launcher davranışı sağlandı.
+- **Launcher Runtime Guard:** `config.py` importu başarısız olduğunda launcher artık `web_server.py` / `cli.py` alt süreçlerini fail-fast koruma ile durdurup kullanıcıya nedenini açıkça bildirir; böylece launcher-fallback ile child-process çökmesi arasındaki tutarsızlık giderildi.
 - **LSP Entegrasyonu:** `managers/code_manager.py` içine Pyright ve TypeScript LSP desteği, yapılandırılmış semantik audit ve güvenli refactor yardımcıları eklendi.
 - **Reviewer Agent Yetenekleri:** Reviewer ajanına `lsp_diagnostics` aracı eklenerek anlamsal kod denetimi kalite kapısına bağlandı.
 - **Multimodal Medya İşleme:** `core/multimodal.py` ile FFmpeg tabanlı video frame analizi, ses kanalı ayırma ve STT tabanlı medya bağlamı üretimi eklendi.

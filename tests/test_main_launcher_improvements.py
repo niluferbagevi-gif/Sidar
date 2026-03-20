@@ -104,3 +104,20 @@ def test_main_rejects_invalid_port_value(monkeypatch):
         main_mod.main()
 
     assert exc.value.code == 2
+
+def test_quick_mode_fails_fast_when_config_import_is_missing(monkeypatch, capsys):
+    main_mod = _load_main_module()
+    main_mod.CONFIG_IMPORT_OK = False
+
+    def _unexpected_execute(*_args, **_kwargs):
+        raise AssertionError("execute_command should not run when config import is missing")
+
+    monkeypatch.setattr(main_mod, "execute_command", _unexpected_execute)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--quick", "web"])
+
+    with pytest.raises(SystemExit) as exc:
+        main_mod.main()
+
+    out = capsys.readouterr().out
+    assert exc.value.code == 2
+    assert "config.py yüklenemediği için web_server.py güvenli şekilde başlatılamıyor" in out

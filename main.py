@@ -39,11 +39,14 @@ class DummyConfig:
     OLLAMA_URL = "http://localhost:11434/api"
     BASE_DIR = "."
 
+CONFIG_IMPORT_OK = True
+
 try:
     from config import Config
     cfg = Config()
     cfg.initialize_directories()
 except ImportError:
+    CONFIG_IMPORT_OK = False
     print(f"{YELLOW}⚠ config.py bulunamadı, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()
 
@@ -99,6 +102,19 @@ def confirm(prompt: str, default_yes: bool = True) -> bool:
     if not raw:
         return default_yes
     return raw in {"y", "yes", "e", "evet"}
+
+
+def validate_runtime_dependencies(mode: str) -> tuple[bool, str | None]:
+    """Seçilen alt süreç için kritik runtime bağımlılıklarını doğrular."""
+    if CONFIG_IMPORT_OK:
+        return True, None
+
+    target_script = "web_server.py" if mode == "web" else "cli.py"
+    return (
+        False,
+        f"config.py yüklenemediği için {target_script} güvenli şekilde başlatılamıyor. "
+        "Launcher varsayılanlarla açıldı ancak child process fail-fast olarak durduruldu.",
+    )
 
 
 def preflight(provider: str) -> None:
@@ -293,6 +309,11 @@ def run_wizard() -> int:
 
     preflight(provider)
 
+    runtime_ok, runtime_error = validate_runtime_dependencies(mode)
+    if not runtime_ok:
+        print(f"{RED}⛔ {runtime_error}{RESET}")
+        return 2
+
     cmd = build_command(mode, provider, level, log_level, extra_args)
 
     print(f"\n{CYAN}🚀 Başlatılacak komut:{RESET}")
@@ -373,6 +394,11 @@ def main() -> None:
         "host": args.host or getattr(cfg, "WEB_HOST", "0.0.0.0"),
         "port": args.port or str(getattr(cfg, "WEB_PORT", 7860))
     }
+
+    runtime_ok, runtime_error = validate_runtime_dependencies(args.quick)
+    if not runtime_ok:
+        print(f"{RED}⛔ {runtime_error}{RESET}")
+        sys.exit(2)
 
     cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
     sys.exit(execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log))
