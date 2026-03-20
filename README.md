@@ -72,6 +72,8 @@
 - **Araç Görselleştirme**: Her tool çağrısı SSE eventi olarak istemciye iletilir; web UI'da badge olarak gösterilir
 - Streaming yanıt (daktilo efekti)
 - **Direct P2P Handoff:** Coder/Reviewer/Researcher ajanları `p2p.v1` sözleşmesiyle sender, receiver, reason ve hop derinliği korunarak doğrudan görev devredebilir.
+- **Maliyet Farkındalığı (Cost-Aware Routing):** `core/router.py`, promptu zero-latency heuristic tarama ile karmaşıklık skoruna ayırır; günlük USD bütçe limiti dolduğunda veya görev basit kaldığında lokal sağlayıcıya, aksi durumda bulut modele yönlendirme yapar.
+- **Otonom Cron Tetikleyiciler:** `web_server.py` içindeki `_autonomous_cron_loop`, sistemin belirli aralıklarla kendi kendini uyandırıp bekleyen iş/sinyal fırsatlarını taramasını sağlar.
 
 ### GPU Hızlandırma (v2.6.0+)
 - PyTorch CUDA 12.4 desteği (RTX / Ampere serisi)
@@ -91,7 +93,7 @@
 - Çalışma zamanında aktif depo değiştirme (`/set-repo`)
 
 ### Web & Araştırma (WebSearchManager)
-- **Tavily** (öncelikli), **Google Custom Search**, **DuckDuckGo** (sırasıyla denenir)
+- **Tavily → Google Custom Search → DuckDuckGo** sıralı otomatik fallback; üst katman 401/403 veya timeout üretirse oturum bazında güvenli şekilde sıradaki sağlayıcıya düşer
 - URL içerik çekme — HTML temizleme dahil (`fetch_url`)
 - Kütüphane dokümantasyon araması (`search_docs`)
 - Stack Overflow araması (`search_stackoverflow`)
@@ -131,6 +133,7 @@
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
 ### Web Arayüzü (v4.3.0 runtime baseline)
+- **Görsel Swarm Akış Diyagramları:** `SwarmFlowPanel`, ajan görevleri, P2P handoff'lar, otonom cron tetikleri ve LLM düşünce/karar özetlerini node-graph olarak görselleştirir
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)
