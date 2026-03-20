@@ -82,6 +82,43 @@ def test_swarm_orchestrator_routes_and_executes_task(monkeypatch, swarm_module):
     assert orchestrator.active_task_count == 0
 
 
+def test_swarm_orchestrator_embeds_browser_signals_into_goal_and_graph(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    seen = {}
+
+    class _DummyAgent:
+        async def handle(self, envelope):
+            seen["goal"] = envelope.goal
+            seen["context"] = dict(envelope.context)
+            return swarm_module.TaskResult(
+                task_id=envelope.task_id,
+                status="success",
+                summary="İnceleme tamamlandı",
+                evidence=["browser-audit"],
+            )
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda intent: _DummySpec("reviewer"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda role_name, **kwargs: _DummyAgent())
+
+    task = swarm_module.SwarmTask(
+        goal="Dinamik akışı incele",
+        intent="code_review",
+        context={
+            "browser_session_id": "sess-browser",
+            "browser_signal_status": "failed",
+            "browser_signal_risk": "yüksek",
+            "browser_signal_summary": "Form submit sonrası browser click başarısız oldu.",
+        },
+    )
+    result = asyncio.run(orchestrator.run_parallel([task], session_id="sess-1", max_concurrency=1))
+
+    assert "[BROWSER_SIGNALS]" in seen["goal"]
+    assert "session_id=sess-browser" in seen["goal"]
+    assert result[0].graph["browser_signal_status"] == "failed"
+    assert result[0].graph["browser_signal_risk"] == "yüksek"
+    assert "browser click başarısız" in result[0].graph["browser_signal_summary"]
+
+
 def test_swarm_orchestrator_run_parallel_processes_all_tasks(monkeypatch, swarm_module):
     orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
 
