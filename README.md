@@ -104,7 +104,7 @@
 ### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
 - `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü, VAD olayları ve transcript→ajan yanıtı akışı
-- `core/voice.py` üzerinden ses segmentasyonu, TTS adaptörleri ve medya güvenlik limitleri
+- `core/voice.py` üzerinden ses segmentasyonu, duplex output buffer durumu, interrupt/barge-in temizliği ve TTS adaptörleri
 - FFmpeg sistem bağımlılığı ile medya dönüştürme; büyük dosyalar için byte limitleri ile korunur
 
 ### Playwright Dinamik Tarayıcı Otomasyonu (Kalıcı Yetenek)

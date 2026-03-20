@@ -13,6 +13,7 @@ v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal d
 - **Reviewer Agent Yetenekleri:** Reviewer ajanına `lsp_diagnostics` aracı eklenerek anlamsal kod denetimi kalite kapısına bağlandı.
 - **Multimodal Medya İşleme:** `core/multimodal.py` ile FFmpeg tabanlı video frame analizi, ses kanalı ayırma ve STT tabanlı medya bağlamı üretimi eklendi.
 - **Voice WebSocket Arayüzü:** `web_server.py` üzerinde base64 ses verilerini işleyip LLM bağlamına katan gerçek zamanlı sesli iletişim endpoint'leri açıldı; VAD olayları ve duplex voice state payload'ları testlerle doğrulandı.
+- **Duplex Voice-to-Voice Derinleşmesi:** `core/voice.py` ve `/ws/voice` hattına assistant turn kimliği, output buffer durumu, audio sıra numarası ve VAD tabanlı barge-in interrupt temizliği eklendi.
 - **Otonom Cron Loop:** SİDAR'ın kendi kendine uyanıp görevleri değerlendirmesini sağlayan `_autonomous_cron_loop` arka plan görevi eklendi.
 - **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`), yüksek riskli aksiyonlar için audit trail ve HITL korumalarıyla ürünleşti.
 - **GraphRAG Etki Analizi:** `core/rag.py` içindeki impact analizi; risk seviyesi, etkilenen endpoint handler'ları ve reviewer hedeflerini üreten daha yönlendirici bir raporlama katmanına genişletildi.

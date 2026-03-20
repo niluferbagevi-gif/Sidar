@@ -9,6 +9,7 @@ class _Cfg:
     VOICE_TTS_PROVIDER = "mock"
     VOICE_TTS_VOICE = ""
     VOICE_TTS_SEGMENT_CHARS = 12
+    VOICE_TTS_BUFFER_CHARS = 24
 
 
 def test_voice_pipeline_mock_synthesizes_audio_bytes():
@@ -130,3 +131,45 @@ def test_voice_pipeline_detects_barge_in_interrupt_signal():
     assert payload["interrupt_ready"] is True
     assert pipeline.should_interrupt_response(384, event="speech_start") is True
     assert pipeline.should_interrupt_response(128, event="speech_start") is False
+
+
+def test_voice_pipeline_tracks_duplex_output_buffers_and_interrupts():
+    cfg = SimpleNamespace(
+        VOICE_TTS_PROVIDER="mock",
+        VOICE_TTS_VOICE="",
+        VOICE_TTS_SEGMENT_CHARS=12,
+        VOICE_TTS_BUFFER_CHARS=24,
+        VOICE_VAD_ENABLED=True,
+        VOICE_DUPLEX_ENABLED=True,
+    )
+    pipeline = VoicePipeline(cfg)
+    state = pipeline.create_duplex_state()
+
+    turn_id = pipeline.begin_assistant_turn(state)
+    assert turn_id == 1
+
+    same_turn, packets = pipeline.buffer_assistant_text(state, "Merhaba", flush=False)
+    assert same_turn == 1
+    assert packets == []
+
+    same_turn, packets = pipeline.buffer_assistant_text(state, " dünya. Yeni cümle", flush=False)
+    assert same_turn == 1
+    assert packets[0]["assistant_turn_id"] == 1
+    assert packets[0]["audio_sequence"] == 1
+    assert packets[0]["text"] == "Merhaba dünya."
+
+    payload = pipeline.build_voice_state_payload(
+        event="speech",
+        buffered_bytes=320,
+        sequence=7,
+        duplex_state=state,
+    )
+    assert payload["assistant_turn_id"] == 1
+    assert payload["output_buffer_chars"] == len("Yeni cümle")
+
+    interrupt = pipeline.interrupt_assistant_turn(state, reason="barge_in")
+    assert interrupt["assistant_turn_id"] == 1
+    assert interrupt["dropped_text_chars"] == len("Yeni cümle")
+    assert interrupt["cancelled_audio_sequences"] == 1
+    assert state.output_text_buffer == ""
+    assert state.last_interrupt_reason == "barge_in"
