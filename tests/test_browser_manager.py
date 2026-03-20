@@ -762,3 +762,188 @@ def test_browser_manager_capture_screenshot_raises_ioerror_for_playwright_page(t
 
     with pytest.raises(OSError, match="disk write failed"):
         manager.capture_screenshot(session.session_id, "broken.png")
+
+
+def test_browser_manager_validate_url_rejects_missing_hostname():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    with pytest.raises(ValueError, match="Geçersiz URL"):
+        manager._validate_url("https:///missing-host")
+
+
+def test_browser_manager_is_available_checks_fallbacks_and_false(monkeypatch):
+    cfg = _Config()
+    cfg.BROWSER_PROVIDER = "auto"
+    manager = BM_MOD.BrowserManager(cfg)
+    real_import = __import__
+    attempted = []
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        attempted.append(name)
+        if name.startswith("playwright"):
+            raise ImportError("playwright missing")
+        if name == "selenium":
+            return SimpleNamespace()
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    assert manager.is_available() is True
+    assert "playwright.sync_api" in attempted
+    assert "selenium" in attempted
+
+    attempted.clear()
+
+    def _all_missing(name, globals=None, locals=None, fromlist=(), level=0):
+        attempted.append(name)
+        if name.startswith("playwright") or name == "selenium":
+            raise ImportError("missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _all_missing)
+    assert manager.is_available() is False
+    assert "playwright.sync_api" in attempted
+    assert "selenium" in attempted
+
+
+def test_browser_manager_start_session_reports_unknown_provider():
+    cfg = _Config()
+    cfg.BROWSER_PROVIDER = "mystery"
+    manager = BM_MOD.BrowserManager(cfg)
+
+    ok, payload = manager.start_session()
+
+    assert ok is False
+    assert payload["error"] == "Desteklenmeyen browser provider: mystery"
+
+
+def test_browser_manager_supports_selenium_navigation_click_fill_select_and_missing_close(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+
+    class _Element:
+        def click(self):
+            calls.append(("click",))
+
+        def clear(self):
+            calls.append(("clear",))
+
+        def send_keys(self, value):
+            calls.append(("send_keys", value))
+
+    element = _Element()
+
+    class _Driver:
+        current_url = ""
+
+        def get(self, url):
+            self.current_url = url
+            calls.append(("get", url))
+
+        def find_element(self, by, selector):
+            calls.append(("find_element", by, selector))
+            return element
+
+        def quit(self):
+            calls.append(("quit",))
+
+    by_mod = SimpleNamespace(CSS_SELECTOR="css selector")
+    selected = []
+
+    class _Select:
+        def __init__(self, value):
+            selected.append(("init", value))
+
+        def select_by_value(self, value):
+            selected.append(("select_by_value", value))
+
+    monkeypatch.setitem(sys.modules, "selenium", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.common", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.common.by", SimpleNamespace(By=by_mod))
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.support", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.support.select", SimpleNamespace(Select=_Select))
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-selenium-full",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=_Driver(),
+    )
+    manager._sessions[session.session_id] = session
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=False))
+
+    ok_goto, goto_msg = manager.goto_url(session.session_id, "https://example.com/path")
+    ok_click, click_msg = manager.click_element(session.session_id, "#submit")
+    ok_fill, fill_msg = manager.fill_form(session.session_id, "#name", "Sidar", clear=True)
+    ok_select, select_msg = manager.select_option(session.session_id, "#priority", "high")
+    ok_close, close_msg = manager.close_session(session.session_id)
+    missing_close = manager.close_session("missing-selenium")
+
+    assert (ok_goto, goto_msg) == (True, "Açıldı: https://example.com/path")
+    assert (ok_click, click_msg) == (True, "Tıklandı: #submit")
+    assert (ok_fill, fill_msg) == (True, "Form dolduruldu: #name")
+    assert (ok_select, select_msg) == (True, "Seçim yapıldı: #priority=high")
+    assert (ok_close, close_msg) == (True, "Tarayıcı oturumu kapatıldı: sess-selenium-full")
+    assert missing_close == (False, "Tarayıcı oturumu bulunamadı: missing-selenium")
+    assert ("get", "https://example.com/path") in calls
+    assert ("find_element", "css selector", "#submit") in calls
+    assert ("clear",) in calls
+    assert ("send_keys", "Sidar") in calls
+    assert selected[-1] == ("select_by_value", "high")
+    assert ("quit",) in calls
+
+
+def test_browser_manager_fill_form_uses_playwright_type_when_clear_false(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+    session = BM_MOD.BrowserSession(
+        session_id="sess-type",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(type=lambda selector, value, timeout: calls.append((selector, value, timeout))),
+    )
+    manager._sessions[session.session_id] = session
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=False))
+
+    ok, message = manager.fill_form(session.session_id, "#notes", "append", clear=False)
+
+    assert ok is True
+    assert message == "Form dolduruldu: #notes"
+    assert calls == [("#notes", "append", 5000)]
+    assert manager.list_audit_log()[-1]["details"]["clear"] is False
+
+
+def test_browser_manager_click_hitl_records_execution_failed_after_approval(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Page:
+        def click(self, *_args, **_kwargs):
+            raise RuntimeError("approved click still failed")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-hitl-click-error",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/jira/SID-3",
+    )
+    manager._sessions[session.session_id] = session
+
+    class _ApproveGate:
+        async def request_approval(self, **kwargs):
+            return True
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _ApproveGate())
+
+    with pytest.raises(RuntimeError, match="approved click still failed"):
+        asyncio.run(manager.click_element_hitl(session.session_id, "button[type='submit']"))
+
+    statuses = [entry["status"] for entry in manager.list_audit_log()]
+    assert statuses == ["pending_approval", "approved", "execution_failed"]
+    assert manager.list_audit_log()[-1]["details"]["error"] == "approved click still failed"
