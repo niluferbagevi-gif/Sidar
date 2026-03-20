@@ -410,6 +410,124 @@ async def _dispatch_autonomy_trigger(
     }
 
 
+def _fallback_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """CI remediation import'u stublandığında temel bağlamı yerelde normalize eder."""
+    data = dict(payload or {})
+    normalized = str(event_name or "").strip().lower()
+    failure_conclusions = {"failure", "timed_out", "cancelled", "startup_failure", "action_required"}
+
+    if bool(data.get("ci_failure") or data.get("pipeline_failed")) or normalized in {
+        "ci_failure_remediation",
+        "ci_pipeline_failed",
+        "pipeline_failed",
+    }:
+        return {
+            "kind": "generic_ci_failure",
+            "repo": str(data.get("repo") or data.get("repository") or "").strip(),
+            "workflow_name": str(data.get("workflow_name") or data.get("pipeline") or data.get("job_name") or "ci_failure").strip(),
+            "run_id": str(data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or "").strip(),
+            "run_number": str(data.get("run_number") or data.get("pipeline_number") or "").strip(),
+            "branch": str(data.get("branch") or data.get("ref") or "").strip(),
+            "base_branch": str(data.get("base_branch") or data.get("target_branch") or "main").strip(),
+            "sha": str(data.get("sha") or data.get("commit") or "").strip(),
+            "conclusion": str(data.get("conclusion") or "failure").strip(),
+            "status": str(data.get("status") or "completed").strip(),
+            "html_url": str(data.get("html_url") or data.get("pipeline_url") or "").strip(),
+            "jobs_url": str(data.get("jobs_url") or "").strip(),
+            "logs_url": str(data.get("logs_url") or data.get("log_url") or "").strip(),
+            "log_excerpt": str(data.get("log_excerpt") or data.get("logs") or data.get("error") or data.get("details") or "").strip(),
+            "failure_summary": str(data.get("failure_summary") or data.get("summary") or data.get("message") or "ci failure").strip(),
+            "failed_jobs": list(data.get("failed_jobs") or data.get("jobs") or []),
+        }
+
+    repository = dict(data.get("repository") or {})
+    repo_name = str(repository.get("full_name") or repository.get("name") or "").strip()
+
+    if normalized == "workflow_run":
+        workflow = dict(data.get("workflow_run") or {})
+        if (
+            str(workflow.get("status") or "").strip().lower() == "completed"
+            and str(workflow.get("conclusion") or "").strip().lower() in failure_conclusions
+        ):
+            pull_requests = list(workflow.get("pull_requests") or [])
+            base_branch = ""
+            if pull_requests:
+                base_branch = str((pull_requests[0] or {}).get("base", {}).get("ref", "") or "").strip()
+            return {
+                "kind": "workflow_run",
+                "repo": repo_name,
+                "workflow_name": str(workflow.get("name") or "workflow_run").strip(),
+                "run_id": str(workflow.get("id") or "").strip(),
+                "run_number": str(workflow.get("run_number") or "").strip(),
+                "branch": str(workflow.get("head_branch") or "").strip(),
+                "base_branch": base_branch or str(repository.get("default_branch") or "main").strip(),
+                "sha": str(workflow.get("head_sha") or "").strip(),
+                "conclusion": str(workflow.get("conclusion") or "").strip(),
+                "status": str(workflow.get("status") or "").strip(),
+                "html_url": str(workflow.get("html_url") or "").strip(),
+                "jobs_url": str(workflow.get("jobs_url") or "").strip(),
+                "logs_url": str(workflow.get("logs_url") or "").strip(),
+                "log_excerpt": str(workflow.get("display_title") or workflow.get("name") or "").strip(),
+                "failure_summary": str(workflow.get("conclusion") or "failure").strip(),
+                "failed_jobs": list(workflow.get("failed_jobs") or workflow.get("jobs") or []),
+            }
+
+    if normalized == "check_run":
+        check_run = dict(data.get("check_run") or {})
+        if str(check_run.get("conclusion") or "").strip().lower() in failure_conclusions:
+            output = dict(check_run.get("output") or {})
+            return {
+                "kind": "check_run",
+                "repo": repo_name,
+                "workflow_name": str(check_run.get("name") or "check_run").strip(),
+                "run_id": str(check_run.get("id") or "").strip(),
+                "run_number": "",
+                "branch": str(check_run.get("check_suite", {}).get("head_branch") or "").strip(),
+                "base_branch": str(repository.get("default_branch") or "main").strip(),
+                "sha": str(check_run.get("head_sha") or "").strip(),
+                "conclusion": str(check_run.get("conclusion") or "").strip(),
+                "status": str(check_run.get("status") or "").strip(),
+                "html_url": str(check_run.get("html_url") or "").strip(),
+                "jobs_url": str(check_run.get("details_url") or "").strip(),
+                "logs_url": str(check_run.get("details_url") or "").strip(),
+                "log_excerpt": "\n\n".join(filter(None, [str(output.get("summary") or "").strip(), str(output.get("text") or "").strip()])),
+                "failure_summary": str(output.get("title") or check_run.get("name") or "check failed").strip(),
+                "failed_jobs": list(check_run.get("failed_jobs") or check_run.get("jobs") or []),
+            }
+
+    if normalized == "check_suite":
+        suite = dict(data.get("check_suite") or {})
+        if str(suite.get("conclusion") or "").strip().lower() in failure_conclusions:
+            return {
+                "kind": "check_suite",
+                "repo": repo_name,
+                "workflow_name": str(suite.get("app", {}).get("name") or "check_suite").strip(),
+                "run_id": str(suite.get("id") or "").strip(),
+                "run_number": "",
+                "branch": str(suite.get("head_branch") or "").strip(),
+                "base_branch": str(repository.get("default_branch") or "main").strip(),
+                "sha": str(suite.get("head_sha") or "").strip(),
+                "conclusion": str(suite.get("conclusion") or "").strip(),
+                "status": str(suite.get("status") or "").strip(),
+                "html_url": str(suite.get("url") or "").strip(),
+                "jobs_url": "",
+                "logs_url": "",
+                "log_excerpt": str(suite.get("app", {}).get("name") or "check_suite_failure").strip(),
+                "failure_summary": str(suite.get("conclusion") or "check suite failure").strip(),
+                "failed_jobs": list(suite.get("failed_jobs") or suite.get("jobs") or []),
+            }
+
+    return {}
+
+
+def _resolve_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Önce çekirdek yardımcıyı dener; test stub/fallback durumunda yerel normalize eder."""
+    context = build_ci_failure_context(event_name, payload)
+    if context:
+        return dict(context)
+    return _fallback_ci_failure_context(event_name, payload)
+
+
 async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
     """Yapılandırılmış aralıklarla otonom değerlendirme tetikler."""
     interval = max(30, int(getattr(cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 900) or 900))
@@ -3017,12 +3135,12 @@ async def autonomy_webhook(
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
     payload_dict = data if isinstance(data, dict) else {"payload": data}
-    ci_context = build_ci_failure_context(str(payload_dict.get("event_name", source) or source), payload_dict)
+    ci_context = _resolve_ci_failure_context(str(payload_dict.get("event_name", source) or source), payload_dict)
     result = await _dispatch_autonomy_trigger(
         trigger_source=f"webhook:{source}:ci_failure" if ci_context else f"webhook:{source}",
         event_name="ci_failure_remediation" if ci_context else str(payload_dict.get("event_name", source) or source),
         payload=ci_context if ci_context else payload_dict,
-        meta={"source": source, "ci_failure": "true" if ci_context else "false"},
+        meta={"source": source, "provider": source, "ci_failure": "true" if ci_context else "false"},
     )
     return JSONResponse({"success": True, "result": result})
 
@@ -3247,7 +3365,7 @@ async def github_webhook(
         issue_num = data.get("issue", {}).get("number", "")
         msg = f"[GITHUB BİLDİRİMİ] Issue #{issue_num} durumu güncellendi ({action}): {issue_title}"
 
-    ci_context = build_ci_failure_context(x_github_event, data if isinstance(data, dict) else {})
+    ci_context = _resolve_ci_failure_context(x_github_event, data if isinstance(data, dict) else {})
     if ci_context:
         msg = (
             "[GITHUB CI] Başarısız pipeline algılandı: "
@@ -3270,7 +3388,7 @@ async def github_webhook(
                     trigger_source="webhook:github:ci_failure" if ci_context else "webhook:github",
                     event_name="ci_failure_remediation" if ci_context else x_github_event,
                     payload=ci_context if ci_context else (data if isinstance(data, dict) else {"payload": data}),
-                    meta={"provider": "github", "ci_failure": "true" if ci_context else "false"},
+                    meta={"source": "github", "provider": "github", "ci_failure": "true" if ci_context else "false"},
                 )
 
     return JSONResponse({"success": True, "event": x_github_event, "message": "İşlendi"})
