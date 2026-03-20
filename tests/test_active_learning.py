@@ -688,6 +688,82 @@ class TestContinuousLearningPipeline:
         assert result["training_result"]["success"] is True
         _run(store.close())
 
+    def test_build_sft_examples_skips_below_threshold_and_judge_reasoning_rows(self, tmp_path):
+        cfg = self._cfg(tmp_path)
+        store = MagicMock()
+        store.min_rating_for_train = 2
+
+        pipeline = ContinuousLearningPipeline(store, config=cfg)
+        examples = pipeline._build_sft_examples(
+            [
+                {"id": 1, "prompt": "P1", "response": "R1", "rating": 1, "correction": ""},
+                {"id": 2, "prompt": "P2", "response": "R2", "rating": 2, "correction": ""},
+                {
+                    "id": 3,
+                    "prompt": "P3",
+                    "response": "R3",
+                    "rating": 5,
+                    "correction": "Reasoning",
+                    "tags": ["judge:auto", "weak_response", "judge_reasoning"],
+                },
+                {"id": 4, "prompt": "P4", "response": "R4", "rating": 3, "correction": "C4"},
+            ]
+        )
+
+        assert examples == [
+            {
+                "instruction": "P2",
+                "input": "",
+                "output": "R2",
+                "source": "response",
+                "feedback_id": 2,
+            },
+            {
+                "instruction": "P4",
+                "input": "",
+                "output": "C4",
+                "source": "correction",
+                "feedback_id": 4,
+            },
+        ]
+
+    def test_run_cycle_schedules_when_preference_threshold_met_without_training(self, tmp_path):
+        cfg = self._cfg(tmp_path, min_sft=3, min_preference=1, trainer_enabled=False)
+        store = FeedbackStore(database_url=f"sqlite+aiosqlite:///{tmp_path/'cl-pref.db'}", config=cfg)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+
+        _run(store.record("Prompt", "Yanıt", rating=-1, correction="Düzeltilmiş yanıt"))
+
+        trainer = MagicMock()
+        trainer.enabled = False
+        pipeline = ContinuousLearningPipeline(store, config=cfg, trainer=trainer)
+        result = _run(pipeline.run_cycle(reason="preference-only"))
+
+        assert result["success"] is True
+        assert result["scheduled"] is True
+        assert result["manifest"]["counts"]["sft_examples"] == 0
+        assert result["manifest"]["counts"]["preference_examples"] == 1
+        assert result["training_result"]["reason"] == "trainer_disabled_or_insufficient_sft"
+        trainer.train.assert_not_called()
+        _run(store.close())
+
+    def test_schedule_cycle_swallows_background_runtime_errors(self, tmp_path):
+        cfg = self._cfg(tmp_path)
+
+        async def _exercise():
+            pipeline = ContinuousLearningPipeline(MagicMock(), config=cfg, trainer=MagicMock())
+
+            async def _boom(*, reason):
+                raise RuntimeError(f"duplicate/conflict: {reason}")
+
+            pipeline.run_cycle = _boom
+
+            assert pipeline.schedule_cycle(reason="judge:auto_feedback") is True
+            await asyncio.sleep(0)
+
+        _run(_exercise())
+
     def test_schedule_continuous_learning_cycle_uses_singleton(self, monkeypatch):
         calls = []
 
