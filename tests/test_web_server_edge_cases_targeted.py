@@ -214,3 +214,64 @@ def test_admin_list_policies_passes_none_tenant_when_blank(monkeypatch):
     response = asyncio.run(mod.admin_list_policies("u-1", "   ", _user=object()))
     assert seen == {"user_id": "u-1", "tenant_id": None}
     assert response.content["items"][0]["user_id"] == "u-1"
+
+def test_get_redis_ping_timeout_returns_none_and_rate_limit_uses_local_fallback(monkeypatch):
+    mod = _load_web_server()
+    mod._redis_client = None
+    mod._redis_lock = asyncio.Lock()
+
+    class _RedisClient:
+        async def ping(self):
+            raise TimeoutError("redis ping timeout")
+
+    monkeypatch.setattr(mod.Redis, "from_url", classmethod(lambda cls, *_a, **_k: _RedisClient()))
+
+    client = asyncio.run(mod._get_redis())
+    assert client is None
+
+    seen = {}
+
+    async def _fake_local(key, limit, window):
+        seen["key"] = key
+        seen["limit"] = limit
+        seen["window"] = window
+        return False
+
+    monkeypatch.setattr(mod, "_local_is_rate_limited", _fake_local)
+    limited = asyncio.run(mod._redis_is_rate_limited("chat", "10.0.0.1", 3, 30))
+
+    assert limited is False
+    assert seen["limit"] == 3
+    assert seen["window"] == 30
+    assert seen["key"].startswith("sidar:rl:chat:10.0.0.1:")
+
+
+
+def test_async_force_shutdown_local_llm_processes_kills_children_and_marks_cleanup(monkeypatch):
+    mod = _load_web_server()
+    mod._shutdown_cleanup_done = False
+    mod.cfg.AI_PROVIDER = "ollama"
+    mod.cfg.OLLAMA_FORCE_KILL_ON_SHUTDOWN = True
+
+    signals = []
+    sleeps = []
+
+    monkeypatch.setattr(mod, "_list_child_ollama_pids", lambda: [111, 222])
+    monkeypatch.setattr(mod.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    real_sleep = mod.asyncio.sleep
+    async def _fake_sleep(delay):
+        sleeps.append(delay)
+        await real_sleep(0)
+    monkeypatch.setattr(mod.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(mod, "_reap_child_processes_nonblocking", lambda: 2)
+
+    asyncio.run(mod._async_force_shutdown_local_llm_processes())
+
+    assert signals == [
+        (111, mod.signal.SIGTERM),
+        (222, mod.signal.SIGTERM),
+        (111, mod.signal.SIGKILL),
+        (222, mod.signal.SIGKILL),
+    ]
+    assert sleeps == [0.15]
+    assert mod._shutdown_cleanup_done is True

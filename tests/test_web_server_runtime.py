@@ -372,6 +372,9 @@ def _install_web_server_stubs():
 
     llm_client_mod.LLMClient = _LLMClient
 
+    ci_mod = types.ModuleType("core.ci_remediation")
+    ci_mod.build_ci_failure_context = lambda *_a, **_k: {}
+
     hitl_mod = types.ModuleType("core.hitl")
     hitl_mod._broadcast_hook = None
     hitl_mod.set_hitl_broadcast_hook = lambda hook: setattr(hitl_mod, "_broadcast_hook", hook)
@@ -389,6 +392,7 @@ def _install_web_server_stubs():
     _set_module("managers.system_health", managers_health_mod)
     _set_module("core.llm_metrics", core_metrics_mod)
     _set_module("core.llm_client", llm_client_mod)
+    _set_module("core.ci_remediation", ci_mod)
     _set_module("core.hitl", hitl_mod)
     return replaced_modules
 
@@ -413,7 +417,7 @@ def _load_web_server():
     finally:
         _restore_modules(
             replaced_modules,
-            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+            names=("core.hitl", "core.llm_metrics", "core.llm_client", "core.ci_remediation"),
         )
     return mod
 
@@ -441,7 +445,7 @@ def _load_web_server_with_blocked_imports():
         builtins.__import__ = real_import
         _restore_modules(
             replaced_modules,
-            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+            names=("core.hitl", "core.llm_metrics", "core.llm_client", "core.ci_remediation"),
         )
     return mod
 
@@ -2121,7 +2125,7 @@ def test_opentelemetry_import_success_path_with_stubbed_modules(monkeypatch):
     finally:
         _restore_modules(
             replaced_modules,
-            names=("core.hitl", "core.llm_metrics", "core.llm_client"),
+            names=("core.hitl", "core.llm_metrics", "core.llm_client", "core.ci_remediation"),
         )
 
 
