@@ -1,3 +1,4 @@
+import core.ci_remediation as ci_mod
 from core.ci_remediation import (
     build_ci_remediation_payload,
     build_ci_failure_context,
@@ -138,3 +139,62 @@ def test_ci_remediation_payload_includes_remediation_loop():
     assert remediation["remediation_loop"]["status"] == "planned"
     assert remediation["remediation_loop"]["validation_commands"][0] == "pytest -q tests/test_reviewer_agent.py"
     assert remediation["remediation_loop"]["steps"][0]["status"] == "completed"
+
+
+def test_ci_remediation_helper_fallbacks_cover_trim_skip_and_non_dict_jobs():
+    long_text = "x" * 1300
+    assert ci_mod._trim_text(long_text).endswith(" …[truncated]")
+
+    root_cause = ci_mod._extract_root_cause_line("\n\n   \n", "  ", "AssertionError: boom")
+    assert root_cause == "AssertionError: boom"
+
+    jobs = ci_mod._extract_failed_job_names({"jobs": ["pytest", {"title": "lint"}, "pytest"]})
+    assert jobs == ["pytest", "lint"]
+
+    hints = ci_mod._build_diagnostic_hints("Build timeout", "ImportError: missing module", ["tests/test_ci_remediation.py"])
+    assert any("Timeout" in hint for hint in hints)
+    assert any("Import zinciri" in hint for hint in hints)
+
+
+def test_check_suite_failure_context_and_event_detection_use_defaults():
+    payload = {
+        "repository": {"name": "sidar", "default_branch": "develop"},
+        "check_suite": {
+            "id": 88,
+            "head_branch": "feature/check-suite",
+            "head_sha": "cafebabe",
+            "status": "completed",
+            "conclusion": "timed_out",
+            "app": {"name": "GitHub Actions"},
+        },
+    }
+
+    assert is_ci_failure_event("check_suite", payload) is True
+
+    context = build_ci_failure_context("check_suite", payload)
+
+    assert context is not None
+    assert context["kind"] == "check_suite"
+    assert context["repo"] == "sidar"
+    assert context["workflow_name"] == "feature/check-suite"
+    assert context["base_branch"] == "develop"
+    assert context["log_excerpt"] == "GitHub Actions"
+    assert context["failure_summary"] == "timed_out"
+
+
+def test_root_cause_summary_falls_back_to_hint_and_validation_commands_skip_blanks():
+    context = {
+        "failure_summary": "",
+        "root_cause_hint": "ImportError: core/db.py could not be imported",
+        "suspected_targets": ["tests/test_ci_remediation.py"],
+    }
+
+    summary = ci_mod.build_root_cause_summary(context, "\n   \n")
+    commands = ci_mod._extract_validation_commands(
+        context,
+        "\n\n   \npytest -q tests/test_ci_remediation.py\npython -m pytest tests/test_agent_core_contracts.py\n",
+    )
+
+    assert summary == "ImportError: core/db.py could not be imported"
+    assert "pytest -q tests/test_ci_remediation.py" in commands
+    assert "python -m pytest tests/test_agent_core_contracts.py" in commands
