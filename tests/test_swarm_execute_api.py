@@ -1,3 +1,4 @@
+
 import asyncio
 import types
 
@@ -31,6 +32,8 @@ def test_execute_swarm_parallel_serializes_results(monkeypatch):
                     summary="tamam",
                     elapsed_ms=12,
                     evidence=["e1"],
+                    handoffs=[{"sender": "coder", "receiver": "reviewer", "reason": "coder_request_review"}],
+                    graph={"sender": "swarm_orchestrator", "receiver": "coder"},
                 )
             ]
 
@@ -55,6 +58,8 @@ def test_execute_swarm_parallel_serializes_results(monkeypatch):
     assert response.content["success"] is True
     assert response.content["mode"] == "parallel"
     assert response.content["results"][0]["agent_role"] == "coder"
+    assert response.content["results"][0]["handoffs"][0]["reason"] == "coder_request_review"
+    assert response.content["results"][0]["graph"]["receiver"] == "coder"
     assert calls["mode"] == "parallel"
     assert calls["session_id"] == "sess-42"
     assert calls["max_concurrency"] == 3
@@ -82,6 +87,8 @@ def test_execute_swarm_pipeline_uses_user_scoped_default_session(monkeypatch):
                     summary="özet",
                     elapsed_ms=21,
                     evidence=[],
+                    handoffs=[],
+                    graph={"sender": "swarm_orchestrator", "receiver": "reviewer"},
                 )
             ]
 

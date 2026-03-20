@@ -59,6 +59,20 @@ const getTaskTargetRole = (task, responseResults, index) =>
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 104;
 
+const prettifyReason = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const toDetailEntries = (record) =>
+  Object.entries(record || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => ({
+      key,
+      value: Array.isArray(value) ? value.join(" · ") : String(value),
+    }));
+
 export function SwarmFlowPanel() {
   const { telemetryEvents } = useChatStore();
   const [tasks, setTasks] = useState(DEFAULT_TASKS);
@@ -70,6 +84,7 @@ export function SwarmFlowPanel() {
   const [response, setResponse] = useState(null);
   const [autonomyActivity, setAutonomyActivity] = useState({ items: [], counts_by_status: {}, counts_by_source: {} });
   const [activityLoading, setActivityLoading] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState("");
 
   const loadAutonomyActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -97,11 +112,35 @@ export function SwarmFlowPanel() {
 
   const graphData = useMemo(() => {
     const responseResults = response?.results || [];
+    const handoffEvents = responseResults.flatMap((item, resultIndex) => {
+      const chain = Array.isArray(item.handoffs) ? item.handoffs : [];
+      if (chain.length > 0) {
+        return chain.map((handoff, handoffIndex) => ({
+          ...handoff,
+          resultIndex,
+          handoffIndex,
+        }));
+      }
+      const graph = item.graph || {};
+      if (!graph.p2p_sender || !graph.p2p_receiver) return [];
+      return [{
+        task_id: item.task_id,
+        sender: graph.p2p_sender,
+        receiver: graph.p2p_receiver,
+        reason: graph.p2p_reason,
+        intent: graph.intent,
+        handoff_depth: graph.p2p_handoff_depth,
+        swarm_hop: graph.swarm_hop,
+        resultIndex,
+        handoffIndex: 0,
+      }];
+    });
     const roleHints = Array.from(
       new Set(
         [
           ...tasks.map((task, index) => getTaskTargetRole(task, responseResults, index)),
           ...responseResults.map((item) => String(item.agent_role || "").toLowerCase()),
+          ...handoffEvents.flatMap((item) => [String(item.sender || "").toLowerCase(), String(item.receiver || "").toLowerCase()]),
         ].filter(Boolean),
       ),
     );
@@ -125,8 +164,9 @@ export function SwarmFlowPanel() {
       supervisor: 182,
       tasks: 336,
       agents: 500,
-      results: 664,
-      telemetry: 828,
+      handoffs: 664,
+      results: 828,
+      telemetry: 992,
     };
 
     const nodes = [];
@@ -184,8 +224,33 @@ export function SwarmFlowPanel() {
         y: rowY.agents,
       }));
 
+    const handoffNodes = handoffEvents.map((handoff, index) => {
+      const receiverRole = String(handoff.receiver || "supervisor").toLowerCase();
+      const lane = laneMap.get(receiverRole) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const sender = prettifyRole(handoff.sender || "unknown");
+      const receiver = prettifyRole(handoff.receiver || "unknown");
+      const reason = prettifyReason(handoff.reason || "delegation");
+      return {
+        id: `handoff-${handoff.task_id || handoff.resultIndex}-${index}`,
+        type: "handoff",
+        title: `${sender} → ${receiver}`,
+        subtitle: `depth ${handoff.handoff_depth || 0} · hop ${handoff.swarm_hop || 0}`,
+        body: clampText(`${reason} · ${handoff.intent || "mixed"} intent`, 170),
+        x: lane.x,
+        y: rowY.handoffs + index * 18,
+        details: toDetailEntries({
+          reason,
+          intent: handoff.intent || "mixed",
+          handoff_depth: handoff.handoff_depth || 0,
+          swarm_hop: handoff.swarm_hop || 0,
+          task_id: handoff.task_id || responseResults[handoff.resultIndex]?.task_id || "",
+        }),
+      };
+    });
+
     const resultNodes = responseResults.map((item, index) => {
       const lane = laneMap.get(String(item.agent_role || "").toLowerCase()) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const graph = item.graph || {};
       return {
         id: `result-${item.task_id || index}`,
         type: item.status === "success" ? "result-success" : item.status === "failed" ? "result-warning" : "result-neutral",
@@ -194,6 +259,15 @@ export function SwarmFlowPanel() {
         body: clampText(item.summary || "Özet üretilmedi", 160),
         x: lane.x,
         y: rowY.results + index * 18,
+        details: toDetailEntries({
+          task_id: item.task_id,
+          status: item.status,
+          elapsed_ms: item.elapsed_ms,
+          sender: graph.sender,
+          receiver: graph.receiver,
+          p2p_reason: graph.p2p_reason,
+          p2p_handoff_depth: graph.p2p_handoff_depth,
+        }),
       };
     });
 
@@ -210,6 +284,12 @@ export function SwarmFlowPanel() {
         actor: step.actor,
         x: lane.x,
         y: rowY.telemetry + laneCount * 128,
+        details: toDetailEntries({
+          actor: prettifyRole(step.actor),
+          kind: step.kind,
+          time: formatTime(step.ts),
+          content: step.content,
+        }),
       };
     });
 
@@ -217,6 +297,7 @@ export function SwarmFlowPanel() {
     pushNode(supervisorNode);
     taskNodes.forEach(pushNode);
     agentNodes.forEach(pushNode);
+    handoffNodes.forEach(pushNode);
     resultNodes.forEach(pushNode);
     telemetryNodes.forEach(pushNode);
 
@@ -276,10 +357,11 @@ export function SwarmFlowPanel() {
       const result = responseResults[index];
       const role = String(result?.agent_role || taskNodes[index]?.laneId || "supervisor").toLowerCase();
       const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
+      const resultHandoffs = handoffNodes.filter((node) => node.id.startsWith(`handoff-${result?.task_id || index}`));
       if (taskNode) {
         edges.push({
           id: `edge-task-result-${resultNode.id}`,
-          from: taskNode.id,
+          from: resultHandoffs[resultHandoffs.length - 1]?.id || taskNode.id,
           to: resultNode.id,
           label: result?.status || "result",
           emphasis: result?.status === "success" ? "success" : "warning",
@@ -297,6 +379,44 @@ export function SwarmFlowPanel() {
           from: resultNode.id,
           to: taskNodes[index + 1].id,
           label: "context handoff",
+          emphasis: "light",
+        });
+      }
+    });
+
+    handoffNodes.forEach((node, index) => {
+      const handoff = handoffEvents[index];
+      const senderRole = String(handoff.sender || "supervisor").toLowerCase();
+      const receiverRole = String(handoff.receiver || "supervisor").toLowerCase();
+      const result = responseResults[handoff.resultIndex];
+      const taskNode = taskNodes.find((task) => task.id === `task-${handoff.resultIndex}`) || taskNodes[handoff.resultIndex];
+      edges.push({
+        id: `edge-task-handoff-${node.id}`,
+        from: taskNode?.id || "supervisor",
+        to: node.id,
+        label: "p2p decision",
+        emphasis: "light",
+      });
+      edges.push({
+        id: `edge-sender-handoff-${node.id}`,
+        from: `agent-${senderRole}`,
+        to: node.id,
+        label: prettifyReason(handoff.reason || "delegation"),
+        emphasis: "strong",
+      });
+      edges.push({
+        id: `edge-handoff-receiver-${node.id}`,
+        from: node.id,
+        to: `agent-${receiverRole}`,
+        label: `depth ${handoff.handoff_depth || 0}`,
+        emphasis: "success",
+      });
+      if (result?.task_id) {
+        edges.push({
+          id: `edge-handoff-result-${node.id}`,
+          from: node.id,
+          to: `result-${result.task_id}`,
+          label: "handoff outcome",
           emphasis: "light",
         });
       }
@@ -331,10 +451,11 @@ export function SwarmFlowPanel() {
       roles: lanes.length,
       tasks: taskNodes.length,
       decisions: telemetryNodes.length,
-      handoffs: edges.filter((edge) => edge.label === "context handoff" || edge.label === "dispatch" || edge.label === "delegation").length,
+      handoffs: handoffNodes.length,
     };
 
-    return { nodes, edges, lanes, width, height, metrics };
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    return { nodes, edges, lanes, width, height, metrics, nodeMap };
   }, [autonomyActivity.items, mode, response, sessionId, steps, tasks]);
 
   const autonomySummary = useMemo(() => {
@@ -370,6 +491,19 @@ export function SwarmFlowPanel() {
       })
       .filter(Boolean);
   }, [graphData]);
+
+  useEffect(() => {
+    if (!selectedNodeId && graphData.nodes.length) {
+      setSelectedNodeId(graphData.nodes[0].id);
+    } else if (selectedNodeId && !graphData.nodeMap.has(selectedNodeId)) {
+      setSelectedNodeId(graphData.nodes[0]?.id || "");
+    }
+  }, [graphData, selectedNodeId]);
+
+  const selectedNode = useMemo(
+    () => graphData.nodeMap.get(selectedNodeId) || graphData.nodes[0] || null,
+    [graphData, selectedNodeId],
+  );
 
   const updateTask = useCallback((index, field, value) => {
     setTasks((prev) => prev.map((task, idx) => (idx === index ? { ...task, [field]: value } : task)));
@@ -477,7 +611,7 @@ export function SwarmFlowPanel() {
             <div className="inline-controls inline-controls--compact">
               <div>
                 <h3>Karar Grafiği</h3>
-                <p className="panel__hint">Trigger → Supervisor → görev → ajan → sonuç → karar telemetrisi zincirini node-graph olarak görün.</p>
+                <p className="panel__hint">Trigger → Supervisor → görev → ajan → P2P handoff → sonuç → karar telemetrisi zincirini node-graph olarak görün.</p>
               </div>
               <span className="pill">{graphData.nodes.length} node / {graphData.edges.length} edge</span>
             </div>
@@ -487,6 +621,7 @@ export function SwarmFlowPanel() {
               <span className="pill">Task {graphData.metrics.tasks}</span>
               <span className="pill pill--success">Decision {graphData.metrics.decisions}</span>
               <span className="pill">Handoff {graphData.metrics.handoffs}</span>
+              <span className="pill">Selected {selectedNode ? selectedNode.title : "n/a"}</span>
               <button type="button" className="button-secondary" onClick={loadAutonomyActivity} disabled={activityLoading}>
                 {activityLoading ? "Yükleniyor…" : "Aktiviteyi Yenile"}
               </button>
@@ -523,8 +658,17 @@ export function SwarmFlowPanel() {
                 {graphData.nodes.map((node) => (
                   <article
                     key={node.id}
-                    className={`swarm-graph__node swarm-graph__node--${node.type}`}
+                    className={`swarm-graph__node swarm-graph__node--${node.type} ${selectedNodeId === node.id ? "swarm-graph__node--selected" : ""}`}
                     style={{ left: `${node.x}px`, top: `${node.y}px` }}
+                    onClick={() => setSelectedNodeId(node.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedNodeId(node.id);
+                      }
+                    }}
                   >
                     <div className="swarm-graph__node-header">
                       <strong>{node.title}</strong>
@@ -534,6 +678,37 @@ export function SwarmFlowPanel() {
                   </article>
                 ))}
               </div>
+            </div>
+
+            <div className="swarm-graph__inspector">
+              <div>
+                <h4>Node Inspector</h4>
+                <p className="panel__hint">Seçili düğümün handoff_depth, p2p_reason ve karar zinciri detayları.</p>
+              </div>
+              {selectedNode ? (
+                <div className="swarm-graph__inspector-card">
+                  <div className="swarm-graph__inspector-header">
+                    <strong>{selectedNode.title}</strong>
+                    <span>{selectedNode.subtitle}</span>
+                  </div>
+                  <p>{selectedNode.body}</p>
+                  <dl className="swarm-graph__detail-list">
+                    {(selectedNode.details || toDetailEntries({
+                      node_id: selectedNode.id,
+                      type: selectedNode.type,
+                      lane_x: selectedNode.x,
+                      y: selectedNode.y,
+                    })).map((item) => (
+                      <React.Fragment key={`${selectedNode.id}-${item.key}`}>
+                        <dt>{item.key}</dt>
+                        <dd>{item.value}</dd>
+                      </React.Fragment>
+                    ))}
+                  </dl>
+                </div>
+              ) : (
+                <div className="empty-state">İncelemek için grafikten bir düğüm seçin.</div>
+              )}
             </div>
           </div>
 
