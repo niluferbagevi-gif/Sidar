@@ -43,6 +43,59 @@ def test_autonomy_webhook_dispatches_trigger_to_agent():
     assert response.content["result"]["status"] == "success"
 
 
+def test_autonomy_webhook_normalizes_generic_ci_failure_payload():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["source"] = trigger.source
+        captured["event_name"] = trigger.event_name
+        captured["payload"] = dict(trigger.payload or {})
+        captured["meta"] = dict(trigger.meta or {})
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "ci remediation planned",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(handle_external_trigger=_handle_trigger)
+
+    mod.get_agent = _get_agent
+    mod.cfg.ENABLE_EVENT_WEBHOOKS = True
+    mod.cfg.AUTONOMY_WEBHOOK_SECRET = ""
+
+    request = _FakeRequest(
+        method="POST",
+        path="/api/autonomy/webhook/gitlab",
+        body_bytes=json.dumps(
+            {
+                "event_name": "ci_pipeline_failed",
+                "ci_failure": True,
+                "repo": "acme/sidar",
+                "workflow_name": "nightly",
+                "pipeline_id": 71,
+                "branch": "main",
+                "failure_summary": "tests/test_voice_pipeline.py timed out",
+                "log_excerpt": "TimeoutError: tests/test_voice_pipeline.py exceeded 120s",
+            }
+        ).encode("utf-8"),
+    )
+
+    response = asyncio.run(mod.autonomy_webhook("gitlab", request, ""))
+
+    assert response.content["success"] is True
+    assert captured["source"] == "webhook:gitlab:ci_failure"
+    assert captured["event_name"] == "ci_failure_remediation"
+    assert captured["payload"]["kind"] == "generic_ci_failure"
+    assert captured["meta"]["ci_failure"] == "true"
+
+
 def test_autonomy_wake_and_activity_return_structured_payloads():
     mod = _load_web_server()
 

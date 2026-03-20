@@ -1,4 +1,5 @@
 from core.ci_remediation import (
+    build_ci_remediation_payload,
     build_ci_failure_context,
     build_ci_failure_prompt,
     build_pr_proposal,
@@ -68,3 +69,32 @@ def test_check_run_failure_generates_pr_proposal():
     assert proposal["head_branch_suggestion"] == "ci-remediation/501"
     assert "Kök neden" in proposal["body"]
     assert "tests/test_reviewer_agent.py" in proposal["body"]
+
+
+def test_generic_ci_failure_payload_builds_structured_remediation():
+    payload = {
+        "event_name": "ci_pipeline_failed",
+        "ci_failure": True,
+        "repo": "acme/sidar",
+        "workflow_name": "Nightly",
+        "pipeline_id": 901,
+        "branch": "main",
+        "base_branch": "main",
+        "failure_summary": "pytest timed out on tests/test_web_server_voice.py",
+        "log_excerpt": "TimeoutError: tests/test_web_server_voice.py exceeded 120s",
+        "failed_jobs": [{"name": "pytest"}],
+        "logs_url": "https://ci.example/logs/901",
+    }
+
+    context = build_ci_failure_context("ci_pipeline_failed", payload)
+
+    assert context is not None
+    assert context["kind"] == "generic_ci_failure"
+    assert context["workflow_name"] == "Nightly"
+    assert context["failed_jobs"] == ["pytest"]
+    assert context["root_cause_hint"].startswith("TimeoutError")
+
+    remediation = build_ci_remediation_payload(context, "TimeoutError: flaky websocket teardown causes long wait.")
+    assert remediation["root_cause_summary"].startswith("TimeoutError")
+    assert remediation["pr_proposal"]["auto_create_ready"] is True
+    assert "Root Cause Hypothesis" in remediation["pr_proposal"]["body"]

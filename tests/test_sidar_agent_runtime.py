@@ -270,6 +270,8 @@ def test_handle_external_trigger_builds_ci_remediation_payload():
     assert record["remediation"]["prompt"].startswith("[CI_REMEDIATION]")
     assert isinstance(record["remediation"]["suspected_targets"], list)
     assert isinstance(record["remediation"]["diagnostic_hints"], list)
+    assert record["remediation"]["root_cause_summary"].startswith("Kök neden")
+    assert record["remediation"]["pr_proposal"]["auto_create_ready"] is True
     assert record["remediation"]["pr_proposal"]["head_branch_suggestion"] == "ci-remediation/77"
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()

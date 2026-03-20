@@ -2919,11 +2919,13 @@ async def autonomy_webhook(
     except json.JSONDecodeError:
         return JSONResponse({"success": False, "error": "Geçersiz JSON payload'u"}, status_code=400)
 
+    payload_dict = data if isinstance(data, dict) else {"payload": data}
+    ci_context = build_ci_failure_context(str(payload_dict.get("event_name", source) or source), payload_dict)
     result = await _dispatch_autonomy_trigger(
-        trigger_source=f"webhook:{source}",
-        event_name=str(data.get("event_name", source) or source),
-        payload=data if isinstance(data, dict) else {"payload": data},
-        meta={"source": source},
+        trigger_source=f"webhook:{source}:ci_failure" if ci_context else f"webhook:{source}",
+        event_name="ci_failure_remediation" if ci_context else str(payload_dict.get("event_name", source) or source),
+        payload=ci_context if ci_context else payload_dict,
+        meta={"source": source, "ci_failure": "true" if ci_context else "false"},
     )
     return JSONResponse({"success": True, "result": result})
 
