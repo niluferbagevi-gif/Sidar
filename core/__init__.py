@@ -46,6 +46,7 @@ rag = _optional_module("core.rag")
 llm_metrics = _optional_module("core.llm_metrics")
 multimodal = _optional_module("core.multimodal")
 voice = _optional_module("core.voice")
+active_learning = _optional_module("core.active_learning")
 
 
 LLMClient = _optional_import("core.llm_client", "LLMClient")
