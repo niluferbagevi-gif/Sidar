@@ -116,6 +116,20 @@ Her uzman ajan yalnızca kendi tool setini görür. Böylece ReAct karar yüzeyi
   - `list_prs`, `pr_diff`, `issues`, `repo_meta`, `changelog/release` yardımcıları.
 - Çıktı formatı: risk matrisi, review checklist, önerilen aksiyonlar.
 
+### 5.5 CoverageAgent (Test Uzmanı)
+
+- Yalnızca test yazma ve kalite araçlarına sahiptir:
+  - `read_coverage_report`, `generate_missing_tests`, `run_targeted_tests`, `list_flaky_tests`.
+- Coverage raporlarını okuyup eksik branch/edge-case senaryolarını doldurur.
+- Çıktı formatı: kapsam açığı özeti, önerilen test dosyaları ve riskli kapsanmayan alanlar.
+
+### 5.6 PoyrazAgent (Dijital Pazarlama)
+
+- Sosyal medya ve dış operasyon araçlarına sahiptir:
+  - içerik taslağı üretimi, gönderi planlama, müşteri iletişimi ve platform metrik analizi.
+- Instagram/Facebook/WhatsApp gibi kanallarda paylaşım ve etkileşim akışlarını yönetir.
+- Çıktı formatı: içerik planı, mesaj taslağı, operasyon özeti ve metrik değerlendirmesi.
+
 ---
 
 ## 6) İletişim Protokolü (Agent Contract)
@@ -191,6 +205,8 @@ agent/
     coder_agent.py         # code-centric tool set
     researcher_agent.py    # web + rag tool set
     reviewer_agent.py      # github/review tool set
+    coverage_agent.py      # coverage/test automation tool set
+    poyraz_agent.py        # digital marketing / operations tool set
   sidar_agent.py           # backward-compatible facade
 ```
 
