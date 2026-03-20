@@ -109,6 +109,83 @@ def test_reviewer_summarize_lsp_diagnostics_rejects_errors():
     assert summary["counts"] == {1: 1, 2: 1}
 
 
+def test_reviewer_build_combined_impact_report_detects_indirect_breakage():
+    semantic_report = {
+        "status": "issues-found",
+        "risk": "yüksek",
+        "decision": "REJECT",
+        "counts": {1: 1},
+        "issues": [
+            {
+                "path": "/workspace/Sidar/web_server.py",
+                "line": 12,
+                "character": 4,
+                "severity": 1,
+                "message": "name is not defined",
+            }
+        ],
+        "summary": "LSP semantik denetimi 1 bulgu üretti.",
+    }
+    graph_summary = {
+        "status": "ok",
+        "risk": "orta",
+        "high_risk_targets": ["core/db.py"],
+        "followup_paths": ["web_server.py", "web_ui_react/src/App.jsx"],
+        "summary": "GraphRAG 1 hedefi analiz etti.",
+    }
+
+    combined = ReviewerAgent._build_combined_impact_report(
+        semantic_report,
+        graph_summary,
+        ["core/db.py"],
+        ["core/db.py", "web_server.py"],
+    )
+
+    assert combined["impact_level"] == "critical"
+    assert combined["indirect_breakage_paths"] == ["web_server.py"]
+    assert combined["high_risk_targets"] == ["core/db.py"]
+
+
+def test_reviewer_build_fix_recommendations_prioritizes_graph_semantic_overlap():
+    semantic_report = {
+        "issues": [
+            {
+                "path": "/workspace/Sidar/web_server.py",
+                "severity": 1,
+                "message": "name is not defined",
+            }
+        ]
+    }
+    graph_payload = {
+        "reports": [
+            {
+                "target": "core/db.py",
+                "ok": True,
+                "details": {
+                    "review_targets": ["core/db.py", "web_server.py"],
+                    "impacted_endpoint_handlers": ["web_server.py"],
+                    "caller_files": [],
+                    "direct_dependents": [],
+                    "impacted_endpoints": ["endpoint:GET /health"],
+                },
+            }
+        ]
+    }
+    combined_impact = {
+        "indirect_breakage_paths": ["web_server.py"],
+    }
+
+    recommendations = ReviewerAgent._build_fix_recommendations(
+        semantic_report,
+        graph_payload,
+        combined_impact,
+    )
+
+    assert recommendations[0]["path"] == "web_server.py"
+    assert recommendations[0]["reason"] == "graph+semantic"
+    assert "endpoint:GET /health" in recommendations[0]["related_endpoints"]
+
+
 def test_reviewer_lsp_diagnostics_tool_uses_code_manager(monkeypatch):
     a = ReviewerAgent()
 
@@ -368,6 +445,65 @@ def test_reviewer_review_code_escalates_risk_from_graph_scope(monkeypatch):
     assert payload["decision"] == "APPROVE"
     assert payload["risk"] == "orta"
     assert payload["graph_review_scope"]["risk"] == "orta"
+    assert payload["combined_impact_report"]["impact_level"] == "high"
+    assert payload["fix_recommendations"][0]["path"] == "web_server.py"
     assert "web_server.py" in payload["lsp_scope_paths"]
     assert "web_ui_react/src/App.jsx" in payload["lsp_scope_paths"]
     assert captured_args and "web_server.py" in captured_args[0]
+
+
+def test_reviewer_review_code_flags_indirect_breakage_from_graph_plus_lsp(monkeypatch):
+    a = ReviewerAgent()
+
+    async def fake_dynamic(_ctx: str) -> str:
+        return "[TEST:OK] dynamic"
+
+    async def fake_run_tests(arg: str) -> str:
+        return f"[TEST:OK] {arg}"
+
+    async def fake_lsp(_arg: str) -> str:
+        return json.dumps({
+            "status": "issues-found",
+            "risk": "yüksek",
+            "decision": "REJECT",
+            "counts": {1: 1},
+            "issues": [
+                {
+                    "path": "/workspace/Sidar/web_server.py",
+                    "line": 5,
+                    "character": 2,
+                    "severity": 1,
+                    "message": "Cannot access member",
+                }
+            ],
+            "summary": "LSP semantik denetimi 1 bulgu üretti (error=1, warning=0, info=0).",
+        }, ensure_ascii=False)
+
+    monkeypatch.setattr(a, "_run_dynamic_tests", fake_dynamic)
+    a.tools["run_tests"] = fake_run_tests
+    a.tools["lsp_diagnostics"] = fake_lsp
+    a.tools["graph_impact"] = lambda _arg: asyncio.sleep(0, result=json.dumps({
+        "status": "ok",
+        "summary": "GraphRAG etki analizi 1 hedef için üretildi.",
+        "targets": ["core/db.py"],
+        "reports": [{
+            "target": "core/db.py",
+            "ok": True,
+            "report": "[GraphRAG Impact] core/db.py",
+            "details": {
+                "risk_level": "high",
+                "review_targets": ["core/db.py", "web_server.py"],
+                "impacted_endpoint_handlers": ["web_server.py"],
+                "caller_files": ["web_ui_react/src/App.jsx"],
+                "direct_dependents": [],
+                "impacted_endpoints": ["endpoint:GET /health"],
+            },
+        }],
+    }, ensure_ascii=False))
+
+    out = asyncio.run(a.run_task("review_code|core/db.py"))
+    payload = json.loads(out.payload.split("|", 1)[1])
+    assert payload["decision"] == "REJECT"
+    assert payload["combined_impact_report"]["indirect_breakage_paths"] == ["web_server.py"]
+    assert payload["fix_recommendations"][0]["path"] == "web_server.py"
+    assert payload["fix_recommendations"][0]["reason"] == "graph+semantic"
