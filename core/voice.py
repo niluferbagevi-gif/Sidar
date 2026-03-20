@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import re
 import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,10 @@ class VoicePipeline:
         provider = str(getattr(config, "VOICE_TTS_PROVIDER", "auto") or "auto")
         self.voice = str(getattr(config, "VOICE_TTS_VOICE", "") or "")
         self.segment_chars = max(20, int(getattr(config, "VOICE_TTS_SEGMENT_CHARS", 48) or 48))
+        self.buffer_chars = max(
+            self.segment_chars,
+            int(getattr(config, "VOICE_TTS_BUFFER_CHARS", self.segment_chars * 2) or (self.segment_chars * 2)),
+        )
         self.vad_enabled = bool(getattr(config, "VOICE_VAD_ENABLED", True))
         self.vad_min_speech_bytes = max(256, int(getattr(config, "VOICE_VAD_MIN_SPEECH_BYTES", 1024) or 1024))
         self.duplex_enabled = bool(getattr(config, "VOICE_DUPLEX_ENABLED", True))
@@ -161,6 +166,93 @@ class VoicePipeline:
 
         return segments, remainder
 
+    @dataclass
+    class DuplexState:
+        assistant_turn_id: int = 0
+        output_sequence: int = 0
+        output_text_buffer: str = ""
+        interrupted_turns: list[int] = field(default_factory=list)
+        last_interrupt_reason: str = ""
+
+    def create_duplex_state(self) -> "VoicePipeline.DuplexState":
+        return self.DuplexState()
+
+    def begin_assistant_turn(self, state: "VoicePipeline.DuplexState | None") -> int:
+        if state is None:
+            return 0
+        state.assistant_turn_id += 1
+        state.output_sequence = 0
+        state.output_text_buffer = ""
+        state.last_interrupt_reason = ""
+        return state.assistant_turn_id
+
+    def buffer_assistant_text(
+        self,
+        state: "VoicePipeline.DuplexState | None",
+        text: str,
+        *,
+        flush: bool = False,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        if state is None:
+            normalized = str(text or "")
+            ready_segments, _remainder = self.extract_ready_segments(normalized, flush=flush)
+            return 0, [
+                {"assistant_turn_id": 0, "audio_sequence": idx, "text": segment}
+                for idx, segment in enumerate(ready_segments, start=1)
+            ]
+
+        if text:
+            state.output_text_buffer += str(text)
+
+        emit_flush = flush
+        if not emit_flush and len(state.output_text_buffer.strip()) < self.buffer_chars:
+            probe_segments, _probe_remainder = self.extract_ready_segments(state.output_text_buffer, flush=False)
+            if not probe_segments:
+                return state.assistant_turn_id, []
+
+        ready_segments, remainder = self.extract_ready_segments(state.output_text_buffer, flush=emit_flush)
+        state.output_text_buffer = remainder
+        packets: list[dict[str, Any]] = []
+        for segment in ready_segments:
+            state.output_sequence += 1
+            packets.append(
+                {
+                    "assistant_turn_id": state.assistant_turn_id,
+                    "audio_sequence": state.output_sequence,
+                    "text": segment,
+                }
+            )
+        return state.assistant_turn_id, packets
+
+    def interrupt_assistant_turn(
+        self,
+        state: "VoicePipeline.DuplexState | None",
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        if state is None:
+            return {
+                "assistant_turn_id": 0,
+                "dropped_text_chars": 0,
+                "cancelled_audio_sequences": 0,
+                "reason": str(reason or "").strip() or "interrupt",
+            }
+
+        dropped = len(state.output_text_buffer)
+        cancelled_sequences = state.output_sequence
+        turn_id = state.assistant_turn_id
+        if turn_id:
+            state.interrupted_turns.append(turn_id)
+        state.output_text_buffer = ""
+        state.output_sequence = 0
+        state.last_interrupt_reason = str(reason or "").strip() or "interrupt"
+        return {
+            "assistant_turn_id": turn_id,
+            "dropped_text_chars": dropped,
+            "cancelled_audio_sequences": cancelled_sequences,
+            "reason": state.last_interrupt_reason,
+        }
+
     def should_commit_audio(self, buffered_bytes: int, *, event: str = "") -> bool:
         """Basit VAD benzeri karar: speech_end/silence olayı ve yeterli buffer varsa işle."""
         if not self.vad_enabled:
@@ -185,8 +277,11 @@ class VoicePipeline:
         event: str,
         buffered_bytes: int,
         sequence: int,
+        duplex_state: "VoicePipeline.DuplexState | None" = None,
     ) -> dict[str, Any]:
         normalized = str(event or "").strip().lower() or "unknown"
+        output_buffer_chars = len(getattr(duplex_state, "output_text_buffer", "") or "")
+        assistant_turn_id = int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
         return {
             "voice_state": normalized,
             "buffered_bytes": max(0, int(buffered_bytes or 0)),
@@ -196,6 +291,9 @@ class VoicePipeline:
             "duplex_enabled": self.duplex_enabled,
             "interrupt_ready": self.should_interrupt_response(buffered_bytes, event=normalized),
             "tts_enabled": self.enabled,
+            "assistant_turn_id": assistant_turn_id,
+            "output_buffer_chars": output_buffer_chars,
+            "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
         }
 
     async def synthesize_text(self, text: str) -> dict[str, Any]:

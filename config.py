@@ -522,6 +522,7 @@ class Config:
     VOICE_TTS_PROVIDER: str = os.getenv("VOICE_TTS_PROVIDER", "auto")
     VOICE_TTS_VOICE: str = os.getenv("VOICE_TTS_VOICE", "")
     VOICE_TTS_SEGMENT_CHARS: int = get_int_env("VOICE_TTS_SEGMENT_CHARS", 48)
+    VOICE_TTS_BUFFER_CHARS: int = get_int_env("VOICE_TTS_BUFFER_CHARS", 96)
     VOICE_VAD_ENABLED: bool = get_bool_env("VOICE_VAD_ENABLED", True)
     VOICE_VAD_MIN_SPEECH_BYTES: int = get_int_env("VOICE_VAD_MIN_SPEECH_BYTES", 1024)
     VOICE_DUPLEX_ENABLED: bool = get_bool_env("VOICE_DUPLEX_ENABLED", True)

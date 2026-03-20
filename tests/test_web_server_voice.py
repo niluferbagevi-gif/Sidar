@@ -74,6 +74,36 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
     class _VoicePipeline:
         def __init__(self, *_args, **_kwargs):
             self.enabled = True
+            self.duplex_enabled = True
+
+        class _State:
+            assistant_turn_id = 0
+            output_text_buffer = ""
+            last_interrupt_reason = ""
+
+        def create_duplex_state(self):
+            return self._State()
+
+        def begin_assistant_turn(self, state):
+            state.assistant_turn_id += 1
+            state.output_text_buffer = ""
+            return state.assistant_turn_id
+
+        def buffer_assistant_text(self, state, text, *, flush=False):
+            text = str(text or "")
+            if text:
+                state.output_text_buffer += text
+            payload = state.output_text_buffer.strip()
+            if not payload:
+                return state.assistant_turn_id, []
+            if flush:
+                state.output_text_buffer = ""
+                return state.assistant_turn_id, [{
+                    "assistant_turn_id": state.assistant_turn_id,
+                    "audio_sequence": 1,
+                    "text": payload,
+                }]
+            return state.assistant_turn_id, []
 
         def extract_ready_segments(self, text, flush=False):
             text = str(text or "").strip()
@@ -125,6 +155,7 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
     assert {"auth_ok": True} in ws.sent
     assert {"buffered_bytes": 7} in ws.sent
     assert {"transcript": "Sunucuyu yeniden başlat.", "language": "tr", "provider": "whisper"} in ws.sent
+    assert {"assistant_turn": "started", "assistant_turn_id": 1} in ws.sent
     assert {"chunk": "yanit:Sunucuyu yeniden başlat."} in ws.sent
     assert {
         "audio_chunk": "dHRzOnlhbml0OlN1bnVjdXl1IHllbmlkZW4gYmHFn2xhdC4=",
@@ -132,7 +163,10 @@ def test_websocket_voice_transcribes_audio_and_streams_agent_reply():
         "audio_mime_type": "audio/mock",
         "audio_provider": "mock",
         "audio_voice": "",
+        "assistant_turn_id": 1,
+        "audio_sequence": 1,
     } in ws.sent
+    assert {"assistant_turn": "completed", "assistant_turn_id": 1} in ws.sent
     assert ws.sent[-1] == {"done": True}
 
 
@@ -228,6 +262,36 @@ def test_websocket_voice_vad_event_auto_commits_buffered_audio():
         def __init__(self, *_args, **_kwargs):
             self.enabled = True
             self.vad_enabled = True
+            self.duplex_enabled = True
+
+        class _State:
+            assistant_turn_id = 0
+            output_text_buffer = ""
+            last_interrupt_reason = ""
+
+        def create_duplex_state(self):
+            return self._State()
+
+        def begin_assistant_turn(self, state):
+            state.assistant_turn_id += 1
+            state.output_text_buffer = ""
+            return state.assistant_turn_id
+
+        def buffer_assistant_text(self, state, text, *, flush=False):
+            text = str(text or "")
+            if text:
+                state.output_text_buffer += text
+            payload = state.output_text_buffer.strip()
+            if not payload:
+                return state.assistant_turn_id, []
+            if flush:
+                state.output_text_buffer = ""
+                return state.assistant_turn_id, [{
+                    "assistant_turn_id": state.assistant_turn_id,
+                    "audio_sequence": 1,
+                    "text": payload,
+                }]
+            return state.assistant_turn_id, []
 
         def extract_ready_segments(self, text, flush=False):
             text = str(text or "").strip()
@@ -247,14 +311,19 @@ def test_websocket_voice_vad_event_auto_commits_buffered_audio():
         def should_commit_audio(self, buffered_bytes, *, event=""):
             return event == "speech_end" and buffered_bytes >= 1024
 
-        def build_voice_state_payload(self, *, event, buffered_bytes, sequence):
+        def build_voice_state_payload(self, *, event, buffered_bytes, sequence, duplex_state=None):
             return {
                 "voice_state": event,
                 "buffered_bytes": buffered_bytes,
                 "sequence": sequence,
                 "vad_enabled": True,
                 "auto_commit_ready": self.should_commit_audio(buffered_bytes, event=event),
+                "duplex_enabled": True,
+                "interrupt_ready": False,
                 "tts_enabled": True,
+                "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
+                "output_buffer_chars": len(getattr(duplex_state, "output_text_buffer", "") or ""),
+                "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
             }
 
     voice_mod.VoicePipeline = _VoicePipeline
@@ -352,6 +421,38 @@ def test_websocket_voice_barge_in_cancels_active_duplex_response():
             self.enabled = True
             self.vad_enabled = True
             self.duplex_enabled = True
+            self._output_seq = 0
+
+        class _State:
+            assistant_turn_id = 0
+            output_text_buffer = ""
+            last_interrupt_reason = ""
+
+        def create_duplex_state(self):
+            return self._State()
+
+        def begin_assistant_turn(self, state):
+            state.assistant_turn_id += 1
+            state.output_text_buffer = ""
+            self._output_seq = 0
+            return state.assistant_turn_id
+
+        def buffer_assistant_text(self, state, text, *, flush=False):
+            text = str(text or "")
+            if text:
+                state.output_text_buffer += text
+            payload = state.output_text_buffer.strip()
+            if not payload:
+                return state.assistant_turn_id, []
+            if flush:
+                self._output_seq += 1
+                state.output_text_buffer = ""
+                return state.assistant_turn_id, [{
+                    "assistant_turn_id": state.assistant_turn_id,
+                    "audio_sequence": self._output_seq,
+                    "text": payload,
+                }]
+            return state.assistant_turn_id, []
 
         def extract_ready_segments(self, text, flush=False):
             text = str(text or "").strip()
@@ -374,7 +475,19 @@ def test_websocket_voice_barge_in_cancels_active_duplex_response():
         def should_interrupt_response(self, buffered_bytes, *, event=""):
             return event == "speech_start" and buffered_bytes >= 300
 
-        def build_voice_state_payload(self, *, event, buffered_bytes, sequence):
+        def interrupt_assistant_turn(self, state, *, reason):
+            dropped = len(state.output_text_buffer)
+            turn_id = state.assistant_turn_id
+            state.output_text_buffer = ""
+            state.last_interrupt_reason = reason
+            return {
+                "assistant_turn_id": turn_id,
+                "dropped_text_chars": dropped,
+                "cancelled_audio_sequences": self._output_seq,
+                "reason": reason,
+            }
+
+        def build_voice_state_payload(self, *, event, buffered_bytes, sequence, duplex_state=None):
             return {
                 "voice_state": event,
                 "buffered_bytes": buffered_bytes,
@@ -384,6 +497,9 @@ def test_websocket_voice_barge_in_cancels_active_duplex_response():
                 "duplex_enabled": True,
                 "interrupt_ready": self.should_interrupt_response(buffered_bytes, event=event),
                 "tts_enabled": True,
+                "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
+                "output_buffer_chars": len(getattr(duplex_state, "output_text_buffer", "") or ""),
+                "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
             }
 
     voice_mod.VoicePipeline = _VoicePipeline
@@ -419,6 +535,11 @@ def test_websocket_voice_barge_in_cancels_active_duplex_response():
         asyncio.run(mod.websocket_voice(ws))
 
     assert {"transcript": "İlk konuşma", "language": "tr", "provider": "whisper"} in ws.sent
-    assert {"voice_interruption": "barge_in", "cancelled": True} in ws.sent
+    interruption = next(item for item in ws.sent if item.get("voice_interruption") == "barge_in")
+    assert interruption["cancelled"] is True
+    assert interruption["assistant_turn_id"] == 1
+    assert interruption["reason"] == "barge_in"
+    assert interruption["dropped_text_chars"] >= len("yanit:İlk konuşma")
+    assert interruption["cancelled_audio_sequences"] == 0
     voice_states = [item for item in ws.sent if item.get("voice_state") == "speech_start"]
     assert voice_states and voice_states[0]["interrupt_ready"] is True

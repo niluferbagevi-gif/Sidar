@@ -1,3 +1,4 @@
+
 # SİDAR v5.0 — İleri Düzey Otonomi ve Yeni Yetenekler Geliştirme Raporu
 
 > **Durum:** Faz A tamamlandı, Faz B odağına geçmiş stratejik mimari raporu
@@ -136,7 +137,7 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 
 ### 4.2 Gerçek Zamanlı Sesli İletişim (Voice-to-Voice)
 
-**Durum:** `/ws/voice` rotası ve `core/voice.py` çekirdeği alpha seviyesinde eklendi; TTS adaptörleri ile metin segmentlerini kademeli ses çıktısına dönüştüren iskelet çalışıyor.
+**Durum:** `/ws/voice` rotası ve `core/voice.py` çekirdeği alpha seviyesinde çalışıyor; TTS adaptörleri artık duplex output buffer durumu, assistant turn kimliği ve VAD tabanlı interrupt/barge-in temizliği ile daha düşük gecikmeli çift yönlü akışı destekliyor.
 
 #### Hedef davranış
 
@@ -162,10 +163,11 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 
 Bu yetenek, SİDAR'ı günlük akışta **yan pencere asistandan** çok daha doğal bir mühendislik partnerine dönüştürür. Özellikle incident response, pair debugging ve hızlı brainstorming oturumlarında büyük fark yaratır.
 
-#### MVP sınırı
+#### Güncel Faz B derinleşmesi
 
-- İlk alpha fazında **voice-to-text + text response + opsiyonel TTS segmentasyonu** iskeleti teslim edildi.
-- Tam duplex voice-to-voice ve daha gelişmiş VAD/STT orkestrasyonu Faz B/C iterasyonlarında derinleştirilecektir.
+- İlk alpha fazındaki **voice-to-text + text response + opsiyonel TTS segmentasyonu** iskeleti korunur.
+- Bunun üzerine duplex state/buffer yönetimi, assistant turn metadata'sı ve VAD tabanlı barge-in interrupt temizliği eklenmiştir.
+- Sonraki iterasyon odağı; daha ince taneli gerçek VAD/STT zamanlaması ve istemci tarafında oynatma ACK/clock senkronizasyonudur.
 
 ---
 

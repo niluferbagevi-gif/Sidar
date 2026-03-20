@@ -1,3 +1,4 @@
+
 """
 Sidar Project - Web Arayüzü Sunucusu
 FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat arayüzü.
@@ -1393,15 +1394,31 @@ async def _ws_stream_agent_text_response(websocket: WebSocket, agent: SidarAgent
     tool_sentinel = re.compile(r"^\x00TOOL:([^\x00]+)\x00$")
     thought_sentinel = re.compile(r"^\x00THOUGHT:([^\x00]+)\x00$")
     voice_pipeline = getattr(websocket, "_sidar_voice_pipeline", None)
+    duplex_state = getattr(websocket, "_sidar_voice_duplex_state", None)
     pending_voice_text = ""
 
     async def _emit_voice_segments(*, flush: bool = False) -> None:
         nonlocal pending_voice_text
         if not voice_pipeline or not getattr(voice_pipeline, "enabled", False):
             return
-        ready_segments, remainder = voice_pipeline.extract_ready_segments(pending_voice_text, flush=flush)
-        pending_voice_text = remainder
-        for segment in ready_segments:
+        if hasattr(voice_pipeline, "buffer_assistant_text"):
+            _turn_id, packets = voice_pipeline.buffer_assistant_text(
+                duplex_state,
+                pending_voice_text,
+                flush=flush,
+            )
+            pending_voice_text = ""
+        else:
+            ready_segments, remainder = voice_pipeline.extract_ready_segments(pending_voice_text, flush=flush)
+            pending_voice_text = remainder
+            packets = [
+                {"assistant_turn_id": 0, "audio_sequence": idx, "text": segment}
+                for idx, segment in enumerate(ready_segments, start=1)
+            ]
+        for packet in packets:
+            segment = str(packet.get("text", "") or "").strip()
+            if not segment:
+                continue
             tts_result = await voice_pipeline.synthesize_text(segment)
             if not tts_result.get("success"):
                 continue
@@ -1415,6 +1432,8 @@ async def _ws_stream_agent_text_response(websocket: WebSocket, agent: SidarAgent
                     "audio_mime_type": tts_result.get("mime_type", "audio/wav"),
                     "audio_provider": tts_result.get("provider", ""),
                     "audio_voice": tts_result.get("voice", ""),
+                    "assistant_turn_id": int(packet.get("assistant_turn_id", 0) or 0),
+                    "audio_sequence": int(packet.get("audio_sequence", 0) or 0),
                 }
             )
 
@@ -1652,6 +1671,12 @@ async def websocket_voice(websocket: WebSocket):
     voice_sequence = 0
     active_response_task: asyncio.Task | None = None
     setattr(websocket, "_sidar_voice_pipeline", voice_pipeline)
+    duplex_state = (
+        voice_pipeline.create_duplex_state()
+        if voice_pipeline is not None and hasattr(voice_pipeline, "create_duplex_state")
+        else None
+    )
+    setattr(websocket, "_sidar_voice_duplex_state", duplex_state)
 
     async def _emit_voice_state(event: str) -> None:
         nonlocal voice_sequence
@@ -1667,6 +1692,9 @@ async def websocket_voice(websocket: WebSocket):
                     "duplex_enabled": bool(getattr(voice_pipeline, "duplex_enabled", False)) if voice_pipeline is not None else False,
                     "interrupt_ready": False,
                     "tts_enabled": bool(getattr(voice_pipeline, "enabled", False)) if voice_pipeline is not None else False,
+                    "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
+                    "output_buffer_chars": len(getattr(duplex_state, "output_text_buffer", "") or ""),
+                    "last_interrupt_reason": str(getattr(duplex_state, "last_interrupt_reason", "") or ""),
                 }
             )
             return
@@ -1675,18 +1703,29 @@ async def websocket_voice(websocket: WebSocket):
                 event=event,
                 buffered_bytes=len(audio_buffer),
                 sequence=voice_sequence,
+                duplex_state=duplex_state,
             )
         )
 
     async def _cancel_active_response(reason: str, *, notify: bool = True) -> None:
         nonlocal active_response_task
+        interrupt_payload = (
+            voice_pipeline.interrupt_assistant_turn(duplex_state, reason=reason)
+            if voice_pipeline is not None and hasattr(voice_pipeline, "interrupt_assistant_turn")
+            else {
+                "assistant_turn_id": int(getattr(duplex_state, "assistant_turn_id", 0) or 0),
+                "dropped_text_chars": 0,
+                "cancelled_audio_sequences": 0,
+                "reason": reason,
+            }
+        )
         if active_response_task is None or active_response_task.done():
             return
         active_response_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await active_response_task
         if notify:
-            await websocket.send_json({"voice_interruption": reason, "cancelled": True})
+            await websocket.send_json({"voice_interruption": reason, "cancelled": True, **interrupt_payload})
         active_response_task = None
 
     async def _run_voice_turn(
@@ -1727,6 +1766,13 @@ async def websocket_voice(websocket: WebSocket):
             await websocket.send_json({"done": True})
             return
 
+        assistant_turn_id = (
+            voice_pipeline.begin_assistant_turn(duplex_state)
+            if voice_pipeline is not None and hasattr(voice_pipeline, "begin_assistant_turn")
+            else int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
+        )
+        await websocket.send_json({"assistant_turn": "started", "assistant_turn_id": assistant_turn_id})
+
         try:
             await _ws_stream_agent_text_response(websocket, agent, transcript_text)
         except LLMAPIError as exc:
@@ -1742,6 +1788,7 @@ async def websocket_voice(websocket: WebSocket):
             await websocket.send_json({"chunk": f"\n[Sistem Hatası] {exc}", "done": True})
             return
 
+        await websocket.send_json({"assistant_turn": "completed", "assistant_turn_id": assistant_turn_id})
         await websocket.send_json({"done": True})
 
     async def _process_audio_commit() -> None:

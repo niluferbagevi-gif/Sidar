@@ -1,3 +1,4 @@
+
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
 > **v4.3.0 runtime baseline + v5.0.0-alpha Faz 6 geçişi** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
@@ -104,7 +105,7 @@
 ### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
 - `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü, VAD olayları ve transcript→ajan yanıtı akışı
-- `core/voice.py` üzerinden ses segmentasyonu, TTS adaptörleri ve medya güvenlik limitleri
+- `core/voice.py` üzerinden ses segmentasyonu, duplex output buffer durumu, interrupt/barge-in temizliği ve TTS adaptörleri
 - FFmpeg sistem bağımlılığı ile medya dönüştürme; büyük dosyalar için byte limitleri ile korunur
 
 ### Playwright Dinamik Tarayıcı Otomasyonu (Kalıcı Yetenek)

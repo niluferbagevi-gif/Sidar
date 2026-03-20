@@ -247,9 +247,9 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 
 - Binary ses chunk'larını kabul eder; istemci `commit` / `end` aksiyonu ile biriken sesi işleme alır.
 - Kimlik doğrulama öncelikle `Sec-WebSocket-Protocol` başlığındaki bearer token ile yapılır; token yoksa oturum açılmadan ses kabul edilmez.
-- Sunucu `core.multimodal.MultimodalPipeline` üzerinden STT/transkript üretir ve ardından ajan yanıtını JSON event akışı olarak geri döner.
+- Sunucu `core.multimodal.MultimodalPipeline` üzerinden STT/transkript üretir; ardından ajan yanıtını duplex assistant turn kimliği, audio sıra numarası ve interrupt payload'ları ile JSON event akışı olarak geri döner.
 - `VOICE_WS_MAX_BYTES` ile toplam kabul edilen ses boyutu sınırlandırılır; limit aşımı `1008 Policy Violation` ile kapatılır.
-- MVP kapsamı bugün **voice-to-text + text response** düzeyindedir; çift yönlü TTS hattı sonraki iterasyona bırakılmıştır.
+- `VOICE_TTS_BUFFER_CHARS`, VAD interrupt sinyali ve `voice_interruption` payload'ları ile söz kesilebilen düşük gecikmeli duplex TTS akışı desteklenir.
 
 ### 3.4 Telemetri ve metrik endpointleri
 
