@@ -31,6 +31,7 @@ def test_external_trigger_to_prompt_and_detection():
 
     assert CONTRACTS.is_external_trigger(trigger) is True
     assert "webhook:github" in prompt
+    assert "correlation_id=trg-1" in prompt
     assert '"branch": "main"' in prompt
 
 
@@ -85,4 +86,26 @@ def test_federation_protocol_normalizes_legacy_aliases():
     assert CONTRACTS.normalize_federation_protocol("swarm.federation.v1") == "federation.v1"
     assert CONTRACTS.is_federation_task_result(result) is True
     assert result.to_task_result().status == "success"
+    assert envelope.correlation_id == "fed-legacy"
+    assert result.correlation_id == "fed-legacy"
     assert "protocol=federation.v1" in result.to_prompt()
+
+
+def test_action_feedback_converts_to_external_trigger():
+    feedback = CONTRACTS.ActionFeedback(
+        feedback_id="fb-1",
+        source_system="crewai",
+        source_agent="planner",
+        action_name="open_pr",
+        status="success",
+        summary="PR açıldı",
+        related_task_id="fed-7",
+    )
+
+    trigger = feedback.to_external_trigger()
+
+    assert CONTRACTS.is_action_feedback(feedback) is True
+    assert trigger.event_name == "action_feedback"
+    assert trigger.correlation_id == "fed-7"
+    assert trigger.payload["action_name"] == "open_pr"
+    assert "correlation_id=fed-7" in feedback.to_prompt()

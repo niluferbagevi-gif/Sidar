@@ -170,6 +170,7 @@ def test_swarm_federation_execute_returns_structured_result():
         context={"repo": "Sidar"},
         inputs=["PR #7"],
         meta={"priority": "high"},
+        correlation_id="corr-fed-1",
     )
 
     response = asyncio.run(mod.swarm_federation_execute(req, ""))
@@ -181,6 +182,8 @@ def test_swarm_federation_execute_returns_structured_result():
     assert result["target_system"] == "autogen"
     assert result["protocol"] == "federation.v1"
     assert result["meta"]["protocol_legacy_alias"] == "swarm.federation.v1"
+    assert result["meta"]["correlation_id"] == "corr-fed-1"
+    assert result["meta"]["action_feedback_endpoint"] == "/api/swarm/federation/feedback"
     assert "federated:[FEDERATION TASK]" in result["summary"]
 
 
@@ -214,6 +217,57 @@ def test_swarm_federation_execute_normalizes_legacy_protocol_alias():
     result = response.content["result"]
     assert result["protocol"] == "federation.v1"
     assert "protocol=federation.v1" in result["summary"]
+
+
+def test_swarm_federation_feedback_dispatches_action_feedback_trigger():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["source"] = trigger.source
+        captured["event_name"] = trigger.event_name
+        captured["payload"] = dict(trigger.payload or {})
+        captured["meta"] = dict(trigger.meta or {})
+        captured["correlation_id"] = getattr(trigger, "correlation_id", "")
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "feedback işlendi",
+            "status": "success",
+            "meta": dict(trigger.meta or {}),
+            "correlation": {"correlation_id": getattr(trigger, "correlation_id", "")},
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(handle_external_trigger=_handle_trigger)
+
+    mod.get_agent = _get_agent
+    mod.cfg.ENABLE_SWARM_FEDERATION = True
+    mod.cfg.SWARM_FEDERATION_SHARED_SECRET = ""
+
+    req = mod._FederationFeedbackRequest(
+        feedback_id="fb-1",
+        source_system="autogen",
+        source_agent="coordinator",
+        action_name="open_pr",
+        status="success",
+        summary="PR açıldı",
+        related_task_id="fed-1",
+        correlation_id="corr-fed-1",
+    )
+
+    response = asyncio.run(mod.swarm_federation_feedback(req, ""))
+
+    assert response.content["success"] is True
+    assert captured["source"] == "federation:autogen:action_feedback"
+    assert captured["event_name"] == "action_feedback"
+    assert captured["payload"]["action_name"] == "open_pr"
+    assert captured["meta"]["correlation_id"] == "corr-fed-1"
+    assert captured["correlation_id"] == "corr-fed-1"
+    assert response.content["feedback"]["correlation_id"] == "corr-fed-1"
 
 
 def test_github_webhook_ci_failure_dispatches_remediation_trigger():

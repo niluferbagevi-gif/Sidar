@@ -79,10 +79,12 @@ except Exception:  # OpenTelemetry opsiyoneldir
 
 from agent.base_agent import BaseAgent
 from agent.core.contracts import (
+    ActionFeedback,
     ExternalTrigger,
     FederationTaskEnvelope,
     FederationTaskResult,
     LEGACY_FEDERATION_PROTOCOL_V1,
+    derive_correlation_id,
     normalize_federation_protocol,
 )
 from agent.core.event_stream import get_agent_event_bus
@@ -349,10 +351,29 @@ async def _dispatch_autonomy_trigger(
         payload=payload,
         meta=dict(meta or {}),
     )
+    fallback_prompt = (
+        str(payload.get("federation_prompt") or "").strip()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if not fallback_prompt and isinstance(payload, dict) and payload.get("kind") == "action_feedback":
+        fallback_prompt = ActionFeedback(
+            feedback_id=str(payload.get("feedback_id") or trigger.trigger_id),
+            source_system=str(payload.get("source_system") or trigger.source),
+            source_agent=str(payload.get("source_agent") or "external"),
+            action_name=str(payload.get("action_name") or trigger.event_name),
+            status=str(payload.get("status") or "received"),
+            summary=str(payload.get("summary") or "Dış sistem action feedback sinyali alındı."),
+            related_task_id=str(payload.get("related_task_id") or ""),
+            related_trigger_id=str(payload.get("related_trigger_id") or ""),
+            details=dict(payload.get("details") or {}),
+            meta=dict(trigger.meta or {}),
+            correlation_id=str(payload.get("correlation_id") or trigger.correlation_id),
+        ).to_prompt()
     if hasattr(agent, "handle_external_trigger"):
         result = await agent.handle_external_trigger(trigger)
     else:
-        summary = await _collect_agent_response(agent, trigger.to_prompt())
+        summary = await _collect_agent_response(agent, fallback_prompt or trigger.to_prompt())
         result = {
             "trigger_id": trigger.trigger_id,
             "source": trigger.source,
@@ -2919,6 +2940,21 @@ class _FederationTaskRequest(BaseModel):
     context: dict[str, str] = Field(default_factory=dict, description="Yapısal bağlam")
     inputs: list[str] = Field(default_factory=list, description="Ek girdiler")
     meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
+    correlation_id: str = Field("", description="Dış sistemlerle iz sürme için korelasyon kimliği")
+
+
+class _FederationFeedbackRequest(BaseModel):
+    feedback_id: str = Field(..., description="Dış sistem action feedback kaydı kimliği")
+    source_system: str = Field(..., description="Feedback gönderen dış sistem")
+    source_agent: str = Field(..., description="Feedback gönderen ajan/workflow")
+    action_name: str = Field(..., description="Geri besleme verilen aksiyon adı")
+    status: str = Field(..., description="Aksiyonun dış sistemdeki durumu")
+    summary: str = Field(..., description="İnsan/ajan tarafından üretilen kısa özet")
+    related_task_id: str = Field("", description="İlişkili federation task id")
+    related_trigger_id: str = Field("", description="İlişkili autonomy trigger id")
+    details: dict[str, Any] = Field(default_factory=dict, description="Detay payload")
+    meta: dict[str, str] = Field(default_factory=dict, description="Ek protokol meta verisi")
+    correlation_id: str = Field("", description="Dış sistemlerle paylaşılan korelasyon kimliği")
 
 
 class _AutonomyWakeRequest(BaseModel):
@@ -3040,8 +3076,29 @@ async def swarm_federation_execute(
         context=dict(req.context or {}),
         inputs=list(req.inputs or []),
         meta=dict(req.meta or {}),
+        correlation_id=req.correlation_id,
     )
-    summary = await _collect_agent_response(await get_agent(), envelope.to_prompt())
+    federation_payload = {
+        "kind": "federation_task",
+        "federation_task": asdict(envelope),
+        "federation_prompt": envelope.to_prompt(),
+        "task_id": envelope.task_id,
+        "source_system": envelope.source_system,
+        "source_agent": envelope.source_agent,
+        "target_agent": envelope.target_agent,
+        "correlation_id": envelope.correlation_id,
+    }
+    trigger_result = await _dispatch_autonomy_trigger(
+        trigger_source=f"federation:{envelope.source_system}",
+        event_name="federation_task",
+        payload=federation_payload,
+        meta={
+            "protocol": envelope.protocol,
+            "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
+            "correlation_id": envelope.correlation_id,
+        },
+    )
+    summary = str(trigger_result.get("summary", "") or "").strip()
     result = FederationTaskResult(
         task_id=envelope.task_id,
         source_system="sidar",
@@ -3051,12 +3108,70 @@ async def swarm_federation_execute(
         status="success" if summary else "failed",
         summary=summary or "Sidar görev için çıktı üretemedi.",
         protocol=envelope.protocol,
+        correlation_id=envelope.correlation_id,
         meta={
             "protocol": envelope.protocol,
             "protocol_legacy_alias": LEGACY_FEDERATION_PROTOCOL_V1,
+            "correlation_id": envelope.correlation_id,
+            "autonomy_trigger_id": str(trigger_result.get("trigger_id", "") or ""),
+            "action_feedback_endpoint": "/api/swarm/federation/feedback",
         },
     )
     return JSONResponse({"success": True, "result": asdict(result)})
+
+
+@app.post(
+    "/api/swarm/federation/feedback",
+    summary="Dış Swarm Action Feedback",
+    description="Dış swarm sistemlerinden gelen action feedback sinyallerini autonomy korelasyon akışına bağlar.",
+)
+async def swarm_federation_feedback(
+    req: _FederationFeedbackRequest,
+    x_sidar_signature: str = Header(default=""),
+):
+    if not bool(getattr(cfg, "ENABLE_SWARM_FEDERATION", True)):
+        raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")
+
+    raw_body = json.dumps(req.__dict__, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    _verify_hmac_signature(
+        raw_body,
+        str(getattr(cfg, "SWARM_FEDERATION_SHARED_SECRET", "") or ""),
+        x_sidar_signature,
+        label="Federation feedback",
+    )
+
+    feedback = ActionFeedback(
+        feedback_id=req.feedback_id,
+        source_system=req.source_system,
+        source_agent=req.source_agent,
+        action_name=req.action_name,
+        status=req.status,
+        summary=req.summary,
+        related_task_id=req.related_task_id,
+        related_trigger_id=req.related_trigger_id,
+        details=dict(req.details or {}),
+        meta=dict(req.meta or {}),
+        correlation_id=derive_correlation_id(req.correlation_id, req.related_task_id, req.related_trigger_id, req.feedback_id),
+    )
+    trigger = feedback.to_external_trigger()
+    result = await _dispatch_autonomy_trigger(
+        trigger_source=trigger.source,
+        event_name=trigger.event_name,
+        payload=dict(trigger.payload or {}),
+        meta=dict(trigger.meta or {}),
+    )
+    return JSONResponse(
+        {
+            "success": True,
+            "result": result,
+            "feedback": {
+                "feedback_id": feedback.feedback_id,
+                "correlation_id": feedback.correlation_id,
+                "related_task_id": feedback.related_task_id,
+                "related_trigger_id": feedback.related_trigger_id,
+            },
+        }
+    )
 
 
 # ─────────────────────────────────────────────
