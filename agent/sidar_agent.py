@@ -19,7 +19,7 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None
 
 from config import Config
-from core.ci_remediation import build_ci_failure_context, build_ci_failure_prompt, build_pr_proposal
+from core.ci_remediation import build_ci_failure_context, build_ci_failure_prompt, build_ci_remediation_payload
 from core.memory import ConversationMemory
 from core.llm_client import LLMClient
 from core.rag import DocumentStore
@@ -207,13 +207,7 @@ class SidarAgent:
                 status = "empty"
                 summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
             elif ci_context:
-                remediation = {
-                    "context": ci_context,
-                    "prompt": prompt,
-                    "suspected_targets": list(ci_context.get("suspected_targets") or []),
-                    "diagnostic_hints": list(ci_context.get("diagnostic_hints") or []),
-                    "pr_proposal": build_pr_proposal(ci_context, summary),
-                }
+                remediation = build_ci_remediation_payload(ci_context, summary)
         except Exception as exc:
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"

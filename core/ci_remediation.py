@@ -12,6 +12,10 @@ from typing import Any, Dict, Optional
 
 _CI_FAILURE_CONCLUSIONS = {"failure", "timed_out", "cancelled", "startup_failure", "action_required"}
 _TARGET_PATTERN = re.compile(r"""(?P<path>(?:tests|core|agent|managers|web_server|main|config|docs|web_ui_react)[/\w.\-]+)""")
+_ROOT_CAUSE_PATTERN = re.compile(
+    r"""(?P<line>.*?(?:AssertionError|ModuleNotFoundError|ImportError|TypeError|ValueError|SyntaxError|NameError|timeout|timed out|failed).*)""",
+    re.IGNORECASE,
+)
 
 
 def _trim_text(value: Any, limit: int = 1200) -> str:
@@ -32,6 +36,72 @@ def _extract_suspected_targets(*values: Any) -> list[str]:
                 seen.add(path)
                 found.append(path)
     return found[:8]
+
+
+def _extract_root_cause_line(*values: Any) -> str:
+    for value in values:
+        text = str(value or "")
+        for line in text.splitlines():
+            normalized = line.strip()
+            if not normalized:
+                continue
+            if _ROOT_CAUSE_PATTERN.match(normalized):
+                return _trim_text(normalized, 220)
+    return ""
+
+
+def _extract_failed_job_names(data: Dict[str, Any]) -> list[str]:
+    jobs = list(data.get("failed_jobs") or data.get("jobs") or [])
+    names: list[str] = []
+    for item in jobs:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("job") or item.get("title") or "").strip()
+        else:
+            name = str(item or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names[:6]
+
+
+def _generic_ci_context(event_name: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    data = dict(payload or {})
+    normalized = str(event_name or "").strip().lower()
+    explicit_flag = bool(data.get("ci_failure") or data.get("pipeline_failed"))
+    ci_like = normalized in {"ci_failure_remediation", "ci_pipeline_failed", "pipeline_failed"}
+    if not explicit_flag and not ci_like:
+        return None
+
+    failure_summary = _trim_text(
+        data.get("failure_summary") or data.get("summary") or data.get("message") or "ci failure",
+        220,
+    )
+    log_excerpt = _trim_text(
+        data.get("log_excerpt") or data.get("logs") or data.get("error") or data.get("details") or "",
+        1200,
+    )
+    suspected_targets = _extract_suspected_targets(log_excerpt, failure_summary)
+    failed_jobs = _extract_failed_job_names(data)
+    return {
+        "kind": "generic_ci_failure",
+        "repo": str(data.get("repo") or data.get("repository") or "").strip(),
+        "workflow_name": str(data.get("workflow_name") or data.get("pipeline") or data.get("job_name") or "ci_failure").strip(),
+        "run_id": str(data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or "").strip(),
+        "run_number": str(data.get("run_number") or data.get("pipeline_number") or "").strip(),
+        "branch": str(data.get("branch") or data.get("ref") or "").strip(),
+        "base_branch": str(data.get("base_branch") or data.get("target_branch") or "main").strip(),
+        "sha": str(data.get("sha") or data.get("commit") or "").strip(),
+        "conclusion": str(data.get("conclusion") or "failure").strip(),
+        "status": str(data.get("status") or "completed").strip(),
+        "html_url": str(data.get("html_url") or data.get("pipeline_url") or "").strip(),
+        "jobs_url": str(data.get("jobs_url") or "").strip(),
+        "logs_url": str(data.get("logs_url") or data.get("log_url") or "").strip(),
+        "log_excerpt": log_excerpt,
+        "failure_summary": failure_summary,
+        "suspected_targets": suspected_targets,
+        "failed_jobs": failed_jobs,
+        "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
+        "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
+    }
 
 
 def _build_diagnostic_hints(failure_summary: str, log_excerpt: str, suspected_targets: list[str]) -> list[str]:
@@ -70,6 +140,10 @@ def is_ci_failure_event(event_name: str, payload: Dict[str, Any]) -> bool:
 
 
 def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    generic = _generic_ci_context(event_name, payload)
+    if generic:
+        return generic
+
     if not is_ci_failure_event(event_name, payload):
         return None
 
@@ -104,6 +178,8 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
             "log_excerpt": log_excerpt,
             "failure_summary": failure_summary,
             "suspected_targets": suspected_targets,
+            "failed_jobs": _extract_failed_job_names(workflow),
+            "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
             "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
         }
 
@@ -130,6 +206,8 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
             "log_excerpt": log_excerpt,
             "failure_summary": failure_summary,
             "suspected_targets": suspected_targets,
+            "failed_jobs": _extract_failed_job_names(check),
+            "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
             "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
         }
 
@@ -154,6 +232,8 @@ def build_ci_failure_context(event_name: str, payload: Dict[str, Any]) -> Option
         "log_excerpt": log_excerpt,
         "failure_summary": failure_summary,
         "suspected_targets": suspected_targets,
+        "failed_jobs": _extract_failed_job_names(suite),
+        "root_cause_hint": _extract_root_cause_line(log_excerpt, failure_summary),
         "diagnostic_hints": _build_diagnostic_hints(failure_summary, log_excerpt, suspected_targets),
     }
 
@@ -162,6 +242,7 @@ def build_ci_failure_prompt(context: Dict[str, Any]) -> str:
     info = dict(context or {})
     suspected_targets = ", ".join(info.get("suspected_targets") or [])
     diagnostic_hints = " | ".join(info.get("diagnostic_hints") or [])
+    failed_jobs = ", ".join(info.get("failed_jobs") or [])
     return (
         "[CI_REMEDIATION]\n"
         "Aşağıdaki CI başarısızlığını proaktif remediation akışı olarak ele al.\n"
@@ -185,9 +266,28 @@ def build_ci_failure_prompt(context: Dict[str, Any]) -> str:
         f"logs_url={info.get('logs_url', '')}\n"
         f"failure_summary={info.get('failure_summary', '')}\n"
         f"log_excerpt={info.get('log_excerpt', '')}\n"
+        f"failed_jobs={failed_jobs}\n"
+        f"root_cause_hint={info.get('root_cause_hint', '')}\n"
         f"suspected_targets={suspected_targets}\n"
         f"diagnostic_hints={diagnostic_hints}\n"
     )
+
+
+def build_root_cause_summary(context: Dict[str, Any], diagnosis: str) -> str:
+    info = dict(context or {})
+    diagnosis_text = str(diagnosis or "").strip()
+    if diagnosis_text:
+        first_sentence = diagnosis_text.splitlines()[0].strip()
+        if first_sentence:
+            compact_sentence = _trim_text(first_sentence, 220)
+            if compact_sentence.lower().startswith(("kök neden", "root cause")):
+                return compact_sentence
+    inferred = _extract_root_cause_line(diagnosis, info.get("log_excerpt"), info.get("failure_summary"))
+    if inferred:
+        return inferred
+    if info.get("root_cause_hint"):
+        return str(info.get("root_cause_hint"))
+    return _trim_text(str(info.get("failure_summary") or "CI başarısızlığı için ek teşhis gerekiyor."), 220)
 
 
 def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
@@ -196,6 +296,7 @@ def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]
     run_id = str(info.get("run_id", "") or "manual")
     base_branch = str(info.get("base_branch", "") or "main")
     branch = str(info.get("branch", "") or "")
+    root_cause = build_root_cause_summary(info, diagnosis)
     title = f"CI remediation: stabilize {workflow_name}"
     head_branch_suggestion = f"ci-remediation/{run_id}"
     body = (
@@ -210,8 +311,12 @@ def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]
         f"- Logs URL: {info.get('logs_url', '')}\n\n"
         "## Failure Summary\n"
         f"{info.get('failure_summary', '')}\n\n"
+        "## Root Cause Hypothesis\n"
+        f"{root_cause}\n\n"
         "## Suspected Targets\n"
         f"{', '.join(info.get('suspected_targets') or []) or '-'}\n\n"
+        "## Failed Jobs\n"
+        f"{', '.join(info.get('failed_jobs') or []) or '-'}\n\n"
         "## Diagnosis and Proposed Patch\n"
         f"{_trim_text(diagnosis, 8000)}\n"
     )
@@ -220,5 +325,21 @@ def build_pr_proposal(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]
         "body": body,
         "base_branch": base_branch,
         "head_branch_suggestion": head_branch_suggestion,
-        "auto_create_ready": False,
+        "root_cause_summary": root_cause,
+        "auto_create_ready": bool(root_cause),
+    }
+
+
+def build_ci_remediation_payload(context: Dict[str, Any], diagnosis: str) -> Dict[str, Any]:
+    info = dict(context or {})
+    pr_proposal = build_pr_proposal(info, diagnosis)
+    root_cause = pr_proposal.get("root_cause_summary") or build_root_cause_summary(info, diagnosis)
+    return {
+        "context": info,
+        "prompt": build_ci_failure_prompt(info),
+        "suspected_targets": list(info.get("suspected_targets") or []),
+        "diagnostic_hints": list(info.get("diagnostic_hints") or []),
+        "failed_jobs": list(info.get("failed_jobs") or []),
+        "root_cause_summary": str(root_cause or ""),
+        "pr_proposal": pr_proposal,
     }
