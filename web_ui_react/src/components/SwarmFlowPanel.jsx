@@ -7,6 +7,58 @@ const DEFAULT_TASKS = [
   { goal: "Bulunan riskler için kısa bir aksiyon planı üret", intent: "summarization", preferred_agent: "" },
 ];
 
+const ROLE_LABELS = {
+  supervisor: "Supervisor",
+  coder: "Coder",
+  reviewer: "Reviewer",
+  researcher: "Researcher",
+  planner: "Planner",
+  ops: "Ops",
+  security: "Security",
+  system: "System",
+};
+
+const prettifyRole = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "Unknown";
+  return ROLE_LABELS[normalized] || normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const clampText = (value, maxLength = 140) => {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "Açıklama bekleniyor.";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+};
+
+const formatTime = (value) =>
+  new Date(value).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+const inferTelemetryActor = (step, roleHints) => {
+  const content = String(step?.content || "").trim();
+  if (!content) return "system";
+
+  const prefixed = content.match(/^([a-z0-9_-]{2,32})\s*:/i);
+  if (prefixed?.[1]) return prefixed[1].toLowerCase();
+
+  const lowered = content.toLowerCase();
+  const knownRoles = ["supervisor", ...roleHints];
+  for (const role of knownRoles) {
+    if (role && lowered.includes(role)) return role;
+  }
+  return step?.kind === "tool_call" ? "supervisor" : "system";
+};
+
+const getTaskTargetRole = (task, responseResults, index) =>
+  String(
+    task.preferred_agent?.trim()
+    || responseResults[index]?.agent_role
+    || responseResults[responseResults.length - 1]?.agent_role
+    || "supervisor",
+  ).toLowerCase();
+
+const NODE_WIDTH = 220;
+const NODE_HEIGHT = 104;
+
 export function SwarmFlowPanel() {
   const { telemetryEvents } = useChatStore();
   const [tasks, setTasks] = useState(DEFAULT_TASKS);
@@ -37,88 +89,252 @@ export function SwarmFlowPanel() {
   }, [loadAutonomyActivity]);
 
   const steps = useMemo(
-    () => telemetryEvents.filter((evt) => evt.kind === "tool_call" || evt.kind === "status" || evt.kind === "thought").slice(-12),
+    () => telemetryEvents
+      .filter((evt) => evt.kind === "tool_call" || evt.kind === "status" || evt.kind === "thought")
+      .slice(-12),
     [telemetryEvents],
   );
 
   const graphData = useMemo(() => {
-    const autonomyNodes = (autonomyActivity.items || []).map((item, index) => ({
-      id: `autonomy-${item.trigger_id || index}`,
-      type: item.status === "failed" ? "autonomy-warning" : "autonomy",
-      title: item.event_name || "trigger",
-      subtitle: item.source || "manual",
-      body: item.summary || JSON.stringify(item.payload || {}),
-      x: 24,
-      y: 148 + index * 108,
+    const responseResults = response?.results || [];
+    const roleHints = Array.from(
+      new Set(
+        [
+          ...tasks.map((task, index) => getTaskTargetRole(task, responseResults, index)),
+          ...responseResults.map((item) => String(item.agent_role || "").toLowerCase()),
+        ].filter(Boolean),
+      ),
+    );
+    const telemetryWithActors = steps.map((step) => ({
+      ...step,
+      actor: inferTelemetryActor(step, roleHints),
     }));
 
-    const taskNodes = tasks.map((task, index) => ({
-      id: `task-${index}`,
-      type: "task",
-      title: task.preferred_agent?.trim() ? task.preferred_agent.trim() : `Task ${index + 1}`,
-      subtitle: task.intent?.trim() || "mixed",
-      body: task.goal?.trim() || "Görev açıklaması bekleniyor",
-      x: 290,
-      y: 36 + index * 118,
-    }));
+    const lanes = ["supervisor", ...Array.from(new Set([...roleHints, ...telemetryWithActors.map((step) => step.actor)]))]
+      .filter(Boolean)
+      .map((role, index) => ({
+        id: role,
+        label: prettifyRole(role),
+        x: 40 + index * 260,
+      }));
 
-    const resultNodes = (response?.results || []).map((item, index) => ({
-      id: `result-${item.task_id || index}`,
-      type: item.status === "success" ? "result-success" : "result-warning",
-      title: item.agent_role || "agent",
-      subtitle: item.status || "unknown",
-      body: item.summary || "Özet üretilmedi",
-      x: 580,
-      y: 36 + index * 118,
-    }));
+    const laneMap = new Map(lanes.map((lane) => [lane.id, lane]));
+    const laneDecisionCounts = new Map();
+    const rowY = {
+      autonomy: 46,
+      supervisor: 182,
+      tasks: 336,
+      agents: 500,
+      results: 664,
+      telemetry: 828,
+    };
 
-    const telemetryNodes = steps.map((step, index) => ({
-      id: `telemetry-${step.id}`,
-      type: step.kind,
-      title: step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Thought" : "Status",
-      subtitle: new Date(step.ts).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-      body: step.content,
-      x: 870,
-      y: 36 + index * 92,
-    }));
+    const nodes = [];
+    const pushNode = (node) => nodes.push({ ...node, width: NODE_WIDTH, height: NODE_HEIGHT });
 
-    const nodes = [
-      {
-        id: "supervisor",
-        type: "root",
-        title: "Supervisor",
-        subtitle: mode === "parallel" ? "run_parallel" : "run_pipeline",
-        body: sessionId.trim() || "ui-swarm-session",
-        x: 24,
-        y: 32,
-      },
-      ...autonomyNodes,
-      ...taskNodes,
-      ...resultNodes,
-      ...telemetryNodes,
-    ];
+    const autonomyNodes = (autonomyActivity.items || []).map((item, index) => {
+      const lane = lanes[Math.min(index, Math.max(lanes.length - 1, 0))] || { x: 40 };
+      return {
+        id: `autonomy-${item.trigger_id || index}`,
+        type: item.status === "failed" ? "autonomy-warning" : "autonomy",
+        title: item.event_name || "trigger",
+        subtitle: `${item.source || "manual"} · ${item.status || "unknown"}`,
+        body: clampText(item.summary || JSON.stringify(item.payload || {}), 160),
+        x: lane.x,
+        y: rowY.autonomy + Math.floor(index / Math.max(lanes.length, 1)) * 122,
+      };
+    });
+
+    const supervisorNode = {
+      id: "supervisor",
+      type: "root",
+      title: "Supervisor",
+      subtitle: mode === "parallel" ? "run_parallel" : "run_pipeline",
+      body: clampText(sessionId.trim() || "ui-swarm-session", 80),
+      x: laneMap.get("supervisor")?.x || 40,
+      y: rowY.supervisor,
+    };
+
+    const taskNodes = tasks.map((task, index) => {
+      const laneId = getTaskTargetRole(task, responseResults, index);
+      const lane = laneMap.get(laneId) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      return {
+        id: `task-${index}`,
+        type: "task",
+        title: `Task ${index + 1}`,
+        subtitle: task.intent?.trim() || "mixed",
+        body: clampText(task.goal?.trim(), 160),
+        laneId,
+        x: lane.x,
+        y: rowY.tasks + index * 18,
+      };
+    });
+
+    const agentNodes = lanes
+      .filter((lane) => lane.id !== "system")
+      .map((lane) => ({
+        id: `agent-${lane.id}`,
+        type: lane.id === "supervisor" ? "agent-supervisor" : "agent",
+        title: lane.label,
+        subtitle: lane.id === "supervisor" ? "orchestrator" : "active role",
+        body: lane.id === "supervisor"
+          ? "Görevleri planlar, zinciri başlatır ve sonuçları toplar."
+          : "Göreve atanmış veya telemetride gözlenen ajan rolü.",
+        x: lane.x,
+        y: rowY.agents,
+      }));
+
+    const resultNodes = responseResults.map((item, index) => {
+      const lane = laneMap.get(String(item.agent_role || "").toLowerCase()) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      return {
+        id: `result-${item.task_id || index}`,
+        type: item.status === "success" ? "result-success" : item.status === "failed" ? "result-warning" : "result-neutral",
+        title: prettifyRole(item.agent_role || "agent"),
+        subtitle: `${item.status || "unknown"} · ${item.elapsed_ms || 0} ms`,
+        body: clampText(item.summary || "Özet üretilmedi", 160),
+        x: lane.x,
+        y: rowY.results + index * 18,
+      };
+    });
+
+    const telemetryNodes = telemetryWithActors.map((step) => {
+      const lane = laneMap.get(step.actor) || laneMap.get("system") || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const laneCount = laneDecisionCounts.get(step.actor) || 0;
+      laneDecisionCounts.set(step.actor, laneCount + 1);
+      return {
+        id: `telemetry-${step.id}`,
+        type: step.kind,
+        title: step.kind === "tool_call" ? "Tool Call" : step.kind === "thought" ? "Decision" : "Status",
+        subtitle: `${prettifyRole(step.actor)} · ${formatTime(step.ts)}`,
+        body: clampText(step.content, 170),
+        actor: step.actor,
+        x: lane.x,
+        y: rowY.telemetry + laneCount * 128,
+      };
+    });
+
+    autonomyNodes.forEach(pushNode);
+    pushNode(supervisorNode);
+    taskNodes.forEach(pushNode);
+    agentNodes.forEach(pushNode);
+    resultNodes.forEach(pushNode);
+    telemetryNodes.forEach(pushNode);
 
     const edges = [];
-    autonomyNodes.forEach((autonomyNode, index) => {
-      const sourceNode = index === 0 ? "supervisor" : autonomyNodes[index - 1].id;
-      edges.push({ id: `edge-autonomy-${autonomyNode.id}`, from: sourceNode, to: autonomyNode.id, label: autonomyNode.subtitle });
+    autonomyNodes.forEach((node, index) => {
+      edges.push({
+        id: `edge-autonomy-${node.id}`,
+        from: index === 0 ? supervisorNode.id : autonomyNodes[index - 1].id,
+        to: node.id,
+        label: index === 0 ? "wake signal" : "trigger chain",
+        emphasis: "light",
+      });
     });
-    taskNodes.forEach((taskNode) => {
-      const sourceNode = autonomyNodes[autonomyNodes.length - 1]?.id || "supervisor";
-      edges.push({ id: `edge-supervisor-${taskNode.id}`, from: sourceNode, to: taskNode.id, label: taskNode.subtitle });
-    });
-    resultNodes.forEach((resultNode, index) => {
-      const sourceTask = taskNodes[index] || taskNodes[taskNodes.length - 1];
-      if (sourceTask) {
-        edges.push({ id: `edge-task-result-${index}`, from: sourceTask.id, to: resultNode.id, label: "delegation" });
-      }
-    });
-    telemetryNodes.forEach((telemetryNode, index) => {
-      const previous = telemetryNodes[index - 1] || resultNodes[resultNodes.length - 1] || taskNodes[taskNodes.length - 1] || nodes[0];
-      edges.push({ id: `edge-telemetry-${index}`, from: previous.id, to: telemetryNode.id, label: telemetryNode.title.toLowerCase() });
+    if (autonomyNodes.length) {
+      edges.push({
+        id: "edge-autonomy-supervisor",
+        from: autonomyNodes[autonomyNodes.length - 1].id,
+        to: supervisorNode.id,
+        label: "activate swarm",
+      });
+    }
+
+    edges.push({
+      id: "edge-supervisor-role",
+      from: supervisorNode.id,
+      to: "agent-supervisor",
+      label: "orchestrates",
+      emphasis: "strong",
     });
 
-    return { nodes, edges };
+    taskNodes.forEach((taskNode, index) => {
+      const targetRole = taskNode.laneId;
+      edges.push({
+        id: `edge-supervisor-task-${taskNode.id}`,
+        from: supervisorNode.id,
+        to: taskNode.id,
+        label: mode === "pipeline" ? `stage ${index + 1}` : "dispatch",
+      });
+      edges.push({
+        id: `edge-task-agent-${taskNode.id}`,
+        from: taskNode.id,
+        to: `agent-${targetRole}`,
+        label: taskNode.subtitle,
+      });
+      if (mode === "pipeline" && index > 0) {
+        edges.push({
+          id: `edge-pipeline-task-${index}`,
+          from: taskNodes[index - 1].id,
+          to: taskNode.id,
+          label: "next stage",
+          emphasis: "light",
+        });
+      }
+    });
+
+    resultNodes.forEach((resultNode, index) => {
+      const result = responseResults[index];
+      const role = String(result?.agent_role || taskNodes[index]?.laneId || "supervisor").toLowerCase();
+      const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
+      if (taskNode) {
+        edges.push({
+          id: `edge-task-result-${resultNode.id}`,
+          from: taskNode.id,
+          to: resultNode.id,
+          label: result?.status || "result",
+          emphasis: result?.status === "success" ? "success" : "warning",
+        });
+      }
+      edges.push({
+        id: `edge-agent-result-${resultNode.id}`,
+        from: `agent-${role}`,
+        to: resultNode.id,
+        label: "output",
+      });
+      if (mode === "pipeline" && index < taskNodes.length - 1) {
+        edges.push({
+          id: `edge-result-next-task-${index}`,
+          from: resultNode.id,
+          to: taskNodes[index + 1].id,
+          label: "context handoff",
+          emphasis: "light",
+        });
+      }
+    });
+
+    const latestResultByRole = new Map();
+    resultNodes.forEach((node, index) => {
+      latestResultByRole.set(String(responseResults[index]?.agent_role || "").toLowerCase(), node.id);
+    });
+
+    telemetryNodes.forEach((telemetryNode, index) => {
+      const previousTelemetry = telemetryNodes
+        .slice(0, index)
+        .reverse()
+        .find((item) => item.actor === telemetryNode.actor);
+      edges.push({
+        id: `edge-telemetry-${telemetryNode.id}`,
+        from: previousTelemetry?.id || latestResultByRole.get(telemetryNode.actor) || `agent-${telemetryNode.actor}`,
+        to: telemetryNode.id,
+        label: telemetryNode.title.toLowerCase(),
+        emphasis: telemetryNode.type === "thought" ? "strong" : "light",
+      });
+    });
+
+    const width = Math.max(1180, lanes.length * 260 + 140);
+    const height = Math.max(
+      980,
+      rowY.telemetry + Math.max(...Array.from(laneDecisionCounts.values()), 1) * 132 + 180,
+    );
+
+    const metrics = {
+      roles: lanes.length,
+      tasks: taskNodes.length,
+      decisions: telemetryNodes.length,
+      handoffs: edges.filter((edge) => edge.label === "context handoff" || edge.label === "dispatch" || edge.label === "delegation").length,
+    };
+
+    return { nodes, edges, lanes, width, height, metrics };
   }, [autonomyActivity.items, mode, response, sessionId, steps, tasks]);
 
   const autonomySummary = useMemo(() => {
@@ -139,12 +355,18 @@ export function SwarmFlowPanel() {
         const from = nodeMap.get(edge.from);
         const to = nodeMap.get(edge.to);
         if (!from || !to) return null;
-        const x1 = from.x + 210;
-        const y1 = from.y + 40;
-        const x2 = to.x;
-        const y2 = to.y + 40;
-        const curve = `M ${x1} ${y1} C ${x1 + 80} ${y1}, ${x2 - 80} ${y2}, ${x2} ${y2}`;
-        return { ...edge, curve, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 10 };
+        const x1 = from.x + NODE_WIDTH / 2;
+        const y1 = from.y + NODE_HEIGHT;
+        const x2 = to.x + NODE_WIDTH / 2;
+        const y2 = to.y;
+        const midY = (y1 + y2) / 2;
+        const curve = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+        return {
+          ...edge,
+          curve,
+          labelX: (x1 + x2) / 2,
+          labelY: midY - 10,
+        };
       })
       .filter(Boolean);
   }, [graphData]);
@@ -255,31 +477,49 @@ export function SwarmFlowPanel() {
             <div className="inline-controls inline-controls--compact">
               <div>
                 <h3>Karar Grafiği</h3>
-                <p className="panel__hint">Proaktif trigger → supervisor → görev → ajan çıktısı → canlı telemetri akışını node-graph olarak izleyin.</p>
+                <p className="panel__hint">Trigger → Supervisor → görev → ajan → sonuç → karar telemetrisi zincirini node-graph olarak görün.</p>
               </div>
               <span className="pill">{graphData.nodes.length} node / {graphData.edges.length} edge</span>
             </div>
+
             <div className="swarm-graph__legend">
-              <span className="pill">Autonomy {autonomySummary.total}</span>
-              <span className="pill pill--success">Success {autonomySummary.success}</span>
-              <span className="pill">{autonomySummary.failed} failed</span>
-              <span className="pill">{autonomySummary.sources} source</span>
+              <span className="pill">Role {graphData.metrics.roles}</span>
+              <span className="pill">Task {graphData.metrics.tasks}</span>
+              <span className="pill pill--success">Decision {graphData.metrics.decisions}</span>
+              <span className="pill">Handoff {graphData.metrics.handoffs}</span>
               <button type="button" className="button-secondary" onClick={loadAutonomyActivity} disabled={activityLoading}>
                 {activityLoading ? "Yükleniyor…" : "Aktiviteyi Yenile"}
               </button>
             </div>
+
             <div className="swarm-graph">
-              <svg className="swarm-graph__edges" viewBox="0 0 1240 920" preserveAspectRatio="none" aria-hidden="true">
+              <svg
+                className="swarm-graph__edges"
+                viewBox={`0 0 ${graphData.width} ${graphData.height}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
                 {graphEdges.map((edge) => (
                   <g key={edge.id}>
-                    <path d={edge.curve} className="swarm-graph__edge-path" />
+                    <path d={edge.curve} className={`swarm-graph__edge-path swarm-graph__edge-path--${edge.emphasis || "default"}`} />
                     <text x={edge.labelX} y={edge.labelY} className="swarm-graph__edge-label">
                       {edge.label}
                     </text>
                   </g>
                 ))}
               </svg>
-              <div className="swarm-graph__canvas">
+
+              <div className="swarm-graph__canvas" style={{ minWidth: `${graphData.width}px`, minHeight: `${graphData.height}px` }}>
+                {graphData.lanes.map((lane) => (
+                  <div
+                    key={lane.id}
+                    className="swarm-graph__lane"
+                    style={{ left: `${lane.x}px`, width: `${NODE_WIDTH}px`, height: `${graphData.height - 56}px` }}
+                  >
+                    <span className="swarm-graph__lane-badge">{lane.label}</span>
+                  </div>
+                ))}
+
                 {graphData.nodes.map((node) => (
                   <article
                     key={node.id}
@@ -293,6 +533,33 @@ export function SwarmFlowPanel() {
                     <p>{node.body}</p>
                   </article>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="inline-controls inline-controls--compact">
+              <div>
+                <h3>Graf İçgörüleri</h3>
+                <p className="panel__hint">Karar akışını özetleyen hızlı görünüm.</p>
+              </div>
+            </div>
+            <div className="swarm-insights">
+              <div className="swarm-insights__item">
+                <span>Autonomy trigger</span>
+                <strong>{autonomySummary.total}</strong>
+              </div>
+              <div className="swarm-insights__item">
+                <span>Başarılı trigger</span>
+                <strong>{autonomySummary.success}</strong>
+              </div>
+              <div className="swarm-insights__item">
+                <span>Başarısız trigger</span>
+                <strong>{autonomySummary.failed}</strong>
+              </div>
+              <div className="swarm-insights__item">
+                <span>Kaynak sayısı</span>
+                <strong>{autonomySummary.sources}</strong>
               </div>
             </div>
           </div>
@@ -322,7 +589,7 @@ export function SwarmFlowPanel() {
           </div>
 
           <div className="card">
-            <h3>Canlı Telemetri</h3>
+            <h3>Canlı Karar Günlüğü</h3>
             <ol className="timeline">
               {steps.length === 0 && <li className="empty-state">Akış verisi bulunamadı.</li>}
               {steps.map((step, idx) => (
