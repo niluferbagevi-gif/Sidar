@@ -452,11 +452,23 @@ WEB_SEARCH_MAX_RESULTS
 - **Proaktif otonomi:** `ENABLE_AUTONOMOUS_CRON`, `AUTONOMOUS_CRON_INTERVAL_SECONDS`, `AUTONOMOUS_CRON_PROMPT`
 - **Webhook / federation:** `ENABLE_EVENT_WEBHOOKS`, `AUTONOMY_WEBHOOK_SECRET`, `ENABLE_SWARM_FEDERATION`, `SWARM_FEDERATION_SHARED_SECRET`
 - **GraphRAG:** `ENABLE_GRAPH_RAG`, `GRAPH_RAG_MAX_FILES`
+- **Cost-aware routing:** `ENABLE_COST_ROUTING`, `COST_ROUTING_COMPLEXITY_THRESHOLD`, `COST_ROUTING_LOCAL_PROVIDER`, `COST_ROUTING_LOCAL_MODEL`, `COST_ROUTING_CLOUD_PROVIDER`, `COST_ROUTING_CLOUD_MODEL`, `COST_ROUTING_DAILY_BUDGET_USD`
 
 **Otonom yapılandırma özeti:**
 - `ENABLE_AUTONOMOUS_CRON=false` ise arka plan zamanlayıcısı hiç başlatılmaz.
 - `AUTONOMOUS_CRON_INTERVAL_SECONDS=900` varsayılanı, cron tetikleyicisini en az 30 saniyelik alt sınır uygulanarak periyodik çalıştırır.
 - `AUTONOMOUS_CRON_PROMPT`, her zamanlayıcı turunda ajana gönderilecek varsayılan görev istemini tanımlar.
+
+**Cost-aware routing özeti:**
+- `ENABLE_COST_ROUTING=false` ise yönlendirici varsayılan model sağlayıcısını değiştirmez.
+- `COST_ROUTING_COMPLEXITY_THRESHOLD`, regex/keyword heuristic ile üretilen karmaşıklık skorunun hangi noktada lokal modelden bulut modele taşınacağını belirler.
+- `COST_ROUTING_LOCAL_PROVIDER`, düşük karmaşıklık veya bütçe baskısı altında fail-safe/local rota olarak kullanılır; tipik değer `ollama`'dır.
+- `COST_ROUTING_DAILY_BUDGET_USD`, günlük harcama tavanı aşıldığında tüm sorguları güvenli şekilde lokal sağlayıcıya geri çeker.
+
+**WebSearch fallback özeti:**
+- `managers/web_search.py`, aramayı varsayılan olarak Tavily ile başlatır; yanıt 401/403 ise anahtar aynı oturum içinde devre dışı bırakılarak gereksiz tekrarlar önlenir.
+- Tavily sonuç vermezse Google Custom Search, o da başarısız olursa DuckDuckGo/`AsyncDDGS` yolu devreye alınır.
+- DuckDuckGo akışı async/thread timeout korumaları ile çevrelenmiştir; böylece harici arama motoru bloklansa bile istek zinciri kontrollü biçimde sonlanır.
 
 ### 5.3 Docker Compose override değişkenleri
 
