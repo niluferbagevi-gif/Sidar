@@ -1,6 +1,6 @@
 # SİDAR v5.0 — İleri Düzey Otonomi ve Yeni Yetenekler Geliştirme Raporu
 
-> **Durum:** Stratejik mimari öneri / ürünleşme planı
+> **Durum:** Faz A tamamlandı, Faz B odağına geçmiş stratejik mimari raporu
 > **Hazırlanma Tarihi:** 2026-03-19
 > **Kapsam:** `PROJE_RAPORU.md`, `README.md`, `core/vision.py`, `core/rag.py`, `agent/tooling.py`, `agent/swarm.py`, `agent/core/supervisor.py`, `managers/web_search.py`, `managers/code_manager.py`, `web_server.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`
 
@@ -21,7 +21,7 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 
 ---
 
-## 1.1 Güncel Faz Durumu (2026-03-19)
+## 1.1 Güncel Faz Durumu (2026-03-20)
 
 | Başlık | Güncel Durum | Not |
 |---|---|---|
@@ -31,6 +31,16 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 | Reviewer + LSP anlamsal denetim | **✅ Faz B eşiği aşıldı** | Reviewer ajan refactor sonrası LSP diagnostics ile regresyon riskini anlamsal düzeyde raporlayabiliyor. |
 | Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
 | Interactive CLI Launcher | **✅ Tamamlandı** | `main.py` ön kontrollü etkileşimli başlatıcı olarak ürünleşti. |
+
+## 1.2 Faz A → Faz B Geçiş Özeti
+
+Faz A kapanışıyla birlikte SİDAR artık yalnızca komut bekleyen bir asistan değildir; medya anlayabilen, gerçek zamanlı ses akışı kabul eden, dinamik tarayıcı aksiyonları yürütebilen, LSP çıktılarıyla kodu anlamsal düzeyde denetleyebilen ve cron/webhook sinyalleriyle kendi kendine uyanabilen bir **AI Co-Worker altyapısı** kazanmıştır. Bu nedenle resmî ürün odağı artık **Faz B**'ye kaymıştır:
+
+1. **GraphRAG → Reviewer entegrasyonu:** bağımlılık grafiği, etki analizi ve `lsp_diagnostics` sinyallerini aynı kalite kapısında birleştirmek.
+2. **Tam Voice-to-Voice duplex:** bugünkü voice-to-text + text/TTS iskeletini çift yönlü, düşük gecikmeli doğal konuşma akışına dönüştürmek.
+3. **Swarm akışının görselleştirilmesi:** `SwarmFlowPanel` ve ilişkili UI yüzeylerinde ajan kararlarının node-graph biçiminde keşfedilebilir hale gelmesi.
+
+Bu geçiş özeti, repo içindeki mevcut Faz A kazanımlarını 'öneri' statüsünden çıkarıp ürünleşmiş taban kabulleri olarak tanımlar; raporun geri kalanı ise Faz B/C derinleştirme alanlarını bu yeni baseline üzerinden okur.
 
 ## 2. Mevcut Mimari Dayanaklar
 
@@ -50,9 +60,9 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 - Video/ses odaklı hata bildirimleri doğrudan anlaşılamıyor.
 - Dinamik web uygulamalarında gerçek tarayıcı işlemi yapılamıyor.
 - Kod tabanındaki anlamsal/ilişkisel bağımlılıklar artık ilk GraphRAG iskeleti ile modellenmeye başladı; ancak etki analizi ve reviewer entegrasyonu henüz erken aşamada.
-- IDE seviyesinde güvenli refactor işlemleri için LSP araçları eklenmiş olsa da Reviewer ajanı bu çıktıları henüz tam anlamsal kalite kapısı olarak kullanmıyor.
-- Sistem kullanıcı yazmadan kendi kendine tetiklenen bir ajan mimarisine tam geçmedi.
-- Swarm karar süreçleri telemetri listesinde görülüyor, fakat görsel karar grafiği olarak keşfedilemiyor.
+- LSP araçları ve Reviewer entegrasyonu artık temel kalite kapısına dahil edildi; sıradaki açık, bu sinyali GraphRAG etki analizi ve otomatik düzeltme akışlarıyla daha derin birleştirmektir.
+- Sistem artık cron/webhook tabanlı kendi kendine uyanma omurgasına sahip; sıradaki açık, bu omurganın daha zengin dış sistem korelasyonu ve aksiyon geri beslemesiyle güçlendirilmesidir.
+- Swarm karar süreçleri telemetri listesinde görülüyor; ancak Faz B odağı, bunları görsel karar grafiği olarak keşfedilebilir hale getirmektir.
 
 ---
 
