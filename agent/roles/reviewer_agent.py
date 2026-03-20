@@ -137,7 +137,7 @@ class ReviewerAgent(BaseAgent):
     @staticmethod
     def _extract_changed_paths(code_context: str) -> list[str]:
         """Serbest metin/diff içinden olası dosya yollarını toplar."""
-        candidates = re.findall(r"[\w./-]+\.(?:py|js|ts|json|md|yml|yaml)", code_context or "")
+        candidates = re.findall(r"[\w./-]+\.(?:py|tsx|ts|jsx|js|json|md|yml|yaml)", code_context or "")
         cleaned: list[str] = []
         for item in candidates:
             val = item.strip().lstrip("./")
@@ -470,6 +470,43 @@ class ReviewerAgent(BaseAgent):
                     "related_endpoints": list(related_graph_detail.get("impacted_endpoints", []) or []),
                 }
             )
+
+        if not recommendations:
+            graph_followups: list[dict[str, object]] = []
+            for report in list(graph_payload.get("reports", []) or []):
+                if not isinstance(report, dict) or not report.get("ok"):
+                    continue
+                target = str(report.get("target", "")).strip()
+                details = report.get("details") or {}
+                if not isinstance(details, dict):
+                    continue
+                if str(details.get("risk_level", "")).lower() != "high":
+                    continue
+                for field in ("review_targets", "impacted_endpoint_handlers", "caller_files", "direct_dependents"):
+                    values = details.get(field) or []
+                    if not isinstance(values, list):
+                        continue
+                    for candidate in values:
+                        normalized = str(candidate or "").strip().lstrip("./")
+                        if not normalized or normalized == target:
+                            continue
+                        graph_followups.append(
+                            {
+                                "path": normalized,
+                                "reason": "graph",
+                                "action": (
+                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada import/sözleşme "
+                                    "uyumunu ve etkilenen çağrı zincirini doğrula."
+                                ),
+                                "lsp_messages": [],
+                                "related_endpoints": list(details.get("impacted_endpoints", []) or []),
+                            }
+                        )
+
+            for item in graph_followups:
+                if any(existing.get("path") == item.get("path") for existing in recommendations):
+                    continue
+                recommendations.append(item)
 
         if not recommendations:
             for path, issue_group in list(grouped_by_path.items())[:6]:
