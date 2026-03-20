@@ -280,6 +280,8 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
   - `CoderAgent`: dosya/kod düzenleme, denetim, paket bilgisi ve TODO tarama
   - `ResearcherAgent`: web arama, URL fetch ve RAG/doküman araması
   - `ReviewerAgent`: repo/PR/issue inceleme, LLM destekli dinamik test üretimi ve sandbox regresyon yürütme
+  - `CoverageAgent`: otonom test üretimi, coverage raporu analizi ve hedefli kalite kapısı yürütme
+  - `PoyrazAgent`: dijital operasyon, sosyal medya yönetimi, medya üretimi ve dış kanal koordinasyonu
 - Intent routing kuralları `SupervisorAgent._intent()` içinde anahtar kelime tabanlıdır:
   - `research`: "araştır", "web", "url", "doküman", "search"
   - `review`: "github", "pull request", "issue", "review", "incele"
@@ -303,6 +305,8 @@ Ana gruplar:
 - Shell/yardımcı: `run_shell` (`bash`, `shell` alias), `glob_search`, `grep_files`, `get_config`
 - Todo/plan: `todo_write`, `todo_read`, `todo_update`, `scan_project_todos`
 - Delegasyon: `subtask` (`agent` alias), `parallel`
+- Sosyal/Medya (planlanan): `post_to_instagram`, `send_whatsapp_message`, `fetch_youtube_stream`
+- Kalite/Test (planlanan): `read_coverage_report`, `generate_patch_from_logs`
 
 ### 4.3 Reviewer/QA döngüsü
 
