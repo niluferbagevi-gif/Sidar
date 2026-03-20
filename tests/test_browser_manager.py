@@ -371,3 +371,310 @@ def test_browser_manager_close_session_returns_error_when_cleanup_fails():
     assert ok is False
     assert "kapatılırken hata" in message
     assert manager.list_audit_log()[-1]["status"] == "execution_failed"
+
+def test_browser_manager_summarize_audit_log_attention_and_no_signal():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    no_signal = manager.summarize_audit_log()
+    assert no_signal["status"] == "no-signal"
+    assert no_signal["risk"] == "düşük"
+
+    manager._record_audit_event(
+        session_id="sess-attn",
+        action="browser_click",
+        status="pending_approval",
+        selector="button.save",
+        current_url="https://example.com/settings",
+    )
+    manager._record_audit_event(
+        session_id="sess-attn",
+        action="browser_click",
+        status="approved",
+        selector="button.save",
+        current_url="https://example.com/settings",
+    )
+
+    attention = manager.summarize_audit_log("sess-attn")
+    assert attention["status"] == "attention"
+    assert attention["risk"] == "orta"
+    assert attention["pending_actions"] == ["browser_click"]
+    assert attention["high_risk_actions"] == ["browser_click:button.save"]
+
+
+def test_browser_manager_start_playwright_session_uses_mocked_runtime(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+
+    class _Page:
+        def __init__(self):
+            self.timeout = None
+
+        def set_default_timeout(self, timeout):
+            self.timeout = timeout
+            calls.append(("set_default_timeout", timeout))
+
+    class _Context:
+        def __init__(self):
+            self.page = _Page()
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class _Browser:
+        def __init__(self):
+            self.context = _Context()
+
+        def new_context(self):
+            calls.append(("new_context",))
+            return self.context
+
+    class _Launcher:
+        def launch(self, *, headless):
+            calls.append(("launch", headless))
+            return _Browser()
+
+    class _Runtime:
+        chromium = _Launcher()
+
+        def stop(self):
+            calls.append(("stop",))
+
+    class _PlaywrightHandle:
+        def start(self):
+            calls.append(("start",))
+            return _Runtime()
+
+    sync_api_mod = SimpleNamespace(sync_playwright=lambda: _PlaywrightHandle())
+    monkeypatch.setitem(sys.modules, "playwright", SimpleNamespace(sync_api=sync_api_mod))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_mod)
+
+    session = manager._start_playwright_session("chromium", headless=False)
+
+    assert session.provider == "playwright"
+    assert session.browser_name == "chromium"
+    assert session.headless is False
+    assert session.page.timeout == 5000
+    assert ("start",) in calls
+    assert ("launch", False) in calls
+    assert ("new_context",) in calls
+    assert ("new_page",) in calls
+
+
+def test_browser_manager_start_playwright_session_stops_runtime_for_unknown_browser(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    calls = []
+
+    class _Runtime:
+        def stop(self):
+            calls.append("stop")
+
+    class _PlaywrightHandle:
+        def start(self):
+            return _Runtime()
+
+    sync_api_mod = SimpleNamespace(sync_playwright=lambda: _PlaywrightHandle())
+    monkeypatch.setitem(sys.modules, "playwright", SimpleNamespace(sync_api=sync_api_mod))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api_mod)
+
+    with pytest.raises(ValueError, match="desteklenmiyor"):
+        manager._start_playwright_session("webkit", headless=True)
+
+    assert calls == ["stop"]
+
+
+def test_browser_manager_start_selenium_session_supports_chrome_and_firefox(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    constructed = []
+
+    class _ChromeOptions:
+        def __init__(self):
+            self.arguments = []
+
+        def add_argument(self, value):
+            self.arguments.append(value)
+
+    class _FirefoxOptions:
+        def __init__(self):
+            self.arguments = []
+
+        def add_argument(self, value):
+            self.arguments.append(value)
+
+    class _Driver:
+        def __init__(self, label, options):
+            self.label = label
+            self.options = options
+            self.page_timeout = None
+
+        def set_page_load_timeout(self, value):
+            self.page_timeout = value
+
+    def _chrome(*, options):
+        driver = _Driver("chrome", options)
+        constructed.append(driver)
+        return driver
+
+    def _firefox(*, options):
+        driver = _Driver("firefox", options)
+        constructed.append(driver)
+        return driver
+
+    webdriver_mod = SimpleNamespace(
+        ChromeOptions=_ChromeOptions,
+        FirefoxOptions=_FirefoxOptions,
+        Chrome=_chrome,
+        Firefox=_firefox,
+    )
+    selenium_mod = SimpleNamespace(webdriver=webdriver_mod)
+    monkeypatch.setitem(sys.modules, "selenium", selenium_mod)
+
+    chrome_session = manager._start_selenium_session("chrome", headless=True)
+    firefox_session = manager._start_selenium_session("firefox", headless=False)
+
+    assert chrome_session.provider == "selenium"
+    assert chrome_session.driver.page_timeout == 5
+    assert constructed[0].options.arguments == ["--headless=new", "--disable-dev-shm-usage", "--no-sandbox"]
+    assert firefox_session.browser_name == "firefox"
+    assert constructed[1].options.arguments == []
+
+    with pytest.raises(ValueError, match="desteklenmiyor"):
+        manager._start_selenium_session("safari", headless=True)
+
+
+def test_browser_manager_records_execution_failed_for_goto_and_sync_mutations(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Page:
+        def goto(self, *_args, **_kwargs):
+            raise TimeoutError("goto timeout")
+
+        def click(self, *_args, **_kwargs):
+            raise RuntimeError("click failed")
+
+        def fill(self, *_args, **_kwargs):
+            raise RuntimeError("fill failed")
+
+        def select_option(self, *_args, **_kwargs):
+            raise RuntimeError("select failed")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-errors",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/dashboard",
+    )
+    manager._sessions[session.session_id] = session
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=False))
+
+    with pytest.raises(TimeoutError, match="goto timeout"):
+        manager.goto_url(session.session_id, "https://example.com")
+
+    with pytest.raises(RuntimeError, match="click failed"):
+        manager.click_element(session.session_id, "#missing")
+
+    with pytest.raises(RuntimeError, match="fill failed"):
+        manager.fill_form(session.session_id, "#name", "Sidar")
+
+    with pytest.raises(RuntimeError, match="select failed"):
+        manager.select_option(session.session_id, "#priority", "high")
+
+    failed = [entry for entry in manager.list_audit_log() if entry["status"] == "execution_failed"]
+    assert [entry["action"] for entry in failed] == [
+        "browser_goto_url",
+        "browser_click",
+        "browser_fill_form",
+        "browser_select_option",
+    ]
+    assert failed[0]["details"]["error"] == "goto timeout"
+    assert failed[1]["selector"] == "#missing"
+    assert failed[2]["details"]["value_preview"] == "*****"
+    assert failed[3]["details"]["value_preview"] == "****"
+
+
+def test_browser_manager_hitl_rejections_and_failures_are_audited(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Page:
+        def fill(self, *_args, **_kwargs):
+            raise RuntimeError("cannot fill")
+
+        def select_option(self, *_args, **_kwargs):
+            raise RuntimeError("cannot select")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-hitl-errors",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/admin",
+    )
+    manager._sessions[session.session_id] = session
+
+    class _RejectGate:
+        async def request_approval(self, **kwargs):
+            return False
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _RejectGate())
+    fill_ok, fill_msg = asyncio.run(manager.fill_form_hitl(session.session_id, "#summary", "Yeni değer"))
+    select_ok, select_msg = asyncio.run(manager.select_option_hitl(session.session_id, "#priority", "high"))
+
+    assert fill_ok is False and "reddedildi" in fill_msg
+    assert select_ok is False and "reddedildi" in select_msg
+    assert [entry["status"] for entry in manager.list_audit_log()] == [
+        "pending_approval",
+        "rejected",
+        "pending_approval",
+        "rejected",
+    ]
+
+    class _ApproveGate:
+        async def request_approval(self, **kwargs):
+            return True
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _ApproveGate())
+
+    with pytest.raises(RuntimeError, match="cannot fill"):
+        asyncio.run(manager.fill_form_hitl(session.session_id, "#summary", "Yeni değer"))
+
+    with pytest.raises(RuntimeError, match="cannot select"):
+        asyncio.run(manager.select_option_hitl(session.session_id, "#priority", "high"))
+
+    failed = [entry for entry in manager.list_audit_log() if entry["status"] == "execution_failed"]
+    assert [entry["action"] for entry in failed] == ["browser_fill_form", "browser_select_option"]
+    assert failed[0]["details"]["error"] == "cannot fill"
+    assert failed[1]["details"]["error"] == "cannot select"
+
+
+def test_browser_manager_uses_selenium_capture_paths(tmp_path):
+    manager = BM_MOD.BrowserManager(_Config())
+    manager.artifact_dir = tmp_path
+
+    class _Driver:
+        current_url = "https://example.com/selenium"
+        page_source = "<html>selenium</html>"
+
+        def save_screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-selenium-capture",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=_Driver(),
+    )
+    manager._sessions[session.session_id] = session
+
+    ok_dom, dom = manager.capture_dom(session.session_id)
+    ok_shot, shot_path = manager.capture_screenshot(session.session_id, full_page=False)
+
+    assert ok_dom is True and dom == "<html>selenium</html>"
+    assert ok_shot is True and Path(shot_path).exists()
+    assert manager.list_audit_log()[-1]["details"]["full_page"] is False
