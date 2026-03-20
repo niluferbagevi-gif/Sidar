@@ -1,5 +1,6 @@
 """Testler: Cost-Aware Model Routing (Özellik 5)"""
 from __future__ import annotations
+import time
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -86,6 +87,15 @@ class TestDailyBudgetTracker:
         self.tracker.add(-1.0)
         assert self.tracker.daily_usage() == 0.0
 
+    def test_daily_usage_resets_when_new_day_starts(self):
+        self.tracker.add(0.75)
+        self.tracker._day_start = time.time() - 86500
+
+        usage = self.tracker.daily_usage()
+
+        assert usage == 0.0
+        assert self.tracker._day_start > time.time() - 5
+
 
 # ─── CostAwareRouter ────────────────────────────────────────────────────────
 
@@ -170,6 +180,15 @@ class TestCostAwareRouter:
         provider, model = router.select(complex_msgs, "ollama", "fallback-model")
         if provider == "openai":
             assert model == "fallback-model"
+
+    def test_local_result_returns_defaults_when_local_provider_is_blank(self):
+        router = self._router()
+        router.local_provider = ""
+
+        provider, model = router._local_result("openai", "gpt-4o-mini")
+
+        assert provider == "openai"
+        assert model == "gpt-4o-mini"
 
 
 # ─── record_routing_cost yardımcı fonksiyon ─────────────────────────────────
