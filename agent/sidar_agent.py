@@ -8,6 +8,8 @@ import asyncio
 import json
 import time
 import threading
+import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List, Any
 
@@ -30,8 +32,98 @@ from managers.security import SecurityManager
 from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
-from agent.core.contracts import ActionFeedback, ExternalTrigger, FederationTaskEnvelope, derive_correlation_id
-from agent.definitions import SIDAR_SYSTEM_PROMPT
+agent_contracts = sys.modules.get("agent.core.contracts") or import_module("agent.core.contracts")
+agent_definitions = sys.modules.get("agent.definitions") or import_module("agent.definitions")
+
+SIDAR_SYSTEM_PROMPT = agent_definitions.SIDAR_SYSTEM_PROMPT
+ExternalTrigger = agent_contracts.ExternalTrigger
+
+
+def _default_derive_correlation_id(*values: object) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+derive_correlation_id = getattr(agent_contracts, "derive_correlation_id", _default_derive_correlation_id)
+
+
+class _FallbackFederationTaskEnvelope:
+    def __init__(self, **kwargs):
+        self.task_id = str(kwargs.get("task_id", ""))
+        self.source_system = str(kwargs.get("source_system", ""))
+        self.source_agent = str(kwargs.get("source_agent", ""))
+        self.target_system = str(kwargs.get("target_system", ""))
+        self.target_agent = str(kwargs.get("target_agent", ""))
+        self.goal = str(kwargs.get("goal", ""))
+        self.protocol = str(kwargs.get("protocol", "federation.v1"))
+        self.intent = str(kwargs.get("intent", "mixed"))
+        self.context = dict(kwargs.get("context", {}) or {})
+        self.inputs = list(kwargs.get("inputs", []) or [])
+        self.meta = dict(kwargs.get("meta", {}) or {})
+        self.correlation_id = derive_correlation_id(
+            kwargs.get("correlation_id", ""),
+            self.meta.get("correlation_id", ""),
+            self.task_id,
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[FEDERATION TASK]\n"
+            f"source_system={self.source_system}\n"
+            f"source_agent={self.source_agent}\n"
+            f"target_system={self.target_system}\n"
+            f"target_agent={self.target_agent}\n"
+            f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
+            f"intent={self.intent}\n"
+            f"goal={self.goal}\n"
+            f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True)}\n"
+            f"inputs={json.dumps(self.inputs, ensure_ascii=False)}\n"
+            f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+class _FallbackActionFeedback:
+    def __init__(self, **kwargs):
+        self.feedback_id = str(kwargs.get("feedback_id", ""))
+        self.source_system = str(kwargs.get("source_system", ""))
+        self.source_agent = str(kwargs.get("source_agent", ""))
+        self.action_name = str(kwargs.get("action_name", ""))
+        self.status = str(kwargs.get("status", "received"))
+        self.summary = str(kwargs.get("summary", ""))
+        self.related_task_id = str(kwargs.get("related_task_id", ""))
+        self.related_trigger_id = str(kwargs.get("related_trigger_id", ""))
+        self.details = dict(kwargs.get("details", {}) or {})
+        self.meta = dict(kwargs.get("meta", {}) or {})
+        self.correlation_id = derive_correlation_id(
+            kwargs.get("correlation_id", ""),
+            self.meta.get("correlation_id", ""),
+            self.related_task_id,
+            self.related_trigger_id,
+            self.feedback_id,
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[ACTION FEEDBACK]\n"
+            f"source_system={self.source_system}\n"
+            f"source_agent={self.source_agent}\n"
+            f"action_name={self.action_name}\n"
+            f"status={self.status}\n"
+            f"correlation_id={self.correlation_id}\n"
+            f"related_task_id={self.related_task_id}\n"
+            f"related_trigger_id={self.related_trigger_id}\n"
+            f"summary={self.summary}\n"
+            f"details={json.dumps(self.details, ensure_ascii=False, sort_keys=True)}\n"
+            f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+FederationTaskEnvelope = getattr(agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope)
+ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedback)
 
 logger = logging.getLogger(__name__)
 
