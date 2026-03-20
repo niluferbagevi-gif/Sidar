@@ -282,3 +282,152 @@ def test_summarize_lsp_diagnostic_entries_covers_warning_info_and_clean_states()
     clean = CM_MOD.CodeManager._summarize_lsp_diagnostic_entries([])
     assert clean["status"] == "clean"
     assert clean["summary"] == "LSP diagnostics temiz."
+
+
+def test_code_manager_lsp_helper_edge_cases(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    sample = tmp_path / "pkg" / "sample.py"
+    sample.parent.mkdir()
+    sample.write_text("value = 1\n", encoding="utf-8")
+
+    normalized = manager._normalize_lsp_path("pkg/sample.py")
+    assert normalized == sample.resolve()
+
+    manager.enable_lsp = False
+    with pytest.raises(RuntimeError, match="ENABLE_LSP"):
+        manager._run_lsp_sequence(primary_path=sample, request_method=None)
+
+    manager.enable_lsp = True
+    unsupported = tmp_path / "notes.md"
+    unsupported.write_text("# demo\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="desteklenmeyen dosya türü"):
+        manager._run_lsp_sequence(primary_path=unsupported, request_method=None)
+
+    with pytest.raises(RuntimeError, match="server exploded"):
+        manager._extract_lsp_result([{"id": 2, "error": "server exploded"}])
+
+    assert manager._format_lsp_locations([], limit=5) == "Sonuç bulunamadı."
+    formatted = manager._format_lsp_locations(
+        [
+            {
+                "targetUri": CM_MOD._path_to_file_uri(sample),
+                "targetSelectionRange": {"start": {"line": 0, "character": 0}},
+            },
+            {
+                "uri": CM_MOD._path_to_file_uri(sample),
+                "range": {"start": {"line": 1, "character": 2}},
+            },
+        ],
+        limit=1,
+    )
+    assert "sample.py" in formatted
+    assert "... ve 1 ek sonuç daha." in formatted
+
+
+def test_code_manager_lsp_definition_references_and_rename_failures(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "demo.py"
+    target.write_text("value = 1\nprint(value)\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("definition down")),
+    )
+    ok, output = manager.lsp_go_to_definition(str(target), 1, 6)
+    assert ok is False
+    assert "definition down" in output
+
+    manager.lsp_max_references = 1
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_kwargs: [
+            {
+                "id": 2,
+                "result": [
+                    {
+                        "targetUri": CM_MOD._path_to_file_uri(target),
+                        "targetSelectionRange": {"start": {"line": 0, "character": 0}},
+                    },
+                    {
+                        "uri": CM_MOD._path_to_file_uri(target),
+                        "range": {"start": {"line": 1, "character": 6}},
+                    },
+                ],
+            }
+        ],
+    )
+    ok, refs = manager.lsp_find_references(str(target), 1, 6)
+    assert ok is True
+    assert "demo.py" in refs
+    assert "... ve 1 ek sonuç daha." in refs
+
+    ok, msg = manager.lsp_rename_symbol(str(target), 0, 0, "   ", apply=False)
+    assert ok is False
+    assert "boş olamaz" in msg
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_kwargs: [{"id": 2, "result": None}])
+    ok, msg = manager.lsp_rename_symbol(str(target), 0, 0, "new_name", apply=False)
+    assert ok is False
+    assert "değişiklik üretmedi" in msg
+
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("rename boom")),
+    )
+    ok, msg = manager.lsp_rename_symbol(str(target), 0, 0, "new_name", apply=False)
+    assert ok is False
+    assert "rename boom" in msg
+
+
+def test_code_manager_workspace_edit_and_semantic_audit_edge_cases(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "rename_me.py"
+    target.write_text("old_name = 1\n", encoding="utf-8")
+
+    ok, output = manager._apply_workspace_edit({})
+    assert ok is False
+    assert output == "Workspace edit boş döndü."
+
+    captured = []
+
+    def _write_file(path, content, validate=True):
+        captured.append((path, content, validate))
+        return False, "disk is read-only"
+
+    monkeypatch.setattr(manager, "write_file", _write_file)
+    edit = {
+        "documentChanges": [
+            {
+                "textDocument": {"uri": CM_MOD._path_to_file_uri(target)},
+                "edits": [
+                    {
+                        "range": {
+                            "start": {"line": 0, "character": 0},
+                            "end": {"line": 0, "character": 8},
+                        },
+                        "newText": "new_name",
+                    }
+                ],
+            }
+        ]
+    }
+    ok, output = manager._apply_workspace_edit(edit)
+    assert ok is False
+    assert output == "disk is read-only"
+    assert captured and captured[0][0].endswith("rename_me.py")
+
+    empty_mgr = _make_manager(monkeypatch, tmp_path / "empty")
+    ok, audit = empty_mgr.lsp_semantic_audit([])
+    assert ok is False
+    assert audit["status"] == "no-targets"
+    assert audit["summary"] == "LSP tanılaması için uygun dosya bulunamadı."
+
+    diag_mgr = _make_manager(monkeypatch, tmp_path)
+    monkeypatch.setattr(diag_mgr, "_run_lsp_sequence", lambda **_kwargs: [{"id": 999, "result": None}])
+    ok, audit = diag_mgr.lsp_semantic_audit([str(target)])
+    assert ok is True
+    assert audit["status"] == "no-signal"
+    assert audit["summary"] == "LSP diagnostics bildirimi dönmedi."
