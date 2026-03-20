@@ -708,6 +708,7 @@ def _chunked(lst: List, size: int):
 
 _feedback_store: Optional[FeedbackStore] = None
 _store_lock = threading.Lock()
+_pipeline_lock = threading.Lock()
 _continuous_learning_pipeline: Optional[ContinuousLearningPipeline] = None
 
 
@@ -725,13 +726,17 @@ def get_feedback_store(config=None) -> FeedbackStore:
 def get_continuous_learning_pipeline(config=None) -> ContinuousLearningPipeline:
     """Süreç-geneli sürekli öğrenme pipeline singleton'ını döndürür."""
     global _continuous_learning_pipeline
-    with _store_lock:
+    if _continuous_learning_pipeline is not None:
+        return _continuous_learning_pipeline
+
+    with _pipeline_lock:
         if _continuous_learning_pipeline is None:
             from config import Config
 
             cfg = config or Config()
+            store = get_feedback_store(cfg)
             _continuous_learning_pipeline = ContinuousLearningPipeline(
-                get_feedback_store(cfg),
+                store,
                 trainer=LoRATrainer(config=cfg),
                 config=cfg,
             )
