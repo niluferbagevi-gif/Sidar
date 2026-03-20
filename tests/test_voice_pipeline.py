@@ -17,6 +17,13 @@ class _Cfg:
     VOICE_TTS_BUFFER_CHARS = 24
 
 
+def test_base_tts_adapter_requires_override():
+    adapter = voice_mod._BaseTTSAdapter()
+
+    with pytest.raises(NotImplementedError):
+        asyncio.run(adapter.synthesize("Merhaba"))
+
+
 def test_voice_pipeline_mock_synthesizes_audio_bytes():
     pipeline = VoicePipeline(_Cfg())
     result = asyncio.run(pipeline.synthesize_text("Merhaba dünya"))
@@ -83,6 +90,42 @@ def test_build_tts_adapter_auto_falls_back_to_mock(monkeypatch):
     assert isinstance(adapter, voice_mod._MockTTSAdapter)
 
 
+def test_build_tts_adapter_explicit_pyttsx3_returns_pyttsx3_adapter(monkeypatch):
+    class _AvailableAdapter:
+        provider = "pyttsx3"
+
+        def __init__(self):
+            self._import_error = ""
+
+        @property
+        def available(self):
+            return True
+
+    monkeypatch.setattr(voice_mod, "_Pyttsx3Adapter", _AvailableAdapter)
+
+    adapter = voice_mod._build_tts_adapter("pyttsx3")
+
+    assert isinstance(adapter, _AvailableAdapter)
+
+
+def test_build_tts_adapter_auto_prefers_available_pyttsx3(monkeypatch):
+    class _AvailableAdapter:
+        provider = "pyttsx3"
+
+        def __init__(self):
+            self._import_error = ""
+
+        @property
+        def available(self):
+            return True
+
+    monkeypatch.setattr(voice_mod, "_Pyttsx3Adapter", _AvailableAdapter)
+
+    adapter = voice_mod._build_tts_adapter("auto")
+
+    assert isinstance(adapter, _AvailableAdapter)
+
+
 def test_pyttsx3_adapter_reports_import_failure(monkeypatch):
     monkeypatch.setattr(voice_mod, "_Pyttsx3Adapter", voice_mod._Pyttsx3Adapter)
     adapter = voice_mod._Pyttsx3Adapter()
@@ -93,6 +136,24 @@ def test_pyttsx3_adapter_reports_import_failure(monkeypatch):
     assert result["success"] is False
     assert result["provider"] == "pyttsx3"
     assert result["reason"] == "pyttsx3 missing"
+
+
+def test_pyttsx3_adapter_synthesize_uses_to_thread_when_available(monkeypatch):
+    adapter = voice_mod._Pyttsx3Adapter()
+    monkeypatch.setattr(adapter, "_import_error", "")
+
+    async def _fake_to_thread(func, text, voice):
+        assert getattr(func, "__self__", None) is adapter
+        assert getattr(func, "__func__", None) is voice_mod._Pyttsx3Adapter._synthesize_sync
+        assert text == "Merhaba"
+        assert voice == "tr"
+        return {"success": True, "provider": "pyttsx3", "voice": voice}
+
+    monkeypatch.setattr(voice_mod.asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(adapter.synthesize("Merhaba", voice="tr"))
+
+    assert result == {"success": True, "provider": "pyttsx3", "voice": "tr"}
 
 
 def test_voice_pipeline_builds_vad_state_and_auto_commit_signal():
@@ -328,6 +389,15 @@ def test_voice_pipeline_covers_none_state_and_disabled_vad_paths():
     }
     assert pipeline.should_commit_audio(2048, event="speech_end") is False
     assert pipeline.should_interrupt_response(2048, event="barge_in") is False
+
+
+def test_voice_pipeline_extract_ready_segments_returns_empty_for_blank_buffer():
+    pipeline = VoicePipeline(_Cfg())
+
+    ready, remainder = pipeline.extract_ready_segments("   ", flush=False)
+
+    assert ready == []
+    assert remainder == ""
 
 
 def test_voice_pipeline_barge_in_clears_buffer_and_tracks_interrupted_turns():
