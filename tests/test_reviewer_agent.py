@@ -258,6 +258,58 @@ def test_reviewer_build_dynamic_test_content_uses_llm(monkeypatch):
     assert "def test_generated" in out
 
 
+def test_reviewer_build_dynamic_test_content_fail_closes_for_empty_context_and_llm_errors(monkeypatch):
+    a = ReviewerAgent()
+
+    empty = asyncio.run(a._build_dynamic_test_content("   "))
+    assert "fail_closed" in empty
+    assert "boş bağlam" in empty
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("llm unavailable")
+
+    monkeypatch.setattr(a, "call_llm", _boom)
+    errored = asyncio.run(a._build_dynamic_test_content("def broken(): pass"))
+
+    assert "fail_closed" in errored
+    assert "llm unavailable" in errored
+
+
+def test_reviewer_build_dynamic_test_content_fail_closes_when_llm_returns_non_test_code(monkeypatch):
+    a = ReviewerAgent()
+
+    async def fake_call_llm(*_args, **_kwargs):
+        return "print('no pytest here')"
+
+    monkeypatch.setattr(a, "call_llm", fake_call_llm)
+
+    out = asyncio.run(a._build_dynamic_test_content("def add_two(x): return x + 2"))
+
+    assert "fail_closed" in out
+    assert "geçerli pytest test fonksiyonu içermedi" in out
+
+
+def test_reviewer_run_dynamic_tests_fail_closes_when_write_fails(monkeypatch, tmp_path):
+    a = ReviewerAgent()
+    a.config.BASE_DIR = tmp_path
+
+    async def fake_build(_ctx: str) -> str:
+        return "def test_generated():\n    assert True\n"
+
+    async def fake_to_thread(func, *args):
+        if getattr(func, "__self__", None) is a.code and getattr(func, "__func__", None) is type(a.code).write_file:
+            return False, "disk full"
+        raise AssertionError(f"unexpected to_thread target: {func}")
+
+    monkeypatch.setattr(a, "_build_dynamic_test_content", fake_build)
+    monkeypatch.setattr(asyncio, "to_thread", fake_to_thread)
+
+    out = asyncio.run(a._run_dynamic_tests("def broken(:"))
+
+    assert "[TEST:FAIL-CLOSED]" in out
+    assert "disk full" in out
+
+
 def test_reviewer_agent_run_tests_tool_rejects_unsafe_command():
     a = ReviewerAgent()
     out = asyncio.run(a.call_tool("run_tests", "rm -rf /"))

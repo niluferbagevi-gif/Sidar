@@ -120,6 +120,42 @@ def test_module_import_sets_trace_none_when_opentelemetry_missing():
     assert mod.trace is None
 
 
+def test_sidar_agent_module_fallback_contract_helpers_build_prompts():
+    mod = _load_sidar_agent_module()
+
+    assert mod._default_derive_correlation_id(None, "  ", "corr-1", "corr-2") == "corr-1"
+    assert mod._default_derive_correlation_id(None, "  ") == ""
+
+    envelope = mod._FallbackFederationTaskEnvelope(
+        task_id="fed-1",
+        source_system="crewai",
+        source_agent="planner",
+        target_system="sidar",
+        target_agent="supervisor",
+        goal="Plan üret",
+        context={"repo": "Sidar"},
+        inputs=["issue #1"],
+        meta={"correlation_id": "meta-corr"},
+    )
+    feedback = mod._FallbackActionFeedback(
+        feedback_id="fb-1",
+        source_system="crewai",
+        source_agent="planner",
+        action_name="open_pr",
+        status="success",
+        summary="PR açıldı",
+        details={"number": 7},
+        meta={"correlation_id": "fb-corr"},
+    )
+
+    assert envelope.correlation_id == "meta-corr"
+    assert "protocol=federation.v1" in envelope.to_prompt()
+    assert '"repo": "Sidar"' in envelope.to_prompt()
+    assert feedback.correlation_id == "fb-corr"
+    assert "action_name=open_pr" in feedback.to_prompt()
+    assert '"number": 7' in feedback.to_prompt()
+
+
 def test_initialize_lock_and_idempotent_memory_init():
     agent = SidarAgent.__new__(SidarAgent)
     agent._initialized = False
