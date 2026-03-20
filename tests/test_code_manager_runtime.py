@@ -350,6 +350,21 @@ def test_read_write_permission_and_directory_error_paths(manager_factory, monkey
     assert "Yazma hatası" in msg
 
 
+def test_code_manager_blocks_directory_traversal_for_read_and_write(monkeypatch, tmp_path):
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
+    security = SEC_MOD.SecurityManager(access_level="full", base_dir=tmp_path)
+    mgr = CM_MOD.CodeManager(security, tmp_path)
+
+    ok_read, msg_read = mgr.read_file("../../../etc/passwd", line_numbers=False)
+    ok_write, msg_write = mgr.write_file("../../../etc/passwd", "owned", validate=False)
+
+    assert ok_read is False
+    assert "Okuma yetkisi yok" in msg_read
+    assert ok_write is False
+    assert "Güvenli alternatif" in msg_write
+    assert str(tmp_path / "temp" / "passwd") in msg_write
+
+
 def test_patch_file_target_not_found_and_ambiguous(manager_factory, tmp_path):
     mgr = manager_factory(can_read=True, can_write=True)
     f = tmp_path / "p.py"
