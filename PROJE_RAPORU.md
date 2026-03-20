@@ -7,13 +7,13 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-20
-> **Son Güncelleme:** 2026-03-20 (v5.0.0-alpha — SİDAR, **v5.0.0-alpha (Faz 6)** geçişi kapsamında reaktif asistandan proaktif AI Co-Worker mimarisine yaklaşan güncel yetenek setini dokümantasyonla senkronize etmiştir. Ultimate Launcher (`main.py`) ön kontroller, zengin terminal UX'i ve thread tabanlı log akışıyla giriş kapısı haline gelmiş; Reviewer ajanı Pyright + TypeScript Language Server Protocol entegrasyonu sayesinde `lsp_diagnostics` tabanlı anlamsal kalite denetimi yapabilir duruma gelmiştir. `core/multimodal.py`, `core/voice.py` ve `/ws/voice` hattı WebSocket tabanlı gerçek zamanlı sesli asistan omurgasını; `managers/browser_manager.py` ise Playwright öncelikli HITL-korumalı dinamik tarayıcı otomasyonunu ürünleşmiş yetenekler olarak sunmaktadır. Ayrıca `_autonomous_cron_loop` ve webhook tetikleyicileri ile dış olaylar gelmeden kendi kendine uyanan proaktif otonomi omurgası belgeye eklenmiştir. `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile 2026-03-20 tarihinde yenilenen takipli ölçümler: üretim Python **24.855** satır (**62** dosya), test havuzu **41.426** satır (**159** Python test dosyası), toplam takipli Python **66.281** satır (**223** dosya), takipli Markdown havuzu **8.264** satır (**97** dosya) ve tüm ölçülen takipli havuz **80.077** satır (**337** dosya).)
+> **Son Güncelleme:** 2026-03-20 (v5.0.0-alpha — SİDAR, **Faz B kapanışı** ile GraphRAG → Reviewer etki analizi, duplex voice-to-voice WebSocket akışı ve görsel Swarm karar grafiğini aynı baseline üzerinde tamamlayarak dokümantasyonunu güncellemiştir. Ultimate Launcher (`main.py`) ön kontroller, zengin terminal UX'i ve thread tabanlı log akışıyla giriş kapısı olmayı sürdürürken; Reviewer ajanı artık GraphRAG raporları ile Pyright + TypeScript Language Server Protocol sinyallerini birlikte yorumlayan anlamsal kalite kapısı sunmaktadır. `core/multimodal.py`, `core/voice.py` ve `/ws/voice` hattı duplex output buffer, assistant turn kimliği ve VAD tabanlı barge-in interrupt temizliğiyle daha doğal gerçek zamanlı ses akışı sağlar; `managers/browser_manager.py`, webhook/federation yüzeyleri ve `web_ui_react/src/components/SwarmFlowPanel.jsx` ise HITL-korumalı browser otomasyonu, proaktif otonomi ve node-graph tabanlı karar görünürlüğünü ürünleşmiş Faz B teslimleri halinde birleştirir. `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile 2026-03-20 tarihinde yenilenen takipli ölçümler: üretim Python **25.202** satır (**62** dosya), test havuzu **41.737** satır (**159** `test_*.py`, **161** toplam Python test dosyası), toplam takipli Python **66.939** satır (**223** dosya), takipli Markdown havuzu **8.328** satır (**97** dosya) ve tüm ölçülen takipli havuz **80.863** satır (**337** dosya).)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** 5.0.0-alpha
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **24.855** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **41.426** satır (**159** Python test dosyası) ve tüm takipli Python toplamı **66.281** satırdır. Aynı ölçümde takipli Markdown havuzu **8.264** satır (**97** dosya), `scripts/audit_metrics.sh` toplamında ise takipli ölçüm yüzeyi **80.077** satır (**337** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), yeni ses hattı (`core/voice.py`), tarayıcı otomasyon katmanı (`managers/browser_manager.py`), LSP destekli kod denetim akışı ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, konfigürasyon bootstrap'i, ses/TTS akışı, proaktif otonomi ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **25.202** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **41.737** satır (**159** `test_*.py`, **161** toplam Python test dosyası) ve tüm takipli Python toplamı **66.939** satırdır. Aynı ölçümde takipli Markdown havuzu **8.328** satır (**97** dosya), `scripts/audit_metrics.sh` toplamında ise takipli ölçüm yüzeyi **80.863** satır (**337** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), Faz B'yi kapatan ses hattı (`core/voice.py`), GraphRAG + reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`), swarm karar grafiği (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`) ve metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, duplex ses/TTS akışı, görsel swarm görünürlüğü, proaktif otonomi/federation ve güvenli ölçüm akışları raporlarla senkronize edilmiştir.
 
 ---
 
@@ -133,7 +133,7 @@
 - **GitHub Entegrasyonu:** Repo analizi, branch/PR ve issue akışları `managers/github_manager.py`; GitHub release bilgileri ise `managers/package_info.py` üzerinden ajan araç setine entegredir.
 - **ReAct döngüsü:** LLM → Araç çağrısı → Gözlem → LLM (maks. `MAX_REACT_STEPS` adım)
 - **Görev Takibi ve Proje Denetimi:** `managers/todo_manager.py` ile TODO yazma/okuma/güncelleme ve proje genelinde `scan_project_todos()` üzerinden TODO/FIXME taraması yapılır.
-- **RAG (Vektör Bellek):** ChromaDB veya pgvector + BM25 + keyword hibrit arama (RRF destekli) akışıyla çalışır; ayrıca beta seviyesinde GraphRAG ile modül bağımlılık grafiği taraması ve yol açıklama desteği sunar (`core/rag.py`).
+- **RAG + Reviewer Etki Analizi (Faz B Tamamlandı):** ChromaDB veya pgvector + BM25 + keyword hibrit arama (RRF destekli) akışına ek olarak GraphRAG, modül bağımlılık grafiği taraması, bağımlılık yolu açıklaması ve reviewer kalite kapısında kullanılan etki analizi raporlarını üretir (`core/rag.py`, `agent/roles/reviewer_agent.py`).
 - **Güvenlik:** OpenClaw 3 katmanlı erişim sistemi (restricted / sandbox / full)
 - **Zero-Trust Sandbox:** Docker izolasyonuna ek olarak ağ kapatma, CPU/RAM sınırlandırma ve gVisor/Kata uyumluluğuna hazır çalışma modeliyle güvenli kod yürütme.
 - **GPU desteği:** CUDA, FP16, çoklu GPU, WSL2 uyumu
@@ -145,11 +145,11 @@
 - **Entity/Persona Memory:** Kullanıcı başına kodlama stili, framework tercihi, verbosity gibi uzun vadeli kişiselleştirilmiş bellek; TTL + LRU eviction (`core/entity_memory.py`).
 - **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
 - **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
-- **Multimodal Perception (Tamamlandı / v5.0-alpha):** `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile medya ingestion, STT, VAD olayları ve TTS segmentasyon akışı ürünleşmiş durumda.
+- **Multimodal Perception + Duplex Voice (Tamamlandı / Faz B):** `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile medya ingestion, STT, assistant turn kimliği, duplex output buffer, VAD olayları ve barge-in destekli TTS segmentasyon akışı ürünleşmiş durumda.
 - **Dynamic Browser Automation (Tamamlandı / v5.0-alpha):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, zorunlu HITL geçidi ve audit trail ile kontrollü tarayıcı oturumlarını yönetiyor.
-- **Proaktif Otonomi Başlangıcı:** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden proaktif modele genişliyor.
+- **Proaktif Otonomi + Swarm Federation (Tamamlandı / Faz B):** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden kontrollü proaktif/federe co-worker modeline genişliyor.
 - **Jira / Slack / Teams Entegrasyonu:** Jira Cloud REST API v3, Slack Bot SDK + Webhook fallback (Block Kit), Teams MessageCard + Adaptive Card v1.4 ve HITL onay kartı (`managers/jira_manager.py`, `managers/slack_manager.py`, `managers/teams_manager.py`).
-- **Kök kontrol düzlemi doğrulaması (v3.0.29):** `main.py` sihirbaz + quick-start başlatma katmanı, `cli.py` tek event-loop CLI oturumu, `web_server.py` geniş FastAPI kontrol düzlemi (mevcut dosyada 61 route/websocket decorator), `config.py` bootstrap/telemetry yükleme yolu, `github_upload.py` güvenli `git ls-files` paketleme akışı ve `gui_launcher.py` Eel köprüsü mevcut repo durumu ile yeniden teyit edilmiştir.
+- **Kök kontrol düzlemi doğrulaması (v5.0-alpha / Faz B):** `main.py` sihirbaz + quick-start başlatma katmanı, `cli.py` tek event-loop CLI oturumu, `web_server.py` geniş FastAPI kontrol düzlemi (mevcut dosyada **66** route/websocket decorator; **64** REST + **2** WebSocket), `config.py` bootstrap/telemetry yükleme yolu, `github_upload.py` güvenli `git ls-files` paketleme akışı ve `gui_launcher.py` Eel köprüsü mevcut repo durumu ile yeniden teyit edilmiştir.
 - **Son doğrulama notu (v3.0.30):** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `core/llm_client.py` ve `web_server.py` üzerindeki D-8..D-14 düzeltmeleri yeniden gözden geçirilmiş; incelenen modüllerde kritik açık bir bulguya rastlanmadığı rapora işlenmiştir.
 
 ---
@@ -700,7 +700,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Hacimsel özet (yönetici görünümü):** 2026-03-20 ölçümünde takipli depo yüzeyi **337 dosya / 80.077 satır** seviyesindedir. Python tarafında üretim kodu **24.855 satır / 62 dosya**, test havuzu **41.426 satır / 159 dosya**, toplam Python hacmi ise **66.281 satır / 223 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **8.264 satır / 97 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
+**Hacimsel özet (yönetici görünümü):** 2026-03-20 ölçümünde takipli depo yüzeyi **337 dosya / 80.863 satır** seviyesindedir. Python tarafında üretim kodu **25.202 satır / 62 dosya**, test havuzu **41.737 satır / 159 `test_*.py` modülü / 161 toplam test Python dosyası**, toplam Python hacmi ise **66.939 satır / 223 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **8.328 satır / 97 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
 
 - **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
@@ -713,20 +713,20 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 880 |
+| `config.py` | 885 |
 | `main.py` | 382 |
 | `cli.py` | 290 |
-| `web_server.py` | 3.066 |
-| `agent/sidar_agent.py` | 692 |
+| `web_server.py` | 3.213 |
+| `agent/sidar_agent.py` | 689 |
 | `agent/auto_handle.py` | 613 |
 | `agent/definitions.py` | 169 |
 | `agent/tooling.py` | 127 |
 | `agent/base_agent.py` | 112 |
 | `agent/registry.py` | 187 |
-| `agent/swarm.py` | 504 |
+| `agent/swarm.py` | 541 |
 | `core/llm_client.py` | 1.388 |
 | `core/memory.py` | 301 |
-| `core/rag.py` | 1.645 |
+| `core/rag.py` | 1.685 |
 | `core/db.py` | 1.861 |
 | `core/llm_metrics.py` | 282 |
 | `core/agent_metrics.py` | 118 |
@@ -738,7 +738,7 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `core/cache_metrics.py` | 189 |
 | `core/active_learning.py` | 772 |
 | `core/vision.py` | 294 |
-| `core/voice.py` | 165 |
+| `core/voice.py` | 310 |
 | `managers/security.py` | 291 |
 | `managers/code_manager.py` | 1.529 |
 | `managers/github_manager.py` | 645 |
@@ -749,7 +749,7 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `managers/slack_manager.py` | 234 |
 | `managers/jira_manager.py` | 245 |
 | `managers/teams_manager.py` | 234 |
-| `managers/browser_manager.py` | 535 |
+| `managers/browser_manager.py` | 718 |
 | `github_upload.py` | 295 |
 | `gui_launcher.py` | 98 |
 
@@ -758,13 +758,13 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | Dosya | Satır |
 |---|---:|
 | `agent/core/supervisor.py` | 291 |
-| `agent/core/contracts.py` | 99 |
+| `agent/core/contracts.py` | 256 |
 | `agent/core/event_stream.py` | 218 |
 | `agent/core/memory_hub.py` | 55 |
 | `agent/core/registry.py` | 30 |
 | `agent/roles/coder_agent.py` | 168 |
 | `agent/roles/researcher_agent.py` | 80 |
-| `agent/roles/reviewer_agent.py` | 247 |
+| `agent/roles/reviewer_agent.py` | 707 |
 
 ### 8.3 Migration / Operasyon / Altyapı
 
@@ -802,18 +802,18 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `web_ui/sidebar.js` | 413 |
 | `web_ui/rag.js` | 132 |
 | `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.105** |
-| **Test modülü (`tests/test_*.py`)** | **149** |
-| **`tests/*.py` toplam dosya** | **151** |
-| **`tests/*.py` toplam satır** | **39.148** |
+| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.939** |
+| **Test modülü (`tests/test_*.py`)** | **159** |
+| **`tests/*.py` toplam dosya** | **161** |
+| **`tests/*.py` toplam satır** | **41.737** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 149 |
-| `tests/` | `*.py` toplam dosya | 151 |
-| `tests/` | `*.py` toplam satır | 39.148 |
+| `tests/` | `test_*.py` modül sayısı | 159 |
+| `tests/` | `*.py` toplam dosya | 161 |
+| `tests/` | `*.py` toplam satır | 41.737 |
 | `scripts/` | dosya sayısı | 7 |
 | `scripts/` | toplam satır | 613 |
 | `migrations/` | `.py` dosya sayısı (env.py + 3 versions) | 4 |
@@ -1240,6 +1240,8 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `ENABLE_ACTIVE_LEARNING`, `AL_MIN_RATING_FOR_TRAIN`, `ENABLE_LORA_TRAINING`, `LORA_*` | çeşitli | Geri bildirim toplama ve LoRA/QLoRA fine-tuning hazırlıkları |
 | `ENABLE_VISION` / `VISION_MAX_IMAGE_BYTES` | `true` / `10485760` | Çok modlu görsel girdi yetenekleri |
 | `ENABLE_MULTIMODAL` / `MULTIMODAL_MAX_FILE_BYTES` / `VOICE_STT_PROVIDER` / `WHISPER_MODEL` / `VOICE_WS_MAX_BYTES` | `true` / `52428800` / `whisper` / `base` / `10485760` | Medya ingestion, ses işleme ve `/ws/voice` limiti |
+| `VOICE_TTS_PROVIDER` / `VOICE_TTS_VOICE` / `VOICE_TTS_SEGMENT_CHARS` / `VOICE_TTS_BUFFER_CHARS` | `auto` / `""` / `48` / `96` | Duplex TTS sağlayıcısı, ses seçimi, segment boyu ve düşük gecikmeli buffer limiti |
+| `VOICE_VAD_ENABLED` / `VOICE_VAD_MIN_SPEECH_BYTES` / `VOICE_DUPLEX_ENABLED` / `VOICE_VAD_INTERRUPT_MIN_BYTES` | `true` / `1024` / `true` / `384` | VAD tabanlı speech algılama, duplex akış ve barge-in interrupt eşikleri |
 | `BROWSER_PROVIDER` / `BROWSER_HEADLESS` / `BROWSER_TIMEOUT_MS` / `BROWSER_ALLOWED_DOMAINS` | `auto` / `true` / `15000` / `[]` | Browser automation sağlayıcısı, görünüm modu, timeout ve domain allowlist |
 | `ENABLE_LSP` / `LSP_TIMEOUT_SECONDS` / `LSP_MAX_REFERENCES` / `PYTHON_LSP_SERVER` / `TYPESCRIPT_LSP_SERVER` | `true` / `15` / `200` / `pyright-langserver` / `typescript-language-server` | LSP tabanlı anlamsal analiz/refactor ayarları |
 | `ENABLE_AUTONOMOUS_CRON` / `AUTONOMOUS_CRON_INTERVAL_SECONDS` / `AUTONOMOUS_CRON_PROMPT` | `false` / `900` / varsayılan otonom prompt | Proaktif cron tetikleyicisinin açılması, periyodu ve sistem promptu |
@@ -1383,8 +1385,10 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%99.9` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
-| **Multimodal Perception** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, VAD olayları ve sesli websocket akışı (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
+| **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Dynamic Browser Automation** | Playwright/Selenium tabanlı, HITL ve audit trail ile kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | ✅ Tamamlandı |
+| **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
+| **Swarm Decision Graph** | Node/edge tabanlı handoff görselleştirmesi ve canlı karar görünürlüğü (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`) | ✅ Tamamlandı |
 
 > **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi repo kültürünün hedefini yansıtsa da, kod tabanında **resmî kalite kapısı** `.coveragerc` ve CI üzerinde `%99.9` olarak uygulanmaktadır; raporda bu nedenle doğrudan ölçülebilir kural esas alınmıştır.
 
