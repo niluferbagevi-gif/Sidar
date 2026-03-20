@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v4.3.0** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v4.3.0 runtime baseline + v5.0.0-alpha Faz 6 geçişi** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -10,7 +10,7 @@
  ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
  ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
  ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║  Yazılım Mimarı & Baş Mühendis AI  v4.3.0  ║
+ ║ Yazılım Mimarı & Baş Mühendis AI v5-alpha ║
  ╚══════════════════════════════════════════════╝
 ```
 
@@ -18,9 +18,9 @@
 
 ## Proje Hakkında
 
-**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır.
+**Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.0.0-alpha geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
 
-> **Güncel Ürün Durumu:** Runtime/paket baseline artık `v4.3.0` seviyesindedir. Bu sürüm; React tabanlı `web_ui_react/` deneyimini varsayılan arayüz, legacy `web_ui/` klasörünü geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanını ise standart kurumsal omurga olarak kabul eder. Faz 4 teslimatları dokümantasyon düzeyinde `v3.2.0` **Autonomous LLMOps** anlatısı ve `v4.2.0` operasyonel kapanış notlarıyla ayrıca konsolide edilmiştir. Aynı anda **v5.0 mimari geçişi aktif olarak ilerletilmiştir**: multimodal medya hattı, browser automation, GraphRAG, `/ws/voice` ve proaktif webhook/cron tetikleyicileri artık Faz A teslimatı olarak repo içinde çalışır durumdadır; sonraki odak GraphRAG derinleştirmesi ve AI Co-Worker seviyesi otonomidir.
+> **Güncel Ürün Durumu:** Runtime/paket baseline `v4.3.0` seviyesinde korunurken repo artık `v5.0.0-alpha (Faz 6)` yeteneklerini de aktif olarak taşımaktadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Resmî sonraki odak artık **Faz B**: GraphRAG'in Reviewer akışına daha derin bağlanması, tam duplex voice-to-voice iletişim ve Swarm karar akışının görsel hale getirilmesidir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
 
@@ -96,15 +96,21 @@
 - Kütüphane dokümantasyon araması (`search_docs`)
 - Stack Overflow araması (`search_stackoverflow`)
 
-### Multimodal Algı ve Sesli Etkileşim (Alpha / Testlerle Doğrulandı)
+### LSP Destekli Anlamsal Analiz (Kalıcı Yetenek)
+- `managers/code_manager.py` içinde Pyright ve TypeScript Language Server Protocol entegrasyonu
+- Reviewer ajanı için `lsp_diagnostics` tabanlı anlamsal kalite kapısı ve regresyon sinyali
+- Sözdizimi denetiminin ötesine geçerek symbol/reference düzeyinde daha güvenilir kod inceleme akışı
+
+### WebSocket Tabanlı Gerçek Zamanlı Sesli Asistan (Kalıcı Yetenek)
 - `core/multimodal.py` ile video frame çıkarma, ses ayıklama ve Whisper tabanlı STT hattı
 - `/ws/voice` WebSocket rotası ile gerçek zamanlı ses chunk kabulü, VAD olayları ve transcript→ajan yanıtı akışı
+- `core/voice.py` üzerinden ses segmentasyonu, TTS adaptörleri ve medya güvenlik limitleri
 - FFmpeg sistem bağımlılığı ile medya dönüştürme; büyük dosyalar için byte limitleri ile korunur
 
-### Dinamik Tarayıcı Otomasyonu (Alpha / Testlerle Doğrulandı)
-- `managers/browser_manager.py` üzerinden Playwright/Selenium sağlayıcı soyutlaması
+### Playwright Dinamik Tarayıcı Otomasyonu (Kalıcı Yetenek)
+- `managers/browser_manager.py` üzerinden Playwright öncelikli, Selenium fallback sağlayıcı soyutlaması
 - Headless/headful çalışma, timeout ve allowlist domain sınırlarıyla kontrollü web etkileşimi
-- Yüksek riskli aksiyonlar için audit trail + HITL korumaları uygulanmıştır; sonraki odak reviewer sinyalleriyle daha derin otonomi entegrasyonudur
+- Yüksek riskli aksiyonlar için audit trail + HITL korumaları uygulanmıştır; Faz B odağı browser sinyallerinin reviewer ve swarm akışlarına daha derin bağlanmasıdır
 
 ### Paket Bilgi Sistemi (PackageInfoManager)
 - PyPI paket bilgisi ve sürüm karşılaştırma (`pypi`, `pypi_compare`)
