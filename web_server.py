@@ -149,6 +149,29 @@ MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
     try:
+        import psutil
+    except ImportError:
+        psutil = None
+
+    if psutil is not None:
+        try:
+            current = psutil.Process(os.getpid())
+            pids: list[int] = []
+            for child in current.children(recursive=False):
+                with contextlib.suppress(Exception):
+                    comm = str(child.name() or "").strip().lower()
+                    args = " ".join(child.cmdline() or []).strip().lower()
+                    if comm == "ollama" or "ollama serve" in args:
+                        pids.append(int(child.pid))
+            return pids
+        except Exception:
+            if os.name == "nt":
+                return []
+
+    if os.name == "nt":
+        return []
+
+    try:
         out = subprocess.check_output(["ps", "-eo", "pid=,ppid=,comm=,args="], stderr=subprocess.DEVNULL).decode("utf-8", errors="replace")
     except Exception:
         return []
