@@ -483,6 +483,39 @@ def test_browser_manager_start_playwright_session_stops_runtime_for_unknown_brow
     assert calls == ["stop"]
 
 
+def test_browser_manager_start_session_falls_back_from_playwright_to_selenium(monkeypatch):
+    cfg = _Config()
+    cfg.BROWSER_PROVIDER = "auto"
+    manager = BM_MOD.BrowserManager(cfg)
+
+    selenium_session = BM_MOD.BrowserSession(
+        session_id="sess-fallback",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=SimpleNamespace(current_url="https://example.com"),
+    )
+
+    monkeypatch.setattr(
+        manager,
+        "_start_playwright_session",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("ssl handshake failed")),
+    )
+    monkeypatch.setattr(manager, "_start_selenium_session", lambda *_args, **_kwargs: selenium_session)
+
+    ok, payload = manager.start_session(browser_name="chrome")
+
+    assert ok is True
+    assert payload["session_id"] == "sess-fallback"
+    audit = manager.list_audit_log()
+    assert audit[0]["session_id"] == "startup:playwright"
+    assert audit[0]["status"] == "failed"
+    assert audit[0]["details"]["error"] == "ssl handshake failed"
+    assert audit[-1]["action"] == "browser_start_session"
+    assert audit[-1]["status"] == "started"
+
+
 def test_browser_manager_start_selenium_session_supports_chrome_and_firefox(monkeypatch):
     manager = BM_MOD.BrowserManager(_Config())
     constructed = []
@@ -678,3 +711,54 @@ def test_browser_manager_uses_selenium_capture_paths(tmp_path):
     assert ok_dom is True and dom == "<html>selenium</html>"
     assert ok_shot is True and Path(shot_path).exists()
     assert manager.list_audit_log()[-1]["details"]["full_page"] is False
+
+
+def test_browser_manager_capture_dom_raises_timeout_for_playwright_page():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Locator:
+        def inner_html(self, timeout):
+            assert timeout == 5000
+            raise TimeoutError("dom timeout")
+
+    class _Page:
+        def locator(self, selector):
+            assert selector == "#content"
+            return _Locator()
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-dom-timeout",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+    )
+    manager._sessions[session.session_id] = session
+
+    with pytest.raises(TimeoutError, match="dom timeout"):
+        manager.capture_dom(session.session_id, "#content")
+
+
+def test_browser_manager_capture_screenshot_raises_ioerror_for_playwright_page(tmp_path):
+    manager = BM_MOD.BrowserManager(_Config())
+    manager.artifact_dir = tmp_path
+
+    class _Page:
+        def screenshot(self, path, full_page):
+            assert path.endswith("broken.png")
+            assert full_page is True
+            raise IOError("disk write failed")
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-shot-ioerror",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+    )
+    manager._sessions[session.session_id] = session
+
+    with pytest.raises(OSError, match="disk write failed"):
+        manager.capture_screenshot(session.session_id, "broken.png")
