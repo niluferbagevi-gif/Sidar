@@ -567,6 +567,87 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   border-color: rgba(148,163,184,0.42);
 }
 
+.swarm-graph__node-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.swarm-graph__node-actions button {
+  min-height: auto;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+}
+
+.swarm-graph__operation-surface {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(15,23,42,0.48);
+}
+
+.swarm-graph__operation-surface-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.swarm-graph__operation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.swarm-graph__operation-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255,255,255,0.03);
+}
+
+.swarm-graph__operation-card p {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+}
+
+.swarm-graph__action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.swarm-graph__action-row button {
+  min-height: auto;
+  padding: 9px 12px;
+}
+
+.swarm-graph__approval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.swarm-graph__approval-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+}
+
+.swarm-graph__approval-item p {
+  margin: 6px 0 0;
+}
+
+.swarm-graph__operation-log {
+  margin-top: 12px;
+}
+
 .swarm-insights {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -640,7 +721,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (max-width: 960px) {
   .grid-2,
-  .tenant-grid {
+  .tenant-grid,
+  .swarm-graph__operation-grid {
     grid-template-columns: 1fr;
   }
 
@@ -648,7 +730,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   .panel-toolbar,
   .token-toolbar,
   .tenant-form,
-  .inline-controls {
+  .inline-controls,
+  .swarm-graph__operation-surface-header {
     flex-direction: column;
     align-items: stretch;
   }
