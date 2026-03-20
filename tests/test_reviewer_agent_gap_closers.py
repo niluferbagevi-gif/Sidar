@@ -275,3 +275,248 @@ def test_reviewer_review_code_falls_back_on_empty_lsp_and_malformed_graph_output
     assert payload["semantic_risk_report"]["summary"].startswith("LSP diagnostics çıktısı boş")
     assert payload["browser_signal_summary"]["status"] == "failed"
     assert payload["summary"].startswith("[REVIEW:FAIL]")
+
+
+def test_reviewer_lsp_summary_special_cases_and_info_only_branch():
+    mod = _load_reviewer_module("reviewer_gap_lsp_specials")
+    reviewer = mod.ReviewerAgent
+
+    clean = reviewer._summarize_lsp_diagnostics("LSP diagnostics temiz")
+    assert clean["status"] == "clean"
+    assert clean["decision"] == "APPROVE"
+
+    no_signal = reviewer._summarize_lsp_diagnostics("LSP bildirimi dönmedi")
+    assert no_signal["status"] == "no-signal"
+    assert no_signal["risk"] == "orta"
+
+    tool_error = reviewer._summarize_lsp_diagnostics("Araç hatası: timeout")
+    assert tool_error["status"] == "tool-error"
+    assert tool_error["summary"] == "LSP diagnostics çalıştırılırken araç hatası oluştu."
+
+    info_only = reviewer._summarize_lsp_diagnostics(
+        "- /workspace/Sidar/core/db.py: satır 1, sütun 1 | severity=3 | note\n"
+        "- /workspace/Sidar/core/db.py: satır 2, sütun 1 | severity=4 | hint"
+    )
+    assert info_only["status"] == "info-only"
+    assert info_only["counts"] == {3: 1, 4: 1}
+    assert "yalnızca bilgilendirici 2 bulgu" in info_only["summary"]
+
+
+def test_reviewer_combined_impact_and_fix_recommendations_ignore_invalid_issue_shapes():
+    mod = _load_reviewer_module("reviewer_gap_invalid_shapes")
+    reviewer = mod.ReviewerAgent
+
+    combined = reviewer._build_combined_impact_report(
+        {
+            "counts": {"oops": 4, 1: 0},
+            "issues": [
+                "bad-item",
+                {"path": "/workspace/Sidar/web_server.py", "severity": 1, "message": "broken import"},
+            ],
+        },
+        {
+            "risk": "düşük",
+            "followup_paths": ["web_server.py"],
+            "high_risk_targets": [],
+        },
+        ["core/db.py"],
+        ["core/db.py", "web_server.py"],
+    )
+    assert combined["issue_paths"] == ["web_server.py"]
+    assert combined["impact_level"] == "high"
+
+    graph_only = reviewer._build_fix_recommendations(
+        {
+            "issues": [
+                "bad-item",
+                {"path": "", "message": "missing path"},
+                {"path": "/workspace/Sidar/core/db.py", "message": "name is not defined"},
+            ]
+        },
+        {
+            "reports": [
+                {"target": "bad-details.py", "ok": True, "details": "broken"},
+                {
+                    "target": "core/db.py",
+                    "ok": True,
+                    "details": {
+                        "risk_level": "high",
+                        "review_targets": "not-a-list",
+                        "impacted_endpoint_handlers": ["web_server.py"],
+                    },
+                },
+            ]
+        },
+        {"indirect_breakage_paths": []},
+    )
+    assert graph_only[0]["path"] == "web_server.py"
+    assert graph_only[0]["reason"] == "graph"
+
+    semantic_only = reviewer._build_fix_recommendations(
+        {
+            "issues": [
+                "bad-item",
+                {"path": "", "message": "missing path"},
+                {"path": "/workspace/Sidar/core/db.py", "message": "name is not defined"},
+            ]
+        },
+        {"reports": []},
+        {"indirect_breakage_paths": []},
+    )
+    assert semantic_only[0]["path"] == "core/db.py"
+    assert semantic_only[0]["reason"] == "semantic"
+
+
+def test_reviewer_parse_payload_and_tool_paths_cover_empty_inline_and_passthrough(monkeypatch):
+    mod = _load_reviewer_module("reviewer_gap_tools")
+    agent = mod.ReviewerAgent()
+
+    empty_payload = agent._parse_review_payload("")
+    assert empty_payload["review_context"] == ""
+    assert empty_payload["browser_include_dom"] is False
+
+    graph_no_targets = json.loads(asyncio.run(agent._tool_graph_impact("")))
+    assert graph_no_targets["status"] == "no-targets"
+    assert graph_no_targets["targets"] == []
+
+    inline_browser = json.loads(
+        asyncio.run(
+            agent._tool_browser_signals(
+                json.dumps(
+                    {
+                        "review_context": "core/db.py",
+                        "browser_signals": {"status": "failed", "risk": "yüksek", "summary": "inline"},
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+    )
+    assert inline_browser["summary"] == "inline"
+
+    collected = []
+
+    def _collect_session_signals(session_id, *, include_dom=False, include_screenshot=False):
+        collected.append((session_id, include_dom, include_screenshot))
+        return {"status": "ok", "risk": "düşük", "summary": "collected"}
+
+    monkeypatch.setattr(agent.browser, "collect_session_signals", _collect_session_signals)
+    fetched_browser = json.loads(
+        asyncio.run(
+            agent._tool_browser_signals(
+                json.dumps(
+                    {
+                        "review_context": "core/db.py",
+                        "browser_session_id": "sess-99",
+                        "browser_include_dom": True,
+                        "browser_include_screenshot": True,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+    )
+    assert fetched_browser["summary"] == "collected"
+    assert collected == [("sess-99", True, True)]
+
+    seen = []
+
+    async def _call_tool(name, arg):
+        seen.append((name, arg))
+        return f"{name}:{arg}"
+
+    monkeypatch.setattr(agent, "call_tool", _call_tool)
+    assert asyncio.run(agent.run_task("lsp_diagnostics")) == "lsp_diagnostics:"
+    assert asyncio.run(agent.run_task("graph_impact")) == "graph_impact:"
+    assert seen == [("lsp_diagnostics", ""), ("graph_impact", "")]
+
+
+def test_reviewer_review_code_marks_medium_risk_for_semantic_warning_and_high_impact(monkeypatch):
+    mod = _load_reviewer_module("reviewer_gap_risk_paths")
+
+    async def _dynamic(_ctx: str) -> str:
+        return "[TEST:OK] dynamic"
+
+    async def _run_tests(arg: str) -> str:
+        return f"[TEST:OK] {arg}"
+
+    async def _graph_low(_arg: str) -> str:
+        return json.dumps({"status": "ok", "risk": "düşük", "summary": "Graph clean.", "reports": []}, ensure_ascii=False)
+
+    async def _graph_high_impact(_arg: str) -> str:
+        return json.dumps(
+            {
+                "status": "ok",
+                "risk": "düşük",
+                "summary": "Graph followups.",
+                "reports": [
+                    {
+                        "target": "core/db.py",
+                        "ok": True,
+                        "details": {
+                            "risk_level": "high",
+                            "review_targets": ["core/db.py", "web_server.py"],
+                            "impacted_endpoint_handlers": ["web_server.py"],
+                            "caller_files": [],
+                            "direct_dependents": [],
+                            "impacted_endpoints": ["endpoint:GET /status"],
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    async def _browser(_arg: str) -> str:
+        return json.dumps({"status": "ok", "risk": "düşük", "summary": "Browser clean."}, ensure_ascii=False)
+
+    agent_warning = mod.ReviewerAgent()
+    monkeypatch.setattr(agent_warning, "_run_dynamic_tests", _dynamic)
+    agent_warning.tools["run_tests"] = _run_tests
+    agent_warning.tools["graph_impact"] = _graph_low
+    agent_warning.tools["browser_signals"] = _browser
+    agent_warning.tools["lsp_diagnostics"] = lambda _arg: asyncio.sleep(
+        0,
+        result=json.dumps(
+            {
+                "status": "issues-found",
+                "risk": "orta",
+                "decision": "APPROVE",
+                "counts": {2: 1},
+                "issues": [{"path": "/workspace/Sidar/core/db.py", "message": "warning"}],
+                "summary": "LSP warning bulundu.",
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    warning_out = asyncio.run(agent_warning.run_task("review_code|core/db.py"))
+    warning_payload = json.loads(warning_out.payload.split("|", 1)[1])
+    assert warning_payload["decision"] == "APPROVE"
+    assert warning_payload["risk"] == "orta"
+
+    agent_impact = mod.ReviewerAgent()
+    monkeypatch.setattr(agent_impact, "_run_dynamic_tests", _dynamic)
+    agent_impact.tools["run_tests"] = _run_tests
+    agent_impact.tools["graph_impact"] = _graph_high_impact
+    agent_impact.tools["browser_signals"] = _browser
+    agent_impact.tools["lsp_diagnostics"] = lambda _arg: asyncio.sleep(
+        0,
+        result=json.dumps(
+            {
+                "status": "clean",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {1: 1},
+                "issues": [{"path": "/workspace/Sidar/web_server.py", "message": "error"}],
+                "summary": "LSP bulgusu tek dosyada.",
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    impact_out = asyncio.run(agent_impact.run_task("review_code|core/db.py"))
+    impact_payload = json.loads(impact_out.payload.split("|", 1)[1])
+    assert impact_payload["decision"] == "APPROVE"
+    assert impact_payload["combined_impact_report"]["impact_level"] == "critical"
+    assert impact_payload["risk"] == "orta"
