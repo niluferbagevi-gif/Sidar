@@ -51,6 +51,76 @@ if importlib.util.find_spec("jwt") is None:
     sys.modules["jwt"] = _jwt
 
 
+
+if importlib.util.find_spec("httpx") is None:
+    _httpx = types.ModuleType("httpx")
+
+    class HTTPError(Exception):
+        pass
+
+    class RequestError(HTTPError):
+        pass
+
+    class TimeoutException(RequestError):
+        pass
+
+    class Response:
+        def __init__(self, status_code=200, text="", json_data=None):
+            self.status_code = status_code
+            self.text = text
+            self._json_data = json_data if json_data is not None else {}
+
+        def json(self):
+            return self._json_data
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise HTTPError(self.text or f"HTTP {self.status_code}")
+
+    class AsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+        async def post(self, *_args, **_kwargs):
+            return Response()
+
+        async def put(self, *_args, **_kwargs):
+            return Response()
+
+        async def delete(self, *_args, **_kwargs):
+            return Response()
+
+    _httpx.HTTPError = HTTPError
+    _httpx.RequestError = RequestError
+    _httpx.TimeoutException = TimeoutException
+    _httpx.Response = Response
+    _httpx.AsyncClient = AsyncClient
+    sys.modules["httpx"] = _httpx
+
+
+if importlib.util.find_spec("bs4") is None:
+    _bs4 = types.ModuleType("bs4")
+
+    class BeautifulSoup:
+        def __init__(self, markup="", parser=None):
+            self.markup = markup
+            self.parser = parser
+
+        def get_text(self, *args, **kwargs):
+            return str(self.markup)
+
+        def find_all(self, *args, **kwargs):
+            return []
+
+    _bs4.BeautifulSoup = BeautifulSoup
+    sys.modules["bs4"] = _bs4
+
 # pytest-asyncio >= 0.21+ ile session kapsamlı event loop pytest.ini üzerinden
 # `asyncio_default_fixture_loop_scope = session` ayarıyla sağlanır.
 # Özel event_loop fixture override'ı artık gerekli değildir ve deprecated'dır.

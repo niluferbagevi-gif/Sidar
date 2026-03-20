@@ -507,3 +507,42 @@ def test_reviewer_review_code_flags_indirect_breakage_from_graph_plus_lsp(monkey
     assert payload["combined_impact_report"]["indirect_breakage_paths"] == ["web_server.py"]
     assert payload["fix_recommendations"][0]["path"] == "web_server.py"
     assert payload["fix_recommendations"][0]["reason"] == "graph+semantic"
+
+def test_reviewer_build_remediation_loop_marks_hitl_for_indirect_breakage():
+    semantic_report = {
+        "summary": "LSP semantik denetimi 1 bulgu üretti.",
+        "counts": {1: 1},
+    }
+    graph_summary = {
+        "risk": "orta",
+        "summary": "GraphRAG 1 hedefi analiz etti.",
+    }
+    combined_impact = {
+        "impact_level": "critical",
+        "direct_scope_paths": ["core/db.py"],
+        "graph_followup_paths": ["web_server.py"],
+        "issue_paths": ["web_server.py"],
+        "indirect_breakage_paths": ["web_server.py"],
+    }
+    fix_recommendations = [
+        {
+            "path": "web_server.py",
+            "reason": "graph+semantic",
+            "action": "Düzelt",
+        }
+    ]
+
+    loop = ReviewerAgent._build_remediation_loop(
+        semantic_report,
+        graph_summary,
+        combined_impact,
+        fix_recommendations,
+        ["pytest -q tests/test_reviewer_agent.py"],
+    )
+
+    assert loop["status"] == "planned"
+    assert loop["mode"] == "self_heal_with_hitl"
+    assert loop["needs_human_approval"] is True
+    assert "web_server.py" in loop["scope_paths"]
+    assert "semantic_issues" in loop["blocked_by"]
+    assert loop["validation_commands"][0] == "pytest -q tests/test_reviewer_agent.py"

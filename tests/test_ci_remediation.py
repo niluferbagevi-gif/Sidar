@@ -3,6 +3,7 @@ from core.ci_remediation import (
     build_ci_failure_context,
     build_ci_failure_prompt,
     build_pr_proposal,
+    build_remediation_loop,
     is_ci_failure_event,
 )
 
@@ -98,3 +99,42 @@ def test_generic_ci_failure_payload_builds_structured_remediation():
     assert remediation["root_cause_summary"].startswith("TimeoutError")
     assert remediation["pr_proposal"]["auto_create_ready"] is True
     assert "Root Cause Hypothesis" in remediation["pr_proposal"]["body"]
+
+
+def test_build_remediation_loop_requires_hitl_for_high_risk_timeout():
+    context = {
+        "failure_summary": "pytest timed out on tests/test_web_server_voice.py",
+        "log_excerpt": "TimeoutError: tests/test_web_server_voice.py exceeded 120s",
+        "suspected_targets": ["tests/test_web_server_voice.py", "web_server.py"],
+        "failed_jobs": ["pytest"],
+    }
+
+    loop = build_remediation_loop(context, "TimeoutError: flaky websocket teardown causes long wait.")
+
+    assert loop["status"] == "planned"
+    assert loop["mode"] == "self_heal_with_hitl"
+    assert loop["needs_human_approval"] is True
+    assert loop["validation_commands"][0].startswith("pytest -q tests/test_web_server_voice.py")
+
+
+def test_ci_remediation_payload_includes_remediation_loop():
+    context = {
+        "repo": "acme/sidar",
+        "workflow_name": "CI",
+        "run_id": "77",
+        "failure_summary": "pytest failed on tests/test_reviewer_agent.py",
+        "log_excerpt": "AssertionError: expected approve",
+        "suspected_targets": ["tests/test_reviewer_agent.py"],
+        "failed_jobs": ["pytest"],
+        "base_branch": "main",
+        "branch": "feature/remediate",
+        "sha": "abc123",
+        "html_url": "https://github.com/acme/sidar/actions/runs/77",
+        "logs_url": "https://github.com/acme/sidar/actions/runs/77/logs",
+    }
+
+    remediation = build_ci_remediation_payload(context, "Kök neden pytest assertion drift.")
+
+    assert remediation["remediation_loop"]["status"] == "planned"
+    assert remediation["remediation_loop"]["validation_commands"][0] == "pytest -q tests/test_reviewer_agent.py"
+    assert remediation["remediation_loop"]["steps"][0]["status"] == "completed"
