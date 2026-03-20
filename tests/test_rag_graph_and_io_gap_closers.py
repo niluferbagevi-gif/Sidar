@@ -238,3 +238,31 @@ def test_embedding_blank_vectors_file_read_errors_and_delete_valueerror_keyerror
     removed_again = store.delete_document(doc_id_2, session_id="s1")
     assert "Belge silindi" in removed_again
     assert doc_id_2 not in store._index
+
+
+def test_graph_index_websocket_and_bfs_seen_guards_cover_remaining_branches(tmp_path):
+    mod = _load_rag_module("rag_graph_seen_guards")
+    graph = mod.GraphIndex(tmp_path)
+
+    ws_calls = graph._extract_script_endpoint_calls(
+        "\n".join(
+            [
+                "new WebSocket('wss://remote.example/ws/ignored')",
+                "new WebSocket('ws://localhost/ws/live')",
+            ]
+        )
+    )
+    assert ws_calls == [
+        {"endpoint_id": "endpoint:WS /ws/live", "method": "WS", "path": "/ws/live"},
+    ]
+
+    graph.add_node("a.py", node_type="file")
+    graph.add_node("b.py", node_type="file")
+    graph.add_node("c.py", node_type="file")
+    graph.add_edge("a.py", "b.py")
+    graph.add_edge("b.py", "a.py")
+    graph.add_edge("b.py", "c.py")
+    graph.add_edge("c.py", "b.py")
+
+    assert graph.explain_dependency_path("a.py", "c.py") == ["a.py", "b.py", "c.py"]
+    assert graph._collect_bfs("a.py", graph.edges, 3) == {"b.py": 1, "c.py": 2}
