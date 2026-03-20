@@ -20,9 +20,16 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.0.0-alpha geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
 
-> **Güncel Ürün Durumu:** Runtime/paket baseline `v4.3.0` seviyesinde korunurken repo artık `v5.0.0-alpha (Faz 6)` yeteneklerini de aktif olarak taşımaktadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim ve Swarm karar akışının görsel hale getirilmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: federasyonun operasyonel ürünleşmesi, proaktif remediation ve istemci tarafı ses deneyiminin daha da derinleştirilmesidir.
+> **Güncel Ürün Durumu:** Runtime/paket baseline `v4.3.0` seviyesinde korunurken repo artık `v5.0.0-alpha (Faz 6)` yeteneklerini de aktif olarak taşımaktadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
+
+### v5.0 Co-Worker Öne Çıkan Özellikler
+
+- **Gerçek zamanlı multimodal ses:** `/ws/voice` hattı duplex STT/TTS, VAD ve barge-in davranışıyla SİDAR'ı canlı sesli çalışma arkadaşına dönüştürür.
+- **LSP destekli otonom kalite kapısı:** Reviewer ajanı GraphRAG + Pyright + TypeScript LSP sinyallerini birleştirerek daha güvenilir inceleme ve remediation önerileri üretir.
+- **Kendi kendini uyandıran otonomi:** cron/webhook/federation tetikleri ve action feedback akışları sayesinde dış olaylar swarm görevlerine dönüştürülebilir.
+- **Canlı operasyon yüzeyi:** `SwarmFlowPanel`, artık sadece karar grafiği değil; seçili node üzerinden görev türetme, hedefli rerun ve bekleyen HITL onaylarını yönetme yüzeyidir.
 
 ### Karakter Profili
 
@@ -112,7 +119,7 @@
 ### Playwright Dinamik Tarayıcı Otomasyonu (Kalıcı Yetenek)
 - `managers/browser_manager.py` üzerinden Playwright öncelikli, Selenium fallback sağlayıcı soyutlaması
 - Headless/headful çalışma, timeout ve allowlist domain sınırlarıyla kontrollü web etkileşimi
-- Yüksek riskli aksiyonlar için audit trail + HITL korumaları uygulanmıştır; Faz B odağı browser sinyallerinin reviewer ve swarm akışlarına daha derin bağlanmasıdır
+- Yüksek riskli aksiyonlar için audit trail + HITL korumaları uygulanmıştır; browser signal özetleri reviewer ve swarm akışlarına taşınabilir
 
 ### Paket Bilgi Sistemi (PackageInfoManager)
 - PyPI paket bilgisi ve sürüm karşılaştırma (`pypi`, `pypi_compare`)
@@ -133,7 +140,7 @@
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
 ### Web Arayüzü (v4.3.0 runtime baseline)
-- **Görsel Swarm Akış Diyagramları:** `SwarmFlowPanel`, ajan görevleri, P2P handoff'lar, otonom cron tetikleri ve LLM düşünce/karar özetlerini node-graph olarak görselleştirir
+- **Görsel Swarm Akış Diyagramları + Canlı Operasyon:** `SwarmFlowPanel`, ajan görevleri, P2P handoff'lar, otonom cron tetikleri ve LLM düşünce/karar özetlerini node-graph olarak görselleştirir; seçili node üzerinden follow-up görev, rerun ve HITL karar aksiyonları sunar
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
 - **ReAct Araç Görselleştirmesi**: Her tool çağrısı animasyonlu Türkçe badge (genişletilmiş araç seti)

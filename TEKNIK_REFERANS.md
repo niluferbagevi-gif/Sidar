@@ -223,7 +223,23 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/api/integrations/teams/send` | Teams mesaj gönder |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
 | POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature`) |
+
+`/api/autonomy/webhook/{source}` örnek payload:
+
+```json
+{
+  "event": "ci_failure",
+  "summary": "main branch build failed",
+  "payload": {
+    "repo": "team/sidar",
+    "branch": "main",
+    "run_id": "gha-123"
+  }
+}
+```
+
 | POST | `/api/swarm/federation` | Dış swarm/CrewAI/AutoGen görevini Sidar içinde yürütür (`X-Sidar-Signature`) |
+| POST | `/api/swarm/federation/feedback` | Harici action feedback payload'larını `action_feedback` trigger'ına dönüştürür ve correlation zincirine bağlar |
 
 ### 3.3 WebSocket protokolleri: `/ws/chat` ve `/ws/voice`
 
@@ -245,11 +261,36 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 
 #### `/ws/voice`
 
-- Binary ses chunk'larını kabul eder; istemci `commit` / `end` aksiyonu ile biriken sesi işleme alır.
+- Binary ses chunk'larını kabul eder; istemci `start`, `append_base64`, `vad_event`, `commit` / `end` aksiyonları ile biriken sesi işleme alır.
 - Kimlik doğrulama öncelikle `Sec-WebSocket-Protocol` başlığındaki bearer token ile yapılır; token yoksa oturum açılmadan ses kabul edilmez.
 - Sunucu `core.multimodal.MultimodalPipeline` üzerinden STT/transkript üretir; ardından ajan yanıtını duplex assistant turn kimliği, audio sıra numarası ve interrupt payload'ları ile JSON event akışı olarak geri döner.
 - `VOICE_WS_MAX_BYTES` ile toplam kabul edilen ses boyutu sınırlandırılır; limit aşımı `1008 Policy Violation` ile kapatılır.
 - `VOICE_TTS_BUFFER_CHARS`, VAD interrupt sinyali ve `voice_interruption` payload'ları ile söz kesilebilen düşük gecikmeli duplex TTS akışı desteklenir.
+- Örnek istemci kontrol mesajları:
+  - `{"action":"start","mime_type":"audio/webm","language":"tr"}`
+  - `{"action":"vad_event","state":"speech_end"}`
+  - `{"action":"commit","mime_type":"audio/webm"}`
+- Örnek sunucu event payload'ları:
+  - `{"voice_state":"chunk","buffered_bytes":1024,"sequence":2}`
+  - `{"transcript":"Sunucuyu yeniden başlat.","language":"tr","provider":"whisper"}`
+  - `{"assistant_turn":"started","assistant_turn_id":1}`
+  - `{"audio_chunk":"<base64>","audio_text":"yanit:...","audio_mime_type":"audio/mock","audio_sequence":1}`
+  - `{"voice_interruption":"barge_in","cancelled":true,"cancelled_audio_sequences":1}`
+
+`/api/swarm/federation/feedback` örnek payload:
+
+```json
+{
+  "event_name": "browser_action",
+  "status": "failed",
+  "correlation_id": "corr-123",
+  "summary": "Playwright click başarısız",
+  "payload": {
+    "session_id": "browser-77",
+    "node_id": "handoff-1"
+  }
+}
+```
 
 ### 3.4 Telemetri ve metrik endpointleri
 

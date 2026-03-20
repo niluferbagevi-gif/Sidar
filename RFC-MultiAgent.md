@@ -210,6 +210,17 @@ agent/
 | `agent/core/memory_hub.py` | Planlandı | ✅ Uygulandı | Global ve role-local kısa ömürlü bağlam notları tutuluyor. |
 | `agent/core/registry.py` | Planlandı | ✅ Uygulandı | Role -> agent kayıt/keşif katmanı Supervisor içinde aktif kullanılıyor. |
 
+## 8.3 Dış Tetikleyicilerin Swarm Döngüsüne Dahil Edilmesi
+
+`ExternalTrigger`, `FederationTaskEnvelope`, `FederationTaskResult` ve `ActionFeedback` artık yalnızca REST sınırındaki veri yapıları değildir; Supervisor-first orkestrasyon içinde P2P görev döngüsünü besleyen dış olay girişleri olarak değerlendirilir. Teknik akış şu şekildedir:
+
+1. Cron, webhook veya federasyon feedback payload'ı `ExternalTrigger`/`ActionFeedback` olarak normalize edilir.
+2. Bu payload için `correlation_id` türetilir veya korunur; böylece aynı dış olayın sonraki reviewer/coder/supervisor adımları izlenebilir.
+3. `SidarAgent` bu tetikleyiciyi supervisor prompt'una bağlamlaştırır ve gerekiyorsa swarm/p2p handoff zincirini başlatır.
+4. Sonuçta üretilen `TaskResult` / federation sonucu aynı korelasyon zinciriyle dış sisteme geri raporlanabilir.
+
+Bu model sayesinde çok ajanlı mimari yalnızca kullanıcı chat isteği değil, dış sistemlerden gelen operasyonel sinyaller için de ortak yürütüm omurgası haline gelir.
+
 ## 9) Yürütüm Akışı (Sequence)
 
 1. Kullanıcı isteği gelir.
@@ -218,8 +229,9 @@ agent/
 4. Görevleri uygun role dağıtır.
 5. Role çıktıları toplanır/normalize edilir.
 6. Gerekirse ikinci tur görevler tetiklenir.
-7. Synthesizer nihai cevabı üretir.
-8. Bellek + telemetry + audit kaydı tamamlanır.
+7. Cron/webhook/federation kaynaklı `ExternalTrigger` veya `ActionFeedback` olayları da aynı orchestration hattına normalize edilerek supervisor görev zincirine dahil edilir.
+8. Synthesizer nihai cevabı üretir.
+9. Bellek + telemetry + audit + correlation kaydı tamamlanır.
 
 ---
 

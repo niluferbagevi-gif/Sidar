@@ -30,12 +30,12 @@ Bu rapor, önerilen yetenekleri mevcut dosya yapısına yerleştirerek, her baş
 | GraphRAG + Reviewer etki analizi | **✅ Faz B: Tamamlandı** | `core/rag.py` içindeki modül bağımlılık grafiği arama/yol açıklama akışı reviewer ajanında birleşik etki analizi ve hedef önerileri üretir. |
 | Reviewer + LSP anlamsal denetim | **✅ Faz B: Tamamlandı** | Reviewer ajanı artık LSP diagnostics ile GraphRAG etki analizi sinyallerini aynı kalite kapısında birleştiriyor. |
 | Proaktif otonomi omurgası | **✅ Faz A/B tamamlandı** | Webhook, manual wake ve cron tabanlı trigger akışları `web_server.py` + `agent/sidar_agent.py` üzerinde aktif. |
-| Swarm karar grafiği görünürlüğü | **✅ Faz B: Tamamlandı** | `SwarmFlowPanel.jsx`, node/edge tabanlı handoff görselleştirmesiyle ajan karar akışını artık görsel hale getiriyor. |
+| Swarm karar grafiği + operasyon yüzeyi | **✅ Faz B: Tamamlandı** | `SwarmFlowPanel.jsx`, node/edge tabanlı handoff görselleştirmesini canlı operasyon yüzeyine taşıdı; seçili düğümden rerun/follow-up/HITL müdahalesi yapılabiliyor. |
 | Interactive CLI Launcher | **✅ Tamamlandı** | `main.py` ön kontrollü etkileşimli başlatıcı olarak ürünleşti. |
 
 ## 1.2 Faz B Tamamlanma Özeti
 
-Faz A kapanışından sonra tanımlanan üç Faz B hedefi de artık repo içinde kapanmıştır: GraphRAG sinyalleri reviewer kalite kapısına bağlanmış, `/ws/voice` hattı duplex state/buffer ve barge-in interrupt davranışı kazanmış, `SwarmFlowPanel` ise ajan handoff zincirini node-graph olarak görselleştirmeye başlamıştır. Böylece SİDAR artık yalnızca medya anlayan ve proaktif uyanan bir sistem değil; karar gerekçesini, kod etkisini ve konuşma akışını daha görünür hale getiren bir **AI Co-Worker altyapısı** sunmaktadır.
+Faz A kapanışından sonra tanımlanan üç Faz B hedefi de repo içinde kapanmıştır: GraphRAG sinyalleri reviewer kalite kapısına bağlanmış, `/ws/voice` hattı duplex state/buffer ve barge-in interrupt davranışı kazanmış, `SwarmFlowPanel` ise ajan handoff zincirini node-graph olarak görselleştirmekten öte canlı operasyon yüzeyine dönüşmüştür. Böylece SİDAR artık yalnızca medya anlayan ve proaktif uyanan bir sistem değil; karar gerekçesini, kod etkisini, dış olay korelasyonunu ve operatör müdahalesini görünür hale getiren bir **AI Co-Worker altyapısı** sunmaktadır.
 
 1. **GraphRAG → Reviewer entegrasyonu tamamlandı:** bağımlılık grafiği, etki analizi ve `lsp_diagnostics` sinyalleri aynı kalite kapısında birleşiyor.
 2. **Tam Voice-to-Voice duplex'in Faz B kapsamı tamamlandı:** assistant turn metadata'sı, duplex output buffer ve VAD tabanlı interrupt temizliği aktif.
@@ -54,7 +54,7 @@ v5.0 önerileri sıfırdan yeni bir platform tasarlamak için değil, mevcut gü
 - **Swarm ve P2P delege zinciri hazır:** `agent/swarm.py` ve `agent/core/supervisor.py` görev yönlendirme, handoff depth, trace ve QA retry davranışlarını zaten yönetiyor.
 - **RAG katmanı hibrit aramaya uygun:** `core/rag.py` ChromaDB + BM25 tabanı üzerine yeni retrieval stratejileri eklemek için iyi bir temel sunuyor.
 - **Web kontrol düzlemi genişlemeye uygun:** `web_server.py` hâlihazırda REST + WebSocket + HITL + swarm yürütme gibi akışları barındırıyor.
-- **UI'da karar grafiği görünürlüğü hazır:** `web_ui_react/src/components/SwarmFlowPanel.jsx` artık görev listesi/telemetriye ek olarak node-graph handoff görünümü sunuyor; sonraki adım bunu daha zengin canlı çalışma yüzeyleriyle birleştirmek.
+- **UI'da canlı operasyon yüzeyi hazır:** `web_ui_react/src/components/SwarmFlowPanel.jsx` artık görev listesi/telemetriye ek olarak node-graph handoff görünümü, seçili node aksiyonları ve HITL karar yüzeyi sunuyor; Faz C'de odak bu yüzeyi remediation/self-healing ve daha derin browser sinyalleri ile beslemek.
 
 ### 2.2 v5.0 ile çözülmek istenen açıklar
 
@@ -417,10 +417,10 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 
 ### Faz C — AI Co-Worker Deneyimi
 
-1. Harici swarm federasyonunun daha operasyonel ürünleşmesi
-2. Voice istemcisinde oynatma ACK / clock senkronizasyonu
-3. Proaktif remediation ve güvenli self-healing akışları
-4. IDE eklentileri
+1. **Proaktif self-healing:** LSP/Reviewer bulgularını güvenli remediation döngüsüne taşıyıp coder ajanı ile kontrollü otomatik düzeltme akışları kurmak.
+2. **Tarayıcı ajanının derinleştirilmesi:** Browser signal özetlerini swarm kararları ve reviewer kalite kapısı içinde daha doğrudan karar değişkeni haline getirmek.
+3. **Operasyon yüzeyinin ileri müdahalesi:** SwarmFlowPanel üzerindeki canlı node aksiyonlarını remediation, federasyon feedback ve görev durumu yönetimiyle genişletmek.
+4. **Voice istemcisinde oynatma ACK / clock senkronizasyonu ve IDE eklentileri:** gerçek zamanlı deneyimi istemci tarafında daha deterministik hale getirmek.
 
 ---
 
@@ -444,7 +444,7 @@ v5.0 geliştirmeleri aşağıdaki ilkelere bağlı kalmalıdır:
 | P0 | Multimodal medya ingestion MVP | `core/multimodal.py`, `core/vision.py` | ✅ Video + ses bağlam üretimi |
 | P0 | Browser automation manager | `managers/browser_manager.py`, `agent/tooling.py` | ✅ Dinamik web aksiyonları |
 | P1 | Webhook/proaktif ajan omurgası | `web_server.py`, `agent/sidar_agent.py` | ✅ Reaktif → proaktif geçiş |
-| P1 | Decision graph UI | `web_ui_react/src/components/SwarmFlowPanel.jsx` | ✅ Görsel swarm görünürlüğü |
+| P1 | Live operation surface UI | `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py` | ✅ Görsel swarm görünürlüğü + node tabanlı operatör müdahalesi |
 | P1 | GraphRAG + reviewer impact gate | `core/rag.py`, `agent/roles/reviewer_agent.py`, `managers/code_manager.py` | ✅ Mimari bağımlılık sorguları + reviewer hedefleri |
 | P2 | LSP entegrasyonu | `managers/code_manager.py` | ✅ Güvenli refactor |
 | P2 | Voice WebSocket akışı | `core/voice.py`, `web_server.py` | ✅ Gerçek zamanlı duplex konuşma + VAD/buffer olayları |
