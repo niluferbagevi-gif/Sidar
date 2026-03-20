@@ -339,6 +339,154 @@ class ReviewerAgent(BaseAgent):
             "summary": summary,
         }
 
+    @staticmethod
+    def _normalize_issue_path(path: object) -> str:
+        """LSP issue yolunu repo-köküne göre normalize eder."""
+        value = str(path or "").strip().replace("\\", "/")
+        marker = "/workspace/Sidar/"
+        if marker in value:
+            value = value.split(marker, 1)[1]
+        return value.lstrip("./")
+
+    @staticmethod
+    def _build_combined_impact_report(
+        semantic_report: dict[str, object],
+        graph_summary: dict[str, object],
+        direct_scope_paths: list[str],
+        lsp_scope_paths: list[str],
+    ) -> dict[str, object]:
+        """GraphRAG ve LSP sinyallerini birleşik etki analizi olarak toplar."""
+        graph_followups = [
+            str(path or "").strip().lstrip("./")
+            for path in list(graph_summary.get("followup_paths", []) or [])
+            if str(path or "").strip()
+        ]
+        issues = semantic_report.get("issues", []) or []
+        normalized_issue_paths: list[str] = []
+        for item in issues:
+            if not isinstance(item, dict):
+                continue
+            normalized = ReviewerAgent._normalize_issue_path(item.get("path"))
+            if normalized and normalized not in normalized_issue_paths:
+                normalized_issue_paths.append(normalized)
+
+        direct_paths = [
+            str(path or "").strip().lstrip("./")
+            for path in direct_scope_paths
+            if str(path or "").strip()
+        ]
+        indirect_paths = [
+            path for path in graph_followups
+            if path in normalized_issue_paths and path not in direct_paths
+        ]
+        highest_severity = 0
+        for key, count in dict(semantic_report.get("counts", {}) or {}).items():
+            try:
+                severity = int(key)
+            except (TypeError, ValueError):
+                continue
+            if int(count or 0) > 0:
+                highest_severity = min(severity, highest_severity) if highest_severity else severity
+
+        if indirect_paths and highest_severity == 1:
+            impact_level = "critical"
+        elif indirect_paths or str(graph_summary.get("risk", "düşük")) == "orta":
+            impact_level = "high"
+        elif normalized_issue_paths:
+            impact_level = "medium"
+        else:
+            impact_level = "low"
+
+        return {
+            "impact_level": impact_level,
+            "direct_scope_paths": direct_paths,
+            "graph_followup_paths": graph_followups,
+            "issue_paths": normalized_issue_paths,
+            "indirect_breakage_paths": indirect_paths,
+            "high_risk_targets": list(graph_summary.get("high_risk_targets", []) or []),
+            "summary": (
+                f"Birleşik etki analizi: doğrudan hedef={len(direct_paths)}, "
+                f"GraphRAG genişleme={len(graph_followups)}, "
+                f"LSP issue dosyası={len(normalized_issue_paths)}, "
+                f"dolaylı kırılma={len(indirect_paths)}."
+            ),
+        }
+
+    @staticmethod
+    def _build_fix_recommendations(
+        semantic_report: dict[str, object],
+        graph_payload: dict[str, object],
+        combined_impact: dict[str, object],
+    ) -> list[dict[str, object]]:
+        """Reviewer için otomatik düzeltme önerisi adaylarını üretir."""
+        recommendations: list[dict[str, object]] = []
+        issues = semantic_report.get("issues", []) or []
+        grouped_by_path: dict[str, list[dict[str, object]]] = {}
+        for item in issues:
+            if not isinstance(item, dict):
+                continue
+            normalized = ReviewerAgent._normalize_issue_path(item.get("path"))
+            if not normalized:
+                continue
+            grouped_by_path.setdefault(normalized, []).append(item)
+
+        graph_details_by_target: dict[str, dict[str, object]] = {}
+        for report in list(graph_payload.get("reports", []) or []):
+            if not isinstance(report, dict) or not report.get("ok"):
+                continue
+            details = report.get("details") or {}
+            if isinstance(details, dict):
+                graph_details_by_target[str(report.get("target", "")).strip()] = details
+
+        for path in list(combined_impact.get("indirect_breakage_paths", []) or []):
+            issue_group = grouped_by_path.get(path, [])
+            messages = [
+                str(item.get("message", "")).strip()
+                for item in issue_group[:3]
+                if str(item.get("message", "")).strip()
+            ]
+            related_graph_detail = next(
+                (
+                    details for details in graph_details_by_target.values()
+                    if path in list(details.get("review_targets", []) or [])
+                    or path in list(details.get("impacted_endpoint_handlers", []) or [])
+                    or path in list(details.get("caller_files", []) or [])
+                    or path in list(details.get("direct_dependents", []) or [])
+                ),
+                {},
+            )
+            recommendations.append(
+                {
+                    "path": path,
+                    "reason": "graph+semantic",
+                    "action": (
+                        "GraphRAG tarafından genişletilen bu dosyada LSP bulguları var; "
+                        "import/type sözleşmelerini ve etkilenen çağrı zincirini düzelt."
+                    ),
+                    "lsp_messages": messages,
+                    "related_endpoints": list(related_graph_detail.get("impacted_endpoints", []) or []),
+                }
+            )
+
+        if not recommendations:
+            for path, issue_group in list(grouped_by_path.items())[:6]:
+                messages = [
+                    str(item.get("message", "")).strip()
+                    for item in issue_group[:3]
+                    if str(item.get("message", "")).strip()
+                ]
+                recommendations.append(
+                    {
+                        "path": path,
+                        "reason": "semantic",
+                        "action": "LSP hatalarını düzelt ve ilgili testleri yeniden çalıştır.",
+                        "lsp_messages": messages,
+                        "related_endpoints": [],
+                    }
+                )
+
+        return recommendations[:8]
+
     async def _tool_repo_info(self, _arg: str) -> str:
         ok, out = await asyncio.to_thread(self.github.get_repo_info)
         return out if ok else f"[HATA] {out}"
@@ -498,6 +646,17 @@ class ReviewerAgent(BaseAgent):
             )
             lsp_output = await self.call_tool("lsp_diagnostics", " ".join(lsp_scope_paths))
             semantic_report = self._summarize_lsp_diagnostics(lsp_output)
+            combined_impact = self._build_combined_impact_report(
+                semantic_report,
+                graph_summary,
+                self._build_lsp_candidate_paths(context),
+                lsp_scope_paths or ["workspace:auto"],
+            )
+            fix_recommendations = self._build_fix_recommendations(
+                semantic_report,
+                graph_payload,
+                combined_impact,
+            )
 
             combo = f"{dynamic_test_output}\n\n{regression_output}\n\n{lsp_output}".lower()
             status = "PASS"
@@ -515,6 +674,8 @@ class ReviewerAgent(BaseAgent):
                 risk = "orta"
             elif graph_summary["risk"] == "orta":
                 risk = "orta"
+            if combined_impact["impact_level"] in {"high", "critical"} and risk == "düşük":
+                risk = "orta"
 
             await self.events.publish("reviewer", "QA kararı coder ajanına P2P ile iletiliyor...")
             feedback_payload = json.dumps(
@@ -523,7 +684,7 @@ class ReviewerAgent(BaseAgent):
                     "risk": risk,
                     "summary": (
                         f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
-                        f"{semantic_report['summary']} {graph_summary['summary']}"
+                        f"{semantic_report['summary']} {graph_summary['summary']} {combined_impact['summary']}"
                     ),
                     "dynamic_test_output": dynamic_test_output,
                     "regression_test_output": regression_output,
@@ -532,6 +693,8 @@ class ReviewerAgent(BaseAgent):
                     "graph_impact_output": graph_output,
                     "graph_impact_report": graph_payload,
                     "graph_review_scope": graph_summary,
+                    "combined_impact_report": combined_impact,
+                    "fix_recommendations": fix_recommendations,
                     "lsp_scope_paths": lsp_scope_paths or ["workspace:auto"],
                 },
                 ensure_ascii=False,
