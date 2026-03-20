@@ -1069,6 +1069,39 @@ def test_maybe_record_feedback_schedules_continuous_learning_on_success():
     _run(_inner())
 
 
+def test_maybe_record_feedback_ignores_schedule_errors_after_success():
+    async def _inner():
+        judge = LLMJudge()
+        judge.auto_feedback_enabled = True
+        judge.auto_feedback_threshold = 8.0
+        result = JudgeResult(
+            relevance_score=0.2,
+            hallucination_risk=0.9,
+            evaluated_at=time.time(),
+            model="judge",
+            provider="ollama",
+        )
+
+        class _Store:
+            async def flag_weak_response(self, **_kwargs):
+                return True
+
+        with patch("core.active_learning.get_feedback_store", return_value=_Store()), patch(
+            "core.active_learning.schedule_continuous_learning_cycle",
+            side_effect=RuntimeError("schedule failure"),
+        ):
+            ok = await judge._maybe_record_feedback(
+                query="soru",
+                documents=["doc"],
+                answer="yanıt",
+                result=result,
+            )
+
+        assert ok is True
+
+    _run(_inner())
+
+
 def test_schedule_background_evaluation_swallows_non_cancelled_errors(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True
