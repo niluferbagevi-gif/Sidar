@@ -81,17 +81,42 @@ def _load_sidar_agent_module():
 
     stubs["agent.definitions"].SIDAR_SYSTEM_PROMPT = "sys"
     class ExternalTrigger:
-        def __init__(self, trigger_id="", source="", event_name="", payload=None, meta=None):
+        def __init__(self, trigger_id="", source="", event_name="", payload=None, meta=None, correlation_id=""):
             self.trigger_id = trigger_id
             self.source = source
             self.event_name = event_name
             self.payload = payload or {}
             self.meta = meta or {}
+            self.correlation_id = correlation_id or self.meta.get("correlation_id", "") or self.payload.get("correlation_id", "") or trigger_id
 
         def to_prompt(self):
             return f"[TRIGGER]\nsource={self.source}\nevent={self.event_name}"
 
+    class FederationTaskEnvelope:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def to_prompt(self):
+            return "[FEDERATION TASK]\n" + json.dumps(self.kwargs, ensure_ascii=False, sort_keys=True)
+
+    class ActionFeedback:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def to_prompt(self):
+            return "[ACTION FEEDBACK]\n" + json.dumps(self.kwargs, ensure_ascii=False, sort_keys=True)
+
+    def derive_correlation_id(*values):
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
     stubs["agent.core.contracts"].ExternalTrigger = ExternalTrigger
+    stubs["agent.core.contracts"].FederationTaskEnvelope = FederationTaskEnvelope
+    stubs["agent.core.contracts"].ActionFeedback = ActionFeedback
+    stubs["agent.core.contracts"].derive_correlation_id = derive_correlation_id
 
     class _Schema:
         pass
@@ -273,6 +298,57 @@ def test_handle_external_trigger_builds_ci_remediation_payload():
     assert record["remediation"]["root_cause_summary"].startswith("Kök neden")
     assert record["remediation"]["pr_proposal"]["auto_create_ready"] is True
     assert record["remediation"]["pr_proposal"]["head_branch_suggestion"] == "ci-remediation/77"
+
+
+def test_handle_external_trigger_correlates_action_feedback_with_prior_record():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def fake_multi(prompt):
+        if prompt.startswith("[ACTION FEEDBACK]"):
+            assert '"correlation_id": "fed-1"' in prompt
+            return "Dış sistem action feedback işlendi."
+        return "İlk federation görev özeti."
+
+    a._try_multi_agent = fake_multi
+
+    first = asyncio.run(
+        a.handle_external_trigger(
+            {
+                "trigger_id": "tr-fed-1",
+                "source": "federation:autogen",
+                "event_name": "federation_task",
+                "payload": {"kind": "federation_task", "task_id": "fed-1", "correlation_id": "fed-1"},
+                "meta": {"correlation_id": "fed-1"},
+            }
+        )
+    )
+    second = asyncio.run(
+        a.handle_external_trigger(
+            {
+                "trigger_id": "fb-1",
+                "source": "federation:autogen:action_feedback",
+                "event_name": "action_feedback",
+                "payload": {
+                    "kind": "action_feedback",
+                    "feedback_id": "fb-1",
+                    "source_system": "autogen",
+                    "source_agent": "planner",
+                    "action_name": "open_pr",
+                    "status": "success",
+                    "summary": "PR açıldı",
+                    "related_task_id": "fed-1",
+                    "correlation_id": "fed-1",
+                },
+                "meta": {"correlation_id": "fed-1"},
+            }
+        )
+    )
+
+    assert first["correlation"]["correlation_id"] == "fed-1"
+    assert second["correlation"]["correlation_id"] == "fed-1"
+    assert second["correlation"]["matched_records"] == 1
+    assert second["correlation"]["related_trigger_ids"] == ["tr-fed-1"]
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 

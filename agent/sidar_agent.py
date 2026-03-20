@@ -30,7 +30,7 @@ from managers.security import SecurityManager
 from managers.web_search import WebSearchManager
 from managers.package_info import PackageInfoManager
 from managers.todo_manager import TodoManager
-from agent.core.contracts import ExternalTrigger
+from agent.core.contracts import ActionFeedback, ExternalTrigger, FederationTaskEnvelope, derive_correlation_id
 from agent.definitions import SIDAR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -176,6 +176,104 @@ class SidarAgent:
             history.append(dict(record))
             self._autonomy_history = history
 
+    @staticmethod
+    def _build_trigger_prompt(trigger: ExternalTrigger, payload_dict: Dict[str, Any], ci_context: Dict[str, Any] | None) -> str:
+        if ci_context:
+            return build_ci_failure_prompt(ci_context)
+
+        if payload_dict.get("kind") == "federation_task":
+            federation_payload = dict(payload_dict.get("federation_task") or payload_dict)
+            if payload_dict.get("federation_prompt"):
+                return str(payload_dict.get("federation_prompt"))
+            return FederationTaskEnvelope(
+                task_id=str(federation_payload.get("task_id") or trigger.trigger_id),
+                source_system=str(federation_payload.get("source_system") or trigger.source),
+                source_agent=str(federation_payload.get("source_agent") or "external"),
+                target_system=str(federation_payload.get("target_system") or "sidar"),
+                target_agent=str(federation_payload.get("target_agent") or "supervisor"),
+                goal=str(federation_payload.get("goal") or ""),
+                protocol=str(federation_payload.get("protocol") or "federation.v1"),
+                intent=str(federation_payload.get("intent") or "mixed"),
+                context=dict(federation_payload.get("context") or {}),
+                inputs=list(federation_payload.get("inputs") or []),
+                meta=dict(federation_payload.get("meta") or {}),
+                correlation_id=str(federation_payload.get("correlation_id") or trigger.correlation_id),
+            ).to_prompt()
+
+        if payload_dict.get("kind") == "action_feedback" or trigger.event_name == "action_feedback":
+            return ActionFeedback(
+                feedback_id=str(payload_dict.get("feedback_id") or trigger.trigger_id),
+                source_system=str(payload_dict.get("source_system") or trigger.source),
+                source_agent=str(payload_dict.get("source_agent") or "external"),
+                action_name=str(payload_dict.get("action_name") or trigger.event_name),
+                status=str(payload_dict.get("status") or "received"),
+                summary=str(payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."),
+                related_task_id=str(payload_dict.get("related_task_id") or ""),
+                related_trigger_id=str(payload_dict.get("related_trigger_id") or ""),
+                details=dict(payload_dict.get("details") or {}),
+                meta=dict(payload_dict.get("meta") or trigger.meta or {}),
+                correlation_id=str(payload_dict.get("correlation_id") or trigger.correlation_id),
+            ).to_prompt()
+
+        return trigger.to_prompt()
+
+    def _build_trigger_correlation(
+        self,
+        trigger: ExternalTrigger,
+        payload_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        self._ensure_autonomy_runtime_state()
+        correlation_id = derive_correlation_id(
+            getattr(trigger, "correlation_id", ""),
+            trigger.meta.get("correlation_id", ""),
+            payload_dict.get("correlation_id", ""),
+            payload_dict.get("related_task_id", ""),
+            payload_dict.get("task_id", ""),
+            trigger.trigger_id,
+        )
+        related_trigger_id = str(payload_dict.get("related_trigger_id") or "").strip()
+        related_task_id = str(payload_dict.get("related_task_id") or payload_dict.get("task_id") or "").strip()
+
+        matches: List[Dict[str, Any]] = []
+        for item in reversed(list(getattr(self, "_autonomy_history", []) or [])):
+            item_trigger_id = str(item.get("trigger_id", "") or "")
+            item_payload = dict(item.get("payload") or {})
+            item_corr = derive_correlation_id(
+                item.get("correlation", {}).get("correlation_id", "") if isinstance(item.get("correlation"), dict) else "",
+                item.get("meta", {}).get("correlation_id", "") if isinstance(item.get("meta"), dict) else "",
+                item_payload.get("correlation_id", ""),
+                item_payload.get("related_task_id", ""),
+                item_payload.get("task_id", ""),
+                item_trigger_id,
+            )
+            if correlation_id and item_corr == correlation_id:
+                matches.append(item)
+            elif related_trigger_id and item_trigger_id == related_trigger_id:
+                matches.append(item)
+            elif related_task_id and str(item_payload.get("task_id", "") or "") == related_task_id:
+                matches.append(item)
+
+        unique_matches: List[Dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for item in matches:
+            item_id = str(item.get("trigger_id", "") or "")
+            if not item_id or item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            unique_matches.append(item)
+
+        related_trigger_ids = [str(item.get("trigger_id", "") or "") for item in unique_matches[:8]]
+        related_sources = list(dict.fromkeys(str(item.get("source", "") or "") for item in unique_matches[:8] if str(item.get("source", "") or "")))
+        return {
+            "correlation_id": correlation_id,
+            "related_trigger_id": related_trigger_id,
+            "related_task_id": related_task_id,
+            "matched_records": len(unique_matches),
+            "related_trigger_ids": related_trigger_ids,
+            "related_sources": related_sources,
+            "latest_related_status": str(unique_matches[0].get("status", "") or "") if unique_matches else "",
+        }
+
     async def handle_external_trigger(self, trigger: ExternalTrigger | Dict[str, Any]) -> Dict[str, Any]:
         """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
         await self.initialize()
@@ -196,7 +294,8 @@ class SidarAgent:
             if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"} and payload_dict.get("workflow_name")
             else build_ci_failure_context(trigger.event_name, payload_dict)
         )
-        prompt = build_ci_failure_prompt(ci_context) if ci_context else trigger.to_prompt()
+        correlation = self._build_trigger_correlation(trigger, payload_dict)
+        prompt = self._build_trigger_prompt(trigger, payload_dict, ci_context)
         started_at = time.time()
         status = "success"
         summary = ""
@@ -220,6 +319,7 @@ class SidarAgent:
             "summary": summary,
             "payload": dict(trigger.payload or {}),
             "meta": dict(trigger.meta or {}),
+            "correlation": correlation,
             "prompt": prompt,
             "created_at": started_at,
             "completed_at": time.time(),

@@ -9,6 +9,7 @@ from typing import Any
 FEDERATION_PROTOCOL_V1 = "federation.v1"
 LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
 FEDERATION_PROTOCOL_ALIASES = frozenset({FEDERATION_PROTOCOL_V1, LEGACY_FEDERATION_PROTOCOL_V1})
+ACTION_FEEDBACK_PROTOCOL_V1 = "action_feedback.v1"
 
 
 def normalize_federation_protocol(protocol: object) -> str:
@@ -17,6 +18,15 @@ def normalize_federation_protocol(protocol: object) -> str:
     if not value or value in FEDERATION_PROTOCOL_ALIASES:
         return FEDERATION_PROTOCOL_V1
     return value
+
+
+def derive_correlation_id(*values: object) -> str:
+    """Dış sistemler arası iz sürme için ilk anlamlı correlation id değerini seç."""
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
 
 
 @dataclass
@@ -105,6 +115,16 @@ class ExternalTrigger:
     payload: dict[str, Any] = field(default_factory=dict)
     protocol: str = "trigger.v1"
     meta: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.meta.get("correlation_id", ""),
+            self.payload.get("correlation_id", "") if isinstance(self.payload, dict) else "",
+            self.payload.get("task_id", "") if isinstance(self.payload, dict) else "",
+            self.trigger_id,
+        )
 
     def to_prompt(self) -> str:
         payload_blob = json.dumps(self.payload, ensure_ascii=False, sort_keys=True)
@@ -114,6 +134,7 @@ class ExternalTrigger:
             f"source={self.source}\n"
             f"event={self.event_name}\n"
             f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
             f"meta={meta_blob}\n"
             f"payload={payload_blob}"
         )
@@ -135,9 +156,16 @@ class FederationTaskEnvelope:
     inputs: list[str] = field(default_factory=list)
     protocol: str = FEDERATION_PROTOCOL_V1
     meta: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
 
     def __post_init__(self) -> None:
         self.protocol = normalize_federation_protocol(self.protocol)
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.meta.get("correlation_id", ""),
+            self.parent_task_id,
+            self.task_id,
+        )
 
     def to_task_envelope(self) -> TaskEnvelope:
         return TaskEnvelope(
@@ -147,7 +175,7 @@ class FederationTaskEnvelope:
             goal=self.goal,
             intent=self.intent,
             parent_task_id=self.parent_task_id,
-            context=dict(self.context),
+            context={**dict(self.context), "correlation_id": self.correlation_id},
             inputs=list(self.inputs),
         )
 
@@ -159,6 +187,7 @@ class FederationTaskEnvelope:
             f"target_system={self.target_system}\n"
             f"target_agent={self.target_agent}\n"
             f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
             f"intent={self.intent}\n"
             f"goal={self.goal}\n"
             f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True)}\n"
@@ -182,9 +211,15 @@ class FederationTaskResult:
     evidence: list[str] = field(default_factory=list)
     next_actions: list[str] = field(default_factory=list)
     meta: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
 
     def __post_init__(self) -> None:
         self.protocol = normalize_federation_protocol(self.protocol)
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.meta.get("correlation_id", ""),
+            self.task_id,
+        )
 
     def to_task_result(self) -> TaskResult:
         return TaskResult(
@@ -203,10 +238,82 @@ class FederationTaskResult:
             f"target_system={self.target_system}\n"
             f"target_agent={self.target_agent}\n"
             f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
             f"status={self.status}\n"
             f"summary={self.summary}\n"
             f"evidence={json.dumps(self.evidence, ensure_ascii=False)}\n"
             f"next_actions={json.dumps(self.next_actions, ensure_ascii=False)}\n"
+            f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+@dataclass
+class ActionFeedback:
+    """Dış sistemlerden gelen eylem geri besleme sinyalini standartlaştırır."""
+
+    feedback_id: str
+    source_system: str
+    source_agent: str
+    action_name: str
+    status: str
+    summary: str
+    related_task_id: str = ""
+    related_trigger_id: str = ""
+    protocol: str = ACTION_FEEDBACK_PROTOCOL_V1
+    details: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.meta.get("correlation_id", ""),
+            self.related_task_id,
+            self.related_trigger_id,
+            self.feedback_id,
+        )
+
+    def to_external_trigger(self) -> ExternalTrigger:
+        payload = {
+            "kind": "action_feedback",
+            "feedback_id": self.feedback_id,
+            "source_system": self.source_system,
+            "source_agent": self.source_agent,
+            "action_name": self.action_name,
+            "status": self.status,
+            "summary": self.summary,
+            "related_task_id": self.related_task_id,
+            "related_trigger_id": self.related_trigger_id,
+            "details": dict(self.details or {}),
+            "correlation_id": self.correlation_id,
+        }
+        meta = {
+            **dict(self.meta or {}),
+            "correlation_id": self.correlation_id,
+            "feedback_status": self.status,
+        }
+        return ExternalTrigger(
+            trigger_id=self.feedback_id,
+            source=f"federation:{self.source_system}:action_feedback",
+            event_name="action_feedback",
+            payload=payload,
+            protocol=self.protocol,
+            meta=meta,
+            correlation_id=self.correlation_id,
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[ACTION FEEDBACK]\n"
+            f"source_system={self.source_system}\n"
+            f"source_agent={self.source_agent}\n"
+            f"action_name={self.action_name}\n"
+            f"status={self.status}\n"
+            f"correlation_id={self.correlation_id}\n"
+            f"related_task_id={self.related_task_id}\n"
+            f"related_trigger_id={self.related_trigger_id}\n"
+            f"summary={self.summary}\n"
+            f"details={json.dumps(self.details, ensure_ascii=False, sort_keys=True)}\n"
             f"meta={json.dumps(self.meta, ensure_ascii=False, sort_keys=True)}"
         )
 
@@ -254,3 +361,11 @@ def is_federation_task_result(value: object) -> bool:
     return type(value).__name__ == "FederationTaskResult" and all(
         hasattr(value, attr) for attr in required
     )
+
+
+def is_action_feedback(value: object) -> bool:
+    """ActionFeedback benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, ActionFeedback):
+        return True
+    required = ("feedback_id", "source_system", "source_agent", "action_name", "status", "summary")
+    return type(value).__name__ == "ActionFeedback" and all(hasattr(value, attr) for attr in required)
