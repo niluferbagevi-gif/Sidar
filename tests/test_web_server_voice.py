@@ -543,3 +543,155 @@ def test_websocket_voice_barge_in_cancels_active_duplex_response():
     assert interruption["cancelled_audio_sequences"] == 0
     voice_states = [item for item in ws.sent if item.get("voice_state") == "speech_start"]
     assert voice_states and voice_states[0]["interrupt_ready"] is True
+
+def test_websocket_voice_auth_text_requires_token_field():
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, *_args, **_kwargs):
+            return None
+
+    async def _set_active_user(*_args, **_kwargs):
+        return None
+
+    async def _get_agent():
+        memory = types.SimpleNamespace(db=_DB(), set_active_user=_set_active_user)
+        return types.SimpleNamespace(memory=memory, llm=object(), respond=None)
+
+    mod.get_agent = _get_agent
+
+    multimodal_mod = types.ModuleType("core.multimodal")
+    multimodal_mod.MultimodalPipeline = lambda *_a, **_k: object()
+
+    class _VoicePipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.vad_enabled = True
+            self.duplex_enabled = True
+
+        def create_duplex_state(self):
+            return types.SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+    voice_mod = types.ModuleType("core.voice")
+    voice_mod.VoicePipeline = _VoicePipeline
+
+    class _WebSocket:
+        def __init__(self):
+            self.headers = {}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.closed = None
+            self._events = [{"type": "websocket.receive", "text": json.dumps({"action": "auth"})}]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            return self._events.pop(0)
+
+        async def send_json(self, payload):
+            self.payload = payload
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    ws = _WebSocket()
+    with _ModulePatch("core.multimodal", multimodal_mod), _ModulePatch("core.voice", voice_mod):
+        asyncio.run(mod.websocket_voice(ws))
+
+    assert ws.closed == (1008, "Authentication token missing")
+
+
+
+def test_websocket_voice_auth_text_rejects_invalid_token_and_invalid_base64_chunk():
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == "valid-token":
+                return types.SimpleNamespace(id="u1", username="alice")
+            return None
+
+    class _Memory:
+        db = _DB()
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+        def __len__(self):
+            return 1
+
+    async def _get_agent():
+        return types.SimpleNamespace(memory=_Memory(), llm=object(), respond=None)
+
+    mod.get_agent = _get_agent
+
+    multimodal_mod = types.ModuleType("core.multimodal")
+    multimodal_mod.MultimodalPipeline = lambda *_a, **_k: object()
+
+    class _VoicePipeline:
+        def __init__(self, *_args, **_kwargs):
+            self.vad_enabled = True
+            self.duplex_enabled = True
+
+        def create_duplex_state(self):
+            return types.SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def build_voice_state_payload(self, *, event, buffered_bytes, sequence, duplex_state=None):
+            return {"voice_state": event, "buffered_bytes": buffered_bytes, "sequence": sequence}
+
+    voice_mod = types.ModuleType("core.voice")
+    voice_mod.VoicePipeline = _VoicePipeline
+
+    class _BadTokenWebSocket:
+        def __init__(self):
+            self.headers = {}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.closed = None
+            self._events = [{"type": "websocket.receive", "text": json.dumps({"action": "auth", "token": "bad"})}]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            return self._events.pop(0)
+
+        async def send_json(self, payload):
+            self.payload = payload
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    bad_ws = _BadTokenWebSocket()
+    with _ModulePatch("core.multimodal", multimodal_mod), _ModulePatch("core.voice", voice_mod):
+        asyncio.run(mod.websocket_voice(bad_ws))
+
+    assert bad_ws.closed == (1008, "Invalid or expired token")
+
+    class _InvalidBase64WebSocket:
+        def __init__(self):
+            self.headers = {"sec-websocket-protocol": "valid-token"}
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.sent = []
+            self.closed = None
+            self._events = [
+                {"type": "websocket.receive", "text": json.dumps({"action": "append_base64", "chunk": "%%%bad%%%"})},
+                {"type": "websocket.disconnect"},
+            ]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            return self._events.pop(0)
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    invalid_ws = _InvalidBase64WebSocket()
+    with _ModulePatch("core.multimodal", multimodal_mod), _ModulePatch("core.voice", voice_mod):
+        asyncio.run(mod.websocket_voice(invalid_ws))
+
+    assert {"auth_ok": True} in invalid_ws.sent
+    assert {"error": "Geçersiz base64 ses parçası", "done": True} in invalid_ws.sent
