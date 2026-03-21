@@ -73,6 +73,18 @@ class CoverageAgent(BaseAgent):
         stem = Path(normalized).stem
         return f"tests/test_{stem}_coverage.py"
 
+    @staticmethod
+    def _normalize_analysis(raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {"summary": "", "findings": []}
+        findings = raw.get("findings")
+        normalized_findings = [item for item in list(findings or []) if isinstance(item, dict)]
+        return {
+            **raw,
+            "summary": str(raw.get("summary", "") or ""),
+            "findings": normalized_findings,
+        }
+
     async def _tool_run_pytest(self, arg: str) -> str:
         payload = self._parse_payload(arg)
         command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
@@ -181,7 +193,7 @@ class CoverageAgent(BaseAgent):
         command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
         cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
         pytest_result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
-        analysis = dict(pytest_result.get("analysis") or {})
+        analysis = self._normalize_analysis(pytest_result.get("analysis"))
         findings = list(analysis.get("findings") or [])
         if not findings:
             return json.dumps(
