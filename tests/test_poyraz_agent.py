@@ -113,7 +113,14 @@ PoyrazAgent = _load_poyraz_agent_class()
 
 def test_poyraz_agent_initializes_with_marketing_tools():
     agent = PoyrazAgent()
-    assert set(agent.tools.keys()) == {"web_search", "fetch_url", "search_docs", "publish_social"}
+    assert set(agent.tools.keys()) == {
+        "web_search",
+        "fetch_url",
+        "search_docs",
+        "publish_social",
+        "build_landing_page",
+        "generate_campaign_copy",
+    }
 
 
 def test_poyraz_agent_routes_prefixed_marketing_tasks(monkeypatch):
@@ -158,3 +165,19 @@ def test_poyraz_agent_routes_social_publish_tool():
     agent = PoyrazAgent()
     out = asyncio.run(agent.run_task("publish_social|instagram|||Yeni kampanya|||@brand|||https://img.test/post.jpg"))
     assert out == "[SOCIAL:PUBLISHED] platform=instagram result=published:instagram"
+
+
+def test_poyraz_agent_routes_json_marketing_tools():
+    agent = PoyrazAgent()
+
+    social_out = asyncio.run(
+        agent.run_task('publish_social|{"platform":"facebook","text":"Yeni duyuru","link_url":"https://example.test"}')
+    )
+    assert social_out == "[SOCIAL:PUBLISHED] platform=facebook result=published:facebook"
+
+    landing_out = asyncio.run(
+        agent.run_task(
+            'build_landing_page|{"brand_name":"Sidar","offer":"Demo","audience":"KOBI","call_to_action":"Kaydol"}'
+        )
+    )
+    assert landing_out == "stub"
