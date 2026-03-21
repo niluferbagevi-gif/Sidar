@@ -294,3 +294,51 @@ def test_websocket_voice_logs_anyio_closed_and_unexpected_errors(monkeypatch):
 
     assert any("ClosedResourceError" in entry for entry in info_logs)
     assert any("beklenmedik hata: boom" in entry for entry in warning_logs)
+
+
+def test_websocket_voice_anyio_closed_awaits_active_response_task(monkeypatch):
+    mod = _load_web_server()
+    _install_voice_pipeline_stubs(monkeypatch)
+    mod.get_agent = lambda: asyncio.sleep(0, result=_make_voice_agent())
+
+    task_state = {"created": 0, "awaited": 0}
+
+    class _PendingTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            task_state["awaited"] += 1
+            if False:
+                yield None
+            return None
+
+    def _create_task(coro):
+        task_state["created"] += 1
+        coro.close()
+        return _PendingTask()
+
+    class _Closed(Exception):
+        pass
+
+    monkeypatch.setattr(mod.asyncio, "create_task", _create_task)
+    mod._ANYIO_CLOSED = _Closed
+
+    ws = _VoiceWebSocket(
+        [
+            {"type": "websocket.receive", "text": json.dumps({"action": "auth", "token": "tok"})},
+            {
+                "type": "websocket.receive",
+                "text": json.dumps({"action": "append_base64", "chunk": base64.b64encode(b"voice").decode("ascii")}),
+            },
+            {"type": "websocket.receive", "text": json.dumps({"action": "commit"})},
+            _Closed("socket closed"),
+        ]
+    )
+
+    asyncio.run(mod.websocket_voice(ws))
+
+    assert task_state == {"created": 1, "awaited": 1}
