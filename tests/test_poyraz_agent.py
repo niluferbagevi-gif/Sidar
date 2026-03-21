@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -329,3 +330,237 @@ def test_poyraz_agent_ingests_video_insights_into_docs():
         )
 
     assert out == "[VIDEO:INGESTED] source=https://youtu.be/dQw4w9WgXcQ doc_id=doc-42 scene_summary=0.0s → güçlü açılış"
+
+
+def test_poyraz_agent_db_and_search_helpers_cover_cache_and_async_paths(monkeypatch):
+    agent = PoyrazAgent()
+    calls = {"db": 0, "connect": 0, "init_schema": 0}
+
+    class _Database:
+        def __init__(self, _cfg):
+            calls["db"] += 1
+
+        async def connect(self):
+            calls["connect"] += 1
+
+        async def init_schema(self):
+            calls["init_schema"] += 1
+
+    fake_db_mod = types.SimpleNamespace(Database=_Database)
+    with patch.dict(sys.modules, {"core.db": fake_db_mod}):
+        db_first = asyncio.run(agent._ensure_db())
+        db_second = asyncio.run(agent._ensure_db())
+
+    assert db_first is db_second
+    assert calls == {"db": 1, "connect": 1, "init_schema": 1}
+
+    async def _async_search(query, *_args):
+        return True, f"docs-async:{query}"
+
+    monkeypatch.setattr(agent.docs, "search", _async_search)
+
+    web_out = asyncio.run(agent._tool_web_search("trend raporu"))
+    fetch_out = asyncio.run(agent._tool_fetch_url("https://sidar.dev"))
+    docs_out = asyncio.run(agent._tool_search_docs("seo checklist"))
+
+    assert web_out == "web:trend raporu"
+    assert fetch_out == "fetch:https://sidar.dev"
+    assert docs_out == "docs-async:seo checklist"
+
+
+def test_poyraz_agent_social_tool_error_branches(monkeypatch):
+    agent = PoyrazAgent()
+
+    async def _social_error(**kwargs):
+        return False, f"bad:{kwargs.get('platform', '')}"
+
+    async def _instagram_error(**_kwargs):
+        return False, "ig-down"
+
+    async def _facebook_error(**_kwargs):
+        return False, "fb-down"
+
+    async def _whatsapp_error(**_kwargs):
+        return False, "wa-down"
+
+    monkeypatch.setattr(agent.social, "publish_content", _social_error)
+    monkeypatch.setattr(agent.social, "publish_instagram_post", _instagram_error)
+    monkeypatch.setattr(agent.social, "publish_facebook_post", _facebook_error)
+    monkeypatch.setattr(agent.social, "send_whatsapp_message", _whatsapp_error)
+
+    social_out = asyncio.run(
+        agent._tool_publish_social('{"platform":"instagram","text":"Post","destination":"@brand","media_url":"https://img","link_url":"https://site"}')
+    )
+    instagram_out = asyncio.run(
+        agent._tool_publish_instagram_post('{"caption":"Yeni post","image_url":"https://img.test/post.jpg"}')
+    )
+    facebook_out = asyncio.run(
+        agent._tool_publish_facebook_post('{"message":"Duyuru","link_url":"https://example.test"}')
+    )
+    whatsapp_out = asyncio.run(
+        agent._tool_send_whatsapp_message('{"to":"+905555555555","text":"Merhaba","preview_url":false}')
+    )
+
+    assert social_out == "[SOCIAL:ERROR] platform=instagram reason=bad:instagram"
+    assert instagram_out == "[INSTAGRAM:ERROR] reason=ig-down"
+    assert facebook_out == "[FACEBOOK:ERROR] reason=fb-down"
+    assert whatsapp_out == "[WHATSAPP:ERROR] reason=wa-down"
+
+
+def test_poyraz_agent_campaign_copy_and_operation_payloads_are_persisted(monkeypatch):
+    agent = PoyrazAgent()
+    persisted_assets = []
+    persisted_checklists = []
+    prompts = []
+
+    async def _fake_generate(task_prompt: str, mode: str) -> str:
+        prompts.append((mode, task_prompt))
+        return f"{mode}:ok"
+
+    async def _fake_persist_content_asset(**kwargs):
+        persisted_assets.append(kwargs)
+        return json.dumps({"success": True, "asset": {"id": 55}}, ensure_ascii=False)
+
+    class _Db:
+        async def add_operation_checklist(self, **kwargs):
+            persisted_checklists.append(kwargs)
+            return types.SimpleNamespace(
+                id=77,
+                campaign_id=kwargs.get("campaign_id"),
+                tenant_id=kwargs["tenant_id"],
+                title=kwargs["title"],
+                status=kwargs["status"],
+                items_json=json.dumps(kwargs["items"], ensure_ascii=False),
+            )
+
+    async def _fake_ensure_db():
+        return _Db()
+
+    monkeypatch.setattr(agent, "_generate_marketing_output", _fake_generate)
+    monkeypatch.setattr(agent, "_persist_content_asset", _fake_persist_content_asset)
+    monkeypatch.setattr(agent, "_ensure_db", _fake_ensure_db)
+
+    raw_copy_out = asyncio.run(agent._tool_generate_campaign_copy("Ham brief metni"))
+    json_copy_out = asyncio.run(
+        agent._tool_generate_campaign_copy(
+            '{"tenant_id":"tenant-a","campaign_id":12,"campaign_name":"Launch","objective":"lead","audience":"KOBI","channels":["instagram","linkedin"],"offer":"Demo","tone":"direct","call_to_action":"Kaydol","store_asset":true,"asset_title":"Launch Copy"}'
+        )
+    )
+    checklist_out = asyncio.run(
+        agent._tool_create_operation_checklist(
+            '{"tenant_id":"tenant-a","campaign_id":12,"title":"Etkinlik Öncesi","items":[{"type":"vendor"}],"owner_user_id":"u-1"}'
+        )
+    )
+    plan_out = asyncio.run(
+        agent._tool_plan_service_operations(
+            '{"tenant_id":"tenant-a","campaign_id":12,"campaign_name":"Launch","service_name":"Roadshow","audience":"B2B","menu_plan":{"adult":["Izgara","  "],"child":[]},"vendor_assignments":{"DJ":"Efe","Hostes":"  "},"timeline":["18:00 karşılama","  "],"notes":"Sahne kurulumu kontrolü","persist_checklist":true,"checklist_title":"Saha Operasyonları","owner_user_id":"u-1"}'
+        )
+    )
+
+    plan_payload = json.loads(plan_out)
+    checklist_payload = json.loads(checklist_out)
+
+    assert raw_copy_out == "campaign_copy_tool:ok"
+    assert json_copy_out == "campaign_copy_tool:ok"
+    assert prompts[0] == ("campaign_copy_tool", "Aşağıdaki brief için kanal bazlı kampanya kopyaları üret. Her kanal için kısa ana mesaj, CTA ve önerilen kreatif açıyı ekle.\n\nHam brief metni")
+    assert persisted_assets[0]["asset_type"] == "campaign_copy"
+    assert persisted_assets[0]["title"] == "Launch Copy"
+    assert persisted_assets[0]["metadata"]["channels"] == ["instagram", "linkedin"]
+    assert checklist_payload["checklist"]["status"] == "pending"
+    assert plan_payload["service_plan"]["checklist"]["status"] == "planned"
+    assert plan_payload["service_plan"]["items"] == [
+        {"type": "menu_plan", "group": "adult", "options": ["Izgara"]},
+        {"type": "vendor_assignment", "role": "DJ", "assignee": "Efe"},
+        {"type": "timeline", "entry": "18:00 karşılama"},
+        {"type": "note", "text": "Sahne kurulumu kontrolü"},
+    ]
+    assert persisted_checklists[0]["status"] == "pending"
+    assert persisted_checklists[1]["title"] == "Saha Operasyonları"
+
+
+def test_poyraz_agent_video_asset_and_prompt_helpers(monkeypatch):
+    agent = PoyrazAgent()
+    persisted_assets = []
+    llm_calls = []
+
+    async def _fake_persist_content_asset(**kwargs):
+        persisted_assets.append(kwargs)
+        return json.dumps({"success": True}, ensure_ascii=False)
+
+    async def _fake_call_llm(messages, **kwargs):
+        llm_calls.append({"messages": messages, **kwargs})
+        return "llm-ok"
+
+    monkeypatch.setattr(agent, "_persist_content_asset", _fake_persist_content_asset)
+    monkeypatch.setattr(agent, "call_llm", _fake_call_llm)
+
+    landing_out = asyncio.run(agent._tool_build_landing_page("Özel bir landing briefi"))
+    generated_out = asyncio.run(agent._generate_marketing_output("Yeni teklif", "marketing_general"))
+
+    class _Pipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze_media_source(self, **kwargs):
+            assert kwargs["media_source"] == "https://video.test/demo.mp4"
+            assert kwargs["prompt"] == "öne çıkan sahneleri çıkar"
+            assert kwargs["language"] == "tr"
+            assert kwargs["ingest_session_id"] == "session-9"
+            assert kwargs["max_frames"] == 8
+            assert kwargs["frame_interval_seconds"] == 5.0
+            return {"success": False, "reason": "pipeline-fail"}
+
+    fake_module = types.SimpleNamespace(MultimodalPipeline=_Pipeline)
+    with patch.dict(sys.modules, {"core.multimodal": fake_module}):
+        video_out = asyncio.run(
+            agent._tool_ingest_video_insights(
+                "https://video.test/demo.mp4|||öne çıkan sahneleri çıkar|||tr|||session-9|||8"
+            )
+        )
+
+    store_out = asyncio.run(
+        agent._tool_store_content_asset(
+            '{"campaign_id":41,"asset_type":"brief","title":"İçerik Kartı","content":"gövde","channel":"email","metadata":{"lang":"tr"}}'
+        )
+    )
+
+    assert landing_out == "llm-ok"
+    assert generated_out == "llm-ok"
+    assert "[GOREV]\nYeni teklif" in llm_calls[1]["messages"][0]["content"]
+    assert llm_calls[1]["system_prompt"] == agent.SYSTEM_PROMPT
+    assert video_out == "[VIDEO:ERROR] source=https://video.test/demo.mp4 reason=pipeline-fail"
+    assert json.loads(store_out)["success"] is True
+    assert persisted_assets[0]["campaign_id"] == 41
+    assert persisted_assets[0]["metadata"] == {"lang": "tr"}
+
+
+def test_poyraz_agent_run_task_fallback_paths(monkeypatch):
+    agent = PoyrazAgent()
+    calls = {"tool": [], "generate": []}
+
+    async def _fake_call_tool(name: str, payload: str) -> str:
+        calls["tool"].append((name, payload))
+        return f"tool:{name}"
+
+    async def _fake_generate(task_prompt: str, mode: str) -> str:
+        calls["generate"].append((mode, task_prompt))
+        return f"gen:{mode}"
+
+    monkeypatch.setattr(agent, "call_tool", _fake_call_tool)
+    monkeypatch.setattr(agent, "_generate_marketing_output", _fake_generate)
+
+    empty_out = asyncio.run(agent.run_task("   "))
+    landing_intent_out = asyncio.run(agent.run_task("Landing page için etkinlik sayfası hazırla"))
+    audience_out = asyncio.run(agent.run_task("audience_ops|yeniden hedefleme planı"))
+    research_out = asyncio.run(agent.run_task("research_to_marketing|araştırmayı kampanyaya çevir"))
+    general_out = asyncio.run(agent.run_task("müşteri sadakat akışı öner"))
+
+    assert empty_out == "[UYARI] Boş pazarlama görevi verildi."
+    assert landing_intent_out == "tool:build_landing_page"
+    assert audience_out == "gen:audience_ops"
+    assert research_out == "gen:research_to_marketing"
+    assert general_out == "gen:marketing_general"
+    assert calls["tool"][0][0] == "build_landing_page"
+    landing_payload = json.loads(calls["tool"][0][1])
+    assert landing_payload["brand_name"] == "SİDAR"
+    assert calls["generate"][-1] == ("marketing_general", "müşteri sadakat akışı öner")
