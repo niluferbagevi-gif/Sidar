@@ -63,6 +63,8 @@ class DownloadedMedia:
     source_url: str
     mime_type: str
     platform: str
+    resolved_url: str = ""
+    title: str = ""
 
 
 def detect_media_kind(*, mime_type: str | None = None, path: str | Path | None = None) -> str:
@@ -86,6 +88,11 @@ def _command_exists(name: str) -> bool:
 
 def _run_subprocess(command: Sequence[str]) -> None:
     subprocess.run(command, check=True, capture_output=True)
+
+
+def _run_subprocess_capture(command: Sequence[str]) -> str:
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return str(result.stdout or "")
 
 
 def _guess_suffix(mime_type: str, fallback: str) -> str:
@@ -219,7 +226,14 @@ async def download_remote_media(
             raise RuntimeError("yt-dlp çıktı dosyası üretmedi.")
         media_path = files[0]
         mime_type = mimetypes.guess_type(str(media_path))[0] or "video/mp4"
-        return DownloadedMedia(path=str(media_path), source_url=source_url, mime_type=mime_type, platform=platform)
+        return DownloadedMedia(
+            path=str(media_path),
+            source_url=source_url,
+            mime_type=mime_type,
+            platform=platform,
+            resolved_url=source_url,
+            title=media_path.stem,
+        )
 
     client_factory = http_client_factory or httpx.AsyncClient
     async with client_factory(timeout=timeout, follow_redirects=True) as client:
@@ -236,7 +250,94 @@ async def download_remote_media(
             source_url=source_url,
             mime_type=mime_type or (mimetypes.guess_type(str(target_path))[0] or ""),
             platform=platform,
+            resolved_url=source_url,
+            title=Path(file_name).stem,
         )
+
+
+async def resolve_remote_media_stream(
+    source_url: str,
+    *,
+    prefer_video: bool = True,
+) -> dict[str, Any]:
+    """Uzak medya için FFmpeg'e verilebilecek çözülmüş stream URL bilgisini döndürür."""
+    if not is_remote_media_source(source_url):
+        raise ValueError("Yalnızca http/https medya kaynakları destekleniyor.")
+
+    platform = detect_video_platform(source_url)
+    if platform == "youtube" and _command_exists("yt-dlp"):
+        info_command = ["yt-dlp", "--no-playlist", "--dump-single-json", source_url]
+        metadata: dict[str, Any] = {}
+        with contextlib.suppress(Exception):
+            raw = await asyncio.to_thread(_run_subprocess_capture, info_command)
+            parsed = json.loads(raw or "{}")
+            if isinstance(parsed, dict):
+                metadata = parsed
+        stream_command = ["yt-dlp", "--no-playlist", "-g", source_url]
+        raw_streams = await asyncio.to_thread(_run_subprocess_capture, stream_command)
+        stream_urls = [line.strip() for line in raw_streams.splitlines() if line.strip()]
+        resolved_url = stream_urls[0] if stream_urls else source_url
+        title = str(metadata.get("title") or "")
+        mime_type = "video/mp4" if prefer_video else "audio/webm"
+        return {
+            "source_url": source_url,
+            "resolved_url": resolved_url,
+            "platform": platform,
+            "mime_type": mime_type,
+            "title": title,
+            "metadata": metadata,
+        }
+
+    return {
+        "source_url": source_url,
+        "resolved_url": source_url,
+        "platform": platform,
+        "mime_type": "video/mp4" if prefer_video else "",
+        "title": "",
+        "metadata": {},
+    }
+
+
+async def materialize_remote_media_for_ffmpeg(
+    source_url: str,
+    *,
+    output_dir: str | Path,
+    mime_type: str | None = None,
+    max_duration_seconds: float = 120.0,
+) -> DownloadedMedia:
+    """Uzak video stream'ini FFmpeg ile yerel analiz dosyasına dönüştürür."""
+    if not _command_exists("ffmpeg"):
+        return await download_remote_media(source_url, output_dir=output_dir)
+
+    stream = await resolve_remote_media_stream(source_url, prefer_video=True)
+    target_dir = Path(output_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = _guess_suffix(mime_type or str(stream.get("mime_type") or ""), ".mp4")
+    safe_title = re.sub(r"[^A-Za-z0-9._-]+", "_", str(stream.get("title") or "").strip()).strip("_")
+    file_name = safe_title or f"{stream.get('platform', 'remote')}_stream"
+    target_path = target_dir / f"{file_name}{suffix}"
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(stream.get("resolved_url") or source_url),
+        "-t",
+        str(max(1.0, float(max_duration_seconds or 120.0))),
+        "-c",
+        "copy",
+        str(target_path),
+    ]
+    await asyncio.to_thread(_run_subprocess, command)
+    resolved_mime = mime_type or str(stream.get("mime_type") or "") or (mimetypes.guess_type(str(target_path))[0] or "")
+    return DownloadedMedia(
+        path=str(target_path),
+        source_url=source_url,
+        mime_type=resolved_mime,
+        platform=str(stream.get("platform") or detect_video_platform(source_url)),
+        resolved_url=str(stream.get("resolved_url") or source_url),
+        title=str(stream.get("title") or file_name),
+    )
 
 
 async def extract_video_frames(
@@ -460,6 +561,14 @@ def render_multimodal_document(
         f"Kaynak: {source}",
         f"Medya Türü: {analysis.get('media_kind', 'video')}",
     ]
+    download_info = analysis.get("download") if isinstance(analysis, dict) else {}
+    if isinstance(download_info, dict):
+        platform = str(download_info.get("platform", "") or "").strip()
+        resolved_url = str(download_info.get("resolved_url", "") or "").strip()
+        if platform:
+            body.append(f"Platform: {platform}")
+        if resolved_url and resolved_url != source:
+            body.append(f"Çözümlenen Akış: {resolved_url}")
     transcript_text = str((transcript or {}).get("text", "") or "").strip()
     if transcript_text:
         body.extend(["", "Transkript Özeti:", transcript_text])
@@ -515,6 +624,9 @@ class MultimodalPipeline:
         self.youtube_transcript_timeout = float(
             getattr(config, "YOUTUBE_TRANSCRIPT_TIMEOUT", _DEFAULT_YOUTUBE_TRANSCRIPT_TIMEOUT)
             or _DEFAULT_YOUTUBE_TRANSCRIPT_TIMEOUT
+        )
+        self.remote_video_max_seconds = float(
+            getattr(config, "MULTIMODAL_REMOTE_VIDEO_MAX_SECONDS", 120.0) or 120.0
         )
         self.stt_provider = str(getattr(config, "VOICE_STT_PROVIDER", "whisper") or "whisper")
         self.whisper_model = str(getattr(config, "WHISPER_MODEL", "base") or "base")
@@ -694,11 +806,27 @@ class MultimodalPipeline:
             )
         else:
             with tempfile.TemporaryDirectory(prefix="sidar-remote-media-") as tmpdir:
-                download = await download_remote_media(
-                    media_source,
-                    output_dir=tmpdir,
-                    timeout=self.remote_download_timeout,
-                )
+                download: DownloadedMedia | None = None
+                if _command_exists("ffmpeg"):
+                    with contextlib.suppress(Exception):
+                        download = await materialize_remote_media_for_ffmpeg(
+                            media_source,
+                            output_dir=tmpdir,
+                            mime_type=mime_type,
+                            max_duration_seconds=self.remote_video_max_seconds,
+                        )
+                    if download is None:
+                        download = await download_remote_media(
+                            media_source,
+                            output_dir=tmpdir,
+                            timeout=self.remote_download_timeout,
+                        )
+                else:
+                    download = await download_remote_media(
+                        media_source,
+                        output_dir=tmpdir,
+                        timeout=self.remote_download_timeout,
+                    )
                 transcript_override = None
                 if download.platform == "youtube":
                     languages = (language,) if language else None
@@ -720,6 +848,8 @@ class MultimodalPipeline:
                     "path": download.path,
                     "platform": download.platform,
                     "mime_type": download.mime_type,
+                    "resolved_url": download.resolved_url,
+                    "title": download.title,
                 }
         result["media_source"] = media_source
         if ingest_document_store is not None and result.get("success"):

@@ -23,6 +23,8 @@ from core.multimodal import (
     fetch_youtube_transcript,
     ingest_multimodal_analysis,
     is_remote_media_source,
+    materialize_remote_media_for_ffmpeg,
+    resolve_remote_media_stream,
     render_multimodal_document,
     transcribe_audio,
 )
@@ -541,6 +543,63 @@ def test_remote_media_helpers_cover_url_detection_and_youtube_transcript():
     assert "lang=tr" in client.urls[0]
 
 
+def test_resolve_remote_media_stream_uses_ytdlp_for_youtube(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda name: name == "yt-dlp")
+    calls = []
+
+    def _fake_capture(command):
+        calls.append(command)
+        if "--dump-single-json" in command:
+            return json.dumps({"title": "Demo Video"})
+        return "https://stream.example.com/video.mp4\nhttps://stream.example.com/audio.webm\n"
+
+    monkeypatch.setattr(multimodal_mod, "_run_subprocess_capture", _fake_capture)
+
+    resolved = asyncio.run(resolve_remote_media_stream("https://youtu.be/dQw4w9WgXcQ"))
+
+    assert resolved["platform"] == "youtube"
+    assert resolved["resolved_url"] == "https://stream.example.com/video.mp4"
+    assert resolved["title"] == "Demo Video"
+    assert any("--dump-single-json" in command for command in calls)
+    assert any("-g" in command for command in calls)
+
+
+def test_materialize_remote_media_for_ffmpeg_uses_resolved_stream(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda name: name == "ffmpeg")
+
+    async def _fake_resolve(*_args, **_kwargs):
+        return {
+            "source_url": "https://youtu.be/dQw4w9WgXcQ",
+            "resolved_url": "https://stream.example.com/video.mp4",
+            "platform": "youtube",
+            "mime_type": "video/mp4",
+            "title": "Launch Video",
+            "metadata": {"duration": 45},
+        }
+
+    captured = {}
+
+    def _fake_run(command):
+        captured["command"] = command
+        Path(command[-1]).write_bytes(b"video")
+
+    monkeypatch.setattr(multimodal_mod, "resolve_remote_media_stream", _fake_resolve)
+    monkeypatch.setattr(multimodal_mod, "_run_subprocess", _fake_run)
+
+    downloaded = asyncio.run(
+        materialize_remote_media_for_ffmpeg(
+            "https://youtu.be/dQw4w9WgXcQ",
+            output_dir=tmp_path,
+            max_duration_seconds=30,
+        )
+    )
+
+    assert downloaded.platform == "youtube"
+    assert downloaded.resolved_url == "https://stream.example.com/video.mp4"
+    assert Path(downloaded.path).exists()
+    assert captured["command"][:5] == ["ffmpeg", "-y", "-i", "https://stream.example.com/video.mp4", "-t"]
+
+
 def test_download_remote_media_http_and_ingest_document(tmp_path: Path):
     class _Response:
         headers = {"content-type": "video/mp4"}
@@ -568,6 +627,7 @@ def test_download_remote_media_http_and_ingest_document(tmp_path: Path):
     )
     assert Path(downloaded.path).exists()
     assert downloaded.platform == "generic"
+    assert downloaded.resolved_url == "https://cdn.example.com/demo.mp4"
 
     title, content = render_multimodal_document(
         {
@@ -625,6 +685,8 @@ def test_multimodal_pipeline_analyze_media_source_downloads_youtube_and_ingests(
             source_url="https://youtu.be/dQw4w9WgXcQ",
             mime_type="video/mp4",
             platform="youtube",
+            resolved_url="https://stream.example.com/video.mp4",
+            title="Demo Video",
         )
 
     async def _fake_transcript(*_args, **_kwargs):
@@ -648,8 +710,10 @@ def test_multimodal_pipeline_analyze_media_source_downloads_youtube_and_ingests(
             return "doc-55"
 
     monkeypatch.setattr(multimodal_mod, "download_remote_media", _fake_download)
+    monkeypatch.setattr(multimodal_mod, "materialize_remote_media_for_ffmpeg", _fake_download)
     monkeypatch.setattr(multimodal_mod, "fetch_youtube_transcript", _fake_transcript)
     monkeypatch.setattr(pipeline, "_analyze_local_media", _fake_local)
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda name: name == "ffmpeg")
     store = _Store()
 
     result = asyncio.run(
@@ -665,3 +729,4 @@ def test_multimodal_pipeline_analyze_media_source_downloads_youtube_and_ingests(
     assert result["success"] is True
     assert result["document_ingest"]["doc_id"] == "doc-55"
     assert result["download"]["platform"] == "youtube"
+    assert result["download"]["resolved_url"] == "https://stream.example.com/video.mp4"
