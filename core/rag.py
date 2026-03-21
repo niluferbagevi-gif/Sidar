@@ -22,6 +22,7 @@ import tempfile
 import threading
 import asyncio
 import ipaddress
+import time
 import urllib.parse
 import uuid
 from pathlib import Path
@@ -935,6 +936,7 @@ class DocumentStore:
         doc_id = uuid.uuid4().hex[:12]
         parent_id = hashlib.md5(f"{title}{source}".encode()).hexdigest()[:12]
         tags = tags or []
+        now = time.time()
 
         chunks = self._chunk_text(content)
         ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
@@ -946,6 +948,9 @@ class DocumentStore:
                 "parent_id": parent_id,
                 "chunk_index": i,
                 "session_id": session_id,
+                "created_at": now,
+                "last_accessed_at": now,
+                "access_count": 0,
             }
             for i in range(len(chunks))
         ]
@@ -962,6 +967,9 @@ class DocumentStore:
                 "preview": content[:300],
                 "parent_id": parent_id,
                 "session_id": session_id,
+                "created_at": now,
+                "last_accessed_at": now,
+                "access_count": 0,
             }
             self._save_index()
             self._update_bm25_cache_on_add(doc_id, content)
@@ -1086,6 +1094,7 @@ class DocumentStore:
                 "preview": meta.get("preview", "")[:120],
                 "tags":    meta.get("tags", []),
                 "session_id": meta.get("session_id", "global"),
+                "access_count": int(meta.get("access_count", 0) or 0),
             }
             for doc_id, meta in self._index.items()
             if session_id is None or meta.get("session_id", "global") == session_id
@@ -1136,6 +1145,14 @@ class DocumentStore:
 
         return f"✓ Belge silindi: [{doc_id}] {title}"
 
+    def _touch_document(self, doc_id: str) -> None:
+        meta = self._index.get(doc_id)
+        if not meta:
+            return
+        meta["last_accessed_at"] = time.time()
+        meta["access_count"] = int(meta.get("access_count", 0) or 0) + 1
+        self._save_index()
+
     def get_document(self, doc_id: str, session_id: str = "global") -> Tuple[bool, str]:
         """Belge ID ile tam içerik getir (İzolasyon Korumalı)."""
         if doc_id not in self._index:
@@ -1149,6 +1166,7 @@ class DocumentStore:
         if not doc_file.exists():
             return False, f"✗ Belge dosyası eksik: {doc_id}"
         content = doc_file.read_text(encoding="utf-8")
+        self._touch_document(doc_id)
         return True, f"[{doc_id}] {meta['title']}\nKaynak: {meta.get('source', '-')}\n\n{content}"
 
     # ─────────────────────────────────────────────
@@ -1622,6 +1640,86 @@ class DocumentStore:
     # ─────────────────────────────────────────────
     #  LİSTELEME & STATÜ
     # ─────────────────────────────────────────────
+
+    def consolidate_session_documents(
+        self,
+        session_id: str,
+        *,
+        keep_recent_docs: int = 2,
+    ) -> Dict[str, Any]:
+        """Oturumdaki eski RAG belgelerini özetleyip düşük değerli embedding'leri temizler."""
+        normalized_session = str(session_id or "").strip() or "global"
+        docs = [
+            (doc_id, dict(meta))
+            for doc_id, meta in self._index.items()
+            if meta.get("session_id", "global") == normalized_session
+        ]
+        keep_count = max(1, int(keep_recent_docs or 1))
+        if len(docs) <= keep_count:
+            return {
+                "status": "skipped",
+                "session_id": normalized_session,
+                "removed_docs": 0,
+                "summary_doc_id": "",
+            }
+
+        sorted_docs = sorted(
+            docs,
+            key=lambda item: (
+                float(item[1].get("last_accessed_at", item[1].get("created_at", 0.0)) or 0.0),
+                int(item[1].get("access_count", 0) or 0),
+            ),
+            reverse=True,
+        )
+        removable: List[Tuple[str, Dict[str, Any]]] = []
+        for doc_id, meta in sorted_docs[keep_count:]:
+            tags = {str(tag).strip().lower() for tag in list(meta.get("tags", []) or [])}
+            if "pinned" in tags or "memory-summary" in tags:
+                continue
+            if int(meta.get("access_count", 0) or 0) > 1:
+                continue
+            removable.append((doc_id, meta))
+
+        if not removable:
+            return {
+                "status": "skipped",
+                "session_id": normalized_session,
+                "removed_docs": 0,
+                "summary_doc_id": "",
+            }
+
+        for doc_id, meta in list(docs):
+            if str(meta.get("source", "") or "").startswith("memory://nightly-digest"):
+                self.delete_document(doc_id, normalized_session)
+
+        summary_lines = [
+            f"Oturum: {normalized_session}",
+            f"Konsolide edilen belge sayısı: {len(removable)}",
+            "Öne çıkan eski belge özetleri:",
+        ]
+        for doc_id, meta in removable[:8]:
+            summary_lines.append(
+                f"- [{doc_id}] {meta.get('title', doc_id)} :: {str(meta.get('preview', '') or '')[:160]}"
+            )
+        summary_doc_id = self._add_document_sync(
+            title=f"Nightly Memory Digest ({normalized_session})",
+            content="\n".join(summary_lines),
+            source="memory://nightly-digest",
+            tags=["memory-summary", "nightly-consolidation"],
+            session_id=normalized_session,
+        )
+
+        removed_docs = 0
+        for doc_id, _meta in removable:
+            self.delete_document(doc_id, normalized_session)
+            removed_docs += 1
+
+        return {
+            "status": "completed",
+            "session_id": normalized_session,
+            "removed_docs": removed_docs,
+            "summary_doc_id": summary_doc_id,
+        }
 
     def list_documents(self, session_id: Optional[str] = None) -> str:
         docs = {k: v for k, v in self._index.items() if session_id is None or v.get("session_id", "global") == session_id}

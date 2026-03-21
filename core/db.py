@@ -1859,3 +1859,58 @@ class Database:
             )
             for r in rows
         ]
+
+    async def replace_session_messages(self, session_id: str, messages: list[dict[str, object]]) -> int:
+        """Bir oturumun mesajlarını atomik olarak yenileriyle değiştirir."""
+        normalized_messages = [
+            {
+                "role": str(item.get("role", "") or "").strip() or "assistant",
+                "content": str(item.get("content", "") or "").strip(),
+            }
+            for item in list(messages or [])
+            if str(item.get("content", "") or "").strip()
+        ]
+        now = _utc_now_iso()
+
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute("DELETE FROM messages WHERE session_id=$1", session_id)
+                    for item in normalized_messages:
+                        await conn.execute(
+                            """
+                            INSERT INTO messages (session_id, role, content, tokens_used, created_at)
+                            VALUES ($1, $2, $3, $4, $5)
+                            """,
+                            session_id,
+                            item["role"],
+                            item["content"],
+                            0,
+                            now,
+                        )
+                    await conn.execute(
+                        "UPDATE sessions SET updated_at=$2 WHERE id=$1",
+                        session_id,
+                        now,
+                    )
+            return len(normalized_messages)
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> int:
+            assert self._sqlite_conn is not None
+            self._sqlite_conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+            for item in normalized_messages:
+                self._sqlite_conn.execute(
+                    "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, item["role"], item["content"], 0, now),
+                )
+            self._sqlite_conn.execute(
+                "UPDATE sessions SET updated_at=? WHERE id=?",
+                (now, session_id),
+            )
+            self._sqlite_conn.commit()
+            return len(normalized_messages)
+
+        return await self._run_sqlite_op(_run)
