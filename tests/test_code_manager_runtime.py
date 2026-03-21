@@ -777,6 +777,29 @@ def test_code_manager_targeted_missing_lines(manager_factory, monkeypatch, tmp_p
     assert "Okunamadı" in rep
 
 
+def test_code_manager_audit_project_stops_collecting_files_at_max_files(manager_factory, monkeypatch, tmp_path):
+    mgr = manager_factory(can_shell=True)
+    audit_root = tmp_path / "audit-limit"
+    audit_root.mkdir()
+    first = audit_root / "a.py"
+    second = audit_root / "b.py"
+    first.write_text("x = 1\n", encoding="utf-8")
+    second.write_text("def broken(:\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        CM_MOD.os,
+        "walk",
+        lambda _target: [(str(audit_root), [], [first.name, second.name])],
+    )
+
+    report = mgr.audit_project(str(audit_root), max_files=1)
+
+    assert "Toplam Python dosyası : 1" in report
+    assert "Dosya limiti nedeniyle ilk 1 dosya tarandı" in report
+    assert "b.py" not in report
+    assert "Tüm dosyalar sözdizimi açısından temiz. ✓" in report
+
+
 def test_init_docker_all_sockets_fail_logs_warning(monkeypatch, tmp_path):
     sec = DummySecurity(tmp_path)
     original_init = CM_MOD.CodeManager._init_docker
