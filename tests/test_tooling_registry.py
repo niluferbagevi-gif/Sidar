@@ -144,3 +144,30 @@ def test_parse_tool_argument_empty_and_json_edge_branches(monkeypatch):
 
 def test_parse_tool_argument_for_unknown_tool_returns_raw_payload():
     assert tooling.parse_tool_argument("dummy_tool", "raw-payload") == "raw-payload"
+
+
+def test_parse_tool_argument_supports_marketing_operation_schemas():
+    assert "publish_social" in tooling.TOOL_ARG_SCHEMAS
+    assert "build_landing_page" in tooling.TOOL_ARG_SCHEMAS
+    assert "generate_campaign_copy" in tooling.TOOL_ARG_SCHEMAS
+
+    social = tooling.parse_tool_argument(
+        "publish_social",
+        '{"platform":"instagram","text":"Yeni kampanya","media_url":"https://cdn.test/post.jpg"}',
+    )
+    assert isinstance(social, tooling.SocialPublishSchema)
+    assert social.platform == "instagram"
+
+    landing = tooling.parse_tool_argument(
+        "build_landing_page",
+        '{"brand_name":"Poyraz","offer":"Demo","audience":"KOBI","call_to_action":"Kaydol","sections":["hero","faq"]}',
+    )
+    assert isinstance(landing, tooling.LandingPageDraftSchema)
+    assert landing.sections == ["hero", "faq"]
+
+    campaign = tooling.parse_tool_argument(
+        "generate_campaign_copy",
+        '{"campaign_name":"Bahar","objective":"Lead","audience":"SMB","channels":["instagram","whatsapp"]}',
+    )
+    assert isinstance(campaign, tooling.CampaignCopySchema)
+    assert campaign.channels == ["instagram", "whatsapp"]

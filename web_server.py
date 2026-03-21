@@ -1407,6 +1407,52 @@ def _serialize_swarm_result(record) -> dict:
     }
 
 
+def _serialize_campaign(record) -> dict[str, Any]:
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "name": str(getattr(record, "name", "") or ""),
+        "channel": str(getattr(record, "channel", "") or ""),
+        "objective": str(getattr(record, "objective", "") or ""),
+        "status": str(getattr(record, "status", "draft") or "draft"),
+        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
+        "budget": float(getattr(record, "budget", 0.0) or 0.0),
+        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
+
+
+def _serialize_content_asset(record) -> dict[str, Any]:
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "campaign_id": int(getattr(record, "campaign_id", 0) or 0),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "asset_type": str(getattr(record, "asset_type", "") or ""),
+        "title": str(getattr(record, "title", "") or ""),
+        "content": str(getattr(record, "content", "") or ""),
+        "channel": str(getattr(record, "channel", "") or ""),
+        "metadata_json": str(getattr(record, "metadata_json", "{}") or "{}"),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
+
+
+def _serialize_operation_checklist(record) -> dict[str, Any]:
+    campaign_id = getattr(record, "campaign_id", None)
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "campaign_id": None if campaign_id is None else int(campaign_id),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "title": str(getattr(record, "title", "") or ""),
+        "items_json": str(getattr(record, "items_json", "[]") or "[]"),
+        "status": str(getattr(record, "status", "pending") or "pending"),
+        "owner_user_id": str(getattr(record, "owner_user_id", "") or ""),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
+
+
 _PLUGIN_ROLE_RE = re.compile(r"^[a-zA-Z0-9_-]{2,64}$")
 
 
@@ -3898,6 +3944,31 @@ class _TeamsSendRequest(BaseModel):
     title: Optional[str] = Field(None, description="Mesaj başlığı")
 
 
+class _OperationChecklistCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=160)
+    items: list[str] = Field(default_factory=list)
+    status: str = Field(default="pending", min_length=1, max_length=32)
+
+
+class _ContentAssetCreateRequest(BaseModel):
+    asset_type: str = Field(..., min_length=1, max_length=64)
+    title: str = Field(..., min_length=1, max_length=160)
+    content: str = Field(..., min_length=1)
+    channel: str = Field(default="", max_length=64)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class _CampaignCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    channel: str = Field(default="", max_length=64)
+    objective: str = Field(default="", max_length=400)
+    status: str = Field(default="draft", min_length=1, max_length=32)
+    budget: float = Field(default=0.0, ge=0.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    initial_assets: list[_ContentAssetCreateRequest] = Field(default_factory=list)
+    initial_checklists: list[_OperationChecklistCreateRequest] = Field(default_factory=list)
+
+
 _teams_mgr_instance = None
 
 
@@ -3921,6 +3992,140 @@ async def api_teams_send(req: _TeamsSendRequest):
     if not ok:
         raise HTTPException(status_code=502, detail=f"Teams hatası: {err}")
     return JSONResponse({"success": True})
+
+
+@app.get("/api/operations/campaigns", summary="Operasyon Kampanyalarını Listele", tags=["Operations"])
+async def api_operations_list_campaigns(
+    status: str = "",
+    limit: int = 50,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    campaigns = await agent.memory.db.list_marketing_campaigns(
+        tenant_id=_get_user_tenant(_user),
+        status=status,
+        limit=limit,
+    )
+    return JSONResponse({"success": True, "campaigns": [_serialize_campaign(item) for item in campaigns]})
+
+
+@app.post("/api/operations/campaigns", summary="Operasyon Kampanyası Oluştur", tags=["Operations"])
+async def api_operations_create_campaign(
+    req: _CampaignCreateRequest,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    db = agent.memory.db
+    campaign = await db.upsert_marketing_campaign(
+        tenant_id=_get_user_tenant(_user),
+        name=req.name,
+        channel=req.channel,
+        objective=req.objective,
+        status=req.status,
+        owner_user_id=str(getattr(_user, "id", "") or ""),
+        budget=float(req.budget or 0.0),
+        metadata=dict(req.metadata or {}),
+    )
+    assets = []
+    for item in req.initial_assets:
+        assets.append(
+            await db.add_content_asset(
+                campaign_id=int(campaign.id),
+                tenant_id=_get_user_tenant(_user),
+                asset_type=item.asset_type,
+                title=item.title,
+                content=item.content,
+                channel=item.channel,
+                metadata=dict(item.metadata or {}),
+            )
+        )
+    checklists = []
+    for item in req.initial_checklists:
+        checklists.append(
+            await db.add_operation_checklist(
+                campaign_id=int(campaign.id),
+                tenant_id=_get_user_tenant(_user),
+                title=item.title,
+                items=list(item.items or []),
+                status=item.status,
+                owner_user_id=str(getattr(_user, "id", "") or ""),
+            )
+        )
+    return JSONResponse(
+        {
+            "success": True,
+            "campaign": _serialize_campaign(campaign),
+            "assets": [_serialize_content_asset(item) for item in assets],
+            "checklists": [_serialize_operation_checklist(item) for item in checklists],
+        }
+    )
+
+
+@app.get("/api/operations/campaigns/{campaign_id}/assets", summary="Kampanya İçerik Varlıklarını Listele", tags=["Operations"])
+async def api_operations_list_assets(
+    campaign_id: int,
+    limit: int = 100,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    assets = await agent.memory.db.list_content_assets(
+        tenant_id=_get_user_tenant(_user),
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    return JSONResponse({"success": True, "assets": [_serialize_content_asset(item) for item in assets]})
+
+
+@app.post("/api/operations/campaigns/{campaign_id}/assets", summary="Kampanyaya İçerik Varlığı Ekle", tags=["Operations"])
+async def api_operations_add_asset(
+    campaign_id: int,
+    req: _ContentAssetCreateRequest,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    asset = await agent.memory.db.add_content_asset(
+        campaign_id=campaign_id,
+        tenant_id=_get_user_tenant(_user),
+        asset_type=req.asset_type,
+        title=req.title,
+        content=req.content,
+        channel=req.channel,
+        metadata=dict(req.metadata or {}),
+    )
+    return JSONResponse({"success": True, "asset": _serialize_content_asset(asset)})
+
+
+@app.get("/api/operations/campaigns/{campaign_id}/checklists", summary="Kampanya Operasyon Checklistlerini Listele", tags=["Operations"])
+async def api_operations_list_checklists(
+    campaign_id: int,
+    limit: int = 100,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    checklists = await agent.memory.db.list_operation_checklists(
+        tenant_id=_get_user_tenant(_user),
+        campaign_id=campaign_id,
+        limit=limit,
+    )
+    return JSONResponse({"success": True, "checklists": [_serialize_operation_checklist(item) for item in checklists]})
+
+
+@app.post("/api/operations/campaigns/{campaign_id}/checklists", summary="Kampanyaya Operasyon Checklisti Ekle", tags=["Operations"])
+async def api_operations_add_checklist(
+    campaign_id: int,
+    req: _OperationChecklistCreateRequest,
+    _user=Depends(_get_request_user),
+):
+    agent = await get_agent()
+    checklist = await agent.memory.db.add_operation_checklist(
+        campaign_id=campaign_id,
+        tenant_id=_get_user_tenant(_user),
+        title=req.title,
+        items=list(req.items or []),
+        status=req.status,
+        owner_user_id=str(getattr(_user, "id", "") or ""),
+    )
+    return JSONResponse({"success": True, "checklist": _serialize_operation_checklist(checklist)})
 
 
 # ─────────────────────────────────────────────

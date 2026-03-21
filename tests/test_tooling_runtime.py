@@ -146,3 +146,28 @@ def test_tooling_rejects_non_object_json_payload():
 
     with pytest.raises(ValueError, match="JSON object olmalıdır"):
         tooling.parse_tool_argument("github_list_files", "[]")
+
+
+def test_tooling_marketing_schemas_runtime():
+    tooling = _load_tooling_module()
+
+    social = tooling.parse_tool_argument(
+        "publish_social",
+        '{"platform":"facebook","text":"Duyuru","link_url":"https://example.test"}',
+    )
+    assert social.platform == "facebook"
+    assert social.link_url == "https://example.test"
+
+    landing = tooling.parse_tool_argument(
+        "build_landing_page",
+        '{"brand_name":"Sidar","offer":"Operasyon Merkezi","audience":"Kurumsal","call_to_action":"Demo iste"}',
+    )
+    assert landing.brand_name == "Sidar"
+    assert landing.call_to_action == "Demo iste"
+
+    campaign = tooling.parse_tool_argument(
+        "generate_campaign_copy",
+        '{"campaign_name":"Launch","objective":"Awareness","audience":"Developers","channels":["instagram"]}',
+    )
+    assert campaign.campaign_name == "Launch"
+    assert campaign.channels == ["instagram"]
