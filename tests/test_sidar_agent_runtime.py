@@ -1101,6 +1101,24 @@ def test_try_multi_agent_uses_supervisor_when_enabled(monkeypatch):
 
     out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
     assert out == "ok:gorev"
+
+
+def test_try_multi_agent_returns_warning_when_supervisor_returns_none(monkeypatch):
+    mod = _load_sidar_agent_module()
+
+    class _Sup:
+        async def run_task(self, _prompt: str):
+            return None
+
+    a = SimpleNamespace(
+        cfg=SimpleNamespace(),
+        _supervisor=_Sup(),
+    )
+
+    out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
+    assert "geçerli bir çıktı" in out
+
+
 def test_memory_archive_context_stops_at_top_k_break():
     a = _make_agent_for_runtime()
 
@@ -1183,6 +1201,29 @@ def test_tool_subtask_returns_max_steps_after_non_string_llm_output():
 
     out = asyncio.run(a._tool_subtask("ham çıktı"))
     assert "Maksimum adım sınırına ulaşıldı" in out
+
+
+def test_tool_subtask_continues_when_metrics_import_is_unavailable(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return '{"thought":"done","tool":"final_answer","argument":"tamam"}'
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.agent_metrics":
+            raise ImportError("metrics unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    real_import = __import__
+    a.llm = _LLM()
+    a._execute_tool = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("tool should not run"))
+
+    monkeypatch.setattr(__import__("builtins"), "__import__", _blocked_import)
+
+    out = asyncio.run(a._tool_subtask("metriksiz alt görev"))
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
 
 
 def test_tool_subtask_empty_and_execute_tool_then_final_answer():
