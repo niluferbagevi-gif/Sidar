@@ -27,9 +27,13 @@ def test_agent_registry_register_create_find_and_unregister(monkeypatch):
     class _Reviewer(_BaseAgent):
         pass
 
+    class _Poyraz(_BaseAgent):
+        pass
+
     monkeypatch.setitem(sys.modules, "agent.roles.coder_agent", types.SimpleNamespace(CoderAgent=_Coder))
     monkeypatch.setitem(sys.modules, "agent.roles.researcher_agent", types.SimpleNamespace(ResearcherAgent=_Researcher))
     monkeypatch.setitem(sys.modules, "agent.roles.reviewer_agent", types.SimpleNamespace(ReviewerAgent=_Reviewer))
+    monkeypatch.setitem(sys.modules, "agent.roles.poyraz_agent", types.SimpleNamespace(PoyrazAgent=_Poyraz))
 
     mod = _load_registry_module("agent_registry_under_test_full")
 
@@ -47,13 +51,14 @@ def test_agent_registry_register_create_find_and_unregister(monkeypatch):
     listed = [spec.role_name for spec in mod.AgentRegistry.list_all()]
     assert "math" in listed
     assert "coder" in listed
+    assert "poyraz" in listed
 
     assert mod.AgentRegistry.unregister("math") is True
     assert mod.AgentRegistry.unregister("math") is False
 
 
 def test_agent_registry_create_missing_role_raises_key_error(monkeypatch):
-    for name in ("agent.roles.coder_agent", "agent.roles.researcher_agent", "agent.roles.reviewer_agent"):
+    for name in ("agent.roles.coder_agent", "agent.roles.researcher_agent", "agent.roles.reviewer_agent", "agent.roles.poyraz_agent"):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
     mod = _load_registry_module("agent_registry_under_test_empty")
@@ -74,6 +79,7 @@ def test_register_builtin_agents_importerror_paths(monkeypatch):
             "agent.roles.coder_agent",
             "agent.roles.researcher_agent",
             "agent.roles.reviewer_agent",
+            "agent.roles.poyraz_agent",
         }:
             raise ImportError("missing role module")
         return real_import(name, *args, **kwargs)

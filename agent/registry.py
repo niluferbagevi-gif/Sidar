@@ -183,5 +183,17 @@ def _register_builtin_agents() -> None:
     except ImportError:
         pass
 
+    try:
+        from agent.roles.poyraz_agent import PoyrazAgent
+        AgentRegistry.register_type(
+            role_name="poyraz",
+            agent_class=PoyrazAgent,
+            capabilities=["marketing_strategy", "seo_analysis", "campaign_copy", "audience_ops"],
+            description="Pazarlama stratejisi, SEO ve kampanya operasyonu uzmanı",
+            is_builtin=True,
+        )
+    except ImportError:
+        pass
+
 
 _register_builtin_agents()
