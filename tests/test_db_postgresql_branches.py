@@ -19,6 +19,14 @@ class _AcquireCtx:
         return False
 
 
+class _TransactionCtx:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 class _FakeConn:
     def __init__(self):
         self.execute_calls = []
@@ -26,9 +34,15 @@ class _FakeConn:
         self.fetch_queue = deque()
         self.fetchval_queue = deque()
         self.execute_queue = deque()
+        self.transaction_calls = 0
+
+    def transaction(self):
+        self.transaction_calls += 1
+        return _TransactionCtx()
 
     async def execute(self, query, *args):
         self.execute_calls.append((query, args))
+        await asyncio.sleep(0)
         if self.execute_queue:
             return self.execute_queue.popleft()
         return "EXECUTE 1"
@@ -374,3 +388,60 @@ def test_postgresql_schema_version_early_return_when_already_current():
     asyncio.run(_run())
     inserts = [q for q, _args in conn.execute_calls if "INSERT INTO" in q]
     assert inserts == []
+
+def test_postgresql_replace_session_messages_supports_concurrent_replacements():
+    cfg = SimpleNamespace(
+        DATABASE_URL="postgresql://user:pass@localhost:5432/sidar",
+        DB_POOL_SIZE=2,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=2,
+    )
+    db = Database(cfg=cfg)
+    conn_a = _FakeConn()
+    conn_b = _FakeConn()
+
+    class _RoundRobinPool:
+        def __init__(self, conns):
+            self._conns = deque(conns)
+
+        def acquire(self):
+            conn = self._conns[0]
+            self._conns.rotate(-1)
+            return _AcquireCtx(conn)
+
+    db._pg_pool = _RoundRobinPool([conn_a, conn_b])
+
+    async def _run():
+        first, second = await asyncio.gather(
+            db.replace_session_messages(
+                "sess-1",
+                [
+                    {"role": " user ", "content": " first payload "},
+                    {"role": "assistant", "content": "   "},
+                ],
+            ),
+            db.replace_session_messages(
+                "sess-1",
+                [{"role": "", "content": " second payload "}],
+            ),
+        )
+
+        assert first == 1
+        assert second == 1
+
+    asyncio.run(_run())
+
+    for conn in (conn_a, conn_b):
+        assert conn.transaction_calls == 1
+        assert len(conn.execute_calls) == 3
+        assert "DELETE FROM messages WHERE session_id=$1" in conn.execute_calls[0][0]
+        assert "INSERT INTO messages" in conn.execute_calls[1][0]
+        assert "UPDATE sessions SET updated_at=$2 WHERE id=$1" in conn.execute_calls[2][0]
+        assert conn.execute_calls[0][1] == ("sess-1",)
+        assert conn.execute_calls[2][1][0] == "sess-1"
+
+    insert_payloads = {conn.execute_calls[1][1][1:4] for conn in (conn_a, conn_b)}
+    assert insert_payloads == {
+        ("user", "first payload", 0),
+        ("assistant", "second payload", 0),
+    }
