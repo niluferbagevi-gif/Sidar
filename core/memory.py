@@ -10,7 +10,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from config import Config, get_config
+from config import Config
+
+try:
+    from config import get_config as _get_config
+except ImportError:  # pragma: no cover - test doubles may only expose Config
+    _get_config = None
 from core.db import Database
 
 logger = logging.getLogger(__name__)
@@ -48,8 +53,8 @@ class ConversationMemory:
         self.keep_last = keep_last
         self._lock = threading.RLock()
 
-        # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; singleton kullanılıyor.
-        self.cfg = get_config()
+        # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; varsa singleton kullanılıyor.
+        self.cfg = _get_config() if callable(_get_config) else Config()
         resolved_database_url = database_url
         if not resolved_database_url:
             resolved_database_url = getattr(self.cfg, "DATABASE_URL", "")

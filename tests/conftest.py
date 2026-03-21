@@ -124,3 +124,23 @@ if importlib.util.find_spec("bs4") is None:
 # pytest-asyncio >= 0.21+ ile session kapsamlı event loop pytest.ini üzerinden
 # `asyncio_default_fixture_loop_scope = session` ayarıyla sağlanır.
 # Özel event_loop fixture override'ı artık gerekli değildir ve deprecated'dır.
+
+@pytest.fixture(autouse=True)
+def _restore_critical_modules_between_tests():
+    """Bazı testlerin sys.modules üzerinde bıraktığı stub modülleri test sonunda geri al."""
+    module_names = (
+        "config",
+        "managers",
+        "managers.system_health",
+        "core",
+        "core.llm_metrics",
+    )
+    saved = {name: sys.modules.get(name) for name in module_names}
+    try:
+        yield
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
