@@ -1,6 +1,20 @@
+
 # Sürüm Geçmişi (Changelog)
 
 > **Not:** Bu dosya yalnızca sürümler arası farkları, kısa düzeltme notlarını ve teknik borç kapanışı özetlerini içerir. Ayrıntılı çözüm geçmişi `docs/archive/` altında tutulur.
+
+---
+
+## [v5.1.2-alpha] - 2026-03-21
+Sürekli öğrenme (Continuous Learning) altyapısının temelleri atıldı, Akıllı Başlatıcı (Launcher) validasyonları ve asenkron ajan kilitleri (lock) sertleştirildi.
+
+### Eklenenler (Added)
+- **Continuous Learning (v6.0 hazırlığı):** `config.py` içine `ENABLE_CONTINUOUS_LEARNING`, bekleme süreleri, veri seti limitleri ve SFT formatı (`alpaca`) yapılandırmaları eklendi.
+- **Port ve tip doğrulaması:** `main.py` içindeki `--port` argümanına tam sayı ve mantıksal aralık (`1-65535`) doğrulama adımları eklendi; kullanıcıya net hata mesajları sunulması sağlandı.
+
+### İyileştirmeler (Improved)
+- **Asenkron kilit (lock) yönetimi:** `agent/sidar_agent.py` içindeki `_autonomy_lock` ve `_nightly_maintenance_lock` objeleri, event-loop hatalarını engellemek amacıyla lazy initialization (ihtiyaç anında oluşturma) prensibiyle dokümantasyona işlendi.
+- **Güvenli proaktif tetikleme (autonomy history):** Dış sistemlerden (Webhook/Cron) gelen tetiklemelerin `_append_autonomy_history` etrafındaki otonomi akışları thread-safe/autonomy-safe koruma modeliyle belgelerde netleştirildi.
 
 ---
 

@@ -7,9 +7,10 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-21
-> **Son Güncelleme:** 2026-03-21 (v5.1.1 belge senkronizasyonu tamamlandı: `main.py` içindeki preflight/launcher sertleştirmeleri, `tests/test_missing_edge_case_coverage_final.py` ile %100 coverage hard gate'ini koruyan son edge-case regresyonları ve güncel repo metrikleri üst seviye raporlara işlendi. Bu revizyon; Redis/veritabanı fallback'leri, `WebSocketDisconnect` kaynaklı async iptal akışları, `tempfile.mkdtemp` hata yolu ve GitHub API başarısızlıklarının mock temelli güvenceye alındığını belgelerken Coverage Agent yol haritasını da mevcut %100 baseline üzerinde yeniden konumlandırır; ayrıntılı denetim özeti için `AUDIT_REPORT_v5.1.md`, sürüm farkları için `CHANGELOG.md` referans alınmalıdır.)
+> **Son Güncelleme:** 2026-03-21 (v5.1.2 belge senkronizasyonu tamamlandı: `config.py` içindeki continuous learning hazırlıkları, `agent/sidar_agent.py` otonomi/gece bakımı kilitlerinin lazy-init asenkron güvenlik modeli ve `main.py` port doğrulama sertleştirmeleri üst seviye raporlara işlendi. Bu revizyon; judge/feedback sinyallerinden veri seti üretimine hazırlanan yeni env anahtarlarını, `_autonomy_lock` / `_nightly_maintenance_lock` tabanlı yarış durumu korumalarını ve launcher'ın `--port` parametresi için 1-65535 aralığında tam sayı zorunluluğunu belgeler; ayrıntılı sürüm farkları için `CHANGELOG.md` referans alınmalıdır.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** v5.0.0-alpha
+> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) sürüm `5.0.0a0` olarak işaretlenmiş olup, `config.py` çalışma zamanı sürümü `5.0.0-alpha` ile uyumlu ilerlemektedir.
 > **İleri Yol Haritası / Faz Durumu:** Faz A, Faz B ve Faz D teslimatları belge-bazında senkronize edildi; aktif geliştirme odağı Faz E planlaması ve v5.x derinleştirme eksenidir.
 
 > **Önceki Kayıt:** 3.0.30
@@ -1276,6 +1277,13 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `ENABLE_COST_ROUTING` ve `COST_ROUTING_*` | `false` / eşik ve model varsayılanları | Basit/karmaşık sorgular için maliyet odaklı model yönlendirmesi |
 | `ENABLE_ENTITY_MEMORY` / `ENTITY_MEMORY_TTL_DAYS` / `ENTITY_MEMORY_MAX_PER_USER` | `true` / `90` / `100` | Entity/persona memory kalıcılığı |
 | `ENABLE_ACTIVE_LEARNING`, `AL_MIN_RATING_FOR_TRAIN`, `ENABLE_LORA_TRAINING`, `LORA_*` | çeşitli | Geri bildirim toplama ve LoRA/QLoRA fine-tuning hazırlıkları |
+| `ENABLE_CONTINUOUS_LEARNING` | `false` | Judge/feedback sinyallerinden sürekli öğrenme (continuous learning) bundle'ı üretilmesini aktifleştirir. (v6.0 hazırlığı) |
+| `CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES` | `20` | Sürekli öğrenme için gereken minimum SFT (Supervised Fine-Tuning) örnek sayısı. |
+| `CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES` | `10` | RLHF/DPO için gereken minimum tercih (preference) örnek sayısı. |
+| `CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS` | `5000` | İşlenmeyi bekleyen maksimum sinyal kapasitesi. |
+| `CONTINUOUS_LEARNING_COOLDOWN_SECONDS` | `3600` | İki ardışık sürekli öğrenme döngüsü arasındaki bekleme süresi (saniye). |
+| `CONTINUOUS_LEARNING_OUTPUT_DIR` | `data/continuous_learning` | Sürekli öğrenme veri setlerinin dışa aktarılacağı dizin. |
+| `CONTINUOUS_LEARNING_SFT_FORMAT` | `alpaca` | Supervised Fine-Tuning formatı (örn. alpaca, sharegpt). |
 | `ENABLE_VISION` / `VISION_MAX_IMAGE_BYTES` | `true` / `10485760` | Çok modlu görsel girdi yetenekleri |
 | `ENABLE_MULTIMODAL` / `MULTIMODAL_MAX_FILE_BYTES` / `VOICE_STT_PROVIDER` / `WHISPER_MODEL` / `VOICE_WS_MAX_BYTES` | `true` / `52428800` / `whisper` / `base` / `10485760` | Medya ingestion, ses işleme ve `/ws/voice` limiti |
 | `VOICE_TTS_PROVIDER` / `VOICE_TTS_VOICE` / `VOICE_TTS_SEGMENT_CHARS` / `VOICE_TTS_BUFFER_CHARS` | `auto` / `""` / `48` / `96` | Duplex TTS sağlayıcısı, ses seçimi, segment boyu ve düşük gecikmeli buffer limiti |

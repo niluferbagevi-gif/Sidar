@@ -80,6 +80,12 @@ Bu akış sayesinde barge-in yalnızca backend olayından ibaret değildir; iste
 - **Scope control:** Görev kapsamı remediation loop içindeki dosyalarla sınırlandırılır.
 - **Human override:** Timeout, yüksek risk veya kapsam dışı mutasyon durumunda HITL devreye girer.
 
+
+### 4.3 Asenkron Güvenlik ve Kilit (Lock) Mekanizmaları
+
+- **Thread-Safe Otonomi:** SİDAR ajanının kendi kendine iyileşme (self-heal) ve gece bakımı (nightly maintenance) gibi arka plan görevleri, olası eşzamanlı (race condition) senaryolarına karşı `_autonomy_lock` ve `_nightly_maintenance_lock` (`asyncio.Lock`) objeleriyle tam koruma altına alınmıştır.
+- **Lazy Initialization:** Python'ın event loop kısıtlamaları gereği, asenkron kilitler `__init__` bloğunda senkron olarak değil, ilk çağrıldıkları anda (lazy init) güvenli bir şekilde oluşturulmaktadır. Bu yaklaşım, container/Kubernetes tabanlı dağıtık ölçeklemelerde event-loop uyumsuzluğu kaynaklı çökme riskini ortadan kaldırır.
+
 ---
 
 ## 5. Browser Decisioning Derinleşmesi
@@ -140,6 +146,7 @@ Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır:
 2. **İlişkisel çıkarımın reviewer/remediation döngüsüne bağlanması:** Knowledge Graph düğümleri yalnızca arama kalitesini artırmak için değil; reviewer etki analizi, self-healing remediation planı ve external trigger korelasyonu için de ikincil karar yüzeyi olarak kullanılmalıdır.
 3. **Dağıtık swarm hazırlığı:** Ajanların tek bir Python süreci içinde çalıştığı mevcut topoloji, Kubernetes pod'ları seviyesinde izole edilmiş uzman worker'lara ayrılacak şekilde evrilmelidir. Bu dönüşüm için görev sözleşmeleri, broker mesaj şemaları, correlation-id taşıma ve retry/timeout politikaları bugünden standartlaştırılmalıdır.
 4. **Broker tabanlı orkestrasyon:** RabbitMQ/Kafka benzeri message broker katmanı, swarm görevlerini kuyruklayan, tenant izolasyonunu güçlendiren ve yatay ölçeklemeyi kolaylaştıran ana omurga olarak konumlandırılmalıdır. Böylece dağıtık sürü mimarisine geçiş yalnızca altyapı değil, gözlemlenebilirlik, hata toleransı ve güvenlik sınırları bakımından da kontrollü hazırlanmış olur.
+5. **Continuous Learning (Sürekli Öğrenme) Altyapısı:** `config.py` düzeyinde `ENABLE_CONTINUOUS_LEARNING` bayrağı ve ilgili SFT/preference konfigürasyonları eklenmiştir. Bu yapı, LLM-as-a-judge sisteminden gelen feedback'lerin birikerek modeli (LoRA/QLoRA üzerinden) otonom biçimde eğitmesi için gerekli pipeline'ın temelini oluşturmaktadır.
 
 ---
 
