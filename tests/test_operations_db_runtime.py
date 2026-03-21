@@ -198,3 +198,46 @@ def test_operations_tables_cover_sqlite_validations_updates_and_listing_filters(
             await db.close()
 
     asyncio.run(_run())
+
+
+def test_upsert_marketing_campaign_raises_when_sqlite_insert_row_cannot_be_loaded(tmp_path):
+    async def _run():
+        db = Database(cfg=_cfg(tmp_path))
+
+        class _Cursor:
+            def __init__(self, *, lastrowid=None, row=None):
+                self.lastrowid = lastrowid
+                self._row = row
+
+            def fetchone(self):
+                return self._row
+
+        class _Conn:
+            def __init__(self):
+                self.calls = 0
+
+            def execute(self, _sql, _params=()):
+                self.calls += 1
+                if self.calls == 1:
+                    return _Cursor(lastrowid=91)
+                return _Cursor(row=None)
+
+            def commit(self):
+                return None
+
+        db._sqlite_conn = _Conn()
+        db._run_sqlite_op = lambda fn: asyncio.sleep(0, result=fn())  # type: ignore[method-assign]
+
+        try:
+            await db.upsert_marketing_campaign(
+                tenant_id="tenant-a",
+                name="Launch",
+                channel="instagram",
+                objective="lead",
+            )
+        except ValueError as exc:
+            assert str(exc) == "campaign not found"
+        else:
+            assert False, "expected ValueError"
+
+    asyncio.run(_run())
