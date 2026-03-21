@@ -154,3 +154,32 @@ Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır:
 - `core/multimodal.py` hattı yerel `.mp4` işleme sınırını aşarak YouTube ve benzeri dış platformlardan video akışlarını alıp FFmpeg + vision modelleri ile çözümleyen bir ingestion katmanına genişletilecektir.
 - Videodan üretilen transkript, sahne özeti ve görsel/işitsel içgörüler; Poyraz tarafından otomatik sosyal medya içeriği, kampanya brief'i ve pazarlama metnine dönüştürülebilecektir.
 - Böylece multimodal katman, yalnızca geliştiriciye medya özeti veren yardımcı modül olmaktan çıkarak gelir/pazarlama operasyonlarını besleyen stratejik veri boru hattına dönüşecektir.
+
+### 9.4 Yapısal Yerleşim Taslağı (Tablolar ve API Uçları)
+
+| Faz E bileşeni | Kullanacağı mevcut yüzeyler | Önerilen yeni tablo/endpoint taslağı | Not |
+|---|---|---|---|
+| Coverage Agent | `managers/code_manager.py`, `agent/sidar_agent.py`, `core/db.py` prompt registry, `/api/swarm/execute`, CI test akışları | `coverage_tasks`, `coverage_findings`, `/api/qa/coverage/run`, `/api/qa/coverage/findings` | Coverage raporlarını ingest edip eksik senaryoları görevleştiren QA boru hattı. |
+| Poyraz Ajanı | `agent/tooling.py`, `web_server.py` auth/audit/multitenancy, mevcut entegrasyon yöneticileri | `marketing_campaigns`, `content_assets`, `operation_checklists`, `/api/operations/campaigns`, `/api/operations/content/generate`, `/api/integrations/social/publish` | Kampanya, içerik ve operasyon checklist'lerini audit edilebilir tenant bağlamında çalıştırır. |
+| YouTube / dış video analizi | `core/multimodal.py`, `web_server.py` upload/vision akışları, RAG/DocumentStore | `media_ingestion_jobs`, `media_scene_segments`, `media_transcripts`, `/api/media/analyze-url`, `/api/media/jobs/{job_id}`, `/api/media/transcripts/{job_id}` | URL tabanlı ingest, FFmpeg sahne/segment çıkarımı ve özet metin üretimi. |
+
+#### 9.4.1 Coverage Agent veri ve kontrol akışı
+
+- Coverage Agent, CI veya yerel `pytest --cov` çıktısını görev tetikleyicisi olarak alır; ham coverage raporu `coverage_tasks` içinde saklanır ve her açık satır/branch kaydı `coverage_findings` tablosunda normalize edilir.
+- `managers/code_manager.py`, eksik test önerilerini üretmek ve doğrulama komutlarını koşturmak için eylem yüzeyi olmaya devam eder; ajan kendi patch planını yine mevcut reviewer/remediation zinciriyle yayınlar.
+- `/api/qa/coverage/run`, son coverage job'unu kuyruğa alır; `/api/qa/coverage/findings` ise UI veya swarm paneline açık kalan dosya/satır kümelerini döner.
+- Bu taslak, mevcut `prompt_registry`, audit log ve HITL mekanizmalarıyla uyumlu biçimde insan onayı gerektiren yüksek riskli test yazımlarını kapıda tutabilir.
+
+#### 9.4.2 Poyraz ajanı için operasyon omurgası
+
+- `marketing_campaigns` tablosu; tenant, kanal, hedef kitle, yayın takvimi, durum ve başarı metriği alanlarını taşır. `content_assets` ise kampanya varlıklarını (brief, sosyal medya metni, landing page taslağı, görsel brief) sürümlü biçimde saklar.
+- `operation_checklists`, Poyraz'ın yalnızca içerik üretmeyip operasyon adımlarını da izleyebilmesi için görev listesi + SLA görünümü sağlar; bu tablo mevcut audit log ve kullanıcı kimliği ile ilişkilendirilmelidir.
+- `/api/operations/campaigns` kampanya CRUD ve durum takibini, `/api/operations/content/generate` çok modlu brief → içerik dönüşümünü, `/api/integrations/social/publish` ise typed-tool tabanlı yayın adaptörlerini besler.
+- Böylece Poyraz, serbest metin üreten bir ajan yerine tenant-aware, denetlenebilir ve başarımı ölçülebilir bir iş akışı ajanı haline gelir.
+
+#### 9.4.3 YouTube video analizi ve multimodal ingest
+
+- `media_ingestion_jobs`, URL tabanlı ingest yaşam döngüsünü (queued, downloading, segmented, transcribed, summarized, failed) izler; job metadata'sı içerik kaynağı, kanal, süre, dil ve işleme maliyeti alanlarını taşımalıdır.
+- FFmpeg ile çıkarılan sahne/kare segmentleri `media_scene_segments` içinde zaman kodlarıyla tutulur; transcript ve özet parçaları `media_transcripts` altında aranabilir metin olarak saklanıp RAG'e bağlanabilir.
+- `/api/media/analyze-url`, YouTube veya eşdeğer platform URL'si alıp job üretir; `/api/media/jobs/{job_id}` ilerleme durumunu, `/api/media/transcripts/{job_id}` ise Poyraz veya Coverage dışı ajanlar tarafından yeniden kullanılabilir içerik çıktısını döner.
+- Bu akış sonunda üretilen sahne özeti ve transcript, `DocumentStore` içine `media://` kaynak etiketiyle alınarak hem pazarlama üretimini hem de kurumsal bilgi geri çağırımını besler.

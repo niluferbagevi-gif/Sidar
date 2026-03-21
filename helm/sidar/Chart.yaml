@@ -2,5 +2,5 @@ apiVersion: v2
 name: sidar
 description: SİDAR platform chart (Web API + AI Worker + Redis + PostgreSQL)
 type: application
-version: 0.1.0
-appVersion: "4.3.0"
+version: 5.0.0-alpha
+appVersion: "5.0.0-alpha"

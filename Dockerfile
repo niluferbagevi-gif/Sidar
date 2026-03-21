@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
 # Sidar AI — Dockerfile
-# Sürüm: 2.7.0  (GPU & CPU destekli çift mod)
+# Sürüm: 5.0.0-alpha  (GPU & CPU destekli çift mod)
 #
 #  CPU modu (varsayılan):
 #    docker build -t sidar-ai .
@@ -22,7 +22,7 @@ FROM ${BASE_IMAGE}
 
 # Meta veriler
 LABEL maintainer="Sidar AI Project"
-LABEL version="2.7.0"
+LABEL version="5.0.0-alpha"
 LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 
 # Çevresel değişkenler

@@ -1,10 +1,10 @@
-# Sidar v4.3.0 — Teknik Referans ve Operasyon Kılavuzu
+# Sidar v5.1.0-docs / v5.0.0-alpha runtime — Teknik Referans ve Operasyon Kılavuzu
 
 Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (DB şeması, endpoint envanteri, WebSocket protokolü, agent akışı, operasyon parametreleri) toplar.
 
 > Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
-> Son doğrulama turu: **2026-03-19** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
-> Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**62**) ve WebSocket yüzeyi (`/ws/chat`, `/ws/voice`) güncellenmiş, veri tabanı tabloları ile Config tarafından okunan env anahtarları yeni multimodal/browser/autonomy değişkenleri dahil yeniden senkronize edilmiştir.
+> Son doğrulama turu: **2026-03-21** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
+> Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**62**) ve WebSocket yüzeyi (`/ws/chat`, `/ws/voice`) güncellenmiş, veri tabanı tabloları ile Config tarafından okunan env anahtarları yeni multimodal/browser/autonomy değişkenleri dahil yeniden senkronize edilmiştir. Ayrıca `nightly_memory_loop` davranışı, gece bakım döngüsünün vektör/RAG optimizasyonu açısından teknik alt başlık olarak bu belgeye işlenmiştir.
 
 ---
 
@@ -27,6 +27,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
   - [4.3 Reviewer/QA döngüsü](#43-reviewerqa-döngüsü)
   - [4.4 Prompt/Context inşası (`sidar_agent.py`)](#44-promptcontext-inşası-sidar_agentpy)
   - [4.5 Bellek sıkıştırma ve `memory_archive` akışı](#45-bellek-sıkıştırma-ve-memory_archive-akışı)
+  - [4.6 Gece bellek bakımı ve vektör optimizasyonu](#46-gece-bellek-bakımı-ve-vektör-optimizasyonu)
 - [5. Konfigürasyon Referansı](#5-konfigürasyon-referansı)
   - [5.1 `.env` katmanlama (`SIDAR_ENV`)](#51-env-katmanlama-sidar_env)
   - [5.2 Config tarafından okunan env anahtarları (tam liste)](#52-config-tarafından-okunan-env-anahtarları-tam-liste)
@@ -39,7 +40,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 
 ## 1. Mimari Kapsam ve Bileşenler
 
-Sidar v4.3.0 teknik akışının ana bileşenleri:
+Sidar v5.1.0-docs / v5.0.0-alpha runtime teknik akışının ana bileşenleri:
 
 - **Web/API katmanı:** `web_server.py` (FastAPI, WebSocket, middleware, auth, rate-limit, RAG/GitHub endpointleri)
 - **Agent katmanı:** `agent/sidar_agent.py` + `agent/core/supervisor.py` + `agent/roles/*`
@@ -384,6 +385,17 @@ Bu sayede:
 - yeni sorularda arşivden semantik geri çağırma yapılabilir.
 
 Not: `core/memory.py` tarafında aktif kullanıcı zorunluluğu (`_require_active_user`) fail-closed prensibiyle uygulanır; kullanıcı bağlamı yoksa bellek/oturum işlemleri hata verir.
+
+### 4.6 Gece bellek bakımı ve vektör optimizasyonu
+
+`web_server.py` içindeki `_nightly_memory_loop(stop_event)` görevi, `ENABLE_NIGHTLY_MEMORY_PRUNING=true` olduğunda arka planda çalışır ve idle periyot sonunda `SidarAgent.run_nightly_memory_maintenance(reason="nightly_loop")` çağrısını tetikler. Bu akış yalnızca temizlik değil, aynı zamanda vektör maliyeti optimizasyonu olarak tasarlanmıştır:
+
+1. **Oturum sıkıştırma:** `ConversationMemory.run_nightly_consolidation(...)`, eski oturumları özetleyip aktif mesaj hacmini azaltır; bunun çıktısı sonraki aramalarda daha küçük fakat daha yoğun bilgi taşıyan context pencereleri üretir.
+2. **RAG belge konsolidasyonu:** `DocumentStore.consolidate_session_documents(...)`, aynı oturuma ait eski ve düşük değerli belgeleri `memory://nightly-digest` benzeri tek bir özet belgeye dönüştürür; böylece gereksiz çoğalan embedding kümeleri temizlenir.
+3. **Yakın dönem koruması:** `keep_recent_sessions` ve `keep_recent_docs` eşikleri sayesinde en yeni bağlam parçaları korunur; optimizasyon yalnızca arşiv değeri taşıyan eski materyalde uygulanır.
+4. **TTL / entity purge:** Entity memory üzerindeki süre aşımı kayıtları temizlenerek hem veri ayak izi küçültülür hem de prompt'a sızabilecek bayat persona kalıntıları azaltılır.
+
+Operasyonel olarak bu mekanizma, vektör veritabanının şişmesini engelleyen bir **nightly compaction + digesting** politikasıdır: çok sayıda küçük ve tekrar eden embedding yerine, daha az sayıda fakat yüksek bilgi yoğunluklu özet belge bırakılır. Sonuçta arama maliyeti, disk kullanımı ve uzun dönem bağlam gürültüsü birlikte düşer.
 
 ---
 
