@@ -210,6 +210,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-size: 0.78rem;
 }
 .pill--success { background: rgba(34,197,94,0.15); color: #bbf7d0; }
+.pill--info { background: rgba(59,130,246,0.16); color: #bfdbfe; }
+.pill--warn { background: rgba(245,158,11,0.16); color: #fde68a; }
 
 .data-list { display: flex; flex-direction: column; gap: 12px; }
 .data-list__item {
@@ -223,6 +225,80 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+}
+
+.marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.marketplace-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(24, 34, 54, 0.96), rgba(12, 18, 32, 0.92));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+.marketplace-card__header,
+.marketplace-card__footer,
+.marketplace-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.marketplace-card__header h3 {
+  margin: 4px 0 0;
+}
+
+.marketplace-card__eyebrow {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.marketplace-card__summary {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.marketplace-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.marketplace-meta > div {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.marketplace-meta dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.marketplace-meta dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.marketplace-capabilities {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tenant-form { display: flex; gap: 10px; margin-bottom: 16px; }
