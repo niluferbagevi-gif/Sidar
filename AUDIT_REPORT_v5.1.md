@@ -1,5 +1,5 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu (v5.1 Faz D/Faz E Senkronizasyonu)
-**Sürüm:** v5.1 belge baseline / v5.0.0-alpha runtime
+**Sürüm:** v5.1.0 belge baseline / v5.0.0-alpha runtime
 **Tarih:** 2026-03-21
 **Kapsam:** Faz D enterprise ölçekleme teslimatları, coverage anlatısına dahil edilen yeni regresyon yüzeyleri ve Faz E otonom iş ekosistemi yol haritası
 
@@ -19,23 +19,23 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını ve Faz E yol harita
 
 | Metrik | Değer |
 |---|---:|
-| Takipli Python dosyası | 235 |
-| Takipli Python satırı | 76.020 |
+| Takipli Python dosyası | 240 |
+| Takipli Python satırı | 77.978 |
 | Üretim Python dosyası | 64 |
-| Üretim Python satırı | 28.201 |
-| `tests/test_*.py` modülü | 169 |
+| Üretim Python satırı | 28.211 |
+| `tests/test_*.py` modülü | 174 |
 | Takipli Markdown dosyası | 101 |
 
 ### 2.2 `scripts/audit_metrics.sh` çıktısı
 
 | Uzantı | Dosya | Satır |
 |---|---:|---:|
-| `.py` | 235 | 76.020 |
+| `.py` | 240 | 77.978 |
 | `.js` | 11 | 3.418 |
 | `.css` | 3 | 2.975 |
 | `.html` | 4 | 745 |
-| `.md` | 101 | 9.340 |
-| **Toplam** | **354** | **92.498** |
+| `.md` | 101 | 9.385 |
+| **Toplam** | **359** | **94.501** |
 
 ### 2.3 Faz D odaklı yüzeyler
 
