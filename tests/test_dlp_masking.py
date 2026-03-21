@@ -144,6 +144,19 @@ class TestMaskMessages:
         result = mask_messages(messages)
         assert result == messages
 
+    def test_message_masks_bearer_and_client_secret_together(self):
+        messages = [
+            {
+                "role": "user",
+                "content": "Authorization: Bearer tokentestvalue1234567890 client_secret=supersecretvalue123",
+            }
+        ]
+
+        result = mask_messages(messages)
+
+        assert "tokentestvalue1234567890" not in result[0]["content"]
+        assert "supersecretvalue123" not in result[0]["content"]
+
 
 # ─── Disabled engine ─────────────────────────────────────────────────────────
 
