@@ -145,3 +145,73 @@ def test_sidar_agent_nightly_maintenance_respects_idle_and_collects_reports(monk
         assert agent._autonomy_history[0]["source"] == "nightly_memory"
 
     asyncio.run(_run())
+
+
+def test_sidar_agent_autonomy_history_lock_handles_concurrent_appends():
+    async def _run() -> None:
+        agent = SidarAgent.__new__(SidarAgent)
+        agent._autonomy_history = []
+        agent._autonomy_lock = None
+
+        async def _append(idx: int) -> None:
+            await SidarAgent._append_autonomy_history(agent, {"trigger_id": f"tr-{idx}", "source": "ws", "status": "ok"})
+
+        await asyncio.wait_for(asyncio.gather(*[_append(i) for i in range(80)]), timeout=1.0)
+
+        assert len(agent._autonomy_history) == 50
+        assert agent._autonomy_history[0]["trigger_id"] == "tr-30"
+        assert agent._autonomy_history[-1]["trigger_id"] == "tr-79"
+
+    asyncio.run(_run())
+
+
+def test_sidar_agent_nightly_maintenance_skips_when_already_running(monkeypatch):
+    async def _run() -> None:
+        gate = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _consolidate(**_kwargs):
+            gate.set()
+            await release.wait()
+            return {
+                "status": "completed",
+                "sessions_compacted": 0,
+                "session_ids": [],
+                "reports": [],
+            }
+
+        agent = SidarAgent.__new__(SidarAgent)
+        agent.cfg = types.SimpleNamespace(
+            ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+            NIGHTLY_MEMORY_IDLE_SECONDS=10,
+            NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=1,
+            NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=2,
+            NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
+        )
+        agent.memory = types.SimpleNamespace(run_nightly_consolidation=_consolidate)
+        agent.docs = types.SimpleNamespace(consolidate_session_documents=lambda session_id, keep_recent_docs=1: {"removed_docs": 0})
+        agent._initialized = True
+        agent.initialize = lambda: asyncio.sleep(0)
+        agent._autonomy_history = []
+        agent._autonomy_lock = None
+        agent._last_activity_ts = time.time() - 100
+        agent._nightly_maintenance_lock = None
+        agent._last_nightly_maintenance_ts = 0.0
+
+        fake_entity = types.SimpleNamespace(
+            initialize=lambda: asyncio.sleep(0),
+            purge_expired=lambda: asyncio.sleep(0, result=0),
+        )
+        monkeypatch.setattr("agent.sidar_agent.get_entity_memory", lambda _cfg: fake_entity)
+
+        first = asyncio.create_task(SidarAgent.run_nightly_memory_maintenance(agent, reason="background"))
+        await gate.wait()
+        second = await SidarAgent.run_nightly_memory_maintenance(agent, reason="background")
+        assert second["status"] == "skipped"
+        assert second["reason"] == "already_running"
+
+        release.set()
+        done = await asyncio.wait_for(first, timeout=1.0)
+        assert done["status"] == "completed"
+
+    asyncio.run(_run())

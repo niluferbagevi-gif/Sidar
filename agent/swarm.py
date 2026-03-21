@@ -20,6 +20,7 @@ Kullanım:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -247,6 +248,79 @@ class SwarmOrchestrator:
                 f"summary={browser_context['browser_signal_summary']}"
             )
         return text
+
+    @staticmethod
+    def _should_fallback_to_supervisor(exc: Exception) -> bool:
+        if isinstance(exc, json.JSONDecodeError):
+            return True
+
+        text = str(exc or "").lower()
+        exc_name = type(exc).__name__.lower()
+        json_signals = (
+            "json",
+            "decode",
+            "parse",
+            "schema",
+            "validation",
+            "unexpected format",
+            "malformed",
+        )
+        if any(signal in exc_name for signal in json_signals):
+            return True
+        if any(signal in text for signal in json_signals):
+            return True
+        if "429" in text or "rate limit" in text or "too many requests" in text:
+            return True
+        return False
+
+    async def _run_supervisor_fallback(
+        self,
+        task: SwarmTask,
+        *,
+        session_id: str,
+        started_at: float,
+        route_trace: List[str],
+        handoff_chain: List[Dict[str, str]],
+        failed_role: str,
+        reason: str,
+    ) -> SwarmResult:
+        from agent.core.supervisor import SupervisorAgent
+
+        supervisor = SupervisorAgent(self.cfg)
+        fallback_prompt = self._compose_goal_with_context(task.goal, task.context)
+        fallback_output = await supervisor.run_task(fallback_prompt)
+        if not isinstance(fallback_output, str) or not fallback_output.strip():
+            raise RuntimeError("Supervisor fallback geçerli bir çıktı üretemedi.")
+
+        elapsed = int((time.monotonic() - started_at) * 1000)
+        next_handoffs = [
+            *handoff_chain,
+            {
+                "task_id": task.task_id,
+                "sender": failed_role,
+                "receiver": "supervisor",
+                "reason": reason,
+                "intent": str(task.intent or ""),
+                "swarm_hop": str(len(route_trace)),
+            },
+        ]
+        return SwarmResult(
+            task_id=task.task_id,
+            agent_role="supervisor",
+            status="success",
+            summary=fallback_output.strip(),
+            elapsed_ms=elapsed,
+            evidence=[f"fallback:{failed_role}", reason],
+            handoffs=next_handoffs,
+            graph={
+                "sender": failed_role,
+                "receiver": "supervisor",
+                "intent": str(task.intent or ""),
+                "session_id": str(session_id or ""),
+                "swarm_trace": " -> ".join(route_trace[-6:]),
+                "fallback_reason": reason,
+            },
+        )
 
     async def _run_autonomous_feedback(
         self,
@@ -650,6 +724,42 @@ class SwarmOrchestrator:
         except Exception as exc:
             elapsed = int((time.monotonic() - started_at) * 1000)
             logger.error("SwarmOrchestrator: [%s] hata [%s]: %s", task.task_id, spec.role_name, exc)
+            if self._should_fallback_to_supervisor(exc):
+                reason = f"fallback:{type(exc).__name__}"
+                logger.warning(
+                    "SwarmOrchestrator: [%s] supervisor fallback tetiklendi [%s] reason=%s",
+                    task.task_id,
+                    spec.role_name,
+                    reason,
+                )
+                try:
+                    return await self._run_supervisor_fallback(
+                        task,
+                        session_id=session_id,
+                        started_at=started_at,
+                        route_trace=next_trace,
+                        handoff_chain=handoff_chain,
+                        failed_role=spec.role_name,
+                        reason=reason,
+                    )
+                except Exception as fallback_exc:
+                    logger.error(
+                        "SwarmOrchestrator: [%s] supervisor fallback hatası [%s]: %s",
+                        task.task_id,
+                        spec.role_name,
+                        fallback_exc,
+                    )
+                    return SwarmResult(
+                        task_id=task.task_id,
+                        agent_role="supervisor",
+                        status="failed",
+                        summary=(
+                            f"Görev başarısız: {exc}. "
+                            f"Supervisor fallback da başarısız oldu: {fallback_exc}"
+                        ),
+                        elapsed_ms=elapsed,
+                        handoffs=handoff_chain,
+                    )
             return SwarmResult(
                 task_id=task.task_id,
                 agent_role=spec.role_name,
