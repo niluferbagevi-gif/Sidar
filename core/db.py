@@ -88,6 +88,48 @@ class AuditLogRecord:
     timestamp: str
 
 
+@dataclass
+class MarketingCampaignRecord:
+    id: int
+    tenant_id: str
+    name: str
+    channel: str
+    objective: str
+    status: str
+    owner_user_id: str
+    budget: float
+    metadata_json: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class ContentAssetRecord:
+    id: int
+    campaign_id: int
+    tenant_id: str
+    asset_type: str
+    title: str
+    content: str
+    channel: str
+    metadata_json: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class OperationChecklistRecord:
+    id: int
+    campaign_id: int | None
+    tenant_id: str
+    title: str
+    items_json: str
+    status: str
+    owner_user_id: str
+    created_at: str
+    updated_at: str
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -121,6 +163,12 @@ def _quote_sql_identifier(identifier: str) -> str:
     if not value.replace("_", "").isalnum() or not (value[0].isalpha() or value[0] == "_"):
         raise ValueError(f"Invalid SQL identifier: {identifier!r}")
     return f'"{value}"'
+
+
+def _json_dumps(payload: Any) -> str:
+    import json
+
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
 class Database:
@@ -450,6 +498,53 @@ class Database:
         );
         CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON prompt_registry(role_name, version);
         CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);
+
+        CREATE TABLE IF NOT EXISTS marketing_campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            name TEXT NOT NULL,
+            channel TEXT NOT NULL DEFAULT '',
+            objective TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft',
+            owner_user_id TEXT NOT NULL DEFAULT '',
+            budget REAL NOT NULL DEFAULT 0,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status
+            ON marketing_campaigns(tenant_id, status, updated_at);
+
+        CREATE TABLE IF NOT EXISTS content_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            asset_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            channel TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant
+            ON content_assets(campaign_id, tenant_id, asset_type);
+
+        CREATE TABLE IF NOT EXISTS operation_checklists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER,
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            title TEXT NOT NULL,
+            items_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'pending',
+            owner_user_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant
+            ON operation_checklists(campaign_id, tenant_id, status);
         """
 
         def _run() -> None:
@@ -564,6 +659,51 @@ class Database:
             );
             """,
             "CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);",
+            """
+            CREATE TABLE IF NOT EXISTS marketing_campaigns (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                name TEXT NOT NULL,
+                channel TEXT NOT NULL DEFAULT '',
+                objective TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                owner_user_id TEXT NOT NULL DEFAULT '',
+                budget DOUBLE PRECISION NOT NULL DEFAULT 0,
+                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status ON marketing_campaigns(tenant_id, status, updated_at);",
+            """
+            CREATE TABLE IF NOT EXISTS content_assets (
+                id BIGSERIAL PRIMARY KEY,
+                campaign_id BIGINT NOT NULL REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                asset_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                channel TEXT NOT NULL DEFAULT '',
+                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant ON content_assets(campaign_id, tenant_id, asset_type);",
+            """
+            CREATE TABLE IF NOT EXISTS operation_checklists (
+                id BIGSERIAL PRIMARY KEY,
+                campaign_id BIGINT REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                title TEXT NOT NULL,
+                items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                status TEXT NOT NULL DEFAULT 'pending',
+                owner_user_id TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant ON operation_checklists(campaign_id, tenant_id, status);",
         ]
         async with self._pg_pool.acquire() as conn:
             for q in queries:
@@ -1525,6 +1665,554 @@ class Database:
                 timestamp=str(r["timestamp"]),
             )
             for r in rows
+        ]
+
+    async def upsert_marketing_campaign(
+        self,
+        *,
+        tenant_id: str = "default",
+        name: str,
+        channel: str = "",
+        objective: str = "",
+        status: str = "draft",
+        owner_user_id: str = "",
+        budget: float = 0.0,
+        metadata: Optional[dict[str, Any]] = None,
+        campaign_id: Optional[int] = None,
+    ) -> MarketingCampaignRecord:
+        tenant = (tenant_id or "default").strip() or "default"
+        campaign_name = (name or "").strip()
+        if not campaign_name:
+            raise ValueError("campaign name is required")
+        now = _utc_now_iso()
+        normalized_status = (status or "draft").strip().lower() or "draft"
+        metadata_json = _json_dumps(metadata or {})
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                if campaign_id:
+                    row = await conn.fetchrow(
+                        """
+                        UPDATE marketing_campaigns
+                        SET tenant_id=$2, name=$3, channel=$4, objective=$5, status=$6,
+                            owner_user_id=$7, budget=$8, metadata_json=$9::jsonb, updated_at=$10
+                        WHERE id=$1
+                        RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                        """,
+                        int(campaign_id),
+                        tenant,
+                        campaign_name,
+                        (channel or "").strip(),
+                        (objective or "").strip(),
+                        normalized_status,
+                        (owner_user_id or "").strip(),
+                        float(budget or 0.0),
+                        metadata_json,
+                        now,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
+                        RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                        """,
+                        tenant,
+                        campaign_name,
+                        (channel or "").strip(),
+                        (objective or "").strip(),
+                        normalized_status,
+                        (owner_user_id or "").strip(),
+                        float(budget or 0.0),
+                        metadata_json,
+                        now,
+                    )
+            if row is None:
+                raise ValueError("campaign not found")
+            return MarketingCampaignRecord(
+                id=int(row["id"]),
+                tenant_id=str(row["tenant_id"]),
+                name=str(row["name"]),
+                channel=str(row["channel"]),
+                objective=str(row["objective"]),
+                status=str(row["status"]),
+                owner_user_id=str(row["owner_user_id"]),
+                budget=float(row["budget"] or 0.0),
+                metadata_json=str(row["metadata_json"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> sqlite3.Row:
+            assert self._sqlite_conn is not None
+            if campaign_id:
+                self._sqlite_conn.execute(
+                    """
+                    UPDATE marketing_campaigns
+                    SET tenant_id=?, name=?, channel=?, objective=?, status=?, owner_user_id=?, budget=?, metadata_json=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        tenant,
+                        campaign_name,
+                        (channel or "").strip(),
+                        (objective or "").strip(),
+                        normalized_status,
+                        (owner_user_id or "").strip(),
+                        float(budget or 0.0),
+                        metadata_json,
+                        now,
+                        int(campaign_id),
+                    ),
+                )
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    FROM marketing_campaigns WHERE id=?
+                    """,
+                    (int(campaign_id),),
+                )
+            else:
+                cur = self._sqlite_conn.execute(
+                    """
+                    INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tenant,
+                        campaign_name,
+                        (channel or "").strip(),
+                        (objective or "").strip(),
+                        normalized_status,
+                        (owner_user_id or "").strip(),
+                        float(budget or 0.0),
+                        metadata_json,
+                        now,
+                        now,
+                    ),
+                )
+                cur = self._sqlite_conn.execute(
+                    """
+                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                    FROM marketing_campaigns WHERE id=?
+                    """,
+                    (int(cur.lastrowid),),
+                )
+            row = cur.fetchone()
+            self._sqlite_conn.commit()
+            if row is None:
+                raise ValueError("campaign not found")
+            return row
+
+        row = await self._run_sqlite_op(_run)
+        return MarketingCampaignRecord(
+            id=int(row["id"]),
+            tenant_id=str(row["tenant_id"]),
+            name=str(row["name"]),
+            channel=str(row["channel"]),
+            objective=str(row["objective"]),
+            status=str(row["status"]),
+            owner_user_id=str(row["owner_user_id"]),
+            budget=float(row["budget"] or 0.0),
+            metadata_json=str(row["metadata_json"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def list_marketing_campaigns(
+        self,
+        *,
+        tenant_id: str,
+        status: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[MarketingCampaignRecord]:
+        tenant = (tenant_id or "default").strip() or "default"
+        normalized_status = (status or "").strip().lower() or None
+        max_items = max(1, min(int(limit or 100), 500))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at "
+                "FROM marketing_campaigns WHERE tenant_id=$1"
+            )
+            args: list[Any] = [tenant]
+            if normalized_status:
+                query += " AND status=$2"
+                args.append(normalized_status)
+            query += f" ORDER BY updated_at DESC LIMIT ${len(args) + 1}"
+            args.append(max_items)
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run() -> list[sqlite3.Row]:
+                assert self._sqlite_conn is not None
+                if normalized_status:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                        FROM marketing_campaigns
+                        WHERE tenant_id=? AND status=?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, normalized_status, max_items),
+                    )
+                else:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
+                        FROM marketing_campaigns
+                        WHERE tenant_id=?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, max_items),
+                    )
+                return cur.fetchall()
+
+            rows = await self._run_sqlite_op(_run)
+        return [
+            MarketingCampaignRecord(
+                id=int(row["id"]),
+                tenant_id=str(row["tenant_id"]),
+                name=str(row["name"]),
+                channel=str(row["channel"]),
+                objective=str(row["objective"]),
+                status=str(row["status"]),
+                owner_user_id=str(row["owner_user_id"]),
+                budget=float(row["budget"] or 0.0),
+                metadata_json=str(row["metadata_json"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
+        ]
+
+    async def add_content_asset(
+        self,
+        *,
+        campaign_id: int,
+        tenant_id: str = "default",
+        asset_type: str,
+        title: str,
+        content: str,
+        channel: str = "",
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> ContentAssetRecord:
+        now = _utc_now_iso()
+        tenant = (tenant_id or "default").strip() or "default"
+        asset_kind = (asset_type or "").strip().lower()
+        asset_title = (title or "").strip()
+        asset_content = str(content or "").strip()
+        if not asset_kind or not asset_title or not asset_content:
+            raise ValueError("asset_type, title and content are required")
+        metadata_json = _json_dumps(metadata or {})
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
+                    RETURNING id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                    """,
+                    int(campaign_id),
+                    tenant,
+                    asset_kind,
+                    asset_title,
+                    asset_content,
+                    (channel or "").strip(),
+                    metadata_json,
+                    now,
+                )
+            return ContentAssetRecord(
+                id=int(row["id"]),
+                campaign_id=int(row["campaign_id"]),
+                tenant_id=str(row["tenant_id"]),
+                asset_type=str(row["asset_type"]),
+                title=str(row["title"]),
+                content=str(row["content"]),
+                channel=str(row["channel"]),
+                metadata_json=str(row["metadata_json"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> sqlite3.Row:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                """
+                INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(campaign_id),
+                    tenant,
+                    asset_kind,
+                    asset_title,
+                    asset_content,
+                    (channel or "").strip(),
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+            row = self._sqlite_conn.execute(
+                """
+                SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                FROM content_assets WHERE id=?
+                """,
+                (int(cur.lastrowid),),
+            ).fetchone()
+            self._sqlite_conn.commit()
+            assert row is not None
+            return row
+
+        row = await self._run_sqlite_op(_run)
+        return ContentAssetRecord(
+            id=int(row["id"]),
+            campaign_id=int(row["campaign_id"]),
+            tenant_id=str(row["tenant_id"]),
+            asset_type=str(row["asset_type"]),
+            title=str(row["title"]),
+            content=str(row["content"]),
+            channel=str(row["channel"]),
+            metadata_json=str(row["metadata_json"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def list_content_assets(
+        self,
+        *,
+        tenant_id: str,
+        campaign_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> list[ContentAssetRecord]:
+        tenant = (tenant_id or "default").strip() or "default"
+        max_items = max(1, min(int(limit or 100), 500))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at "
+                "FROM content_assets WHERE tenant_id=$1"
+            )
+            args: list[Any] = [tenant]
+            if campaign_id is not None:
+                query += " AND campaign_id=$2"
+                args.append(int(campaign_id))
+            query += f" ORDER BY created_at DESC LIMIT ${len(args) + 1}"
+            args.append(max_items)
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run() -> list[sqlite3.Row]:
+                assert self._sqlite_conn is not None
+                if campaign_id is not None:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                        FROM content_assets
+                        WHERE tenant_id=? AND campaign_id=?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, int(campaign_id), max_items),
+                    )
+                else:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
+                        FROM content_assets
+                        WHERE tenant_id=?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, max_items),
+                    )
+                return cur.fetchall()
+
+            rows = await self._run_sqlite_op(_run)
+        return [
+            ContentAssetRecord(
+                id=int(row["id"]),
+                campaign_id=int(row["campaign_id"]),
+                tenant_id=str(row["tenant_id"]),
+                asset_type=str(row["asset_type"]),
+                title=str(row["title"]),
+                content=str(row["content"]),
+                channel=str(row["channel"]),
+                metadata_json=str(row["metadata_json"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
+        ]
+
+    async def add_operation_checklist(
+        self,
+        *,
+        tenant_id: str = "default",
+        title: str,
+        items: list[str],
+        status: str = "pending",
+        owner_user_id: str = "",
+        campaign_id: Optional[int] = None,
+    ) -> OperationChecklistRecord:
+        tenant = (tenant_id or "default").strip() or "default"
+        checklist_title = (title or "").strip()
+        if not checklist_title:
+            raise ValueError("title is required")
+        normalized_items = [str(item).strip() for item in list(items or []) if str(item).strip()]
+        now = _utc_now_iso()
+        items_json = _json_dumps(normalized_items)
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $7)
+                    RETURNING id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                    """,
+                    int(campaign_id) if campaign_id is not None else None,
+                    tenant,
+                    checklist_title,
+                    items_json,
+                    (status or "pending").strip().lower() or "pending",
+                    (owner_user_id or "").strip(),
+                    now,
+                )
+            return OperationChecklistRecord(
+                id=int(row["id"]),
+                campaign_id=None if row["campaign_id"] is None else int(row["campaign_id"]),
+                tenant_id=str(row["tenant_id"]),
+                title=str(row["title"]),
+                items_json=str(row["items_json"]),
+                status=str(row["status"]),
+                owner_user_id=str(row["owner_user_id"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> sqlite3.Row:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                """
+                INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(campaign_id) if campaign_id is not None else None,
+                    tenant,
+                    checklist_title,
+                    items_json,
+                    (status or "pending").strip().lower() or "pending",
+                    (owner_user_id or "").strip(),
+                    now,
+                    now,
+                ),
+            )
+            row = self._sqlite_conn.execute(
+                """
+                SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                FROM operation_checklists WHERE id=?
+                """,
+                (int(cur.lastrowid),),
+            ).fetchone()
+            self._sqlite_conn.commit()
+            assert row is not None
+            return row
+
+        row = await self._run_sqlite_op(_run)
+        return OperationChecklistRecord(
+            id=int(row["id"]),
+            campaign_id=None if row["campaign_id"] is None else int(row["campaign_id"]),
+            tenant_id=str(row["tenant_id"]),
+            title=str(row["title"]),
+            items_json=str(row["items_json"]),
+            status=str(row["status"]),
+            owner_user_id=str(row["owner_user_id"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def list_operation_checklists(
+        self,
+        *,
+        tenant_id: str,
+        campaign_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> list[OperationChecklistRecord]:
+        tenant = (tenant_id or "default").strip() or "default"
+        max_items = max(1, min(int(limit or 100), 500))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at "
+                "FROM operation_checklists WHERE tenant_id=$1"
+            )
+            args: list[Any] = [tenant]
+            if campaign_id is not None:
+                query += " AND campaign_id=$2"
+                args.append(int(campaign_id))
+            query += f" ORDER BY created_at DESC LIMIT ${len(args) + 1}"
+            args.append(max_items)
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run() -> list[sqlite3.Row]:
+                assert self._sqlite_conn is not None
+                if campaign_id is not None:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                        FROM operation_checklists
+                        WHERE tenant_id=? AND campaign_id=?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, int(campaign_id), max_items),
+                    )
+                else:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
+                        FROM operation_checklists
+                        WHERE tenant_id=?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, max_items),
+                    )
+                return cur.fetchall()
+
+            rows = await self._run_sqlite_op(_run)
+        return [
+            OperationChecklistRecord(
+                id=int(row["id"]),
+                campaign_id=None if row["campaign_id"] is None else int(row["campaign_id"]),
+                tenant_id=str(row["tenant_id"]),
+                title=str(row["title"]),
+                items_json=str(row["items_json"]),
+                status=str(row["status"]),
+                owner_user_id=str(row["owner_user_id"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
         ]
 
     async def upsert_user_quota(self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0) -> None:

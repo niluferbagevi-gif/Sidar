@@ -86,6 +86,33 @@ class LspRenameSchema(BaseModel):
     apply: bool = False
 
 
+class SocialPublishSchema(BaseModel):
+    platform: str
+    text: str
+    destination: str = ""
+    media_url: str = ""
+    link_url: str = ""
+
+
+class LandingPageDraftSchema(BaseModel):
+    brand_name: str
+    offer: str
+    audience: str
+    call_to_action: str
+    tone: str = "professional"
+    sections: Optional[List[str]] = None
+
+
+class CampaignCopySchema(BaseModel):
+    campaign_name: str
+    objective: str
+    audience: str
+    channels: Optional[List[str]] = None
+    offer: str = ""
+    tone: str = "professional"
+    call_to_action: str = ""
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -102,6 +129,9 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "scan_project_todos": ScanProjectTodosSchema,
     "lsp_diagnostics": LspDiagnosticsSchema,
     "lsp_rename": LspRenameSchema,
+    "publish_social": SocialPublishSchema,
+    "build_landing_page": LandingPageDraftSchema,
+    "generate_campaign_copy": CampaignCopySchema,
 }
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
