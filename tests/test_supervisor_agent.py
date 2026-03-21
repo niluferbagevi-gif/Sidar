@@ -497,3 +497,126 @@ def test_supervisor_delegate_reraises_agent_errors_even_if_metrics_fail(monkeypa
 
     with pytest.raises(RuntimeError, match="agent boom"):
         asyncio.run(sup._delegate("coder", "görev", "code"))
+
+
+def test_supervisor_routes_coverage_intent_to_qa_when_coverage_agent_is_unavailable(monkeypatch):
+    s = object.__new__(SupervisorAgent)
+    s.events = type("_Events", (), {"publish": lambda self, *_a, **_k: asyncio.sleep(0)})()
+    s.memory_hub = type("_MemoryHub", (), {"add_global": lambda self, *_a, **_k: None})()
+    s.registry = type("_Registry", (), {"has": lambda self, name: False})()
+
+    captured = {}
+
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor", context=None):
+        captured["receiver"] = receiver
+        captured["goal"] = goal
+        captured["intent"] = intent
+        return TaskResult(task_id="coverage-qa", status="done", summary="QA:COVERAGE")
+
+    s._delegate = fake_delegate
+    s._route_p2p = None
+
+    out = asyncio.run(s.run_task("coverage açığını kapatmak için test yaz"))
+
+    assert out == "QA:COVERAGE"
+    assert captured == {
+        "receiver": "qa",
+        "goal": "coverage açığını kapatmak için test yaz",
+        "intent": "coverage",
+    }
+
+
+def test_supervisor_route_p2p_returns_fail_closed_when_hop_limit_is_exceeded():
+    s = object.__new__(SupervisorAgent)
+    s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 0.1, "MAX_QA_RETRIES": 3})()
+    s.events = type("_Events", (), {"publish": lambda self, *_a, **_k: asyncio.sleep(0)})()
+
+    async def _delegate(*_args, **_kwargs):
+        return TaskResult(
+            task_id="loop",
+            status="done",
+            summary=DelegationRequest(
+                task_id="loop",
+                reply_to="coder",
+                target_agent="reviewer",
+                payload="review_code|diff",
+            ),
+        )
+
+    s._delegate = _delegate
+
+    result = asyncio.run(
+        s._route_p2p(
+            DelegationRequest(
+                task_id="root-loop",
+                reply_to="reviewer",
+                target_agent="coder",
+                payload="qa_feedback|decision=approve",
+            ),
+            max_hops=2,
+        )
+    )
+
+    assert result.status == "failed"
+    assert "Maksimum delegasyon hop sayısı aşıldı" in result.summary
+
+
+def test_supervisor_delegate_records_metrics_memory_and_span_attributes(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    sup = object.__new__(SupervisorAgent)
+
+    class _Agent:
+        async def run_task(self, prompt: str):
+            assert prompt == "görev"
+            return "tamamlandı"
+
+    class _Registry:
+        def get(self, receiver):
+            assert receiver == "coder"
+            return _Agent()
+
+    notes = []
+
+    class _MemoryHub:
+        def add_role_note(self, role, summary):
+            notes.append((role, summary))
+
+    span_attrs = {}
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def set_attribute(self, key, value):
+            span_attrs[key] = value
+
+    class _Tracer:
+        def start_as_current_span(self, name, attributes=None):
+            span_attrs["span_name"] = name
+            span_attrs["attributes"] = dict(attributes or {})
+            return _Span()
+
+    calls = []
+
+    class _Collector:
+        def record(self, receiver, intent, status, duration_s):
+            calls.append((receiver, intent, status, duration_s > 0))
+
+    sup.registry = _Registry()
+    sup.memory_hub = _MemoryHub()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", _Tracer())
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Collector())
+
+    result = asyncio.run(sup._delegate("coder", "görev", "code", parent_task_id="parent-1"))
+
+    assert result.status == "done"
+    assert result.summary == "tamamlandı"
+    assert notes == [("coder", "tamamlandı")]
+    assert calls == [("coder", "code", "done", True)]
+    assert span_attrs["span_name"] == "supervisor.delegate.coder"
+    assert span_attrs["attributes"]["sidar.parent_task_id"] == "parent-1"
+    assert span_attrs["sidar.result_len"] == len("tamamlandı")
