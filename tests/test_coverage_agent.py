@@ -1,8 +1,10 @@
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -196,3 +198,123 @@ def test_coverage_agent_write_missing_tests_tool(monkeypatch):
 
     assert '"success": true' in out.lower()
     assert "tests/test_gap.py" in out
+
+
+def test_coverage_agent_helper_paths_cover_payload_normalization_and_db_cache():
+    agent = CoverageAgent()
+    calls = {"db": 0, "connect": 0, "init_schema": 0}
+
+    class _Database:
+        def __init__(self, _cfg):
+            calls["db"] += 1
+
+        async def connect(self):
+            calls["connect"] += 1
+
+        async def init_schema(self):
+            calls["init_schema"] += 1
+
+    fake_db_mod = types.SimpleNamespace(Database=_Database)
+    with patch.dict(sys.modules, {"core.db": fake_db_mod}):
+        db_first = asyncio.run(agent._ensure_db())
+        db_second = asyncio.run(agent._ensure_db())
+
+    assert db_first is db_second
+    assert calls == {"db": 1, "connect": 1, "init_schema": 1}
+    assert agent._parse_payload("") == {}
+    assert agent._parse_payload("pytest tests/test_cov.py -q") == {"command": "pytest tests/test_cov.py -q"}
+    assert agent._parse_payload('["not-a-dict"]') == {"command": '["not-a-dict"]'}
+    assert agent._suggest_test_path("") == "tests/test_generated_coverage_agent.py"
+    assert agent._normalize_analysis("unexpected") == {"summary": "", "findings": []}
+
+
+def test_coverage_agent_analyze_and_generate_tools_use_fallbacks(monkeypatch):
+    agent = CoverageAgent()
+    seen = {}
+
+    monkeypatch.setattr(
+        agent.code,
+        "analyze_pytest_output",
+        lambda output: {"summary": f"analiz:{output}", "findings": []},
+    )
+    monkeypatch.setattr(agent.code, "read_file", lambda *_args, **_kwargs: (False, ""))
+
+    async def _fake_call_llm(messages, **kwargs):
+        seen["messages"] = messages
+        seen["kwargs"] = kwargs
+        return "def test_fallback():\n    assert True\n"
+
+    monkeypatch.setattr(agent, "call_llm", _fake_call_llm)
+
+    analyze_out = asyncio.run(agent.run_task("analyze_pytest_output|plain pytest output"))
+    generated_out = asyncio.run(
+        agent.run_task(
+            'generate_missing_tests|{"target_path":"core/demo.py","pytest_output":"FAIL: sample","analysis":"unexpected-format"}'
+        )
+    )
+
+    assert "analiz:plain pytest output" in analyze_out
+    assert "def test_fallback()" in generated_out
+    assert "kaynak okunamadı" in seen["messages"][0]["content"]
+    assert "Önerilen test yolu: tests/test_demo_coverage.py" in seen["messages"][0]["content"]
+    assert seen["kwargs"]["system_prompt"] == agent.TEST_GENERATION_PROMPT
+
+
+def test_coverage_agent_run_task_handles_no_gaps_unexpected_analysis_and_record_failures(monkeypatch):
+    agent = CoverageAgent()
+    writes = []
+
+    monkeypatch.setattr(
+        agent.code,
+        "run_pytest_and_collect",
+        lambda *_args, **_kwargs: {
+            "success": False,
+            "command": "pytest -q",
+            "output": "unexpected pytest output",
+            "analysis": ["unexpected", "shape"],
+        },
+    )
+
+    no_gap_out = asyncio.run(agent.run_task('{"command":"pytest -q tests/test_demo.py"}'))
+    no_gap_payload = json.loads(no_gap_out)
+    assert no_gap_payload["status"] == "no_gaps_detected"
+    assert no_gap_payload["command"] == "pytest -q tests/test_demo.py"
+
+    monkeypatch.setattr(
+        agent.code,
+        "run_pytest_and_collect",
+        lambda *_args, **_kwargs: {
+            "success": False,
+            "command": "pytest -q",
+            "output": "1 failed",
+            "analysis": {
+                "summary": "1 failed",
+                "findings": [
+                    {"finding_type": "missing_coverage", "target_path": "core/sample.py", "summary": "Eksik satırlar"},
+                    "ignored-entry",
+                ],
+            },
+        },
+    )
+    monkeypatch.setattr(agent.code, "read_file", lambda *_args, **_kwargs: (True, "def sample():\n    return 1\n"))
+    monkeypatch.setattr(
+        agent.code,
+        "write_generated_test",
+        lambda path, content, append=True: writes.append((path, content, append)) or (False, f"write-failed:{path}"),
+    )
+    async def _record_fail(**_kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(agent, "_record_task", _record_fail)
+
+    result = asyncio.run(agent.run_task("coverage recovery"))
+    payload = json.loads(result)
+
+    assert payload["success"] is False
+    assert payload["status"] == "write_failed"
+    assert payload["suggested_test_path"] == "tests/test_sample_coverage.py"
+    assert payload["analysis"]["findings"] == [
+        {"finding_type": "missing_coverage", "target_path": "core/sample.py", "summary": "Eksik satırlar"}
+    ]
+    assert payload["write_message"] == "write-failed:tests/test_sample_coverage.py"
+    assert writes[0][2] is True
