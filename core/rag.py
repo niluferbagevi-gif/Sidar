@@ -25,6 +25,7 @@ import ipaddress
 import time
 import urllib.parse
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -457,6 +458,32 @@ class GraphIndex:
             }
             for node_id, score in scored[:top_k]
         ]
+
+
+@dataclass(frozen=True)
+class KnowledgeGraphNode:
+    id: str
+    label: str
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class KnowledgeGraphEdge:
+    source: str
+    target: str
+    relation: str
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class GraphRAGSearchPlan:
+    query: str
+    vector_backend: str
+    vector_candidates: List[str] = field(default_factory=list)
+    graph_nodes: List[KnowledgeGraphNode] = field(default_factory=list)
+    graph_edges: List[KnowledgeGraphEdge] = field(default_factory=list)
+    broker_topics: List[str] = field(default_factory=list)
+    cypher_hint: str = ""
 
 
 def embed_texts_for_semantic_cache(texts: List[str], cfg: Optional[Config] = None) -> List[List[float]]:
@@ -1287,6 +1314,153 @@ class DocumentStore:
         if not analysis:
             return False, f"GraphRAG içinde '{target}' için etki analizi üretilemedi."
         return True, analysis
+
+    def build_knowledge_graph_projection(
+        self,
+        *,
+        session_id: str = "global",
+        include_code_graph: bool = True,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """pgvector/Chroma belge katmanını bilgi grafı düğüm/kenarlarına yansıtır.
+
+        Neo4j gibi bir katmana doğrudan yazmak yerine, önce taşınabilir bir projection
+        üretir. Böylece ileride GraphRAG için `MERGE` tabanlı sync işleri kolaylaşır.
+        """
+        max_items = max(1, min(int(limit or 100), 1000))
+        nodes: List[KnowledgeGraphNode] = []
+        edges: List[KnowledgeGraphEdge] = []
+
+        doc_items = list(self._index.items())[:max_items]
+        for doc_id, meta in doc_items:
+            doc_session = str(meta.get("session_id", "global") or "global")
+            if session_id != "global" and doc_session != session_id:
+                continue
+            title = str(meta.get("title", "") or "")
+            source = str(meta.get("source", "") or "")
+            nodes.append(
+                KnowledgeGraphNode(
+                    id=f"doc:{doc_id}",
+                    label="Document",
+                    properties={
+                        "doc_id": doc_id,
+                        "title": title,
+                        "source": source,
+                        "session_id": doc_session,
+                        "vector_backend": "pgvector" if getattr(self, "_pgvector_available", False) else self._vector_backend,
+                    },
+                )
+            )
+            nodes.append(
+                KnowledgeGraphNode(
+                    id=f"session:{doc_session}",
+                    label="Session",
+                    properties={"session_id": doc_session},
+                )
+            )
+            edges.append(
+                KnowledgeGraphEdge(
+                    source=f"session:{doc_session}",
+                    target=f"doc:{doc_id}",
+                    relation="CONTAINS_DOCUMENT",
+                )
+            )
+            if source:
+                nodes.append(
+                    KnowledgeGraphNode(
+                        id=f"source:{source}",
+                        label="Source",
+                        properties={"source": source},
+                    )
+                )
+                edges.append(
+                    KnowledgeGraphEdge(
+                        source=f"doc:{doc_id}",
+                        target=f"source:{source}",
+                        relation="DERIVED_FROM",
+                    )
+                )
+
+        if include_code_graph and self._graph_rag_enabled:
+            self._ensure_graph_ready()
+            for node_id, attrs in list(self._graph_index.nodes.items())[:max_items]:
+                nodes.append(
+                    KnowledgeGraphNode(
+                        id=f"code:{node_id}",
+                        label="CodeNode",
+                        properties=dict(attrs),
+                    )
+                )
+            edge_count = 0
+            for source_id, targets in self._graph_index.edges.items():
+                for target_id in sorted(targets):
+                    edge_count += 1
+                    if edge_count > max_items:
+                        break
+                    edge_kinds = sorted(self._graph_index.edge_kinds.get((source_id, target_id), {"RELATED_TO"}))
+                    edges.append(
+                        KnowledgeGraphEdge(
+                            source=f"code:{source_id}",
+                            target=f"code:{target_id}",
+                            relation=edge_kinds[0],
+                            properties={"edge_kinds": edge_kinds},
+                        )
+                    )
+                if edge_count > max_items:
+                    break
+
+        unique_nodes = list({(node.id, node.label): node for node in nodes}.values())
+        cypher_hint = (
+            "UNWIND $nodes AS node MERGE (n:KG {id: node.id}) "
+            "SET n += node.properties, n.label = node.label "
+            "WITH n UNWIND $edges AS edge MATCH (s:KG {id: edge.source}), (t:KG {id: edge.target}) "
+            "MERGE (s)-[r:RELATED {relation: edge.relation}]->(t) SET r += edge.properties"
+        )
+        return {
+            "nodes": unique_nodes,
+            "edges": edges,
+            "cypher_hint": cypher_hint,
+            "vector_backend": "pgvector" if getattr(self, "_pgvector_available", False) else self._vector_backend,
+        }
+
+    def build_graphrag_search_plan(
+        self,
+        query: str,
+        *,
+        session_id: str = "global",
+        top_k: int = 5,
+    ) -> GraphRAGSearchPlan:
+        """Vektör sonuçlarını bilgi grafı düğümleri ve dağıtık ajan topic'leriyle eşler."""
+        normalized = str(query or "").strip()
+        vector_backend = "pgvector" if getattr(self, "_pgvector_available", False) else (
+            "chromadb" if self._chroma_available and self.collection else "bm25"
+        )
+        vector_results: List[Dict[str, Any]] = []
+        if normalized:
+            if getattr(self, "_pgvector_available", False):
+                vector_results = self._fetch_pgvector(normalized, top_k, session_id)
+            elif self._chroma_available and self.collection:
+                vector_results = self._fetch_chroma(normalized, top_k, session_id)
+
+        vector_candidates = [str(item.get("doc_id", "") or "") for item in vector_results if str(item.get("doc_id", "") or "")]
+        projection = self.build_knowledge_graph_projection(session_id=session_id, include_code_graph=True, limit=max(20, top_k * 10))
+        graph_nodes = list(projection["nodes"])
+        graph_edges = list(projection["edges"])
+        def _broker_topic(receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
+            return f"{namespace}.{str(receiver or 'unknown').strip().lower() or 'unknown'}.{str(intent or 'mixed').strip().lower() or 'mixed'}"
+        broker_topics = [
+            _broker_topic(receiver="researcher", intent="rag_search"),
+            _broker_topic(receiver="reviewer", intent="graph_review"),
+        ]
+        return GraphRAGSearchPlan(
+            query=normalized,
+            vector_backend=vector_backend,
+            vector_candidates=vector_candidates[:top_k],
+            graph_nodes=graph_nodes[: max(20, top_k * 4)],
+            graph_edges=graph_edges[: max(20, top_k * 4)],
+            broker_topics=broker_topics,
+            cypher_hint=str(projection.get("cypher_hint", "")),
+        )
 
     def _search_sync(self, query: str, top_k: Optional[int] = None, mode: str = "auto", session_id: str = "global") -> Tuple[bool, str]:
         if top_k is None: top_k = getattr(self.cfg, "RAG_TOP_K", self.default_top_k)

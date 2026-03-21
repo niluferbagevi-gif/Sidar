@@ -10,6 +10,9 @@ FEDERATION_PROTOCOL_V1 = "federation.v1"
 LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
 FEDERATION_PROTOCOL_ALIASES = frozenset({FEDERATION_PROTOCOL_V1, LEGACY_FEDERATION_PROTOCOL_V1})
 ACTION_FEEDBACK_PROTOCOL_V1 = "action_feedback.v1"
+BROKER_PROTOCOL_V1 = "broker.task.v1"
+LEGACY_BROKER_PROTOCOL_V1 = "swarm.broker.v1"
+BROKER_PROTOCOL_ALIASES = frozenset({BROKER_PROTOCOL_V1, LEGACY_BROKER_PROTOCOL_V1})
 
 
 def normalize_federation_protocol(protocol: object) -> str:
@@ -18,6 +21,21 @@ def normalize_federation_protocol(protocol: object) -> str:
     if not value or value in FEDERATION_PROTOCOL_ALIASES:
         return FEDERATION_PROTOCOL_V1
     return value
+
+
+def normalize_broker_protocol(protocol: object) -> str:
+    """Broker protokol etiketlerini kanonik `broker.task.v1` değerine indirger."""
+    value = str(protocol or "").strip().lower()
+    if not value or value in BROKER_PROTOCOL_ALIASES:
+        return BROKER_PROTOCOL_V1
+    return value
+
+
+def derive_broker_routing_key(*, receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
+    role = str(receiver or "unknown").strip().lower() or "unknown"
+    topic = str(intent or "mixed").strip().lower() or "mixed"
+    ns = str(namespace or "sidar.swarm").strip().lower() or "sidar.swarm"
+    return f"{ns}.{role}.{topic}"
 
 
 def derive_correlation_id(*values: object) -> str:
@@ -248,6 +266,175 @@ class FederationTaskResult:
 
 
 @dataclass
+class BrokerTaskEnvelope:
+    """Message broker üzerinden pod'lar arası taşınacak görev zarfı."""
+
+    task_id: str
+    sender: str
+    receiver: str
+    goal: str
+    intent: str = "mixed"
+    parent_task_id: str | None = None
+    context: dict[str, str] = field(default_factory=dict)
+    inputs: list[str] = field(default_factory=list)
+    broker: str = "memory"
+    exchange: str = "sidar.swarm"
+    routing_key: str = ""
+    reply_queue: str = ""
+    protocol: str = BROKER_PROTOCOL_V1
+    headers: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.protocol = normalize_broker_protocol(self.protocol)
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.headers.get("correlation_id", ""),
+            self.parent_task_id,
+            self.task_id,
+        )
+        if not self.routing_key:
+            self.routing_key = derive_broker_routing_key(receiver=self.receiver, intent=self.intent, namespace=self.exchange)
+
+    @classmethod
+    def from_task_envelope(
+        cls,
+        envelope: TaskEnvelope,
+        *,
+        broker: str = "memory",
+        exchange: str = "sidar.swarm",
+        reply_queue: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> BrokerTaskEnvelope:
+        return cls(
+            task_id=envelope.task_id,
+            sender=envelope.sender,
+            receiver=envelope.receiver,
+            goal=envelope.goal,
+            intent=envelope.intent,
+            parent_task_id=envelope.parent_task_id,
+            context=dict(envelope.context),
+            inputs=list(envelope.inputs),
+            broker=broker,
+            exchange=exchange,
+            reply_queue=reply_queue,
+            headers=dict(headers or {}),
+            correlation_id=str(envelope.context.get("correlation_id", "") or ""),
+        )
+
+    def to_task_envelope(self) -> TaskEnvelope:
+        return TaskEnvelope(
+            task_id=self.task_id,
+            sender=self.sender,
+            receiver=self.receiver,
+            goal=self.goal,
+            intent=self.intent,
+            parent_task_id=self.parent_task_id,
+            context={**dict(self.context), "correlation_id": self.correlation_id},
+            inputs=list(self.inputs),
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[BROKER TASK]\n"
+            f"broker={self.broker}\n"
+            f"exchange={self.exchange}\n"
+            f"routing_key={self.routing_key}\n"
+            f"reply_queue={self.reply_queue}\n"
+            f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
+            f"sender={self.sender}\n"
+            f"receiver={self.receiver}\n"
+            f"intent={self.intent}\n"
+            f"goal={self.goal}\n"
+            f"context={json.dumps(self.context, ensure_ascii=False, sort_keys=True)}\n"
+            f"inputs={json.dumps(self.inputs, ensure_ascii=False)}\n"
+            f"headers={json.dumps(self.headers, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+@dataclass
+class BrokerTaskResult:
+    """Broker tabanlı delegasyonun taşınabilir sonucu."""
+
+    task_id: str
+    sender: str
+    receiver: str
+    status: str
+    summary: str
+    broker: str = "memory"
+    exchange: str = "sidar.swarm"
+    routing_key: str = ""
+    protocol: str = BROKER_PROTOCOL_V1
+    evidence: list[str] = field(default_factory=list)
+    next_actions: list[str] = field(default_factory=list)
+    headers: dict[str, str] = field(default_factory=dict)
+    correlation_id: str = ""
+
+    def __post_init__(self) -> None:
+        self.protocol = normalize_broker_protocol(self.protocol)
+        self.correlation_id = derive_correlation_id(
+            self.correlation_id,
+            self.headers.get("correlation_id", ""),
+            self.task_id,
+        )
+        if not self.routing_key:
+            self.routing_key = derive_broker_routing_key(receiver=self.receiver, intent=self.status, namespace=self.exchange)
+
+    @classmethod
+    def from_task_result(
+        cls,
+        result: TaskResult,
+        *,
+        sender: str,
+        receiver: str,
+        broker: str = "memory",
+        exchange: str = "sidar.swarm",
+        headers: dict[str, str] | None = None,
+        correlation_id: str = "",
+    ) -> BrokerTaskResult:
+        return cls(
+            task_id=result.task_id,
+            sender=sender,
+            receiver=receiver,
+            status=result.status,
+            summary=str(result.summary),
+            broker=broker,
+            exchange=exchange,
+            evidence=list(result.evidence),
+            next_actions=list(result.next_actions),
+            headers=dict(headers or {}),
+            correlation_id=correlation_id,
+        )
+
+    def to_task_result(self) -> TaskResult:
+        return TaskResult(
+            task_id=self.task_id,
+            status=self.status,
+            summary=self.summary,
+            evidence=list(self.evidence),
+            next_actions=list(self.next_actions),
+        )
+
+    def to_prompt(self) -> str:
+        return (
+            f"[BROKER RESULT]\n"
+            f"broker={self.broker}\n"
+            f"exchange={self.exchange}\n"
+            f"routing_key={self.routing_key}\n"
+            f"protocol={self.protocol}\n"
+            f"correlation_id={self.correlation_id}\n"
+            f"sender={self.sender}\n"
+            f"receiver={self.receiver}\n"
+            f"status={self.status}\n"
+            f"summary={self.summary}\n"
+            f"evidence={json.dumps(self.evidence, ensure_ascii=False)}\n"
+            f"next_actions={json.dumps(self.next_actions, ensure_ascii=False)}\n"
+            f"headers={json.dumps(self.headers, ensure_ascii=False, sort_keys=True)}"
+        )
+
+
+@dataclass
 class ActionFeedback:
     """Dış sistemlerden gelen eylem geri besleme sinyalini standartlaştırır."""
 
@@ -369,3 +556,19 @@ def is_action_feedback(value: object) -> bool:
         return True
     required = ("feedback_id", "source_system", "source_agent", "action_name", "status", "summary")
     return type(value).__name__ == "ActionFeedback" and all(hasattr(value, attr) for attr in required)
+
+
+def is_broker_task_envelope(value: object) -> bool:
+    """BrokerTaskEnvelope benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, BrokerTaskEnvelope):
+        return True
+    required = ("task_id", "sender", "receiver", "goal", "broker", "exchange", "routing_key")
+    return type(value).__name__ == "BrokerTaskEnvelope" and all(hasattr(value, attr) for attr in required)
+
+
+def is_broker_task_result(value: object) -> bool:
+    """BrokerTaskResult benzeri nesneleri duck-typing ile tanımlar."""
+    if isinstance(value, BrokerTaskResult):
+        return True
+    required = ("task_id", "sender", "receiver", "status", "summary", "broker", "exchange")
+    return type(value).__name__ == "BrokerTaskResult" and all(hasattr(value, attr) for attr in required)

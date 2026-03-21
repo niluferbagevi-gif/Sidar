@@ -718,3 +718,27 @@ def test_task_router_maps_coverage_intents_to_coverage_agent(monkeypatch, swarm_
     spec = router.route("coverage")
 
     assert spec.role_name == "coverage"
+
+
+def test_swarm_dispatch_distributed_uses_broker_backend(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    backend = swarm_module.InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("researcher"))
+
+    result = asyncio.run(
+        orchestrator.dispatch_distributed(
+            swarm_module.SwarmTask(goal="GraphRAG planı çıkar", intent="rag_search", context={"tenant": "default"}),
+            session_id="sess-42",
+            broker="rabbitmq",
+            exchange="sidar.swarm",
+            reply_queue="sidar.reply",
+        )
+    )
+
+    assert result.status == "queued"
+    assert backend.dispatched[0].broker == "rabbitmq"
+    assert backend.dispatched[0].routing_key == "sidar.swarm.researcher.rag_search"
+    assert backend.dispatched[0].reply_queue == "sidar.reply"
+    assert backend.dispatched[0].context["distributed_dispatch"] == "true"
