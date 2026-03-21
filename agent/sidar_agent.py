@@ -698,6 +698,12 @@ class SidarAgent:
 
         if self._nightly_maintenance_lock is None:
             self._nightly_maintenance_lock = asyncio.Lock()
+        if self._nightly_maintenance_lock.locked():
+            return {
+                "status": "skipped",
+                "reason": "already_running",
+                "idle_for_seconds": round(idle_for, 2),
+            }
 
         async with self._nightly_maintenance_lock:
             entity_report: Dict[str, Any] = {"purged": 0, "status": "disabled"}

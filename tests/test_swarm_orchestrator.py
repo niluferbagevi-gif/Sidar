@@ -195,6 +195,91 @@ def test_swarm_orchestrator_returns_failed_after_retry_limit(monkeypatch, swarm_
     assert "kalıcı hata" in result.summary
 
 
+def test_swarm_orchestrator_falls_back_to_supervisor_on_json_decode_error(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+
+    class _BrokenAgent:
+        async def handle(self, envelope):
+            raise ValueError("unexpected JSON format from provider")
+
+    class _Supervisor:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+        async def run_task(self, prompt):
+            assert "Özet çıkar" in prompt
+            return "Supervisor fallback sonucu"
+
+    supervisor_mod = types.ModuleType("agent.core.supervisor")
+    supervisor_mod.SupervisorAgent = _Supervisor
+    monkeypatch.setitem(sys.modules, "agent.core.supervisor", supervisor_mod)
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _BrokenAgent())
+
+    result = asyncio.run(orchestrator.run("Özet çıkar", intent="summarization", session_id="sess-json"))
+
+    assert result.status == "success"
+    assert result.agent_role == "supervisor"
+    assert result.summary == "Supervisor fallback sonucu"
+    assert result.evidence[0] == "fallback:coder"
+    assert result.graph["fallback_reason"] == "fallback:ValueError"
+
+
+def test_swarm_orchestrator_falls_back_to_supervisor_on_rate_limit(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+
+    class _RateLimitedAgent:
+        async def handle(self, envelope):
+            raise RuntimeError("429 rate limit exceeded")
+
+    class _Supervisor:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+        async def run_task(self, prompt):
+            return f"Supervisor handled: {prompt.splitlines()[0]}"
+
+    supervisor_mod = types.ModuleType("agent.core.supervisor")
+    supervisor_mod.SupervisorAgent = _Supervisor
+    monkeypatch.setitem(sys.modules, "agent.core.supervisor", supervisor_mod)
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("researcher"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _RateLimitedAgent())
+
+    result = asyncio.run(orchestrator.run("Kaynak ara", intent="research", session_id="sess-429"))
+
+    assert result.status == "success"
+    assert result.agent_role == "supervisor"
+    assert result.summary == "Supervisor handled: Kaynak ara"
+    assert result.handoffs[-1]["receiver"] == "supervisor"
+
+
+def test_swarm_orchestrator_reports_failure_when_supervisor_fallback_is_blank(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+
+    class _BrokenAgent:
+        async def handle(self, envelope):
+            raise RuntimeError("unexpected format from upstream")
+
+    class _Supervisor:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+        async def run_task(self, prompt):
+            return "   "
+
+    supervisor_mod = types.ModuleType("agent.core.supervisor")
+    supervisor_mod.SupervisorAgent = _Supervisor
+    monkeypatch.setitem(sys.modules, "agent.core.supervisor", supervisor_mod)
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: _DummySpec("coder"))
+    monkeypatch.setattr(swarm_module.AgentRegistry, "create", lambda *_a, **_k: _BrokenAgent())
+
+    result = asyncio.run(orchestrator.run("Format bozuk", intent="mixed", session_id="sess-blank"))
+
+    assert result.status == "failed"
+    assert result.agent_role == "supervisor"
+    assert "Supervisor fallback da başarısız oldu" in result.summary
+
+
 def test_swarm_orchestrator_follows_single_delegation(monkeypatch, swarm_module):
     cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=4, SWARM_LOOP_GUARD_MAX_REPEAT=3)
     orchestrator = swarm_module.SwarmOrchestrator(cfg=cfg)
