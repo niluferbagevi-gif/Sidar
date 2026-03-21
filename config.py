@@ -1,7 +1,7 @@
 
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: v5.0.0-alpha (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
+Sürüm: v5.1.0 (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -248,12 +248,12 @@ def check_hardware() -> HardwareInfo:
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: v5.0.0-alpha
+    Sürüm: v5.1.0
     """
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "5.0.0-alpha"
+    VERSION: str      = "5.1.0"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
     ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)

@@ -149,7 +149,7 @@ class SidarAgent:
     Tamamen asenkron ağ istekleri, stream, yapısal veri ve sonsuz vektör hafıza uyumlu yapı.
     """
 
-    VERSION = "5.0.0-alpha"  # Ürün baseline: Ultimate Launcher + multimodal/browser/voice Faz A/B
+    VERSION = "5.1.0"  # Ürün baseline: Ultimate Launcher + multimodal/browser/voice Faz A/B
 
     def __init__(self, cfg: Config = None) -> None:
         self.cfg = cfg or Config()
