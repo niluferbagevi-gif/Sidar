@@ -445,3 +445,237 @@ def test_postgresql_replace_session_messages_supports_concurrent_replacements():
         ("user", "first payload", 0),
         ("assistant", "second payload", 0),
     }
+
+
+def test_postgresql_marketing_operations_and_coverage_crud_branches():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        with pytest.raises(ValueError, match="campaign name is required"):
+            await db.upsert_marketing_campaign(name=" ")
+
+        conn.fetchrow_queue.append({
+            "id": 11,
+            "tenant_id": "tenant-a",
+            "name": "Launch",
+            "channel": "instagram",
+            "objective": "lead",
+            "status": "draft",
+            "owner_user_id": "u-1",
+            "budget": 25.0,
+            "metadata_json": '{"region":"TR"}',
+            "created_at": "c1",
+            "updated_at": "u1",
+        })
+        created = await db.upsert_marketing_campaign(
+            tenant_id="tenant-a",
+            name="Launch",
+            channel="instagram",
+            objective="lead",
+            owner_user_id="u-1",
+            budget=25.0,
+            metadata={"region": "TR"},
+        )
+        assert created.id == 11
+
+        conn.fetchrow_queue.append({
+            "id": 11,
+            "tenant_id": "tenant-a",
+            "name": "Launch v2",
+            "channel": "linkedin",
+            "objective": "pipeline",
+            "status": "active",
+            "owner_user_id": "u-2",
+            "budget": 40.0,
+            "metadata_json": '{"segment":"b2b"}',
+            "created_at": "c1",
+            "updated_at": "u2",
+        })
+        updated = await db.upsert_marketing_campaign(
+            campaign_id=11,
+            tenant_id="tenant-a",
+            name="Launch v2",
+            channel="linkedin",
+            objective="pipeline",
+            status="ACTIVE",
+            owner_user_id="u-2",
+            budget=40.0,
+            metadata={"segment": "b2b"},
+        )
+        assert updated.status == "active"
+
+        conn.fetchrow_queue.append(None)
+        with pytest.raises(ValueError, match="campaign not found"):
+            await db.upsert_marketing_campaign(campaign_id=999, tenant_id="tenant-a", name="missing")
+
+        conn.fetch_queue.append([
+            {
+                "id": 11,
+                "tenant_id": "tenant-a",
+                "name": "Launch v2",
+                "channel": "linkedin",
+                "objective": "pipeline",
+                "status": "active",
+                "owner_user_id": "u-2",
+                "budget": 40.0,
+                "metadata_json": '{"segment":"b2b"}',
+                "created_at": "c1",
+                "updated_at": "u2",
+            }
+        ])
+        campaigns = await db.list_marketing_campaigns(tenant_id="tenant-a", status="active", limit=1)
+        assert campaigns[0].channel == "linkedin"
+
+        with pytest.raises(ValueError, match="asset_type, title and content are required"):
+            await db.add_content_asset(campaign_id=11, asset_type="", title="", content="")
+
+        conn.fetchrow_queue.append({
+            "id": 21,
+            "campaign_id": 11,
+            "tenant_id": "tenant-a",
+            "asset_type": "landing_page",
+            "title": "LP",
+            "content": "<main/>",
+            "channel": "web",
+            "metadata_json": '{"lang":"tr"}',
+            "created_at": "c2",
+            "updated_at": "u2",
+        })
+        asset = await db.add_content_asset(
+            campaign_id=11,
+            tenant_id="tenant-a",
+            asset_type="landing_page",
+            title="LP",
+            content="<main/>",
+            channel="web",
+            metadata={"lang": "tr"},
+        )
+        assert asset.id == 21
+
+        conn.fetch_queue.append([
+            {
+                "id": 21,
+                "campaign_id": 11,
+                "tenant_id": "tenant-a",
+                "asset_type": "landing_page",
+                "title": "LP",
+                "content": "<main/>",
+                "channel": "web",
+                "metadata_json": '{"lang":"tr"}',
+                "created_at": "c2",
+                "updated_at": "u2",
+            }
+        ])
+        assets = await db.list_content_assets(tenant_id="tenant-a", campaign_id=11, limit=1)
+        assert assets[0].campaign_id == 11
+
+        with pytest.raises(ValueError, match="title is required"):
+            await db.add_operation_checklist(title=" ", items=[])
+
+        conn.fetchrow_queue.append({
+            "id": 31,
+            "campaign_id": 11,
+            "tenant_id": "tenant-a",
+            "title": "Ops",
+            "items_json": '[{"type":"vendor"}]',
+            "status": "planned",
+            "owner_user_id": "u-1",
+            "created_at": "c3",
+            "updated_at": "u3",
+        })
+        checklist = await db.add_operation_checklist(
+            campaign_id=11,
+            tenant_id="tenant-a",
+            title="Ops",
+            items=[{"type": "vendor"}],
+            status="planned",
+            owner_user_id="u-1",
+        )
+        assert checklist.id == 31
+
+        conn.fetch_queue.append([
+            {
+                "id": 31,
+                "campaign_id": 11,
+                "tenant_id": "tenant-a",
+                "title": "Ops",
+                "items_json": '[{"type":"vendor"}]',
+                "status": "planned",
+                "owner_user_id": "u-1",
+                "created_at": "c3",
+                "updated_at": "u3",
+            }
+        ])
+        checklists = await db.list_operation_checklists(tenant_id="tenant-a", campaign_id=11, limit=1)
+        assert checklists[0].status == "planned"
+
+        with pytest.raises(ValueError, match="command is required"):
+            await db.create_coverage_task(command=" ", pytest_output="")
+
+        conn.fetchrow_queue.append({
+            "id": 41,
+            "tenant_id": "tenant-a",
+            "requester_role": "coverage",
+            "command": "pytest -q",
+            "pytest_output": "1 failed",
+            "status": "pending_review",
+            "target_path": "core/db.py",
+            "suggested_test_path": "tests/test_db_postgresql_branches.py",
+            "review_payload_json": '{"decision":"pending"}',
+            "created_at": "c4",
+            "updated_at": "u4",
+        })
+        task = await db.create_coverage_task(
+            tenant_id="tenant-a",
+            requester_role="coverage",
+            command="pytest -q",
+            pytest_output="1 failed",
+            status="pending_review",
+            target_path="core/db.py",
+            suggested_test_path="tests/test_db_postgresql_branches.py",
+            review_payload_json='{"decision":"pending"}',
+        )
+        assert task.id == 41
+
+        with pytest.raises(ValueError, match="finding_type and summary are required"):
+            await db.add_coverage_finding(task_id=41, finding_type="", target_path="", summary="")
+
+        conn.fetchrow_queue.append({
+            "id": 51,
+            "task_id": 41,
+            "finding_type": "missing_coverage",
+            "target_path": "core/db.py",
+            "summary": "Eksik satırlar",
+            "severity": "high",
+            "details_json": '{"lines":[1,2]}',
+            "created_at": "c5",
+        })
+        finding = await db.add_coverage_finding(
+            task_id=41,
+            finding_type="missing_coverage",
+            target_path="core/db.py",
+            summary="Eksik satırlar",
+            severity="high",
+            details={"lines": [1, 2]},
+        )
+        assert finding.id == 51
+
+        conn.fetch_queue.append([
+            {
+                "id": 41,
+                "tenant_id": "tenant-a",
+                "requester_role": "coverage",
+                "command": "pytest -q",
+                "pytest_output": "1 failed",
+                "status": "pending_review",
+                "target_path": "core/db.py",
+                "suggested_test_path": "tests/test_db_postgresql_branches.py",
+                "review_payload_json": '{"decision":"pending"}',
+                "created_at": "c4",
+                "updated_at": "u4",
+            }
+        ])
+        tasks = await db.list_coverage_tasks(tenant_id="tenant-a", status="pending_review", limit=1)
+        assert tasks[0].target_path == "core/db.py"
+
+    asyncio.run(_run())
