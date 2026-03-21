@@ -13,12 +13,17 @@ from typing import Dict, List, Optional
 from config import Config
 
 try:
-    from config import get_config as _get_config
+    from config import get_config as _config_get_config
 except ImportError:  # pragma: no cover - test doubles may only expose Config
-    _get_config = None
+    _config_get_config = None
 from core.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def get_config() -> Config:
+    """Bellek modülü için geriye dönük uyumlu config erişimi sağlar."""
+    return _config_get_config() if callable(_config_get_config) else Config()
 
 
 class MemoryAuthError(PermissionError):
@@ -54,7 +59,7 @@ class ConversationMemory:
         self._lock = threading.RLock()
 
         # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; varsa singleton kullanılıyor.
-        self.cfg = _get_config() if callable(_get_config) else Config()
+        self.cfg = get_config()
         resolved_database_url = database_url
         if not resolved_database_url:
             resolved_database_url = getattr(self.cfg, "DATABASE_URL", "")
