@@ -300,6 +300,167 @@ def test_handle_external_trigger_builds_ci_remediation_payload():
     assert record["remediation"]["pr_proposal"]["head_branch_suggestion"] == "ci-remediation/77"
 
 
+def test_handle_external_trigger_applies_self_heal_when_plan_is_safe(tmp_path):
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+    a.cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="m",
+        ACCESS_LEVEL="full",
+        BASE_DIR=tmp_path,
+        ENABLE_AUTONOMOUS_SELF_HEAL=True,
+        SELF_HEAL_MAX_PATCHES=2,
+    )
+    target = tmp_path / "main.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+
+    class _Code:
+        def read_file(self, path, line_numbers=False):
+            return True, (tmp_path / path).read_text(encoding="utf-8")
+
+        def patch_file(self, path, target_block, replacement_block):
+            file_path = tmp_path / path
+            content = file_path.read_text(encoding="utf-8")
+            if target_block not in content:
+                return False, "missing target"
+            file_path.write_text(content.replace(target_block, replacement_block, 1), encoding="utf-8")
+            return True, "patched"
+
+        def write_file(self, path, content, validate=False):
+            (tmp_path / path).write_text(content, encoding="utf-8")
+            return True, "written"
+
+        def run_shell_in_sandbox(self, command, cwd):
+            assert cwd == str(tmp_path)
+            return True, f"ok:{command}"
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            prompt = kwargs["messages"][0]["content"]
+            assert "[SELF_HEAL_PLAN]" in prompt
+            return json.dumps(
+                {
+                    "summary": "VALUE sabitini düzelt",
+                    "confidence": "medium",
+                    "operations": [
+                        {
+                            "action": "patch",
+                            "path": "main.py",
+                            "target": "VALUE = 1",
+                            "replacement": "VALUE = 2",
+                        }
+                    ],
+                    "validation_commands": ["python -m pytest"],
+                }
+            )
+
+    async def fake_multi(prompt):
+        assert "[CI_REMEDIATION]" in prompt
+        return "Kök neden: VALUE = 1 sabiti artık 2 olmalı."
+
+    a.code = _Code()
+    a.llm = _LLM()
+    a._try_multi_agent = fake_multi
+
+    trigger = ExternalTrigger(
+        trigger_id="tr-ci-safe",
+        source="webhook:github:ci_failure",
+        event_name="ci_pipeline_failed",
+        payload={
+            "ci_failure": True,
+            "repo": "acme/sidar",
+            "workflow_name": "CI",
+            "pipeline_id": 91,
+            "branch": "main",
+            "base_branch": "main",
+            "failure_summary": "AssertionError in main.py",
+            "log_excerpt": "AssertionError: expected VALUE = 2 in main.py",
+        },
+    )
+    record = asyncio.run(a.handle_external_trigger(trigger))
+
+    assert record["remediation"]["self_heal_execution"]["status"] == "applied"
+    assert target.read_text(encoding="utf-8") == "VALUE = 2\n"
+    assert record["remediation"]["remediation_loop"]["status"] == "applied"
+
+
+def test_handle_external_trigger_reverts_self_heal_when_validation_fails(tmp_path):
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+    a.cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="m",
+        ACCESS_LEVEL="full",
+        BASE_DIR=tmp_path,
+        ENABLE_AUTONOMOUS_SELF_HEAL=True,
+        SELF_HEAL_MAX_PATCHES=2,
+    )
+    target = tmp_path / "main.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+
+    class _Code:
+        def read_file(self, path, line_numbers=False):
+            return True, (tmp_path / path).read_text(encoding="utf-8")
+
+        def patch_file(self, path, target_block, replacement_block):
+            file_path = tmp_path / path
+            content = file_path.read_text(encoding="utf-8")
+            file_path.write_text(content.replace(target_block, replacement_block, 1), encoding="utf-8")
+            return True, "patched"
+
+        def write_file(self, path, content, validate=False):
+            (tmp_path / path).write_text(content, encoding="utf-8")
+            return True, "written"
+
+        def run_shell_in_sandbox(self, command, cwd):
+            return False, f"failed:{command}"
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return json.dumps(
+                {
+                    "summary": "VALUE sabitini düzelt",
+                    "confidence": "medium",
+                    "operations": [
+                        {
+                            "action": "patch",
+                            "path": "main.py",
+                            "target": "VALUE = 1",
+                            "replacement": "VALUE = 2",
+                        }
+                    ],
+                    "validation_commands": ["python -m pytest"],
+                }
+            )
+
+    async def fake_multi(_prompt):
+        return "Kök neden: VALUE = 1 sabiti artık 2 olmalı."
+
+    a.code = _Code()
+    a.llm = _LLM()
+    a._try_multi_agent = fake_multi
+
+    trigger = ExternalTrigger(
+        trigger_id="tr-ci-revert",
+        source="webhook:github:ci_failure",
+        event_name="ci_pipeline_failed",
+        payload={
+            "ci_failure": True,
+            "repo": "acme/sidar",
+            "workflow_name": "CI",
+            "pipeline_id": 92,
+            "branch": "main",
+            "base_branch": "main",
+            "failure_summary": "AssertionError in main.py",
+            "log_excerpt": "AssertionError: expected VALUE = 2 in main.py",
+        },
+    )
+    record = asyncio.run(a.handle_external_trigger(trigger))
+
+    assert record["remediation"]["self_heal_execution"]["status"] == "reverted"
+    assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
 def test_handle_external_trigger_correlates_action_feedback_with_prior_record():
     a = _make_agent_for_runtime()
     a.initialize = lambda: asyncio.sleep(0)

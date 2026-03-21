@@ -410,7 +410,7 @@ Bu yetenek, SİDAR'ın yalnızca ayrı bir web uygulaması değil, geliştiricin
 
 ### Faz C — AI Co-Worker Deneyimi
 
-1. **Proaktif self-healing:** LSP/Reviewer bulgularını güvenli remediation döngüsüne taşıyıp coder ajanı ile kontrollü otomatik düzeltme akışları kurmak.
+1. **Proaktif self-healing:** İlk bootstrap tamamlandı; `core/ci_remediation.py` + `agent/sidar_agent.py` artık düşük riskli CI kırılmalarında JSON patch planı üretip sandbox doğrulaması sonrası patch'i uyguluyor, başarısızlıkta rollback yapıyor. Faz C'nin sıradaki odağı bunu Reviewer/Coder remediation zincirine daha derin bağlamak.
 2. **Tarayıcı ajanının derinleştirilmesi:** Browser signal özetlerini swarm kararları ve reviewer kalite kapısı içinde daha doğrudan karar değişkeni haline getirmek.
 3. **Operasyon yüzeyinin ileri müdahalesi:** SwarmFlowPanel üzerindeki canlı node aksiyonlarını remediation, federasyon feedback ve görev durumu yönetimiyle genişletmek.
 4. **Voice istemcisinde oynatma ACK / clock senkronizasyonu ve IDE eklentileri:** gerçek zamanlı deneyimi istemci tarafında daha deterministik hale getirmek.

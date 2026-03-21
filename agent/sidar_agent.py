@@ -21,7 +21,13 @@ except Exception:  # OpenTelemetry opsiyoneldir
     trace = None
 
 from config import Config
-from core.ci_remediation import build_ci_failure_context, build_ci_failure_prompt, build_ci_remediation_payload
+from core.ci_remediation import (
+    build_ci_failure_context,
+    build_ci_failure_prompt,
+    build_ci_remediation_payload,
+    build_self_heal_patch_prompt,
+    normalize_self_heal_plan,
+)
 from core.memory import ConversationMemory
 from core.llm_client import LLMClient
 from core.rag import DocumentStore
@@ -269,6 +275,212 @@ class SidarAgent:
             self._autonomy_history = history
 
     @staticmethod
+    def _update_remediation_step(remediation_loop: Dict[str, Any], step_name: str, *, status: str, detail: str) -> None:
+        steps = list(remediation_loop.get("steps") or [])
+        for step in steps:
+            if str(step.get("name", "")).strip() != step_name:
+                continue
+            step["status"] = status
+            step["detail"] = detail
+            break
+
+    async def _collect_self_heal_snapshots(self, scope_paths: List[str]) -> List[Dict[str, str]]:
+        snapshots: List[Dict[str, str]] = []
+        for path in scope_paths[:6]:
+            normalized = str(path or "").strip().lstrip("./")
+            if not normalized:
+                continue
+            ok, content = await asyncio.to_thread(self.code.read_file, normalized, False)
+            if not ok:
+                continue
+            snapshots.append({"path": normalized, "content": str(content)})
+        return snapshots
+
+    async def _build_self_heal_plan(
+        self,
+        *,
+        ci_context: Dict[str, Any],
+        diagnosis: str,
+        remediation_loop: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        scope_paths = [str(item).strip() for item in list(remediation_loop.get("scope_paths") or []) if str(item).strip()]
+        if not scope_paths:
+            return {
+                "summary": "Self-heal kapsamı boş olduğu için plan oluşturulmadı.",
+                "confidence": "unknown",
+                "operations": [],
+                "validation_commands": list(remediation_loop.get("validation_commands") or []),
+            }
+
+        snapshots = await self._collect_self_heal_snapshots(scope_paths)
+        prompt = build_self_heal_patch_prompt(ci_context, diagnosis, remediation_loop, snapshots)
+        raw_plan = await self.llm.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=getattr(self.cfg, "CODING_MODEL", None),
+            temperature=0.1,
+            stream=False,
+            json_mode=True,
+        )
+        return normalize_self_heal_plan(
+            raw_plan,
+            scope_paths=scope_paths,
+            fallback_validation_commands=list(remediation_loop.get("validation_commands") or []),
+            max_operations=max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3)),
+        )
+
+    async def _restore_self_heal_backups(self, backups: Dict[str, str]) -> None:
+        for path, content in backups.items():
+            await asyncio.to_thread(self.code.write_file, path, content, False)
+
+    async def _execute_self_heal_plan(
+        self,
+        *,
+        remediation_loop: Dict[str, Any],
+        plan: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        operations = list(plan.get("operations") or [])
+        validation_commands = list(plan.get("validation_commands") or remediation_loop.get("validation_commands") or [])
+        result: Dict[str, Any] = {
+            "status": "skipped",
+            "summary": str(plan.get("summary") or "").strip() or "Self-heal planı uygulanmadı.",
+            "operations_applied": [],
+            "validation_results": [],
+            "reverted": False,
+            "confidence": str(plan.get("confidence") or "unknown"),
+        }
+        if not operations:
+            result["summary"] = "Self-heal planı patch operasyonu içermediği için atlandı."
+            return result
+
+        backups: Dict[str, str] = {}
+        applied: List[str] = []
+        try:
+            for item in operations:
+                path = str(item.get("path") or "").strip()
+                target = str(item.get("target") or "")
+                replacement = str(item.get("replacement") or "")
+                if path not in backups:
+                    ok, original = await asyncio.to_thread(self.code.read_file, path, False)
+                    if not ok:
+                        raise RuntimeError(f"Self-heal yedekleme başarısız: {original}")
+                    backups[path] = str(original)
+                ok, message = await asyncio.to_thread(self.code.patch_file, path, target, replacement)
+                if not ok:
+                    raise RuntimeError(f"{path} patch edilemedi: {message}")
+                applied.append(path)
+
+            for command in validation_commands:
+                ok, output = await asyncio.to_thread(
+                    self.code.run_shell_in_sandbox,
+                    command,
+                    str(self.cfg.BASE_DIR),
+                )
+                result["validation_results"].append({"command": command, "ok": ok, "output": output})
+                if not ok:
+                    raise RuntimeError(f"Sandbox doğrulaması başarısız: {command}")
+
+            result["status"] = "applied"
+            result["operations_applied"] = applied
+            result["summary"] = (
+                f"Self-heal başarıyla uygulandı: {len(applied)} patch, "
+                f"{len(result['validation_results'])} sandbox doğrulaması geçti."
+            )
+            return result
+        except Exception as exc:
+            await self._restore_self_heal_backups(backups)
+            result["status"] = "reverted"
+            result["reverted"] = True
+            result["operations_applied"] = applied
+            result["summary"] = f"Self-heal başarısız oldu ve geri alındı: {exc}"
+            return result
+
+    async def _attempt_autonomous_self_heal(
+        self,
+        *,
+        ci_context: Dict[str, Any],
+        diagnosis: str,
+        remediation: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        remediation_loop = dict(remediation.get("remediation_loop") or {})
+        if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
+            return {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
+        if str(remediation_loop.get("status", "")).strip() != "planned":
+            return {"status": "skipped", "summary": "Remediation loop plan durumunda değil."}
+        if bool(remediation_loop.get("needs_human_approval")):
+            self._update_remediation_step(
+                remediation_loop,
+                "handoff",
+                status="awaiting_hitl",
+                detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
+            )
+            remediation["remediation_loop"] = remediation_loop
+            return {"status": "awaiting_hitl", "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı."}
+        if not hasattr(self, "code") or not hasattr(self, "llm"):
+            return {"status": "blocked", "summary": "Self-heal için code/llm bağımlılıkları hazır değil."}
+
+        plan = await self._build_self_heal_plan(
+            ci_context=ci_context,
+            diagnosis=diagnosis,
+            remediation_loop=remediation_loop,
+        )
+        remediation["self_heal_plan"] = plan
+        if not list(plan.get("operations") or []):
+            self._update_remediation_step(
+                remediation_loop,
+                "patch",
+                status="blocked",
+                detail="LLM güvenli patch planı üretemedi.",
+            )
+            remediation["remediation_loop"] = remediation_loop
+            return {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
+
+        self._update_remediation_step(
+            remediation_loop,
+            "patch",
+            status="running",
+            detail="Self-heal patch operasyonları uygulanıyor.",
+        )
+        execution = await self._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan)
+        remediation["self_heal_execution"] = execution
+
+        if execution["status"] == "applied":
+            remediation_loop["status"] = "applied"
+            self._update_remediation_step(
+                remediation_loop,
+                "patch",
+                status="completed",
+                detail=f"{len(execution.get('operations_applied', []))} patch uygulandı.",
+            )
+            self._update_remediation_step(
+                remediation_loop,
+                "validate",
+                status="completed",
+                detail="Sandbox doğrulamaları başarıyla geçti.",
+            )
+            self._update_remediation_step(
+                remediation_loop,
+                "handoff",
+                status="completed",
+                detail="Değişiklikler başarıyla uygulandı; sonraki adım PR/proposal güncellemesi.",
+            )
+        else:
+            remediation_loop["status"] = execution["status"]
+            self._update_remediation_step(
+                remediation_loop,
+                "patch",
+                status="failed",
+                detail=execution["summary"],
+            )
+            self._update_remediation_step(
+                remediation_loop,
+                "validate",
+                status="failed",
+                detail="Self-heal doğrulaması başarısız olduğu için rollback yapıldı.",
+            )
+        remediation["remediation_loop"] = remediation_loop
+        return execution
+
+    @staticmethod
     def _build_trigger_prompt(trigger: ExternalTrigger, payload_dict: Dict[str, Any], ci_context: Dict[str, Any] | None) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
@@ -399,6 +611,12 @@ class SidarAgent:
                 summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
             elif ci_context:
                 remediation = build_ci_remediation_payload(ci_context, summary)
+                if status == "success":
+                    await self._attempt_autonomous_self_heal(
+                        ci_context=ci_context,
+                        diagnosis=summary,
+                        remediation=remediation,
+                    )
         except Exception as exc:
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"

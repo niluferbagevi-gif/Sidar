@@ -5,7 +5,9 @@ from core.ci_remediation import (
     build_ci_failure_prompt,
     build_pr_proposal,
     build_remediation_loop,
+    build_self_heal_patch_prompt,
     is_ci_failure_event,
+    normalize_self_heal_plan,
 )
 
 
@@ -198,3 +200,43 @@ def test_root_cause_summary_falls_back_to_hint_and_validation_commands_skip_blan
     assert summary == "ImportError: core/db.py could not be imported"
     assert "pytest -q tests/test_ci_remediation.py" in commands
     assert "python -m pytest tests/test_agent_core_contracts.py" in commands
+
+
+def test_self_heal_prompt_and_normalize_plan_filter_scope():
+    context = {
+        "repo": "acme/sidar",
+        "workflow_name": "CI",
+        "failure_summary": "AssertionError in app.py",
+    }
+    remediation_loop = {
+        "scope_paths": ["app.py"],
+        "validation_commands": ["pytest -q tests/test_app.py", "python -m pytest"],
+    }
+    prompt = build_self_heal_patch_prompt(
+        context,
+        "Kök neden: sabit değer drift oldu.",
+        remediation_loop,
+        [{"path": "app.py", "content": "VALUE = 1\n"}],
+    )
+    assert "[SELF_HEAL_PLAN]" in prompt
+    assert "Yalnızca şu kapsam içindeki dosyaları değiştir: app.py" in prompt
+
+    plan = normalize_self_heal_plan(
+        {
+            "summary": "Fix",
+            "confidence": "medium",
+            "operations": [
+                {"action": "patch", "path": "app.py", "target": "VALUE = 1", "replacement": "VALUE = 2"},
+                {"action": "patch", "path": "../secrets.py", "target": "A", "replacement": "B"},
+                {"action": "write", "path": "app.py", "content": "VALUE = 3"},
+            ],
+            "validation_commands": ["pytest -q tests/test_app.py", "rm -rf /"],
+        },
+        scope_paths=["app.py"],
+        fallback_validation_commands=["python -m pytest"],
+    )
+
+    assert plan["operations"] == [
+        {"action": "patch", "path": "app.py", "target": "VALUE = 1", "replacement": "VALUE = 2"}
+    ]
+    assert plan["validation_commands"] == ["pytest -q tests/test_app.py", "python -m pytest"]

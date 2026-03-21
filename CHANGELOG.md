@@ -19,6 +19,7 @@ v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal d
 - **Otonom Cron Loop:** SİDAR'ın kendi kendine uyanıp görevleri değerlendirmesini sağlayan `_autonomous_cron_loop` arka plan görevi eklendi.
 - **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`), yüksek riskli aksiyonlar için audit trail ve HITL korumalarıyla ürünleşti.
 - **GraphRAG Etki Analizi:** `core/rag.py` içindeki impact analizi; risk seviyesi, etkilenen endpoint handler'ları ve reviewer hedeflerini üreten daha yönlendirici bir raporlama katmanına genişletildi.
+- **Faz C Self-Healing Bootstrap:** `core/ci_remediation.py` ve `agent/sidar_agent.py` artık düşük riskli CI arızaları için LLM tabanlı JSON patch planı üretip patch uygular, sandbox içinde doğrular ve hata halinde otomatik rollback yapar; yüksek riskli akışlar ise HITL beklemeye devam eder.
 
 ### Teknik Borç Kapanışı
 - `core/voice.py`, `web_server.py`, `managers/browser_manager.py`, `main.py`, `core/ci_remediation.py`, `agent/core/contracts.py` ve `core/rag.py` çevresindeki v5.0-alpha test kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_ci_remediation.py`, `tests/test_contracts_federation.py` ve `tests/test_rag_graph.py` ile kapatıldı.

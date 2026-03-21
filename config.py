@@ -256,6 +256,8 @@ class Config:
     VERSION: str      = "5.0.0-alpha"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
+    ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", True)
+    SELF_HEAL_MAX_PATCHES: int = get_int_env("SELF_HEAL_MAX_PATCHES", 3)
 
     # ─── Dizinler ────────────────────────────────────────────
     BASE_DIR:    Path = BASE_DIR

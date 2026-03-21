@@ -49,8 +49,11 @@ Provides-Extra: sandbox
 Requires-Dist: docker~=7.1.0; extra == "sandbox"
 Provides-Extra: gui
 Requires-Dist: eel>=0.16.0; extra == "gui"
+Provides-Extra: browser
+Requires-Dist: playwright~=1.51.0; extra == "browser"
+Requires-Dist: selenium~=4.29.0; extra == "browser"
 Provides-Extra: all
-Requires-Dist: sidar-project[anthropic,gemini,gpu,gui,postgres,rag,sandbox,telemetry]; extra == "all"
+Requires-Dist: sidar-project[anthropic,browser,gemini,gpu,gui,postgres,rag,sandbox,telemetry]; extra == "all"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.23.0; extra == "dev"
