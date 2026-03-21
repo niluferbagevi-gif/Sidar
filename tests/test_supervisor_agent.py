@@ -24,6 +24,7 @@ def _load_supervisor_module():
             "agent.roles.coder_agent",
             "agent.roles.researcher_agent",
             "agent.roles.reviewer_agent",
+            "agent.roles.poyraz_agent",
             "config",
             "core",
             "core.llm_client",
@@ -81,6 +82,7 @@ def _load_supervisor_module():
         ("agent.roles.coder_agent", "CoderAgent"),
         ("agent.roles.researcher_agent", "ResearcherAgent"),
         ("agent.roles.reviewer_agent", "ReviewerAgent"),
+        ("agent.roles.poyraz_agent", "PoyrazAgent"),
     ):
         role_mod = types.ModuleType(module_name)
         role_mod.__dict__[class_name] = type(class_name, (_RoleAgent,), {})
@@ -134,6 +136,7 @@ def test_supervisor_init_falls_back_when_base_and_role_agents_are_object_stubs(m
     monkeypatch.setattr(supervisor_mod, "ResearcherAgent", object)
     monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
     monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
+    monkeypatch.setattr(supervisor_mod, "PoyrazAgent", object)
 
     cfg = object()
     s = SupervisorAgent(cfg=cfg)
@@ -145,6 +148,7 @@ def test_supervisor_init_falls_back_when_base_and_role_agents_are_object_stubs(m
     assert s.researcher is None
     assert s.coder is None
     assert s.reviewer is None
+    assert s.poyraz is None
 
 
 def test_supervisor_routes_research_to_researcher(monkeypatch):
@@ -171,6 +175,22 @@ def test_supervisor_routes_review_intent_to_reviewer(monkeypatch):
     assert out.startswith("REVIEW:")
 
 
+
+
+def test_supervisor_intent_classifies_marketing_keywords():
+    assert SupervisorAgent._intent("SEO ve kampanya metni hazırla") == "marketing"
+
+
+def test_supervisor_routes_marketing_intent_to_poyraz(monkeypatch):
+    s = SupervisorAgent()
+
+    async def fake_marketing_run_task(prompt: str) -> str:
+        return f"MARKETING:{prompt}"
+
+    monkeypatch.setattr(s.poyraz, "run_task", fake_marketing_run_task)
+
+    out = asyncio.run(s.run_task("SEO ve kampanya planı hazırla"))
+    assert out.startswith("MARKETING:")
 
 
 def test_supervisor_routes_research_delegation_requests_through_p2p(monkeypatch):
@@ -381,6 +401,7 @@ def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch
     monkeypatch.setattr(supervisor_mod, "ResearcherAgent", object)
     monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
     monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
+    monkeypatch.setattr(supervisor_mod, "PoyrazAgent", object)
 
     cfg = object()
     s = SupervisorAgent(cfg=cfg)
@@ -392,6 +413,7 @@ def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch
     assert s.researcher is None
     assert s.coder is None
     assert s.reviewer is None
+    assert s.poyraz is None
 
 
 def test_supervisor_null_span_methods_are_safe():
