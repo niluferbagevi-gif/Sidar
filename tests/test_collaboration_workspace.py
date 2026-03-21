@@ -59,7 +59,8 @@ def test_websocket_chat_broadcasts_collaboration_room_messages_and_sidar_command
             self.memory = _Memory()
 
         async def _try_multi_agent(self, prompt):
-            return f"room-ok:{prompt.split('Current command:\\n', 1)[-1].strip()}"
+            delimiter = 'Current command:\n'
+            return f"room-ok:{prompt.split(delimiter, 1)[-1].strip()}"
 
     class _ScriptedSocket:
         def __init__(self, payloads):
