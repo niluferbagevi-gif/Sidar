@@ -362,6 +362,7 @@ class Config:
     RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
     RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
     REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    REDIS_MAX_CONNECTIONS: int = get_int_env("REDIS_MAX_CONNECTIONS", 50)
     ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
     HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez

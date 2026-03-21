@@ -26,9 +26,13 @@ aIWorker:
       memory: 8Gi
 
 redis:
+  maxConnections: 200
   storage:
     size: 20Gi
     storageClassName: ssd
+
+database:
+  poolSize: 30
 
 postgresql:
   password: ""  # ExternalSecret / Vault Secret referansıyla sağlanır (boş bırakın)

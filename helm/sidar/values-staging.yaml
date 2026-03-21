@@ -26,9 +26,13 @@ aIWorker:
       memory: 2Gi
 
 redis:
+  maxConnections: 60
   storage:
     size: 2Gi
     storageClassName: standard
+
+database:
+  poolSize: 8
 
 postgresql:
   password: staging-secret  # Üretimde ExternalSecret / Vault referansıyla değiştirin

@@ -180,3 +180,57 @@ Chart, Grafana sidecar taraması için `grafana_dashboard=1` etiketli `sidar-slo
 - Availability (`up`) ≥ 99.9%
 - P95 latency (`http_server_requests_seconds_bucket`) ≤ hedef eşik
 - 5xx error rate (`http_server_requests_seconds_count{status=~"5.."}`) ≤ hedef eşik
+
+## 10) PostgreSQL ve Redis pool doğrulaması
+
+Cutover öncesi aşağıdaki env ayarları gözden geçirilmelidir:
+
+- `DB_POOL_SIZE`: PostgreSQL `asyncpg` havuz üst sınırı. Staging için başlangıç `8`, production için `30` önerilir.
+- `REDIS_MAX_CONNECTIONS`: Redis istemcileri (`web_server`, semantic cache, event bus) için bağlantı üst sınırı. Staging için `60`, production için `200` önerilir.
+- Uygulama pod/container loglarında bağlantı timeout veya pool exhaustion sinyali görülürse önce bu iki değer ve veritabanı/Redis CPU-RAM grafikleri birlikte incelenmelidir.
+
+Doğrulama komutları:
+
+```bash
+python scripts/load_test_db_pool.py --concurrency 50
+python - <<'PY'
+from config import Config
+cfg = Config()
+print({"db_pool_size": cfg.DB_POOL_SIZE, "redis_max_connections": cfg.REDIS_MAX_CONNECTIONS})
+PY
+```
+
+## 11) Deployment komutları
+
+### 11.1 Helm ile Kubernetes deploy
+
+```bash
+helm upgrade --install sidar ./helm/sidar \
+  -f helm/sidar/values.yaml \
+  -f helm/sidar/values-prod.yaml
+
+kubectl rollout status deploy/sidar-web
+kubectl rollout status deploy/sidar-ai-worker
+```
+
+### 11.2 Docker Compose ile VPS deploy
+
+```bash
+docker compose pull
+docker compose up -d postgres redis jaeger prometheus grafana sidar-web
+docker compose ps
+```
+
+## 12) Grafana dashboard doğrulaması
+
+Grafana ayağa kalktıktan sonra aşağıdaki dashboard dosyalarının yüklendiğini doğrulayın:
+
+- `docker/grafana/dashboards/sidar-llm-overview.json`
+- `grafana/dashboards/sidar_overview.json`
+
+Operasyon başlangıcında şu sinyalleri izleyin:
+
+- LLM token / maliyet panelleri
+- ajan delegasyon gecikmeleri / tepki süreleri
+- Redis ve PostgreSQL sağlık sinyalleri
+- tracing hattı (Jaeger/OTel) ile yavaş istekler
