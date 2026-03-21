@@ -2148,7 +2148,7 @@ class Database:
         *,
         tenant_id: str = "default",
         title: str,
-        items: list[str],
+        items: list[Any],
         status: str = "pending",
         owner_user_id: str = "",
         campaign_id: Optional[int] = None,
@@ -2157,7 +2157,20 @@ class Database:
         checklist_title = (title or "").strip()
         if not checklist_title:
             raise ValueError("title is required")
-        normalized_items = [str(item).strip() for item in list(items or []) if str(item).strip()]
+        normalized_items: list[Any] = []
+        for item in list(items or []):
+            if isinstance(item, dict):
+                normalized_dict = {
+                    str(key).strip(): value
+                    for key, value in item.items()
+                    if str(key).strip()
+                }
+                if normalized_dict:
+                    normalized_items.append(normalized_dict)
+                continue
+            text = str(item).strip()
+            if text:
+                normalized_items.append(text)
         now = _utc_now_iso()
         items_json = _json_dumps(normalized_items)
         if self._backend == "postgresql":

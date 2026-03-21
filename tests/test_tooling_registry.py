@@ -148,9 +148,16 @@ def test_parse_tool_argument_for_unknown_tool_returns_raw_payload():
 
 def test_parse_tool_argument_supports_marketing_operation_schemas():
     assert "publish_social" in tooling.TOOL_ARG_SCHEMAS
+    assert "publish_instagram_post" in tooling.TOOL_ARG_SCHEMAS
+    assert "publish_facebook_post" in tooling.TOOL_ARG_SCHEMAS
+    assert "send_whatsapp_message" in tooling.TOOL_ARG_SCHEMAS
     assert "build_landing_page" in tooling.TOOL_ARG_SCHEMAS
     assert "generate_campaign_copy" in tooling.TOOL_ARG_SCHEMAS
     assert "ingest_video_insights" in tooling.TOOL_ARG_SCHEMAS
+    assert "create_marketing_campaign" in tooling.TOOL_ARG_SCHEMAS
+    assert "store_content_asset" in tooling.TOOL_ARG_SCHEMAS
+    assert "create_operation_checklist" in tooling.TOOL_ARG_SCHEMAS
+    assert "plan_service_operations" in tooling.TOOL_ARG_SCHEMAS
 
     social = tooling.parse_tool_argument(
         "publish_social",
@@ -159,19 +166,43 @@ def test_parse_tool_argument_supports_marketing_operation_schemas():
     assert isinstance(social, tooling.SocialPublishSchema)
     assert social.platform == "instagram"
 
+    instagram = tooling.parse_tool_argument(
+        "publish_instagram_post",
+        '{"caption":"Yeni kampanya","image_url":"https://cdn.test/post.jpg"}',
+    )
+    assert isinstance(instagram, tooling.InstagramPublishSchema)
+    assert instagram.image_url.endswith("post.jpg")
+
+    facebook = tooling.parse_tool_argument(
+        "publish_facebook_post",
+        '{"message":"Duyuru","link_url":"https://example.test"}',
+    )
+    assert isinstance(facebook, tooling.FacebookPublishSchema)
+    assert facebook.link_url == "https://example.test"
+
+    whatsapp = tooling.parse_tool_argument(
+        "send_whatsapp_message",
+        '{"to":"+905555555555","text":"Merhaba","preview_url":true}',
+    )
+    assert isinstance(whatsapp, tooling.WhatsAppMessageSchema)
+    assert whatsapp.preview_url is True
+
     landing = tooling.parse_tool_argument(
         "build_landing_page",
-        '{"brand_name":"Poyraz","offer":"Demo","audience":"KOBI","call_to_action":"Kaydol","sections":["hero","faq"]}',
+        '{"brand_name":"Poyraz","offer":"Demo","audience":"KOBI","call_to_action":"Kaydol","sections":["hero","faq"],"campaign_id":9,"store_asset":true}',
     )
     assert isinstance(landing, tooling.LandingPageDraftSchema)
     assert landing.sections == ["hero", "faq"]
+    assert landing.campaign_id == 9
+    assert landing.store_asset is True
 
     campaign = tooling.parse_tool_argument(
         "generate_campaign_copy",
-        '{"campaign_name":"Bahar","objective":"Lead","audience":"SMB","channels":["instagram","whatsapp"]}',
+        '{"campaign_name":"Bahar","objective":"Lead","audience":"SMB","channels":["instagram","whatsapp"],"campaign_id":4,"store_asset":true}',
     )
     assert isinstance(campaign, tooling.CampaignCopySchema)
     assert campaign.channels == ["instagram", "whatsapp"]
+    assert campaign.store_asset is True
 
     video = tooling.parse_tool_argument(
         "ingest_video_insights",
@@ -179,3 +210,31 @@ def test_parse_tool_argument_supports_marketing_operation_schemas():
     )
     assert isinstance(video, tooling.VideoInsightIngestSchema)
     assert video.source_url.endswith("dQw4w9WgXcQ")
+
+    ops_campaign = tooling.parse_tool_argument(
+        "create_marketing_campaign",
+        '{"tenant_id":"tenant-a","name":"Lansman","channel":"instagram","objective":"lead","metadata":{"region":"TR"}}',
+    )
+    assert isinstance(ops_campaign, tooling.MarketingCampaignCreateSchema)
+    assert ops_campaign.metadata == {"region": "TR"}
+
+    asset = tooling.parse_tool_argument(
+        "store_content_asset",
+        '{"campaign_id":12,"asset_type":"landing_page","title":"LP","content":"demo","metadata":{"locale":"tr-TR"}}',
+    )
+    assert isinstance(asset, tooling.ContentAssetCreateSchema)
+    assert asset.metadata["locale"] == "tr-TR"
+
+    checklist = tooling.parse_tool_argument(
+        "create_operation_checklist",
+        '{"title":"Kontrol","items":["UTM",{"type":"vendor_assignment","role":"DJ","assignee":"Ece"}]}',
+    )
+    assert isinstance(checklist, tooling.OperationChecklistSchema)
+    assert isinstance(checklist.items[1], dict)
+
+    service_plan = tooling.parse_tool_argument(
+        "plan_service_operations",
+        '{"campaign_name":"Doğum Günü","service_name":"Organizasyon","menu_plan":{"adult":["Izgara"],"child":["Mini pizza"]},"vendor_assignments":{"DJ":"Ali"},"timeline":["18:00 karşılama"]}',
+    )
+    assert isinstance(service_plan, tooling.ServiceOperationsPlanSchema)
+    assert service_plan.menu_plan["child"] == ["Mini pizza"]
