@@ -44,6 +44,23 @@ llm_client = _optional_module("core.llm_client")
 db = _optional_module("core.db")
 rag = _optional_module("core.rag")
 llm_metrics = _optional_module("core.llm_metrics")
+
+
+def _optional_module(module_name: str):
+    """Alt modül import'u başarısız olsa da çekirdek paketinin yüklenmesini engellemez."""
+    try:
+        return import_module(module_name)
+    except Exception:
+        return None
+
+
+# Testlerde monkeypatch("core.<module>....") kullanımını desteklemek için
+# alt modülleri paket seviyesinde erişilebilir kıl.
+memory = _optional_module("core.memory")
+llm_client = _optional_module("core.llm_client")
+db = _optional_module("core.db")
+rag = _optional_module("core.rag")
+llm_metrics = _optional_module("core.llm_metrics")
 multimodal = _optional_module("core.multimodal")
 voice = _optional_module("core.voice")
 active_learning = _optional_module("core.active_learning")
