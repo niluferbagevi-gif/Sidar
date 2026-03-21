@@ -27,6 +27,8 @@ def test_coveragerc_has_fail_under_100():
 
 def test_ci_has_explicit_coverage_quality_gate_step():
     src = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "Run targeted Swarm + Active Learning regression slice" in src
+    assert "tests/test_swarm_orchestrator.py tests/test_active_learning.py" in src
     assert "Enforce coverage quality gate (100%)" in src
     assert "--cov-fail-under=100" in src
 

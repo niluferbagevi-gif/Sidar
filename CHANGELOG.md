@@ -5,6 +5,18 @@
 
 ---
 
+## [v5.1.3-alpha] - 2026-03-21
+Swarm orkestrasyonu ile Active Learning yüzeyleri, production cutover ve coverage kalite kapıları içinde daha görünür ve hedefli bir regresyon dilimi olarak sabitlendi.
+
+### İyileştirmeler (Improved)
+- **CI coverage guard netleştirmesi:** `.github/workflows/ci.yml` içine `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` odaklı ayrı bir regresyon adımı eklenerek, `%100` coverage hard gate öncesinde Swarm + Active Learning omurgasının açık isimli bir kalite kapısından geçmesi sağlandı.
+- **Production cutover doğrulama genişlemesi:** `.github/workflows/migration-cutover-checks.yml` artık PostgreSQL migration + pool smoke zincirine ek olarak aynı Swarm + Active Learning dilimini ve workflow guard testini çalıştırarak cutover provasını yalnızca veri katmanı ile sınırlamıyor.
+
+### Teknik Borç Kapanışı
+- Coverage/cutover anlatısındaki örtük bağımlılık azaltıldı; Swarm koordinasyonu ile geri bildirim tabanlı öğrenme hattı artık CI ve production rehearsal katmanlarında isimli, testle doğrulanan bir operasyon yüzeyi olarak izleniyor.
+
+---
+
 ## [v5.1.2-alpha] - 2026-03-21
 Sürekli öğrenme (Continuous Learning) altyapısının temelleri atıldı, Akıllı Başlatıcı (Launcher) validasyonları ve asenkron ajan kilitleri (lock) sertleştirildi.
 

@@ -7,7 +7,7 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-21
-> **Son Güncelleme:** 2026-03-21 (v5.1.2 belge senkronizasyonu tamamlandı: `config.py` içindeki continuous learning hazırlıkları, `agent/sidar_agent.py` otonomi/gece bakımı kilitlerinin lazy-init asenkron güvenlik modeli ve `main.py` port doğrulama sertleştirmeleri üst seviye raporlara işlendi. Bu revizyon; judge/feedback sinyallerinden veri seti üretimine hazırlanan yeni env anahtarlarını, `_autonomy_lock` / `_nightly_maintenance_lock` tabanlı yarış durumu korumalarını ve launcher'ın `--port` parametresi için 1-65535 aralığında tam sayı zorunluluğunu belgeler; ayrıntılı sürüm farkları için `CHANGELOG.md` referans alınmalıdır.)
+> **Son Güncelleme:** 2026-03-21 (v5.1.3 belge senkronizasyonu tamamlandı: `.github/workflows/ci.yml` içindeki coverage quality gate öncesine Swarm + Active Learning odaklı hedefli regresyon dilimi eklendi, `.github/workflows/migration-cutover-checks.yml` production rehearsal hattı aynı iki yüzeyi ve workflow guard testini kapsayacak şekilde genişletildi. Bu revizyon; `tests/test_swarm_orchestrator.py` ile `tests/test_active_learning.py` yüzeylerinin artık yalnızca toplam `%100` coverage barajı içinde örtük kalmadığını, production cutover provasına da açık isimli kalite kapısı olarak bağlandığını belgeler; ayrıntılı sürüm farkları için `CHANGELOG.md` referans alınmalıdır.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** v5.0.0-alpha
 > **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) sürüm `5.0.0a0` olarak işaretlenmiş olup, `config.py` çalışma zamanı sürümü `5.0.0-alpha` ile uyumlu ilerlemektedir.
@@ -622,15 +622,18 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
+| Swarm + Active Learning hedefli regresyon dilimi | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_swarm_orchestrator.py`, `tests/test_active_learning.py` |
+| Production cutover rehearsal genişletmesi | ✅ Aktif | `.github/workflows/migration-cutover-checks.yml`, `tests/test_migration_ci_guards.py`, `tests/test_swarm_orchestrator.py`, `tests/test_active_learning.py` |
 
-Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + enterprise senaryo regresyonları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
+Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + enterprise senaryo regresyonları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır. Swarm orkestrasyonu ile Active Learning hattı da artık bu model içinde açık isimli hedefli regresyon dilimi olarak ayrı görünürlük kazanmıştır.
 
 ### 6.2 Coverage Hard Gate (%100)
 
 - `.coveragerc` içinde `fail_under = 100` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
 - `pytest.ini`, `python_files = test_*.py` ve `asyncio_mode = auto` ayarlarıyla aynı test evrenini deterministik biçimde çalıştırır.
-- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100` komutu ile coverage eşiğini uygular.
+- CI hattı (`.github/workflows/ci.yml`) coverage eşiğinden hemen önce `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` için hedefli bir regresyon dilimi koşturur; ardından ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100` komutu ile coverage eşiğini uygular.
 - `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"` değişkeniyle aynı eşiği yerelde tekrarlar.
+- `migration-cutover-checks.yml` production rehearsal hattı da aynı Swarm + Active Learning dilimini `tests/test_migration_ci_guards.py` guard testi ile birlikte çalıştırarak veri migrasyonu, connection pool smoke ve öğrenme/orkestrasyon omurgasını tek cutover zincirinde toplar.
 - Depoda `test_quick_100.py` ve `test_ultimate_coverage.py` gibi agresif kapsama odaklı testler bulunur; bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar

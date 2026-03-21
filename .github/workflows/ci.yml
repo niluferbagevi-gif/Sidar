@@ -50,6 +50,10 @@ jobs:
         run: |
           pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
 
+      - name: Run targeted Swarm + Active Learning regression slice
+        run: |
+          pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py
+
       - name: Enforce coverage quality gate (100%)
         run: |
           python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100
