@@ -564,3 +564,64 @@ def test_poyraz_agent_run_task_fallback_paths(monkeypatch):
     landing_payload = json.loads(calls["tool"][0][1])
     assert landing_payload["brand_name"] == "SİDAR"
     assert calls["generate"][-1] == ("marketing_general", "müşteri sadakat akışı öner")
+
+
+def test_poyraz_agent_ensure_db_returns_cached_value_inside_lock():
+    agent = PoyrazAgent()
+    sentinel_db = object()
+
+    class _LockThatSeedsDb:
+        async def __aenter__(self):
+            agent._db = sentinel_db
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    agent._db = None
+    agent._db_lock = _LockThatSeedsDb()
+
+    db = asyncio.run(agent._ensure_db())
+
+    assert db is sentinel_db
+
+
+def test_poyraz_agent_routes_additional_prefixed_tools(monkeypatch):
+    agent = PoyrazAgent()
+    calls = {"tool": [], "generate": []}
+
+    async def _fake_call_tool(name: str, payload: str) -> str:
+        calls["tool"].append((name, payload))
+        return f"tool:{name}:{payload}"
+
+    async def _fake_generate(task_prompt: str, mode: str) -> str:
+        calls["generate"].append((mode, task_prompt))
+        return f"gen:{mode}:{task_prompt}"
+
+    monkeypatch.setattr(agent, "call_tool", _fake_call_tool)
+    monkeypatch.setattr(agent, "_generate_marketing_output", _fake_generate)
+
+    web_search_out = asyncio.run(agent.run_task("web_search| trend raporu "))
+    fetch_out = asyncio.run(agent.run_task("fetch_url| https://sidar.dev/blog "))
+    docs_out = asyncio.run(agent.run_task("search_docs| growth playbook "))
+    copy_out = asyncio.run(agent.run_task('generate_campaign_copy|{"brief":"launch"}'))
+    store_out = asyncio.run(agent.run_task('store_content_asset|{"title":"Asset"}'))
+    checklist_out = asyncio.run(agent.run_task('create_operation_checklist|{"title":"Checklist"}'))
+    seo_out = asyncio.run(agent.run_task("seo_audit| teknik seo özeti "))
+
+    assert web_search_out == "tool:web_search:trend raporu"
+    assert fetch_out == "tool:fetch_url:https://sidar.dev/blog"
+    assert docs_out == "tool:search_docs:growth playbook"
+    assert copy_out == 'tool:generate_campaign_copy:{"brief":"launch"}'
+    assert store_out == 'tool:store_content_asset:{"title":"Asset"}'
+    assert checklist_out == 'tool:create_operation_checklist:{"title":"Checklist"}'
+    assert seo_out == "gen:seo_audit:teknik seo özeti"
+    assert calls["tool"] == [
+        ("web_search", "trend raporu"),
+        ("fetch_url", "https://sidar.dev/blog"),
+        ("search_docs", "growth playbook"),
+        ("generate_campaign_copy", '{"brief":"launch"}'),
+        ("store_content_asset", '{"title":"Asset"}'),
+        ("create_operation_checklist", '{"title":"Checklist"}'),
+    ]
+    assert calls["generate"] == [("seo_audit", "teknik seo özeti")]
