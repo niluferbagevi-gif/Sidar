@@ -2919,7 +2919,7 @@ def test_assets_mount_added_when_assets_directory_exists(monkeypatch):
 
     def _exists(self):
         path = str(self).replace("\\", "/")
-        if path.endswith("/web_ui/assets"):
+        if path.endswith("/web_ui_react/dist/assets"):
             return True
         return original_exists(self)
 
@@ -2927,7 +2927,12 @@ def test_assets_mount_added_when_assets_directory_exists(monkeypatch):
     monkeypatch.setattr(Path, "exists", _exists)
     _load_web_server()
 
-    assert any(path == "/assets" and str(directory).replace("\\", "/").endswith("/web_ui/assets") and name == "assets" for path, directory, name in recorded)
+    assert any(
+        path == "/assets"
+        and str(directory).replace("\\", "/").endswith("/web_ui_react/dist/assets")
+        and name == "assets"
+        for path, directory, name in recorded
+    )
 
 
 def test_async_shutdown_non_ollama_marks_cleanup_done_and_reaps_once(monkeypatch):
