@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sidar-project"
-version = "5.0.0a0"
+version = "5.1.0"
 requires-python = ">=3.11"
 dependencies = [
   # ── Temel altyapı ──────────────────────────────────────────────────────
@@ -92,7 +96,12 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["agent*", "core*", "managers*", "plugins*"]
+exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
+
+[tool.setuptools]
+include-package-data = true
 
 [tool.ruff]
 line-length = 100
