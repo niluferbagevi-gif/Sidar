@@ -179,8 +179,6 @@ def test_supervisor_routes_review_intent_to_reviewer(monkeypatch):
     assert out.startswith("REVIEW:")
 
 
-
-
 def test_supervisor_intent_classifies_marketing_keywords():
     assert SupervisorAgent._intent("SEO ve kampanya metni hazırla") == "marketing"
 
@@ -211,6 +209,38 @@ def test_supervisor_routes_marketing_intent_to_poyraz(monkeypatch):
 
     out = asyncio.run(s.run_task("SEO ve kampanya planı hazırla"))
     assert out.startswith("MARKETING:")
+
+
+def test_supervisor_routes_coverage_delegation_requests_through_p2p(monkeypatch):
+    s = SupervisorAgent()
+
+    req = DelegationRequest(
+        task_id="p2p-coverage",
+        reply_to="coverage",
+        target_agent="qa",
+        payload="coverage boşluklarını tekrar doğrula",
+    )
+
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor", context=None):
+        assert receiver == "coverage"
+        assert intent == "coverage"
+        assert parent_task_id is None
+        return TaskResult(task_id="coverage-1", status="done", summary=req)
+
+    routed = []
+
+    async def fake_route(request, *, parent_task_id=None, max_hops=4):
+        routed.append((request, parent_task_id, max_hops))
+        return TaskResult(task_id="route-4", status="done", summary="COVERAGE:P2P")
+
+    monkeypatch.setattr(s, "_delegate", fake_delegate)
+    monkeypatch.setattr(s, "_route_p2p", fake_route)
+    monkeypatch.setattr(s.registry, "has", lambda name: name == "coverage")
+
+    out = asyncio.run(s.run_task("coverage açığını kapat ve gerekiyorsa devret"))
+
+    assert out == "COVERAGE:P2P"
+    assert routed == [(req, "coverage-1", 4)]
 
 
 def test_supervisor_routes_research_delegation_requests_through_p2p(monkeypatch):
@@ -273,6 +303,37 @@ def test_supervisor_routes_review_delegation_requests_through_p2p(monkeypatch):
 
     assert out == "REVIEW:P2P"
     assert routed == [(req, "review-1", 4)]
+
+
+def test_supervisor_routes_marketing_delegation_requests_through_p2p(monkeypatch):
+    s = SupervisorAgent()
+
+    req = DelegationRequest(
+        task_id="p2p-marketing",
+        reply_to="poyraz",
+        target_agent="reviewer",
+        payload="kampanya metnini kalite açısından incele",
+    )
+
+    async def fake_delegate(receiver: str, goal: str, intent: str, parent_task_id=None, sender="supervisor", context=None):
+        assert receiver == "poyraz"
+        assert intent == "marketing"
+        assert parent_task_id is None
+        return TaskResult(task_id="marketing-1", status="done", summary=req)
+
+    routed = []
+
+    async def fake_route(request, *, parent_task_id=None, max_hops=4):
+        routed.append((request, parent_task_id, max_hops))
+        return TaskResult(task_id="route-3", status="done", summary="MARKETING:P2P")
+
+    monkeypatch.setattr(s, "_delegate", fake_delegate)
+    monkeypatch.setattr(s, "_route_p2p", fake_route)
+
+    out = asyncio.run(s.run_task("SEO kampanyasını hazırla ve gerekiyorsa devret"))
+
+    assert out == "MARKETING:P2P"
+    assert routed == [(req, "marketing-1", 4)]
 
 
 def test_supervisor_routes_code_intent_to_coder(monkeypatch):
