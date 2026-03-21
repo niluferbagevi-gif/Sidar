@@ -208,6 +208,44 @@ def test_run_lsp_sequence_handles_timeout_and_server_failure(monkeypatch, tmp_pa
         manager._run_lsp_sequence(primary_path=target, request_method=None)
 
 
+def test_run_lsp_sequence_skips_existing_extra_files_with_unsupported_language(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    target = tmp_path / "sample.py"
+    helper = tmp_path / "helper.py"
+    unsupported = tmp_path / "notes.md"
+    target.write_text("value = 1\n", encoding="utf-8")
+    helper.write_text("helper = 2\n", encoding="utf-8")
+    unsupported.write_text("# ignored by lsp\n", encoding="utf-8")
+
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+
+        def communicate(self, payload, timeout):
+            captured["payload"] = payload
+            captured["timeout"] = timeout
+            return b"", b""
+
+    monkeypatch.setattr(CM_MOD.subprocess, "Popen", lambda *args, **kwargs: _Proc())
+
+    messages = manager._run_lsp_sequence(
+        primary_path=target,
+        request_method=None,
+        extra_open_files=[helper, unsupported],
+    )
+
+    assert messages == []
+    decoded_messages = CM_MOD._decode_lsp_stream(captured["payload"])
+    did_open_uris = [
+        item["params"]["textDocument"]["uri"]
+        for item in decoded_messages
+        if item.get("method") == "textDocument/didOpen"
+    ]
+    assert did_open_uris == [CM_MOD._path_to_file_uri(target), CM_MOD._path_to_file_uri(helper)]
+    assert CM_MOD._path_to_file_uri(unsupported) not in did_open_uris
+    assert captured["timeout"] == manager.lsp_timeout_seconds
+
 def test_run_lsp_sequence_propagates_protocol_error_from_stdout(monkeypatch, tmp_path):
     manager = _make_manager(monkeypatch, tmp_path)
     target = tmp_path / "sample.py"
