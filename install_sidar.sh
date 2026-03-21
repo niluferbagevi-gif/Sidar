@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sidar AI — Otomatik Kurulum Betiği
-# Sürüm: 2.7.0
+# Sürüm: 5.1.0 (v5.0.0-alpha baseline)
 
 # Hata durumunda betiği durdur
 set -euo pipefail
@@ -51,7 +51,7 @@ install_system_packages() {
     echo "ℹ️ Sistem yükseltmesi varsayılan olarak kapalı (ALLOW_APT_UPGRADE=1 ile açabilirsiniz)."
   fi
 
-  sudo apt install -y curl wget git build-essential software-properties-common zstd
+  sudo apt install -y curl wget git build-essential software-properties-common zstd nodejs npm
   sudo apt install -y portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
 }
 
@@ -168,27 +168,24 @@ pull_models() {
 
 print_footer() {
   echo "============================================================"
-  echo "🚀 SİDAR v2.7.0 Kurulumu Tamamlandı!"
+  echo "🚀 SİDAR v5.1.0 Kurulumu Tamamlandı!"
   echo "============================================================"
   echo "Lütfen yeni ayarların yüklenmesi için terminali kapatıp YENİDEN AÇIN."
   echo ""
   echo "🌐 Web Arayüzü: http://localhost:7860"
-  echo "💻 Terminal Modu: python main.py --mode cli"
+  echo "🚀 Ultimate Launcher: python main.py"
   if [[ -n "$DOCKER_COMPOSE_CMD" ]]; then
-    echo "🐳 Docker Compose: $DOCKER_COMPOSE_CMD"
+    echo "🐳 Docker Compose: $DOCKER_COMPOSE_CMD up --build sidar-web"
   else
-    echo "⚠️ Docker Compose bulunamadı (docker compose / docker-compose)."
+    echo "⚠️ Docker Compose bulunamadı."
   fi
   echo ""
   echo "Sonrasında SİDAR'ı çalıştırmak için sırasıyla şunları yazın:"
   echo "  1. cd ~/$PROJECT_NAME"
   echo "  2. conda activate $ENV_NAME"
   echo "  3. nano .env            ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
-  echo "  4. python web_server.py ← Web arayüzünü başlatmak için (http://localhost:7860)"
-  echo "     VEYA: python cli.py  ← Komut satırı (CLI) modu için"
-  echo ""
-  echo "Hızlı sağlık kontrolü:"
-  echo "  curl http://localhost:7860/status"
+  echo "  4. alembic upgrade head ← (ÖNEMLİ) Veritabanı tablolarını oluşturmak için"
+  echo "  5. python main.py       ← Etkileşimli TUI menüsü ile başlatmak için"
   echo ""
   echo "Güvenlik notu:"
   echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
@@ -205,6 +202,21 @@ setup_env_file() {
     echo "✅ .env.example → .env olarak kopyalandı."
     echo "   📝 Önemli: $PROJECT_DIR/.env dosyasını açarak"
     echo "      AI sağlayıcınızı (AI_PROVIDER) ve diğer ayarları yapılandırın."
+  fi
+}
+
+build_react_frontend() {
+  echo -e "\n⚛️ 10. React tabanlı web arayüzü (web_ui_react) derleniyor..."
+  if [[ -d "$PROJECT_DIR/web_ui_react" ]]; then
+    cd "$PROJECT_DIR/web_ui_react"
+    echo "   npm paketleri yükleniyor..."
+    npm install
+    echo "   Production build alınıyor..."
+    npm run build
+    cd "$PROJECT_DIR"
+    echo "✅ React arayüzü başarıyla derlendi."
+  else
+    echo "⚠️ web_ui_react klasörü bulunamadı, bu adım atlanıyor."
   fi
 }
 
@@ -241,4 +253,5 @@ setup_conda_env
 pull_models
 setup_env_file
 download_vendor_libs
+build_react_frontend
 print_footer
