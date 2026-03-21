@@ -947,3 +947,66 @@ def test_browser_manager_click_hitl_records_execution_failed_after_approval(monk
     statuses = [entry["status"] for entry in manager.list_audit_log()]
     assert statuses == ["pending_approval", "approved", "execution_failed"]
     assert manager.list_audit_log()[-1]["details"]["error"] == "approved click still failed"
+
+
+def test_browser_manager_select_option_records_execution_failed_when_impl_raises(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    session = BM_MOD.BrowserSession(
+        session_id="sess-select-error",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(),
+        current_url="https://example.com/form",
+    )
+    manager._sessions[session.session_id] = session
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=False))
+
+    def _boom(_session_id, _selector, _value):
+        raise RuntimeError("select impl exploded")
+
+    monkeypatch.setattr(manager, "_select_option_impl", _boom)
+
+    with pytest.raises(RuntimeError, match="select impl exploded"):
+        manager.select_option(session.session_id, "#priority", "high")
+
+    failed = manager.list_audit_log()[-1]
+    assert failed["action"] == "browser_select_option"
+    assert failed["status"] == "execution_failed"
+    assert failed["details"]["error"] == "select impl exploded"
+    assert failed["details"]["value_preview"] == "****"
+
+
+def test_browser_manager_select_option_hitl_records_timeout_after_approval(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    session = BM_MOD.BrowserSession(
+        session_id="sess-select-timeout",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(),
+        current_url="https://example.com/form",
+    )
+    manager._sessions[session.session_id] = session
+
+    class _ApproveGate:
+        async def request_approval(self, **_kwargs):
+            return True
+
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: _ApproveGate())
+
+    def _timeout(_session_id, _selector, _value):
+        raise TimeoutError("select timeout")
+
+    monkeypatch.setattr(manager, "_select_option_impl", _timeout)
+
+    with pytest.raises(TimeoutError, match="select timeout"):
+        asyncio.run(manager.select_option_hitl(session.session_id, "#priority", "high", reason="Öncelik güncelle"))
+
+    failed = manager.list_audit_log()[-1]
+    assert failed["action"] == "browser_select_option"
+    assert failed["status"] == "execution_failed"
+    assert failed["details"]["error"] == "select timeout"
+    assert failed["details"]["reason"] == "Öncelik güncelle"
