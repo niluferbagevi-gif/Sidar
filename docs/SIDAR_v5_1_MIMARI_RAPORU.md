@@ -133,6 +133,14 @@ CI + federation context]
 ## 8. Sonuç
 
 Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır: kullanıcı deneyimi istemci tarafında sesli etkileşimi görünür hale getirmiştir; backend tarafında self-healing ve event-driven federation ile reaktif model aşılmıştır; reviewer/browser/GraphRAG birleşimi ise karar kalitesini ve denetlenebilirliği artırmıştır. Bu nedenle v5.1 mimari raporu, mevcut kod tabanını v5.0'ın ötesine geçen bir **ileri otonomi baseline'ı** olarak belgelemektedir.
+
+## 8.1 Orta Vade Mimari Hazırlıklar: GraphRAG ve Dağıtık Swarm
+
+1. **GraphRAG + Knowledge Graph derinleşmesi:** Mevcut `pgvector` odaklı retrieval omurgası, varlık/ilişki çıkarımı yapan bir Knowledge Graph katmanı ile eşleştirilerek çok adımlı ve kompleks problemlerde bağımlılık zincirlerini, aktörler arası ilişkileri ve görevler arası nedenselliği daha doğru modelleyecek şekilde genişletilmelidir.
+2. **İlişkisel çıkarımın reviewer/remediation döngüsüne bağlanması:** Knowledge Graph düğümleri yalnızca arama kalitesini artırmak için değil; reviewer etki analizi, self-healing remediation planı ve external trigger korelasyonu için de ikincil karar yüzeyi olarak kullanılmalıdır.
+3. **Dağıtık swarm hazırlığı:** Ajanların tek bir Python süreci içinde çalıştığı mevcut topoloji, Kubernetes pod'ları seviyesinde izole edilmiş uzman worker'lara ayrılacak şekilde evrilmelidir. Bu dönüşüm için görev sözleşmeleri, broker mesaj şemaları, correlation-id taşıma ve retry/timeout politikaları bugünden standartlaştırılmalıdır.
+4. **Broker tabanlı orkestrasyon:** RabbitMQ/Kafka benzeri message broker katmanı, swarm görevlerini kuyruklayan, tenant izolasyonunu güçlendiren ve yatay ölçeklemeyi kolaylaştıran ana omurga olarak konumlandırılmalıdır. Böylece dağıtık sürü mimarisine geçiş yalnızca altyapı değil, gözlemlenebilirlik, hata toleransı ve güvenlik sınırları bakımından da kontrollü hazırlanmış olur.
+
 ---
 
 ## 9. Faz E: Otonom İş Ekosistemi (Poyraz & Coverage)
