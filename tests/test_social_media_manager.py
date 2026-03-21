@@ -175,6 +175,20 @@ def test_social_media_manager_http_error_and_invalid_json_paths():
     assert ok_publish_fail is False and out_publish_fail == "publish down"
 
 
+def test_social_media_manager_http_error_uses_stringified_non_dict_response_body():
+    client = _FakeClient([_Response(502, ["gateway", "down"])])
+    manager = SocialMediaManager(
+        graph_api_token="token",
+        facebook_page_id="page-1",
+        http_client_factory=lambda **_kwargs: client,
+    )
+
+    ok, out = asyncio.run(manager.publish_facebook_post(message="Landing yayında"))
+
+    assert ok is False
+    assert out == "['gateway', 'down']"
+
+
 def test_social_media_manager_request_error_timeout_and_validation_paths():
     class _TimeoutError(social_mod.httpx.TimeoutException):
         pass
