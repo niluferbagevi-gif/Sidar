@@ -507,6 +507,24 @@ class TestDatasetExporter:
         with pytest.raises(ValueError, match="Desteklenmeyen format"):
             _run(exporter.export(str(tmp_path / "x.jsonl"), fmt="csv"))
 
+    def test_serialize_sft_examples_rejects_unknown_format_and_skips_blank_rows(self, tmp_path):
+        store = _make_store(tmp_path)
+        pipeline = ContinuousLearningPipeline(store, config=types.SimpleNamespace())
+
+        with pytest.raises(ValueError, match="Desteklenmeyen continuous learning SFT formatı"):
+            pipeline._serialize_sft_examples([], "csv")
+
+        serialized = pipeline._serialize_sft_examples(
+            [
+                {"instruction": "  ", "output": "cevap"},
+                {"instruction": "Soru", "output": "   "},
+                {"instruction": "Geçerli", "output": "Yanıt"},
+            ],
+            "jsonl",
+        )
+
+        assert serialized == [{"prompt": "Geçerli", "completion": "Yanıt"}]
+
 
 # ─── LoRATrainer ─────────────────────────────────────────────────────────────
 
