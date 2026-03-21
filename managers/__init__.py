@@ -6,6 +6,7 @@ from .jira_manager import JiraManager
 from .package_info import PackageInfoManager
 from .security import SecurityManager
 from .slack_manager import SlackManager
+from .social_media_manager import SocialMediaManager
 from .system_health import SystemHealthManager
 from .teams_manager import TeamsManager
 from .todo_manager import TodoManager
@@ -21,6 +22,7 @@ _EXPORTED_MANAGERS = (
     GitHubManager,
     JiraManager,
     SlackManager,
+    SocialMediaManager,
     TeamsManager,
     SecurityManager,
     WebSearchManager,
