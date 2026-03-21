@@ -704,3 +704,17 @@ def test_task_router_maps_marketing_intents_to_poyraz(monkeypatch, swarm_module)
     spec = router.route("seo")
 
     assert spec.role_name == "poyraz"
+
+
+def test_task_router_maps_coverage_intents_to_qa(monkeypatch, swarm_module):
+    router = swarm_module.TaskRouter()
+
+    monkeypatch.setattr(
+        swarm_module.AgentRegistry,
+        "find_by_capability",
+        lambda capability: [_DummySpec("qa")] if capability == "coverage_analysis" else [],
+    )
+
+    spec = router.route("coverage")
+
+    assert spec.role_name == "qa"

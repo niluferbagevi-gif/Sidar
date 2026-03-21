@@ -195,5 +195,17 @@ def _register_builtin_agents() -> None:
     except ImportError:
         pass
 
+    try:
+        from agent.roles.qa_agent import QAAgent
+        AgentRegistry.register_type(
+            role_name="qa",
+            agent_class=QAAgent,
+            capabilities=["coverage_analysis", "test_generation", "ci_remediation"],
+            description="Coverage analizi ve pytest tabanlı test üretimi uzmanı",
+            is_builtin=True,
+        )
+    except ImportError:
+        pass
+
 
 _register_builtin_agents()
