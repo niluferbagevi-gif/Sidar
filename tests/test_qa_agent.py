@@ -1,8 +1,11 @@
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,3 +146,86 @@ def test_qa_agent_routes_missing_test_generation(monkeypatch):
         "target_path": "core/ci_remediation.py",
         "context": "critical branches",
     }
+
+
+def test_qa_agent_helper_payload_and_tool_parsing_paths(monkeypatch):
+    agent = QAAgent()
+
+    assert agent._parse_json_payload("") == {}
+    assert agent._parse_json_payload("pytest -q tests/test_demo.py") == {"failure_summary": "pytest -q tests/test_demo.py"}
+    assert agent._parse_json_payload('["unexpected"]') == {"failure_summary": '["unexpected"]'}
+    assert agent._suggest_test_path("") == "tests/test_generated_coverage.py"
+    assert agent._suggest_test_path("./core/sample.py") == "tests/test_sample.py"
+
+    read_out = asyncio.run(agent.run_task("read_file|core/demo.py"))
+    list_out = asyncio.run(agent.run_task("list_directory|tests"))
+    grep_default = asyncio.run(agent.run_task("grep_search|needle|||core"))
+    grep_explicit = asyncio.run(agent.run_task("grep_search|needle|||core|||*.py|||7"))
+    remediation_out = asyncio.run(agent.run_task('ci_remediation|{"failure_summary":"pytest failed","suspected_targets":["core/demo.py"]}'))
+
+    assert read_out == "read:core/demo.py"
+    assert list_out == "list:tests"
+    assert grep_default == "grep:needle:core:*:2"
+    assert grep_explicit == "grep:needle:core:*.py:7"
+    assert '"suspected_targets": ["core/demo.py"]' in remediation_out
+
+
+def test_qa_agent_generate_test_code_prompt_and_timeout(monkeypatch):
+    agent = QAAgent()
+    seen = {}
+
+    async def _fake_call_llm(messages, **kwargs):
+        seen["messages"] = messages
+        seen["kwargs"] = kwargs
+        return "def test_generated_timeout_case():\n    assert True\n"
+
+    monkeypatch.setattr(agent, "call_llm", _fake_call_llm)
+
+    generated = asyncio.run(agent._generate_test_code("core/qa_agent.py", "edge case context"))
+
+    assert "def test_generated_timeout_case" in generated
+    assert "Önerilen test dosyası: tests/test_qa_agent.py" in seen["messages"][0]["content"]
+    assert "Coverage fail_under" in seen["messages"][0]["content"]
+    assert seen["kwargs"]["system_prompt"] == agent.TEST_GENERATION_PROMPT
+
+    async def _timeout_call_llm(*_args, **_kwargs):
+        raise asyncio.TimeoutError("llm timeout")
+
+    monkeypatch.setattr(agent, "call_llm", _timeout_call_llm)
+
+    with pytest.raises(asyncio.TimeoutError, match="llm timeout"):
+        asyncio.run(agent.run_task("write_missing_tests|core/qa_agent.py|timeout senaryosu"))
+
+
+def test_qa_agent_run_task_routes_tool_limit_and_fallback_modes(monkeypatch):
+    agent = QAAgent()
+    seen = {"tool": [], "plan": [], "generate": []}
+
+    async def _fake_call_tool(name: str, payload: str) -> str:
+        seen["tool"].append((name, payload))
+        return f"[TOOL_LIMIT] {name}:{payload}"
+
+    async def _fake_plan(payload: str) -> str:
+        seen["plan"].append(payload)
+        return json.dumps({"status": "planned", "payload": payload}, ensure_ascii=False)
+
+    async def _fake_generate(target_path: str, context: str) -> str:
+        seen["generate"].append((target_path, context))
+        return f"generated:{target_path or 'fallback'}:{context}"
+
+    monkeypatch.setattr(agent, "call_tool", _fake_call_tool)
+    monkeypatch.setattr(agent, "_build_coverage_plan", _fake_plan)
+    monkeypatch.setattr(agent, "_generate_test_code", _fake_generate)
+
+    empty_out = asyncio.run(agent.run_task("   "))
+    tool_limit_out = asyncio.run(agent.run_task("coverage_config"))
+    coverage_plan_out = asyncio.run(agent.run_task("Bu coverage raporu için eksik test üret"))
+    fallback_out = asyncio.run(agent.run_task("sade açıklama metni"))
+
+    assert empty_out == "[UYARI] Boş QA/Coverage görevi verildi."
+    assert tool_limit_out == "[TOOL_LIMIT] coverage_config:"
+    assert json.loads(coverage_plan_out)["status"] == "planned"
+    assert fallback_out == "generated:fallback:sade açıklama metni"
+    assert seen["tool"] == [("coverage_config", "")]
+    assert seen["plan"] == ["Bu coverage raporu için eksik test üret"]
+    assert seen["generate"] == [("", "sade açıklama metni")]
