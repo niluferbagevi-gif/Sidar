@@ -131,6 +131,62 @@ def test_build_knowledge_graph_projection_and_graphrag_plan(tmp_path):
     assert "sidar.swarm.researcher.rag_search" in plan.broker_topics
 
 
+def test_build_knowledge_graph_projection_filters_sessions_and_limits_code_edges(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._index = {
+        "doc-1": {"title": "Spec", "source": "docs/spec.md", "session_id": "sess-1"},
+        "doc-2": {"title": "Other", "source": "docs/other.md", "session_id": "sess-2"},
+    }
+    store._graph_ready = True
+    store._graph_rag_enabled = True
+    store._graph_index.add_node("node-a", node_type="file")
+    store._graph_index.add_node("node-b", node_type="file")
+    store._graph_index.add_node("node-c", node_type="file")
+    store._graph_index.add_edge("node-a", "node-b", kind="imports")
+    store._graph_index.add_edge("node-a", "node-c", kind="calls")
+    store._graph_index.add_edge("node-b", "node-c", kind="references")
+
+    projection = store.build_knowledge_graph_projection(
+        session_id="sess-1",
+        include_code_graph=True,
+        limit=1,
+    )
+
+    node_ids = {node.id for node in projection["nodes"]}
+    code_edges = [edge for edge in projection["edges"] if edge.source.startswith("code:")]
+
+    assert "doc:doc-1" in node_ids
+    assert "doc:doc-2" not in node_ids
+    assert len(code_edges) == 1
+
+
+def test_build_graphrag_search_plan_uses_chroma_backend_when_available(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._index = {"doc-1": {"title": "Spec", "source": "docs/spec.md", "session_id": "sess-1"}}
+    store._graph_ready = True
+    store._graph_rag_enabled = False
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._vector_backend = "chromadb"
+
+    calls = {}
+
+    def _fake_fetch_chroma(query, top_k, session_id):
+        calls["fetch"] = (query, top_k, session_id)
+        return [{"doc_id": "doc-1", "title": "Spec", "score": 0.77}]
+
+    monkeypatch.setattr(store, "_fetch_chroma", _fake_fetch_chroma)
+
+    plan = store.build_graphrag_search_plan("spec query", session_id="sess-1", top_k=2)
+
+    assert calls["fetch"] == ("spec query", 2, "sess-1")
+    assert plan.vector_backend == "chromadb"
+    assert plan.vector_candidates == ["doc-1"]
+
+
 def test_init_chroma_and_init_fts_migration_paths(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
 
