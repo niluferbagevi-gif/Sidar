@@ -2985,20 +2985,7 @@ async def _await_if_needed(value):
     return value
 
 
-@app.get(
-    "/health",
-    summary="Sağlık Kontrolü (Health Check)",
-    description="Liveness/readiness kontrolü için sistem sağlık bilgisini döndürür.",
-    responses={
-        200: {"description": "Sistem sağlıklı"},
-        503: {"description": "Sistemde kritik bir sorun var"},
-    },
-)
-async def health_check():
-    """
-    Kubernetes/Docker monitör sistemleri için yapısal (JSON) sağlık kontrolü.
-    (Liveness/Readiness probe endpointi)
-    """
+async def _health_response(*, require_dependencies: bool = False) -> JSONResponse:
     agent = await get_agent()
     health_data = agent.health.get_health_summary()
     health_data["uptime_seconds"] = int(time.monotonic() - _start_time)
@@ -3008,7 +2995,39 @@ async def health_check():
         health_data["status"] = "degraded"
         return JSONResponse(health_data, status_code=503)
 
+    if require_dependencies:
+        dependency_health = agent.health.get_dependency_health()
+        health_data["dependencies"] = dependency_health
+        if any(item.get("healthy") is False for item in dependency_health.values()):
+            health_data["status"] = "degraded"
+            return JSONResponse(health_data, status_code=503)
+
     return JSONResponse(health_data)
+
+
+@app.get(
+    "/health",
+    summary="Sağlık Kontrolü (Health Check)",
+    description="Liveness/readiness kontrolü için sistem sağlık bilgisini döndürür.",
+    responses={
+        200: {"description": "Sistem sağlıklı"},
+        503: {"description": "Sistemde kritik bir sorun var"},
+    },
+)
+@app.get("/healthz", include_in_schema=False)
+async def health_check():
+    """
+    Kubernetes/Docker liveness probe'ları için yapısal (JSON) sağlık kontrolü.
+    """
+    return await _health_response(require_dependencies=False)
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readiness_check():
+    """
+    Readiness probe: Redis/PostgreSQL gibi bağımlılıklar erişilemezse 503 döndürür.
+    """
+    return await _health_response(require_dependencies=True)
 
 
 @app.get("/metrics")

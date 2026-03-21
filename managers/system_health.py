@@ -14,9 +14,12 @@ import atexit
 import gc
 import logging
 import platform
+import socket
 import subprocess
 import threading
+from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from config import Config
 
@@ -436,8 +439,7 @@ class SystemHealthManager:
         cpu = self.get_cpu_usage()
         mem = self.get_memory_info()
         gpu = self.get_gpu_info()
-
-        return {
+        summary = {
             "status": "healthy",
             "cpu_percent": cpu if cpu is not None else 0.0,
             "ram_percent": mem.get("percent", 0.0) if mem else 0.0,
@@ -446,6 +448,61 @@ class SystemHealthManager:
             "python_version": platform.python_version(),
             "os": platform.system(),
         }
+        if getattr(self.cfg, "ENABLE_DEPENDENCY_HEALTHCHECKS", False):
+            dependencies = self.get_dependency_health()
+            summary["dependencies"] = dependencies
+            if any(item.get("healthy") is False for item in dependencies.values()):
+                summary["status"] = "degraded"
+        return summary
+
+    def get_dependency_health(self) -> dict:
+        """Redis/PostgreSQL gibi dış bağımlılıklar için hafif readiness kontrolü."""
+        return {
+            "redis": self.check_redis(),
+            "database": self.check_database(),
+        }
+
+    def _tcp_dependency_health(self, host: str, port: int, *, label: str) -> dict:
+        timeout_ms = max(50, int(getattr(self.cfg, "HEALTHCHECK_CONNECT_TIMEOUT_MS", 250) or 250))
+        try:
+            with socket.create_connection((host, port), timeout=timeout_ms / 1000.0):
+                return {"healthy": True, "target": f"{host}:{port}", "kind": label}
+        except Exception as exc:
+            return {"healthy": False, "target": f"{host}:{port}", "kind": label, "error": str(exc)}
+
+    def check_redis(self) -> dict:
+        raw = str(getattr(self.cfg, "REDIS_URL", "") or "").strip()
+        if not raw:
+            return {"healthy": True, "kind": "redis", "mode": "disabled"}
+        parsed = urlparse(raw)
+        host = parsed.hostname or "localhost"
+        port = int(parsed.port or 6379)
+        status = self._tcp_dependency_health(host, port, label="redis")
+        status["mode"] = "tcp"
+        return status
+
+    def check_database(self) -> dict:
+        raw = str(getattr(self.cfg, "DATABASE_URL", "") or "").strip()
+        if not raw:
+            return {"healthy": True, "kind": "database", "mode": "disabled"}
+        lowered = raw.lower()
+        if lowered.startswith("sqlite"):
+            path = raw.split(":///", 1)[-1] if ":///" in raw else raw
+            db_path = Path(path)
+            exists = db_path.exists()
+            return {
+                "healthy": exists or not db_path.name,
+                "kind": "database",
+                "mode": "sqlite",
+                "target": str(db_path),
+                **({} if exists or not db_path.name else {"error": "sqlite database file not found"}),
+            }
+        parsed = urlparse(raw)
+        host = parsed.hostname or "localhost"
+        port = int(parsed.port or 5432)
+        status = self._tcp_dependency_health(host, port, label="database")
+        status["mode"] = parsed.scheme or "tcp"
+        return status
 
     def full_report(self) -> str:
         """Kapsamlı sistem sağlık raporu (metin)."""

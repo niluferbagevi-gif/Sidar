@@ -504,6 +504,12 @@ def _make_agent(ai_provider="ollama", ollama_online=True):
         def get_health_summary(self):
             return {"status": "ok", "ollama_online": ollama_online}
 
+        def get_dependency_health(self):
+            return {
+                "redis": {"healthy": True, "kind": "redis"},
+                "database": {"healthy": True, "kind": "database"},
+            }
+
         def get_gpu_info(self):
             return {"devices": []}
 
@@ -775,6 +781,28 @@ def test_health_status_and_rag_search_endpoints():
     ok = asyncio.run(mod.rag_search(q="needle", mode="auto", top_k=99))
     assert ok.status_code == 200
     assert calls["search"] == ("needle", 10, "auto", "sess-1")
+
+
+def test_readiness_check_returns_503_when_dependency_is_down():
+    mod = _load_web_server()
+    agent, _calls = _make_agent(ai_provider="gemini", ollama_online=True)
+    agent.health.get_dependency_health = lambda: {
+        "redis": {"healthy": False, "kind": "redis", "error": "connection refused"},
+        "database": {"healthy": True, "kind": "database"},
+    }
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    ready = asyncio.run(mod.readiness_check())
+    live = asyncio.run(mod.health_check())
+
+    assert ready.status_code == 503
+    assert ready.content["status"] == "degraded"
+    assert ready.content["dependencies"]["redis"]["healthy"] is False
+    assert live.status_code == 200
 
 
 def test_rag_add_file_upload_set_level_and_webhook():

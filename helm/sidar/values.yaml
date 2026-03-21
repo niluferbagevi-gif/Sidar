@@ -114,6 +114,14 @@ monitoring:
   sloDashboard:
     enabled: true
 
+healthChecks:
+  dependencyChecksEnabled: true
+  connectTimeoutMs: 250
+
+eventBus:
+  dlqChannel: sidar:agent_events:dlq
+  dlqMaxLen: 1000
+
 # --- Üretim Dayanıklılık Ayarları ---
 podDisruptionBudget:
   web:
