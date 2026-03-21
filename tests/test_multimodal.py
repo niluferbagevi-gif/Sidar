@@ -9,6 +9,7 @@ import pytest
 
 from core import multimodal as multimodal_mod
 from core.multimodal import (
+    DownloadedMedia,
     ExtractedFrame,
     MultimodalPipeline,
     _command_exists,
@@ -730,3 +731,184 @@ def test_multimodal_pipeline_analyze_media_source_downloads_youtube_and_ingests(
     assert result["document_ingest"]["doc_id"] == "doc-55"
     assert result["download"]["platform"] == "youtube"
     assert result["download"]["resolved_url"] == "https://stream.example.com/video.mp4"
+
+
+def test_multimodal_helper_validation_and_youtube_edge_paths(monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    def _fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(stdout="stream-a\nstream-b\n")
+
+    monkeypatch.setattr(multimodal_mod.subprocess, "run", _fake_run)
+    assert multimodal_mod._run_subprocess_capture(["yt-dlp", "-g", "https://youtu.be/demo"]) == "stream-a\nstream-b\n"
+    assert captured["kwargs"]["text"] is True
+
+    assert multimodal_mod.detect_video_platform("https://vimeo.com/123") == "vimeo"
+    assert multimodal_mod.detect_video_platform("https://loom.com/share/abc") == "loom"
+    assert multimodal_mod.extract_youtube_video_id("https://youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert multimodal_mod.extract_youtube_video_id("https://youtube.com/watch?v=bad") == ""
+
+    normalized = multimodal_mod._normalize_youtube_transcript_events(
+        [
+            "skip",
+            {"segs": "bad"},
+            {"tStartMs": 500, "dDurationMs": 800, "segs": [{"utf8": "Merhaba &amp; hoş"}]},
+        ]
+    )
+    assert normalized["text"] == "Merhaba & hoş"
+    assert normalized["segments"][0]["start_seconds"] == 0.5
+
+    class _NotFoundResponse:
+        status_code = 404
+
+        def json(self):
+            return {}
+
+    class _EmptyResponse:
+        status_code = 200
+
+        def json(self):
+            return {"events": [{"segs": []}]}
+
+    class _TranscriptClient:
+        def __init__(self):
+            self._responses = [_NotFoundResponse(), _EmptyResponse()]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, _url):
+            return self._responses.pop(0)
+
+    invalid = asyncio.run(fetch_youtube_transcript("invalid-id"))
+    empty = asyncio.run(
+        fetch_youtube_transcript(
+            "https://youtu.be/dQw4w9WgXcQ",
+            languages=("tr", "en"),
+            http_client_factory=lambda **_kwargs: _TranscriptClient(),
+        )
+    )
+
+    assert invalid == {"success": False, "reason": "Geçerli YouTube video id bulunamadı.", "video_id": ""}
+    assert empty["success"] is False and "boş döndü" in empty["reason"]
+
+
+def test_remote_media_download_and_stream_resolution_validation_edges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    with pytest.raises(ValueError, match="http/https medya kaynakları"):
+        asyncio.run(download_remote_media("file:///tmp/demo.mp4", output_dir=tmp_path))
+
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda name: name == "yt-dlp")
+
+    def _fake_ytdlp(_command):
+        return None
+
+    monkeypatch.setattr(multimodal_mod, "_run_subprocess", _fake_ytdlp)
+    with pytest.raises(RuntimeError, match="çıktı dosyası üretmedi"):
+        asyncio.run(download_remote_media("https://youtu.be/dQw4w9WgXcQ", output_dir=tmp_path / "yt"))
+
+    with pytest.raises(ValueError, match="http/https medya kaynakları"):
+        asyncio.run(resolve_remote_media_stream("ftp://example.com/media.mp4"))
+
+    def _capture_bad_json(command):
+        if "--dump-single-json" in command:
+            return "{bad-json"
+        return ""
+
+    monkeypatch.setattr(multimodal_mod, "_run_subprocess_capture", _capture_bad_json)
+    resolved = asyncio.run(resolve_remote_media_stream("https://youtu.be/dQw4w9WgXcQ", prefer_video=False))
+    assert resolved["resolved_url"] == "https://youtu.be/dQw4w9WgXcQ"
+    assert resolved["mime_type"] == "audio/webm"
+    assert resolved["metadata"] == {}
+
+    async def _fallback_download(*_args, **_kwargs):
+        return DownloadedMedia(
+            path=str(tmp_path / "fallback.mp4"),
+            source_url="https://cdn.example.com/demo.mp4",
+            mime_type="video/mp4",
+            platform="generic",
+            resolved_url="https://cdn.example.com/demo.mp4",
+            title="fallback",
+        )
+
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda _name: False)
+    monkeypatch.setattr(multimodal_mod, "download_remote_media", _fallback_download)
+    fallback = asyncio.run(
+        materialize_remote_media_for_ffmpeg("https://cdn.example.com/demo.mp4", output_dir=tmp_path / "ffmpeg-off")
+    )
+    assert fallback.title == "fallback"
+
+
+def test_multimodal_scene_ingest_and_source_analysis_edge_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    assert multimodal_mod.build_scene_summary(
+        [{"timestamp_seconds": 1.0, "analysis": " "}, {"timestamp_seconds": 2.5, "summary": "Hero sahnesi"}]
+    ) == "2.5s → Hero sahnesi"
+
+    failed_ingest = asyncio.run(
+        ingest_multimodal_analysis(
+            object(),
+            {"success": False},
+            source="https://cdn.example.com/demo.mp4",
+        )
+    )
+    assert failed_ingest == {"success": False, "reason": "Başarısız analiz ingest edilemez."}
+
+    pipeline = MultimodalPipeline(_DummyLLM(), types.SimpleNamespace(ENABLE_MULTIMODAL=False, MULTIMODAL_MAX_FILE_BYTES=1024))
+    assert asyncio.run(pipeline.analyze_media_source(media_source="https://cdn.example.com/demo.mp4")) == {
+        "success": False,
+        "reason": "ENABLE_MULTIMODAL devre dışı",
+    }
+
+    pipeline.enabled = True
+    assert asyncio.run(pipeline.analyze_media_source(media_source="   ")) == {
+        "success": False,
+        "reason": "media_source boş olamaz",
+    }
+
+    local_media = tmp_path / "clip.wav"
+    local_media.write_bytes(b"audio")
+
+    async def _fake_local(**kwargs):
+        return {"success": True, "media_kind": "audio", "analysis": "ok", "context": "ctx", "transcript": {}, "frame_analyses": []}
+
+    monkeypatch.setattr(pipeline, "_analyze_local_media", _fake_local)
+    local_result = asyncio.run(pipeline.analyze_media_source(media_source=str(local_media), mime_type="audio/wav"))
+    assert local_result["media_source"] == str(local_media)
+
+    async def _fail_materialize(*_args, **_kwargs):
+        raise RuntimeError("ffmpeg failed")
+
+    async def _download_remote(*_args, **_kwargs):
+        file_path = tmp_path / "remote.mp4"
+        file_path.write_bytes(b"video")
+        return DownloadedMedia(
+            path=str(file_path),
+            source_url="https://youtu.be/dQw4w9WgXcQ",
+            mime_type="video/mp4",
+            platform="youtube",
+            resolved_url="https://stream.example.com/video.mp4",
+            title="Remote Video",
+        )
+
+    async def _transcript(*_args, **_kwargs):
+        return {"success": True, "text": "uzak transcript", "segments": [], "language": "tr"}
+
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda name: name == "ffmpeg")
+    monkeypatch.setattr(multimodal_mod, "materialize_remote_media_for_ffmpeg", _fail_materialize)
+    monkeypatch.setattr(multimodal_mod, "download_remote_media", _download_remote)
+    monkeypatch.setattr(multimodal_mod, "fetch_youtube_transcript", _transcript)
+
+    remote_result = asyncio.run(
+        pipeline.analyze_media_source(
+            media_source="https://youtu.be/dQw4w9WgXcQ",
+            mime_type="video/mp4",
+        )
+    )
+
+    assert remote_result["success"] is True
+    assert remote_result["download"]["platform"] == "youtube"
+    assert remote_result["download"]["title"] == "Remote Video"
