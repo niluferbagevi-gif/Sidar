@@ -46,6 +46,25 @@ class _FakeClient:
         return self.responses.pop(0)
 
 
+class _TextResponse(_Response):
+    def json(self):
+        raise ValueError("invalid json")
+
+
+class _ErrorClient:
+    def __init__(self, exc):
+        self.exc = exc
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def post(self, url, json=None):
+        raise self.exc
+
+
 def test_publish_instagram_post_runs_container_then_publish_calls():
     client = _FakeClient([_Response(200, {"id": "creation-1"}), _Response(200, {"id": "publish-1"})])
     manager = SocialMediaManager(
@@ -119,3 +138,74 @@ def test_publish_content_routes_platforms_and_handles_unknown():
     assert ok_fb is True and out_fb.startswith("fb:")
     assert ok_wa is True and out_wa.startswith("wa:")
     assert bad_ok is False and "Desteklenmeyen" in bad_out
+
+
+def test_social_media_manager_http_error_and_invalid_json_paths():
+    client_4xx = _FakeClient([_Response(400, {"error": {"message": "invalid media"}})])
+    manager_4xx = SocialMediaManager(
+        graph_api_token="token",
+        instagram_business_account_id="ig-1",
+        http_client_factory=lambda **_kwargs: client_4xx,
+    )
+    ok_4xx, out_4xx = asyncio.run(
+        manager_4xx.publish_instagram_post(caption="Yeni gönderi", image_url="https://img.test/1.jpg")
+    )
+
+    client_5xx = _FakeClient([_TextResponse(500, "server exploded")])
+    manager_5xx = SocialMediaManager(
+        graph_api_token="token",
+        facebook_page_id="page-1",
+        http_client_factory=lambda **_kwargs: client_5xx,
+    )
+    ok_5xx, out_5xx = asyncio.run(manager_5xx.publish_facebook_post(message="Landing yayında"))
+
+    client_publish_fail = _FakeClient([_Response(200, {"id": "creation-1"}), _Response(503, {"error": {"message": "publish down"}})])
+    manager_publish_fail = SocialMediaManager(
+        graph_api_token="token",
+        instagram_business_account_id="ig-1",
+        http_client_factory=lambda **_kwargs: client_publish_fail,
+    )
+    ok_publish_fail, out_publish_fail = asyncio.run(
+        manager_publish_fail.publish_instagram_post(caption="Yeni gönderi", image_url="https://img.test/1.jpg")
+    )
+
+    assert ok_4xx is False and out_4xx == "invalid media"
+    assert ok_5xx is False and "server exploded" in out_5xx
+    assert ok_publish_fail is False and out_publish_fail == "publish down"
+
+
+def test_social_media_manager_request_error_timeout_and_validation_paths():
+    class _TimeoutError(social_mod.httpx.TimeoutException):
+        pass
+
+    class _RequestError(social_mod.httpx.RequestError):
+        pass
+
+    timeout_manager = SocialMediaManager(
+        graph_api_token="token",
+        whatsapp_phone_number_id="phone-1",
+        http_client_factory=lambda **_kwargs: _ErrorClient(_TimeoutError("timeout")),
+    )
+    request_error_manager = SocialMediaManager(
+        graph_api_token="token",
+        facebook_page_id="page-1",
+        http_client_factory=lambda **_kwargs: _ErrorClient(_RequestError("network down")),
+    )
+    missing_media_manager = SocialMediaManager(graph_api_token="token", instagram_business_account_id="ig-1")
+    missing_to_manager = SocialMediaManager(graph_api_token="token", whatsapp_phone_number_id="phone-1")
+
+    timeout_ok, timeout_out = asyncio.run(
+        timeout_manager.send_whatsapp_message(to="905551112233", text="Merhaba", preview_url=False)
+    )
+    req_ok, req_out = asyncio.run(request_error_manager.publish_facebook_post(message="Landing yayında"))
+    missing_media_ok, missing_media_out = asyncio.run(
+        missing_media_manager.publish_instagram_post(caption="Yeni gönderi", image_url=" ")
+    )
+    missing_to_ok, missing_to_out = asyncio.run(
+        missing_to_manager.send_whatsapp_message(to=" ", text="Merhaba", preview_url=False)
+    )
+
+    assert timeout_ok is False and "İstek zaman aşımı" in timeout_out
+    assert req_ok is False and "HTTP isteği başarısız" in req_out
+    assert missing_media_ok is False and "image_url gerekli" in missing_media_out
+    assert missing_to_ok is False and "alıcı numarası gerekli" in missing_to_out

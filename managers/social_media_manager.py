@@ -51,8 +51,13 @@ class SocialMediaManager:
             return False, "META_GRAPH_API_TOKEN ayarlanmamış"
 
         data = {**payload, "access_token": self.graph_api_token}
-        async with self.http_client_factory(timeout=self.TIMEOUT, follow_redirects=True) as client:
-            response = await client.post(self._url(path), json=data)
+        try:
+            async with self.http_client_factory(timeout=self.TIMEOUT, follow_redirects=True) as client:
+                response = await client.post(self._url(path), json=data)
+        except httpx.TimeoutException as exc:
+            return False, f"İstek zaman aşımı: {exc}"
+        except httpx.RequestError as exc:
+            return False, f"HTTP isteği başarısız: {exc}"
 
         try:
             body = response.json()
