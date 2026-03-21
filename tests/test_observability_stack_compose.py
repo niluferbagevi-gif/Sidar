@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import pytest
-
-yaml = pytest.importorskip("yaml")
+import yaml
 
 
 def test_compose_includes_observability_stack_and_tracing_wiring():

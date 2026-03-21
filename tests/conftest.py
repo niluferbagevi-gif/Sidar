@@ -58,48 +58,24 @@ if importlib.util.find_spec("httpx") is None:
     class HTTPError(Exception):
         pass
 
-    class HTTPStatusError(HTTPError):
-        def __init__(self, message="", request=None, response=None):
-            super().__init__(message)
-            self.request = request
-            self.response = response
-
     class RequestError(HTTPError):
-        pass
-
-    class ConnectError(RequestError):
         pass
 
     class TimeoutException(RequestError):
         pass
 
-    class ReadTimeout(TimeoutException):
-        pass
-
-    class Timeout:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-            self.connect = kwargs.get("connect")
-
-    class Request:
-        def __init__(self, method="GET", url=""):
-            self.method = method
-            self.url = url
-
     class Response:
-        def __init__(self, status_code=200, text="", json_data=None, request=None):
+        def __init__(self, status_code=200, text="", json_data=None):
             self.status_code = status_code
             self.text = text
             self._json_data = json_data if json_data is not None else {}
-            self.request = request
 
         def json(self):
             return self._json_data
 
         def raise_for_status(self):
             if self.status_code >= 400:
-                raise HTTPStatusError(self.text or f"HTTP {self.status_code}", request=self.request, response=self)
+                raise HTTPError(self.text or f"HTTP {self.status_code}")
 
     class AsyncClient:
         async def __aenter__(self):
@@ -121,13 +97,8 @@ if importlib.util.find_spec("httpx") is None:
             return Response()
 
     _httpx.HTTPError = HTTPError
-    _httpx.HTTPStatusError = HTTPStatusError
     _httpx.RequestError = RequestError
-    _httpx.ConnectError = ConnectError
     _httpx.TimeoutException = TimeoutException
-    _httpx.ReadTimeout = ReadTimeout
-    _httpx.Timeout = Timeout
-    _httpx.Request = Request
     _httpx.Response = Response
     _httpx.AsyncClient = AsyncClient
     sys.modules["httpx"] = _httpx

@@ -13,23 +13,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, List, Any
 
-try:
-    from pydantic import BaseModel, Field, ValidationError
-except Exception:  # pragma: no cover - minimal ortamlarda opsiyonel fallback
-    class ValidationError(Exception):
-        """Pydantic yoksa şema doğrulama hatası için uyumlu fallback."""
-
-
-    class BaseModel:
-        """Pydantic'siz test/indirgenmiş çalışma ortamları için hafif fallback."""
-
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-
-    def Field(default=..., **_kwargs):
-        return default
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from opentelemetry import trace

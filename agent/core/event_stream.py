@@ -13,14 +13,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Dict
 
-try:
-    from redis.asyncio import Redis
-    from redis.exceptions import ResponseError
-except Exception:  # pragma: no cover - Redis opsiyonel
-    Redis = None
-
-    class ResponseError(Exception):
-        """Redis bağımlılığı yoksa yakalama uyumluluğu sağlayan fallback."""
+from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +73,6 @@ class AgentEventBus:
         if self._redis_available is False:
             return
         if self._redis_listener_task is not None and not self._redis_listener_task.done():
-            return
-        if Redis is None:
-            self._redis_available = False
             return
 
         try:
