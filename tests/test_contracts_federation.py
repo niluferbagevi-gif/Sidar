@@ -288,3 +288,26 @@ def test_broker_task_envelope_factory_and_result_defaults_cover_conversion_paths
     assert broker.to_task_envelope().inputs == ["web_server.py"]
     assert result.routing_key == "sidar.mesh.supervisor.queued"
     assert result.correlation_id == "task-9"
+
+def test_broker_protocol_keeps_custom_non_alias_values():
+    assert CONTRACTS.normalize_broker_protocol(" custom.broker.v2 ") == "custom.broker.v2"
+
+
+def test_broker_task_envelope_to_prompt_serializes_transport_metadata():
+    envelope = CONTRACTS.BrokerTaskEnvelope(
+        task_id="brk-prompt",
+        sender="supervisor",
+        receiver="reviewer",
+        goal="İnceleme isteğini kuyruğa yaz",
+        intent="review",
+        exchange="sidar.mesh",
+        reply_queue="sidar.reply",
+        headers={"tenant": "acme"},
+    )
+
+    prompt = envelope.to_prompt()
+
+    assert "[BROKER TASK]" in prompt
+    assert "broker=memory" in prompt
+    assert "routing_key=sidar.mesh.reviewer.review" in prompt
+    assert 'headers={"tenant": "acme"}' in prompt
