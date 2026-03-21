@@ -169,6 +169,8 @@ def test_publish_via_redis_failure_sets_local_fallback(monkeypatch):
     assert ok is False
     assert bus._redis_available is False
     assert cleaned["called"] is True
+    assert bus._dlq_buffer
+    assert bus._dlq_buffer[-1]["reason"] == "publish_failed"
 
 
 def test_event_bus_listener_handles_invalid_payload_and_ack_failures(monkeypatch):
@@ -217,6 +219,30 @@ def test_event_bus_listener_handles_invalid_payload_and_ack_failures(monkeypatch
     assert evt.message == "y"
     assert "1-0" in redis.acked and "2-0" in redis.acked
     assert cleaned["called"] is True
+    reasons = [item["reason"] for item in bus._dlq_buffer]
+    assert "invalid_payload" in reasons
+    assert "ack_failed" in reasons
+
+
+def test_write_dead_letter_pushes_to_redis_when_available():
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _Redis:
+        def __init__(self):
+            self.calls = []
+
+        async def xadd(self, channel, fields, **kwargs):
+            self.calls.append((channel, fields, kwargs))
+
+    redis = _Redis()
+    bus._redis_client = redis
+
+    asyncio.run(bus._write_dead_letter(reason="manual", payload={"msg": "broken"}))
+
+    assert bus._dlq_buffer[-1]["reason"] == "manual"
+    assert redis.calls
+    assert redis.calls[0][0] == bus._dlq_channel
 
 
 

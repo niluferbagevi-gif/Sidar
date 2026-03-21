@@ -362,6 +362,8 @@ class Config:
     RATE_LIMIT_MUTATIONS: int = get_int_env("RATE_LIMIT_MUTATIONS", 60)
     RATE_LIMIT_GET_IO:    int = get_int_env("RATE_LIMIT_GET_IO", 30)
     REDIS_URL:            str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    ENABLE_DEPENDENCY_HEALTHCHECKS: bool = get_bool_env("ENABLE_DEPENDENCY_HEALTHCHECKS", False)
+    HEALTHCHECK_CONNECT_TIMEOUT_MS: int = get_int_env("HEALTHCHECK_CONNECT_TIMEOUT_MS", 250)
     # Güvenilir ters proxy IP listesi (virgülle ayrılmış); boşsa proxy başlıkları kabul edilmez
     TRUSTED_PROXIES: frozenset = frozenset(
         ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "").split(",") if ip.strip()
@@ -389,6 +391,8 @@ class Config:
     SEMANTIC_CACHE_THRESHOLD: float = get_float_env("SEMANTIC_CACHE_THRESHOLD", 0.95)
     SEMANTIC_CACHE_TTL: int = get_int_env("SEMANTIC_CACHE_TTL", 3600)
     SEMANTIC_CACHE_MAX_ITEMS: int = get_int_env("SEMANTIC_CACHE_MAX_ITEMS", 500)
+    SIDAR_EVENT_BUS_DLQ_CHANNEL: str = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", "sidar:agent_events:dlq")
+    SIDAR_EVENT_BUS_DLQ_MAXLEN: int = get_int_env("SIDAR_EVENT_BUS_DLQ_MAXLEN", 1000)
 
     # ─── Web Arama ───────────────────────────────────────────
     SEARCH_ENGINE:        str = os.getenv("SEARCH_ENGINE", "auto")

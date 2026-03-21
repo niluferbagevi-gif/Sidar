@@ -33,6 +33,8 @@ class AgentEventBus:
         self._instance_id = uuid.uuid4().hex
         self._channel = os.getenv("SIDAR_EVENT_BUS_CHANNEL", "sidar:agent_events")
         self._consumer_group = os.getenv("SIDAR_EVENT_BUS_GROUP", "sidar:agent_events:cg")
+        self._dlq_channel = os.getenv("SIDAR_EVENT_BUS_DLQ_CHANNEL", f"{self._channel}:dlq")
+        self._dlq_buffer: deque[dict[str, object]] = deque(maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000")))
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self._redis_client: Redis | None = None
@@ -118,6 +120,11 @@ class AgentEventBus:
             return True
         except Exception as exc:
             logger.debug("AgentEventBus Redis publish başarısız, local fallback: %s", exc)
+            await self._write_dead_letter(
+                reason="publish_failed",
+                payload={"event": {"ts": evt.ts, "source": evt.source, "message": evt.message}},
+                error=exc,
+            )
             self._redis_available = False
             await self._cleanup_redis()
             return False
@@ -156,11 +163,22 @@ class AgentEventBus:
                                 message=str(payload.get("message", "")),
                             )
                             self._fanout_local(evt)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        await self._write_dead_letter(
+                            reason="invalid_payload",
+                            payload={"msg_id": msg_id, "payload": str(payload_raw)},
+                            error=exc,
+                        )
                     finally:
                         with contextlib.suppress(Exception):
-                            await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
+                            try:
+                                await self._redis_client.xack(self._channel, self._consumer_group, msg_id)
+                            except Exception as exc:
+                                await self._write_dead_letter(
+                                    reason="ack_failed",
+                                    payload={"msg_id": msg_id, "payload": str(payload_raw)},
+                                    error=exc,
+                                )
 
     async def _drain_buffered_events_once(self) -> bool:
         any_progress = False
@@ -209,6 +227,29 @@ class AgentEventBus:
                 closer = getattr(self._redis_client, "aclose", None) or self._redis_client.close
                 await closer()
         self._redis_client = None
+
+    async def _write_dead_letter(self, *, reason: str, payload: dict[str, object], error: Exception | None = None) -> None:
+        item = {
+            "ts": time.time(),
+            "reason": reason,
+            "payload": payload,
+        }
+        if error is not None:
+            item["error"] = str(error)
+        self._dlq_buffer.append(item)
+
+        if self._redis_client is None or self._redis_available is not True:
+            return
+
+        try:
+            await self._redis_client.xadd(
+                self._dlq_channel,
+                {"payload": json.dumps(item, ensure_ascii=False)},
+                maxlen=self._dlq_buffer.maxlen,
+                approximate=True,
+            )
+        except Exception as exc:
+            logger.debug("AgentEventBus DLQ yazımı başarısız: %s", exc)
 
 
 _BUS = AgentEventBus()

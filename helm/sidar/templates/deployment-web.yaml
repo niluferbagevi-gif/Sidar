@@ -34,6 +34,14 @@ spec:
               value: "postgresql+asyncpg://{{ .Values.postgresql.username }}:{{ .Values.postgresql.password }}@{{ include \"sidar.fullname\" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
             - name: OTEL_EXPORTER_ENDPOINT
               value: {{ include "sidar.otelEndpoint" . | quote }}
+            - name: ENABLE_DEPENDENCY_HEALTHCHECKS
+              value: {{ ternary "true" "false" .Values.healthChecks.dependencyChecksEnabled | quote }}
+            - name: HEALTHCHECK_CONNECT_TIMEOUT_MS
+              value: {{ .Values.healthChecks.connectTimeoutMs | quote }}
+            - name: SIDAR_EVENT_BUS_DLQ_CHANNEL
+              value: {{ .Values.eventBus.dlqChannel | quote }}
+            - name: SIDAR_EVENT_BUS_DLQ_MAXLEN
+              value: {{ .Values.eventBus.dlqMaxLen | quote }}
             {{- range $k, $v := .Values.env }}
             {{- if ne $k "OTEL_EXPORTER_ENDPOINT" }}
             - name: {{ $k }}
@@ -52,7 +60,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
