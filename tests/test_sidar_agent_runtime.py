@@ -461,6 +461,93 @@ def test_handle_external_trigger_reverts_self_heal_when_validation_fails(tmp_pat
     assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
 
 
+def test_handle_external_trigger_records_self_heal_disabled_state(tmp_path):
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+    a.cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="m",
+        ACCESS_LEVEL="full",
+        BASE_DIR=tmp_path,
+        ENABLE_AUTONOMOUS_SELF_HEAL=False,
+        SELF_HEAL_MAX_PATCHES=2,
+    )
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            raise AssertionError("self-heal plan should not be requested when disabled")
+
+    async def fake_multi(_prompt):
+        return "Kök neden: VALUE = 1 sabiti artık 2 olmalı."
+
+    a.llm = _LLM()
+    a._try_multi_agent = fake_multi
+
+    trigger = ExternalTrigger(
+        trigger_id="tr-ci-disabled",
+        source="webhook:github:ci_failure",
+        event_name="ci_pipeline_failed",
+        payload={
+            "ci_failure": True,
+            "repo": "acme/sidar",
+            "workflow_name": "CI",
+            "pipeline_id": 93,
+            "branch": "main",
+            "base_branch": "main",
+            "failure_summary": "AssertionError in main.py",
+            "log_excerpt": "AssertionError: expected VALUE = 2 in main.py",
+        },
+    )
+    record = asyncio.run(a.handle_external_trigger(trigger))
+
+    assert record["status"] == "success"
+    assert record["remediation"]["self_heal_execution"]["status"] == "disabled"
+
+
+def test_execute_self_heal_plan_blocks_when_no_safe_validation_commands(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(BASE_DIR=tmp_path)
+
+    class _Code:
+        def read_file(self, path, line_numbers=False):
+            return True, (tmp_path / path).read_text(encoding="utf-8")
+
+        def patch_file(self, path, target_block, replacement_block):
+            raise AssertionError("patch should not run without validation commands")
+
+        def write_file(self, path, content, validate=False):
+            (tmp_path / path).write_text(content, encoding="utf-8")
+            return True, "written"
+
+        def run_shell_in_sandbox(self, command, cwd):
+            raise AssertionError("sandbox should not run without validation commands")
+
+    a.code = _Code()
+    (tmp_path / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = asyncio.run(
+        a._execute_self_heal_plan(
+            remediation_loop={"validation_commands": []},
+            plan={
+                "summary": "unsafe",
+                "confidence": "low",
+                "operations": [
+                    {
+                        "action": "patch",
+                        "path": "main.py",
+                        "target": "VALUE = 1",
+                        "replacement": "VALUE = 2",
+                    }
+                ],
+                "validation_commands": [],
+            },
+        )
+    )
+
+    assert result["status"] == "blocked"
+    assert (tmp_path / "main.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
 def test_handle_external_trigger_correlates_action_feedback_with_prior_record():
     a = _make_agent_for_runtime()
     a.initialize = lambda: asyncio.sleep(0)
