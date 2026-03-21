@@ -1,6 +1,6 @@
 # SİDAR — Yazılım Mühendisi AI Asistanı
 
-> **v4.3.0 runtime baseline + v5.0.0-alpha Faz 6 geçişi** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
+> **v5.0.0-alpha ürün baseline** — React SPA + Multi-Agent Swarm + PostgreSQL/pgvector kurumsal mimarisi üzerine kurulu, proaktif AI Co-Worker seviyesine yaklaşan Türkçe dilli, tam async yazılım mühendisi AI projesi.
 
 ```
  ╔══════════════════════════════════════════════╗
@@ -20,7 +20,7 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.0.0-alpha geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
 
-> **Güncel Ürün Durumu:** Runtime/paket baseline `v4.3.0` seviyesinde korunurken repo artık `v5.0.0-alpha (Faz 6)` yeteneklerini de aktif olarak taşımaktadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
+> **Güncel Ürün Durumu:** Repo artık `v5.0.0-alpha` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
 > **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
 
@@ -139,7 +139,7 @@
 - GPU/CUDA bilgisi ve VRAM takibi (pynvml)
 - GPU bellek optimizasyonu (VRAM boşaltma + Python GC)
 
-### Web Arayüzü (v4.3.0 runtime baseline)
+### Web Arayüzü (v5.0.0-alpha ürün baseline)
 - **Görsel Swarm Akış Diyagramları + Canlı Operasyon:** `SwarmFlowPanel`, ajan görevleri, P2P handoff'lar, otonom cron tetikleri ve LLM düşünce/karar özetlerini node-graph olarak görselleştirir; seçili node üzerinden follow-up görev, rerun ve HITL karar aksiyonları sunar
 - **Çoklu oturum sidebar**: oturum geçişi, oluşturma, silme, arama/filtreleme
 - **Dışa Aktarma**: Sohbet geçmişini MD veya JSON olarak indirme
@@ -260,6 +260,13 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ## Kurulum
 
+### Sistem Gereksinimleri
+
+- Python 3.11
+- `ffmpeg` (multimodal video/ses ayrıştırma için zorunlu sistem bağımlılığı)
+- `psutil` (sistem sağlık ölçümleri ve child-process cleanup akışları için Python bağımlılığı; `pyproject.toml` içinde tanımlı)
+- İsteğe bağlı: Docker, Ollama, PostgreSQL/pgvector, Playwright tarayıcıları
+
 ### Conda ile (Önerilen)
 
 ```bash
@@ -272,7 +279,7 @@ conda activate sidar-ai
 
 ```bash
 # Runtime + opsiyonel gruplar (pyproject.toml extras)
-pip install -e .[rag,postgres,telemetry]
+pip install -e .[rag,postgres,telemetry,browser]
 
 # Geliştirme + test bağımlılıkları
 pip install -r requirements-dev.txt
@@ -353,7 +360,21 @@ ALLOW_APT_UPGRADE=1 ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh
 
 ## Kullanım
 
-### 🌐 Web Arayüzü (Önerilen)
+### 🚀 Ultimate Launcher ile Başlatma (Önerilen)
+
+```bash
+python main.py
+```
+
+`main.py`; preflight kontrollerini çalıştırır, etkileşimli TUI menüsünü açar, uygun çalışma modunu seçtirir ve `config.py` yüklenemezse child process'leri fail-fast biçimde durdurur. Varsayılan kullanıcı akışı artık burasıdır.
+
+**TUI üzerinden yapabilecekleriniz:**
+- Web arayüzünü veya CLI oturumunu menüden seçmek
+- Önkoşul/hata durumlarını launch öncesi görmek
+- Alt süreç loglarını tek yerden takip etmek
+- Hızlı başlatma (quick start) ile standart web oturumuna geçmek
+
+### 🌐 Web Arayüzü (Doğrudan)
 
 ```bash
 python web_server.py
@@ -506,12 +527,12 @@ sidar_project/
 ├── helm/sidar/             # Kubernetes chart; web, ai-worker, redis, PostgreSQL, otel-collector, Jaeger, Zipkin
 ├── docker/                 # Prometheus + Grafana provisioning dosyaları
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
-├── config.py               # Merkezi yapılandırma; runtime sürümü `4.3.0`
+├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.0.0-alpha`
 ├── web_server.py           # 62 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
 ├── PROJE_RAPORU.md         # Mimari + kalite raporu
-├── AUDIT_REPORT_v4.0.md    # Güvenlik ve denetim raporu
+├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
 └── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
@@ -628,14 +649,14 @@ mypy . --ignore-missing-imports
 |----------|----------------------|
 | **v5.0.0-alpha** | Faz 6 görünür ürün geçişi: multimodal medya hattı, `/ws/voice`, tarayıcı otomasyonu, proaktif cron/webhook akışları, GraphRAG etki analizi ve launcher stabilizasyonu testlerle doğrulandı; aktif v5.0 coverage borcu kapatıldı |
 | **v4.3.0** | Sürüm + metrik senkronizasyonu: `config.py`, `pyproject.toml`, `PKG-INFO`, Helm chart ve üst seviye dokümanlar 4.3.0 çizgisine taşındı; takipli dosya ölçümleri 58 üretim Python / 20.582 satır, 151 test dosyası / 39.147 satır ve 62 REST endpoint gerçekliğiyle güncellendi. Aynı baz çizgide v5.0 geçişi için multimodal, browser automation ve proaktif trigger iskeletleri devreye alındı |
-| **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v4.0.md` senkronize edildi |
+| **v4.2.0** | Autonomous LLMOps operasyonel kapanışı: Faz 4 teslimatları audit trail + direct `p2p.v1` handoff doğrulamalarıyla kurumsal rollout seviyesinde kapatıldı; `PROJE_RAPORU.md`, `RFC-MultiAgent.md` ve `AUDIT_REPORT_v5.0.md` senkronize edildi |
 | **v3.2.0** | Autonomous LLMOps konsolidasyonu: Active Learning/LoRA, Vision Pipeline, Cost-Aware Routing ve Slack/Jira/Teams orkestrasyonu Faz 4’ün birleşik ürün anlatısı olarak toplandı |
 | **v3.0.31** | Kurumsal rollout senkronizasyonu: `audit_logs` migration + DB audit trail yardımcıları + `access_policy_middleware` audit kaydı akışı raporlandı; direct `p2p.v1` handoff protokolü Supervisor ve Swarm katmanlarında belgelendi |
 | **v3.0.24** | Faz 4 tamamlama: Slack Bot SDK + Webhook (`slack_manager`), Jira Cloud REST API v3 (`jira_manager`), Teams Adaptive Card v1.4 + HITL onay kartı (`teams_manager`); 44 yeni test; 142 test modülü, ~18.200+ Python kaynak satırı |
 | **v3.0.23** | Faz 4: Active Learning + LoRA/QLoRA (`core/active_learning.py`), Multimodal Vision Pipeline (`core/vision.py`); 66 yeni test |
 | **v3.0.22** | Faz 5 devam: Cost-Aware Model Routing (`core/router.py`), Entity/Persona Memory (`core/entity_memory.py`), Semantic Cache Grafana Hit Rate (`core/cache_metrics.py` + Grafana dashboard); 62 yeni test |
 | **v3.0.21** | Faz 5 başlangıç: DLP & PII Maskeleme (`core/dlp.py`), Human-in-the-Loop (`core/hitl.py`), LLM-as-a-Judge (`core/judge.py`), .env.example↔config.py parite sertleştirmesi; 60 yeni test |
-| **v3.0.20** | Kapsamlı rapor güncelleme turu: AUDIT_REPORT_v4.0.2, PROJE_RAPORU.md, README.md tüm satır sayıları ve araç envanteri mevcut koda göre yeniden ölçüldü ve güncellendi |
+| **v3.0.20** | Kapsamlı rapor güncelleme turu: AUDIT_REPORT_v5.0, PROJE_RAPORU.md, README.md tüm satır sayıları ve araç envanteri mevcut koda göre yeniden ölçüldü ve güncellendi |
 | **v3.0.19** | React SPA react-router-dom navigasyonu, PromptAdminPanel/SwarmFlowPanel/P2PDialoguePanel bileşenleri, `/api/swarm/execute` endpoint, DB destekli sistem promptu yükleme |
 | **v3.0.18** | FAZ-6: D-6 `core/db.py` lazy lock dead-code kapatıldı. Tüm 18 güvenlik bulgusu (K/Y/O/D) kapatıldı. Güvenlik puanı 10.0/10 |
 | **v3.0.17** | FAZ-5: O-1..O-6 tüm orta öncelikli bulgular kapatıldı (BASE_DIR kısıtlama, DOCKER_REQUIRED, shell blocklist) |
