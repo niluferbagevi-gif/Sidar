@@ -247,6 +247,32 @@ def test_write_dead_letter_pushes_to_redis_when_available():
 
 
 
+def test_write_dead_letter_skips_redis_when_client_missing_or_disabled():
+    bus = AgentEventBus()
+
+    class _Redis:
+        def __init__(self):
+            self.calls = []
+
+        async def xadd(self, channel, fields, **kwargs):
+            self.calls.append((channel, fields, kwargs))
+
+    redis = _Redis()
+    bus._redis_client = redis
+    bus._redis_available = False
+
+    asyncio.run(bus._write_dead_letter(reason="disabled", payload={"msg": "keep-local"}))
+
+    assert bus._dlq_buffer[-1]["reason"] == "disabled"
+    assert redis.calls == []
+
+    bus._redis_client = None
+    bus._redis_available = True
+    asyncio.run(bus._write_dead_letter(reason="missing-client", payload={"msg": "still-local"}))
+
+    assert bus._dlq_buffer[-1]["reason"] == "missing-client"
+
+
 def test_ensure_listener_falls_back_when_consumer_group_create_errors(monkeypatch):
     bus = AgentEventBus()
 
