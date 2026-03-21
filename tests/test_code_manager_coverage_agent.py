@@ -1,4 +1,5 @@
 from pathlib import Path
+from textwrap import dedent
 
 from tests.test_code_manager_runtime import CM_MOD, DummySecurity, FULL
 
@@ -64,6 +65,17 @@ def test_code_manager_run_pytest_and_collect_uses_sandbox_runner(tmp_path, monke
     assert result["analysis"]["summary"].endswith("passed")
 
 
+def test_code_manager_run_pytest_and_collect_rejects_non_pytest_commands(tmp_path):
+    manager = _manager(tmp_path)
+
+    result = manager.run_pytest_and_collect("python script.py", cwd=str(tmp_path))
+
+    assert result["success"] is False
+    assert result["command"] == "python script.py"
+    assert "Yalnızca pytest komutları desteklenir" in result["output"]
+    assert result["analysis"]["has_failures"] is False
+
+
 def test_code_manager_write_generated_test_appends_idempotently(tmp_path):
     manager = _manager(tmp_path)
     target = tmp_path / "tests" / "test_sample.py"
@@ -84,3 +96,65 @@ def test_code_manager_write_generated_test_appends_idempotently(tmp_path):
     ok2, msg2 = manager.write_generated_test(str(target), "def test_generated():\n    assert 1 == 1\n", append=True)
     assert ok2 is True
     assert "zaten mevcut" in msg2.lower()
+
+
+def test_code_manager_write_generated_test_handles_blank_and_read_failures(tmp_path, monkeypatch):
+    manager = _manager(tmp_path)
+    target = tmp_path / "tests" / "test_sample.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def test_existing():\n    assert True\n", encoding="utf-8")
+
+    ok_blank, msg_blank = manager.write_generated_test(str(target), "```python\n```", append=True)
+    assert ok_blank is False
+    assert "boş" in msg_blank.lower()
+
+    monkeypatch.setattr(manager, "read_file", lambda *_args, **_kwargs: (False, "okuma başarısız"))
+    ok_read, msg_read = manager.write_generated_test(str(target), "def test_new():\n    assert True\n", append=True)
+    assert ok_read is False
+    assert msg_read == "okuma başarısız"
+
+
+def test_code_manager_write_generated_test_writes_new_file_without_append(tmp_path, monkeypatch):
+    manager = _manager(tmp_path)
+    captured = {}
+
+    def _fake_write_file(path, content, *, validate):
+        captured.update({"path": path, "content": content, "validate": validate})
+        return True, f"kaydedildi:{path}"
+
+    monkeypatch.setattr(manager, "write_file", _fake_write_file)
+
+    ok, msg = manager.write_generated_test(
+        str(tmp_path / "tests" / "test_generated.py"),
+        "```python\ndef test_new():\n    assert True\n```",
+        append=False,
+    )
+
+    assert ok is True
+    assert "kaydedildi" in msg
+    assert captured["content"] == "def test_new():\n    assert True\n"
+    assert captured["validate"] is True
+
+
+def test_code_manager_analyze_pytest_output_extracts_failure_sections(tmp_path):
+    manager = _manager(tmp_path)
+    output = dedent(
+        """
+        ============================= test session starts =============================
+        ___ test runtime timeout ___
+        tests/test_runtime.py:55: PermissionError
+        Traceback (most recent call last):
+          File "tests/test_runtime.py", line 55, in test_runtime_timeout
+            raise PermissionError("denied")
+        PermissionError: denied
+        =========================== short test summary info ============================
+        1 failed in 0.33s
+        """
+    )
+    analysis = manager.analyze_pytest_output(output)
+
+    assert analysis["has_failures"] is True
+    assert analysis["coverage_targets"] == []
+    assert analysis["failure_targets"][0]["summary"] == "test runtime timeout"
+    assert analysis["failure_targets"][0]["target_path"] == "tests/test_runtime.py"
+    assert "PermissionError" in analysis["failure_targets"][0]["details"]
