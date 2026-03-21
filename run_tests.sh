@@ -19,4 +19,13 @@ python -m pytest -v \
 # 3) Kritik yol performans baseline testleri (pytest-benchmark)
 python -m pytest -v tests/test_benchmark.py
 
-echo "✅ Testler Tamamlandı!"
+# 4) Frontend React testleri ve coverage
+if [ -d "web_ui_react" ]; then
+  echo "🚀 Frontend (React) Testleri Başlıyor..."
+  pushd web_ui_react > /dev/null
+  npm install
+  npm run test:coverage
+  popd > /dev/null
+fi
+
+echo "✅ Tüm Backend ve Frontend testleri başarıyla tamamlandı!"
