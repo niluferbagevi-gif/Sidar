@@ -2149,17 +2149,25 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# React SPA (web_ui_react/dist) hazırsa onu, değilse legacy web_ui dizinini sun.
-LEGACY_WEB_DIR = Path(__file__).parent / "web_ui"
+# React SPA yalnızca web_ui_react/dist üzerinden sunulur.
 REACT_DIST_DIR = Path(__file__).parent / "web_ui_react" / "dist"
-WEB_DIR = REACT_DIST_DIR if REACT_DIST_DIR.exists() else LEGACY_WEB_DIR
+WEB_DIR = REACT_DIST_DIR
 
-# Legacy kodun /static beklentisi korunur; React build'de de aynı mount kalır.
-app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+def _make_static_files(directory: Path):
+    """FastAPI StaticFiles nesnesini dist dizini eksik olsa bile güvenli üret."""
+    try:
+        return StaticFiles(directory=directory, check_dir=False)
+    except TypeError:
+        return StaticFiles(directory=directory)
+
+
+# React build çıktısı /static altında servis edilir.
+app.mount("/static", _make_static_files(WEB_DIR), name="static")
 
 # Vite build asset'leri (/assets/*) için ayrı mount.
 if (WEB_DIR / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")
+    app.mount("/assets", _make_static_files(WEB_DIR / "assets"), name="assets")
 
 
 
@@ -2175,9 +2183,7 @@ async def favicon():
 
 @app.get("/vendor/{file_path:path}", include_in_schema=False)
 async def serve_vendor(file_path: str):
-    """Yerel vendor kütüphanelerini servis eder (highlight.js, marked.js).
-    install_sidar.sh tarafından web_ui/vendor/ dizinine indirilmiş dosyalar buradan sunulur.
-    """
+    """React dist altındaki vendor kütüphanelerini servis eder."""
     vendor_dir = (WEB_DIR / "vendor").resolve()
     safe_path = (vendor_dir / file_path).resolve()
     if not str(safe_path).startswith(str(vendor_dir)):
@@ -2189,10 +2195,13 @@ async def serve_vendor(file_path: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """Ana sayfa — React SPA veya legacy chat arayüzü."""
+    """Ana sayfa — React SPA build çıktısı."""
     html_file = WEB_DIR / "index.html"
     if not html_file.exists():
-        return HTMLResponse("<h1>Hata: UI index.html bulunamadı.</h1>", status_code=500)
+        return HTMLResponse(
+            "<h1>Hata: React dist bulunamadı. web_ui_react içinde npm run build çalıştırın.</h1>",
+            status_code=500,
+        )
     grafana_url = str(getattr(cfg, "GRAFANA_URL", "http://localhost:3000") or "http://localhost:3000")
     config_script = (
         f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url)}}};</script>'
