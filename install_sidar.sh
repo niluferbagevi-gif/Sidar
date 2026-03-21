@@ -130,11 +130,13 @@ prepare_runtime_dirs() {
 setup_conda_env() {
   echo -e "\n⚙️  5. Conda ortamı ($ENV_NAME) environment.yml dosyasından kuruluyor..."
   if conda info --envs | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-    echo "Ortam zaten var, güncelleniyor..."
+    echo "   Ortam zaten var, güncelleniyor (--prune ile eski paketler temizlenecek)..."
     conda env update -f environment.yml --prune
   else
+    echo "   Yeni Conda ortamı oluşturuluyor..."
     conda env create -f environment.yml
   fi
+  echo "✅ Conda ortamı hazır. Aktif hale getirmek için: conda activate $ENV_NAME"
 }
 
 pull_models() {
@@ -183,9 +185,10 @@ print_footer() {
   echo "Sonrasında SİDAR'ı çalıştırmak için sırasıyla şunları yazın:"
   echo "  1. cd ~/$PROJECT_NAME"
   echo "  2. conda activate $ENV_NAME"
-  echo "  3. nano .env            ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
-  echo "  4. alembic upgrade head ← (ÖNEMLİ) Veritabanı tablolarını oluşturmak için"
-  echo "  5. python main.py       ← Etkileşimli TUI menüsü ile başlatmak için"
+  echo "  3. nano .env                    ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
+  echo "  4. alembic upgrade head         ← (ÖNEMLİ) Veritabanı tablolarını oluşturmak için"
+  echo "  5. python -m pytest             ← (Opsiyonel) Tüm testleri çalıştırmak için"
+  echo "  6. python main.py               ← Etkileşimli TUI menüsü ile başlatmak için"
   echo ""
   echo "Güvenlik notu:"
   echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
