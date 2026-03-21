@@ -227,3 +227,64 @@ def test_duck_typed_contract_detection_helpers_cover_true_and_false_paths():
     assert CONTRACTS.is_broker_task_result(broker_result_missing) is False
     assert CONTRACTS.is_action_feedback(feedback_like) is True
     assert CONTRACTS.is_action_feedback(feedback_missing) is False
+
+
+def test_p2p_message_bumped_preserves_payload_and_meta():
+    request = CONTRACTS.DelegationRequest(
+        task_id="p2p-1",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload="qa_feedback|decision=reject",
+        intent="review",
+        parent_task_id="root-1",
+        handoff_depth=1,
+        meta={"reason": "qa_retry"},
+    )
+
+    bumped = request.bumped()
+
+    assert bumped is not request
+    assert bumped.handoff_depth == 2
+    assert bumped.payload == request.payload
+    assert bumped.parent_task_id == "root-1"
+    assert bumped.meta == {"reason": "qa_retry"}
+    assert bumped.sender == "reviewer"
+    assert bumped.receiver == "coder"
+
+
+def test_broker_task_envelope_factory_and_result_defaults_cover_conversion_paths():
+    envelope = CONTRACTS.TaskEnvelope(
+        task_id="task-9",
+        sender="supervisor",
+        receiver="reviewer",
+        goal="Graf etkisini değerlendir",
+        intent="review",
+        parent_task_id="root-9",
+        context={"correlation_id": "corr-9", "scope": "web"},
+        inputs=["web_server.py"],
+    )
+
+    broker = CONTRACTS.BrokerTaskEnvelope.from_task_envelope(
+        envelope,
+        broker="rabbitmq",
+        exchange="sidar.mesh",
+        reply_queue="sidar.reply",
+        headers={"tenant": "acme"},
+    )
+    result = CONTRACTS.BrokerTaskResult(
+        task_id="task-9",
+        sender="reviewer",
+        receiver="supervisor",
+        status="queued",
+        summary="işleme alındı",
+        exchange="sidar.mesh",
+    )
+
+    assert broker.broker == "rabbitmq"
+    assert broker.reply_queue == "sidar.reply"
+    assert broker.routing_key == "sidar.mesh.reviewer.review"
+    assert broker.correlation_id == "corr-9"
+    assert broker.to_task_envelope().context["scope"] == "web"
+    assert broker.to_task_envelope().inputs == ["web_server.py"]
+    assert result.routing_key == "sidar.mesh.supervisor.queued"
+    assert result.correlation_id == "task-9"
