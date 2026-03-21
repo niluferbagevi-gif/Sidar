@@ -5,6 +5,22 @@
 
 ---
 
+## [v5.2.0-alpha] - 2026-03-21
+Faz E otonom iş ekosistemi ajanları kod tabanına ve üst seviye raporlara resmi olarak işlendi.
+
+### Eklenenler (Added)
+- **CoverageAgent entegrasyonu:** `agent/roles/coverage_agent.py` ile otonom pytest analizi, coverage bulgusu kaydı ve eksik test üretim/yazım akışı sisteme eklendi.
+- **PoyrazAgent entegrasyonu:** `agent/roles/poyraz_agent.py` ile sosyal medya paylaşımı, landing page oluşturma, WhatsApp entegrasyonu, video içgörüsü ingest'i ve kampanya yönetimi araçları devreye alındı.
+- **Faz E rapor senkronizasyonu:** `PROJE_RAPORU.md`, `docs/SIDAR_v5_1_MIMARI_RAPORU.md` ve `AUDIT_REPORT_v5.1.md` Coverage/Poyraz ajanları, güncel repo metrikleri ve `core/db.py` Faz E yardımcılarıyla uyumlu hale getirildi.
+
+### İyileştirmeler (Improved)
+- **Mimari anlatı güncellemesi:** Faz E artık yol haritası diliyle değil, aktif ajan davranışları, tool kayıtları ve veritabanı yüzeyleriyle belgeleniyor.
+
+### Teknik Borç Kapanışı
+- Coverage ve pazarlama/operasyon otomasyonu artık yalnızca vizyon başlığı altında değil; kod, audit ve mimari raporlar arasında senkronize edilen fiili teslimat olarak izleniyor.
+
+---
+
 ## [v5.1.3-alpha] - 2026-03-21
 Swarm orkestrasyonu ile Active Learning yüzeyleri, production cutover ve coverage kalite kapıları içinde daha görünür ve hedefli bir regresyon dilimi olarak sabitlendi.
 

@@ -1,15 +1,15 @@
-# Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu (v5.1 Faz D/Faz E Senkronizasyonu)
-**Sürüm:** v5.1.1 belge baseline / v5.0.0-alpha runtime
+# Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu (v5.2 Faz E Aktivasyonu)
+**Sürüm:** v5.2.0-alpha belge baseline / v5.0.0-alpha runtime
 **Tarih:** 2026-03-21
-**Kapsam:** Faz D enterprise ölçekleme teslimatları, coverage anlatısına dahil edilen yeni regresyon yüzeyleri ve Faz E otonom iş ekosistemi yol haritası
+**Kapsam:** Faz D enterprise ölçekleme teslimatları, Faz E kapsamında devreye alınan `agent/roles/coverage_agent.py` ve `agent/roles/poyraz_agent.py` yüzeyleri, güncel repo metrikleri ve ilişkili veritabanı yardımcıları
 
 ---
 
 ## 1. Yönetici Özeti
 
-Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher sertleştirmelerini ve %100 coverage baseline'ını belgelerle senkronize etmek amacıyla hazırlanmıştır. İnceleme odağı; Plugin Marketplace sıcak yükleme yüzeyi, çok oyunculu collaboration workspace akışı, gece bellek bakımı, dependency resilience/chaos engineering testleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan son mock tabanlı edge-case senaryolarının coverage anlatısına dahil edilmesidir. Güncel ölçümler, takipli repo yüzeyinin büyümeye devam ederken güvenlik ve kalite kapılarını koruduğunu göstermektedir.
+Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher sertleştirmelerini ve Faz E ajan aktivasyonunu belgelerle senkronize etmek amacıyla hazırlanmıştır. İnceleme odağı; Plugin Marketplace sıcak yükleme yüzeyi, çok oyunculu collaboration workspace akışı, gece bellek bakımı, dependency resilience/chaos engineering testleri ile birlikte yeni `agent/roles/coverage_agent.py` ve `agent/roles/poyraz_agent.py` modüllerinin mevcut güvenlik/kalite omurgasına nasıl bağlandığını doğrulamaktır. Güncel ölçümler, takipli repo yüzeyinin büyümeye devam ederken güvenlik ve kalite kapılarını koruduğunu göstermektedir.
 
-**Sonuç:** Açık kritik/yüksek/orta/düşük bulgu tespit edilmemiştir. Zero Debt beyanı korunmaktadır; v5.1.1 revizyonu ile sistemdeki tüm bağımlılık kopmaları (Redis, veritabanı), asenkron iptal durumları (`WebSocketDisconnect`) ve yetkilendirme bypass girişimleri mock testleriyle coverage alanına %100 oranında dahil edilmiş, Faz D modülleri de mevcut güvenli sandbox, HITL, typed-tool ve fail-safe operasyon ilkeleriyle uyumlu biçimde entegre edilmiştir.
+**Sonuç:** Açık kritik/yüksek/orta/düşük bulgu tespit edilmemiştir. Zero Debt beyanı korunmaktadır; v5.2.0-alpha belge baseline'ında Coverage Agent'in `CodeManager` üzerinden pytest koşturup coverage bulgularını kalıcılaştırdığı, Poyraz'ın sosyal medya + web arama + multimodal ingest yüzeylerini aktif kullandığı ve Faz E yardımcı tablolarının `core/db.py` şema başlangıcında bulunduğu doğrulanmıştır.
 
 ---
 
@@ -19,25 +19,25 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 
 | Metrik | Değer |
 |---|---:|
-| Takipli Python dosyası | 250 |
-| Takipli Python satırı | 79.462 |
-| Üretim Python dosyası | 68 |
-| Üretim Python satırı | 28.931 |
-| `tests/test_*.py` modülü | 180 |
+| Takipli Python dosyası | 256 |
+| Takipli Python satırı | 86.611 |
+| Üretim Python dosyası | 69 |
+| Üretim Python satırı | 32.401 |
+| `tests/test_*.py` modülü | 185 |
 | Takipli Markdown dosyası | 101 |
 
 ### 2.2 `scripts/audit_metrics.sh` çıktısı
 
 | Uzantı | Dosya | Satır |
 |---|---:|---:|
-| `.py` | 250 | 79.462 |
+| `.py` | 256 | 86.611 |
 | `.js` | 11 | 3.418 |
 | `.css` | 3 | 2.975 |
 | `.html` | 4 | 745 |
-| `.md` | 101 | 9.456 |
-| **Toplam** | **369** | **96.056** |
+| `.md` | 101 | 9.532 |
+| **Toplam** | **375** | **103.281** |
 
-### 2.3 Faz D odaklı yüzeyler
+### 2.3 Faz D/Faz E odaklı yüzeyler
 
 | Yüzey | Ölçüm |
 |---|---:|
@@ -55,10 +55,13 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 | `core/multimodal.py` | 413 |
 | `agent/tooling.py` | 127 |
 | `managers/code_manager.py` | 1.534 |
+| `agent/roles/coverage_agent.py` | 262 |
+| `agent/roles/poyraz_agent.py` | 498 |
+| `core/db.py` | 2.965 |
 
 ---
 
-## 3. Faz D Denetim Bulguları
+## 3. Faz D/Faz E Denetim Bulguları
 
 ### 3.1 Plugin Marketplace ve Sıcak Yükleme
 - `web_ui_react/src/components/PluginMarketplacePanel.jsx`, çalışma zamanında ajan eklentilerini listeleyen ve etkinleştiren React paneliyle plugin pazarını görünür kılar.
@@ -72,10 +75,10 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 - `tests/test_nightly_memory_maintenance.py`, idle-gated bakım turunun özetleme, doküman konsolidasyonu ve TTL temizliğini yaptığını kanıtlar.
 - `runbooks/chaos_live_rehearsal.md` ile `tests/test_system_health_dependency_checks.py`, PostgreSQL/Redis kopmalarında fail-safe health kontrolü ve prova edilebilir incident yanıtını belgeler.
 
-### 3.4 Faz E Yol Haritası Hazırlığı
-- `agent/tooling.py`, Poyraz ajanının sosyal medya ve operasyon araçları için doğal entegrasyon yüzeyi olarak belirlenmiştir.
-- `core/multimodal.py`, YouTube ve dış video platformlarından gelecek akışların çözümlenmesi için genişletilecek aday ingestion çekirdeğidir.
-- `managers/code_manager.py`, Coverage Agent'in coverage çıktısı okuyup test üretme/doğrulama döngüsünü bağlayacağı uygulama kapısı olacaktır; `tests/test_missing_edge_case_coverage_final.py` ile doğrulanan %100 baseline bu ajanın referans kabul eşiğini oluşturacaktır.
+### 3.4 Faz E Ajanlarının Devreye Alınması
+- `agent/roles/coverage_agent.py`, `run_pytest`, `analyze_pytest_output`, `generate_missing_tests` ve `write_missing_tests` araçlarını kayıt altına alarak `CodeManager` üzerinden pytest çalıştıran, çıktı analizi yapan ve `coverage_tasks` / `coverage_findings` kayıtları oluşturan aktif QA ajanı olarak denetim kapsamına dahil edilmiştir.
+- `agent/roles/poyraz_agent.py`, `SocialMediaManager`, `WebSearchManager`, `DocumentStore` ve `MultimodalPipeline` entegrasyonlarıyla sosyal yayın, landing page üretimi, kampanya kopyası, WhatsApp mesajı, video içgörüsü ingest'i ve operasyon checklist'i üreten aktif Faz E ajanı olarak doğrulanmıştır.
+- `core/db.py` içinde `upsert_marketing_campaign`, `add_content_asset`, `add_operation_checklist`, `create_coverage_task` ve `add_coverage_finding` yardımcılarıyla Faz E veri modeli uygulama şemasında hazırdır; ayrı Alembic revision dosyası ise bu denetim turunda listelenmemiştir ve sonraki operasyon adımı olarak izlenmelidir.
 
 ---
 
@@ -88,7 +91,7 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 | Nightly memory maintenance | `tests/test_nightly_memory_maintenance.py` | Hazır |
 | Dependency resilience / chaos checks | `tests/test_system_health_dependency_checks.py` | Hazır |
 
-> Coverage politikası dokümantasyonda `%100 hard gate` olarak korunmaktadır; bu güncellemede audit metrikleri yeniden hesaplanmış, `main.py` launcher sertleştirmeleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan Redis fallback, async cancel, `tempfile.mkdtemp` hata yolu ve GitHub API arıza senaryolarının tam regresyon güvenliğine dahil olduğu açıkça belgelenmiştir.
+> Coverage politikası dokümantasyonda `%100 hard gate` olarak korunmaktadır; bu güncellemede audit metrikleri yeniden hesaplanmış, `main.py` launcher sertleştirmeleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan Redis fallback, async cancel, `tempfile.mkdtemp` hata yolu ve GitHub API arıza senaryolarının tam regresyon güvenliğine dahil olduğu açıkça belgelenmiş, Coverage/Poyraz ajanlarının bu güvenli omurga üstünde çalıştığı doğrulanmıştır.
 
 ---
 
