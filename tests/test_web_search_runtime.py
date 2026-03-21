@@ -198,6 +198,29 @@ def test_search_tavily_mode_falls_back_after_error(monkeypatch, web_search_mod, 
     assert result == "google-result"
 
 
+def test_search_tavily_mode_success_returns_immediately(monkeypatch, web_search_mod, base_cfg):
+    base_cfg.SEARCH_ENGINE = "tavily"
+    base_cfg.TAVILY_API_KEY = "t-key"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g-key"
+    base_cfg.GOOGLE_SEARCH_CX = "g-cx"
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    async def fake_tavily(query, n):
+        assert (query, n) == ("q", 4)
+        return True, manager._mark_no_results("hemen dön")
+
+    async def fail_google(*_args, **_kwargs):
+        raise AssertionError("Google fallback çalışmamalı")
+
+    monkeypatch.setattr(manager, "_search_tavily", fake_tavily)
+    monkeypatch.setattr(manager, "_search_google", fail_google)
+
+    ok, result = asyncio.run(manager.search("q", max_results=4))
+    assert ok is True
+    assert result == "hemen dön"
+
+
 def test_search_returns_error_when_no_engines_available(monkeypatch, web_search_mod, base_cfg):
     monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
     manager = web_search_mod.WebSearchManager(base_cfg)
@@ -473,6 +496,28 @@ def test_search_auto_falls_to_duckduckgo_after_no_result_markers(monkeypatch, we
     assert text == "duck-final"
 
 
+def test_search_auto_returns_after_tavily_actionable_result(monkeypatch, web_search_mod, base_cfg):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    async def yes_t(query, n):
+        assert (query, n) == ("q", 3)
+        return True, "[Web Arama (Tavily): q]\n\n1. **Başlık**"
+
+    async def fail_google(*_args, **_kwargs):
+        raise AssertionError("Google fallback çalışmamalı")
+
+    monkeypatch.setattr(manager, "_search_tavily", yes_t)
+    monkeypatch.setattr(manager, "_search_google", fail_google)
+
+    ok, text = asyncio.run(manager.search("q", max_results=3))
+    assert ok is True
+    assert "Başlık" in text
+
+
 def test_tavily_success_no_results_and_exceptions(monkeypatch, web_search_mod, base_cfg):
     monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
     base_cfg.TAVILY_API_KEY = "t"
@@ -626,6 +671,43 @@ def test_duckduckgo_async_generator_and_sync_branch(monkeypatch, web_search_mod,
     assert "S" in text
 
 
+def test_duckduckgo_async_list_and_no_results_branches(monkeypatch, web_search_mod, base_cfg):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: True)
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    class _AsyncDDGSList:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def text(self, query, max_results):
+            assert (query, max_results) == ("q", 2)
+            return [{"title": "Başlık", "body": "Gövde", "href": "https://example.com"}]
+
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", SimpleNamespace(AsyncDDGS=_AsyncDDGSList))
+    ok, text = asyncio.run(manager._search_duckduckgo("q", 2))
+    assert ok is True
+    assert "Başlık" in text
+
+    class _AsyncDDGSEmpty:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def text(self, query, max_results):
+            assert (query, max_results) == ("empty", 1)
+            return []
+
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", SimpleNamespace(AsyncDDGS=_AsyncDDGSEmpty))
+    ok, text = asyncio.run(manager._search_duckduckgo("empty", 1))
+    assert ok is True
+    assert "DuckDuckGo'da sonuç bulunamadı" in text
+
+
 def test_duckduckgo_general_exception(monkeypatch, web_search_mod, base_cfg):
     monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: True)
     manager = web_search_mod.WebSearchManager(base_cfg)
@@ -772,6 +854,27 @@ def test_scrape_url_requesterror_path(monkeypatch, web_search_mod, base_cfg):
     monkeypatch.setattr(web_search_mod.httpx, "AsyncClient", _ClientReqErr)
     text = asyncio.run(manager.scrape_url("http://err"))
     assert "bağlantı/istek hatası" in text
+
+
+def test_scrape_url_success_path(monkeypatch, web_search_mod, base_cfg):
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    class _ClientOK:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return _FakeResponse(text="<html><body><h1>Başlık</h1><script>x</script><p>İçerik</p></body></html>")
+
+    monkeypatch.setattr(web_search_mod.httpx, "AsyncClient", _ClientOK)
+    text = asyncio.run(manager.scrape_url("http://ok"))
+    assert text == "Başlık İçerik"
 
 
 def test_duckduckgo_general_exception_242(monkeypatch, web_search_mod, base_cfg):
