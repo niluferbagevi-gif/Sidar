@@ -24,10 +24,14 @@ PyGithub~=2.4.0
 duckduckgo-search~=6.2.13
 
 [all]
-sidar-project[anthropic,gemini,gpu,gui,postgres,rag,sandbox,telemetry]
+sidar-project[anthropic,browser,gemini,gpu,gui,postgres,rag,sandbox,telemetry]
 
 [anthropic]
 anthropic~=0.40.0
+
+[browser]
+playwright~=1.51.0
+selenium~=4.29.0
 
 [dev]
 pytest>=8.0.0

@@ -1,7 +1,7 @@
 
 """
 Sidar Project — Merkezi Yapılandırma Modülü
-Sürüm: 4.3.0 (Kurumsal/SaaS sürüm: React SPA, multi-agent swarm, PostgreSQL/pgvector, observability, sandbox)
+Sürüm: v5.0.0-alpha (Ultimate Launcher, multimodal/voice, browser automation, proaktif swarm)
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
@@ -248,12 +248,12 @@ def check_hardware() -> HardwareInfo:
 class Config:
     """
     Sidar Merkezi Yapılandırma Sınıfı
-    Sürüm: 4.3.0
+    Sürüm: v5.0.0-alpha
     """
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "4.3.0"
+    VERSION: str      = "5.0.0-alpha"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
 

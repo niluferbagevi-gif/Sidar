@@ -30,7 +30,7 @@ v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal d
 Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipli kod tabanı ile senkronize edildi.
 
 ### ✅ Dokümantasyon ve Sürüm Senkronizasyonu
-**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md`, `TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
+**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v5.0.md`, `TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
 - Runtime, paket ve dağıtım yüzeyi `v4.3.0` sürüm çizgisine taşındı; README, teknik referans, proje raporu ve geliştirici rehberleri aynı baseline ile hizalandı.
 - Takipli depo ölçümleri yeniden doğrulandı: **58** üretim Python dosyası / **20.582** satır, **151** test dosyası / **39.147** satır, toplam takipli Python **209** dosya / **59.729** satır, Web UI toplamı **6.105** satır ve REST endpoint envanteri **60** olarak raporlara işlendi.
 - Teknik referans turunda API/DB/env sözleşmeleri tekrar kontrol edildi; bu sürümde yeni endpoint, tablo veya config anahtarı eklenmediği için envanter korunurken başlık ve senkronizasyon notları güncellendi.
@@ -70,7 +70,7 @@ Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıy
 FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut repo durumu ile senkronize edildi.
 
 ### ✅ Dokümantasyon ve Operasyon Senkronizasyonu
-**Dosyalar:** `pyproject.toml`, `.github/workflows/migration-cutover-checks.yml`, `README.md`, `RFC-MultiAgent.md`, `TEKNIK_REFERANS.md`, `runbooks/production-cutover-playbook.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v4.0.md`
+**Dosyalar:** `pyproject.toml`, `.github/workflows/migration-cutover-checks.yml`, `README.md`, `RFC-MultiAgent.md`, `TEKNIK_REFERANS.md`, `runbooks/production-cutover-playbook.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v5.0.md`
 - `pyproject.toml` paket sürümü `config.py` içindeki runtime sürümüyle uyumlu olacak şekilde `3.0.0` olarak düzeltildi.
 - PostgreSQL cutover workflow'undan diskte bulunmayan `requirements.txt` bağımlılığı kaldırıldı; migration provası artık `requirements-dev.txt + asyncpg` ile çalışır.
 - README, React/Vite geliştirme akışı, SPA öncelikli servisleme modeli, güncel proje ağacı ve 149 test modülü / 151 test dosyası gerçekliğiyle yenilendi.
@@ -87,7 +87,7 @@ FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut r
 FAZ-10 — Autonomous LLMOps kapanış anlatısı kurumsal operasyon seviyesiyle eşitlendi.
 
 ### ✅ FAZ-10 — Faz 4 Operasyonel Olarak Kapatıldı
-**Dosyalar:** `PROJE_RAPORU.md`, `RFC-MultiAgent.md`, `AUDIT_REPORT_v4.0.md`, `README.md`
+**Dosyalar:** `PROJE_RAPORU.md`, `RFC-MultiAgent.md`, `AUDIT_REPORT_v5.0.md`, `README.md`
 - Faz 4; aktif öğrenme, vision, cost-aware routing ve dış sistem orkestrasyonunu kapsayan birleşik **Autonomous LLMOps** katmanı olarak yeniden çerçevelendi.
 - Audit trail ve direct `p2p.v1` handoff doğrulamaları bu kabiliyetlerin sadece mevcut değil, denetlenebilir ve rollout'a hazır olduğunu gösterecek şekilde dokümante edildi.
 - Proje raporu ve RFC tarafında `v4.2.0` operasyonel kapanış dili, audit ve README tarafında da görünür hâle getirildi.
