@@ -7,6 +7,8 @@
 
 ---
 
+> **Not:** Faz C derinleşmesi ve güncel repo metrikleri için `AUDIT_REPORT_v5.1.md` dosyasına da bakınız.
+
 ## İçindekiler
 
 1. [Yönetici Özeti](#1-yönetici-özeti)

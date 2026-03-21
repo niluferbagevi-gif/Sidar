@@ -6,15 +6,15 @@
 > _(Ana rapor yalnızca aktif durum özeti ve stratejik kurumsal görünüm için referans noktasıdır.)_
 > ---
 
-> **Rapor Tarihi:** 2026-03-20
-> **Son Güncelleme:** 2026-03-20 (v5.0.0-alpha — SİDAR, **Faz A ve Faz B hedeflerini ürünleşmiş baseline olarak kapatmış**, Faz C derinleşmesine geçmiş durumdadır: GraphRAG → Reviewer etki analizi, duplex voice-to-voice WebSocket akışı, proaktif cron/webhook/federation tetikleyicileri, browser sinyalleri, correlation-id tabanlı dış olay izlenebilirliği ve SwarmFlowPanel üzerinde canlı operasyon yüzeyi aynı omurgada çalışmaktadır. Ultimate Launcher (`main.py`) ön kontroller, zengin terminal UX'i, thread tabanlı log akışı ve `config.py` eksikliğinde child process'leri fail-fast durduran runtime guard ile giriş kapısı olmayı sürdürürken; `web_server.py` içindeki Ollama shutdown cleanup hattı artık `psutil` öncelikli çocuk süreç keşfi ve Windows üzerinde güvenli no-op davranışı ile daha taşınabilir hale gelmiştir. Reviewer ajanı artık GraphRAG raporları ile Pyright + TypeScript Language Server Protocol sinyallerini birlikte yorumlayan anlamsal kalite kapısı sunmaktadır. `core/multimodal.py`, `core/voice.py` ve `/ws/voice` hattı duplex output buffer, assistant turn kimliği ve VAD tabanlı barge-in interrupt temizliğiyle daha doğal gerçek zamanlı ses akışı sağlar; `managers/browser_manager.py`, `agent/core/contracts.py`, `agent/sidar_agent.py`, `web_server.py` ve `web_ui_react/src/components/SwarmFlowPanel.jsx` birlikte HITL-korumalı browser otomasyonu, proaktif otonomi, action feedback/federation korelasyonu ve node-graph üzerinden canlı operatör müdahalesini ürünleşmiş Faz B teslimleri halinde birleştirir.)
+> **Rapor Tarihi:** 2026-03-21
+> **Son Güncelleme:** 2026-03-21 (v5.0.0-alpha runtime baseline üzerinde Faz C derinleşmesi belgeleri senkronize edildi: `web_ui_react/src/components/VoiceAssistantPanel.jsx` + `web_ui_react/src/hooks/useVoiceAssistant.js` istemci tarafı duplex ses/VAD deneyimini React SPA içine taşıyor; `core/voice.py` + `/ws/voice` hattı assistant turn kimliği, output buffer, VAD ve barge-in temizliği ile uyumlu çalışıyor. `agent/roles/reviewer_agent.py`, `core/ci_remediation.py`, `agent/sidar_agent.py` ve `managers/code_manager.py` düşük riskli CI arızalarında JSON patch planı, sandbox doğrulaması ve rollback fail-safe içeren self-healing döngüsünü birlikte yürütüyor. `web_server.py`, `agent/swarm.py` ve federation/webhook uçları GitHub, Jira ve sistem olaylarından event-driven swarm pipeline'larını otomatik tetiklerken; `managers/browser_manager.py` screenshot + DOM tabanlı browser sinyallerini reviewer ve HITL akışlarına taşıyor. Ayrıntılı Faz C mimari senkronizasyonu için `docs/SIDAR_v5_1_MIMARI_RAPORU.md`, bağımsız denetim özeti için `AUDIT_REPORT_v5.1.md` referans alınmalıdır.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
 > **Proje Sürümü:** v5.0.0-alpha
 > **İleri Yol Haritası / Faz Durumu:** Faz A ve Faz B ürünleşmiş baseline olarak kapatıldı; aktif geliştirme odağı Faz C derinleşmesidir.
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları satır satır yeniden ölçülmüştür. `scripts/collect_repo_metrics.sh` çıktısına göre güncel üretim Python hacmi **26.261** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **46.874** satır (**165** `test_*.py`, **167** toplam Python test dosyası varsayımıyla `tests/*.py` taraması) ve tüm takipli Python toplamı **73.135** satırdır. Aynı ölçümde takipli Markdown havuzu **8.440** satır (**97** dosya), `scripts/audit_metrics.sh` toplamında ise takipli ölçüm yüzeyi **87.576** satır (**343** dosya) seviyesine çıkmıştır. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), Faz B'yi kapatan ses hattı (`core/voice.py`), GraphRAG + reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`), dış olay korelasyonu (`agent/core/contracts.py`, `agent/sidar_agent.py`, `web_server.py`), browser sinyalleri (`managers/browser_manager.py`) ve canlı operasyon yüzeyi (`web_ui_react/src/components/SwarmFlowPanel.jsx`) ile metrik betikleri (`scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`) yeniden doğrulanmış; başlatma, CLI oturum yönetimi, web kontrol düzlemi, duplex ses/TTS akışı, cost-aware yönlendirme, görsel swarm görünürlüğü, proaktif otonomi/federation, action-feedback akışı ve güvenli ölçüm yüzeyleri raporlarla senkronize edilmiştir.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile yeniden ölçülmüştür. Güncel ölçümde üretim Python hacmi **26.900** satır (**62** takipli `.py` dosyası; `tests/` hariç), test havuzu **47.380** satır (**165** `test_*.py` modülü) ve tüm takipli Python toplamı **74.280** satır (**229** dosya) olarak doğrulanmıştır. Takipli Markdown havuzu **9.155** satır (**100** dosya), toplam ölçüm yüzeyi ise **90.261** satır (**347** dosya) seviyesindedir. Modern frontend tarafında `web_ui_react/` **25** takipli dosya / **3.853** satır, legacy `web_ui/` ise **6** takipli dosya / **4.715** satır üretmektedir. Bu revizyonda özellikle root giriş dosyaları (`main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py`, `gui_launcher.py`), istemci tarafı voice UX modülleri (`web_ui_react/src/components/VoiceAssistantPanel.jsx`, `web_ui_react/src/hooks/useVoiceAssistant.js`), self-healing omurgası (`core/ci_remediation.py`, `agent/sidar_agent.py`, `managers/code_manager.py`), event-driven federation/webhook zinciri (`web_server.py`, `agent/swarm.py`, `github_upload.py`) ve metrik betikleri yeniden doğrulanmıştır.
 
 ---
 
@@ -147,6 +147,8 @@
 - **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
 - **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
 - **Multimodal Perception + Duplex Voice (Tamamlandı / Faz B):** `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile medya ingestion, STT, assistant turn kimliği, duplex output buffer, VAD olayları ve barge-in destekli TTS segmentasyon akışı ürünleşmiş durumda.
+- **İstemci Tarafı Ses Deneyimi (Faz C derinleşmesi):** `VoiceAssistantPanel.jsx` ve `useVoiceAssistant.js`, mikrofon izni, `MediaRecorder` akışı, VAD durum takibi, transcript diyagnostiği ve kullanıcının SİDAR konuşmasını kesebilmesini React UI üzerinde görünür hale getirir.
+- **Otonom Remediation / Self-Healing (Faz C):** `core/ci_remediation.py`, `agent/sidar_agent.py`, `agent/roles/reviewer_agent.py` ve `managers/code_manager.py` birlikte düşük riskli CI arızaları için patch planı üretir, sandbox'ta doğrular, gerekirse rollback yapar ve yüksek riskte HITL kapısına döner.
 - **Dynamic Browser Automation (Tamamlandı / v5.0-alpha):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, zorunlu HITL geçidi, audit trail ve reviewer/swarm akışına taşınabilen browser signal özetleri ile kontrollü tarayıcı oturumlarını yönetiyor.
 - **Proaktif Otonomi + Swarm Federation (Tamamlandı / Faz B):** `web_server.py` içinde `/ws/voice`, `/api/autonomy/webhook/{source}`, `/api/swarm/federation`, `/api/swarm/federation/feedback` ve `ENABLE_AUTONOMOUS_CRON` tabanlı cron tetikleyicisi ile sistem reaktif modelden kontrollü proaktif/federe co-worker modeline genişliyor.
 - **Canlı Operasyon Yüzeyi (Tamamlandı / Faz B):** `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py` ve ilgili HITL API'leri ile görsel karar grafiği artık sadece izleme değil; seçili düğümden görev türetme, hedefli rerun ve bekleyen onayları yönetme yüzeyi olarak da çalışıyor.
@@ -272,6 +274,9 @@ sidar_project/
 │
 ├── web_ui_react/              # Modern React SPA arayüzü (Vite tabanlı)
 │   ├── src/                     # React bileşenleri, hook'lar ve API yardımcıları
+│   │   ├── components/VoiceAssistantPanel.jsx   # Duplex voice oturumu, transcript ve VAD paneli
+│   │   ├── components/SwarmFlowPanel.jsx        # Canlı swarm karar grafiği ve operasyon yüzeyi
+│   │   └── hooks/useVoiceAssistant.js           # MediaRecorder + WebSocket + VAD istemci hook'u
 │   ├── package.json             # npm bağımlılıkları ve script'ler
 │   └── vite.config.js           # Vite build konfigürasyonu
 │
@@ -376,10 +381,19 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.27 | `web_ui/`, `web_ui_react/` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok |
+| 3.27 | `web_ui/`, `web_ui_react/`, `VoiceAssistantPanel.jsx`, `useVoiceAssistant.js` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok, ancak duplex ses UX bileşenleri rapor içinde ayrıca belgelenmiştir |
 | 3.28 | `github_upload.py`, `gui_launcher.py` | [docs/module-notes/github_upload.py.md](docs/module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
 | 3.29 | `migrations/`, `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
 | 3.30 | `docker/`, `runbooks/`, `helm/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](docs/module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
+
+---
+
+### 3.D.1 React İstemci Tarafı Ses Bileşenleri
+
+- **`web_ui_react/src/components/VoiceAssistantPanel.jsx`:** Duplex ses oturumunun özet panelidir; mikrofonu başlat/durdur, aktif TTS oynatmasını kes, son transcript'i görüntüle ve VAD / buffer / turn bilgisini operatöre görünür kılar.
+- **`web_ui_react/src/hooks/useVoiceAssistant.js`:** `MediaRecorder`, `getUserMedia`, `AnalyserNode` ve `/ws/voice` WebSocket akışını tek yerde yöneten istemci orkestrasyon katmanıdır. Hook; VAD threshold/silence takibi, base64 ses paketleme, diagnostics halkası ve barge-in sırasında oynatmayı sonlandırma davranışını yönetir.
+- **Backend uyumu:** Bu iki modül `core/voice.py` ve `web_server.py` içindeki `/ws/voice` akışına bağlanarak transcript, assistant turn metadata, `voice_state`, `voice_interruption` ve TTS paketleriyle tam çift yönlü bir UX sunar.
+- **Operasyonel değer:** Sesli kod inceleme, hızlı incident triage ve hands-free debugging oturumları artık yalnızca backend capability değil, React SPA üzerinde gözlemlenebilir bir kullanıcı deneyimi haline gelmiştir.
 
 ---
 
@@ -700,9 +714,9 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
+Bu bölüm, 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Hacimsel özet (yönetici görünümü):** 2026-03-21 ölçümünde takipli depo yüzeyi **343 dosya / 87.576 satır** seviyesindedir. Python tarafında üretim kodu **26.261 satır / 62 dosya**, test havuzu **46.874 satır / 165 `test_*.py` modülü / 167 toplam test Python dosyası**, toplam Python hacmi ise **73.135 satır / 229 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **8.440 satır / 97 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. Kod tabanı artık küçük bir monolit değildir; test havuzu Python ekosisteminin en büyük payını oluştururken, `core/`, `agent/` ve `managers/` altında kurumsal backend/sürü orkestrasyonu; `web_ui_react/` ile modern SPA katmanı; `helm/`, `docker/`, Grafana dashboard'ları ve runbook'lar ile de ciddi bir Infrastructure-as-Code / operasyon dokümantasyonu hacmi oluşmuştur.
+**Hacimsel özet (yönetici görünümü):** 2026-03-21 ölçümünde takipli depo yüzeyi **347 dosya / 90.261 satır** seviyesindedir. Python tarafında üretim kodu **26.900 satır / 62 dosya**, test havuzu **47.380 satır / 165 `test_*.py` modülü**, toplam Python hacmi ise **74.280 satır / 229 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **9.155 satır / 100 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **25** takipli dosya / **3.853** satırlık SPA hacmi ve `web_ui/` altındaki **4.715** satırlık legacy yüzey birlikte değerlendirildiğinde, Faz C'de istemci tarafı ses deneyimi de artık ölçülebilir bir ürün bileşeni haline gelmiştir.
 
 - **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
@@ -804,11 +818,12 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `web_ui/sidebar.js` | 413 |
 | `web_ui/rag.js` | 132 |
 | `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **6.985** |
-| **React UI (`web_ui_react/` toplam takipli satır)** | **2.591** |
+| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **8.568** |
+| **Legacy UI (`web_ui/` toplam takipli satır)** | **4.715** |
+| **React UI (`web_ui_react/` toplam takipli satır)** | **3.853** |
+| **Voice UI alt kümesi (`VoiceAssistantPanel.jsx` + `useVoiceAssistant.js`)** | **711** |
 | **Test modülü (`tests/test_*.py`)** | **165** |
-| **`tests/*.py` toplam dosya** | **167** |
-| **`tests/*.py` toplam satır** | **46.874** |
+| **`tests/*.py` toplam satır** | **47.380** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
@@ -816,8 +831,8 @@ Bu bölüm, 2026-03-20 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 |---|---|---:|
 | `tests/` | `test_*.py` modül sayısı | 165 |
 | `tests/` | `*.py` toplam dosya | 167 |
-| `tests/` | `*.py` toplam satır | 46.874 |
-| `web_ui_react/` | toplam takipli satır | 2.591 |
+| `tests/` | `*.py` toplam satır | 47.380 |
+| `web_ui_react/` | toplam takipli satır | 3.853 |
 | `scripts/` | dosya sayısı | 7 |
 | `scripts/` | toplam satır | 613 |
 | `migrations/` | `.py` dosya sayısı (env.py + 3 versions) | 4 |
@@ -1108,7 +1123,7 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 ### 11.3 v5.0 Faz-6 Coverage Kapanışı
 
-- `core/voice.py`, `managers/browser_manager.py`, `main.py`, `core/rag.py`, `agent/core/contracts.py` ve `core/ci_remediation.py` için beklenen test kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_rag_graph.py`, `tests/test_contracts_federation.py` ve `tests/test_ci_remediation.py` ile repoda mevcuttur.
+- `core/voice.py`, `web_ui_react` duplex ses akışı, `managers/browser_manager.py`, `main.py`, `core/rag.py`, `agent/core/contracts.py`, `core/ci_remediation.py` ve event-driven federation/webhook zinciri için beklenen regresyon kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_rag_graph.py`, `tests/test_contracts_federation.py`, `tests/test_ci_remediation.py` ve `tests/test_web_server_autonomy.py` ile repoda mevcuttur.
 - Opsiyonel `pyttsx3` bağımlılığı, HITL onay akışları ve launcher alt süreç davranışı için mocking/fake adapter stratejileri test dosyalarında uygulanmış durumdadır; bu başlık artık aktif borç değil, sürdürülen regresyon korumasıdır.
 
 ### 11.4 Operasyonel İzleme Başlıkları
