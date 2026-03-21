@@ -17,6 +17,7 @@ npm run dev         # http://localhost:5173 — FastAPI'ye proxy
 npm run build       # web_ui_react/dist/ dizinine derler
 npm run test        # Vitest watch modu
 npm run test:run    # CI için tek seferlik test koşumu
+npm run test:coverage # Coverage raporu üretir
 ```
 
 `web_server.py` otomatik olarak `web_ui_react/dist/` varsa onu, yoksa legacy `web_ui/` dizinini sunar.

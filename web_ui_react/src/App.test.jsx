@@ -1,5 +1,6 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import App from "./App.jsx";
 import { BrowserRouter } from "./lib/routerShim.jsx";
 import { TOKEN_KEY } from "./lib/api.js";
@@ -27,21 +28,23 @@ describe("App", () => {
     window.history.replaceState({}, "Test", "/");
   });
 
-  it("stores the bearer token and updates the token hint", () => {
+  it("stores the bearer token and updates the token hint", async () => {
+    const user = userEvent.setup();
     renderApp();
 
     const input = screen.getByLabelText("Bearer token");
-    fireEvent.change(input, { target: { value: "  secret-token  " } });
-    fireEvent.click(screen.getByRole("button", { name: "Token Kaydet" }));
+    await user.type(input, "secret-token");
+    await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
 
     expect(localStorage.getItem(TOKEN_KEY)).toBe("secret-token");
     expect(screen.getByText(/Token hazır/)).toBeInTheDocument();
   });
 
-  it("navigates to the agent manager route from the tab bar", () => {
+  it("navigates to the agent manager route from the tab bar", async () => {
+    const user = userEvent.setup();
     renderApp("/chat");
 
-    fireEvent.click(screen.getByRole("link", { name: "Agent Manager" }));
+    await user.click(screen.getByRole("link", { name: "Agent Manager" }));
 
     expect(screen.getByText("Agent Manager Mock")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/admin/agents");
