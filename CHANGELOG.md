@@ -75,7 +75,7 @@ FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut r
 - PostgreSQL cutover workflow'undan diskte bulunmayan `requirements.txt` bağımlılığı kaldırıldı; migration provası artık `requirements-dev.txt + asyncpg` ile çalışır.
 - README, React/Vite geliştirme akışı, SPA öncelikli servisleme modeli, güncel proje ağacı ve 149 test modülü / 151 test dosyası gerçekliğiyle yenilendi.
 - RFC ve teknik referans, Supervisor/Coder/Researcher/Reviewer sorumluluklarını ve reviewer'ın dinamik QA/sandbox regresyon rolünü yansıtacak şekilde güncellendi.
-- Production cutover ve audit raporları prompt registry, DLP, observability dashboard'ları, migration provası ve `%99.9` coverage hard gate detaylarıyla güçlendirildi.
+- Production cutover ve audit raporları prompt registry, DLP, observability dashboard'ları, migration provası ve `%100` coverage hard gate detaylarıyla güçlendirildi.
 
 ### Teknik Borç Kapanışı
 - Cutover workflow içindeki `requirements.txt` drift'i kaldırıldı.
@@ -615,7 +615,7 @@ Aşağıdaki bulgular satır satır kaynak incelemesiyle doğrulanmıştır.
 ---
 
 ## [v3.0.4] - 2026-03-16
-Tam kaynak denetimi — test istatistikleri güncellendi, kapsama kalite kapısı %99.9'a yükseltildi, 20 yeni güvenlik/işlevsellik bulgusu tespit edilip giderildi.
+Tam kaynak denetimi — test istatistikleri güncellendi, kapsama kalite kapısı %100'e yükseltildi, 20 yeni güvenlik/işlevsellik bulgusu tespit edilip giderildi.
 
 ### ✅ Güvenlik Düzeltmeleri
 
