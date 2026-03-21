@@ -332,7 +332,7 @@ def test_websocket_chat_collaboration_status_pump_and_empty_mention(monkeypatch)
 
         async def _try_multi_agent(self, prompt):
             await asyncio.sleep(0.02)
-            return f"ok:{prompt.split('Current command:\n', 1)[-1].strip()}"
+            return "ok:" + prompt.split("Current command:\n", 1)[-1].strip()
 
     class _Bus:
         def __init__(self):
