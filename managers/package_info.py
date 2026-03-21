@@ -53,7 +53,7 @@ class PackageInfoManager:
                 # En kısıtlı stub'larda (örn. Timeout=object) yalnızca argümansız çağrı çalışır.
                 self.timeout = httpx.Timeout()
 
-        version = getattr(config, "VERSION", "2.7.0") if config is not None else "2.7.0"
+        version = getattr(config, "VERSION", "5.0.0-alpha") if config is not None else "5.0.0-alpha"
         self.headers = {
             "User-Agent": f"SidarAI/{version} (Software Engineer Assistant)",
             "Accept": "application/json",
