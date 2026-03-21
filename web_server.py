@@ -112,6 +112,9 @@ class _CollaborationParticipant:
     user_id: str
     username: str
     display_name: str
+    role: str
+    can_write: bool
+    write_scopes: List[str]
     joined_at: str
 
 
@@ -125,6 +128,13 @@ class _CollaborationRoom:
 
 
 _collaboration_rooms: Dict[str, _CollaborationRoom] = {}
+_COLLAB_WRITE_INTENT_RE = re.compile(
+    r"(?i)\b("
+    r"write|edit|patch|modify|delete|remove|rename|commit|push|create file|save file|"
+    r"yaz|düzenle|değiştir|sil|kaldır|yeniden adlandır|commit at|dosya oluştur|dosya kaydet"
+    r")\b"
+)
+_COLLAB_WRITE_ROLES = {"admin", "maintainer", "developer", "editor"}
 
 
 def _collaboration_now_iso() -> str:
@@ -147,8 +157,38 @@ def _serialize_collaboration_participant(participant: _CollaborationParticipant)
         "user_id": participant.user_id,
         "username": participant.username,
         "display_name": participant.display_name,
+        "role": participant.role,
+        "can_write": "true" if participant.can_write else "false",
+        "write_scopes": list(participant.write_scopes),
         "joined_at": participant.joined_at,
     }
+
+
+def _normalize_collaboration_role(role: str) -> str:
+    normalized = (role or "").strip().lower()
+    return normalized or "user"
+
+
+def _collaboration_write_scopes_for_role(role: str, room_id: str) -> List[str]:
+    normalized_role = _normalize_collaboration_role(role)
+    base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
+    if normalized_role == "admin":
+        return [str(base_dir)]
+    if normalized_role in _COLLAB_WRITE_ROLES:
+        return [str(base_dir / "workspaces" / room_id.replace(":", "/"))]
+    return []
+
+
+def _collaboration_command_requires_write(command: str) -> bool:
+    return bool(_COLLAB_WRITE_INTENT_RE.search(str(command or "")))
+
+
+def _mask_collaboration_text(text: str) -> str:
+    try:
+        from core.dlp import mask_pii as _mask_pii
+        return _mask_pii(str(text or ""))
+    except Exception:
+        return str(text or "")
 
 
 def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
@@ -170,7 +210,12 @@ def _append_room_message(room: _CollaborationRoom, payload: dict[str, Any], *, l
 
 
 def _append_room_telemetry(room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200) -> None:
-    room.telemetry.append(payload)
+    safe_payload = dict(payload)
+    if "content" in safe_payload:
+        safe_payload["content"] = _mask_collaboration_text(str(safe_payload.get("content", "") or ""))
+    if "error" in safe_payload:
+        safe_payload["error"] = _mask_collaboration_text(str(safe_payload.get("error", "") or ""))
+    room.telemetry.append(safe_payload)
     if len(room.telemetry) > limit:
         room.telemetry = room.telemetry[-limit:]
 
@@ -190,7 +235,7 @@ def _build_room_message(
         "room_id": room_id,
         "role": role,
         "kind": kind,
-        "content": content,
+        "content": _mask_collaboration_text(content),
         "author_name": author_name,
         "author_id": author_id,
         "request_id": request_id,
@@ -216,6 +261,7 @@ async def _join_collaboration_room(
     user_id: str,
     username: str,
     display_name: str,
+    user_role: str = "user",
 ) -> _CollaborationRoom:
     normalized = _normalize_room_id(room_id)
     current_room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
@@ -223,11 +269,15 @@ async def _join_collaboration_room(
         await _leave_collaboration_room(websocket)
 
     room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
+    write_scopes = _collaboration_write_scopes_for_role(user_role, normalized)
     room.participants[_socket_key(websocket)] = _CollaborationParticipant(
         websocket=websocket,
         user_id=user_id,
         username=username,
         display_name=(display_name or username or user_id or "Anonim").strip()[:80],
+        role=_normalize_collaboration_role(user_role),
+        can_write=bool(write_scopes),
+        write_scopes=write_scopes,
         joined_at=_collaboration_now_iso(),
     )
     setattr(websocket, "_sidar_room_id", normalized)
@@ -284,18 +334,27 @@ def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, co
         )
     recent_context = "\n".join(transcript) if transcript else "(henüz ortak geçmiş yok)"
     participants = ", ".join(
-        participant.display_name
+        f"{participant.display_name}<{participant.role}>"
         for participant in sorted(room.participants.values(), key=lambda value: value.display_name.lower())
     )
+    actor = next(
+        (item for item in room.participants.values() if item.display_name == actor_name),
+        None,
+    )
+    actor_role = actor.role if actor else "user"
+    actor_scopes = ", ".join(actor.write_scopes) if actor and actor.write_scopes else "read-only"
     return (
         "[COLLABORATION WORKSPACE]\n"
         f"room_id={room.room_id}\n"
         f"participants={participants or 'unknown'}\n"
         f"requesting_user={actor_name}\n"
+        f"requesting_role={actor_role}\n"
+        f"requesting_write_scopes={actor_scopes}\n"
         "recent_transcript=\n"
         f"{recent_context}\n\n"
         "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor. "
-        "Yanıtında ekip bağlamını koru ve gerekiyorsa kimin ne istediğini netleştir.\n\n"
+        "Yanıtında ekip bağlamını koru ve gerekiyorsa kimin ne istediğini netleştir. "
+        "Yazma işlemlerinde sadece requesting_write_scopes kapsamındaki dizinleri kullan.\n\n"
         f"Current command:\n{command}"
     )
 
@@ -2356,6 +2415,7 @@ async def websocket_chat(websocket: WebSocket):
     active_task: asyncio.Task | None = None
     ws_user_id = ""
     ws_username = ""
+    ws_user_role = "user"
     ws_authenticated = False
     joined_room_id = ""
 
@@ -2367,6 +2427,7 @@ async def websocket_chat(websocket: WebSocket):
             return
         ws_user_id = ws_user.id
         ws_username = ws_user.username
+        ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
         ws_authenticated = True
         await agent.memory.set_active_user(ws_user_id, ws_username)
         with contextlib.suppress(Exception):
@@ -2460,7 +2521,7 @@ async def websocket_chat(websocket: WebSocket):
                         "room_id": room.room_id,
                         "kind": "status",
                         "source": evt.source,
-                        "content": evt.message,
+                        "content": _mask_collaboration_text(evt.message),
                         "ts": _collaboration_now_iso(),
                     }
                     _append_room_telemetry(room, payload)
@@ -2484,7 +2545,7 @@ async def websocket_chat(websocket: WebSocket):
                         "type": "assistant_chunk",
                         "room_id": room.room_id,
                         "request_id": request_id,
-                        "chunk": chunk,
+                        "chunk": _mask_collaboration_text(chunk),
                         "author_name": "SİDAR",
                     },
                 )
@@ -2525,13 +2586,13 @@ async def websocket_chat(websocket: WebSocket):
             logger.exception("Collaborative agent response error: %s", exc)
             await _broadcast_room_payload(
                 room,
-                {
-                    "type": "room_error",
-                    "room_id": room.room_id,
-                    "error": str(exc),
-                    "request_id": request_id,
-                },
-            )
+                    {
+                        "type": "room_error",
+                        "room_id": room.room_id,
+                        "error": _mask_collaboration_text(str(exc)),
+                        "request_id": request_id,
+                    },
+                )
         finally:
             stop_status.set()
             if status_task is not None:
@@ -2570,6 +2631,7 @@ async def websocket_chat(websocket: WebSocket):
                     return
                 ws_user_id = ws_user.id
                 ws_username = ws_user.username
+                ws_user_role = _normalize_collaboration_role(getattr(ws_user, "role", "user"))
                 ws_authenticated = True
                 await agent.memory.set_active_user(ws_user_id, ws_username)
                 with contextlib.suppress(Exception):
@@ -2585,6 +2647,7 @@ async def websocket_chat(websocket: WebSocket):
                     user_id=ws_user_id,
                     username=ws_username,
                     display_name=display_name,
+                    user_role=ws_user_role,
                 )
                 joined_room_id = room.room_id
                 continue
@@ -2623,6 +2686,7 @@ async def websocket_chat(websocket: WebSocket):
                         user_id=ws_user_id,
                         username=ws_username,
                         display_name=ws_username or ws_user_id,
+                        user_role=ws_user_role,
                     )
                 display_name = str(payload.get("display_name", "") or ws_username or ws_user_id).strip() or ws_username or ws_user_id or "Anonim"
                 user_message_payload = _build_room_message(
@@ -2645,6 +2709,28 @@ async def websocket_chat(websocket: WebSocket):
                                 "type": "room_error",
                                 "room_id": room.room_id,
                                 "error": "@Sidar etiketi sonrası komut bulunamadı.",
+                            },
+                        )
+                        continue
+                    participant = room.participants.get(_socket_key(websocket))
+                    if _collaboration_command_requires_write(command) and not (participant and participant.can_write):
+                        _append_room_telemetry(
+                            room,
+                            {
+                                "id": secrets.token_hex(8),
+                                "room_id": room.room_id,
+                                "kind": "rbac_denied",
+                                "source": "collaboration_rbac",
+                                "content": command,
+                                "ts": _collaboration_now_iso(),
+                            },
+                        )
+                        await _broadcast_room_payload(
+                            room,
+                            {
+                                "type": "room_error",
+                                "room_id": room.room_id,
+                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
                             },
                         )
                         continue
