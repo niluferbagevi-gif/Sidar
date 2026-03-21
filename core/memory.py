@@ -6,6 +6,7 @@ import asyncio
 import logging
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -265,6 +266,137 @@ class ConversationMemory:
         if sid:
             await self.db.delete_session(sid, self.active_user_id)
             await self.create_session(title)
+
+    @staticmethod
+    def _parse_iso_ts(value: str) -> float:
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _build_compaction_summary(title: str, messages: List[object]) -> str:
+        user_points: List[str] = []
+        assistant_points: List[str] = []
+        code_refs = 0
+        for item in messages:
+            role = str(getattr(item, "role", "") or "")
+            content = str(getattr(item, "content", "") or "").strip()
+            if not content:
+                continue
+            if "```" in content or ".py" in content or ".ts" in content or "/api/" in content:
+                code_refs += 1
+            cleaned = " ".join(content.split())
+            if role == "user" and len(user_points) < 3:
+                user_points.append(cleaned[:180])
+            elif role == "assistant" and len(assistant_points) < 3:
+                assistant_points.append(cleaned[:180])
+
+        lines = [
+            f"Oturum başlığı: {title}",
+            f"Toplam mesaj: {len(messages)}",
+            f"Kod/araç referansı görülen mesaj sayısı: {code_refs}",
+        ]
+        if user_points:
+            lines.append("Öne çıkan kullanıcı istekleri:")
+            lines.extend(f"- {item}" for item in user_points)
+        if assistant_points:
+            lines.append("Öne çıkan SİDAR çıktıları:")
+            lines.extend(f"- {item}" for item in assistant_points)
+        return "\n".join(lines)
+
+    async def compact_session(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        keep_last: Optional[int] = None,
+        min_messages: int = 12,
+    ) -> Dict[str, object]:
+        """Belirli bir oturumu özetleyip son birkaç mesajı koruyarak sıkıştırır."""
+        await self._ensure_initialized()
+        session = await self.db.load_session(session_id, user_id)
+        if not session:
+            return {"session_id": session_id, "status": "missing", "messages_before": 0}
+
+        messages = await self.db.get_session_messages(session_id)
+        if len(messages) < max(1, int(min_messages or 1)):
+            return {
+                "session_id": session_id,
+                "status": "skipped",
+                "messages_before": len(messages),
+                "reason": "message_threshold",
+            }
+
+        keep_count = self.keep_last if keep_last is None else max(0, int(keep_last))
+        kept_messages = messages[-keep_count:] if keep_count > 0 else []
+        summary_text = self._build_compaction_summary(session.title, messages)
+        compact_turns = [
+            {"role": "user", "content": "[GECE DÖNGÜSÜ] Önceki konuşmalar sıkıştırıldı."},
+            {"role": "assistant", "content": f"[GECE KONSOLİDASYON ÖZETİ]\n{summary_text}"},
+            *[
+                {"role": str(item.role), "content": str(item.content)}
+                for item in kept_messages
+            ],
+        ]
+        written = await self.db.replace_session_messages(session_id, compact_turns)
+
+        if self.active_user_id == user_id and self.active_session_id == session_id:
+            with self._lock:
+                self._turns = [
+                    {"role": item["role"], "content": item["content"], "timestamp": time.time()}
+                    for item in compact_turns
+                ]
+
+        return {
+            "session_id": session_id,
+            "status": "compacted",
+            "messages_before": len(messages),
+            "messages_after": written,
+            "summary_preview": summary_text[:240],
+        }
+
+    async def run_nightly_consolidation(
+        self,
+        *,
+        keep_recent_sessions: int = 2,
+        min_messages: int = 12,
+    ) -> Dict[str, object]:
+        """Tüm kullanıcı oturumlarında eski konuşmaları özetleyip sıkıştırır."""
+        await self._ensure_initialized()
+        try:
+            users = await self.db.list_users_with_quotas()
+            user_ids = [str(item.get("id", "") or "").strip() for item in users if str(item.get("id", "") or "").strip()]
+        except Exception:
+            user_ids = []
+        if self.active_user_id and self.active_user_id not in user_ids:
+            user_ids.append(self.active_user_id)
+
+        reports: List[Dict[str, object]] = []
+        compacted_session_ids: List[str] = []
+        normalized_keep = max(0, int(keep_recent_sessions or 0))
+        for user_id in user_ids:
+            sessions = await self.db.list_sessions(user_id)
+            for index, session in enumerate(sessions):
+                if index < normalized_keep:
+                    continue
+                report = await self.compact_session(
+                    user_id=user_id,
+                    session_id=session.id,
+                    min_messages=min_messages,
+                )
+                reports.append(report)
+                if report.get("status") == "compacted":
+                    compacted_session_ids.append(str(report.get("session_id", "")))
+
+        compacted = [item for item in reports if item.get("status") == "compacted"]
+        return {
+            "status": "completed",
+            "users_scanned": len(user_ids),
+            "sessions_compacted": len(compacted),
+            "session_ids": compacted_session_ids,
+            "reports": reports,
+        }
 
     def force_save(self) -> None:
         # DB yazımı add/update sırasında anlık yapılıyor.

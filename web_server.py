@@ -131,6 +131,8 @@ _agent_lock: asyncio.Lock | None = None
 _rag_prewarm_task: asyncio.Task | None = None
 _autonomy_cron_task: asyncio.Task | None = None
 _autonomy_cron_stop: asyncio.Event | None = None
+_nightly_memory_task: asyncio.Task | None = None
+_nightly_memory_stop: asyncio.Event | None = None
 _shutdown_cleanup_done = False
 MAX_FILE_CONTENT_BYTES = 1_048_576  # 1 MB
 
@@ -792,13 +794,34 @@ async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
                 logger.warning("Autonomous cron tetikleme hatası: %s", exc)
 
 
+async def _nightly_memory_loop(stop_event: asyncio.Event) -> None:
+    """Sistem idle iken gece hafıza konsolidasyonu ve RAG pruning çalıştırır."""
+    if not bool(getattr(cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
+        logger.info("Nightly memory pruning devre dışı; döngü başlatılmadı.")
+        return
+
+    interval = max(300, int(getattr(cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400) or 86400))
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            try:
+                agent = await get_agent()
+                report = await agent.run_nightly_memory_maintenance(reason="nightly_loop")
+                logger.info("Nightly memory maintenance sonucu: %s", report.get("status", "unknown"))
+            except Exception as exc:
+                logger.warning("Nightly memory maintenance hatası: %s", exc)
+
+
 # ─────────────────────────────────────────────
 #  FASTAPI UYGULAMASI
 # ─────────────────────────────────────────────
 
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
-    global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock, _autonomy_cron_task, _autonomy_cron_stop
+    global _rag_prewarm_task, _agent_lock, _redis_lock, _local_rate_lock
+    global _autonomy_cron_task, _autonomy_cron_stop, _nightly_memory_task, _nightly_memory_stop
     # Kilitleri event loop ayaktayken kesin olarak başlat (lazy başlatma race-condition'ı önler)
     _agent_lock = asyncio.Lock()
     _redis_lock = asyncio.Lock()
@@ -809,6 +832,9 @@ async def _app_lifespan(_app: FastAPI):
     if bool(getattr(cfg, "ENABLE_AUTONOMOUS_CRON", False)):
         _autonomy_cron_stop = asyncio.Event()
         _autonomy_cron_task = asyncio.create_task(_autonomous_cron_loop(_autonomy_cron_stop))
+    if bool(getattr(cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
+        _nightly_memory_stop = asyncio.Event()
+        _nightly_memory_task = asyncio.create_task(_nightly_memory_loop(_nightly_memory_stop))
     try:
         yield
     finally:
@@ -818,6 +844,12 @@ async def _app_lifespan(_app: FastAPI):
             _autonomy_cron_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await _autonomy_cron_task
+        if _nightly_memory_stop is not None:
+            _nightly_memory_stop.set()
+        if _nightly_memory_task and not _nightly_memory_task.done():
+            _nightly_memory_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await _nightly_memory_task
         if _rag_prewarm_task and not _rag_prewarm_task.done():
             _rag_prewarm_task.cancel()
             try:

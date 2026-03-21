@@ -546,6 +546,12 @@ class Config:
         "AUTONOMOUS_CRON_PROMPT",
         "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
     )
+    ENABLE_NIGHTLY_MEMORY_PRUNING: bool = get_bool_env("ENABLE_NIGHTLY_MEMORY_PRUNING", False)
+    NIGHTLY_MEMORY_INTERVAL_SECONDS: int = get_int_env("NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400)
+    NIGHTLY_MEMORY_IDLE_SECONDS: int = get_int_env("NIGHTLY_MEMORY_IDLE_SECONDS", 1800)
+    NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS: int = get_int_env("NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2)
+    NIGHTLY_MEMORY_SESSION_MIN_MESSAGES: int = get_int_env("NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12)
+    NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS: int = get_int_env("NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2)
     ENABLE_EVENT_WEBHOOKS: bool = get_bool_env("ENABLE_EVENT_WEBHOOKS", True)
     AUTONOMY_WEBHOOK_SECRET: str = os.getenv("AUTONOMY_WEBHOOK_SECRET", "")
     ENABLE_SWARM_FEDERATION: bool = get_bool_env("ENABLE_SWARM_FEDERATION", True)
@@ -884,4 +890,4 @@ logger.info("✅ %s v%s yapılandırması yüklendi.", Config.PROJECT_NAME, Conf
 if __name__ == "__main__":
     Config.initialize_directories()
     if Config.DEBUG_MODE:
-        Config.print_config_summary() 
+        Config.print_config_summary()

@@ -28,6 +28,7 @@ from core.ci_remediation import (
     build_self_heal_patch_prompt,
     normalize_self_heal_plan,
 )
+from core.entity_memory import get_entity_memory
 from core.memory import ConversationMemory
 from core.llm_client import LLMClient
 from core.rag import DocumentStore
@@ -201,6 +202,9 @@ class SidarAgent:
         self.system_prompt: str = SIDAR_SYSTEM_PROMPT
         self._autonomy_history: List[Dict[str, Any]] = []
         self._autonomy_lock: Optional[asyncio.Lock] = None
+        self._last_activity_ts: float = time.time()
+        self._nightly_maintenance_lock: Optional[asyncio.Lock] = None
+        self._last_nightly_maintenance_ts: float = 0.0
 
 
         # Tek omurga: supervisor tabanlı multi-agent
@@ -247,6 +251,7 @@ class SidarAgent:
             return
 
         await self.initialize()
+        self.mark_activity("respond")
 
         # Tek akış: tüm görevler SupervisorAgent üzerinden yürütülür.
         multi_result = await self._try_multi_agent(user_input)
@@ -258,6 +263,13 @@ class SidarAgent:
             await self._memory_add("assistant", multi_result)
 
         yield multi_result
+
+    def mark_activity(self, source: str = "runtime") -> None:
+        self._last_activity_ts = time.time()
+        logger.debug("Sidar activity updated: %s", source)
+
+    def seconds_since_last_activity(self) -> float:
+        return max(0.0, time.time() - float(getattr(self, "_last_activity_ts", 0.0) or 0.0))
 
     def _ensure_autonomy_runtime_state(self) -> None:
         if not hasattr(self, "_autonomy_history") or self._autonomy_history is None:
@@ -596,6 +608,7 @@ class SidarAgent:
         """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
         await self.initialize()
         self._ensure_autonomy_runtime_state()
+        self.mark_activity("external_trigger")
 
         if isinstance(trigger, dict):
             trigger = ExternalTrigger(
@@ -661,6 +674,95 @@ class SidarAgent:
         await self._memory_add("user", f"[AUTONOMY_TRIGGER] {prompt}")
         await self._memory_add("assistant", summary)
         return record
+
+    async def run_nightly_memory_maintenance(
+        self,
+        *,
+        force: bool = False,
+        reason: str = "nightly_idle",
+    ) -> Dict[str, Any]:
+        """Uzun süreli kullanım için sohbet/RAG belleğini sıkıştırır ve temizler."""
+        await self.initialize()
+        if not bool(getattr(self.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
+            return {"status": "disabled", "reason": "config_disabled"}
+
+        idle_seconds = max(60, int(getattr(self.cfg, "NIGHTLY_MEMORY_IDLE_SECONDS", 1800) or 1800))
+        idle_for = self.seconds_since_last_activity()
+        if not force and idle_for < idle_seconds:
+            return {
+                "status": "skipped",
+                "reason": "not_idle",
+                "idle_for_seconds": round(idle_for, 2),
+                "idle_threshold_seconds": idle_seconds,
+            }
+
+        if self._nightly_maintenance_lock is None:
+            self._nightly_maintenance_lock = asyncio.Lock()
+
+        async with self._nightly_maintenance_lock:
+            entity_report: Dict[str, Any] = {"purged": 0, "status": "disabled"}
+            try:
+                entity_memory = get_entity_memory(self.cfg)
+                await entity_memory.initialize()
+                entity_report = {
+                    "status": "completed",
+                    "purged": await entity_memory.purge_expired(),
+                }
+            except Exception as exc:
+                entity_report = {"status": "failed", "error": str(exc), "purged": 0}
+
+            memory_report = await self.memory.run_nightly_consolidation(
+                keep_recent_sessions=max(0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)),
+                min_messages=max(2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)),
+            )
+
+            rag_reports: List[Dict[str, Any]] = []
+            keep_recent_docs = max(1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2))
+            for session_id in list(memory_report.get("session_ids", []) or []):
+                report = await asyncio.to_thread(
+                    self.docs.consolidate_session_documents,
+                    str(session_id),
+                    keep_recent_docs=keep_recent_docs,
+                )
+                rag_reports.append(report)
+
+            removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
+            result = {
+                "status": "completed",
+                "reason": reason,
+                "idle_for_seconds": round(idle_for, 2),
+                "memory_report": memory_report,
+                "entity_report": entity_report,
+                "rag_reports": rag_reports,
+                "sessions_compacted": int(memory_report.get("sessions_compacted", 0) or 0),
+                "rag_docs_pruned": removed_docs,
+            }
+            self._last_nightly_maintenance_ts = time.time()
+            await self._append_autonomy_history(
+                {
+                    "trigger_id": f"nightly-{int(self._last_nightly_maintenance_ts)}",
+                    "source": "nightly_memory",
+                    "event_name": "memory_consolidation",
+                    "status": result["status"],
+                    "summary": (
+                        f"Nightly maintenance tamamlandı: "
+                        f"{result['sessions_compacted']} oturum sıkıştırıldı, "
+                        f"{removed_docs} RAG dokümanı budandı, "
+                        f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
+                    ),
+                    "payload": {
+                        "reason": reason,
+                        "idle_for_seconds": round(idle_for, 2),
+                    },
+                    "meta": {
+                        "kind": "nightly_memory_maintenance",
+                        "force": str(bool(force)).lower(),
+                    },
+                    "created_at": self._last_nightly_maintenance_ts,
+                    "completed_at": self._last_nightly_maintenance_ts,
+                }
+            )
+            return result
 
     def get_autonomy_activity(self, limit: int = 20) -> Dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
