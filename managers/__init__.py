@@ -10,6 +10,7 @@ from .system_health import SystemHealthManager
 from .teams_manager import TeamsManager
 from .todo_manager import TodoManager
 from .web_search import WebSearchManager
+from .youtube_manager import YouTubeManager
 
 # Tek kaynak: Export edilecek manager sınıfları bu tuple'da tutulur.
 # __all__ bu listedan türetildiği için manuel drift riski azaltılır.
@@ -23,6 +24,7 @@ _EXPORTED_MANAGERS = (
     TeamsManager,
     SecurityManager,
     WebSearchManager,
+    YouTubeManager,
     PackageInfoManager,
     TodoManager,
 )
