@@ -303,7 +303,7 @@ def test_mark_exported_returns_immediately_when_ids_empty(tmp_path):
     _run(store.close())
 
 
-def _install_training_stubs(monkeypatch, *, include_bitsandbytes=True):
+def _install_training_stubs(monkeypatch, *, include_bitsandbytes=True, dataset_row=None):
     records = {}
 
     class _Tokenizer:
@@ -383,12 +383,14 @@ def _install_training_stubs(monkeypatch, *, include_bitsandbytes=True):
             records["bnb_kwargs"] = kwargs
             self.kwargs = kwargs
 
+    sample_row = dataset_row or {"instruction": "Komut", "output": "Yanıt"}
+
     class _Dataset:
-        column_names = ["instruction", "output"]
+        column_names = list(sample_row.keys())
 
         def map(self, fn, remove_columns):
             records["remove_columns"] = remove_columns
-            mapped = fn({"instruction": "Komut", "output": "Yanıt"})
+            mapped = fn(sample_row)
             records["mapped"] = mapped
             return [{"input_ids": mapped["input_ids"], "labels": mapped["labels"]}]
 
@@ -599,6 +601,26 @@ class TestLoRATrainer:
         assert records["model_saved"] == str(tmp_path / "adapters")
         assert records["tokenizer_saved"] == str(tmp_path / "adapters")
 
+    def test_run_training_supports_sharegpt_rows(self, monkeypatch, tmp_path):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        trainer.output_dir = str(tmp_path / "adapters-sharegpt")
+        records = _install_training_stubs(
+            monkeypatch,
+            include_bitsandbytes=False,
+            dataset_row={
+                "conversations": [
+                    {"from": "human", "value": "İsteği özetle"},
+                    {"from": "gpt", "value": "Özet yanıt"},
+                ]
+            },
+        )
+
+        result = trainer._run_training("sharegpt.jsonl")
+
+        assert result["success"] is True
+        assert records["tokenized_text"] == "İsteği özetle\n\nÖzet yanıt"
+        assert records["remove_columns"] == ["conversations"]
+
     def test_run_training_without_bitsandbytes_falls_back_to_standard_model_kwargs(self, monkeypatch, tmp_path):
         trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
         trainer.output_dir = str(tmp_path / "adapters-no-bnb")
@@ -666,6 +688,40 @@ class TestContinuousLearningPipeline:
         assert len(sft_lines) == 2
         assert len(pref_lines) == 1
         assert json.loads(pref_lines[0])["chosen"] == "İyileştirilmiş 1"
+        _run(store.close())
+
+    def test_build_dataset_bundle_respects_sharegpt_sft_format(self, tmp_path):
+        cfg = self._cfg(tmp_path, sft_format="sharegpt")
+        store = FeedbackStore(database_url=f"sqlite+aiosqlite:///{tmp_path/'cl-sharegpt.db'}", config=cfg)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+
+        _run(store.record("Prompt SG", "Yanıt SG", rating=1, correction="Düzeltilmiş SG"))
+        pipeline = ContinuousLearningPipeline(store, config=cfg)
+        manifest = _run(pipeline.build_dataset_bundle())
+
+        sft_row = json.loads(Path(manifest["sft_path"]).read_text(encoding="utf-8").strip())
+        assert manifest["sft_format"] == "sharegpt"
+        assert sft_row == {
+            "conversations": [
+                {"from": "human", "value": "Prompt SG"},
+                {"from": "gpt", "value": "Düzeltilmiş SG"},
+            ]
+        }
+        _run(store.close())
+
+    def test_build_dataset_bundle_respects_jsonl_sft_format(self, tmp_path):
+        cfg = self._cfg(tmp_path, sft_format="jsonl")
+        store = FeedbackStore(database_url=f"sqlite+aiosqlite:///{tmp_path/'cl-jsonl.db'}", config=cfg)
+        if not _try_init(store):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+
+        _run(store.record("Prompt J", "Yanıt J", rating=1))
+        pipeline = ContinuousLearningPipeline(store, config=cfg)
+        manifest = _run(pipeline.build_dataset_bundle())
+
+        sft_row = json.loads(Path(manifest["sft_path"]).read_text(encoding="utf-8").strip())
+        assert sft_row == {"prompt": "Prompt J", "completion": "Yanıt J"}
         _run(store.close())
 
     def test_run_cycle_triggers_trainer_when_threshold_met(self, tmp_path):

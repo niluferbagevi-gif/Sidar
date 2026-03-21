@@ -432,6 +432,40 @@ class ContinuousLearningPipeline:
         return examples
 
     @staticmethod
+    def _serialize_sft_examples(rows: List[Dict[str, Any]], fmt: str) -> List[Dict[str, Any]]:
+        fmt = str(fmt or "alpaca").lower()
+        if fmt not in DatasetExporter.SUPPORTED_FORMATS:
+            raise ValueError(f"Desteklenmeyen continuous learning SFT formatı: {fmt}")
+
+        serialized: list[dict[str, Any]] = []
+        for row in rows:
+            prompt = str(row.get("instruction", "") or "").strip()
+            output = str(row.get("output", "") or "").strip()
+            if not prompt or not output:
+                continue
+
+            if fmt == "jsonl":
+                serialized.append({"prompt": prompt, "completion": output})
+            elif fmt == "alpaca":
+                serialized.append(
+                    {
+                        "instruction": prompt,
+                        "input": str(row.get("input", "") or ""),
+                        "output": output,
+                    }
+                )
+            else:
+                serialized.append(
+                    {
+                        "conversations": [
+                            {"from": "human", "value": prompt},
+                            {"from": "gpt", "value": output},
+                        ]
+                    }
+                )
+        return serialized
+
+    @staticmethod
     def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
@@ -442,6 +476,7 @@ class ContinuousLearningPipeline:
         """Bekleyen sinyallerden SFT/DPO bundle üretir; eğitimi başlatmaz."""
         rows = await self.store.get_pending_signals(limit=self.max_pending_signals)
         sft_examples = self._build_sft_examples(rows)
+        serialized_sft_examples = self._serialize_sft_examples(sft_examples, self.sft_format)
         preference_examples = self._build_preference_examples(rows)
         triage_only = max(0, len(rows) - len({r.get("feedback_id") for r in sft_examples + preference_examples if r.get("feedback_id")}))
 
@@ -452,7 +487,7 @@ class ContinuousLearningPipeline:
         preference_path = bundle_dir / "preference.dpo.jsonl"
         manifest_path = bundle_dir / "manifest.json"
 
-        await asyncio.to_thread(self._write_jsonl, sft_path, sft_examples)
+        await asyncio.to_thread(self._write_jsonl, sft_path, serialized_sft_examples)
         await asyncio.to_thread(self._write_jsonl, preference_path, preference_examples)
 
         manifest = {
@@ -653,9 +688,18 @@ class LoRATrainer:
         dataset = load_dataset("json", data_files=dataset_path, split="train")
 
         def _tokenize(example):
-            prompt = example.get("instruction", example.get("prompt", ""))
-            output = example.get("output", example.get("completion", ""))
-            full = f"{prompt}\n\n{output}"
+            prompt = str(example.get("instruction", example.get("prompt", "")) or "")
+            output = str(example.get("output", example.get("completion", "")) or "")
+            if not prompt and not output:
+                conversations = example.get("conversations")
+                if isinstance(conversations, list):
+                    human_turns = [turn for turn in conversations if isinstance(turn, dict) and turn.get("from") == "human"]
+                    assistant_turns = [turn for turn in conversations if isinstance(turn, dict) and turn.get("from") == "gpt"]
+                    if human_turns:
+                        prompt = str(human_turns[0].get("value", "") or "")
+                    if assistant_turns:
+                        output = str(assistant_turns[0].get("value", "") or "")
+            full = f"{prompt}\n\n{output}".strip()
             enc = tokenizer(full, truncation=True, max_length=512, padding="max_length")
             enc["labels"] = enc["input_ids"].copy()
             return enc
