@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -827,3 +828,28 @@ def test_swarm_dispatch_distributed_uses_broker_backend(monkeypatch, swarm_modul
     assert backend.dispatched[0].routing_key == "sidar.swarm.researcher.rag_search"
     assert backend.dispatched[0].reply_queue == "sidar.reply"
     assert backend.dispatched[0].context["distributed_dispatch"] == "true"
+
+
+def test_swarm_dispatch_distributed_rejects_missing_backend_and_missing_agent(monkeypatch, swarm_module):
+    orchestrator = swarm_module.SwarmOrchestrator(cfg=SimpleNamespace())
+    task = swarm_module.SwarmTask(goal="Dağıtık görev", intent="research")
+
+    with pytest.raises(RuntimeError, match="backend"):
+        asyncio.run(orchestrator.dispatch_distributed(task))
+
+    orchestrator.configure_delegation_backend(swarm_module.InMemoryDelegationBackend())
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: None)
+
+    with pytest.raises(RuntimeError, match="uygun ajan bulunamadı"):
+        asyncio.run(orchestrator.dispatch_distributed(task))
+
+
+def test_swarm_should_fallback_to_supervisor_for_jsondecode_and_parse_named_errors(swarm_module):
+    assert swarm_module.SwarmOrchestrator._should_fallback_to_supervisor(
+        json.JSONDecodeError("bad json", "{}", 1)
+    ) is True
+
+    ParseSchemaError = type("ParseSchemaError", (RuntimeError,), {})
+    assert swarm_module.SwarmOrchestrator._should_fallback_to_supervisor(
+        ParseSchemaError("provider response failed")
+    ) is True
