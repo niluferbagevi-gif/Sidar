@@ -4,6 +4,20 @@
 
 ---
 
+## [v5.1.0-docs] - 2026-03-21
+Faz D kurumsal ölçekleme teslimatları ve Faz E otonom iş ekosistemi vizyonu, güncel audit metrikleriyle birlikte üst seviye belgelere işlendi.
+
+### Eklenenler (Added)
+- **Faz D dokümantasyon senkronizasyonu:** `PROJE_RAPORU.md` içine Plugin Marketplace, Multiplayer Collaboration Workspace, Nightly Memory Maintenance ve chaos engineering olgunluğu mevcut durum özeti olarak eklendi.
+- **Faz E mimari yönü:** `docs/SIDAR_v5_1_MIMARI_RAPORU.md` sonuna Coverage Agent, Poyraz ve YouTube/dış platform video analizi odaklı yeni mimari başlık eklendi.
+- **Audit metriği yenilemesi:** `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` çıktıları yeniden alınarak `AUDIT_REPORT_v5.1.md` ile üst seviye raporlardaki satır/dosya sayıları güncellendi.
+
+### Teknik Borç Kapanışı
+- `tests/test_system_health_dependency_checks.py`, `tests/test_plugin_marketplace_hot_reload.py` ve `tests/test_nightly_memory_maintenance.py` ile temsil edilen Faz D yüzeyleri coverage anlatısına açıkça dahil edildi.
+- Kaos mühendisliği, eklenti pazaryeri ve bellek bakımı modüllerinin regresyon güvenliği artık changelog ve audit katmanında da görünür durumdadır.
+
+---
+
 ## [v5.0.0-alpha] - 2026-03-19
 v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal denetim ve akıllı başlatıcı yüzeyiyle görünür ürün fazına taşındı.
 

@@ -1,8 +1,8 @@
 # SİDAR v5.1 — Faz C Derinleşme ve İleri Otonomi Mimari Raporu
 
-> **Durum:** v5.0.0-alpha runtime baseline üzerinde Faz C yetenekleri belge ve akış bazında senkronize edilmiştir.
+> **Durum:** v5.0.0-alpha runtime baseline üzerinde Faz C yetenekleri ile Faz D kurumsal ölçekleme teslimatları senkronize edilmiş, Faz E otonom iş ekosistemi vizyonu resmi mimari yol haritasına eklenmiştir.
 > **Hazırlanma Tarihi:** 2026-03-21
-> **Kapsam:** `web_ui_react/src/components/VoiceAssistantPanel.jsx`, `web_ui_react/src/hooks/useVoiceAssistant.js`, `core/voice.py`, `web_server.py`, `core/ci_remediation.py`, `agent/sidar_agent.py`, `agent/roles/reviewer_agent.py`, `managers/code_manager.py`, `managers/browser_manager.py`, `agent/swarm.py`, `github_upload.py`
+> **Kapsam:** `web_ui_react/src/components/VoiceAssistantPanel.jsx`, `web_ui_react/src/hooks/useVoiceAssistant.js`, `core/voice.py`, `web_server.py`, `core/ci_remediation.py`, `agent/sidar_agent.py`, `agent/roles/reviewer_agent.py`, `managers/code_manager.py`, `managers/browser_manager.py`, `agent/swarm.py`, `github_upload.py`, `web_ui_react/src/components/PluginMarketplacePanel.jsx`, `web_ui_react/src/components/AgentManagerPanel.jsx`, `web_ui_react/src/hooks/useWebSocket.js`, `tests/test_plugin_marketplace_hot_reload.py`, `tests/test_collaboration_workspace.py`, `tests/test_nightly_memory_maintenance.py`, `tests/test_system_health_dependency_checks.py`, `runbooks/chaos_live_rehearsal.md`, `agent/tooling.py`, `core/multimodal.py`
 
 ---
 
@@ -133,3 +133,24 @@ CI + federation context]
 ## 8. Sonuç
 
 Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır: kullanıcı deneyimi istemci tarafında sesli etkileşimi görünür hale getirmiştir; backend tarafında self-healing ve event-driven federation ile reaktif model aşılmıştır; reviewer/browser/GraphRAG birleşimi ise karar kalitesini ve denetlenebilirliği artırmıştır. Bu nedenle v5.1 mimari raporu, mevcut kod tabanını v5.0'ın ötesine geçen bir **ileri otonomi baseline'ı** olarak belgelemektedir.
+---
+
+## 9. Faz E: Otonom İş Ekosistemi (Poyraz & Coverage)
+
+### 9.1 Test Otomasyonu (Coverage Ajanı)
+
+- Yeni swarm birimi, `pytest` ve coverage çıktılarındaki açık satırları `managers/code_manager.py` üzerinden okuyup eksik senaryolara otomatik test üreten bir kalite ajanı olarak konumlanacaktır.
+- Amaç, Faz D ile genişleyen plugin marketplace, collaboration workspace, nightly memory maintenance ve dependency resilience yüzeylerinde `%100` hard gate kültürünü insan müdahalesi olmadan sürdürebilmektir.
+- Reviewer ve remediation zinciriyle birleştiğinde Coverage Agent, “sorunu bul → testini yaz → düzeltmeyi doğrula” döngüsünü tamamlayan yeni QA halkasını temsil eder.
+
+### 9.2 Dijital Pazarlama & Operasyonlar (Poyraz Ajanı)
+
+- `agent/tooling.py` üzerinde genişletilecek sosyal ağ ve iş operasyonu araçları; Instagram, Facebook ve WhatsApp kanallarına içerik gönderimi, kampanya operasyonu ve müşteri iletişimi için typed tool yüzeyi sağlayacaktır.
+- Poyraz, yalnızca paylaşım yapan bir bot değil; web sitesi taslakları, landing page içerikleri, kampanya metinleri ve operasyon checklist'leri üreten dışa dönük bir iş ajanı olarak tasarlanır.
+- Bu katman, SİDAR'ı tek departmanlı bir yazılım ajanından çok departmanlı bir dijital işletme simülasyonuna doğru genişletir.
+
+### 9.3 Genişletilmiş Multimodal Zeka
+
+- `core/multimodal.py` hattı yerel `.mp4` işleme sınırını aşarak YouTube ve benzeri dış platformlardan video akışlarını alıp FFmpeg + vision modelleri ile çözümleyen bir ingestion katmanına genişletilecektir.
+- Videodan üretilen transkript, sahne özeti ve görsel/işitsel içgörüler; Poyraz tarafından otomatik sosyal medya içeriği, kampanya brief'i ve pazarlama metnine dönüştürülebilecektir.
+- Böylece multimodal katman, yalnızca geliştiriciye medya özeti veren yardımcı modül olmaktan çıkarak gelir/pazarlama operasyonlarını besleyen stratejik veri boru hattına dönüşecektir.
