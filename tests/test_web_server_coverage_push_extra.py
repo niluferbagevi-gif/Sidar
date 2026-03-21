@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import types
 from pathlib import Path
 
@@ -116,6 +117,27 @@ def test_collaboration_helpers_trim_stale_participants_and_switch_rooms(monkeypa
     orphan._sidar_room_id = "workspace:missing"
     asyncio.run(mod._leave_collaboration_room(orphan))
     assert orphan._sidar_room_id == ""
+
+
+def test_collaboration_masking_falls_back_to_raw_text_and_masks_error_fields(monkeypatch):
+    mod = _load_web_server_for_extra_tests()
+    room = mod._CollaborationRoom(room_id="workspace:mask")
+
+    fake_dlp = types.ModuleType("core.dlp")
+
+    def _boom(_text):
+        raise RuntimeError("mask boom")
+
+    fake_dlp.mask_pii = _boom
+    monkeypatch.setitem(sys.modules, "core.dlp", fake_dlp)
+
+    assert mod._mask_collaboration_text("api-key=123") == "api-key=123"
+
+    monkeypatch.setattr(mod, "_mask_collaboration_text", lambda text: f"masked::{text}")
+    mod._append_room_telemetry(room, {"content": "secret", "error": "token leaked"})
+
+    assert room.telemetry[-1]["content"] == "masked::secret"
+    assert room.telemetry[-1]["error"] == "masked::token leaked"
 
 
 def test_event_driven_federation_specs_cover_jira_and_system_paths():
@@ -457,7 +479,9 @@ def test_spa_fallback_covers_root_and_asset_like_paths(monkeypatch):
     monkeypatch.setattr(mod, "index", lambda: asyncio.sleep(0, result=types.SimpleNamespace(content="INDEX", status_code=200)))
 
     root = asyncio.run(mod.spa_fallback(""))
+    page = asyncio.run(mod.spa_fallback("workspace/dashboard"))
     asset = asyncio.run(mod.spa_fallback("favicon.ico"))
 
     assert root.content == "INDEX"
+    assert page.content == "INDEX"
     assert asset.status_code == 404
