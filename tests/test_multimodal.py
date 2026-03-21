@@ -15,9 +15,15 @@ from core.multimodal import (
     _guess_suffix,
     _run_subprocess,
     build_multimodal_context,
+    download_remote_media,
     detect_media_kind,
+    extract_youtube_video_id,
     extract_audio_track,
     extract_video_frames,
+    fetch_youtube_transcript,
+    ingest_multimodal_analysis,
+    is_remote_media_source,
+    render_multimodal_document,
     transcribe_audio,
 )
 
@@ -495,3 +501,167 @@ def test_multimodal_pipeline_analyze_media_video_branch_collects_frames_and_supp
     assert "Video transkript" in result["context"]
     assert "olay özeti" in result["context"]
     assert tracking_tempdir.created_paths == tracking_tempdir.cleaned_paths
+
+
+def test_remote_media_helpers_cover_url_detection_and_youtube_transcript():
+    assert is_remote_media_source("https://example.com/video.mp4") is True
+    assert is_remote_media_source("/tmp/video.mp4") is False
+    assert extract_youtube_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+    class _Response:
+        status_code = 200
+
+        def json(self):
+            return {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "Merhaba"}]}]}
+
+    class _Client:
+        def __init__(self):
+            self.urls = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, url):
+            self.urls.append(url)
+            return _Response()
+
+    client = _Client()
+    transcript = asyncio.run(
+        fetch_youtube_transcript(
+            "https://youtu.be/dQw4w9WgXcQ",
+            languages=("tr",),
+            http_client_factory=lambda **_kwargs: client,
+        )
+    )
+    assert transcript["success"] is True
+    assert transcript["text"] == "Merhaba"
+    assert "lang=tr" in client.urls[0]
+
+
+def test_download_remote_media_http_and_ingest_document(tmp_path: Path):
+    class _Response:
+        headers = {"content-type": "video/mp4"}
+        content = b"video-bytes"
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def get(self, _url):
+            return _Response()
+
+    downloaded = asyncio.run(
+        download_remote_media(
+            "https://cdn.example.com/demo.mp4",
+            output_dir=tmp_path,
+            http_client_factory=lambda **_kwargs: _Client(),
+        )
+    )
+    assert Path(downloaded.path).exists()
+    assert downloaded.platform == "generic"
+
+    title, content = render_multimodal_document(
+        {
+            "success": True,
+            "media_kind": "video",
+            "transcript": {"text": "Transkript"},
+            "frame_analyses": [{"timestamp_seconds": 0.0, "analysis": "Hero sahnesi"}],
+            "analysis": "CTA güçlü",
+            "context": "bağlam",
+        },
+        source="https://cdn.example.com/demo.mp4",
+    )
+    assert "Video İçgörü Özeti" in title
+    assert "Hero sahnesi" in content
+
+    class _Store:
+        async def add_document(self, **kwargs):
+            self.kwargs = kwargs
+            return "doc-1"
+
+    store = _Store()
+    ingest = asyncio.run(
+        ingest_multimodal_analysis(
+            store,
+            {
+                "success": True,
+                "media_kind": "video",
+                "transcript": {"text": "Transkript"},
+                "frame_analyses": [{"timestamp_seconds": 0.0, "analysis": "Hero sahnesi"}],
+                "analysis": "CTA güçlü",
+                "context": "bağlam",
+            },
+            source="https://cdn.example.com/demo.mp4",
+            session_id="marketing",
+            tags=["video"],
+        )
+    )
+    assert ingest["doc_id"] == "doc-1"
+    assert store.kwargs["session_id"] == "marketing"
+
+
+def test_multimodal_pipeline_analyze_media_source_downloads_youtube_and_ingests(monkeypatch: pytest.MonkeyPatch):
+    class _LLM:
+        async def chat(self, **_kwargs):
+            return "unused"
+
+    pipeline = MultimodalPipeline(
+        _LLM(),
+        types.SimpleNamespace(ENABLE_MULTIMODAL=True, MULTIMODAL_MAX_FILE_BYTES=1024 * 1024),
+    )
+
+    async def _fake_download(*_args, **_kwargs):
+        return multimodal_mod.DownloadedMedia(
+            path="/tmp/fake.mp4",
+            source_url="https://youtu.be/dQw4w9WgXcQ",
+            mime_type="video/mp4",
+            platform="youtube",
+        )
+
+    async def _fake_transcript(*_args, **_kwargs):
+        return {"success": True, "text": "Video özeti", "segments": [], "language": "tr"}
+
+    async def _fake_local(**kwargs):
+        assert kwargs["transcript_override"]["text"] == "Video özeti"
+        return {
+            "success": True,
+            "media_kind": "video",
+            "transcript": {"text": "Video özeti"},
+            "frame_analyses": [{"timestamp_seconds": 0.0, "analysis": "Hero"}],
+            "scene_summary": "0.0s → Hero",
+            "analysis": "Kampanya açılışı güçlü",
+            "context": "ctx",
+        }
+
+    class _Store:
+        async def add_document(self, **kwargs):
+            self.kwargs = kwargs
+            return "doc-55"
+
+    monkeypatch.setattr(multimodal_mod, "download_remote_media", _fake_download)
+    monkeypatch.setattr(multimodal_mod, "fetch_youtube_transcript", _fake_transcript)
+    monkeypatch.setattr(pipeline, "_analyze_local_media", _fake_local)
+    store = _Store()
+
+    result = asyncio.run(
+        pipeline.analyze_media_source(
+            media_source="https://youtu.be/dQw4w9WgXcQ",
+            prompt="hook çıkar",
+            ingest_document_store=store,
+            ingest_session_id="marketing",
+            ingest_tags=["video", "marketing"],
+        )
+    )
+
+    assert result["success"] is True
+    assert result["document_ingest"]["doc_id"] == "doc-55"
+    assert result["download"]["platform"] == "youtube"

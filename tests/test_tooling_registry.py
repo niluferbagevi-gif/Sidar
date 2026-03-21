@@ -150,6 +150,7 @@ def test_parse_tool_argument_supports_marketing_operation_schemas():
     assert "publish_social" in tooling.TOOL_ARG_SCHEMAS
     assert "build_landing_page" in tooling.TOOL_ARG_SCHEMAS
     assert "generate_campaign_copy" in tooling.TOOL_ARG_SCHEMAS
+    assert "ingest_video_insights" in tooling.TOOL_ARG_SCHEMAS
 
     social = tooling.parse_tool_argument(
         "publish_social",
@@ -171,3 +172,10 @@ def test_parse_tool_argument_supports_marketing_operation_schemas():
     )
     assert isinstance(campaign, tooling.CampaignCopySchema)
     assert campaign.channels == ["instagram", "whatsapp"]
+
+    video = tooling.parse_tool_argument(
+        "ingest_video_insights",
+        '{"source_url":"https://youtu.be/dQw4w9WgXcQ","prompt":"Özet çıkar","session_id":"marketing"}',
+    )
+    assert isinstance(video, tooling.VideoInsightIngestSchema)
+    assert video.source_url.endswith("dQw4w9WgXcQ")

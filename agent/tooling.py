@@ -113,6 +113,15 @@ class CampaignCopySchema(BaseModel):
     call_to_action: str = ""
 
 
+class VideoInsightIngestSchema(BaseModel):
+    source_url: str
+    prompt: str = ""
+    language: str = ""
+    session_id: str = "marketing"
+    max_frames: int = 6
+    frame_interval_seconds: float = 5.0
+
+
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "write_file": WriteFileSchema,
     "patch_file": PatchFileSchema,
@@ -132,6 +141,7 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "publish_social": SocialPublishSchema,
     "build_landing_page": LandingPageDraftSchema,
     "generate_campaign_copy": CampaignCopySchema,
+    "ingest_video_insights": VideoInsightIngestSchema,
 }
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:

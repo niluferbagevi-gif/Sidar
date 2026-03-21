@@ -3,6 +3,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,6 +121,7 @@ def test_poyraz_agent_initializes_with_marketing_tools():
         "publish_social",
         "build_landing_page",
         "generate_campaign_copy",
+        "ingest_video_insights",
     }
 
 
@@ -181,3 +183,29 @@ def test_poyraz_agent_routes_json_marketing_tools():
         )
     )
     assert landing_out == "stub"
+
+
+def test_poyraz_agent_ingests_video_insights_into_docs():
+    agent = PoyrazAgent()
+
+    class _Pipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze_media_source(self, **kwargs):
+            assert kwargs["media_source"].endswith("dQw4w9WgXcQ")
+            return {
+                "success": True,
+                "scene_summary": "0.0s → güçlü açılış",
+                "document_ingest": {"doc_id": "doc-42"},
+            }
+
+    fake_module = types.SimpleNamespace(MultimodalPipeline=_Pipeline)
+    with patch.dict(sys.modules, {"core.multimodal": fake_module}):
+        out = asyncio.run(
+            agent.run_task(
+                'ingest_video_insights|{"source_url":"https://youtu.be/dQw4w9WgXcQ","prompt":"hook çıkar","session_id":"marketing"}'
+            )
+        )
+
+    assert out == "[VIDEO:INGESTED] source=https://youtu.be/dQw4w9WgXcQ doc_id=doc-42 scene_summary=0.0s → güçlü açılış"
