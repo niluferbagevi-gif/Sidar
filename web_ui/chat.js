@@ -28,7 +28,8 @@ function showUiNotice(message, level = 'warn') {
   }, 4200);
 }
 
-const VOICE_STATE_LABELS = {
+const voiceLiveUtils = window.SidarVoiceLiveUtils || {};
+const VOICE_STATE_LABELS = voiceLiveUtils.VOICE_STATE_LABELS || {
   idle: 'Bekleniyor',
   ready: 'Hazır',
   chunk: 'Dinleniyor',
@@ -38,20 +39,16 @@ const VOICE_STATE_LABELS = {
   cancelled: 'İptal edildi',
   unknown: 'Bilinmeyen durum',
 };
-
-function getVoiceLiveDefaults() {
-  return {
-    lastTranscript: '',
-    lastState: 'idle',
-    summary: 'Ses websocket tanılama verisi bekleniyor.',
-    diagnostics: 'Henüz ek tanı verisi yok.',
-    badgeClass: 'idle',
-    badgeLabel: 'Bekleniyor',
-    log: [],
-  };
-}
-
-function getVoiceBadgeMeta(stateKey, payload = {}) {
+const getVoiceLiveDefaults = voiceLiveUtils.getVoiceLiveDefaults || (() => ({
+  lastTranscript: '',
+  lastState: 'idle',
+  summary: 'Ses websocket tanılama verisi bekleniyor.',
+  diagnostics: 'Henüz ek tanı verisi yok.',
+  badgeClass: 'idle',
+  badgeLabel: 'Bekleniyor',
+  log: [],
+}));
+const getVoiceBadgeMeta = voiceLiveUtils.getVoiceBadgeMeta || ((stateKey, payload = {}) => {
   const normalized = String(stateKey || 'idle').trim().toLowerCase() || 'idle';
   if (payload.error) return { badgeClass: 'error', badgeLabel: 'Hata' };
   if (payload.voice_interruption || normalized === 'cancelled') return { badgeClass: 'error', badgeLabel: 'Kesildi' };
@@ -65,30 +62,9 @@ function getVoiceBadgeMeta(stateKey, payload = {}) {
     return { badgeClass: 'listening', badgeLabel: 'Canlı' };
   }
   return { badgeClass: 'idle', badgeLabel: VOICE_STATE_LABELS[normalized] || 'Bekleniyor' };
-}
-
-function buildVoiceDiagnosticsText(payload = {}) {
-  const parts = [];
-  if (payload.buffered_bytes !== undefined) parts.push(`buffer ${payload.buffered_bytes} B`);
-  if (payload.sequence !== undefined) parts.push(`seq ${payload.sequence}`);
-  if (payload.audio_sequence !== undefined) parts.push(`audio #${payload.audio_sequence}`);
-  if (payload.assistant_turn_id !== undefined) parts.push(`tur ${payload.assistant_turn_id}`);
-  if (payload.provider) parts.push(`sağlayıcı ${payload.provider}`);
-  if (payload.language) parts.push(`dil ${payload.language}`);
-  if (payload.audio_mime_type) parts.push(payload.audio_mime_type);
-  if (payload.last_interrupt_reason) parts.push(`kesinti ${payload.last_interrupt_reason}`);
-  if (payload.cancelled_audio_sequences !== undefined) parts.push(`iptal ses ${payload.cancelled_audio_sequences}`);
-  if (payload.auto_commit_ready !== undefined) parts.push(payload.auto_commit_ready ? 'otomatik commit hazır' : 'otomatik commit bekliyor');
-  if (payload.interrupt_ready !== undefined) parts.push(payload.interrupt_ready ? 'barge-in hazır' : 'barge-in pasif');
-  if (payload.error) parts.push(`hata ${payload.error}`);
-  return parts.length ? parts.join(' · ') : 'Henüz ek tanı verisi yok.';
-}
-
-function appendVoiceLog(log, label, value) {
-  const next = Array.isArray(log) ? [...log] : [];
-  next.unshift({ label, value });
-  return next.slice(0, 8);
-}
+});
+const buildVoiceDiagnosticsText = voiceLiveUtils.buildVoiceDiagnosticsText || (() => 'Henüz ek tanı verisi yok.');
+const appendVoiceLog = voiceLiveUtils.appendVoiceLog || ((log, label, value) => [{ label, value }, ...(Array.isArray(log) ? log : [])].slice(0, 8));
 
 function renderVoiceLivePanel(snapshot = null) {
   const state = snapshot || _getState('voiceLive', getVoiceLiveDefaults());
