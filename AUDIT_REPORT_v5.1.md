@@ -1,5 +1,5 @@
 # Sidar Projesi — Bağımsız Güvenlik ve Kalite Denetim Raporu (v5.1 Faz D/Faz E Senkronizasyonu)
-**Sürüm:** v5.1.0 belge baseline / v5.0.0-alpha runtime
+**Sürüm:** v5.1.1 belge baseline / v5.0.0-alpha runtime
 **Tarih:** 2026-03-21
 **Kapsam:** Faz D enterprise ölçekleme teslimatları, coverage anlatısına dahil edilen yeni regresyon yüzeyleri ve Faz E otonom iş ekosistemi yol haritası
 
@@ -7,9 +7,9 @@
 
 ## 1. Yönetici Özeti
 
-Bu denetim revizyonu, kod tabanının Faz D teslimatlarını ve Faz E yol haritasını belgelerle senkronize etmek amacıyla hazırlanmıştır. İnceleme odağı; Plugin Marketplace sıcak yükleme yüzeyi, çok oyunculu collaboration workspace akışı, gece bellek bakımı, dependency resilience/chaos engineering testleri ve bunların coverage anlatısına dahil edilmesidir. Güncel ölçümler, takipli repo yüzeyinin büyümeye devam ederken güvenlik ve kalite kapılarını koruduğunu göstermektedir.
+Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher sertleştirmelerini ve %100 coverage baseline'ını belgelerle senkronize etmek amacıyla hazırlanmıştır. İnceleme odağı; Plugin Marketplace sıcak yükleme yüzeyi, çok oyunculu collaboration workspace akışı, gece bellek bakımı, dependency resilience/chaos engineering testleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan son mock tabanlı edge-case senaryolarının coverage anlatısına dahil edilmesidir. Güncel ölçümler, takipli repo yüzeyinin büyümeye devam ederken güvenlik ve kalite kapılarını koruduğunu göstermektedir.
 
-**Sonuç:** Açık kritik/yüksek/orta/düşük bulgu tespit edilmemiştir. Zero Debt beyanı korunmaktadır; Faz D modülleri mevcut güvenli sandbox, HITL, typed-tool ve fail-safe operasyon ilkeleriyle uyumlu biçimde entegre edilmiştir.
+**Sonuç:** Açık kritik/yüksek/orta/düşük bulgu tespit edilmemiştir. Zero Debt beyanı korunmaktadır; v5.1.1 revizyonu ile sistemdeki tüm bağımlılık kopmaları (Redis, veritabanı), asenkron iptal durumları (`WebSocketDisconnect`) ve yetkilendirme bypass girişimleri mock testleriyle coverage alanına %100 oranında dahil edilmiş, Faz D modülleri de mevcut güvenli sandbox, HITL, typed-tool ve fail-safe operasyon ilkeleriyle uyumlu biçimde entegre edilmiştir.
 
 ---
 
@@ -19,40 +19,42 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını ve Faz E yol harita
 
 | Metrik | Değer |
 |---|---:|
-| Takipli Python dosyası | 240 |
-| Takipli Python satırı | 77.978 |
-| Üretim Python dosyası | 64 |
-| Üretim Python satırı | 28.211 |
-| `tests/test_*.py` modülü | 174 |
+| Takipli Python dosyası | 250 |
+| Takipli Python satırı | 79.462 |
+| Üretim Python dosyası | 68 |
+| Üretim Python satırı | 28.931 |
+| `tests/test_*.py` modülü | 180 |
 | Takipli Markdown dosyası | 101 |
 
 ### 2.2 `scripts/audit_metrics.sh` çıktısı
 
 | Uzantı | Dosya | Satır |
 |---|---:|---:|
-| `.py` | 240 | 77.978 |
+| `.py` | 250 | 79.462 |
 | `.js` | 11 | 3.418 |
 | `.css` | 3 | 2.975 |
 | `.html` | 4 | 745 |
-| `.md` | 101 | 9.385 |
-| **Toplam** | **359** | **94.501** |
+| `.md` | 101 | 9.456 |
+| **Toplam** | **369** | **96.056** |
 
 ### 2.3 Faz D odaklı yüzeyler
 
 | Yüzey | Ölçüm |
 |---|---:|
 | `web_ui_react/` toplam satır | 4.393 |
-| `PluginMarketplacePanel.jsx` | 154 |
-| `AgentManagerPanel.jsx` | 131 |
-| `useWebSocket.js` | 187 |
-| `tests/test_plugin_marketplace_hot_reload.py` | 66 |
-| `tests/test_collaboration_workspace.py` | 129 |
-| `tests/test_nightly_memory_maintenance.py` | 146 |
-| `tests/test_system_health_dependency_checks.py` | 40 |
-| `runbooks/chaos_live_rehearsal.md` | 120 |
-| `core/multimodal.py` | 412 |
-| `agent/tooling.py` | 126 |
-| `managers/code_manager.py` | 1.533 |
+| `PluginMarketplacePanel.jsx` | 155 |
+| `AgentManagerPanel.jsx` | 132 |
+| `useWebSocket.js` | 188 |
+| `tests/test_plugin_marketplace_hot_reload.py` | 67 |
+| `tests/test_collaboration_workspace.py` | 131 |
+| `tests/test_nightly_memory_maintenance.py` | 147 |
+| `tests/test_system_health_dependency_checks.py` | 41 |
+| `runbooks/chaos_live_rehearsal.md` | 121 |
+| `tests/test_missing_edge_case_coverage_final.py` | 797 |
+| `main.py` | 408 |
+| `core/multimodal.py` | 413 |
+| `agent/tooling.py` | 127 |
+| `managers/code_manager.py` | 1.534 |
 
 ---
 
@@ -73,7 +75,7 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını ve Faz E yol harita
 ### 3.4 Faz E Yol Haritası Hazırlığı
 - `agent/tooling.py`, Poyraz ajanının sosyal medya ve operasyon araçları için doğal entegrasyon yüzeyi olarak belirlenmiştir.
 - `core/multimodal.py`, YouTube ve dış video platformlarından gelecek akışların çözümlenmesi için genişletilecek aday ingestion çekirdeğidir.
-- `managers/code_manager.py`, Coverage Agent'in coverage çıktısı okuyup test üretme/doğrulama döngüsünü bağlayacağı uygulama kapısı olacaktır.
+- `managers/code_manager.py`, Coverage Agent'in coverage çıktısı okuyup test üretme/doğrulama döngüsünü bağlayacağı uygulama kapısı olacaktır; `tests/test_missing_edge_case_coverage_final.py` ile doğrulanan %100 baseline bu ajanın referans kabul eşiğini oluşturacaktır.
 
 ---
 
@@ -86,10 +88,10 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını ve Faz E yol harita
 | Nightly memory maintenance | `tests/test_nightly_memory_maintenance.py` | Hazır |
 | Dependency resilience / chaos checks | `tests/test_system_health_dependency_checks.py` | Hazır |
 
-> Coverage politikası dokümantasyonda `%100 hard gate` olarak korunmaktadır; bu güncellemede audit metrikleri yeniden hesaplanmış ve kaos mühendisliği, eklenti pazaryeri ile bellek bakımı yüzeylerinin regresyon güvenliğine dahil olduğu açıkça belgelenmiştir.
+> Coverage politikası dokümantasyonda `%100 hard gate` olarak korunmaktadır; bu güncellemede audit metrikleri yeniden hesaplanmış, `main.py` launcher sertleştirmeleri ile `tests/test_missing_edge_case_coverage_final.py` içinde toplanan Redis fallback, async cancel, `tempfile.mkdtemp` hata yolu ve GitHub API arıza senaryolarının tam regresyon güvenliğine dahil olduğu açıkça belgelenmiştir.
 
 ---
 
 ## 5. Zero Debt Beyanı
 
-Bu revizyon kapsamında yeni açık teknik borç kaydı oluşturulmamıştır. Güncel belgeler, Faz D modüllerinin güvenlik kapıları (sandbox, HITL, health checks, allowlist, rollback, auth) ile uyumlu biçimde entegre edildiğini ve Faz E hedeflerinin mevcut mimari üzerine kontrollü şekilde oturtulduğunu göstermektedir. Bu nedenle proje için **Zero Debt / Production-Ready alpha** beyanı sürdürülmektedir.
+Bu revizyon kapsamında yeni açık teknik borç kaydı oluşturulmamıştır. v5.1.1 revizyonu ile sistemdeki tüm bağımlılık kopmaları (Redis, veritabanı), asenkron iptal durumları (`WebSocketDisconnect`) ve yetkilendirme bypass girişimleri mock testleriyle coverage alanına %100 oranında dahil edilmiş; güncel belgeler de Faz D modüllerinin güvenlik kapıları (sandbox, HITL, health checks, allowlist, rollback, auth) ile uyumlu biçimde entegre edildiğini ve Faz E hedeflerinin mevcut mimari üzerine kontrollü şekilde oturtulduğunu göstermektedir. Bu nedenle proje için **Zero Debt / Production-Ready alpha** beyanı sürdürülmektedir.
