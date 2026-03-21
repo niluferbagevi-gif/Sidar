@@ -171,3 +171,10 @@ def test_tooling_marketing_schemas_runtime():
     )
     assert campaign.campaign_name == "Launch"
     assert campaign.channels == ["instagram"]
+
+    video = tooling.parse_tool_argument(
+        "ingest_video_insights",
+        '{"source_url":"https://youtu.be/dQw4w9WgXcQ","prompt":"hook çıkar"}',
+    )
+    assert video.source_url.endswith("dQw4w9WgXcQ")
+    assert video.prompt == "hook çıkar"

@@ -63,6 +63,7 @@ class PoyrazAgent(BaseAgent):
         self.register_tool("publish_social", self._tool_publish_social)
         self.register_tool("build_landing_page", self._tool_build_landing_page)
         self.register_tool("generate_campaign_copy", self._tool_generate_campaign_copy)
+        self.register_tool("ingest_video_insights", self._tool_ingest_video_insights)
 
     async def _tool_web_search(self, arg: str) -> str:
         _ok, result = await self.web.search(arg)
@@ -147,6 +148,48 @@ class PoyrazAgent(BaseAgent):
             "campaign_copy_tool",
         )
 
+    async def _tool_ingest_video_insights(self, arg: str) -> str:
+        from core.multimodal import MultimodalPipeline
+
+        raw = (arg or "").strip()
+        if raw.startswith("{"):
+            payload = parse_tool_argument("ingest_video_insights", raw)
+            source_url = payload.source_url.strip()
+            prompt = payload.prompt.strip()
+            language = payload.language.strip() or None
+            session_id = payload.session_id.strip() or "marketing"
+            max_frames = int(payload.max_frames or 6)
+            frame_interval_seconds = float(payload.frame_interval_seconds or 5.0)
+        else:
+            parts = (raw.split("|||", 4) + ["", "", "", "", ""])[:5]
+            source_url = parts[0].strip()
+            prompt = parts[1].strip()
+            language = parts[2].strip() or None
+            session_id = parts[3].strip() or "marketing"
+            max_frames = int(parts[4].strip() or 6)
+            frame_interval_seconds = 5.0
+
+        pipeline = MultimodalPipeline(self.llm, self.cfg)
+        result = await pipeline.analyze_media_source(
+            media_source=source_url,
+            prompt=prompt,
+            language=language,
+            max_frames=max_frames,
+            frame_interval_seconds=frame_interval_seconds,
+            ingest_document_store=self.docs,
+            ingest_session_id=session_id,
+            ingest_title=f"Video İçgörü Özeti - {source_url}",
+            ingest_tags=["video", "multimodal", "marketing", "poyraz"],
+        )
+        if not result.get("success"):
+            return f"[VIDEO:ERROR] source={source_url} reason={result.get('reason', 'unknown')}"
+        ingest = dict(result.get("document_ingest") or {})
+        return (
+            f"[VIDEO:INGESTED] source={source_url} "
+            f"doc_id={ingest.get('doc_id', '')} "
+            f"scene_summary={result.get('scene_summary', '')}"
+        )
+
     async def _generate_marketing_output(self, task_prompt: str, mode: str) -> str:
         user_prompt = (
             f"Görev modu: {mode}\n"
@@ -176,6 +219,8 @@ class PoyrazAgent(BaseAgent):
             return await self.call_tool("build_landing_page", prompt.split("|", 1)[1].strip())
         if lower.startswith("generate_campaign_copy|"):
             return await self.call_tool("generate_campaign_copy", prompt.split("|", 1)[1].strip())
+        if lower.startswith("ingest_video_insights|") or lower.startswith("analyze_video|"):
+            return await self.call_tool("ingest_video_insights", prompt.split("|", 1)[1].strip())
         if lower.startswith("seo_audit|"):
             return await self._generate_marketing_output(prompt.split("|", 1)[1].strip(), "seo_audit")
         if lower.startswith("campaign_copy|"):
