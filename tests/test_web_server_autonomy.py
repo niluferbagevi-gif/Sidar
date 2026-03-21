@@ -327,3 +327,200 @@ def test_github_webhook_ci_failure_dispatches_remediation_trigger():
     assert captured["event_name"] == "ci_failure_remediation"
     assert captured["payload"]["workflow_name"] == "CI"
     assert captured["payload"]["logs_url"].endswith("/88/logs")
+
+def test_autonomy_webhook_jira_issue_triggers_event_driven_federation():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["source"] = trigger.source
+        captured["event_name"] = trigger.event_name
+        captured["payload"] = dict(trigger.payload or {})
+        captured["meta"] = dict(trigger.meta or {})
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "jira federation planned",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(handle_external_trigger=_handle_trigger)
+
+    async def _fake_workflow(**kwargs):
+        assert kwargs["source"] == "jira"
+        assert kwargs["event_name"] == "issue_created"
+        return {
+            "workflow_type": "jira_issue",
+            "correlation_id": "jira-corr-1",
+            "federation_task": {
+                "task_id": "jira-sid-7",
+                "source_system": "jira",
+                "source_agent": "issue_webhook",
+                "target_agent": "supervisor",
+            },
+            "federation_prompt": "[FEDERATION TASK] jira issue",
+            "pipeline": [{"agent_role": "coder", "status": "success"}, {"agent_role": "reviewer", "status": "success"}],
+            "federation_result": {"summary": "Reviewer approved next actions."},
+        }
+
+    mod.get_agent = _get_agent
+    mod._run_event_driven_federation_workflow = _fake_workflow
+    mod.cfg.ENABLE_EVENT_WEBHOOKS = True
+    mod.cfg.AUTONOMY_WEBHOOK_SECRET = ""
+
+    request = _FakeRequest(
+        method="POST",
+        path="/api/autonomy/webhook/jira",
+        body_bytes=json.dumps({
+            "event_name": "issue_created",
+            "action": "created",
+            "issue": {"key": "SID-7", "summary": "Voice regression"},
+        }).encode("utf-8"),
+    )
+
+    response = asyncio.run(mod.autonomy_webhook("jira", request, ""))
+
+    assert response.content["success"] is True
+    assert response.content["event_driven_federation"]["workflow_type"] == "jira_issue"
+    assert captured["source"] == "webhook:jira"
+    assert captured["event_name"] == "issue_created"
+    assert captured["payload"]["kind"] == "federation_task"
+    assert captured["payload"]["event_driven_federation"]["workflow_type"] == "jira_issue"
+    assert captured["meta"]["event_driven_federation"] == "true"
+
+
+def test_autonomy_webhook_system_monitor_error_triggers_event_driven_federation():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["payload"] = dict(trigger.payload or {})
+        captured["meta"] = dict(trigger.meta or {})
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "system federation planned",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(handle_external_trigger=_handle_trigger)
+
+    async def _fake_workflow(**kwargs):
+        assert kwargs["source"] == "system_monitor"
+        return {
+            "workflow_type": "system_error",
+            "correlation_id": "sys-corr-1",
+            "federation_task": {
+                "task_id": "system-err-1",
+                "source_system": "system_monitor",
+                "source_agent": "alert_webhook",
+                "target_agent": "supervisor",
+            },
+            "federation_prompt": "[FEDERATION TASK] system error",
+            "pipeline": [{"agent_role": "coder", "status": "success"}, {"agent_role": "reviewer", "status": "success"}],
+            "federation_result": {"summary": "Rollback plan hazır."},
+        }
+
+    mod.get_agent = _get_agent
+    mod._run_event_driven_federation_workflow = _fake_workflow
+    mod.cfg.ENABLE_EVENT_WEBHOOKS = True
+    mod.cfg.AUTONOMY_WEBHOOK_SECRET = ""
+
+    request = _FakeRequest(
+        method="POST",
+        path="/api/autonomy/webhook/system_monitor",
+        body_bytes=json.dumps({
+            "event_name": "system_error",
+            "severity": "critical",
+            "service": "voice-gateway",
+            "message": "latency spike",
+        }).encode("utf-8"),
+    )
+
+    response = asyncio.run(mod.autonomy_webhook("system_monitor", request, ""))
+
+    assert response.content["success"] is True
+    assert response.content["event_driven_federation"]["workflow_type"] == "system_error"
+    assert captured["payload"]["kind"] == "federation_task"
+    assert captured["meta"]["workflow_type"] == "system_error"
+
+
+def test_github_webhook_pull_request_triggers_event_driven_federation():
+    mod = _load_web_server()
+    captured = {}
+
+    async def _handle_trigger(trigger):
+        captured["source"] = trigger.source
+        captured["event_name"] = trigger.event_name
+        captured["payload"] = dict(trigger.payload or {})
+        captured["meta"] = dict(trigger.meta or {})
+        return {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": "github federation planned",
+            "status": "success",
+            "meta": dict(trigger.meta),
+            "created_at": 1.0,
+            "completed_at": 2.0,
+        }
+
+    async def _get_agent():
+        return types.SimpleNamespace(
+            handle_external_trigger=_handle_trigger,
+            memory=types.SimpleNamespace(add=lambda *_args, **_kwargs: None),
+        )
+
+    async def _fake_workflow(**kwargs):
+        assert kwargs["source"] == "github"
+        assert kwargs["event_name"] == "pull_request"
+        return {
+            "workflow_type": "github_pull_request",
+            "correlation_id": "gh-pr-corr-9",
+            "federation_task": {
+                "task_id": "github-pr-9",
+                "source_system": "github",
+                "source_agent": "pull_request_webhook",
+                "target_agent": "supervisor",
+            },
+            "federation_prompt": "[FEDERATION TASK] github pr",
+            "pipeline": [{"agent_role": "coder", "status": "success"}, {"agent_role": "reviewer", "status": "success"}],
+            "federation_result": {"summary": "PR review gate hazır."},
+        }
+
+    mod.get_agent = _get_agent
+    mod._run_event_driven_federation_workflow = _fake_workflow
+    mod.cfg.GITHUB_WEBHOOK_SECRET = ""
+    mod.cfg.ENABLE_EVENT_WEBHOOKS = True
+
+    body = json.dumps({
+        "action": "opened",
+        "repository": {"full_name": "acme/sidar"},
+        "pull_request": {
+            "number": 9,
+            "title": "Add duplex voice",
+            "body": "Implements client voice flow",
+            "base": {"ref": "main"},
+            "head": {"ref": "feature/voice"},
+        },
+    }).encode("utf-8")
+    request = _FakeRequest(method="POST", path="/api/webhook", body_bytes=body)
+
+    response = asyncio.run(mod.github_webhook(request, "pull_request", ""))
+
+    assert response.content["success"] is True
+    assert captured["source"] == "webhook:github"
+    assert captured["event_name"] == "pull_request"
+    assert captured["payload"]["kind"] == "federation_task"
+    assert captured["payload"]["event_driven_federation"]["workflow_type"] == "github_pull_request"
+    assert captured["meta"]["event_driven_federation"] == "true"
