@@ -9,6 +9,8 @@ def test_migration_cutover_workflow_contains_required_gates():
     assert '--dry-run' in wf
     assert 'scripts/load_test_db_pool.py' in wf
     assert '--concurrency 50' in wf
+    assert 'Verify Swarm + Active Learning production cutover slice' in wf
+    assert 'tests/test_swarm_orchestrator.py tests/test_active_learning.py tests/test_migration_ci_guards.py' in wf
 
 
 def test_db_pool_load_script_has_expected_cli_args():

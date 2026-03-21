@@ -85,3 +85,7 @@ jobs:
             --database-url "$DATABASE_URL" \
             --concurrency 50 \
             --requests 300
+
+      - name: Verify Swarm + Active Learning production cutover slice
+        run: |
+          pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py tests/test_migration_ci_guards.py
