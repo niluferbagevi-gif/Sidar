@@ -38,7 +38,7 @@
   - [5.3 Kurumsal Zero-Trust Savunma Sütunları (v3.0)](#53-kurumsal-zero-trust-savunma-sütunları-v30)
 - [6. Test Kapsamı](#6-test-kapsamı)
   - [6.1 CI/CD Pipeline Durumu](#61-cicd-pipeline-durumu)
-  - [6.2 Coverage Hard Gate (%99.9)](#62-coverage-hard-gate-999)
+  - [6.2 Coverage Hard Gate (%100)](#62-coverage-hard-gate-100)
   - [6.3 Test Havuzu ve Modüler Senaryolar](#63-test-havuzu-ve-modüler-senaryolar)
   - [6.4 Asenkron Test Altyapısı](#64-asenkron-test-altyapısı)
 - [7. Temel Bağımlılıklar](#7-temel-bağımlılıklar)
@@ -311,7 +311,7 @@ sidar_project/
 │           ├── statefulset-postgresql.yaml, statefulset-redis.yaml
 │           ├── hpa-web.yaml, pdb-web.yaml, networkpolicy-web.yaml
 │           └── secret-postgresql.yaml
-├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%99.9 eşik)
+├── <a href="docs/module-notes/coveragerc.md">.coveragerc</a>                # Coverage kalite kapısı kuralları (%100 eşik)
 ├── <a href="docs/module-notes/env.example.md">.env.example</a>               # Ortam değişkeni şablonu
 ├── AUDIT_REPORT_v4.0.md       # v4.0 kurumsal geçiş denetim raporu
 ├── <a href="docs/module-notes/CHANGELOG.md.md">CHANGELOG.md</a>               # Sürüm notları ve değişiklik geçmişi
@@ -563,7 +563,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 - **`test_*.py` modül sayısı:** **149**
 - **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **151**
 - **Toplam test satırı (`tests/*.py`):** **39.148**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%99.9 hard gate**
+- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%100 hard gate**
 
 **Öne çıkan test kategorileri (v4.3.0):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -583,20 +583,20 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Kalite Kapısı | Durum | Kaynak |
 |---|---|---|
 | Tüm testleri çalıştır (`run_tests.sh`) | ✅ Aktif | `.github/workflows/ci.yml`, `run_tests.sh` |
-| Coverage Quality Gate (`fail_under=99.9`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml` |
-| Ayrı coverage adımı (`--cov-fail-under=99.9`) | ✅ Aktif | `.github/workflows/ci.yml` |
+| Coverage Quality Gate (`fail_under=100`) | ✅ Zorunlu | `.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml` |
+| Ayrı coverage adımı (`--cov-fail-under=100`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
 | `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
 | Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
 
 Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage barajı + artifact hijyeni + enterprise senaryo regresyonları** üzerine kurulu kurumsal bir kalite modeline taşınmıştır.
 
-### 6.2 Coverage Hard Gate (%99.9)
+### 6.2 Coverage Hard Gate (%100)
 
-- `.coveragerc` içinde `fail_under = 99.9` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
+- `.coveragerc` içinde `fail_under = 100` ve `show_missing = True` ayarları zorunlu kalite kapısı olarak tanımlıdır.
 - `pytest.ini`, `python_files = test_*.py` ve `asyncio_mode = auto` ayarlarıyla aynı test evrenini deterministik biçimde çalıştırır.
-- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9` komutu ile coverage eşiğini uygular.
-- `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-99.9}"` değişkeniyle aynı eşiği yerelde tekrarlar.
+- CI hattı (`.github/workflows/ci.yml`) ayrı bir adımda `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100` komutu ile coverage eşiğini uygular.
+- `run_tests.sh` betiği de `COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"` değişkeniyle aynı eşiği yerelde tekrarlar.
 - Depoda `test_quick_100.py` ve `test_ultimate_coverage.py` gibi agresif kapsama odaklı testler bulunur; bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
@@ -1306,7 +1306,7 @@ Bu bant, v4 mimarisinin yalnızca backend kabiliyeti olarak kalmayıp ürün sev
 
 - **Modern React SPA geçişi:** `web_ui_react/` artık standart kullanıcı deneyimidir; `web_server.py` derlenmiş React dağıtımını önceliklendirir, yönetim panelleri (Prompt Admin, Agent Manager, Swarm Flow, tenant ekranları) aynı SPA kabuğunda birleşir.
 - **Dokümantasyon/sürüm tekilleştirmesi:** `CHANGELOG.md`, `README.md`, `config.py`, teknik referanslar ve proje raporu `v4.3.0` çizgisine hizalanarak operasyonda tek bir sürüm gerçeği oluşturuldu.
-- **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%99.9` olarak kodlanmış olsa da, repo kültürü fiilî tam kapsama hedefiyle yürür; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
+- **CI/CD ile korunan sıfır borç disiplini:** Kapsama hard gate'i `%100` olarak kodlanmıştır; test, audit ve metrik betikleri artık takip dışı dosyaları saymadan gerçek repo ölçümleri üzerinden kalite kapısı üretir.
 - **Kurumsal kapanış yorumu:** Bu aşamada React SPA, swarm, semantic cache, OTel, tenant RBAC/audit, DLP/HITL ve kurumsal deployment yüzeyleri aynı sistem üzerinde bir araya gelmiş; v4.x serisi “özellik ekleme” aşamasını tamamlayıp **operasyonel enterprise platform** seviyesine ulaşmıştır.
 
 ### 13.4 v4.x Tamamlanan Evrim Özeti
@@ -1386,7 +1386,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Modern Asenkron Arayüz (SPA)** | React + Vite + WebSocket/event-driven sunum katmanı (`web_ui_react/`, `web_server.py`) | ✅ Tamamlandı |
 | **Model Ağ Geçidi (LLM Gateway)** | OpenAI/Anthropic/Ollama/LiteLLM yollarını tekleştiren sağlayıcı soyutlama katmanı (`core/llm_client.py`, `core/router.py`) | ✅ Tamamlandı |
 | **Dinamik Genişletilebilirlik** | Runtime kayıt edilen ajan pazaryeri ve plugin yükleme akışı (`agent/registry.py`, `plugins/`, `web_server.py`) | ✅ Tamamlandı |
-| **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%99.9` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
+| **Sıfır Borç Kalite Kapısı** | Agresif test envanteri, CI kalite kapıları ve `%100` coverage hard gate (`.github/workflows/ci.yml`, `run_tests.sh`, `.coveragerc`, `tests/`) | ✅ Tamamlandı |
 | **Varlık Belleği (Entity Memory)** | Persona/ilişki odaklı kalıcı kullanıcı belleği (`core/entity_memory.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.jsx`) | ✅ Tamamlandı |
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
@@ -1394,7 +1394,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.jsx`, `core/hitl.py`) | ✅ Tamamlandı |
 
-> **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi repo kültürünün hedefini yansıtsa da, kod tabanında **resmî kalite kapısı** `.coveragerc` ve CI üzerinde `%99.9` olarak uygulanmaktadır; raporda bu nedenle doğrudan ölçülebilir kural esas alınmıştır.
+> **Not:** Kullanıcı isteğinde geçen “%100 Test Kapsaması” ifadesi artık repo kültüründeki hedefin ötesinde, `.coveragerc`, `run_tests.sh` ve CI üzerinde **resmî kalite kapısı** olarak da uygulanmaktadır.
 
 ---
 ## 16. Gözlemlenebilirlik (Observability), Loglama ve Hata Yönetimi
@@ -1498,7 +1498,7 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 
 ### Final Doğrulama ve Sıfır Teknik Borç Durumu
 
-Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%99.9 coverage hard gate** uygular; bu değer depo kültüründeki fiilî tam kapsama hedefinin ölçülebilir ve repo içinde gerçekten kodlanmış karşılığıdır.
+Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%100 coverage hard gate** uygular; bu değer depo kültüründeki tam kapsama hedefinin repo içinde gerçekten kodlanmış karşılığıdır.
 
 Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v4.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
 

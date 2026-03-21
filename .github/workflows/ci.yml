@@ -50,9 +50,9 @@ jobs:
         run: |
           pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
 
-      - name: Enforce coverage quality gate (99.9%)
+      - name: Enforce coverage quality gate (100%)
         run: |
-          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=99.9
+          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
