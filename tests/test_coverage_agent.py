@@ -228,6 +228,26 @@ def test_coverage_agent_helper_paths_cover_payload_normalization_and_db_cache():
     assert agent._normalize_analysis("unexpected") == {"summary": "", "findings": []}
 
 
+def test_coverage_agent_ensure_db_returns_cached_value_inside_lock():
+    agent = CoverageAgent()
+    sentinel_db = object()
+
+    class _LockThatSeedsDb:
+        async def __aenter__(self):
+            agent._db = sentinel_db
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    agent._db = None
+    agent._db_lock = _LockThatSeedsDb()
+
+    db = asyncio.run(agent._ensure_db())
+
+    assert db is sentinel_db
+
+
 def test_coverage_agent_analyze_and_generate_tools_use_fallbacks(monkeypatch):
     agent = CoverageAgent()
     seen = {}
@@ -318,3 +338,11 @@ def test_coverage_agent_run_task_handles_no_gaps_unexpected_analysis_and_record_
     ]
     assert payload["write_message"] == "write-failed:tests/test_sample_coverage.py"
     assert writes[0][2] is True
+
+
+def test_coverage_agent_run_task_warns_on_empty_prompt():
+    agent = CoverageAgent()
+
+    result = asyncio.run(agent.run_task("   "))
+
+    assert result == "[UYARI] Boş coverage görevi verildi."
