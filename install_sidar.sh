@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sidar AI — Otomatik Kurulum Betiği
-# Sürüm: 5.1.0 (v5.0.0-alpha baseline)
+# Sürüm: 5.1.0 (v5.1.0 runtime baseline)
 
 # Hata durumunda betiği durdur
 set -euo pipefail
