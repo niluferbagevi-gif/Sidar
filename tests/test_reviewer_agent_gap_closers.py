@@ -520,3 +520,78 @@ def test_reviewer_review_code_marks_medium_risk_for_semantic_warning_and_high_im
     assert impact_payload["decision"] == "APPROVE"
     assert impact_payload["combined_impact_report"]["impact_level"] == "critical"
     assert impact_payload["risk"] == "orta"
+
+
+def test_reviewer_review_code_escalates_low_risk_to_medium_for_high_impact_info_only_signal(monkeypatch):
+    mod = _load_reviewer_module("reviewer_gap_high_impact_info_only")
+    agent = mod.ReviewerAgent()
+
+    async def _dynamic(_ctx: str) -> str:
+        return "[TEST:OK] dynamic"
+
+    async def _run_tests(arg: str) -> str:
+        return f"[TEST:OK] {arg}"
+
+    async def _graph(_arg: str) -> str:
+        return json.dumps(
+            {
+                "status": "ok",
+                "risk": "düşük",
+                "summary": "Graph followups found.",
+                "reports": [
+                    {
+                        "target": "core/db.py",
+                        "ok": True,
+                        "details": {
+                            "risk_level": "low",
+                            "review_targets": ["core/db.py", "web_server.py"],
+                            "impacted_endpoint_handlers": ["web_server.py"],
+                            "caller_files": [],
+                            "direct_dependents": [],
+                            "impacted_endpoints": [],
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    async def _browser(_arg: str) -> str:
+        return json.dumps({"status": "ok", "risk": "düşük", "summary": "Browser clean."}, ensure_ascii=False)
+
+    monkeypatch.setattr(agent, "_run_dynamic_tests", _dynamic)
+    agent.tools["run_tests"] = _run_tests
+    agent.tools["graph_impact"] = _graph
+    agent.tools["browser_signals"] = _browser
+    agent.tools["lsp_diagnostics"] = lambda _arg: asyncio.sleep(
+        0,
+        result=json.dumps(
+            {
+                "status": "info-only",
+                "risk": "düşük",
+                "decision": "APPROVE",
+                "counts": {3: 1},
+                "issues": [{"path": "/workspace/Sidar/web_server.py", "message": "informational note"}],
+                "summary": "LSP diagnostics yalnızca bilgilendirici 1 bulgu üretti.",
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    out = asyncio.run(agent.run_task("review_code|core/db.py"))
+    payload = json.loads(out.payload.split("|", 1)[1])
+
+    assert payload["decision"] == "APPROVE"
+    assert payload["semantic_risk_report"]["status"] == "info-only"
+    assert payload["combined_impact_report"]["impact_level"] == "high"
+    assert payload["risk"] == "orta"
+
+
+def test_reviewer_list_issues_stringifies_unexpected_success_payload():
+    mod = _load_reviewer_module("reviewer_gap_list_issues_fallback")
+    agent = mod.ReviewerAgent()
+    agent.github.list_issues = lambda state, limit: (True, {"state": state, "limit": limit, "status": "fallback"})
+
+    out = asyncio.run(agent.run_task("list_issues|closed"))
+
+    assert out == "{'state': 'closed', 'limit': 20, 'status': 'fallback'}"
