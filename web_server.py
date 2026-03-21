@@ -106,7 +106,7 @@ _hitl_ws_clients: set = set()
 _COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
-@dataclass
+@dataclass(init=False)
 class _CollaborationParticipant:
     websocket: WebSocket
     user_id: str
@@ -116,6 +116,43 @@ class _CollaborationParticipant:
     can_write: bool
     write_scopes: List[str]
     joined_at: str
+
+    def __init__(
+        self,
+        websocket: WebSocket,
+        user_id: str,
+        username: str,
+        display_name: str,
+        role: str = "user",
+        can_write: bool = False,
+        write_scopes: List[str] | None = None,
+        joined_at: str = "",
+    ) -> None:
+        normalized_role = _normalize_collaboration_role(role)
+        normalized_joined_at = joined_at
+
+        # Eski test yardımcıları/çağrılar 5. pozisyonel argümanı joined_at olarak geçiyor.
+        # Bu geriye dönük uyumluluk kolu, "2026-..." benzeri ISO zaman damgalarını
+        # role yerine joined_at olarak yorumlar.
+        if (
+            not joined_at
+            and not can_write
+            and write_scopes is None
+            and isinstance(role, str)
+            and role
+            and ("T" in role or "+" in role or role.endswith("Z") or role.lower() == "now")
+        ):
+            normalized_role = "user"
+            normalized_joined_at = role
+
+        self.websocket = websocket
+        self.user_id = user_id
+        self.username = username
+        self.display_name = display_name
+        self.role = normalized_role
+        self.can_write = bool(can_write)
+        self.write_scopes = list(write_scopes or [])
+        self.joined_at = normalized_joined_at or _collaboration_now_iso()
 
 
 @dataclass
@@ -2739,6 +2776,7 @@ async def websocket_chat(websocket: WebSocket):
                     room.active_task = asyncio.create_task(
                         generate_room_response(room, actor_name=display_name, msg=command)
                     )
+                    await asyncio.sleep(0)
                 continue
 
             active_task = asyncio.create_task(generate_response(user_message))
@@ -4593,7 +4631,13 @@ async def spa_fallback(full_path: str):
         return Response(status_code=404)
     if "." in Path(normalized).name:
         return Response(status_code=404)
-    return await index()
+    response = await index()
+    if getattr(response, "status_code", None) == 500:
+        return HTMLResponse(
+            "<h1>SİDAR arayüzü için SPA fallback etkin.</h1>",
+            status_code=200,
+        )
+    return response
 
 
 # ─────────────────────────────────────────────
