@@ -216,6 +216,25 @@ def test_websocket_voice_rejects_non_auth_action_before_authentication(monkeypat
     assert ws.closed == [(1008, "Authentication required")]
 
 
+def test_websocket_voice_commit_without_buffered_audio_returns_done_error(monkeypatch):
+    mod = _load_web_server()
+    _install_voice_pipeline_stubs(monkeypatch)
+    mod.get_agent = lambda: asyncio.sleep(0, result=_make_voice_agent())
+    mod.jwt.decode = lambda *_a, **_k: (_ for _ in ()).throw(mod.jwt.PyJWTError("bad token"))
+
+    ws = _VoiceWebSocket(
+        [
+            {"type": "websocket.receive", "text": json.dumps({"action": "auth", "token": "tok"})},
+            {"type": "websocket.receive", "text": json.dumps({"action": "commit"})},
+            {"type": "websocket.disconnect"},
+        ]
+    )
+
+    asyncio.run(mod.websocket_voice(ws))
+
+    assert {"auth_ok": True} in ws.sent
+    assert {"error": "İşlenecek ses verisi bulunamadı.", "done": True} in ws.sent
+
 def test_websocket_voice_second_commit_cancels_active_response(monkeypatch):
     mod = _load_web_server()
     _install_voice_pipeline_stubs(monkeypatch)
