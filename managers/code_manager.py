@@ -648,6 +648,99 @@ class CodeManager:
             return False, f"Sandbox komutu başarısız (çıkış kodu: {result.returncode}):\n{combined}"
         return True, combined
 
+    @staticmethod
+    def analyze_pytest_output(output: str) -> Dict[str, Any]:
+        text = str(output or "")
+        findings: List[Dict[str, Any]] = []
+        coverage_targets: List[Dict[str, Any]] = []
+        failure_targets: List[Dict[str, Any]] = []
+
+        summary_match = re.search(
+            r"(?P<failed>\d+)\s+failed|(?P<passed>\d+)\s+passed|(?P<errors>\d+)\s+error",
+            text.lower(),
+        )
+        summary = summary_match.group(0) if summary_match else ""
+
+        coverage_pattern = re.compile(
+            r"^(?P<path>[A-Za-z0-9_./\\-]+)\s+(?P<stmts>\d+)\s+(?P<miss>\d+)\s+(?P<cover>\d+)%\s+(?P<missing>.+)$",
+            re.MULTILINE,
+        )
+        for match in coverage_pattern.finditer(text):
+            path = match.group("path").strip()
+            if path.upper() == "TOTAL" or path.startswith("tests/"):
+                continue
+            missing = match.group("missing").strip()
+            finding = {
+                "finding_type": "missing_coverage",
+                "target_path": path,
+                "summary": f"Eksik coverage satırları: {missing}",
+                "missing_lines": missing,
+                "coverage_percent": int(match.group("cover")),
+            }
+            coverage_targets.append(finding)
+            findings.append(finding)
+
+        failure_pattern = re.compile(
+            r"_{3,}\s+(?P<target>[^_\n]+?)\s+_{3,}\n(?P<body>.*?)(?=\n_{3,}|\n=+|\Z)",
+            re.DOTALL,
+        )
+        for match in failure_pattern.finditer(text):
+            target = match.group("target").strip()
+            body = match.group("body").strip()
+            path_match = re.search(r"([A-Za-z0-9_./\\-]+\.py):\d+", body)
+            target_path = path_match.group(1) if path_match else ""
+            finding = {
+                "finding_type": "test_failure",
+                "target_path": target_path,
+                "summary": target,
+                "details": body[:1000],
+            }
+            failure_targets.append(finding)
+            findings.append(finding)
+
+        if not failure_targets and re.search(r"\b\d+\s+failed\b", text.lower()):
+            path_match = re.search(r"([A-Za-z0-9_./\\-]+\.py):\d+", text)
+            failure_targets.append(
+                {
+                    "finding_type": "test_failure",
+                    "target_path": path_match.group(1) if path_match else "",
+                    "summary": "pytest failure detected",
+                    "details": text[:1000],
+                }
+            )
+            findings.append(failure_targets[-1])
+
+        return {
+            "summary": summary,
+            "findings": findings,
+            "coverage_targets": coverage_targets,
+            "failure_targets": failure_targets,
+            "has_failures": bool(failure_targets),
+            "has_coverage_gaps": bool(coverage_targets),
+        }
+
+    def run_pytest_and_collect(
+        self,
+        command: str = "pytest -q",
+        cwd: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        normalized = (command or "").strip() or "pytest -q"
+        if "pytest" not in normalized:
+            return {
+                "success": False,
+                "command": normalized,
+                "output": "Yalnızca pytest komutları desteklenir.",
+                "analysis": self.analyze_pytest_output(""),
+            }
+
+        ok, output = self.run_shell_in_sandbox(normalized, cwd=cwd)
+        return {
+            "success": ok,
+            "command": normalized,
+            "output": output,
+            "analysis": self.analyze_pytest_output(output),
+        }
+
 
     def run_shell(
         self,

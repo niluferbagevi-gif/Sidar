@@ -196,11 +196,23 @@ def _register_builtin_agents() -> None:
         pass
 
     try:
+        from agent.roles.coverage_agent import CoverageAgent
+        AgentRegistry.register_type(
+            role_name="coverage",
+            agent_class=CoverageAgent,
+            capabilities=["coverage_analysis", "pytest_output_analysis", "autonomous_test_generation"],
+            description="Pytest çıktılarını okuyup coverage açığı için test adayı üreten uzman ajan",
+            is_builtin=True,
+        )
+    except ImportError:
+        pass
+
+    try:
         from agent.roles.qa_agent import QAAgent
         AgentRegistry.register_type(
             role_name="qa",
             agent_class=QAAgent,
-            capabilities=["coverage_analysis", "test_generation", "ci_remediation"],
+            capabilities=["test_generation", "ci_remediation"],
             description="Coverage analizi ve pytest tabanlı test üretimi uzmanı",
             is_builtin=True,
         )

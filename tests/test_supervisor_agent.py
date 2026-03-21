@@ -189,16 +189,16 @@ def test_supervisor_intent_classifies_coverage_keywords():
     assert SupervisorAgent._intent("Coverage açığını kapatmak için eksik test yaz") == "coverage"
 
 
-def test_supervisor_routes_coverage_intent_to_qa(monkeypatch):
+def test_supervisor_routes_coverage_intent_to_coverage_agent(monkeypatch):
     s = SupervisorAgent()
 
-    async def fake_qa_run_task(prompt: str) -> str:
-        return f"QA:{prompt}"
+    async def fake_coverage_run_task(prompt: str) -> str:
+        return f"COVERAGE:{prompt}"
 
-    monkeypatch.setattr(s.qa, "run_task", fake_qa_run_task)
+    monkeypatch.setattr(s.coverage, "run_task", fake_coverage_run_task)
 
     out = asyncio.run(s.run_task("Coverage açığını kapatmak için test yaz"))
-    assert out.startswith("QA:")
+    assert out.startswith("COVERAGE:")
 
 
 def test_supervisor_routes_marketing_intent_to_poyraz(monkeypatch):

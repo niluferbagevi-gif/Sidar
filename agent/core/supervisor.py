@@ -20,6 +20,7 @@ from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
 from agent.roles.poyraz_agent import PoyrazAgent
 from agent.roles.qa_agent import QAAgent
+from agent.roles.coverage_agent import CoverageAgent
 
 try:
     from opentelemetry import trace as otel_trace
@@ -79,6 +80,11 @@ class SupervisorAgent(BaseAgent):
             self.reviewer = self.registry.get("reviewer")
             self.poyraz = self.registry.get("poyraz")
             self.qa = self.registry.get("qa")
+            try:
+                self.registry.register("coverage", CoverageAgent(self.cfg))
+                self.coverage = self.registry.get("coverage")
+            except Exception:
+                self.coverage = self.qa
         except TypeError:
             # BaseAgent stub'ının object olduğu test ortamlarında alt ajan kurulumunu atla.
             self.researcher = None
@@ -86,6 +92,7 @@ class SupervisorAgent(BaseAgent):
             self.reviewer = None
             self.poyraz = None
             self.qa = None
+            self.coverage = None
 
     @staticmethod
     def _intent(prompt: str) -> str:
@@ -260,8 +267,9 @@ class SupervisorAgent(BaseAgent):
             return str(result.summary)
 
         if intent == "coverage":
-            await self.events.publish("supervisor", "QA/Coverage ajanına yönlendiriliyor...")
-            result = await self._delegate("qa", task_prompt, "coverage")
+            await self.events.publish("supervisor", "Coverage ajanına yönlendiriliyor...")
+            receiver = "coverage" if self.registry.has("coverage") else "qa"
+            result = await self._delegate(receiver, task_prompt, "coverage")
             if is_delegation_request(result.summary):
                 result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
             return str(result.summary)
