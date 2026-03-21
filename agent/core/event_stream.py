@@ -37,6 +37,7 @@ class AgentEventBus:
         self._dlq_buffer: deque[dict[str, object]] = deque(maxlen=max(10, int(os.getenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1000") or "1000")))
 
         self._redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self._redis_max_connections = max(1, int(os.getenv("REDIS_MAX_CONNECTIONS", "50") or "50"))
         self._redis_client: Redis | None = None
         self._redis_listener_task: asyncio.Task | None = None
         self._redis_bootstrap_task: asyncio.Task | None = None
@@ -77,7 +78,12 @@ class AgentEventBus:
 
         try:
             if self._redis_client is None:
-                self._redis_client = Redis.from_url(self._redis_url, encoding="utf-8", decode_responses=True)
+                self._redis_client = Redis.from_url(
+                    self._redis_url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                    max_connections=self._redis_max_connections,
+                )
                 await self._redis_client.ping()
 
             try:

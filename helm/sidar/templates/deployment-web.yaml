@@ -32,6 +32,10 @@ spec:
               value: "redis://{{ include \"sidar.fullname\" . }}-redis:{{ .Values.redis.port }}/0"
             - name: DATABASE_URL
               value: "postgresql+asyncpg://{{ .Values.postgresql.username }}:{{ .Values.postgresql.password }}@{{ include \"sidar.fullname\" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            - name: DB_POOL_SIZE
+              value: {{ .Values.database.poolSize | quote }}
+            - name: REDIS_MAX_CONNECTIONS
+              value: {{ .Values.redis.maxConnections | quote }}
             - name: OTEL_EXPORTER_ENDPOINT
               value: {{ include "sidar.otelEndpoint" . | quote }}
             - name: ENABLE_DEPENDENCY_HEALTHCHECKS

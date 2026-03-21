@@ -37,6 +37,7 @@ redis:
   enabled: true
   image: redis:alpine
   port: 6379
+  maxConnections: 100
   storage:
     size: 5Gi
     storageClassName: ""
@@ -51,6 +52,9 @@ postgresql:
   storage:
     size: 10Gi
     storageClassName: ""
+
+database:
+  poolSize: 10
 
 hpa:
   web:

@@ -241,6 +241,7 @@ class _SemanticCacheManager:
                 getattr(self.config, "REDIS_URL", "redis://localhost:6379/0"),
                 encoding="utf-8",
                 decode_responses=True,
+                max_connections=max(1, int(getattr(self.config, "REDIS_MAX_CONNECTIONS", 50) or 50)),
             )
             await self._redis.ping()
             observe_cache_redis_latency((time.perf_counter() - started) * 1000.0)

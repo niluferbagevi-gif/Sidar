@@ -2035,7 +2035,12 @@ async def _get_redis() -> Redis | None:
         async with _redis_lock:
             if _redis_client is None:
                 try:
-                    client = Redis.from_url(cfg.REDIS_URL, encoding="utf-8", decode_responses=True)
+                    client = Redis.from_url(
+                        cfg.REDIS_URL,
+                        encoding="utf-8",
+                        decode_responses=True,
+                        max_connections=max(1, int(getattr(cfg, "REDIS_MAX_CONNECTIONS", 50) or 50)),
+                    )
                     await client.ping()
                     _redis_client = client
                 except Exception as exc:
