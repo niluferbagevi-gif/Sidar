@@ -1,3 +1,4 @@
+
 # Sidar React UI
 
 Mevcut `web_ui/` (vanilla JS) ile paralel çalışan React/Vite tabanlı modern frontend.
@@ -15,6 +16,8 @@ npm run dev         # http://localhost:5173 — FastAPI'ye proxy
 
 ```bash
 npm run build       # web_ui_react/dist/ dizinine derler
+npm run test        # Vitest watch modu
+npm run test:run    # CI için tek seferlik test koşumu
 ```
 
 `web_server.py` otomatik olarak `web_ui_react/dist/` varsa onu, yoksa legacy `web_ui/` dizinini sunar.
@@ -45,3 +48,9 @@ src/
 | Zustand | Minimal global state (Redux olmadan) |
 | react-markdown | Güvenli Markdown render |
 | rehype-highlight | Kod blokları sözdizim renklendirme |
+
+## Test Altyapısı
+
+- `Vitest` + `@testing-library/react`: React SPA bileşenleri için native birim testleri.
+- `jsdom`: Tarayıcı DOM API'lerini emüle ederek `App`, `ChatPanel` ve `AgentManagerPanel` gibi bileşenlerin davranışını doğrular.
+- Legacy `web_ui/` tarafındaki sesli durum yardımcıları `voice_live_utils.js` içine ayrıştırılmıştır; böylece fallback arayüzü için de saf JS birim testleri yazılabilir.
