@@ -6,6 +6,8 @@
 
 ---
 
+> **Not:** Faz C derinleşmesi ve event-driven/self-healing/istemci ses akışının güncel sürümü için `docs/SIDAR_v5_1_MIMARI_RAPORU.md` dosyasına bakınız.
+
 ## 1. Yönetici Özeti
 
 SİDAR v4.2.0 itibarıyla güçlü bir **Autonomous LLMOps** platformuna dönüşmüş durumdadır: multimodal görsel analiz, hibrit RAG, direct P2P swarm, audit trail, HITL ve observability katmanları ürün seviyesinde mevcuttur. Buna rağmen sistem bugün hâlâ ağırlıklı olarak **reaktif** bir çalışma modeli izlemektedir; kullanıcı komutu geldiğinde araç çağıran gelişmiş bir mühendis asistanı gibi davranır.
