@@ -747,6 +747,8 @@ def test_multimodal_helper_validation_and_youtube_edge_paths(monkeypatch: pytest
 
     assert multimodal_mod.detect_video_platform("https://vimeo.com/123") == "vimeo"
     assert multimodal_mod.detect_video_platform("https://loom.com/share/abc") == "loom"
+    assert multimodal_mod.extract_youtube_video_id("") == ""
+    assert multimodal_mod.extract_youtube_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
     assert multimodal_mod.extract_youtube_video_id("https://youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
     assert multimodal_mod.extract_youtube_video_id("https://youtube.com/watch?v=bad") == ""
 
@@ -811,6 +813,19 @@ def test_remote_media_download_and_stream_resolution_validation_edges(tmp_path: 
     with pytest.raises(RuntimeError, match="çıktı dosyası üretmedi"):
         asyncio.run(download_remote_media("https://youtu.be/dQw4w9WgXcQ", output_dir=tmp_path / "yt"))
 
+    success_dir = tmp_path / "yt-success"
+
+    def _fake_ytdlp_success(_command):
+        success_dir.mkdir(parents=True, exist_ok=True)
+        (success_dir / "dQw4w9WgXcQ.webm").write_bytes(b"video")
+        return None
+
+    monkeypatch.setattr(multimodal_mod, "_run_subprocess", _fake_ytdlp_success)
+    downloaded = asyncio.run(download_remote_media("https://youtu.be/dQw4w9WgXcQ", output_dir=success_dir))
+    assert downloaded.platform == "youtube"
+    assert downloaded.mime_type == "video/webm"
+    assert downloaded.title == "dQw4w9WgXcQ"
+
     with pytest.raises(ValueError, match="http/https medya kaynakları"):
         asyncio.run(resolve_remote_media_stream("ftp://example.com/media.mp4"))
 
@@ -824,6 +839,17 @@ def test_remote_media_download_and_stream_resolution_validation_edges(tmp_path: 
     assert resolved["resolved_url"] == "https://youtu.be/dQw4w9WgXcQ"
     assert resolved["mime_type"] == "audio/webm"
     assert resolved["metadata"] == {}
+
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda _name: False)
+    direct = asyncio.run(resolve_remote_media_stream("https://cdn.example.com/media.mp4", prefer_video=True))
+    assert direct == {
+        "source_url": "https://cdn.example.com/media.mp4",
+        "resolved_url": "https://cdn.example.com/media.mp4",
+        "platform": "generic",
+        "mime_type": "video/mp4",
+        "title": "",
+        "metadata": {},
+    }
 
     async def _fallback_download(*_args, **_kwargs):
         return DownloadedMedia(
@@ -912,3 +938,42 @@ def test_multimodal_scene_ingest_and_source_analysis_edge_cases(tmp_path: Path, 
     assert remote_result["success"] is True
     assert remote_result["download"]["platform"] == "youtube"
     assert remote_result["download"]["title"] == "Remote Video"
+
+
+def test_multimodal_pipeline_analyze_media_source_downloads_without_ffmpeg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    pipeline = MultimodalPipeline(_DummyLLM(), types.SimpleNamespace(ENABLE_MULTIMODAL=True, MULTIMODAL_MAX_FILE_BYTES=1024))
+
+    calls = {}
+
+    async def _download_remote(source_url, **kwargs):
+        calls["download"] = {"source_url": source_url, **kwargs}
+        file_path = tmp_path / "remote-no-ffmpeg.mp4"
+        file_path.write_bytes(b"video")
+        return DownloadedMedia(
+            path=str(file_path),
+            source_url=source_url,
+            mime_type="video/mp4",
+            platform="generic",
+            resolved_url=source_url,
+            title="No FFmpeg",
+        )
+
+    async def _fake_local(**kwargs):
+        calls["local"] = kwargs
+        return {"success": True, "media_kind": "video", "analysis": "ok", "context": "ctx", "transcript": {}, "frame_analyses": []}
+
+    monkeypatch.setattr(multimodal_mod, "_command_exists", lambda _name: False)
+    monkeypatch.setattr(multimodal_mod, "download_remote_media", _download_remote)
+    monkeypatch.setattr(pipeline, "_analyze_local_media", _fake_local)
+
+    result = asyncio.run(
+        pipeline.analyze_media_source(
+            media_source="https://cdn.example.com/demo.mp4",
+            mime_type="video/mp4",
+        )
+    )
+
+    assert calls["download"]["source_url"] == "https://cdn.example.com/demo.mp4"
+    assert calls["local"]["media_path"].endswith("remote-no-ffmpeg.mp4")
+    assert result["success"] is True
+    assert result["download"]["title"] == "No FFmpeg"
