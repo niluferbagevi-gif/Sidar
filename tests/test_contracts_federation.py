@@ -111,9 +111,39 @@ def test_action_feedback_converts_to_external_trigger():
     assert "correlation_id=fed-7" in feedback.to_prompt()
 
 
+def test_broker_task_contracts_normalize_and_convert():
+    envelope = CONTRACTS.BrokerTaskEnvelope(
+        task_id="brk-1",
+        sender="supervisor",
+        receiver="coder",
+        goal="Patch hazırla",
+        intent="code_generation",
+        exchange="sidar.swarm",
+        protocol="swarm.broker.v1",
+        headers={"correlation_id": "corr-7"},
+    )
+    task_envelope = envelope.to_task_envelope()
+    result = CONTRACTS.BrokerTaskResult.from_task_result(
+        CONTRACTS.TaskResult(task_id="brk-1", status="success", summary="ok"),
+        sender="coder",
+        receiver="supervisor",
+        correlation_id=envelope.correlation_id,
+    )
+
+    assert envelope.protocol == "broker.task.v1"
+    assert envelope.routing_key == "sidar.swarm.coder.code_generation"
+    assert task_envelope.context["correlation_id"] == "corr-7"
+    assert CONTRACTS.is_broker_task_envelope(envelope) is True
+    assert CONTRACTS.is_broker_task_result(result) is True
+    assert result.to_task_result().summary == "ok"
+    assert "protocol=broker.task.v1" in result.to_prompt()
+
+
 def test_protocol_and_correlation_helpers_cover_custom_and_empty_values():
     assert CONTRACTS.normalize_federation_protocol(" custom.proto.v2 ") == "custom.proto.v2"
+    assert CONTRACTS.normalize_broker_protocol(" swarm.broker.v1 ") == "broker.task.v1"
     assert CONTRACTS.derive_correlation_id(None, "   ", "") == ""
+    assert CONTRACTS.derive_broker_routing_key(receiver="reviewer", intent="graph_review") == "sidar.swarm.reviewer.graph_review"
 
 
 def test_duck_typed_contract_detection_helpers_cover_true_and_false_paths():
@@ -156,6 +186,18 @@ def test_duck_typed_contract_detection_helpers_cover_true_and_false_paths():
         },
     )()
     result_missing = type("FederationTaskResult", (), {"task_id": "fed-1", "status": "success"})()
+    broker_envelope_like = type(
+        "BrokerTaskEnvelope",
+        (),
+        {"task_id": "b-1", "sender": "supervisor", "receiver": "coder", "goal": "g", "broker": "rabbitmq", "exchange": "sidar", "routing_key": "sidar.coder.code"},
+    )()
+    broker_envelope_missing = type("BrokerTaskEnvelope", (), {"task_id": "b-1", "sender": "supervisor"})()
+    broker_result_like = type(
+        "BrokerTaskResult",
+        (),
+        {"task_id": "b-1", "sender": "coder", "receiver": "supervisor", "status": "queued", "summary": "ok", "broker": "rabbitmq", "exchange": "sidar"},
+    )()
+    broker_result_missing = type("BrokerTaskResult", (), {"task_id": "b-1", "status": "queued"})()
     feedback_like = type(
         "ActionFeedback",
         (),
@@ -179,5 +221,9 @@ def test_duck_typed_contract_detection_helpers_cover_true_and_false_paths():
     assert CONTRACTS.is_federation_task_envelope(envelope_missing) is False
     assert CONTRACTS.is_federation_task_result(result_like) is True
     assert CONTRACTS.is_federation_task_result(result_missing) is False
+    assert CONTRACTS.is_broker_task_envelope(broker_envelope_like) is True
+    assert CONTRACTS.is_broker_task_envelope(broker_envelope_missing) is False
+    assert CONTRACTS.is_broker_task_result(broker_result_like) is True
+    assert CONTRACTS.is_broker_task_result(broker_result_missing) is False
     assert CONTRACTS.is_action_feedback(feedback_like) is True
     assert CONTRACTS.is_action_feedback(feedback_missing) is False

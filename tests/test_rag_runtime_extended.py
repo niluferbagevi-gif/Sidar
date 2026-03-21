@@ -102,6 +102,35 @@ def test_env_import_and_load_index_error_paths(tmp_path):
     assert store2._load_index() == {}
 
 
+def test_build_knowledge_graph_projection_and_graphrag_plan(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._index = {
+        "doc-1": {"title": "Spec", "source": "https://example.test/spec", "session_id": "sess-1"},
+        "doc-2": {"title": "Runbook", "source": "docs/runbook.md", "session_id": "sess-1"},
+    }
+    store._graph_ready = True
+    store._graph_rag_enabled = True
+    store._graph_index.add_node("core/rag.py", node_type="file")
+    store._graph_index.add_node("agent/swarm.py", node_type="file")
+    store._graph_index.add_edge("agent/swarm.py", "core/rag.py", kind="imports")
+    store._chroma_available = False
+    store.collection = None
+    store._vector_backend = "pgvector"
+    store._pgvector_available = True
+    store._fetch_pgvector = lambda query, top_k, session_id: [{"doc_id": "doc-1", "title": "Spec", "score": 0.91}]
+
+    projection = store.build_knowledge_graph_projection(session_id="sess-1")
+    plan = store.build_graphrag_search_plan("distributed swarm", session_id="sess-1", top_k=3)
+
+    assert any(node.id == "doc:doc-1" for node in projection["nodes"])
+    assert any(edge.relation == "CONTAINS_DOCUMENT" for edge in projection["edges"])
+    assert "MERGE (n:KG" in projection["cypher_hint"]
+    assert plan.vector_backend == "pgvector"
+    assert plan.vector_candidates == ["doc-1"]
+    assert "sidar.swarm.researcher.rag_search" in plan.broker_topics
+
+
 def test_init_chroma_and_init_fts_migration_paths(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
 

@@ -24,10 +24,17 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Protocol
 
 from agent.registry import AgentRegistry, AgentSpec
-from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
+from agent.core.contracts import (
+    BrokerTaskEnvelope,
+    BrokerTaskResult,
+    DelegationRequest,
+    TaskEnvelope,
+    TaskResult,
+    is_delegation_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +102,34 @@ class SwarmResult:
     graph: Dict[str, str] = field(default_factory=dict)
 
 
+class AsyncDelegationBackend(Protocol):
+    """Broker veya kuyruk tabanlı dağıtık delegasyon backend kontratı."""
+
+    async def dispatch(self, envelope: BrokerTaskEnvelope) -> BrokerTaskResult:
+        """Görevi dağıtık kuyruğa bırakır ve normalize edilmiş sonucu döndürür."""
+
+
+class InMemoryDelegationBackend:
+    """Test/prototip amaçlı broker uyumlu backend."""
+
+    def __init__(self) -> None:
+        self.dispatched: list[BrokerTaskEnvelope] = []
+
+    async def dispatch(self, envelope: BrokerTaskEnvelope) -> BrokerTaskResult:
+        self.dispatched.append(envelope)
+        return BrokerTaskResult(
+            task_id=envelope.task_id,
+            sender=envelope.receiver,
+            receiver=envelope.sender,
+            status="queued",
+            summary=f"Broker kuyruğuna alındı: {envelope.routing_key}",
+            broker=envelope.broker,
+            exchange=envelope.exchange,
+            routing_key=envelope.routing_key,
+            correlation_id=envelope.correlation_id,
+        )
+
+
 class TaskRouter:
     """
     Görev intent'ine göre uygun ajan rolünü seçer.
@@ -131,6 +166,54 @@ class SwarmOrchestrator:
         self.cfg = cfg
         self.router = TaskRouter()
         self._active_agents: Dict[str, object] = {}  # task_id → agent instance
+        self.delegation_backend: AsyncDelegationBackend | None = None
+
+    def configure_delegation_backend(self, backend: AsyncDelegationBackend | None) -> None:
+        """Broker tabanlı delegasyon backend'ini enjekte eder."""
+        self.delegation_backend = backend
+
+    async def dispatch_distributed(
+        self,
+        task: SwarmTask,
+        *,
+        session_id: str = "",
+        sender: str = "swarm_orchestrator",
+        receiver: str | None = None,
+        exchange: str = "sidar.swarm",
+        broker: str = "memory",
+        reply_queue: str = "",
+    ) -> BrokerTaskResult:
+        """Görevi broker uyumlu zarf ile dış/backplane delegasyonuna hazırlar."""
+        if self.delegation_backend is None:
+            raise RuntimeError("Dağıtık delegasyon backend'i yapılandırılmadı.")
+
+        spec = self.router.route_by_role(receiver) if receiver else (
+            self.router.route_by_role(task.preferred_agent) if task.preferred_agent else self.router.route(task.intent)
+        )
+        if spec is None:
+            raise RuntimeError("Dağıtık delegasyon için uygun ajan bulunamadı.")
+
+        envelope = TaskEnvelope(
+            task_id=task.task_id,
+            sender=sender,
+            receiver=spec.role_name,
+            goal=self._compose_goal_with_context(task.goal, task.context),
+            intent=task.intent,
+            parent_task_id=None,
+            context={
+                **task.context,
+                "session_id": session_id,
+                "distributed_dispatch": "true",
+            },
+        )
+        broker_envelope = BrokerTaskEnvelope.from_task_envelope(
+            envelope,
+            broker=broker,
+            exchange=exchange,
+            reply_queue=reply_queue,
+            headers={"session_id": session_id},
+        )
+        return await self.delegation_backend.dispatch(broker_envelope)
 
     def _loop_repeat_limit(self) -> int:
         """Yerel modellerde daha sıkı, uzak modellerde daha esnek tekrar limiti."""
