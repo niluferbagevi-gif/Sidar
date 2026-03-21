@@ -4,13 +4,28 @@
 
 ---
 
+## [v5.1.1-docs] - 2026-03-21
+Kurumsal raporlar, `main.py` launcher sertleştirmeleri ve %100 coverage baseline'ını koruyan son edge-case test modülü ile yeniden senkronize edildi.
+
+### Eklenenler (Added)
+- **%100 coverage kapanışı:** `tests/test_missing_edge_case_coverage_final.py` eklenerek Redis fallback, `WebSocketDisconnect` kaynaklı async cancel, `tempfile.mkdtemp` hata yolu ile GitHub API 400/503 kenar durumları izole mock testleriyle coverage hard gate içine alındı.
+
+### İyileştirmeler (Improved)
+- **Ultimate Launcher sertleştirmesi:** `main.py` içinde `--port` argümanı için `1-65535` aralık doğrulaması, `validate_runtime_dependencies` kontrolü ve child process stdout/stderr akışını bellek dostu biçimde yazdıran güvenli stream loglama yolu dokümantasyon baseline'ına işlendi.
+- **Audit metriği yenilemesi:** `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` yeniden çalıştırıldı; yeni baseline **250** takipli Python dosyası / **79.462** Python satırı / **369** toplam takipli dosya olarak raporlara yansıtıldı.
+
+### Teknik Borç Kapanışı
+- Son mock tabanlı edge-case kapsamı sayesinde bağımlılık kopmaları, async iptal akışları ve yetkilendirme bypass girişimleri için regresyon boşluğu bırakılmadı; Coverage Agent yol haritası artık bu %100 baseline üzerine kurulacaktır.
+
+---
+
 ## [v5.1.0-docs] - 2026-03-21
 Faz D kurumsal ölçekleme teslimatları ve Faz E otonom iş ekosistemi vizyonu, güncel audit metrikleriyle birlikte üst seviye belgelere işlendi.
 
 ### Eklenenler (Added)
 - **Faz D dokümantasyon senkronizasyonu:** `PROJE_RAPORU.md` içine Plugin Marketplace, Multiplayer Collaboration Workspace, Nightly Memory Maintenance ve chaos engineering olgunluğu mevcut durum özeti olarak eklendi.
 - **Faz E mimari yönü:** `docs/SIDAR_v5_1_MIMARI_RAPORU.md` sonuna Coverage Agent, Poyraz ve YouTube/dış platform video analizi odaklı yeni mimari başlık eklendi.
-- **Audit metriği yenilemesi:** `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` çıktıları yeniden alınarak `AUDIT_REPORT_v5.1.md` ile üst seviye raporlardaki satır/dosya sayıları güncellendi; yeni baseline 240 takipli Python dosyası / 77.978 Python satırı / 359 toplam takipli dosya seviyesine taşındı.
+- **Audit metriği yenilemesi:** `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` çıktıları yeniden alınarak `AUDIT_REPORT_v5.1.md` ile üst seviye raporlardaki satır/dosya sayıları güncellendi; yeni baseline 250 takipli Python dosyası / 79.462 Python satırı / 369 toplam takipli dosya seviyesine taşındı.
 
 ### Teknik Borç Kapanışı
 - `tests/test_system_health_dependency_checks.py`, `tests/test_plugin_marketplace_hot_reload.py` ve `tests/test_nightly_memory_maintenance.py` ile temsil edilen Faz D yüzeyleri coverage anlatısına açıkça dahil edildi.
