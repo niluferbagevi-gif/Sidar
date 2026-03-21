@@ -104,6 +104,42 @@ def test_extract_video_id_supports_watch_short_and_direct_id():
     assert YouTubeManager.extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
 
+def test_extract_video_id_returns_empty_for_blank_and_invalid_inputs():
+    assert YouTubeManager.extract_video_id("") == ""
+    assert YouTubeManager.extract_video_id("https://example.com/watch?v=dQw4w9WgXcQ") == ""
+    assert YouTubeManager.extract_video_id("https://www.youtube.com/watch?v=short") == ""
+
+
+def test_normalize_transcript_events_skips_invalid_pieces_and_empty_text():
+    normalized = YouTubeManager._normalize_transcript_events(
+        [
+            "invalid-item",
+            {"tStartMs": 0, "dDurationMs": 1000, "segs": "not-a-list"},
+            {"tStartMs": 1000, "dDurationMs": 1000, "segs": [{"utf8": "   "}]},
+            {
+                "tStartMs": 2000,
+                "dDurationMs": 1500,
+                "segs": [
+                    {"utf8": "Merhaba &amp;"},
+                    {"utf8": " dünya"},
+                    "ignored-piece",
+                ],
+            },
+        ]
+    )
+
+    assert normalized == {
+        "text": "Merhaba & dünya",
+        "segments": [
+            {
+                "start_seconds": 2.0,
+                "duration_seconds": 1.5,
+                "text": "Merhaba & dünya",
+            }
+        ],
+    }
+
+
 def test_fetch_transcript_returns_normalized_segments():
     client = _FakeClient([
         _Response(200, {
@@ -139,6 +175,18 @@ def test_fetch_transcript_returns_failure_when_no_caption_found():
     assert "bulunamadı" in result["reason"]
 
 
+def test_fetch_transcript_returns_failure_for_invalid_video_id():
+    manager = YouTubeManager(http_client_factory=lambda **_kwargs: _FakeClient([]))
+
+    result = asyncio.run(manager.fetch_transcript("not-a-valid-youtube-id"))
+
+    assert result == {
+        "success": False,
+        "reason": "Geçerli YouTube video id bulunamadı.",
+        "video_id": "",
+    }
+
+
 def test_analyze_video_file_uses_vision_pipeline_for_frames(tmp_path):
     video_path = tmp_path / "sample.mp4"
     video_path.write_bytes(b"video")
@@ -160,6 +208,26 @@ def test_analyze_video_file_uses_vision_pipeline_for_frames(tmp_path):
     assert result["frame_analyses"][0]["analysis"] == "ux_review:frame_001.jpg"
     assert "frames=2" in result["context"]
     assert "cta analizi" in result["context"]
+
+
+def test_analyze_video_file_returns_validation_failures(tmp_path):
+    missing_file = tmp_path / "missing.mp4"
+    manager_without_llm = YouTubeManager(config=SimpleNamespace())
+
+    missing_file_result = asyncio.run(manager_without_llm.analyze_video_file(missing_file))
+    assert missing_file_result == {
+        "success": False,
+        "reason": f"Video dosyası bulunamadı: {missing_file}",
+    }
+
+    existing_file = tmp_path / "sample.mp4"
+    existing_file.write_bytes(b"video")
+
+    missing_llm_result = asyncio.run(manager_without_llm.analyze_video_file(existing_file))
+    assert missing_llm_result == {
+        "success": False,
+        "reason": "Vision analizi için llm_client gerekli.",
+    }
 
 
 def test_build_video_analysis_combines_transcript_and_frame_pipeline(tmp_path):
@@ -186,3 +254,25 @@ def test_build_video_analysis_combines_transcript_and_frame_pipeline(tmp_path):
     assert result["video_id"] == "dQw4w9WgXcQ"
     assert result["transcript"]["text"] == "Selam"
     assert len(result["frame_analyses"]) == 1
+
+
+def test_build_video_analysis_returns_underlying_analysis_failure(tmp_path):
+    manager = YouTubeManager(llm_client=SimpleNamespace(provider="test"), config=SimpleNamespace())
+
+    async def _fake_transcript(*_args, **_kwargs):
+        return {"success": False, "video_id": "dQw4w9WgXcQ", "reason": "transcript disabled"}
+
+    async def _fake_analyze(*_args, **_kwargs):
+        return {"success": False, "reason": "Video dosyası bulunamadı: missing.mp4"}
+
+    manager.fetch_transcript = _fake_transcript
+    manager.analyze_video_file = _fake_analyze
+
+    result = asyncio.run(
+        manager.build_video_analysis(
+            video_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            video_path=tmp_path / "missing.mp4",
+        )
+    )
+
+    assert result == {"success": False, "reason": "Video dosyası bulunamadı: missing.mp4"}
