@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -209,3 +210,75 @@ def test_social_media_manager_request_error_timeout_and_validation_paths():
     assert req_ok is False and "HTTP isteği başarısız" in req_out
     assert missing_media_ok is False and "image_url gerekli" in missing_media_out
     assert missing_to_ok is False and "alıcı numarası gerekli" in missing_to_out
+
+
+def test_is_available_and_build_content_preview_cover_configuration_branches():
+    unavailable = SocialMediaManager()
+    assert unavailable.is_available() is False
+    assert unavailable.is_available("instagram") is False
+    assert unavailable.is_available("facebook") is False
+    assert unavailable.is_available("whatsapp") is False
+
+    partially_available = SocialMediaManager(
+        graph_api_token="token",
+        instagram_business_account_id=" ig-1 ",
+        facebook_page_id=" page-1 ",
+        whatsapp_phone_number_id=" phone-1 ",
+    )
+    assert partially_available.is_available() is True
+    assert partially_available.is_available("instagram") is True
+    assert partially_available.is_available("facebook") is True
+    assert partially_available.is_available("whatsapp") is True
+
+    preview = SocialMediaManager.build_content_preview(
+        " Instagram ",
+        " Yeni içerik ",
+        media_url=" https://img.test/post.jpg ",
+        link_url=" https://example.test ",
+        destination=" +905551112233 ",
+    )
+    assert json.loads(preview) == {
+        "platform": "instagram",
+        "text": "Yeni içerik",
+        "media_url": "https://img.test/post.jpg",
+        "link_url": "https://example.test",
+        "destination": "+905551112233",
+    }
+
+
+def test_missing_credentials_and_missing_instagram_creation_id_paths():
+    no_token_manager = SocialMediaManager(instagram_business_account_id="ig-1")
+    no_token_ok, no_token_out = asyncio.run(
+        no_token_manager.publish_instagram_post(caption="Yeni gönderi", image_url="https://img.test/1.jpg")
+    )
+
+    missing_instagram_id_manager = SocialMediaManager(graph_api_token="token")
+    missing_instagram_ok, missing_instagram_out = asyncio.run(
+        missing_instagram_id_manager.publish_instagram_post(caption="Yeni gönderi", image_url="https://img.test/1.jpg")
+    )
+
+    missing_facebook_id_manager = SocialMediaManager(graph_api_token="token")
+    missing_facebook_ok, missing_facebook_out = asyncio.run(
+        missing_facebook_id_manager.publish_facebook_post(message="Landing yayında")
+    )
+
+    missing_whatsapp_id_manager = SocialMediaManager(graph_api_token="token")
+    missing_whatsapp_ok, missing_whatsapp_out = asyncio.run(
+        missing_whatsapp_id_manager.send_whatsapp_message(to="905551112233", text="Merhaba")
+    )
+
+    client_missing_creation = _FakeClient([_Response(200, {"status": "created-without-id"})])
+    missing_creation_manager = SocialMediaManager(
+        graph_api_token="token",
+        instagram_business_account_id="ig-1",
+        http_client_factory=lambda **_kwargs: client_missing_creation,
+    )
+    missing_creation_ok, missing_creation_out = asyncio.run(
+        missing_creation_manager.publish_instagram_post(caption="Yeni gönderi", image_url="https://img.test/1.jpg")
+    )
+
+    assert no_token_ok is False and no_token_out == "META_GRAPH_API_TOKEN ayarlanmamış"
+    assert missing_instagram_ok is False and "INSTAGRAM_BUSINESS_ACCOUNT_ID ayarlanmamış" in missing_instagram_out
+    assert missing_facebook_ok is False and "FACEBOOK_PAGE_ID ayarlanmamış" in missing_facebook_out
+    assert missing_whatsapp_ok is False and "WHATSAPP_PHONE_NUMBER_ID ayarlanmamış" in missing_whatsapp_out
+    assert missing_creation_ok is False and missing_creation_out == "Instagram media container oluşturulamadı"
