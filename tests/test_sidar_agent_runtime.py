@@ -1214,6 +1214,42 @@ def test_tool_subtask_empty_and_execute_tool_then_final_answer():
     assert calls["n"] == 1
 
 
+def test_tool_subtask_records_llm_and_tool_step_metrics(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=3, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t","tool":"list_dir","argument":"."}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    metrics_calls = []
+
+    class _Collector:
+        def record_step(self, agent, step, target, status, duration_s):
+            metrics_calls.append((agent, step, target, status, duration_s))
+
+    async def _exec(tool, arg):
+        return f"ok:{tool}:{arg}"
+
+    a.llm = _LLM()
+    a._execute_tool = _exec
+
+    metrics_mod = types.ModuleType("core.agent_metrics")
+    metrics_mod.get_agent_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.agent_metrics", metrics_mod)
+
+    out = asyncio.run(a._tool_subtask("metrikli alt görev"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+    assert any(call[1] == "llm_decision" and call[2] == "tm" and call[3] == "success" for call in metrics_calls)
+    assert any(call[1] == "tool_execution" and call[2] == "list_dir" and call[3] == "success" for call in metrics_calls)
+
+
 def test_tool_github_smart_pr_success_branch_returns_created_message():
     a = _make_agent_for_runtime()
 

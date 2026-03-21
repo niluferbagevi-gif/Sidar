@@ -60,3 +60,16 @@ def test_docker_dashboard_includes_semantic_cache_panels():
     assert "rate(sidar_semantic_cache_misses_total[5m])" in exprs
     assert "sidar_semantic_cache_items" in exprs
     assert "sidar_semantic_cache_redis_latency_ms" in exprs
+
+
+def test_dashboards_include_agent_step_observability_panels():
+    root_dashboard = _load_dashboard("grafana/dashboards/sidar_overview.json")
+    docker_dashboard = _load_dashboard("docker/grafana/dashboards/sidar-llm-overview.json")
+
+    for dashboard in (root_dashboard, docker_dashboard):
+        titles = _panel_titles(dashboard)
+        exprs = _panel_exprs(dashboard)
+        assert "Agent Step Latency (p95)" in titles
+        assert "Agent Step Throughput" in titles
+        assert any("sidar_agent_step_duration_seconds_bucket" in expr for expr in exprs)
+        assert any("sidar_agent_step_total" in expr for expr in exprs)
