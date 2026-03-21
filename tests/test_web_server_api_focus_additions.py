@@ -206,6 +206,35 @@ def test_feedback_store_api_caches_instance_and_surfaces_init_errors():
     assert "FeedbackStore başlatılamadı" in str(excinfo.value.detail)
 
 
+def test_feedback_record_api_surfaces_feedback_store_initialization_errors():
+    mod = _load_web_server()
+    mod._feedback_store_instance = None
+
+    class _BrokenFeedbackStore:
+        async def initialize(self):
+            raise RuntimeError("feedback db unavailable")
+
+    feedback_mod = types.ModuleType("core.active_learning")
+    feedback_mod.get_feedback_store = lambda _cfg: _BrokenFeedbackStore()
+
+    with _ApiModulePatch("core.active_learning", feedback_mod):
+        with pytest.raises(_FakeHTTPException) as excinfo:
+            asyncio.run(
+                mod.api_feedback_record(
+                    mod._FeedbackRecordRequest(
+                        user_id="u1",
+                        prompt="Merhaba",
+                        response="Selam",
+                        rating=4,
+                        note="",
+                    )
+                )
+            )
+
+    assert excinfo.value.status_code == 501
+    assert "FeedbackStore başlatılamadı" in str(excinfo.value.detail)
+
+
 def test_slack_jira_and_teams_api_wrappers_cover_success_unavailable_and_backend_errors():
     mod = _load_web_server()
     mod._slack_mgr_instance = None
