@@ -11,13 +11,15 @@ import rehypeHighlight from "rehype-highlight";
 export function ChatMessage({ message, isStreaming = false }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  const authorName = message.author_name || (isUser ? "Ekip Üyesi" : "SİDAR");
 
   return (
     <div className={`message message--${message.role}${isStreaming ? " message--streaming" : ""}`}>
       <div className="message__avatar">
-        {isUser ? "👤" : "🤖"}
+        {message.role === "system" ? "📣" : isUser ? "👤" : "🤖"}
       </div>
       <div className="message__body">
+        <div className="message__author">{authorName}</div>
         {isUser ? (
           <span className="message__text">{message.content}</span>
         ) : (

@@ -34,7 +34,7 @@ export function ChatInput({ onSend, disabled = false }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Mesajınızı yazın… (Enter: gönder, Shift+Enter: satır)"
+        placeholder="@Sidar ile komut verin veya ekip notu bırakın… (Enter: gönder, Shift+Enter: satır)"
         rows={3}
         disabled={isStreaming || disabled}
         aria-label="Mesaj giriş alanı"

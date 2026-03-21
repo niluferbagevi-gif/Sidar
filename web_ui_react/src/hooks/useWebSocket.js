@@ -5,10 +5,40 @@ const WS_URL = () =>
 
 const TOKEN_KEY = "sidar_access_token";
 
-export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, onToolCall, onThought } = {}) {
+export function useWebSocket(
+  _sessionId,
+  {
+    roomId,
+    displayName,
+    onChunk,
+    onDone,
+    onError,
+    onStatus,
+    onToolCall,
+    onThought,
+    onRoomState,
+    onRoomMessage,
+    onPresence,
+    onRoomEvent,
+    onAssistantStart,
+  } = {},
+) {
   const wsRef = useRef(null);
+  const joinedRoomRef = useRef("");
   const [status, setStatus] = useState("disconnected");
   const bufferRef = useRef("");
+
+  const joinRoom = useCallback((targetRoomId, targetDisplayName) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    const nextRoom = String(targetRoomId || "").trim();
+    if (!nextRoom || joinedRoomRef.current === nextRoom) return;
+    wsRef.current.send(JSON.stringify({
+      action: "join_room",
+      room_id: nextRoom,
+      display_name: String(targetDisplayName || "").trim() || "Operatör",
+    }));
+    joinedRoomRef.current = nextRoom;
+  }, []);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -21,14 +51,8 @@ export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, o
     }
 
     setStatus("connecting");
-    // Token'ı Sec-WebSocket-Protocol başlığı üzerinden gönder (JSON payload'dan daha güvenli)
     const ws = new WebSocket(WS_URL(), token ? [token] : undefined);
     wsRef.current = ws;
-
-    ws.onopen = () => {
-      // Başlık tabanlı auth kullanılıyor; onopen'da ek JSON auth mesajı gönderilmez.
-      // Sunucu token'ı HTTP upgrade başlığından okuyarak auth_ok döner.
-    };
 
     ws.onmessage = (event) => {
       const raw = event.data;
@@ -43,6 +67,50 @@ export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, o
         const msg = JSON.parse(raw);
         if (msg.auth_ok) {
           setStatus("connected");
+          joinedRoomRef.current = "";
+          joinRoom(roomId, displayName);
+          return;
+        }
+
+        if (msg.type === "room_state") {
+          joinedRoomRef.current = msg.room_id || joinedRoomRef.current;
+          onRoomState?.(msg);
+          return;
+        }
+        if (msg.type === "presence") {
+          onPresence?.(msg.participants || []);
+          return;
+        }
+        if (msg.type === "room_message" && msg.message) {
+          onRoomMessage?.(msg.message);
+          return;
+        }
+        if (msg.type === "assistant_stream_start") {
+          bufferRef.current = "";
+          onAssistantStart?.(msg.request_id || "");
+          return;
+        }
+        if (msg.type === "assistant_chunk") {
+          const chunk = msg.chunk || "";
+          bufferRef.current += chunk;
+          onChunk?.(chunk, msg.request_id || "");
+          return;
+        }
+        if (msg.type === "assistant_done") {
+          onDone?.(msg.message || null, msg.request_id || "");
+          bufferRef.current = "";
+          return;
+        }
+        if (msg.type === "collaboration_event" && msg.event) {
+          const eventKind = msg.event.kind || "status";
+          onRoomEvent?.(msg.event);
+          if (eventKind === "status") onStatus?.(`${msg.event.source || "room"}: ${msg.event.content || ""}`);
+          if (eventKind === "tool_call") onToolCall?.(msg.event.content || "");
+          if (eventKind === "thought") onThought?.(msg.event.content || "");
+          return;
+        }
+        if (msg.type === "room_error") {
+          onError?.(msg.error || "Ortak çalışma alanı hatası.");
           return;
         }
 
@@ -74,31 +142,47 @@ export function useWebSocket(_sessionId, { onChunk, onDone, onError, onStatus, o
     };
 
     ws.onclose = () => setStatus("disconnected");
-  }, [onChunk, onDone, onError, onStatus, onToolCall, onThought]);
+  }, [
+    displayName,
+    joinRoom,
+    onChunk,
+    onDone,
+    onError,
+    onPresence,
+    onRoomEvent,
+    onRoomMessage,
+    onRoomState,
+    onStatus,
+    onThought,
+    onToolCall,
+    onAssistantStart,
+    roomId,
+  ]);
 
   const disconnect = useCallback(() => {
     wsRef.current?.close();
   }, []);
 
-  const send = useCallback(
-    (message) => {
-      if (wsRef.current?.readyState !== WebSocket.OPEN) {
-        onError?.("Bağlantı kapalı.");
-        return;
-      }
-      bufferRef.current = "";
-      const payload = typeof message === "string"
-        ? { action: "message", message }
-        : message;
-      wsRef.current.send(JSON.stringify(payload));
-    },
-    [onError],
-  );
+  const send = useCallback((message) => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      onError?.("Bağlantı kapalı.");
+      return;
+    }
+    bufferRef.current = "";
+    const payload = typeof message === "string"
+      ? { action: "message", message, room_id: roomId, display_name: displayName }
+      : { room_id: roomId, display_name: displayName, ...message };
+    wsRef.current.send(JSON.stringify(payload));
+  }, [displayName, onError, roomId]);
 
   useEffect(() => {
     connect();
     return () => disconnect();
   }, [connect, disconnect]);
 
-  return { send, status, connect, disconnect };
+  useEffect(() => {
+    joinRoom(roomId, displayName);
+  }, [displayName, joinRoom, roomId]);
+
+  return { send, status, connect, disconnect, joinRoom };
 }

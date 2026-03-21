@@ -324,6 +324,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   gap: 12px;
   font-size: 0.75rem;
   color: var(--text-muted);
+  flex-wrap: wrap;
 }
 
 .status-bar__new-session {
@@ -334,6 +335,56 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   border-radius: 20px;
 }
 .status-bar__new-session:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
+
+.status-bar__room,
+.status-bar__count,
+.status-bar__voice {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+}
+
+.collab-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(180px, 1fr) auto;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+
+.collab-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.collab-bar input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.collab-bar__summary {
+  min-width: 120px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(59,130,246,0.08);
+}
+
+.collab-bar__summary strong {
+  font-size: 1.1rem;
+  color: var(--text);
+}
 
 .chat-window {
   flex: 1;
@@ -374,6 +425,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .message__body { background: var(--surface-2); border-radius: var(--radius); padding: 10px 14px; position: relative; }
 .message--user .message__body { background: var(--user-bubble); }
+.message__author { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; }
 .message__text { white-space: pre-wrap; word-break: break-word; }
 .message__cursor { display: inline-block; animation: blink 1s step-end infinite; color: var(--accent); margin-left: 2px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
@@ -976,16 +1028,13 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   opacity: 0.8;
 }
 
-.status-bar__voice {
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.04);
-}
-
 @media (max-width: 960px) {
   .voice-panel__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .collab-bar {
+    grid-template-columns: 1fr;
   }
 }
 
