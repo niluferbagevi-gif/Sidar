@@ -1,4 +1,4 @@
-"""Ajan delegasyon süresi ve sayaç metrikleri (Prometheus-uyumlu).
+"""Ajan delegasyon/step süresi ve sayaç metrikleri (Prometheus-uyumlu).
 
 Bu modül supervisor._delegate() ve _route_p2p() çağrılarından üretilen
 latency/count verilerini process-içi saklar; /metrics/llm/prometheus
@@ -19,7 +19,7 @@ _BUCKETS: List[float] = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, math.i
 
 
 class _DelegationHistogram:
-    """Tek bir (receiver, intent, status) etiket kombinasyonu için histogram."""
+    """Tek bir etiket kombinasyonu için histogram."""
 
     __slots__ = ("_counts", "_sum", "_total", "_lock")
 
@@ -47,7 +47,7 @@ class _DelegationHistogram:
 
 
 class AgentMetricsCollector:
-    """Thread-safe ajan delegasyon metrik toplayıcısı."""
+    """Thread-safe ajan delegasyon ve step metrik toplayıcısı."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -55,6 +55,10 @@ class AgentMetricsCollector:
         self._histograms: Dict[tuple, _DelegationHistogram] = {}
         # key: (receiver, intent, status) → int
         self._counters: Dict[tuple, int] = {}
+        # key: (agent, step, target, status) → _DelegationHistogram
+        self._step_histograms: Dict[tuple, _DelegationHistogram] = {}
+        # key: (agent, step, target, status) → int
+        self._step_counters: Dict[tuple, int] = {}
 
     def record(self, receiver: str, intent: str, status: str, duration_s: float) -> None:
         """Delegasyon sonucunu kaydet."""
@@ -67,6 +71,17 @@ class AgentMetricsCollector:
             self._counters[key] += 1
         # histogram kendi kilidi var
         self._histograms[key].observe(duration_s)
+
+    def record_step(self, agent: str, step: str, target: str, status: str, duration_s: float) -> None:
+        """Ajan içindeki tekil karar/tool adımını kaydet."""
+        key = (agent, step, target, status)
+        with self._lock:
+            if key not in self._step_histograms:
+                self._step_histograms[key] = _DelegationHistogram()
+            if key not in self._step_counters:
+                self._step_counters[key] = 0
+            self._step_counters[key] += 1
+        self._step_histograms[key].observe(duration_s)
 
     def render_prometheus(self) -> str:
         """Prometheus metin formatında metrik çıktısı üret."""
@@ -98,6 +113,33 @@ class AgentMetricsCollector:
         for (receiver, intent, status), count in counter_items:
             labels = f'receiver="{receiver}",intent="{intent}",status="{status}"'
             lines.append(f"sidar_agent_delegation_total{{{labels}}} {count}")
+
+        # --- sidar_agent_step_duration_seconds (histogram) ---
+        lines.append("# HELP sidar_agent_step_duration_seconds Ajan içi karar/tool adımı süresi (saniye)")
+        lines.append("# TYPE sidar_agent_step_duration_seconds histogram")
+        with self._lock:
+            step_histogram_items = list(self._step_histograms.items())
+
+        for (agent, step, target, status), hist in step_histogram_items:
+            snap = hist.snapshot()
+            labels = f'agent="{agent}",step="{step}",target="{target}",status="{status}"'
+            for i, bound in enumerate(_BUCKETS):
+                le = "+Inf" if math.isinf(bound) else str(bound)
+                lines.append(
+                    f'sidar_agent_step_duration_seconds_bucket{{{labels},le="{le}"}} {snap["counts"][i]}'
+                )
+            lines.append(f"sidar_agent_step_duration_seconds_sum{{{labels}}} {snap['sum']:.6f}")
+            lines.append(f"sidar_agent_step_duration_seconds_count{{{labels}}} {snap['count']}")
+
+        # --- sidar_agent_step_total (counter) ---
+        lines.append("# HELP sidar_agent_step_total Toplam ajan içi step sayısı")
+        lines.append("# TYPE sidar_agent_step_total counter")
+        with self._lock:
+            step_counter_items = list(self._step_counters.items())
+
+        for (agent, step, target, status), count in step_counter_items:
+            labels = f'agent="{agent}",step="{step}",target="{target}",status="{status}"'
+            lines.append(f"sidar_agent_step_total{{{labels}}} {count}")
 
         return "\n".join(lines) + "\n"
 

@@ -1034,12 +1034,22 @@ class SidarAgent:
         if not task:
             return "⚠ Alt görev belirtilmedi."
 
+        try:
+            from core.agent_metrics import get_agent_metrics_collector
+            _metrics = get_agent_metrics_collector()
+        except Exception:
+            _metrics = None
+
         max_steps = int(getattr(self.cfg, "SUBTASK_MAX_STEPS", 5))
         max_steps = max(1, max_steps)
         feedback = task
 
         for _ in range(max_steps):
+            llm_started_at = None
+            tool_started_at = None
+            tool = ""
             try:
+                llm_started_at = time.monotonic()
                 raw = await self.llm.chat(
                     messages=[{"role": "user", "content": feedback}],
                     model=getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL),
@@ -1047,6 +1057,14 @@ class SidarAgent:
                     stream=False,
                     json_mode=True,
                 )
+                if _metrics is not None:
+                    _metrics.record_step(
+                        "sidar_agent",
+                        "llm_decision",
+                        str(getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL) or "unknown"),
+                        "success",
+                        time.monotonic() - llm_started_at,
+                    )
                 if not isinstance(raw, str):
                     feedback = "Lütfen geçerli JSON araç çağrısı üret."
                     continue
@@ -1061,11 +1079,39 @@ class SidarAgent:
                 if tool == "final_answer":
                     return f"✓ Alt Görev Tamamlandı: {action.argument}"
 
+                tool_started_at = time.monotonic()
                 tool_result = await self._execute_tool(tool, action.argument)
+                if _metrics is not None:
+                    _metrics.record_step(
+                        "sidar_agent",
+                        "tool_execution",
+                        tool,
+                        "success",
+                        time.monotonic() - tool_started_at,
+                    )
                 feedback = f"Araç sonucu: {tool_result}"
             except ValidationError:
+                if _metrics is not None:
+                    _metrics.record_step(
+                        "sidar_agent",
+                        "llm_decision",
+                        str(getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL) or "unknown"),
+                        "failed",
+                        max(0.0, time.monotonic() - (llm_started_at or time.monotonic())),
+                    )
                 feedback = "Şema doğrulama hatası: thought/tool/argument alanları zorunlu."
             except Exception as exc:
+                if _metrics is not None:
+                    failed_step = "tool_execution" if tool else "llm_decision"
+                    failed_target = tool or str(getattr(self.cfg, "TEXT_MODEL", self.cfg.CODING_MODEL) or "unknown")
+                    started_at = tool_started_at or llm_started_at or time.monotonic()
+                    _metrics.record_step(
+                        "sidar_agent",
+                        failed_step,
+                        failed_target,
+                        "failed",
+                        max(0.0, time.monotonic() - started_at),
+                    )
                 feedback = f"Araç çağrısı başarısız: {exc}"
 
         return "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
