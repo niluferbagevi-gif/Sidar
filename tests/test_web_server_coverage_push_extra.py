@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_web_server_runtime import _load_web_server
+def _load_web_server_for_extra_tests():
+    from tests.test_web_server_runtime import _load_web_server
+
+    return _load_web_server()
 
 
 class _Socket:
@@ -51,7 +54,7 @@ class _PendingTask:
 
 
 def test_collaboration_helpers_trim_stale_participants_and_switch_rooms(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     mod._collaboration_rooms.clear()
 
     with pytest.raises(mod.HTTPException) as exc:
@@ -116,7 +119,7 @@ def test_collaboration_helpers_trim_stale_participants_and_switch_rooms(monkeypa
 
 
 def test_event_driven_federation_specs_cover_jira_and_system_paths():
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
 
     jira = mod._build_event_driven_federation_spec(
         "jira",
@@ -155,7 +158,7 @@ def test_event_driven_federation_specs_cover_jira_and_system_paths():
 
 
 def test_nightly_memory_loop_disabled_success_and_warning_paths(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     infos = []
     warnings = []
     monkeypatch.setattr(mod.logger, "info", lambda msg, *args: infos.append(msg % args if args else msg))
@@ -216,7 +219,7 @@ def test_nightly_memory_loop_disabled_success_and_warning_paths(monkeypatch):
 
 
 def test_app_lifespan_cancels_autonomy_and_nightly_tasks(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     cancelled = {"prewarm": 0, "cron": 0, "nightly": 0}
 
     async def _prewarm():
@@ -261,7 +264,7 @@ def test_app_lifespan_cancels_autonomy_and_nightly_tasks(monkeypatch):
 
 
 def test_plugin_marketplace_state_and_reload_error_paths(tmp_path, monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     warnings = []
     state_path = tmp_path / ".marketplace_state.json"
     monkeypatch.setattr(mod, "_plugin_marketplace_state_path", lambda: state_path)
@@ -304,7 +307,7 @@ def test_plugin_marketplace_state_and_reload_error_paths(tmp_path, monkeypatch):
 
 
 def test_websocket_chat_collaboration_status_pump_and_empty_mention(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     mod._collaboration_rooms.clear()
     warning_logs = []
     monkeypatch.setattr(mod.logger, "warning", lambda msg, *args: warning_logs.append(msg % args if args else msg))
@@ -383,7 +386,7 @@ def test_websocket_chat_collaboration_status_pump_and_empty_mention(monkeypatch)
 
 
 def test_websocket_chat_room_cancel_and_retrigger_cancel_existing_room_task(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     mod._collaboration_rooms.clear()
 
     class _DB:
@@ -450,7 +453,7 @@ def test_websocket_chat_room_cancel_and_retrigger_cancel_existing_room_task(monk
 
 
 def test_spa_fallback_covers_root_and_asset_like_paths(monkeypatch):
-    mod = _load_web_server()
+    mod = _load_web_server_for_extra_tests()
     monkeypatch.setattr(mod, "index", lambda: asyncio.sleep(0, result=types.SimpleNamespace(content="INDEX", status_code=200)))
 
     root = asyncio.run(mod.spa_fallback(""))
