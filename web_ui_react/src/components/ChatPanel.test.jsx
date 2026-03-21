@@ -1,5 +1,6 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ChatPanel } from "./ChatPanel.jsx";
 
 const store = {
@@ -82,22 +83,26 @@ describe("ChatPanel", () => {
     });
   });
 
-  it("wires room inputs to the chat store and sends messages via the websocket hook", () => {
+  it("wires room inputs to the chat store and sends messages via the websocket hook", async () => {
+    const user = userEvent.setup();
     render(<ChatPanel />);
 
-    fireEvent.change(screen.getByPlaceholderText("workspace:sidar"), { target: { value: "workspace:demo" } });
-    fireEvent.change(screen.getByPlaceholderText("Operatör"), { target: { value: "Demo Kullanıcı" } });
-    fireEvent.click(screen.getByRole("button", { name: "Test Send" }));
+    await user.clear(screen.getByPlaceholderText("workspace:sidar"));
+    await user.type(screen.getByPlaceholderText("workspace:sidar"), "workspace:demo");
+    await user.clear(screen.getByPlaceholderText("Operatör"));
+    await user.type(screen.getByPlaceholderText("Operatör"), "Demo Kullanıcı");
+    await user.click(screen.getByRole("button", { name: "Test Send" }));
 
-    expect(store.setRoomId).toHaveBeenCalledWith("workspace:demo");
-    expect(store.setDisplayName).toHaveBeenCalledWith("Demo Kullanıcı");
+    expect(store.setRoomId).toHaveBeenLastCalledWith("workspace:demo");
+    expect(store.setDisplayName).toHaveBeenLastCalledWith("Demo Kullanıcı");
     expect(send).toHaveBeenCalledWith("Merhaba SİDAR");
   });
 
-  it("stops the voice assistant before starting a fresh session", () => {
+  it("stops the voice assistant before starting a fresh session", async () => {
+    const user = userEvent.setup();
     render(<ChatPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Yeni Oturum" }));
+    await user.click(screen.getByRole("button", { name: "Yeni Oturum" }));
 
     expect(stop).toHaveBeenCalledTimes(1);
     expect(store.newSession).toHaveBeenCalledTimes(1);
