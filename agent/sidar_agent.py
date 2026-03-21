@@ -351,6 +351,10 @@ class SidarAgent:
         if not operations:
             result["summary"] = "Self-heal planı patch operasyonu içermediği için atlandı."
             return result
+        if not validation_commands:
+            result["status"] = "blocked"
+            result["summary"] = "Self-heal planı güvenli doğrulama komutu içermediği için engellendi."
+            return result
 
         backups: Dict[str, str] = {}
         applied: List[str] = []
@@ -403,9 +407,13 @@ class SidarAgent:
     ) -> Dict[str, Any]:
         remediation_loop = dict(remediation.get("remediation_loop") or {})
         if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
-            return {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
+            execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
+            remediation["self_heal_execution"] = execution
+            return execution
         if str(remediation_loop.get("status", "")).strip() != "planned":
-            return {"status": "skipped", "summary": "Remediation loop plan durumunda değil."}
+            execution = {"status": "skipped", "summary": "Remediation loop plan durumunda değil."}
+            remediation["self_heal_execution"] = execution
+            return execution
         if bool(remediation_loop.get("needs_human_approval")):
             self._update_remediation_step(
                 remediation_loop,
@@ -413,10 +421,14 @@ class SidarAgent:
                 status="awaiting_hitl",
                 detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
             )
+            execution = {"status": "awaiting_hitl", "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı."}
             remediation["remediation_loop"] = remediation_loop
-            return {"status": "awaiting_hitl", "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı."}
+            remediation["self_heal_execution"] = execution
+            return execution
         if not hasattr(self, "code") or not hasattr(self, "llm"):
-            return {"status": "blocked", "summary": "Self-heal için code/llm bağımlılıkları hazır değil."}
+            execution = {"status": "blocked", "summary": "Self-heal için code/llm bağımlılıkları hazır değil."}
+            remediation["self_heal_execution"] = execution
+            return execution
 
         plan = await self._build_self_heal_plan(
             ci_context=ci_context,
@@ -425,6 +437,7 @@ class SidarAgent:
         )
         remediation["self_heal_plan"] = plan
         if not list(plan.get("operations") or []):
+            execution = {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
             self._update_remediation_step(
                 remediation_loop,
                 "patch",
@@ -432,7 +445,8 @@ class SidarAgent:
                 detail="LLM güvenli patch planı üretemedi.",
             )
             remediation["remediation_loop"] = remediation_loop
-            return {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
+            remediation["self_heal_execution"] = execution
+            return execution
 
         self._update_remediation_step(
             remediation_loop,
@@ -612,11 +626,17 @@ class SidarAgent:
             elif ci_context:
                 remediation = build_ci_remediation_payload(ci_context, summary)
                 if status == "success":
-                    await self._attempt_autonomous_self_heal(
-                        ci_context=ci_context,
-                        diagnosis=summary,
-                        remediation=remediation,
-                    )
+                    try:
+                        await self._attempt_autonomous_self_heal(
+                            ci_context=ci_context,
+                            diagnosis=summary,
+                            remediation=remediation,
+                        )
+                    except Exception as exc:
+                        remediation["self_heal_execution"] = {
+                            "status": "failed",
+                            "summary": f"Autonomous self-heal hata verdi: {exc}",
+                        }
         except Exception as exc:
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"

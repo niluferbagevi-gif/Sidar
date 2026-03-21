@@ -6,8 +6,9 @@ teşhis/remediation prompt'u üretir ve PR taslağı oluşturur.
 
 from __future__ import annotations
 
-import re
 import json
+import re
+import shlex
 from typing import Any, Dict, Optional
 
 
@@ -18,6 +19,40 @@ _ROOT_CAUSE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+
+
+
+def _is_allowed_validation_command(command: str) -> bool:
+    normalized = str(command or "").strip().strip("`")
+    if not normalized:
+        return False
+    if any(token in normalized for token in ("&&", "||", ";", "|", ">", "<", "$", "\n", "\r")):
+        return False
+    try:
+        parts = shlex.split(normalized)
+    except ValueError:
+        return False
+    if not parts:
+        return False
+
+    def _is_allowed_pytest_arg(token: str) -> bool:
+        return (
+            token == "."
+            or token.startswith("-")
+            or token.startswith("tests/")
+            or token.startswith("test/")
+            or token.startswith("./")
+            or token.endswith(".py")
+            or "/" in token
+        )
+
+    if parts[0] == "pytest":
+        return all(_is_allowed_pytest_arg(token) for token in parts[1:])
+    if parts[:3] == ["python", "-m", "pytest"]:
+        return all(_is_allowed_pytest_arg(token) for token in parts[3:])
+    if parts[:2] == ["bash", "run_tests.sh"]:
+        return all(re.fullmatch(r"[\w./-]+", token) for token in parts[2:])
+    return False
 
 def _trim_text(value: Any, limit: int = 1200) -> str:
     text = str(value or "").strip()
@@ -365,12 +400,7 @@ def normalize_self_heal_plan(
     validation_commands: list[str] = []
     for command in list(payload.get("validation_commands") or []) + list(fallback_validation_commands or []):
         normalized = str(command or "").strip().strip("`")
-        if not normalized:
-            continue
-        if not re.match(
-            r"^(pytest(?:\s+(?:-|tests?/|\.))?|python -m pytest(?:\s+(?:-|tests?/|\.))?|bash run_tests\.sh(?:\s|$))",
-            normalized,
-        ):
+        if not _is_allowed_validation_command(normalized):
             continue
         if normalized not in validation_commands:
             validation_commands.append(normalized)
@@ -449,10 +479,7 @@ def _extract_validation_commands(context: Dict[str, Any], diagnosis: str) -> lis
             normalized = line.strip().strip("`")
             if not normalized:
                 continue
-            if re.match(
-                r"^(pytest(?:\s+(?:-|tests?/|\.))|python -m pytest(?:\s+(?:-|tests?/|\.))|bash run_tests\.sh(?:\s|$))",
-                normalized,
-            ) and normalized not in commands:
+            if _is_allowed_validation_command(normalized) and normalized not in commands:
                 commands.append(normalized)
     suspected_targets = list(context.get("suspected_targets") or [])
     targeted_tests = [path for path in suspected_targets if str(path).startswith("tests/")]

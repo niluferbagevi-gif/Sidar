@@ -240,3 +240,22 @@ def test_self_heal_prompt_and_normalize_plan_filter_scope():
         {"action": "patch", "path": "app.py", "target": "VALUE = 1", "replacement": "VALUE = 2"}
     ]
     assert plan["validation_commands"] == ["pytest -q tests/test_app.py", "python -m pytest"]
+
+
+def test_normalize_self_heal_plan_rejects_shell_chaining_in_validation_commands():
+    plan = normalize_self_heal_plan(
+        {
+            "operations": [
+                {"action": "patch", "path": "app.py", "target": "VALUE = 1", "replacement": "VALUE = 2"}
+            ],
+            "validation_commands": [
+                "pytest -q tests/test_app.py && echo hacked",
+                "python -m pytest; rm -rf /",
+                "bash run_tests.sh smoke",
+            ],
+        },
+        scope_paths=["app.py"],
+        fallback_validation_commands=[],
+    )
+
+    assert plan["validation_commands"] == ["bash run_tests.sh smoke"]
