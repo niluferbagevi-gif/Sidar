@@ -1010,3 +1010,51 @@ def test_browser_manager_select_option_hitl_records_timeout_after_approval(monke
     assert failed["status"] == "execution_failed"
     assert failed["details"]["error"] == "select timeout"
     assert failed["details"]["reason"] == "Öncelik güncelle"
+
+def test_browser_manager_start_selenium_session_adds_firefox_headless_argument(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+    created = {}
+
+    class _FirefoxOptions:
+        def __init__(self):
+            self.arguments = []
+
+        def add_argument(self, value):
+            self.arguments.append(value)
+
+    class _Driver:
+        def set_page_load_timeout(self, value):
+            created["timeout"] = value
+
+    def _firefox(*, options):
+        created["options"] = options
+        return _Driver()
+
+    webdriver_mod = SimpleNamespace(FirefoxOptions=_FirefoxOptions, Firefox=_firefox)
+    selenium_mod = SimpleNamespace(webdriver=webdriver_mod)
+    monkeypatch.setitem(sys.modules, "selenium", selenium_mod)
+
+    session = manager._start_selenium_session("firefox", headless=True)
+
+    assert session.provider == "selenium"
+    assert created["options"].arguments == ["-headless"]
+    assert created["timeout"] == 5
+
+
+def test_browser_manager_is_available_returns_true_when_playwright_import_succeeds(monkeypatch):
+    cfg = _Config()
+    cfg.BROWSER_PROVIDER = "playwright"
+    manager = BM_MOD.BrowserManager(cfg)
+    real_import = __import__
+    attempted = []
+
+    def _playwright_only(name, globals=None, locals=None, fromlist=(), level=0):
+        attempted.append(name)
+        if name == "playwright.sync_api":
+            return SimpleNamespace()
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", _playwright_only)
+
+    assert manager.is_available() is True
+    assert attempted == ["playwright.sync_api"]
