@@ -1,8 +1,8 @@
-# 3.18 `web_ui/` — Web Arayüzü (Toplam ~4.160 satır)
+# 3.18 `web_ui/` — Web Arayüzü (Toplam ~4.715 satır)
 
 ## Rapor İçeriği (Taşınan Bölüm)
 
-> Not (Doğrulama): Güncel depoda `wc -l` ölçümü: `index.html=572`, `style.css=1684`, `app.js=670`, `chat.js=695`, `rag.js=131`, `sidebar.js=408` (**toplam 4.160**).
+> Not (Doğrulama): Güncel depoda `wc -l` ölçümü: `index.html=664`, `style.css=1806`, `app.js=827`, `chat.js=875`, `rag.js=131`, `sidebar.js=412` (**toplam 4.715**).
 
 **Mimari Yapı (Modüler Vanilla JS SPA):**
 - Monolitik tek-dosya yaklaşımı yerine sorumluluklar `app.js`, `chat.js`, `sidebar.js`, `rag.js` modüllerine ayrılmıştır.
@@ -12,13 +12,13 @@
 
 | Dosya | Satır | Sorumluluk |
 |-------|------:|-----------|
-| `index.html` | 572 | HTML iskeleti, auth overlay, modal/board container'lar, script yükleme noktaları |
-| `style.css` | 1.684 | Tema (dark/light), layout sistemi, bileşen stilleri |
-| `chat.js` | 695 | WebSocket chat akışı, event render, markdown + kod çıktısı işleme |
-| `sidebar.js` | 408 | Oturum listesi, filtreleme, başlık düzenleme/silme |
+| `index.html` | 664 | HTML iskeleti, auth overlay, modal/board container'lar, script yükleme noktaları |
+| `style.css` | 1.806 | Tema (dark/light), layout sistemi, bileşen stilleri |
+| `chat.js` | 875 | WebSocket chat akışı, event render, markdown + kod çıktısı işleme |
+| `sidebar.js` | 412 | Oturum listesi, filtreleme, başlık düzenleme/silme |
 | `rag.js` | 131 | RAG belge ekleme/listeleme/arama/silme UI |
-| `app.js` | 670 | Auth flow, global state, tema/yardımcı kontroller, uygulama orkestrasyonu |
-| **Toplam** | **4.160** | Modüler ve ayrışmış web istemcisi |
+| `app.js` | 827 | Auth flow, global state, tema/yardımcı kontroller, uygulama orkestrasyonu |
+| **Toplam** | **4.715** | Modüler ve ayrışmış web istemcisi |
 
 **Kimlik Doğrulama ve Oturum Koruması:**
 - `AUTH_TOKEN_KEY` / `AUTH_USER_KEY` ile token + kullanıcı bağlamı istemci tarafında yönetilir.
