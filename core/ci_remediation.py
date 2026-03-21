@@ -7,6 +7,7 @@ teşhis/remediation prompt'u üretir ve PR taslağı oluşturur.
 from __future__ import annotations
 
 import re
+import json
 from typing import Any, Dict, Optional
 
 
@@ -271,6 +272,115 @@ def build_ci_failure_prompt(context: Dict[str, Any]) -> str:
         f"suspected_targets={suspected_targets}\n"
         f"diagnostic_hints={diagnostic_hints}\n"
     )
+
+
+def build_self_heal_patch_prompt(
+    context: Dict[str, Any],
+    diagnosis: str,
+    remediation_loop: Dict[str, Any],
+    file_snapshots: list[Dict[str, str]],
+) -> str:
+    """Self-healing için düşük riskli JSON patch planı prompt'u üretir."""
+    info = dict(context or {})
+    loop = dict(remediation_loop or {})
+    scope_paths = [str(item).strip() for item in list(loop.get("scope_paths") or []) if str(item).strip()]
+    validation_commands = [str(item).strip() for item in list(loop.get("validation_commands") or []) if str(item).strip()]
+    snapshot_lines: list[str] = []
+    for item in file_snapshots[:6]:
+        path = str(item.get("path") or "").strip()
+        content = _trim_text(item.get("content") or "", 4000)
+        if not path or not content:
+            continue
+        snapshot_lines.append(f"[FILE] {path}\n{content}")
+
+    return (
+        "[SELF_HEAL_PLAN]\n"
+        "Sadece düşük riskli, minimal ve geri alınabilir patch planı üret.\n"
+        "Yanıtın yalnızca geçerli JSON olsun. Markdown kullanma.\n"
+        "Sadece şu şemayı kullan:\n"
+        '{"summary":"...","confidence":"low|medium|high","operations":[{"action":"patch","path":"...","target":"...","replacement":"..."}],"validation_commands":["pytest -q ..."]}\n'
+        "Kurallar:\n"
+        f"- Yalnızca şu kapsam içindeki dosyaları değiştir: {', '.join(scope_paths) or '-'}\n"
+        "- Sadece `patch` aksiyonu üret; dosyayı tamamen yeniden yazma.\n"
+        "- `target` mevcut dosyada birebir bulunmalı; minimal diff üret.\n"
+        "- Patch öncesi/sonrası deterministik olmalı.\n"
+        "- Validation komutları güvenli sandbox içinde çalışacak; pytest/python -m pytest/bash run_tests.sh dışına çıkma.\n\n"
+        f"repo={info.get('repo', '')}\n"
+        f"workflow_name={info.get('workflow_name', '')}\n"
+        f"failure_summary={info.get('failure_summary', '')}\n"
+        f"root_cause_hint={info.get('root_cause_hint', '')}\n"
+        f"diagnosis={_trim_text(diagnosis, 5000)}\n"
+        f"validation_commands={', '.join(validation_commands) or '-'}\n\n"
+        + "\n\n".join(snapshot_lines)
+    )
+
+
+def normalize_self_heal_plan(
+    raw_plan: Any,
+    *,
+    scope_paths: list[str],
+    fallback_validation_commands: list[str],
+    max_operations: int = 3,
+) -> Dict[str, Any]:
+    """LLM çıktısını güvenli, kapsam kısıtlı self-heal planına dönüştürür."""
+    if isinstance(raw_plan, str):
+        text = raw_plan.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = {}
+    elif isinstance(raw_plan, dict):
+        payload = dict(raw_plan)
+    else:
+        payload = {}
+
+    allowed_paths = {str(path).strip().lstrip('./') for path in scope_paths if str(path).strip()}
+    operations = []
+    for item in list(payload.get("operations") or [])[:max_operations]:
+        if not isinstance(item, dict):
+            continue
+        action = str(item.get("action") or "").strip().lower()
+        path = str(item.get("path") or "").strip().lstrip('./')
+        target = str(item.get("target") or "")
+        replacement = str(item.get("replacement") or "")
+        if action != "patch" or not path or not target or path.startswith("/") or ".." in path:
+            continue
+        if allowed_paths and path not in allowed_paths:
+            continue
+        operations.append({
+            "action": "patch",
+            "path": path,
+            "target": target,
+            "replacement": replacement,
+        })
+
+    validation_commands: list[str] = []
+    for command in list(payload.get("validation_commands") or []) + list(fallback_validation_commands or []):
+        normalized = str(command or "").strip().strip("`")
+        if not normalized:
+            continue
+        if not re.match(
+            r"^(pytest(?:\s+(?:-|tests?/|\.))?|python -m pytest(?:\s+(?:-|tests?/|\.))?|bash run_tests\.sh(?:\s|$))",
+            normalized,
+        ):
+            continue
+        if normalized not in validation_commands:
+            validation_commands.append(normalized)
+
+    return {
+        "summary": str(payload.get("summary") or "").strip() or "LLM self-heal planı normalize edildi.",
+        "confidence": str(payload.get("confidence") or "unknown").strip().lower(),
+        "operations": operations,
+        "validation_commands": validation_commands[:5],
+    }
 
 
 def build_root_cause_summary(context: Dict[str, Any], diagnosis: str) -> str:
