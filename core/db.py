@@ -130,6 +130,33 @@ class OperationChecklistRecord:
     updated_at: str
 
 
+@dataclass
+class CoverageTaskRecord:
+    id: int
+    tenant_id: str
+    requester_role: str
+    command: str
+    pytest_output: str
+    status: str
+    target_path: str
+    suggested_test_path: str
+    review_payload_json: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class CoverageFindingRecord:
+    id: int
+    task_id: int
+    finding_type: str
+    target_path: str
+    summary: str
+    severity: str
+    details_json: str
+    created_at: str
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -545,6 +572,36 @@ class Database:
         );
         CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant
             ON operation_checklists(campaign_id, tenant_id, status);
+
+        CREATE TABLE IF NOT EXISTS coverage_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id TEXT NOT NULL DEFAULT 'default',
+            requester_role TEXT NOT NULL DEFAULT 'coverage',
+            command TEXT NOT NULL,
+            pytest_output TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending_review',
+            target_path TEXT NOT NULL DEFAULT '',
+            suggested_test_path TEXT NOT NULL DEFAULT '',
+            review_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status
+            ON coverage_tasks(tenant_id, status, updated_at);
+
+        CREATE TABLE IF NOT EXISTS coverage_findings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            finding_type TEXT NOT NULL,
+            target_path TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'medium',
+            details_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(task_id) REFERENCES coverage_tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_coverage_findings_task
+            ON coverage_findings(task_id, finding_type, severity);
         """
 
         def _run() -> None:
@@ -704,6 +761,35 @@ class Database:
             );
             """,
             "CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant ON operation_checklists(campaign_id, tenant_id, status);",
+            """
+            CREATE TABLE IF NOT EXISTS coverage_tasks (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
+                requester_role TEXT NOT NULL DEFAULT 'coverage',
+                command TEXT NOT NULL,
+                pytest_output TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending_review',
+                target_path TEXT NOT NULL DEFAULT '',
+                suggested_test_path TEXT NOT NULL DEFAULT '',
+                review_payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status ON coverage_tasks(tenant_id, status, updated_at);",
+            """
+            CREATE TABLE IF NOT EXISTS coverage_findings (
+                id BIGSERIAL PRIMARY KEY,
+                task_id BIGINT NOT NULL REFERENCES coverage_tasks(id) ON DELETE CASCADE,
+                finding_type TEXT NOT NULL,
+                target_path TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'medium',
+                details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL
+            );
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_coverage_findings_task ON coverage_findings(task_id, finding_type, severity);",
         ]
         async with self._pg_pool.acquire() as conn:
             for q in queries:
@@ -2209,6 +2295,269 @@ class Database:
                 items_json=str(row["items_json"]),
                 status=str(row["status"]),
                 owner_user_id=str(row["owner_user_id"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+            for row in rows
+        ]
+
+    async def create_coverage_task(
+        self,
+        *,
+        tenant_id: str = "default",
+        requester_role: str = "coverage",
+        command: str,
+        pytest_output: str,
+        status: str = "pending_review",
+        target_path: str = "",
+        suggested_test_path: str = "",
+        review_payload_json: str = "{}",
+    ) -> CoverageTaskRecord:
+        tenant = (tenant_id or "default").strip() or "default"
+        now = _utc_now_iso()
+        if not str(command or "").strip():
+            raise ValueError("command is required")
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO coverage_tasks (
+                        tenant_id, requester_role, command, pytest_output, status,
+                        target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
+                    RETURNING id, tenant_id, requester_role, command, pytest_output, status,
+                              target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                    """,
+                    tenant,
+                    str(requester_role or "coverage"),
+                    str(command),
+                    str(pytest_output or ""),
+                    str(status or "pending_review"),
+                    str(target_path or ""),
+                    str(suggested_test_path or ""),
+                    str(review_payload_json or "{}"),
+                    now,
+                )
+            return CoverageTaskRecord(
+                id=int(row["id"]),
+                tenant_id=str(row["tenant_id"]),
+                requester_role=str(row["requester_role"]),
+                command=str(row["command"]),
+                pytest_output=str(row["pytest_output"]),
+                status=str(row["status"]),
+                target_path=str(row["target_path"]),
+                suggested_test_path=str(row["suggested_test_path"]),
+                review_payload_json=str(row["review_payload_json"]),
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> sqlite3.Row:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                """
+                INSERT INTO coverage_tasks (
+                    tenant_id, requester_role, command, pytest_output, status,
+                    target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tenant,
+                    str(requester_role or "coverage"),
+                    str(command),
+                    str(pytest_output or ""),
+                    str(status or "pending_review"),
+                    str(target_path or ""),
+                    str(suggested_test_path or ""),
+                    str(review_payload_json or "{}"),
+                    now,
+                    now,
+                ),
+            )
+            row = self._sqlite_conn.execute(
+                """
+                SELECT id, tenant_id, requester_role, command, pytest_output, status,
+                       target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                FROM coverage_tasks WHERE id=?
+                """,
+                (int(cur.lastrowid),),
+            ).fetchone()
+            self._sqlite_conn.commit()
+            assert row is not None
+            return row
+
+        row = await self._run_sqlite_op(_run)
+        return CoverageTaskRecord(
+            id=int(row["id"]),
+            tenant_id=str(row["tenant_id"]),
+            requester_role=str(row["requester_role"]),
+            command=str(row["command"]),
+            pytest_output=str(row["pytest_output"]),
+            status=str(row["status"]),
+            target_path=str(row["target_path"]),
+            suggested_test_path=str(row["suggested_test_path"]),
+            review_payload_json=str(row["review_payload_json"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    async def add_coverage_finding(
+        self,
+        *,
+        task_id: int,
+        finding_type: str,
+        target_path: str,
+        summary: str,
+        severity: str = "medium",
+        details: Optional[dict[str, Any]] = None,
+    ) -> CoverageFindingRecord:
+        now = _utc_now_iso()
+        if not str(finding_type or "").strip() or not str(summary or "").strip():
+            raise ValueError("finding_type and summary are required")
+        details_json = _json_dumps(details or {})
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            async with self._pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+                    RETURNING id, task_id, finding_type, target_path, summary, severity, details_json, created_at
+                    """,
+                    int(task_id),
+                    str(finding_type),
+                    str(target_path or ""),
+                    str(summary),
+                    str(severity or "medium"),
+                    details_json,
+                    now,
+                )
+            return CoverageFindingRecord(
+                id=int(row["id"]),
+                task_id=int(row["task_id"]),
+                finding_type=str(row["finding_type"]),
+                target_path=str(row["target_path"]),
+                summary=str(row["summary"]),
+                severity=str(row["severity"]),
+                details_json=str(row["details_json"]),
+                created_at=str(row["created_at"]),
+            )
+
+        assert self._sqlite_conn is not None
+
+        def _run() -> sqlite3.Row:
+            assert self._sqlite_conn is not None
+            cur = self._sqlite_conn.execute(
+                """
+                INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(task_id),
+                    str(finding_type),
+                    str(target_path or ""),
+                    str(summary),
+                    str(severity or "medium"),
+                    details_json,
+                    now,
+                ),
+            )
+            row = self._sqlite_conn.execute(
+                """
+                SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
+                FROM coverage_findings WHERE id=?
+                """,
+                (int(cur.lastrowid),),
+            ).fetchone()
+            self._sqlite_conn.commit()
+            assert row is not None
+            return row
+
+        row = await self._run_sqlite_op(_run)
+        return CoverageFindingRecord(
+            id=int(row["id"]),
+            task_id=int(row["task_id"]),
+            finding_type=str(row["finding_type"]),
+            target_path=str(row["target_path"]),
+            summary=str(row["summary"]),
+            severity=str(row["severity"]),
+            details_json=str(row["details_json"]),
+            created_at=str(row["created_at"]),
+        )
+
+    async def list_coverage_tasks(
+        self,
+        *,
+        tenant_id: str = "default",
+        status: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[CoverageTaskRecord]:
+        tenant = (tenant_id or "default").strip() or "default"
+        normalized_status = (status or "").strip() or None
+        max_items = max(1, min(int(limit or 100), 500))
+        if self._backend == "postgresql":
+            assert self._pg_pool is not None
+            query = (
+                "SELECT id, tenant_id, requester_role, command, pytest_output, status, "
+                "target_path, suggested_test_path, review_payload_json, created_at, updated_at "
+                "FROM coverage_tasks WHERE tenant_id=$1"
+            )
+            args: list[Any] = [tenant]
+            if normalized_status:
+                query += " AND status=$2"
+                args.append(normalized_status)
+            query += f" ORDER BY updated_at DESC LIMIT ${len(args) + 1}"
+            args.append(max_items)
+            async with self._pg_pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            assert self._sqlite_conn is not None
+
+            def _run() -> list[sqlite3.Row]:
+                assert self._sqlite_conn is not None
+                if normalized_status:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, tenant_id, requester_role, command, pytest_output, status,
+                               target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                        FROM coverage_tasks
+                        WHERE tenant_id=? AND status=?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, normalized_status, max_items),
+                    )
+                else:
+                    cur = self._sqlite_conn.execute(
+                        """
+                        SELECT id, tenant_id, requester_role, command, pytest_output, status,
+                               target_path, suggested_test_path, review_payload_json, created_at, updated_at
+                        FROM coverage_tasks
+                        WHERE tenant_id=?
+                        ORDER BY updated_at DESC
+                        LIMIT ?
+                        """,
+                        (tenant, max_items),
+                    )
+                return cur.fetchall()
+
+            rows = await self._run_sqlite_op(_run)
+        return [
+            CoverageTaskRecord(
+                id=int(row["id"]),
+                tenant_id=str(row["tenant_id"]),
+                requester_role=str(row["requester_role"]),
+                command=str(row["command"]),
+                pytest_output=str(row["pytest_output"]),
+                status=str(row["status"]),
+                target_path=str(row["target_path"]),
+                suggested_test_path=str(row["suggested_test_path"]),
+                review_payload_json=str(row["review_payload_json"]),
                 created_at=str(row["created_at"]),
                 updated_at=str(row["updated_at"]),
             )
