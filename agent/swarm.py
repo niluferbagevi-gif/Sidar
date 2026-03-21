@@ -52,6 +52,9 @@ _INTENT_CAPABILITY_MAP: Dict[str, str] = {
     "seo_analysis":    "seo_analysis",
     "campaign_copy":   "campaign_copy",
     "audience_ops":    "audience_ops",
+    "coverage_analysis": "coverage_analysis",
+    "test_generation":  "test_generation",
+    "ci_remediation":   "ci_remediation",
     # Üst düzey intent'ler → spesifik yetenek
     "code":             "code_generation",
     "research":         "web_search",
@@ -60,6 +63,9 @@ _INTENT_CAPABILITY_MAP: Dict[str, str] = {
     "marketing":        "marketing_strategy",
     "seo":              "seo_analysis",
     "campaign":         "campaign_copy",
+    "coverage":         "coverage_analysis",
+    "qa":               "coverage_analysis",
+    "tests":            "test_generation",
     "mixed":            "code_generation",  # varsayılan
 }
 

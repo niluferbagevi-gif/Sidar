@@ -25,6 +25,7 @@ def _load_supervisor_module():
             "agent.roles.researcher_agent",
             "agent.roles.reviewer_agent",
             "agent.roles.poyraz_agent",
+            "agent.roles.qa_agent",
             "config",
             "core",
             "core.llm_client",
@@ -83,6 +84,7 @@ def _load_supervisor_module():
         ("agent.roles.researcher_agent", "ResearcherAgent"),
         ("agent.roles.reviewer_agent", "ReviewerAgent"),
         ("agent.roles.poyraz_agent", "PoyrazAgent"),
+        ("agent.roles.qa_agent", "QAAgent"),
     ):
         role_mod = types.ModuleType(module_name)
         role_mod.__dict__[class_name] = type(class_name, (_RoleAgent,), {})
@@ -137,6 +139,7 @@ def test_supervisor_init_falls_back_when_base_and_role_agents_are_object_stubs(m
     monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
     monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
     monkeypatch.setattr(supervisor_mod, "PoyrazAgent", object)
+    monkeypatch.setattr(supervisor_mod, "QAAgent", object)
 
     cfg = object()
     s = SupervisorAgent(cfg=cfg)
@@ -149,6 +152,7 @@ def test_supervisor_init_falls_back_when_base_and_role_agents_are_object_stubs(m
     assert s.coder is None
     assert s.reviewer is None
     assert s.poyraz is None
+    assert s.qa is None
 
 
 def test_supervisor_routes_research_to_researcher(monkeypatch):
@@ -179,6 +183,22 @@ def test_supervisor_routes_review_intent_to_reviewer(monkeypatch):
 
 def test_supervisor_intent_classifies_marketing_keywords():
     assert SupervisorAgent._intent("SEO ve kampanya metni hazırla") == "marketing"
+
+
+def test_supervisor_intent_classifies_coverage_keywords():
+    assert SupervisorAgent._intent("Coverage açığını kapatmak için eksik test yaz") == "coverage"
+
+
+def test_supervisor_routes_coverage_intent_to_qa(monkeypatch):
+    s = SupervisorAgent()
+
+    async def fake_qa_run_task(prompt: str) -> str:
+        return f"QA:{prompt}"
+
+    monkeypatch.setattr(s.qa, "run_task", fake_qa_run_task)
+
+    out = asyncio.run(s.run_task("Coverage açığını kapatmak için test yaz"))
+    assert out.startswith("QA:")
 
 
 def test_supervisor_routes_marketing_intent_to_poyraz(monkeypatch):
@@ -402,6 +422,7 @@ def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch
     monkeypatch.setattr(supervisor_mod, "CoderAgent", object)
     monkeypatch.setattr(supervisor_mod, "ReviewerAgent", object)
     monkeypatch.setattr(supervisor_mod, "PoyrazAgent", object)
+    monkeypatch.setattr(supervisor_mod, "QAAgent", object)
 
     cfg = object()
     s = SupervisorAgent(cfg=cfg)
@@ -414,6 +435,7 @@ def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch
     assert s.coder is None
     assert s.reviewer is None
     assert s.poyraz is None
+    assert s.qa is None
 
 
 def test_supervisor_null_span_methods_are_safe():
