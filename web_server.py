@@ -1888,7 +1888,7 @@ async def websocket_voice(websocket: WebSocket):
         language: str | None,
         prompt: str,
     ) -> None:
-        if not audio_bytes:
+        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
             await websocket.send_json({"error": "İşlenecek ses verisi bulunamadı.", "done": True})
             return
 
