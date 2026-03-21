@@ -44,6 +44,10 @@ _INTENT_CAPABILITY_MAP: Dict[str, str] = {
     "summarization":    "summarization",
     "security_audit":   "security_audit",
     "quality_check":    "quality_check",
+    "aws_management":   "aws_management",
+    "cloud_ops":        "aws_management",
+    "slack_notification": "slack_notification",
+    "notifications":    "slack_notification",
     # Üst düzey intent'ler → spesifik yetenek
     "code":             "code_generation",
     "research":         "web_search",

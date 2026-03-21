@@ -6,6 +6,7 @@ import { SwarmFlowPanel } from "./components/SwarmFlowPanel.jsx";
 import { TenantAdminPanel } from "./components/TenantAdminPanel.jsx";
 import { PromptAdminPanel } from "./components/PromptAdminPanel.jsx";
 import { AgentManagerPanel } from "./components/AgentManagerPanel.jsx";
+import { PluginMarketplacePanel } from "./components/PluginMarketplacePanel.jsx";
 import { getStoredToken, setStoredToken } from "./lib/api.js";
 
 const NAV_ITEMS = [
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/p2p", label: "P2P Diyalog" },
   { to: "/swarm", label: "Swarm Akışı" },
   { to: "/admin/prompts", label: "Prompt Admin" },
+  { to: "/admin/plugins", label: "Plugin Marketplace" },
   { to: "/admin/agents", label: "Agent Manager" },
   { to: "/admin/tenants", label: "Tenant Admin" },
 ];
@@ -68,6 +70,7 @@ export default function App() {
           <Route path="/p2p" element={<P2PDialoguePanel />} />
           <Route path="/swarm" element={<SwarmFlowPanel />} />
           <Route path="/admin/prompts" element={<PromptAdminPanel />} />
+          <Route path="/admin/plugins" element={<PluginMarketplacePanel />} />
           <Route path="/admin/agents" element={<AgentManagerPanel />} />
           <Route path="/admin/tenants" element={<TenantAdminPanel />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
