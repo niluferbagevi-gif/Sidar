@@ -351,6 +351,47 @@ class CodeManager:
         except Exception as exc:
             return False, f"Yazma hatası: {exc}"
 
+    @staticmethod
+    def _strip_markdown_code_fences(content: str) -> str:
+        text = str(content or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        return text
+
+    def write_generated_test(
+        self,
+        path: str,
+        content: str,
+        *,
+        append: bool = True,
+    ) -> Tuple[bool, str]:
+        """Coverage ajanı için üretilen pytest içeriğini güvenli biçimde yazar.
+
+        - Markdown kod çitlerini temizler.
+        - Varsayılan olarak mevcut test dosyasına ekleme yapar.
+        - Aynı içerik zaten varsa idempotent davranır.
+        """
+        normalized = self._strip_markdown_code_fences(content)
+        if not normalized.strip():
+            return False, "Yazılacak pytest içeriği boş."
+
+        target = Path(path)
+        if append and target.exists():
+            ok, current = self.read_file(str(target), line_numbers=False)
+            if not ok:
+                return False, current
+            if normalized in current:
+                return True, f"Test içeriği zaten mevcut: {path}"
+            separator = "\n\n" if current.strip() else ""
+            return self.write_file(str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True)
+
+        return self.write_file(str(target), f"{normalized.rstrip()}\n", validate=True)
+
     # ─────────────────────────────────────────────
     #  AKILLI YAMA (PATCH)
     # ─────────────────────────────────────────────
@@ -670,12 +711,17 @@ class CodeManager:
             if path.upper() == "TOTAL" or path.startswith("tests/"):
                 continue
             missing = match.group("missing").strip()
+            missing_segments = [item.strip() for item in missing.split(",") if item.strip()]
+            missing_branches = [item for item in missing_segments if "->" in item]
+            missing_lines = [item for item in missing_segments if "->" not in item]
             finding = {
                 "finding_type": "missing_coverage",
                 "target_path": path,
                 "summary": f"Eksik coverage satırları: {missing}",
                 "missing_lines": missing,
                 "coverage_percent": int(match.group("cover")),
+                "missing_line_ranges": missing_lines,
+                "missing_branch_arcs": missing_branches,
             }
             coverage_targets.append(finding)
             findings.append(finding)

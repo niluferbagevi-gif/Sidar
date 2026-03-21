@@ -66,6 +66,9 @@ def _load_coverage_agent_class():
         def read_file(self, *_args, **_kwargs):
             return True, "def sample():\n    return 1\n"
 
+        def write_generated_test(self, *_args, **_kwargs):
+            return True, "Dosya başarıyla kaydedildi: tests/test_generated.py"
+
     config_mod.Config = _Config
     llm_client_mod.LLMClient = _LLMClient
     security_mod.SecurityManager = _SecurityManager
@@ -108,7 +111,7 @@ def _load_coverage_agent_class():
 CoverageAgent = _load_coverage_agent_class()
 
 
-def test_coverage_agent_generates_reviewer_delegation(monkeypatch):
+def test_coverage_agent_writes_generated_test_and_records_task(monkeypatch):
     agent = CoverageAgent()
 
     class _Db:
@@ -146,13 +149,21 @@ def test_coverage_agent_generates_reviewer_delegation(monkeypatch):
         },
     )
     monkeypatch.setattr(agent.code, "read_file", lambda *_args, **_kwargs: (True, "def sample():\n    return 1\n"))
+    writes = []
+    monkeypatch.setattr(
+        agent.code,
+        "write_generated_test",
+        lambda path, content, append=True: writes.append((path, content, append)) or (True, f"written:{path}"),
+    )
 
     result = asyncio.run(agent.run_task("coverage cycle"))
 
-    assert agent.is_delegation_message(result) is True
-    assert result.target_agent == "reviewer"
-    assert "generated_test_candidate" in result.payload
+    assert '"status": "tests_written"' in result
+    assert '"suggested_test_path": "tests/test_sample_coverage.py"' in result
     assert fake_db.task_kwargs["target_path"] == "core/sample.py"
+    assert fake_db.task_kwargs["status"] == "tests_written"
+    assert writes[0][0] == "tests/test_sample_coverage.py"
+    assert writes[0][2] is True
 
 
 def test_coverage_agent_run_pytest_tool(monkeypatch):
@@ -167,3 +178,21 @@ def test_coverage_agent_run_pytest_tool(monkeypatch):
 
     assert '"success": true' in out.lower()
     assert "2 passed" in out
+
+
+def test_coverage_agent_write_missing_tests_tool(monkeypatch):
+    agent = CoverageAgent()
+    monkeypatch.setattr(
+        agent.code,
+        "write_generated_test",
+        lambda path, content, append=True: (True, f"write:{path}:{append}:{content.strip()}"),
+    )
+
+    out = asyncio.run(
+        agent.run_task(
+            'write_missing_tests|{"suggested_test_path":"tests/test_gap.py","generated_test":"def test_gap():\\n    assert True\\n"}'
+        )
+    )
+
+    assert '"success": true' in out.lower()
+    assert "tests/test_gap.py" in out

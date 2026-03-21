@@ -37,6 +37,7 @@ class CoverageAgent(BaseAgent):
         self.register_tool("run_pytest", self._tool_run_pytest)
         self.register_tool("analyze_pytest_output", self._tool_analyze_pytest_output)
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
+        self.register_tool("write_missing_tests", self._tool_write_missing_tests)
 
     async def _ensure_db(self):
         if self._db is not None:
@@ -110,14 +111,43 @@ class CoverageAgent(BaseAgent):
             analysis = await asyncio.to_thread(self.code.analyze_pytest_output, pytest_output)
         return await self._generate_test_candidate(target_path=target_path, pytest_output=pytest_output, analysis=analysis)
 
-    async def _record_task(self, *, command: str, pytest_output: str, analysis: dict[str, Any], generated_test: str, review_payload: dict[str, Any]) -> None:
+    async def _tool_write_missing_tests(self, arg: str) -> str:
+        payload = self._parse_payload(arg)
+        suggested_test_path = str(payload.get("suggested_test_path", "") or "")
+        generated_test = str(payload.get("generated_test", "") or "")
+        append = bool(payload.get("append", True))
+        ok, message = await asyncio.to_thread(
+            self.code.write_generated_test,
+            suggested_test_path,
+            generated_test,
+            append=append,
+        )
+        return json.dumps(
+            {
+                "success": ok,
+                "suggested_test_path": suggested_test_path,
+                "message": message,
+            },
+            ensure_ascii=False,
+        )
+
+    async def _record_task(
+        self,
+        *,
+        command: str,
+        pytest_output: str,
+        analysis: dict[str, Any],
+        generated_test: str,
+        review_payload: dict[str, Any],
+        status: str,
+    ) -> None:
         db = await self._ensure_db()
         task = await db.create_coverage_task(
             tenant_id="default",
             requester_role=self.role_name,
             command=command,
             pytest_output=pytest_output,
-            status="pending_review",
+            status=status,
             target_path=str(review_payload.get("target_path", "") or ""),
             suggested_test_path=str(review_payload.get("suggested_test_path", "") or ""),
             review_payload_json=json.dumps(review_payload, ensure_ascii=False),
@@ -144,6 +174,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("analyze_pytest_output", prompt.split("|", 1)[1].strip())
         if lower.startswith("generate_missing_tests|"):
             return await self.call_tool("generate_missing_tests", prompt.split("|", 1)[1].strip())
+        if lower.startswith("write_missing_tests|"):
+            return await self.call_tool("write_missing_tests", prompt.split("|", 1)[1].strip())
 
         payload = self._parse_payload(prompt)
         command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
@@ -183,6 +215,16 @@ class CoverageAgent(BaseAgent):
             "target_path": target_path,
             "pytest_output": str(pytest_result.get("output", "") or "")[:4000],
         }
+        write_ok, write_message = await asyncio.to_thread(
+            self.code.write_generated_test,
+            suggested_test_path,
+            generated_test,
+            append=True,
+        )
+        review_payload["write_result"] = {
+            "success": write_ok,
+            "message": write_message,
+        }
         try:
             await self._record_task(
                 command=command,
@@ -190,12 +232,20 @@ class CoverageAgent(BaseAgent):
                 analysis=analysis,
                 generated_test=generated_test,
                 review_payload=review_payload,
+                status="tests_written" if write_ok else "write_failed",
             )
         except Exception:
             pass
-        return self.delegate_to(
-            "reviewer",
-            f"review_code|{json.dumps(review_payload, ensure_ascii=False)}",
-            reason="coverage_candidate_review",
-            intent="coverage",
+        return json.dumps(
+            {
+                "success": write_ok,
+                "status": "tests_written" if write_ok else "write_failed",
+                "command": command,
+                "target_path": target_path,
+                "suggested_test_path": suggested_test_path,
+                "analysis": analysis,
+                "generated_test_candidate": generated_test,
+                "write_message": write_message,
+            },
+            ensure_ascii=False,
         )
