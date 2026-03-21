@@ -48,11 +48,18 @@ _INTENT_CAPABILITY_MAP: Dict[str, str] = {
     "cloud_ops":        "aws_management",
     "slack_notification": "slack_notification",
     "notifications":    "slack_notification",
+    "marketing_strategy": "marketing_strategy",
+    "seo_analysis":    "seo_analysis",
+    "campaign_copy":   "campaign_copy",
+    "audience_ops":    "audience_ops",
     # Üst düzey intent'ler → spesifik yetenek
     "code":             "code_generation",
     "research":         "web_search",
     "review":           "code_review",
     "security":         "security_audit",
+    "marketing":        "marketing_strategy",
+    "seo":              "seo_analysis",
+    "campaign":         "campaign_copy",
     "mixed":            "code_generation",  # varsayılan
 }
 

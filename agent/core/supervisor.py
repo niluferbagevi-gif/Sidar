@@ -18,6 +18,7 @@ from agent.core.event_stream import get_agent_event_bus
 from agent.roles.coder_agent import CoderAgent
 from agent.roles.researcher_agent import ResearcherAgent
 from agent.roles.reviewer_agent import ReviewerAgent
+from agent.roles.poyraz_agent import PoyrazAgent
 
 try:
     from opentelemetry import trace as otel_trace
@@ -69,15 +70,18 @@ class SupervisorAgent(BaseAgent):
             self.registry.register("researcher", ResearcherAgent(self.cfg))
             self.registry.register("coder", CoderAgent(self.cfg))
             self.registry.register("reviewer", ReviewerAgent(self.cfg))
+            self.registry.register("poyraz", PoyrazAgent(self.cfg))
 
             self.researcher = self.registry.get("researcher")
             self.coder = self.registry.get("coder")
             self.reviewer = self.registry.get("reviewer")
+            self.poyraz = self.registry.get("poyraz")
         except TypeError:
             # BaseAgent stub'ının object olduğu test ortamlarında alt ajan kurulumunu atla.
             self.researcher = None
             self.coder = None
             self.reviewer = None
+            self.poyraz = None
 
     @staticmethod
     def _intent(prompt: str) -> str:
@@ -86,6 +90,8 @@ class SupervisorAgent(BaseAgent):
             return "research"
         if any(t in text for t in ("github", "pull request", "issue", "review", "incele")):
             return "review"
+        if any(t in text for t in ("seo", "kampanya", "pazarlama", "hedef kitle", "growth", "funnel", "reklam")):
+            return "marketing"
         return "code"
 
     @staticmethod
@@ -236,6 +242,13 @@ class SupervisorAgent(BaseAgent):
         if intent == "review":
             await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
             result = await self._delegate("reviewer", task_prompt, "review")
+            if is_delegation_request(result.summary):
+                result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
+            return str(result.summary)
+
+        if intent == "marketing":
+            await self.events.publish("supervisor", "Poyraz ajanına yönlendiriliyor...")
+            result = await self._delegate("poyraz", task_prompt, "marketing")
             if is_delegation_request(result.summary):
                 result = await self._route_p2p(result.summary, parent_task_id=result.task_id)
             return str(result.summary)
