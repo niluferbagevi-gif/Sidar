@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import sys
 import types
@@ -374,3 +375,319 @@ def test_admin_prompt_endpoints(mod, monkeypatch):
     )
     assert activated.status_code == 200
     assert activated.content["id"] == 3
+
+
+class _DoneTask:
+    def done(self):
+        return True
+
+    def cancel(self):
+        return None
+
+    def __await__(self):
+        if False:
+            yield None
+        return None
+
+
+class _SafeCancelledTask:
+    def __init__(self):
+        self.cancelled = False
+
+    def done(self):
+        return False
+
+    def cancel(self):
+        self.cancelled = True
+
+    def __await__(self):
+        if False:
+            yield None
+        return None
+
+
+class _CollabSocket:
+    def __init__(self, mod, payloads, *, before_message=None):
+        self._mod = mod
+        self._payloads = list(payloads)
+        self._before_message = before_message
+        self.sent = []
+        self.client = types.SimpleNamespace(host="127.0.0.1")
+        self.headers = {}
+        self._sidar_room_id = ""
+
+    async def accept(self, subprotocol=None):
+        self.subprotocol = subprotocol
+        return None
+
+    async def receive_text(self):
+        if not self._payloads:
+            raise self._mod.WebSocketDisconnect()
+        item = self._payloads.pop(0)
+        if self._before_message and isinstance(item, str):
+            payload = json.loads(item)
+            if payload.get("action") == "message":
+                self._before_message()
+                self._before_message = None
+        if isinstance(item, Exception):
+            await asyncio.sleep(0.05)
+            raise item
+        return item
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+        return None
+
+
+class _DB:
+    async def get_user_by_token(self, _token):
+        return types.SimpleNamespace(id="u1", username="alice")
+
+
+class _Memory:
+    def __init__(self):
+        self.db = _DB()
+
+    async def set_active_user(self, *_args, **_kwargs):
+        return None
+
+    def __len__(self):
+        return 1
+
+    def update_title(self, _title):
+        return None
+
+
+def test_trim_autonomy_text_truncates_suffix():
+    mod = _load_web_server()
+
+    trimmed = mod._trim_autonomy_text("x" * 12, limit=5)
+
+    assert trimmed == "xxxxx …[truncated]"
+
+
+def test_websocket_chat_recreates_missing_room_and_status_timeout(monkeypatch):
+    mod = _load_web_server()
+    mod._collaboration_rooms.clear()
+
+    class _Bus:
+        def __init__(self):
+            self.queue = asyncio.Queue()
+            self.unsubscribed = []
+
+        def subscribe(self):
+            return "sub-timeout", self.queue
+
+        def unsubscribe(self, sub_id):
+            self.unsubscribed.append(sub_id)
+
+    bus = _Bus()
+    metrics = {"set": 0, "reset": 0}
+    wait_calls = {"count": 0}
+    join_calls = []
+    room_ref = {"room": None}
+    spectator = _CollabSocket(mod, [])
+    real_wait_for = mod.asyncio.wait_for
+    real_join_room = mod._join_collaboration_room
+
+    async def _wait_for_once_timeout(awaitable, timeout):
+        if wait_calls["count"] == 0:
+            wait_calls["count"] += 1
+            with contextlib.suppress(Exception):
+                awaitable.close()
+            raise asyncio.TimeoutError
+        return await real_wait_for(awaitable, timeout)
+
+    async def _join_wrapper(*args, **kwargs):
+        join_calls.append(kwargs["room_id"])
+        room = await real_join_room(*args, **kwargs)
+        room_ref["room"] = room
+        if len(join_calls) == 2:
+            room.participants[mod._socket_key(spectator)] = mod._CollaborationParticipant(
+                spectator,
+                "u2",
+                "bob",
+                "Bob",
+                mod._collaboration_now_iso(),
+            )
+        return room
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            bus.queue.put_nowait(types.SimpleNamespace(source="planner", message="hazır"))
+            await asyncio.sleep(0.05)
+            mod._collaboration_rooms["workspace:demo"].active_task = _DoneTask()
+            return "tamamlandı"
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    def _drop_room():
+        mod._collaboration_rooms.clear()
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(mod.asyncio, "wait_for", _wait_for_once_timeout)
+    monkeypatch.setattr(mod, "_join_collaboration_room", _join_wrapper)
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: metrics.__setitem__("set", metrics["set"] + 1) or "ctx-token")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _tok: metrics.__setitem__("reset", metrics["reset"] + 1))
+
+    ws = _CollabSocket(
+        mod,
+        [
+            json.dumps({"action": "auth", "token": "tok"}),
+            json.dumps({"action": "join_room", "room_id": "workspace:demo", "display_name": "Alice"}),
+            json.dumps({"action": "message", "message": "@Sidar planı hazırla", "display_name": "Alice"}),
+            mod.WebSocketDisconnect(),
+        ],
+        before_message=_drop_room,
+    )
+
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert join_calls == ["workspace:demo", "workspace:demo"]
+    assert wait_calls["count"] == 1
+    assert any(item.get("type") == "collaboration_event" for item in ws.sent)
+    assert any(item.get("type") == "assistant_done" for item in spectator.sent)
+    assert metrics["set"] == 1
+
+
+def test_websocket_chat_room_task_cancelled_broadcasts_cancel_state(monkeypatch):
+    mod = _load_web_server()
+    mod._collaboration_rooms.clear()
+
+    class _Bus:
+        def __init__(self):
+            self.unsubscribed = []
+
+        def subscribe(self):
+            return "sub-cancel", asyncio.Queue()
+
+        def unsubscribe(self, sub_id):
+            self.unsubscribed.append(sub_id)
+
+    bus = _Bus()
+    metrics = {"reset": 0}
+    room_ref = {"room": None}
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            room_ref["room"] = mod._collaboration_rooms["workspace:cancel"]
+            room_ref["room"].active_task = _DoneTask()
+            raise asyncio.CancelledError
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    ws = _CollabSocket(
+        mod,
+        [
+            json.dumps({"action": "auth", "token": "tok"}),
+            json.dumps({"action": "join_room", "room_id": "workspace:cancel", "display_name": "Alice"}),
+            json.dumps({"action": "message", "message": "@Sidar iptal", "display_name": "Alice"}),
+            mod.WebSocketDisconnect(),
+        ],
+    )
+
+    real_create_task = mod.asyncio.create_task
+
+    def _create_task(coro):
+        if getattr(coro, "cr_code", None) and coro.cr_code.co_name == "_status_pump":
+            coro.close()
+            return _SafeCancelledTask()
+        return real_create_task(coro)
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx-token")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _tok: metrics.__setitem__("reset", metrics["reset"] + 1))
+    monkeypatch.setattr(mod.asyncio, "create_task", _create_task)
+
+    asyncio.run(mod.websocket_chat(ws))
+
+    cancelled = [item for item in ws.sent if item.get("type") == "assistant_done" and item.get("cancelled") is True]
+    assert cancelled and cancelled[-1]["message"] is None
+    assert bus.unsubscribed == ["sub-cancel"]
+    assert metrics["reset"] == 1
+    assert room_ref["room"].active_task is None
+
+
+def test_websocket_chat_room_task_exception_broadcasts_room_error(monkeypatch):
+    mod = _load_web_server()
+    mod._collaboration_rooms.clear()
+
+    class _Bus:
+        def __init__(self):
+            self.unsubscribed = []
+
+        def subscribe(self):
+            return "sub-error", asyncio.Queue()
+
+        def unsubscribe(self, sub_id):
+            self.unsubscribed.append(sub_id)
+
+    bus = _Bus()
+    metrics = {"reset": 0}
+    room_ref = {"room": None}
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            room_ref["room"] = mod._collaboration_rooms["workspace:error"]
+            room_ref["room"].active_task = _DoneTask()
+            raise RuntimeError("multi-agent boom")
+
+    async def _get_agent():
+        return _Agent()
+
+    async def _not_limited(*_args, **_kwargs):
+        return False
+
+    ws = _CollabSocket(
+        mod,
+        [
+            json.dumps({"action": "auth", "token": "tok"}),
+            json.dumps({"action": "join_room", "room_id": "workspace:error", "display_name": "Alice"}),
+            json.dumps({"action": "message", "message": "@Sidar hata üret", "display_name": "Alice"}),
+            mod.WebSocketDisconnect(),
+        ],
+    )
+
+    real_create_task = mod.asyncio.create_task
+
+    def _create_task(coro):
+        if getattr(coro, "cr_code", None) and coro.cr_code.co_name == "_status_pump":
+            coro.close()
+            return _SafeCancelledTask()
+        return real_create_task(coro)
+
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", _not_limited)
+    monkeypatch.setattr(mod, "set_current_metrics_user_id", lambda _uid: "ctx-token")
+    monkeypatch.setattr(mod, "reset_current_metrics_user_id", lambda _tok: metrics.__setitem__("reset", metrics["reset"] + 1))
+    monkeypatch.setattr(mod.asyncio, "create_task", _create_task)
+
+    asyncio.run(mod.websocket_chat(ws))
+
+    errors = [item for item in ws.sent if item.get("type") == "room_error"]
+    assert errors and "multi-agent boom" in errors[-1]["error"]
+    assert bus.unsubscribed == ["sub-error"]
+    assert metrics["reset"] == 1
+    assert room_ref["room"].active_task is None
