@@ -161,6 +161,29 @@ def test_build_knowledge_graph_projection_filters_sessions_and_limits_code_edges
     assert len(code_edges) == 1
 
 
+def test_build_knowledge_graph_projection_skips_documents_from_other_sessions(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._index = {
+        "doc-foreign": {"title": "Other", "source": "docs/other.md", "session_id": "sess-2"},
+        "doc-local": {"title": "Spec", "source": "docs/spec.md", "session_id": "sess-1"},
+    }
+    store._graph_ready = False
+    store._graph_rag_enabled = False
+    store._chroma_available = False
+    store.collection = None
+    store._vector_backend = "memory"
+    store._pgvector_available = False
+
+    projection = store.build_knowledge_graph_projection(session_id="sess-1", include_code_graph=False, limit=2)
+
+    node_ids = {node.id for node in projection["nodes"]}
+
+    assert "doc:doc-local" in node_ids
+    assert "doc:doc-foreign" not in node_ids
+    assert all(edge.target != "doc:doc-foreign" for edge in projection["edges"])
+
+
 def test_build_graphrag_search_plan_uses_chroma_backend_when_available(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
