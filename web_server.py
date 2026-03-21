@@ -27,7 +27,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -103,6 +103,208 @@ logger = logging.getLogger(__name__)
 #  HITL WebSocket Yayın Kümesi
 # ─────────────────────────────────────────────
 _hitl_ws_clients: set = set()
+_COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
+
+
+@dataclass
+class _CollaborationParticipant:
+    websocket: WebSocket
+    user_id: str
+    username: str
+    display_name: str
+    joined_at: str
+
+
+@dataclass
+class _CollaborationRoom:
+    room_id: str
+    participants: Dict[int, _CollaborationParticipant] = field(default_factory=dict)
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    telemetry: List[Dict[str, Any]] = field(default_factory=list)
+    active_task: asyncio.Task | None = None
+
+
+_collaboration_rooms: Dict[str, _CollaborationRoom] = {}
+
+
+def _collaboration_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_room_id(room_id: str) -> str:
+    normalized = (room_id or "").strip() or "workspace:default"
+    if not _COLLAB_ROOM_RE.match(normalized):
+        raise HTTPException(status_code=400, detail="Geçersiz room_id")
+    return normalized
+
+
+def _socket_key(websocket: WebSocket) -> int:
+    return id(websocket)
+
+
+def _serialize_collaboration_participant(participant: _CollaborationParticipant) -> dict[str, str]:
+    return {
+        "user_id": participant.user_id,
+        "username": participant.username,
+        "display_name": participant.display_name,
+        "joined_at": participant.joined_at,
+    }
+
+
+def _serialize_collaboration_room(room: _CollaborationRoom) -> dict[str, Any]:
+    return {
+        "room_id": room.room_id,
+        "participants": [
+            _serialize_collaboration_participant(item)
+            for item in sorted(room.participants.values(), key=lambda value: value.display_name.lower())
+        ],
+        "messages": list(room.messages[-120:]),
+        "telemetry": list(room.telemetry[-120:]),
+    }
+
+
+def _append_room_message(room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200) -> None:
+    room.messages.append(payload)
+    if len(room.messages) > limit:
+        room.messages = room.messages[-limit:]
+
+
+def _append_room_telemetry(room: _CollaborationRoom, payload: dict[str, Any], *, limit: int = 200) -> None:
+    room.telemetry.append(payload)
+    if len(room.telemetry) > limit:
+        room.telemetry = room.telemetry[-limit:]
+
+
+def _build_room_message(
+    *,
+    room_id: str,
+    role: str,
+    content: str,
+    author_name: str,
+    author_id: str,
+    kind: str = "message",
+    request_id: str = "",
+) -> dict[str, Any]:
+    return {
+        "id": secrets.token_hex(8),
+        "room_id": room_id,
+        "role": role,
+        "kind": kind,
+        "content": content,
+        "author_name": author_name,
+        "author_id": author_id,
+        "request_id": request_id,
+        "ts": _collaboration_now_iso(),
+    }
+
+
+async def _broadcast_room_payload(room: _CollaborationRoom, payload: dict[str, Any]) -> None:
+    stale: list[int] = []
+    for key, participant in list(room.participants.items()):
+        try:
+            await participant.websocket.send_json(payload)
+        except Exception:
+            stale.append(key)
+    for key in stale:
+        room.participants.pop(key, None)
+
+
+async def _join_collaboration_room(
+    websocket: WebSocket,
+    *,
+    room_id: str,
+    user_id: str,
+    username: str,
+    display_name: str,
+) -> _CollaborationRoom:
+    normalized = _normalize_room_id(room_id)
+    current_room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
+    if current_room_id and current_room_id != normalized:
+        await _leave_collaboration_room(websocket)
+
+    room = _collaboration_rooms.setdefault(normalized, _CollaborationRoom(room_id=normalized))
+    room.participants[_socket_key(websocket)] = _CollaborationParticipant(
+        websocket=websocket,
+        user_id=user_id,
+        username=username,
+        display_name=(display_name or username or user_id or "Anonim").strip()[:80],
+        joined_at=_collaboration_now_iso(),
+    )
+    setattr(websocket, "_sidar_room_id", normalized)
+    await websocket.send_json({"type": "room_state", **_serialize_collaboration_room(room)})
+    await _broadcast_room_payload(
+        room,
+        {
+            "type": "presence",
+            "room_id": normalized,
+            "participants": _serialize_collaboration_room(room)["participants"],
+        },
+    )
+    return room
+
+
+async def _leave_collaboration_room(websocket: WebSocket) -> None:
+    room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
+    if not room_id:
+        return
+    room = _collaboration_rooms.get(room_id)
+    setattr(websocket, "_sidar_room_id", "")
+    if room is None:
+        return
+    room.participants.pop(_socket_key(websocket), None)
+    if room.participants:
+        await _broadcast_room_payload(
+            room,
+            {
+                "type": "presence",
+                "room_id": room.room_id,
+                "participants": _serialize_collaboration_room(room)["participants"],
+            },
+        )
+        return
+    if room.active_task and not room.active_task.done():
+        room.active_task.cancel()
+    _collaboration_rooms.pop(room_id, None)
+
+
+def _is_sidar_mention(message: str) -> bool:
+    return bool(re.search(r"(^|\s)@sidar\b", message, flags=re.IGNORECASE))
+
+
+def _strip_sidar_mention(message: str) -> str:
+    stripped = re.sub(r"(^|\s)@sidar\b", " ", message, count=1, flags=re.IGNORECASE)
+    return " ".join(stripped.split()).strip()
+
+
+def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, command: str) -> str:
+    transcript: list[str] = []
+    for item in room.messages[-10:]:
+        transcript.append(
+            f"[{item.get('role', 'user')}] {item.get('author_name', 'Anonim')}: {str(item.get('content', '')).strip()[:240]}"
+        )
+    recent_context = "\n".join(transcript) if transcript else "(henüz ortak geçmiş yok)"
+    participants = ", ".join(
+        participant.display_name
+        for participant in sorted(room.participants.values(), key=lambda value: value.display_name.lower())
+    )
+    return (
+        "[COLLABORATION WORKSPACE]\n"
+        f"room_id={room.room_id}\n"
+        f"participants={participants or 'unknown'}\n"
+        f"requesting_user={actor_name}\n"
+        "recent_transcript=\n"
+        f"{recent_context}\n\n"
+        "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor. "
+        "Yanıtında ekip bağlamını koru ve gerekiyorsa kimin ne istediğini netleştir.\n\n"
+        f"Current command:\n{command}"
+    )
+
+
+def _iter_stream_chunks(text: str, *, size: int = 180) -> List[str]:
+    clean = str(text or "")
+    if not clean:
+        return []
+    return [clean[index:index + size] for index in range(0, len(clean), size)]
 
 
 async def _hitl_broadcast(payload: dict) -> None:
@@ -2095,6 +2297,7 @@ async def websocket_chat(websocket: WebSocket):
     ws_user_id = ""
     ws_username = ""
     ws_authenticated = False
+    joined_room_id = ""
 
     # Başlık token'ı varsa bağlantı açılır açılmaz doğrula
     if header_token:
@@ -2175,6 +2378,113 @@ async def websocket_chat(websocket: WebSocket):
             if ctx_token is not None:
                 reset_current_metrics_user_id(ctx_token)
 
+    async def generate_room_response(room: _CollaborationRoom, *, actor_name: str, msg: str) -> None:
+        sub_id = None
+        status_task = None
+        stop_status = asyncio.Event()
+        request_id = secrets.token_hex(6)
+        collaboration_prompt = _build_collaboration_prompt(room, actor_name=actor_name, command=msg)
+        ctx_token = set_current_metrics_user_id(ws_user_id) if ws_user_id else None
+        try:
+            event_bus = get_agent_event_bus()
+            sub_id, status_queue = event_bus.subscribe()
+
+            async def _status_pump() -> None:
+                while not stop_status.is_set():
+                    try:
+                        evt = await asyncio.wait_for(status_queue.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    payload = {
+                        "id": secrets.token_hex(8),
+                        "room_id": room.room_id,
+                        "kind": "status",
+                        "source": evt.source,
+                        "content": evt.message,
+                        "ts": _collaboration_now_iso(),
+                    }
+                    _append_room_telemetry(room, payload)
+                    await _broadcast_room_payload(room, {"type": "collaboration_event", "event": payload})
+
+            status_task = asyncio.create_task(_status_pump())
+            await _broadcast_room_payload(
+                room,
+                {
+                    "type": "assistant_stream_start",
+                    "room_id": room.room_id,
+                    "request_id": request_id,
+                    "author_name": "SİDAR",
+                },
+            )
+            result = await agent._try_multi_agent(collaboration_prompt)
+            for chunk in _iter_stream_chunks(result):
+                await _broadcast_room_payload(
+                    room,
+                    {
+                        "type": "assistant_chunk",
+                        "room_id": room.room_id,
+                        "request_id": request_id,
+                        "chunk": chunk,
+                        "author_name": "SİDAR",
+                    },
+                )
+
+            assistant_message = _build_room_message(
+                room_id=room.room_id,
+                role="assistant",
+                content=result,
+                author_name="SİDAR",
+                author_id="sidar",
+                kind="assistant_reply",
+                request_id=request_id,
+            )
+            _append_room_message(room, assistant_message)
+            await _broadcast_room_payload(
+                room,
+                {
+                    "type": "assistant_done",
+                    "room_id": room.room_id,
+                    "request_id": request_id,
+                    "message": assistant_message,
+                },
+            )
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await _broadcast_room_payload(
+                    room,
+                    {
+                        "type": "assistant_done",
+                        "room_id": room.room_id,
+                        "request_id": request_id,
+                        "cancelled": True,
+                        "message": None,
+                    },
+                )
+            raise
+        except Exception as exc:
+            logger.exception("Collaborative agent response error: %s", exc)
+            await _broadcast_room_payload(
+                room,
+                {
+                    "type": "room_error",
+                    "room_id": room.room_id,
+                    "error": str(exc),
+                    "request_id": request_id,
+                },
+            )
+        finally:
+            stop_status.set()
+            if status_task is not None:
+                status_task.cancel()
+                with contextlib.suppress(Exception):
+                    await status_task
+            if sub_id is not None:
+                get_agent_event_bus().unsubscribe(sub_id)
+            if room.active_task is not None and room.active_task.done():
+                room.active_task = None
+            if ctx_token is not None:
+                reset_current_metrics_user_id(ctx_token)
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -2206,12 +2516,31 @@ async def websocket_chat(websocket: WebSocket):
                     await websocket.send_json({'auth_ok': True})
                 continue
 
+            if action == "join_room":
+                target_room_id = str(payload.get("room_id", "") or "").strip()
+                display_name = str(payload.get("display_name", "") or ws_username or ws_user_id).strip()
+                room = await _join_collaboration_room(
+                    websocket,
+                    room_id=target_room_id,
+                    user_id=ws_user_id,
+                    username=ws_username,
+                    display_name=display_name,
+                )
+                joined_room_id = room.room_id
+                continue
+
             if action == "cancel" and active_task and not active_task.done():
                 active_task.cancel()
                 await websocket.send_json({
                     "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
                     "done": True,
                 })
+                continue
+
+            if action == "cancel" and joined_room_id:
+                room = _collaboration_rooms.get(joined_room_id)
+                if room and room.active_task and not room.active_task.done():
+                    room.active_task.cancel()
                 continue
 
             if not user_message:
@@ -2225,12 +2554,54 @@ async def websocket_chat(websocket: WebSocket):
             if active_task and not active_task.done():
                 active_task.cancel()
 
+            if joined_room_id:
+                room = _collaboration_rooms.get(joined_room_id)
+                if room is None:
+                    room = await _join_collaboration_room(
+                        websocket,
+                        room_id=joined_room_id,
+                        user_id=ws_user_id,
+                        username=ws_username,
+                        display_name=ws_username or ws_user_id,
+                    )
+                display_name = str(payload.get("display_name", "") or ws_username or ws_user_id).strip() or ws_username or ws_user_id or "Anonim"
+                user_message_payload = _build_room_message(
+                    room_id=room.room_id,
+                    role="user",
+                    content=user_message,
+                    author_name=display_name,
+                    author_id=ws_user_id or display_name,
+                    kind="sidar_command" if _is_sidar_mention(user_message) else "collaboration_note",
+                )
+                _append_room_message(room, user_message_payload)
+                await _broadcast_room_payload(room, {"type": "room_message", "message": user_message_payload})
+
+                if _is_sidar_mention(user_message):
+                    command = _strip_sidar_mention(user_message)
+                    if not command:
+                        await _broadcast_room_payload(
+                            room,
+                            {
+                                "type": "room_error",
+                                "room_id": room.room_id,
+                                "error": "@Sidar etiketi sonrası komut bulunamadı.",
+                            },
+                        )
+                        continue
+                    if room.active_task and not room.active_task.done():
+                        room.active_task.cancel()
+                    room.active_task = asyncio.create_task(
+                        generate_room_response(room, actor_name=display_name, msg=command)
+                    )
+                continue
+
             active_task = asyncio.create_task(generate_response(user_message))
 
     except WebSocketDisconnect:
         logger.info("İstemci WebSocket bağlantısını kesti.")
         if active_task and not active_task.done():
             active_task.cancel()
+        await _leave_collaboration_room(websocket)
     except Exception as _ws_exc:
         # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
         # kapatma sinyali — WebSocketDisconnect ile eşdeğer, normal çıkış.
@@ -2238,6 +2609,7 @@ async def websocket_chat(websocket: WebSocket):
             logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
             if active_task and not active_task.done():
                 active_task.cancel()
+            await _leave_collaboration_room(websocket)
         else:
             logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
 

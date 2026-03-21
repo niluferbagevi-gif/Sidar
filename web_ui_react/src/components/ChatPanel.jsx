@@ -10,34 +10,48 @@ import { useChatStore } from "../hooks/useChatStore.js";
 export function ChatPanel() {
   const {
     sessionId,
-    addUserMessage,
+    roomId,
+    displayName,
+    setRoomId,
+    setDisplayName,
+    hydrateRoom,
+    updateParticipants,
+    pushRoomMessage,
+    startAssistantStream,
     appendChunk,
     commitAssistantMessage,
     setError,
     addTelemetryEvent,
     newSession,
+    participants,
   } = useChatStore();
 
   const { send, status } = useWebSocket(sessionId, {
+    roomId,
+    displayName,
     onChunk: appendChunk,
     onDone: commitAssistantMessage,
     onError: setError,
     onStatus: (msg) => addTelemetryEvent("status", msg),
     onToolCall: (msg) => addTelemetryEvent("tool_call", msg),
     onThought: (msg) => addTelemetryEvent("thought", msg),
+    onRoomState: hydrateRoom,
+    onRoomMessage: pushRoomMessage,
+    onPresence: updateParticipants,
+    onRoomEvent: (event) => addTelemetryEvent(event.kind || "status", event.content || "", event),
+    onAssistantStart: startAssistantStream,
   });
 
   const handleSend = useCallback(
     (text) => {
-      addUserMessage(text);
       send(text);
     },
-    [addUserMessage, send],
+    [send],
   );
 
   const voice = useVoiceAssistant({
     onUserTranscript: (transcript) => {
-      addUserMessage(`🎤 ${transcript}`);
+      send(`@Sidar ${transcript}`);
     },
     onAssistantChunk: appendChunk,
     onAssistantDone: commitAssistantMessage,
@@ -55,11 +69,31 @@ export function ChatPanel() {
       <header className="panel-toolbar panel-toolbar--chat">
         <div>
           <h2>Sohbet</h2>
-          <p className="panel__hint">WebSocket üzerinden canlı agent streaming akışı.</p>
+          <p className="panel__hint">Room tabanlı ortak çalışma alanı. Ekip arkadaşlarınızın @Sidar komutlarını ve swarm akışını canlı izleyin.</p>
         </div>
-        <StatusBar wsStatus={status} onNewSession={handleNewSession} voiceStatus={voice.statusLabel} />
+        <StatusBar
+          wsStatus={status}
+          onNewSession={handleNewSession}
+          voiceStatus={voice.statusLabel}
+          roomId={roomId}
+          collaborators={participants.length}
+        />
       </header>
       <div className="app__chat-shell">
+        <section className="collab-bar">
+          <label>
+            Workspace / Room
+            <input value={roomId} onChange={(e) => setRoomId(e.target.value)} placeholder="workspace:sidar" />
+          </label>
+          <label>
+            Görünen ad
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Operatör" />
+          </label>
+          <div className="collab-bar__summary">
+            <strong>{participants.length}</strong>
+            <span>katılımcı bağlı</span>
+          </div>
+        </section>
         <ChatWindow />
         <VoiceAssistantPanel voice={voice} />
         <footer className="app__footer">

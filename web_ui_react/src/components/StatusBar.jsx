@@ -13,7 +13,7 @@ const STATUS_LABEL = {
   unauthenticated: { icon: "🟠", text: "Token gerekli" },
 };
 
-export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır" }) {
+export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır", roomId = "", collaborators = 0 }) {
   const { sessionId, messages } = useChatStore();
   const { icon, text } = STATUS_LABEL[wsStatus] ?? STATUS_LABEL.disconnected;
 
@@ -22,8 +22,14 @@ export function StatusBar({ wsStatus, onNewSession, voiceStatus = "Hazır" }) {
       <span className="status-bar__ws" title={`Session: ${sessionId}`}>
         {icon} {text}
       </span>
+      <span className="status-bar__room" title={`Workspace: ${roomId}`}>
+        🧩 {roomId || "workspace:sidar"}
+      </span>
       <span className="status-bar__count">
         {messages.length} mesaj
+      </span>
+      <span className="status-bar__count">
+        👥 {collaborators} kişi
       </span>
       <span className="status-bar__voice">🎙 {voiceStatus}</span>
       <button
