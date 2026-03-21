@@ -69,6 +69,15 @@ def _load_poyraz_agent_class():
         async def publish_content(self, **kwargs):
             return True, f"published:{kwargs.get('platform', '')}"
 
+        async def publish_instagram_post(self, **kwargs):
+            return True, f"instagram:{kwargs.get('caption', '')}"
+
+        async def publish_facebook_post(self, **kwargs):
+            return True, f"facebook:{kwargs.get('message', '')}"
+
+        async def send_whatsapp_message(self, **kwargs):
+            return True, f"whatsapp:{kwargs.get('to', '')}"
+
     config_mod.Config = _Config
     llm_client_mod.LLMClient = _LLMClient
     rag_mod.DocumentStore = _DocumentStore
@@ -119,9 +128,16 @@ def test_poyraz_agent_initializes_with_marketing_tools():
         "fetch_url",
         "search_docs",
         "publish_social",
+        "publish_instagram_post",
+        "publish_facebook_post",
+        "send_whatsapp_message",
         "build_landing_page",
         "generate_campaign_copy",
         "ingest_video_insights",
+        "create_marketing_campaign",
+        "store_content_asset",
+        "create_operation_checklist",
+        "plan_service_operations",
     }
 
 
@@ -183,6 +199,110 @@ def test_poyraz_agent_routes_json_marketing_tools():
         )
     )
     assert landing_out == "stub"
+
+
+def test_poyraz_agent_routes_channel_specific_social_tools(monkeypatch):
+    agent = PoyrazAgent()
+    seen = {}
+
+    async def _fake_instagram(**kwargs):
+        seen["instagram"] = kwargs
+        return True, "ig-1"
+
+    async def _fake_facebook(**kwargs):
+        seen["facebook"] = kwargs
+        return True, "fb-2"
+
+    async def _fake_whatsapp(**kwargs):
+        seen["whatsapp"] = kwargs
+        return True, "wa-3"
+
+    monkeypatch.setattr(agent.social, "publish_instagram_post", _fake_instagram)
+    monkeypatch.setattr(agent.social, "publish_facebook_post", _fake_facebook)
+    monkeypatch.setattr(agent.social, "send_whatsapp_message", _fake_whatsapp)
+
+    instagram_out = asyncio.run(
+        agent.run_task('publish_instagram_post|{"caption":"Yeni post","image_url":"https://cdn.test/post.jpg"}')
+    )
+    facebook_out = asyncio.run(
+        agent.run_task('publish_facebook_post|{"message":"Duyuru","link_url":"https://example.test"}')
+    )
+    whatsapp_out = asyncio.run(
+        agent.run_task('send_whatsapp_message|{"to":"+905555555555","text":"Merhaba","preview_url":true}')
+    )
+
+    assert instagram_out == "[INSTAGRAM:PUBLISHED] result=ig-1"
+    assert facebook_out == "[FACEBOOK:PUBLISHED] result=fb-2"
+    assert whatsapp_out == "[WHATSAPP:SENT] result=wa-3"
+    assert seen["instagram"]["caption"] == "Yeni post"
+    assert seen["facebook"]["link_url"] == "https://example.test"
+    assert seen["whatsapp"]["preview_url"] is True
+
+
+def test_poyraz_agent_persists_campaign_assets_and_service_plan(monkeypatch):
+    agent = PoyrazAgent()
+
+    class _Db:
+        async def upsert_marketing_campaign(self, **kwargs):
+            return types.SimpleNamespace(
+                id=14,
+                tenant_id=kwargs["tenant_id"],
+                name=kwargs["name"],
+                channel=kwargs["channel"],
+                objective=kwargs["objective"],
+                status=kwargs["status"],
+                owner_user_id=kwargs["owner_user_id"],
+                budget=kwargs["budget"],
+            )
+
+        async def add_content_asset(self, **kwargs):
+            return types.SimpleNamespace(
+                id=22,
+                campaign_id=kwargs["campaign_id"],
+                tenant_id=kwargs["tenant_id"],
+                asset_type=kwargs["asset_type"],
+                title=kwargs["title"],
+                content=kwargs["content"],
+                channel=kwargs["channel"],
+            )
+
+        async def add_operation_checklist(self, **kwargs):
+            return types.SimpleNamespace(
+                id=31,
+                campaign_id=kwargs.get("campaign_id"),
+                tenant_id=kwargs["tenant_id"],
+                title=kwargs["title"],
+                items_json=str(kwargs["items"]),
+                status=kwargs["status"],
+            )
+
+    async def _fake_ensure_db():
+        return _Db()
+
+    monkeypatch.setattr(agent, "_ensure_db", _fake_ensure_db)
+
+    campaign_out = asyncio.run(
+        agent.run_task(
+            'create_marketing_campaign|{"tenant_id":"tenant-a","name":"Yaz Lansmanı","channel":"instagram","objective":"lead","status":"draft","owner_user_id":"u-1","budget":2500}'
+        )
+    )
+
+    monkeypatch.setattr(agent, "_generate_marketing_output", lambda *_args, **_kwargs: asyncio.sleep(0, result="landing taslağı"))
+    landing_out = asyncio.run(
+        agent.run_task(
+            'build_landing_page|{"brand_name":"Sidar","offer":"Demo","audience":"KOBI","call_to_action":"Kaydol","campaign_id":14,"tenant_id":"tenant-a","store_asset":true}'
+        )
+    )
+    plan_out = asyncio.run(
+        agent.run_task(
+            'plan_service_operations|{"tenant_id":"tenant-a","campaign_id":14,"campaign_name":"Doğum Günü","service_name":"Etkinlik","menu_plan":{"adult":["Izgara"],"child":["Mini pizza"]},"vendor_assignments":{"DJ":"Efe","Fotografci":"Luna"},"timeline":["18:00 karşılama"],"persist_checklist":true}'
+        )
+    )
+
+    assert '"id": 14' in campaign_out
+    assert landing_out == "landing taslağı"
+    assert '"success": true' in plan_out.lower()
+    assert '"menu_plan"' in plan_out
 
 
 def test_poyraz_agent_ingests_video_insights_into_docs():

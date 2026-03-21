@@ -94,6 +94,22 @@ class SocialPublishSchema(BaseModel):
     link_url: str = ""
 
 
+class InstagramPublishSchema(BaseModel):
+    caption: str
+    image_url: str
+
+
+class FacebookPublishSchema(BaseModel):
+    message: str
+    link_url: str = ""
+
+
+class WhatsAppMessageSchema(BaseModel):
+    to: str
+    text: str
+    preview_url: bool = False
+
+
 class LandingPageDraftSchema(BaseModel):
     brand_name: str
     offer: str
@@ -101,6 +117,11 @@ class LandingPageDraftSchema(BaseModel):
     call_to_action: str
     tone: str = "professional"
     sections: Optional[List[str]] = None
+    campaign_id: Optional[int] = None
+    tenant_id: str = "default"
+    store_asset: bool = False
+    asset_title: str = "Landing Page Taslağı"
+    channel: str = "web"
 
 
 class CampaignCopySchema(BaseModel):
@@ -111,6 +132,10 @@ class CampaignCopySchema(BaseModel):
     offer: str = ""
     tone: str = "professional"
     call_to_action: str = ""
+    campaign_id: Optional[int] = None
+    tenant_id: str = "default"
+    store_asset: bool = False
+    asset_title: str = "Kampanya Kopyası"
 
 
 class VideoInsightIngestSchema(BaseModel):
@@ -120,6 +145,52 @@ class VideoInsightIngestSchema(BaseModel):
     session_id: str = "marketing"
     max_frames: int = 6
     frame_interval_seconds: float = 5.0
+
+
+class MarketingCampaignCreateSchema(BaseModel):
+    tenant_id: str = "default"
+    name: str
+    channel: str = ""
+    objective: str = ""
+    status: str = "draft"
+    owner_user_id: str = ""
+    budget: float = 0.0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    campaign_id: Optional[int] = None
+
+
+class ContentAssetCreateSchema(BaseModel):
+    campaign_id: int
+    tenant_id: str = "default"
+    asset_type: str
+    title: str
+    content: str
+    channel: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OperationChecklistSchema(BaseModel):
+    tenant_id: str = "default"
+    title: str
+    items: List[Any] = Field(default_factory=list)
+    status: str = "pending"
+    owner_user_id: str = ""
+    campaign_id: Optional[int] = None
+
+
+class ServiceOperationsPlanSchema(BaseModel):
+    tenant_id: str = "default"
+    campaign_id: Optional[int] = None
+    campaign_name: str = ""
+    service_name: str = ""
+    audience: str = ""
+    menu_plan: Dict[str, List[str]] = Field(default_factory=dict)
+    vendor_assignments: Dict[str, str] = Field(default_factory=dict)
+    timeline: List[str] = Field(default_factory=list)
+    notes: str = ""
+    owner_user_id: str = ""
+    persist_checklist: bool = True
+    checklist_title: str = "Operasyon Planı"
 
 
 TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
@@ -139,9 +210,16 @@ TOOL_ARG_SCHEMAS: Dict[str, Type[BaseModel]] = {
     "lsp_diagnostics": LspDiagnosticsSchema,
     "lsp_rename": LspRenameSchema,
     "publish_social": SocialPublishSchema,
+    "publish_instagram_post": InstagramPublishSchema,
+    "publish_facebook_post": FacebookPublishSchema,
+    "send_whatsapp_message": WhatsAppMessageSchema,
     "build_landing_page": LandingPageDraftSchema,
     "generate_campaign_copy": CampaignCopySchema,
     "ingest_video_insights": VideoInsightIngestSchema,
+    "create_marketing_campaign": MarketingCampaignCreateSchema,
+    "store_content_asset": ContentAssetCreateSchema,
+    "create_operation_checklist": OperationChecklistSchema,
+    "plan_service_operations": ServiceOperationsPlanSchema,
 }
 
 def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
