@@ -25,8 +25,7 @@ def _load_llm_module_for_retry_tests():
         HTTPStatusError=_HTTPStatusError,
         AsyncClient=None,
     )
-    saved_httpx = sys.modules.get("httpx")
-    saved_llm_metrics = sys.modules.get("core.llm_metrics")
+    sys.modules["httpx"] = httpx_stub
 
     core_pkg = types.ModuleType("core")
     core_pkg.__path__ = [str(Path("core").resolve())]
@@ -40,26 +39,13 @@ def _load_llm_module_for_retry_tests():
             return None
 
     llm_metrics_mod.get_llm_metrics_collector = lambda: _Collector()
+    sys.modules["core.llm_metrics"] = llm_metrics_mod
 
     spec = importlib.util.spec_from_file_location("llm_retry_under_test", Path("core/llm_client.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-
-    try:
-        sys.modules["httpx"] = httpx_stub
-        sys.modules["core.llm_metrics"] = llm_metrics_mod
-        spec.loader.exec_module(mod)
-        return mod
-    finally:
-        if saved_httpx is None:
-            sys.modules.pop("httpx", None)
-        else:
-            sys.modules["httpx"] = saved_httpx
-
-        if saved_llm_metrics is None:
-            sys.modules.pop("core.llm_metrics", None)
-        else:
-            sys.modules["core.llm_metrics"] = saved_llm_metrics
+    spec.loader.exec_module(mod)
+    return mod
 
 
 llm = _load_llm_module_for_retry_tests()
