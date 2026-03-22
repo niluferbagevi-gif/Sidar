@@ -1346,6 +1346,56 @@ def test_tool_subtask_validation_error_and_tool_exception_paths():
     assert calls == [("dangerous", "bad-param")]
 
 
+def test_tool_subtask_normalizes_tool_name_before_dispatch():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t","tool":"  LiSt_DiR  ","argument":"."}',
+        '{"thought":"done","tool":" FINAL_ANSWER ","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    calls = []
+
+    async def _exec(tool, arg):
+        calls.append((tool, arg))
+        return f"ok:{tool}:{arg}"
+
+    a.llm = _LLM()
+    a._execute_tool = _exec
+
+    out = asyncio.run(a._tool_subtask("normalize araç adı"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+    assert calls == [("list_dir", ".")]
+
+
+
+def test_tool_subtask_invalid_json_falls_back_to_general_failure_then_recovers():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("tool should not run"))
+
+    out = asyncio.run(a._tool_subtask("bozuk json"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+
+
 def test_tool_subtask_returns_max_steps_after_non_string_llm_output():
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="tm", CODING_MODEL="cm")
