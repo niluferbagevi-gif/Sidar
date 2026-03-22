@@ -453,12 +453,13 @@ def test_db_postgres_pool_error_and_main_preflight_warnings(monkeypatch):
     finally:
         sys.modules.pop("asyncpg", None)
 
-    if not hasattr(launcher_main.cfg, "OPENAI_API_KEY"):
-        launcher_main.cfg.OPENAI_API_KEY = ""
-    if not hasattr(launcher_main.cfg, "ANTHROPIC_API_KEY"):
-        launcher_main.cfg.ANTHROPIC_API_KEY = ""
-    monkeypatch.setattr(launcher_main.cfg, "OPENAI_API_KEY", "")
-    monkeypatch.setattr(launcher_main.cfg, "ANTHROPIC_API_KEY", "")
+    # Access config.Config directly since main.py doesn't export cfg as a module attribute
+    if not hasattr(config_mod.Config, "OPENAI_API_KEY"):
+        config_mod.Config.OPENAI_API_KEY = ""
+    if not hasattr(config_mod.Config, "ANTHROPIC_API_KEY"):
+        config_mod.Config.ANTHROPIC_API_KEY = ""
+    monkeypatch.setattr(config_mod.Config, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(config_mod.Config, "ANTHROPIC_API_KEY", "")
     launcher_main.preflight("openai")
     launcher_main.preflight("anthropic")
 
