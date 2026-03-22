@@ -210,6 +210,31 @@ def test_build_graphrag_search_plan_uses_chroma_backend_when_available(tmp_path,
     assert plan.vector_candidates == ["doc-1"]
 
 
+def test_graph_impact_analysis_skips_non_file_handlers_and_empty_dependency_paths(tmp_path, monkeypatch):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    graph = store._graph_index
+
+    graph.add_node("core/db.py", node_type="file")
+    graph.add_node("caller.py", node_type="file")
+    graph.add_node("endpoint:GET /health", node_type="endpoint")
+    graph.add_node("service:health", node_type="service")
+    graph.add_edge("caller.py", "core/db.py", kind="imports")
+    graph.add_edge("endpoint:GET /health", "core/db.py", kind="route")
+    graph.add_edge("endpoint:GET /health", "service:health", kind="route")
+
+    monkeypatch.setattr(
+        graph,
+        "explain_dependency_path",
+        lambda candidate, target: [] if candidate == "endpoint:GET /health" else [candidate, target],
+    )
+
+    analysis = graph.impact_analysis("core/db.py")
+
+    assert analysis["impacted_endpoint_handlers"] == ["core/db.py"]
+    assert analysis["dependency_paths"] == [["caller.py", "core/db.py"]]
+
+
 def test_init_chroma_and_init_fts_migration_paths(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
 
@@ -337,6 +362,13 @@ def test_delete_document_returns_not_found_for_unknown_doc(tmp_path):
 
     msg = store.delete_document("olmayan_id")
     assert "Belge bulunamadı" in msg
+
+
+def test_validate_url_safe_allows_regular_dns_hosts_after_ip_parse_fallback(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    store._validate_url_safe("https://example.com/path")
 
 
 def test_delete_document_rejects_cross_session_deletion(tmp_path):
@@ -472,6 +504,20 @@ def test_search_sync_auto_disables_rrf_for_local_provider(monkeypatch, tmp_path)
     ok, msg = mod.DocumentStore._search_sync(st, "q", mode="auto", session_id="s1")
     assert ok is True
     assert msg == "bm25"
+
+
+def test_rrf_search_returns_keyword_fallback_when_all_backends_are_empty(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+    store._pgvector_available = True
+    store._fetch_pgvector = lambda *_a, **_k: []
+    store._fetch_bm25 = lambda *_a, **_k: []
+    store._keyword_search = lambda query, top_k, session_id: (
+        False,
+        f"no-results:{query}:{top_k}:{session_id}",
+    )
+
+    assert store._rrf_search("needle", 2, "s1") == (False, "no-results:needle:2:s1")
 
 def test_search_auto_falls_back_when_vector_backends_raise(tmp_path, monkeypatch):
     mod = _load_rag_module(tmp_path)
