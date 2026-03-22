@@ -633,6 +633,29 @@ def test_build_trigger_prompt_prefers_explicit_federation_prompt():
     assert prompt == "Doğrudan federation promptunu kullan"
 
 
+def test_build_trigger_correlation_matches_related_task_id_without_other_links():
+    a = _make_agent_for_runtime()
+    a._autonomy_history = [
+        {
+            "trigger_id": "older-1",
+            "source": "federation:x",
+            "status": "done",
+            "payload": {"task_id": "task-7"},
+            "meta": {},
+            "correlation": {"correlation_id": ""},
+        }
+    ]
+
+    correlation = a._build_trigger_correlation(
+        ExternalTrigger(trigger_id="new-related", source="external", event_name="feedback"),
+        {"related_task_id": "task-7"},
+    )
+
+    assert correlation["matched_records"] == 1
+    assert correlation["related_trigger_ids"] == ["older-1"]
+    assert correlation["latest_related_status"] == "done"
+
+
 def test_build_trigger_correlation_matches_related_trigger_and_task_and_deduplicates():
     a = _make_agent_for_runtime()
     a._autonomy_history = [
@@ -671,6 +694,36 @@ def test_build_trigger_correlation_matches_related_trigger_and_task_and_deduplic
     assert correlation["related_trigger_ids"] == ["other-2", "dup-1"]
     assert correlation["related_sources"] == ["federation:b", "federation:a"]
     assert correlation["latest_related_status"] == "queued"
+
+
+def test_handle_external_trigger_ci_empty_output_skips_self_heal_attempt():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+    calls = {"heal": 0}
+
+    async def _blank_multi(_prompt):
+        return "   "
+
+    async def _heal(**_kwargs):
+        calls["heal"] += 1
+
+    a._try_multi_agent = _blank_multi
+    a._attempt_autonomous_self_heal = _heal
+
+    record = asyncio.run(
+        a.handle_external_trigger(
+            ExternalTrigger(
+                trigger_id="tr-empty-ci",
+                source="webhook",
+                event_name="workflow_run",
+                payload={"kind": "workflow_run", "workflow_name": "CI", "task_id": "ci-1"},
+            )
+        )
+    )
+
+    assert record["status"] == "empty"
+    assert "remediation" not in record
+    assert calls["heal"] == 0
 
 
 def test_handle_external_trigger_marks_empty_output_when_multi_agent_returns_blank():
@@ -1085,6 +1138,25 @@ def test_load_instruction_files_permission_error_on_one_file_is_ignored(tmp_path
     assert "root rules" in out
     assert "secret" not in out
 
+def test_tool_docs_search_handles_sync_result_without_pipe_mode(monkeypatch):
+    agent = SidarAgent.__new__(SidarAgent)
+
+    class _Docs:
+        def search(self, query, _none, mode, session_id):
+            assert query == "needle"
+            assert mode == "auto"
+            assert session_id == "global"
+            return True, "sync-found"
+
+    async def passthrough(func, *args):
+        return func(*args)
+
+    agent.docs = _Docs()
+    monkeypatch.setattr(asyncio, "to_thread", passthrough)
+
+    assert asyncio.run(agent._tool_docs_search("needle")) == "sync-found"
+
+
 def test_try_multi_agent_always_uses_supervisor(monkeypatch):
     mod = _load_sidar_agent_module()
 
@@ -1134,6 +1206,47 @@ def test_try_multi_agent_returns_warning_when_supervisor_returns_none(monkeypatc
 
     out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
     assert "geçerli bir çıktı" in out
+
+
+def test_tool_subtask_records_metrics_for_success_validation_and_tool_failure(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=3, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t1","tool":"echo","argument":"ok"}',
+        '{"thought":"t2","tool":"missing-argument"}',
+        '{"thought":"t3","tool":"explode","argument":"boom"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            assert kwargs["model"] == "tm"
+            return next(replies)
+
+    async def _exec(tool, arg):
+        if tool == "explode":
+            raise RuntimeError(f"tool failed:{arg}")
+        return f"{tool}:{arg}"
+
+    calls = []
+
+    class _Collector:
+        def record_step(self, agent_name, step_name, target, status, duration):
+            calls.append((agent_name, step_name, target, status, duration >= 0))
+
+    agent_metrics_mod = types.ModuleType("core.agent_metrics")
+    agent_metrics_mod.get_agent_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.agent_metrics", agent_metrics_mod)
+
+    a.llm = _LLM()
+    a._execute_tool = _exec
+
+    out = asyncio.run(a._tool_subtask("metric coverage"))
+
+    assert "Maksimum adım" in out
+    assert ("sidar_agent", "tool_execution", "echo", "success", True) in calls
+    assert ("sidar_agent", "llm_decision", "tm", "failed", True) in calls
+    assert ("sidar_agent", "tool_execution", "explode", "failed", True) in calls
 
 
 def test_tool_subtask_metrics_use_coding_model_fallback_when_text_model_missing(monkeypatch):
