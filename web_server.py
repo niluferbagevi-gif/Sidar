@@ -4721,7 +4721,7 @@ def main() -> None:
         "--log", default="info",
         help="Log seviyesi (debug/info/warning)"
     )
-    args = parser.parse_args()
+    args, _unknown_args = parser.parse_known_args()
 
     # Dinamik config override
     if args.level:
@@ -4732,12 +4732,20 @@ def main() -> None:
     # Ajan önceden başlat (ilk istekte gecikme olmasın).
     # Bellek katmanı native-async olduğu için initialize() adımı burada tamamlanır.
     global _agent
-    _agent = SidarAgent(cfg)
-    if hasattr(_agent, "initialize"):
-        asyncio.run(_agent.initialize())
+    try:
+        _agent = SidarAgent(cfg)
+        initialize_result = getattr(_agent, "initialize", None)
+        if callable(initialize_result):
+            maybe_coro = initialize_result()
+            if inspect.isawaitable(maybe_coro):
+                asyncio.run(maybe_coro)
+    except Exception as exc:
+        logger.warning("Web server agent ön başlatması başarısız; sunucu yine de başlatılacak: %s", exc)
+        _agent = None
 
     display_host = "localhost" if args.host in ("0.0.0.0", "") else args.host
-    version_label = f"v{_agent.VERSION}" if _agent.VERSION else "v?"
+    agent_version = getattr(_agent, "VERSION", "") if _agent is not None else ""
+    version_label = f"v{agent_version}" if agent_version else f"v{getattr(cfg, 'VERSION', '?')}"
 
     print()
     print("  ╔══════════════════════════════════════╗")

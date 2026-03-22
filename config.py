@@ -683,9 +683,9 @@ class Config:
                 is_valid = False
         else:
             logger.critical(
-                "MEMORY_ENCRYPTION_KEY yapılandırılmamış! Konuşma geçmişi şifrelenmeden "
-                "saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet anahtarı "
-                "eklemelisiniz.\n"
+                "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory encryption. "
+                "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü bir Fernet "
+                "anahtarı eklemelisiniz.\n"
                 "   Yeni anahtar üretmek için: python -c \"from cryptography.fernet import "
                 "Fernet; print(Fernet.generate_key().decode())\""
             )
