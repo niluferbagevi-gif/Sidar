@@ -233,6 +233,21 @@ def test_reviewer_graph_followup_and_summary_ignore_invalid_payload_shapes():
 
 
 
+def test_reviewer_summarize_lsp_diagnostics_handles_tool_errors_and_json_without_summary():
+    mod = _load_reviewer_module("reviewer_gap_lsp_fallbacks")
+    reviewer = mod.ReviewerAgent
+
+    tool_error = reviewer._summarize_lsp_diagnostics("[LSP:FAIL] çalıştırma hatası: pyright unavailable")
+    json_without_summary = reviewer._summarize_lsp_diagnostics('{"status":"clean","counts":{"1":1}}')
+
+    assert tool_error["status"] == "tool-error"
+    assert tool_error["risk"] == "orta"
+    assert "araç hatası" in tool_error["summary"]
+    assert json_without_summary["status"] == "clean"
+    assert json_without_summary["decision"] == "APPROVE"
+    assert json_without_summary["counts"] == {}
+
+
 def test_reviewer_review_code_falls_back_on_empty_lsp_and_malformed_graph_output_and_rejects_failed_browser(monkeypatch):
     mod = _load_reviewer_module("reviewer_gap_review_code")
     agent = mod.ReviewerAgent()
