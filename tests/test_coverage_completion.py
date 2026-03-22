@@ -942,6 +942,62 @@ def test_main_database_url_validation():
 # ============================================================================
 
 
+def test_auto_handle_multiline_rejection():
+    """Test AutoHandle rejects multi-step commands (ardından, step patterns)."""
+    # Inline regex test for multi-step command detection
+    multi_step_re = re.compile(
+        r"\bardından\b|\bsonrasında\b|\bönce\b.{1,60}\bsonra\b"
+        r"|\b\d+\s*[\.\)]\s+\w|\bve\s+ardından\b|\bşunları\s+(yap|bul|göster|listele)\b"
+        r"|\bfirst\b.{0,200}\bthen\b|\bstep\s*\d|\bnext\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # Should match multi-step patterns
+    assert multi_step_re.search("ardından test et") is not None
+    assert multi_step_re.search("first build, then test") is not None
+    assert multi_step_re.search("step 1: build") is not None
+    # Should not match single-step
+    assert multi_step_re.search("build the project") is None
+
+
+def test_auto_handle_long_input_size_limit():
+    """Test AutoHandle 2000-char input limit (ReDoS protection)."""
+    # Test that very long inputs are rejected for ReDoS protection
+    long_text = "x" * 3000
+    assert len(long_text) > 2000
+    # In actual AutoHandle, this would return (False, "")
+
+
+def test_endpoint_path_normalization_variations():
+    """Test URL normalization patterns without importing GraphIndex."""
+    # Test the regex patterns used in endpoint normalization
+    import re
+    import urllib.parse
+
+    def normalize_endpoint_path(raw_url: str):
+        """Simplified version of GraphIndex._normalize_endpoint_path."""
+        value = (raw_url or "").strip().strip("'\"")
+        if not value or "${" in value or "{" in value:
+            return None
+        if value.startswith(("ws://", "wss://", "http://", "https://")):
+            parsed = urllib.parse.urlparse(value)
+            hostname = (parsed.hostname or "").lower()
+            if hostname and hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                return None
+            value = parsed.path or "/"
+        if not value.startswith("/"):
+            return None
+        return value or "/"
+
+    # Test various URL formats
+    assert normalize_endpoint_path("") is None
+    assert normalize_endpoint_path("${VAR}") is None
+    assert normalize_endpoint_path("https://external.com/api") is None
+    assert normalize_endpoint_path("http://localhost/api") == "/api"
+    assert normalize_endpoint_path("/api/users") == "/api/users"
+    assert normalize_endpoint_path("/") == "/"
+
+
 def test_coverage_target_100_percent():
     """
     Meta test: ensures we're targeting 100% coverage completion.

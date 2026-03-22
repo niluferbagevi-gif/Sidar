@@ -209,6 +209,7 @@ tests/test_core_memory.py
 tests/test_core_runtime_focus.py
 tests/test_cost_aware_routing.py
 tests/test_coverage_agent.py
+tests/test_coverage_completion.py
 tests/test_coverage_db_runtime.py
 tests/test_coverage_final_push.py
 tests/test_coverage_gap_closers.py
