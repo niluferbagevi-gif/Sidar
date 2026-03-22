@@ -544,3 +544,57 @@ def test_handle_returns_false_for_very_long_input():
     handled, msg = asyncio.run(auto.handle("x" * 2001))
     assert handled is False
     assert msg == ""
+
+def test_handle_routes_through_main_dispatcher_branches():
+    auto = _make_auto(github_available=True)
+
+    cases = [
+        ("kök dizin listele ./src", "LIST:./src"),
+        ("dosya içeriğini göster demo.txt", "[demo.txt]\n```\nhello\n```"),
+        ("audit", "AUDIT:."),
+        ("sistem sağlık raporu", "health-ok"),
+        ("gpu optimize et", "gpu-ok"),
+        ("app.py sözdizimi doğrula", "✓ py-ok"),
+        ("son 3 commit listele", "commits:3"),
+        ("repo bilgi göster", "repo-info"),
+        ("repodaki dosyaları listele", "files"),
+        ('github dosya oku "README.md"', "remote:README.md"),
+        ("kapalı pr listele", "prs:closed:10"),
+        ("pr #8", "pr:8"),
+        ("erişim seviyesi nedir", "sec-status"),
+        ("internette ara python asyncio", "web:python asyncio"),
+        ("url oku https://x.dev", "fetch:https://x.dev"),
+        ("docs ara fastapi routing", "docs:fastapi:routing"),
+        ("stackoverflow: python asyncio", "so:python asyncio"),
+        ("pypi fastapi", "pypi:fastapi"),
+        ("npm react", "npm:react"),
+        ("github releases tiangolo/fastapi", "rel:tiangolo/fastapi"),
+        ("depoda ara: vector db", "dsearch:vector db"),
+        ("belge deposu listele", "dlist"),
+        ('belge ekle https://a.b "Başlık"', "dadd:https://a.b:Başlık"),
+    ]
+
+    for text, expected in cases:
+        handled, msg = asyncio.run(auto.handle(text))
+        assert handled is True, text
+        assert msg == expected, text
+
+
+def test_try_docs_search_awaits_async_result_returned_from_thread():
+    auto = _make_auto(github_available=True)
+
+    async def _delayed_result():
+        return True, "async-doc-search"
+
+    class _AsyncReturningDocs:
+        def search(self, query, _unused, mode):
+            assert query == "cache"
+            assert mode == "vector"
+            return _delayed_result()
+
+    auto.docs = _AsyncReturningDocs()
+
+    handled, msg = asyncio.run(auto._try_docs_search("depoda ara: cache mode:vector", ""))
+
+    assert handled is True
+    assert msg == "async-doc-search"
