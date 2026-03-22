@@ -19,6 +19,7 @@ from agent.sidar_agent import SidarAgent, ToolCall
 from managers.web_search import WebSearchManager
 from managers.system_health import SystemHealthManager
 from core.rag import DocumentStore
+import web_server
 
 
 @pytest.fixture
@@ -833,7 +834,6 @@ async def test_auto_handle_health_returns_report_when_available(agent):
 @pytest.mark.asyncio
 async def test_rate_limiter_blocks_after_limit():
     """_is_rate_limited: Limit aşıldıktan sonra True döner."""
-    import web_server
 
     test_ip = "192.0.2.1"  # RFC 5737 test IP
     web_server._rate_data.pop(test_ip, None)
@@ -852,7 +852,6 @@ async def test_rate_limiter_blocks_after_limit():
 @pytest.mark.asyncio
 async def test_rate_limiter_different_keys_independent():
     """_is_rate_limited: Farklı IP'ler birbirini etkilemez (TOCTOU izolasyonu)."""
-    import web_server
 
     ip_a = "192.0.2.2"
     ip_b = "192.0.2.3"
@@ -874,7 +873,6 @@ async def test_rate_limiter_different_keys_independent():
 @pytest.mark.asyncio
 async def test_rate_limiter_concurrent_toctou():
     """_is_rate_limited: Eş zamanlı çağrılar limit sayısını aşmaz."""
-    import web_server
 
     test_ip = "192.0.2.4"
     web_server._rate_data.pop(test_ip, None)
@@ -1123,7 +1121,6 @@ def test_config_validate_critical_settings_returns_bool():
 def test_get_client_ip_xff():
     """web_server._get_client_ip(): Güvenilen proxy'den gelen X-Forwarded-For başlığından IP çeker."""
     from unittest.mock import MagicMock
-    import web_server
 
     req = MagicMock()
     req.headers = {"X-Forwarded-For": "1.2.3.4, 10.0.0.1, 172.16.0.1"}
@@ -1141,7 +1138,6 @@ def test_get_client_ip_xff():
 def test_get_client_ip_xri():
     """web_server._get_client_ip(): Güvenilen proxy'den gelen X-Real-IP başlığından IP çeker."""
     from unittest.mock import MagicMock
-    import web_server
 
     req = MagicMock()
     req.headers = {"X-Real-IP": "5.6.7.8"}
@@ -1159,7 +1155,6 @@ def test_get_client_ip_xri():
 def test_get_client_ip_fallback():
     """web_server._get_client_ip(): Başlık yoksa request.client.host kullanır."""
     from unittest.mock import MagicMock
-    import web_server
 
     req = MagicMock()
     req.headers = {}
