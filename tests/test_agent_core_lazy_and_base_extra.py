@@ -177,3 +177,72 @@ def test_memory_hub_empty_branches_and_async_helpers():
         assert hub.aglobal_context(limit=1) == ["g1"]
         assert hub.arole_context("coder", limit=1) == ["n1"]
         assert hub.role_context("unknown") == []
+
+def test_base_agent_handle_preserves_existing_delegation_task_id_and_parent():
+    with _load_real_agent_modules() as (BaseAgent, _, _):
+        contracts = sys.modules["agent.core.contracts"]
+        DelegationRequest = contracts.DelegationRequest
+        TaskEnvelope = contracts.TaskEnvelope
+
+        class _MiniAgent(BaseAgent):
+            async def run_task(self, task_prompt: str):
+                assert task_prompt == "delegate work"
+                return DelegationRequest(
+                    task_id="existing-task",
+                    reply_to="mini",
+                    target_agent="reviewer",
+                    payload="payload",
+                    parent_task_id="existing-parent",
+                    handoff_depth=1,
+                )
+
+        agent = _MiniAgent(role_name="mini")
+        envelope = TaskEnvelope(
+            task_id="envelope-task",
+            sender="supervisor",
+            receiver="mini",
+            goal="delegate work",
+            parent_task_id="envelope-parent",
+            context={"p2p_handoff_depth": "0"},
+        )
+
+        result = asyncio.run(agent.handle(envelope))
+
+        assert result.summary.task_id == "existing-task"
+        assert result.summary.parent_task_id == "existing-parent"
+        assert result.summary.handoff_depth == 1
+
+
+def test_base_agent_handle_backfills_parent_from_task_when_parent_missing():
+    with _load_real_agent_modules() as (BaseAgent, _, _):
+        contracts = sys.modules["agent.core.contracts"]
+        DelegationRequest = contracts.DelegationRequest
+        TaskEnvelope = contracts.TaskEnvelope
+
+        class _MiniAgent(BaseAgent):
+            async def run_task(self, task_prompt: str):
+                assert task_prompt == "delegate fallback"
+                return DelegationRequest(
+                    task_id="existing-task",
+                    reply_to="mini",
+                    target_agent="reviewer",
+                    payload="payload",
+                    parent_task_id=None,
+                    handoff_depth=0,
+                )
+
+        agent = _MiniAgent(role_name="mini")
+        envelope = TaskEnvelope(
+            task_id="envelope-task",
+            sender="supervisor",
+            receiver="mini",
+            goal="delegate fallback",
+            parent_task_id="",
+            context={"p2p_handoff_depth": "2"},
+        )
+
+        result = asyncio.run(agent.handle(envelope))
+
+        assert result.summary.task_id == "existing-task"
+        assert result.summary.parent_task_id == "envelope-task"
+        assert result.summary.handoff_depth == 2
