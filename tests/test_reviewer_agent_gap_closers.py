@@ -446,6 +446,39 @@ def test_reviewer_parse_payload_and_tool_paths_cover_empty_inline_and_passthroug
     assert seen == [("lsp_diagnostics", ""), ("graph_impact", "")]
 
 
+def test_reviewer_combined_impact_parse_payload_and_graph_cache_gap_paths(monkeypatch):
+    mod = _load_reviewer_module("reviewer_gap_misc_paths")
+
+    combined = mod.ReviewerAgent._build_combined_impact_report(
+        {
+            "counts": {2: 1},
+            "issues": [
+                "not-a-dict",
+                {"path": "/workspace/Sidar/core/db.py", "severity": 2},
+                {"path": "./core/db.py", "severity": 2},
+                {"path": "   ", "severity": 2},
+            ],
+        },
+        {"status": "ok", "risk": "düşük", "followup_paths": ["core/db.py"]},
+        [],
+        ["core/db.py"],
+    )
+    assert combined["issue_paths"] == ["core/db.py"]
+    assert combined["indirect_breakage_paths"] == ["core/db.py"]
+
+    monkeypatch.setattr(mod.json, "loads", lambda _text: ["unexpected"])
+    payload = mod.ReviewerAgent._parse_review_payload('{"context":"ignored"} browser_session=browser-7')
+    assert payload["review_context"] == '{"context":"ignored"}'
+    assert payload["browser_session_id"] == "browser-7"
+    assert payload["browser_signals"] == {}
+
+    agent = mod.ReviewerAgent()
+    sentinel = object()
+    agent._graph_docs = sentinel
+    monkeypatch.setattr(mod, "DocumentStore", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("DocumentStore should not be recreated")))
+    assert agent._get_graph_store() is sentinel
+
+
 def test_reviewer_review_code_marks_medium_risk_for_semantic_warning_and_high_impact(monkeypatch):
     mod = _load_reviewer_module("reviewer_gap_risk_paths")
 
