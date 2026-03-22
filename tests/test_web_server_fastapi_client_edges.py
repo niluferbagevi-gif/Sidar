@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import importlib.util
 import sys
 import types
@@ -14,25 +15,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_web_server_with_real_fastapi():
-    saved = {name: sys.modules.get(name) for name in (
-        "redis.asyncio",
-        "uvicorn",
-        "config",
-        "agent",
-        "agent.core",
-        "agent.sidar_agent",
-        "agent.base_agent",
-        "agent.registry",
-        "agent.swarm",
-        "agent.core.event_stream",
-        "managers",
-        "managers.system_health",
-        "core",
-        "core.llm_metrics",
-        "core.llm_client",
-        "core.ci_remediation",
-        "core.hitl",
-    )}
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name in {
+            "redis.asyncio",
+            "uvicorn",
+            "config",
+            "agent",
+            "agent.core",
+            "agent.sidar_agent",
+            "agent.base_agent",
+            "agent.registry",
+            "agent.swarm",
+            "agent.core.event_stream",
+            "managers",
+            "managers.system_health",
+            "core",
+            "core.llm_metrics",
+            "core.llm_client",
+            "core.ci_remediation",
+            "core.hitl",
+        }
+        or name == "fastapi"
+        or name.startswith("fastapi.")
+        or name == "pydantic"
+        or name.startswith("pydantic.")
+    }
 
     def _set(name: str, module):
         sys.modules[name] = module
@@ -156,6 +165,16 @@ def _load_web_server_with_real_fastapi():
         ("core.hitl", hitl_mod),
     ):
         _set(name, module)
+
+    for name in list(sys.modules):
+        if name == "fastapi" or name.startswith("fastapi.") or name == "pydantic" or name.startswith("pydantic."):
+            sys.modules.pop(name, None)
+
+    importlib.import_module("pydantic")
+    importlib.import_module("fastapi")
+    importlib.import_module("fastapi.middleware.cors")
+    importlib.import_module("fastapi.responses")
+    importlib.import_module("fastapi.staticfiles")
 
     spec = importlib.util.spec_from_file_location("web_server_fastapi_test", ROOT / "web_server.py")
     mod = importlib.util.module_from_spec(spec)
