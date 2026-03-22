@@ -168,6 +168,27 @@ pull_models() {
   ollama pull nomic-embed-text
 }
 
+run_verification_tests() {
+  echo -e "\n🧪 11. Sistem doğrulama testleri çalıştırılıyor..."
+  echo "   (Bu adım kurulumun başarılı olduğunu kontrol eder)"
+  cd "$PROJECT_DIR"
+
+  # Conda ortamını etkinleştir
+  # shellcheck disable=SC1091
+  source "$MINICONDA_DIR/etc/profile.d/conda.sh"
+  conda activate "$ENV_NAME" || { echo "❌ Conda ortamı $ENV_NAME etkinleştirilemedi."; exit 1; }
+
+  # pytest çalıştır (coverage ile birlikte)
+  if ! python -m pytest -v --tb=short 2>&1 | tee tests_output.log; then
+    echo "❌ Testler başarısız oldu. Kurulum durduruluyor."
+    echo "   Lütfen hataları kontrol edin: tests_output.log"
+    exit 1
+  fi
+
+  echo "✅ Tüm testler başarıyla tamamlandı."
+  rm -f tests_output.log
+}
+
 print_footer() {
   echo "============================================================"
   echo "🚀 SİDAR v5.1.0 Kurulumu Tamamlandı!"
@@ -187,8 +208,7 @@ print_footer() {
   echo "  2. conda activate $ENV_NAME"
   echo "  3. nano .env                    ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
   echo "  4. alembic upgrade head         ← (ÖNEMLİ) Veritabanı tablolarını oluşturmak için"
-  echo "  5. python -m pytest             ← (Opsiyonel) Tüm testleri çalıştırmak için"
-  echo "  6. python main.py               ← Etkileşimli TUI menüsü ile başlatmak için"
+  echo "  5. python main.py               ← Etkileşimli TUI menüsü ile başlatmak için"
   echo ""
   echo "Güvenlik notu:"
   echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
@@ -257,4 +277,5 @@ pull_models
 setup_env_file
 download_vendor_libs
 build_react_frontend
+run_verification_tests
 print_footer
