@@ -478,6 +478,33 @@ def test_poyraz_agent_campaign_copy_and_operation_payloads_are_persisted(monkeyp
     assert persisted_checklists[1]["title"] == "Saha Operasyonları"
 
 
+def test_poyraz_agent_plan_service_operations_skips_db_when_persist_disabled(monkeypatch):
+    agent = PoyrazAgent()
+
+    async def _unexpected_ensure_db():
+        raise AssertionError("db should not be used when persist_checklist is disabled")
+
+    monkeypatch.setattr(agent, "_ensure_db", _unexpected_ensure_db)
+
+    plan_out = asyncio.run(
+        agent._tool_plan_service_operations(
+            '{"tenant_id":"tenant-a","campaign_name":"Launch","service_name":"Roadshow","audience":"B2B","menu_plan":{"adult":["Izgara","  "]},"vendor_assignments":{"DJ":"Efe","Hostes":"  "},"timeline":["18:00 karşılama","  "],"notes":"Sahne kurulumu kontrolü","persist_checklist":false}'
+        )
+    )
+
+    payload = json.loads(plan_out)
+
+    assert payload["success"] is True
+    assert payload["service_plan"]["campaign_name"] == "Launch"
+    assert "checklist" not in payload["service_plan"]
+    assert payload["service_plan"]["items"] == [
+        {"type": "menu_plan", "group": "adult", "options": ["Izgara"]},
+        {"type": "vendor_assignment", "role": "DJ", "assignee": "Efe"},
+        {"type": "timeline", "entry": "18:00 karşılama"},
+        {"type": "note", "text": "Sahne kurulumu kontrolü"},
+    ]
+
+
 def test_poyraz_agent_video_asset_and_prompt_helpers(monkeypatch):
     agent = PoyrazAgent()
     persisted_assets = []
