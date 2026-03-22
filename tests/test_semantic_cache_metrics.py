@@ -287,6 +287,24 @@ def test_inc_prometheus_counter_ignores_non_positive_counts(monkeypatch):
     assert metric_calls == []
 
 
+def test_prometheus_helpers_ignore_metrics_without_inc_or_set(monkeypatch):
+    import core.cache_metrics as cm_mod
+
+    class _NoMethods:
+        pass
+
+    calls = []
+    monkeypatch.setattr(cm_mod, "_get_prometheus_metric", lambda *args, **kwargs: calls.append((args, kwargs)) or _NoMethods())
+
+    cm_mod._inc_prometheus_counter("sidar_counter_without_inc", "desc", count=2)
+    cm_mod._set_prometheus_gauge("sidar_gauge_without_set", "desc", 3.5)
+
+    assert calls == [
+        (("sidar_counter_without_inc", "desc", "counter"), {}),
+        (("sidar_gauge_without_set", "desc", "gauge"), {}),
+    ]
+
+
 def test_record_cache_skip_updates_prometheus_collectors_when_available(monkeypatch):
     import core.cache_metrics as cm_mod
 
