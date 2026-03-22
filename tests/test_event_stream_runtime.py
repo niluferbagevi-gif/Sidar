@@ -1,6 +1,7 @@
 import asyncio
 from collections import deque
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -224,6 +225,50 @@ def test_event_bus_listener_handles_invalid_payload_and_ack_failures(monkeypatch
     assert "ack_failed" in reasons
 
 
+def test_event_bus_listener_ignores_same_instance_messages_but_still_acks(monkeypatch):
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _OneShotRedis:
+        def __init__(self):
+            self.acked = []
+            self.called = 0
+
+        async def xreadgroup(self, **_kwargs):
+            self.called += 1
+            if self.called == 1:
+                return [(
+                    "sidar:agent_events",
+                    [("1-0", {"payload": json.dumps({"sid": bus._instance_id, "ts": 1, "source": "self", "message": "ignore"})})],
+                )]
+            raise RuntimeError("stop loop")
+
+        async def xack(self, _channel, _group, msg_id):
+            self.acked.append(msg_id)
+
+    redis = _OneShotRedis()
+    bus._redis_client = redis
+
+    cleaned = {"called": False}
+
+    async def _cleanup_stub():
+        cleaned["called"] = True
+        bus._redis_client = None
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup_stub)
+
+    sid, q = bus.subscribe(maxsize=5)
+    try:
+        asyncio.run(bus._redis_listener_loop())
+    finally:
+        bus.unsubscribe(sid)
+
+    assert redis.acked == ["1-0"]
+    assert q.empty() is True
+    assert cleaned["called"] is True
+    assert list(bus._dlq_buffer) == []
+
+
 def test_write_dead_letter_pushes_to_redis_when_available():
     bus = AgentEventBus()
     bus._redis_available = True
@@ -390,6 +435,31 @@ def test_event_bus_fanout_unsubscribes_when_queue_full_and_no_buffer_space():
     bus._fanout_local(AgentEvent(ts=1.0, source="x", message="y"))
 
     assert 1 not in bus._subscribers
+
+
+def test_event_bus_drain_buffered_events_once_skips_subscribers_without_buffers():
+    bus = AgentEventBus()
+    q = asyncio.Queue(maxsize=1)
+    bus._subscribers = {1: q}
+    bus._buffered_events = {}
+
+    assert asyncio.run(bus._drain_buffered_events_once()) is False
+    assert q.empty() is True
+
+
+def test_event_bus_fanout_unsubscribes_when_existing_buffer_is_full():
+    bus = AgentEventBus()
+    full_q = asyncio.Queue(maxsize=1)
+    full_q.put_nowait(AgentEvent(ts=0.0, source="seed", message="seed"))
+    full_buffer = deque([AgentEvent(ts=0.5, source="seed", message="buffered")], maxlen=1)
+
+    bus._subscribers = {7: full_q}
+    bus._buffered_events = {7: full_buffer}
+
+    bus._fanout_local(AgentEvent(ts=1.0, source="x", message="drop-me"))
+
+    assert 7 not in bus._subscribers
+    assert 7 not in bus._buffered_events
 
 def test_ensure_listener_busygroup_and_publish_success_and_cleanup_cancel(monkeypatch):
     bus = AgentEventBus()

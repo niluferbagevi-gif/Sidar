@@ -681,3 +681,60 @@ def test_supervisor_delegate_records_metrics_memory_and_span_attributes(monkeypa
     assert span_attrs["span_name"] == "supervisor.delegate.coder"
     assert span_attrs["attributes"]["sidar.parent_task_id"] == "parent-1"
     assert span_attrs["sidar.result_len"] == len("tamamlandı")
+
+
+def test_supervisor_delegate_allows_blank_agent_response_and_records_zero_length(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    sup = object.__new__(SupervisorAgent)
+
+    class _BlankAgent:
+        async def run_task(self, prompt: str):
+            assert prompt == "boş görev"
+            return ""
+
+    class _Registry:
+        def get(self, receiver):
+            assert receiver == "coder"
+            return _BlankAgent()
+
+    notes = []
+
+    class _MemoryHub:
+        def add_role_note(self, role, summary):
+            notes.append((role, summary))
+
+    span_attrs = {}
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def set_attribute(self, key, value):
+            span_attrs[key] = value
+
+    class _Tracer:
+        def start_as_current_span(self, *_args, **_kwargs):
+            return _Span()
+
+    metric_calls = []
+
+    class _Collector:
+        def record(self, receiver, intent, status, duration_s):
+            metric_calls.append((receiver, intent, status, duration_s >= 0))
+
+    sup.registry = _Registry()
+    sup.memory_hub = _MemoryHub()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", _Tracer())
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", lambda: _Collector())
+
+    result = asyncio.run(sup._delegate("coder", "boş görev", "code"))
+
+    assert result.status == "done"
+    assert result.summary == ""
+    assert notes == [("coder", "")]
+    assert metric_calls == [("coder", "code", "done", True)]
+    assert span_attrs["sidar.result_len"] == 0
