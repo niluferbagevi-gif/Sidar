@@ -332,6 +332,20 @@ def test_poyraz_agent_ingests_video_insights_into_docs():
     assert out == "[VIDEO:INGESTED] source=https://youtu.be/dQw4w9WgXcQ doc_id=doc-42 scene_summary=0.0s → güçlü açılış"
 
 
+def test_poyraz_agent_tool_search_docs_handles_sync_tuple_result(monkeypatch):
+    agent = PoyrazAgent()
+
+    def _sync_search(query, *_args):
+        assert query == "seo checklist"
+        return True, "docs-sync:seo checklist"
+
+    monkeypatch.setattr(agent.docs, "search", _sync_search)
+
+    docs_out = asyncio.run(agent._tool_search_docs("seo checklist"))
+
+    assert docs_out == "docs-sync:seo checklist"
+
+
 def test_poyraz_agent_db_and_search_helpers_cover_cache_and_async_paths(monkeypatch):
     agent = PoyrazAgent()
     calls = {"db": 0, "connect": 0, "init_schema": 0}
