@@ -4,7 +4,7 @@ parallel = True
 omit =
     tests/*
     */sidar_plugin_*
-    */plug_auto_discover*
+    */plug_*
     */__pycache__/*
     */site-packages/*
     setup.py

@@ -60,6 +60,7 @@ def _load_config():
 def _prepare_config_for_validate(cfg_mod):
     """validate_critical_settings() için minimum ön koşulları hazırlar."""
     cfg_mod.Config._hardware_loaded = True
+    cfg_mod.Config._ensure_hardware_info_loaded = classmethod(lambda cls: None)
     cfg_mod.Config.initialize_directories = classmethod(lambda cls: None)
     cfg_mod.Config.AI_PROVIDER = "ollama"
     cfg_mod.Config.GEMINI_API_KEY = "irrelevant"
