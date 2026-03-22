@@ -27,6 +27,17 @@ def test_self_heal_prompt_skips_snapshot_entries_missing_path_or_content():
     assert "empty.py" not in prompt
 
 
+def test_normalize_self_heal_plan_handles_non_json_code_fence_and_text_without_braces():
+    plan = normalize_self_heal_plan(
+        "```yaml\nsummary: nope\n```",
+        scope_paths=["app.py"],
+        fallback_validation_commands=["python -m pytest"],
+    )
+
+    assert plan["operations"] == []
+    assert plan["validation_commands"] == ["python -m pytest"]
+
+
 def test_normalize_self_heal_plan_handles_code_fence_parse_failures_and_invalid_shapes():
     fenced_invalid = normalize_self_heal_plan(
         "```json\n{not valid json}\n```",

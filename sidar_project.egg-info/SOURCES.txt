@@ -209,6 +209,7 @@ tests/test_core_memory.py
 tests/test_core_runtime_focus.py
 tests/test_cost_aware_routing.py
 tests/test_coverage_agent.py
+tests/test_coverage_completion.py
 tests/test_coverage_db_runtime.py
 tests/test_coverage_final_push.py
 tests/test_coverage_gap_closers.py
@@ -336,6 +337,7 @@ tests/test_web_server_autonomy.py
 tests/test_web_server_coverage_push_extra.py
 tests/test_web_server_critical_gap_closers.py
 tests/test_web_server_edge_cases_targeted.py
+tests/test_web_server_fastapi_client_edges.py
 tests/test_web_server_gap_additions.py
 tests/test_web_server_gap_closure_round2.py
 tests/test_web_server_improvements.py

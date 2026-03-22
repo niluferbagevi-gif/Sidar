@@ -29,6 +29,11 @@ def test_prompt_registry_seed_and_activation(tmp_path):
         assert created.version >= 2
         assert created.is_active is True
 
+        inactive = await db.upsert_prompt("system", "Taslak prompt", activate=False)
+        assert inactive.version >= created.version
+        assert inactive.is_active is False
+        assert (await db.get_active_prompt("system")).id == created.id
+
         items = await db.list_prompts("system")
         assert len(items) >= 2
         assert sum(1 for x in items if x.is_active) == 1

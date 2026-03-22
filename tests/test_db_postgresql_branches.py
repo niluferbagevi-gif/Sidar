@@ -372,6 +372,123 @@ def test_postgresql_session_create_and_delete_parse_edge_cases():
     asyncio.run(_run())
 
 
+def test_postgresql_prompt_and_operations_queries_cover_optional_filters_and_inactive_prompt():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        conn.fetchval_queue.append(0)
+        conn.fetchrow_queue.append(
+            {
+                "id": 5,
+                "role_name": "reviewer",
+                "prompt_text": "Draft prompt",
+                "version": 1,
+                "is_active": False,
+                "created_at": "now",
+                "updated_at": "now",
+            }
+        )
+        created = await db.upsert_prompt("reviewer", "Draft prompt", activate=False)
+        assert created.is_active is False
+
+        conn.fetch_queue.append(
+            [{
+                "id": 11,
+                "tenant_id": "tenant-a",
+                "name": "Campaign",
+                "channel": "email",
+                "objective": "launch",
+                "status": "draft",
+                "owner_user_id": "u-1",
+                "budget": 1.0,
+                "metadata_json": "{}",
+                "created_at": "c1",
+                "updated_at": "u1",
+            }]
+        )
+        campaigns = await db.list_marketing_campaigns(tenant_id="tenant-a", status=None, limit=1)
+        assert campaigns[0].status == "draft"
+
+        conn.fetch_queue.append(
+            [{
+                "id": 21,
+                "campaign_id": 11,
+                "tenant_id": "tenant-a",
+                "asset_type": "landing_page",
+                "title": "LP",
+                "content": "<main/>",
+                "channel": "web",
+                "metadata_json": "{}",
+                "created_at": "c2",
+                "updated_at": "u2",
+            }]
+        )
+        assets = await db.list_content_assets(tenant_id="tenant-a", campaign_id=None, limit=1)
+        assert assets[0].campaign_id == 11
+
+        conn.fetchrow_queue.append(
+            {
+                "id": 31,
+                "campaign_id": 11,
+                "tenant_id": "tenant-a",
+                "title": "Ops",
+                "items_json": '["step"]',
+                "status": "pending",
+                "owner_user_id": "",
+                "created_at": "c3",
+                "updated_at": "u3",
+            }
+        )
+        checklist = await db.add_operation_checklist(
+            campaign_id=None,
+            tenant_id="tenant-a",
+            title="Ops",
+            items=[{}, " step "],
+            status="pending",
+            owner_user_id="",
+        )
+        assert checklist.items_json == '["step"]'
+
+        conn.fetch_queue.append(
+            [{
+                "id": 31,
+                "campaign_id": 11,
+                "tenant_id": "tenant-a",
+                "title": "Ops",
+                "items_json": '["step"]',
+                "status": "pending",
+                "owner_user_id": "",
+                "created_at": "c3",
+                "updated_at": "u3",
+            }]
+        )
+        checklists = await db.list_operation_checklists(tenant_id="tenant-a", campaign_id=None, limit=1)
+        assert checklists[0].campaign_id == 11
+
+    asyncio.run(_run())
+
+    assert conn.execute_calls == []
+    prompt_insert_query, prompt_insert_args = conn.fetchrow_calls[0]
+    assert "INSERT INTO prompt_registry" in prompt_insert_query
+    assert prompt_insert_args[3] is False
+
+    campaigns_query, campaigns_args = conn.fetch_calls[0]
+    assert "AND status=$2" not in campaigns_query
+    assert campaigns_args == ("tenant-a", 1)
+
+    assets_query, assets_args = conn.fetch_calls[1]
+    assert "AND campaign_id=$2" not in assets_query
+    assert assets_args == ("tenant-a", 1)
+
+    checklist_insert_query, checklist_insert_args = conn.fetchrow_calls[1]
+    assert "INSERT INTO operation_checklists" in checklist_insert_query
+    assert checklist_insert_args[3] == '["step"]'
+
+    checklists_query, checklists_args = conn.fetch_calls[2]
+    assert "AND campaign_id=$2" not in checklists_query
+    assert checklists_args == ("tenant-a", 1)
+
+
 def test_postgresql_get_active_prompt_none_and_list_coverage_tasks_query_variants():
     db, conn, _pool = _pg_db()
 
