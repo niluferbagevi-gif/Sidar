@@ -587,6 +587,39 @@ def test_supervisor_routes_coverage_intent_to_qa_when_coverage_agent_is_unavaila
     }
 
 
+def test_supervisor_route_p2p_stops_when_qa_retry_limit_is_exceeded():
+    s = object.__new__(SupervisorAgent)
+    s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 0.1, "MAX_QA_RETRIES": 0})()
+
+    published = []
+
+    class _Events:
+        async def publish(self, source, message):
+            published.append((source, message))
+
+    async def _delegate(*_args, **_kwargs):
+        raise AssertionError("delegate should not run after QA retry limit is exceeded")
+
+    s.events = _Events()
+    s._delegate = _delegate
+
+    result = asyncio.run(
+        s._route_p2p(
+            DelegationRequest(
+                task_id="qa-stop",
+                reply_to="reviewer",
+                target_agent="coder",
+                payload="qa_feedback|decision=reject;risk=yuksek",
+            ),
+            max_hops=3,
+        )
+    )
+
+    assert result.status == "failed"
+    assert "Maksimum QA retry limiti aşıldı (0)" in result.summary
+    assert published == []
+
+
 def test_supervisor_route_p2p_returns_fail_closed_when_hop_limit_is_exceeded():
     s = object.__new__(SupervisorAgent)
     s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 0.1, "MAX_QA_RETRIES": 3})()
@@ -620,6 +653,50 @@ def test_supervisor_route_p2p_returns_fail_closed_when_hop_limit_is_exceeded():
 
     assert result.status == "failed"
     assert "Maksimum delegasyon hop sayısı aşıldı" in result.summary
+
+
+def test_supervisor_delegate_succeeds_without_metrics_and_without_span_set_attribute(monkeypatch):
+    supervisor_mod = sys.modules["agent.core.supervisor"]
+    sup = object.__new__(SupervisorAgent)
+
+    class _Agent:
+        async def run_task(self, prompt: str):
+            assert prompt == "görev"
+            return "özet"
+
+    class _Registry:
+        def get(self, receiver):
+            assert receiver == "coder"
+            return _Agent()
+
+    notes = []
+
+    class _MemoryHub:
+        def add_role_note(self, role, summary):
+            notes.append((role, summary))
+
+    class _SpanCtx:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return False
+
+    class _Tracer:
+        def start_as_current_span(self, *_args, **_kwargs):
+            return _SpanCtx()
+
+    sup.registry = _Registry()
+    sup.memory_hub = _MemoryHub()
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", _Tracer())
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", None)
+
+    result = asyncio.run(sup._delegate("coder", "görev", "code"))
+
+    assert result.status == "done"
+    assert result.summary == "özet"
+    assert notes == [("coder", "özet")]
 
 
 def test_supervisor_delegate_records_metrics_memory_and_span_attributes(monkeypatch):
