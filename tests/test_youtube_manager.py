@@ -104,6 +104,11 @@ def test_extract_video_id_supports_watch_short_and_direct_id():
     assert YouTubeManager.extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
 
+def test_extract_video_id_returns_empty_for_unrecognized_youtube_paths():
+    assert YouTubeManager.extract_video_id("https://www.youtube.com/channel/UC1234567890") == ""
+    assert YouTubeManager.extract_video_id("https://www.youtube.com/embed/short") == ""
+
+
 def test_extract_video_id_returns_empty_for_blank_and_invalid_inputs():
     assert YouTubeManager.extract_video_id("") == ""
     assert YouTubeManager.extract_video_id("https://example.com/watch?v=dQw4w9WgXcQ") == ""
@@ -159,6 +164,26 @@ def test_fetch_transcript_returns_normalized_segments():
     assert result["text"] == "Merhaba dünya"
     assert result["segments"][0]["start_seconds"] == 0.0
     assert "lang=tr" in client.requested[0]
+
+
+def test_fetch_transcript_falls_back_to_next_language_when_first_is_empty():
+    client = _FakeClient([
+        _Response(200, {"events": []}),
+        _Response(200, {
+            "events": [
+                {"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "Hello"}]},
+            ]
+        }),
+    ])
+    manager = YouTubeManager(http_client_factory=lambda **_kwargs: client)
+
+    result = asyncio.run(manager.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr", "en")))
+
+    assert result["success"] is True
+    assert result["language"] == "en"
+    assert result["text"] == "Hello"
+    assert "lang=tr" in client.requested[0]
+    assert "lang=en" in client.requested[1]
 
 
 def test_fetch_transcript_returns_failure_when_no_caption_found():
