@@ -8,7 +8,6 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("pydantic")
-from fastapi.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +213,8 @@ def fastapi_web_mod(monkeypatch):
 
 
 def test_fastapi_client_handles_401_403_422_and_readiness_503(fastapi_web_mod, monkeypatch):
+    from fastapi.testclient import TestClient
+
     mod = fastapi_web_mod
 
     class _Store:
@@ -232,7 +233,9 @@ def test_fastapi_client_handles_401_403_422_and_readiness_503(fastapi_web_mod, m
 
     forbidden = client.get("/metrics", headers={"Authorization": "Bearer good-token"})
     assert forbidden.status_code == 403
-    assert "admin yetkisi" in forbidden.json()["detail"] or "METRICS_TOKEN" in forbidden.json()["detail"]
+    forbidden_body = forbidden.json()
+    forbidden_message = forbidden_body.get("detail") or forbidden_body.get("error", "")
+    assert "admin yetkisi" in forbidden_message or "METRICS_TOKEN" in forbidden_message
 
     invalid_payload = client.post(
         "/api/feedback/record",
@@ -259,6 +262,8 @@ def test_fastapi_client_handles_401_403_422_and_readiness_503(fastapi_web_mod, m
 
 
 def test_fastapi_client_websocket_disconnect_does_not_crash(fastapi_web_mod):
+    from fastapi.testclient import TestClient
+
     mod = fastapi_web_mod
 
     class _DB:
