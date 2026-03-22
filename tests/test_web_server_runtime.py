@@ -3070,6 +3070,21 @@ def test_policy_resolution_jwt_payload_and_plugin_loader_error_paths(monkeypatch
     )
     assert discovered.__name__ == "AutoOne"
 
+
+def test_plugin_source_filename_uses_virtual_label_for_dynamic_code(monkeypatch):
+    mod = _load_web_server()
+
+    assert mod._plugin_source_filename("plug_missing_class") == "<sidar-plugin:plug_missing_class>"
+    assert mod._plugin_source_filename(" weird label / ") == "<sidar-plugin:weird_label_>"
+
+    plugin_cls = mod._load_plugin_agent_class(
+        "from agent.base_agent import BaseAgent\n\nclass Demo(BaseAgent):\n    def ping(self):\n        return 'ok'\n",
+        "Demo",
+        "plug_missing_class",
+    )
+
+    assert plugin_cls.ping.__code__.co_filename == "<sidar-plugin:plug_missing_class>"
+
     monkeypatch.setattr(mod.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
     plugin_path = Path("plugins") / "demo.py"
     plugin_path.unlink(missing_ok=True)

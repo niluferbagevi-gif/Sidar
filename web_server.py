@@ -1595,10 +1595,15 @@ def _sanitize_capabilities(capabilities: list[str] | None) -> list[str]:
     return [c.strip() for c in capabilities if str(c).strip()]
 
 
+def _plugin_source_filename(module_label: str) -> str:
+    safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", (module_label or "").strip()) or "plugin"
+    return f"<sidar-plugin:{safe_label}>"
+
+
 def _load_plugin_agent_class(source_code: str, class_name: str | None, module_label: str) -> type[BaseAgent]:
     namespace = {"__name__": module_label}
     try:
-        exec(compile(source_code, module_label, "exec"), namespace)
+        exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}") from exc
 
