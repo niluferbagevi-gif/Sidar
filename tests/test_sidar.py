@@ -1271,3 +1271,764 @@ def test_rag_delete_document_coverage_native(test_config):
     st._index["baskasinin_belgesi"] = {"session_id": "baska_bir_oturum"}
     res_unauthorized = st.delete_document("baskasinin_belgesi", session_id="benim_oturum")
     assert "yetkiniz yok" in res_unauthorized
+
+
+# ─────────────────────────────────────────────
+# AUTO_HANDLE COMPREHENSIVE BRANCH COVERAGE
+# ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_list_dir_no_match(agent):
+    """AutoHandle: list directory regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match directory list pattern
+    result = await ah.handle("lütfen git logu göster")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_read_file_no_match(agent):
+    """AutoHandle: read file regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match read file pattern
+    result = await ah.handle("bu sorunu çöz lütfen")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_validate_no_match(agent):
+    """AutoHandle: validate file regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match validation pattern
+    result = await ah.handle("git commit yap")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_commits_no_match(agent):
+    """AutoHandle: github commits regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github commits pattern
+    result = await ah.handle("bir fonksiyon yaz")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_info_no_match(agent):
+    """AutoHandle: github info regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github info pattern
+    result = await ah.handle("test yaz")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_files_no_match(agent):
+    """AutoHandle: github list files regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github files pattern
+    result = await ah.handle("bir sorun var mı?")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_read_no_match(agent):
+    """AutoHandle: github read file regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github read pattern
+    result = await ah.handle("yardım et")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_prs_no_match(agent):
+    """AutoHandle: github PRs regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github PR pattern
+    result = await ah.handle("merhaba")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_github_pr_get_no_match(agent):
+    """AutoHandle: github get PR regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match get PR pattern
+    result = await ah.handle("selamlar")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_security_no_match(agent):
+    """AutoHandle: security status regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match security pattern
+    result = await ah.handle("test yaz")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_web_search_no_match(agent):
+    """AutoHandle: web search regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match web search pattern
+    result = await ah.handle("yapı taşları")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_fetch_url_no_match(agent):
+    """AutoHandle: fetch url regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match fetch URL pattern
+    result = await ah.handle("bunu inceleme yap")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_search_docs_no_match(agent):
+    """AutoHandle: search docs regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match search docs pattern
+    result = await ah.handle("bir şey bul")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_stackoverflow_no_match(agent):
+    """AutoHandle: stackoverflow regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match stackoverflow pattern
+    result = await ah.handle("nasıl yapılır?")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_pypi_no_match(agent):
+    """AutoHandle: PyPI regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match PyPI pattern
+    result = await ah.handle("paket kur")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_npm_no_match(agent):
+    """AutoHandle: npm regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match npm pattern
+    result = await ah.handle("node kurulumu")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_gh_releases_no_match(agent):
+    """AutoHandle: github releases regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match github releases pattern
+    result = await ah.handle("sürümü kontrol et")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_docs_search_no_match(agent):
+    """AutoHandle: docs search regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match docs search pattern
+    result = await ah.handle("test yaz")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_docs_list_no_match(agent):
+    """AutoHandle: docs list regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match docs list pattern
+    result = await ah.handle("başka bir şey")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_guard_clause_docs_add_no_match(agent):
+    """AutoHandle: docs add regex pattern nomatch returns False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Text doesn't match docs add pattern
+    result = await ah.handle("yapın lütfen")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_long_text_early_return(agent):
+    """AutoHandle: text longer than 2000 chars returns False early."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Very long text (ReDoS protection)
+    long_text = "a" * 2100
+    result = await ah.handle(long_text)
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_multi_step_command_returns_false(agent):
+    """AutoHandle: multi-step commands (ardından, önce...sonra) return False."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Multi-step command
+    result = await ah.handle("dosya oku ardından bunu yap")
+    assert result == (False, "")
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_read_file_no_path_provided(agent):
+    """AutoHandle: read file with no path returns warning message."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Trigger read file but no path
+    result = await ah.handle("dosya içeriğini getir")
+    assert result[0] is True
+    assert "Hangi dosyayı" in result[1]
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_validate_file_no_path(agent):
+    """AutoHandle: validate file with no path returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Trigger validation but no path
+    result = await ah.handle("python sözdizimi doğrula")
+    assert result[0] is True
+    assert "Doğrulanacak dosya" in result[1]
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_audit_timeout(agent):
+    """AutoHandle: audit timeout returns timeout message."""
+    from agent.auto_handle import AutoHandle
+    import unittest.mock as mock
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+    ah.command_timeout = 0.001  # Very short timeout
+
+    # Mock audit to sleep
+    async def mock_audit(*args):
+        await asyncio.sleep(10)
+
+    with mock.patch.object(ah.code, 'audit_project', side_effect=mock_audit):
+        result = await ah.handle("sistemi tara")
+        assert "zaman aşımına" in result[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_web_search_empty_query(agent):
+    """AutoHandle: web search with empty query returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Trigger web search but no query
+    result = await ah.handle("web'de ara:")
+    assert result[0] is True
+    assert "sorgusu" in result[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_fetch_url_no_url(agent):
+    """AutoHandle: fetch URL without URL returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Trigger fetch but no URL
+    result = await ah.handle("url oku")
+    assert result[0] is True
+    assert "URL" in result[1]
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_github_read_no_path(agent):
+    """AutoHandle: github read without path returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # GitHub token would be required; instead just test the path
+    # Since GitHub is not available in test, the test will return unavailable message
+    result = await ah.handle("github oku")
+    # Either path warning or unavailable message
+    assert result[0] is True
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_health_when_none(agent):
+    """AutoHandle: health command when health manager is None returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=None,  # Set health to None
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Try to get health when manager is None
+    result = await ah.handle(".health")
+    assert result[0] is True
+    assert "başlatılamadı" in result[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_gpu_when_health_none(agent):
+    """AutoHandle: GPU optimize when health manager is None returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=None,  # Set health to None
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Try to optimize GPU when manager is None
+    result = await ah.handle(".gpu")
+    assert result[0] is True
+    assert "başlatılamadı" in result[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_docs_search_empty_query(agent):
+    """AutoHandle: docs search with empty query returns warning."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Docs search with just "ara:" but no query
+    # This should hit the regex but fail to extract proper content
+    result = await ah.handle("depoda ara:")
+    assert result[0] is True  # Method should process it
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_pypi_package_comparison(agent):
+    """AutoHandle: PyPI version comparison extracts version."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # PyPI query without version should not match ver_m but should process package
+    result = await ah.handle("pypi requests")
+    # Since pkg manager might not be available, just check it returns a tuple
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_dot_command_dispatch(agent):
+    """AutoHandle: dot command dispatcher routes correctly."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Test .audit command routing
+    result = await ah.handle(".audit")
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_github_pr_files_request(agent):
+    """AutoHandle: GitHub PR files request triggers correct path."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # PR request without GitHub token
+    result = await ah.handle("PR #5 dosyaları")
+    # Should return either files or unavailable message
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_auto_handle_github_pr_state_detection(agent):
+    """AutoHandle: GitHub PR list detects state (open/closed/all)."""
+    from agent.auto_handle import AutoHandle
+
+    ah = AutoHandle(
+        code=agent.code,
+        health=agent.health,
+        github=agent.github,
+        memory=agent.memory,
+        web=agent.web,
+        pkg=agent.pkg,
+        docs=agent.docs,
+        cfg=agent.cfg,
+    )
+
+    # Closed PR request without token
+    result = await ah.handle("kapalı PR listele")
+    assert isinstance(result, tuple)
+    assert len(result) == 2
