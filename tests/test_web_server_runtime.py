@@ -783,6 +783,24 @@ def test_health_status_and_rag_search_endpoints():
     assert calls["search"] == ("needle", 10, "auto", "sess-1")
 
 
+def test_readiness_check_returns_503_when_dependency_health_lookup_raises():
+    mod = _load_web_server()
+    agent, _calls = _make_agent(ai_provider="openai", ollama_online=True)
+    agent.health.get_dependency_health = lambda: (_ for _ in ()).throw(RuntimeError("redis/db offline"))
+
+    async def _get_agent():
+        return agent
+
+    mod.get_agent = _get_agent
+
+    ready = asyncio.run(mod.readiness_check())
+
+    assert ready.status_code == 503
+    assert ready.content["status"] == "degraded"
+    assert ready.content["dependencies"]["error"]["healthy"] is False
+    assert "redis/db offline" in ready.content["dependencies"]["error"]["detail"]
+
+
 def test_readiness_check_returns_503_when_dependency_is_down():
     mod = _load_web_server()
     agent, _calls = _make_agent(ai_provider="gemini", ollama_online=True)
