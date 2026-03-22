@@ -118,6 +118,54 @@ def test_execute_self_heal_plan_handles_empty_ops_backup_failure_and_patch_failu
     assert writes == [("b.py", "original-content")]
 
 
+def test_update_remediation_step_and_execute_self_heal_plan_reuse_existing_backup():
+    agent = _make_agent_for_runtime()
+    agent.cfg = SimpleNamespace(BASE_DIR="/repo")
+
+    remediation_loop = {"steps": [{"name": "analyze", "status": "planned", "detail": ""}]}
+    SA_MOD.SidarAgent._update_remediation_step(remediation_loop, "missing", status="done", detail="no-op")
+    assert remediation_loop["steps"][0] == {"name": "analyze", "status": "planned", "detail": ""}
+
+    reads = []
+    patches = []
+
+    class _Code:
+        def read_file(self, path, _with_numbers=False):
+            reads.append(path)
+            return True, f"original:{path}"
+
+        def patch_file(self, path, target, replacement):
+            patches.append((path, target, replacement))
+            return True, "patched"
+
+        def write_file(self, path, content, _with_numbers=False):
+            raise AssertionError("restore should not run on successful self-heal")
+
+        def run_shell_in_sandbox(self, command, base_dir):
+            return True, f"ok:{command}:{base_dir}"
+
+    agent.code = _Code()
+
+    result = asyncio.run(
+        agent._execute_self_heal_plan(
+            remediation_loop={"validation_commands": ["pytest -q"]},
+            plan={
+                "summary": "plan",
+                "confidence": "medium",
+                "operations": [
+                    {"path": "same.py", "target": "A", "replacement": "B"},
+                    {"path": "same.py", "target": "B", "replacement": "C"},
+                ],
+                "validation_commands": ["pytest -q"],
+            },
+        )
+    )
+
+    assert result["status"] == "applied"
+    assert reads == ["same.py"]
+    assert patches == [("same.py", "A", "B"), ("same.py", "B", "C")]
+
+
 def test_attempt_autonomous_self_heal_guard_paths_and_missing_operations(monkeypatch):
     agent = _make_agent_for_runtime()
     agent.cfg = SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)

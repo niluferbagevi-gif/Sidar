@@ -236,6 +236,23 @@ def test_respond_react_and_summarize_path():
     assert out == ["supervised"]
 
 
+def test_respond_reuses_existing_lock_for_memory_writes():
+    a = _make_agent_for_runtime()
+    existing_lock = asyncio.Lock()
+    a._lock = existing_lock
+
+    async def fake_multi(_):
+        return "locked"
+
+    a._try_multi_agent = fake_multi
+
+    out = asyncio.run(_collect(a.respond("kilit testi")))
+
+    assert out == ["locked"]
+    assert a._lock is existing_lock
+    assert a.memory.items == [("user", "kilit testi"), ("assistant", "locked")]
+
+
 def test_handle_external_trigger_records_activity_and_memory():
     a = _make_agent_for_runtime()
     a.initialize = lambda: asyncio.sleep(0)
@@ -1117,6 +1134,34 @@ def test_try_multi_agent_returns_warning_when_supervisor_returns_none(monkeypatc
 
     out = asyncio.run(mod.SidarAgent._try_multi_agent(a, "gorev"))
     assert "geçerli bir çıktı" in out
+
+
+def test_tool_subtask_metrics_use_coding_model_fallback_when_text_model_missing(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=1, CODING_MODEL="cm")
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            assert kwargs["model"] == "cm"
+            raise RuntimeError("llm unavailable")
+
+    calls = []
+
+    class _Collector:
+        def record_step(self, agent_name, step_name, target, status, duration):
+            calls.append((agent_name, step_name, target, status, duration >= 0))
+
+    agent_metrics_mod = types.ModuleType("core.agent_metrics")
+    agent_metrics_mod.get_agent_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.agent_metrics", agent_metrics_mod)
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_args, **_kwargs: asyncio.sleep(0)
+
+    out = asyncio.run(a._tool_subtask("fallback model testi"))
+
+    assert "Maksimum adım" in out
+    assert calls == [("sidar_agent", "llm_decision", "cm", "failed", True)]
 
 
 def test_memory_archive_context_stops_at_top_k_break():
