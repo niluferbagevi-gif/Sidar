@@ -298,6 +298,13 @@ class Database:
                 max_size=max(1, self.pool_size),
             )
         except Exception as exc:
+            if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
+                logger.warning(
+                    "PostgreSQL bağlantı havuzu zaman aşımına uğradı; hata üst katmana iletiliyor: %s",
+                    exc,
+                )
+                raise
+
             pool_error_type = getattr(asyncpg, "PoolError", None)
             is_pool_error = bool(pool_error_type and isinstance(exc, pool_error_type))
             error_text = str(exc).lower()
