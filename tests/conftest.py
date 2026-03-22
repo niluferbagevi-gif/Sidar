@@ -9,63 +9,7 @@ import types
 import pytest
 
 
-def _can_import(name: str) -> bool:
-    """Modülü gerçekten import edip deneyerek kontrol eder."""
-    try:
-        __import__(name)
-        return True
-    except BaseException:  # PanicException (pyo3) BaseException'dan türeyebilir
-        # Kısmen yüklenen modülü sys.modules'dan temizle
-        for key in list(sys.modules.keys()):
-            if key == name or key.startswith(name + "."):
-                sys.modules.pop(key, None)
-        return False
-
-
-# cryptography Rust bağlamalarının bozuk olduğu ortamlarda jwt'yi stub'la.
-# Önce mevcut kırık cryptography modüllerini temizle, sonra stub ekle.
-def _fix_broken_cryptography_jwt():
-    """cryptography/jwt import zincirini stub'larla kır."""
-    # Mevcut kırık modülleri temizle
-    for key in list(sys.modules.keys()):
-        if key.startswith("cryptography") or key == "jwt" or key.startswith("jwt."):
-            sys.modules.pop(key, None)
-
-    # cryptography alt modüllerini stub'la
-    _crypto_mods = [
-        "cryptography",
-        "cryptography.hazmat",
-        "cryptography.hazmat.bindings",
-        "cryptography.hazmat.bindings._rust",
-        "cryptography.hazmat._oid",
-        "cryptography.hazmat.primitives",
-        "cryptography.hazmat.primitives.asymmetric",
-        "cryptography.hazmat.primitives.asymmetric.ec",
-        "cryptography.hazmat.primitives.asymmetric.rsa",
-        "cryptography.hazmat.primitives.asymmetric.padding",
-        "cryptography.hazmat.primitives.hashes",
-        "cryptography.hazmat.primitives.serialization",
-        "cryptography.hazmat.backends",
-    ]
-    for _m in _crypto_mods:
-        stub = types.ModuleType(_m)
-        stub.__path__ = []
-        stub.__package__ = _m.rsplit(".", 1)[0] if "." in _m else _m
-        sys.modules[_m] = stub
-    # EllipticCurve stub
-    sys.modules["cryptography.hazmat.primitives.asymmetric.ec"].EllipticCurve = type(
-        "EllipticCurve", (), {}
-    )
-    # ObjectIdentifier stub
-    sys.modules["cryptography.hazmat._oid"].ObjectIdentifier = type("ObjectIdentifier", (), {})
-
-
-# jwt çalışıp çalışmadığını kontrol et
-_jwt_works = _can_import("jwt")
-if not _jwt_works:
-    _fix_broken_cryptography_jwt()
-
-if not _can_import("jwt"):
+if importlib.util.find_spec("jwt") is None:
     _jwt = types.ModuleType("jwt")
 
     class PyJWTError(Exception):
