@@ -580,6 +580,23 @@ def test_handle_routes_through_main_dispatcher_branches():
         assert msg == expected, text
 
 
+def test_try_docs_search_handles_sync_tuple_returned_from_thread():
+    auto = _make_auto(github_available=True)
+
+    class _SyncDocs:
+        def search(self, query, _unused, mode):
+            assert query == "cache"
+            assert mode == "vector"
+            return True, "sync-doc-search"
+
+    auto.docs = _SyncDocs()
+
+    handled, msg = asyncio.run(auto._try_docs_search("depoda ara: cache mode:vector", ""))
+
+    assert handled is True
+    assert msg == "sync-doc-search"
+
+
 def test_try_docs_search_awaits_async_result_returned_from_thread():
     auto = _make_auto(github_available=True)
 
