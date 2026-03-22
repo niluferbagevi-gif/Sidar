@@ -84,7 +84,8 @@ def test_web_server_ultimate_edge_cases(monkeypatch):
         with patch("sys.argv", ["web_server.py"]):
             try:
                 ns = {"__name__": "__main__", "__file__": "web_server.py"}
-                exec(compile(open("web_server.py", "rb").read(), "web_server.py", "exec"), ns)
+                with open("web_server.py", "rb") as f:
+                    exec(compile(f.read(), "web_server.py", "exec"), ns)
             except Exception:
                 pass
     finally:
