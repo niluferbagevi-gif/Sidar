@@ -1230,6 +1230,36 @@ app = FastAPI(
 )
 
 
+def _register_exception_handlers(application: FastAPI) -> None:
+    if not hasattr(application, "exception_handler"):
+        return
+
+    @application.exception_handler(HTTPException)
+    async def _http_exception_handler(_request: Request, exc: HTTPException):
+        detail = getattr(exc, "detail", "İstek işlenemedi.")
+        if isinstance(detail, dict):
+            content = {"success": False, **detail}
+            content.setdefault("error", "İstek işlenemedi.")
+        else:
+            content = {"success": False, "error": str(detail or "İstek işlenemedi.")}
+        return JSONResponse(content, status_code=getattr(exc, "status_code", 500))
+
+    @application.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception(
+            "İşlenmeyen web hatası: path=%s error=%s",
+            getattr(request.url, "path", "?"),
+            exc,
+        )
+        return JSONResponse(
+            {"success": False, "error": "İç sunucu hatası", "detail": str(exc)},
+            status_code=500,
+        )
+
+
+_register_exception_handlers(app)
+
+
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
     """Bearer token ile stateless JWT kullanıcı doğrulaması uygular."""
@@ -2796,6 +2826,12 @@ async def websocket_chat(websocket: WebSocket):
             await _leave_collaboration_room(websocket)
         else:
             logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
+            with contextlib.suppress(Exception):
+                await websocket.send_json(
+                    {"error": "WebSocket oturumu beklenmedik şekilde sonlandı.", "done": True}
+                )
+            with contextlib.suppress(Exception):
+                await _leave_collaboration_room(websocket)
 
 
 @app.websocket("/ws/voice")
@@ -3170,8 +3206,21 @@ async def _await_if_needed(value):
 
 
 async def _health_response(*, require_dependencies: bool = False) -> JSONResponse:
-    agent = await get_agent()
-    health_data = agent.health.get_health_summary()
+    try:
+        agent = await get_agent()
+        health_data = agent.health.get_health_summary()
+    except Exception as exc:
+        logger.warning("Health check güvenli fallback'e düştü: %s", exc)
+        return JSONResponse(
+            {
+                "status": "degraded",
+                "error": "health_check_failed",
+                "detail": str(exc),
+                "uptime_seconds": int(time.monotonic() - _start_time),
+            },
+            status_code=503,
+        )
+
     health_data["uptime_seconds"] = int(time.monotonic() - _start_time)
 
     # Eğer ana yapay zeka servisi (Ollama) çöktüyse 503 HTTP kodu döndür
@@ -3180,7 +3229,13 @@ async def _health_response(*, require_dependencies: bool = False) -> JSONRespons
         return JSONResponse(health_data, status_code=503)
 
     if require_dependencies:
-        dependency_health = agent.health.get_dependency_health()
+        try:
+            dependency_health = agent.health.get_dependency_health()
+        except Exception as exc:
+            logger.warning("Dependency health sorgusu başarısız oldu: %s", exc)
+            health_data["dependencies"] = {"error": {"healthy": False, "detail": str(exc)}}
+            health_data["status"] = "degraded"
+            return JSONResponse(health_data, status_code=503)
         health_data["dependencies"] = dependency_health
         if any(item.get("healthy") is False for item in dependency_health.values()):
             health_data["status"] = "degraded"

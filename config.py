@@ -657,12 +657,14 @@ class Config:
             )
             is_valid = False
 
-        if cls.MEMORY_ENCRYPTION_KEY:
+        memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
+
+        if memory_encryption_key:
             try:
                 from cryptography.fernet import Fernet  # noqa: F401
                 # Anahtarı ön doğrulama — geçersiz formatta erken hata ver
                 try:
-                    Fernet(cls.MEMORY_ENCRYPTION_KEY.encode())
+                    Fernet(memory_encryption_key.encode())
                 except Exception as key_exc:
                     logger.error(
                         "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
