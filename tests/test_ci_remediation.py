@@ -184,6 +184,14 @@ def test_check_suite_failure_context_and_event_detection_use_defaults():
     assert context["failure_summary"] == "timed_out"
 
 
+def test_root_cause_summary_uses_inferred_line_when_first_sentence_is_not_root_cause(monkeypatch):
+    monkeypatch.setattr(ci_mod, "_extract_root_cause_line", lambda *_args: "Inferred: flaky teardown")
+
+    summary = ci_mod.build_root_cause_summary({}, "AssertionError: websocket timeout")
+
+    assert summary == "Inferred: flaky teardown"
+
+
 def test_root_cause_summary_falls_back_to_hint_and_validation_commands_skip_blanks():
     context = {
         "failure_summary": "",
