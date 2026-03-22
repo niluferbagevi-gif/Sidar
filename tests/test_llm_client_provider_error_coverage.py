@@ -231,3 +231,226 @@ def test_llm_client_ollama_truncation_edge_branches():
     assert sum(len(m["content"]) for m in truncated) <= 1300
     assert truncated[0]["role"] == "system"
     assert all(not (m["role"] == "system" and m["content"] == "IGNORED") for m in truncated)
+
+def test_provider_retry_warnings_cover_openai_ollama_and_anthropic(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(llm.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    async def _fast_sleep(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(llm.asyncio, "sleep", _fast_sleep)
+    monkeypatch.setattr(llm.random, "uniform", lambda *_args, **_kwargs: 0.0)
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    openai_attempts = {"count": 0}
+
+    class _OpenAIResponse:
+        def raise_for_status(self):
+            if openai_attempts["count"] == 0:
+                openai_attempts["count"] += 1
+                raise llm.httpx.HTTPStatusError(429)
+
+        def json(self):
+            return {"choices": [{"message": {"content": "openai-ok"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+    class _OpenAIClient:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return _OpenAIResponse()
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _OpenAIClient)
+    openai_cfg = SimpleNamespace(
+        OPENAI_API_KEY="key",
+        OPENAI_MODEL="gpt-test",
+        OPENAI_TIMEOUT=10,
+        LLM_MAX_RETRIES=1,
+        LLM_RETRY_BASE_DELAY=0.01,
+        LLM_RETRY_MAX_DELAY=0.01,
+    )
+    openai = llm.OpenAIClient(openai_cfg)
+    openai_result = asyncio.run(openai.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=False))
+    assert openai_result == "openai-ok"
+    assert openai_attempts["count"] == 1
+
+    ollama_attempts = {"count": 0}
+
+    class _OllamaResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": {"content": "ollama-ok"}}
+
+    class _OllamaClient:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            if ollama_attempts["count"] == 0:
+                ollama_attempts["count"] += 1
+                raise llm.httpx.TimeoutException("ollama timeout")
+            return _OllamaResponse()
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _OllamaClient)
+    ollama_cfg = SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_TIMEOUT=10,
+        CODING_MODEL="qwen2.5-coder:7b",
+        USE_GPU=False,
+        LLM_MAX_RETRIES=1,
+        LLM_RETRY_BASE_DELAY=0.01,
+        LLM_RETRY_MAX_DELAY=0.01,
+    )
+    ollama = llm.OllamaClient(ollama_cfg)
+    ollama_result = asyncio.run(ollama.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=False))
+    assert ollama_result == "ollama-ok"
+    assert ollama_attempts["count"] == 1
+
+    anthropic_attempts = {"count": 0}
+
+    class _MessagesAPI:
+        async def create(self, **_kwargs):
+            if anthropic_attempts["count"] == 0:
+                anthropic_attempts["count"] += 1
+                raise llm.httpx.TimeoutException("anthropic timeout")
+            return SimpleNamespace(
+                content=[SimpleNamespace(text="anthropic-ok")],
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            )
+
+    class _AsyncAnthropic:
+        def __init__(self, api_key, timeout):
+            self.api_key = api_key
+            self.timeout = timeout
+            self.messages = _MessagesAPI()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    anthropic_cfg = SimpleNamespace(
+        ANTHROPIC_API_KEY="anth-key",
+        ANTHROPIC_MODEL="claude-test",
+        ANTHROPIC_TIMEOUT=10,
+        LLM_MAX_RETRIES=1,
+        LLM_RETRY_BASE_DELAY=0.01,
+        LLM_RETRY_MAX_DELAY=0.01,
+    )
+    anthropic = llm.AnthropicClient(anthropic_cfg)
+    anthropic_result = asyncio.run(anthropic.chat([{"role": "user", "content": "hey"}], stream=False, json_mode=False))
+    assert anthropic_result == "anthropic-ok"
+    assert anthropic_attempts["count"] == 1
+
+    assert any("openai geçici hata" in entry and "429" in entry for entry in warnings)
+    assert any("ollama geçici hata" in entry and "ollama timeout" in entry for entry in warnings)
+    assert any("anthropic geçici hata" in entry and "anthropic timeout" in entry for entry in warnings)
+
+
+@pytest.mark.parametrize(
+    ("client_factory", "cfg", "expected_fragment"),
+    [
+        (
+            lambda cfg: llm.OpenAIClient(cfg),
+            SimpleNamespace(OPENAI_API_KEY="", OPENAI_MODEL="gpt-test", OPENAI_TIMEOUT=10),
+            "OPENAI_API_KEY ayarlanmamış",
+        ),
+        (
+            lambda cfg: llm.GeminiClient(cfg),
+            SimpleNamespace(GEMINI_API_KEY="", GEMINI_MODEL="gemini-test", ENABLE_TRACING=False),
+            "GEMINI_API_KEY ayarlanmamış",
+        ),
+        (
+            lambda cfg: llm.AnthropicClient(cfg),
+            SimpleNamespace(ANTHROPIC_API_KEY="", ANTHROPIC_MODEL="claude-test", ANTHROPIC_TIMEOUT=10),
+            "ANTHROPIC_API_KEY ayarlanmamış",
+        ),
+    ],
+)
+def test_provider_missing_api_keys_return_fallback_payloads(monkeypatch, client_factory, cfg, expected_fragment):
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda **_kwargs: None
+    fake_genai.GenerativeModel = object
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+
+    client = client_factory(cfg)
+    result = asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=True))
+    payload = json.loads(result)
+    assert expected_fragment in payload["argument"]
+
+
+def test_gemini_stream_retry_warns_on_transient_timeout(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(llm.logger, "warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+    async def _fast_sleep(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(llm.asyncio, "sleep", _fast_sleep)
+    monkeypatch.setattr(llm.random, "uniform", lambda *_args, **_kwargs: 0.0)
+
+    calls = {"stream_attempts": 0, "configured_key": None}
+
+    class _Chunk:
+        def __init__(self, text):
+            self.text = text
+
+    class _Session:
+        async def send_message_async(self, prompt, stream=False):
+            assert prompt == "retry please"
+            if stream:
+                if calls["stream_attempts"] == 0:
+                    calls["stream_attempts"] += 1
+                    raise llm.httpx.TimeoutException("gemini stream timeout")
+
+                async def _iter():
+                    yield _Chunk("gemini-ok")
+
+                return _iter()
+            raise AssertionError("non-stream path should not be used")
+
+    class _Model:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start_chat(self, history):
+            assert history == []
+            return _Session()
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda api_key: calls.__setitem__("configured_key", api_key)
+    fake_genai.GenerativeModel = _Model
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.delitem(sys.modules, "google.generativeai.types", raising=False)
+
+    gemini = llm.GeminiClient(
+        SimpleNamespace(
+            GEMINI_API_KEY="gem-key",
+            GEMINI_MODEL="gemini-test",
+            ENABLE_TRACING=False,
+            LLM_MAX_RETRIES=1,
+            LLM_RETRY_BASE_DELAY=0.01,
+            LLM_RETRY_MAX_DELAY=0.01,
+        )
+    )
+
+    async def _run():
+        stream = await gemini.chat([{"role": "user", "content": "retry please"}], stream=True, json_mode=False)
+        return await _collect(stream)
+
+    out = asyncio.run(_run())
+    assert out == ["gemini-ok"]
+    assert calls["configured_key"] == "gem-key"
+    assert calls["stream_attempts"] == 1
+    assert any("gemini geçici hata" in entry and "gemini stream timeout" in entry for entry in warnings)
