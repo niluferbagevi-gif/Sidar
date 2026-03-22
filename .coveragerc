@@ -7,7 +7,6 @@ omit =
     */__pycache__/*
     */site-packages/*
     setup.py
-    plug_auto_discover
 
 [report]
 fail_under = 100
