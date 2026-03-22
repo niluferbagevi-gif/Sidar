@@ -30,6 +30,15 @@ from core.active_learning import (
 
 # ─── FeedbackStore — devre dışı modu ────────────────────────────────────────
 
+def test_feedback_store_stats_returns_empty_dict_when_enabled_but_engine_missing():
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+
+    assert _run(store.stats()) == {}
+
+
 class TestFeedbackStoreDisabled:
     def setup_method(self):
         cfg = MagicMock()

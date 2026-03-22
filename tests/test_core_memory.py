@@ -104,6 +104,35 @@ def test_compact_session_returns_missing_for_unknown_session(tmp_path: Path):
     asyncio.run(_run())
 
 
+def test_compact_session_skips_when_message_count_is_below_threshold(tmp_path: Path):
+    async def _run() -> None:
+        _mod, memory, user = await _make_initialized_memory(tmp_path)
+        session_id = memory.active_session_id
+        assert session_id is not None
+
+        memory.db.load_session = AsyncMock(return_value=SimpleNamespace(title="Sess"))
+        memory.db.get_session_messages = AsyncMock(
+            return_value=[SimpleNamespace(role="user", content="yalnızca bir mesaj")]
+        )
+        memory.db.replace_session_messages = AsyncMock()
+
+        report = await memory.compact_session(
+            user_id=user.id,
+            session_id=session_id,
+            min_messages=3,
+        )
+
+        assert report == {
+            "session_id": session_id,
+            "status": "skipped",
+            "messages_before": 1,
+            "reason": "message_threshold",
+        }
+        memory.db.replace_session_messages.assert_not_called()
+
+    asyncio.run(_run())
+
+
 def test_compact_session_replaces_active_session_turns(tmp_path: Path):
     async def _run() -> None:
         _mod, memory, user = await _make_initialized_memory(tmp_path)
