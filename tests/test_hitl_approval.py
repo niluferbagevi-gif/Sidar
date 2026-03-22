@@ -430,6 +430,48 @@ def test_request_approval_returns_false_when_request_disappears(monkeypatch):
     _run(_inner())
 
 
+def test_request_approval_returns_false_when_request_is_marked_timeout_before_deadline(monkeypatch, caplog):
+    async def _inner():
+        import core.hitl as hitl_mod
+
+        store = _HITLStore()
+        monkeypatch.setattr(hitl_mod, "get_hitl_store", lambda: store)
+
+        gate = HITLGate()
+        gate.enabled = True
+        gate.timeout = 10
+
+        clock = {"now": 5000.0}
+
+        async def _notify(_req):
+            return None
+
+        async def _sleep(_seconds):
+            req = store._requests[-1]
+            req.decision = HITLDecision.TIMEOUT
+            req.decided_at = clock["now"] + 1
+            clock["now"] += 1
+
+        monkeypatch.setattr(hitl_mod, "notify", _notify)
+        monkeypatch.setattr(time, "time", lambda: clock["now"])
+        monkeypatch.setattr(asyncio, "sleep", _sleep)
+
+        approved = await gate.request_approval(
+            action="dangerous_write",
+            description="Onay verilmezse timeout kararı dönmeli",
+            payload={},
+            requested_by="CodeManager",
+        )
+
+        assert approved is False
+        assert store._requests[-1].decision == HITLDecision.TIMEOUT
+
+    with caplog.at_level("WARNING"):
+        _run(_inner())
+
+    assert "HITL REDDEDİLDİ/ZAMAN AŞIMI" in caplog.text
+
+
 def test_request_approval_returns_false_when_request_is_rejected(monkeypatch):
     async def _inner():
         import core.hitl as hitl_mod
