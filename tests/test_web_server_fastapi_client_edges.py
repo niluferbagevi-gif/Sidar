@@ -167,7 +167,9 @@ def _load_web_server_with_real_fastapi():
         _set(name, module)
 
     for name in list(sys.modules):
-        if name == "fastapi" or name.startswith("fastapi.") or name == "pydantic" or name.startswith("pydantic."):
+        if name in ("fastapi", "pydantic", "httpx", "starlette") or name.startswith(
+            ("fastapi.", "pydantic.", "httpx.", "starlette.")
+        ):
             sys.modules.pop(name, None)
 
     importlib.import_module("pydantic")
