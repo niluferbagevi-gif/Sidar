@@ -224,6 +224,20 @@ class TestEntityMemoryWithSQLite:
         assert len(profile) <= 5, f"Eviction çalışmadı: {len(profile)} anahtar var"
         _run(em.close())
 
+    def test_purge_expired_returns_zero_when_engine_is_ready_but_nothing_is_removed(self, tmp_path):
+        em = _make_sqlite_em(tmp_path)
+        if not _try_init(em):
+            pytest.skip("aiosqlite/sqlalchemy kurulu değil")
+        result = _run(em.purge_expired())
+        assert result == 0
+        _run(em.close())
+
+    def test_close_is_noop_when_engine_is_missing(self, tmp_path):
+        em = _make_sqlite_em(tmp_path)
+        assert em._engine is None
+        assert _run(em.close()) is None
+        assert em._engine is None
+
     def test_purge_expired_removes_old(self, tmp_path):
         em = _make_sqlite_em(tmp_path)
         if not _try_init(em):
