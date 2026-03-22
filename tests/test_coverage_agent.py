@@ -248,6 +248,34 @@ def test_coverage_agent_ensure_db_returns_cached_value_inside_lock():
     assert db is sentinel_db
 
 
+def test_coverage_agent_generate_missing_tests_uses_provided_analysis_dict(monkeypatch):
+    agent = CoverageAgent()
+    seen = {}
+
+    def _unexpected_analyze(*_args, **_kwargs):
+        raise AssertionError("analyze_pytest_output should not run when analysis is already a dict")
+
+    monkeypatch.setattr(agent.code, "analyze_pytest_output", _unexpected_analyze)
+    monkeypatch.setattr(agent.code, "read_file", lambda *_args, **_kwargs: (False, ""))
+
+    async def _fake_call_llm(messages, **kwargs):
+        seen["messages"] = messages
+        seen["kwargs"] = kwargs
+        return "def test_existing_analysis():\n    assert True\n"
+
+    monkeypatch.setattr(agent, "call_llm", _fake_call_llm)
+
+    generated_out = asyncio.run(
+        agent.run_task(
+            'generate_missing_tests|{"target_path":"core/demo.py","pytest_output":"FAIL: sample","analysis":{"summary":"hazir","findings":[]}}'
+        )
+    )
+
+    assert "def test_existing_analysis()" in generated_out
+    assert "hazir" in seen["messages"][0]["content"]
+    assert seen["kwargs"]["system_prompt"] == agent.TEST_GENERATION_PROMPT
+
+
 def test_coverage_agent_analyze_and_generate_tools_use_fallbacks(monkeypatch):
     agent = CoverageAgent()
     seen = {}
