@@ -304,6 +304,57 @@ def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_tolerates_stop_error(
     assert engine.stopped is True
 
 
+def test_pyttsx3_adapter_synthesize_sync_keeps_default_voice_when_no_candidate_matches(monkeypatch, tmp_path):
+    class _TrackingTempDir:
+        def __init__(self, prefix="sidar-tts-"):
+            self.path = tmp_path / prefix.rstrip("-")
+
+        def __enter__(self):
+            self.path.mkdir(parents=True, exist_ok=True)
+            return str(self.path)
+
+        def __exit__(self, exc_type, exc, tb):
+            for child in sorted(self.path.rglob("*"), reverse=True):
+                if child.is_file():
+                    child.unlink()
+                elif child.is_dir():
+                    child.rmdir()
+            self.path.rmdir()
+            return False
+
+    class _Engine:
+        def __init__(self):
+            self.selected_voice = None
+
+        def getProperty(self, name):
+            assert name == "voices"
+            return [SimpleNamespace(id="en-us", name="English")]
+
+        def setProperty(self, name, value):
+            assert name == "voice"
+            self.selected_voice = value
+
+        def save_to_file(self, text, output_path):
+            Path(output_path).write_bytes(f"audio:{text}".encode("utf-8"))
+
+        def runAndWait(self):
+            return None
+
+        def stop(self):
+            return None
+
+    engine = _Engine()
+    monkeypatch.setitem(sys.modules, "pyttsx3", SimpleNamespace(init=lambda: engine))
+    monkeypatch.setattr(voice_mod.tempfile, "TemporaryDirectory", _TrackingTempDir)
+
+    adapter = voice_mod._Pyttsx3Adapter()
+    result = adapter._synthesize_sync("Merhaba", "turkish")
+
+    assert result["success"] is True
+    assert result["voice"] == "turkish"
+    assert engine.selected_voice is None
+
+
 def test_pyttsx3_adapter_propagates_device_and_permission_errors(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
@@ -400,6 +451,15 @@ def test_voice_pipeline_extract_ready_segments_returns_empty_for_blank_buffer():
     assert remainder == ""
 
 
+def test_voice_pipeline_extract_ready_segments_skips_blank_boundary_parts():
+    pipeline = VoicePipeline(_Cfg())
+
+    ready, remainder = pipeline.extract_ready_segments("İlk cümle. \n\nSon bölüm", flush=False)
+
+    assert ready == ["İlk cümle."]
+    assert remainder == "Son bölüm"
+
+
 def test_voice_pipeline_barge_in_clears_buffer_and_tracks_interrupted_turns():
     cfg = SimpleNamespace(
         VOICE_TTS_PROVIDER="mock",
@@ -431,3 +491,37 @@ def test_voice_pipeline_barge_in_clears_buffer_and_tracks_interrupted_turns():
     assert state.output_text_buffer == ""
     assert state.output_sequence == 0
     assert state.last_interrupt_reason == "barge_in"
+
+
+def test_voice_pipeline_emits_short_punctuated_segments_before_buffer_limit():
+    cfg = SimpleNamespace(
+        VOICE_TTS_PROVIDER="mock",
+        VOICE_TTS_SEGMENT_CHARS=20,
+        VOICE_TTS_BUFFER_CHARS=60,
+    )
+    pipeline = VoicePipeline(cfg)
+    state = pipeline.create_duplex_state()
+    pipeline.begin_assistant_turn(state)
+
+    turn_id, packets = pipeline.buffer_assistant_text(state, "Kısa cevap. Devam", flush=False)
+
+    assert turn_id == 1
+    assert packets == [{"assistant_turn_id": 1, "audio_sequence": 1, "text": "Kısa cevap."}]
+    assert state.output_text_buffer == "Devam"
+
+
+def test_voice_pipeline_empty_text_keeps_buffer_and_zero_turn_interrupt_is_not_tracked():
+    pipeline = VoicePipeline(_Cfg())
+    state = pipeline.create_duplex_state()
+    state.output_text_buffer = "Taslak çıktı"
+    state.output_sequence = 3
+
+    turn_id, packets = pipeline.buffer_assistant_text(state, "", flush=False)
+    interrupt = pipeline.interrupt_assistant_turn(state, reason="")
+
+    assert turn_id == 0
+    assert packets == []
+    assert interrupt["assistant_turn_id"] == 0
+    assert interrupt["cancelled_audio_sequences"] == 3
+    assert interrupt["reason"] == "interrupt"
+    assert state.interrupted_turns == []
