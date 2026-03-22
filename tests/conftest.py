@@ -134,6 +134,9 @@ def _restore_critical_modules_between_tests():
         "managers.system_health",
         "core",
         "core.llm_metrics",
+        "httpx",
+        "fastapi",
+        "starlette",
     )
     saved = {name: sys.modules.get(name) for name in module_names}
     try:
