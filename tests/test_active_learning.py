@@ -30,6 +30,16 @@ from core.active_learning import (
 
 # ─── FeedbackStore — devre dışı modu ────────────────────────────────────────
 
+def test_feedback_store_close_noops_without_engine():
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+
+    assert _run(store.close()) is None
+    assert store._engine is None
+
+
 def test_feedback_store_stats_returns_empty_dict_when_enabled_but_engine_missing():
     cfg = MagicMock()
     cfg.ENABLE_ACTIVE_LEARNING = True
@@ -208,6 +218,28 @@ class TestFeedbackStoreWithSQLite:
         assert rows[0]["rating"] == -1
         assert rows[0]["correction"] == "Bağlamdan önemli maddeler eksik."
         _run(store.close())
+
+
+def test_feedback_store_flag_weak_response_omits_reasoning_tag_when_blank(monkeypatch):
+    cfg = MagicMock()
+    cfg.ENABLE_ACTIVE_LEARNING = True
+    cfg.AL_MIN_RATING_FOR_TRAIN = 1
+    store = FeedbackStore(config=cfg)
+    store._engine = object()
+
+    captured = {}
+
+    async def _record(**kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(store, "record", _record)
+
+    ok = _run(store.flag_weak_response("prompt", "response", 4, ""))
+
+    assert ok is True
+    assert "judge_reasoning" not in captured["tags"]
+    assert "weak_response" in captured["tags"]
 
 
 def test_feedback_store_record_propagates_db_execute_errors(monkeypatch):
@@ -510,6 +542,26 @@ class TestDatasetExporter:
         assert result["count"] == 0
         _run(store.close())
 
+    def test_export_skips_mark_done_when_disabled(self, tmp_path):
+        class _Store:
+            def __init__(self):
+                self.marked = []
+
+            async def get_pending_export(self, min_rating=None):
+                return [{"id": 7, "prompt": "P", "response": "R", "correction": ""}]
+
+            async def mark_exported(self, ids):
+                self.marked.append(list(ids))
+
+        exporter = DatasetExporter(_Store())
+        out = str(tmp_path / "mark-disabled.jsonl")
+
+        result = _run(exporter.export(out, fmt="jsonl", mark_done=False))
+
+        assert result["count"] == 1
+        assert exporter.store.marked == []
+
+
     def test_unsupported_format_raises(self, tmp_path):
         store = _make_store(tmp_path)
         exporter = DatasetExporter(store)
@@ -647,6 +699,56 @@ class TestLoRATrainer:
         assert result["success"] is True
         assert records["tokenized_text"] == "İsteği özetle\n\nÖzet yanıt"
         assert records["remove_columns"] == ["conversations"]
+
+    def test_run_training_preserves_existing_pad_token(self, monkeypatch, tmp_path):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        trainer.output_dir = str(tmp_path / "adapters-pad")
+        records = _install_training_stubs(monkeypatch, include_bitsandbytes=False)
+        transformers_mod = sys.modules["transformers"]
+        original_from_pretrained = transformers_mod.AutoTokenizer.from_pretrained
+
+        def _from_pretrained(*args, **kwargs):
+            tokenizer = original_from_pretrained(*args, **kwargs)
+            tokenizer.pad_token = "<pad>"
+            return tokenizer
+
+        monkeypatch.setattr(transformers_mod.AutoTokenizer, "from_pretrained", staticmethod(_from_pretrained))
+
+        result = trainer._run_training("dataset.jsonl")
+
+        assert result["success"] is True
+        assert records["tokenizer"].pad_token == "<pad>"
+
+
+    def test_run_training_handles_non_list_and_partial_sharegpt_conversations(self, monkeypatch, tmp_path):
+        trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
+        trainer.output_dir = str(tmp_path / "adapters-sharegpt-partial")
+
+        records = _install_training_stubs(monkeypatch, include_bitsandbytes=False, dataset_row={"conversations": {"from": "human"}})
+        result = trainer._run_training("sharegpt-nonlist.jsonl")
+        assert result["success"] is True
+        assert records["tokenized_text"] == ""
+
+        trainer.output_dir = str(tmp_path / "adapters-sharegpt-human-only")
+        records = _install_training_stubs(
+            monkeypatch,
+            include_bitsandbytes=False,
+            dataset_row={"conversations": [{"from": "human", "value": "Sadece insan"}]},
+        )
+        result = trainer._run_training("sharegpt-human.jsonl")
+        assert result["success"] is True
+        assert records["tokenized_text"] == "Sadece insan"
+
+        trainer.output_dir = str(tmp_path / "adapters-sharegpt-assistant-only")
+        records = _install_training_stubs(
+            monkeypatch,
+            include_bitsandbytes=False,
+            dataset_row={"conversations": [{"from": "gpt", "value": "Sadece asistan"}]},
+        )
+        result = trainer._run_training("sharegpt-assistant.jsonl")
+        assert result["success"] is True
+        assert records["tokenized_text"] == "Sadece asistan"
+
 
     def test_run_training_without_bitsandbytes_falls_back_to_standard_model_kwargs(self, monkeypatch, tmp_path):
         trainer = LoRATrainer(config=self._cfg(enabled=True, base_model="mock/model"))
@@ -894,6 +996,33 @@ def test_get_feedback_store_returns_instance():
         al_mod._feedback_store = original
 
 
+def test_get_continuous_learning_pipeline_uses_instance_created_inside_lock(monkeypatch):
+    import core.active_learning as al_mod
+
+    original = al_mod._continuous_learning_pipeline
+    al_mod._continuous_learning_pipeline = None
+
+    class _InjectedPipeline:
+        pass
+
+    injected = _InjectedPipeline()
+
+    class _Lock:
+        def __enter__(self):
+            al_mod._continuous_learning_pipeline = injected
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(al_mod, "_pipeline_lock", _Lock())
+
+    try:
+        assert get_continuous_learning_pipeline() is injected
+    finally:
+        al_mod._continuous_learning_pipeline = original
+
+
 def test_get_continuous_learning_pipeline_returns_instance(monkeypatch):
     import core.active_learning as al_mod
 
@@ -976,6 +1105,13 @@ def test_feedback_store_get_pending_signals_handles_disabled_and_invalid_tags(tm
 
     assert rows[0]["tags"] == ["judge:auto", "weak_response"]
     assert rows[1]["tags"] == []
+
+
+def test_continuous_learning_pipeline_normalize_tags_returns_empty_for_json_object(tmp_path):
+    cfg = TestContinuousLearningPipeline()._cfg(tmp_path)
+    pipeline = ContinuousLearningPipeline(MagicMock(), config=cfg, trainer=MagicMock())
+
+    assert pipeline._normalize_tags('{"tag":"value"}') == []
 
 
 def test_continuous_learning_pipeline_normalize_and_example_filters(tmp_path):
