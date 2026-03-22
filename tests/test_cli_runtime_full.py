@@ -5,6 +5,7 @@ import sys
 import types
 from contextlib import contextmanager
 from pathlib import Path
+import pytest
 
 
 @contextmanager
@@ -286,3 +287,52 @@ def test_interactive_loop_supports_slash_exit_and_slash_clear(monkeypatch):
     monkeypatch.setattr(asyncio, "to_thread", lambda fn, *a, **k: asyncio.sleep(0, result=next(inputs)))
 
     asyncio.run(cli._interactive_loop_async(agent))
+
+
+def test_cli_main_invalid_argparse_choice_exits(monkeypatch):
+    cli = _load_cli_module()
+    monkeypatch.setattr(sys, "argv", ["cli.py", "--provider", "invalid-provider"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 2
+
+
+def test_interactive_loop_gracefully_exits_on_cancelled_response(monkeypatch):
+    cli = _load_cli_module()
+
+    class _CancelledAgent:
+        def __init__(self):
+            base = _make_agent()
+            self.VERSION = base.VERSION
+            self.cfg = base.cfg
+            self.github = base.github
+            self.web = base.web
+            self.pkg = base.pkg
+            self.docs = base.docs
+            self.health = base.health
+            self.security = base.security
+            self.code = base.code
+            self.memory = base.memory
+
+        async def clear_memory(self):
+            return "cleared"
+
+        def status(self):
+            return "agent-status"
+
+        async def set_access_level(self, level):
+            return f"set:{level}"
+
+        async def respond(self, _text):
+            raise asyncio.CancelledError()
+            yield ""
+
+    monkeypatch.setattr(asyncio, "to_thread", lambda fn, *a, **k: asyncio.sleep(0, result="soru"))
+    logged = []
+    monkeypatch.setattr(cli.logging, "exception", lambda *a, **k: logged.append((a, k)))
+
+    asyncio.run(cli._interactive_loop_async(_CancelledAgent()))
+
+    assert logged == []
