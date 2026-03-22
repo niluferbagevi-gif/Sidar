@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -108,17 +108,7 @@ _hitl_ws_clients: set = set()
 _COLLAB_ROOM_RE = re.compile(r"^[a-zA-Z0-9:_./-]{2,96}$")
 
 
-@dataclass(init=False)
 class _CollaborationParticipant:
-    websocket: WebSocket
-    user_id: str
-    username: str
-    display_name: str
-    role: str
-    can_write: bool
-    write_scopes: List[str]
-    joined_at: str
-
     def __init__(
         self,
         websocket: WebSocket,
@@ -157,13 +147,20 @@ class _CollaborationParticipant:
         self.joined_at = normalized_joined_at or _collaboration_now_iso()
 
 
-@dataclass
 class _CollaborationRoom:
-    room_id: str
-    participants: Dict[int, _CollaborationParticipant] = field(default_factory=dict)
-    messages: List[Dict[str, Any]] = field(default_factory=list)
-    telemetry: List[Dict[str, Any]] = field(default_factory=list)
-    active_task: asyncio.Task | None = None
+    def __init__(
+        self,
+        room_id: str,
+        participants: Dict[int, _CollaborationParticipant] | None = None,
+        messages: List[Dict[str, Any]] | None = None,
+        telemetry: List[Dict[str, Any]] | None = None,
+        active_task: asyncio.Task | None = None,
+    ) -> None:
+        self.room_id = room_id
+        self.participants = participants if participants is not None else {}
+        self.messages = messages if messages is not None else []
+        self.telemetry = telemetry if telemetry is not None else []
+        self.active_task = active_task
 
 
 _collaboration_rooms: Dict[str, _CollaborationRoom] = {}
