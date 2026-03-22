@@ -116,6 +116,50 @@ def test_entity_memory_purge_expired_removed_nonzero():
         assert result == 3
 
 
+def test_entity_memory_purge_expired_removed_zero():
+    """Satır 255->257: removed=0 ise logger.info çağrılmamalı (false branch)."""
+    try:
+        from core.entity_memory import EntityMemory
+    except Exception:
+        pytest.skip("EntityMemory import edilemiyor")
+
+    import core.entity_memory as _em_mod
+
+    with patch.object(EntityMemory, '__init__', return_value=None), \
+         patch.object(_em_mod, "sql_text", side_effect=lambda s: s, create=True):
+        em = EntityMemory.__new__(EntityMemory)
+        em._engine = MagicMock()
+        em.enabled = True
+
+        mock_result = MagicMock()
+        mock_result.rowcount = 0  # removed=0 → logger.info çağrılmamalı
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(return_value=mock_result)
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        em._engine.begin = MagicMock(return_value=mock_ctx)
+        em.ttl_days = 30
+
+        result = asyncio.run(em.purge_expired())
+        assert result == 0
+
+
+def test_entity_memory_close_no_engine():
+    """Satır 261->exit: _engine=None ise dispose() çağrılmamalı."""
+    try:
+        from core.entity_memory import EntityMemory
+    except Exception:
+        pytest.skip("EntityMemory import edilemiyor")
+
+    with patch.object(EntityMemory, '__init__', return_value=None):
+        em = EntityMemory.__new__(EntityMemory)
+        em._engine = None  # Engine yok → dispose() atlanmalı
+        asyncio.run(em.close())
+        assert em._engine is None  # Değişmedi
+
+
 def test_entity_memory_close_with_engine():
     """Satır 261→exit: _engine var → dispose() çağrılıp None yapılmalı."""
     try:
@@ -517,17 +561,37 @@ def test_judge_store_auto_feedback_ok_true():
             # schedule_continuous_learning_cycle çağrılmış olmalı (ok=True branch)
 
 
-def test_judge_emit_metrics_awaitable_branch():
-    """Satır 456→exit: _usage_sink awaitable döndürürse task oluşturulmalı."""
+def test_judge_record_metrics_non_awaitable_sink():
+    """Satır 456->exit: _usage_sink NOT awaitable → create_task çağrılmamalı."""
     try:
-        from core.judge import _emit_judge_metrics, JudgeResult
+        from core.judge import _record_judge_metrics, JudgeResult
     except Exception:
-        pytest.skip("judge._emit_judge_metrics import edilemiyor")
+        pytest.skip("judge._record_judge_metrics import edilemiyor")
 
     mock_result = MagicMock()
     mock_result.relevance_score = 0.9
     mock_result.hallucination_risk = 0.1
-    mock_result.quality_score_10 = 8.0
+    mock_result.model = "test"
+    mock_result.provider = "test"
+    mock_result.evaluated_at = time.time()
+
+    mock_collector = MagicMock()
+    mock_collector._usage_sink = lambda payload: None  # NOT awaitable
+
+    with patch("core.llm_metrics.get_llm_metrics_collector", return_value=mock_collector):
+        _record_judge_metrics(mock_result)  # sync call — should not crash
+
+
+def test_judge_record_metrics_awaitable_sink():
+    """Satır 456->457: _usage_sink IS awaitable → create_task çağrılmalı."""
+    try:
+        from core.judge import _record_judge_metrics
+    except Exception:
+        pytest.skip("judge._record_judge_metrics import edilemiyor")
+
+    mock_result = MagicMock()
+    mock_result.relevance_score = 0.8
+    mock_result.hallucination_risk = 0.2
     mock_result.model = "test"
     mock_result.provider = "test"
     mock_result.evaluated_at = time.time()
@@ -539,9 +603,9 @@ def test_judge_emit_metrics_awaitable_branch():
 
     mock_collector._usage_sink = _async_sink
 
-    with patch("core.judge.get_llm_metrics_collector", return_value=mock_collector):
+    with patch("core.llm_metrics.get_llm_metrics_collector", return_value=mock_collector):
         async def _run():
-            _emit_judge_metrics(mock_result)
+            _record_judge_metrics(mock_result)
 
         asyncio.run(_run())
 

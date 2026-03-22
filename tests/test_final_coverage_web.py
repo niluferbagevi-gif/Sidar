@@ -86,7 +86,9 @@ def test_web_server_health_response_agent_exception():
     response = asyncio.run(_run())
     assert response.status_code == 503
     import json
-    body = json.loads(response.body)
+    # _FakeJSONResponse uses .content (dict), real JSONResponse uses .body (bytes)
+    raw = response.body if hasattr(response, "body") else response.content
+    body = json.loads(raw) if isinstance(raw, (bytes, str)) else raw
     assert body["status"] == "degraded"
     assert body["error"] == "health_check_failed"
 
@@ -114,7 +116,8 @@ def test_web_server_health_response_dependency_exception():
     response = asyncio.run(_run())
     assert response.status_code == 503
     import json
-    body = json.loads(response.body)
+    raw = response.body if hasattr(response, "body") else response.content
+    body = json.loads(raw) if isinstance(raw, (bytes, str)) else raw
     assert body["status"] == "degraded"
 
 
@@ -225,20 +228,16 @@ def test_web_server_get_client_ip_trusted_proxy_x_forwarded():
         "X-Real-IP": "",
     }.get(h, d))
 
-    original_proxies = getattr(Config, "TRUSTED_PROXIES", set())
-    try:
-        Config.TRUSTED_PROXIES = {"10.0.0.1"}
+    # web_server'ın kendi Config referansını patch'le
+    with patch.object(ws.Config, "TRUSTED_PROXIES", {"10.0.0.1"}):
         result = ws._get_client_ip(mock_request)
-        assert result == "203.0.113.5"
-    finally:
-        Config.TRUSTED_PROXIES = original_proxies
+    assert result == "203.0.113.5"
 
 
 def test_web_server_get_client_ip_trusted_proxy_x_real_ip():
     """Satır 2280→2282: X-Forwarded-For boş, X-Real-IP kullanılmalı."""
     try:
         import web_server as ws
-        from config import Config
     except Exception:
         pytest.skip("web_server import edilemiyor")
 
@@ -249,13 +248,9 @@ def test_web_server_get_client_ip_trusted_proxy_x_real_ip():
         "X-Real-IP": "203.0.113.99",
     }.get(h, d))
 
-    original_proxies = getattr(Config, "TRUSTED_PROXIES", set())
-    try:
-        Config.TRUSTED_PROXIES = {"10.0.0.1"}
+    with patch.object(ws.Config, "TRUSTED_PROXIES", {"10.0.0.1"}):
         result = ws._get_client_ip(mock_request)
-        assert result == "203.0.113.99"
-    finally:
-        Config.TRUSTED_PROXIES = original_proxies
+    assert result == "203.0.113.99"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

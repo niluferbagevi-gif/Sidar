@@ -496,6 +496,35 @@ def test_base_agent_handle_delegation_has_task_id_no_parent():
     assert result is not None
 
 
+def test_base_agent_handle_delegation_both_ids_set():
+    """Satır 96->98: task_id VE parent_task_id zaten set → her iki atama da atlanmalı."""
+    try:
+        ba_mod = _load_base_agent()
+    except Exception:
+        pytest.skip("base_agent yüklenemiyor")
+
+    DelegationRequest = ba_mod.DelegationRequest
+    TaskEnvelope = ba_mod.TaskEnvelope
+
+    class ConcreteAgent(ba_mod.BaseAgent):
+        async def run_task(self, task_prompt: str):
+            return DelegationRequest(
+                task_id="already-set",       # Dolu → atanmayacak
+                parent_task_id="parent-set", # Dolu → atanmayacak
+                target_agent="reviewer",
+                payload=task_prompt,
+            )
+
+    agent = ConcreteAgent(role_name="agent_3")
+    envelope = TaskEnvelope(task_id="env-999", parent_task_id="parent-abc", goal="test3")
+
+    async def _run():
+        return await agent.handle(envelope)
+
+    result = asyncio.run(_run())
+    assert result is not None
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # supervisor.py — QA retry limit (satır 210→219)
 # ──────────────────────────────────────────────────────────────────────────────
