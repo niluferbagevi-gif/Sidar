@@ -204,6 +204,9 @@ async def _interactive_loop_async(agent: SidarAgent) -> None:
             async for chunk in agent.respond(user_input):
                 print(chunk, end="", flush=True)
             print("\n")
+        except asyncio.CancelledError:
+            print("\nSidar > İşlem iptal edildi. Kapatılıyor. ✓")
+            break
         except Exception as exc:
             print(f"\nSidar > ✗ Hata: {exc}\n")
             logging.exception("Ajan yanıt hatası")

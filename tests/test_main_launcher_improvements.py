@@ -141,3 +141,39 @@ def test_run_wizard_fails_fast_when_runtime_dependencies_are_missing(monkeypatch
 
     out = capsys.readouterr().out
     assert "config.py yüklenemediği için web_server.py güvenli şekilde başlatılamıyor" in out
+
+
+def test_run_with_streaming_terminates_lingering_process_before_join(monkeypatch):
+    main_mod = _load_main_module()
+
+    class _Pipe:
+        def readline(self):
+            return ""
+
+        def close(self):
+            return None
+
+    class _Proc:
+        def __init__(self):
+            self.stdout = _Pipe()
+            self.stderr = _Pipe()
+            self.terminate_calls = 0
+            self.kill_calls = 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            self.terminate_calls += 1
+
+        def kill(self):
+            self.kill_calls += 1
+
+    proc = _Proc()
+    monkeypatch.setattr(main_mod.subprocess, "Popen", lambda *a, **k: proc)
+
+    rc = main_mod._run_with_streaming(["python", "cli.py"], None)
+
+    assert rc == 0
+    assert proc.terminate_calls == 1
+    assert proc.kill_calls == 0

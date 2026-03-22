@@ -721,6 +721,24 @@ def test_validate_critical_settings_for_openai_anthropic_and_litellm_missing_env
     assert cfg_mod.Config.validate_critical_settings() is False
     assert any("LITELLM_GATEWAY_URL" in e for e in errors)
 
+
+def test_validate_critical_settings_requires_gemini_api_key(monkeypatch):
+    cfg_mod = _load_config_module()
+    cfg_mod.Config._hardware_loaded = True
+    cfg_mod.Config.initialize_directories = classmethod(lambda cls: True)
+    cfg_mod.Config.AI_PROVIDER = "gemini"
+    cfg_mod.Config.GEMINI_API_KEY = ""
+    cfg_mod.Config.MEMORY_ENCRYPTION_KEY = ""
+
+    errors = []
+    criticals = []
+    monkeypatch.setattr(cfg_mod.logger, "error", lambda msg, *args: errors.append(msg % args if args else msg))
+    monkeypatch.setattr(cfg_mod.logger, "critical", lambda msg, *args: criticals.append(msg % args if args else msg))
+
+    assert cfg_mod.Config.validate_critical_settings() is False
+    assert any("GEMINI_API_KEY" in entry for entry in errors)
+    assert criticals
+
 def test_get_env_helpers_typeerror_and_profile_trimmed_override(monkeypatch):
     cfg_mod = _load_config_module()
 
