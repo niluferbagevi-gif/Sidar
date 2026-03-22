@@ -139,6 +139,23 @@ def test_broker_task_contracts_normalize_and_convert():
     assert "protocol=broker.task.v1" in result.to_prompt()
 
 
+def test_broker_task_envelope_preserves_explicit_routing_key():
+    envelope = CONTRACTS.BrokerTaskEnvelope(
+        task_id="brk-explicit-route",
+        sender="supervisor",
+        receiver="reviewer",
+        goal="Var olan routing key'i koru",
+        intent="graph_review",
+        exchange="sidar.custom",
+        routing_key="manual.route.reviewer",
+        headers={"correlation_id": "corr-explicit"},
+    )
+
+    assert envelope.routing_key == "manual.route.reviewer"
+    assert envelope.correlation_id == "corr-explicit"
+    assert "routing_key=manual.route.reviewer" in envelope.to_prompt()
+
+
 def test_protocol_and_correlation_helpers_cover_custom_and_empty_values():
     assert CONTRACTS.normalize_federation_protocol(" custom.proto.v2 ") == "custom.proto.v2"
     assert CONTRACTS.normalize_broker_protocol(" swarm.broker.v1 ") == "broker.task.v1"
