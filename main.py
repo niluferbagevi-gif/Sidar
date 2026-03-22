@@ -119,6 +119,36 @@ def validate_runtime_dependencies(mode: str) -> tuple[bool, str | None]:
     )
 
 
+def _safe_choice(value: object, default: str, allowed: set[str]) -> str:
+    """Config/env kökenli seçimleri normalize eder; geçersizde default döner."""
+    if not isinstance(value, str):
+        return default
+
+    normalized = value.strip().lower()
+    if not normalized or normalized not in allowed:
+        return default
+    return normalized
+
+
+def _safe_text(value: object, default: str) -> str:
+    """Config/env kökenli metinleri normalize eder; boş/geçersizde default döner."""
+    if value is None:
+        return default
+
+    normalized = str(value).strip()
+    return normalized or default
+
+
+def _safe_port(value: object, default: str = "7860") -> str:
+    """Config/env kökenli port değerlerini güvenli biçimde doğrular."""
+    normalized = _safe_text(value, default)
+    try:
+        port = int(normalized)
+    except (TypeError, ValueError):
+        return default
+    return str(port) if 1 <= port <= 65535 else default
+
+
 def preflight(provider: str) -> None:
     """Sistem gereksinimlerini ve API erişimlerini kontrol eder."""
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
@@ -294,7 +324,12 @@ def run_wizard() -> int:
     print("-" * 50)
 
     default_provider_map = {"ollama": "1", "gemini": "2", "openai": "3", "anthropic": "4"}
-    default_provider = default_provider_map.get(getattr(cfg, "AI_PROVIDER", "ollama").lower(), "1")
+    default_provider_value = _safe_choice(
+        getattr(cfg, "AI_PROVIDER", "ollama"),
+        "ollama",
+        {"ollama", "gemini", "openai", "anthropic"},
+    )
+    default_provider = default_provider_map.get(default_provider_value, "1")
     provider_options = {
         "1": ("Ollama (Yerel LLM)", "ollama"),
         "2": ("Gemini (Bulut LLM)", "gemini"),
@@ -304,7 +339,11 @@ def run_wizard() -> int:
     provider = ask_choice("2. Hangi AI Sağlayıcısı kullanılsın?", provider_options, default_provider)
     print("-" * 50)
 
-    default_level_val = getattr(cfg, "ACCESS_LEVEL", "full").lower()
+    default_level_val = _safe_choice(
+        getattr(cfg, "ACCESS_LEVEL", "full"),
+        "full",
+        {"restricted", "sandbox", "full"},
+    )
     default_level = "1" if default_level_val == "full" else "2" if default_level_val == "sandbox" else "3"
     level_options = {
         "1": ("Full (Sınırsız Sistem Erişimi)", "full"),
@@ -323,10 +362,19 @@ def run_wizard() -> int:
 
     extra_args = {}
     if provider == "ollama" and mode == "cli":
-        extra_args["model"] = ask_text("\nKullanılacak Ollama modeli", getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"))
+        extra_args["model"] = ask_text(
+            "\nKullanılacak Ollama modeli",
+            _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
+        )
     elif mode == "web":
-        extra_args["host"] = ask_text("\nWeb Sunucu Host IP'si", getattr(cfg, "WEB_HOST", "0.0.0.0"))
-        extra_args["port"] = ask_text("Web Sunucu Portu", str(getattr(cfg, "WEB_PORT", 7860)))
+        extra_args["host"] = ask_text(
+            "\nWeb Sunucu Host IP'si",
+            _safe_text(getattr(cfg, "WEB_HOST", "0.0.0.0"), "0.0.0.0"),
+        )
+        extra_args["port"] = ask_text(
+            "Web Sunucu Portu",
+            _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
+        )
 
     preflight(provider)
 
@@ -407,13 +455,21 @@ def main() -> None:
         sys.exit(run_wizard())
 
     # --quick argümanı verildiyse varsayılanları veya cli argümanlarını kullan
-    provider = args.provider or getattr(cfg, "AI_PROVIDER", "ollama").lower()
-    level = args.level or getattr(cfg, "ACCESS_LEVEL", "full").lower()
-    
+    provider = args.provider or _safe_choice(
+        getattr(cfg, "AI_PROVIDER", "ollama"),
+        "ollama",
+        {"ollama", "gemini", "openai", "anthropic"},
+    )
+    level = args.level or _safe_choice(
+        getattr(cfg, "ACCESS_LEVEL", "full"),
+        "full",
+        {"restricted", "sandbox", "full"},
+    )
+
     extra_args = {
-        "model": args.model or getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"),
-        "host": args.host or getattr(cfg, "WEB_HOST", "0.0.0.0"),
-        "port": args.port or str(getattr(cfg, "WEB_PORT", 7860))
+        "model": args.model or _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
+        "host": args.host or _safe_text(getattr(cfg, "WEB_HOST", "0.0.0.0"), "0.0.0.0"),
+        "port": args.port or _safe_port(getattr(cfg, "WEB_PORT", 7860), "7860"),
     }
 
     runtime_ok, runtime_error = validate_runtime_dependencies(args.quick)
