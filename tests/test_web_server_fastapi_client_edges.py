@@ -160,6 +160,7 @@ def _load_web_server_with_real_fastapi():
     spec = importlib.util.spec_from_file_location("web_server_fastapi_test", ROOT / "web_server.py")
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
+    sys.modules[mod.__name__] = mod
     try:
         spec.loader.exec_module(mod)
         return mod
@@ -169,6 +170,7 @@ def _load_web_server_with_real_fastapi():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = previous
+        sys.modules.pop(mod.__name__, None)
 
 
 @pytest.fixture

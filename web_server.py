@@ -7,6 +7,8 @@ Başlatmak için:
     python web_server.py --host 0.0.0.0 --port 7860
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import atexit
