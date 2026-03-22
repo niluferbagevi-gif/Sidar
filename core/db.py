@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import sqlite3
 import uuid
 import secrets
@@ -14,6 +15,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config import Config
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -287,7 +291,27 @@ class Database:
             raise RuntimeError("PostgreSQL için asyncpg bağımlılığı gerekli.") from exc
 
         dsn = self.database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-        self._pg_pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=max(1, self.pool_size))
+        try:
+            self._pg_pool = await asyncpg.create_pool(
+                dsn=dsn,
+                min_size=1,
+                max_size=max(1, self.pool_size),
+            )
+        except Exception as exc:
+            pool_error_type = getattr(asyncpg, "PoolError", None)
+            is_pool_error = bool(pool_error_type and isinstance(exc, pool_error_type))
+            error_text = str(exc).lower()
+            if is_pool_error or "pool" in error_text:
+                logger.warning(
+                    "PostgreSQL bağlantı havuzu kullanılamıyor; bağlantı kurulamadı: %s",
+                    exc,
+                )
+            else:
+                logger.warning(
+                    "PostgreSQL bağlantı havuzu oluşturulamadı; üst katmana iletiliyor: %s",
+                    exc,
+                )
+            raise
 
     async def close(self) -> None:
         if self._sqlite_conn is not None:

@@ -10,6 +10,7 @@ Hızlı Kullanım: python main.py --quick web --provider ollama --level full
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import shlex
 import subprocess
@@ -40,6 +41,7 @@ class DummyConfig:
     BASE_DIR = "."
 
 CONFIG_IMPORT_OK = True
+logger = logging.getLogger(__name__)
 
 try:
     from config import Config
@@ -122,22 +124,38 @@ def preflight(provider: str) -> None:
     print(f"\n{CYAN}🔎 Ön kontroller yapılıyor...{RESET}")
 
     if sys.version_info < (3, 10):
-        print(f"{YELLOW}⚠ Python 3.10+ önerilir. (Mevcut: {sys.version.split()[0]}){RESET}")
+        message = f"Python 3.10+ önerilir. (Mevcut: {sys.version.split()[0]})"
+        logger.warning(message)
+        print(f"{YELLOW}⚠ {message}{RESET}")
 
     env_path = Path(cfg.BASE_DIR) / ".env"
     if env_path.exists():
         print(f"{GREEN}✅ .env dosyası bulundu.{RESET}")
     else:
-        print(f"{YELLOW}⚠ .env bulunamadı, sistem ortam değişkenleri kullanılacak.{RESET}")
+        message = ".env bulunamadı, sistem ortam değişkenleri kullanılacak."
+        logger.warning(message)
+        print(f"{YELLOW}⚠ {message}{RESET}")
+
+    database_url = str(getattr(cfg, "DATABASE_URL", "") or "").strip()
+    if not database_url:
+        logger.warning("DATABASE_URL tanımlı değil; varsayılan SQLite fallback kullanılacak.")
+    elif "://" not in database_url:
+        logger.warning("DATABASE_URL beklenen şema biçiminde değil: %s", database_url)
 
     if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
-        print(f"{RED}⚠ Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
+        message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger.warning(message)
+        print(f"{RED}⚠ {message}{RESET}")
 
     if provider == "openai" and not getattr(cfg, "OPENAI_API_KEY", None):
-        print(f"{RED}⚠ Uyarı: OPENAI_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
+        message = "Uyarı: OPENAI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger.warning(message)
+        print(f"{RED}⚠ {message}{RESET}")
 
     if provider == "anthropic" and not getattr(cfg, "ANTHROPIC_API_KEY", None):
-        print(f"{RED}⚠ Uyarı: ANTHROPIC_API_KEY boş görünüyor. API çağrıları başarısız olabilir.{RESET}")
+        message = "Uyarı: ANTHROPIC_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger.warning(message)
+        print(f"{RED}⚠ {message}{RESET}")
 
     if provider == "ollama":
         try:
@@ -149,10 +167,13 @@ def preflight(provider: str) -> None:
             if code == 200:
                 print(f"{GREEN}✅ Ollama erişimi başarılı ({base}).{RESET}")
             else:
+                logger.warning("Ollama health kontrolü beklenmeyen durum kodu döndürdü: %s", code)
                 print(f"{YELLOW}⚠ Ollama yanıt kodu: {code}{RESET}")
         except ImportError:
+            logger.warning("'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.")
             print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
-        except Exception:
+        except Exception as exc:
+            logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
             print(f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}")
 
 
