@@ -26,11 +26,10 @@ import secrets
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -101,19 +100,6 @@ except Exception:  # test stub/fallback
         return None
 
 logger = logging.getLogger(__name__)
-
-
-class _ModuleGlobalsProxy:
-    def __init__(self, namespace: dict[str, Any]) -> None:
-        object.__setattr__(self, "__dict__", namespace)
-
-
-if __name__ not in sys.modules:
-    # Bazı testler bu dosyayı importlib ile yüklerken modülü sys.modules içine
-    # yerleştirmiyor. FastAPI/Pydantic ve benzeri araçlar annotation çözümlemesi
-    # sırasında sys.modules[__name__].__dict__ beklediği için, canlı globals
-    # sözlüğünü işaret eden hafif bir proxy kaydı oluşturuyoruz.
-    sys.modules[__name__] = _ModuleGlobalsProxy(globals())
 
 # ─────────────────────────────────────────────
 #  HITL WebSocket Yayın Kümesi
