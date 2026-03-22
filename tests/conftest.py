@@ -144,3 +144,29 @@ def _restore_critical_modules_between_tests():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_logging_handlers():
+    """Teste sonra logging handler'larını kapat (ResourceWarning önlemek için)."""
+    yield
+    import logging
+    import gc
+    # Tüm handler'ları kapat
+    for handler in logging.root.handlers[:]:
+        try:
+            handler.close()
+            logging.root.removeHandler(handler)
+        except Exception:
+            pass
+    # Tüm logger'ları temizle
+    for logger_name in list(logging.Logger.manager.loggerDict):
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers[:]:
+            try:
+                handler.close()
+                logger.removeHandler(handler)
+            except Exception:
+                pass
+    # Garbage collection'ı force et
+    gc.collect()
