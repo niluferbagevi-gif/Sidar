@@ -348,6 +348,38 @@ def test_browser_manager_click_hitl_can_skip_confirmation_for_low_risk(monkeypat
     assert calls == [("a.learn-more", 5000)]
 
 
+def test_browser_manager_summarize_actions_without_status_and_close_playwright_session(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    manager._record_audit_event(session_id="sess-summary", action="browser_click", status="", selector="#submit")
+    manager._record_audit_event(session_id="sess-summary", action="browser_click", status="execution_failed", selector="button.save")
+
+    summary = manager.summarize_audit_log("sess-summary")
+    assert summary["action_counts"]["browser_click"] == 2
+    assert summary["failed_actions"] == ["browser_click:button.save"]
+
+    calls = []
+    session = BM_MOD.BrowserSession(
+        session_id="sess-playwright-close",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        context=SimpleNamespace(close=lambda: calls.append("context")),
+        browser=SimpleNamespace(close=lambda: calls.append("browser")),
+        runtime=SimpleNamespace(stop=lambda: calls.append("runtime")),
+    )
+    manager._sessions[session.session_id] = session
+
+    ok, message = manager.close_session(session.session_id)
+
+    assert ok is True
+    assert "kapatıldı" in message
+    assert calls == ["context", "browser", "runtime"]
+    assert manager.list_audit_log()[-1]["action"] == "browser_close_session"
+    assert manager.list_audit_log()[-1]["status"] == "executed"
+
+
 def test_browser_manager_close_session_returns_error_when_cleanup_fails():
     manager = BM_MOD.BrowserManager(_Config())
 
@@ -573,6 +605,68 @@ def test_browser_manager_start_selenium_session_supports_chrome_and_firefox(monk
 
     with pytest.raises(ValueError, match="desteklenmiyor"):
         manager._start_selenium_session("safari", headless=True)
+
+
+def test_browser_manager_selenium_page_load_timeout_and_dom_errors_are_audited(monkeypatch):
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Element:
+        def click(self):
+            raise TimeoutError("element timeout")
+
+        def clear(self):
+            raise RuntimeError("dom clear failed")
+
+        def send_keys(self, _value):
+            raise AssertionError("send_keys should not run after clear failure")
+
+    element = _Element()
+
+    class _Driver:
+        current_url = "https://example.com/selenium"
+
+        def get(self, _url):
+            raise TimeoutError("page load timeout")
+
+        def find_element(self, _by, _selector):
+            return element
+
+    by_mod = SimpleNamespace(CSS_SELECTOR="css selector")
+    monkeypatch.setitem(sys.modules, "selenium", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.common", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "selenium.webdriver.common.by", SimpleNamespace(By=by_mod))
+    monkeypatch.setattr(BM_MOD, "get_hitl_gate", lambda: SimpleNamespace(enabled=False))
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-selenium-errors",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=_Driver(),
+        current_url="https://example.com/selenium",
+    )
+    manager._sessions[session.session_id] = session
+
+    with pytest.raises(TimeoutError, match="page load timeout"):
+        manager.goto_url(session.session_id, "https://example.com/dashboard")
+
+    with pytest.raises(TimeoutError, match="element timeout"):
+        manager.click_element(session.session_id, "#missing")
+
+    with pytest.raises(RuntimeError, match="dom clear failed"):
+        manager.fill_form(session.session_id, "#name", "Sidar", clear=True)
+
+    failed = [entry for entry in manager.list_audit_log() if entry["status"] == "execution_failed"]
+    assert [entry["action"] for entry in failed] == [
+        "browser_goto_url",
+        "browser_click",
+        "browser_fill_form",
+    ]
+    assert failed[0]["details"]["error"] == "page load timeout"
+    assert failed[1]["details"]["error"] == "element timeout"
+    assert failed[2]["details"]["error"] == "dom clear failed"
 
 
 def test_browser_manager_records_execution_failed_for_goto_and_sync_mutations(monkeypatch):
