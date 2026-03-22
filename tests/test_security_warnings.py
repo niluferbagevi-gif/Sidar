@@ -169,6 +169,82 @@ def _load_web_server_standalone():
     agent_mod = types.ModuleType("agent.sidar_agent")
     agent_mod.SidarAgent = object
 
+    base_agent_mod = types.ModuleType("agent.base_agent")
+    base_agent_mod.BaseAgent = object
+
+    contracts_mod = types.ModuleType("agent.core.contracts")
+
+    class _Envelope(types.SimpleNamespace):
+        protocol_version = "1.0"
+
+        def to_prompt(self):
+            return "stub-envelope"
+
+    class _Result(types.SimpleNamespace):
+        protocol_version = "1.0"
+
+    class _ExternalTrigger(types.SimpleNamespace):
+        trigger_id = "trigger-1"
+        source = "stub"
+        event_name = "stub"
+        payload = {}
+        meta = {}
+        correlation_id = "corr-1"
+
+        def to_prompt(self):
+            return "stub-trigger"
+
+    class _ActionFeedback(types.SimpleNamespace):
+        def to_prompt(self):
+            return "stub-feedback"
+
+    contracts_mod.ActionFeedback = _ActionFeedback
+    contracts_mod.ExternalTrigger = _ExternalTrigger
+    contracts_mod.FederationTaskEnvelope = _Envelope
+    contracts_mod.FederationTaskResult = _Result
+    contracts_mod.LEGACY_FEDERATION_PROTOCOL_V1 = "1.0"
+    contracts_mod.derive_correlation_id = lambda *_a, **_k: "corr-1"
+    contracts_mod.normalize_federation_protocol = lambda value=None: value or "1.0"
+
+    registry_mod = types.ModuleType("agent.registry")
+
+    class _AgentRegistry:
+        @classmethod
+        def list_all(cls):
+            return []
+
+        @classmethod
+        def register_type(cls, **_kwargs):
+            return None
+
+        @classmethod
+        def unregister(cls, *_args, **_kwargs):
+            return False
+
+        @classmethod
+        def get(cls, *_args, **_kwargs):
+            return None
+
+        @classmethod
+        def find_by_capability(cls, *_args, **_kwargs):
+            return []
+
+    registry_mod.AgentRegistry = _AgentRegistry
+
+    swarm_mod = types.ModuleType("agent.swarm")
+
+    class _SwarmOrchestrator:
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+    class _SwarmTask:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    swarm_mod.SwarmOrchestrator = _SwarmOrchestrator
+    swarm_mod.SwarmTask = _SwarmTask
+
     core_metrics_mod = types.ModuleType("core.llm_metrics")
 
     class _Collector:
@@ -176,6 +252,8 @@ def _load_web_server_standalone():
             return {"totals": {"calls": 0, "total_tokens": 0}}
 
     core_metrics_mod.get_llm_metrics_collector = lambda: _Collector()
+    core_metrics_mod.set_current_metrics_user_id = lambda *_a, **_k: None
+    core_metrics_mod.reset_current_metrics_user_id = lambda *_a, **_k: None
 
     event_stream_mod = types.ModuleType("agent.core.event_stream")
 
@@ -190,6 +268,14 @@ def _load_web_server_standalone():
     llm_client_mod = types.ModuleType("core.llm_client")
     llm_client_mod.LLMAPIError = type("LLMAPIError", (Exception,), {})
     llm_client_mod.LLMClient = type("LLMClient", (), {})
+
+    ci_mod = types.ModuleType("core.ci_remediation")
+    ci_mod.build_ci_failure_context = lambda *_a, **_k: {}
+
+    hitl_mod = types.ModuleType("core.hitl")
+    hitl_mod.get_hitl_gate = lambda: types.SimpleNamespace(respond=lambda *a, **k: None, submit=lambda *a, **k: None)
+    hitl_mod.get_hitl_store = lambda: types.SimpleNamespace(list_pending=lambda: [], get=lambda *_a, **_k: None)
+    hitl_mod.set_hitl_broadcast_hook = lambda *_a, **_k: None
 
     # managers.system_health stub
     managers_pkg = types.ModuleType("managers")
@@ -219,9 +305,15 @@ def _load_web_server_standalone():
         "uvicorn": uvicorn_mod,
         "config": cfg_mod,
         "agent.sidar_agent": agent_mod,
+        "agent.base_agent": base_agent_mod,
+        "agent.core.contracts": contracts_mod,
         "agent.core.event_stream": event_stream_mod,
+        "agent.registry": registry_mod,
+        "agent.swarm": swarm_mod,
         "core.llm_metrics": core_metrics_mod,
         "core.llm_client": llm_client_mod,
+        "core.ci_remediation": ci_mod,
+        "core.hitl": hitl_mod,
         "managers": managers_pkg,
         "managers.system_health": managers_health_mod,
         "httpx": httpx_stub,
@@ -230,7 +322,7 @@ def _load_web_server_standalone():
     for pkg_name in ("agent", "agent.core", "core"):
         if pkg_name not in sys.modules:
             pkg = types.ModuleType(pkg_name)
-            pkg.__path__ = []
+            pkg.__path__ = [str(Path(pkg_name.replace(".", "/")).resolve())] if Path(pkg_name.replace(".", "/")).exists() else []
             to_install[pkg_name] = pkg
 
     saved = {k: sys.modules.get(k) for k in to_install}
