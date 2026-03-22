@@ -371,6 +371,31 @@ def test_validate_url_safe_allows_regular_dns_hosts_after_ip_parse_fallback(tmp_
     store._validate_url_safe("https://example.com/path")
 
 
+def test_graph_search_related_skips_nodes_with_zero_score(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    graph = mod.GraphIndex(tmp_path)
+    graph.add_node("core/rag.py")
+    graph.add_node("isolated.txt")
+    graph.add_edge("caller.py", "core/rag.py", kind="imports")
+
+    results = graph.search_related("rag", top_k=10)
+
+    assert [item["id"] for item in results] == ["core/rag.py"]
+
+
+def test_add_document_from_file_rejects_directory_paths(tmp_path):
+    mod = _load_rag_module(tmp_path)
+    store = _new_store(mod, tmp_path)
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+
+    ok, msg = store.add_document_from_file(str(folder))
+
+    assert ok is False
+    assert "bir dosya değil" in msg
+
+
 def test_delete_document_rejects_cross_session_deletion(tmp_path):
     mod = _load_rag_module(tmp_path)
     store = _new_store(mod, tmp_path)
