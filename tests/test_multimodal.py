@@ -506,6 +506,56 @@ def test_multimodal_pipeline_analyze_media_video_branch_collects_frames_and_supp
     assert tracking_tempdir.created_paths == tracking_tempdir.cleaned_paths
 
 
+def test_multimodal_pipeline_analyze_local_media_video_uses_transcript_override_and_handles_empty_frames(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tracking_tempdir
+):
+    video = tmp_path / "empty-frames.mp4"
+    video.write_bytes(b"video")
+    llm = _DummyLLM()
+    pipeline = MultimodalPipeline(llm, _Config())
+
+    async def _unexpected_extract_audio(*_args, **_kwargs):
+        raise AssertionError("extract_audio_track should not run when transcript_override already has text")
+
+    async def _unexpected_transcribe(*_args, **_kwargs):
+        raise AssertionError("transcribe_audio should not run when transcript_override already has text")
+
+    async def _no_frames(path, *, interval_seconds, max_frames, output_dir):
+        assert Path(path) == video
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return []
+
+    class _VisionPipeline:
+        async def analyze(self, *, image_path: str):
+            raise AssertionError(f"vision analyze should not run for empty frame list: {image_path}")
+
+    fake_module = types.ModuleType("core.vision")
+    fake_module.VisionPipeline = lambda *_args, **_kwargs: _VisionPipeline()
+    monkeypatch.setitem(sys.modules, "core.vision", fake_module)
+    monkeypatch.setattr(multimodal_mod, "extract_audio_track", _unexpected_extract_audio)
+    monkeypatch.setattr(multimodal_mod, "transcribe_audio", _unexpected_transcribe)
+    monkeypatch.setattr(multimodal_mod, "extract_video_frames", _no_frames)
+
+    result = asyncio.run(
+        pipeline._analyze_local_media(
+            media_path=str(video),
+            mime_type="video/mp4",
+            prompt="hazır transcript",
+            transcript_override={"success": True, "text": "Önceden çözümlenmiş transcript", "language": "tr"},
+            frame_interval_seconds=2.0,
+            max_frames=0,
+            language="tr",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["media_kind"] == "video"
+    assert result["transcript"]["text"] == "Önceden çözümlenmiş transcript"
+    assert result["frame_analyses"] == []
+    assert "Önceden çözümlenmiş transcript" in result["context"]
+    assert tracking_tempdir.created_paths == tracking_tempdir.cleaned_paths
+
+
 def test_remote_media_helpers_cover_url_detection_and_youtube_transcript():
     assert is_remote_media_source("https://example.com/video.mp4") is True
     assert is_remote_media_source("/tmp/video.mp4") is False
@@ -750,6 +800,7 @@ def test_multimodal_helper_validation_and_youtube_edge_paths(monkeypatch: pytest
     assert multimodal_mod.extract_youtube_video_id("") == ""
     assert multimodal_mod.extract_youtube_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
     assert multimodal_mod.extract_youtube_video_id("https://youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert multimodal_mod.extract_youtube_video_id("https://youtube.com/embed/bad-id") == ""
     assert multimodal_mod.extract_youtube_video_id("https://youtube.com/watch?v=bad") == ""
 
     normalized = multimodal_mod._normalize_youtube_transcript_events(
