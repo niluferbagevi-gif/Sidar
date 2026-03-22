@@ -1,4 +1,5 @@
 import sys
+import time
 
 # Bazı runtime testleri core/core.llm_metrics için stub modül bırakabiliyor.
 # Bu durumda gerçek modülü zorla yeniden çöz.
@@ -88,6 +89,32 @@ def test_llm_metrics_record_calculates_cost_when_none_and_handles_async_sink():
     assert snap["totals"]["cost_usd"] > 0
     assert observed["task_calls"] == 1
 
+
+def test_llm_metrics_record_uses_explicit_cost_without_estimating_and_falls_back_to_context_user():
+    from core.llm_metrics import reset_current_metrics_user_id, set_current_metrics_user_id
+
+    collector = LLMMetricsCollector(max_events=5)
+    collector.estimate_cost_usd = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("estimate_cost_usd should not run"))
+
+    token = set_current_metrics_user_id(" ctx-user ")
+    try:
+        collector.record(
+            provider="openai",
+            model="gpt-4o-mini",
+            latency_ms=9,
+            prompt_tokens=3,
+            completion_tokens=2,
+            cost_usd=1.2345,
+            user_id="",
+        )
+    finally:
+        reset_current_metrics_user_id(token)
+
+    snap = collector.snapshot()
+    assert snap["totals"]["cost_usd"] == 1.2345
+    assert snap["by_user"]["ctx-user"]["calls"] == 1
+    assert snap["by_user"]["ctx-user"]["cost_usd"] == 1.2345
+
 def test_estimate_cost_usd_openai_and_anthropic_exact_values():
     c = LLMMetricsCollector(max_events=5)
 
@@ -172,3 +199,67 @@ def test_llm_metrics_snapshot_uses_zero_cache_stats_when_cache_metrics_import_fa
     assert snap["totals"]["cost_usd"] == 0.0
     assert snap["cache"]["hits"] == 0
     assert snap["cache"]["redis_latency_ms"] == 0.0
+
+
+def test_llm_metrics_snapshot_daily_budget_excludes_stale_events():
+    from core.llm_metrics import LLMMetricEvent
+
+    collector = LLMMetricsCollector(max_events=5)
+    now = time.time()
+    collector._events.extend(
+        [
+            LLMMetricEvent(
+                timestamp=now - 90000,
+                provider="openai",
+                model="gpt-4o-mini",
+                latency_ms=5,
+                prompt_tokens=1,
+                completion_tokens=1,
+                total_tokens=2,
+                cost_usd=0.4,
+                success=True,
+                rate_limited=False,
+            ),
+            LLMMetricEvent(
+                timestamp=now,
+                provider="openai",
+                model="gpt-4o-mini",
+                latency_ms=7,
+                prompt_tokens=1,
+                completion_tokens=1,
+                total_tokens=2,
+                cost_usd=0.6,
+                success=True,
+                rate_limited=False,
+            ),
+        ]
+    )
+
+    snap = collector.snapshot()
+    budget = snap["by_provider"]["openai"]["budget"]
+    assert snap["totals"]["cost_usd"] == 1.0
+    assert budget["daily_usage_usd"] == 0.6
+    assert budget["total_usage_usd"] == 1.0
+
+
+def test_llm_metrics_snapshot_skips_latency_average_division_when_calls_is_zero_via_trace():
+    collector = LLMMetricsCollector(max_events=5)
+    collector.record(provider="openai", model="gpt-4o-mini", latency_ms=5, prompt_tokens=1, completion_tokens=1)
+
+    previous = sys.gettrace()
+
+    def _tracer(frame, event, arg):
+        if frame.f_code.co_name == "snapshot" and event == "line" and frame.f_lineno == 209:
+            row = frame.f_locals.get("row")
+            if isinstance(row, dict):
+                row["calls"] = 0
+        return _tracer
+
+    sys.settrace(_tracer)
+    try:
+        snap = collector.snapshot()
+    finally:
+        sys.settrace(previous)
+
+    assert snap["by_provider"]["openai"]["latency_ms_avg"] == 5.0
+    assert snap["by_provider"]["openai"]["latency_ms_max"] == 5.0
