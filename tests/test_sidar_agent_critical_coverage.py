@@ -180,6 +180,36 @@ def test_initialize_lock_and_idempotent_memory_init():
     assert agent.memory.calls == 1
 
 
+def test_initialize_keeps_default_system_prompt_when_active_prompt_is_blank():
+    agent = SidarAgent.__new__(SidarAgent)
+    agent._initialized = False
+    agent._init_lock = None
+    agent.system_prompt = "varsayılan sistem promptu"
+
+    class _Prompt:
+        prompt_text = "   "
+
+    class _Db:
+        async def get_active_prompt(self, _kind):
+            return _Prompt()
+
+    class _Mem:
+        def __init__(self):
+            self.calls = 0
+            self.db = _Db()
+
+        async def initialize(self):
+            self.calls += 1
+
+    agent.memory = _Mem()
+
+    asyncio.run(agent.initialize())
+
+    assert agent._initialized is True
+    assert agent.memory.calls == 1
+    assert agent.system_prompt == "varsayılan sistem promptu"
+
+
 def test_get_memory_archive_context_defaults_are_applied(monkeypatch):
     agent = SidarAgent.__new__(SidarAgent)
     agent.cfg = SimpleNamespace()
@@ -196,6 +226,63 @@ def test_get_memory_archive_context_defaults_are_applied(monkeypatch):
     out = asyncio.run(agent._get_memory_archive_context("sorgu"))
     assert out == "ctx"
     assert got["args"] == ("sorgu", 3, 0.35, 1500)
+
+
+def test_sidar_agent_init_uses_default_config_when_cfg_is_none(monkeypatch, tmp_path):
+    mod = _load_sidar_agent_module()
+    cfg = SimpleNamespace(
+        BASE_DIR=tmp_path,
+        DOCKER_PYTHON_IMAGE="python:3.11",
+        DOCKER_EXEC_TIMEOUT=10,
+        USE_GPU=False,
+        GITHUB_TOKEN="",
+        GITHUB_REPO="acme/sidar",
+        DATABASE_URL="sqlite:///sidar.db",
+        MEMORY_FILE=tmp_path / "memory.json",
+        MAX_MEMORY_TURNS=12,
+        MEMORY_ENCRYPTION_KEY="",
+        MEMORY_SUMMARY_KEEP_LAST=4,
+        AI_PROVIDER="ollama",
+        RAG_DIR=tmp_path / "rag",
+        RAG_TOP_K=3,
+        RAG_CHUNK_SIZE=64,
+        RAG_CHUNK_OVERLAP=8,
+        GPU_DEVICE=0,
+        GPU_MIXED_PRECISION=False,
+        ENABLE_TRACING=False,
+        CODING_MODEL="code-model",
+        ACCESS_LEVEL="sandbox",
+    )
+
+    memory_calls = {}
+    llm_calls = {}
+
+    monkeypatch.setattr(mod, "Config", lambda: cfg)
+    monkeypatch.setattr(mod, "SecurityManager", lambda cfg=None: SimpleNamespace(level_name="sandbox", set_level=lambda _lvl: False))
+    monkeypatch.setattr(mod, "CodeManager", lambda *args, **kwargs: SimpleNamespace())
+    monkeypatch.setattr(mod, "SystemHealthManager", lambda *args, **kwargs: SimpleNamespace())
+    monkeypatch.setattr(mod, "GitHubManager", lambda *args, **kwargs: SimpleNamespace(is_available=lambda: False))
+    def _conversation_memory(**kwargs):
+        memory_calls["kwargs"] = kwargs
+        return SimpleNamespace()
+
+    def _llm_client(provider, passed_cfg):
+        llm_calls["args"] = (provider, passed_cfg)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(mod, "ConversationMemory", _conversation_memory)
+    monkeypatch.setattr(mod, "LLMClient", _llm_client)
+    monkeypatch.setattr(mod, "WebSearchManager", lambda passed_cfg: SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setattr(mod, "PackageInfoManager", lambda passed_cfg: SimpleNamespace())
+    monkeypatch.setattr(mod, "DocumentStore", lambda *args, **kwargs: SimpleNamespace(status=lambda: "docs"))
+    monkeypatch.setattr(mod, "TodoManager", lambda passed_cfg: SimpleNamespace())
+
+    agent = mod.SidarAgent(cfg=None)
+
+    assert agent.cfg is cfg
+    assert memory_calls["kwargs"]["base_dir"] == tmp_path
+    assert memory_calls["kwargs"]["file_path"] == tmp_path / "memory.json"
+    assert llm_calls["args"] == ("ollama", cfg)
 
 
 def test_tool_docs_search_handles_pipe_mode_and_coroutine_result(monkeypatch):
