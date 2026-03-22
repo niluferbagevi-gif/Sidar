@@ -235,6 +235,32 @@ class TestLLMJudge:
 
         _run(_inner())
 
+    def test_evaluate_rag_keeps_hallucination_default_when_llm_returns_none(self):
+        async def _inner():
+            judge = self._make_judge(enabled=True, sample_rate=1.0)
+
+            async def _fake_llm(system, _user_msg):
+                if "RAG kalite" in system:
+                    return 0.9
+                return None
+
+            with patch.object(judge, "_call_llm", side_effect=_fake_llm), patch.object(
+                judge,
+                "_maybe_record_feedback",
+                return_value=False,
+            ):
+                result = await judge.evaluate_rag(
+                    query="Yanıt güvenilir mi?",
+                    documents=["İlgili belge içeriği"],
+                    answer="Destekleyici bağlamı olan yanıt",
+                )
+
+            assert result is not None
+            assert result.relevance_score == 0.9
+            assert result.hallucination_risk == 0.0
+
+        _run(_inner())
+
     def test_evaluate_response_parses_score_and_reasoning_json(self):
         async def _inner():
             judge = self._make_judge(enabled=True, sample_rate=1.0)
@@ -1102,6 +1128,41 @@ def test_maybe_record_feedback_ignores_schedule_errors_after_success():
     _run(_inner())
 
 
+def test_maybe_record_feedback_returns_false_without_scheduling_when_store_returns_false():
+    async def _inner():
+        judge = LLMJudge()
+        judge.auto_feedback_enabled = True
+        judge.auto_feedback_threshold = 8.0
+        result = JudgeResult(
+            relevance_score=0.2,
+            hallucination_risk=0.9,
+            evaluated_at=time.time(),
+            model="judge",
+            provider="ollama",
+        )
+        scheduled = []
+
+        class _Store:
+            async def flag_weak_response(self, **_kwargs):
+                return False
+
+        with patch("core.active_learning.get_feedback_store", return_value=_Store()), patch(
+            "core.active_learning.schedule_continuous_learning_cycle",
+            side_effect=lambda **kwargs: scheduled.append(kwargs) or True,
+        ):
+            ok = await judge._maybe_record_feedback(
+                query="soru",
+                documents=["doc"],
+                answer="yanıt",
+                result=result,
+            )
+
+        assert ok is False
+        assert scheduled == []
+
+    _run(_inner())
+
+
 def test_schedule_background_evaluation_swallows_non_cancelled_errors(monkeypatch):
     judge = LLMJudge()
     judge.enabled = True
@@ -1186,3 +1247,35 @@ def test_record_judge_metrics_schedules_async_sink_when_loop_exists(monkeypatch)
         assert scheduled["awaitable"] is not None
 
     _run(_runner())
+
+
+def test_record_judge_metrics_ignores_non_awaitable_sink_results(monkeypatch):
+    import sys
+    import types
+
+    seen = {}
+
+    def _sink(payload):
+        seen["payload"] = payload
+        return {"status": "ok"}
+
+    class _Collector:
+        def __init__(self):
+            self._usage_sink = _sink
+
+    fake_mod = types.ModuleType("core.llm_metrics")
+    fake_mod.get_llm_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.llm_metrics", fake_mod)
+
+    result = JudgeResult(
+        relevance_score=0.4,
+        hallucination_risk=0.3,
+        evaluated_at=time.time(),
+        model="judge-sync",
+        provider="ollama",
+    )
+
+    _record_judge_metrics(result)
+
+    assert seen["payload"]["type"] == "judge"
+    assert seen["payload"]["model"] == "judge-sync"

@@ -94,6 +94,20 @@ def test_trace_stream_metrics_sets_span_attributes(llm_mod):
     assert span.ended is True
 
 
+def test_trace_stream_metrics_ends_span_without_ttft_when_stream_never_yields_text(llm_mod):
+    async def _gen():
+        yield ""
+        yield ""
+
+    span = _FakeSpan()
+    got = asyncio.run(_collect(llm_mod._trace_stream_metrics(_gen(), span, started_at=0.0)))
+
+    assert got == ["", ""]
+    assert "sidar.llm.total_ms" in span.attributes
+    assert "sidar.llm.ttft_ms" not in span.attributes
+    assert span.ended is True
+
+
 def test_ollama_chat_nonstream_json_mode_wraps_text(llm_mod, monkeypatch):
     config = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=60, USE_GPU=False)
     client = llm_mod.OllamaClient(config)
@@ -986,6 +1000,35 @@ def test_llmclient_chat_falls_back_after_routing_failure_and_records_stream_cach
     assert any("CostRouter yönlendirme başarısız" in msg for msg in warnings)
 
 
+def test_llmclient_chat_stream_records_cache_skip_without_touching_semantic_cache(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30, OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12)
+    client = llm_mod.LLMClient("openai", cfg)
+    calls = {"skip": 0, "get": 0}
+
+    monkeypatch.setattr(client._router, "select", lambda messages, provider, model: (provider, model))
+    monkeypatch.setattr(llm_mod, "record_cache_skip", lambda: calls.__setitem__("skip", calls["skip"] + 1))
+
+    async def _unexpected_cache_get(_prompt):
+        calls["get"] += 1
+        return "cached"
+
+    async def _chat(**_kwargs):
+        async def _gen():
+            yield "live-stream"
+        return _gen()
+
+    monkeypatch.setattr(client._semantic_cache, "get", _unexpected_cache_get)
+    monkeypatch.setattr(client._client, "chat", _chat)
+
+    stream_iter = asyncio.run(
+        client.chat([{"role": "assistant", "content": "önceki çıktı"}], stream=True, json_mode=False)
+    )
+    out = asyncio.run(_collect(stream_iter))
+
+    assert out == ["live-stream"]
+    assert calls == {"skip": 1, "get": 0}
+
+
 def test_openai_stream_yields_error_payload_when_network_drops_mid_stream(llm_mod, monkeypatch):
     cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30)
     client = llm_mod.OpenAIClient(cfg)
@@ -1108,6 +1151,63 @@ def test_llmclient_non_ollama_fallback_helpers_and_stream_bridge(monkeypatch):
 
     chunks = asyncio.run(_collect(client._stream_gemini_generator(_FakeRespStream())))
     assert chunks == ["x", "y"]
+
+
+def test_openai_chat_wraps_unexpected_non_mapping_response_type(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-test", OPENAI_TIMEOUT=30)
+    client = llm_mod.OpenAIClient(cfg)
+
+    async def _bad_response(*_args, **_kwargs):
+        return "unexpected-string-response"
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _bad_response)
+    monkeypatch.setattr(llm_mod, "_record_llm_metric", lambda **_kwargs: None)
+
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=True))
+
+    assert exc.value.provider == "openai"
+    assert "'str' object has no attribute 'get'" in str(exc.value)
+
+
+def test_ollama_chat_wraps_unexpected_non_mapping_response_type(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=30, USE_GPU=False, CODING_MODEL="qwen")
+    client = llm_mod.OllamaClient(cfg)
+
+    async def _bad_response(*_args, **_kwargs):
+        return ["unexpected", "list"]
+
+    monkeypatch.setattr(llm_mod, "_retry_with_backoff", _bad_response)
+
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=False))
+
+    assert exc.value.provider == "ollama"
+    assert "list" in str(exc.value)
+
+
+def test_anthropic_chat_wraps_unexpected_content_shapes(llm_mod, monkeypatch):
+    cfg = SimpleNamespace(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ANTHROPIC_TIMEOUT=10)
+    client = llm_mod.AnthropicClient(cfg)
+
+    class _MessagesAPI:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(content=object(), usage=SimpleNamespace(input_tokens=1, output_tokens=1))
+
+    class _AsyncAnthropic:
+        def __init__(self, api_key, timeout):
+            self.api_key = api_key
+            self.timeout = timeout
+            self.messages = _MessagesAPI()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    monkeypatch.setattr(llm_mod, "_record_llm_metric", lambda **_kwargs: None)
+
+    with pytest.raises(llm_mod.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=False))
+
+    assert exc.value.provider == "anthropic"
+    assert "object is not iterable" in str(exc.value)
 
 def test_openai_stream_ignores_invalid_json_chunks_then_continues(llm_mod, monkeypatch):
     cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30)
