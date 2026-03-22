@@ -350,6 +350,42 @@ def test_read_write_permission_and_directory_error_paths(manager_factory, monkey
     assert "Yazma hatası" in msg
 
 
+def test_read_and_write_file_surface_encoding_errors(manager_factory, monkeypatch, tmp_path):
+    mgr = manager_factory(can_read=True, can_write=True)
+
+    target = tmp_path / "encoding.txt"
+    target.write_text("ok", encoding="utf-8")
+
+    import builtins
+    real_open = builtins.open
+
+    def _decode_boom(path, mode="r", *args, **kwargs):
+        if Path(path) == target and "r" in mode:
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _decode_boom)
+    ok, msg = mgr.read_file(str(target), line_numbers=False)
+    assert ok is False
+    assert "Okuma hatası" in msg
+    assert "invalid start byte" in msg
+
+    monkeypatch.setattr(builtins, "open", real_open)
+
+    def _encode_boom(path, mode="r", *args, **kwargs):
+        if Path(path) == target and "w" in mode:
+            raise UnicodeEncodeError("utf-8", "\udcff", 0, 1, "surrogates not allowed")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _encode_boom)
+    ok, msg = mgr.write_file(str(target), "\udcff", validate=False)
+    assert ok is False
+    assert "Yazma hatası" in msg
+    assert "surrogates not allowed" in msg
+
+    monkeypatch.setattr(builtins, "open", real_open)
+
+
 def test_code_manager_blocks_directory_traversal_for_read_and_write(monkeypatch, tmp_path):
     monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
     security = SEC_MOD.SecurityManager(access_level="full", base_dir=tmp_path)

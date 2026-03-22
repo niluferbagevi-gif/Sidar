@@ -420,6 +420,28 @@ def test_code_manager_lsp_definition_references_and_rename_failures(monkeypatch,
     assert "rename boom" in msg
 
 
+def test_apply_workspace_edit_raises_when_target_file_is_missing(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path)
+    missing = tmp_path / "missing.py"
+
+    edit = {
+        "changes": {
+            CM_MOD._path_to_file_uri(missing): [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 0},
+                    },
+                    "newText": "print('x')\n",
+                }
+            ]
+        }
+    }
+
+    with pytest.raises(FileNotFoundError):
+        manager._apply_workspace_edit(edit)
+
+
 def test_code_manager_workspace_edit_and_semantic_audit_edge_cases(monkeypatch, tmp_path):
     manager = _make_manager(monkeypatch, tmp_path)
     target = tmp_path / "rename_me.py"
