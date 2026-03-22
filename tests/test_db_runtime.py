@@ -118,3 +118,29 @@ def test_ensure_default_prompt_registry_swallows_upsert_errors(tmp_path: Path, m
         await db.close()
 
     asyncio.run(_run())
+
+
+def test_ensure_default_prompt_registry_returns_early_when_loader_missing(tmp_path: Path, monkeypatch):
+    class _Cfg:
+        DATABASE_URL = f"sqlite+aiosqlite:///{(tmp_path / 'db.sqlite').as_posix()}"
+        DB_POOL_SIZE = 2
+        DB_SCHEMA_VERSION_TABLE = "schema_versions"
+        DB_SCHEMA_TARGET_VERSION = 1
+        BASE_DIR = tmp_path
+
+    db = Database(cfg=_Cfg())
+
+    class _Spec:
+        loader = None
+
+    async def _no_prompt(_role):
+        return None
+
+    async def _unexpected_upsert(**_kwargs):
+        raise AssertionError("upsert should not run when default prompt cannot be loaded")
+
+    monkeypatch.setattr("importlib.util.spec_from_file_location", lambda *_a, **_k: _Spec())
+    monkeypatch.setattr(db, "get_active_prompt", _no_prompt)
+    monkeypatch.setattr(db, "upsert_prompt", _unexpected_upsert)
+
+    asyncio.run(db.ensure_default_prompt_registry())

@@ -170,6 +170,21 @@ def test_prompt_registry_and_activation_gap_branches(tmp_path):
     asyncio.run(_run())
 
 
+def test_configure_backend_resolves_plain_sqlite_triple_slash_paths(tmp_path):
+    cfg = SimpleNamespace(
+        DATABASE_URL="sqlite:///relative/db.sqlite",
+        BASE_DIR=tmp_path,
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
+
+    db = Database(cfg=cfg)
+
+    assert db._backend == "sqlite"
+    assert db._sqlite_path == tmp_path / "relative" / "db.sqlite"
+
+
 def test_postgresql_prompt_and_user_lookup_gap_branches():
     cfg = SimpleNamespace(
         DATABASE_URL="postgresql://user:pass@localhost:5432/sidar",

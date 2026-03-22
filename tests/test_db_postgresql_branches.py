@@ -30,6 +30,8 @@ class _TransactionCtx:
 class _FakeConn:
     def __init__(self):
         self.execute_calls = []
+        self.fetchrow_calls = []
+        self.fetch_calls = []
         self.fetchrow_queue = deque()
         self.fetch_queue = deque()
         self.fetchval_queue = deque()
@@ -48,11 +50,13 @@ class _FakeConn:
         return "EXECUTE 1"
 
     async def fetchrow(self, query, *args):
+        self.fetchrow_calls.append((query, args))
         if self.fetchrow_queue:
             return self.fetchrow_queue.popleft()
         return None
 
     async def fetch(self, query, *args):
+        self.fetch_calls.append((query, args))
         if self.fetch_queue:
             return self.fetch_queue.popleft()
         return []
@@ -328,6 +332,32 @@ def test_connect_postgresql_pool_creation_failure_bubbles(monkeypatch):
         asyncio.run(db.connect())
 
 
+def test_connect_postgresql_generic_pool_failure_logs_warning(monkeypatch):
+    cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@localhost/db", DB_POOL_SIZE=2)
+    db = Database(cfg=cfg)
+    warnings = []
+
+    class _Asyncpg:
+        @staticmethod
+        async def create_pool(**_kwargs):
+            raise RuntimeError("socket closed")
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "asyncpg":
+            return _Asyncpg
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr("core.db.logger.warning", lambda msg, *args: warnings.append(msg % args if args else msg))
+
+    with pytest.raises(RuntimeError, match="socket closed"):
+        asyncio.run(db.connect())
+
+    assert any("oluşturulamadı" in msg for msg in warnings)
+
+
 def test_postgresql_session_create_and_delete_parse_edge_cases():
     db, conn, _pool = _pg_db()
 
@@ -340,6 +370,68 @@ def test_postgresql_session_create_and_delete_parse_edge_cases():
         assert deleted is False
 
     asyncio.run(_run())
+
+
+def test_postgresql_get_active_prompt_none_and_list_coverage_tasks_query_variants():
+    db, conn, _pool = _pg_db()
+
+    async def _run():
+        assert await db.get_active_prompt("system") is None
+
+        conn.fetch_queue.append(
+            [
+                {
+                    "id": 41,
+                    "tenant_id": "tenant-a",
+                    "requester_role": "coverage",
+                    "command": "pytest -q",
+                    "pytest_output": "ok",
+                    "status": "pending_review",
+                    "target_path": "core/db.py",
+                    "suggested_test_path": "tests/test_db_runtime.py",
+                    "review_payload_json": "{}",
+                    "created_at": "now",
+                    "updated_at": "now",
+                }
+            ]
+        )
+        tasks_all = await db.list_coverage_tasks(tenant_id="tenant-a", status=None, limit=2)
+
+        conn.fetch_queue.append(
+            [
+                {
+                    "id": 42,
+                    "tenant_id": "tenant-a",
+                    "requester_role": "coverage",
+                    "command": "pytest -q",
+                    "pytest_output": "ok",
+                    "status": "pending_review",
+                    "target_path": "core/db.py",
+                    "suggested_test_path": "tests/test_db_runtime.py",
+                    "review_payload_json": "{}",
+                    "created_at": "now",
+                    "updated_at": "now",
+                }
+            ]
+        )
+        tasks_filtered = await db.list_coverage_tasks(tenant_id="tenant-a", status="pending_review", limit=1)
+
+        assert tasks_all[0].id == 41
+        assert tasks_filtered[0].id == 42
+
+    asyncio.run(_run())
+
+    active_prompt_query, active_prompt_args = conn.fetchrow_calls[0]
+    assert "FROM prompt_registry" in active_prompt_query
+    assert active_prompt_args == ("system",)
+
+    list_all_query, list_all_args = conn.fetch_calls[0]
+    assert "AND status=$2" not in list_all_query
+    assert list_all_args == ("tenant-a", 2)
+
+    list_filtered_query, list_filtered_args = conn.fetch_calls[1]
+    assert "AND status=$2" in list_filtered_query
+    assert list_filtered_args == ("tenant-a", "pending_review", 1)
 
 
 def test_connect_postgresql_normalizes_asyncpg_scheme(monkeypatch):
