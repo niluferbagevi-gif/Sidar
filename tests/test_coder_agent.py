@@ -101,6 +101,12 @@ def test_coder_agent_run_task_qa_feedback_approved_and_direct_tool_routes():
     assert patch_out == "patch-ok"
 
 
+def test_coder_agent_parse_qa_feedback_falls_back_for_valid_non_dict_json():
+    parsed = CoderAgent._parse_qa_feedback('["approve", "looks good"]')
+
+    assert parsed == {"raw": '["approve", "looks good"]'}
+
+
 def test_coder_agent_qa_feedback_reject_surfaces_remediation_loop():
     a = CoderAgent()
     payload = {
