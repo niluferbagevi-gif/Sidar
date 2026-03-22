@@ -73,6 +73,36 @@ def test_build_compaction_summary_collects_points_and_code_refs():
     assert "Yanıt: `main.py` içinde hata var. ```py```" in summary
 
 
+def test_build_compaction_summary_skips_user_section_when_only_assistant_messages_exist():
+    mod = _load_memory_module()
+    ConversationMemory = mod.ConversationMemory
+
+    messages = [
+        SimpleNamespace(role="assistant", content="İlk çıktı tools.py üzerinde güncelleme yaptı."),
+        SimpleNamespace(role="assistant", content="İkinci çıktı /api/tasks sonucunu özetledi."),
+    ]
+
+    summary = ConversationMemory._build_compaction_summary("Asistan Oturumu", messages)
+
+    assert "Öne çıkan kullanıcı istekleri:" not in summary
+    assert "Öne çıkan SİDAR çıktıları:" in summary
+
+
+def test_build_compaction_summary_skips_assistant_section_when_only_user_messages_exist():
+    mod = _load_memory_module()
+    ConversationMemory = mod.ConversationMemory
+
+    messages = [
+        SimpleNamespace(role="user", content="README.md ve src/app.ts dosyalarını incele."),
+        SimpleNamespace(role="user", content="Lütfen /api/health cevabını da doğrula."),
+    ]
+
+    summary = ConversationMemory._build_compaction_summary("Kullanıcı Oturumu", messages)
+
+    assert "Öne çıkan kullanıcı istekleri:" in summary
+    assert "Öne çıkan SİDAR çıktıları:" not in summary
+
+
 async def _make_initialized_memory(tmp_path: Path):
     mod = _load_memory_module()
     memory = mod.ConversationMemory(file_path=tmp_path / "test_session.json", max_turns=20, keep_last=2)
@@ -100,6 +130,44 @@ def test_compact_session_returns_missing_for_unknown_session(tmp_path: Path):
             "messages_before": 0,
         }
         memory.db.get_session_messages.assert_not_called()
+
+    asyncio.run(_run())
+
+
+def test_ensure_initialized_creates_lock_and_calls_initialize(tmp_path: Path):
+    async def _run() -> None:
+        mod = _load_memory_module()
+        memory = mod.ConversationMemory(file_path=tmp_path / "ensure_init.json", max_turns=5)
+        memory.initialize = AsyncMock(side_effect=lambda: setattr(memory, "_initialized", True))
+
+        assert memory._init_lock is None
+        await memory._ensure_initialized()
+
+        assert memory._init_lock is not None
+        memory.initialize.assert_awaited_once()
+
+    asyncio.run(_run())
+
+
+def test_ensure_initialized_skips_initialize_when_lock_already_marks_memory_ready(tmp_path: Path):
+    async def _run() -> None:
+        mod = _load_memory_module()
+        memory = mod.ConversationMemory(file_path=tmp_path / "ensure_ready.json", max_turns=5)
+        memory.initialize = AsyncMock()
+
+        class _Lock:
+            async def __aenter__(self):
+                memory._initialized = True
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        memory._initialized = False
+        memory._init_lock = _Lock()
+
+        await memory._ensure_initialized()
+
+        memory.initialize.assert_not_awaited()
 
     asyncio.run(_run())
 
@@ -133,6 +201,26 @@ def test_compact_session_skips_when_message_count_is_below_threshold(tmp_path: P
     asyncio.run(_run())
 
 
+def test_delete_session_returns_true_without_switching_when_deleted_session_is_not_active(tmp_path: Path):
+    async def _run() -> None:
+        _mod, memory, user = await _make_initialized_memory(tmp_path)
+        memory.active_session_id = "active-session"
+        memory.db.delete_session = AsyncMock(return_value=True)
+        memory.get_all_sessions = AsyncMock()
+        memory.load_session = AsyncMock()
+        memory.create_session = AsyncMock()
+
+        result = await memory.delete_session("other-session")
+
+        assert result is True
+        memory.db.delete_session.assert_awaited_once_with("other-session", user.id)
+        memory.get_all_sessions.assert_not_awaited()
+        memory.load_session.assert_not_awaited()
+        memory.create_session.assert_not_awaited()
+
+    asyncio.run(_run())
+
+
 def test_compact_session_replaces_active_session_turns(tmp_path: Path):
     async def _run() -> None:
         _mod, memory, user = await _make_initialized_memory(tmp_path)
@@ -159,6 +247,51 @@ def test_compact_session_replaces_active_session_turns(tmp_path: Path):
         assert turns[1]["content"].startswith("[GECE KONSOLİDASYON ÖZETİ]\nOturum başlığı: Yeni Sohbet")
         assert turns[2]["content"] == "Soru 2"
         assert turns[3]["content"] == "Cevap 2"
+
+    asyncio.run(_run())
+
+
+def test_apply_summary_skips_db_rewrite_when_session_or_user_is_missing(tmp_path: Path):
+    async def _run() -> None:
+        _mod, memory, _user = await _make_initialized_memory(tmp_path)
+        memory._turns = [
+            {"role": "user", "content": "ilk", "timestamp": 1.0},
+            {"role": "assistant", "content": "yanıt", "timestamp": 2.0},
+        ]
+        memory.active_session_id = None
+        memory.active_user_id = None
+        memory.db.delete_session = AsyncMock()
+        memory.create_session = AsyncMock()
+        memory.add = AsyncMock()
+
+        await memory.apply_summary("özet")
+
+        assert [turn["content"] for turn in memory._turns[:2]] == [
+            "[Önceki konuşmaların özeti istendi]",
+            "[KONUŞMA ÖZETİ]\nözet",
+        ]
+        memory.db.delete_session.assert_not_awaited()
+        memory.create_session.assert_not_awaited()
+        memory.add.assert_not_awaited()
+
+    asyncio.run(_run())
+
+
+def test_clear_skips_db_recreation_when_no_active_session_exists(tmp_path: Path):
+    async def _run() -> None:
+        _mod, memory, _user = await _make_initialized_memory(tmp_path)
+        memory._turns = [{"role": "user", "content": "geçici", "timestamp": 1.0}]
+        memory._last_file = "demo.py"
+        memory.active_session_id = None
+        memory.db.delete_session = AsyncMock()
+        memory.create_session = AsyncMock()
+
+        await memory.clear()
+
+        assert memory._turns == []
+        assert memory._last_file is None
+        memory.db.delete_session.assert_not_awaited()
+        memory.create_session.assert_not_awaited()
 
     asyncio.run(_run())
 
