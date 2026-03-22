@@ -58,6 +58,29 @@ def test_agent_metrics_render_prometheus_emits_histogram_and_counter_series():
     ) in rendered
 
 
+def test_get_agent_metrics_collector_uses_instance_initialized_inside_lock(monkeypatch):
+    import core.agent_metrics as agent_metrics_mod
+
+    original_collector = agent_metrics_mod._COLLECTOR
+    agent_metrics_mod._COLLECTOR = None
+    injected = agent_metrics_mod.AgentMetricsCollector()
+
+    class _Lock:
+        def __enter__(self):
+            agent_metrics_mod._COLLECTOR = injected
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(agent_metrics_mod, "_COLLECTOR_LOCK", _Lock())
+
+    try:
+        assert agent_metrics_mod.get_agent_metrics_collector() is injected
+    finally:
+        agent_metrics_mod._COLLECTOR = original_collector
+
+
 def test_agent_metrics_render_prometheus_emits_step_histogram_and_counter_series():
     collector = AgentMetricsCollector()
 
