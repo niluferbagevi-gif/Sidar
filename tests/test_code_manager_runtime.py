@@ -274,6 +274,11 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    # ÇÖZÜM 1: Sistem modüllerinden docker'ı kaldırarak test izolasyonunu sağlıyoruz.
+    # Aksi halde çalışan ortamda docker varsa fallback yapmadan gerçek sockete bağlanıp assert'ü patlatır.
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+
     monkeypatch.setattr(
         CM_MOD.subprocess,
         "run",
@@ -295,7 +300,12 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
 
     docker_module = types.ModuleType("docker")
     docker_module.DockerClient = _DockerClient
-    docker_module.from_env = lambda: (_ for _ in ()).throw(RuntimeError("daemon down"))
+
+    # ÇÖZÜM 2: Yanlış ValueError üreten lambda jeneratör hack'i yerine normal bir fırlatıcı tanımlıyoruz.
+    def raise_daemon_down():
+        raise RuntimeError("daemon down")
+
+    docker_module.from_env = raise_daemon_down
 
     monkeypatch.setattr(builtins, "__import__", real_import)
     monkeypatch.setitem(sys.modules, "docker", docker_module)
