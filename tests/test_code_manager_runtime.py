@@ -879,6 +879,12 @@ def test_init_docker_all_sockets_fail_logs_warning(monkeypatch, tmp_path):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    # CLI fallback'in ortam bağımsız olarak başarısız olmasını sağla
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="daemon not running"),
+    )
     original_init(mgr)
     assert mgr.docker_available is False
 
@@ -973,6 +979,12 @@ def test_init_docker_skips_non_socket_path(monkeypatch, tmp_path):
         st_mode = _stat.S_IFREG
 
     monkeypatch.setattr(CM_MOD.os, "stat", lambda _p, *args, **kwargs: _FakeStat())
+    # CLI fallback'in ortam bağımsız olarak başarısız olmasını sağla
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="daemon not running"),
+    )
 
     original_init(mgr)
     assert mgr.docker_available is False
