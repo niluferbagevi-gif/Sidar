@@ -100,6 +100,63 @@ def test_browser_manager_capture_dom_raises_when_selector_is_missing():
     with pytest.raises(LookupError, match="selector not found"):
         manager.capture_dom(session.session_id, selector="#missing")
 
+
+def test_browser_manager_collect_session_signals_keeps_empty_dom_preview():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Locator:
+        def inner_html(self, timeout):
+            assert timeout == 5000
+            return ""
+
+    class _Page:
+        def locator(self, selector):
+            assert selector == "html"
+            return _Locator()
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-empty-dom",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+        current_url="https://example.com/empty",
+    )
+    manager._sessions[session.session_id] = session
+
+    signal = manager.collect_session_signals(session.session_id, include_dom=True, include_screenshot=False)
+
+    assert signal["dom_capture"]["ok"] is True
+    assert signal["dom_capture"]["preview"] == ""
+
+
+def test_browser_manager_collect_session_signals_propagates_missing_dom_locator():
+    manager = BM_MOD.BrowserManager(_Config())
+
+    class _Locator:
+        def inner_html(self, timeout):
+            assert timeout == 5000
+            raise LookupError("dom node disappeared")
+
+    class _Page:
+        def locator(self, selector):
+            assert selector == "#missing"
+            return _Locator()
+
+    session = BM_MOD.BrowserSession(
+        session_id="sess-dom-disconnect",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=_Page(),
+    )
+    manager._sessions[session.session_id] = session
+
+    with pytest.raises(LookupError, match="dom node disappeared"):
+        manager.collect_session_signals(session.session_id, include_dom=True, include_screenshot=False, dom_selector="#missing")
+
 def test_browser_manager_close_session_succeeds_when_playwright_runtime_is_absent():
     manager = BM_MOD.BrowserManager(_Config())
     calls = []
