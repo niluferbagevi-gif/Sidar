@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 _WEBHOOK_TIMEOUT = 10.0
 
 
+def _is_valid_webhook_url(url: str) -> bool:
+    normalized = (url or "").strip()
+    return normalized.startswith("https://hooks.slack.com/") or normalized.startswith("https://hooks.slack-gov.com/")
+
+
 class SlackManager:
     """
     Slack Bot API + Incoming Webhook entegrasyonu.
@@ -64,6 +69,9 @@ class SlackManager:
                 logger.error("Slack istemcisi oluşturma hatası: %s", exc)
 
         if self.webhook_url:
+            if not _is_valid_webhook_url(self.webhook_url):
+                logger.warning("Geçersiz Slack webhook URL formatı; webhook modu devre dışı bırakıldı.")
+                return
             self._available = True
             self._webhook_only = True
             logger.info("Slack Webhook modu aktif.")
@@ -137,7 +145,11 @@ class SlackManager:
                 resp = await asyncio.to_thread(self._client.chat_postMessage, **kwargs)
                 if resp["ok"]:
                     return True, resp.get("ts", "")
-                return False, resp.get("error", "Bilinmeyen hata")
+                error = resp.get("error", "Bilinmeyen hata")
+                status_code = resp.get("status")
+                if isinstance(status_code, int) and status_code >= 500:
+                    return False, f"Slack API hatası ({status_code}): {error}"
+                return False, error
             except Exception as exc:
                 logger.error("Slack send_message SDK hatası: %s", exc)
                 return False, str(exc)
@@ -154,6 +166,8 @@ class SlackManager:
         """Incoming Webhook URL'ye POST gönderir."""
         if not self.webhook_url:
             return False, "SLACK_WEBHOOK_URL ayarlanmamış"
+        if not _is_valid_webhook_url(self.webhook_url):
+            return False, "Geçersiz Slack webhook URL formatı"
 
         payload: Dict[str, Any] = {}
         if text:

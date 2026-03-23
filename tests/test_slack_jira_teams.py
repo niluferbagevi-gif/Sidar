@@ -66,6 +66,14 @@ class TestSlackManagerInit:
         assert mgr.is_available() is True
         assert mgr._webhook_only is True
 
+    def test_invalid_webhook_url_does_not_enable_webhook_mode(self):
+        with patch.object(_slack_mod.logger, "warning") as warning_log:
+            mgr = SlackManager(webhook_url="ftp://invalid-webhook")
+
+        assert mgr.is_available() is False
+        assert mgr._webhook_only is False
+        warning_log.assert_called_once()
+
     def test_token_without_sdk_falls_back_to_webhook(self):
         # slack_sdk kurulu değilse token yok sayılır
         with patch.dict(sys.modules, {"slack_sdk": None}):
@@ -225,6 +233,15 @@ class TestSlackManagerSendMessage:
         assert ok is False
         assert err == "ratelimited"
 
+    def test_send_message_sdk_surfaces_server_error_status(self):
+        mgr = self._sdk_mgr()
+        mgr._client.chat_postMessage = lambda **_kwargs: {"ok": False, "error": "internal_error", "status": 500}
+
+        ok, err = _run(mgr.send_message("Merhaba"))
+
+        assert ok is False
+        assert err == "Slack API hatası (500): internal_error"
+
     def test_send_message_sdk_timeout_returns_error(self):
         mgr = self._sdk_mgr()
 
@@ -249,6 +266,20 @@ class TestSlackManagerSendWebhook:
         ok, err = _run(mgr.send_webhook("test"))
         assert ok is False
         assert "SLACK_WEBHOOK_URL" in err
+
+    def test_invalid_webhook_url_returns_early_without_http_call(self):
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.webhook_url = "ftp://invalid-webhook"
+        mgr._available = True
+        mgr._webhook_only = True
+        mgr._client = None
+
+        with patch.object(_slack_mod.httpx, "AsyncClient") as async_client:
+            ok, err = _run(mgr.send_webhook(text="Test"))
+
+        assert ok is False
+        assert err == "Geçersiz Slack webhook URL formatı"
+        async_client.assert_not_called()
 
     def test_successful_webhook_post(self):
         mgr = SlackManager.__new__(SlackManager)
