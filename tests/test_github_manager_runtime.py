@@ -543,3 +543,63 @@ def test_init_client_success_sets_available_and_loads_repo(monkeypatch):
     assert m.is_available() is True
     assert m.repo_name == "org/repo"
     assert m._repo is not None
+
+
+def test_init_client_missing_and_invalid_pat_paths(monkeypatch):
+    with patch.object(GM.logger, "warning") as warning_log:
+        missing = GM.GitHubManager(token="", repo_name="", require_token=False)
+
+    assert missing.is_available() is False
+    assert "Bağlı değil" in missing.status()
+    warning_log.assert_called_once()
+
+    class _Auth:
+        @staticmethod
+        def Token(token):
+            return token
+
+    class _GithubInvalidPat:
+        def __init__(self, auth=None):
+            self.auth = auth
+
+        def get_user(self):
+            raise RuntimeError("Bad credentials")
+
+    fake_mod = types.SimpleNamespace(Auth=_Auth, Github=_GithubInvalidPat)
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "github":
+            return fake_mod
+        return real_import(name, *args, **kwargs)
+
+    with patch.object(GM.logger, "error") as error_log:
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        invalid = GM.GitHubManager(token="bad-token", repo_name="", require_token=False)
+
+    assert invalid.is_available() is False
+    assert "Token geçersiz" in invalid.status()
+    error_log.assert_called_once()
+
+
+def test_get_pull_request_diff_returns_empty_message_for_pr_without_files():
+    class _EmptyFilesPr:
+        title = "No-op change"
+
+        def get_files(self):
+            return []
+
+    class _RepoEmptyDiff(FakeRepo):
+        def get_pull(self, number):
+            assert number == 77
+            return _EmptyFilesPr()
+
+    manager = _manager(repo=_RepoEmptyDiff(), gh=types.SimpleNamespace(search_code=lambda *_: []), available=True, token="t")
+
+    ok, message = manager.get_pull_request_diff(77)
+
+    assert ok is True
+    assert message == "Bu PR'da değiştirilmiş kod dosyası bulunmuyor."
