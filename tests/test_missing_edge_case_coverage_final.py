@@ -645,6 +645,37 @@ def test_websocket_llm_error_and_cleanup_lines(monkeypatch):
     assert calls["reset"] >= 1
 
 
+def test_get_agent_concurrent_call_reuses_singleton_inside_lock(monkeypatch):
+    mod = _load_web_server()
+    mod._agent = None
+    mod._agent_lock = asyncio.Lock()
+
+    created = []
+    bound = []
+
+    class _Agent:
+        def __init__(self, _cfg):
+            created.append(self)
+
+        async def initialize(self):
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(mod, "SidarAgent", _Agent)
+    monkeypatch.setattr(mod, "_bind_llm_usage_sink", lambda agent: bound.append(agent))
+
+    async def _run():
+        first = asyncio.create_task(mod.get_agent())
+        await asyncio.sleep(0)
+        second = asyncio.create_task(mod.get_agent())
+        return await asyncio.gather(first, second)
+
+    first_agent, second_agent = asyncio.run(_run())
+
+    assert first_agent is second_agent
+    assert len(created) == 1
+    assert bound == [first_agent]
+
+
 def test_websocket_status_timeout_and_cancelled_error_lines(monkeypatch):
     mod = _load_web_server()
 
@@ -731,6 +762,93 @@ def test_websocket_status_timeout_and_cancelled_error_lines(monkeypatch):
 
     asyncio.run(mod.websocket_chat(_WS()))
     assert wait_for_calls["n"] >= 1
+
+
+def test_websocket_chat_status_pump_can_exit_without_emitting_status(monkeypatch):
+    mod = _load_web_server()
+
+    class _Bus:
+        def __init__(self):
+            self.queue = asyncio.Queue()
+            self.unsubscribed = []
+
+        def subscribe(self):
+            return "sub-fast-exit", self.queue
+
+        def unsubscribe(self, sub_id):
+            self.unsubscribed.append(sub_id)
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id="u1", username="alice")
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def set_active_user(self, *_a, **_k):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            yield "tamam"
+
+    async def _get_agent():
+        return _Agent()
+
+    bus = _Bus()
+    monkeypatch.setattr(mod, "get_agent", _get_agent)
+    monkeypatch.setattr(mod, "get_agent_event_bus", lambda: bus)
+    monkeypatch.setattr(mod, "_redis_is_rate_limited", lambda *_a, **_k: asyncio.sleep(0, result=False))
+    monkeypatch.setattr(
+        mod,
+        "_resolve_user_from_token",
+        lambda _agent, _token: asyncio.sleep(0, result=types.SimpleNamespace(id="u1", username="alice", role="user")),
+    )
+
+    real_create_task = mod.asyncio.create_task
+
+    def _create_task(coro):
+        if getattr(coro, "cr_code", None) and coro.cr_code.co_name == "_status_pump":
+            coro.cr_frame.f_locals["stop_status"].set()
+        return real_create_task(coro)
+
+    monkeypatch.setattr(mod.asyncio, "create_task", _create_task)
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
+            self.sent = []
+            self._payloads = [
+                json.dumps({"action": "auth", "token": "tok"}),
+                json.dumps({"action": "send", "message": "hazır"}),
+            ]
+
+        async def accept(self):
+            return None
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(0.05)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    ws = _WS()
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert {"chunk": "tamam"} in ws.sent
+    assert {"done": True} in ws.sent
+    assert not any("status" in payload for payload in ws.sent)
 
 
 def test_websocket_llm_error_send_json_failure_swallowed(monkeypatch):
