@@ -404,6 +404,7 @@ class TestSlackManagerListChannels:
         ok, channels, err = _run(mgr.list_channels())
         assert ok is False
         assert channels == []
+        assert err == "Kanal listesi için slack-sdk ve bot token gerekli"
 
     def test_list_channels_webhook_only(self):
         mgr = SlackManager.__new__(SlackManager)
@@ -411,6 +412,7 @@ class TestSlackManagerListChannels:
         mgr._webhook_only = True
         ok, channels, err = _run(mgr.list_channels())
         assert ok is False
+        assert err == "Kanal listesi için slack-sdk ve bot token gerekli"
 
 
 

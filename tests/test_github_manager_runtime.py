@@ -2,6 +2,7 @@ import importlib.util
 import types
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 
 def _load_module():
@@ -271,6 +272,22 @@ def test_status_without_token_or_repo():
 
     m3 = _manager(repo=None, gh=None, available=True, token="x")
     assert m3.default_branch == "main"
+
+
+def test_is_available_logs_guidance_and_status_includes_token_setup_steps():
+    m = _manager(repo=None, gh=None, available=False, token="")
+
+    with patch.object(GM.logger, "debug") as debug_log:
+        assert m.is_available() is False
+
+    debug_log.assert_called_once()
+    logged = debug_log.call_args[0][0]
+    assert "GitHub: Token eksik" in logged
+    assert "github.com/settings/tokens" in logged
+
+    status = m.status()
+    assert "GITHUB_TOKEN=<token>" in status
+    assert "Gerekli izinler" in status
 
 
 def test_list_repos_handles_owner_types_and_missing_fields():
