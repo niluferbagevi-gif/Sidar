@@ -134,6 +134,50 @@ def test_run_with_streaming_kills_process_when_wait_after_terminate_fails(monkey
     assert proc.wait_calls == [None, 3]
 
 
+def test_run_with_streaming_kills_process_after_terminate_timeout_when_poll_reports_running(monkeypatch):
+    main_mod = _load_main_module()
+
+    class _Pipe:
+        def readline(self):
+            return ""
+
+        def close(self):
+            return None
+
+    class _Proc:
+        def __init__(self):
+            self.stdout = _Pipe()
+            self.stderr = _Pipe()
+            self.terminate_calls = 0
+            self.kill_calls = 0
+            self.wait_calls = []
+
+        def wait(self, timeout=None):
+            self.wait_calls.append(timeout)
+            if timeout == 3:
+                raise TimeoutError("still hung")
+            return 0
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminate_calls += 1
+
+        def kill(self):
+            self.kill_calls += 1
+
+    proc = _Proc()
+    monkeypatch.setattr(main_mod.subprocess, "Popen", lambda *args, **kwargs: proc)
+
+    rc = main_mod._run_with_streaming([sys.executable, "cli.py"], None)
+
+    assert rc == 0
+    assert proc.terminate_calls == 1
+    assert proc.kill_calls == 1
+    assert proc.wait_calls == [None, 3]
+
+
 def test_run_wizard_cli_non_ollama_skips_extra_prompt_and_executes(monkeypatch):
     main_mod = _load_main_module()
     prompts = []
