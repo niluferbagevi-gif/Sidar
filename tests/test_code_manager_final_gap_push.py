@@ -5,9 +5,11 @@ from pathlib import Path
 from tests.test_code_manager_runtime import CM_MOD, DummySecurity, FULL
 
 def _make_manager(tmp_path, **security_kwargs):
+    original = CM_MOD.CodeManager._init_docker
     CM_MOD.CodeManager._init_docker = lambda self: None
     sec = DummySecurity(tmp_path, level=FULL, **security_kwargs)
     manager = CM_MOD.CodeManager(sec, tmp_path)
+    CM_MOD.CodeManager._init_docker = original
     manager.docker_available = False
     manager.docker_client = None
     return manager

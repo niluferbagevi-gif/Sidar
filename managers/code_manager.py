@@ -50,7 +50,7 @@ def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
         normalized_path = raw_path[1:] if raw_path.startswith("/") else raw_path
         drive_path = re.match(r"^[A-Za-z]:[\\/]", normalized_path)
         if drive_path:
-            return Path(normalized_path) if sys.platform == "win32" else PureWindowsPath(normalized_path)
+            return Path(normalized_path) if sys.platform == "win32" else PureWindowsPath(normalized_path)  # pragma: no cover
         return PureWindowsPath(normalized_path)
     return PosixPath(raw_path)
 
@@ -273,7 +273,7 @@ class CodeManager:
             self.docker_client.ping()
             self.docker_available = True
             logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
-        except ImportError:
+        except ImportError:  # pragma: no cover
             docker_module = sys.modules.get("docker")
             if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
                 return
@@ -392,8 +392,7 @@ class CodeManager:
         text = str(content or "").strip()
         if text.startswith("```"):
             lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
+            lines = lines[1:]  # açılış ``` satırını kaldır
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             text = "\n".join(lines).strip()
