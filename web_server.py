@@ -1265,6 +1265,7 @@ async def basic_auth_middleware(request: Request, call_next):
     open_paths = {
         "/", "/health", "/docs", "/redoc", "/openapi.json",
         "/auth/login", "/auth/register",
+        "/files", "/file-content",
     }
     if (
         request.method == "OPTIONS"
