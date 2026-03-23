@@ -4,6 +4,8 @@ import sys
 import types
 from types import SimpleNamespace
 
+import pytest
+
 from tests.test_llm_client_critical_gap_closers import _collect, _load_llm_module
 
 
@@ -201,3 +203,106 @@ def test_litellm_stream_interruption_yields_safe_error_and_closes_resources(monk
     assert "LiteLLM akış hatası" in payload["argument"]
     assert "litellm stream interrupted" in payload["argument"]
     assert state == {"client_closed": True, "stream_closed": True}
+
+def test_openai_chat_retries_through_transient_500_until_success(monkeypatch):
+    llm = _load_llm_module()
+    client = llm.OpenAIClient(
+        SimpleNamespace(
+            OPENAI_API_KEY="k",
+            OPENAI_MODEL="gpt",
+            OPENAI_TIMEOUT=10,
+            LLM_MAX_RETRIES=2,
+            LLM_RETRY_BASE_DELAY=0.05,
+            LLM_RETRY_MAX_DELAY=0.05,
+        )
+    )
+    attempts = {"count": 0}
+    sleeps = []
+
+    class _Resp:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+        def raise_for_status(self):
+            if self.status_code >= 500:
+                raise llm.httpx.HTTPStatusError(self.status_code)
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "retry ok"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1},
+            }
+
+    class _Client:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                return _Resp(500)
+            return _Resp(200)
+
+    async def _fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(llm.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(llm.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    result = asyncio.run(client.chat([{"role": "user", "content": "retry please"}], stream=False, json_mode=False))
+
+    assert result == "retry ok"
+    assert attempts["count"] == 3
+    assert sleeps == [0.05, 0.05]
+
+
+def test_anthropic_chat_retries_until_timeout_budget_is_exhausted(monkeypatch):
+    llm = _load_llm_module()
+    attempts = {"count": 0}
+    sleeps = []
+
+    class _AsyncAnthropic:
+        def __init__(self, api_key, timeout):
+            self.api_key = api_key
+            self.timeout = timeout
+            self.messages = types.SimpleNamespace(create=self._create)
+
+        async def _create(self, **_kwargs):
+            attempts["count"] += 1
+            raise llm.httpx.TimeoutException("anthropic timeout")
+
+    async def _fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+    monkeypatch.setattr(llm.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(llm.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    client = llm.AnthropicClient(
+        SimpleNamespace(
+            ANTHROPIC_API_KEY="k",
+            ANTHROPIC_MODEL="claude",
+            ANTHROPIC_TIMEOUT=10,
+            LLM_MAX_RETRIES=2,
+            LLM_RETRY_BASE_DELAY=0.05,
+            LLM_RETRY_MAX_DELAY=0.05,
+        )
+    )
+
+    with pytest.raises(llm.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "still timing out"}], stream=False, json_mode=False))
+
+    assert exc.value.provider == "anthropic"
+    assert exc.value.retryable is True
+    assert "anthropic timeout" in str(exc.value)
+    assert attempts["count"] == 3
+    assert sleeps == [0.05, 0.05]
