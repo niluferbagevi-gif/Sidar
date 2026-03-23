@@ -216,8 +216,36 @@ class CodeManager:
             return False, f"REPL Hatası (Docker CLI Sandbox):\n{output or '(çıktı yok)'}"
         return True, f"REPL Çıktısı (Docker CLI Sandbox):\n{output or '(kod çalıştı, çıktı yok)'}"
 
+    def _try_wsl_socket_fallback(self, docker_module: Any) -> bool:
+        """Docker Desktop/WSL2 socket yollarını deneyerek istemci başlatır."""
+        wsl_sockets = [
+            "unix:///var/run/docker.sock",
+            "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock",
+        ]
+        for socket_path in wsl_sockets:
+            fs_path = socket_path.removeprefix("unix://")
+            try:
+                file_stat = os.stat(fs_path)
+            except OSError:
+                continue
+            if not stat.S_ISSOCK(file_stat.st_mode):
+                logger.warning("Beklenen socket değil, atlanıyor: %s", fs_path)
+                continue
+            try:
+                candidate = docker_module.DockerClient(base_url=socket_path)
+                candidate.ping()
+            except Exception:
+                continue
+            self.docker_client = candidate
+            self.docker_available = True
+            logger.info("Docker bağlantısı WSL2 socket ile kuruldu: %s", socket_path)
+            return True
+        return False
+
     def _init_docker(self):
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
+        self.docker_available = False
+        self.docker_client = None
         try:
             import docker
             self.docker_client = docker.from_env()
@@ -225,33 +253,16 @@ class CodeManager:
             self.docker_available = True
             logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
         except ImportError:
+            docker_module = sys.modules.get("docker")
+            if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
+                return
             logger.warning("Docker SDK kurulu değil. (pip install docker)")
         except Exception as first_err:
             # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
             # (docker modülü zaten try bloğunda import edildi; yeniden import gerekmez)
             import docker as _docker_mod  # noqa: F811 — try bloğu ImportError vermediyse önbellektedir
-            wsl_sockets = [
-                "unix:///var/run/docker.sock",
-                "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock",
-            ]
-            for socket_path in wsl_sockets:
-                # unix:// önekini kaldırarak dosya yolunu al
-                fs_path = socket_path.removeprefix("unix://")
-                try:
-                    file_stat = os.stat(fs_path)
-                except OSError:
-                    continue  # Dosya yok veya erişilemiyor
-                if not stat.S_ISSOCK(file_stat.st_mode):
-                    logger.warning("Beklenen socket değil, atlanıyor: %s", fs_path)
-                    continue
-                try:
-                    self.docker_client = _docker_mod.DockerClient(base_url=socket_path)
-                    self.docker_client.ping()
-                    self.docker_available = True
-                    logger.info("Docker bağlantısı WSL2 socket ile kuruldu: %s", socket_path)
-                    return
-                except Exception:
-                    continue
+            if self._try_wsl_socket_fallback(_docker_mod):
+                return
             logger.warning(
                 "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
                 "WSL2 kullanıcıları: Docker Desktop'u açın ve "
