@@ -47,6 +47,50 @@ def test_fetch_pgvector_returns_empty_on_connection_drop(tmp_path, monkeypatch):
     assert store._fetch_pgvector("needle", top_k=2, session_id="s1") == []
     assert any("pgvector arama hatası" in msg and "socket closed" in msg for msg in warnings)
 
+
+def test_fetch_pgvector_returns_empty_when_query_finds_no_rows(tmp_path, monkeypatch):
+    rag_mod = _load_rag_module("rag_final_pg_empty_rows")
+    store = _new_store(rag_mod, tmp_path)
+
+    class _Result:
+        def fetchall(self):
+            return []
+
+    class _Conn:
+        def execute(self, stmt, params):
+            return _Result()
+
+    class _Begin:
+        def __enter__(self):
+            return _Conn()
+
+        def __exit__(self, *args):
+            return False
+
+    class _Engine:
+        def begin(self):
+            return _Begin()
+
+    store._pgvector_available = True
+    store.pg_engine = _Engine()
+    store._pg_table = "rag_embeddings"
+    store._pgvector_embed_texts = lambda texts: [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda sql: sql))
+
+    assert store._fetch_pgvector("needle", top_k=2, session_id="s1") == []
+
+
+def test_search_sync_bm25_mode_uses_bm25_backend_when_available(tmp_path):
+    rag_mod = _load_rag_module("rag_final_bm25_mode")
+    store = _new_store(rag_mod, tmp_path)
+    store._index = {"doc-1": {"session_id": "s1", "title": "Doc", "source": "src", "tags": []}}
+    store._bm25_available = True
+    store._bm25_search = lambda query, top_k, session_id: (True, f"bm25:{query}:{top_k}:{session_id}")
+
+    assert store._search_sync("needle", top_k=2, mode="bm25", session_id="s1") == (True, "bm25:needle:2:s1")
+
+
 def test_search_sync_auto_falls_back_to_keyword_when_chroma_disconnects(tmp_path, monkeypatch):
     rag_mod = _load_rag_module("rag_final_chroma_fallback")
     store = _new_store(rag_mod, tmp_path)
@@ -78,6 +122,17 @@ def test_chunk_text_handles_overlap_larger_than_chunk_size_without_overflow(tmp_
     assert chunks[0] == "a"
     assert chunks[-1] == "abcdef"
     assert chunks[-1].endswith("f")
+
+
+def test_chunk_text_accepts_explicit_chunk_size_larger_than_config(tmp_path):
+    rag_mod = _load_rag_module("rag_final_large_explicit_chunk")
+    store = _new_store(rag_mod, tmp_path)
+    store.cfg.RAG_CHUNK_SIZE = 12
+    store.cfg.RAG_CHUNK_OVERLAP = 3
+
+    chunks = store._chunk_text("x" * 40, chunk_size=64, chunk_overlap=5)
+
+    assert chunks == ["x" * 40]
 
 
 def test_recursive_chunk_text_forces_split_for_oversized_single_word(tmp_path):
