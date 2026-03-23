@@ -192,6 +192,26 @@ def test_root_cause_summary_uses_inferred_line_when_first_sentence_is_not_root_c
     assert summary == "Inferred: flaky teardown"
 
 
+def test_root_cause_summary_infers_syntax_error_from_malformed_ci_log_payload():
+    payload = {
+        "event_name": "ci_pipeline_failed",
+        "ci_failure": True,
+        "repo": "acme/sidar",
+        "workflow_name": "CI",
+        "pipeline_id": 902,
+        "branch": "main",
+        "base_branch": "main",
+        "failure_summary": "CI parser malformed output aldı",
+        "log_excerpt": "@@ ??? malformed syntax payload <<<\nnot-json: [}\nSyntaxError: unexpected EOF while parsing",
+        "failed_jobs": [{"name": "pytest"}],
+    }
+
+    context = build_ci_failure_context("ci_pipeline_failed", payload)
+    summary = ci_mod.build_root_cause_summary(context or {}, "Parser çıktısı normalize edilemedi.")
+
+    assert summary == "SyntaxError: unexpected EOF while parsing"
+
+
 def test_root_cause_summary_falls_back_to_hint_and_validation_commands_skip_blanks():
     context = {
         "failure_summary": "",
