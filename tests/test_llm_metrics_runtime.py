@@ -201,6 +201,21 @@ def test_llm_metrics_snapshot_uses_zero_cache_stats_when_cache_metrics_import_fa
     assert snap["cache"]["redis_latency_ms"] == 0.0
 
 
+def test_llm_metrics_snapshot_handles_empty_event_window_without_provider_rows():
+    collector = LLMMetricsCollector(max_events=5)
+
+    snap = collector.snapshot()
+
+    assert snap["window_events"] == 0
+    assert snap["totals"]["calls"] == 0
+    assert snap["totals"]["failures"] == 0
+    assert snap["totals"]["rate_limited"] == 0
+    assert snap["totals"]["total_tokens"] == 0
+    assert snap["totals"]["cost_usd"] == 0.0
+    assert snap["by_provider"] == {}
+    assert snap["by_user"] == {}
+
+
 def test_llm_metrics_snapshot_daily_budget_excludes_stale_events():
     from core.llm_metrics import LLMMetricEvent
 
