@@ -278,6 +278,7 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
     # ÇÖZÜM 1: Sistem modüllerinden docker'ı kaldırarak test izolasyonunu sağlıyoruz.
     # Aksi halde çalışan ortamda docker varsa fallback yapmadan gerçek sockete bağlanıp assert'ü patlatır.
     monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda binary: "/usr/bin/docker" if binary == "docker" else None)
 
     monkeypatch.setattr(
         CM_MOD.subprocess,

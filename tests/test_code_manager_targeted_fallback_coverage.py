@@ -37,6 +37,10 @@ def test_file_uri_to_path_windows_non_drive_path_and_empty_cpu_limits(monkeypatc
 def test_docker_cli_and_wsl_fallback_failure_paths(monkeypatch, tmp_path):
     manager = _make_manager(monkeypatch, tmp_path)
 
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _binary: None)
+    assert manager._try_docker_cli_fallback() is False
+
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _binary: "/usr/bin/docker")
     monkeypatch.setattr(
         CM_MOD.subprocess,
         "run",
