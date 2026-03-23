@@ -69,3 +69,15 @@ def test_normalize_self_heal_plan_handles_code_fence_parse_failures_and_invalid_
     assert mixed_operations["operations"] == [
         {"action": "patch", "path": "app.py", "target": "A", "replacement": "B"}
     ]
+
+
+def test_build_root_cause_summary_falls_back_to_malformed_log_excerpt_signal():
+    summary = ci_mod.build_root_cause_summary(
+        {
+            "failure_summary": "CI parser malformed output aldı",
+            "log_excerpt": "@@ broken payload <<<\nnot-json: [}\nSyntaxError: unexpected EOF while parsing",
+        },
+        "Ön analiz tamamlandı ama ilk satır kök neden içermiyor.",
+    )
+
+    assert summary == "SyntaxError: unexpected EOF while parsing"
