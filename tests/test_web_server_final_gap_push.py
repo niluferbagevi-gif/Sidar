@@ -149,3 +149,23 @@ def test_github_webhook_unknown_event_returns_success_without_memory_side_effect
     assert response.status_code == 200
     assert response.content == {"success": True, "event": "ping", "message": "İşlendi"}
     assert adds == []
+
+
+def test_stubbed_request_paths_cover_404_and_429_edges(monkeypatch):
+    mod = _load_web_server()
+
+    missing_dir = asyncio.run(mod.list_project_files('__definitely_missing_test_dir__'))
+    assert missing_dir.status_code == 404
+    assert 'Dizin bulunamadı' in missing_dir.content['error']
+
+    async def _limited(namespace, *_args, **_kwargs):
+        return namespace == 'ddos'
+
+    async def _next(_request):
+        return mod.JSONResponse({'ok': True}, status_code=200)
+
+    monkeypatch.setattr(mod, '_redis_is_rate_limited', _limited)
+
+    limited = asyncio.run(mod.ddos_rate_limit_middleware(_FakeRequest(path='/files'), _next))
+    assert limited.status_code == 429
+    assert 'Rate Limit' in limited.content['error']
