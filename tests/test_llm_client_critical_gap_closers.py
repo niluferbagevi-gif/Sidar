@@ -14,6 +14,10 @@ import pytest
 def _load_llm_module(*, break_redis=False):
     name = "llm_client_under_test" if not break_redis else "llm_client_no_redis_for_test"
     sys.modules.pop(name, None)
+    saved_core = sys.modules.get("core")
+    saved_metrics = sys.modules.get("core.llm_metrics")
+    saved_httpx = sys.modules.get("httpx")
+    saved_redis = sys.modules.get("redis")
 
     class _Timeout:
         def __init__(self, *args, **kwargs):
@@ -59,8 +63,30 @@ def _load_llm_module(*, break_redis=False):
     spec = importlib.util.spec_from_file_location(name, Path("core/llm_client.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+    try:
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if saved_httpx is None:
+            sys.modules.pop("httpx", None)
+        else:
+            sys.modules["httpx"] = saved_httpx
+
+        if saved_metrics is None:
+            sys.modules.pop("core.llm_metrics", None)
+        else:
+            sys.modules["core.llm_metrics"] = saved_metrics
+
+        if saved_core is None:
+            sys.modules.pop("core", None)
+        else:
+            sys.modules["core"] = saved_core
+
+        if break_redis:
+            if saved_redis is None:
+                sys.modules.pop("redis", None)
+            else:
+                sys.modules["redis"] = saved_redis
 
 
 llm = _load_llm_module()
