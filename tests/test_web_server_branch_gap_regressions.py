@@ -911,3 +911,90 @@ def test_set_level_endpoint_returns_plain_string_from_background_thread(monkeypa
     assert response.status_code == 200
     assert response.content['message'] == 'plain-level-updated'
     assert response.content['current_level'] == 'full'
+
+
+
+def test_websocket_voice_anyio_closed_with_completed_response_task_exits_cleanly(monkeypatch):
+    mod = _load_web_server()
+
+    class _Closed(Exception):
+        pass
+
+    class _DoneTask:
+        def __init__(self):
+            self.awaited = 0
+
+        def done(self):
+            return True
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            self.awaited += 1
+            if False:
+                yield None
+            return None
+
+    done_task = _DoneTask()
+
+    def _create_task(coro):
+        if getattr(coro, 'cr_code', None) and coro.cr_code.co_name == '_run_voice_turn':
+            coro.close()
+            return done_task
+        return asyncio.create_task(coro)
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == 'valid-token':
+                return types.SimpleNamespace(id='u1', username='alice')
+            return None
+
+    class _Memory:
+        db = _DB()
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+        def __len__(self):
+            return 1
+
+    monkeypatch.setattr(mod, 'get_agent', lambda: asyncio.sleep(0, result=types.SimpleNamespace(memory=_Memory(), llm=object(), respond=None)))
+    monkeypatch.setattr(mod, '_ANYIO_CLOSED', _Closed)
+    monkeypatch.setattr(mod.asyncio, 'create_task', _create_task)
+
+    multimodal_mod = types.ModuleType('core.multimodal')
+    voice_mod = types.ModuleType('core.voice')
+    multimodal_mod.MultimodalPipeline = lambda *_a, **_k: types.SimpleNamespace(transcribe_bytes=lambda *_a, **_k: None)
+    voice_mod.VoicePipeline = lambda *_a, **_k: types.SimpleNamespace(create_duplex_state=lambda: types.SimpleNamespace(assistant_turn_id=0, output_text_buffer='', last_interrupt_reason=''), vad_enabled=False, duplex_enabled=False)
+
+    class _WebSocket:
+        def __init__(self):
+            self.headers = {'sec-websocket-protocol': 'valid-token'}
+            self.client = types.SimpleNamespace(host='127.0.0.1')
+            self._events = [
+                {'type': 'websocket.receive', 'bytes': b'audio'},
+                {'type': 'websocket.receive', 'text': json.dumps({'action': 'commit'})},
+                _Closed('socket closed'),
+            ]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            item = self._events.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        async def send_json(self, _payload):
+            return None
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    ws = _WebSocket()
+    with _ModulePatch('core.multimodal', multimodal_mod), _ModulePatch('core.voice', voice_mod):
+        asyncio.run(mod.websocket_voice(ws))
+
+    assert done_task.awaited == 0
