@@ -75,6 +75,22 @@ def test_event_bus_publish_and_subscribe_roundtrip():
     assert "Kod yazılıyor" in evt.message
 
 
+def test_event_bus_publish_without_subscribers_is_a_noop_locally(monkeypatch):
+    bus = AgentEventBus()
+    published = []
+
+    async def _publish_stub(evt):
+        published.append((evt.source, evt.message))
+        return False
+
+    monkeypatch.setattr(bus, "_publish_via_redis", _publish_stub)
+
+    asyncio.run(bus.publish("supervisor", "kimse dinlemiyor"))
+
+    assert bus._subscribers == {}
+    assert published == [("supervisor", "kimse dinlemiyor")]
+
+
 def test_event_bus_listener_switches_to_local_fallback_on_redis_disconnect(monkeypatch):
     bus = AgentEventBus()
     bus._redis_available = True

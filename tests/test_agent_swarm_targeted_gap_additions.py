@@ -92,6 +92,7 @@ def _make_managers_stub_pairs():
     managers_pkg = types.ModuleType("managers")
     managers_pkg.__path__ = [str(ROOT / "managers")]
 
+    browser_manager_stub = types.ModuleType("managers.browser_manager")
     code_manager_stub = types.ModuleType("managers.code_manager")
     github_manager_stub = types.ModuleType("managers.github_manager")
     package_info_stub = types.ModuleType("managers.package_info")
@@ -129,6 +130,9 @@ def _make_managers_stub_pairs():
         def audit_project(self, path):
             return f"AUDIT:{path}"
 
+    class _BrowserManager(_BaseManager):
+        pass
+
     class _GitHubManager(_BaseManager):
         pass
 
@@ -143,6 +147,7 @@ def _make_managers_stub_pairs():
         def scan_project_todos(self, directory, _limit):
             return f"TODOS:{directory}"
 
+    browser_manager_stub.BrowserManager = _BrowserManager
     code_manager_stub.CodeManager = _CodeManager
     github_manager_stub.GitHubManager = _GitHubManager
     package_info_stub.PackageInfoManager = _PackageInfoManager
@@ -152,6 +157,7 @@ def _make_managers_stub_pairs():
 
     return (
         ("managers", managers_pkg),
+        ("managers.browser_manager", browser_manager_stub),
         ("managers.code_manager", code_manager_stub),
         ("managers.github_manager", github_manager_stub),
         ("managers.package_info", package_info_stub),
@@ -184,8 +190,10 @@ def _load_agent_test_symbols():
             "bs4",
             "core",
             "core.llm_client",
+            "core.rag",
             "httpx",
             "managers",
+            "managers.browser_manager",
             "managers.code_manager",
             "managers.github_manager",
             "managers.package_info",
@@ -201,7 +209,9 @@ def _load_agent_test_symbols():
     roles_pkg = types.ModuleType("agent.roles")
     roles_pkg.__path__ = [str(ROOT / "agent" / "roles")]
     root_core_pkg = types.ModuleType("core")
+    root_core_pkg.__path__ = [str(ROOT / "core")]
     llm_client_mod = types.ModuleType("core.llm_client")
+    rag_mod = types.ModuleType("core.rag")
 
     class _LLMClient:
         def __init__(self, *_args, **_kwargs):
@@ -211,7 +221,9 @@ def _load_agent_test_symbols():
             return {"args": args, "kwargs": kwargs}
 
     llm_client_mod.LLMClient = _LLMClient
+    rag_mod.DocumentStore = type("DocumentStore", (), {})
     root_core_pkg.llm_client = llm_client_mod
+    root_core_pkg.rag = rag_mod
 
     stub_pairs = (
         ("agent", agent_pkg),
@@ -224,6 +236,7 @@ def _load_agent_test_symbols():
         ("bs4", _make_bs4_stub()),
         ("core", root_core_pkg),
         ("core.llm_client", llm_client_mod),
+        ("core.rag", rag_mod),
         ("httpx", _make_httpx_stub()),
         *_make_managers_stub_pairs(),
     )
@@ -375,6 +388,44 @@ def test_supervisor_route_p2p_stops_when_qa_retry_limit_is_exceeded():
 
         assert result.status == "failed"
         assert "Maksimum QA retry limiti aşıldı" in result.summary
+
+
+def test_supervisor_run_task_defaults_to_coder_when_intent_has_no_keyword_match():
+    with _load_agent_test_symbols() as symbols:
+        SupervisorAgent = symbols["SupervisorAgent"]
+        TaskResult = symbols["TaskResult"]
+
+        supervisor = object.__new__(SupervisorAgent)
+        published = []
+
+        class _Bus:
+            async def publish(self, source, message):
+                published.append((source, message))
+                return None
+
+        class _MemoryHub:
+            def add_global(self, _text):
+                return None
+
+            def add_role_note(self, _role, _text):
+                return None
+
+        async def _delegate(receiver, goal, intent, parent_task_id=None, sender="supervisor"):
+            if receiver == "coder":
+                return TaskResult(task_id="code-1", status="done", summary=f"kod:{goal}")
+            return TaskResult(task_id="review-1", status="done", summary="review:ok")
+
+        supervisor.events = _Bus()
+        supervisor.memory_hub = _MemoryHub()
+        supervisor._delegate = _delegate
+
+        output = asyncio.run(supervisor.run_task("tamamen nötr bir istek"))
+
+        assert "kod:tamamen nötr bir istek" in output
+        assert "Reviewer QA Özeti" in output
+        assert output.endswith("review:ok")
+        assert any("Coder ajanı kod üzerinde çalışıyor" in msg for _, msg in published)
+        assert any("Reviewer kodu inceliyor" in msg for _, msg in published)
 
 
 def test_swarm_autonomous_feedback_short_circuits_and_swallows_judge_errors(caplog):
@@ -576,6 +627,27 @@ def test_coder_agent_parse_qa_feedback_handles_empty_and_valid_dict_payloads():
             "decision": "reject",
             "summary": "x",
         }
+
+
+def test_coder_agent_empty_task_returns_warning_after_publishing_start_event():
+    with _load_agent_test_symbols() as symbols:
+        CoderAgent = symbols["CoderAgent"]
+
+        published = []
+
+        class _Bus:
+            async def publish(self, source, message):
+                published.append((source, message))
+                return None
+
+        agent = object.__new__(CoderAgent)
+        agent.events = _Bus()
+        agent.call_tool = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("tool should not run"))
+
+        output = asyncio.run(agent.run_task("   "))
+
+        assert output == "[UYARI] Boş kodlayıcı görevi verildi."
+        assert published == [("coder", "Kod görevi alındı, planlanıyor...")]
 
 
 def test_reviewer_dynamic_test_generation_fail_closes_for_plain_text_and_llm_error(monkeypatch):
