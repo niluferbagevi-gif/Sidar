@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import sys
 import types
@@ -668,4 +669,245 @@ def test_set_level_endpoint_awaits_coroutine_result_from_background_thread_again
 
     assert response.status_code == 200
     assert response.content['message'] == 'async-level-updated-again'
+    assert response.content['current_level'] == 'full'
+
+
+
+def test_websocket_chat_subscribe_failure_skips_status_task_and_unsubscribe(monkeypatch):
+    mod = _load_web_server()
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id='', username='alice')
+
+    class _Memory:
+        db = _DB()
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+        def __len__(self):
+            return 1
+
+        def update_title(self, _title):
+            return None
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def respond(self, _msg):
+            if False:
+                yield 'unused'
+
+    class _Bus:
+        def subscribe(self):
+            raise RuntimeError('subscribe failed')
+
+        def unsubscribe(self, _sub_id):
+            raise AssertionError('unsubscribe should not run')
+
+    class _WebSocket:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host='127.0.0.1')
+            self.headers = {}
+            self.sent = []
+            self._payloads = [
+                json.dumps({'action': 'auth', 'token': 'tok'}),
+                json.dumps({'action': 'send', 'message': 'merhaba'}),
+            ]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(0.05)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    monkeypatch.setattr(mod, 'get_agent', lambda: asyncio.sleep(0, result=_Agent()))
+    monkeypatch.setattr(mod, 'get_agent_event_bus', lambda: _Bus())
+    monkeypatch.setattr(mod, '_redis_is_rate_limited', lambda *_a, **_k: asyncio.sleep(0, result=False))
+
+    ws = _WebSocket()
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert any('Sistem Hatası' in item.get('chunk', '') for item in ws.sent)
+
+
+def test_websocket_chat_room_subscribe_failure_skips_status_task_and_unsubscribe(monkeypatch):
+    mod = _load_web_server()
+    mod._collaboration_rooms.clear()
+
+    class _DB:
+        async def get_user_by_token(self, _token):
+            return types.SimpleNamespace(id='', username='alice')
+
+    class _Memory:
+        db = _DB()
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+        def __len__(self):
+            return 1
+
+    class _Agent:
+        def __init__(self):
+            self.memory = _Memory()
+
+        async def _try_multi_agent(self, _prompt):
+            return 'unused'
+
+    class _Bus:
+        def subscribe(self):
+            raise RuntimeError('room subscribe failed')
+
+        def unsubscribe(self, _sub_id):
+            raise AssertionError('unsubscribe should not run')
+
+    class _WebSocket:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host='127.0.0.1')
+            self.headers = {}
+            self.sent = []
+            self._payloads = [
+                json.dumps({'action': 'auth', 'token': 'tok'}),
+                json.dumps({'action': 'join_room', 'room_id': 'workspace:demo', 'display_name': 'Alice'}),
+                json.dumps({'action': 'message', 'message': '@Sidar plan yap', 'display_name': 'Alice'}),
+            ]
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive_text(self):
+            if self._payloads:
+                return self._payloads.pop(0)
+            await asyncio.sleep(0.05)
+            raise mod.WebSocketDisconnect()
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+    monkeypatch.setattr(mod, 'get_agent', lambda: asyncio.sleep(0, result=_Agent()))
+    monkeypatch.setattr(mod, 'get_agent_event_bus', lambda: _Bus())
+    monkeypatch.setattr(mod, '_redis_is_rate_limited', lambda *_a, **_k: asyncio.sleep(0, result=False))
+
+    ws = _WebSocket()
+    asyncio.run(mod.websocket_chat(ws))
+
+    assert any(item.get('type') == 'room_error' and 'room subscribe failed' in item.get('error', '') for item in ws.sent)
+
+
+def test_websocket_voice_cancel_can_skip_notification_when_called_with_notify_false(monkeypatch):
+    mod = _load_web_server()
+    captured = {}
+
+    async def _resolve_user_from_token(_agent, _token):
+        frame = inspect.currentframe()
+        assert frame is not None and frame.f_back is not None
+        captured['cancel_fn'] = frame.f_back.f_locals['_cancel_active_response']
+        return types.SimpleNamespace(id='u1', username='alice')
+
+    class _PendingTask:
+        def __init__(self):
+            self.cancelled = False
+
+        def done(self):
+            return False
+
+        def cancel(self):
+            self.cancelled = True
+
+        def __await__(self):
+            if False:
+                yield None
+            return None
+
+    def _create_task(coro):
+        if getattr(coro, 'cr_code', None) and coro.cr_code.co_name == '_run_voice_turn':
+            coro.close()
+            task = _PendingTask()
+            captured['task'] = task
+            return task
+        return asyncio.create_task(coro)
+
+    class _VoicePipeline:
+        vad_enabled = False
+        duplex_enabled = True
+
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+        def create_duplex_state(self):
+            return types.SimpleNamespace(assistant_turn_id=3, output_text_buffer='abc', last_interrupt_reason='')
+
+        def interrupt_assistant_turn(self, state, *, reason):
+            state.last_interrupt_reason = reason
+            return {'assistant_turn_id': state.assistant_turn_id, 'reason': reason}
+
+    class _WebSocket:
+        def __init__(self):
+            self.headers = {'sec-websocket-protocol': 'valid-token'}
+            self.client = types.SimpleNamespace(host='127.0.0.1')
+            self.sent = []
+            self.step = 0
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            if self.step == 0:
+                self.step += 1
+                return {'type': 'websocket.receive', 'bytes': b'audio'}
+            if self.step == 1:
+                self.step += 1
+                return {'type': 'websocket.receive', 'text': json.dumps({'action': 'commit'})}
+            if self.step == 2:
+                self.step += 1
+                await captured['cancel_fn']('silent', notify=False)
+                return {'type': 'websocket.disconnect'}
+            raise AssertionError('unexpected receive call')
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code, reason):
+            self.closed = (code, reason)
+
+    multimodal_mod = types.ModuleType('core.multimodal')
+    voice_mod = types.ModuleType('core.voice')
+    multimodal_mod.MultimodalPipeline = lambda *_a, **_k: types.SimpleNamespace(transcribe_bytes=lambda *_a, **_k: None)
+    voice_mod.VoicePipeline = _VoicePipeline
+
+    monkeypatch.setattr(mod, 'get_agent', lambda: asyncio.sleep(0, result=types.SimpleNamespace(memory=types.SimpleNamespace(set_active_user=lambda *_a, **_k: asyncio.sleep(0), db=None), llm=object(), respond=None)))
+    monkeypatch.setattr(mod, '_resolve_user_from_token', _resolve_user_from_token)
+    monkeypatch.setattr(mod.asyncio, 'create_task', _create_task)
+
+    ws = _WebSocket()
+    with _ModulePatch('core.multimodal', multimodal_mod), _ModulePatch('core.voice', voice_mod):
+        asyncio.run(mod.websocket_voice(ws))
+
+    assert captured['task'].cancelled is True
+    assert not any('voice_interruption' in item for item in ws.sent)
+
+
+def test_set_level_endpoint_returns_plain_string_from_background_thread(monkeypatch):
+    mod = _load_web_server()
+
+    agent = types.SimpleNamespace(
+        set_access_level=lambda _level: 'plain-level-updated',
+        security=types.SimpleNamespace(level_name='full'),
+    )
+
+    monkeypatch.setattr(mod, 'get_agent', lambda: asyncio.sleep(0, result=agent))
+
+    response = asyncio.run(mod.set_level_endpoint(_FakeRequest(json_body={'level': 'full'})))
+
+    assert response.status_code == 200
+    assert response.content['message'] == 'plain-level-updated'
     assert response.content['current_level'] == 'full'
