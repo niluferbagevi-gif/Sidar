@@ -193,6 +193,75 @@ def test_fetch_chroma_skips_duplicate_parent_after_top_k_is_reached(tmp_path):
     assert all(item["snippet"] != "dup-chunk" for item in found)
 
 
+def test_search_sync_local_auto_falls_back_to_bm25_when_collection_truthiness_flips(tmp_path):
+    rag_mod = _load_rag_module("rag_branch_local_auto_flaky_collection")
+    store = _new_store(rag_mod, tmp_path)
+    store._is_local_llm_provider = True
+    store._local_hybrid_enabled = False
+    store._pgvector_available = False
+    store._chroma_available = True
+    store._bm25_available = True
+    store._index = {"doc-1": {"session_id": "sess-1"}}
+    store._bm25_search = lambda query, top_k, session_id: (True, f"bm25:{query}:{top_k}:{session_id}")
+
+    class _FlakyCollection:
+        def __init__(self):
+            self.calls = 0
+
+        def __bool__(self):
+            self.calls += 1
+            return self.calls == 1
+
+    store.collection = _FlakyCollection()
+
+    assert store._search_sync("needle", top_k=2, mode="auto", session_id="sess-1") == (
+        True,
+        "bm25:needle:2:sess-1",
+    )
+
+
+def test_fetch_chroma_hits_duplicate_parent_continue_branch_with_stateful_top_k(tmp_path):
+    rag_mod = _load_rag_module("rag_branch_chroma_duplicate_continue")
+    store = _new_store(rag_mod, tmp_path)
+
+    class _Collection:
+        def count(self):
+            return 3
+
+        def query(self, **kwargs):
+            assert kwargs["where"] == {"session_id": "sess-1"}
+            return {
+                "ids": [["c1", "c2", "c3"]],
+                "documents": [["chunk-1", "dup-chunk", "chunk-2"]],
+                "metadatas": [[
+                    {"parent_id": "p1", "title": "Doc 1", "source": "s1"},
+                    {"parent_id": "p1", "title": "Doc 1 duplicate", "source": "s1"},
+                    {"parent_id": "p2", "title": "Doc 2", "source": "s2"},
+                ]],
+            }
+
+    class _StatefulTopK:
+        def __init__(self):
+            self.compare_calls = 0
+
+        def __mul__(self, other):
+            return 2
+
+        __rmul__ = __mul__
+
+        def __le__(self, other):
+            self.compare_calls += 1
+            return self.compare_calls >= 2
+
+    store.collection = _Collection()
+    store._chroma_available = True
+
+    found = store._fetch_chroma("needle", top_k=_StatefulTopK(), session_id="sess-1")
+
+    assert [item["id"] for item in found] == ["p1", "p2"]
+    assert [item["snippet"] for item in found] == ["chunk-1", "chunk-2"]
+
+
 def test_keyword_search_skips_documents_from_other_sessions(tmp_path):
     rag_mod = _load_rag_module("rag_branch_keyword_session_skip")
     store = _new_store(rag_mod, tmp_path)

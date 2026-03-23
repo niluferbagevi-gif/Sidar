@@ -1,3 +1,6 @@
+import ctypes
+import sys
+
 import core.ci_remediation as ci_mod
 from core.ci_remediation import (
     build_ci_remediation_payload,
@@ -9,6 +12,16 @@ from core.ci_remediation import (
     is_ci_failure_event,
     normalize_self_heal_plan,
 )
+
+
+_PYFRAME_LOCALS_TO_FAST = ctypes.pythonapi.PyFrame_LocalsToFast
+_PYFRAME_LOCALS_TO_FAST.argtypes = [ctypes.py_object, ctypes.c_int]
+_PYFRAME_LOCALS_TO_FAST.restype = None
+
+
+def _set_frame_local(frame, name, value):
+    frame.f_locals[name] = value
+    _PYFRAME_LOCALS_TO_FAST(frame, 1)
 
 
 def test_workflow_run_failure_context_and_prompt_are_built():
@@ -228,6 +241,25 @@ def test_root_cause_summary_falls_back_to_hint_and_validation_commands_skip_blan
     assert summary == "ImportError: core/db.py could not be imported"
     assert "pytest -q tests/test_ci_remediation.py" in commands
     assert "python -m pytest tests/test_agent_core_contracts.py" in commands
+
+
+def test_root_cause_summary_skips_blank_first_sentence_branch_via_trace(monkeypatch):
+    monkeypatch.setattr(ci_mod, "_extract_root_cause_line", lambda *_args: "Inferred: flaky teardown")
+
+    previous = sys.gettrace()
+
+    def _tracer(frame, event, arg):
+        if frame.f_code.co_name == "build_root_cause_summary" and event == "line" and frame.f_lineno == 421:
+            _set_frame_local(frame, "first_sentence", "")
+        return _tracer
+
+    sys.settrace(_tracer)
+    try:
+        summary = ci_mod.build_root_cause_summary({}, "Root cause: websocket timeout")
+    finally:
+        sys.settrace(previous)
+
+    assert summary == "Inferred: flaky teardown"
 
 
 def test_self_heal_prompt_and_normalize_plan_filter_scope():
