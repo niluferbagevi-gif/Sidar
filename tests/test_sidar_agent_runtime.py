@@ -795,6 +795,39 @@ def test_handle_external_trigger_marks_failed_status_when_multi_agent_raises():
     assert record["status"] == "failed"
     assert record["summary"] == "⚠ Proaktif tetik işlenemedi: llm unavailable"
     assert a.memory.items[-1] == ("assistant", "⚠ Proaktif tetik işlenemedi: llm unavailable")
+
+
+
+def test_handle_external_trigger_records_self_heal_exception_without_failing_trigger():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def _multi(_prompt):
+        return "ci teşhisi"
+
+    async def _heal(**_kwargs):
+        raise RuntimeError("self heal boom")
+
+    a._try_multi_agent = _multi
+    a._attempt_autonomous_self_heal = _heal
+
+    record = asyncio.run(
+        a.handle_external_trigger(
+            ExternalTrigger(
+                trigger_id="tr-self-heal-fail",
+                source="webhook:github",
+                event_name="workflow_run",
+                payload={"kind": "workflow_run", "workflow_name": "CI", "task_id": "ci-77"},
+            )
+        )
+    )
+
+    assert record["status"] == "success"
+    assert record["summary"] == "ci teşhisi"
+    assert record["remediation"]["self_heal_execution"]["status"] == "failed"
+    assert "self heal boom" in record["remediation"]["self_heal_execution"]["summary"]
+
+
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 
@@ -1408,6 +1441,69 @@ def test_tool_subtask_invalid_tool_call_records_failed_metric_and_recovers(monke
 
     assert out == "✓ Alt Görev Tamamlandı: tamam"
     assert ("sidar_agent", "llm_decision", "tm", "failed", True) in calls
+
+
+
+def test_tool_subtask_validation_error_without_metrics_recovers_to_final_answer(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"eksik alan","tool":"list_dir"}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.agent_metrics":
+            raise ImportError("metrics unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    real_import = __import__
+    monkeypatch.setattr("builtins.__import__", _blocked_import)
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("tool should not run on invalid schema"))
+
+    out = asyncio.run(a._tool_subtask("metricsiz şema hatası"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+
+
+
+def test_tool_subtask_tool_exception_without_metrics_recovers_to_final_answer(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t1","tool":"list_dir","argument":"."}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    async def _fail(_tool, _arg):
+        raise RuntimeError("tool patladı")
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.agent_metrics":
+            raise ImportError("metrics unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    real_import = __import__
+    monkeypatch.setattr("builtins.__import__", _blocked_import)
+
+    a.llm = _LLM()
+    a._execute_tool = _fail
+
+    out = asyncio.run(a._tool_subtask("metricsiz araç hatası"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
 
 
 def test_tool_subtask_normalizes_tool_name_before_dispatch():
