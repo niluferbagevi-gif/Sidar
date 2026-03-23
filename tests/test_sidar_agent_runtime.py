@@ -1,5 +1,7 @@
 import asyncio
+import ctypes
 import importlib.util
+import inspect
 import json
 import sys
 import threading
@@ -826,6 +828,61 @@ def test_handle_external_trigger_records_self_heal_exception_without_failing_tri
     assert record["summary"] == "ci teşhisi"
     assert record["remediation"]["self_heal_execution"]["status"] == "failed"
     assert "self heal boom" in record["remediation"]["self_heal_execution"]["summary"]
+
+
+def test_handle_external_trigger_skips_self_heal_when_status_changes_before_guard():
+    a = _make_agent_for_runtime()
+    a.initialize = lambda: asyncio.sleep(0)
+
+    async def _multi(_prompt):
+        return "ci teşhisi"
+
+    async def _heal(**_kwargs):
+        raise AssertionError("self-heal should be skipped when status is no longer success")
+
+    handle_lines, first_lineno = inspect.getsourcelines(SA_MOD.SidarAgent.handle_external_trigger)
+    target_lineno = first_lineno + next(
+        index for index, line in enumerate(handle_lines) if 'if status == "success":' in line
+    )
+    mutated = {"applied": False}
+
+    def _trace(frame, event, arg):
+        if (
+            event == "line"
+            and frame.f_code.co_name == "handle_external_trigger"
+            and frame.f_code.co_filename.endswith("agent/sidar_agent.py")
+            and frame.f_lineno == target_lineno
+            and not mutated["applied"]
+        ):
+            frame.f_locals["status"] = "disabled"
+            ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(0))
+            mutated["applied"] = True
+        return _trace
+
+    a._try_multi_agent = _multi
+    a._attempt_autonomous_self_heal = _heal
+
+    previous_trace = sys.gettrace()
+    sys.settrace(_trace)
+    try:
+        record = asyncio.run(
+            a.handle_external_trigger(
+                ExternalTrigger(
+                    trigger_id="tr-self-heal-skip",
+                    source="webhook:github",
+                    event_name="workflow_run",
+                    payload={"kind": "workflow_run", "workflow_name": "CI", "task_id": "ci-88"},
+                )
+            )
+        )
+    finally:
+        sys.settrace(previous_trace)
+
+    assert mutated["applied"] is True
+    assert record["status"] == "disabled"
+    assert record["summary"] == "ci teşhisi"
+    assert "remediation" in record
+    assert "self_heal_execution" not in record["remediation"]
 
 
 def test_set_access_level_clear_memory_and_status():
