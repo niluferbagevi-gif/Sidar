@@ -1411,6 +1411,30 @@ def test_tool_subtask_returns_max_steps_after_non_string_llm_output():
     assert "Maksimum adım sınırına ulaşıldı" in out
 
 
+def test_tool_subtask_returns_max_steps_after_repeated_tool_failures():
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t1","tool":"list_dir","argument":"."}',
+        '{"thought":"t2","tool":"read_file","argument":"missing.txt"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            return next(replies)
+
+    async def _fail(_tool, _arg):
+        raise RuntimeError("tool unavailable")
+
+    a.llm = _LLM()
+    a._execute_tool = _fail
+
+    out = asyncio.run(a._tool_subtask("araç limiti testi"))
+
+    assert out == "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
+
+
 def test_tool_subtask_continues_when_metrics_import_is_unavailable(monkeypatch):
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
@@ -1657,3 +1681,40 @@ def test_build_context_truncates_for_local_provider(tmp_path):
 
     txt = asyncio.run(a._build_context())
     assert txt.endswith("[Not] Bağlam yerel model için kırpıldı.")
+
+
+def test_build_context_truncates_instruction_block_before_total_context_limit(tmp_path):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(
+        PROJECT_NAME="Sidar",
+        VERSION="3.0",
+        BASE_DIR=tmp_path,
+        AI_PROVIDER="ollama",
+        CODING_MODEL="code",
+        TEXT_MODEL="text",
+        OLLAMA_URL="http://localhost:11434",
+        ACCESS_LEVEL="full",
+        USE_GPU=False,
+        GPU_INFO="CPU",
+        CUDA_VERSION="N/A",
+        GITHUB_REPO="org/repo",
+        GEMINI_MODEL="gemini",
+        LOCAL_AGENT_CONTEXT_MAX_CHARS=8000,
+        LOCAL_INSTRUCTION_MAX_CHARS=80,
+    )
+    a.code = SimpleNamespace(get_metrics=lambda: {"files_read": 1, "files_written": 0})
+    a.github = SimpleNamespace(is_available=lambda: False)
+    a.web = SimpleNamespace(is_available=lambda: False)
+    a.docs = SimpleNamespace(status=lambda: "ok")
+    a.security = SimpleNamespace(level_name="full")
+    a.todo = []
+    a.memory = SimpleNamespace(get_last_file=lambda: None)
+    a._instructions_lock = threading.Lock()
+    a._instructions_cache = None
+    a._instructions_mtimes = {}
+    a._load_instruction_files = lambda: "Y" * 1000
+
+    txt = asyncio.run(a._build_context())
+
+    assert "[Not] Talimatlar yerel model bağlam sınırı için kırpıldı." in txt
+    assert not txt.endswith("[Not] Bağlam yerel model için kırpıldı.")
