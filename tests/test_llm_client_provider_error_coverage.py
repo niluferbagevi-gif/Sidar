@@ -533,3 +533,201 @@ def test_gemini_stream_retry_warns_on_transient_timeout(monkeypatch):
     assert calls["configured_key"] == "gem-key"
     assert calls["stream_attempts"] == 1
     assert any("gemini geçici hata" in entry and "gemini stream timeout" in entry for entry in warnings)
+
+
+def test_ollama_stream_trailing_flush_skips_empty_content_line(monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=20, CODING_MODEL="qwen", USE_GPU=False)
+    client = llm.OllamaClient(cfg)
+
+    class _MockDecoder:
+        def decode(self, data, final=False):
+            if final and data == b"":
+                return '\n{"message":{"content":""}}\n{"message":{"content":"tail-ok"}}\n'
+            return data.decode("utf-8", errors="replace")
+
+    def _mock_getincrementaldecoder(_encoding):
+        def _factory(**_kwargs):
+            return _MockDecoder()
+        return _factory
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b""
+
+    class _CM:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Client:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        def stream(self, *_args, **_kwargs):
+            return _CM()
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(llm.codecs, "getincrementaldecoder", _mock_getincrementaldecoder)
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _Client)
+
+    out = asyncio.run(_collect(client._stream_response("http://localhost/api/chat", {"x": 1}, timeout=llm.httpx.Timeout(10))))
+
+    assert out == ["tail-ok"]
+
+
+def test_openai_stream_handles_empty_iterable_and_closes_resources(monkeypatch):
+    client = llm.OpenAIClient(SimpleNamespace(OPENAI_API_KEY="k", OPENAI_MODEL="gpt", OPENAI_TIMEOUT=10, LLM_MAX_RETRIES=0))
+    state = {"client_closed": False, "stream_closed": False}
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            if False:
+                yield "data: unreachable"
+
+    class _CM:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            state["stream_closed"] = True
+            return False
+
+    class _Client:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        def stream(self, *_args, **_kwargs):
+            return _CM()
+
+        async def aclose(self):
+            state["client_closed"] = True
+
+    async def _call_operation(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(llm, "_retry_with_backoff", _call_operation)
+
+    out = asyncio.run(_collect(client._stream_openai({}, {}, llm.httpx.Timeout(10), json_mode=False)))
+
+    assert out == []
+    assert state == {"client_closed": True, "stream_closed": True}
+
+
+def test_litellm_chat_raises_unknown_error_when_candidate_models_are_empty(monkeypatch):
+    cfg = SimpleNamespace(
+        LITELLM_GATEWAY_URL="http://gateway",
+        LITELLM_API_KEY="secret",
+        LITELLM_MODEL="gpt-lite",
+        LITELLM_TIMEOUT=15,
+        ENABLE_TRACING=False,
+    )
+    client = llm.LiteLLMClient(cfg)
+
+    monkeypatch.setattr(client, "_candidate_models", lambda _requested_model: [])
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    with pytest.raises(llm.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "hi"}], stream=False, json_mode=False))
+
+    assert exc.value.provider == "litellm"
+    assert str(exc.value) == "LiteLLM hata: None"
+
+
+def test_litellm_stream_handles_empty_iterable_and_closes_resources(monkeypatch):
+    cfg = SimpleNamespace(LITELLM_TIMEOUT=20, LLM_MAX_RETRIES=0, LLM_RETRY_BASE_DELAY=0.01, LLM_RETRY_MAX_DELAY=0.02)
+    client = llm.LiteLLMClient(cfg)
+    state = {"client_closed": False, "stream_closed": False}
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            if False:
+                yield "data: unreachable"
+
+    class _CM:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            state["stream_closed"] = True
+            return False
+
+    class _Client:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        def stream(self, *_args, **_kwargs):
+            return _CM()
+
+        async def aclose(self):
+            state["client_closed"] = True
+
+    async def _call_operation(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(llm, "_retry_with_backoff", _call_operation)
+
+    out = asyncio.run(_collect(client._stream_openai_compatible("http://gateway/chat/completions", {}, {}, llm.httpx.Timeout(10), json_mode=False)))
+
+    assert out == []
+    assert state == {"client_closed": True, "stream_closed": True}
+
+
+def test_llm_client_truncate_messages_skips_system_insert_when_last_message_is_system():
+    cfg = SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_CONTEXT_MAX_CHARS=1200,
+        ENABLE_SEMANTIC_CACHE=False,
+    )
+    client = llm.LLMClient("ollama", cfg)
+
+    messages = [
+        {"role": "assistant", "content": "A" * 650},
+        {"role": "user", "content": "U" * 650},
+        {"role": "system", "content": "S" * 650},
+    ]
+
+    truncated = client._truncate_messages_for_local_model(messages)
+
+    assert sum(len(item["content"]) for item in truncated) <= 1200
+    assert truncated[0]["role"] == "system"
+    assert sum(1 for item in truncated if item["role"] == "system") == 1
+
+
+def test_llm_client_nonstream_without_user_prompt_bypasses_semantic_cache(monkeypatch):
+    cfg = SimpleNamespace(OPENAI_API_KEY="k", OPENAI_TIMEOUT=30, OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=12)
+    client = llm.LLMClient("openai", cfg)
+    calls = {"skip": 0, "get": 0, "chat": 0}
+
+    monkeypatch.setattr(client._router, "select", lambda messages, provider, model: (provider, model))
+    monkeypatch.setattr(llm, "record_cache_skip", lambda: calls.__setitem__("skip", calls["skip"] + 1))
+
+    async def _unexpected_cache_get(_prompt):
+        calls["get"] += 1
+        return "cached"
+
+    async def _chat(**_kwargs):
+        calls["chat"] += 1
+        return "assistant-only"
+
+    monkeypatch.setattr(client._semantic_cache, "get", _unexpected_cache_get)
+    monkeypatch.setattr(client._client, "chat", _chat)
+
+    result = asyncio.run(client.chat([{"role": "assistant", "content": "önceki çıktı"}], stream=False, json_mode=False))
+
+    assert result == "assistant-only"
+    assert calls == {"skip": 0, "get": 0, "chat": 1}
