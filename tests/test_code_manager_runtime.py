@@ -301,7 +301,7 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
     class _FakeStatResult:
         st_mode = 0
 
-    monkeypatch.setattr(os, "stat", lambda _path: _FakeStatResult())
+    monkeypatch.setattr(os, "stat", lambda _path, *args, **kwargs: _FakeStatResult())
     monkeypatch.setattr(stat, "S_ISSOCK", lambda _mode: True)
 
     mgr.docker_available = False
@@ -959,7 +959,7 @@ def test_init_docker_skips_non_socket_path(monkeypatch, tmp_path):
     class _FakeStat:
         st_mode = _stat.S_IFREG
 
-    monkeypatch.setattr(CM_MOD.os, "stat", lambda _p: _FakeStat())
+    monkeypatch.setattr(CM_MOD.os, "stat", lambda _p, *args, **kwargs: _FakeStat())
 
     original_init(mgr)
     assert mgr.docker_available is False
