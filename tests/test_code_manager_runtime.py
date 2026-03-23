@@ -287,15 +287,12 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
                 return True
             raise RuntimeError("socket down")
 
-    class _DockerModule:
-        DockerClient = _DockerClient
-
-        @staticmethod
-        def from_env():
-            raise RuntimeError("daemon down")
+    docker_module = types.ModuleType("docker")
+    docker_module.DockerClient = _DockerClient
+    docker_module.from_env = lambda: (_ for _ in ()).throw(RuntimeError("daemon down"))
 
     monkeypatch.setattr(builtins, "__import__", real_import)
-    monkeypatch.setitem(sys.modules, "docker", _DockerModule)
+    monkeypatch.setitem(sys.modules, "docker", docker_module)
 
     # Simulate socket validation path so fallback remains deterministic.
     class _FakeStatResult:
