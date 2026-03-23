@@ -320,3 +320,23 @@ def test_fastapi_client_websocket_disconnect_does_not_crash(fastapi_web_mod):
     with client.websocket_connect("/ws/chat") as websocket:
         websocket.send_text('{"action":"auth","token":"good-token"}')
         websocket.send_text('{"action":"send","message":"merhaba"}')
+
+
+def test_fastapi_client_handles_resource_404_and_rate_limit_429(fastapi_web_mod, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    mod = fastapi_web_mod
+    client = TestClient(mod.app)
+
+    missing_dir = client.get('/files', params={'path': '__definitely_missing_test_dir__'})
+    assert missing_dir.status_code == 404
+    assert 'Dizin bulunamadı' in missing_dir.json()['error']
+
+    async def _limited(namespace, *_args, **_kwargs):
+        return namespace == 'ddos'
+
+    monkeypatch.setattr(mod, '_redis_is_rate_limited', _limited)
+
+    rate_limited = client.get('/files')
+    assert rate_limited.status_code == 429
+    assert 'Rate Limit' in rate_limited.json()['error']

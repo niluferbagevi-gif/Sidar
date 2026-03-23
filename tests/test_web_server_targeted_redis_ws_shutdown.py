@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 from tests.test_web_server_runtime import _install_web_server_stubs, _restore_modules
 
 
@@ -218,3 +220,38 @@ def test_async_shutdown_cleanup_terminates_listed_ollama_children(monkeypatch):
         (111, mod.signal.SIGKILL),
         (222, mod.signal.SIGKILL),
     ]
+
+
+def test_app_lifespan_propagates_redis_cleanup_exception_after_prewarm_cancel(monkeypatch):
+    mod = _load_web_server()
+
+    started = asyncio.Event()
+    cleanup = {'redis': 0, 'shutdown': 0}
+
+    async def _prewarm_blocker():
+        started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            raise
+
+    async def _close_redis_client():
+        cleanup['redis'] += 1
+        raise RuntimeError('redis disconnect during shutdown')
+
+    async def _shutdown():
+        cleanup['shutdown'] += 1
+
+    monkeypatch.setattr(mod, '_prewarm_rag_embeddings', _prewarm_blocker)
+    monkeypatch.setattr(mod, '_close_redis_client', _close_redis_client)
+    monkeypatch.setattr(mod, '_async_force_shutdown_local_llm_processes', _shutdown)
+
+    async def _run():
+        with pytest.raises(RuntimeError, match='redis disconnect during shutdown'):
+            async with mod._app_lifespan(mod.app):
+                await started.wait()
+
+    asyncio.run(_run())
+
+    assert cleanup == {'redis': 1, 'shutdown': 0}
+    assert mod._rag_prewarm_task.done() is True
