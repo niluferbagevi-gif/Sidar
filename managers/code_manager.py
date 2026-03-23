@@ -242,6 +242,27 @@ class CodeManager:
             return True
         return False
 
+    def _try_docker_cli_fallback(self) -> bool:
+        """Docker SDK yoksa CLI üzerinden daemon erişimini doğrular."""
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=str(self.base_dir),
+            )
+        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
+            return False
+
+        if result.returncode != 0:
+            return False
+
+        self.docker_client = None
+        self.docker_available = True
+        logger.info("Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi.")
+        return True
+
     def _init_docker(self):
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
         self.docker_available = False
@@ -256,12 +277,16 @@ class CodeManager:
             docker_module = sys.modules.get("docker")
             if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
                 return
+            if self._try_docker_cli_fallback():
+                return
             logger.warning("Docker SDK kurulu değil. (pip install docker)")
         except Exception as first_err:
             # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
             # (docker modülü zaten try bloğunda import edildi; yeniden import gerekmez)
             import docker as _docker_mod  # noqa: F811 — try bloğu ImportError vermediyse önbellektedir
             if self._try_wsl_socket_fallback(_docker_mod):
+                return
+            if self._try_docker_cli_fallback():
                 return
             logger.warning(
                 "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
