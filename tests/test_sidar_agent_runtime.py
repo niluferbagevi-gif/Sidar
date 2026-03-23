@@ -696,6 +696,37 @@ def test_build_trigger_correlation_matches_related_trigger_and_task_and_deduplic
     assert correlation["latest_related_status"] == "queued"
 
 
+def test_build_trigger_correlation_skips_unrelated_history_entries():
+    a = _make_agent_for_runtime()
+    a._autonomy_history = [
+        {
+            "trigger_id": "noise-1",
+            "source": "cron",
+            "status": "ignored",
+            "payload": {"task_id": "task-x"},
+            "meta": {"correlation_id": "corr-x"},
+            "correlation": {"correlation_id": "corr-x"},
+        },
+        {
+            "trigger_id": "match-1",
+            "source": "federation:c",
+            "status": "done",
+            "payload": {"task_id": "task-9"},
+            "meta": {},
+            "correlation": {"correlation_id": ""},
+        },
+    ]
+
+    correlation = a._build_trigger_correlation(
+        ExternalTrigger(trigger_id="new-task", source="external", event_name="feedback"),
+        {"related_task_id": "task-9"},
+    )
+
+    assert correlation["matched_records"] == 1
+    assert correlation["related_trigger_ids"] == ["match-1"]
+    assert correlation["related_sources"] == ["federation:c"]
+
+
 def test_handle_external_trigger_ci_empty_output_skips_self_heal_attempt():
     a = _make_agent_for_runtime()
     a.initialize = lambda: asyncio.sleep(0)
@@ -1456,6 +1487,42 @@ def test_tool_subtask_continues_when_metrics_import_is_unavailable(monkeypatch):
 
     out = asyncio.run(a._tool_subtask("metriksiz alt görev"))
     assert out == "✓ Alt Görev Tamamlandı: tamam"
+
+
+def test_tool_subtask_uses_tool_result_feedback_when_metrics_import_is_unavailable(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"t","tool":"list_dir","argument":"."}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+    feedback_messages = []
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            feedback_messages.append(kwargs["messages"][0]["content"])
+            return next(replies)
+
+    async def _exec(tool, arg):
+        assert (tool, arg) == ("list_dir", ".")
+        return "ok:list_dir:."
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "core.agent_metrics":
+            raise ImportError("metrics unavailable")
+        return real_import(name, globals, locals, fromlist, level)
+
+    real_import = __import__
+    a.llm = _LLM()
+    a._execute_tool = _exec
+
+    monkeypatch.setattr(__import__("builtins"), "__import__", _blocked_import)
+
+    out = asyncio.run(a._tool_subtask("araç geri bildirimi"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+    assert feedback_messages == ["araç geri bildirimi", "Araç sonucu: ok:list_dir:."]
 
 
 def test_tool_subtask_empty_and_execute_tool_then_final_answer():
