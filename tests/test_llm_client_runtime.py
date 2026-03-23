@@ -297,6 +297,193 @@ def test_openai_chat_without_key_and_stream_parse(llm_mod, monkeypatch):
     assert got == ["A"]
 
 
+def test_ollama_chat_retries_after_timeout_then_succeeds(llm_mod, monkeypatch):
+    llm_mod.httpx.TimeoutException = type("_TimeoutException", (Exception,), {})
+    config = SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_TIMEOUT=60,
+        USE_GPU=False,
+        LLM_MAX_RETRIES=2,
+        LLM_RETRY_BASE_DELAY=0.05,
+        LLM_RETRY_MAX_DELAY=0.1,
+    )
+    client = llm_mod.OllamaClient(config)
+
+    attempts = {"count": 0}
+    sleeps = []
+
+    async def _sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(llm_mod.random, "uniform", lambda _a, _b: 0.0)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"message": {"content": "retry-ok"}}
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise llm_mod.httpx.TimeoutException("temporary timeout")
+            return _Resp()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    result = asyncio.run(client.chat([{"role": "user", "content": "retry ollama"}], stream=False, json_mode=False))
+
+    assert result == "retry-ok"
+    assert attempts["count"] == 2
+    assert sleeps == [0.05]
+
+
+
+def test_openai_chat_retries_after_http_503_then_succeeds(llm_mod, monkeypatch):
+    class _HTTPStatusError(Exception):
+        def __init__(self, code):
+            self.response = SimpleNamespace(status_code=code)
+
+    llm_mod.httpx.HTTPStatusError = _HTTPStatusError
+
+    config = SimpleNamespace(
+        OPENAI_API_KEY="k",
+        OPENAI_TIMEOUT=60,
+        OPENAI_MODEL="gpt-4o-mini",
+        LLM_MAX_RETRIES=2,
+        LLM_RETRY_BASE_DELAY=0.05,
+        LLM_RETRY_MAX_DELAY=0.1,
+    )
+    client = llm_mod.OpenAIClient(config)
+
+    attempts = {"count": 0}
+    sleeps = []
+    metrics = []
+
+    async def _sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(llm_mod.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(llm_mod, "_record_llm_metric", lambda **kwargs: metrics.append(kwargs))
+
+    class _Resp:
+        def raise_for_status(self):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise llm_mod.httpx.HTTPStatusError(503)
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "retry ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            }
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json, headers):
+            return _Resp()
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    result = asyncio.run(client.chat([{"role": "user", "content": "retry openai"}], stream=False, json_mode=False))
+
+    assert result == "retry ok"
+    assert attempts["count"] == 2
+    assert sleeps == [0.05]
+    assert metrics and metrics[-1]["success"] is True
+
+
+
+def test_openai_stream_retries_after_timeout_then_yields_chunks(llm_mod, monkeypatch):
+    llm_mod.httpx.TimeoutException = type("_TimeoutException", (Exception,), {})
+    config = SimpleNamespace(
+        OPENAI_API_KEY="k",
+        OPENAI_TIMEOUT=60,
+        LLM_MAX_RETRIES=2,
+        LLM_RETRY_BASE_DELAY=0.05,
+        LLM_RETRY_MAX_DELAY=0.1,
+    )
+    client = llm_mod.OpenAIClient(config)
+
+    attempts = {"count": 0}
+    sleeps = []
+
+    async def _sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(llm_mod.random, "uniform", lambda _a, _b: 0.0)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"choices": [{"delta": {"content": "B"}}]}'
+            yield 'data: {"choices": [{"delta": {"content": "C"}}]}'
+            yield 'data: [DONE]'
+
+    class _StreamCtx:
+        async def __aenter__(self):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise llm_mod.httpx.TimeoutException("stream timeout")
+            return _Resp()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    class _HttpxClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+            self.closed = False
+
+        def stream(self, method, url, json, headers):
+            return _StreamCtx()
+
+        async def aclose(self):
+            self.closed = True
+
+    monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _HttpxClient)
+
+    got = asyncio.run(
+        _collect(
+            client._stream_openai(
+                payload={"stream": True},
+                headers={"Authorization": "Bearer k"},
+                timeout=llm_mod.httpx.Timeout(10),
+                json_mode=False,
+            )
+        )
+    )
+
+    assert got == ["B", "C"]
+    assert attempts["count"] == 2
+    assert sleeps == [0.05]
+
+
 def test_llm_client_factory_and_compat_methods(llm_mod):
     cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=1)
 
