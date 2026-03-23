@@ -1645,19 +1645,35 @@ class DocumentStore:
             where={"session_id": session_id}
         )
 
-        if not results["ids"] or not results["ids"][0]: return []
+        ids = results.get("ids") or []
+        if not ids or not ids[0]:
+            return []
+
+        documents = results.get("documents") or [[]]
+        metadatas = results.get("metadatas") or [[]]
+        doc_ids = ids[0]
+        doc_chunks = documents[0] if documents else []
+        doc_metas = metadatas[0] if metadatas else []
 
         found_docs, seen_parents = [], set()
-        for i, chunk_content in enumerate(results["documents"][0]):
-            meta = results["metadatas"][0][i]
-            parent_id = meta.get("parent_id")
-            if parent_id in seen_parents and len(seen_parents) >= top_k: continue
+        for i, chunk_content in enumerate(doc_chunks):
+            raw_meta = doc_metas[i] if i < len(doc_metas) else {}
+            meta = raw_meta if isinstance(raw_meta, dict) else {}
+            parent_id = str(meta.get("parent_id") or (doc_ids[i] if i < len(doc_ids) else "") or "")
+            if not parent_id:
+                continue
+            if parent_id in seen_parents and len(seen_parents) >= top_k:
+                continue
             seen_parents.add(parent_id)
             found_docs.append({
-                "id": parent_id, "title": meta.get("title", "?"),
-                "source": meta.get("source", ""), "snippet": chunk_content, "score": 1.0
+                "id": parent_id,
+                "title": str(meta.get("title", "?") or "?"),
+                "source": str(meta.get("source", "") or ""),
+                "snippet": str(chunk_content or ""),
+                "score": 1.0,
             })
-            if len(found_docs) >= top_k: break
+            if len(found_docs) >= top_k:
+                break
         return found_docs
 
     def _chroma_search(self, query: str, top_k: int, session_id: str) -> Tuple[bool, str]:
