@@ -828,6 +828,7 @@ def test_handle_external_trigger_records_self_heal_exception_without_failing_tri
     assert "self heal boom" in record["remediation"]["self_heal_execution"]["summary"]
 
 
+
 def test_set_access_level_clear_memory_and_status():
     a = _make_agent_for_runtime()
 
