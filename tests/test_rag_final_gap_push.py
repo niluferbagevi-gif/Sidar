@@ -78,3 +78,36 @@ def test_chunk_text_handles_overlap_larger_than_chunk_size_without_overflow(tmp_
     assert chunks[0] == "a"
     assert chunks[-1] == "abcdef"
     assert chunks[-1].endswith("f")
+
+
+def test_recursive_chunk_text_forces_split_for_oversized_single_word(tmp_path):
+    rag_mod = _load_rag_module("rag_final_forced_single_word")
+    store = _new_store(rag_mod, tmp_path)
+
+    chunks = store._recursive_chunk_text("x" * 21, size=8, overlap=3)
+
+    assert chunks == ["xxxxxxxx", "xxxxxxxx", "xxxxxxxx", "xxxxxx"]
+    assert all(len(chunk) <= 8 for chunk in chunks)
+
+
+def test_rrf_search_returns_explicit_no_results_when_all_backends_are_empty(tmp_path):
+    rag_mod = _load_rag_module("rag_final_total_search_miss")
+    store = _new_store(rag_mod, tmp_path)
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._bm25_available = True
+    store._index = {}
+
+    store._fetch_chroma = lambda *_a, **_k: []
+    store._fetch_bm25 = lambda *_a, **_k: []
+    store._keyword_search = lambda query, top_k, session_id: (
+        False,
+        f"'{query}' için belge deposunda ilgili sonuç bulunamadı.",
+    )
+
+    ok, message = store._rrf_search("tam başarısızlık", top_k=3, session_id="s1")
+
+    assert ok is False
+    assert "tam başarısızlık" in message
+    assert "ilgili sonuç bulunamadı" in message
