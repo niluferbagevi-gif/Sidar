@@ -284,6 +284,7 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
         "run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Server Version: 27.0.0\n", stderr=""),
     )
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: "/usr/bin/docker")
     original_init(mgr)
     assert mgr.docker_available is True
     assert mgr.docker_client is None
@@ -879,6 +880,7 @@ def test_init_docker_all_sockets_fail_logs_warning(monkeypatch, tmp_path):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: None)
     original_init(mgr)
     assert mgr.docker_available is False
 
@@ -968,6 +970,7 @@ def test_init_docker_skips_non_socket_path(monkeypatch, tmp_path):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(CM_MOD.shutil, "which", lambda _name: None)
 
     class _FakeStat:
         st_mode = _stat.S_IFREG
