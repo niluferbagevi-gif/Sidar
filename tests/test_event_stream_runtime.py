@@ -615,3 +615,14 @@ def test_publish_skips_redis_when_bootstrap_marks_it_unavailable(monkeypatch):
     ok = asyncio.run(bus._publish_via_redis(AgentEvent(ts=1.0, source="s", message="m")))
     assert ok is False
     assert bus._redis_client is None
+
+
+def test_cleanup_redis_without_client_is_a_noop_for_close_path():
+    bus = AgentEventBus()
+    bus._redis_client = None
+    bus._redis_listener_task = None
+
+    asyncio.run(bus._cleanup_redis())
+
+    assert bus._redis_client is None
+    assert bus._redis_listener_task is None
