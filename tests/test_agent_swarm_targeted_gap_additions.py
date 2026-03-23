@@ -629,6 +629,22 @@ def test_coder_agent_parse_qa_feedback_handles_empty_and_valid_dict_payloads():
         }
 
 
+def test_coder_agent_parse_qa_feedback_falls_back_when_json_load_returns_non_dict(monkeypatch):
+    with _load_agent_test_symbols() as symbols:
+        CoderAgent = symbols["CoderAgent"]
+        coder_mod = sys.modules[CoderAgent.__module__]
+
+        monkeypatch.setattr(coder_mod.json, "loads", lambda _payload: ["unexpected"])
+
+        parsed = CoderAgent._parse_qa_feedback("{decision=reject;summary=liste gibi geldi}")
+
+        assert parsed == {
+            "raw": "{decision=reject;summary=liste gibi geldi}",
+            "{decision": "reject",
+            "summary": "liste gibi geldi}",
+        }
+
+
 def test_coder_agent_empty_task_returns_warning_after_publishing_start_event():
     with _load_agent_test_symbols() as symbols:
         CoderAgent = symbols["CoderAgent"]

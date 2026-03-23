@@ -472,6 +472,36 @@ def test_supervisor_route_p2p_preserves_direct_handoff_context():
     assert captured["context"]["p2p_receiver"] == "reviewer"
 
 
+def test_supervisor_route_p2p_allows_first_reject_retry_before_timeout():
+    s = object.__new__(SupervisorAgent)
+    s.cfg = type("Cfg", (), {"REACT_TIMEOUT": 0.01, "MAX_QA_RETRIES": 1})()
+
+    published = []
+
+    class _Events:
+        async def publish(self, source, message):
+            published.append((source, message))
+
+    async def _delegate(*_args, **_kwargs):
+        await asyncio.sleep(1)
+        return TaskResult(task_id="late", status="done", summary="never")
+
+    s.events = _Events()
+    s._delegate = _delegate
+
+    req = DelegationRequest(
+        task_id="p2p-first-reject",
+        reply_to="reviewer",
+        target_agent="coder",
+        payload='qa_feedback|{"decision":"reject","summary":"yeniden dene"}',
+    )
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(s._route_p2p(req, max_hops=2))
+
+    assert published == [("supervisor", "P2P yönlendirme: reviewer → coder")]
+
+
 def test_supervisor_init_falls_back_when_base_init_raises_type_error(monkeypatch):
     supervisor_mod = sys.modules["agent.core.supervisor"]
 
