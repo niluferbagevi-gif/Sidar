@@ -254,6 +254,14 @@ def test_fastapi_client_handles_401_403_422_and_readiness_503(fastapi_web_mod, m
     assert unauthorized.status_code == 401
     assert unauthorized.json() == {"error": "Yetkisiz erişim"}
 
+    blank_token = client.get("/metrics", headers={"Authorization": "Bearer   "})
+    assert blank_token.status_code == 401
+    assert blank_token.json() == {"error": "Geçersiz token"}
+
+    expired = client.get("/metrics", headers={"Authorization": "Bearer expired-token"})
+    assert expired.status_code == 401
+    assert expired.json() == {"error": "Oturum geçersiz veya süresi dolmuş"}
+
     forbidden = client.get("/metrics", headers={"Authorization": "Bearer good-token"})
     assert forbidden.status_code == 403
     forbidden_body = forbidden.json()

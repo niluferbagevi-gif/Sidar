@@ -285,6 +285,34 @@ def test_app_lifespan_cancels_autonomy_and_nightly_tasks(monkeypatch):
     assert cancelled == {"prewarm": 1, "cron": 1, "nightly": 1}
 
 
+def test_app_lifespan_skips_done_prewarm_task_and_still_runs_cleanup(monkeypatch):
+    mod = _load_web_server_for_extra_tests()
+    events = []
+
+    async def _prewarm():
+        events.append("prewarm")
+
+    async def _close():
+        events.append("close_redis")
+
+    async def _shutdown():
+        events.append("shutdown_llm")
+
+    monkeypatch.setattr(mod, "_prewarm_rag_embeddings", _prewarm)
+    monkeypatch.setattr(mod, "_close_redis_client", _close)
+    monkeypatch.setattr(mod, "_async_force_shutdown_local_llm_processes", _shutdown)
+    mod.cfg.ENABLE_AUTONOMOUS_CRON = False
+    mod.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = False
+
+    async def _run():
+        async with mod._app_lifespan(mod.app):
+            await asyncio.sleep(0)
+
+    asyncio.run(_run())
+
+    assert events == ["prewarm", "close_redis", "shutdown_llm"]
+
+
 def test_plugin_marketplace_state_and_reload_error_paths(tmp_path, monkeypatch):
     mod = _load_web_server_for_extra_tests()
     warnings = []
