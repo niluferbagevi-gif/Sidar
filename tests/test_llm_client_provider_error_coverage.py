@@ -101,6 +101,46 @@ def test_litellm_stream_open_handles_non_data_and_http_5xx(monkeypatch):
     assert "LiteLLM akış hatası" in payload["argument"]
 
 
+def test_ollama_stream_ignores_broken_json_lines_and_invalid_trailing_buffer(monkeypatch):
+    cfg = SimpleNamespace(OLLAMA_URL="http://localhost:11434/api", OLLAMA_TIMEOUT=20, CODING_MODEL="qwen", USE_GPU=False)
+    client = llm.OllamaClient(cfg)
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_bytes(self):
+            yield b'{"message":{"content":"ilk"}}\n{broken\n'
+            yield b'{"message":{"content":"ikinci"}}\n{"message":{"content":"yarim"'
+
+    class _CM:
+        async def __aenter__(self):
+            return _Resp()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Client:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+            self.closed = False
+
+        def stream(self, method, url, json=None):
+            return _CM()
+
+        async def aclose(self):
+            self.closed = True
+
+    async def _call_operation(_provider, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(llm, "_retry_with_backoff", _call_operation)
+
+    out = asyncio.run(_collect(client._stream_response("http://localhost/api/chat", {"x": 1}, timeout=llm.httpx.Timeout(10))))
+    assert out == ["ilk", "ikinci"]
+
+
 def test_provider_error_paths_cover_timeout_bad_json_and_5xx(monkeypatch):
     monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
 
@@ -203,6 +243,45 @@ def test_provider_error_paths_cover_timeout_bad_json_and_5xx(monkeypatch):
 
     bad_json_msg = asyncio.run(gemini.chat([{"role": "user", "content": "broken"}], stream=False, json_mode=True))
     assert "JSON dışı" in json.loads(bad_json_msg)["thought"]
+
+
+def test_litellm_chat_wraps_plain_text_json_and_timeout_errors(monkeypatch):
+    cfg = SimpleNamespace(
+        LITELLM_GATEWAY_URL="http://gateway",
+        LITELLM_API_KEY="secret",
+        LITELLM_MODEL="gpt-lite",
+        LITELLM_TIMEOUT=15,
+        LLM_MAX_RETRIES=1,
+        LLM_RETRY_BASE_DELAY=0.01,
+        LLM_RETRY_MAX_DELAY=0.02,
+        ENABLE_TRACING=False,
+    )
+    client = llm.LiteLLMClient(cfg)
+
+    monkeypatch.setattr(llm, "_record_llm_metric", lambda **_kwargs: None)
+
+    async def _plain_text(*_args, **_kwargs):
+        return {
+            "choices": [{"message": {"content": "ham düz metin"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _plain_text)
+    wrapped = asyncio.run(client.chat([{"role": "user", "content": "json ver"}], stream=False, json_mode=True))
+    payload = json.loads(wrapped)
+    assert payload["tool"] == "final_answer"
+    assert payload["argument"] == "ham düz metin"
+    assert "JSON dışı" in payload["thought"]
+
+    async def _timeout(*_args, **_kwargs):
+        raise llm.httpx.TimeoutException("gateway timeout")
+
+    monkeypatch.setattr(llm, "_retry_with_backoff", _timeout)
+    with pytest.raises(llm.LLMAPIError) as exc:
+        asyncio.run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=False))
+
+    assert exc.value.provider == "litellm"
+    assert "gateway timeout" in str(exc.value)
 
 
 def test_llm_client_ollama_truncation_edge_branches():

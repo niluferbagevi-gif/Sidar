@@ -250,3 +250,25 @@ def test_retry_with_backoff_raises_after_retry_limit_for_timeout(monkeypatch):
     assert exc.value.provider == "openai"
     assert exc.value.retryable is True
     assert sleeps == [0.05]
+
+
+def test_retry_with_backoff_raises_after_retry_limit_for_httpx_timeout(monkeypatch):
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(llm.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(llm.random, "uniform", lambda _a, _b: 0.0)
+
+    async def op():
+        raise llm.httpx.TimeoutException("socket timed out")
+
+    cfg = SimpleNamespace(LLM_MAX_RETRIES=1, LLM_RETRY_BASE_DELAY=0.05, LLM_RETRY_MAX_DELAY=0.1)
+    with pytest.raises(llm.LLMAPIError) as exc:
+        asyncio.run(llm._retry_with_backoff("litellm", op, config=cfg, retry_hint="gateway failed"))
+
+    assert exc.value.provider == "litellm"
+    assert exc.value.retryable is True
+    assert "socket timed out" in str(exc.value)
+    assert sleeps == [0.05]
