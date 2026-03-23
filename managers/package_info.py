@@ -178,7 +178,8 @@ class PackageInfoManager:
         ok, data, err = await self._fetch_pypi_json(package)
         if not ok:
             return False, err
-        version = data.get("info", {}).get("version") or "?"
+        version = data.get("info", {}).get("version", "?")
+        version = version or "?"
         return True, f"{package}=={version}"
 
     async def pypi_compare(self, package: str, current_version: str) -> Tuple[bool, str]:
@@ -189,7 +190,8 @@ class PackageInfoManager:
         if not ok:
             return False, err
 
-        latest = data.get("info", {}).get("version") or "?"
+        latest = data.get("info", {}).get("version", "?")
+        latest = latest or "?"
         current_version = current_version or "?"
         ok_info, info = await self.pypi_info(package)
         if not ok_info:
@@ -318,19 +320,19 @@ class PackageInfoManager:
         Hem PEP 440 (alpha/beta/rc) hem de npm semver sayısal pre-release
         formatlarını destekler (örn: 1.0.0-0, 2.0.0-42).
         """
-        version_text = "" if version is None else str(version).strip()
-        if not version_text:
+        version = "" if version is None else str(version).strip()
+        if not version:
             return False
 
         # npm semver sayısal pre-release: 1.0.0-0, 1.0.0-1, 2.0.0-42
         # packaging kütüphanesi bunları post-release olarak yorumlar; önce biz kontrol ederiz.
-        if re.match(r"^\d+\.\d+\.\d+-\d+$", version_text):
+        if re.match(r"^\d+\.\d+\.\d+-\d+$", version):
             return True
         try:
-            return Version(version_text).is_prerelease
-        except (InvalidVersion, TypeError):
+            return Version(version).is_prerelease
+        except InvalidVersion:
             # PEP440 dışı semver pre-release etiketlerini yakala: 1.2.3-alpha.1, 2.0.0-rc
-            if re.search(r"-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)$", version_text):
+            if re.search(r"-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)$", version):
                 return True
             # Bilinmeyen formatlar için agresif filtreleme yerine stable kabul et
             return False
