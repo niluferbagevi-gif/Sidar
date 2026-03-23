@@ -286,8 +286,9 @@ class CodeManager:
             import docker as _docker_mod  # noqa: F811 — try bloğu ImportError vermediyse önbellektedir
             if self._try_wsl_socket_fallback(_docker_mod):
                 return
-            if self._try_docker_cli_fallback():
-                return
+            # SDK kurulu ama daemon/socket erişimi başarısız olduğunda CLI fallback'e
+            # geçmeyiz; bu durum mevcut daemon erişim problemini maskeleyip test/üretim
+            # davranışını belirsizleştirebilir. CLI fallback yalnızca SDK yoksa denenir.
             logger.warning(
                 "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
                 "WSL2 kullanıcıları: Docker Desktop'u açın ve "
