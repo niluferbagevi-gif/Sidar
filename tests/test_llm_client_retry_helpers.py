@@ -9,6 +9,10 @@ import pytest
 
 
 def _load_llm_module_for_retry_tests():
+    saved_core = sys.modules.get("core")
+    saved_metrics = sys.modules.get("core.llm_metrics")
+    saved_httpx = sys.modules.get("httpx")
+
     class _HTTPStatusError(Exception):
         pass
 
@@ -44,8 +48,24 @@ def _load_llm_module_for_retry_tests():
     spec = importlib.util.spec_from_file_location("llm_retry_under_test", Path("core/llm_client.py"))
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    spec.loader.exec_module(mod)
-    return mod
+    try:
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        if saved_httpx is None:
+            sys.modules.pop("httpx", None)
+        else:
+            sys.modules["httpx"] = saved_httpx
+
+        if saved_metrics is None:
+            sys.modules.pop("core.llm_metrics", None)
+        else:
+            sys.modules["core.llm_metrics"] = saved_metrics
+
+        if saved_core is None:
+            sys.modules.pop("core", None)
+        else:
+            sys.modules["core"] = saved_core
 
 
 llm = _load_llm_module_for_retry_tests()
