@@ -477,6 +477,50 @@ def test_event_bus_fanout_unsubscribes_when_existing_buffer_is_full():
     assert 7 not in bus._subscribers
     assert 7 not in bus._buffered_events
 
+
+def test_event_bus_listener_unsubscribes_full_queue_when_client_stops_consuming(monkeypatch):
+    bus = AgentEventBus()
+    bus._redis_available = True
+
+    class _OneShotRedis:
+        def __init__(self):
+            self.acked = []
+            self.called = 0
+
+        async def xreadgroup(self, **_kwargs):
+            self.called += 1
+            if self.called == 1:
+                return [(
+                    "sidar:agent_events",
+                    [("1-0", {"payload": json.dumps({"sid": "other", "ts": 1, "source": "remote", "message": "drop"})})],
+                )]
+            raise RuntimeError("stop loop")
+
+        async def xack(self, _channel, _group, msg_id):
+            self.acked.append(msg_id)
+
+    redis = _OneShotRedis()
+    bus._redis_client = redis
+    sid = 41
+    q = asyncio.Queue(maxsize=1)
+    q.put_nowait(AgentEvent(ts=0.0, source="seed", message="seed"))
+    bus._subscribers = {sid: q}
+    bus._buffered_events = {}
+
+    cleaned = {"called": False}
+
+    async def _cleanup_stub():
+        cleaned["called"] = True
+        bus._redis_client = None
+
+    monkeypatch.setattr(bus, "_cleanup_redis", _cleanup_stub)
+
+    asyncio.run(bus._redis_listener_loop())
+
+    assert sid not in bus._subscribers
+    assert redis.acked == ["1-0"]
+    assert cleaned["called"] is True
+
 def test_ensure_listener_busygroup_and_publish_success_and_cleanup_cancel(monkeypatch):
     bus = AgentEventBus()
 
@@ -522,6 +566,26 @@ def test_ensure_listener_busygroup_and_publish_success_and_cleanup_cancel(monkey
 
     asyncio.run(bus._cleanup_redis())
     assert fake_listener_task.cancelled is True
+    assert bus._redis_client is None
+
+
+def test_cleanup_redis_prefers_aclose_and_swallows_disconnect_errors():
+    bus = AgentEventBus()
+
+    class _RedisWithAclose:
+        def __init__(self):
+            self.calls = 0
+
+        async def aclose(self):
+            self.calls += 1
+            raise ConnectionResetError("client disconnected")
+
+    redis = _RedisWithAclose()
+    bus._redis_client = redis
+
+    asyncio.run(bus._cleanup_redis())
+
+    assert redis.calls == 1
     assert bus._redis_client is None
 
 
