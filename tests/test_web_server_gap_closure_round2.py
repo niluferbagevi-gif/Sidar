@@ -495,3 +495,85 @@ def test_websocket_voice_misc_actions_and_turn_error_paths(mod, monkeypatch):
     with _ModulePatch("core.multimodal", multimodal_empty), _ModulePatch("core.voice", voice_empty):
         asyncio.run(mod.websocket_voice(ws_empty))
     assert {"done": True} in ws_empty.sent
+
+def test_get_agent_concurrent_initialization_shares_single_instance(mod):
+    created = {"count": 0, "initialized": 0}
+    release = asyncio.Event()
+
+    class _Agent:
+        def __init__(self, _cfg):
+            created["count"] += 1
+            self.memory = types.SimpleNamespace()
+
+        async def initialize(self):
+            created["initialized"] += 1
+            await release.wait()
+
+    async def _run():
+        mod._agent = None
+        mod._agent_lock = asyncio.Lock()
+        mod.SidarAgent = _Agent
+
+        first = asyncio.create_task(mod.get_agent())
+        await asyncio.sleep(0)
+        second = asyncio.create_task(mod.get_agent())
+        await asyncio.sleep(0)
+        release.set()
+        return await asyncio.gather(first, second)
+
+    a1, a2 = asyncio.run(_run())
+    assert a1 is a2
+    assert created == {"count": 1, "initialized": 1}
+
+
+def test_ci_failure_and_federation_helpers_return_empty_for_non_matching_inputs(mod):
+    assert mod._fallback_ci_failure_context(
+        "workflow_run",
+        {
+            "repository": {"full_name": "acme/sidar", "default_branch": "main"},
+            "workflow_run": {"status": "in_progress", "conclusion": "success"},
+        },
+    ) == {}
+    assert mod._fallback_ci_failure_context(
+        "check_run",
+        {
+            "repository": {"full_name": "acme/sidar", "default_branch": "main"},
+            "check_run": {"conclusion": "success", "status": "completed"},
+        },
+    ) == {}
+    assert mod._fallback_ci_failure_context(
+        "check_suite",
+        {
+            "repository": {"full_name": "acme/sidar", "default_branch": "main"},
+            "check_suite": {"conclusion": "success", "status": "completed"},
+        },
+    ) == {}
+
+    assert mod._build_event_driven_federation_spec(
+        "jira",
+        "issue_updated",
+        {"action": "updated", "issue": {"key": "OPS-1", "summary": "noop"}},
+    ) is None
+    assert mod._build_event_driven_federation_spec(
+        "github",
+        "closed",
+        {
+            "action": "closed",
+            "repository": {"full_name": "acme/sidar"},
+            "pull_request": {"number": 42, "title": "Already handled"},
+        },
+    ) is None
+    assert mod._build_event_driven_federation_spec(
+        "system",
+        "heartbeat",
+        {"severity": "info", "alert_name": "worker-ok", "message": "all good"},
+    ) is None
+
+
+def test_get_jwt_secret_falls_back_to_dev_secret_when_missing(mod, monkeypatch):
+    critical_logs = []
+    monkeypatch.setattr(mod.cfg, "JWT_SECRET_KEY", "", raising=False)
+    monkeypatch.setattr(mod.logger, "critical", lambda msg, *args: critical_logs.append(msg % args if args else msg))
+
+    assert mod._get_jwt_secret() == "sidar-dev-secret"
+    assert any("JWT_SECRET_KEY yapılandırılmamış" in entry for entry in critical_logs)
