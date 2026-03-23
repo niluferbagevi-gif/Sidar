@@ -1,3 +1,4 @@
+import builtins
 from pathlib import Path
 from textwrap import dedent
 
@@ -158,3 +159,66 @@ def test_code_manager_analyze_pytest_output_extracts_failure_sections(tmp_path):
     assert analysis["failure_targets"][0]["summary"] == "test runtime timeout"
     assert analysis["failure_targets"][0]["target_path"] == "tests/test_runtime.py"
     assert "PermissionError" in analysis["failure_targets"][0]["details"]
+
+
+def test_code_manager_read_file_reports_missing_directory_and_permission_errors(tmp_path, monkeypatch):
+    manager = _manager(tmp_path)
+
+    missing = tmp_path / "missing.py"
+    ok_missing, msg_missing = manager.read_file(str(missing))
+    assert ok_missing is False
+    assert "Dosya bulunamadı" in msg_missing
+
+    folder = tmp_path / "pkg"
+    folder.mkdir()
+    ok_dir, msg_dir = manager.read_file(str(folder))
+    assert ok_dir is False
+    assert "bir dizin" in msg_dir
+
+    blocked = tmp_path / "blocked.py"
+    blocked.write_text("print('x')\n", encoding="utf-8")
+
+    def _raise_permission(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(builtins, "open", _raise_permission)
+    ok_perm, msg_perm = manager.read_file(str(blocked))
+    assert ok_perm is False
+    assert "Erişim reddedildi" in msg_perm
+
+
+def test_code_manager_write_file_reports_permission_and_generic_failures(tmp_path, monkeypatch):
+    manager = _manager(tmp_path)
+    target = tmp_path / "tests" / "test_perm.py"
+
+    def _raise_permission(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(CM_MOD.Path, "mkdir", _raise_permission)
+    ok_perm, msg_perm = manager.write_file(str(target), "print('x')\n", validate=False)
+    assert ok_perm is False
+    assert "Yazma erişimi reddedildi" in msg_perm
+
+    manager2 = _manager(tmp_path)
+
+    def _raise_runtime(*_args, **_kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(CM_MOD.Path, "mkdir", _raise_runtime)
+    ok_runtime, msg_runtime = manager2.write_file(str(target), "print('x')\n", validate=False)
+    assert ok_runtime is False
+    assert "Yazma hatası" in msg_runtime
+    assert "disk full" in msg_runtime
+
+
+def test_code_manager_write_generated_test_handles_blank_existing_file_without_extra_separator(tmp_path):
+    manager = _manager(tmp_path)
+    target = tmp_path / "tests" / "test_empty.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("   \n", encoding="utf-8")
+
+    ok, msg = manager.write_generated_test(str(target), "def test_generated():\n    assert True\n", append=True)
+
+    assert ok is True
+    assert "kaydedildi" in msg.lower()
+    assert target.read_text(encoding="utf-8") == "def test_generated():\n    assert True\n"
