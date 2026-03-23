@@ -1377,6 +1377,39 @@ def test_tool_subtask_validation_error_and_tool_exception_paths():
     assert calls == [("dangerous", "bad-param")]
 
 
+def test_tool_subtask_invalid_tool_call_records_failed_metric_and_recovers(monkeypatch):
+    a = _make_agent_for_runtime()
+    a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
+
+    replies = iter([
+        '{"thought":"eksik alan","tool":"list_dir"}',
+        '{"thought":"done","tool":"final_answer","argument":"tamam"}',
+    ])
+
+    class _LLM:
+        async def chat(self, **kwargs):
+            assert kwargs["model"] == "tm"
+            return next(replies)
+
+    calls = []
+
+    class _Collector:
+        def record_step(self, agent_name, step_name, target, status, duration):
+            calls.append((agent_name, step_name, target, status, duration >= 0))
+
+    agent_metrics_mod = types.ModuleType("core.agent_metrics")
+    agent_metrics_mod.get_agent_metrics_collector = lambda: _Collector()
+    monkeypatch.setitem(sys.modules, "core.agent_metrics", agent_metrics_mod)
+
+    a.llm = _LLM()
+    a._execute_tool = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("tool should not run on invalid tool call"))
+
+    out = asyncio.run(a._tool_subtask("invalid tool call"))
+
+    assert out == "✓ Alt Görev Tamamlandı: tamam"
+    assert ("sidar_agent", "llm_decision", "tm", "failed", True) in calls
+
+
 def test_tool_subtask_normalizes_tool_name_before_dispatch():
     a = _make_agent_for_runtime()
     a.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=2, TEXT_MODEL="tm", CODING_MODEL="cm")
