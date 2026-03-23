@@ -266,6 +266,52 @@ def test_handle_external_trigger_records_self_heal_failure_summary(monkeypatch):
     assert "json parse failed" in record["remediation"]["self_heal_execution"]["summary"]
 
 
+def test_attempt_autonomous_self_heal_marks_patch_and_validate_failed_when_execution_reverts():
+    agent = _make_agent_for_runtime()
+    agent.cfg = SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = object()
+    agent.llm = object()
+
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [
+                {"name": "patch", "status": "pending", "detail": ""},
+                {"name": "validate", "status": "pending", "detail": ""},
+                {"name": "handoff", "status": "pending", "detail": ""},
+            ],
+        }
+    }
+
+    async def _plan(**_kwargs):
+        return {
+            "summary": "plan",
+            "confidence": "medium",
+            "operations": [{"path": "app.py", "target": "A", "replacement": "B"}],
+            "validation_commands": ["pytest -q"],
+        }
+
+    async def _reverted(**_kwargs):
+        return {"status": "reverted", "summary": "Sandbox doğrulaması başarısız oldu.", "operations_applied": ["app.py"]}
+
+    agent._build_self_heal_plan = _plan
+    agent._execute_self_heal_plan = _reverted
+
+    result = asyncio.run(
+        agent._attempt_autonomous_self_heal(
+            ci_context={"workflow_name": "ci"},
+            diagnosis="diag",
+            remediation=remediation,
+        )
+    )
+
+    assert result["status"] == "reverted"
+    assert remediation["remediation_loop"]["status"] == "reverted"
+    assert remediation["remediation_loop"]["steps"][0]["status"] == "failed"
+    assert remediation["remediation_loop"]["steps"][0]["detail"] == "Sandbox doğrulaması başarısız oldu."
+    assert remediation["remediation_loop"]["steps"][1]["status"] == "failed"
+
+
 def test_run_nightly_memory_maintenance_disabled_and_entity_failure(monkeypatch):
     agent = _make_agent_for_runtime()
     agent.initialize = lambda: asyncio.sleep(0)
