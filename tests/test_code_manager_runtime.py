@@ -264,7 +264,7 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
     mgr = CM_MOD.CodeManager(sec, tmp_path)
 
-    # ImportError branch
+    # ImportError branch: SDK olmasa da docker CLI erişimi docker_available=True döndürmeli.
     import builtins
     real_import = builtins.__import__
 
@@ -274,8 +274,14 @@ def test_init_docker_importerror_and_wsl_socket_fallback(monkeypatch, tmp_path):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        CM_MOD.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="Server Version: 27.0.0\n", stderr=""),
+    )
     original_init(mgr)
-    assert mgr.docker_available is False
+    assert mgr.docker_available is True
+    assert mgr.docker_client is None
 
     # WSL socket fallback branch: from_env fails, second socket succeeds
     class _DockerClient:
