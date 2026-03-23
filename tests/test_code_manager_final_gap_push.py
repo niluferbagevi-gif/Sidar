@@ -4,8 +4,8 @@ from pathlib import Path
 
 from tests.test_code_manager_runtime import CM_MOD, DummySecurity, FULL
 
-def _make_manager(tmp_path, **security_kwargs):
-    CM_MOD.CodeManager._init_docker = lambda self: None
+def _make_manager(monkeypatch, tmp_path, **security_kwargs):
+    monkeypatch.setattr(CM_MOD.CodeManager, "_init_docker", lambda self: None)
     sec = DummySecurity(tmp_path, level=FULL, **security_kwargs)
     manager = CM_MOD.CodeManager(sec, tmp_path)
     manager.docker_available = False
@@ -27,7 +27,7 @@ def test_code_manager_resolve_sandbox_limits_keeps_default_nano_cpus_for_zero_cp
     assert limits["network_mode"] == "bridge"
 
 def test_code_manager_execute_code_accepts_non_dict_wait_result_and_cleans_container(monkeypatch, tmp_path):
-    manager = _make_manager(tmp_path, can_execute=True)
+    manager = _make_manager(monkeypatch, tmp_path, can_execute=True)
     manager.docker_available = True
 
     state = {"removed": False}
@@ -58,8 +58,8 @@ def test_code_manager_execute_code_accepts_non_dict_wait_result_and_cleans_conta
     assert "docker ok" in message
     assert state["removed"] is True
 
-def test_code_manager_audit_project_uses_default_excludes_and_reports_syntax_errors(tmp_path):
-    manager = _make_manager(tmp_path, can_shell=True)
+def test_code_manager_audit_project_uses_default_excludes_and_reports_syntax_errors(monkeypatch, tmp_path):
+    manager = _make_manager(monkeypatch, tmp_path, can_shell=True)
     root = tmp_path / "audit-defaults"
     (root / ".git").mkdir(parents=True)
     (root / "good.py").write_text("value = 1\n", encoding="utf-8")
@@ -73,7 +73,7 @@ def test_code_manager_audit_project_uses_default_excludes_and_reports_syntax_err
     assert "ignored.py" not in report
 
 def test_code_manager_audit_project_reports_permission_error_as_unreadable(tmp_path, monkeypatch):
-    manager = _make_manager(tmp_path, can_shell=True)
+    manager = _make_manager(monkeypatch, tmp_path, can_shell=True)
     root = tmp_path / "audit-permissions"
     root.mkdir()
     locked = root / "locked.py"
