@@ -137,7 +137,14 @@ class PackageInfoManager:
             return False, err
 
         info = data.get("info", {})
-        all_versions = list(data.get("releases", {}).keys())
+        all_versions = []
+        for version_key in data.get("releases", {}).keys():
+            if version_key is None:
+                continue
+            normalized_key = str(version_key).strip()
+            if not normalized_key:
+                continue
+            all_versions.append(normalized_key)
         recent_versions = sorted(
             [v for v in all_versions if not self._is_prerelease(v)],
             key=self._version_sort_key,
@@ -146,7 +153,7 @@ class PackageInfoManager:
 
         lines = [
             f"[PyPI: {package}]",
-            f"  Güncel sürüm  : {info.get('version', '?')}",
+            f"  Güncel sürüm  : {info.get('version') or '?'}",
             f"  Yazar         : {(info.get('author') or info.get('author_email') or '?')[:80]}",
             f"  Lisans        : {info.get('license', '?') or '?'}",
             f"  Python gerekli: {info.get('requires_python', '?') or '?'}",
@@ -171,7 +178,7 @@ class PackageInfoManager:
         ok, data, err = await self._fetch_pypi_json(package)
         if not ok:
             return False, err
-        version = data.get("info", {}).get("version", "?")
+        version = data.get("info", {}).get("version") or "?"
         return True, f"{package}=={version}"
 
     async def pypi_compare(self, package: str, current_version: str) -> Tuple[bool, str]:
@@ -182,15 +189,16 @@ class PackageInfoManager:
         if not ok:
             return False, err
 
-        latest = data.get("info", {}).get("version", "?")
+        latest = data.get("info", {}).get("version") or "?"
+        current_version = current_version or "?"
         ok_info, info = await self.pypi_info(package)
         if not ok_info:
             return False, info
 
         try:
-            needs_update = Version(current_version) < Version(latest)
-        except InvalidVersion:
-            needs_update = current_version != latest
+            needs_update = Version(str(current_version)) < Version(str(latest))
+        except (InvalidVersion, TypeError):
+            needs_update = str(current_version) != str(latest)
         if not needs_update:
             status_line = f"  Durum         : ✓ Güncel ({current_version})"
         else:
@@ -226,7 +234,7 @@ class PackageInfoManager:
 
         lines = [
             f"[npm: {package}]",
-            f"  Güncel sürüm : {data.get('version', '?')}",
+            f"  Güncel sürüm : {data.get('version') or '?'}",
             f"  Yazar        : {author_str[:80]}",
             f"  Lisans       : {data.get('license', '?')}",
             f"  Özet         : {(data.get('description') or '')[:150]}",
@@ -304,35 +312,42 @@ class PackageInfoManager:
     # ─────────────────────────────────────────────
 
     @staticmethod
-    def _is_prerelease(version: str) -> bool:
+    def _is_prerelease(version: object) -> bool:
         """Sürümün pre-release olup olmadığını kontrol et.
 
         Hem PEP 440 (alpha/beta/rc) hem de npm semver sayısal pre-release
         formatlarını destekler (örn: 1.0.0-0, 2.0.0-42).
         """
+        version_text = "" if version is None else str(version).strip()
+        if not version_text:
+            return False
+
         # npm semver sayısal pre-release: 1.0.0-0, 1.0.0-1, 2.0.0-42
         # packaging kütüphanesi bunları post-release olarak yorumlar; önce biz kontrol ederiz.
-        if re.match(r"^\d+\.\d+\.\d+-\d+$", version):
+        if re.match(r"^\d+\.\d+\.\d+-\d+$", version_text):
             return True
         try:
-            return Version(version).is_prerelease
-        except InvalidVersion:
+            return Version(version_text).is_prerelease
+        except (InvalidVersion, TypeError):
             # PEP440 dışı semver pre-release etiketlerini yakala: 1.2.3-alpha.1, 2.0.0-rc
-            if re.search(r"-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)$", version):
+            if re.search(r"-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)$", version_text):
                 return True
             # Bilinmeyen formatlar için agresif filtreleme yerine stable kabul et
             return False
 
     @staticmethod
-    def _version_sort_key(version: str) -> Version:
+    def _version_sort_key(version: object) -> Version:
         """
         Sürüm dizisini PEP 440 uyumlu şekilde sırala.
         packaging.version.Version kullanımı: 1.0.0 > 1.0.0rc1 > 1.0.0b2 > 1.0.0a1
         Geçersiz sürüm formatlarında 0.0.0 döndürülür (sona düşer).
         """
+        version_text = "" if version is None else str(version).strip()
+        if not version_text:
+            return Version("0.0.0")
         try:
-            return Version(version)
-        except InvalidVersion:
+            return Version(version_text)
+        except (InvalidVersion, TypeError):
             return Version("0.0.0")
 
     def status(self) -> str:

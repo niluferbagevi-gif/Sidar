@@ -285,3 +285,58 @@ def test_init_timeout_fallbacks_and_pypi_compare_invalid_version(monkeypatch):
             sys.modules.pop("httpx", None)
         else:
             sys.modules["httpx"] = old_httpx
+
+
+def test_pypi_and_npm_version_formatting_handles_none_and_unexpected_strings(monkeypatch):
+    mgr = PackageInfoManager(config=types.SimpleNamespace(VERSION="3.1", PACKAGE_INFO_TIMEOUT=5, PACKAGE_INFO_CACHE_TTL=120))
+
+    async def fake_get_json(url, cache_key=""):
+        if "pypi.org" in url:
+            return True, {
+                "info": {
+                    "version": None,
+                    "author": "dev",
+                    "license": "MIT",
+                    "requires_python": None,
+                    "summary": "sum",
+                },
+                "releases": {None: {}, "": {}, "build_2024.09": {}, "1.0.0rc1": {}, "1.0.0": {}},
+            }, ""
+        return True, {
+            "version": None if package_state["npm_none"] else "release-2024.09-build",
+            "author": "npmdev",
+            "license": "ISC",
+            "description": "npm desc",
+            "main": "index.js",
+        }, ""
+
+    package_state = {"npm_none": True}
+    monkeypatch.setattr(mgr, "_get_json", fake_get_json)
+
+    ok, pypi_info = asyncio.run(mgr.pypi_info("pkg"))
+    assert ok is True
+    assert "Güncel sürüm  : ?" in pypi_info
+    assert "Son sürümler  : 1.0.0, build_2024.09" in pypi_info
+
+    ok, latest = asyncio.run(mgr.pypi_latest_version("pkg"))
+    assert ok is True
+    assert latest == "pkg==?"
+
+    ok, compare = asyncio.run(mgr.pypi_compare("pkg", None))
+    assert ok is True
+    assert "Kurulu sürüm  : ?" in compare
+    assert "✓ Güncel (?)" in compare
+
+    ok, npm_none = asyncio.run(mgr.npm_info("leftpad"))
+    assert ok is True
+    assert "Güncel sürüm : ?" in npm_none
+
+    package_state["npm_none"] = False
+    ok, npm_weird = asyncio.run(mgr.npm_info("leftpad"))
+    assert ok is True
+    assert "Güncel sürüm : release-2024.09-build" in npm_weird
+
+
+def test_package_version_helpers_tolerate_none_values():
+    assert PackageInfoManager._is_prerelease(None) is False
+    assert str(PackageInfoManager._version_sort_key(None)) == "0.0.0"
