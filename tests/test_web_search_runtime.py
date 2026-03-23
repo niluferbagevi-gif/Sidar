@@ -386,8 +386,20 @@ def test_init_with_none_config_and_basic_status_repr(monkeypatch, web_search_mod
     assert manager.tavily_key == ""
     assert manager.google_key == ""
     assert manager.google_cx == ""
+    assert manager.is_available() is False
     assert manager.status() == "WebSearch: Kurulu veya yapılandırılmış motor yok."
     assert "engine=auto" in repr(manager)
+
+
+def test_search_returns_config_warning_when_no_engines_available(monkeypatch, web_search_mod):
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: False)
+    manager = web_search_mod.WebSearchManager(config=None)
+
+    ok, result = asyncio.run(manager.search("coverage gap", max_results=3))
+
+    assert ok is False
+    assert "Web arama yapılamadı" in result
+    assert "API anahtarları" in result
 
 
 def test_check_ddg_import_error_returns_false(monkeypatch, web_search_mod, base_cfg):
