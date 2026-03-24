@@ -92,7 +92,10 @@ def _is_valid_repo_url(url: str) -> bool:
 
 def _normalize_path(path: str) -> str:
     """Yol formatını güvenlik kontrolleri için normalize eder."""
-    return path.replace("\\", "/").lstrip("./")
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        return normalized[2:]
+    return normalized
 
 
 def is_forbidden_path(path: str) -> bool:
@@ -159,6 +162,22 @@ def collect_safe_files() -> Tuple[List[str], List[str]]:
     return safe_files, blocked_files
 
 
+def collect_deleted_files() -> List[str]:
+    """Git tarafından izlenen fakat local'de silinmiş dosyaları toplar."""
+    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
+    if not success or not output.strip():
+        return []
+
+    deleted_files: List[str] = []
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        deleted_files.append(file_path)
+
+    return deleted_files
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -217,14 +236,21 @@ def main() -> None:
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
     safe_files, blocked_files = collect_safe_files()
+    deleted_files = collect_deleted_files()
 
     if safe_files:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
+
+    if deleted_files:
+        run_command(["git", "add", "-u", "--"] + deleted_files, show_output=False)
 
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
             print(f"  - {blocked}")
+
+    if deleted_files:
+        print(f"{Colors.OKBLUE}🗑️ Local'de silinen ve commit'e dahil edilecek dosya sayısı: {len(deleted_files)}{Colors.ENDC}")
 
     # 5. Durum Kontrolü (Değişen dosya var mı?)
     _, status = run_command(["git", "status", "--porcelain"], show_output=False)

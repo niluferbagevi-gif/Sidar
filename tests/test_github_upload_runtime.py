@@ -87,6 +87,51 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
     assert "sessions/secret.txt" in blocked
 
 
+def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(
+        GU, "run_command", lambda *a, **k: (True, "old.txt\nnested/removed.py\n")
+    )
+    assert GU.collect_deleted_files() == ["old.txt", "nested/removed.py"]
+
+
+def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
+    GU = _load_module()
+    GU.cfg.GITHUB_TOKEN = "token"
+    seen = []
+
+    def _fake_run(args, show_output=False):
+        seen.append(tuple(args))
+        if args[:2] == ["git", "--version"]:
+            return True, "git version"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:2] == ["git", "status"]:
+            return True, "D old.txt"
+        if args[:2] == ["git", "commit"]:
+            return True, "ok"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "push"]:
+            return True, "ok"
+        if args[:3] == ["git", "ls-files", "-d"]:
+            return True, "old.txt"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: ([], []))
+    monkeypatch.setattr("builtins.input", lambda _p: "sync deletes")
+
+    GU.main()
+
+    assert ("git", "add", "-u", "--", "old.txt") in seen
+
+
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
     GU = _load_module()
     # no token path
@@ -238,6 +283,8 @@ def test_main_push_conflict_cancelled_by_user(monkeypatch):
             return True, "main"
         if args[:2] == ["git", "push"]:
             return False, "non-fast-forward"
+        if args[:3] == ["git", "ls-files", "-d"]:
+            return True, ""
         raise AssertionError(f"Unexpected command: {args}")
 
     monkeypatch.setattr(GU, "run_command", _fake_run)
