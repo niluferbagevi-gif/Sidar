@@ -69,6 +69,19 @@ def test_build_multimodal_context_uses_reason_and_skips_blank_frame_summary():
     assert "1.5s" not in context
 
 
+def test_build_multimodal_context_skips_reason_and_language_when_transcript_fields_missing():
+    context = build_multimodal_context(
+        media_kind="audio",
+        transcript={"text": "   ", "language": "   ", "reason": ""},
+        frame_analyses=None,
+    )
+
+    assert "Transkript:" not in context
+    assert "Transkript Durumu:" not in context
+    assert "Transkript Dili:" not in context
+    assert context == "Medya Türü: audio"
+
+
 def test_command_exists_and_guess_suffix(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(multimodal_mod.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None)
 
