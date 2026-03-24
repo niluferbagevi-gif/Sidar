@@ -50,6 +50,14 @@ def _env_float(key: str, default: float) -> float:
         return float(default)
 
 
+def _safe_calls(value: Any) -> int:
+    try:
+        calls = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return calls if calls > 0 else 0
+
+
 # Yaklaşık maliyet tablosu (1M token başına USD)
 # Not: Bu değerler dashboard trend amaçlıdır; faturalama sisteminin tek-kaynağı değildir.
 _MODEL_PRICES_PER_1M: Dict[str, Dict[str, float]] = {
@@ -206,8 +214,10 @@ class LLMMetricsCollector:
                 )
 
         for provider, row in by_provider.items():
-            if row["calls"]:
-                row["latency_ms_avg"] = round(row["latency_ms_avg"] / row["calls"], 2)
+            calls = _safe_calls(row.get("calls"))
+            row["calls"] = calls
+            if calls:
+                row["latency_ms_avg"] = round(row["latency_ms_avg"] / calls, 2)
             row["latency_ms_max"] = round(row["latency_ms_max"], 2)
             row["cost_usd"] = round(row["cost_usd"], 6)
 

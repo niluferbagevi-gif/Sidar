@@ -179,6 +179,16 @@ def test_env_float_returns_parsed_numeric_value(monkeypatch):
     monkeypatch.setattr("core.llm_metrics.os.getenv", lambda _key: "7.25")
     assert _env_float("LLM_VALID", 1.0) == 7.25
 
+
+def test_safe_calls_normalizes_none_and_invalid_values():
+    from core.llm_metrics import _safe_calls
+
+    assert _safe_calls(None) == 0
+    assert _safe_calls("oops") == 0
+    assert _safe_calls(-3) == 0
+    assert _safe_calls("2") == 2
+
+
 def test_llm_metrics_snapshot_uses_zero_cache_stats_when_cache_metrics_import_fails(monkeypatch):
     import builtins
 
