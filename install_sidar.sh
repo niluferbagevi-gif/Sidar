@@ -1,346 +1,394 @@
-#!/usr/bin/env bash
-# Sidar AI — Otomatik Kurulum Betiği
-# Sürüm: 5.1.2 (Birleştirilmiş İyileştirmeler)
+"""
+Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
+Sürüm: 1.9
+Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
+Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
+"""
+import os
+import subprocess
+import sys
+from fnmatch import fnmatch
+from datetime import datetime
+from typing import List, Sequence, Tuple
 
-# Hata durumunda betiği durdur
-set -euo pipefail
+from config import Config
 
-PROJECT_NAME="Sidar"
-ENV_NAME="sidar-ai"
-# Gerekirse kendi SİDAR repo URL'nizle değiştirin
-REPO_URL="https://github.com/niluferbagevi-gif/Sidar"
-PROJECT_DIR="$HOME/$PROJECT_NAME"
-MINICONDA_DIR="$HOME/miniconda3"
-MINICONDA_SH="$MINICONDA_DIR/miniconda.sh"
-OLLAMA_PID=""
-ALLOW_APT_UPGRADE="${ALLOW_APT_UPGRADE:-0}"
-ALLOW_OLLAMA_INSTALL_SCRIPT="${ALLOW_OLLAMA_INSTALL_SCRIPT:-0}"
-DOCKER_COMPOSE_CMD=""
 
-cleanup() {
-  if [[ -n "${OLLAMA_PID}" ]] && kill -0 "${OLLAMA_PID}" >/dev/null 2>&1; then
-    kill "${OLLAMA_PID}" || true
-  fi
-}
-trap cleanup EXIT
+cfg = Config()
 
-detect_docker_compose() {
-  if docker compose version >/dev/null 2>&1; then
-    DOCKER_COMPOSE_CMD="docker compose"
-  elif command -v docker-compose >/dev/null 2>&1; then
-    DOCKER_COMPOSE_CMD="docker-compose"
-  else
-    DOCKER_COMPOSE_CMD=""
-  fi
-}
+# ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
+FORBIDDEN_PATHS = [
+    ".env",
+    ".env.*",
+    "sessions/",
+    "secrets/",
+    "credentials/",
+    "chroma_db/",
+    "__pycache__/",
+    ".git/",
+    "logs/",
+    "data/",
+    "temp/",
+    "tmp/",
+    "models/",
+]
 
-print_header() {
-  echo "============================================================"
-  echo " 🚀 SİDAR - Sıfırdan Ubuntu (WSL) Otomatik Kurulum Aracı"
-  echo "============================================================"
-}
+# FORBIDDEN_PATHS kuralından muaf tutulan şablon/örnek dosyalar
+# Örn: .env.* kalıbı .env.example'ı da bloklar; ancak bu dosya API key içermez, commit edilmesi gerekir.
+ALLOWED_EXCEPTIONS: frozenset[str] = frozenset({
+    ".env.example",
+})
 
-# ─── Adım 1: Sistem Paketleri ───────────────────────────────────
-install_system_packages() {
-  echo -e "\n📦 1. Sistem paket indeksleri güncelleniyor ve temel paketler kuruluyor..."
-  sudo apt update
 
-  if [[ "$ALLOW_APT_UPGRADE" == "1" ]]; then
-    echo "⚠️ ALLOW_APT_UPGRADE=1 olduğu için sistem yükseltmesi uygulanıyor..."
-    sudo apt upgrade -y
-  else
-    echo "ℹ️ Sistem yükseltmesi varsayılan olarak kapalı (ALLOW_APT_UPGRADE=1 ile açabilirsiniz)."
-  fi
+# ═══════════════════════════════════════════════════════════════
+# RENK KODLARI
+# ═══════════════════════════════════════════════════════════════
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
 
-  sudo apt install -y curl wget git build-essential software-properties-common zstd
-  sudo apt install -y portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg
 
-  # Node.js 20.x — Ubuntu varsayılan deposundaki sürüm React derlemesi için yetersiz kalabilir
-  local node_major=0
-  if command -v node >/dev/null 2>&1; then
-    node_major=$(node -v 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1 || echo 0)
-  fi
-  if [[ "$node_major" -lt 18 ]]; then
-    echo "   Node.js v20 (NodeSource) kuruluyor..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt install -y nodejs
-    echo "✅ Node.js $(node -v) kuruldu."
-  else
-    echo "✅ Node.js yeterli sürümde ($(node -v)) kurulu."
-  fi
-}
+# ═══════════════════════════════════════════════════════════════
+# YARDIMCI FONKSİYONLAR
+# ═══════════════════════════════════════════════════════════════
+def run_command(args: Sequence[str], show_output: bool = True) -> Tuple[bool, str]:
+    """Komutu shell=False ile güvenli şekilde çalıştırır."""
+    try:
+        result = subprocess.run(
+            args,
+            shell=False,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if show_output and result.stdout.strip():
+            print(result.stdout.strip())
+        return True, result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.strip()
+        if e.stdout and e.stdout.strip():
+            err_msg += "\n" + e.stdout.strip()
 
-# ─── Adım 1.5: Google Chrome ────────────────────────────────────
-install_google_chrome() {
-  echo -e "\n🌐 1.5. Google Chrome kontrol ediliyor..."
-  if command -v google-chrome-stable >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1; then
-    echo "✅ Google Chrome zaten kurulu."
-    return 0
-  fi
-  echo "   Chrome bulunamadı. İndiriliyor ve kuruluyor..."
-  wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
-  sudo apt install -y /tmp/chrome.deb
-  rm -f /tmp/chrome.deb
-  echo "✅ Google Chrome başarıyla kuruldu."
-}
+        if show_output and err_msg:
+            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
+        return False, err_msg
+    except FileNotFoundError:
+        err_msg = f"Komut bulunamadı: {args[0] if args else 'bilinmiyor'}"
+        if show_output:
+            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
+        return False, err_msg
 
-# ─── Adım 2: Miniconda ──────────────────────────────────────────
-install_miniconda() {
-  echo -e "\n🐍 2. Miniconda kuruluyor..."
-  if [[ ! -d "$MINICONDA_DIR" ]]; then
-    mkdir -p "$MINICONDA_DIR"
-    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O "$MINICONDA_SH"
-    bash "$MINICONDA_SH" -b -u -p "$MINICONDA_DIR"
-    rm -f "$MINICONDA_SH"
-    "$MINICONDA_DIR/bin/conda" init bash
-    echo "✅ Miniconda başarıyla kuruldu."
-  else
-    echo "✅ Miniconda zaten kurulu."
-  fi
 
-  # Conda'yı bu oturumda hemen kullanabilmek için etkinleştiriyoruz
-  # shellcheck disable=SC1091
-  source "$MINICONDA_DIR/etc/profile.d/conda.sh"
-}
+def _is_valid_repo_url(url: str) -> bool:
+    """Temel GitHub repo URL doğrulaması."""
+    if not url:
+        return False
+    normalized = url.strip()
+    return (
+        normalized.startswith("https://github.com/")
+        or normalized.startswith("git@github.com:")
+    )
 
-# ─── Adım 3: Ollama ─────────────────────────────────────────────
-install_ollama() {
-  echo -e "\n🦙 3. Ollama kuruluyor..."
-  if ! ollama -v >/dev/null 2>&1; then
-    echo "⚠️ Ollama bulunamadı veya kurulumu bozuk."
-    if [[ "$ALLOW_OLLAMA_INSTALL_SCRIPT" != "1" ]]; then
-      echo "❌ Güvenlik nedeniyle otomatik uzaktan script çalıştırma kapalı."
-      echo "   Önce manuel kurulum yapın: https://ollama.com/download/linux"
-      echo "   Otomatik kurulum için bilinçli onay: ALLOW_OLLAMA_INSTALL_SCRIPT=1 ./install_sidar.sh"
-      exit 1
-    fi
 
-    local installer="/tmp/ollama_install.sh"
-    echo "ℹ️ Kurulum scripti indiriliyor: $installer"
-    curl -fsSL https://ollama.com/install.sh -o "$installer"
-    chmod 700 "$installer"
-    sudo rm -f /usr/local/bin/ollama
-    sh "$installer"
-    rm -f "$installer"
-    echo "✅ Ollama başarıyla kuruldu."
-  else
-    echo "✅ Ollama zaten kurulu ve çalışıyor."
-  fi
-}
+def _normalize_path(path: str) -> str:
+    """Yol formatını güvenlik kontrolleri için normalize eder."""
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        return normalized[2:]
+    return normalized
 
-# ─── Adım 4: Proje Klonlama / Güncelleme ────────────────────────
-clone_or_update_repo() {
-  echo -e "\n🐙 4. SİDAR projesi GitHub'dan çekiliyor..."
-  if [[ ! -d "$PROJECT_DIR" ]]; then
-    # Hızlı ilk kurulum için shallow clone
-    git clone --depth 1 "$REPO_URL" "$PROJECT_DIR"
-  elif [[ -d "$PROJECT_DIR/.git" ]]; then
-    echo "⚠️ SİDAR klasörü zaten var. Güvenli güncelleme (fetch + pull --ff-only) uygulanıyor..."
-    git -C "$PROJECT_DIR" fetch --all --prune
-    if ! git -C "$PROJECT_DIR" pull --ff-only; then
-      echo "❌ Git pull --ff-only başarısız oldu (muhtemel lokal değişiklik/çatışma)."
-      echo "   Çözüm seçenekleri:"
-      echo "   1) cd \"$PROJECT_DIR\" && git status ile durumu inceleyin"
-      echo "   2) Lokal değişiklikleri commit/push edin veya kaldırın"
-      echo "   3) Temiz kurulum: rm -rf \"$PROJECT_DIR\" && ./install_sidar.sh"
-      exit 1
-    fi
-  else
-    # Klasör var ama git deposu değil (bozuk/karışık) — yedekle ve temiz clone al
-    local backup_dir="${PROJECT_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
-    echo "⚠️ $PROJECT_DIR mevcut fakat bir Git deposu değil."
-    echo "   Mevcut klasör yedekleniyor: $backup_dir"
-    mv "$PROJECT_DIR" "$backup_dir"
-    git clone --depth 1 "$REPO_URL" "$PROJECT_DIR"
-    echo "✅ Temiz depo klonlandı. Eski içerik yedek klasörde saklandı: $backup_dir"
-  fi
-  cd "$PROJECT_DIR"
-}
 
-# ─── Adım 4.5: Çalışma Dizinleri ────────────────────────────────
-prepare_runtime_dirs() {
-  echo -e "\n📂 4.5. Gerekli çalışma dizinleri oluşturuluyor..."
-  mkdir -p "$PROJECT_DIR/sessions" "$PROJECT_DIR/chroma_db" "$PROJECT_DIR/logs" "$PROJECT_DIR/models"
-  echo "✅ sessions/, chroma_db/, logs/ ve models/ dizinleri hazır."
-}
+def is_forbidden_path(path: str) -> bool:
+    """Hard blacklist: .gitignore'dan bağımsız kesin engel.
+    ALLOWED_EXCEPTIONS listesindeki dosyalar her zaman izin verilir."""
+    normalized = _normalize_path(path)
+    if normalized in ALLOWED_EXCEPTIONS:
+        return False
+    for forbidden in FORBIDDEN_PATHS:
+        rule = _normalize_path(forbidden)
 
-# ─── Adım 5: Conda Ortamı ───────────────────────────────────────
-setup_conda_env() {
-  echo -e "\n⚙️  5. Conda ortamı ($ENV_NAME) environment.yml dosyasından kuruluyor..."
-  if conda info --envs | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-    echo "   Ortam zaten var, güncelleniyor (--prune ile eski paketler temizlenecek)..."
-    conda env update -f environment.yml --prune
-  else
-    echo "   Yeni Conda ortamı oluşturuluyor..."
-    conda env create -f environment.yml
-  fi
-  echo "✅ Conda ortamı hazır. Aktif hale getirmek için: conda activate $ENV_NAME"
-}
+        if any(ch in rule for ch in "*?[]"):
+            if fnmatch(normalized, rule):
+                return True
+            continue
 
-# ─── Adım 6: AI Modelleri ───────────────────────────────────────
-pull_models() {
-  echo -e "\n🧠 6. Yapay zeka modelleri hazırlanıyor..."
-  if ! command -v ollama >/dev/null 2>&1; then
-    echo "⚠️ Ollama bulunamadı, model indirme adımı atlandı."
-    return 0
-  fi
+        if forbidden.endswith("/"):
+            dir_rule = rule.rstrip("/")
+            if normalized == dir_rule or normalized.startswith(f"{dir_rule}/"):
+                return True
+            continue
 
-  ollama serve >/dev/null 2>&1 &
-  OLLAMA_PID=$!
+        if normalized == rule:
+            return True
 
-  echo -e "   Ollama servisi başlatılıyor..."
-  local retries=30
-  local i=0
-  until curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; do
-    i=$((i + 1))
-    if [[ $i -ge $retries ]]; then
-      echo "❌ Ollama 30 saniye içinde yanıt vermedi. Kurulum durduruluyor."
-      exit 1
-    fi
-    sleep 1
-  done
-  echo "   ✅ Ollama hazır (${i}s)."
+    return False
 
-  echo "-> qwen2.5-coder:7b (SİDAR varsayılan model) indiriliyor..."
-  ollama pull qwen2.5-coder:7b
-  echo "-> nomic-embed-text (RAG embed) indiriliyor..."
-  ollama pull nomic-embed-text
-}
 
-# ─── Adım 7: Çevre Değişkenleri (.env) ──────────────────────────
-setup_env_file() {
-  echo -e "\n⚙️  7. Çevre değişkenleri dosyası (.env) ayarlanıyor..."
-  if [[ -f "$PROJECT_DIR/.env" ]]; then
-    echo "✅ .env dosyası zaten mevcut. Üzerine yazılmıyor."
-  else
-    cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
-    echo "✅ .env.example → .env olarak kopyalandı."
-    echo "   📝 Önemli: $PROJECT_DIR/.env dosyasını açarak"
-    echo "      AI sağlayıcınızı (AI_PROVIDER) ve diğer ayarları yapılandırın."
-  fi
-}
+def get_file_content(path: str) -> str | None:
+    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
+    if is_forbidden_path(path):
+        return None
 
-# ─── Adım 8: Veritabanı Migrasyonu ──────────────────────────────
-run_alembic_migrations() {
-  echo -e "\n🗄️  8. Veritabanı şeması oluşturuluyor (alembic upgrade head)..."
-  cd "$PROJECT_DIR"
-  # shellcheck disable=SC1091
-  source "$MINICONDA_DIR/etc/profile.d/conda.sh"
-  conda activate "$ENV_NAME" || { echo "❌ Conda ortamı $ENV_NAME etkinleştirilemedi."; exit 1; }
-  if [[ -f "alembic.ini" ]]; then
-    if python -m alembic upgrade head; then
-      echo "✅ Veritabanı şeması başarıyla oluşturuldu."
-    else
-      echo "⚠️ Alembic migration tamamlanamadı (muhtemelen .env yapılandırma gerektirir)."
-      echo "   .env dosyanızı düzenledikten sonra manuel çalıştırın: alembic upgrade head"
-    fi
-  else
-    echo "⚠️ alembic.ini bulunamadı, bu adım atlandı."
-  fi
-}
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return file.read()
+    except (UnicodeDecodeError, OSError):
+        return None
 
-# ─── Adım 9: Vendor Kütüphaneleri ───────────────────────────────
-download_vendor_libs() {
-  echo -e "\n📚 9. Web arayüzü bağımlılıkları yerel olarak indiriliyor (çevrimdışı destek)..."
-  local vendor_dir="$PROJECT_DIR/web_ui/vendor"
-  mkdir -p "$vendor_dir"
 
-  local failed=0
+def collect_safe_files() -> Tuple[List[str], List[str]]:
+    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
+    success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
+    if not success:
+        return [], []
 
-  curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" \
-    -o "$vendor_dir/highlight.min.css" || { echo "⚠️ highlight.min.css indirilemedi (CDN yedek kullanılacak)."; failed=1; }
-  curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" \
-    -o "$vendor_dir/highlight.min.js" || { echo "⚠️ highlight.min.js indirilemedi (CDN yedek kullanılacak)."; failed=1; }
-  curl -fsSL "https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js" \
-    -o "$vendor_dir/marked.min.js" || { echo "⚠️ marked.min.js indirilemedi (CDN yedek kullanılacak)."; failed=1; }
+    safe_files = []
+    blocked_files = []
 
-  if [[ $failed -eq 0 ]]; then
-    echo "✅ Vendor kütüphaneleri web_ui/vendor/ dizinine indirildi."
-  else
-    echo "⚠️ Bazı vendor dosyaları indirilemedi. Web arayüzü CDN üzerinden çalışmaya devam eder."
-  fi
-}
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        if os.path.isdir(file_path):
+            continue
 
-# ─── Adım 10: React Arayüzü ─────────────────────────────────────
-build_react_frontend() {
-  echo -e "\n⚛️ 10. React tabanlı web arayüzü (web_ui_react) derleniyor..."
-  if [[ -d "$PROJECT_DIR/web_ui_react" ]]; then
-    cd "$PROJECT_DIR/web_ui_react"
-    echo "   npm paketleri yükleniyor..."
-    npm install
-    echo "   Production build alınıyor..."
-    npm run build
-    cd "$PROJECT_DIR"
-    echo "✅ React arayüzü başarıyla derlendi."
-  else
-    echo "⚠️ web_ui_react klasörü bulunamadı, bu adım atlanıyor."
-  fi
-}
+        if is_forbidden_path(file_path):
+            blocked_files.append(file_path)
+            continue
 
-# ─── Adım 11: Kurulum Doğrulama Testleri ────────────────────────
-run_verification_tests() {
-  echo -e "\n🧪 11. Sistem doğrulama testleri çalıştırılıyor..."
-  echo "   (Kurulumun temel bileşenlerini doğrulayan hızlı smoke test)"
-  cd "$PROJECT_DIR"
+        if get_file_content(file_path) is None:
+            blocked_files.append(file_path)
+            continue
 
-  # shellcheck disable=SC1091
-  source "$MINICONDA_DIR/etc/profile.d/conda.sh"
-  conda activate "$ENV_NAME" || { echo "❌ Conda ortamı $ENV_NAME etkinleştirilemedi."; exit 1; }
+        safe_files.append(file_path)
 
-  # Smoke test: yalnızca test_sidar.py, --no-cov ile hızlı çalıştır
-  # API key'ler henüz girilmemiş olabileceğinden başarısızlık uyarıya dönüştürüldü
-  if ! python -m pytest tests/test_sidar.py -v --tb=short --no-cov 2>&1 | tee tests_output.log; then
-    echo "⚠️ DİKKAT: Bazı smoke testler başarısız oldu."
-    echo "   Bu durum, .env dosyasındaki API key'lerin henüz boş olmasından kaynaklanıyor olabilir."
-    echo "   .env dosyanızı yapılandırdıktan sonra tam test çalıştırın: pytest"
-    echo "   Hata detayları: tests_output.log"
-  else
-    echo "✅ Tüm smoke testler başarıyla tamamlandı."
-    rm -f tests_output.log
-  fi
-}
+    return safe_files, blocked_files
 
-print_footer() {
-  echo "============================================================"
-  echo "🚀 SİDAR v5.1.0 Kurulumu Tamamlandı!"
-  echo "============================================================"
-  echo "Lütfen yeni ayarların yüklenmesi için terminali kapatıp YENİDEN AÇIN."
-  echo ""
-  echo "🌐 Web Arayüzü: http://localhost:7860"
-  echo "🚀 Ultimate Launcher: python main.py"
-  if [[ -n "$DOCKER_COMPOSE_CMD" ]]; then
-    echo "🐳 Docker Compose: $DOCKER_COMPOSE_CMD up --build sidar-web"
-  else
-    echo "⚠️ Docker Compose bulunamadı."
-  fi
-  echo ""
-  echo "Sonrasında SİDAR'ı çalıştırmak için sırasıyla şunları yazın:"
-  echo "  1. cd ~/$PROJECT_NAME"
-  echo "  2. conda activate $ENV_NAME"
-  echo "  3. nano .env                    ← AI sağlayıcısı, token'lar ve ayarları yapılandırın"
-  echo "  4. alembic upgrade head         ← Veritabanı adım 8'de otomatik denendi; sorun olduysa tekrar çalıştırın"
-  echo "  5. python main.py               ← Etkileşimli TUI menüsü ile başlatmak için"
-  echo ""
-  echo "Güvenlik notu:"
-  echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
-  echo "  - Otomatik Ollama script kurulumu varsayılan kapalıdır (ALLOW_OLLAMA_INSTALL_SCRIPT=1 ile açılır)."
-  echo "============================================================"
-}
 
-# ─── Ana Akış ────────────────────────────────────────────────────
-print_header
-detect_docker_compose
-install_system_packages      # 1
-install_google_chrome        # 1.5
-install_miniconda            # 2
-install_ollama               # 3
-clone_or_update_repo         # 4
-prepare_runtime_dirs         # 4.5
-setup_conda_env              # 5
-pull_models                  # 6
-setup_env_file               # 7
-run_alembic_migrations       # 8
-download_vendor_libs         # 9
-build_react_frontend         # 10
-run_verification_tests       # 11
-print_footer
+def collect_deleted_files() -> List[str]:
+    """Git tarafından izlenen fakat local'de silinmiş dosyaları toplar."""
+    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
+    if not success or not output.strip():
+        return []
+
+    deleted_files: List[str] = []
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        deleted_files.append(file_path)
+
+    return deleted_files
+
+
+def collect_tracked_ignored_files() -> List[str]:
+    """
+    .gitignore tarafından ignore edilmesine rağmen hâlâ tracked olan dosyaları toplar.
+    Bu dosyalar, geçmişte commit edildikleri için index'te kalmış olabilir.
+    """
+    success, output = run_command(
+        ["git", "ls-files", "-ci", "--exclude-standard"],
+        show_output=False,
+    )
+    if not success or not output.strip():
+        return []
+
+    tracked_ignored: List[str] = []
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        tracked_ignored.append(file_path)
+
+    return tracked_ignored
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANA PROGRAM
+# ═══════════════════════════════════════════════════════════════
+def main() -> None:
+    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{cfg.VERSION}) {Colors.ENDC}")
+    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
+
+    # 0. Merkezi yapılandırmadan token kontrolü
+    if not cfg.GITHUB_TOKEN:
+        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
+        sys.exit(1)
+
+    # 1. Git kurulu mu?
+    success, _ = run_command(["git", "--version"], show_output=False)
+    if not success:
+        print(f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}")
+        sys.exit(1)
+
+    # 1.5 Git Kimlik (Identity) Kontrolü
+    _, name_out = run_command(["git", "config", "user.name"], show_output=False)
+    if not name_out:
+        print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
+        git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
+        git_email = input("GitHub E-Posta Adresiniz: ").strip()
+        run_command(["git", "config", "--global", "user.name", git_name], show_output=False)
+        run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
+        print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
+
+    # 2. Git reposu mu?
+    if not os.path.exists(".git"):
+        print(f"{Colors.WARNING}Bu klasör henüz bir Git deposu değil. Başlatılıyor...{Colors.ENDC}")
+        run_command(["git", "init"], show_output=False)
+        run_command(["git", "branch", "-M", "main"], show_output=False)
+        print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
+
+    # 3. Remote (Uzak Sunucu) kontrolü
+    _, remotes = run_command(["git", "remote", "-v"], show_output=False)
+    if "origin" not in remotes:
+        print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
+        repo_url = input(
+            f"{Colors.OKBLUE}Lütfen GitHub Depo URL'sini girin\n"
+            f"(Örn: https://github.com/niluferbagevi-gif/Sidar): {Colors.ENDC}"
+        ).strip()
+
+        if not _is_valid_repo_url(repo_url):
+            print(f"{Colors.FAIL}Geçersiz veya boş URL. İşlem iptal edildi.{Colors.ENDC}")
+            sys.exit(1)
+
+        run_command(["git", "remote", "add", "origin", repo_url], show_output=False)
+        print(f"{Colors.OKGREEN}✅ GitHub deposu sisteme bağlandı.{Colors.ENDC}")
+    else:
+        print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
+
+    # 3.5 .gitignore ile mevcut tracked dosyalar uyumlu mu?
+    tracked_ignored_files = collect_tracked_ignored_files()
+    if tracked_ignored_files:
+        print(f"{Colors.WARNING}⚠️ .gitignore ile çelişen (tracked) dosyalar tespit edildi:{Colors.ENDC}")
+        for path in tracked_ignored_files[:20]:
+            print(f"  - {path}")
+        if len(tracked_ignored_files) > 20:
+            print(f"  ... (+{len(tracked_ignored_files) - 20} dosya daha)")
+        print(
+            f"{Colors.WARNING}"
+            "Not: Bu dosyalar .gitignore'da olsa bile tracked kaldığı için push edilir. "
+            "Gerekirse `git rm -r --cached <dosya/klasör>` ile index'ten çıkarın."
+            f"{Colors.ENDC}"
+        )
+
+    # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
+    print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
+    run_command(["git", "reset"], show_output=False)
+    safe_files, blocked_files = collect_safe_files()
+    deleted_files = collect_deleted_files()
+
+    if safe_files:
+        run_command(["git", "add", "--"] + safe_files, show_output=False)
+
+    if deleted_files:
+        run_command(["git", "add", "-u", "--"] + deleted_files, show_output=False)
+
+    if blocked_files:
+        print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
+        for blocked in blocked_files:
+            print(f"  - {blocked}")
+
+    if deleted_files:
+        print(f"{Colors.OKBLUE}🗑️ Local'de silinen ve commit'e dahil edilecek dosya sayısı: {len(deleted_files)}{Colors.ENDC}")
+
+    # 5. Durum Kontrolü (Değişen dosya var mı?)
+    _, status = run_command(["git", "status", "--porcelain"], show_output=False)
+    if not status:
+        print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
+        sys.exit(0)
+
+    # 6. Commit (Kaydetme) Mesajı
+    default_msg = (
+        f"🚀 Sidar {cfg.VERSION} - Otomatik Dağıtım "
+        f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+    )
+    print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
+    commit_msg = input(
+        f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
+    ).strip()
+
+    if not commit_msg:
+        commit_msg = default_msg
+
+    print(f"\n{Colors.OKBLUE}💾 Değişiklikler kaydediliyor...{Colors.ENDC}")
+    commit_success, commit_err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
+
+    if not commit_success:
+        print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
+        sys.exit(1)
+
+    # 7. Branch (Dal) belirle
+    _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
+    current_branch = branch if branch else "main"
+
+    # 8. GitHub'a Gönder (Push)
+    print(f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}")
+
+    # Push işlemini dene
+    push_success, err_msg = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
+
+    if push_success:
+        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
+        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+    else:
+        # Çakışma varsa (fetch first / rejected)
+        if "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
+            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
+            confirm = input(
+                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+            ).strip().lower()
+
+            if confirm == "y":
+                print(
+                    f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
+                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+                )
+                pull_cmd = [
+                    "git", "pull", "origin", current_branch,
+                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+                ]
+                pull_success, pull_err = run_command(pull_cmd, show_output=False)
+
+                if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
+                    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
+
+                    retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
+
+                    if retry_success:
+                        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
+                        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                    else:
+                        if "rule violations" in retry_err:
+                            print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
+                            print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
+                        else:
+                            print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
+                else:
+                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
+                    print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
+                    print(f"Hata Çıktısı:\n{pull_err}")
+            else:
+                print(
+                    f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
+                    "Veri kaybını önlemek için push durduruldu."
+                    f"{Colors.ENDC}"
+                )
+        else:
+            print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(f"\n\n{Colors.FAIL}İşlem kullanıcı tarafından iptal edildi.{Colors.ENDC}")
+        sys.exit(0)
