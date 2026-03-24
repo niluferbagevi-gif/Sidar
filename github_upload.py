@@ -159,13 +159,6 @@ def _is_readable_utf8(path: str) -> bool:
         return False
 
 
-def _git_lines(args: list[str]) -> list[str]:
-    ok, output = run_command(args, show_output=False)
-    if not ok or not output:
-        return []
-    return [line.strip() for line in output.splitlines() if line.strip()]
-
-
 def _git_lines_z(args: list[str]) -> list[str]:
     """NUL-ayraçlı git çıktısını güvenle parse eder (boşluk/özel karakter güvenli)."""
     logging.debug("Komut çalıştırılıyor (-z): %s", " ".join(args))
@@ -196,6 +189,24 @@ def _run_git_in_batches(base_cmd: list[str], paths: list[str], batch_size: int =
         run_command(base_cmd + paths[idx: idx + batch_size], show_output=False)
 
 
+def collect_deleted_files(protected_rules: list[str]) -> tuple[list[str], list[str]]:
+    """Yerelde silinmiş tracked dosyaları toplar (mirror delete listesi)."""
+    deleted_candidates = _git_lines_z(["git", "ls-files", "-z", "--deleted"])
+    delete: list[str] = []
+    blocked: list[str] = []
+
+    for file_path in deleted_candidates:
+        if is_forbidden_path(file_path):
+            blocked.append(file_path)
+            continue
+        if is_protected_path(file_path, protected_rules):
+            logging.info("Korumalı yol silinmeyecek: %s", file_path)
+            continue
+        delete.append(file_path)
+
+    return sorted(delete), sorted(set(blocked))
+
+
 def build_sync_plan(protected_rules: list[str], mirror: bool) -> SyncPlan:
     """Stage planı üretir: eklenecek/güncellenecek ve silinecek dosyalar."""
     all_candidates = _git_lines_z(["git", "ls-files", "-z", "-co", "--exclude-standard"])
@@ -215,15 +226,8 @@ def build_sync_plan(protected_rules: list[str], mirror: bool) -> SyncPlan:
 
     delete: list[str] = []
     if mirror:
-        deleted_candidates = _git_lines_z(["git", "ls-files", "-z", "--deleted"])
-        for file_path in deleted_candidates:
-            if is_forbidden_path(file_path):
-                blocked.append(file_path)
-                continue
-            if is_protected_path(file_path, protected_rules):
-                logging.info("Korumalı yol silinmeyecek: %s", file_path)
-                continue
-            delete.append(file_path)
+        delete, blocked_delete = collect_deleted_files(protected_rules)
+        blocked.extend(blocked_delete)
 
     return SyncPlan(add_or_update=sorted(add_or_update), delete=sorted(delete), blocked=sorted(set(blocked)))
 
@@ -320,7 +324,7 @@ def stage_plan(plan: SyncPlan, cli: CliArgs) -> None:
         if not _confirm_deletions(plan.delete, cli.force_delete, cli.non_interactive):
             print(f"{Colors.WARNING}Silme senkronizasyonu kullanıcı tarafından iptal edildi.{Colors.ENDC}")
         else:
-            _run_git_in_batches(["git", "rm", "--"], plan.delete)
+            _run_git_in_batches(["git", "rm", "--cached", "--ignore-unmatch", "--"], plan.delete)
 
 
 def build_commit(cli: CliArgs) -> bool:
