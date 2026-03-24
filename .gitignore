@@ -16,6 +16,7 @@ wheels/
 .venv/
 venv/
 env/
+.python-version
 
 # uv
 .uv/
@@ -89,6 +90,9 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 coverage.xml
+.hypothesis/
+.tox/
+.nox/
 
 # mypy & Type checking
 .mypy_cache/
@@ -97,12 +101,16 @@ coverage.xml
 # Notebook / modern tool artifacts
 .ipynb_checkpoints/
 .ruff_cache/
+.cache/
 
 # React / Node (web_ui_react)
 web_ui_react/node_modules/
 web_ui_react/dist/
 web_ui_react/build/
 web_ui_react/.eslintcache
+web_ui_react/.parcel-cache/
+web_ui_react/.vite/
+web_ui_react/coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
