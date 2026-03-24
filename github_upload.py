@@ -25,6 +25,9 @@ FORBIDDEN_PATHS = [
     "models/",
 ]
 
+FORBIDDEN_FILES = {p for p in FORBIDDEN_PATHS if not p.endswith("/")}
+FORBIDDEN_DIRS = {p.rstrip("/") for p in FORBIDDEN_PATHS if p.endswith("/")}
+
 
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
@@ -85,10 +88,16 @@ def _normalize_path(path: str) -> str:
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
-    return any(
-        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
-        for forbidden in FORBIDDEN_PATHS
-    )
+    parts = normalized.split("/")
+
+    # Yalnızca gerçek dizin eşleşmelerini engelle (örn: logs/, sessions/)
+    for forbidden_dir in FORBIDDEN_DIRS:
+        if normalized == forbidden_dir or normalized.startswith(f"{forbidden_dir}/"):
+            return True
+
+    # Dosya eşleşmeleri: tam yol veya herhangi bir segmentte aynı dosya adı
+    # (örn: ".env" hem kökte hem alt dizinlerde engellenir).
+    return normalized in FORBIDDEN_FILES or any(part in FORBIDDEN_FILES for part in parts)
 
 
 def get_file_content(path: str):
@@ -169,8 +178,8 @@ def main():
         print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
 
     # 3. Remote (Uzak Sunucu) kontrolü
-    _, remotes = run_command(["git", "remote", "-v"], show_output=False)
-    if "origin" not in remotes:
+    has_origin, _ = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    if not has_origin:
         print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
         repo_url = input(
             f"{Colors.OKBLUE}Lütfen GitHub Depo URL'sini girin\n"
