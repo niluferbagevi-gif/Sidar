@@ -194,6 +194,9 @@ def main():
     if safe_files:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
 
+    # Silinen (deleted) dosyaları da Git'e bildir
+    run_command(["git", "add", "-u"], show_output=False)
+
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
