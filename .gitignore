@@ -106,7 +106,3 @@ web_ui_react/.eslintcache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-# Sidar critical exclusions
-chroma_db/
-.git/
-models/
