@@ -7,6 +7,7 @@ Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
 import os
 import subprocess
 import sys
+from fnmatch import fnmatch
 from datetime import datetime
 
 from config import Config
@@ -17,6 +18,7 @@ cfg = Config()
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
 FORBIDDEN_PATHS = [
     ".env",
+    ".env.*",
     "sessions/",
     "chroma_db/",
     "__pycache__/",
@@ -64,6 +66,11 @@ def run_command(args, show_output=True):
         if show_output and err_msg:
             print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
         return False, err_msg
+    except FileNotFoundError:
+        err_msg = f"Komut bulunamadı: {args[0] if args else 'bilinmiyor'}"
+        if show_output:
+            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
+        return False, err_msg
 
 
 def _is_valid_repo_url(url: str) -> bool:
@@ -85,10 +92,24 @@ def _normalize_path(path: str) -> str:
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
-    return any(
-        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
-        for forbidden in FORBIDDEN_PATHS
-    )
+    for forbidden in FORBIDDEN_PATHS:
+        rule = _normalize_path(forbidden)
+
+        if any(ch in rule for ch in "*?[]"):
+            if fnmatch(normalized, rule):
+                return True
+            continue
+
+        if forbidden.endswith("/"):
+            dir_rule = rule.rstrip("/")
+            if normalized == dir_rule or normalized.startswith(f"{dir_rule}/"):
+                return True
+            continue
+
+        if normalized == rule:
+            return True
+
+    return False
 
 
 def get_file_content(path: str):
