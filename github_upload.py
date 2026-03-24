@@ -100,16 +100,27 @@ def is_forbidden_path(path: str) -> bool:
     return normalized in FORBIDDEN_FILES or any(part in FORBIDDEN_FILES for part in parts)
 
 
-def get_file_content(path: str):
-    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
+def is_text_file(path: str, probe_size: int = 1024) -> bool:
+    """
+    Dosyanın tamamını belleğe almadan metin dosyası olup olmadığını kontrol eder.
+    - İlk `probe_size` baytı okur
+    - Null byte içeriyorsa binary kabul eder
+    - UTF-8 decode başarısızsa binary/hatalı kabul eder
+    """
     if is_forbidden_path(path):
-        return None
+        return False
 
     try:
-        with open(path, "r", encoding="utf-8") as file:
-            return file.read()
-    except (UnicodeDecodeError, OSError):
-        return None
+        with open(path, "rb") as file:
+            chunk = file.read(probe_size)
+            if b"\x00" in chunk:
+                return False
+            chunk.decode("utf-8")
+            return True
+    except OSError:
+        return False
+    except UnicodeDecodeError:
+        return False
 
 
 def collect_safe_files():
@@ -132,13 +143,33 @@ def collect_safe_files():
             blocked_files.append(file_path)
             continue
 
-        if get_file_content(file_path) is None:
+        if not is_text_file(file_path):
             blocked_files.append(file_path)
             continue
 
         safe_files.append(file_path)
 
     return safe_files, blocked_files
+
+
+def ensure_gitignore():
+    """Kritik blacklist yollarının .gitignore içinde olduğundan emin olur."""
+    gitignore_path = ".gitignore"
+    if not os.path.exists(gitignore_path):
+        with open(gitignore_path, "w", encoding="utf-8") as f:
+            f.write("# Sidar auto-generated ignore rules\n")
+
+    with open(gitignore_path, "r", encoding="utf-8") as f:
+        existing_lines = {line.strip() for line in f if line.strip()}
+
+    missing = [path for path in FORBIDDEN_PATHS if path not in existing_lines]
+    if not missing:
+        return
+
+    with open(gitignore_path, "a", encoding="utf-8") as f:
+        f.write("\n# Sidar critical exclusions\n")
+        for path in missing:
+            f.write(f"{path}\n")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -149,10 +180,12 @@ def main():
     print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
-    # 0. Merkezi yapılandırmadan token kontrolü
+    # 0. Token bilgisi (opsiyonel)
     if not cfg.GITHUB_TOKEN:
-        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
-        sys.exit(1)
+        print(
+            f"{Colors.WARNING}⚠️ GITHUB_TOKEN bulunamadı. "
+            f"Git kimlik doğrulaması mevcut SSH/Credential Manager üzerinden yapılacaktır.{Colors.ENDC}"
+        )
 
     # 1. Git kurulu mu?
     success, _ = run_command(["git", "--version"], show_output=False)
@@ -166,9 +199,9 @@ def main():
         print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
         git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
         git_email = input("GitHub E-Posta Adresiniz: ").strip()
-        run_command(["git", "config", "--global", "user.name", git_name], show_output=False)
-        run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
-        print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
+        run_command(["git", "config", "--local", "user.name", git_name], show_output=False)
+        run_command(["git", "config", "--local", "user.email", git_email], show_output=False)
+        print(f"{Colors.OKGREEN}✅ Git kimliğiniz bu repo için başarıyla kaydedildi.{Colors.ENDC}\n")
 
     # 2. Git reposu mu?
     if not os.path.exists(".git"):
@@ -176,6 +209,8 @@ def main():
         run_command(["git", "init"], show_output=False)
         run_command(["git", "branch", "-M", "main"], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
+
+    ensure_gitignore()
 
     # 3. Remote (Uzak Sunucu) kontrolü
     has_origin, _ = run_command(["git", "remote", "get-url", "origin"], show_output=False)
@@ -259,11 +294,11 @@ def main():
             if confirm == "y":
                 print(
                     f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+                    f"(Çakışma olursa işlem durdurulacak)...{Colors.ENDC}"
                 )
                 pull_cmd = [
                     "git", "pull", "origin", current_branch,
-                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+                    "--rebase=false", "--allow-unrelated-histories", "--no-edit",
                 ]
                 pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
@@ -283,7 +318,8 @@ def main():
                         else:
                             print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
                 else:
-                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
+                    print(f"{Colors.FAIL}❌ Birleştirme sırasında çakışma/hata oluştu. Veri kaybını önlemek için işlem durduruldu.{Colors.ENDC}")
+                    print(f"{Colors.WARNING}Lütfen çakışmayı manuel çözün (ör. VS Code Source Control) ve tekrar deneyin.{Colors.ENDC}")
                     print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
                     print(f"Hata Çıktısı:\n{pull_err}")
             else:
