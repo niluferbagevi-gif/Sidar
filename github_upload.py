@@ -178,6 +178,28 @@ def collect_deleted_files() -> List[str]:
     return deleted_files
 
 
+def collect_tracked_ignored_files() -> List[str]:
+    """
+    .gitignore tarafından ignore edilmesine rağmen hâlâ tracked olan dosyaları toplar.
+    Bu dosyalar, geçmişte commit edildikleri için index'te kalmış olabilir.
+    """
+    success, output = run_command(
+        ["git", "ls-files", "-ci", "--exclude-standard"],
+        show_output=False,
+    )
+    if not success or not output.strip():
+        return []
+
+    tracked_ignored: List[str] = []
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        tracked_ignored.append(file_path)
+
+    return tracked_ignored
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -231,6 +253,21 @@ def main() -> None:
         print(f"{Colors.OKGREEN}✅ GitHub deposu sisteme bağlandı.{Colors.ENDC}")
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
+
+    # 3.5 .gitignore ile mevcut tracked dosyalar uyumlu mu?
+    tracked_ignored_files = collect_tracked_ignored_files()
+    if tracked_ignored_files:
+        print(f"{Colors.WARNING}⚠️ .gitignore ile çelişen (tracked) dosyalar tespit edildi:{Colors.ENDC}")
+        for path in tracked_ignored_files[:20]:
+            print(f"  - {path}")
+        if len(tracked_ignored_files) > 20:
+            print(f"  ... (+{len(tracked_ignored_files) - 20} dosya daha)")
+        print(
+            f"{Colors.WARNING}"
+            "Not: Bu dosyalar .gitignore'da olsa bile tracked kaldığı için push edilir. "
+            "Gerekirse `git rm -r --cached <dosya/klasör>` ile index'ten çıkarın."
+            f"{Colors.ENDC}"
+        )
 
     # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")

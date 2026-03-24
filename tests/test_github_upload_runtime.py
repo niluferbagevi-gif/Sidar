@@ -95,6 +95,17 @@ def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
     assert GU.collect_deleted_files() == ["old.txt", "nested/removed.py"]
 
 
+def test_collect_tracked_ignored_files_returns_conflicts(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(
+        GU, "run_command", lambda *a, **k: (True, "sidar_project.egg-info/PKG-INFO\n.env.local\n")
+    )
+    assert GU.collect_tracked_ignored_files() == [
+        "sidar_project.egg-info/PKG-INFO",
+        ".env.local",
+    ]
+
+
 def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
     GU = _load_module()
     GU.cfg.GITHUB_TOKEN = "token"
@@ -284,6 +295,8 @@ def test_main_push_conflict_cancelled_by_user(monkeypatch):
         if args[:2] == ["git", "push"]:
             return False, "non-fast-forward"
         if args[:3] == ["git", "ls-files", "-d"]:
+            return True, ""
+        if args[:4] == ["git", "ls-files", "-ci", "--exclude-standard"]:
             return True, ""
         raise AssertionError(f"Unexpected command: {args}")
 
