@@ -113,7 +113,7 @@ install_ollama() {
 clone_or_update_repo() {
   echo -e "\n🐙 4. SİDAR projesi GitHub'dan çekiliyor..."
   if [[ ! -d "$PROJECT_DIR" ]]; then
-    git clone "$REPO_URL" "$PROJECT_DIR"
+    git clone --depth 1 "$REPO_URL" "$PROJECT_DIR"
   else
     echo "⚠️ SİDAR klasörü zaten var. Git pull ile güncelleniyor..."
     git -C "$PROJECT_DIR" pull
@@ -178,8 +178,8 @@ run_verification_tests() {
   source "$MINICONDA_DIR/etc/profile.d/conda.sh"
   conda activate "$ENV_NAME" || { echo "❌ Conda ortamı $ENV_NAME etkinleştirilemedi."; exit 1; }
 
-  # pytest çalıştır (coverage ile birlikte)
-  if ! python -m pytest -v --tb=short 2>&1 | tee tests_output.log; then
+  # pytest çalıştır (kurulum doğrulaması için --no-cov ile hızlı smoke test)
+  if ! python -m pytest tests/test_sidar.py -v --tb=short --no-cov 2>&1 | tee tests_output.log; then
     echo "❌ Testler başarısız oldu. Kurulum durduruluyor."
     echo "   Lütfen hataları kontrol edin: tests_output.log"
     exit 1
@@ -214,6 +214,19 @@ print_footer() {
   echo "  - Sistem yükseltmesi varsayılan kapalıdır (ALLOW_APT_UPGRADE=1 ile açılır)."
   echo "  - Otomatik Ollama script kurulumu varsayılan kapalıdır (ALLOW_OLLAMA_INSTALL_SCRIPT=1 ile açılır)."
   echo "============================================================"
+}
+
+run_alembic_migrations() {
+  echo -e "\n🗄️  7. Veritabanı şeması oluşturuluyor (alembic upgrade head)..."
+  cd "$PROJECT_DIR"
+  # shellcheck disable=SC1091
+  source "$MINICONDA_DIR/etc/profile.d/conda.sh"
+  conda activate "$ENV_NAME" || { echo "❌ Conda ortamı $ENV_NAME etkinleştirilemedi."; exit 1; }
+  if python -m alembic upgrade head; then
+    echo "✅ Veritabanı şeması başarıyla oluşturuldu."
+  else
+    echo "⚠️ Alembic migration başarısız oldu. .env dosyasını yapılandırdıktan sonra manuel olarak çalıştırın: alembic upgrade head"
+  fi
 }
 
 setup_env_file() {
@@ -274,6 +287,7 @@ clone_or_update_repo
 prepare_runtime_dirs
 setup_conda_env
 pull_models
+run_alembic_migrations
 setup_env_file
 download_vendor_libs
 build_react_frontend
