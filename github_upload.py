@@ -152,6 +152,38 @@ def collect_safe_files():
     return safe_files, blocked_files
 
 
+def collect_deleted_files():
+    """Yerelde silinmiş (Git'te tracked) dosyaları listeler."""
+    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
+    if not success:
+        return []
+
+    deleted_files = []
+    for line in output.splitlines():
+        file_path = line.strip()
+        if not file_path:
+            continue
+        if is_forbidden_path(file_path):
+            continue
+        deleted_files.append(file_path)
+    return deleted_files
+
+
+def confirm_deletions(deleted_files):
+    """Silinen dosyaların GitHub'dan da kaldırılması için kullanıcı onayı alır."""
+    if not deleted_files:
+        return False
+
+    print(f"\n{Colors.WARNING}⚠️ Yerelde silinmiş ve GitHub'dan da kaldırılabilecek dosyalar:{Colors.ENDC}")
+    for path in deleted_files:
+        print(f"  [SIL] {path}")
+
+    confirm = input(
+        f"{Colors.OKBLUE}Bu dosyalar GitHub'dan da silinsin mi? (y/n) [Varsayılan: y]: {Colors.ENDC}"
+    ).strip().lower()
+    return confirm in ("", "y")
+
+
 def ensure_gitignore():
     """Kritik blacklist yollarının .gitignore içinde olduğundan emin olur."""
     gitignore_path = ".gitignore"
@@ -234,9 +266,16 @@ def main():
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
     safe_files, blocked_files = collect_safe_files()
+    deleted_files = collect_deleted_files()
 
     if safe_files:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
+
+    if deleted_files:
+        if confirm_deletions(deleted_files):
+            run_command(["git", "rm", "--cached", "--ignore-unmatch", "--"] + deleted_files, show_output=False)
+        else:
+            print(f"{Colors.WARNING}⏭️ Silinen dosyalar bu commit'e dahil edilmedi.{Colors.ENDC}")
 
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
