@@ -200,6 +200,22 @@ def test_root_cause_summary_handles_blank_first_line_and_uses_inferred_line(monk
     assert summary == "Inferred: blank-first-line path"
 
 
+def test_root_cause_summary_handles_truthy_diagnosis_with_empty_first_sentence_branch(monkeypatch):
+    monkeypatch.setattr(ci_mod, "_extract_root_cause_line", lambda *_args: "Inferred: empty-first-sentence branch")
+
+    class _WeirdDiagnosisText(str):
+        def strip(self, *_args, **_kwargs):
+            return self
+
+    class _Diagnosis:
+        def __str__(self):
+            return _WeirdDiagnosisText("\nKök neden ikinci satırda")
+
+    summary = ci_mod.build_root_cause_summary({}, _Diagnosis())
+
+    assert summary == "Inferred: empty-first-sentence branch"
+
+
 def test_root_cause_summary_infers_syntax_error_from_malformed_ci_log_payload():
     payload = {
         "event_name": "ci_pipeline_failed",
