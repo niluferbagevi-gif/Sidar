@@ -7,9 +7,7 @@ Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
 import os
 import subprocess
 import sys
-from fnmatch import fnmatch
 from datetime import datetime
-from typing import List, Sequence, Tuple
 
 from config import Config
 
@@ -19,19 +17,16 @@ cfg = Config()
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
 FORBIDDEN_PATHS = [
     ".env",
-    ".env.*",
     "sessions/",
-    "secrets/",
-    "credentials/",
     "chroma_db/",
     "__pycache__/",
     ".git/",
     "logs/",
-    "data/",
-    "temp/",
-    "tmp/",
     "models/",
 ]
+
+FORBIDDEN_FILES = {p for p in FORBIDDEN_PATHS if not p.endswith("/")}
+FORBIDDEN_DIRS = {p.rstrip("/") for p in FORBIDDEN_PATHS if p.endswith("/")}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -50,7 +45,7 @@ class Colors:
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
-def run_command(args: Sequence[str], show_output: bool = True) -> Tuple[bool, str]:
+def run_command(args, show_output=True):
     """Komutu shell=False ile güvenli şekilde çalıştırır."""
     try:
         result = subprocess.run(
@@ -72,11 +67,6 @@ def run_command(args: Sequence[str], show_output: bool = True) -> Tuple[bool, st
         if show_output and err_msg:
             print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
         return False, err_msg
-    except FileNotFoundError:
-        err_msg = f"Komut bulunamadı: {args[0] if args else 'bilinmiyor'}"
-        if show_output:
-            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
-        return False, err_msg
 
 
 def _is_valid_repo_url(url: str) -> bool:
@@ -92,48 +82,48 @@ def _is_valid_repo_url(url: str) -> bool:
 
 def _normalize_path(path: str) -> str:
     """Yol formatını güvenlik kontrolleri için normalize eder."""
-    normalized = path.replace("\\", "/")
-    if normalized.startswith("./"):
-        return normalized[2:]
-    return normalized
+    return path.replace("\\", "/").lstrip("./")
 
 
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
-    for forbidden in FORBIDDEN_PATHS:
-        rule = _normalize_path(forbidden)
+    parts = normalized.split("/")
 
-        if any(ch in rule for ch in "*?[]"):
-            if fnmatch(normalized, rule):
-                return True
-            continue
-
-        if forbidden.endswith("/"):
-            dir_rule = rule.rstrip("/")
-            if normalized == dir_rule or normalized.startswith(f"{dir_rule}/"):
-                return True
-            continue
-
-        if normalized == rule:
+    # Yalnızca gerçek dizin eşleşmelerini engelle (örn: logs/, sessions/)
+    for forbidden_dir in FORBIDDEN_DIRS:
+        if normalized == forbidden_dir or normalized.startswith(f"{forbidden_dir}/"):
             return True
 
-    return False
+    # Dosya eşleşmeleri: tam yol veya herhangi bir segmentte aynı dosya adı
+    # (örn: ".env" hem kökte hem alt dizinlerde engellenir).
+    return normalized in FORBIDDEN_FILES or any(part in FORBIDDEN_FILES for part in parts)
 
 
-def get_file_content(path: str) -> str | None:
-    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
+def is_text_file(path: str, probe_size: int = 1024) -> bool:
+    """
+    Dosyanın tamamını belleğe almadan metin dosyası olup olmadığını kontrol eder.
+    - İlk `probe_size` baytı okur
+    - Null byte içeriyorsa binary kabul eder
+    - UTF-8 decode başarısızsa binary/hatalı kabul eder
+    """
     if is_forbidden_path(path):
-        return None
+        return False
 
     try:
-        with open(path, "r", encoding="utf-8") as file:
-            return file.read()
-    except (UnicodeDecodeError, OSError):
-        return None
+        with open(path, "rb") as file:
+            chunk = file.read(probe_size)
+            if b"\x00" in chunk:
+                return False
+            chunk.decode("utf-8")
+            return True
+    except OSError:
+        return False
+    except UnicodeDecodeError:
+        return False
 
 
-def collect_safe_files() -> Tuple[List[str], List[str]]:
+def collect_safe_files():
     """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
     success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
     if not success:
@@ -153,7 +143,7 @@ def collect_safe_files() -> Tuple[List[str], List[str]]:
             blocked_files.append(file_path)
             continue
 
-        if get_file_content(file_path) is None:
+        if not is_text_file(file_path):
             blocked_files.append(file_path)
             continue
 
@@ -162,56 +152,72 @@ def collect_safe_files() -> Tuple[List[str], List[str]]:
     return safe_files, blocked_files
 
 
-def collect_deleted_files() -> List[str]:
-    """Git tarafından izlenen fakat local'de silinmiş dosyaları toplar."""
+def collect_deleted_files():
+    """Yerelde silinmiş (Git'te tracked) dosyaları listeler."""
     success, output = run_command(["git", "ls-files", "-d"], show_output=False)
-    if not success or not output.strip():
+    if not success:
         return []
 
-    deleted_files: List[str] = []
+    deleted_files = []
     for line in output.splitlines():
         file_path = line.strip()
         if not file_path:
             continue
+        if is_forbidden_path(file_path):
+            continue
         deleted_files.append(file_path)
-
     return deleted_files
 
 
-def collect_tracked_ignored_files() -> List[str]:
-    """
-    .gitignore tarafından ignore edilmesine rağmen hâlâ tracked olan dosyaları toplar.
-    Bu dosyalar, geçmişte commit edildikleri için index'te kalmış olabilir.
-    """
-    success, output = run_command(
-        ["git", "ls-files", "-ci", "--exclude-standard"],
-        show_output=False,
-    )
-    if not success or not output.strip():
-        return []
+def confirm_deletions(deleted_files):
+    """Silinen dosyaların GitHub'dan da kaldırılması için kullanıcı onayı alır."""
+    if not deleted_files:
+        return False
 
-    tracked_ignored: List[str] = []
-    for line in output.splitlines():
-        file_path = line.strip()
-        if not file_path:
-            continue
-        tracked_ignored.append(file_path)
+    print(f"\n{Colors.WARNING}⚠️ Yerelde silinmiş ve GitHub'dan da kaldırılabilecek dosyalar:{Colors.ENDC}")
+    for path in deleted_files:
+        print(f"  [SIL] {path}")
 
-    return tracked_ignored
+    confirm = input(
+        f"{Colors.OKBLUE}Bu dosyalar GitHub'dan da silinsin mi? (y/n) [Varsayılan: y]: {Colors.ENDC}"
+    ).strip().lower()
+    return confirm in ("", "y")
+
+
+def ensure_gitignore():
+    """Kritik blacklist yollarının .gitignore içinde olduğundan emin olur."""
+    gitignore_path = ".gitignore"
+    if not os.path.exists(gitignore_path):
+        with open(gitignore_path, "w", encoding="utf-8") as f:
+            f.write("# Sidar auto-generated ignore rules\n")
+
+    with open(gitignore_path, "r", encoding="utf-8") as f:
+        existing_lines = {line.strip() for line in f if line.strip()}
+
+    missing = [path for path in FORBIDDEN_PATHS if path not in existing_lines]
+    if not missing:
+        return
+
+    with open(gitignore_path, "a", encoding="utf-8") as f:
+        f.write("\n# Sidar critical exclusions\n")
+        for path in missing:
+            f.write(f"{path}\n")
 
 
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
-def main() -> None:
+def main():
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{cfg.VERSION}) {Colors.ENDC}")
+    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
-    # 0. Merkezi yapılandırmadan token kontrolü
+    # 0. Token bilgisi (opsiyonel)
     if not cfg.GITHUB_TOKEN:
-        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
-        sys.exit(1)
+        print(
+            f"{Colors.WARNING}⚠️ GITHUB_TOKEN bulunamadı. "
+            f"Git kimlik doğrulaması mevcut SSH/Credential Manager üzerinden yapılacaktır.{Colors.ENDC}"
+        )
 
     # 1. Git kurulu mu?
     success, _ = run_command(["git", "--version"], show_output=False)
@@ -225,9 +231,9 @@ def main() -> None:
         print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
         git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
         git_email = input("GitHub E-Posta Adresiniz: ").strip()
-        run_command(["git", "config", "--global", "user.name", git_name], show_output=False)
-        run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
-        print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
+        run_command(["git", "config", "--local", "user.name", git_name], show_output=False)
+        run_command(["git", "config", "--local", "user.email", git_email], show_output=False)
+        print(f"{Colors.OKGREEN}✅ Git kimliğiniz bu repo için başarıyla kaydedildi.{Colors.ENDC}\n")
 
     # 2. Git reposu mu?
     if not os.path.exists(".git"):
@@ -236,9 +242,11 @@ def main() -> None:
         run_command(["git", "branch", "-M", "main"], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
 
+    ensure_gitignore()
+
     # 3. Remote (Uzak Sunucu) kontrolü
-    _, remotes = run_command(["git", "remote", "-v"], show_output=False)
-    if "origin" not in remotes:
+    has_origin, _ = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    if not has_origin:
         print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
         repo_url = input(
             f"{Colors.OKBLUE}Lütfen GitHub Depo URL'sini girin\n"
@@ -254,21 +262,6 @@ def main() -> None:
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    # 3.5 .gitignore ile mevcut tracked dosyalar uyumlu mu?
-    tracked_ignored_files = collect_tracked_ignored_files()
-    if tracked_ignored_files:
-        print(f"{Colors.WARNING}⚠️ .gitignore ile çelişen (tracked) dosyalar tespit edildi:{Colors.ENDC}")
-        for path in tracked_ignored_files[:20]:
-            print(f"  - {path}")
-        if len(tracked_ignored_files) > 20:
-            print(f"  ... (+{len(tracked_ignored_files) - 20} dosya daha)")
-        print(
-            f"{Colors.WARNING}"
-            "Not: Bu dosyalar .gitignore'da olsa bile tracked kaldığı için push edilir. "
-            "Gerekirse `git rm -r --cached <dosya/klasör>` ile index'ten çıkarın."
-            f"{Colors.ENDC}"
-        )
-
     # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
@@ -279,15 +272,15 @@ def main() -> None:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
 
     if deleted_files:
-        run_command(["git", "add", "-u", "--"] + deleted_files, show_output=False)
+        if confirm_deletions(deleted_files):
+            run_command(["git", "rm", "--cached", "--ignore-unmatch", "--"] + deleted_files, show_output=False)
+        else:
+            print(f"{Colors.WARNING}⏭️ Silinen dosyalar bu commit'e dahil edilmedi.{Colors.ENDC}")
 
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
             print(f"  - {blocked}")
-
-    if deleted_files:
-        print(f"{Colors.OKBLUE}🗑️ Local'de silinen ve commit'e dahil edilecek dosya sayısı: {len(deleted_files)}{Colors.ENDC}")
 
     # 5. Durum Kontrolü (Değişen dosya var mı?)
     _, status = run_command(["git", "status", "--porcelain"], show_output=False)
@@ -340,11 +333,11 @@ def main() -> None:
             if confirm == "y":
                 print(
                     f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+                    f"(Çakışma olursa işlem durdurulacak)...{Colors.ENDC}"
                 )
                 pull_cmd = [
                     "git", "pull", "origin", current_branch,
-                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+                    "--rebase=false", "--allow-unrelated-histories", "--no-edit",
                 ]
                 pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
@@ -364,7 +357,8 @@ def main() -> None:
                         else:
                             print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
                 else:
-                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
+                    print(f"{Colors.FAIL}❌ Birleştirme sırasında çakışma/hata oluştu. Veri kaybını önlemek için işlem durduruldu.{Colors.ENDC}")
+                    print(f"{Colors.WARNING}Lütfen çakışmayı manuel çözün (ör. VS Code Source Control) ve tekrar deneyin.{Colors.ENDC}")
                     print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
                     print(f"Hata Çıktısı:\n{pull_err}")
             else:

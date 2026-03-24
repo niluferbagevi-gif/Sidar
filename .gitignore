@@ -120,3 +120,7 @@ yarn-error.log*
 
 # Helm package outputs
 helm/**/*.tgz
+# Sidar critical exclusions
+chroma_db/
+.git/
+models/

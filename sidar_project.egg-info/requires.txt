@@ -24,7 +24,7 @@ PyGithub~=2.4.0
 duckduckgo-search~=6.2.13
 
 [all]
-sidar-project[anthropic,browser,gemini,gpu,gui,postgres,rag,sandbox,telemetry]
+sidar-project[anthropic,browser,gemini,gpu,gui,openai,postgres,rag,sandbox,telemetry]
 
 [anthropic]
 anthropic~=0.40.0
@@ -51,6 +51,9 @@ nvidia-ml-py~=12.560.30
 
 [gui]
 eel>=0.16.0
+
+[openai]
+openai~=1.54.0
 
 [postgres]
 asyncpg~=0.30.0
