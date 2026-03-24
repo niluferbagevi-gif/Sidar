@@ -194,7 +194,7 @@ def main():
     if safe_files:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
 
-    # Silinen (deleted) dosyaları da Git'e bildir
+    # KALICI ÇÖZÜM: Silinmiş veya değiştirilmiş dosyaları Git'e otomatik olarak güncelle
     run_command(["git", "add", "-u"], show_output=False)
 
     if blocked_files:
