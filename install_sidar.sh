@@ -115,8 +115,25 @@ clone_or_update_repo() {
   if [[ ! -d "$PROJECT_DIR" ]]; then
     git clone "$REPO_URL" "$PROJECT_DIR"
   else
-    echo "⚠️ SİDAR klasörü zaten var. Git pull ile güncelleniyor..."
-    git -C "$PROJECT_DIR" pull
+    if [[ -d "$PROJECT_DIR/.git" ]]; then
+      echo "⚠️ SİDAR klasörü zaten var. Güvenli güncelleme (fetch + pull --ff-only) uygulanıyor..."
+      git -C "$PROJECT_DIR" fetch --all --prune
+      if ! git -C "$PROJECT_DIR" pull --ff-only; then
+        echo "❌ Git pull --ff-only başarısız oldu (muhtemel lokal değişiklik/çatışma)."
+        echo "   Çözüm seçenekleri:"
+        echo "   1) cd \"$PROJECT_DIR\" && git status ile durumu inceleyin"
+        echo "   2) Lokal değişiklikleri commit/push edin veya kaldırın"
+        echo "   3) Temiz kurulum için proje klasörünü yeniden adlandırıp scripti tekrar çalıştırın"
+        exit 1
+      fi
+    else
+      local backup_dir="${PROJECT_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
+      echo "⚠️ $PROJECT_DIR mevcut fakat bir Git deposu değil."
+      echo "   Mevcut klasör yedekleniyor: $backup_dir"
+      mv "$PROJECT_DIR" "$backup_dir"
+      git clone "$REPO_URL" "$PROJECT_DIR"
+      echo "✅ Temiz depo klonlandı. Eski içerik yedek klasörde saklandı."
+    fi
   fi
   cd "$PROJECT_DIR"
 }
