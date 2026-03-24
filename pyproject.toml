@@ -73,6 +73,9 @@ gemini = [
 anthropic = [
   "anthropic~=0.40.0",
 ]
+openai = [
+  "openai~=1.54.0",
+]
 
 # ── Altyapı extras ────────────────────────────────────────────────────────
 postgres = [
@@ -107,7 +110,7 @@ browser = [
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar-project[gemini,anthropic,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
+  "sidar-project[gemini,anthropic,openai,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
 ]
 dev = [
   "pytest>=8.0.0",
