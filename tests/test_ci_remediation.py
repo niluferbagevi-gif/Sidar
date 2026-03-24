@@ -195,7 +195,7 @@ def test_root_cause_summary_uses_inferred_line_when_first_sentence_is_not_root_c
 def test_root_cause_summary_handles_blank_first_line_and_uses_inferred_line(monkeypatch):
     monkeypatch.setattr(ci_mod, "_extract_root_cause_line", lambda *_args: "Inferred: blank-first-line path")
 
-    summary = ci_mod.build_root_cause_summary({}, "\nRoot cause appears on second line")
+    summary = ci_mod.build_root_cause_summary({}, "   \n  ")
 
     assert summary == "Inferred: blank-first-line path"
 
