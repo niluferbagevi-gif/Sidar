@@ -9,6 +9,7 @@ import subprocess
 import sys
 from fnmatch import fnmatch
 from datetime import datetime
+from typing import List, Sequence, Tuple
 
 from config import Config
 
@@ -20,10 +21,15 @@ FORBIDDEN_PATHS = [
     ".env",
     ".env.*",
     "sessions/",
+    "secrets/",
+    "credentials/",
     "chroma_db/",
     "__pycache__/",
     ".git/",
     "logs/",
+    "data/",
+    "temp/",
+    "tmp/",
     "models/",
 ]
 
@@ -44,7 +50,7 @@ class Colors:
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
-def run_command(args, show_output=True):
+def run_command(args: Sequence[str], show_output: bool = True) -> Tuple[bool, str]:
     """Komutu shell=False ile güvenli şekilde çalıştırır."""
     try:
         result = subprocess.run(
@@ -112,7 +118,7 @@ def is_forbidden_path(path: str) -> bool:
     return False
 
 
-def get_file_content(path: str):
+def get_file_content(path: str) -> str | None:
     """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
     if is_forbidden_path(path):
         return None
@@ -124,7 +130,7 @@ def get_file_content(path: str):
         return None
 
 
-def collect_safe_files():
+def collect_safe_files() -> Tuple[List[str], List[str]]:
     """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
     success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
     if not success:
@@ -156,9 +162,9 @@ def collect_safe_files():
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
-def main():
+def main() -> None:
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
+    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{cfg.VERSION}) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
     # 0. Merkezi yapılandırmadan token kontrolü
