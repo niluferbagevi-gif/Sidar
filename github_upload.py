@@ -1,13 +1,15 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
-Sürüm: 1.9
+Sürüm: 2.0
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
 """
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
+from typing import Optional
 
 from config import Config
 
@@ -15,7 +17,9 @@ from config import Config
 cfg = Config()
 
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
-FORBIDDEN_PATHS = [
+# Not: .gitignore'dan bağımsız hard-blacklist; collect_safe_files() içinde
+# git add -u KULLANILMAZ — bu liste tracked dosya sızıntısına karşı da korur.
+FORBIDDEN_PATHS: list[str] = [
     ".env",
     "sessions/",
     "chroma_db/",
@@ -23,7 +27,16 @@ FORBIDDEN_PATHS = [
     ".git/",
     "logs/",
     "models/",
+    "secrets/",
+    "credentials/",
+    "data/",
+    "temp/",
+    "tmp/",
 ]
+
+# Push yeniden deneme ayarları (CLAUDE.md: exponential backoff)
+_PUSH_MAX_RETRIES: int = 4
+_PUSH_BACKOFF_BASE: int = 2  # saniye
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -42,7 +55,7 @@ class Colors:
 # ═══════════════════════════════════════════════════════════════
 # YARDIMCI FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
-def run_command(args, show_output=True):
+def run_command(args: list[str], show_output: bool = True) -> tuple[bool, str]:
     """Komutu shell=False ile güvenli şekilde çalıştırır."""
     try:
         result = subprocess.run(
@@ -60,7 +73,6 @@ def run_command(args, show_output=True):
         err_msg = e.stderr.strip()
         if e.stdout and e.stdout.strip():
             err_msg += "\n" + e.stdout.strip()
-
         if show_output and err_msg:
             print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
         return False, err_msg
@@ -91,39 +103,41 @@ def is_forbidden_path(path: str) -> bool:
     )
 
 
-def get_file_content(path: str):
-    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
-    if is_forbidden_path(path):
-        return None
-
+def _is_readable_utf8(path: str) -> bool:
+    """Dosyanın UTF-8 olarak açılabilir olup olmadığını kontrol eder (içerik yüklenmez)."""
     try:
-        with open(path, "r", encoding="utf-8") as file:
-            return file.read()
+        with open(path, "r", encoding="utf-8") as fh:
+            fh.read(1)
+        return True
     except (UnicodeDecodeError, OSError):
-        return None
+        return False
 
 
-def collect_safe_files():
-    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
-    success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
+def collect_safe_files() -> tuple[list[str], list[str]]:
+    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır.
+
+    Not: git add -u kasıtlı olarak kullanılmaz. Bu sayede daha önce
+    yanlışlıkla commit edilmiş forbidden-path dosyaları push'a dahil olmaz.
+    """
+    success, output = run_command(
+        ["git", "ls-files", "-co", "--exclude-standard"], show_output=False
+    )
     if not success:
         return [], []
 
-    safe_files = []
-    blocked_files = []
+    safe_files: list[str] = []
+    blocked_files: list[str] = []
 
     for line in output.splitlines():
         file_path = line.strip()
-        if not file_path:
-            continue
-        if os.path.isdir(file_path):
+        if not file_path or os.path.isdir(file_path):
             continue
 
         if is_forbidden_path(file_path):
             blocked_files.append(file_path)
             continue
 
-        if get_file_content(file_path) is None:
+        if not _is_readable_utf8(file_path):
             blocked_files.append(file_path)
             continue
 
@@ -133,25 +147,10 @@ def collect_safe_files():
 
 
 # ═══════════════════════════════════════════════════════════════
-# ANA PROGRAM
+# KURULUM ADIMLARI
 # ═══════════════════════════════════════════════════════════════
-def main():
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
-
-    # 0. Merkezi yapılandırmadan token kontrolü
-    if not cfg.GITHUB_TOKEN:
-        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
-        sys.exit(1)
-
-    # 1. Git kurulu mu?
-    success, _ = run_command(["git", "--version"], show_output=False)
-    if not success:
-        print(f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}")
-        sys.exit(1)
-
-    # 1.5 Git Kimlik (Identity) Kontrolü
+def setup_git_identity() -> None:
+    """Eksikse Git kullanıcı kimliğini interaktif olarak ayarlar."""
     _, name_out = run_command(["git", "config", "user.name"], show_output=False)
     if not name_out:
         print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
@@ -161,14 +160,18 @@ def main():
         run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
 
-    # 2. Git reposu mu?
+
+def ensure_git_repo() -> None:
+    """Klasörü gerekirse Git deposuna dönüştürür."""
     if not os.path.exists(".git"):
         print(f"{Colors.WARNING}Bu klasör henüz bir Git deposu değil. Başlatılıyor...{Colors.ENDC}")
         run_command(["git", "init"], show_output=False)
         run_command(["git", "branch", "-M", "main"], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
 
-    # 3. Remote (Uzak Sunucu) kontrolü
+
+def ensure_remote() -> None:
+    """Origin remote yoksa kullanıcıdan URL alarak ekler."""
     _, remotes = run_command(["git", "remote", "-v"], show_output=False)
     if "origin" not in remotes:
         print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
@@ -186,7 +189,9 @@ def main():
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
+
+def build_commit() -> None:
+    """Güvenli dosyaları stage'e alır ve commit oluşturur."""
     print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
     safe_files, blocked_files = collect_safe_files()
@@ -194,100 +199,164 @@ def main():
     if safe_files:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
 
-    # KALICI ÇÖZÜM: Silinmiş veya değiştirilmiş dosyaları Git'e otomatik olarak güncelle
-    run_command(["git", "add", "-u"], show_output=False)
+    # NOT: git add -u burada kasıtlı olarak kullanılmıyor.
+    # Tracked forbidden dosyaların (örn. yanlışlıkla commit edilmiş .env)
+    # push'a sızmasını engellemek için silinen dosyalar manuel takip edilmez.
 
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
             print(f"  - {blocked}")
 
-    # 5. Durum Kontrolü (Değişen dosya var mı?)
     _, status = run_command(["git", "status", "--porcelain"], show_output=False)
     if not status:
         print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
         sys.exit(0)
 
-    # 6. Commit (Kaydetme) Mesajı
+    version: str = getattr(cfg, "VERSION", "?")
     default_msg = (
-        f"🚀 Sidar {cfg.VERSION} - Otomatik Dağıtım "
+        f"Sidar {version} - Otomatik Dagtim "
         f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
     )
     print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
     commit_msg = input(
         f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
-    ).strip()
-
-    if not commit_msg:
-        commit_msg = default_msg
+    ).strip() or default_msg
 
     print(f"\n{Colors.OKBLUE}💾 Değişiklikler kaydediliyor...{Colors.ENDC}")
     commit_success, commit_err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
-
     if not commit_success:
         print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
         sys.exit(1)
 
-    # 7. Branch (Dal) belirle
+
+def _try_push(branch: str) -> tuple[bool, str]:
+    """Tek push denemesi; sonucu döner."""
+    return run_command(["git", "push", "-u", "origin", branch], show_output=False)
+
+
+def _handle_conflict(branch: str) -> None:
+    """Çakışma durumunda kullanıcıya merge seçeneği sunar ve push'u yeniden dener."""
+    print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
+    confirm = input(
+        f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+    ).strip().lower()
+
+    if confirm != "y":
+        print(
+            f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
+            "Veri kaybını önlemek için push durduruldu."
+            f"{Colors.ENDC}"
+        )
+        return
+
+    pull_cmd = [
+        "git", "pull", "origin", branch,
+        "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+    ]
+    print(
+        f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
+        f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+    )
+    pull_success, pull_err = run_command(pull_cmd, show_output=False)
+
+    if not (pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower()):
+        print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Manuel kontrol gerekli:{Colors.ENDC}")
+        print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
+        print(f"Hata Çıktısı:\n{pull_err}")
+        return
+
+    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
+    retry_success, retry_err = push_with_retry(branch)
+    if not retry_success:
+        _print_push_error(retry_err)
+
+
+def _print_push_error(err_msg: str) -> None:
+    """Push hata mesajını sınıflandırarak ekrana basar."""
+    if "rule violations" in err_msg:
+        print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
+        print(
+            f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. "
+            "Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) "
+            f"veya linke tıklayıp izin verin.{Colors.ENDC}"
+        )
+    else:
+        print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
+
+
+def push_with_retry(branch: str) -> tuple[bool, str]:
+    """Push işlemini exponential backoff ile yeniden dener (CLAUDE.md gereksinimi).
+
+    Yeniden deneme aralıkları: 2s, 4s, 8s, 16s
+    """
+    for attempt in range(_PUSH_MAX_RETRIES + 1):
+        success, err_msg = _try_push(branch)
+        if success:
+            return True, ""
+
+        # Çakışma/rejected hataları ağ sorunu değil; yeniden deneme anlamsız
+        if any(kw in err_msg for kw in ("rejected", "fetch first", "non-fast-forward", "rule violations")):
+            return False, err_msg
+
+        if attempt < _PUSH_MAX_RETRIES:
+            wait = _PUSH_BACKOFF_BASE ** (attempt + 1)
+            print(
+                f"{Colors.WARNING}⚠️ Push başarısız (deneme {attempt + 1}/{_PUSH_MAX_RETRIES}). "
+                f"{wait}s sonra yeniden deneniyor...{Colors.ENDC}"
+            )
+            time.sleep(wait)
+
+    return False, err_msg  # type: ignore[return-value]  # döngü en az 1 iterasyon yapar
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANA PROGRAM
+# ═══════════════════════════════════════════════════════════════
+def main() -> None:
+    version: str = getattr(cfg, "VERSION", "2.0")
+    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+    print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{version}) {Colors.ENDC}")
+    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
+
+    # 0. Token kontrolü
+    if not cfg.GITHUB_TOKEN:
+        print(
+            f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. "
+            f"İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+    # 1. Git kurulu mu?
+    success, _ = run_command(["git", "--version"], show_output=False)
+    if not success:
+        print(
+            f"{Colors.FAIL}Sistemde Git kurulu değil. "
+            f"Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}"
+        )
+        sys.exit(1)
+
+    setup_git_identity()
+    ensure_git_repo()
+    ensure_remote()
+    build_commit()
+
+    # Branch belirle
     _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
-    current_branch = branch if branch else "main"
+    current_branch: str = branch if branch else "main"
 
-    # 8. GitHub'a Gönder (Push)
+    # Push
     print(f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}")
-
-    # Push işlemini dene
-    push_success, err_msg = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
+    push_success, err_msg = push_with_retry(current_branch)
 
     if push_success:
         print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
         print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+    elif any(kw in err_msg for kw in ("rejected", "fetch first", "non-fast-forward")):
+        _handle_conflict(current_branch)
     else:
-        # Çakışma varsa (fetch first / rejected)
-        if "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
-            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
-            confirm = input(
-                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
-            ).strip().lower()
-
-            if confirm == "y":
-                print(
-                    f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
-                )
-                pull_cmd = [
-                    "git", "pull", "origin", current_branch,
-                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
-                ]
-                pull_success, pull_err = run_command(pull_cmd, show_output=False)
-
-                if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
-                    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
-
-                    retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
-
-                    if retry_success:
-                        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
-                        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                    else:
-                        if "rule violations" in retry_err:
-                            print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
-                            print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
-                        else:
-                            print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
-                else:
-                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
-                    print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
-                    print(f"Hata Çıktısı:\n{pull_err}")
-            else:
-                print(
-                    f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
-                    "Veri kaybını önlemek için push durduruldu."
-                    f"{Colors.ENDC}"
-                )
-        else:
-            print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
+        _print_push_error(err_msg)
 
 
 if __name__ == '__main__':
