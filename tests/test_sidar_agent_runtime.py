@@ -1,5 +1,4 @@
 import asyncio
-import ctypes
 import importlib.util
 import json
 import sys
@@ -8,10 +7,6 @@ import types
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
-
-_PYFRAME_LOCALS_TO_FAST = ctypes.pythonapi.PyFrame_LocalsToFast
-_PYFRAME_LOCALS_TO_FAST.argtypes = [ctypes.py_object, ctypes.c_int]
-_PYFRAME_LOCALS_TO_FAST.restype = None
 
 
 def _load_sidar_agent_module():
@@ -833,55 +828,32 @@ def test_handle_external_trigger_records_self_heal_exception_without_failing_tri
     assert "self heal boom" in record["remediation"]["self_heal_execution"]["summary"]
 
 
-def test_handle_external_trigger_skips_self_heal_when_status_is_mutated_before_guard(monkeypatch):
+def test_handle_external_trigger_accepts_dict_trigger_with_defaults_and_skips_remediation():
     a = _make_agent_for_runtime()
     a.initialize = lambda: asyncio.sleep(0)
-    calls = {"heal": 0}
 
     async def _multi(_prompt):
-        return "ci teşhisi"
-
-    async def _heal(**_kwargs):
-        calls["heal"] += 1
+        return "varsayılan tetik işlendi"
 
     a._try_multi_agent = _multi
-    a._attempt_autonomous_self_heal = _heal
-    monkeypatch.setattr(
-        SA_MOD,
-        "build_ci_remediation_payload",
-        lambda ctx, summary: {"context": ctx, "summary": summary},
+
+    record = asyncio.run(
+        a.handle_external_trigger(
+            {
+                "trigger_id": "tr-defaults",
+                "source": "external",
+                "event_name": "event",
+                "payload": {},
+                "meta": {},
+            }
+        )
     )
 
-    def _set_frame_local(frame, name, value):
-        frame.f_locals[name] = value
-        _PYFRAME_LOCALS_TO_FAST(frame, 1)
-
-    previous = sys.gettrace()
-
-    def _tracer(frame, event, arg):
-        if frame.f_code.co_name == "handle_external_trigger" and event == "line" and frame.f_lineno == 641:
-            _set_frame_local(frame, "status", "partial")
-        return _tracer
-
-    sys.settrace(_tracer)
-    try:
-        record = asyncio.run(
-            a.handle_external_trigger(
-                ExternalTrigger(
-                    trigger_id="tr-ci-skip-heal",
-                    source="webhook:github",
-                    event_name="workflow_run",
-                    payload={"kind": "workflow_run", "workflow_name": "CI", "task_id": "ci-77"},
-                )
-            )
-        )
-    finally:
-        sys.settrace(previous)
-
-    assert record["status"] == "partial"
-    assert record["summary"] == "ci teşhisi"
-    assert record["remediation"]["summary"] == "ci teşhisi"
-    assert calls["heal"] == 0
+    assert record["status"] == "success"
+    assert record["summary"] == "varsayılan tetik işlendi"
+    assert record["trigger_id"] == "tr-defaults"
+    assert record["event_name"] == "event"
+    assert "remediation" not in record
 
 
 
