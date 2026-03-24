@@ -638,18 +638,17 @@ class SidarAgent:
                 summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
             elif ci_context:
                 remediation = build_ci_remediation_payload(ci_context, summary)
-                if status == "success":
-                    try:
-                        await self._attempt_autonomous_self_heal(
-                            ci_context=ci_context,
-                            diagnosis=summary,
-                            remediation=remediation,
-                        )
-                    except Exception as exc:
-                        remediation["self_heal_execution"] = {
-                            "status": "failed",
-                            "summary": f"Autonomous self-heal hata verdi: {exc}",
-                        }
+                try:
+                    await self._attempt_autonomous_self_heal(
+                        ci_context=ci_context,
+                        diagnosis=summary,
+                        remediation=remediation,
+                    )
+                except Exception as exc:
+                    remediation["self_heal_execution"] = {
+                        "status": "failed",
+                        "summary": f"Autonomous self-heal hata verdi: {exc}",
+                    }
         except Exception as exc:
             status = "failed"
             summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
