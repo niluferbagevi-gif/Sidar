@@ -33,6 +33,12 @@ FORBIDDEN_PATHS = [
     "models/",
 ]
 
+# FORBIDDEN_PATHS kuralından muaf tutulan şablon/örnek dosyalar
+# Örn: .env.* kalıbı .env.example'ı da bloklar; ancak bu dosya API key içermez, commit edilmesi gerekir.
+ALLOWED_EXCEPTIONS: frozenset[str] = frozenset({
+    ".env.example",
+})
+
 
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
@@ -99,8 +105,11 @@ def _normalize_path(path: str) -> str:
 
 
 def is_forbidden_path(path: str) -> bool:
-    """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
+    """Hard blacklist: .gitignore'dan bağımsız kesin engel.
+    ALLOWED_EXCEPTIONS listesindeki dosyalar her zaman izin verilir."""
     normalized = _normalize_path(path)
+    if normalized in ALLOWED_EXCEPTIONS:
+        return False
     for forbidden in FORBIDDEN_PATHS:
         rule = _normalize_path(forbidden)
 
