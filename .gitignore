@@ -67,6 +67,9 @@ web_ui/vendor/
 # Docker volume data
 prometheus_data/
 grafana_data/
+postgres_data/
+pgdata/
+redis_data/
 
 # OS
 .DS_Store
@@ -114,3 +117,6 @@ web_ui_react/coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Helm package outputs
+helm/**/*.tgz
