@@ -26,8 +26,6 @@ anyio==4.13.0
     #   watchfiles
 asgiref==3.11.1
     # via opentelemetry-instrumentation-asgi
-asyncpg==0.30.0
-    # via sidar (pyproject.toml)
 attrs==26.1.0
     # via
     #   aiohttp
@@ -289,7 +287,7 @@ oauthlib==3.3.1
     # via requests-oauthlib
 onnxruntime==1.24.4
     # via chromadb
-openai==2.30.0
+openai==1.109.1
     # via
     #   sidar (pyproject.toml)
     #   litellm
