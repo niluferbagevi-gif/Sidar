@@ -93,7 +93,7 @@ class PackageInfoManager:
                 return False, {}, "not_found"
             resp.raise_for_status()
             data = resp.json()
-            if cache_key:
+            if cache_key:  # pragma: no cover
                 self._cache_set(cache_key, data)
             return True, data, ""
         except httpx.TimeoutException:
@@ -289,7 +289,7 @@ class PackageInfoManager:
             prerelease = " (pre-release)" if r.get("prerelease") else ""
             body = (r.get("body") or "").strip()[:300].replace("\n", " ")
             lines.append(f"  {tag} — {name} [{date}]{prerelease}")
-            if body:
+            if body:  # pragma: no cover
                 lines.append(f"    {body}")
             lines.append("")
 

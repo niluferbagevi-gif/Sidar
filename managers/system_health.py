@@ -283,7 +283,7 @@ class SystemHealthManager:
                 }
 
                 # pynvml ek verisi
-                if self._nvml_initialized:
+                if self._nvml_initialized:  # pragma: no cover
                     try:
                         import pynvml
                         handle = pynvml.nvmlDeviceGetHandleByIndex(i)

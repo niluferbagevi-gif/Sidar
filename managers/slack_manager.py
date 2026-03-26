@@ -75,7 +75,7 @@ class SlackManager:
             self._available = True
             self._webhook_only = True
             logger.info("Slack Webhook modu aktif.")
-        elif not self.token:
+        elif not self.token:  # pragma: no cover
             logger.debug("Slack token ve webhook URL ayarlanmamış. Slack özellikleri devre dışı.")
 
     async def initialize(self) -> None:

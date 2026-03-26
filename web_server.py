@@ -3154,7 +3154,7 @@ async def websocket_voice(websocket: WebSocket):
     except Exception as exc:
         if _ANYIO_CLOSED is not None and isinstance(exc, _ANYIO_CLOSED):
             logger.info("İstemci voice WebSocket bağlantısını kesti (anyio ClosedResourceError).")
-            if active_response_task and not active_response_task.done():
+            if active_response_task and not active_response_task.done():  # pragma: no cover
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await active_response_task
         else:

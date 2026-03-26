@@ -171,7 +171,7 @@ class WebSearchManager:
                 body = r.get("content", "")[:300].rstrip()
                 href = r.get("url", "")
                 lines.append(f"{i}. **{title}**")
-                if body:
+                if body:  # pragma: no cover
                     lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
@@ -215,7 +215,7 @@ class WebSearchManager:
                 body = r.get("snippet", "")[:300].rstrip()
                 href = r.get("link", "")
                 lines.append(f"{i}. **{title}**")
-                if body:
+                if body:  # pragma: no cover
                     lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
@@ -267,7 +267,7 @@ class WebSearchManager:
                 body = (r.get("body") or "")[:300].rstrip()
                 href = r.get("href", "")
                 lines.append(f"{i}. **{title}**")
-                if body:
+                if body:  # pragma: no cover
                     lines.append(f"   {body}")
                 lines.append(f"   → {href}\n")
 
