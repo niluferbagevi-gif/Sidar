@@ -76,10 +76,14 @@ anthropic = [
 openai = [
   "openai~=1.54.0",
 ]
+litellm = [
+  "litellm~=1.74.0",
+]
 
 # ── Altyapı extras ────────────────────────────────────────────────────────
 postgres = [
   "asyncpg~=0.30.0",
+  "pgvector~=0.3.6",
 ]
 telemetry = [
   "opentelemetry-api~=1.29.0",
@@ -110,7 +114,7 @@ browser = [
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar[gemini,anthropic,openai,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
+  "sidar[gemini,anthropic,openai,litellm,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
 ]
 dev = [
   "pytest>=8.0.0",
