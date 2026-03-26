@@ -2804,6 +2804,136 @@ def test_websocket_chat_anyio_closed_resource_branch_cancels_active_task():
     asyncio.run(mod.websocket_chat(_WS()))
 
 
+def test_websocket_voice_anyio_closed_resource_with_completed_active_task_exits_cleanly(monkeypatch):
+    mod = _load_web_server()
+
+    class _AnyioClosed(Exception):
+        pass
+
+    mod._ANYIO_CLOSED = _AnyioClosed
+
+    class _DB:
+        async def get_user_by_token(self, token):
+            if token == "tok":
+                return types.SimpleNamespace(id="u1", username="alice")
+            return None
+
+    class _Memory:
+        def __init__(self):
+            self.db = _DB()
+
+        async def set_active_user(self, *_args, **_kwargs):
+            return None
+
+    async def _respond(_text):
+        if False:
+            yield "unused"
+
+    async def _ga():
+        return types.SimpleNamespace(memory=_Memory(), llm=object(), respond=_respond)
+
+    multimodal_mod = types.ModuleType("core.multimodal")
+
+    class _MultimodalPipeline:
+        def __init__(self, *_args, **_kwargs):
+            return None
+
+        async def transcribe_bytes(self, audio_bytes, **_kwargs):
+            return {"success": True, "text": "ok" if audio_bytes else ""}
+
+    multimodal_mod.MultimodalPipeline = _MultimodalPipeline
+
+    voice_mod = types.ModuleType("core.voice")
+
+    class _VoicePipeline:
+        enabled = False
+        vad_enabled = False
+        duplex_enabled = False
+
+        def __init__(self, _cfg):
+            self.cfg = _cfg
+
+        def create_duplex_state(self):
+            return types.SimpleNamespace(assistant_turn_id=0, output_text_buffer="", last_interrupt_reason="")
+
+        def build_voice_state_payload(self, *, event, buffered_bytes, sequence, duplex_state):
+            return {
+                "voice_state": event,
+                "buffered_bytes": buffered_bytes,
+                "sequence": sequence,
+                "assistant_turn_id": duplex_state.assistant_turn_id,
+            }
+
+    voice_mod.VoicePipeline = _VoicePipeline
+
+    task_state = {"created": 0, "awaited": 0}
+
+    class _DoneTask:
+        def done(self):
+            return True
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            task_state["awaited"] += 1
+            if False:
+                yield None
+            return None
+
+    def _create_task(coro):
+        task_state["created"] += 1
+        coro.close()
+        return _DoneTask()
+
+    class _WS:
+        def __init__(self):
+            self.client = types.SimpleNamespace(host="127.0.0.1")
+            self.headers = {}
+            self.sent = []
+            self._idx = 0
+
+        async def accept(self, subprotocol=None):
+            self.accepted = subprotocol
+
+        async def receive(self):
+            self._idx += 1
+            if self._idx == 1:
+                return {"type": "websocket.receive", "text": json.dumps({"action": "auth", "token": "tok"})}
+            if self._idx == 2:
+                return {"type": "websocket.receive", "bytes": b"voice-bytes"}
+            if self._idx == 3:
+                return {"type": "websocket.receive", "text": json.dumps({"action": "commit"})}
+            raise _AnyioClosed("socket closed")
+
+        async def send_json(self, payload):
+            self.sent.append(payload)
+
+        async def close(self, code=None, reason=None):
+            self.closed = (code, reason)
+
+    mod.get_agent = _ga
+    monkeypatch.setattr(mod.asyncio, "create_task", _create_task)
+
+    _orig_multimodal = sys.modules.get("core.multimodal")
+    _orig_voice = sys.modules.get("core.voice")
+    sys.modules["core.multimodal"] = multimodal_mod
+    sys.modules["core.voice"] = voice_mod
+    try:
+        asyncio.run(mod.websocket_voice(_WS()))
+    finally:
+        if _orig_multimodal is None:
+            del sys.modules["core.multimodal"]
+        else:
+            sys.modules["core.multimodal"] = _orig_multimodal
+        if _orig_voice is None:
+            del sys.modules["core.voice"]
+        else:
+            sys.modules["core.voice"] = _orig_voice
+
+    assert task_state == {"created": 1, "awaited": 0}
+
+
 def test_websocket_chat_header_token_auth_success_and_invalid_close():
     mod = _load_web_server()
 
