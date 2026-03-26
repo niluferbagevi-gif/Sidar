@@ -5,6 +5,7 @@ Aciklama: Mevcut projeyi kolayca GitHub'a yedekler/yukler.
 Kimlik, cakisma, silme senkronizasyonu ve otomatik birlestirme (Auto-Merge) kontrolleri icerir.
 """
 import os
+import fnmatch
 import subprocess
 import sys
 import time
@@ -20,6 +21,7 @@ cfg = Config()
 # git add -u KULLANILMAZ - bu liste tracked dosya sizintisina karsi da korur.
 FORBIDDEN_PATHS: list[str] = [
     ".env",
+    ".env.*",
     "sessions/",
     "chroma_db/",
     "__pycache__/",
@@ -31,6 +33,17 @@ FORBIDDEN_PATHS: list[str] = [
     "data/",
     "temp/",
     "tmp/",
+    "media_cache/",
+    "downloads/",
+    "web_ui_react/test-results/",
+    "web_ui_react/playwright-report/",
+    ".cursor/",
+    ".idea/",
+    "htmlcov/",
+    ".coverage",
+    "*.sqlite",
+    "*.sqlite3",
+    "*.db",
 ]
 
 # Push yeniden deneme ayarlari (CLAUDE.md: exponential backoff)
@@ -96,25 +109,48 @@ def _normalize_path(path: str) -> str:
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bagimsiz kesin engel."""
     normalized = _normalize_path(path)
-    return any(
-        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
-        for forbidden in FORBIDDEN_PATHS
-    )
+    basename = os.path.basename(normalized)
+
+    for forbidden in FORBIDDEN_PATHS:
+        normalized_forbidden = _normalize_path(forbidden)
+
+        # Klasor tabanli engelleme
+        if normalized_forbidden.endswith("/"):
+            if normalized == normalized_forbidden.rstrip("/") or normalized.startswith(normalized_forbidden):
+                return True
+            continue
+
+        # Glob tabanli engelleme (*.db, .env.* vb.)
+        if any(ch in normalized_forbidden for ch in "*?[]"):
+            if fnmatch.fnmatch(normalized, normalized_forbidden) or fnmatch.fnmatch(basename, normalized_forbidden):
+                return True
+            continue
+
+        # Dosya tam eslesmesi
+        if normalized == normalized_forbidden:
+            return True
+
+    return False
 
 
-def get_file_content(path: str) -> str | None:
-    """Dosyayi UTF-8 olarak okur; okunamazsa veya yasak yolsa None doner."""
+def is_file_safe_to_upload(path: str) -> tuple[bool, str]:
+    """Dosyanin yasakli yolda olup olmadigini ve boyutunu kontrol eder."""
     if not os.path.isabs(path) and is_forbidden_path(path):
-        return None
+        return False, "yasakli dizin/dosya"
+
     try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return fh.read()
-    except (UnicodeDecodeError, OSError):
-        return None
+        file_size_mb = os.path.getsize(path) / (1024 * 1024)
+    except OSError:
+        return False, "dosya boyutu okunamadi"
+
+    if file_size_mb > 95.0:
+        return False, f"dosya cok buyuk ({file_size_mb:.1f} MB)"
+
+    return True, ""
 
 
 def collect_safe_files() -> tuple[list[str], list[str]]:
-    """Yalnizca guvenli ve UTF-8 okunabilir dosyalari stage listesine alir.
+    """Yalnizca guvenli ve boyutu uygun dosyalari stage listesine alir.
 
     Yalnizca mevcut (untracked + tracked) dosyalari kapsar.
     Silinen dosyalar icin collect_deleted_files() kullanilir.
@@ -133,9 +169,9 @@ def collect_safe_files() -> tuple[list[str], list[str]]:
         if not file_path or os.path.isdir(file_path):
             continue
 
-        content = get_file_content(file_path)
-        if content is None:
-            blocked_files.append(file_path)
+        safe_to_upload, reason = is_file_safe_to_upload(file_path)
+        if not safe_to_upload:
+            blocked_files.append(f"{file_path} ({reason})")
             continue
 
         safe_files.append(file_path)
@@ -306,11 +342,11 @@ def _handle_conflict(branch: str) -> None:
 
     pull_cmd = [
         "git", "pull", "origin", branch,
-        "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+        "--rebase=false", "--allow-unrelated-histories", "--no-edit",
     ]
     print(
         f"{Colors.OKBLUE}Uzak sunucu ile dosyalar birlestiriliyor "
-        f"(Cakismalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+        f"(Cakisma olursa islem durdurulacak)...{Colors.ENDC}"
     )
     pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
