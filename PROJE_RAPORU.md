@@ -1219,7 +1219,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `PGVECTOR_TABLE` / `PGVECTOR_EMBEDDING_DIM` / `PGVECTOR_EMBEDDING_MODEL` | `rag_embeddings` / `384` / `all-MiniLM-L6-v2` | PostgreSQL/pgvector tarafında embedding tablo ve model ayarları |
 | `MEMORY_ENCRYPTION_KEY` | `""` | Bellek kayıtlarını Fernet ile şifrelemek için opsiyonel anahtar |
 
-> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` ve şema versiyon anahtarları ise çalışma zamanında desteklenir; ancak bunların tamamı `.env.example` içinde hazır satır olarak bulunmayabilir.
+> **RAG notu:** Güncel yapılandırmada ayrı bir `CHROMADB_PATH` değişkeni yoktur; Chroma tarafı `RAG_DIR` ve belge deposu düzeni üzerinden yönetilir. `DATABASE_URL` ve şema versiyon anahtarları çalışma zamanı ile `.env.example` şablonunda senkronize tutulur.
 
 ### 12.4 Anlamsal Önbellek, Redis ve Event Bus
 
@@ -1277,8 +1277,8 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `GPU_MEMORY_FRACTION` / `LLM_GPU_MEMORY_FRACTION` / `RAG_GPU_MEMORY_FRACTION` | `0.8` / `0.8` / `0.3` | Yerel LLM ve RAG için VRAM bütçe ayarları |
 | `GPU_MIXED_PRECISION` | `false` | FP16/mixed precision ile VRAM optimizasyonu |
 | `DOCKER_PYTHON_IMAGE` / `DOCKER_EXEC_TIMEOUT` / `DOCKER_REQUIRED` | `python:3.11-alpine` / `10` / `false` | Kod çalıştırma sandbox'ının temel Docker davranışı |
-| `DOCKER_RUNTIME` / `DOCKER_ALLOWED_RUNTIMES` / `DOCKER_MICROVM_MODE` | `""` / `,runc,runsc,kata-runtime` / `off` | Zero-trust sandbox runtime ve mikro-VM hazırlık seçenekleri (`DOCKER_MICROVM_MODE` şu anda `config.py` destekli olup `.env.example` şablonunda ayrıca listelenmemektedir) |
-| `DOCKER_MEM_LIMIT` / `DOCKER_NETWORK_DISABLED` / `DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları (`DOCKER_MEM_LIMIT` şu anda `config.py` destekli olup `.env.example` şablonunda ayrıca listelenmemektedir) |
+| `DOCKER_RUNTIME` / `DOCKER_ALLOWED_RUNTIMES` / `DOCKER_MICROVM_MODE` | `""` / `,runc,runsc,kata-runtime` / `off` | Zero-trust sandbox runtime ve mikro-VM hazırlık seçenekleri |
+| `DOCKER_MEM_LIMIT` / `DOCKER_NETWORK_DISABLED` / `DOCKER_NANO_CPUS` | `256m` / `true` / `1000000000` | Sandbox konteyner kaynak kısıtları |
 | `SANDBOX_MEMORY` / `SANDBOX_CPUS` / `SANDBOX_NETWORK` / `SANDBOX_PIDS_LIMIT` / `SANDBOX_TIMEOUT` | `256m` / `0.5` / `none` / `64` / `10` | `config.py::SANDBOX_LIMITS` sözlüğüne beslenen detaylı çalışma kotaları |
 | `WEB_HOST` / `WEB_PORT` / `WEB_GPU_PORT` | `0.0.0.0` / `7860` / `7861` | Web sunucusunun bind adresi ve portları |
 | `HF_TOKEN` / `HF_HUB_OFFLINE` | `""` / `0/false` | HuggingFace model erişimi ve offline cache davranışı |
