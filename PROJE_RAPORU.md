@@ -15,7 +15,7 @@
 
 > **Önceki Kayıt:** 3.0.30
 > **Derin Teknik Kılavuz:** API/DB/Operasyon detayları için `TEKNIK_REFERANS.md` dosyasına bakınız.
-> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile yeniden ölçülmüştür. Güncel ölçümde üretim Python hacmi **32.401** satır (**69** takipli `.py` dosyası; `tests/` hariç), test havuzu **54.210** satır (**185** `test_*.py` modülü; toplam Python ile üretim farkı üzerinden), tüm takipli Python toplamı **86.611** satır (**256** dosya) olarak doğrulanmıştır. Takipli Markdown havuzu **9.532** satır (**101** dosya), toplam ölçüm yüzeyi ise **103.281** satır (**375** dosya) seviyesindedir. Modern frontend tarafında `web_ui_react/` **26** takipli dosya / **4.393** satır, legacy `web_ui/` ise **6** takipli dosya / **4.721** satır üretmektedir. Bu revizyonda özellikle `main.py` launcher sertleştirmeleri, `tests/test_missing_edge_case_coverage_final.py` ile son edge-case coverage kapanışı, Faz D enterprise ölçekleme yüzeyleri (`web_ui_react/src/components/PluginMarketplacePanel.jsx`, `web_ui_react/src/components/AgentManagerPanel.jsx`, `web_ui_react/src/hooks/useWebSocket.js`, `tests/test_plugin_marketplace_hot_reload.py`, `tests/test_collaboration_workspace.py`, `tests/test_nightly_memory_maintenance.py`, `tests/test_system_health_dependency_checks.py`, `runbooks/chaos_live_rehearsal.md`) ve Faz E devreye alınan ajan yüzeyleri (`agent/roles/coverage_agent.py`, `agent/roles/poyraz_agent.py`, `agent/tooling.py`, `core/multimodal.py`, `managers/code_manager.py`, `core/db.py`) yeniden doğrulanmıştır.
+> **Analiz Kapsamı:** Tüm takipli kaynak dosyaları 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile yeniden ölçülmüştür. Güncel ölçümde üretim Python hacmi **32.936** satır (**70** takipli `.py` dosyası; `tests/` hariç), test havuzu **65.729** satır (**213** `test_*.py` modülü; `tests/*.py` toplamı **215** dosya), tüm takipli Python toplamı **98.665** satır (**285** dosya) olarak doğrulanmıştır. Takipli Markdown havuzu **10.148** satır (**102** dosya), toplam ölçüm yüzeyi ise **116.053** satır (**408** dosya; `.py/.js/.css/.html/.md` kapsamı) seviyesindedir. Modern frontend tarafında `web_ui_react/` **38** takipli dosya / **10.792** satır, legacy `web_ui/` ise **7** takipli dosya / **4.769** satır üretmektedir. Bu revizyonda özellikle `main.py` launcher sertleştirmeleri, `tests/test_missing_edge_case_coverage_final.py` ile son edge-case coverage kapanışı, Faz D enterprise ölçekleme yüzeyleri (`web_ui_react/src/components/PluginMarketplacePanel.jsx`, `web_ui_react/src/components/AgentManagerPanel.jsx`, `web_ui_react/src/hooks/useWebSocket.js`, `tests/test_plugin_marketplace_hot_reload.py`, `tests/test_collaboration_workspace.py`, `tests/test_nightly_memory_maintenance.py`, `tests/test_system_health_dependency_checks.py`, `runbooks/chaos_live_rehearsal.md`) ve Faz E devreye alınan ajan yüzeyleri (`agent/roles/coverage_agent.py`, `agent/roles/poyraz_agent.py`, `agent/tooling.py`, `core/multimodal.py`, `managers/code_manager.py`, `core/db.py`) yeniden doğrulanmıştır.
 
 ---
 
@@ -597,9 +597,9 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **165**
-- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **167**
-- **Toplam test satırı (`tests/*.py`):** **46.874**
+- **`test_*.py` modül sayısı:** **213**
+- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
+- **Toplam test satırı (`tests/*.py`):** **65.729**
 - **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%100 hard gate**
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
@@ -641,7 +641,7 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **165 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **167** adettir.
+- Güncel depoda `test_*.py` desenine uyan **213 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **215** adettir.
 - Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
 - Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
 
@@ -740,9 +740,9 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
+Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
 
-**Hacimsel özet (yönetici görünümü):** 2026-03-21 ölçümünde takipli depo yüzeyi **375 dosya / 103.281 satır** seviyesindedir. Python tarafında üretim kodu **32.401 satır / 69 dosya**, test havuzu **54.210 satır / 185 `test_*.py` modülü**, toplam Python hacmi ise **86.611 satır / 256 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **9.532 satır / 101 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **26** takipli dosya / **4.393** satırlık SPA hacmi ve `web_ui/` altındaki **4.721** satırlık legacy yüzey birlikte değerlendirildiğinde, Coverage/Poyraz ajanlarıyla genişleyen Faz E yüzeyi artık ölçülebilir ürün olgunluğunun parçası haline gelmiştir.
+**Hacimsel özet (yönetici görünümü):** 2026-03-26 ölçümünde takipli depo yüzeyi **408 dosya / 116.053 satır** seviyesindedir (`.py/.js/.css/.html/.md`). Python tarafında üretim kodu **32.936 satır / 70 dosya**, test havuzu **65.729 satır / 213 `test_*.py` modülü**, toplam Python hacmi ise **98.665 satır / 285 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **10.148 satır / 102 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **38** takipli dosya / **10.792** satırlık SPA hacmi ve `web_ui/` altındaki **4.769** satırlık legacy yüzey birlikte değerlendirildiğinde, Coverage/Poyraz ajanlarıyla genişleyen Faz E yüzeyi artık ölçülebilir ürün olgunluğunun parçası haline gelmiştir.
 
 - **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
@@ -847,21 +847,21 @@ Bu bölüm, 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `web_ui/sidebar.js` | 413 |
 | `web_ui/rag.js` | 132 |
 | `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **8.568** |
-| **Legacy UI (`web_ui/` toplam takipli satır)** | **4.715** |
-| **React UI (`web_ui_react/` toplam takipli satır)** | **3.853** |
+| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **15.561** |
+| **Legacy UI (`web_ui/` toplam takipli satır)** | **4.769** |
+| **React UI (`web_ui_react/` toplam takipli satır)** | **10.792** |
 | **Voice UI alt kümesi (`VoiceAssistantPanel.jsx` + `useVoiceAssistant.js`)** | **711** |
-| **Test modülü (`tests/test_*.py`)** | **165** |
-| **`tests/*.py` toplam satır** | **47.380** |
+| **Test modülü (`tests/test_*.py`)** | **213** |
+| **`tests/*.py` toplam satır** | **65.729** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 165 |
-| `tests/` | `*.py` toplam dosya | 167 |
-| `tests/` | `*.py` toplam satır | 47.380 |
-| `web_ui_react/` | toplam takipli satır | 3.853 |
+| `tests/` | `test_*.py` modül sayısı | 213 |
+| `tests/` | `*.py` toplam dosya | 215 |
+| `tests/` | `*.py` toplam satır | 65.729 |
+| `web_ui_react/` | toplam takipli satır | 10.792 |
 | `scripts/` | dosya sayısı | 7 |
 | `scripts/` | toplam satır | 613 |
 | `migrations/` | `.py` dosya sayısı (env.py + 4 versions) | 5 |
