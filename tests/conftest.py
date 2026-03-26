@@ -1,59 +1,88 @@
+"""
+Sidar Test Suite — Ortak Fixture ve Stub Tanımları
+===================================================
+Bu dosya tüm test modülleri tarafından otomatik olarak yüklenir.
+Görevleri:
+  • Opsiyonel / ağır bağımlılıklar (jwt, httpx, bs4) için hafif stub'lar sağlar.
+  • Her test sonrası sys.modules ve logging durumunu temizler.
+  • Session kapsamlı asyncio event loop'unu pyproject.toml üzerinden yönetir
+    (asyncio_default_fixture_loop_scope = "session" — özel fixture gerekmez).
+"""
+
+from __future__ import annotations
+
 import base64
+import gc
 import hashlib
 import hmac
 import importlib.util
 import json
+import logging
 import sys
 import types
 
 import pytest
 
 
-if importlib.util.find_spec("jwt") is None:
-    _jwt = types.ModuleType("jwt")
+# ────────────────────────────────────────────────────────────────────────────
+# OPSIYONEL BAĞIMLILIK STUB'LARI
+# Gerçek paket kuruluysa stub enjekte edilmez; kurulu değilse minimal bir
+# sahte modül sys.modules içine yerleştirilir — böylece import hataları
+# test süitini çökertemez.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _inject_jwt_stub() -> None:
+    """PyJWT kurulu değilse HS256 desteğiyle minimal stub ekle."""
+    if importlib.util.find_spec("jwt") is not None:
+        return
+
+    mod = types.ModuleType("jwt")
 
     class PyJWTError(Exception):
         pass
 
-    def _b64encode(data: bytes) -> str:
+    def _b64enc(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
-    def _b64decode(data: str) -> bytes:
-        padding = "=" * (-len(data) % 4)
-        return base64.urlsafe_b64decode((data + padding).encode("ascii"))
+    def _b64dec(data: str) -> bytes:
+        pad = "=" * (-len(data) % 4)
+        return base64.urlsafe_b64decode((data + pad).encode("ascii"))
 
-    def encode(payload, secret, algorithm="HS256"):
+    def encode(payload: dict, secret: str, algorithm: str = "HS256") -> str:
         if algorithm != "HS256":
             raise PyJWTError("Unsupported algorithm")
-        header = {"alg": algorithm, "typ": "JWT"}
-        header_part = _b64encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-        payload_part = _b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-        signing_input = f"{header_part}.{payload_part}".encode("ascii")
-        signature = hmac.new(str(secret).encode("utf-8"), signing_input, hashlib.sha256).digest()
-        return f"{header_part}.{payload_part}.{_b64encode(signature)}"
+        header = _b64enc(json.dumps({"alg": algorithm, "typ": "JWT"}, separators=(",", ":")).encode())
+        body = _b64enc(json.dumps(payload, separators=(",", ":")).encode())
+        sig_input = f"{header}.{body}".encode("ascii")
+        sig = hmac.new(str(secret).encode(), sig_input, hashlib.sha256).digest()
+        return f"{header}.{body}.{_b64enc(sig)}"
 
-    def decode(token, secret, algorithms):
+    def decode(token: str, secret: str, algorithms: list[str]) -> dict:
         if "HS256" not in algorithms:
             raise PyJWTError("Unsupported algorithm")
         try:
-            header_part, payload_part, sig_part = token.split(".", 2)
+            header, body, sig = token.split(".", 2)
         except ValueError as exc:
             raise PyJWTError("Malformed token") from exc
-        signing_input = f"{header_part}.{payload_part}".encode("ascii")
-        expected = hmac.new(str(secret).encode("utf-8"), signing_input, hashlib.sha256).digest()
-        if not hmac.compare_digest(_b64encode(expected), sig_part):
+        sig_input = f"{header}.{body}".encode("ascii")
+        expected = hmac.new(str(secret).encode(), sig_input, hashlib.sha256).digest()
+        if not hmac.compare_digest(_b64enc(expected), sig):
             raise PyJWTError("Signature verification failed")
-        return json.loads(_b64decode(payload_part).decode("utf-8"))
+        return json.loads(_b64dec(body).decode())
 
-    _jwt.PyJWTError = PyJWTError
-    _jwt.encode = encode
-    _jwt.decode = decode
-    sys.modules["jwt"] = _jwt
+    mod.PyJWTError = PyJWTError  # type: ignore[attr-defined]
+    mod.encode = encode           # type: ignore[attr-defined]
+    mod.decode = decode           # type: ignore[attr-defined]
+    sys.modules["jwt"] = mod
 
 
+def _inject_httpx_stub() -> None:
+    """httpx kurulu değilse minimal async-uyumlu stub ekle."""
+    if importlib.util.find_spec("httpx") is not None:
+        return
 
-if importlib.util.find_spec("httpx") is None:
-    _httpx = types.ModuleType("httpx")
+    mod = types.ModuleType("httpx")
 
     class HTTPError(Exception):
         pass
@@ -65,84 +94,102 @@ if importlib.util.find_spec("httpx") is None:
         pass
 
     class Response:
-        def __init__(self, status_code=200, text="", json_data=None):
+        def __init__(self, status_code: int = 200, text: str = "", json_data: dict | None = None):
             self.status_code = status_code
             self.text = text
-            self._json_data = json_data if json_data is not None else {}
+            self._json = json_data or {}
 
-        def json(self):
-            return self._json_data
+        def json(self) -> dict:
+            return self._json
 
-        def raise_for_status(self):
+        def raise_for_status(self) -> None:
             if self.status_code >= 400:
                 raise HTTPError(self.text or f"HTTP {self.status_code}")
 
     class AsyncClient:
-        async def __aenter__(self):
+        async def __aenter__(self) -> "AsyncClient":
             return self
 
-        async def __aexit__(self, exc_type, exc, tb):
+        async def __aexit__(self, *_: object) -> bool:
             return False
 
-        async def get(self, *_args, **_kwargs):
+        async def get(self, *_: object, **__: object) -> Response:
             return Response()
 
-        async def post(self, *_args, **_kwargs):
+        async def post(self, *_: object, **__: object) -> Response:
             return Response()
 
-        async def put(self, *_args, **_kwargs):
+        async def put(self, *_: object, **__: object) -> Response:
             return Response()
 
-        async def delete(self, *_args, **_kwargs):
+        async def delete(self, *_: object, **__: object) -> Response:
             return Response()
 
-    _httpx.HTTPError = HTTPError
-    _httpx.RequestError = RequestError
-    _httpx.TimeoutException = TimeoutException
-    _httpx.Response = Response
-    _httpx.AsyncClient = AsyncClient
-    sys.modules["httpx"] = _httpx
+    mod.HTTPError = HTTPError             # type: ignore[attr-defined]
+    mod.RequestError = RequestError       # type: ignore[attr-defined]
+    mod.TimeoutException = TimeoutException  # type: ignore[attr-defined]
+    mod.Response = Response               # type: ignore[attr-defined]
+    mod.AsyncClient = AsyncClient         # type: ignore[attr-defined]
+    sys.modules["httpx"] = mod
 
 
-if importlib.util.find_spec("bs4") is None:
-    _bs4 = types.ModuleType("bs4")
+def _inject_bs4_stub() -> None:
+    """BeautifulSoup4 kurulu değilse metin döndüren minimal stub ekle."""
+    if importlib.util.find_spec("bs4") is not None:
+        return
+
+    mod = types.ModuleType("bs4")
 
     class BeautifulSoup:
-        def __init__(self, markup="", parser=None):
+        def __init__(self, markup: str = "", parser: str | None = None):
             self.markup = markup
-            self.parser = parser
 
-        def get_text(self, *args, **kwargs):
+        def get_text(self, *_: object, **__: object) -> str:
             return str(self.markup)
 
-        def find_all(self, *args, **kwargs):
+        def find_all(self, *_: object, **__: object) -> list:
             return []
 
-    _bs4.BeautifulSoup = BeautifulSoup
-    sys.modules["bs4"] = _bs4
+    mod.BeautifulSoup = BeautifulSoup  # type: ignore[attr-defined]
+    sys.modules["bs4"] = mod
 
-# pytest-asyncio >= 0.21+ ile session kapsamlı event loop pytest.ini üzerinden
-# `asyncio_default_fixture_loop_scope = session` ayarıyla sağlanır.
-# Özel event_loop fixture override'ı artık gerekli değildir ve deprecated'dır.
+
+# Stub'ları uygula (modül yüklendiği anda, import sırasına göre)
+_inject_jwt_stub()
+_inject_httpx_stub()
+_inject_bs4_stub()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ORTAK FIXTURE'LAR
+# ────────────────────────────────────────────────────────────────────────────
+
+# sys.modules içinde izlenecek kritik modüller; her test sonrası orijinal
+# hâline döndürülür — testlerin birbirini kirletmesini önler.
+_TRACKED_MODULES = (
+    "config",
+    "managers",
+    "managers.system_health",
+    "managers.security",
+    "core",
+    "core.llm_client",
+    "core.llm_metrics",
+    "core.memory",
+    "core.rag",
+    "httpx",
+    "fastapi",
+    "starlette",
+)
+
 
 @pytest.fixture(autouse=True)
-def _restore_critical_modules_between_tests():
-    """Bazı testlerin sys.modules üzerinde bıraktığı stub modülleri test sonunda geri al."""
-    module_names = (
-        "config",
-        "managers",
-        "managers.system_health",
-        "core",
-        "core.llm_metrics",
-        "httpx",
-        "fastapi",
-        "starlette",
-    )
-    saved = {name: sys.modules.get(name) for name in module_names}
+def _restore_modules():
+    """Her test öncesi modül anlık görüntüsünü al; sonrasında geri yükle."""
+    snapshot = {name: sys.modules.get(name) for name in _TRACKED_MODULES}
     try:
         yield
     finally:
-        for name, module in saved.items():
+        for name, module in snapshot.items():
             if module is None:
                 sys.modules.pop(name, None)
             else:
@@ -150,26 +197,33 @@ def _restore_critical_modules_between_tests():
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_logging_handlers():
-    """Teste sonra logging handler'larını kapat (ResourceWarning önlemek için)."""
+def _cleanup_logging():
+    """Her test sonrası logging handler'larını kapat → ResourceWarning önle."""
     yield
-    import logging
-    import gc
-    # Tüm handler'ları kapat
     for handler in logging.root.handlers[:]:
-        try:
+        with suppress_exception():
             handler.close()
             logging.root.removeHandler(handler)
-        except Exception:
-            pass
-    # Tüm logger'ları temizle
-    for logger_name in list(logging.Logger.manager.loggerDict):
-        logger = logging.getLogger(logger_name)
+    for name in list(logging.Logger.manager.loggerDict):
+        logger = logging.getLogger(name)
         for handler in logger.handlers[:]:
-            try:
+            with suppress_exception():
                 handler.close()
                 logger.removeHandler(handler)
-            except Exception:
-                pass
-    # Garbage collection'ı force et
     gc.collect()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# YARDIMCI
+# ────────────────────────────────────────────────────────────────────────────
+
+from contextlib import contextmanager  # noqa: E402
+
+
+@contextmanager
+def suppress_exception():
+    """Sessizce tüm exception'ları yut (cleanup bloklarında kullanım için)."""
+    try:
+        yield
+    except Exception:
+        pass
