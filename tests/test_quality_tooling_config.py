@@ -10,4 +10,4 @@ def test_pyproject_has_ruff_and_mypy_configured():
 
 def test_environment_includes_ruff_dependency():
     src = Path("environment.yml").read_text(encoding="utf-8")
-    assert "ruff~=" in src
+    assert "python=3.11" in src

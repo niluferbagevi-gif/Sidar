@@ -272,17 +272,14 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ```bash
 cd sidar_project
 conda env create -f environment.yml
-conda activate sidar-ai
+conda activate sidar
 ```
 
 ### pip ile (Conda dışı)
 
 ```bash
-# Runtime + opsiyonel gruplar (pyproject.toml extras)
-pip install -e .[rag,postgres,telemetry,browser]
-
-# Geliştirme + test bağımlılıkları
-pip install -r requirements-dev.txt
+# Runtime + geliştirme bağımlılıkları (pyproject.toml tek kaynak)
+uv pip install -e ".[dev]"
 ```
 
 ### Opsiyonel: Masaüstü GUI Launcher
@@ -302,7 +299,7 @@ Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui
 v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
 
 ```bash
-pip install -r requirements-dev.txt
+uv pip install -e ".[dev]"
 alembic upgrade head
 ```
 

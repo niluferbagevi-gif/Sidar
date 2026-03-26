@@ -2,7 +2,7 @@
 Sidar Project - Temel Test ve Entegrasyon Suiti
 Çalıştırmak için kök dizinde: pytest tests/
 
-pytest-asyncio modu: pyproject.toml / pytest.ini'da
+pytest-asyncio modu: pyproject.toml'da
   asyncio_mode = "auto"  ya da her async test @pytest.mark.asyncio ile işaretlenmiştir.
 """
 
