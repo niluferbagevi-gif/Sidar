@@ -275,6 +275,32 @@ conda env create -f environment.yml
 conda activate sidar-ai
 ```
 
+### Windows 11 + WSL2 (ASUS Zenbook Pro Duo 15 OLED UX582ZW) Notları
+
+WSL/Ubuntu/Conda akışınız doğru. Bu profil için pratikte dikkat edilmesi gereken ek noktalar:
+
+1. **WSL ve NVIDIA sürücüsü güncel olmalı**  
+   Windows tarafında NVIDIA sürücüsünün güncel olması ve WSL tarafında CUDA köprüsünün görünmesi gerekir.
+2. **GPU doğrulaması**  
+   WSL içinde `nvidia-smi` komutu çalışmalı. Çalışmıyorsa RAG/GPU hızlandırma paketleri CPU moduna düşer.
+3. **PyTorch CUDA wheel kanalı**  
+   `rag` extra kurulmadan önce CUDA wheel index'i tanımlanmalıdır (aşağıdaki komut).
+4. **Playwright sistem bağımlılıkları**  
+   Browser otomasyonu kullanıyorsanız Linux bağımlılıklarını ayrıca kurun (aşağıdaki komut).
+
+```bash
+# (WSL içinde) GPU görünürlüğü
+nvidia-smi
+
+# CUDA wheel index (opsiyonel ama GPU için önerilir)
+export PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
+
+# Browser otomasyonu kullanacaksanız:
+python -m playwright install --with-deps chromium
+```
+
+Ayrıntılı adımlar için: `runbooks/wsl-win11-ux582zw-checklist.md`.
+
 ### pip ile (Conda dışı)
 
 ```bash
