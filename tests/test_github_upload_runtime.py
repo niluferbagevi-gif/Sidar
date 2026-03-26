@@ -706,3 +706,24 @@ def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
     GU.main()
+
+
+def test_collect_deleted_files_edge_cases(monkeypatch):
+    GU = _load_module()
+
+    # failure path -> returns empty list
+    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
+    assert GU.collect_deleted_files() == []
+
+    # empty lines and forbidden paths are skipped
+    monkeypatch.setattr(
+        GU, "run_command",
+        lambda *a, **k: (True, "\nsessions/secret.txt\nlegit.txt\n")
+    )
+    assert GU.collect_deleted_files() == ["legit.txt"]
+
+
+def test_collect_tracked_ignored_files_failure(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
+    assert GU.collect_tracked_ignored_files() == []
