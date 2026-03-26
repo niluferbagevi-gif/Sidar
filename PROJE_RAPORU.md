@@ -7,10 +7,10 @@
 > ---
 
 > **Rapor Tarihi:** 2026-03-21
-> **Son Güncelleme:** 2026-03-21 (v5.2.0-alpha belge senkronizasyonu tamamlandı: Faz E kapsamında `agent/roles/coverage_agent.py` ve `agent/roles/poyraz_agent.py` resmi raporlara işlendi; Coverage Agent'in `CodeManager` üstünden `pytest` çalıştırıp eksik test ürettiği, Poyraz'ın `SocialMediaManager` + `WebSearchManager` + `MultimodalPipeline` entegrasyonlarıyla pazarlama/operasyon akışlarını devreye aldığı ve `core/db.py` içindeki Faz E tablolarının aktif şema yüzeyi olduğu rapor-baseline içinde netleştirildi. Ayrıntılı sürüm farkları için `CHANGELOG.md` referans alınmalıdır.)
+> **Son Güncelleme:** 2026-03-26 (v5.1.0 belge senkronizasyonu: Faz C, D ve E kapsamındaki kod tabanı güncellemeleri rapor metniyle hizalandı.)
 > **Önceki Güncelleme:** 2026-03-19 (v3.2.0 — Autonomous LLMOps özellik turu tamamlandı: Active Learning/LoRA (`core/active_learning.py`), Vision Pipeline (`core/vision.py`), Cost-Aware routing (`core/router.py`) ve Slack/Jira/Teams tabanlı dış sistem orkestrasyonu birlikte değerlendirilerek Faz 4 teslimatının ürünleştiği teyit edildi.)
-> **Proje Sürümü:** v5.0.0-alpha
-> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) sürüm `5.0.0a0` olarak işaretlenmiş olup, `config.py` çalışma zamanı sürümü `5.0.0-alpha` ile uyumlu ilerlemektedir.
+> **Proje Sürümü:** v5.1.0
+> **Sürüm Notu:** Paket yöneticisi düzeyinde (`pyproject.toml`) ve çalışma zamanı (`config.py`) sürümü `5.1.0` olarak hizalanmıştır.
 > **İleri Yol Haritası / Faz Durumu:** Faz A, Faz B, Faz D ve Faz E ajan teslimatları belge-bazında senkronize edildi; aktif geliştirme odağı Faz E'nin YouTube/dış video ingest genişlemesi ve v5.x derinleştirme eksenidir.
 
 > **Önceki Kayıt:** 3.0.30
