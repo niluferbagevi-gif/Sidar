@@ -3,8 +3,8 @@ requires = ["setuptools>=75.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sidar-project"
-version = "5.1.0"
+name = "sidar"
+version = "5.2.0"
 description = "Sidar AI: Multi-Agent Autonomous System with Swarm Capability"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -110,7 +110,7 @@ browser = [
 
 # ── Kolaylık profilleri ───────────────────────────────────────────────────
 all = [
-  "sidar-project[gemini,anthropic,openai,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
+  "sidar[gemini,anthropic,openai,postgres,telemetry,rag,gpu,sandbox,gui,browser]",
 ]
 dev = [
   "pytest>=8.0.0",
@@ -122,6 +122,33 @@ dev = [
   "ruff~=0.8.1",
   "mypy~=1.11.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+markers = [
+  "asyncio: run coroutine test",
+  "slow: yavaş entegrasyon testleri (CI'da -m \"not slow\" ile atlanabilir)",
+  "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
+  "benchmark: performans baseline testleri",
+  "integration: harici sistem entegrasyonları",
+]
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:setuptools",
+  "ignore::FutureWarning:torch",
+  "ignore::UserWarning:torch",
+  "ignore::ResourceWarning",
+]
+log_cli = false
+log_cli_level = "INFO"
+log_file = "tests/pytest.log"
+log_file_level = "DEBUG"
+addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-report=xml"
 
 [tool.setuptools.packages.find]
 where = ["."]

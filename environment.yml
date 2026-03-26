@@ -1,27 +1,6 @@
-name: sidar-ai
+name: sidar
 channels:
-  - conda-forge
   - defaults
+  - conda-forge
 dependencies:
-  - python=3.11.15
-  - pip=24.2
-  - git=2.45
-  - setuptools=75.1
-  - wheel=0.44
-  # ─── PyTorch / WSL2 Notu ───────────────────────────────────────────────────
-  # Conda'nın pytorch-cuda paketi, WSL2'nin Windows sürücüsünden gelen
-  # libcuda.so.1 stub'ı ile çakışabildiği için PyTorch bağımlılıkları
-  # pyproject.toml'daki extras üzerinden PIP tarafından kurulmalıdır.
-  #
-  # GPU için kurulum öncesi (isteğe bağlı):
-  #   PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
-  #
-  # Not: uv package manager (opsiyonel, hızlı bağımlılık çözme için)
-  # pip kurulum süresini kısaltmak istiyorsanız: uv pip install ...
-  - pip:
-      - uv>=0.5.0
-      - pytest-benchmark>=4.0.0
-      - ruff~=0.8.1
-      - -e .[all,dev]
-      # Python 3.11.x uyumluluğu: RAG bağımlılık pinleri pyproject.toml extras içinde yönetilir.
-      # Beklenen pinler: chromadb~=0.5.5, torch~=2.4.1, torchvision~=0.19.1
+  - python=3.11

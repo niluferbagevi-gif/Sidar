@@ -1,3 +1,0 @@
-# Geliştirme ortamı: pyproject.toml tek bağımlılık kaynağıdır.
-# Runtime + opsiyonel + dev/test araçları editable install ile gelir.
--e .[all,dev]

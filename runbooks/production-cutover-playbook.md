@@ -38,7 +38,7 @@ Bu rehber, SİDAR'ın üretim ortamında PostgreSQL'e güvenli geçişi için mi
 
 1. Bağımlılıkları kurun:
    ```bash
-   pip install -r requirements-dev.txt
+   uv pip install -e ".[dev]"
    ```
 2. Mevcut bağlantıyı override ederek migration çalıştırın:
    ```bash

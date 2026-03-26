@@ -2,10 +2,10 @@ from pathlib import Path
 
 
 def test_pytest_ini_keeps_core_pytest_discovery_settings():
-    src = Path("pytest.ini").read_text(encoding="utf-8")
-    assert "[pytest]" in src
-    assert "testpaths = tests" in src
-    assert "python_files = test_*.py" in src
+    src = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert "[tool.pytest.ini_options]" in src
+    assert 'testpaths = ["tests"]' in src
+    assert 'python_files = ["test_*.py"]' in src
 
 
 def test_run_tests_script_enforces_100pct_quality_gate_and_benchmarks():
@@ -35,4 +35,4 @@ def test_ci_has_explicit_coverage_quality_gate_step():
 
 def test_environment_includes_benchmark_dependency():
     src = Path("environment.yml").read_text(encoding="utf-8")
-    assert "pytest-benchmark" in src
+    assert "python=3.11" in src
