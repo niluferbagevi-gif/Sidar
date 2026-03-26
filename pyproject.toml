@@ -57,13 +57,12 @@ dependencies = [
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
-  "openai>=1.68.2",
+  "openai>=1.68.2,<2.0.0",
   "anthropic~=0.40.0",
   "google-generativeai~=0.8.3",
   "litellm~=1.74.0",
   "chromadb~=0.5.5",
   "sentence-transformers~=3.0.1",
-  "asyncpg~=0.30.0",
   "pgvector~=0.3.6",
   "pyttsx3~=2.98",
   "SpeechRecognition~=3.10.4",
@@ -87,7 +86,7 @@ anthropic = [
   "anthropic~=0.40.0",
 ]
 openai = [
-  "openai>=1.68.2",
+  "openai>=1.68.2,<2.0.0",
 ]
 litellm = [
   "litellm~=1.74.0",
@@ -96,19 +95,17 @@ litellm = [
 # ── Altyapı extras ────────────────────────────────────────────────────────
 postgres = [
   "asyncpg~=0.30.0",
-  "pgvector~=0.3.6",
 ]
 telemetry = [
-  "opentelemetry-api~=1.29.0",
-  "opentelemetry-sdk~=1.29.0",
-  "opentelemetry-instrumentation-fastapi~=0.50b0",
-  "opentelemetry-instrumentation-httpx~=0.50b0",
-  "opentelemetry-exporter-otlp~=1.29.0",
+  "opentelemetry-api>=1.29.0",
+  "opentelemetry-sdk>=1.29.0",
+  "opentelemetry-instrumentation-fastapi>=0.50b0",
+  "opentelemetry-instrumentation-httpx>=0.50b0",
+  "opentelemetry-exporter-otlp>=1.29.0",
 ]
 rag = [
   "chromadb~=0.5.5",
-  "torch~=2.4.1",
-  "torchvision~=0.19.1",
+  "torch>=2.4.1",
   "sentence-transformers~=3.0.1",
 ]
 gpu = [

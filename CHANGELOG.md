@@ -5,6 +5,20 @@
 
 ---
 
+## [v5.2.0] - 2026-03-26
+
+### Düzeltmeler (Fixed)
+- **openai sürüm sınırı:** `openai>=1.68.2` → `openai>=1.68.2,<2.0.0` — üst sınır eksikliği nedeniyle OpenAI SDK v2 kuruluyordu; v2 breaking changes içerdiğinden kırılmaya neden oluyordu.
+- **asyncpg çift tanımlama:** `asyncpg` hem `dependencies` hem `postgres` extras içinde tanımlıydı; core `dependencies`'ten kaldırıldı — sadece `postgres` extras'ta kalması gerekir.
+- **pgvector çift tanımlama:** `pgvector` hem `dependencies` hem `postgres` extras'ta bulunuyordu; `postgres` extras'tan kaldırıldı.
+- **rag extras torch uyumsuzluğu:** `torch~=2.4.1` sabit pin'i kaldırıldı (`torch>=2.4.1` olarak güncellendi); `torchvision~=0.19.1` çıkarıldı — `openai-whisper` ve `sentence-transformers` zaten torch 2.11.x çekiyor, 0.19.1 ile uyumsuzluk yaratıyordu.
+- **telemetry extras eski versiyon pinleri:** `opentelemetry-*~=1.29.0` ve `~=0.50b0` pinleri `>=` kısıtlamalarına dönüştürüldü — chromadb'nin çektiği 1.40.0 / 0.61b0 ile çakışma önlendi.
+
+### Teknik Borç Kapanışı
+- `requirements.txt` ve `requirements-dev.txt` güncel `pyproject.toml` kısıtlamalarına göre yeniden üretildi (`openai==1.109.1`, v1.x garantili).
+
+---
+
 ## [v5.2.0-alpha] - 2026-03-21
 Faz E otonom iş ekosistemi ajanları kod tabanına ve üst seviye raporlara resmi olarak işlendi.
 
