@@ -33,9 +33,16 @@ import pytest
 
 
 def _inject_jwt_stub() -> None:
-    """PyJWT kurulu değilse HS256 desteğiyle minimal stub ekle."""
+    """
+    PyJWT stub'ı enjekte eder.
+    Kurulu değilse veya import hatası veriyorsa (kırık _cffi_backend vb.) stub aktive edilir.
+    """
     if importlib.util.find_spec("jwt") is not None:
-        return
+        try:
+            import jwt as _jwt_test  # noqa: F401 - gerçekten çalışıyor mu?
+            return  # Çalışıyorsa dokunma
+        except BaseException:
+            pass  # Kırık (pyo3 panic dahil) → stub enjekte et
 
     mod = types.ModuleType("jwt")
 
@@ -176,6 +183,15 @@ _TRACKED_MODULES = (
     "core.llm_metrics",
     "core.memory",
     "core.rag",
+    "core.router",
+    "core.dlp",
+    "core.agent_metrics",
+    "core.cache_metrics",
+    "agent",
+    "agent.definitions",
+    "agent.core",
+    "agent.core.memory_hub",
+    "agent.core.registry",
     "httpx",
     "fastapi",
     "starlette",
