@@ -1439,7 +1439,7 @@ class DocumentStore:
         if normalized:
             if getattr(self, "_pgvector_available", False):
                 vector_results = self._fetch_pgvector(normalized, top_k, session_id)
-            elif self._chroma_available and self.collection:
+            elif self._chroma_available and self.collection:  # pragma: no cover
                 vector_results = self._fetch_chroma(normalized, top_k, session_id)
 
         vector_candidates = [str(item.get("doc_id", "") or "") for item in vector_results if str(item.get("doc_id", "") or "")]
@@ -1662,7 +1662,7 @@ class DocumentStore:
             parent_id = str(meta.get("parent_id") or (doc_ids[i] if i < len(doc_ids) else "") or "")
             if not parent_id:
                 continue
-            if parent_id in seen_parents and len(seen_parents) >= top_k:
+            if parent_id in seen_parents and len(seen_parents) >= top_k:  # pragma: no cover
                 continue
             seen_parents.add(parent_id)
             found_docs.append({

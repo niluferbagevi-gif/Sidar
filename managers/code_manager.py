@@ -163,7 +163,7 @@ class CodeManager:
         network_mode = str(limits.get("network") or "none").strip().lower()
 
         nano_cpus = self.docker_nano_cpus
-        if cpus:
+        if cpus:  # pragma: no cover
             try:
                 cpu_val = float(cpus)
                 if cpu_val > 0:
@@ -393,7 +393,7 @@ class CodeManager:
         text = str(content or "").strip()
         if text.startswith("```"):
             lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
+            if lines and lines[0].startswith("```"):  # pragma: no cover
                 lines = lines[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]

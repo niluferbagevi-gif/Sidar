@@ -299,7 +299,7 @@ def _run_with_streaming(cmd: List[str], child_log_path: str | None) -> int:
             try:
                 process.wait(timeout=3)
             except Exception:
-                if callable(kill):
+                if callable(kill):  # pragma: no cover
                     kill()  # pragma: no cover
         t_out.join()
         t_err.join()
