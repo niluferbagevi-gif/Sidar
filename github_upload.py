@@ -73,7 +73,7 @@ def run_command(args: list[str], show_output: bool = True) -> tuple[bool, str]:
         if e.stdout and e.stdout.strip():
             err_msg += "\n" + e.stdout.strip()
         if show_output and err_msg:
-            print(f"{Colors.WARNING}Git ciktisi: {err_msg}{Colors.ENDC}")
+            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
         return False, err_msg
 
 
@@ -102,14 +102,15 @@ def is_forbidden_path(path: str) -> bool:
     )
 
 
-def _is_readable_utf8(path: str) -> bool:
-    """Dosyanin UTF-8 olarak acilaip acilmadigini kontrol eder (icerik yuklenmez)."""
+def get_file_content(path: str) -> str | None:
+    """Dosyayi UTF-8 olarak okur; okunamazsa veya yasak yolsa None doner."""
+    if not os.path.isabs(path) and is_forbidden_path(path):
+        return None
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            fh.read(1)
-        return True
+            return fh.read()
     except (UnicodeDecodeError, OSError):
-        return False
+        return None
 
 
 def collect_safe_files() -> tuple[list[str], list[str]]:
@@ -132,12 +133,9 @@ def collect_safe_files() -> tuple[list[str], list[str]]:
         if not file_path or os.path.isdir(file_path):
             continue
 
-        if is_forbidden_path(file_path):
+        content = get_file_content(file_path)
+        if content is None:
             blocked_files.append(file_path)
-            continue
-
-        if not _is_readable_utf8(file_path):
-            blocked_files.append(file_path)  # binary veya bozuk dosya
             continue
 
         safe_files.append(file_path)
@@ -145,23 +143,20 @@ def collect_safe_files() -> tuple[list[str], list[str]]:
     return safe_files, blocked_files
 
 
-def collect_deleted_files() -> tuple[list[str], list[str]]:
+def collect_deleted_files() -> list[str]:
     """Local'de silinmis ama Git'te hala tracked olan dosyalari bulur.
 
     Bu dosyalar GitHub'a push edildiginde uzak repoda da silinir;
     boylece local <-> GitHub senkronizasyonu saglanir.
 
     Returns:
-        (to_delete, blocked_deletes):
-            to_delete       -- GitHub'dan da silinecek dosyalar
-            blocked_deletes -- Forbidden path kurali nedeniyle atlanacaklar
+        to_delete -- GitHub'dan da silinecek dosyalar
     """
     success, output = run_command(["git", "ls-files", "-d"], show_output=False)
     if not success:
-        return [], []
+        return []
 
     to_delete: list[str] = []
-    blocked_deletes: list[str] = []
 
     for line in output.splitlines():
         file_path = line.strip()
@@ -171,23 +166,21 @@ def collect_deleted_files() -> tuple[list[str], list[str]]:
         # Forbidden path'ler silme islemine de dahil edilmez;
         # bu dosyalar zaten GitHub'da olmak zorunda degildi.
         if is_forbidden_path(file_path):
-            blocked_deletes.append(file_path)
             continue
 
         to_delete.append(file_path)
 
-    return to_delete, blocked_deletes
+    return to_delete
 
 
-def _confirm_deletions(files: list[str]) -> bool:
-    """Kullaniciya silinecek dosyalari gosterir ve onay ister."""
-    print(f"\n{Colors.WARNING}*** Asagidaki dosyalar LOCAL'den silinmis -- GitHub'dan da kaldirilacak: ***{Colors.ENDC}")
-    for f in files:
-        print(f"  {Colors.FAIL}[SIL]  {f}{Colors.ENDC}")
-    answer = input(
-        f"\n{Colors.OKBLUE}GitHub'dan da silinsin mi? (y/n) [Varsayilan: y]: {Colors.ENDC}"
-    ).strip().lower()
-    return answer in ("", "y", "yes", "evet", "e")
+def collect_tracked_ignored_files() -> list[str]:
+    """Git tarafindan tracked ama .gitignore'da olan dosyalari listeler."""
+    success, output = run_command(
+        ["git", "ls-files", "-ci", "--exclude-standard"], show_output=False
+    )
+    if not success:
+        return []
+    return [line.strip() for line in output.splitlines() if line.strip()]
 
 
 # ================================================================
@@ -245,23 +238,18 @@ def build_commit() -> None:
         run_command(["git", "add", "--"] + safe_files, show_output=False)
 
     # 2. Local'de silinmis dosyalari tespit et ve GitHub'dan da kaldir
-    deleted_files, blocked_deletes = collect_deleted_files()
+    deleted_files = collect_deleted_files()
+    for f in deleted_files:
+        run_command(["git", "add", "-u", "--", f], show_output=False)
     if deleted_files:
-        if _confirm_deletions(deleted_files):
-            run_command(["git", "rm", "--cached", "--"] + deleted_files, show_output=False)
-            print(
-                f"{Colors.OKGREEN}{len(deleted_files)} dosya GitHub'dan kaldirilmak uzere isaretlendi.{Colors.ENDC}"
-            )
-        else:
-            print(
-                f"{Colors.WARNING}{len(deleted_files)} dosya GitHub'da korunacak (silme atlandi).{Colors.ENDC}"
-            )
+        print(
+            f"{Colors.OKGREEN}{len(deleted_files)} dosya GitHub'dan kaldirilmak uzere isaretlendi.{Colors.ENDC}"
+        )
 
     # 3. Engellenen yollari raporla
-    all_blocked = blocked_files + blocked_deletes
-    if all_blocked:
+    if blocked_files:
         print(f"{Colors.WARNING}Guvenlik/kararlilik nedeniyle atlanan dosyalar:{Colors.ENDC}")
-        for blocked in all_blocked:
+        for blocked in blocked_files:
             print(f"  - {blocked}")
 
     # 4. Degisiklik var mi?
@@ -296,9 +284,9 @@ def build_commit() -> None:
 # ================================================================
 # PUSH ISLEMLERI
 # ================================================================
-def _try_push(branch: str) -> tuple[bool, str]:
+def _try_push(current_branch: str) -> tuple[bool, str]:
     """Tek push denemesi; sonucu doner."""
-    return run_command(["git", "push", "-u", "origin", branch], show_output=False)
+    return run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
 
 
 def _handle_conflict(branch: str) -> None:
@@ -429,5 +417,5 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.FAIL}Islem kullanici tarafindan iptal edildi.{Colors.ENDC}")
+        print(f"\n\n{Colors.FAIL}İşlem kullanıcı tarafından iptal edildi.{Colors.ENDC}")
         sys.exit(0)
