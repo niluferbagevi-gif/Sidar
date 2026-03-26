@@ -138,6 +138,9 @@ def is_file_safe_to_upload(path: str) -> tuple[bool, str]:
     if not os.path.isabs(path) and is_forbidden_path(path):
         return False, "yasakli dizin/dosya"
 
+    if os.path.islink(path):
+        return False, "sembolik baglar (symlink) guvenlik geregi engellendi"
+
     try:
         file_size_mb = os.path.getsize(path) / (1024 * 1024)
     except OSError:
@@ -217,6 +220,29 @@ def collect_tracked_ignored_files() -> list[str]:
     if not success:
         return []
     return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _summarize_staged_areas() -> str:
+    """Stage'deki degisikliklerden klasor/alan ozeti uretir."""
+    success, output = run_command(
+        ["git", "diff", "--cached", "--name-only"], show_output=False
+    )
+    if not success or not output.strip():
+        return "workspace"
+
+    areas: list[str] = []
+    for raw in output.splitlines():
+        path = _normalize_path(raw.strip())
+        if not path:
+            continue
+        area = path.split("/", 1)[0]
+        if area not in areas:
+            areas.append(area)
+
+    if not areas:
+        return "workspace"
+
+    return " ".join(f"{area}/" for area in areas[:4])
 
 
 # ================================================================
@@ -299,8 +325,9 @@ def build_commit() -> None:
 
     # 5. Commit mesaji
     version: str = getattr(cfg, "VERSION", "?")
+    staged_area_summary = _summarize_staged_areas()
     default_msg = (
-        f"Sidar {version} - Otomatik Dagitim "
+        f"Sidar {version} - Otomatik Dagitim: {staged_area_summary} "
         f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
     )
     print(f"\n{Colors.WARNING}Degisiklikleri kaydetmek icin bir not yazin.{Colors.ENDC}")
@@ -342,11 +369,11 @@ def _handle_conflict(branch: str) -> None:
 
     pull_cmd = [
         "git", "pull", "origin", branch,
-        "--rebase=false", "--allow-unrelated-histories", "--no-edit",
+        "--rebase",
     ]
     print(
         f"{Colors.OKBLUE}Uzak sunucu ile dosyalar birlestiriliyor "
-        f"(Cakisma olursa islem durdurulacak)...{Colors.ENDC}"
+        f"(rebase modu; cakisma olursa islem durdurulacak)...{Colors.ENDC}"
     )
     pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
