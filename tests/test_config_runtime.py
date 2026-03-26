@@ -918,3 +918,30 @@ def test_config_summary_prints_litellm_gateway_and_model(capsys):
     assert "http://gateway:4000" in out
     assert "LiteLLM Modeli" in out
     assert "gpt-4o-mini" in out
+
+
+def test_config_no_sidar_env_base_env_exists_sets_env_path(monkeypatch):
+    """57->60 branch: no SIDAR_ENV set and base .env file exists → skip elif body, ENV_PATH = base_env_path."""
+    load_calls = []
+    dotenv_mod = types.ModuleType("dotenv")
+    dotenv_mod.load_dotenv = lambda *a, **k: load_calls.append((a, k))
+
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+
+    saved = sys.modules.get("dotenv")
+    try:
+        sys.modules["dotenv"] = dotenv_mod
+        spec = importlib.util.spec_from_file_location(
+            "config_no_sidar_env_base_exists_under_test", Path("config.py")
+        )
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+    finally:
+        if saved is None:
+            sys.modules.pop("dotenv", None)
+        else:
+            sys.modules["dotenv"] = saved
+
+    assert str(mod.ENV_PATH).endswith(".env")
