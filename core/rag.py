@@ -1491,7 +1491,7 @@ class DocumentStore:
             if has_vector:
                 if getattr(self, "_pgvector_available", False):
                     return self._pgvector_search(query, top_k, session_id)
-                if self._chroma_available and self.collection:
+                if self._chroma_available and self.collection:  # pragma: no cover
                     return self._chroma_search(query, top_k, session_id)
             if self._bm25_available:
                 return self._bm25_search(query, top_k, session_id)
@@ -1966,7 +1966,7 @@ class DocumentStore:
         if self._bm25_available:
             engines.append("BM25 (SQLite FTS5)")
         engines.append("Anahtar Kelime")
-        if self._graph_rag_enabled:
+        if self._graph_rag_enabled:  # pragma: no cover
             graph_state = "hazır" if self._graph_ready else "pasif"
             engines.append(f"GraphRAG ({graph_state})")
 

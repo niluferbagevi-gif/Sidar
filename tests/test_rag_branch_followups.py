@@ -92,3 +92,33 @@ def test_fetch_bm25_returns_empty_for_symbol_only_query_without_touching_sqlite(
     store._write_lock = types.SimpleNamespace(__enter__=lambda self: self, __exit__=lambda self, *args: False)
 
     assert store._fetch_bm25('"" !!! ???', top_k=3, session_id="sess-1") == []
+
+
+def test_fetch_chroma_returns_all_results_without_break_when_top_k_exceeds_chunk_count(tmp_path):
+    rag_mod = _load_rag_module("rag_branch_chroma_no_break")
+    store = _new_store(rag_mod, tmp_path)
+
+    class _Collection:
+        def count(self):
+            return 2
+
+        def query(self, **kwargs):
+            return {
+                "ids": [["c1", "c2"]],
+                "documents": [["chunk-1", "chunk-2"]],
+                "metadatas": [[
+                    {"parent_id": "p1", "title": "Doc 1", "source": "src-1"},
+                    {"parent_id": "p2", "title": "Doc 2", "source": "src-2"},
+                ]],
+            }
+
+    store.collection = _Collection()
+    store._chroma_available = True
+
+    # top_k=10 > number of chunks (2), so the for loop exhausts naturally (no break)
+    # covering the 1659->1677 branch (loop exits without break)
+    found = store._fetch_chroma("needle", top_k=10, session_id="sess-1")
+
+    assert len(found) == 2
+    assert found[0]["id"] == "p1"
+    assert found[1]["id"] == "p2"

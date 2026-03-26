@@ -93,3 +93,40 @@ def test_code_manager_audit_project_reports_permission_error_as_unreadable(tmp_p
     assert "locked.py" in report
     assert "Okunamadı" in report
     assert "denied" in report
+
+
+def test_resolve_sandbox_limits_sets_nano_cpus_for_valid_positive_cpu_float():
+    manager = object.__new__(CM_MOD.CodeManager)
+    manager.cfg = types.SimpleNamespace(SANDBOX_LIMITS={"cpus": "0.5", "pids_limit": 64, "timeout": 10, "network": "none"})
+    manager.docker_mem_limit = "256m"
+    manager.docker_exec_timeout = 10
+    manager.docker_nano_cpus = 0
+
+    limits = manager._resolve_sandbox_limits()
+
+    assert limits["nano_cpus"] == int(0.5 * 1_000_000_000)
+
+
+def test_resolve_sandbox_limits_keeps_default_nano_cpus_for_invalid_cpu_string():
+    manager = object.__new__(CM_MOD.CodeManager)
+    manager.cfg = types.SimpleNamespace(SANDBOX_LIMITS={"cpus": "bad", "pids_limit": 64, "timeout": 10, "network": "none"})
+    manager.docker_mem_limit = "256m"
+    manager.docker_exec_timeout = 10
+    manager.docker_nano_cpus = 999999999
+
+    limits = manager._resolve_sandbox_limits()
+
+    # Invalid cpu string → ValueError → default nano_cpus unchanged
+    assert limits["nano_cpus"] == 999999999
+
+
+def test_strip_markdown_code_fences_removes_opening_and_closing_fence():
+    content = "```python\nprint('hello')\n```"
+    result = CM_MOD.CodeManager._strip_markdown_code_fences(content)
+    assert result == "print('hello')"
+
+
+def test_strip_markdown_code_fences_removes_only_opening_fence_when_no_closing():
+    content = "```python\nprint('hello')"
+    result = CM_MOD.CodeManager._strip_markdown_code_fences(content)
+    assert result == "print('hello')"

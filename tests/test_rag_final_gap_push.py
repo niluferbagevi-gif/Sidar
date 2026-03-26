@@ -166,3 +166,60 @@ def test_rrf_search_returns_explicit_no_results_when_all_backends_are_empty(tmp_
     assert ok is False
     assert "tam başarısızlık" in message
     assert "ilgili sonuç bulunamadı" in message
+
+
+def test_build_graphrag_search_plan_uses_fetch_chroma_when_pgvector_unavailable(tmp_path):
+    rag_mod = _load_rag_module("rag_final_graphrag_chroma")
+    store = _new_store(rag_mod, tmp_path)
+
+    chroma_calls = []
+
+    class _Collection:
+        pass
+
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = _Collection()
+
+    def _fake_fetch_chroma(query, top_k, session_id):
+        chroma_calls.append((query, top_k, session_id))
+        return []
+
+    store._fetch_chroma = _fake_fetch_chroma
+
+    store._graph_ready = False
+    store._graph_rag_enabled = False
+
+    plan = store.build_graphrag_search_plan("test query", session_id="sess-1", top_k=2)
+
+    assert len(chroma_calls) == 1
+    assert chroma_calls[0][0] == "test query"
+    assert plan.vector_backend == "chromadb"
+    assert plan.vector_candidates == []
+
+
+def test_search_sync_auto_local_llm_uses_chroma_when_pgvector_unavailable(tmp_path):
+    rag_mod = _load_rag_module("rag_final_auto_local_chroma")
+    store = _new_store(rag_mod, tmp_path)
+
+    store._index = {"doc-1": {"session_id": "s1", "title": "Doc", "source": "src", "tags": []}}
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = object()
+    store._is_local_llm_provider = True
+    store._local_hybrid_enabled = False
+    store._bm25_available = False
+
+    chroma_calls = []
+
+    def _fake_chroma_search(query, top_k, session_id):
+        chroma_calls.append((query, top_k, session_id))
+        return True, f"chroma:{query}"
+
+    store._chroma_search = _fake_chroma_search
+
+    ok, result = store._search_sync("local query", top_k=3, mode="auto", session_id="s1")
+
+    assert ok is True
+    assert result == "chroma:local query"
+    assert len(chroma_calls) == 1
