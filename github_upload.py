@@ -1,9 +1,16 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yukleme Araci
-Surum: 2.1
+Surum: 2.2
 Aciklama: Mevcut projeyi kolayca GitHub'a yedekler/yukler.
-Kimlik, cakisma, silme senkronizasyonu ve otomatik birlestirme (Auto-Merge) kontrolleri icerir.
+Kimlik, cakisma, silme senkronizasyonu, branch yonetimi ve
+otomatik birlestirme (Auto-Merge) kontrolleri icerir.
+
+Kullanim:
+  python github_upload.py                             # mevcut branch
+  python github_upload.py main                        # main branch'e gec + yukle
+  python github_upload.py claude/review-deps-xyz      # belirtilen branch'e gec/olustur + yukle
 """
+import argparse
 import os
 import fnmatch
 import subprocess
@@ -19,6 +26,12 @@ cfg = Config()
 # ASLA YUKLENMEMESI GEREKENLER (kritik guvenlik katmani)
 # Not: .gitignore'dan bagimsiz hard-blacklist; collect_safe_files() icinde
 # git add -u KULLANILMAZ - bu liste tracked dosya sizintisina karsi da korur.
+
+# FORBIDDEN_PATHS kuralından muaf dosyalar (API anahtarı içermeyen şablonlar)
+ALLOWED_EXCEPTIONS: frozenset[str] = frozenset({
+    ".env.example",
+})
+
 FORBIDDEN_PATHS: list[str] = [
     ".env",
     ".env.*",
@@ -102,13 +115,29 @@ def _is_valid_repo_url(url: str) -> bool:
 
 
 def _normalize_path(path: str) -> str:
-    """Yol formatini guvenlik kontrolleri icin normalize eder."""
-    return path.replace("\\", "/").lstrip("./")
+    """Yol formatini guvenlik kontrolleri icin normalize eder.
+
+    Yalnizca ters bolmeleri duzeltur ve './' on ekini kaldirir.
+    lstrip('./') KULLANILMAZ — bu '.env.*' gibibi pattern'lardaki bas
+    noktayi da soyarak 'env.*' yapar ve migrations/env.py, docs/.../env.py.md
+    gibi masum dosyalari yanlis bloklar.
+    """
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        return normalized[2:]
+    return normalized
 
 
 def is_forbidden_path(path: str) -> bool:
-    """Hard blacklist: .gitignore'dan bagimsiz kesin engel."""
+    """Hard blacklist: .gitignore'dan bagimsiz kesin engel.
+    ALLOWED_EXCEPTIONS listesindeki dosyalar her zaman izin verilir.
+    """
     normalized = _normalize_path(path)
+
+    # Acik izin listesi — forbidden kontrolunden once isaretlenir
+    if normalized in ALLOWED_EXCEPTIONS:
+        return False
+
     basename = os.path.basename(normalized)
 
     for forbidden in FORBIDDEN_PATHS:
@@ -428,10 +457,78 @@ def push_with_retry(branch: str) -> tuple[bool, str]:
 
 
 # ================================================================
+# BRANCH YONETIMI
+# ================================================================
+def _parse_args() -> argparse.Namespace:
+    """Komut satiri argümanlarini isler."""
+    parser = argparse.ArgumentParser(
+        prog="python github_upload.py",
+        description="Sidar — GitHub otomatik yukleme & yedekleme araci (v2.2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Ornekler:\n"
+            "  python github_upload.py\n"
+            "  python github_upload.py main\n"
+            "  python github_upload.py claude/review-dependencies-ePc3D\n"
+            "  python github_upload.py codex/add-missing-ai-packages-to-pyproject.toml\n"
+        ),
+    )
+    parser.add_argument(
+        "branch",
+        nargs="?",
+        default=None,
+        metavar="BRANCH",
+        help=(
+            "Hedef branch adi. Belirtilmezse mevcut branch kullanilir. "
+            "Branch yoksa local'de otomatik olusturulur."
+        ),
+    )
+    return parser.parse_args()
+
+
+def _get_current_branch() -> str:
+    """Aktif branch adini doner; tanimsizsa 'main' kullanilir."""
+    _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
+    return branch.strip() if branch.strip() else "main"
+
+
+def _ensure_branch(target: str) -> str:
+    """Hedef branch'e gecer veya yoksa olusturur; aktif branch adini doner.
+
+    - Zaten hedefteyse: hicbir sey yapmaz.
+    - Local'de varsa   : git checkout <target>
+    - Yoksa            : git checkout -b <target>  (mevcut HEAD'den dallanir)
+    """
+    current = _get_current_branch()
+    if current == target:
+        return target
+
+    # Local branch listesinde var mi?
+    _, branch_list = run_command(
+        ["git", "branch", "--list", target], show_output=False
+    )
+
+    if branch_list.strip():
+        print(f"{Colors.OKBLUE}Branch mevcut, gecis yapiliyor: {target}{Colors.ENDC}")
+        ok, err = run_command(["git", "checkout", target], show_output=False)
+    else:
+        print(f"{Colors.OKBLUE}Yeni branch olusturuluyor: {target} (mevcut HEAD'den){Colors.ENDC}")
+        ok, err = run_command(["git", "checkout", "-b", target], show_output=False)
+
+    if not ok:
+        print(f"{Colors.FAIL}Branch islemi basarisiz oldu: {err}{Colors.ENDC}")
+        sys.exit(1)
+
+    print(f"{Colors.OKGREEN}Aktif branch: {target}{Colors.ENDC}")
+    return target
+
+
+# ================================================================
 # ANA PROGRAM
 # ================================================================
 def main() -> None:
-    version: str = getattr(cfg, "VERSION", "2.1")
+    args = _parse_args()
+    version: str = getattr(cfg, "VERSION", "2.2")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
     print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yukleme & Yedekleme Araci (v{version}) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
@@ -456,22 +553,25 @@ def main() -> None:
     setup_git_identity()
     ensure_git_repo()
     ensure_remote()
+
+    # 2. Hedef branch belirleme / gecis
+    if args.branch:
+        target_branch = _ensure_branch(args.branch)
+    else:
+        target_branch = _get_current_branch()
+
     build_commit()
 
-    # Branch belirle
-    _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
-    current_branch: str = branch if branch else "main"
-
     # Push
-    print(f"\n{Colors.HEADER}GitHub'a yukleniyor (Hedef: {current_branch}). Lutfen bekleyin...{Colors.ENDC}")
-    push_success, err_msg = push_with_retry(current_branch)
+    print(f"\n{Colors.HEADER}GitHub'a yukleniyor (Hedef: {target_branch}). Lutfen bekleyin...{Colors.ENDC}")
+    push_success, err_msg = push_with_retry(target_branch)
 
     if push_success:
         print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
         print(f"{Colors.BOLD}{Colors.OKGREEN}TEBRIKLER! Proje basariyla GitHub'a yuklendi!{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
     elif any(kw in err_msg for kw in ("rejected", "fetch first", "non-fast-forward")):
-        _handle_conflict(current_branch)
+        _handle_conflict(target_branch)
     else:
         _print_push_error(err_msg)
 
