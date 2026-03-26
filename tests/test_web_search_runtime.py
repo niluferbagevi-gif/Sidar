@@ -1082,3 +1082,69 @@ def test_web_search_ultimate_exceptions_and_so(monkeypatch, web_search_mod, base
     manager.search.reset_mock()
     asyncio.run(manager.search_stackoverflow("python"))
     manager.search.assert_awaited_with("stackoverflow python", max_results=5)
+
+def test_tavily_google_duckduckgo_skip_optional_body_lines(monkeypatch, web_search_mod, base_cfg):
+    """Cover body/snippet/href formatting branches when summary text is empty."""
+    monkeypatch.setattr(web_search_mod.WebSearchManager, "_check_ddg", lambda self: True)
+    base_cfg.TAVILY_API_KEY = "t"
+    base_cfg.GOOGLE_SEARCH_API_KEY = "g"
+    base_cfg.GOOGLE_SEARCH_CX = "cx"
+    manager = web_search_mod.WebSearchManager(base_cfg)
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _ClientTavily:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return _Resp({"results": [{"title": "T", "content": "", "url": "https://t.example"}]})
+
+    class _ClientGoogle(_ClientTavily):
+        async def get(self, *args, **kwargs):
+            return _Resp({"items": [{"title": "G", "snippet": "", "link": "https://g.example"}]})
+
+    monkeypatch.setattr(web_search_mod.httpx, "AsyncClient", _ClientTavily)
+    ok_t, tavily_text = asyncio.run(manager._search_tavily("q", 1))
+    assert ok_t is True
+    assert "1. **T**" in tavily_text
+    assert "   → https://t.example" in tavily_text
+    assert "\n   \n" not in tavily_text
+
+    monkeypatch.setattr(web_search_mod.httpx, "AsyncClient", _ClientGoogle)
+    ok_g, google_text = asyncio.run(manager._search_google("q", 1))
+    assert ok_g is True
+    assert "1. **G**" in google_text
+    assert "   → https://g.example" in google_text
+    assert "\n   \n" not in google_text
+
+    class _AsyncDDGS:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def text(self, query, max_results):
+            return [{"title": "D", "body": "", "href": "https://d.example"}]
+
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", SimpleNamespace(AsyncDDGS=_AsyncDDGS))
+    ok_d, ddg_text = asyncio.run(manager._search_duckduckgo("q", 1))
+    assert ok_d is True
+    assert "1. **D**" in ddg_text
+    assert "   → https://d.example" in ddg_text
+    assert "\n   \n" not in ddg_text
