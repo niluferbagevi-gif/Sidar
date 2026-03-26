@@ -1,6 +1,6 @@
 """
 Sidar github_upload.py - Otomatik GitHub Yukleme Araci
-Surum: 2.2
+Surum: 2.3
 Aciklama: Mevcut projeyi guvenli sekilde GitHub'a yedekler/yukler.
 Kimlik, cakisma, silme senkronizasyonu ve otomatik birlestirme kontrolleri icerir.
 """
@@ -49,7 +49,7 @@ FORBIDDEN_PATHS: list[str] = [
 
 _PUSH_MAX_RETRIES: int = 4
 _PUSH_BACKOFF_BASE: int = 2
-DEFAULT_TARGET_BRANCH = "main"
+TARGET_BRANCH = "main"
 
 
 class Colors:
@@ -202,11 +202,15 @@ def setup_git_identity() -> None:
 
 
 def ensure_git_repo() -> None:
-    if os.path.exists(".git"):
-        return
-    print(f"{Colors.WARNING}Bu klasor Git reposu degil, olusturuluyor...{Colors.ENDC}")
-    run_command(["git", "init"], show_output=False)
-    run_command(["git", "branch", "-M", DEFAULT_TARGET_BRANCH], show_output=False)
+    if not os.path.exists(".git"):
+        print(f"{Colors.WARNING}Bu klasor Git reposu degil, olusturuluyor...{Colors.ENDC}")
+        run_command(["git", "init"], show_output=False)
+
+    # Kullanici beklentisi: her calismada local dal 'main' olsun.
+    ok, _ = run_command(["git", "branch", "-M", TARGET_BRANCH], show_output=False)
+    if not ok:
+        print(f"{Colors.FAIL}Local branch {TARGET_BRANCH} olarak ayarlanamadi.{Colors.ENDC}")
+        sys.exit(1)
 
 
 def ensure_remote() -> None:
@@ -269,8 +273,7 @@ def build_commit() -> None:
 
 
 def _try_push(remote_branch: str) -> tuple[bool, str]:
-    # Her kosulda mevcut HEAD'i origin/<remote_branch> dalina gonderir.
-    return run_command(["git", "push", "-u", "origin", f"HEAD:{remote_branch}"], show_output=False)
+    return run_command(["git", "push", "-u", "origin", remote_branch], show_output=False)
 
 
 def push_with_retry(remote_branch: str) -> tuple[bool, str]:
@@ -327,8 +330,8 @@ def _print_push_error(err_msg: str) -> None:
 
 
 def main() -> None:
-    version = getattr(cfg, "VERSION", "2.2")
-    target_branch = getattr(cfg, "GITHUB_TARGET_BRANCH", DEFAULT_TARGET_BRANCH) or DEFAULT_TARGET_BRANCH
+    version = getattr(cfg, "VERSION", "2.3")
+    target_branch = TARGET_BRANCH
 
     print(f"{Colors.HEADER}{'=' * 68}{Colors.ENDC}")
     print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yukleme Araci (v{version}) {Colors.ENDC}")
