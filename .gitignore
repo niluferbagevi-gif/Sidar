@@ -124,3 +124,39 @@ helm/**/*.tgz
 chroma_db/
 .git/
 models/
+
+# --- Ekstra Önerilen Kurallar ---
+
+# Media & Downloads (Voice, Vision, YouTube)
+*.mp3
+*.wav
+*.webm
+*.mp4
+*.avi
+*.mkv
+media_cache/
+downloads/
+
+# Keys & Certificates
+*.pem
+*.key
+*.cert
+*.cer
+*.rsa
+id_rsa*
+*.p12
+*.pfx
+
+# Web UI E2E Testing Artifacts
+web_ui_react/test-results/
+web_ui_react/playwright-report/
+web_ui_react/blob-report/
+web_ui_react/cypress/videos/
+web_ui_react/cypress/screenshots/
+
+# Helm chart dependencies
+helm/sidar/charts/
+
+# Modern Editors / AI Assistants
+.cursor/
+.fleet/
