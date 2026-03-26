@@ -660,6 +660,8 @@ Bu yapı ile test disiplini yalnızca birim test sayısına değil, **coverage b
 
 Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` ve `web_ui_react/package.json` dosyalarına göre v5.0.0-alpha bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında, React SPA bağımlılıkları ise `web_ui_react/package.json` içinde yönetilir.)
 
+> **Sistem bağımlılığı notu (multimodal ingest):** `core/multimodal.py` içindeki dış video/ses işleme akışlarının (özellikle `ingest_video_insights`) sorunsuz çalışabilmesi için host/container seviyesinde `yt-dlp`, `ffmpeg` ve `whisper` CLI araçlarının kurulu olması gerekir.
+
 ### 7.1 Asenkron Altyapı ve Uygulama Çekirdeği
 
 | Paket | Durum | Kullanım Yeri |
@@ -690,6 +692,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 | Paket | Durum | Kullanım Yeri |
 |-------|-------|---------------|
 | `docker` | Kritik/opsiyonel | Zero-Trust REPL sandbox çalıştırma |
+| `yt-dlp`, `ffmpeg`, `whisper` (CLI) | Sistem seviyesi zorunlu (multimodal iş akışları için) | Harici video/ses indirme, dönüştürme, transkripsiyon ve özetleme zinciri (`core/multimodal.py`) |
 | `nvidia-ml-py` + `psutil` | Opsiyonel | GPU/CPU/RAM donanım metrikleri |
 | `cryptography` | Opsiyonel | Fernet tabanlı şifreleme yardımcıları |
 | `python-multipart`, `packaging`, `pyyaml` | ✓ Zorunlu | Yardımcı runtime bileşenleri |
