@@ -1,25 +1,18 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yukleme Araci
-Surum: 2.3
+Surum: 2.2
 Aciklama: Mevcut projeyi kolayca GitHub'a yedekler/yukler.
-Kimlik, cakisma, silme senkronizasyonu, branch yonetimi,
-rollback/geri alma ve otomatik birlestirme kontrolleri icerir.
+Kimlik, cakisma, silme senkronizasyonu, branch yonetimi ve
+otomatik birlestirme (Auto-Merge) kontrolleri icerir.
 
 Kullanim:
-  python github_upload.py                              # mevcut branch'e yukle
-  python github_upload.py main                         # main'e gec + yukle
-  python github_upload.py claude/review-deps-xyz       # branch'e gec/olustur + yukle
-
-  python github_upload.py -1                           # son 1 commit'i geri al
-  python github_upload.py -3                           # son 3 commit'i geri al
-  python github_upload.py --rollback                   # interaktif liste (son 10 commit)
-  python github_upload.py --rollback 5                 # son 5 commit'i geri al
-  python github_upload.py main --rollback 2            # main branch'te son 2 commit'i geri al
+  python github_upload.py                             # mevcut branch
+  python github_upload.py main                        # main branch'e gec + yukle
+  python github_upload.py claude/review-deps-xyz      # belirtilen branch'e gec/olustur + yukle
 """
 import argparse
 import os
 import fnmatch
-import re
 import subprocess
 import sys
 import time
@@ -466,40 +459,18 @@ def push_with_retry(branch: str) -> tuple[bool, str]:
 # ================================================================
 # BRANCH YONETIMI
 # ================================================================
-def _extract_rollback_from_argv() -> int | None:
-    """'-N' seklindeki rollback kisayolunu sys.argv'den ayiklar ve temizler.
-
-    'python github_upload.py -3'  →  returns 3, removes '-3' from sys.argv
-    Yalnizca -1 ile -99 arasi tam sayilar kabul edilir.
-    """
-    rollback_n: int | None = None
-    new_argv = [sys.argv[0]]
-    for arg in sys.argv[1:]:
-        m = re.match(r'^-([1-9][0-9]?)$', arg)
-        if m:
-            rollback_n = int(m.group(1))
-        else:
-            new_argv.append(arg)
-    sys.argv[:] = new_argv
-    return rollback_n
-
-
 def _parse_args() -> argparse.Namespace:
     """Komut satiri argümanlarini isler."""
     parser = argparse.ArgumentParser(
         prog="python github_upload.py",
-        description="Sidar — GitHub otomatik yukleme & yedekleme araci (v2.3)",
+        description="Sidar — GitHub otomatik yukleme & yedekleme araci (v2.2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Yukleme ornekleri:\n"
+            "Ornekler:\n"
             "  python github_upload.py\n"
             "  python github_upload.py main\n"
-            "  python github_upload.py claude/review-dependencies-ePc3D\n\n"
-            "Geri alma ornekleri:\n"
-            "  python github_upload.py -1          # son commit'i geri al\n"
-            "  python github_upload.py -3          # son 3 commit'i geri al\n"
-            "  python github_upload.py --rollback  # interaktif liste\n"
-            "  python github_upload.py main -2     # main'de son 2 commit'i geri al\n"
+            "  python github_upload.py claude/review-dependencies-ePc3D\n"
+            "  python github_upload.py codex/add-missing-ai-packages-to-pyproject.toml\n"
         ),
     )
     parser.add_argument(
@@ -510,18 +481,6 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Hedef branch adi. Belirtilmezse mevcut branch kullanilir. "
             "Branch yoksa local'de otomatik olusturulur."
-        ),
-    )
-    parser.add_argument(
-        "--rollback",
-        nargs="?",
-        const=0,
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Son N commit'i geri al ve GitHub'a yukle. "
-            "N belirtilmezse son 10 commit interaktif listelenir."
         ),
     )
     return parser.parse_args()
@@ -565,180 +524,11 @@ def _ensure_branch(target: str) -> str:
 
 
 # ================================================================
-# ROLLBACK / GERI ALMA
-# ================================================================
-def _list_commits(n: int = 10) -> list[dict[str, str]]:
-    """Son N commit'i hash, tarih ve mesajla birlikte dondurur."""
-    success, output = run_command(
-        ["git", "log", f"--max-count={n}", "--format=%H|%ad|%s", "--date=short"],
-        show_output=False,
-    )
-    if not success or not output.strip():
-        return []
-    commits: list[dict[str, str]] = []
-    for line in output.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) == 3:
-            commits.append({
-                "hash":      parts[0][:7],
-                "full_hash": parts[0],
-                "date":      parts[1],
-                "msg":       parts[2],
-            })
-    return commits
-
-
-def _do_rollback(n: int, branch: str) -> None:
-    """Son n commit'i geri alir ve GitHub'a iter.
-
-    n == 0  →  interaktif mod: son 10 commit listelenir, kullanici secer.
-    n >= 1  →  dogrudan n commit geri alinir.
-
-    Iki yontem sunulur:
-      1) Guvenli revert  — yeni commit olusturur, normal push yeterli
-      2) Hard reset      — gecmis silinir, force-with-lease push gerekir
-    """
-    commits = _list_commits(10)
-    if not commits:
-        print(f"{Colors.FAIL}Commit listesi alinamadi — git log basarisiz.{Colors.ENDC}")
-        return
-
-    # ── Interaktif mod ────────────────────────────────────────────────────────
-    if n == 0:
-        print(f"\n{Colors.BOLD}Son {len(commits)} commit:{Colors.ENDC}")
-        for i, c in enumerate(commits, 1):
-            print(f"  -{i:2d}  {c['hash']}  {c['date']}  {c['msg'][:72]}")
-        raw = input(
-            f"\n{Colors.OKBLUE}Hangi commit'e donmek istiyorsunuz? (1-{len(commits)}): {Colors.ENDC}"
-        ).strip()
-        try:
-            n = int(raw)
-            if not 1 <= n <= len(commits):
-                raise ValueError
-        except ValueError:
-            print(f"{Colors.FAIL}Gecersiz secenek. Islem iptal edildi.{Colors.ENDC}")
-            return
-
-    # ── Geri alma sayisi dogrulamasi ──────────────────────────────────────────
-    if n > len(commits):
-        print(
-            f"{Colors.FAIL}Yalnizca {len(commits)} commit mevcut; "
-            f"-{n} gecersiz.{Colors.ENDC}"
-        )
-        return
-
-    target = commits[n - 1]
-
-    # ── Ozet goster ───────────────────────────────────────────────────────────
-    print(f"\n{Colors.BOLD}{'─'*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD}Geri alma ozeti:{Colors.ENDC}")
-    print(
-        f"  Guncel  (-1)  {commits[0]['hash']}  {commits[0]['date']}  "
-        f"{commits[0]['msg'][:55]}"
-    )
-    print(
-        f"  Hedef   (-{n})  {target['hash']}  {target['date']}  "
-        f"{target['msg'][:55]}"
-    )
-    print(f"  Branch          : {branch}")
-    print(f"  Geri alinacak   : {n} commit")
-    print(f"{Colors.BOLD}{'─'*65}{Colors.ENDC}\n")
-
-    # ── Yontem secimi ─────────────────────────────────────────────────────────
-    print(f"{Colors.WARNING}Geri alma yontemi secin:{Colors.ENDC}")
-    print("  1) Guvenli revert  — yeni bir 'revert commit' olusturur,")
-    print("                       gecmis korunur, force-push gerektirmez  [ONERILEN]")
-    print(f"  2) Hard reset      — son {n} commit kalici olarak silinir,")
-    print("                       force-push gerektirir  [DIKKATLI KULLANIN]")
-    choice = input(
-        f"{Colors.OKBLUE}Seciminiz (1/2, varsayilan: 1): {Colors.ENDC}"
-    ).strip() or "1"
-
-    # ── Yontem 2: Hard reset ──────────────────────────────────────────────────
-    if choice == "2":
-        confirm = input(
-            f"\n{Colors.FAIL}UYARI: Son {n} commit KALICI olarak silinecek "
-            f"ve '{branch}' branch'i guncelllenecek!\n"
-            f"Onaylamak icin 'evet' yazin: {Colors.ENDC}"
-        ).strip().lower()
-        if confirm not in ("evet", "e", "yes", "y"):
-            print(f"{Colors.WARNING}Islem iptal edildi.{Colors.ENDC}")
-            return
-
-        print(f"\n{Colors.OKBLUE}Hard reset yapiliyor (HEAD~{n})...{Colors.ENDC}")
-        ok, err = run_command(["git", "reset", "--hard", f"HEAD~{n}"], show_output=False)
-        if not ok:
-            print(f"{Colors.FAIL}Reset basarisiz: {err}{Colors.ENDC}")
-            return
-
-        print(f"{Colors.OKGREEN}Local reset tamamlandi.{Colors.ENDC}")
-        print(f"{Colors.OKBLUE}Force-push yapiliyor ({branch})...{Colors.ENDC}")
-        ok, err = run_command(
-            ["git", "push", "--force-with-lease", "origin", branch],
-            show_output=False,
-        )
-        if ok:
-            print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-            print(
-                f"{Colors.BOLD}{Colors.OKGREEN}"
-                f"TEBRIKLER! Geri alma ve GitHub guncelleme basarili! "
-                f"(hard reset, -{n}){Colors.ENDC}"
-            )
-            print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-        else:
-            print(f"{Colors.FAIL}Force-push basarisiz: {err}{Colors.ENDC}")
-            print(
-                f"{Colors.WARNING}Local reset tamamlandi ancak GitHub guncellenmedi.\n"
-                f"Manuel: git push --force-with-lease origin {branch}{Colors.ENDC}"
-            )
-        return
-
-    # ── Yontem 1: Guvenli revert ──────────────────────────────────────────────
-    print(f"\n{Colors.OKBLUE}Guvenli revert yapiliyor (HEAD~{n}..HEAD)...{Colors.ENDC}")
-    ok, err = run_command(
-        ["git", "revert", "--no-edit", f"HEAD~{n}..HEAD"],
-        show_output=False,
-    )
-    if not ok:
-        print(f"{Colors.FAIL}Revert basarisiz: {err}{Colors.ENDC}")
-        print(
-            f"{Colors.WARNING}Cakisma varsa revert'i iptal etmek icin: "
-            f"git revert --abort{Colors.ENDC}"
-        )
-        return
-
-    print(f"{Colors.OKGREEN}Revert commit olusturuldu. Push yapiliyor...{Colors.ENDC}")
-    push_ok, push_err = push_with_retry(branch)
-    if push_ok:
-        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-        print(
-            f"{Colors.BOLD}{Colors.OKGREEN}"
-            f"TEBRIKLER! Geri alma ve GitHub guncelleme basarili! "
-            f"(revert, -{n}){Colors.ENDC}"
-        )
-        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    else:
-        _print_push_error(push_err)
-
-
-# ================================================================
 # ANA PROGRAM
 # ================================================================
 def main() -> None:
-    # -N kisayolunu argparse goermeden once ayikla (ornek: -1, -3)
-    rollback_shorthand = _extract_rollback_from_argv()
     args = _parse_args()
-
-    # Rollback kaynagini birlestir: -N kisayolu oncelikli
-    effective_rollback: int | None
-    if rollback_shorthand is not None:
-        effective_rollback = rollback_shorthand
-    elif args.rollback is not None:
-        effective_rollback = args.rollback  # 0 = interaktif
-    else:
-        effective_rollback = None
-
-    version: str = getattr(cfg, "VERSION", "2.3")
+    version: str = getattr(cfg, "VERSION", "2.2")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
     print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yukleme & Yedekleme Araci (v{version}) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
@@ -764,20 +554,15 @@ def main() -> None:
     ensure_git_repo()
     ensure_remote()
 
-    # Hedef branch belirleme / gecis
+    # 2. Hedef branch belirleme / gecis
     if args.branch:
         target_branch = _ensure_branch(args.branch)
     else:
         target_branch = _get_current_branch()
 
-    # ── ROLLBACK MODU ─────────────────────────────────────────────────────────
-    if effective_rollback is not None:
-        _do_rollback(effective_rollback, target_branch)
-        return
-
-    # ── NORMAL YUKLEME MODU ───────────────────────────────────────────────────
     build_commit()
 
+    # Push
     print(f"\n{Colors.HEADER}GitHub'a yukleniyor (Hedef: {target_branch}). Lutfen bekleyin...{Colors.ENDC}")
     push_success, err_msg = push_with_retry(target_branch)
 
