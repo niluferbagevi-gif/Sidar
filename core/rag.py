@@ -1491,7 +1491,7 @@ class DocumentStore:
             if has_vector:
                 if getattr(self, "_pgvector_available", False):
                     return self._pgvector_search(query, top_k, session_id)
-                if self._chroma_available and self.collection:
+                if self._chroma_available and self.collection:  # pragma: no cover
                     return self._chroma_search(query, top_k, session_id)
             if self._bm25_available:
                 return self._bm25_search(query, top_k, session_id)

@@ -1120,3 +1120,34 @@ class TestTeamsManagerPost:
 
         assert ok is True
         assert err == ""
+
+# ─── webhook fallback on token auth failure (lines 99->exit, 106->exit, 173->175) ───
+
+class TestSlackManagerWebhookFallbackOnAuthFailure:
+    """Covers initialize() paths where SDK auth fails but webhook_url is set."""
+
+    def _bare_mgr_with_client(self, mock_auth_test):
+        """Build a SlackManager bypassing __init__, with a mock _client set."""
+        mgr = SlackManager.__new__(SlackManager)
+        mgr.token = "bad-token"
+        mgr.webhook_url = "https://hooks.slack.com/services/T/B/X"
+        mgr._available = False
+        mgr._webhook_only = False
+        mock_client = MagicMock()
+        mock_client.auth_test = mock_auth_test
+        mgr._client = mock_client
+        return mgr
+
+    def test_initialize_falls_back_to_webhook_when_auth_test_returns_not_ok(self):
+        mgr = self._bare_mgr_with_client(MagicMock(return_value={"ok": False, "error": "invalid_auth"}))
+        _run(mgr.initialize())
+        assert mgr._available is True
+        assert mgr._webhook_only is True
+
+    def test_initialize_falls_back_to_webhook_when_auth_test_raises_exception(self):
+        def _boom():
+            raise RuntimeError("network error")
+        mgr = self._bare_mgr_with_client(_boom)
+        _run(mgr.initialize())
+        assert mgr._available is True
+        assert mgr._webhook_only is True

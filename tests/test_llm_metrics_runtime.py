@@ -278,3 +278,14 @@ def test_llm_metrics_snapshot_skips_latency_average_division_when_calls_is_zero_
 
     assert snap["by_provider"]["openai"]["latency_ms_avg"] == 5.0
     assert snap["by_provider"]["openai"]["latency_ms_max"] == 5.0
+
+
+def test_llm_metrics_snapshot_computes_latency_average_when_calls_is_nonzero():
+    c = LLMMetricsCollector(max_events=10)
+    c.record(provider="openai", model="gpt-4o-mini", latency_ms=100, prompt_tokens=5, completion_tokens=5)
+    c.record(provider="openai", model="gpt-4o-mini", latency_ms=200, prompt_tokens=5, completion_tokens=5)
+
+    snap = c.snapshot()
+    # Average of 100 and 200 is 150.0
+    assert snap["by_provider"]["openai"]["latency_ms_avg"] == 150.0
+    assert snap["by_provider"]["openai"]["calls"] == 2

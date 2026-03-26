@@ -664,3 +664,28 @@ def test_repr_format():
     assert "SystemHealthManager" in r
     assert "gpu=True" in r
     assert "torch=True" in r
+
+# ─── degraded status when a dependency is unhealthy (line 454->456) ─────────
+
+def test_get_health_summary_sets_degraded_when_dependency_is_unhealthy():
+    """Covers branch 454->456: summary status becomes 'degraded' on unhealthy dep."""
+    mgr = _make_mgr()
+    mgr.cfg = types.SimpleNamespace(
+        OLLAMA_URL="http://localhost:11434/api",
+        OLLAMA_TIMEOUT=5,
+        ENABLE_DEPENDENCY_HEALTHCHECKS=True,
+    )
+    mgr.get_cpu_usage = lambda: 10.0
+    mgr.get_memory_info = lambda: {"percent": 20.0}
+    mgr.get_gpu_info = lambda: {"available": False}
+    mgr.check_ollama = lambda: False
+    mgr.get_dependency_health = lambda: {
+        "redis": {"healthy": True, "latency_ms": 1.0},
+        "postgres": {"healthy": False, "latency_ms": None},
+    }
+
+    summary = mgr.get_health_summary()
+
+    assert summary["status"] == "degraded"
+    assert "dependencies" in summary
+    assert summary["dependencies"]["postgres"]["healthy"] is False

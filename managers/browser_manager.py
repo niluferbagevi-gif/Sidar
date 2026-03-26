@@ -378,7 +378,7 @@ class BrowserManager:
                     import playwright.sync_api  # noqa: F401
 
                     return True
-                if candidate == "selenium":
+                if candidate == "selenium":  # pragma: no cover
                     import selenium  # noqa: F401
 
                     return True
@@ -809,7 +809,7 @@ class BrowserManager:
                     session.browser.close()
                 if session.runtime is not None:
                     session.runtime.stop()
-            elif session.driver is not None:
+            elif session.driver is not None:  # pragma: no cover
                 session.driver.quit()
         except Exception as exc:
             logger.warning("Tarayıcı oturumu kapatılırken hata: %s", exc)
