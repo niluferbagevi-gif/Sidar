@@ -5,7 +5,6 @@ Aciklama: Mevcut projeyi kolayca GitHub'a yedekler/yukler.
 Kimlik, cakisma, silme senkronizasyonu ve otomatik birlestirme (Auto-Merge) kontrolleri icerir.
 """
 import os
-import fnmatch
 import subprocess
 import sys
 import time
@@ -21,7 +20,6 @@ cfg = Config()
 # git add -u KULLANILMAZ - bu liste tracked dosya sizintisina karsi da korur.
 FORBIDDEN_PATHS: list[str] = [
     ".env",
-    ".env.*",
     "sessions/",
     "chroma_db/",
     "__pycache__/",
@@ -33,17 +31,6 @@ FORBIDDEN_PATHS: list[str] = [
     "data/",
     "temp/",
     "tmp/",
-    "media_cache/",
-    "downloads/",
-    "web_ui_react/test-results/",
-    "web_ui_react/playwright-report/",
-    ".cursor/",
-    ".idea/",
-    "htmlcov/",
-    ".coverage",
-    "*.sqlite",
-    "*.sqlite3",
-    "*.db",
 ]
 
 # Push yeniden deneme ayarlari (CLAUDE.md: exponential backoff)
@@ -109,51 +96,25 @@ def _normalize_path(path: str) -> str:
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bagimsiz kesin engel."""
     normalized = _normalize_path(path)
-    basename = os.path.basename(normalized)
-
-    for forbidden in FORBIDDEN_PATHS:
-        normalized_forbidden = _normalize_path(forbidden)
-
-        # Klasor tabanli engelleme
-        if normalized_forbidden.endswith("/"):
-            if normalized == normalized_forbidden.rstrip("/") or normalized.startswith(normalized_forbidden):
-                return True
-            continue
-
-        # Glob tabanli engelleme (*.db, .env.* vb.)
-        if any(ch in normalized_forbidden for ch in "*?[]"):
-            if fnmatch.fnmatch(normalized, normalized_forbidden) or fnmatch.fnmatch(basename, normalized_forbidden):
-                return True
-            continue
-
-        # Dosya tam eslesmesi
-        if normalized == normalized_forbidden:
-            return True
-
-    return False
+    return any(
+        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
+        for forbidden in FORBIDDEN_PATHS
+    )
 
 
-def is_file_safe_to_upload(path: str) -> tuple[bool, str]:
-    """Dosyanin yasakli yolda olup olmadigini ve boyutunu kontrol eder."""
+def get_file_content(path: str) -> str | None:
+    """Dosyayi UTF-8 olarak okur; okunamazsa veya yasak yolsa None doner."""
     if not os.path.isabs(path) and is_forbidden_path(path):
-        return False, "yasakli dizin/dosya"
-
-    if os.path.islink(path):
-        return False, "sembolik baglar (symlink) guvenlik geregi engellendi"
-
+        return None
     try:
-        file_size_mb = os.path.getsize(path) / (1024 * 1024)
-    except OSError:
-        return False, "dosya boyutu okunamadi"
-
-    if file_size_mb > 95.0:
-        return False, f"dosya cok buyuk ({file_size_mb:.1f} MB)"
-
-    return True, ""
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except (UnicodeDecodeError, OSError):
+        return None
 
 
 def collect_safe_files() -> tuple[list[str], list[str]]:
-    """Yalnizca guvenli ve boyutu uygun dosyalari stage listesine alir.
+    """Yalnizca guvenli ve UTF-8 okunabilir dosyalari stage listesine alir.
 
     Yalnizca mevcut (untracked + tracked) dosyalari kapsar.
     Silinen dosyalar icin collect_deleted_files() kullanilir.
@@ -172,9 +133,9 @@ def collect_safe_files() -> tuple[list[str], list[str]]:
         if not file_path or os.path.isdir(file_path):
             continue
 
-        safe_to_upload, reason = is_file_safe_to_upload(file_path)
-        if not safe_to_upload:
-            blocked_files.append(f"{file_path} ({reason})")
+        content = get_file_content(file_path)
+        if content is None:
+            blocked_files.append(file_path)
             continue
 
         safe_files.append(file_path)
@@ -220,29 +181,6 @@ def collect_tracked_ignored_files() -> list[str]:
     if not success:
         return []
     return [line.strip() for line in output.splitlines() if line.strip()]
-
-
-def _summarize_staged_areas() -> str:
-    """Stage'deki degisikliklerden klasor/alan ozeti uretir."""
-    success, output = run_command(
-        ["git", "diff", "--cached", "--name-only"], show_output=False
-    )
-    if not success or not output.strip():
-        return "workspace"
-
-    areas: list[str] = []
-    for raw in output.splitlines():
-        path = _normalize_path(raw.strip())
-        if not path:
-            continue
-        area = path.split("/", 1)[0]
-        if area not in areas:
-            areas.append(area)
-
-    if not areas:
-        return "workspace"
-
-    return " ".join(f"{area}/" for area in areas[:4])
 
 
 # ================================================================
@@ -325,9 +263,8 @@ def build_commit() -> None:
 
     # 5. Commit mesaji
     version: str = getattr(cfg, "VERSION", "?")
-    staged_area_summary = _summarize_staged_areas()
     default_msg = (
-        f"Sidar {version} - Otomatik Dagitim: {staged_area_summary} "
+        f"Sidar {version} - Otomatik Dagitim "
         f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
     )
     print(f"\n{Colors.WARNING}Degisiklikleri kaydetmek icin bir not yazin.{Colors.ENDC}")
@@ -369,11 +306,11 @@ def _handle_conflict(branch: str) -> None:
 
     pull_cmd = [
         "git", "pull", "origin", branch,
-        "--rebase",
+        "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
     ]
     print(
         f"{Colors.OKBLUE}Uzak sunucu ile dosyalar birlestiriliyor "
-        f"(rebase modu; cakisma olursa islem durdurulacak)...{Colors.ENDC}"
+        f"(Cakismalarda yerel dosyalar korunacak)...{Colors.ENDC}"
     )
     pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
