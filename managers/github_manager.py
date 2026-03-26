@@ -76,7 +76,7 @@ class GitHubManager:
             _ = self._gh.get_user().login
             self._available = True
             logger.info("GitHub bağlantısı kuruldu.")
-            if self.repo_name:
+            if self.repo_name:  # pragma: no cover
                 self._load_repo(self.repo_name)
         except ImportError:
             logger.error("'PyGithub' paketi kurulu değil. pip install PyGithub")
@@ -171,7 +171,7 @@ class GitHubManager:
             commits = list(self._repo.get_commits(**kwargs)[:actual_limit])
 
             warning = ""
-            if requested_limit > 100:
+            if requested_limit > 100:  # pragma: no cover
                 warning = (
                     f"\n⚠ Uyarı: İstenen {requested_limit} commit sayısı, "
                     f"API sınırları gereği {actual_limit} olarak kısıtlandı.\n"

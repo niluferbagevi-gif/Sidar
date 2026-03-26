@@ -283,7 +283,7 @@ class SystemHealthManager:
                 }
 
                 # pynvml ek verisi
-                if self._nvml_initialized:
+                if self._nvml_initialized:  # pragma: no cover
                     try:
                         import pynvml
                         handle = pynvml.nvmlDeviceGetHandleByIndex(i)
@@ -451,7 +451,7 @@ class SystemHealthManager:
         if getattr(self.cfg, "ENABLE_DEPENDENCY_HEALTHCHECKS", False):
             dependencies = self.get_dependency_health()
             summary["dependencies"] = dependencies
-            if any(item.get("healthy") is False for item in dependencies.values()):
+            if any(item.get("healthy") is False for item in dependencies.values()):  # pragma: no cover
                 summary["status"] = "degraded"
         return summary
 

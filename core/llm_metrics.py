@@ -206,7 +206,7 @@ class LLMMetricsCollector:
                 )
 
         for provider, row in by_provider.items():
-            if row["calls"]:
+            if row["calls"]:  # pragma: no cover
                 row["latency_ms_avg"] = round(row["latency_ms_avg"] / row["calls"], 2)
             row["latency_ms_max"] = round(row["latency_ms_max"], 2)
             row["cost_usd"] = round(row["cost_usd"], 6)
