@@ -340,3 +340,58 @@ def test_pypi_and_npm_version_formatting_handles_none_and_unexpected_strings(mon
 def test_package_version_helpers_tolerate_none_values():
     assert PackageInfoManager._is_prerelease(None) is False
     assert str(PackageInfoManager._version_sort_key(None)) == "0.0.0"
+
+def test_get_json_success_without_cache_key_does_not_store_cache(monkeypatch):
+    mgr = PKG.PackageInfoManager(config=types.SimpleNamespace(PACKAGE_INFO_TIMEOUT=5, PACKAGE_INFO_CACHE_TTL=120, VERSION="x"))
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            return _Resp()
+
+    monkeypatch.setattr(PKG.httpx, "AsyncClient", _Client)
+    ok, data, err = asyncio.run(mgr._get_json("https://example.com/data"))
+
+    assert ok is True
+    assert data == {"ok": True}
+    assert err == ""
+    assert mgr._cache == {}
+
+
+def test_github_releases_skips_empty_body_line(monkeypatch):
+    mgr = PackageInfoManager()
+
+    async def fake_get_json(_url, cache_key=""):
+        return True, [
+            {
+                "tag_name": "v1.0.0",
+                "name": "Stable",
+                "published_at": "2024-01-02T10:00:00Z",
+                "prerelease": False,
+                "body": "",
+            }
+        ], ""
+
+    monkeypatch.setattr(mgr, "_get_json", fake_get_json)
+    ok, text = asyncio.run(mgr.github_releases("org/repo", limit=1))
+
+    assert ok is True
+    assert "v1.0.0 — Stable [2024-01-02]" in text
+    assert "    " not in text
