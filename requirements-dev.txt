@@ -1,3 +1,4 @@
-# Geliştirme ortamı: pyproject.toml tek bağımlılık kaynağıdır.
-# Runtime + opsiyonel + dev/test araçları editable install ile gelir.
+# DEPRECATED: Ayrı bir bağımlılık listesi taşımıyor.
+# Kanonik kaynak: pyproject.toml (PEP 621) + uv.lock
+# Backward compatibility için tek satır shortcut korunur.
 -e .[all,dev]

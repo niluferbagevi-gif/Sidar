@@ -278,12 +278,14 @@ conda activate sidar-ai
 ### pip ile (Conda dışı)
 
 ```bash
-# Runtime + opsiyonel gruplar (pyproject.toml extras)
-pip install -e .[rag,postgres,telemetry,browser]
-
-# Geliştirme + test bağımlılıkları
-pip install -r requirements-dev.txt
+# Tek kaynak: pyproject.toml (PEP 621) + uv.lock
+# Tüm runtime + opsiyonel + geliştirme bağımlılıkları
+pip install -e .[all,dev]
 ```
+
+> **Bağımlılık Yönetimi Notu:** Bu repoda kanonik bağımlılık kaynağı `pyproject.toml` dosyasıdır.
+> `requirements-dev.txt` yalnızca backward-compatibility için `-e .[all,dev]` kısayolu olarak tutulur,
+> `setup.cfg` kaldırılmıştır.
 
 ### Opsiyonel: Masaüstü GUI Launcher
 
@@ -302,7 +304,7 @@ Launcher frontend dosyaları `launcher_gui/` altında bulunur ve seçimleri `gui
 v3.0 üretim hazırlığı kapsamında resmi migration zinciri `migrations/` klasörü altında tutulur.
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e .[all,dev]
 alembic upgrade head
 ```
 
