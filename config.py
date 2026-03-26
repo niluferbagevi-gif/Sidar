@@ -253,7 +253,7 @@ class Config:
 
     # ─── Genel ───────────────────────────────────────────────
     PROJECT_NAME: str = "Sidar"
-    VERSION: str      = "5.1.0"
+    VERSION: str      = "5.2.0"
     DEBUG_MODE: bool  = get_bool_env("DEBUG_MODE", False)
     ENABLE_MULTI_AGENT: bool = True  # Legacy bayrak kaldırıldı; sistem daima Supervisor akışında çalışır.
     ENABLE_AUTONOMOUS_SELF_HEAL: bool = get_bool_env("ENABLE_AUTONOMOUS_SELF_HEAL", False)

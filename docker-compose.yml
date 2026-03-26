@@ -65,13 +65,16 @@ services:
   # Kullanım: docker compose up sidar-gpu
   # Gereksinim: NVIDIA Container Toolkit kurulu olmalı.
   #   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+  # WSL2 notu: WSL2 üzerinde Docker GPU desteği için önce Windows tarafında
+  #   NVIDIA Driver (>=595.x) kurulmalı; WSL2 içinde ayrıca nvidia-ctk kurulumu gerekir:
+  #   sudo apt-get install -y nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker
   sidar-gpu:
     build:
       context: .
       args:
-        BASE_IMAGE: nvidia/cuda:12.4.1-runtime-ubuntu22.04
+        BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
     container_name: sidar_agent_gpu
     restart: unless-stopped
     cpus: ${SIDAR_GPU_CPU_LIMIT:-4.0}
@@ -179,9 +182,9 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: nvidia/cuda:12.4.1-runtime-ubuntu22.04
+        BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
     container_name: sidar_web_gpu
     restart: unless-stopped
     cpus: ${SIDAR_WEB_GPU_CPU_LIMIT:-4.0}
@@ -270,3 +273,4 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:

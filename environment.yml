@@ -1,6 +1,51 @@
-name: sidar
+name: sidar-ai
+
+# ── Kanal öncelik sırası ──────────────────────────────────────────────────────
+# pytorch  : PyTorch GPU wheellerini conda üzerinden sunar
+# nvidia   : CUDA araçları (cudatoolkit, cudnn)
+# conda-forge: güncel topluluk paketleri
+# defaults  : Anaconda/Miniconda standart kanalı
 channels:
-  - defaults
+  - pytorch
+  - nvidia
   - conda-forge
+  - defaults
+
 dependencies:
+  # ── Python çekirdeği ──────────────────────────────────────────────────────
   - python=3.11
+  - pip>=24.0
+
+  # ── Ses/PortAudio (pyaudio için sistem bağımlılığı) ───────────────────────
+  # WSL2 üzerinde pyaudio ses desteği için portaudio conda'dan kurulur;
+  # pip wheelinin derlenmesi gerekmez.
+  - portaudio
+
+  # ── pip ile kurulan paketler ──────────────────────────────────────────────
+  # Paket yönetimi uv (requirements.txt) üzerinden yapılır.
+  # GPU torch desteği için:
+  #   uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130
+  # Tüm bağımlılıklar için:
+  #   uv pip install -r requirements.txt
+  - pip:
+      - uv>=0.5.0
+
+# ── Kurulum talimatları (WSL2 / Ubuntu / Conda) ───────────────────────────────
+#
+# 1. Ortamı oluştur:
+#      conda env create -f environment.yml
+#      conda activate sidar-ai
+#
+# 2. Tüm bağımlılıkları kur (CPU):
+#      uv pip install -r requirements.txt
+#
+# 3. GPU (RTX 3070, CUDA 13.x) torch kurulumu için:
+#      uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130
+#
+# 4. CUDA bağlantısını doğrula:
+#      python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+#
+# NOT — WSL2 ses desteği:
+#   PulseAudio veya PipeWire kurulumu gerekebilir; pyaudio WSL2'de
+#   çoğunlukla ses donanımına erişemez. Ses özelliği devre dışı bırakılabilir:
+#   USE_VOICE=false (.env)
