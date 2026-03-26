@@ -155,18 +155,21 @@ Faz C derinleşmesi, SİDAR'ın mimarisini üç açıdan olgunlaştırmıştır:
 ### 9.1 Test Otomasyonu (Coverage Ajanı)
 
 - `agent/roles/coverage_agent.py`, `BaseAgent` üstünde `run_pytest`, `analyze_pytest_output`, `generate_missing_tests` ve `write_missing_tests` araçlarını `register_tool(...)` ile kaydeden fiili bir QA ajanı olarak sisteme eklendi.
+- **Kayıtlı tool seti (teyit):** `run_pytest`, `analyze_pytest_output`, `generate_missing_tests`, `write_missing_tests`.
 - Ajan, `SecurityManager` ile oluşturulan `CodeManager` üzerinden `run_pytest_and_collect(...)` çağrısını çalıştırıyor; pytest çıktısını `analyze_pytest_output(...)` ile normalleştiriyor, ilk bulguya göre hedef dosya için test adayı üretip önerilen `tests/test_<modül>_coverage.py` yoluna yazabiliyor.
 - Çalışma döngüsü yalnızca test üretmekle sınırlı değil; `core/db.py` içindeki `create_coverage_task(...)` ve `add_coverage_finding(...)` yardımcıları üzerinden `coverage_tasks` / `coverage_findings` kayıtları kalıcı hale getiriliyor. Böylece Coverage Agent, “çalıştır → analiz et → testi yaz → bulguyu kaydet” zincirini fiilen tamamlayan bir Faz E kalite halkası haline geldi.
 
 ### 9.2 Dijital Pazarlama & Operasyonlar (Poyraz Ajanı)
 
 - `agent/roles/poyraz_agent.py`, `WebSearchManager`, `SocialMediaManager` ve `DocumentStore` entegrasyonlarıyla çalışan aktif bir pazarlama/operasyon ajanıdır. Kurucu katmanda `web_search`, `fetch_url`, `search_docs`, `publish_social`, `publish_instagram_post`, `publish_facebook_post`, `send_whatsapp_message`, `build_landing_page`, `generate_campaign_copy`, `ingest_video_insights`, `create_marketing_campaign`, `store_content_asset`, `create_operation_checklist` ve `plan_service_operations` araçları `register_tool(...)` ile sisteme kaydedilir.
+- **Kayıtlı tool seti (teyit):** `web_search`, `fetch_url`, `search_docs`, `publish_social`, `publish_instagram_post`, `publish_facebook_post`, `send_whatsapp_message`, `build_landing_page`, `generate_campaign_copy`, `ingest_video_insights`, `create_marketing_campaign`, `store_content_asset`, `create_operation_checklist`, `plan_service_operations`.
 - Bu tasarım sayesinde Poyraz yalnızca serbest metin üreten bir rol değildir; `publish_instagram_post` ve `send_whatsapp_message` ile doğrudan kanal aktivasyonu yapar, `build_landing_page` ve `generate_campaign_copy` ile içerik üretir, `create_marketing_campaign` / `store_content_asset` / `create_operation_checklist` ile tenant-aware operasyon kayıtlarını kalıcılaştırır.
 - `core/db.py` içindeki `upsert_marketing_campaign(...)`, `add_content_asset(...)` ve `add_operation_checklist(...)` yardımcıları; `marketing_campaigns`, `content_assets` ve `operation_checklists` tablolarını hem SQLite hem PostgreSQL init-schema akışında hazırlar. Bu şema yüzeyi artık `migrations/versions/0004_faz_e_tables.py` ile resmi Alembic zincirine alınmış durumdadır; böylece Faz E veri modeli uygulama başlatma akışına ek olarak migration geçmişinde de izlenebilir hale gelmiştir.
 
 ### 9.3 Genişletilmiş Multimodal Zeka
 
 - Poyraz'ın `ingest_video_insights` aracı, `core.multimodal.MultimodalPipeline` örneğini doğrudan başlatır ve `analyze_media_source(...)` çağrısıyla dış video URL'lerinden sahne özeti, ingest metadatası ve `DocumentStore` beslemesi üretir.
+- **Dış sistem bağımlılığı teyidi:** `core/multimodal.py` URL/video ingest akışında sistem seviyesinde `yt-dlp`, `ffmpeg` ve `whisper` CLI varlığını kullanır; bu nedenle multimodal pipeline bu yardımcı araçların kurulu olduğu host/container ortamını gerektirir.
 - Üretilen sonuç, `document_ingest` bilgisiyle birlikte kampanya üretimine geri bağlanır; böylece video çözümleme artık yalnızca teknik demo değil, pazarlama brief'i ve içerik üretimi için kullanılan aktif Faz E veri kanalıdır.
 - Bu yapı, multimodal katmanı geliştirici odaklı medya özetinden çıkarıp operasyon ve gelir tarafını besleyen stratejik veri boru hattına dönüştürmüş durumdadır.
 
