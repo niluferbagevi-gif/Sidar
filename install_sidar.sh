@@ -1,394 +1,346 @@
-"""
-Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
-Sürüm: 1.9
-Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
-Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
-"""
-import os
-import subprocess
-import sys
-from fnmatch import fnmatch
-from datetime import datetime
-from typing import List, Sequence, Tuple
-
-from config import Config
-
-
-cfg = Config()
-
-# ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
-FORBIDDEN_PATHS = [
-    ".env",
-    ".env.*",
-    "sessions/",
-    "secrets/",
-    "credentials/",
-    "chroma_db/",
-    "__pycache__/",
-    ".git/",
-    "logs/",
-    "data/",
-    "temp/",
-    "tmp/",
-    "models/",
-]
-
-# FORBIDDEN_PATHS kuralından muaf tutulan şablon/örnek dosyalar
-# Örn: .env.* kalıbı .env.example'ı da bloklar; ancak bu dosya API key içermez, commit edilmesi gerekir.
-ALLOWED_EXCEPTIONS: frozenset[str] = frozenset({
-    ".env.example",
-})
-
-
-# ═══════════════════════════════════════════════════════════════
-# RENK KODLARI
-# ═══════════════════════════════════════════════════════════════
-class Colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-
-
-# ═══════════════════════════════════════════════════════════════
-# YARDIMCI FONKSİYONLAR
-# ═══════════════════════════════════════════════════════════════
-def run_command(args: Sequence[str], show_output: bool = True) -> Tuple[bool, str]:
-    """Komutu shell=False ile güvenli şekilde çalıştırır."""
-    try:
-        result = subprocess.run(
-            args,
-            shell=False,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if show_output and result.stdout.strip():
-            print(result.stdout.strip())
-        return True, result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        err_msg = e.stderr.strip()
-        if e.stdout and e.stdout.strip():
-            err_msg += "\n" + e.stdout.strip()
-
-        if show_output and err_msg:
-            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
-        return False, err_msg
-    except FileNotFoundError:
-        err_msg = f"Komut bulunamadı: {args[0] if args else 'bilinmiyor'}"
-        if show_output:
-            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
-        return False, err_msg
-
-
-def _is_valid_repo_url(url: str) -> bool:
-    """Temel GitHub repo URL doğrulaması."""
-    if not url:
-        return False
-    normalized = url.strip()
-    return (
-        normalized.startswith("https://github.com/")
-        or normalized.startswith("git@github.com:")
-    )
-
-
-def _normalize_path(path: str) -> str:
-    """Yol formatını güvenlik kontrolleri için normalize eder."""
-    normalized = path.replace("\\", "/")
-    if normalized.startswith("./"):
-        return normalized[2:]
-    return normalized
-
-
-def is_forbidden_path(path: str) -> bool:
-    """Hard blacklist: .gitignore'dan bağımsız kesin engel.
-    ALLOWED_EXCEPTIONS listesindeki dosyalar her zaman izin verilir."""
-    normalized = _normalize_path(path)
-    if normalized in ALLOWED_EXCEPTIONS:
-        return False
-    for forbidden in FORBIDDEN_PATHS:
-        rule = _normalize_path(forbidden)
-
-        if any(ch in rule for ch in "*?[]"):
-            if fnmatch(normalized, rule):
-                return True
-            continue
-
-        if forbidden.endswith("/"):
-            dir_rule = rule.rstrip("/")
-            if normalized == dir_rule or normalized.startswith(f"{dir_rule}/"):
-                return True
-            continue
-
-        if normalized == rule:
-            return True
-
-    return False
-
-
-def get_file_content(path: str) -> str | None:
-    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
-    if is_forbidden_path(path):
-        return None
-
-    try:
-        with open(path, "r", encoding="utf-8") as file:
-            return file.read()
-    except (UnicodeDecodeError, OSError):
-        return None
-
-
-def collect_safe_files() -> Tuple[List[str], List[str]]:
-    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
-    success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
-    if not success:
-        return [], []
-
-    safe_files = []
-    blocked_files = []
-
-    for line in output.splitlines():
-        file_path = line.strip()
-        if not file_path:
-            continue
-        if os.path.isdir(file_path):
-            continue
-
-        if is_forbidden_path(file_path):
-            blocked_files.append(file_path)
-            continue
-
-        if get_file_content(file_path) is None:
-            blocked_files.append(file_path)
-            continue
-
-        safe_files.append(file_path)
-
-    return safe_files, blocked_files
-
-
-def collect_deleted_files() -> List[str]:
-    """Git tarafından izlenen fakat local'de silinmiş dosyaları toplar."""
-    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
-    if not success or not output.strip():
-        return []
-
-    deleted_files: List[str] = []
-    for line in output.splitlines():
-        file_path = line.strip()
-        if not file_path:
-            continue
-        deleted_files.append(file_path)
-
-    return deleted_files
-
-
-def collect_tracked_ignored_files() -> List[str]:
-    """
-    .gitignore tarafından ignore edilmesine rağmen hâlâ tracked olan dosyaları toplar.
-    Bu dosyalar, geçmişte commit edildikleri için index'te kalmış olabilir.
-    """
-    success, output = run_command(
-        ["git", "ls-files", "-ci", "--exclude-standard"],
-        show_output=False,
-    )
-    if not success or not output.strip():
-        return []
-
-    tracked_ignored: List[str] = []
-    for line in output.splitlines():
-        file_path = line.strip()
-        if not file_path:
-            continue
-        tracked_ignored.append(file_path)
-
-    return tracked_ignored
-
-
-# ═══════════════════════════════════════════════════════════════
-# ANA PROGRAM
-# ═══════════════════════════════════════════════════════════════
-def main() -> None:
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v{cfg.VERSION}) {Colors.ENDC}")
-    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
-
-    # 0. Merkezi yapılandırmadan token kontrolü
-    if not cfg.GITHUB_TOKEN:
-        print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
-        sys.exit(1)
-
-    # 1. Git kurulu mu?
-    success, _ = run_command(["git", "--version"], show_output=False)
-    if not success:
-        print(f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}")
-        sys.exit(1)
-
-    # 1.5 Git Kimlik (Identity) Kontrolü
-    _, name_out = run_command(["git", "config", "user.name"], show_output=False)
-    if not name_out:
-        print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
-        git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
-        git_email = input("GitHub E-Posta Adresiniz: ").strip()
-        run_command(["git", "config", "--global", "user.name", git_name], show_output=False)
-        run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
-        print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
-
-    # 2. Git reposu mu?
-    if not os.path.exists(".git"):
-        print(f"{Colors.WARNING}Bu klasör henüz bir Git deposu değil. Başlatılıyor...{Colors.ENDC}")
-        run_command(["git", "init"], show_output=False)
-        run_command(["git", "branch", "-M", "main"], show_output=False)
-        print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
-
-    # 3. Remote (Uzak Sunucu) kontrolü
-    _, remotes = run_command(["git", "remote", "-v"], show_output=False)
-    if "origin" not in remotes:
-        print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
-        repo_url = input(
-            f"{Colors.OKBLUE}Lütfen GitHub Depo URL'sini girin\n"
-            f"(Örn: https://github.com/niluferbagevi-gif/Sidar): {Colors.ENDC}"
-        ).strip()
-
-        if not _is_valid_repo_url(repo_url):
-            print(f"{Colors.FAIL}Geçersiz veya boş URL. İşlem iptal edildi.{Colors.ENDC}")
-            sys.exit(1)
-
-        run_command(["git", "remote", "add", "origin", repo_url], show_output=False)
-        print(f"{Colors.OKGREEN}✅ GitHub deposu sisteme bağlandı.{Colors.ENDC}")
-    else:
-        print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
-
-    # 3.5 .gitignore ile mevcut tracked dosyalar uyumlu mu?
-    tracked_ignored_files = collect_tracked_ignored_files()
-    if tracked_ignored_files:
-        print(f"{Colors.WARNING}⚠️ .gitignore ile çelişen (tracked) dosyalar tespit edildi:{Colors.ENDC}")
-        for path in tracked_ignored_files[:20]:
-            print(f"  - {path}")
-        if len(tracked_ignored_files) > 20:
-            print(f"  ... (+{len(tracked_ignored_files) - 20} dosya daha)")
-        print(
-            f"{Colors.WARNING}"
-            "Not: Bu dosyalar .gitignore'da olsa bile tracked kaldığı için push edilir. "
-            "Gerekirse `git rm -r --cached <dosya/klasör>` ile index'ten çıkarın."
-            f"{Colors.ENDC}"
-        )
-
-    # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
-    print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
-    run_command(["git", "reset"], show_output=False)
-    safe_files, blocked_files = collect_safe_files()
-    deleted_files = collect_deleted_files()
-
-    if safe_files:
-        run_command(["git", "add", "--"] + safe_files, show_output=False)
-
-    if deleted_files:
-        run_command(["git", "add", "-u", "--"] + deleted_files, show_output=False)
-
-    if blocked_files:
-        print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
-        for blocked in blocked_files:
-            print(f"  - {blocked}")
-
-    if deleted_files:
-        print(f"{Colors.OKBLUE}🗑️ Local'de silinen ve commit'e dahil edilecek dosya sayısı: {len(deleted_files)}{Colors.ENDC}")
-
-    # 5. Durum Kontrolü (Değişen dosya var mı?)
-    _, status = run_command(["git", "status", "--porcelain"], show_output=False)
-    if not status:
-        print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
-        sys.exit(0)
-
-    # 6. Commit (Kaydetme) Mesajı
-    default_msg = (
-        f"🚀 Sidar {cfg.VERSION} - Otomatik Dağıtım "
-        f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
-    )
-    print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
-    commit_msg = input(
-        f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
-    ).strip()
-
-    if not commit_msg:
-        commit_msg = default_msg
-
-    print(f"\n{Colors.OKBLUE}💾 Değişiklikler kaydediliyor...{Colors.ENDC}")
-    commit_success, commit_err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
-
-    if not commit_success:
-        print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
-        sys.exit(1)
-
-    # 7. Branch (Dal) belirle
-    _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
-    current_branch = branch if branch else "main"
-
-    # 8. GitHub'a Gönder (Push)
-    print(f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}")
-
-    # Push işlemini dene
-    push_success, err_msg = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
-
-    if push_success:
-        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
-        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    else:
-        # Çakışma varsa (fetch first / rejected)
-        if "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
-            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
-            confirm = input(
-                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
-            ).strip().lower()
-
-            if confirm == "y":
-                print(
-                    f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
-                )
-                pull_cmd = [
-                    "git", "pull", "origin", current_branch,
-                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
-                ]
-                pull_success, pull_err = run_command(pull_cmd, show_output=False)
-
-                if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
-                    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
-
-                    retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
-
-                    if retry_success:
-                        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
-                        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                    else:
-                        if "rule violations" in retry_err:
-                            print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
-                            print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
-                        else:
-                            print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
-                else:
-                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
-                    print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
-                    print(f"Hata Çıktısı:\n{pull_err}")
-            else:
-                print(
-                    f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
-                    "Veri kaybını önlemek için push durduruldu."
-                    f"{Colors.ENDC}"
-                )
-        else:
-            print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
-
-
-if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(f"\n\n{Colors.FAIL}İşlem kullanıcı tarafından iptal edildi.{Colors.ENDC}")
-        sys.exit(0)
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sidar AI — Kurulum Betiği (install_sidar.sh)
+# Sürüm : 5.2.0
+# Hedef : WSL2 / Ubuntu / Conda + NVIDIA RTX 30xx/40xx (CUDA 13.x)
+#
+# Kullanım:
+#   chmod +x install_sidar.sh
+#   ./install_sidar.sh           # standart kurulum
+#   ./install_sidar.sh --dev     # geliştirici bağımlılıklarıyla
+#   ./install_sidar.sh --cpu     # GPU algılansa bile CPU zorla
+# ═══════════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+# ── Renkler ──────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+
+ok()   { echo -e "${GREEN}✅  $*${NC}"; }
+info() { echo -e "${BLUE}ℹ️   $*${NC}"; }
+warn() { echo -e "${YELLOW}⚠️   $*${NC}"; }
+fail() { echo -e "${RED}❌  $*${NC}"; exit 1; }
+step() { echo -e "\n${BOLD}${BLUE}── $* ──${NC}"; }
+
+# ── Argümanlar ────────────────────────────────────────────────────────────────
+INSTALL_DEV=false
+FORCE_CPU=false
+for arg in "$@"; do
+    case "$arg" in
+        --dev)  INSTALL_DEV=true ;;
+        --cpu)  FORCE_CPU=true ;;
+        *)      warn "Bilinmeyen argüman: $arg (--dev | --cpu kabul edilir)"; exit 1 ;;
+    esac
+done
+
+# ── Sabitler ──────────────────────────────────────────────────────────────────
+CONDA_ENV_NAME="sidar-ai"
+PYTHON_VERSION="3.11"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REQUIRED_DIRS=(data logs temp sessions chroma_db data/rag data/lora_adapters data/continuous_learning)
+
+banner() {
+    echo -e "${BOLD}${BLUE}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║          Sidar AI — Kurulum Başlıyor (v5.2.0)               ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
+# ── 1. Ön koşul kontrolleri ───────────────────────────────────────────────────
+check_prerequisites() {
+    step "Ön Koşullar Kontrol Ediliyor"
+
+    # Conda
+    if ! command -v conda &>/dev/null; then
+        fail "Conda bulunamadı. Miniconda veya Anaconda kurduğunuzdan emin olun.\n   İndirme: https://docs.conda.io/en/latest/miniconda.html"
+    fi
+    ok "Conda $(conda --version | cut -d' ' -f2)"
+
+    # Git
+    if ! command -v git &>/dev/null; then
+        fail "Git bulunamadı. Kurun: sudo apt-get install -y git"
+    fi
+    ok "Git $(git --version | cut -d' ' -f3)"
+
+    # Python 3.11+ kontrolü (conda içinde olacak, sadece sistem python denetimi)
+    if command -v python3 &>/dev/null; then
+        PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "0.0")
+        PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)
+        PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
+        if [[ "$PY_MAJOR" -ge 3 && "$PY_MINOR" -ge 11 ]]; then
+            ok "Python $PY_VER (sistem)"
+        else
+            warn "Sistem Python'u $PY_VER — conda ortamı Python $PYTHON_VERSION ile oluşturulacak."
+        fi
+    fi
+
+    # WSL2 tespiti
+    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+        info "WSL2 ortamı tespit edildi."
+        WSL2=true
+    else
+        WSL2=false
+    fi
+}
+
+# ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
+detect_gpu() {
+    step "GPU Tespiti"
+    GPU_AVAILABLE=false
+    CUDA_VERSION=""
+
+    if [[ "$FORCE_CPU" == true ]]; then
+        warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
+        return
+    fi
+
+    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
+        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "Bilinmiyor")
+        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ' || echo "0")
+        CUDA_VERSION=$(nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[\d.]+' | head -1 || echo "")
+        DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || echo "")
+
+        GPU_AVAILABLE=true
+        ok "GPU     : $GPU_NAME"
+        ok "VRAM    : ${VRAM_MB} MiB"
+        ok "Sürücü  : $DRIVER_VER"
+        ok "CUDA    : $CUDA_VERSION"
+
+        if [[ "$WSL2" == true ]]; then
+            info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
+        fi
+    else
+        warn "NVIDIA GPU bulunamadı veya nvidia-smi erişilemez — CPU modunda kurulum yapılacak."
+    fi
+}
+
+# ── 3. Conda ortamı oluştur / güncelle ───────────────────────────────────────
+setup_conda_env() {
+    step "Conda Ortamı: $CONDA_ENV_NAME"
+
+    # Conda init scriptini kaynak al (conda activate çalışması için gerekli)
+    CONDA_BASE=$(conda info --base 2>/dev/null) || fail "conda info başarısız oldu."
+    # shellcheck disable=SC1091
+    source "$CONDA_BASE/etc/profile.d/conda.sh"
+
+    if conda env list | grep -q "^${CONDA_ENV_NAME}\s"; then
+        info "Mevcut conda ortamı bulundu: $CONDA_ENV_NAME — güncelleniyor..."
+        conda env update -n "$CONDA_ENV_NAME" -f "$SCRIPT_DIR/environment.yml" --prune
+        ok "Conda ortamı güncellendi."
+    else
+        info "Yeni conda ortamı oluşturuluyor: $CONDA_ENV_NAME (Python $PYTHON_VERSION)..."
+        conda env create -f "$SCRIPT_DIR/environment.yml"
+        ok "Conda ortamı oluşturuldu."
+    fi
+
+    conda activate "$CONDA_ENV_NAME"
+    ok "Ortam aktif: $(conda info --envs | grep '\*' | awk '{print $1}')"
+}
+
+# ── 4. uv kurulumu / güncelleme ──────────────────────────────────────────────
+setup_uv() {
+    step "uv Paket Yöneticisi"
+
+    if ! command -v uv &>/dev/null; then
+        info "uv bulunamadı — pip ile kuruluyor..."
+        pip install --quiet "uv>=0.5.0"
+    fi
+    ok "uv $(uv --version | cut -d' ' -f2)"
+}
+
+# ── 5. Python bağımlılıklarını kur ───────────────────────────────────────────
+install_python_deps() {
+    step "Python Bağımlılıkları Kuruluyor"
+
+    REQ_FILE="$SCRIPT_DIR/requirements.txt"
+    [[ -f "$REQ_FILE" ]] || fail "requirements.txt bulunamadı: $REQ_FILE"
+
+    if [[ "$GPU_AVAILABLE" == true && -n "$CUDA_VERSION" ]]; then
+        # CUDA major version'ı belirle (örn. 13.2 → cu130)
+        CUDA_MAJOR=$(echo "$CUDA_VERSION" | cut -d. -f1)
+        CUDA_MINOR=$(echo "$CUDA_VERSION" | cut -d. -f2)
+
+        # PyTorch wheel dizini: cu130, cu121, cu124 gibi
+        if   [[ "$CUDA_MAJOR" -ge 13 ]]; then TORCH_CU="cu130"
+        elif [[ "$CUDA_MAJOR" -eq 12 && "$CUDA_MINOR" -ge 4 ]]; then TORCH_CU="cu124"
+        elif [[ "$CUDA_MAJOR" -eq 12 ]]; then TORCH_CU="cu121"
+        else TORCH_CU=""
+        fi
+
+        if [[ -n "$TORCH_CU" ]]; then
+            info "GPU kurulumu: CUDA $CUDA_VERSION → PyTorch wheel: $TORCH_CU"
+            uv pip install \
+                --extra-index-url "https://download.pytorch.org/whl/${TORCH_CU}" \
+                -r "$REQ_FILE"
+        else
+            warn "CUDA $CUDA_VERSION için PyTorch wheel URL'i belirlenemedi — PyPI'dan kuruluyor."
+            uv pip install -r "$REQ_FILE"
+        fi
+    else
+        info "CPU modu — requirements.txt'ten kuruluyor..."
+        uv pip install -r "$REQ_FILE"
+    fi
+
+    if [[ "$INSTALL_DEV" == true ]]; then
+        DEV_REQ_FILE="$SCRIPT_DIR/requirements-dev.txt"
+        if [[ -f "$DEV_REQ_FILE" ]]; then
+            info "Geliştirici bağımlılıkları kuruluyor..."
+            uv pip install -r "$DEV_REQ_FILE"
+            ok "Geliştirici bağımlılıkları kuruldu."
+        else
+            warn "requirements-dev.txt bulunamadı — dev kurulumu atlandı."
+        fi
+    fi
+
+    ok "Python bağımlılıkları kuruldu."
+}
+
+# ── 6. PyAudio WSL2 uyarısı ──────────────────────────────────────────────────
+check_pyaudio_wsl2() {
+    if [[ "$WSL2" == true ]]; then
+        warn "WSL2 üzerinde ses donanımına erişim kısıtlıdır."
+        info "Sesli özellik kullanmayacaksanız .env dosyanıza şunu ekleyin:"
+        echo "       USE_VOICE=false"
+        info "Ses desteği istiyorsanız: https://learn.microsoft.com/tr-tr/windows/wsl/tutorials/gui-apps"
+    fi
+}
+
+# ── 7. Dizinleri oluştur ──────────────────────────────────────────────────────
+create_directories() {
+    step "Proje Dizinleri"
+    for dir in "${REQUIRED_DIRS[@]}"; do
+        mkdir -p "$SCRIPT_DIR/$dir"
+    done
+    ok "Dizinler hazır: ${REQUIRED_DIRS[*]}"
+}
+
+# ── 8. .env dosyası ───────────────────────────────────────────────────────────
+setup_env_file() {
+    step ".env Yapılandırması"
+    ENV_FILE="$SCRIPT_DIR/.env"
+    EXAMPLE_FILE="$SCRIPT_DIR/.env.example"
+
+    if [[ -f "$ENV_FILE" ]]; then
+        ok ".env dosyası zaten mevcut — atlandı."
+        return
+    fi
+
+    if [[ ! -f "$EXAMPLE_FILE" ]]; then
+        warn ".env.example bulunamadı — .env oluşturulamadı. Manuel olarak oluşturun."
+        return
+    fi
+
+    cp "$EXAMPLE_FILE" "$ENV_FILE"
+    ok ".env dosyası .env.example'dan oluşturuldu."
+
+    # GPU tespiti varsa .env içinde USE_GPU=true yap
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        if command -v sed &>/dev/null; then
+            sed -i 's/^USE_GPU=false/USE_GPU=true/' "$ENV_FILE"
+            sed -i 's/^GPU_MIXED_PRECISION=false/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
+            ok ".env: USE_GPU=true, GPU_MIXED_PRECISION=true (RTX 30xx Ampere FP16 desteği)"
+        fi
+    fi
+
+    warn ".env dosyasını açın ve API anahtarlarınızı (OPENAI_API_KEY, GEMINI_API_KEY vb.) doldurun."
+}
+
+# ── 9. Alembic migrasyonları ─────────────────────────────────────────────────
+run_migrations() {
+    step "Veritabanı Migrasyonları"
+    ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
+
+    if [[ ! -f "$ALEMBIC_INI" ]]; then
+        warn "alembic.ini bulunamadı — migrasyon atlandı."
+        return
+    fi
+
+    cd "$SCRIPT_DIR"
+    if python -m alembic upgrade head 2>&1; then
+        ok "Alembic migrasyonları tamamlandı."
+    else
+        warn "Migrasyon başarısız veya kısmen tamamlandı. Log'ları kontrol edin."
+    fi
+}
+
+# ── 10. CUDA bağlantı testi ──────────────────────────────────────────────────
+verify_torch_cuda() {
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        step "PyTorch CUDA Doğrulaması"
+        CUDA_OK=$(python -c "
+import torch
+avail = torch.cuda.is_available()
+ver   = torch.version.cuda or 'N/A'
+dev   = torch.cuda.get_device_name(0) if avail else 'N/A'
+print(f'available={avail} cuda={ver} device={dev}')
+" 2>/dev/null || echo "available=false cuda=N/A device=N/A")
+
+        if echo "$CUDA_OK" | grep -q "available=True"; then
+            TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
+            TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
+            ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
+        else
+            warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
+            info "GPU wheel için: uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130"
+        fi
+    fi
+}
+
+# ── 11. Özet ─────────────────────────────────────────────────────────────────
+print_summary() {
+    echo ""
+    echo -e "${BOLD}${GREEN}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║              Sidar AI Kurulumu Tamamlandı!                  ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    echo -e "${BOLD}Sonraki Adımlar:${NC}"
+    echo ""
+    echo -e "  1️⃣  .env dosyasını düzenle:"
+    echo "       nano .env"
+    echo ""
+    echo -e "  2️⃣  Conda ortamını aktif et (yeni terminalde):"
+    echo "       conda activate $CONDA_ENV_NAME"
+    echo ""
+    echo -e "  3️⃣  CLI ile başlat:"
+    echo "       python main.py"
+    echo ""
+    echo -e "  4️⃣  Web arayüzü ile başlat (http://localhost:7860):"
+    echo "       python main.py --quick web"
+    echo ""
+    echo -e "  5️⃣  Testleri çalıştır (--dev ile kurulduysa):"
+    echo "       pytest tests/ -x -q"
+    echo ""
+
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        echo -e "  ${GREEN}🚀 GPU hızlandırma aktif — .env: USE_GPU=true${NC}"
+        echo ""
+    fi
+
+    echo -e "${BOLD}Faydalı Komutlar:${NC}"
+    echo "  python github_upload.py   — projeyi GitHub'a yükle"
+    echo "  python -m alembic upgrade head  — DB migrasyonu"
+    echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo ""
+}
+
+# ── Ana Akış ─────────────────────────────────────────────────────────────────
+main() {
+    cd "$SCRIPT_DIR"
+    banner
+    check_prerequisites
+    detect_gpu
+    setup_conda_env
+    setup_uv
+    install_python_deps
+    check_pyaudio_wsl2
+    create_directories
+    setup_env_file
+    run_migrations
+    verify_torch_cuda
+    print_summary
+}
+
+main "$@"
