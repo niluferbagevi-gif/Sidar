@@ -269,7 +269,8 @@ sidar_project/
 │   └── versions/
 │       ├── 0001_baseline_schema.py     # Temel şema (users, sessions, messages, quotas)
 │       ├── 0002_prompt_registry.py     # Prompt registry tablosu (v3.0.9+)
-│       └── 0003_audit_trail.py         # Tenant RBAC audit trail geçişi
+│       ├── 0003_audit_trail.py         # Tenant RBAC audit trail geçişi
+│       └── 0004_faz_e_tables.py        # Faz E kampanya/içerik/coverage tabloları
 │
 ├── scripts/                   # Operasyon, test ve metrik betikleri
 │   ├── <a href="docs/module-notes/scripts/audit_metrics.sh.md">audit_metrics.sh</a>       # Kod satır sayısı ve audit metrikleri üretici
@@ -405,7 +406,7 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 |---|---|---|
 | 3.27 | `web_ui/`, `web_ui_react/`, `VoiceAssistantPanel.jsx`, `useVoiceAssistant.js` | [docs/module-notes/web_ui/index.html.md](docs/module-notes/web_ui/index.html.md); React SPA için ayrı modül notu henüz yok, ancak duplex ses UX bileşenleri rapor içinde ayrıca belgelenmiştir |
 | 3.28 | `github_upload.py`, `gui_launcher.py` | [docs/module-notes/github_upload.py.md](docs/module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
-| 3.29 | `migrations/`, `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
+| 3.29 | `migrations/` (`0001`-`0004`), `scripts/` | [docs/module-notes/migrations/env.py.md](docs/module-notes/migrations/env.py.md) |
 | 3.30 | `docker/`, `runbooks/`, `helm/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](docs/module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
 
 ---
@@ -817,6 +818,7 @@ Bu bölüm, 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `migrations/versions/0001_baseline_schema.py` | 99 |
 | `migrations/versions/0002_prompt_registry.py` | 53 |
 | `migrations/versions/0003_audit_trail.py` | 38 |
+| `migrations/versions/0004_faz_e_tables.py` | 144 |
 | `scripts/migrate_sqlite_to_pg.py` | 92 |
 | `scripts/load_test_db_pool.py` | 74 |
 | `scripts/audit_metrics.sh` | 84 |
@@ -862,8 +864,8 @@ Bu bölüm, 2026-03-21 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/a
 | `web_ui_react/` | toplam takipli satır | 3.853 |
 | `scripts/` | dosya sayısı | 7 |
 | `scripts/` | toplam satır | 613 |
-| `migrations/` | `.py` dosya sayısı (env.py + 3 versions) | 4 |
-| `migrations/` | `*.py` toplam satır | 256 |
+| `migrations/` | `.py` dosya sayısı (env.py + 4 versions) | 5 |
+| `migrations/` | `*.py` toplam satır | 396 |
 | `helm/sidar/` | şablon dosyası sayısı (templates/ dahil) | 25 |
 | `helm/sidar/` | toplam satır | 913 |
 | `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
