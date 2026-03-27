@@ -202,10 +202,11 @@ def setup_git_identity() -> None:
 
 
 def ensure_git_repo() -> None:
-    if os.path.exists(".git"):
-        return
-    print(f"{Colors.WARNING}Bu klasor Git reposu degil, olusturuluyor...{Colors.ENDC}")
-    run_command(["git", "init"], show_output=False)
+    if not os.path.exists(".git"):
+        print(f"{Colors.WARNING}Bu klasor Git reposu degil, olusturuluyor...{Colors.ENDC}")
+        run_command(["git", "init"], show_output=False)
+
+    # Her kosulda local dali "main" olarak standartlastir.
     run_command(["git", "branch", "-M", DEFAULT_TARGET_BRANCH], show_output=False)
 
 
@@ -328,7 +329,7 @@ def _print_push_error(err_msg: str) -> None:
 
 def main() -> None:
     version = getattr(cfg, "VERSION", "2.2")
-    target_branch = getattr(cfg, "GITHUB_TARGET_BRANCH", DEFAULT_TARGET_BRANCH) or DEFAULT_TARGET_BRANCH
+    target_branch = DEFAULT_TARGET_BRANCH
 
     print(f"{Colors.HEADER}{'=' * 68}{Colors.ENDC}")
     print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yukleme Araci (v{version}) {Colors.ENDC}")
