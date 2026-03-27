@@ -282,6 +282,28 @@ def _restore_stash_if_any(stashed: bool) -> None:
     print(f"{Colors.OKGREEN}Gecici stash geri yuklendi.{Colors.ENDC}")
 
 
+def _has_unmerged_paths() -> bool:
+    ok, output = run_command(["git", "diff", "--name-only", "--diff-filter=U"], show_output=False)
+    return ok and bool(output.strip())
+
+
+def preflight_repo_state_checks() -> None:
+    """
+    Tehlikeli durumlardan cikmadan isleme devam etme:
+    - Conflicted (unmerged) dosyalar varken devam etme
+    - Rebase acikken branch switch/push akisina girme
+    """
+    if _has_unmerged_paths():
+        print(f"{Colors.FAIL}Repo icinde merge/rebase conflict var. Once conflict cozumleyin.{Colors.ENDC}")
+        print(f"{Colors.WARNING}Yardim: git status && git add <dosya> && git rebase --continue{Colors.ENDC}")
+        sys.exit(1)
+
+    if _is_rebase_in_progress():
+        print(f"{Colors.WARNING}Rebase su anda acik. Branch degisimi ve push engellendi.{Colors.ENDC}")
+        print(f"{Colors.WARNING}Yardim: git status, conflict cozu, sonra git rebase --continue{Colors.ENDC}")
+        sys.exit(1)
+
+
 def checkout_target_branch(branch: str) -> None:
     """
     Hedef branch'i localde hazirlar:
@@ -469,6 +491,7 @@ def main() -> None:
     setup_git_identity()
     ensure_git_repo()
     ensure_remote()
+    preflight_repo_state_checks()
     checkout_target_branch(target_branch)
     build_commit()
     finalize_rebase_if_needed()
