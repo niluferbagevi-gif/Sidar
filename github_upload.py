@@ -180,6 +180,13 @@ def collect_deleted_files() -> list[str]:
     return deleted
 
 
+def _is_rebase_in_progress() -> bool:
+    git_dir = ".git"
+    return os.path.exists(os.path.join(git_dir, "rebase-merge")) or os.path.exists(
+        os.path.join(git_dir, "rebase-apply")
+    )
+
+
 def _summarize_staged_areas() -> str:
     success, output = run_command(["git", "diff", "--cached", "--name-only"], show_output=False)
     if not success or not output.strip():
@@ -293,8 +300,11 @@ def build_commit() -> None:
         for blocked in blocked_files:
             print(f"  - {blocked}")
 
-    _, status = run_command(["git", "status", "--porcelain"], show_output=False)
-    if not status:
+    rebase_in_progress = _is_rebase_in_progress()
+    _, staged_status = run_command(["git", "diff", "--cached", "--name-only"], show_output=False)
+    has_staged_changes = bool(staged_status.strip())
+
+    if not has_staged_changes and not rebase_in_progress:
         print(f"{Colors.WARNING}Yeni degisiklik yok, proje guncel.{Colors.ENDC}")
         sys.exit(0)
 
@@ -308,7 +318,15 @@ def build_commit() -> None:
     print(f"\n{Colors.WARNING}Commit mesaji (bos birakirsan otomatik):{Colors.ENDC}")
     commit_msg = input(f"{Colors.OKBLUE}> {Colors.ENDC}").strip() or default_msg
 
-    ok, err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
+    commit_cmd = ["git", "commit", "-m", commit_msg]
+    if rebase_in_progress:
+        if has_staged_changes:
+            commit_cmd = ["git", "commit", "--amend", "-m", commit_msg]
+        else:
+            print(f"{Colors.WARNING}Rebase acik; degisiklik yok, mevcut commit no-edit amend edilecek.{Colors.ENDC}")
+            commit_cmd = ["git", "commit", "--amend", "--no-edit"]
+
+    ok, err = run_command(commit_cmd, show_output=False)
     if not ok:
         print(f"{Colors.FAIL}Commit olusturulamadi: {err}{Colors.ENDC}")
         sys.exit(1)
@@ -372,6 +390,22 @@ def _print_push_error(err_msg: str) -> None:
         print(f"{Colors.FAIL}Push hatasi: {err_msg}{Colors.ENDC}")
 
 
+def finalize_rebase_if_needed() -> None:
+    """Rebase aciksa devam ettirir; tamamlanmadan push'a gecmez."""
+    if not _is_rebase_in_progress():
+        return
+
+    ok, err = run_command(["git", "rebase", "--continue"], show_output=False)
+    if not ok:
+        print(f"{Colors.FAIL}Rebase --continue basarisiz: {err}{Colors.ENDC}")
+        print(f"{Colors.WARNING}Lutfen rebase'i manuel tamamlayip tekrar deneyin.{Colors.ENDC}")
+        sys.exit(1)
+
+    if _is_rebase_in_progress():
+        print(f"{Colors.WARNING}Rebase halen acik. Tum adimlari manuel tamamlayin ve scripti tekrar calistirin.{Colors.ENDC}")
+        sys.exit(1)
+
+
 def main() -> None:
     version = getattr(cfg, "VERSION", "2.2")
     target_branch = sys.argv[1].strip() if len(sys.argv) > 1 else DEFAULT_TARGET_BRANCH
@@ -399,6 +433,7 @@ def main() -> None:
     ensure_remote()
     checkout_target_branch(target_branch)
     build_commit()
+    finalize_rebase_if_needed()
 
     print(f"\n{Colors.HEADER}GitHub'a yukleniyor: origin/{target_branch}{Colors.ENDC}")
     push_success, err_msg = push_with_retry(target_branch)
