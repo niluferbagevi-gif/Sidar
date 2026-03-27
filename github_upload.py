@@ -251,6 +251,37 @@ def _remote_branch_exists(branch: str) -> bool:
     return ok and bool(output.strip())
 
 
+def _has_local_changes() -> bool:
+    ok, output = run_command(["git", "status", "--porcelain"], show_output=False)
+    return ok and bool(output.strip())
+
+
+def _stash_local_changes_if_needed() -> bool:
+    """Branch degisimi oncesi local degisiklikleri gecici stash'e alir."""
+    if not _has_local_changes():
+        return False
+
+    stash_msg = f"sidar-auto-stash-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    ok, err = run_command(["git", "stash", "push", "-u", "-m", stash_msg], show_output=False)
+    if not ok:
+        print(f"{Colors.FAIL}Local degisiklikler stash'e alinamadi: {err}{Colors.ENDC}")
+        sys.exit(1)
+    print(f"{Colors.WARNING}Branch degisimi icin local degisiklikler gecici stash'e alindi.{Colors.ENDC}")
+    return True
+
+
+def _restore_stash_if_any(stashed: bool) -> None:
+    if not stashed:
+        return
+
+    ok, err = run_command(["git", "stash", "pop"], show_output=False)
+    if not ok:
+        print(f"{Colors.FAIL}Stash geri yuklenemedi: {err}{Colors.ENDC}")
+        print(f"{Colors.WARNING}Lutfen 'git stash list' ve 'git stash pop' ile manuel geri yukleyin.{Colors.ENDC}")
+        sys.exit(1)
+    print(f"{Colors.OKGREEN}Gecici stash geri yuklendi.{Colors.ENDC}")
+
+
 def checkout_target_branch(branch: str) -> None:
     """
     Hedef branch'i localde hazirlar:
@@ -258,26 +289,33 @@ def checkout_target_branch(branch: str) -> None:
     - yoksa remote'da varsa track ederek olusturur
     - hic yoksa yeni local branch olusturur
     """
+    stashed = _stash_local_changes_if_needed()
     run_command(["git", "fetch", "origin"], show_output=False)
 
     if _local_branch_exists(branch):
         ok, err = run_command(["git", "checkout", branch], show_output=False)
         if not ok:
+            _restore_stash_if_any(stashed)
             print(f"{Colors.FAIL}Branch degistirme basarisiz: {err}{Colors.ENDC}")
             sys.exit(1)
+        _restore_stash_if_any(stashed)
         return
 
     if _remote_branch_exists(branch):
         ok, err = run_command(["git", "checkout", "-b", branch, "--track", f"origin/{branch}"], show_output=False)
         if not ok:
+            _restore_stash_if_any(stashed)
             print(f"{Colors.FAIL}Remote branch track edilirken hata: {err}{Colors.ENDC}")
             sys.exit(1)
+        _restore_stash_if_any(stashed)
         return
 
     ok, err = run_command(["git", "checkout", "-b", branch], show_output=False)
     if not ok:
+        _restore_stash_if_any(stashed)
         print(f"{Colors.FAIL}Yeni branch olusturulamadi: {err}{Colors.ENDC}")
         sys.exit(1)
+    _restore_stash_if_any(stashed)
 
 
 def build_commit() -> None:
