@@ -96,6 +96,14 @@ def _is_valid_repo_url(url: str) -> bool:
     return normalized.startswith("https://github.com/") or normalized.startswith("git@github.com:")
 
 
+def _is_valid_branch_name(branch: str) -> bool:
+    """Git'e uygun bir branch adi olup olmadigini kontrol eder."""
+    if not branch or any(ch.isspace() for ch in branch):
+        return False
+    ok, _ = run_command(["git", "check-ref-format", "--branch", branch], show_output=False)
+    return ok
+
+
 def is_forbidden_path(path: str) -> bool:
     normalized = _normalize_path(path)
     basename = os.path.basename(normalized)
@@ -205,9 +213,7 @@ def ensure_git_repo() -> None:
     if not os.path.exists(".git"):
         print(f"{Colors.WARNING}Bu klasor Git reposu degil, olusturuluyor...{Colors.ENDC}")
         run_command(["git", "init"], show_output=False)
-
-    # Her kosulda local dali "main" olarak standartlastir.
-    run_command(["git", "branch", "-M", DEFAULT_TARGET_BRANCH], show_output=False)
+        run_command(["git", "branch", "-M", DEFAULT_TARGET_BRANCH], show_output=False)
 
 
 def ensure_remote() -> None:
@@ -226,6 +232,45 @@ def ensure_remote() -> None:
 
     run_command(["git", "remote", "add", "origin", repo_url], show_output=False)
     print(f"{Colors.OKGREEN}Origin remote eklendi.{Colors.ENDC}")
+
+
+def _local_branch_exists(branch: str) -> bool:
+    ok, _ = run_command(["git", "show-ref", "--verify", f"refs/heads/{branch}"], show_output=False)
+    return ok
+
+
+def _remote_branch_exists(branch: str) -> bool:
+    ok, output = run_command(["git", "ls-remote", "--heads", "origin", branch], show_output=False)
+    return ok and bool(output.strip())
+
+
+def checkout_target_branch(branch: str) -> None:
+    """
+    Hedef branch'i localde hazirlar:
+    - localde varsa ona gecer
+    - yoksa remote'da varsa track ederek olusturur
+    - hic yoksa yeni local branch olusturur
+    """
+    run_command(["git", "fetch", "origin"], show_output=False)
+
+    if _local_branch_exists(branch):
+        ok, err = run_command(["git", "checkout", branch], show_output=False)
+        if not ok:
+            print(f"{Colors.FAIL}Branch degistirme basarisiz: {err}{Colors.ENDC}")
+            sys.exit(1)
+        return
+
+    if _remote_branch_exists(branch):
+        ok, err = run_command(["git", "checkout", "-b", branch, "--track", f"origin/{branch}"], show_output=False)
+        if not ok:
+            print(f"{Colors.FAIL}Remote branch track edilirken hata: {err}{Colors.ENDC}")
+            sys.exit(1)
+        return
+
+    ok, err = run_command(["git", "checkout", "-b", branch], show_output=False)
+    if not ok:
+        print(f"{Colors.FAIL}Yeni branch olusturulamadi: {err}{Colors.ENDC}")
+        sys.exit(1)
 
 
 def build_commit() -> None:
@@ -329,7 +374,11 @@ def _print_push_error(err_msg: str) -> None:
 
 def main() -> None:
     version = getattr(cfg, "VERSION", "2.2")
-    target_branch = DEFAULT_TARGET_BRANCH
+    target_branch = sys.argv[1].strip() if len(sys.argv) > 1 else DEFAULT_TARGET_BRANCH
+    if not _is_valid_branch_name(target_branch):
+        print(f"{Colors.FAIL}Gecersiz branch adi: '{target_branch}'{Colors.ENDC}")
+        print(f"{Colors.WARNING}Ornek kullanim: python github_upload.py main{Colors.ENDC}")
+        sys.exit(1)
 
     print(f"{Colors.HEADER}{'=' * 68}{Colors.ENDC}")
     print(f"{Colors.BOLD} Sidar - GitHub Otomatik Yukleme Araci (v{version}) {Colors.ENDC}")
@@ -348,6 +397,7 @@ def main() -> None:
     setup_git_identity()
     ensure_git_repo()
     ensure_remote()
+    checkout_target_branch(target_branch)
     build_commit()
 
     print(f"\n{Colors.HEADER}GitHub'a yukleniyor: origin/{target_branch}{Colors.ENDC}")
