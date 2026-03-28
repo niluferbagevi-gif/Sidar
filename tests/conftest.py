@@ -172,6 +172,12 @@ if importlib.util.find_spec("bs4") is None:
     _bs4.BeautifulSoup = BeautifulSoup
     sys.modules["bs4"] = _bs4
 
+# managers paketini erken yükle; conftest save/restore döngüsünde kaybolmasını önle.
+try:
+    import managers as _managers_pkg  # noqa: F401
+except Exception:
+    pass
+
 # pytest-asyncio >= 0.21+ ile session kapsamlı event loop pytest.ini üzerinden
 # `asyncio_default_fixture_loop_scope = session` ayarıyla sağlanır.
 # Özel event_loop fixture override'ı artık gerekli değildir ve deprecated'dır.
@@ -182,13 +188,19 @@ def _restore_critical_modules_between_tests():
     module_names = (
         "config",
         "managers",
+        "managers.browser_manager",
         "managers.system_health",
         "managers.code_manager",
         "managers.github_manager",
+        "managers.jira_manager",
         "managers.security",
+        "managers.slack_manager",
+        "managers.social_media_manager",
+        "managers.teams_manager",
+        "managers.todo_manager",
         "managers.web_search",
         "managers.package_info",
-        "managers.todo_manager",
+        "managers.youtube_manager",
         "core",
         "core.llm_metrics",
         "core.llm_client",

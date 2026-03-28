@@ -25,7 +25,6 @@ def _get_bm():
     hitl_stub = types.ModuleType("core.hitl")
     hitl_stub.get_hitl_gate = lambda: None
     sys.modules["core.hitl"] = hitl_stub
-    sys.modules["core"] = types.ModuleType("core")
 
     if "managers.browser_manager" in sys.modules:
         del sys.modules["managers.browser_manager"]
