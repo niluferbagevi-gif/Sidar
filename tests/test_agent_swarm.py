@@ -16,16 +16,66 @@ import pytest
 
 def _stub_swarm_deps():
     """Swarm'ın bağımlılıklarını stub'lar."""
+    import pathlib as _pl
+    _proj = _pl.Path(__file__).parent.parent
+
     # config stub
     if "config" not in sys.modules:
         cfg_stub = types.ModuleType("config")
         cfg_stub.Config = type("Config", (), {"AI_PROVIDER": "ollama"})
         sys.modules["config"] = cfg_stub
 
-    # agent.registry stub
-    for mod in ("agent", "agent.registry", "agent.core", "agent.core.contracts"):
-        if mod not in sys.modules:
-            sys.modules[mod] = types.ModuleType(mod)
+    # agent package stub — __path__ gerekli, yoksa submodule import çalışmaz
+    if "agent" not in sys.modules:
+        _pkg = types.ModuleType("agent")
+        _pkg.__path__ = [str(_proj / "agent")]
+        _pkg.__package__ = "agent"
+        sys.modules["agent"] = _pkg
+
+    # agent.registry stub — AgentRegistry ve AgentSpec import öncesi tanımlanmalı
+    if "agent.registry" not in sys.modules:
+        _reg_mod = types.ModuleType("agent.registry")
+        sys.modules["agent.registry"] = _reg_mod
+    else:
+        _reg_mod = sys.modules["agent.registry"]
+
+    if not hasattr(_reg_mod, "AgentRegistry"):
+        class _AgentSpec:
+            def __init__(self, role_name, capabilities=None):
+                self.role_name = role_name
+                self.capabilities = capabilities or []
+                self.description = ""
+
+        class _AgentRegistry:
+            _registry = {}
+
+            @classmethod
+            def get(cls, name):
+                return cls._registry.get(name)
+
+            @classmethod
+            def find_by_capability(cls, cap):
+                return [s for s in cls._registry.values() if cap in s.capabilities]
+
+            @classmethod
+            def list_all(cls):
+                return list(cls._registry.values())
+
+            @classmethod
+            def create(cls, name, **kwargs):
+                spec = cls._registry.get(name)
+                if spec is None:
+                    raise KeyError(name)
+                return spec._agent_factory(**kwargs) if hasattr(spec, "_agent_factory") else MagicMock()
+
+        _reg_mod.AgentRegistry = _AgentRegistry
+        _reg_mod.AgentSpec = _AgentSpec
+
+    # agent.core ve agent.core.contracts stub'ları
+    if "agent.core" not in sys.modules:
+        sys.modules["agent.core"] = types.ModuleType("agent.core")
+    if "agent.core.contracts" not in sys.modules:
+        sys.modules["agent.core.contracts"] = types.ModuleType("agent.core.contracts")
 
     # contracts stub
     contracts = sys.modules["agent.core.contracts"]
@@ -150,39 +200,6 @@ def _make_orchestrator(registered_agents=None):
     """SwarmOrchestrator + kayıtlı dummy ajanlarla hazır örnek döndürür."""
     sw = _get_swarm_module()
     reg = sys.modules["agent.registry"]
-
-    # AgentRegistry stub
-    if not hasattr(reg, "AgentRegistry"):
-        class _FakeSpec:
-            def __init__(self, role_name, capabilities=None):
-                self.role_name = role_name
-                self.capabilities = capabilities or []
-                self.description = ""
-
-        class _FakeRegistry:
-            _registry = {}
-
-            @classmethod
-            def get(cls, name):
-                return cls._registry.get(name)
-
-            @classmethod
-            def find_by_capability(cls, cap):
-                return [s for s in cls._registry.values() if cap in s.capabilities]
-
-            @classmethod
-            def list_all(cls):
-                return list(cls._registry.values())
-
-            @classmethod
-            def create(cls, name, **kwargs):
-                spec = cls._registry.get(name)
-                if spec is None:
-                    raise KeyError(name)
-                return spec._agent_factory(**kwargs) if hasattr(spec, "_agent_factory") else MagicMock()
-
-        reg.AgentRegistry = _FakeRegistry
-        reg.AgentSpec = _FakeSpec
 
     # Kayıtlı ajanlar
     agents_to_register = registered_agents or {

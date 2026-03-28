@@ -11,7 +11,52 @@ import types
 import pytest
 
 
+def _ensure_pydantic():
+    """Pydantic v2-uyumlu stub yükler; model_validate ve zorunlu alan doğrulaması içerir."""
+    class _ValidationError(Exception):
+        pass
+
+    class _BaseModel:
+        @classmethod
+        def _field_info(cls):
+            ann = {}
+            defaults = {}
+            for klass in reversed(cls.__mro__):
+                if klass is object:
+                    continue
+                klass_ann = klass.__dict__.get("__annotations__", {})
+                ann.update(klass_ann)
+                for k in klass_ann:
+                    if k in klass.__dict__:
+                        defaults[k] = klass.__dict__[k]
+            return ann, defaults
+
+        def __init__(self, **data):
+            ann, defaults = type(self)._field_info()
+            for field_name in ann:
+                if field_name not in data and field_name not in defaults:
+                    raise _ValidationError(f"Field '{field_name}' zorunlu")
+            for k, v in data.items():
+                setattr(self, k, v)
+            for k, v in defaults.items():
+                if k not in data:
+                    setattr(self, k, v)
+
+        @classmethod
+        def model_validate(cls, obj):
+            if not isinstance(obj, dict):
+                raise _ValidationError(f"dict beklendi, {type(obj)} geldi")
+            return cls(**obj)
+
+    pyd = types.ModuleType("pydantic")
+    pyd.BaseModel = _BaseModel
+    pyd.ValidationError = _ValidationError
+    pyd.Field = lambda *a, **k: None
+    sys.modules["pydantic"] = pyd
+
+
 def _get_tooling():
+    _ensure_pydantic()
     for mod in list(sys.modules.keys()):
         if mod == "agent.tooling":
             del sys.modules[mod]

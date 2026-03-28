@@ -26,10 +26,18 @@ def _stub_agent_deps():
     if not hasattr(llm_stub, "LLMClient"):
         llm_stub.LLMClient = MagicMock()
 
-    # agent.core.contracts stub
-    for mod in ("agent", "agent.core", "agent.core.contracts"):
-        if mod not in sys.modules:
-            sys.modules[mod] = types.ModuleType(mod)
+    # agent package stub — __path__ gerekli, yoksa submodule import çalışmaz
+    import pathlib as _pl
+    _proj = _pl.Path(__file__).parent.parent
+    if "agent" not in sys.modules:
+        _pkg = types.ModuleType("agent")
+        _pkg.__path__ = [str(_proj / "agent")]
+        _pkg.__package__ = "agent"
+        sys.modules["agent"] = _pkg
+    if "agent.core" not in sys.modules:
+        sys.modules["agent.core"] = types.ModuleType("agent.core")
+    if "agent.core.contracts" not in sys.modules:
+        sys.modules["agent.core.contracts"] = types.ModuleType("agent.core.contracts")
 
     contracts = sys.modules["agent.core.contracts"]
     for attr in ("DelegationRequest", "TaskEnvelope", "TaskResult", "is_delegation_request"):

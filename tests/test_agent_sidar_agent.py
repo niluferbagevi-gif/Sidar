@@ -83,6 +83,18 @@ def _build_contracts_stub():
 
 def _stub_all_sidar_deps():
     """SidarAgent'ın import zincirindeki tüm modülleri stub'lar."""
+    import pathlib as _pl
+    _proj = _pl.Path(__file__).parent.parent
+
+    # agent package stub — __path__ ile agent/__init__.py'nin çalışması engellenir
+    if "agent" not in sys.modules:
+        _pkg = types.ModuleType("agent")
+        _pkg.__path__ = [str(_proj / "agent")]
+        _pkg.__package__ = "agent"
+        sys.modules["agent"] = _pkg
+    if "agent.core" not in sys.modules:
+        sys.modules["agent.core"] = types.ModuleType("agent.core")
+
     contracts = _build_contracts_stub()
     sys.modules["agent.core.contracts"] = contracts
 
@@ -90,6 +102,7 @@ def _stub_all_sidar_deps():
     defs = types.ModuleType("agent.definitions")
     defs.SIDAR_SYSTEM_PROMPT = "Sen SİDAR'sın."
     defs.SIDAR_KEYS = ["sidar"]
+    defs.SIDAR_WAKE_WORDS = ["hey sidar", "sidar"]
     sys.modules["agent.definitions"] = defs
 
     # config stub
