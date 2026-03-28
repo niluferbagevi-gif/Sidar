@@ -139,6 +139,11 @@ if importlib.util.find_spec("httpx") is None:
             super().__init__(message)
             self.response = response
 
+    class Timeout:
+        def __init__(self, timeout=None, connect=None, read=None, write=None, pool=None):
+            self.timeout = timeout
+            self.connect = connect
+
     _httpx.HTTPError = HTTPError
     _httpx.RequestError = RequestError
     _httpx.TimeoutException = TimeoutException
@@ -146,6 +151,7 @@ if importlib.util.find_spec("httpx") is None:
     _httpx.HTTPStatusError = HTTPStatusError
     _httpx.Response = Response
     _httpx.AsyncClient = AsyncClient
+    _httpx.Timeout = Timeout
     sys.modules["httpx"] = _httpx
 
 
