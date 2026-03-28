@@ -8,8 +8,43 @@ import types
 
 import pytest
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Çevrede bozuk native kütüphaneler varsa (cffi/cryptography/jwt) testlerin
+# tamamen çökmemesi için stub'ları erken enjekte et.
+# ──────────────────────────────────────────────────────────────────────────────
+def _stub_broken_native_deps() -> None:
+    """cffi/cryptography/jwt gibi binary uyumsuz paketleri stub ile değiştirir."""
+    # _cffi_backend stub
+    if "_cffi_backend" not in sys.modules:
+        _cffi_backend = types.ModuleType("_cffi_backend")
+        sys.modules["_cffi_backend"] = _cffi_backend
 
-if importlib.util.find_spec("jwt") is None:
+    # cffi stub
+    if "cffi" not in sys.modules:
+        _cffi = types.ModuleType("cffi")
+        _cffi.FFI = type("FFI", (), {})
+        sys.modules["cffi"] = _cffi
+
+    # cryptography stub — sadece jwt'nin beklediği arayüz
+    for mod_name in (
+        "cryptography",
+        "cryptography.hazmat",
+        "cryptography.hazmat.primitives",
+        "cryptography.hazmat.primitives.asymmetric",
+        "cryptography.hazmat.primitives.asymmetric.ec",
+        "cryptography.hazmat._oid",
+        "cryptography.hazmat.bindings",
+        "cryptography.hazmat.bindings._rust",
+        "cryptography.exceptions",
+        "cryptography.fernet",
+    ):
+        if mod_name not in sys.modules:
+            sys.modules[mod_name] = types.ModuleType(mod_name)
+
+
+_stub_broken_native_deps()
+
+if "jwt" not in sys.modules:
     _jwt = types.ModuleType("jwt")
 
     class PyJWTError(Exception):
