@@ -92,6 +92,7 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
     assert "sessions/secret.txt" in blocked
 
 
+<<<<<<< HEAD
 def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(
@@ -149,6 +150,8 @@ def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
     assert ("git", "add", "-u", "--", "old.txt") in seen
 
 
+=======
+>>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(sys, "argv", ["github_upload.py"])
@@ -319,7 +322,6 @@ def test_main_push_conflict_cancelled_by_user(monkeypatch):
     GU.main()
 
 
-
 def test_main_push_conflict_accepts_merge_and_retries_push(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(sys, "argv", ["github_upload.py"])
@@ -377,7 +379,6 @@ def test_main_exits_when_git_missing(monkeypatch):
         assert False
     except SystemExit as exc:
         assert exc.code == 1
-
 
 
 def test_github_upload_all_edge_cases(monkeypatch, tmp_path):
@@ -724,6 +725,7 @@ def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
     GU.main()
+<<<<<<< HEAD
 
 
 def test_collect_deleted_files_edge_cases(monkeypatch):
@@ -745,3 +747,5 @@ def test_collect_tracked_ignored_files_failure(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
     assert GU.collect_tracked_ignored_files() == []
+=======
+>>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
