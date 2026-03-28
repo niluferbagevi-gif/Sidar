@@ -205,7 +205,45 @@ def main():
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
     _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
-    current_branch = branch_out if branch_out else "main"
+    current_branch = branch_out.strip() if branch_out else "main"
+
+    # Çalışma akışını her zaman main dalında sürdür.
+    if current_branch != "main":
+        print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
+        print(f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş hazırlanıyor...{Colors.ENDC}")
+
+        _, stash_status = run_command(["git", "status", "--porcelain"], show_output=False)
+        stash_created = False
+        if stash_status.strip():
+            stash_success, stash_err = run_command(
+                ["git", "stash", "push", "-u", "-m", "github_upload:auto-switch-to-main"],
+                show_output=False,
+            )
+            if not stash_success:
+                print(f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e alınamadı:\n{stash_err}{Colors.ENDC}")
+                sys.exit(1)
+            stash_created = True
+
+        checkout_success, checkout_err = run_command(["git", "checkout", "main"], show_output=False)
+        if not checkout_success:
+            print(f"{Colors.FAIL}❌ 'main' dalına geçiş başarısız oldu:\n{checkout_err}{Colors.ENDC}")
+            if stash_created:
+                run_command(["git", "stash", "pop"], show_output=False)
+            print(f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları kontrol edin.{Colors.ENDC}")
+            sys.exit(1)
+
+        current_branch = "main"
+
+        if stash_created:
+            pop_success, pop_err = run_command(["git", "stash", "pop"], show_output=False)
+            if not pop_success:
+                print(f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma oluştu:\n{pop_err}{Colors.ENDC}")
+                print(
+                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar çalıştırabilirsiniz.{Colors.ENDC}"
+                )
+                sys.exit(1)
+
+        print(f"{Colors.OKGREEN}✅ 'main' dalına başarıyla geçildi.{Colors.ENDC}\n")
 
 
     # ═══════════════════════════════════════════════════════════════
