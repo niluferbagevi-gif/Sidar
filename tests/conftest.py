@@ -53,4 +53,4 @@ def test_config(tmp_path: Path) -> dict[str, Any]:
         "workspace_dir": str(tmp_path),
         "debug": False,
         "llm_timeout_seconds": 10,
-    }
+    } 
