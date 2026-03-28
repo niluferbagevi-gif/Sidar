@@ -27,7 +27,7 @@ if [ -d "web_ui_react" ] && command -v npm >/dev/null 2>&1; then
     echo "⚠️ npm install başarısız, React testleri atlanıyor."
     popd > /dev/null
   else
-    npm run test:coverage || echo "⚠️ Frontend test:coverage başarısız, ancak devam ediliyor."
+    npm run test:coverage
     popd > /dev/null
   fi
 elif [ -d "web_ui_react" ]; then
