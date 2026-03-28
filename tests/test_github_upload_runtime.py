@@ -92,30 +92,7 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
     assert "sessions/secret.txt" in blocked
 
 
-<<<<<<< HEAD
-def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
-    GU = _load_module()
-    monkeypatch.setattr(
-        GU, "run_command", lambda *a, **k: (True, "old.txt\nnested/removed.py\n")
-    )
-    assert GU.collect_deleted_files() == ["old.txt", "nested/removed.py"]
-
-
-def test_collect_tracked_ignored_files_returns_conflicts(monkeypatch):
-    GU = _load_module()
-    monkeypatch.setattr(
-        GU, "run_command", lambda *a, **k: (True, "sidar_project.egg-info/PKG-INFO\n.env.local\n")
-    )
-    assert GU.collect_tracked_ignored_files() == [
-        "sidar_project.egg-info/PKG-INFO",
-        ".env.local",
-    ]
-
-
-def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
-=======
 def test_main_stages_safe_files_with_explicit_pathspec(monkeypatch):
->>>>>>> adbbcf6b6d2f27b5554cba54309734e7c6574dce
     GU = _load_module()
     monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
@@ -805,10 +782,6 @@ def test_main_rollback_argument_out_of_range_exits(monkeypatch):
 
 def test_main_rollback_confirmed_reset_failure_exits(monkeypatch):
     GU = _load_module()
-<<<<<<< HEAD
-    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
-    assert GU.collect_tracked_ignored_files() == []
-=======
     monkeypatch.setattr(sys, "argv", ["github_upload.py", "-2"])
     GU.cfg.GITHUB_TOKEN = "token"
 
@@ -918,4 +891,3 @@ def test_main_no_status_but_unpushed_commits_pushes_without_prompt(monkeypatch):
     GU.main()
     assert ("git", "log", "origin/main..HEAD") in calls
     assert ("git", "push", "-u", "origin", "main") in calls
->>>>>>> adbbcf6b6d2f27b5554cba54309734e7c6574dce
