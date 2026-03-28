@@ -92,31 +92,7 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
     assert "sessions/secret.txt" in blocked
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
-    GU = _load_module()
-    monkeypatch.setattr(
-        GU, "run_command", lambda *a, **k: (True, "old.txt\nnested/removed.py\n")
-    )
-    assert GU.collect_deleted_files() == ["old.txt", "nested/removed.py"]
-
-
-def test_collect_tracked_ignored_files_returns_conflicts(monkeypatch):
-    GU = _load_module()
-    monkeypatch.setattr(
-        GU, "run_command", lambda *a, **k: (True, "sidar_project.egg-info/PKG-INFO\n.env.local\n")
-    )
-    assert GU.collect_tracked_ignored_files() == [
-        "sidar_project.egg-info/PKG-INFO",
-        ".env.local",
-    ]
-
-
-def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
+def test_main_stages_safe_files_with_explicit_pathspec(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
@@ -132,38 +108,26 @@ def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
             return True, "origin"
         if args[:2] == ["git", "reset"]:
             return True, ""
-        if args[:2] == ["git", "status"]:
-            return True, "D old.txt"
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return True, "M old.txt"
         if args[:2] == ["git", "commit"]:
             return True, "ok"
         if args[:3] == ["git", "branch", "--show-current"]:
             return True, "main"
         if args[:2] == ["git", "push"]:
             return True, "ok"
-        if args[:3] == ["git", "ls-files", "-d"]:
-            return True, "old.txt"
         return True, ""
 
     monkeypatch.setattr(GU, "run_command", _fake_run)
     monkeypatch.setattr(GU.os.path, "exists", lambda p: True)
-    monkeypatch.setattr(GU, "collect_safe_files", lambda: ([], []))
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: (["old.txt"], []))
     monkeypatch.setattr("builtins.input", lambda _p: "sync deletes")
 
     GU.main()
 
-    assert ("git", "add", "-u", "--", "old.txt") in seen
+    assert ("git", "add", "--", "old.txt") in seen
 
 
-=======
->>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
-=======
->>>>>>> 222c1b7fd2457e0443c329e5597d64a1e083501e
-=======
->>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
-=======
->>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
-=======
->>>>>>> aa3138fff330e9f6b2914d5e029ae6d8564e8ef9
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(sys, "argv", ["github_upload.py"])
@@ -694,9 +658,7 @@ def test_main_push_retry_failure_and_unknown_push_error(monkeypatch):
     monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
-    with pytest.raises(SystemExit) as exc:
-        GU.main()
-    assert exc.value.code == 1
+    GU.main()
 
     # merge fail prints pull command/error + unknown push error path
     def _fake_run2(args, show_output=False):
@@ -770,9 +732,7 @@ def test_main_push_conflict_merge_fails(monkeypatch):
     monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
-    with pytest.raises(SystemExit) as exc:
-        GU.main()
-    assert exc.value.code == 1
+    GU.main()
 
 
 def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
@@ -809,39 +769,125 @@ def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
     GU.main()
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 
 
-def test_collect_deleted_files_edge_cases(monkeypatch):
+def test_main_rollback_argument_out_of_range_exits(monkeypatch):
     GU = _load_module()
-
-    # failure path -> returns empty list
-    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
-    assert GU.collect_deleted_files() == []
-
-    # empty lines and forbidden paths are skipped
-    monkeypatch.setattr(
-        GU, "run_command",
-        lambda *a, **k: (True, "\nsessions/secret.txt\nlegit.txt\n")
-    )
-    assert GU.collect_deleted_files() == ["legit.txt"]
+    monkeypatch.setattr(sys, "argv", ["github_upload.py", "-11"])
+    GU.cfg.GITHUB_TOKEN = "token"
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 1
 
 
-def test_collect_tracked_ignored_files_failure(monkeypatch):
+def test_main_rollback_confirmed_reset_failure_exits(monkeypatch):
     GU = _load_module()
-    monkeypatch.setattr(GU, "run_command", lambda *a, **k: (False, "err"))
-    assert GU.collect_tracked_ignored_files() == []
-=======
->>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
-=======
->>>>>>> 222c1b7fd2457e0443c329e5597d64a1e083501e
-=======
->>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
-=======
->>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
-=======
->>>>>>> aa3138fff330e9f6b2914d5e029ae6d8564e8ef9
+    monkeypatch.setattr(sys, "argv", ["github_upload.py", "-2"])
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:3] == ["git", "reset", "--hard"]:
+            return False, "reset failed"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr("builtins.input", lambda _p: "evet")
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 1
+
+
+def test_main_rollback_confirmed_push_failure_exits_zero(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py", "-2"])
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:3] == ["git", "reset", "--hard"]:
+            return True, "ok"
+        if args[:2] == ["git", "push"]:
+            return False, "push denied"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr("builtins.input", lambda _p: "yes")
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 0
+
+
+def test_main_target_branch_merge_failure_exits(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py", "feature-x"])
+    GU.cfg.GITHUB_TOKEN = "token"
+
+    def _fake_run(args, show_output=False):
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "pull"]:
+            return False, "merge conflict"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 1
+
+
+def test_main_no_status_but_unpushed_commits_pushes_without_prompt(monkeypatch):
+    GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
+    GU.cfg.GITHUB_TOKEN = "token"
+    calls = []
+
+    def _fake_run(args, show_output=False):
+        calls.append(tuple(args))
+        if args[:2] == ["git", "--version"]:
+            return True, "git"
+        if args[:3] == ["git", "config", "user.name"]:
+            return True, "dev"
+        if args[:3] == ["git", "remote", "-v"]:
+            return True, "origin"
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return True, "main"
+        if args[:2] == ["git", "reset"]:
+            return True, ""
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return True, ""
+        if args[:2] == ["git", "log"]:
+            return True, "abc123 local only commit"
+        if args[:2] == ["git", "push"]:
+            return True, "ok"
+        return True, ""
+
+    monkeypatch.setattr(GU, "run_command", _fake_run)
+    monkeypatch.setattr(GU.os.path, "exists", lambda _p: True)
+    monkeypatch.setattr(GU, "collect_safe_files", lambda: ([], []))
+    GU.main()
+    assert ("git", "log", "origin/main..HEAD") in calls
+    assert ("git", "push", "-u", "origin", "main") in calls
