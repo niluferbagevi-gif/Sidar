@@ -131,9 +131,19 @@ if importlib.util.find_spec("httpx") is None:
         async def delete(self, *_args, **_kwargs):
             return Response()
 
+    class ConnectError(RequestError):
+        pass
+
+    class HTTPStatusError(HTTPError):
+        def __init__(self, message="", response=None):
+            super().__init__(message)
+            self.response = response
+
     _httpx.HTTPError = HTTPError
     _httpx.RequestError = RequestError
     _httpx.TimeoutException = TimeoutException
+    _httpx.ConnectError = ConnectError
+    _httpx.HTTPStatusError = HTTPStatusError
     _httpx.Response = Response
     _httpx.AsyncClient = AsyncClient
     sys.modules["httpx"] = _httpx
