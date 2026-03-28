@@ -527,6 +527,9 @@ class TestValidateCriticalSettings:
         import config
         config.Config._hardware_loaded = True  # donanım kontrolünü atla
         config.Config.AI_PROVIDER = provider
+        # Gerçek .env'den gelen geçersiz MEMORY_ENCRYPTION_KEY testleri bozmasın;
+        # boş string "else" dalına düşer (sadece CRITICAL log, is_valid etkilenmez).
+        config.Config.MEMORY_ENCRYPTION_KEY = ""
         for k, v in (extra or {}).items():
             setattr(config.Config, k, v)
         return config.Config
