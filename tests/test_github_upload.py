@@ -170,3 +170,51 @@ class TestCollectSafeFiles:
         assert "binary.bin" in safe  # text uzantısı değilse içerik okunmasa da geçer
         assert "README.md" in blocked
         assert "logs/app.log" in blocked
+
+
+class TestNormalizePathEdgeCases:
+    def test_removes_dot_slash_prefix(self):
+        mod = _get_github_upload()
+        assert mod._normalize_path("./relative/path.py") == "relative/path.py"
+
+    def test_removes_leading_slash(self):
+        mod = _get_github_upload()
+        assert mod._normalize_path("/absolute/path.py") == "absolute/path.py"
+
+    def test_collapses_double_slashes(self):
+        mod = _get_github_upload()
+        assert mod._normalize_path("a//b//c.py") == "a/b/c.py"
+
+    def test_plain_path_unchanged(self):
+        mod = _get_github_upload()
+        assert mod._normalize_path("src/app.py") == "src/app.py"
+
+    def test_dot_slash_only_becomes_empty(self):
+        mod = _get_github_upload()
+        assert mod._normalize_path("./") == ""
+
+
+class TestIsForbiddenPathExtended:
+    def test_chroma_db_path_is_forbidden(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path("chroma_db/data.json") is True
+
+    def test_pycache_path_is_forbidden(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path("__pycache__/module.pyc") is True
+
+    def test_sessions_path_is_forbidden(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path("sessions/user.json") is True
+
+    def test_models_path_is_forbidden(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path("models/llm.bin") is True
+
+    def test_git_dir_is_forbidden(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path(".git/config") is True
+
+    def test_non_forbidden_python_file_allowed(self):
+        mod = _get_github_upload()
+        assert mod.is_forbidden_path("agent/sidar_agent.py") is False

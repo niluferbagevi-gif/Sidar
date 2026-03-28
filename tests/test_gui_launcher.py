@@ -45,6 +45,22 @@ def _load_gui_launcher(*, execute_return_code: int = 0, preflight_raises: Except
     return module, state
 
 
+class TestConstants:
+    def test_default_log_level_is_info(self):
+        mod, _ = _load_gui_launcher()
+        assert mod.DEFAULT_LOG_LEVEL == "info"
+
+    def test_default_web_args_keys(self):
+        mod, _ = _load_gui_launcher()
+        assert "host" in mod.DEFAULT_WEB_ARGS
+        assert "port" in mod.DEFAULT_WEB_ARGS
+
+    def test_default_web_args_values(self):
+        mod, _ = _load_gui_launcher()
+        assert mod.DEFAULT_WEB_ARGS["host"] == "0.0.0.0"
+        assert mod.DEFAULT_WEB_ARGS["port"] == "7860"
+
+
 class TestNormalizeSelection:
     def test_normalize_selection_trims_and_lowercases(self):
         mod, _ = _load_gui_launcher()
@@ -64,6 +80,42 @@ class TestNormalizeSelection:
             assert False, "ValueError bekleniyordu"
         except ValueError as exc:
             assert "Geçersiz mode" in str(exc)
+
+    def test_invalid_provider_raises(self):
+        mod, _ = _load_gui_launcher()
+        try:
+            mod._normalize_selection("cli", "gpt4", "full", "info")
+            assert False, "ValueError bekleniyordu"
+        except ValueError as exc:
+            assert "Geçersiz provider" in str(exc)
+
+    def test_invalid_level_raises(self):
+        mod, _ = _load_gui_launcher()
+        try:
+            mod._normalize_selection("cli", "ollama", "superuser", "info")
+            assert False, "ValueError bekleniyordu"
+        except ValueError as exc:
+            assert "Geçersiz level" in str(exc)
+
+    def test_invalid_log_level_raises(self):
+        mod, _ = _load_gui_launcher()
+        try:
+            mod._normalize_selection("cli", "ollama", "full", "verbose")
+            assert False, "ValueError bekleniyordu"
+        except ValueError as exc:
+            assert "Geçersiz log_level" in str(exc)
+
+    def test_all_valid_providers_accepted(self):
+        mod, _ = _load_gui_launcher()
+        for provider in ("ollama", "gemini", "openai", "anthropic"):
+            result = mod._normalize_selection("cli", provider, "full", "info")
+            assert result["provider"] == provider
+
+    def test_all_valid_levels_accepted(self):
+        mod, _ = _load_gui_launcher()
+        for level in ("restricted", "sandbox", "full"):
+            result = mod._normalize_selection("cli", "ollama", level, "info")
+            assert result["level"] == level
 
 
 class TestExtraArgsForMode:

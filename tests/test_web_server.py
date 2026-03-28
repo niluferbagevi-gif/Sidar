@@ -337,3 +337,467 @@ class TestPromptBuilder:
         assert "participants=Ali<developer>" in prompt
         assert "requesting_write_scopes=/repo/workspaces/workspace/default" in prompt
         assert "Current command:\ntestleri çalıştır" in prompt
+
+
+class TestSocketKey:
+    def test_returns_id_of_object(self):
+        ws = _get_web_server()
+        obj = object()
+        assert ws._socket_key(obj) == id(obj)
+
+    def test_different_objects_have_different_keys(self):
+        ws = _get_web_server()
+        a, b = object(), object()
+        assert ws._socket_key(a) != ws._socket_key(b)
+
+
+class TestCollaborationNowIso:
+    def test_returns_string(self):
+        ws = _get_web_server()
+        result = ws._collaboration_now_iso()
+        assert isinstance(result, str)
+
+    def test_contains_utc_offset(self):
+        ws = _get_web_server()
+        result = ws._collaboration_now_iso()
+        assert "+" in result or result.endswith("Z")
+
+
+class TestSerializeCollaborationParticipant:
+    def test_all_fields_present(self):
+        ws = _get_web_server()
+        stub_ws = types.SimpleNamespace()
+        p = ws._CollaborationParticipant(
+            websocket=stub_ws,
+            user_id="u42",
+            username="zeynep",
+            display_name="Zeynep K.",
+            role="admin",
+            can_write=True,
+            write_scopes=["/repo"],
+            joined_at="2026-03-28T00:00:00+00:00",
+        )
+        result = ws._serialize_collaboration_participant(p)
+        assert result["user_id"] == "u42"
+        assert result["username"] == "zeynep"
+        assert result["display_name"] == "Zeynep K."
+        assert result["role"] == "admin"
+        assert result["can_write"] == "true"
+        assert result["write_scopes"] == ["/repo"]
+
+    def test_can_write_false_serialized_as_string(self):
+        ws = _get_web_server()
+        stub_ws = types.SimpleNamespace()
+        p = ws._CollaborationParticipant(
+            websocket=stub_ws,
+            user_id="u1",
+            username="ali",
+            display_name="Ali",
+            role="user",
+            can_write=False,
+            write_scopes=[],
+            joined_at="2026-03-28T00:00:00+00:00",
+        )
+        result = ws._serialize_collaboration_participant(p)
+        assert result["can_write"] == "false"
+
+
+class TestSerializeCollaborationRoom:
+    def test_shape_has_required_keys(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        result = ws._serialize_collaboration_room(room)
+        assert "room_id" in result
+        assert "participants" in result
+        assert "messages" in result
+        assert "telemetry" in result
+
+    def test_room_id_matches(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:qa")
+        result = ws._serialize_collaboration_room(room)
+        assert result["room_id"] == "workspace:qa"
+
+    def test_messages_limited_to_120(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        room.messages = [{"id": str(i)} for i in range(200)]
+        result = ws._serialize_collaboration_room(room)
+        assert len(result["messages"]) == 120
+
+
+class TestMaskCollaborationText:
+    def test_returns_string_when_dlp_unavailable(self):
+        ws = _get_web_server()
+        import sys
+        sys.modules.pop("core.dlp", None)
+        result = ws._mask_collaboration_text("merhaba dünya")
+        assert isinstance(result, str)
+        assert "merhaba" in result
+
+    def test_empty_string_returns_empty(self):
+        ws = _get_web_server()
+        assert ws._mask_collaboration_text("") == ""
+
+    def test_none_converted_to_empty(self):
+        ws = _get_web_server()
+        result = ws._mask_collaboration_text(None)
+        assert isinstance(result, str)
+
+
+class TestNormalizeCollaborationRoleExtended:
+    def test_valid_role_returned_as_is(self):
+        ws = _get_web_server()
+        assert ws._normalize_collaboration_role("admin") == "admin"
+
+    def test_uppercase_role_lowercased(self):
+        ws = _get_web_server()
+        assert ws._normalize_collaboration_role("DEVELOPER") == "developer"
+
+    def test_whitespace_only_becomes_user(self):
+        ws = _get_web_server()
+        assert ws._normalize_collaboration_role("   ") == "user"
+
+    def test_maintainer_role_preserved(self):
+        ws = _get_web_server()
+        assert ws._normalize_collaboration_role("maintainer") == "maintainer"
+
+
+class TestCollaborationWriteScopesExtended:
+    def test_maintainer_scope_is_workspace_subdir(self):
+        ws = _get_web_server()
+        scopes = ws._collaboration_write_scopes_for_role("maintainer", "workspace:team")
+        assert len(scopes) == 1
+        assert "workspace" in scopes[0]
+
+    def test_editor_scope_is_workspace_subdir(self):
+        ws = _get_web_server()
+        scopes = ws._collaboration_write_scopes_for_role("editor", "workspace:docs")
+        assert len(scopes) == 1
+        assert "workspace" in scopes[0]
+
+    def test_guest_has_no_write_scope(self):
+        ws = _get_web_server()
+        assert ws._collaboration_write_scopes_for_role("guest", "workspace:x") == []
+
+
+class TestTrimAutonomyText:
+    def test_short_text_returned_unchanged(self):
+        ws = _get_web_server()
+        assert ws._trim_autonomy_text("kısa metin", 1200) == "kısa metin"
+
+    def test_long_text_truncated_with_marker(self):
+        ws = _get_web_server()
+        long_text = "a" * 2000
+        result = ws._trim_autonomy_text(long_text, 1200)
+        assert result.endswith("…[truncated]")
+        assert len(result) < 2000
+
+    def test_empty_string_returns_empty(self):
+        ws = _get_web_server()
+        assert ws._trim_autonomy_text("") == ""
+
+    def test_none_returns_empty(self):
+        ws = _get_web_server()
+        assert ws._trim_autonomy_text(None) == ""
+
+    def test_exactly_at_limit_not_truncated(self):
+        ws = _get_web_server()
+        text = "x" * 1200
+        result = ws._trim_autonomy_text(text, 1200)
+        assert not result.endswith("…[truncated]")
+
+
+class TestBuildAuditResource:
+    def test_formats_resource_correctly(self):
+        ws = _get_web_server()
+        assert ws._build_audit_resource("rag", "doc-123") == "rag:doc-123"
+
+    def test_empty_resource_id_becomes_wildcard(self):
+        ws = _get_web_server()
+        assert ws._build_audit_resource("github", "") == "github:*"
+
+    def test_empty_resource_type_returns_empty(self):
+        ws = _get_web_server()
+        assert ws._build_audit_resource("", "some-id") == ""
+
+    def test_resource_type_lowercased(self):
+        ws = _get_web_server()
+        assert ws._build_audit_resource("RAG", "doc-1") == "rag:doc-1"
+
+
+class TestBuildUserFromJwtPayload:
+    def test_valid_payload_returns_user(self):
+        ws = _get_web_server()
+        payload = {"sub": "u1", "username": "ali", "role": "admin", "tenant_id": "acme"}
+        user = ws._build_user_from_jwt_payload(payload)
+        assert user is not None
+        assert user.id == "u1"
+        assert user.username == "ali"
+        assert user.role == "admin"
+        assert user.tenant_id == "acme"
+
+    def test_missing_sub_returns_none(self):
+        ws = _get_web_server()
+        payload = {"username": "ali", "role": "user"}
+        assert ws._build_user_from_jwt_payload(payload) is None
+
+    def test_missing_username_returns_none(self):
+        ws = _get_web_server()
+        payload = {"sub": "u1", "role": "user"}
+        assert ws._build_user_from_jwt_payload(payload) is None
+
+    def test_missing_role_defaults_to_user(self):
+        ws = _get_web_server()
+        payload = {"sub": "u1", "username": "ali"}
+        user = ws._build_user_from_jwt_payload(payload)
+        assert user is not None
+        assert user.role == "user"
+
+    def test_missing_tenant_id_defaults_to_default(self):
+        ws = _get_web_server()
+        payload = {"sub": "u1", "username": "ali"}
+        user = ws._build_user_from_jwt_payload(payload)
+        assert user is not None
+        assert user.tenant_id == "default"
+
+
+class TestGetJwtSecret:
+    def test_returns_string(self):
+        ws = _get_web_server()
+        result = ws._get_jwt_secret()
+        assert isinstance(result, str) and len(result) > 0
+
+    def test_fallback_when_key_not_configured(self):
+        ws = _get_web_server()
+        import types as _types
+        old_cfg = ws.cfg
+        fake_cfg = _types.SimpleNamespace()
+        ws.cfg = fake_cfg
+        try:
+            result = ws._get_jwt_secret()
+            assert result == "sidar-dev-secret"
+        finally:
+            ws.cfg = old_cfg
+
+
+class TestIsAdminUser:
+    def test_admin_role_returns_true(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(role="admin", username="ali")
+        assert ws._is_admin_user(user) is True
+
+    def test_default_admin_username_returns_true(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(role="user", username="default_admin")
+        assert ws._is_admin_user(user) is True
+
+    def test_regular_user_returns_false(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(role="user", username="zeynep")
+        assert ws._is_admin_user(user) is False
+
+    def test_uppercase_admin_role_detected(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(role="ADMIN", username="ali")
+        assert ws._is_admin_user(user) is True
+
+
+class TestGetUserTenant:
+    def test_returns_tenant_id_from_user(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(tenant_id="acme")
+        assert ws._get_user_tenant(user) == "acme"
+
+    def test_missing_tenant_id_defaults_to_default(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace()
+        assert ws._get_user_tenant(user) == "default"
+
+    def test_empty_tenant_id_defaults_to_default(self):
+        ws = _get_web_server()
+        import types as _types
+        user = _types.SimpleNamespace(tenant_id="")
+        assert ws._get_user_tenant(user) == "default"
+
+
+class TestValidatePluginRoleName:
+    def test_valid_role_name_returned_lowercased(self):
+        ws = _get_web_server()
+        assert ws._validate_plugin_role_name("MyAgent") == "myagent"
+
+    def test_valid_role_with_hyphen(self):
+        ws = _get_web_server()
+        assert ws._validate_plugin_role_name("aws-ops") == "aws-ops"
+
+    def test_invalid_role_raises_400(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._validate_plugin_role_name("a b c")
+        assert exc_info.value.status_code == 400
+
+    def test_too_short_raises_400(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._validate_plugin_role_name("x")
+        assert exc_info.value.status_code == 400
+
+    def test_empty_string_raises_400(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException):
+            ws._validate_plugin_role_name("")
+
+
+class TestSanitizeCapabilities:
+    def test_normal_list_returned(self):
+        ws = _get_web_server()
+        assert ws._sanitize_capabilities(["read", "write"]) == ["read", "write"]
+
+    def test_none_returns_empty_list(self):
+        ws = _get_web_server()
+        assert ws._sanitize_capabilities(None) == []
+
+    def test_empty_list_returns_empty_list(self):
+        ws = _get_web_server()
+        assert ws._sanitize_capabilities([]) == []
+
+    def test_empty_strings_filtered_out(self):
+        ws = _get_web_server()
+        assert ws._sanitize_capabilities(["read", "", "  ", "write"]) == ["read", "write"]
+
+    def test_whitespace_stripped(self):
+        ws = _get_web_server()
+        assert ws._sanitize_capabilities(["  admin  "]) == ["admin"]
+
+
+class TestPluginSourceFilename:
+    def test_normal_label_wrapped(self):
+        ws = _get_web_server()
+        result = ws._plugin_source_filename("my_plugin")
+        assert result == "<sidar-plugin:my_plugin>"
+
+    def test_special_chars_replaced_with_underscore(self):
+        ws = _get_web_server()
+        result = ws._plugin_source_filename("my plugin/v2")
+        assert " " not in result
+        assert "/" not in result
+
+    def test_empty_label_defaults_to_plugin(self):
+        ws = _get_web_server()
+        result = ws._plugin_source_filename("")
+        assert result == "<sidar-plugin:plugin>"
+
+
+class TestFallbackCiFailureContext:
+    def test_ci_failure_flag_triggers_context(self):
+        ws = _get_web_server()
+        payload = {"ci_failure": True, "repo": "org/repo", "branch": "main"}
+        result = ws._fallback_ci_failure_context("check_run", payload)
+        assert result is not None
+        assert result["kind"] == "generic_ci_failure"
+        assert result["repo"] == "org/repo"
+        assert result["branch"] == "main"
+
+    def test_pipeline_failed_flag_triggers_context(self):
+        ws = _get_web_server()
+        payload = {"pipeline_failed": True}
+        result = ws._fallback_ci_failure_context("push", payload)
+        assert result is not None
+        assert result["kind"] == "generic_ci_failure"
+
+    def test_ci_failure_event_name_triggers_context(self):
+        ws = _get_web_server()
+        result = ws._fallback_ci_failure_context("ci_failure_remediation", {})
+        assert result is not None
+
+    def test_unrelated_event_returns_empty_dict(self):
+        ws = _get_web_server()
+        result = ws._fallback_ci_failure_context("push", {"action": "opened"})
+        assert result == {}
+
+    def test_conclusion_defaults_to_failure(self):
+        ws = _get_web_server()
+        result = ws._fallback_ci_failure_context("ci_pipeline_failed", {})
+        assert result["conclusion"] == "failure"
+
+
+class TestBuildSwarmGoalForRole:
+    def test_coder_role_includes_coder_marker(self):
+        ws = _get_web_server()
+        spec = {"context": {"issue_key": "PROJ-1"}, "inputs": ["key=value"]}
+        result = ws._build_swarm_goal_for_role("temel hedef", "coder", spec)
+        assert "EVENT_DRIVEN_SWARM:CODER" in result
+        assert "temel hedef" in result
+
+    def test_reviewer_role_includes_reviewer_marker(self):
+        ws = _get_web_server()
+        spec = {"context": {}, "inputs": []}
+        result = ws._build_swarm_goal_for_role("temel hedef", "reviewer", spec)
+        assert "EVENT_DRIVEN_SWARM:REVIEWER" in result
+
+    def test_unknown_role_uses_reviewer_template(self):
+        ws = _get_web_server()
+        spec = {"context": {}, "inputs": []}
+        result = ws._build_swarm_goal_for_role("hedef", "unknown", spec)
+        assert "EVENT_DRIVEN_SWARM:REVIEWER" in result
+
+
+class TestBuildEventDrivenFederationSpec:
+    def test_jira_issue_created_returns_spec(self):
+        ws = _get_web_server()
+        payload = {
+            "action": "created",
+            "issue": {"key": "PROJ-42", "summary": "Bug fix needed"},
+        }
+        result = ws._build_event_driven_federation_spec("jira", "issue_created", payload)
+        assert result is not None
+        assert result["workflow_type"] == "jira_issue"
+        assert "proj-42" in result["task_id"]
+
+    def test_github_pr_opened_returns_spec(self):
+        ws = _get_web_server()
+        payload = {
+            "action": "opened",
+            "pull_request": {"number": 7, "title": "feat: new feature"},
+            "repository": {"full_name": "org/repo"},
+        }
+        result = ws._build_event_driven_federation_spec("github", "pull_request", payload)
+        assert result is not None
+        assert result["workflow_type"] == "github_pull_request"
+        assert "7" in result["task_id"]
+
+    def test_system_monitor_critical_returns_spec(self):
+        ws = _get_web_server()
+        payload = {
+            "severity": "critical",
+            "alert_name": "DB Connection Pool Exhausted",
+        }
+        result = ws._build_event_driven_federation_spec("system_monitor", "monitor_alert", payload)
+        assert result is not None
+        assert result["workflow_type"] == "system_error"
+
+    def test_unknown_source_returns_none(self):
+        ws = _get_web_server()
+        result = ws._build_event_driven_federation_spec("slack", "message", {})
+        assert result is None
+
+    def test_jira_without_issue_key_returns_none(self):
+        ws = _get_web_server()
+        payload = {"action": "created", "issue": {}}
+        result = ws._build_event_driven_federation_spec("jira", "issue_created", payload)
+        assert result is None
+
+    def test_github_pr_closed_action_returns_none(self):
+        ws = _get_web_server()
+        payload = {
+            "action": "closed",
+            "pull_request": {"number": 7, "title": "feat"},
+        }
+        result = ws._build_event_driven_federation_spec("github", "pull_request", payload)
+        assert result is None
