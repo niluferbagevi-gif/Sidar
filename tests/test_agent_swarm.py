@@ -160,23 +160,23 @@ def _make_orchestrator(registered_agents=None):
                 self.description = ""
 
         class _FakeRegistry:
-            _store = {}
+            _registry = {}
 
             @classmethod
             def get(cls, name):
-                return cls._store.get(name)
+                return cls._registry.get(name)
 
             @classmethod
             def find_by_capability(cls, cap):
-                return [s for s in cls._store.values() if cap in s.capabilities]
+                return [s for s in cls._registry.values() if cap in s.capabilities]
 
             @classmethod
             def list_all(cls):
-                return list(cls._store.values())
+                return list(cls._registry.values())
 
             @classmethod
             def create(cls, name, **kwargs):
-                spec = cls._store.get(name)
+                spec = cls._registry.get(name)
                 if spec is None:
                     raise KeyError(name)
                 return spec._agent_factory(**kwargs) if hasattr(spec, "_agent_factory") else MagicMock()
@@ -191,12 +191,12 @@ def _make_orchestrator(registered_agents=None):
     }
 
     registry = reg.AgentRegistry
-    registry._store.clear()
+    registry._registry.clear()
 
     for role, caps in agents_to_register.items():
         spec = reg.AgentSpec(role_name=role, capabilities=caps)
         spec._agent_factory = lambda **kw: _make_mock_agent()
-        registry._store[role] = spec
+        registry._registry[role] = spec
 
     orchestrator = sw.SwarmOrchestrator(cfg=None)
     return orchestrator, sw

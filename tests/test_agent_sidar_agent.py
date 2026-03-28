@@ -108,6 +108,25 @@ def _stub_all_sidar_deps():
         LOG_LEVEL = "WARNING"
         ENABLE_HITL = False
         HITL_APPROVAL_TIMEOUT = 30
+        # Hardware / GPU
+        USE_GPU = False
+        GPU_DEVICE = 0
+        GPU_MIXED_PRECISION = False
+        # Memory / RAG
+        MEMORY_FILE = "/tmp/sidar_test/data/memory.json"
+        MAX_MEMORY_TURNS = 20
+        MEMORY_SUMMARY_KEEP_LAST = 4
+        MEMORY_ENCRYPTION_KEY = ""
+        RAG_DIR = "/tmp/sidar_test/data/rag"
+        RAG_TOP_K = 3
+        RAG_CHUNK_SIZE = 1000
+        RAG_CHUNK_OVERLAP = 200
+        DATABASE_URL = "sqlite+aiosqlite:///tmp/sidar_test.db"
+        # Docker
+        DOCKER_PYTHON_IMAGE = "python:3.11-alpine"
+        DOCKER_EXEC_TIMEOUT = 10
+        # Tracing
+        ENABLE_TRACING = False
 
     cfg_mod.Config = _Config
     sys.modules["config"] = cfg_mod
