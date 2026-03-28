@@ -1,1 +1,1 @@
-"""Sidar Project - Test Paketi"""
+"""Test package marker."""
