@@ -83,7 +83,15 @@ def _is_valid_repo_url(url: str) -> bool:
 
 def _normalize_path(path: str) -> str:
     """Yol formatını güvenlik kontrolleri için normalize eder."""
-    return path.replace("\\", "/").lstrip("./")
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    elif normalized.startswith("/"):
+        normalized = normalized[1:]
+    while "//" in normalized:
+        normalized = normalized.replace("//", "/")
+    normalized = normalized.lstrip("/")
+    return normalized
 
 
 def is_forbidden_path(path: str) -> bool:
