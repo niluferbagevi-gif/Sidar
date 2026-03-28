@@ -95,6 +95,7 @@ def test_collect_safe_files_filters_forbidden_and_binary(monkeypatch, tmp_path):
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 def test_collect_deleted_files_returns_git_deleted_list(monkeypatch):
     GU = _load_module()
     monkeypatch.setattr(
@@ -156,6 +157,8 @@ def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
 >>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
 =======
 >>>>>>> 222c1b7fd2457e0443c329e5597d64a1e083501e
+=======
+>>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
 =======
 >>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
@@ -738,6 +741,7 @@ def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
 def test_collect_deleted_files_edge_cases(monkeypatch):
@@ -763,5 +767,7 @@ def test_collect_tracked_ignored_files_failure(monkeypatch):
 >>>>>>> 45c88cd2fc6a0bbdb287669e70e91646664395dd
 =======
 >>>>>>> 222c1b7fd2457e0443c329e5597d64a1e083501e
+=======
+>>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
 =======
 >>>>>>> 16d6ebdf8ceeb1d0a9a04de4945addc772a68077
