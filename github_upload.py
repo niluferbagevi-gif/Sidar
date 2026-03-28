@@ -295,4 +295,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print(f"\n{Colors.FAIL}Islem kullanici tarafindan iptal edildi.{Colors.ENDC}")
-        sys.exit(0)
+        sys.exit(0) 
