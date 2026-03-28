@@ -9,6 +9,11 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sys_argv(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
+
+
 class _Cfg:
     GITHUB_TOKEN = "token"
     VERSION = "2.0"
@@ -108,6 +113,7 @@ def test_collect_tracked_ignored_files_returns_conflicts(monkeypatch):
 
 def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
     seen = []
 
@@ -145,6 +151,7 @@ def test_main_stages_deleted_files_with_explicit_pathspec(monkeypatch):
 
 def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     # no token path
     GU.cfg.GITHUB_TOKEN = ""
     try:
@@ -191,6 +198,7 @@ def test_main_flow_no_changes_and_invalid_repo(monkeypatch):
 
 def test_main_push_conflict_branches(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     state = {"push_count": 0}
@@ -233,6 +241,7 @@ def test_main_push_conflict_branches(monkeypatch):
 
 def test_main_prompts_for_missing_git_identity_and_sets_global_config(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
     seen = []
 
@@ -273,6 +282,7 @@ def test_main_prompts_for_missing_git_identity_and_sets_global_config(monkeypatc
 
 def test_main_push_conflict_cancelled_by_user(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     def _fake_run(args, show_output=False):
@@ -312,6 +322,7 @@ def test_main_push_conflict_cancelled_by_user(monkeypatch):
 
 def test_main_push_conflict_accepts_merge_and_retries_push(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
     state = {"push": 0, "pull": 0}
 
@@ -356,6 +367,7 @@ def test_main_push_conflict_accepts_merge_and_retries_push(monkeypatch):
 
 def test_main_exits_when_git_missing(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     monkeypatch.setattr(GU, "run_command", lambda args, show_output=False: (False, "missing") if args[:2] == ["git", "--version"] else (True, ""))
@@ -370,6 +382,7 @@ def test_main_exits_when_git_missing(monkeypatch):
 
 def test_github_upload_all_edge_cases(monkeypatch, tmp_path):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     # güvenli dosya filtresi
@@ -416,6 +429,7 @@ def test_github_upload_all_edge_cases(monkeypatch, tmp_path):
 
 def test_github_upload_empty_commit_and_no_remote(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     def _fake_run(args, show_output=False):
@@ -486,6 +500,7 @@ def test_collect_safe_files_skips_empty_dirs_and_unreadable(monkeypatch, tmp_pat
 
 def test_main_branches_for_repo_init_blocked_no_status_and_commit_fail(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
     calls = []
 
@@ -555,6 +570,7 @@ def test_main_branches_for_repo_init_blocked_no_status_and_commit_fail(monkeypat
 
 def test_main_push_retry_failure_and_unknown_push_error(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     def _common(args):
@@ -644,6 +660,7 @@ def test_github_upload_dunder_main_keyboard_interrupt_prints_cancel(monkeypatch,
 
 def test_main_push_conflict_merge_fails(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
 
     def _fake_run(args, show_output=False):
@@ -675,6 +692,7 @@ def test_main_push_conflict_merge_fails(monkeypatch):
 
 def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
     GU = _load_module()
+    monkeypatch.setattr(sys, "argv", ["github_upload.py"])
     GU.cfg.GITHUB_TOKEN = "token"
     state = {"push": 0}
 
