@@ -333,25 +333,16 @@ class TestMigrate:
     @pytest.mark.asyncio
     async def test_asyncpg_import_error_raises_runtime_error(self):
         """asyncpg yoksa RuntimeError fırlatılmalı (pragma: no cover satırının testi)."""
-        # Bu test sadece hata mesajının doğru türde olduğunu doğrular;
-        # asyncpg'yi kaldırmak için modülü sıfırlamamız gerekir.
-        sys.modules.pop("migrate_sqlite_to_pg", None)
-        saved = sys.modules.pop("asyncpg", None)
+        mod = _import_script(stub_asyncpg=False)
         path = _make_test_sqlite({})
         path.touch()
         try:
-            # asyncpg'siz script'i import et
-            spec = importlib.util.spec_from_file_location("migrate_sqlite_to_pg_no_asyncpg", str(_SCRIPT_PATH))
-            mod2 = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod2)
-            # asyncpg'yi sys.modules'tan kaldır
-            sys.modules.pop("asyncpg", None)
-            with pytest.raises((RuntimeError, ImportError, ModuleNotFoundError)):
-                await mod2.migrate(path, "postgresql://localhost/test", dry_run=True)
+            # sys.modules'a None atamak import'u ImportError ile durdurur
+            with patch.dict(sys.modules, {"asyncpg": None}):
+                with pytest.raises((RuntimeError, ImportError)):
+                    await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
         finally:
             path.unlink(missing_ok=True)
-            if saved is not None:
-                sys.modules["asyncpg"] = saved
 
 
 # ─────────────────────────────────────────────────────────
