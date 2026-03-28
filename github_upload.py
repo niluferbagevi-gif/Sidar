@@ -81,11 +81,6 @@ def _normalize_path(path: str) -> str:
     return path.replace("\\", "/").lstrip("./")
 
 
-def _is_valid_repo_url(url: str) -> bool:
-    normalized = (url or "").strip()
-    return normalized.startswith("https://github.com/") or normalized.startswith("git@github.com:")
-
-
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
@@ -108,13 +103,17 @@ def get_file_content(path: str):
 
 
 def collect_safe_files():
-    """Yalnızca güvenli ve UTF-8 okunabilir dosyaları stage listesine alır."""
+    """Yalnızca güvenli dosyaları stage listesine alır. 
+    Performans için UTF-8 kontrolü sadece metin tabanlı dosyalara uygulanır."""
     success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
     if not success:
         return [], []
 
     safe_files = []
     blocked_files = []
+    
+    # UTF-8 okunabilirlik testi yapılacak dosya uzantıları
+    TEXT_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yml", ".yaml", ".html", ".css", ".js", ".sh", ".csv"}
 
     for line in output.splitlines():
         file_path = line.strip()
@@ -127,9 +126,12 @@ def collect_safe_files():
             blocked_files.append(file_path)
             continue
 
-        if get_file_content(file_path) is None:
-            blocked_files.append(file_path)
-            continue
+        # Uzantıyı al ve sadece metin dosyaları için UTF-8 içeriğini denetle
+        _, ext = os.path.splitext(file_path)
+        if ext.lower() in TEXT_EXTENSIONS:
+            if get_file_content(file_path) is None:
+                blocked_files.append(file_path)
+                continue
 
         safe_files.append(file_path)
 
@@ -145,7 +147,7 @@ def main():
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
     # 0. Merkezi yapılandırmadan token kontrolü
-    if not cfg.GITHUB_TOKEN:
+    if not hasattr(cfg, 'GITHUB_TOKEN') or not cfg.GITHUB_TOKEN:
         print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
         sys.exit(1)
 
@@ -209,8 +211,9 @@ def main():
         sys.exit(0)
 
     # 6. Commit (Kaydetme) Mesajı
+    version_str = getattr(cfg, 'VERSION', '1.9')
     default_msg = (
-        f"🚀 Sidar {cfg.VERSION} - Otomatik Dağıtım "
+        f"🚀 Sidar {version_str} - Otomatik Dağıtım "
         f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
     )
     print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
@@ -242,52 +245,50 @@ def main():
         print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
         print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
         print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    else:
-        # Çakışma varsa (fetch first / rejected)
-        if "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
-            print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
-            confirm = input(
-                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
-            ).strip().lower()
+    elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
+        print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
+        confirm = input(
+            f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+        ).strip().lower()
 
-            if confirm == "y":
-                print(
-                    f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
-                    f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
-                )
-                pull_cmd = [
-                    "git", "pull", "origin", current_branch,
-                    "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
-                ]
-                pull_success, pull_err = run_command(pull_cmd, show_output=False)
+        if confirm == "y":
+            print(
+                f"{Colors.OKBLUE}🔄 Uzak sunucu ile dosyalar birleştiriliyor "
+                f"(Çakışmalarda yerel dosyalar korunacak)...{Colors.ENDC}"
+            )
+            pull_cmd = [
+                "git", "pull", "origin", current_branch,
+                "--rebase=false", "--allow-unrelated-histories", "--no-edit", "-X", "ours",
+            ]
+            pull_success, pull_err = run_command(pull_cmd, show_output=False)
 
-                if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
-                    print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
+            if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
+                print(f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}")
 
-                    retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
+                retry_success, retry_err = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
 
-                    if retry_success:
-                        print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                        print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
-                        print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-                    else:
-                        if "rule violations" in retry_err:
-                            print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
-                            print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
-                        else:
-                            print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
+                if retry_success:
+                    print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                    print(f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}")
+                    print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
                 else:
-                    print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
-                    print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
-                    print(f"Hata Çıktısı:\n{pull_err}")
+                    if "rule violations" in retry_err:
+                        print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
+                        print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
+                    else:
+                        print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
             else:
-                print(
-                    f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
-                    "Veri kaybını önlemek için push durduruldu."
-                    f"{Colors.ENDC}"
-                )
+                print(f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}")
+                print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
+                print(f"Hata Çıktısı:\n{pull_err}")
         else:
-            print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
+            print(
+                f"{Colors.WARNING}⏹️ Otomatik birleştirme iptal edildi. "
+                "Veri kaybını önlemek için push durduruldu."
+                f"{Colors.ENDC}"
+            )
+    else:
+        print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
 
 
 if __name__ == "__main__":
@@ -295,4 +296,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print(f"\n{Colors.FAIL}Islem kullanici tarafindan iptal edildi.{Colors.ENDC}")
-        sys.exit(0) 
+        sys.exit(0)
