@@ -1,12 +1,17 @@
 """
 Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
-Sürüm: 1.9
-Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
-Kimlik, çakışma ve otomatik birleştirme (Auto-Merge) kontrolleri içerir.
+Sürüm: 2.1
+Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler. 
+Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
+Kullanım: 
+  python github_upload.py                 -> Normal yükleme
+  python github_upload.py <branch_adi>    -> Dış dalı çekip birleştirme
+  python github_upload.py -<sayi>         -> Son <sayi> işlemi geri alma (Örn: -3)
 """
 import os
 import subprocess
 import sys
+import re
 from datetime import datetime
 
 from config import Config
@@ -103,8 +108,7 @@ def get_file_content(path: str):
 
 
 def collect_safe_files():
-    """Yalnızca güvenli dosyaları stage listesine alır. 
-    Performans için UTF-8 kontrolü sadece metin tabanlı dosyalara uygulanır."""
+    """Yalnızca güvenli dosyaları stage listesine alır."""
     success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
     if not success:
         return [], []
@@ -112,7 +116,6 @@ def collect_safe_files():
     safe_files = []
     blocked_files = []
     
-    # UTF-8 okunabilirlik testi yapılacak dosya uzantıları
     TEXT_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yml", ".yaml", ".html", ".css", ".js", ".sh", ".csv"}
 
     for line in output.splitlines():
@@ -126,7 +129,6 @@ def collect_safe_files():
             blocked_files.append(file_path)
             continue
 
-        # Uzantıyı al ve sadece metin dosyaları için UTF-8 içeriğini denetle
         _, ext = os.path.splitext(file_path)
         if ext.lower() in TEXT_EXTENSIONS:
             if get_file_content(file_path) is None:
@@ -142,11 +144,25 @@ def collect_safe_files():
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
 def main():
+    target_branch = None
+    rollback_steps = 0
+
+    # Argüman kontrolü: Dal adı mı yoksa -X (Geri alma) komutu mu?
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].strip()
+        # Eğer argüman -1, -5, -10 vb. formattaysa
+        if re.match(r"^-\d+$", arg):
+            rollback_steps = int(arg[1:])
+            if rollback_steps < 1 or rollback_steps > 10:
+                print(f"{Colors.FAIL}❌ Hata: Sadece 1 ile 10 işlem arasına kadar geri alabilirsiniz (Örn: -3).{Colors.ENDC}")
+                sys.exit(1)
+        else:
+            target_branch = arg
+
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
-    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v1.9) {Colors.ENDC}")
+    print(f"{Colors.BOLD} 🐙 Sidar - GitHub Otomatik Yükleme & Yedekleme Aracı (v2.1) {Colors.ENDC}")
     print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}\n")
 
-    # 0. Merkezi yapılandırmadan token kontrolü
     if not hasattr(cfg, 'GITHUB_TOKEN') or not cfg.GITHUB_TOKEN:
         print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
         sys.exit(1)
@@ -156,7 +172,6 @@ def main():
         print(f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}")
         sys.exit(1)
 
-    # 1.5 Git Kimlik (Identity) Kontrolü
     _, name_out = run_command(["git", "config", "user.name"], show_output=False)
     if not name_out:
         print(f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}")
@@ -166,14 +181,12 @@ def main():
         run_command(["git", "config", "--global", "user.email", git_email], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git kimliğiniz başarıyla kaydedildi.{Colors.ENDC}\n")
 
-    # 2. Git reposu mu?
     if not os.path.exists(".git"):
         print(f"{Colors.WARNING}Bu klasör henüz bir Git deposu değil. Başlatılıyor...{Colors.ENDC}")
         run_command(["git", "init"], show_output=False)
         run_command(["git", "branch", "-M", "main"], show_output=False)
         print(f"{Colors.OKGREEN}✅ Git deposu oluşturuldu.{Colors.ENDC}")
 
-    # 3. Remote (Uzak Sunucu) kontrolü
     _, remotes = run_command(["git", "remote", "-v"], show_output=False)
     if "origin" not in remotes:
         print(f"{Colors.WARNING}GitHub depo (repository) bağlantısı bulunamadı.{Colors.ENDC}")
@@ -191,8 +204,71 @@ def main():
     else:
         print(f"{Colors.OKGREEN}✅ Mevcut GitHub bağlantısı algılandı.{Colors.ENDC}")
 
-    # 4. Değişiklikleri güvenli şekilde ekle (hard blacklist + UTF-8 kontrol)
-    print(f"\n{Colors.OKBLUE}📦 Dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
+    _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
+    current_branch = branch_out if branch_out else "main"
+
+
+    # ═══════════════════════════════════════════════════════════════
+    # GERİ ALMA (ROLLBACK) İŞLEMİ
+    # ═══════════════════════════════════════════════════════════════
+    if rollback_steps > 0:
+        print(f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI 🚨{Colors.ENDC}")
+        print(f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}")
+        print(f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}")
+        
+        confirm = input(f"\n{Colors.OKBLUE}Bu işlemi onaylıyor musunuz? (evet / hayır): {Colors.ENDC}").strip().lower()
+        
+        if confirm in ['e', 'evet', 'y', 'yes']:
+            print(f"\n{Colors.WARNING}⏳ Proje {rollback_steps} adım geriye sarılıyor...{Colors.ENDC}")
+            
+            # 1. Yerel dosyaları sert şekilde geri al
+            reset_success, reset_err = run_command(["git", "reset", "--hard", f"HEAD~{rollback_steps}"], show_output=False)
+            if not reset_success:
+                print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
+                sys.exit(1)
+                
+            # 2. GitHub'ı zorla (force) güncelle
+            print(f"{Colors.WARNING}⏳ GitHub deposu zorla (force) güncelleniyor...{Colors.ENDC}")
+            push_success, push_err = run_command(["git", "push", "--force", "origin", current_branch], show_output=False)
+            
+            if push_success:
+                print(f"\n{Colors.HEADER}{'='*65}{Colors.ENDC}")
+                print(f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} adım önceki haline döndürüldü.{Colors.ENDC}")
+                print(f"{Colors.HEADER}{'='*65}{Colors.ENDC}")
+            else:
+                print(f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız oldu:\n{push_err}{Colors.ENDC}")
+                print(f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force push'u engelliyor olabilir.{Colors.ENDC}")
+            
+            sys.exit(0) # Geri alma bitti, programdan çık
+        else:
+            print(f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız güvende.{Colors.ENDC}")
+            sys.exit(0)
+
+
+    # ═══════════════════════════════════════════════════════════════
+    # DAL ÇEKME (PULL/MERGE) İŞLEMİ
+    # ═══════════════════════════════════════════════════════════════
+    if target_branch:
+        print(f"\n{Colors.HEADER}📥 Dış dal (branch) algılandı: '{target_branch}'{Colors.ENDC}")
+        print(f"{Colors.OKBLUE}🔄 '{target_branch}' GitHub'dan çekilip '{current_branch}' ile birleştiriliyor...{Colors.ENDC}")
+        
+        pull_cmd = [
+            "git", "pull", "origin", target_branch,
+            "--no-rebase", "--allow-unrelated-histories", "--no-edit"
+        ]
+        pull_success, pull_err = run_command(pull_cmd, show_output=False)
+
+        if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
+            print(f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve birleştirildi.{Colors.ENDC}")
+        else:
+            print(f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}")
+            print(f"{Colors.WARNING}Lütfen çakışan dosyaları manuel düzenleyip aracı argümansız tekrar çalıştırın.{Colors.ENDC}")
+            sys.exit(1)
+
+    # ═══════════════════════════════════════════════════════════════
+    # STANDART YÜKLEME İŞLEMİ
+    # ═══════════════════════════════════════════════════════════════
+    print(f"\n{Colors.OKBLUE}📦 Yerel dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
     safe_files, blocked_files = collect_safe_files()
 
@@ -204,41 +280,41 @@ def main():
         for blocked in blocked_files:
             print(f"  - {blocked}")
 
-    # 5. Durum Kontrolü (Değişen dosya var mı?)
     _, status = run_command(["git", "status", "--porcelain"], show_output=False)
-    if not status:
-        print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
-        sys.exit(0)
+    
+    if status:
+        version_str = getattr(cfg, 'VERSION', '2.1')
+        default_msg = (
+            f"🚀 Sidar {version_str} - Otomatik Dağıtım "
+            f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+        )
+        if target_branch:
+            default_msg += f" (Merged branch: {target_branch})"
 
-    # 6. Commit (Kaydetme) Mesajı
-    version_str = getattr(cfg, 'VERSION', '1.9')
-    default_msg = (
-        f"🚀 Sidar {version_str} - Otomatik Dağıtım "
-        f"({datetime.now().strftime('%Y-%m-%d %H:%M')})"
-    )
-    print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
-    commit_msg = input(
-        f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
-    ).strip()
+        print(f"\n{Colors.WARNING}Değişiklikleri kaydetmek için bir not yazın.{Colors.ENDC}")
+        commit_msg = input(
+            f"{Colors.OKBLUE}Commit mesajı (Boş bırakırsanız otomatik tarih atılır): {Colors.ENDC}"
+        ).strip()
 
-    if not commit_msg:
-        commit_msg = default_msg
+        if not commit_msg:
+            commit_msg = default_msg
 
-    print(f"\n{Colors.OKBLUE}💾 Değişiklikler kaydediliyor...{Colors.ENDC}")
-    commit_success, commit_err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
+        print(f"\n{Colors.OKBLUE}💾 Değişiklikler kaydediliyor...{Colors.ENDC}")
+        commit_success, commit_err = run_command(["git", "commit", "-m", commit_msg], show_output=False)
 
-    if not commit_success:
-        print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
-        sys.exit(1)
+        if not commit_success:
+            print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
+            sys.exit(1)
+    else:
+        _, unpushed = run_command(["git", "log", f"origin/{current_branch}..HEAD"], show_output=False)
+        if not unpushed:
+            print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
+            sys.exit(0)
+        else:
+            print(f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}")
 
-    # 7. Branch (Dal) belirle
-    _, branch = run_command(["git", "branch", "--show-current"], show_output=False)
-    current_branch = branch if branch else "main"
-
-    # 8. GitHub'a Gönder (Push)
     print(f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}")
 
-    # Push işlemini dene
     push_success, err_msg = run_command(["git", "push", "-u", "origin", current_branch], show_output=False)
 
     if push_success:
@@ -274,7 +350,6 @@ def main():
                 else:
                     if "rule violations" in retry_err:
                         print(f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}")
-                        print(f"{Colors.WARNING}İçinde şifre barındıran bir dosya yüklemeye çalışıyorsunuz. Lütfen yukarıdaki hata logunu okuyup şifreli dosyayı gizleyin (.gitignore) veya linke tıklayıp izin verin.{Colors.ENDC}")
                     else:
                         print(f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}")
             else:
