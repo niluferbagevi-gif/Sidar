@@ -12,9 +12,9 @@ def test_core_docs_reference_v5():
     This test ensures core documentation files exist and are properly maintained.
     """
     readme = Path("README.md").read_text(encoding="utf-8")
-    report = Path("PROJE_RAPORU.md").read_text(encoding="utf-8")
+    report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-    sidar_md = Path("SIDAR.md").read_text(encoding="utf-8")
+    sidar_md = Path("docs/SIDAR.md").read_text(encoding="utf-8")
 
     # Verify documentation files have version info (may be historical)
     assert '## [' in changelog  # Has version section
