@@ -1,0 +1,305 @@
+"""
+core/entity_memory.py için birim testleri.
+EntityMemory (disabled path + SQLite integration) ve
+WELL_KNOWN_KEYS sabitini kapsar.
+"""
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+
+
+def _get_em():
+    if "core.entity_memory" in sys.modules:
+        del sys.modules["core.entity_memory"]
+    import core.entity_memory as em
+    em._instance = None
+    return em
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+# ══════════════════════════════════════════════════════════════
+# WELL_KNOWN_KEYS sabiti
+# ══════════════════════════════════════════════════════════════
+
+class TestWellKnownKeys:
+    def test_coding_style_in_keys(self):
+        em = _get_em()
+        assert "coding_style" in em.WELL_KNOWN_KEYS
+
+    def test_preferred_language_in_keys(self):
+        em = _get_em()
+        assert "preferred_language" in em.WELL_KNOWN_KEYS
+
+    def test_is_frozenset(self):
+        em = _get_em()
+        assert isinstance(em.WELL_KNOWN_KEYS, frozenset)
+
+
+# ══════════════════════════════════════════════════════════════
+# EntityMemory — init
+# ══════════════════════════════════════════════════════════════
+
+class TestEntityMemoryInit:
+    def test_default_ttl(self):
+        em = _get_em()
+        instance = em.EntityMemory()
+        assert instance.ttl_days == 90
+
+    def test_custom_ttl(self):
+        em = _get_em()
+        instance = em.EntityMemory(ttl_days=30)
+        assert instance.ttl_days == 30
+
+    def test_default_max_per_user(self):
+        em = _get_em()
+        instance = em.EntityMemory()
+        assert instance.max_per_user == 100
+
+    def test_custom_max_per_user(self):
+        em = _get_em()
+        instance = em.EntityMemory(max_per_user=50)
+        assert instance.max_per_user == 50
+
+    def test_enabled_default_true(self):
+        em = _get_em()
+        instance = em.EntityMemory()
+        assert instance.enabled is True
+
+    def test_config_overrides_ttl(self):
+        em = _get_em()
+
+        class _Cfg:
+            ENTITY_MEMORY_TTL_DAYS = 7
+            ENTITY_MEMORY_MAX_PER_USER = 10
+            ENABLE_ENTITY_MEMORY = True
+
+        instance = em.EntityMemory(config=_Cfg())
+        assert instance.ttl_days == 7
+        assert instance.max_per_user == 10
+
+    def test_explicit_ttl_overrides_config(self):
+        em = _get_em()
+
+        class _Cfg:
+            ENTITY_MEMORY_TTL_DAYS = 7
+            ENTITY_MEMORY_MAX_PER_USER = 10
+            ENABLE_ENTITY_MEMORY = True
+
+        instance = em.EntityMemory(config=_Cfg(), ttl_days=99)
+        assert instance.ttl_days == 99
+
+    def test_disabled_via_config(self):
+        em = _get_em()
+
+        class _Cfg:
+            ENTITY_MEMORY_TTL_DAYS = 90
+            ENTITY_MEMORY_MAX_PER_USER = 100
+            ENABLE_ENTITY_MEMORY = False
+
+        instance = em.EntityMemory(config=_Cfg())
+        assert instance.enabled is False
+
+
+# ══════════════════════════════════════════════════════════════
+# EntityMemory — disabled path (no DB calls)
+# ══════════════════════════════════════════════════════════════
+
+class TestEntityMemoryDisabled:
+    def setup_method(self):
+        em = _get_em()
+
+        class _Cfg:
+            ENTITY_MEMORY_TTL_DAYS = 90
+            ENTITY_MEMORY_MAX_PER_USER = 100
+            ENABLE_ENTITY_MEMORY = False
+
+        self.em_instance = em.EntityMemory(config=_Cfg())
+
+    def test_initialize_noop_when_disabled(self):
+        _run(self.em_instance.initialize())
+        assert self.em_instance._engine is None
+
+    def test_upsert_returns_false_when_disabled(self):
+        result = _run(self.em_instance.upsert("u1", "key", "val"))
+        assert result is False
+
+    def test_get_returns_none_when_disabled(self):
+        result = _run(self.em_instance.get("u1", "key"))
+        assert result is None
+
+    def test_get_profile_returns_empty_when_disabled(self):
+        result = _run(self.em_instance.get_profile("u1"))
+        assert result == {}
+
+    def test_list_users_returns_empty_when_disabled(self):
+        result = _run(self.em_instance.list_users())
+        assert result == []
+
+    def test_delete_returns_false_when_disabled(self):
+        result = _run(self.em_instance.delete("u1", "key"))
+        assert result is False
+
+    def test_delete_user_returns_zero_when_disabled(self):
+        result = _run(self.em_instance.delete_user("u1"))
+        assert result == 0
+
+    def test_purge_expired_returns_zero_when_disabled(self):
+        result = _run(self.em_instance.purge_expired())
+        assert result == 0
+
+    def test_close_noop_when_no_engine(self):
+        _run(self.em_instance.close())  # should not raise
+
+
+# ══════════════════════════════════════════════════════════════
+# EntityMemory — no engine path (enabled=True but no init)
+# ══════════════════════════════════════════════════════════════
+
+class TestEntityMemoryNoEngine:
+    def setup_method(self):
+        em = _get_em()
+        self.em_instance = em.EntityMemory()
+        # enabled=True but _engine=None (not initialized)
+
+    def test_upsert_returns_false_without_engine(self):
+        result = _run(self.em_instance.upsert("u1", "key", "val"))
+        assert result is False
+
+    def test_get_returns_none_without_engine(self):
+        result = _run(self.em_instance.get("u1", "key"))
+        assert result is None
+
+    def test_get_profile_returns_empty_without_engine(self):
+        result = _run(self.em_instance.get_profile("u1"))
+        assert result == {}
+
+    def test_purge_expired_returns_zero_when_ttl_zero(self):
+        em = _get_em()
+        instance = em.EntityMemory(ttl_days=0)
+        result = _run(instance.purge_expired())
+        assert result == 0
+
+
+# ══════════════════════════════════════════════════════════════
+# EntityMemory — SQLite integration (if sqlalchemy available)
+# ══════════════════════════════════════════════════════════════
+
+try:
+    import sqlalchemy  # noqa: F401
+    import aiosqlite  # noqa: F401
+    _SA_AVAILABLE = True
+except ImportError:
+    _SA_AVAILABLE = False
+
+import pytest
+
+
+@pytest.mark.skipif(not _SA_AVAILABLE, reason="sqlalchemy+aiosqlite required")
+class TestEntityMemorySQLite:
+    def _make(self, **kwargs):
+        em = _get_em()
+        return em.EntityMemory(
+            database_url="sqlite+aiosqlite:///:memory:",
+            **kwargs,
+        )
+
+    def test_initialize_creates_table(self):
+        instance = self._make()
+        _run(instance.initialize())
+        assert instance._engine is not None
+
+    def test_upsert_and_get(self):
+        instance = self._make()
+        _run(instance.initialize())
+        ok = _run(instance.upsert("u1", "coding_style", "functional"))
+        assert ok is True
+        val = _run(instance.get("u1", "coding_style"))
+        assert val == "functional"
+
+    def test_upsert_updates_existing(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.upsert("u1", "lang", "Python"))
+        _run(instance.upsert("u1", "lang", "TypeScript"))
+        val = _run(instance.get("u1", "lang"))
+        assert val == "TypeScript"
+
+    def test_upsert_empty_user_id_returns_false(self):
+        instance = self._make()
+        _run(instance.initialize())
+        ok = _run(instance.upsert("", "key", "val"))
+        assert ok is False
+
+    def test_upsert_empty_key_returns_false(self):
+        instance = self._make()
+        _run(instance.initialize())
+        ok = _run(instance.upsert("u1", "", "val"))
+        assert ok is False
+
+    def test_get_nonexistent_returns_none(self):
+        instance = self._make()
+        _run(instance.initialize())
+        val = _run(instance.get("u1", "nonexistent"))
+        assert val is None
+
+    def test_get_profile_returns_all_keys(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.upsert("u1", "lang", "Python"))
+        _run(instance.upsert("u1", "style", "OOP"))
+        profile = _run(instance.get_profile("u1"))
+        assert profile["lang"] == "Python"
+        assert profile["style"] == "OOP"
+
+    def test_list_users(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.upsert("alice", "k", "v"))
+        _run(instance.upsert("bob", "k", "v"))
+        users = _run(instance.list_users())
+        assert "alice" in users
+        assert "bob" in users
+
+    def test_delete_removes_key(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.upsert("u1", "lang", "Python"))
+        ok = _run(instance.delete("u1", "lang"))
+        assert ok is True
+        val = _run(instance.get("u1", "lang"))
+        assert val is None
+
+    def test_delete_user_removes_all(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.upsert("u1", "lang", "Python"))
+        _run(instance.upsert("u1", "style", "OOP"))
+        count = _run(instance.delete_user("u1"))
+        assert count == 2
+
+    def test_purge_expired_removes_old_records(self):
+        import time
+        instance = self._make(ttl_days=1)
+        _run(instance.initialize())
+        _run(instance.upsert("u1", "old", "value"))
+        # Simulate old record
+        import sqlalchemy as sa_mod
+        async def _backdate():
+            async with instance._engine.begin() as conn:
+                await conn.execute(
+                    sa_mod.text("UPDATE entity_memory SET updated_at = 0 WHERE user_id = 'u1'")
+                )
+        _run(_backdate())
+        removed = _run(instance.purge_expired())
+        assert removed >= 1
+
+    def test_close_disposes_engine(self):
+        instance = self._make()
+        _run(instance.initialize())
+        _run(instance.close())
+        assert instance._engine is None
