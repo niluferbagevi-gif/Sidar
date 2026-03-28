@@ -19,7 +19,7 @@ def _get_em():
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -209,97 +209,128 @@ class TestEntityMemorySQLite:
         )
 
     def test_initialize_creates_table(self):
-        instance = self._make()
-        _run(instance.initialize())
-        assert instance._engine is not None
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            assert instance._engine is not None
+            await instance.close()
+        asyncio.run(_test())
 
     def test_upsert_and_get(self):
-        instance = self._make()
-        _run(instance.initialize())
-        ok = _run(instance.upsert("u1", "coding_style", "functional"))
-        assert ok is True
-        val = _run(instance.get("u1", "coding_style"))
-        assert val == "functional"
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            ok = await instance.upsert("u1", "coding_style", "functional")
+            assert ok is True
+            val = await instance.get("u1", "coding_style")
+            assert val == "functional"
+            await instance.close()
+        asyncio.run(_test())
 
     def test_upsert_updates_existing(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.upsert("u1", "lang", "Python"))
-        _run(instance.upsert("u1", "lang", "TypeScript"))
-        val = _run(instance.get("u1", "lang"))
-        assert val == "TypeScript"
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.upsert("u1", "lang", "Python")
+            await instance.upsert("u1", "lang", "TypeScript")
+            val = await instance.get("u1", "lang")
+            assert val == "TypeScript"
+            await instance.close()
+        asyncio.run(_test())
 
     def test_upsert_empty_user_id_returns_false(self):
-        instance = self._make()
-        _run(instance.initialize())
-        ok = _run(instance.upsert("", "key", "val"))
-        assert ok is False
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            ok = await instance.upsert("", "key", "val")
+            assert ok is False
+            await instance.close()
+        asyncio.run(_test())
 
     def test_upsert_empty_key_returns_false(self):
-        instance = self._make()
-        _run(instance.initialize())
-        ok = _run(instance.upsert("u1", "", "val"))
-        assert ok is False
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            ok = await instance.upsert("u1", "", "val")
+            assert ok is False
+            await instance.close()
+        asyncio.run(_test())
 
     def test_get_nonexistent_returns_none(self):
-        instance = self._make()
-        _run(instance.initialize())
-        val = _run(instance.get("u1", "nonexistent"))
-        assert val is None
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            val = await instance.get("u1", "nonexistent")
+            assert val is None
+            await instance.close()
+        asyncio.run(_test())
 
     def test_get_profile_returns_all_keys(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.upsert("u1", "lang", "Python"))
-        _run(instance.upsert("u1", "style", "OOP"))
-        profile = _run(instance.get_profile("u1"))
-        assert profile["lang"] == "Python"
-        assert profile["style"] == "OOP"
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.upsert("u1", "lang", "Python")
+            await instance.upsert("u1", "style", "OOP")
+            profile = await instance.get_profile("u1")
+            assert profile["lang"] == "Python"
+            assert profile["style"] == "OOP"
+            await instance.close()
+        asyncio.run(_test())
 
     def test_list_users(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.upsert("alice", "k", "v"))
-        _run(instance.upsert("bob", "k", "v"))
-        users = _run(instance.list_users())
-        assert "alice" in users
-        assert "bob" in users
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.upsert("alice", "k", "v")
+            await instance.upsert("bob", "k", "v")
+            users = await instance.list_users()
+            assert "alice" in users
+            assert "bob" in users
+            await instance.close()
+        asyncio.run(_test())
 
     def test_delete_removes_key(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.upsert("u1", "lang", "Python"))
-        ok = _run(instance.delete("u1", "lang"))
-        assert ok is True
-        val = _run(instance.get("u1", "lang"))
-        assert val is None
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.upsert("u1", "lang", "Python")
+            ok = await instance.delete("u1", "lang")
+            assert ok is True
+            val = await instance.get("u1", "lang")
+            assert val is None
+            await instance.close()
+        asyncio.run(_test())
 
     def test_delete_user_removes_all(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.upsert("u1", "lang", "Python"))
-        _run(instance.upsert("u1", "style", "OOP"))
-        count = _run(instance.delete_user("u1"))
-        assert count == 2
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.upsert("u1", "lang", "Python")
+            await instance.upsert("u1", "style", "OOP")
+            count = await instance.delete_user("u1")
+            assert count == 2
+            await instance.close()
+        asyncio.run(_test())
 
     def test_purge_expired_removes_old_records(self):
-        import time
-        instance = self._make(ttl_days=1)
-        _run(instance.initialize())
-        _run(instance.upsert("u1", "old", "value"))
-        # Simulate old record
         import sqlalchemy as sa_mod
-        async def _backdate():
+        async def _test():
+            instance = self._make(ttl_days=1)
+            await instance.initialize()
+            await instance.upsert("u1", "old", "value")
             async with instance._engine.begin() as conn:
                 await conn.execute(
                     sa_mod.text("UPDATE entity_memory SET updated_at = 0 WHERE user_id = 'u1'")
                 )
-        _run(_backdate())
-        removed = _run(instance.purge_expired())
-        assert removed >= 1
+            removed = await instance.purge_expired()
+            assert removed >= 1
+            await instance.close()
+        asyncio.run(_test())
 
     def test_close_disposes_engine(self):
-        instance = self._make()
-        _run(instance.initialize())
-        _run(instance.close())
-        assert instance._engine is None
+        async def _test():
+            instance = self._make()
+            await instance.initialize()
+            await instance.close()
+            assert instance._engine is None
+        asyncio.run(_test())

@@ -20,7 +20,7 @@ def _get_al():
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -251,38 +251,52 @@ class TestFeedbackStoreSQLite:
         return al.FeedbackStore("sqlite+aiosqlite:///:memory:")
 
     def test_initialize_creates_engine(self):
-        fs = self._make()
-        _run(fs.initialize())
-        assert fs._engine is not None
+        async def _test():
+            fs = self._make()
+            await fs.initialize()
+            assert fs._engine is not None
+            await fs.close()
+        asyncio.run(_test())
 
     def test_record_and_get_pending(self):
-        fs = self._make()
-        _run(fs.initialize())
-        ok = _run(fs.record("hello", "world", rating=1))
-        assert ok is True
-        rows = _run(fs.get_pending_export(min_rating=1))
-        assert len(rows) == 1
-        assert rows[0]["prompt"] == "hello"
+        async def _test():
+            fs = self._make()
+            await fs.initialize()
+            ok = await fs.record("hello", "world", rating=1)
+            assert ok is True
+            rows = await fs.get_pending_export(min_rating=1)
+            assert len(rows) == 1
+            assert rows[0]["prompt"] == "hello"
+            await fs.close()
+        asyncio.run(_test())
 
     def test_negative_rating_not_in_pending_export(self):
-        fs = self._make()
-        _run(fs.initialize())
-        _run(fs.record("q", "a", rating=-1))
-        rows = _run(fs.get_pending_export(min_rating=1))
-        assert len(rows) == 0
+        async def _test():
+            fs = self._make()
+            await fs.initialize()
+            await fs.record("q", "a", rating=-1)
+            rows = await fs.get_pending_export(min_rating=1)
+            assert len(rows) == 0
+            await fs.close()
+        asyncio.run(_test())
 
     def test_stats_counts(self):
-        fs = self._make()
-        _run(fs.initialize())
-        _run(fs.record("q1", "a1", rating=1))
-        _run(fs.record("q2", "a2", rating=-1))
-        stats = _run(fs.stats())
-        assert stats["total"] == 2
-        assert stats["positive"] == 1
-        assert stats["negative"] == 1
+        async def _test():
+            fs = self._make()
+            await fs.initialize()
+            await fs.record("q1", "a1", rating=1)
+            await fs.record("q2", "a2", rating=-1)
+            stats = await fs.stats()
+            assert stats["total"] == 2
+            assert stats["positive"] == 1
+            assert stats["negative"] == 1
+            await fs.close()
+        asyncio.run(_test())
 
     def test_close_disposes_engine(self):
-        fs = self._make()
-        _run(fs.initialize())
-        _run(fs.close())
-        assert fs._engine is None
+        async def _test():
+            fs = self._make()
+            await fs.initialize()
+            await fs.close()
+            assert fs._engine is None
+        asyncio.run(_test())
