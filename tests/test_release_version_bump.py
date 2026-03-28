@@ -3,7 +3,7 @@ from pathlib import Path
 
 def test_config_version_is_v5_1():
     content = Path("config.py").read_text(encoding="utf-8")
-    assert 'VERSION: str      = "5.1.0"' in content
+    assert 'VERSION: str      = "5.2.0"' in content
 
 
 def test_core_docs_reference_v5():
