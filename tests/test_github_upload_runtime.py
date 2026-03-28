@@ -554,7 +554,9 @@ def test_main_push_retry_failure_and_unknown_push_error(monkeypatch):
     monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
-    GU.main()
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 1
 
     # merge fail prints pull command/error + unknown push error path
     def _fake_run2(args, show_output=False):
@@ -628,7 +630,9 @@ def test_main_push_conflict_merge_fails(monkeypatch):
     monkeypatch.setattr(GU, "collect_safe_files", lambda: (["a.txt"], []))
     answers = iter(["msg", "y"])
     monkeypatch.setattr("builtins.input", lambda _p: next(answers))
-    GU.main()
+    with pytest.raises(SystemExit) as exc:
+        GU.main()
+    assert exc.value.code == 1
 
 
 def test_main_push_conflict_merge_success_but_retry_push_fails(monkeypatch):
