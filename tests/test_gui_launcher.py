@@ -34,9 +34,14 @@ def _load_gui_launcher(*, execute_return_code: int = 0, preflight_raises: Except
     main_stub.build_command = _build_command
     main_stub.execute_command = _execute_command
 
+    previous_main = sys.modules.get("main")
     sys.modules["main"] = main_stub
     sys.modules.pop("gui_launcher", None)
     module = importlib.import_module("gui_launcher")
+    if previous_main is not None:
+        sys.modules["main"] = previous_main
+    else:
+        sys.modules.pop("main", None)
     return module, state
 
 
