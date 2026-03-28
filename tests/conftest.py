@@ -155,6 +155,39 @@ if importlib.util.find_spec("httpx") is None:
     sys.modules["httpx"] = _httpx
 
 
+if importlib.util.find_spec("pydantic") is None:
+    _pydantic = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+        def model_dump(self, **kwargs):
+            return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+
+        dict = model_dump
+
+        @classmethod
+        def model_validate(cls, data):
+            return cls(**data) if isinstance(data, dict) else data
+
+    def _Field(default=None, **kwargs):
+        return default
+
+    class _ValidationError(Exception):
+        def __init__(self, errors=None, model=None):
+            super().__init__(str(errors))
+            self.errors_list = errors or []
+
+        def errors(self):
+            return self.errors_list
+
+    _pydantic.BaseModel = _BaseModel
+    _pydantic.Field = _Field
+    _pydantic.ValidationError = _ValidationError
+    sys.modules["pydantic"] = _pydantic
+
 if importlib.util.find_spec("bs4") is None:
     _bs4 = types.ModuleType("bs4")
 
