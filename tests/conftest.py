@@ -36,21 +36,34 @@ def db_session() -> sqlite3.Connection:
     try:
         yield conn
     finally:
-        conn.close()
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
-@pytest.fixture
-def llm_mock_client() -> MockLLMClient:
-    """Testlerde ortak kullanılacak LLM mock istemcisi."""
-    return MockLLMClient()
-
-
-@pytest.fixture
-def test_config(tmp_path: Path) -> dict[str, Any]:
-    """Sık kullanılan test konfigürasyon değerleri."""
-    return {
-        "environment": "test",
-        "workspace_dir": str(tmp_path),
-        "debug": False,
-        "llm_timeout_seconds": 10,
-    }
+@pytest.fixture(autouse=True)
+def _cleanup_logging_handlers():
+    """Teste sonra logging handler'larını kapat (ResourceWarning önlemek için)."""
+    yield
+    import logging
+    import gc
+    # Tüm handler'ları kapat
+    for handler in logging.root.handlers[:]:
+        try:
+            handler.close()
+            logging.root.removeHandler(handler)
+        except Exception:
+            pass
+    # Tüm logger'ları temizle
+    for logger_name in list(logging.Logger.manager.loggerDict):
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers[:]:
+            try:
+                handler.close()
+                logger.removeHandler(handler)
+            except Exception:
+                pass
+    # Garbage collection'ı force et
+    gc.collect()
