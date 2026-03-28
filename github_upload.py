@@ -11,7 +11,6 @@ from datetime import datetime
 
 from config import Config
 
-
 cfg = Config()
 
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
@@ -30,13 +29,13 @@ FORBIDDEN_PATHS = [
 # RENK KODLARI
 # ═══════════════════════════════════════════════════════════════
 class Colors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -62,7 +61,7 @@ def run_command(args, show_output=True):
             err_msg += "\n" + e.stdout.strip()
 
         if show_output and err_msg:
-            print(f"{Colors.WARNING}Git çıktısı: {err_msg}{Colors.ENDC}")
+            print(f"{Colors.WARNING}Git ciktisi: {err_msg}{Colors.ENDC}")
         return False, err_msg
 
 
@@ -80,6 +79,11 @@ def _is_valid_repo_url(url: str) -> bool:
 def _normalize_path(path: str) -> str:
     """Yol formatını güvenlik kontrolleri için normalize eder."""
     return path.replace("\\", "/").lstrip("./")
+
+
+def _is_valid_repo_url(url: str) -> bool:
+    normalized = (url or "").strip()
+    return normalized.startswith("https://github.com/") or normalized.startswith("git@github.com:")
 
 
 def is_forbidden_path(path: str) -> bool:
@@ -145,7 +149,6 @@ def main():
         print(f"{Colors.FAIL}GITHUB_TOKEN config.py/.env üzerinden bulunamadı. İşlem güvenlik nedeniyle durduruldu.{Colors.ENDC}")
         sys.exit(1)
 
-    # 1. Git kurulu mu?
     success, _ = run_command(["git", "--version"], show_output=False)
     if not success:
         print(f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}")
@@ -287,9 +290,9 @@ def main():
             print(f"{Colors.FAIL}❌ Yükleme sırasında bilinmeyen bir hata oluştu:\n{err_msg}{Colors.ENDC}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.FAIL}İşlem kullanıcı tarafından iptal edildi.{Colors.ENDC}")
+        print(f"\n{Colors.FAIL}Islem kullanici tarafindan iptal edildi.{Colors.ENDC}")
         sys.exit(0)

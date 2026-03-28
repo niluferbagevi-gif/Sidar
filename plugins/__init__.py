@@ -1,0 +1,1 @@
+# Sidar AI — Plugin package
