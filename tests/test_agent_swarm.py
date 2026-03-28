@@ -202,7 +202,7 @@ def _make_orchestrator(registered_agents=None):
     reg = sys.modules["agent.registry"]
 
     # Kayıtlı ajanlar
-    agents_to_register = registered_agents or {
+    agents_to_register = registered_agents if registered_agents is not None else {
         "coder": ["code_generation", "file_io"],
         "reviewer": ["code_review"],
     }
@@ -276,20 +276,20 @@ class TestInMemoryDelegationBackend:
 
 class TestTaskRouter:
     def test_route_known_intent(self):
-        sw, _ = _make_orchestrator()
+        _, sw = _make_orchestrator()
         router = sw.TaskRouter()
         spec = router.route("code_generation")
         assert spec is not None
 
     def test_route_by_role(self):
-        sw, _ = _make_orchestrator()
+        _, sw = _make_orchestrator()
         router = sw.TaskRouter()
         spec = router.route_by_role("coder")
         assert spec is not None
         assert spec.role_name == "coder"
 
     def test_route_by_unknown_role_returns_none(self):
-        sw, _ = _make_orchestrator()
+        _, sw = _make_orchestrator()
         router = sw.TaskRouter()
         spec = router.route_by_role("unknown_role_xyz")
         assert spec is None

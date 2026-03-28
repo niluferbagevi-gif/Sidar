@@ -138,8 +138,13 @@ def _stub_all_sidar_deps():
         # Docker
         DOCKER_PYTHON_IMAGE = "python:3.11-alpine"
         DOCKER_EXEC_TIMEOUT = 10
+        # Model names
+        CODING_MODEL = "qwen2.5-coder:7b"
+        TEXT_MODEL = "gemma2:9b"
         # Tracing
         ENABLE_TRACING = False
+        # HITL
+        SIDAR_MAX_TOOL_STEPS = 10
 
     cfg_mod.Config = _Config
     sys.modules["config"] = cfg_mod
