@@ -407,7 +407,7 @@ def test_runtime_helper_error_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(GU.subprocess, "run", _raise)
     ok, out = GU.run_command(["git", "status"], show_output=True)
     assert ok is False and "err" in out
-    assert any("Git çıktısı" in p for p in printed)
+    assert any("Git ciktisi" in p for p in printed)
 
     # get_file_content: forbidden + decode/os errors
     assert GU.get_file_content("sessions/secret.txt") is None
@@ -597,7 +597,7 @@ def test_github_upload_dunder_main_keyboard_interrupt_prints_cancel(monkeypatch,
 
     assert excinfo.value.code == 0
     out = capsys.readouterr().out
-    assert "İşlem kullanıcı tarafından iptal edildi" in out
+    assert "Islem kullanici tarafindan iptal edildi." in out
 
 def test_main_push_conflict_merge_fails(monkeypatch):
     GU = _load_module()
