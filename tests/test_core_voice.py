@@ -399,3 +399,37 @@ class TestVoicePipelineDummyAudioFlow:
         assert result["provider"] == "pyttsx3"
         assert result["mime_type"] == "audio/wav"
         assert isinstance(result["audio_bytes"], (bytes, bytearray))
+
+
+class TestVoicePipelineAdditionalCoverage:
+    def test_build_voice_state_payload_defaults_unknown_event(self):
+        voice = _get_voice()
+        vp = voice.VoicePipeline(_make_config(VOICE_TTS_PROVIDER="mock"))
+        payload = vp.build_voice_state_payload(event="", buffered_bytes=-5, sequence=-1, duplex_state=None)
+        assert payload["voice_state"] == "unknown"
+        assert payload["buffered_bytes"] == 0
+        assert payload["sequence"] == 0
+
+    def test_synthesize_text_empty_returns_failure_payload(self):
+        voice = _get_voice()
+        vp = voice.VoicePipeline(_make_config(VOICE_TTS_PROVIDER="mock", VOICE_TTS_VOICE="narrator"))
+        result = _run(vp.synthesize_text("   "))
+        assert result["success"] is False
+        assert result["voice"] == "narrator"
+
+    def test_pyttsx3_synthesize_returns_unavailable_when_import_fails(self, monkeypatch):
+        voice = _get_voice()
+
+        real_import = __import__("builtins").__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pyttsx3":
+                raise ImportError("missing pyttsx3")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(__import__("builtins"), "__import__", fake_import)
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("merhaba", voice=""))
+        assert result["success"] is False
+        assert "pyttsx3" in result["provider"]
+        assert result["audio_bytes"] == b""

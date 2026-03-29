@@ -305,3 +305,53 @@ class TestMaxEvents:
         snap = collector.snapshot()
         # Only 5 events retained
         assert snap["totals"]["calls"] == 5
+
+
+class TestUsageSinkAndAsyncPaths:
+    def test_record_calls_usage_sink_sync(self):
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+        called = []
+
+        def sink(event):
+            called.append(event.provider)
+
+        collector.set_usage_sink(sink)
+        collector.record(provider="openai", model="gpt-4o", latency_ms=10.0)
+
+        assert called == ["openai"]
+
+    def test_record_usage_sink_exception_is_swallowed(self):
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+
+        def bad_sink(_event):
+            raise RuntimeError("sink failed")
+
+        collector.set_usage_sink(bad_sink)
+        collector.record(provider="openai", model="gpt-4o", latency_ms=10.0)
+
+        snap = collector.snapshot()
+        assert snap["totals"]["calls"] == 1
+
+    def test_record_usage_sink_awaitable_without_running_loop(self):
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+
+        async def sink_async(_event):
+            return None
+
+        collector.set_usage_sink(sink_async)
+        collector.record(provider="openai", model="gpt-4o", latency_ms=10.0)
+
+        snap = collector.snapshot()
+        assert snap["totals"]["calls"] == 1
+
+
+class TestEnvFloatExtra:
+    def test_none_default_is_normalized_to_zero(self):
+        lm = _get_llm_metrics()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("_SIDAR_TEST_VAR_NONE_DEFAULT", None)
+            result = lm._env_float("_SIDAR_TEST_VAR_NONE_DEFAULT", None)
+        assert result == 0.0
