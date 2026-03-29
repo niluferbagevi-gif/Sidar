@@ -455,6 +455,22 @@ class TestTypeCheckers:
         )
         assert c.is_federation_task_envelope(env) is True
 
+    def test_is_federation_task_envelope_duck_typed_true(self):
+        c = _get_contracts()
+        DuckEnvelope = type(
+            "FederationTaskEnvelope",
+            (),
+            {
+                "task_id": "t1",
+                "source_system": "s",
+                "source_agent": "a",
+                "target_system": "t",
+                "target_agent": "b",
+                "goal": "g",
+            },
+        )
+        assert c.is_federation_task_envelope(DuckEnvelope()) is True
+
     def test_is_federation_task_result_true(self):
         c = _get_contracts()
         r = c.FederationTaskResult(
@@ -462,6 +478,23 @@ class TestTypeCheckers:
             target_system="t", target_agent="b", status="success", summary="özet",
         )
         assert c.is_federation_task_result(r) is True
+
+    def test_is_federation_task_result_duck_typed_true(self):
+        c = _get_contracts()
+        DuckResult = type(
+            "FederationTaskResult",
+            (),
+            {
+                "task_id": "t1",
+                "source_system": "s",
+                "source_agent": "a",
+                "target_system": "t",
+                "target_agent": "b",
+                "status": "success",
+                "summary": "özet",
+            },
+        )
+        assert c.is_federation_task_result(DuckResult()) is True
 
     def test_is_action_feedback_true(self):
         c = _get_contracts()
@@ -471,10 +504,43 @@ class TestTypeCheckers:
         )
         assert c.is_action_feedback(fb) is True
 
+    def test_is_action_feedback_duck_typed_true(self):
+        c = _get_contracts()
+        DuckFeedback = type(
+            "ActionFeedback",
+            (),
+            {
+                "feedback_id": "fb1",
+                "source_system": "s",
+                "source_agent": "a",
+                "action_name": "act",
+                "status": "ok",
+                "summary": "tamam",
+            },
+        )
+        assert c.is_action_feedback(DuckFeedback()) is True
+
     def test_is_broker_task_envelope_true(self):
         c = _get_contracts()
         env = c.BrokerTaskEnvelope(task_id="t1", sender="s", receiver="r", goal="g")
         assert c.is_broker_task_envelope(env) is True
+
+    def test_is_broker_task_envelope_duck_typed_true(self):
+        c = _get_contracts()
+        DuckBrokerEnv = type(
+            "BrokerTaskEnvelope",
+            (),
+            {
+                "task_id": "t1",
+                "sender": "s",
+                "receiver": "r",
+                "goal": "g",
+                "broker": "rabbitmq",
+                "exchange": "sidar.swarm.tasks",
+                "routing_key": "sidar.swarm.r.mixed",
+            },
+        )
+        assert c.is_broker_task_envelope(DuckBrokerEnv()) is True
 
     def test_is_broker_task_result_true(self):
         c = _get_contracts()

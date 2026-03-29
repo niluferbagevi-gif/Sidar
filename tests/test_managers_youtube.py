@@ -139,6 +139,13 @@ class TestNormalizeTranscriptEvents:
         result = yt.YouTubeManager._normalize_transcript_events(["bad", 42])  # type: ignore
         assert result["text"] == ""
 
+    def test_non_list_segs_skipped(self):
+        yt = _get_yt()
+        events = [{"tStartMs": 0, "dDurationMs": 1000, "segs": "invalid"}]
+        result = yt.YouTubeManager._normalize_transcript_events(events)  # type: ignore[arg-type]
+        assert result["text"] == ""
+        assert result["segments"] == []
+
 
 # ══════════════════════════════════════════════════════════════
 # YouTubeManager constructor
