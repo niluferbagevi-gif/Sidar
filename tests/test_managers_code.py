@@ -361,6 +361,37 @@ class TestRunShellInSandbox:
         assert ok is True
         assert "çıktı üretmedi" in message
 
+    def test_success_with_stdout_output(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=0, stdout="all good", stderr="")),
+        )
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is True
+        assert "all good" in message
+
+
+class TestCodeManagerDockerCliMocking:
+    def test_execute_code_with_docker_cli_truncates_large_output(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.max_output_chars = 10
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=0, stdout="x" * 50, stderr="")),
+        )
+        ok, output = mgr._execute_code_with_docker_cli(
+            "print('x')",
+            {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "network_mode": "none", "timeout": 10},
+        )
+        assert ok is True
+        assert "ÇIKTI KIRPILDI" in output
+
 
 class TestPytestOutputAnalysis:
     def test_extracts_coverage_targets_and_branch_arcs(self):
