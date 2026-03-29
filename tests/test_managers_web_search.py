@@ -351,6 +351,47 @@ class TestDocsAndHelpers:
 
 
 class TestWebSearchEngineApiMocking:
+    def test_search_auto_falls_back_when_tavily_returns_no_results(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.engine = "auto"
+        mgr.tavily_key = "tok"
+        mgr.google_key = "g"
+        mgr.google_cx = "cx"
+        mgr._search_tavily = AsyncMock(return_value=(True, ws.WebSearchManager._mark_no_results("empty")))
+        mgr._search_google = AsyncMock(return_value=(True, "google-hit"))
+
+        ok, out = asyncio.run(mgr.search("query", max_results=5))
+
+        assert ok is True
+        assert out == "google-hit"
+        mgr._search_tavily.assert_awaited_once()
+        mgr._search_google.assert_awaited_once()
+
+    def test_search_duckduckgo_timeout_returns_error(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.FETCH_TIMEOUT = 0.01
+
+        ddg_stub = types.ModuleType("duckduckgo_search")
+
+        class _AsyncDDGS:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def text(self, query, max_results=5):
+                raise asyncio.TimeoutError()
+
+        ddg_stub.AsyncDDGS = _AsyncDDGS
+        sys.modules["duckduckgo_search"] = ddg_stub
+
+        ok, out = asyncio.run(mgr._search_duckduckgo("query", 5))
+        assert ok is False
+        assert "Zaman aşımı" in out
+
     def test_search_tavily_success_with_mocked_json(self):
         ws = _get_ws()
         mgr = ws.WebSearchManager()

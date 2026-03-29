@@ -9,6 +9,9 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 
 def _get_todo():
@@ -380,3 +383,27 @@ class TestClearHelpers:
     def test_repr(self):
         mgr, tm = self._make()
         assert "TodoManager" in repr(mgr)
+
+
+class TestTodoPersistenceErrors:
+    def _make(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_stub = types.ModuleType("config")
+
+            class _Cfg:
+                BASE_DIR = tmpdir
+
+            cfg_stub.Config = _Cfg
+            sys.modules["config"] = cfg_stub
+
+            if "managers.todo_manager" in sys.modules:
+                del sys.modules["managers.todo_manager"]
+            import managers.todo_manager as tm
+            mgr = tm.TodoManager()
+        return mgr
+
+    def test_add_task_raises_when_save_fails_with_db_lock(self):
+        mgr = self._make()
+        with patch.object(mgr, "_save", side_effect=OSError("database is locked")):
+            with pytest.raises(OSError):
+                mgr.add_task("Kilitleme senaryosu")

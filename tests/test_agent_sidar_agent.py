@@ -697,6 +697,41 @@ class TestSidarAgentToolHelpers:
 
         asyncio.run(_run_case())
 
+
+class TestSidarAgentRespondAndToolFallback:
+    def test_respond_initializes_lock_and_persists_messages(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent._lock = None
+
+        async def _run_case():
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "_try_multi_agent", AsyncMock(return_value="multi-agent sonucu")):
+                    with patch.object(agent, "_memory_add", AsyncMock()) as memory_add:
+                        chunks = []
+                        async for chunk in agent.respond("Merhaba"):
+                            chunks.append(chunk)
+            assert chunks == ["multi-agent sonucu"]
+            assert agent._lock is not None
+            assert memory_add.await_count == 2
+            memory_add.assert_any_await("user", "Merhaba")
+            memory_add.assert_any_await("assistant", "multi-agent sonucu")
+
+        asyncio.run(_run_case())
+
+    def test_tool_subtask_tool_failure_falls_back_to_max_step_message(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.SUBTASK_MAX_STEPS = 1
+        agent.llm.chat = AsyncMock(return_value='{"tool":"read_file"}')
+
+        async def _run_case():
+            result = await agent._tool_subtask("dosyayı oku")
+            assert "Maksimum adım sınırı" in result
+            agent.llm.chat.assert_awaited_once()
+
+        asyncio.run(_run_case())
+
     def test_tool_github_smart_pr_guard_cases(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()
