@@ -433,6 +433,22 @@ class TestConfigEnvOverrides:
         cfg = _reload_config({"DOCKER_REQUIRED": "true"})
         assert cfg.Config.DOCKER_REQUIRED is True
 
+    def test_invalid_web_port_falls_back_to_default(self):
+        cfg = _reload_config({"WEB_PORT": "not-a-number"})
+        assert cfg.Config.WEB_PORT == 7860
+
+    def test_invalid_ollama_timeout_falls_back_to_default(self):
+        cfg = _reload_config({"OLLAMA_TIMEOUT": "timeout"})
+        assert cfg.Config.OLLAMA_TIMEOUT == 30
+
+    def test_invalid_rate_limit_chat_falls_back_to_default(self):
+        cfg = _reload_config({"RATE_LIMIT_CHAT": "NaN"})
+        assert cfg.Config.RATE_LIMIT_CHAT == 20
+
+    def test_invalid_gpu_memory_fraction_falls_back_to_default(self):
+        cfg = _reload_config({"GPU_MEMORY_FRACTION": "invalid-float"})
+        assert cfg.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8)
+
 
 # ══════════════════════════════════════════════════════════════
 # Config.set_provider_mode

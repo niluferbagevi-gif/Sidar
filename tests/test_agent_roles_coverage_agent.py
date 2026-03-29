@@ -659,6 +659,28 @@ class TestCoverageAgentTools:
         assert "def test_generated" in result
 
     @pytest.mark.asyncio
+    async def test_tool_generate_missing_tests_with_coverage_finding_uses_dynamic_prompt(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        payload = json.dumps(
+            {
+                "coverage_finding": {
+                    "target_path": "agent/roles/coverage_agent.py",
+                    "missing_lines": [260, 261],
+                    "missing_branches": ["320:50% (1/2)"],
+                },
+                "coveragerc": {"run": {"include": "agent/*"}, "report": {"omit": "tests/*"}},
+            }
+        )
+        with patch.object(agent, "call_llm", AsyncMock(return_value="def test_dynamic(): pass")) as llm_mock:
+            result = await agent._tool_generate_missing_tests(payload)
+        assert "test_dynamic" in result
+        prompt = llm_mock.await_args.args[0][0]["content"]
+        assert "Hedef dosya: agent/roles/coverage_agent.py" in prompt
+        assert ".coveragerc include: agent/*" in prompt
+        assert ".coveragerc omit: tests/*" in prompt
+
+    @pytest.mark.asyncio
     async def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):
         m = _get_coverage()
         agent = m.CoverageAgent()
@@ -719,3 +741,25 @@ class TestCoverageAgentTools:
             "def test_append(): pass",
             append=False,
         )
+
+    @pytest.mark.asyncio
+    async def test_record_task_persists_findings_with_fallback_defaults(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        fake_db = MagicMock()
+        fake_db.create_coverage_task = AsyncMock(return_value=types.SimpleNamespace(id=99))
+        fake_db.add_coverage_finding = AsyncMock()
+        with patch.object(agent, "_ensure_db", AsyncMock(return_value=fake_db)):
+            await agent._record_task(
+                command="pytest -q",
+                pytest_output="FAILED ...",
+                analysis={"findings": [{"summary": "eksik test"}]},
+                generated_test="def test_x(): pass",
+                review_payload={"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
+                status="tests_written",
+            )
+        fake_db.create_coverage_task.assert_awaited_once()
+        fake_db.add_coverage_finding.assert_awaited_once()
+        call_kwargs = fake_db.add_coverage_finding.await_args.kwargs
+        assert call_kwargs["finding_type"] == "unknown"
+        assert call_kwargs["target_path"] == ""

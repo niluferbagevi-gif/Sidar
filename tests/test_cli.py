@@ -734,3 +734,30 @@ class TestMain:
                         with patch("builtins.print"):
                             cli.main()
         assert mock_cfg.AI_PROVIDER == "anthropic"
+
+    def test_invalid_level_arg_exits_with_error(self):
+        cli = _get_cli()
+        mock_cfg, _ = self._make_mocks()
+        with patch.object(sys, "argv", ["cli.py", "--level", "invalid-level"]):
+            with patch("cli.Config", return_value=mock_cfg):
+                with pytest.raises(SystemExit) as exc:
+                    cli.main()
+        assert exc.value.code == 2
+
+    def test_invalid_provider_arg_exits_with_error(self):
+        cli = _get_cli()
+        mock_cfg, _ = self._make_mocks()
+        with patch.object(sys, "argv", ["cli.py", "--provider", "invalid-provider"]):
+            with patch("cli.Config", return_value=mock_cfg):
+                with pytest.raises(SystemExit) as exc:
+                    cli.main()
+        assert exc.value.code == 2
+
+    def test_missing_model_value_exits_with_error(self):
+        cli = _get_cli()
+        mock_cfg, _ = self._make_mocks()
+        with patch.object(sys, "argv", ["cli.py", "--model"]):
+            with patch("cli.Config", return_value=mock_cfg):
+                with pytest.raises(SystemExit) as exc:
+                    cli.main()
+        assert exc.value.code == 2

@@ -185,6 +185,14 @@ class TestEntityMemoryNoEngine:
         result = _run(instance.purge_expired())
         assert result == 0
 
+    def test_initialize_returns_when_sqlalchemy_unavailable(self):
+        em = _get_em()
+        instance = em.EntityMemory()
+        with patch.object(em, "_SA_AVAILABLE", False), patch.object(em.logger, "warning") as warning_mock:
+            _run(instance.initialize())
+        warning_mock.assert_called_once()
+        assert instance._engine is None
+
 
 class TestGetEntityMemorySingleton:
     def setup_method(self):
@@ -276,6 +284,19 @@ class TestEntityMemorySQLite:
             await instance.close()
         asyncio.run(_test())
 
+    def test_upsert_evicts_oldest_when_max_per_user_reached(self):
+        async def _test():
+            instance = self._make(max_per_user=1)
+            await instance.initialize()
+            await instance.upsert("u1", "first", "one")
+            await instance.upsert("u1", "second", "two")
+            first_val = await instance.get("u1", "first")
+            second_val = await instance.get("u1", "second")
+            assert first_val is None
+            assert second_val == "two"
+            await instance.close()
+        asyncio.run(_test())
+
     def test_upsert_empty_user_id_returns_false(self):
         async def _test():
             instance = self._make()
@@ -362,6 +383,16 @@ class TestEntityMemorySQLite:
                 )
             removed = await instance.purge_expired()
             assert removed >= 1
+            await instance.close()
+        asyncio.run(_test())
+
+    def test_purge_expired_returns_zero_when_no_old_records(self):
+        async def _test():
+            instance = self._make(ttl_days=1)
+            await instance.initialize()
+            await instance.upsert("u1", "fresh", "value")
+            removed = await instance.purge_expired()
+            assert removed == 0
             await instance.close()
         asyncio.run(_test())
 
