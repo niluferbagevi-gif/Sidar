@@ -5,8 +5,10 @@ _cache_get/_cache_set, cache TTL.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 
 def _get_pi():
@@ -160,3 +162,60 @@ class TestCacheGetSet:
         mgr._cache["pypi:old"] = ({"info": {}}, datetime.now() - timedelta(seconds=9999))
         mgr._cache_get("pypi:old")
         assert "pypi:old" not in mgr._cache
+
+
+class TestGetJsonExceptionHandling:
+    def _mgr(self):
+        pi = _get_pi()
+        return pi.PackageInfoManager()
+
+    def test_get_json_timeout_exception_returns_timeout_error(self):
+        pi = _get_pi()
+        mgr = self._mgr()
+
+        client_mock = AsyncMock()
+        client_mock.get = AsyncMock(side_effect=pi.httpx.TimeoutException("mock timeout"))
+        cm_mock = AsyncMock()
+        cm_mock.__aenter__.return_value = client_mock
+        cm_mock.__aexit__.return_value = False
+
+        with patch.object(pi.httpx, "AsyncClient", return_value=cm_mock):
+            ok, data, err = asyncio.run(mgr._get_json("https://example.test/pypi"))
+
+        assert ok is False
+        assert data == {}
+        assert err == "timeout"
+
+    def test_get_json_request_exception_returns_request_error(self):
+        pi = _get_pi()
+        mgr = self._mgr()
+
+        client_mock = AsyncMock()
+        client_mock.get = AsyncMock(side_effect=pi.httpx.RequestError("network down"))
+        cm_mock = AsyncMock()
+        cm_mock.__aenter__.return_value = client_mock
+        cm_mock.__aexit__.return_value = False
+
+        with patch.object(pi.httpx, "AsyncClient", return_value=cm_mock):
+            ok, data, err = asyncio.run(mgr._get_json("https://example.test/npm"))
+
+        assert ok is False
+        assert data == {}
+        assert err.startswith("request:")
+
+    def test_get_json_unexpected_exception_returns_unexpected_error(self):
+        pi = _get_pi()
+        mgr = self._mgr()
+
+        client_mock = AsyncMock()
+        client_mock.get = AsyncMock(side_effect=Exception("mock error"))
+        cm_mock = AsyncMock()
+        cm_mock.__aenter__.return_value = client_mock
+        cm_mock.__aexit__.return_value = False
+
+        with patch.object(pi.httpx, "AsyncClient", return_value=cm_mock):
+            ok, data, err = asyncio.run(mgr._get_json("https://example.test/unexpected"))
+
+        assert ok is False
+        assert data == {}
+        assert err == "unexpected:mock error"
