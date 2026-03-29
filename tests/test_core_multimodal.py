@@ -6,7 +6,9 @@ _guess_suffix saf fonksiyonlarını kapsar.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
+from pathlib import Path
 
 
 def _get_mm():
@@ -233,3 +235,83 @@ class TestGuessSuffix:
     def test_empty_mime_uses_fallback(self):
         mm = _get_mm()
         assert mm._guess_suffix("", ".fallback") == ".fallback"
+
+
+class TestMultimodalRemoteAndTranscriptFlows:
+    def test_fetch_youtube_transcript_returns_invalid_id_reason(self):
+        mm = _get_mm()
+        result = asyncio.run(mm.fetch_youtube_transcript("https://example.com/video"))
+        assert result["success"] is False
+        assert "video id" in result["reason"].lower()
+
+    def test_fetch_youtube_transcript_handles_empty_events(self):
+        mm = _get_mm()
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"events": []}
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, _url):
+                return _Resp()
+
+        result = asyncio.run(
+            mm.fetch_youtube_transcript(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                http_client_factory=lambda **_kwargs: _Client(),
+            )
+        )
+        assert result["success"] is False
+        assert "bulunamadı" in result["reason"].lower()
+
+    def test_download_remote_media_rejects_non_http_sources(self, tmp_path):
+        mm = _get_mm()
+        import pytest
+        with pytest.raises(ValueError):
+            asyncio.run(mm.download_remote_media("file:///tmp/a.mp4", output_dir=tmp_path))
+
+    def test_download_remote_media_generic_http_success(self, tmp_path):
+        mm = _get_mm()
+
+        class _Resp:
+            headers = {"content-type": "video/mp4"}
+            content = b"dummy-bytes"
+
+            def raise_for_status(self):
+                return None
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, _url):
+                return _Resp()
+
+        downloaded = asyncio.run(
+            mm.download_remote_media(
+                "https://cdn.example.com/video.mp4",
+                output_dir=tmp_path,
+                http_client_factory=lambda **_kwargs: _Client(),
+            )
+        )
+        assert downloaded.platform == "generic"
+        assert Path(downloaded.path).exists()
+        assert downloaded.mime_type == "video/mp4"
+
+    def test_resolve_remote_media_stream_non_remote_raises(self):
+        mm = _get_mm()
+        import pytest
+        with pytest.raises(ValueError):
+            asyncio.run(mm.resolve_remote_media_stream("/tmp/video.mp4"))

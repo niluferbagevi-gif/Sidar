@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 
 def _get_bm():
@@ -207,3 +208,86 @@ class TestBrowserManagerUnhappyPaths:
             mgr.goto_url("s1", "https://example.com")
 
         assert mgr._audit_log[-1]["status"] == "execution_failed"
+
+
+class TestBrowserManagerAutomationMocking:
+    def test_start_session_playwright_mock_success(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_session = bm.BrowserSession(
+            session_id="pw-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(url=""),
+        )
+        monkeypatch.setattr(mgr, "_provider_candidates", lambda: ["playwright"])
+        monkeypatch.setattr(mgr, "_start_playwright_session", lambda *_a, **_k: fake_session)
+
+        ok, payload = mgr.start_session(browser_name="chromium")
+        assert ok is True
+        assert payload["session_id"] == "pw-1"
+        assert "pw-1" in mgr._sessions
+
+    def test_click_fill_select_use_mocked_playwright_page(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_page = types.SimpleNamespace(
+            click=lambda *_a, **_k: None,
+            fill=lambda *_a, **_k: None,
+            select_option=lambda *_a, **_k: None,
+            url="https://example.com",
+            content=lambda: "<html></html>",
+            screenshot=lambda path=None, full_page=True: Path(path).write_bytes(b"png"),
+        )
+        session = bm.BrowserSession(
+            session_id="s1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=fake_page,
+        )
+        mgr._sessions["s1"] = session
+
+        ok_click, _ = mgr._click_element_impl("s1", "#safe-button")
+        ok_fill, _ = mgr._fill_form_impl("s1", "#name", "alice")
+        ok_select, _ = mgr._select_option_impl("s1", "#country", "TR")
+        ok_dom, dom = mgr.capture_dom("s1")
+
+        assert ok_click is True
+        assert ok_fill is True
+        assert ok_select is True
+        assert ok_dom is True
+        assert "<html" in dom
+
+    def test_selenium_mocked_session_actions(self, tmp_path):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_driver = types.SimpleNamespace(
+            current_url="https://example.com",
+            get=lambda _url: None,
+            page_source="<html>selenium</html>",
+            save_screenshot=lambda path: Path(path).write_bytes(b"png"),
+            quit=lambda: None,
+        )
+        session = bm.BrowserSession(
+            session_id="sel-1",
+            provider="selenium",
+            browser_name="chrome",
+            headless=True,
+            started_at=1.0,
+            driver=fake_driver,
+        )
+        mgr._sessions["sel-1"] = session
+        mgr.artifact_dir = tmp_path
+
+        ok_go, _ = mgr.goto_url("sel-1", "https://example.com")
+        ok_shot, shot_path = mgr.capture_screenshot("sel-1", file_name="s.png")
+        ok_close, _ = mgr.close_session("sel-1")
+
+        assert ok_go is True
+        assert ok_shot is True
+        assert Path(shot_path).exists()
+        assert ok_close is True
