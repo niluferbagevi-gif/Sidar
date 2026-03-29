@@ -10,6 +10,7 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 
 def _get_cm():
@@ -225,3 +226,58 @@ class TestResolveSandboxLimits:
         mgr, cm = _make_code_manager()
         limits = mgr._resolve_sandbox_limits()
         assert limits["timeout"] >= 1
+
+
+class TestExecuteCodeFallbackLoops:
+    def test_execute_code_timeout_kills_container(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, level=0)
+        mgr.docker_available = True
+
+        class _Container:
+            status = "running"
+
+            def reload(self):
+                return None
+
+            def kill(self):
+                return None
+
+            def remove(self, force=False):
+                return None
+
+        container = _Container()
+        mgr.docker_client = types.SimpleNamespace(
+            containers=types.SimpleNamespace(run=lambda **kwargs: container)
+        )
+
+        fake_time = iter([0.0, 5.0, 12.0])
+        monkeypatch.setattr(cm.time, "time", lambda: next(fake_time))
+        monkeypatch.setattr(cm.time, "sleep", lambda _v: None)
+
+        ok, message = mgr.execute_code("while True: pass")
+        assert ok is False
+        assert "Zaman aşımı" in message
+
+    def test_execute_code_docker_error_falls_back_to_local_after_cli_failure(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, level=0)
+        mgr.docker_available = True
+        mgr.docker_client = types.SimpleNamespace(
+            containers=types.SimpleNamespace(run=MagicMock(side_effect=RuntimeError("daemon down")))
+        )
+        class _ImageNotFound(Exception):
+            pass
+        monkeypatch.setitem(
+            sys.modules,
+            "docker",
+            types.SimpleNamespace(errors=types.SimpleNamespace(ImageNotFound=_ImageNotFound)),
+        )
+
+        monkeypatch.setattr(mgr, "_execute_code_with_docker_cli", MagicMock(side_effect=RuntimeError("cli failed")))
+        monkeypatch.setattr(mgr, "execute_code_local", MagicMock(return_value=(True, "local fallback ok")))
+
+        ok, message = mgr.execute_code("print('hi')")
+        assert ok is True
+        assert message == "local fallback ok"
+        mgr.execute_code_local.assert_called_once()
