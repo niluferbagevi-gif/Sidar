@@ -174,3 +174,36 @@ class TestAuditLog:
         summary = mgr.summarize_audit_log()
         assert summary["status"] == "failed"
         assert summary["risk"] == "yüksek"
+
+
+class TestBrowserManagerUnhappyPaths:
+    def test_start_session_returns_last_error_when_all_providers_fail(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        monkeypatch.setattr(mgr, "_provider_candidates", lambda: ["playwright", "selenium"])
+        monkeypatch.setattr(mgr, "_start_playwright_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("pw down")))
+        monkeypatch.setattr(mgr, "_start_selenium_session", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("sel down")))
+
+        ok, payload = mgr.start_session(browser_name="chromium")
+        assert ok is False
+        assert "sel down" in str(payload.get("error"))
+        assert len(mgr._audit_log) >= 2
+
+    def test_goto_url_records_execution_failed_audit_and_raises(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = types.SimpleNamespace(
+            session_id="s1",
+            provider="playwright",
+            page=types.SimpleNamespace(
+                goto=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("network offline"))
+            ),
+            current_url="",
+        )
+        mgr._sessions["s1"] = session
+
+        import pytest
+        with pytest.raises(RuntimeError, match="network offline"):
+            mgr.goto_url("s1", "https://example.com")
+
+        assert mgr._audit_log[-1]["status"] == "execution_failed"

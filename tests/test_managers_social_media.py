@@ -305,3 +305,57 @@ class TestSocialMediaApiMocking:
 
         assert ok is False
         assert "internal server error" in str(err).lower()
+
+    def test_post_401_unauthorized_returns_api_error_message(self):
+        sm = _get_sm()
+
+        response = MagicMock()
+        response.status_code = 401
+        response.json.return_value = {"error": {"message": "Invalid OAuth access token"}}
+        response.text = ""
+
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is False
+        assert "invalid oauth access token" in str(err).lower()
+
+    def test_post_200_with_broken_json_returns_raw_payload(self):
+        sm = _get_sm()
+
+        response = MagicMock()
+        response.status_code = 200
+        response.text = "{broken-json"
+        response.json.side_effect = ValueError("bad json")
+
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, payload = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is True
+        assert payload == {"raw": "{broken-json"}

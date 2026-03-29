@@ -164,3 +164,26 @@ class TestGitHubPatchedServiceResponses:
 
         assert ok is False
         assert repos == []
+
+    def test_read_remote_file_handles_forbidden_403(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._repo = MagicMock()
+        mgr._repo.get_contents.side_effect = _GitHubHttpError(403, "Forbidden")
+
+        ok, message = mgr.read_remote_file("secret.txt")
+        assert ok is False
+        assert "Forbidden" in message
+
+    def test_read_remote_file_rejects_unsafe_extensionless_file(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        content = MagicMock()
+        content.name = "credentials"
+        content.decoded_content = b"token=abc"
+        mgr._repo = MagicMock()
+        mgr._repo.get_contents.return_value = content
+
+        ok, message = mgr.read_remote_file("credentials")
+        assert ok is False
+        assert "güvenli listede değil" in message

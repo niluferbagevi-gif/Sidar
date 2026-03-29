@@ -5,8 +5,14 @@ _quote_sql_identifier, _utc_now_iso) ve Database._configure_backend kapsar.
 """
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 import sys
+import tempfile
 import types
+from pathlib import Path
+
+import pytest
 
 
 def _get_db():
@@ -318,3 +324,141 @@ class TestDatabaseConfigureBackend:
     def test_target_schema_version_default(self):
         db = self._make_db("")
         assert db.target_schema_version == 1
+
+
+class TestDatabaseErrorAndAsyncFlows:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_test.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_run_sqlite_op_raises_when_connection_missing(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                with pytest.raises(RuntimeError, match="SQLite bağlantısı başlatılmadı"):
+                    await database._run_sqlite_op(lambda: 1)
+        asyncio.run(_scenario())
+
+    def test_connect_postgresql_timeout_is_propagated(self, monkeypatch):
+        db_mod = _get_db()
+
+        class _Cfg:
+            DATABASE_URL = "postgresql://user:pass@db.local/sidar"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+
+        fake_asyncpg = types.SimpleNamespace(
+            create_pool=lambda **_kwargs: (_ for _ in ()).throw(asyncio.TimeoutError("pool timeout")),
+            PoolError=RuntimeError,
+        )
+        monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
+        database = db_mod.Database(cfg=_Cfg())
+
+        async def _scenario():
+            with pytest.raises(asyncio.TimeoutError):
+                await database.connect()
+            assert database._pg_pool is None
+        asyncio.run(_scenario())
+
+    def test_connect_postgresql_pool_error_is_propagated(self, monkeypatch):
+        db_mod = _get_db()
+
+        class _Cfg:
+            DATABASE_URL = "postgresql://user:pass@db.local/sidar"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+
+        class _FakePoolError(Exception):
+            pass
+
+        async def _raise_pool_error(**_kwargs):
+            raise _FakePoolError("pool unavailable")
+
+        fake_asyncpg = types.SimpleNamespace(create_pool=_raise_pool_error, PoolError=_FakePoolError)
+        monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
+        database = db_mod.Database(cfg=_Cfg())
+
+        async def _scenario():
+            with pytest.raises(_FakePoolError):
+                await database.connect()
+            assert database._pg_pool is None
+        asyncio.run(_scenario())
+
+    def test_unique_constraint_violation_on_duplicate_username(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                await database.create_user("alice", role="user")
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database.create_user("alice", role="admin")
+
+                await database.close()
+        asyncio.run(_scenario())
+
+    def test_rollback_scenario_preserves_database_consistency(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                def _operation():
+                    assert database._sqlite_conn is not None
+                    conn = database._sqlite_conn
+                    conn.execute("CREATE TABLE IF NOT EXISTS t (v TEXT UNIQUE)")
+                    try:
+                        conn.execute("INSERT INTO t (v) VALUES ('x')")
+                        conn.execute("INSERT INTO t (v) VALUES ('x')")
+                        conn.commit()
+                    except sqlite3.IntegrityError:
+                        conn.rollback()
+                        raise
+
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database._run_sqlite_op(_operation)
+
+                def _count():
+                    assert database._sqlite_conn is not None
+                    row = database._sqlite_conn.execute("SELECT COUNT(*) FROM t").fetchone()
+                    return int(row[0])
+
+                row_count = await database._run_sqlite_op(_count)
+                assert row_count == 0
+                await database.close()
+        asyncio.run(_scenario())
+
+    def test_async_create_session_and_message_flow(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                user = await database.create_user("bob", role="user")
+                session = await database.create_session(user.id, "Test Sohbeti")
+                message = await database.add_message(session.id, "user", "merhaba", tokens_used=12)
+                messages = await database.get_session_messages(session.id)
+
+                assert session.user_id == user.id
+                assert message.tokens_used == 12
+                assert len(messages) == 1
+                assert messages[0].content == "merhaba"
+                await database.close()
+        asyncio.run(_scenario())
