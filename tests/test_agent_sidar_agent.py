@@ -358,6 +358,53 @@ class TestSidarAgentExternalTrigger:
                         assert result is not None
                         assert result.get("trigger_id") == "trig-1"
 
+    def test_handle_external_trigger_marks_empty_when_llm_returns_blank(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        contracts = sys.modules["agent.core.contracts"]
+        trigger = contracts.ExternalTrigger(
+            trigger_id="trig-empty",
+            source="webhook",
+            event_name="non_ci_event",
+            payload={"hello": "world"},
+        )
+        if not hasattr(agent, "handle_external_trigger"):
+            pytest.skip("handle_external_trigger metodu bu sürümde mevcut değil")
+
+        async def _run_case():
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "_try_multi_agent", AsyncMock(return_value="   ")):
+                    with patch.object(agent, "_append_autonomy_history", AsyncMock()):
+                        with patch.object(agent, "_memory_add", AsyncMock()):
+                            return await agent.handle_external_trigger(trigger)
+
+        result = asyncio.run(_run_case())
+        assert result["status"] == "empty"
+        assert "boş çıktı" in result["summary"]
+
+
+class TestSidarAgentAutonomyActivity:
+    def test_get_autonomy_activity_aggregates_status_and_source_counts(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        if not hasattr(agent, "get_autonomy_activity"):
+            pytest.skip("get_autonomy_activity metodu bu sürümde mevcut değil")
+
+        agent._autonomy_history = [
+            {"trigger_id": "t1", "status": "success", "source": "github"},
+            {"trigger_id": "t2", "status": "failed", "source": "github"},
+            {"trigger_id": "t3", "status": "success", "source": "scheduler"},
+        ]
+
+        result = agent.get_autonomy_activity(limit=2)
+        assert result["returned"] == 2
+        assert result["total"] == 3
+        assert result["counts_by_status"]["failed"] == 1
+        assert result["counts_by_status"]["success"] == 1
+        assert result["counts_by_source"]["github"] == 1
+        assert result["counts_by_source"]["scheduler"] == 1
+        assert result["latest_trigger_id"] == "t3"
+
 
 class TestDefaultDeriveCorrelationId:
     def test_returns_first_non_empty(self):
