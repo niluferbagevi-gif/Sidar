@@ -3,7 +3,6 @@ branch = True
 parallel = True
 omit =
     tests/*
-    plugins/*
     */sidar_plugin_*
     */plug_auto_discover*
     */plug_bad_compile*

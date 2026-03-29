@@ -801,3 +801,723 @@ class TestBuildEventDrivenFederationSpec:
         }
         result = ws._build_event_driven_federation_spec("github", "pull_request", payload)
         assert result is None
+
+
+class TestResolveCiFailureContext:
+    def test_returns_build_ci_failure_context_when_non_empty(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "build_ci_failure_context", lambda e, p: {"kind": "check_run", "repo": "org/repo"})
+        result = ws._resolve_ci_failure_context("check_run", {"ci_failure": True})
+        assert result["kind"] == "check_run"
+
+    def test_falls_back_when_build_ci_returns_empty(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "build_ci_failure_context", lambda e, p: {})
+        result = ws._resolve_ci_failure_context("ci_failure_remediation", {})
+        assert result is not None
+
+    def test_returns_empty_dict_for_unrelated_event(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "build_ci_failure_context", lambda e, p: {})
+        result = ws._resolve_ci_failure_context("push", {"action": "opened"})
+        assert result == {}
+
+
+class TestEmbedEventDrivenFederationPayload:
+    def test_keys_present_in_result(self):
+        ws = _get_web_server()
+        base = {"event": "ci_failure"}
+        workflow = {
+            "federation_task": {"task_id": "t1", "source_system": "github", "source_agent": "pr_webhook", "target_agent": "supervisor"},
+            "federation_prompt": "inceleme yap",
+            "correlation_id": "corr-123",
+        }
+        result = ws._embed_event_driven_federation_payload(base, workflow)
+        assert result["kind"] == "federation_task"
+        assert result["federation_prompt"] == "inceleme yap"
+        assert result["task_id"] == "t1"
+        assert result["source_system"] == "github"
+        assert result["correlation_id"] == "corr-123"
+
+    def test_empty_workflow_returns_safe_defaults(self):
+        ws = _get_web_server()
+        result = ws._embed_event_driven_federation_payload({}, {})
+        assert result["kind"] == "federation_task"
+        assert result["task_id"] == ""
+        assert result["source_system"] == ""
+        assert result["correlation_id"] == ""
+
+
+class TestSerializePolicy:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=1,
+            user_id="u1",
+            tenant_id="acme",
+            resource_type="rag",
+            resource_id="doc-1",
+            action="read",
+            effect="allow",
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+        result = ws._serialize_policy(record)
+        assert result["id"] == 1
+        assert result["user_id"] == "u1"
+        assert result["tenant_id"] == "acme"
+        assert result["resource_type"] == "rag"
+        assert result["resource_id"] == "doc-1"
+        assert result["action"] == "read"
+        assert result["effect"] == "allow"
+
+    def test_missing_fields_use_defaults(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace()
+        result = ws._serialize_policy(record)
+        assert result["id"] == 0
+        assert result["tenant_id"] == "default"
+        assert result["effect"] == "allow"
+
+
+class TestSerializePrompt:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=42,
+            role_name="system",
+            prompt_text="Sen yararlı bir asistansın.",
+            version=3,
+            is_active=True,
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+        result = ws._serialize_prompt(record)
+        assert result["id"] == 42
+        assert result["role_name"] == "system"
+        assert result["prompt_text"] == "Sen yararlı bir asistansın."
+        assert result["version"] == 3
+        assert result["is_active"] is True
+
+
+class TestSerializeSwarmResult:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            task_id="t1",
+            agent_role="coder",
+            status="completed",
+            summary="Kod yazıldı.",
+            elapsed_ms=1500,
+            evidence=["e1"],
+            handoffs=["h1"],
+            graph={"nodes": []},
+        )
+        result = ws._serialize_swarm_result(record)
+        assert result["task_id"] == "t1"
+        assert result["agent_role"] == "coder"
+        assert result["status"] == "completed"
+        assert result["elapsed_ms"] == 1500
+
+    def test_missing_fields_use_defaults(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace()
+        result = ws._serialize_swarm_result(record)
+        assert result["task_id"] == ""
+        assert result["elapsed_ms"] == 0
+        assert result["evidence"] == []
+        assert result["graph"] == {}
+
+
+class TestSerializeCampaign:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=10,
+            tenant_id="acme",
+            name="Kampanya 1",
+            channel="email",
+            objective="Satış artırma",
+            status="active",
+            owner_user_id="u1",
+            budget=5000.0,
+            metadata_json='{"key": "val"}',
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+        result = ws._serialize_campaign(record)
+        assert result["id"] == 10
+        assert result["name"] == "Kampanya 1"
+        assert result["budget"] == 5000.0
+        assert result["status"] == "active"
+
+    def test_defaults_when_fields_missing(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace()
+        result = ws._serialize_campaign(record)
+        assert result["id"] == 0
+        assert result["tenant_id"] == "default"
+        assert result["status"] == "draft"
+
+
+class TestSerializeContentAsset:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=5,
+            campaign_id=10,
+            tenant_id="acme",
+            asset_type="image",
+            title="Banner",
+            content="<img>",
+            channel="social",
+            metadata_json="{}",
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+        result = ws._serialize_content_asset(record)
+        assert result["id"] == 5
+        assert result["asset_type"] == "image"
+        assert result["title"] == "Banner"
+
+    def test_defaults_when_fields_missing(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace()
+        result = ws._serialize_content_asset(record)
+        assert result["id"] == 0
+        assert result["tenant_id"] == "default"
+
+
+class TestSerializeOperationChecklist:
+    def test_all_fields_serialized(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=3,
+            campaign_id=7,
+            tenant_id="acme",
+            title="Checklist 1",
+            items_json='["item1"]',
+            status="in_progress",
+            owner_user_id="u2",
+            created_at="2026-01-01",
+            updated_at="2026-01-02",
+        )
+        result = ws._serialize_operation_checklist(record)
+        assert result["id"] == 3
+        assert result["campaign_id"] == 7
+        assert result["status"] == "in_progress"
+
+    def test_none_campaign_id_serialized_as_none(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace(
+            id=1,
+            campaign_id=None,
+            tenant_id="default",
+            title="T",
+            items_json="[]",
+            status="pending",
+            owner_user_id="",
+            created_at="",
+            updated_at="",
+        )
+        result = ws._serialize_operation_checklist(record)
+        assert result["campaign_id"] is None
+
+    def test_defaults_when_fields_missing(self):
+        ws = _get_web_server()
+        record = types.SimpleNamespace()
+        result = ws._serialize_operation_checklist(record)
+        assert result["id"] == 0
+        assert result["tenant_id"] == "default"
+        assert result["status"] == "pending"
+
+
+class TestGetRequestUser:
+    def test_returns_user_when_present(self):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(id="u1", username="ali", role="user")
+        request = types.SimpleNamespace(state=types.SimpleNamespace(user=user))
+        result = ws._get_request_user(request)
+        assert result.id == "u1"
+
+    def test_raises_401_when_no_user(self):
+        ws = _get_web_server()
+        request = types.SimpleNamespace(state=types.SimpleNamespace())
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._get_request_user(request)
+        assert exc_info.value.status_code == 401
+
+
+class TestRequireAdminUser:
+    def test_admin_user_passes(self):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(role="admin", username="ali")
+        result = ws._require_admin_user(user=user)
+        assert result.role == "admin"
+
+    def test_non_admin_raises_403(self):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(role="user", username="zeynep")
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._require_admin_user(user=user)
+        assert exc_info.value.status_code == 403
+
+
+class TestRequireMetricsAccess:
+    def test_admin_user_allowed(self):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(role="admin", username="ali")
+        request = types.SimpleNamespace(headers={"Authorization": ""})
+        result = ws._require_metrics_access(request=request, user=user)
+        assert result.role == "admin"
+
+    def test_metrics_token_allows_non_admin(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.cfg, "METRICS_TOKEN", "supersecret", raising=False)
+        user = types.SimpleNamespace(role="user", username="ali")
+        request = types.SimpleNamespace(headers={"Authorization": "Bearer supersecret"})
+        result = ws._require_metrics_access(request=request, user=user)
+        assert result.role == "user"
+
+    def test_non_admin_without_token_raises_403(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.cfg, "METRICS_TOKEN", "", raising=False)
+        user = types.SimpleNamespace(role="user", username="zeynep")
+        request = types.SimpleNamespace(headers={"Authorization": ""})
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._require_metrics_access(request=request, user=user)
+        assert exc_info.value.status_code == 403
+
+
+class TestSetupTracing:
+    def test_calls_cfg_init_telemetry_when_available(self, monkeypatch):
+        ws = _get_web_server()
+        called_with = {}
+
+        def fake_init_telemetry(**kwargs):
+            called_with.update(kwargs)
+
+        monkeypatch.setattr(ws.cfg, "init_telemetry", fake_init_telemetry, raising=False)
+        ws._setup_tracing()
+        assert "service_name" in called_with
+
+    def test_returns_early_when_tracing_disabled(self, monkeypatch):
+        ws = _get_web_server()
+        # init_telemetry içermeyen sahte bir cfg nesnesi kullan
+        fake_cfg = types.SimpleNamespace(ENABLE_TRACING=False)
+        monkeypatch.setattr(ws, "cfg", fake_cfg)
+        # exception olmadan tamamlanmalı
+        ws._setup_tracing()
+
+
+class TestRegisterExceptionHandlers:
+    def test_does_not_raise_for_app_with_handler(self):
+        ws = _get_web_server()
+        ws._register_exception_handlers(ws.app)  # tekrar çağrılabilmeli
+
+    def test_skips_app_without_exception_handler_attr(self):
+        ws = _get_web_server()
+        fake_app = types.SimpleNamespace()
+        # AttributeError fırlatmamalı
+        ws._register_exception_handlers(fake_app)
+
+
+class TestResolvePolicyFromRequest:
+    def _make_request(self, path, method="GET"):
+        url = types.SimpleNamespace(path=path)
+        return types.SimpleNamespace(url=url, method=method)
+
+    def test_rag_get_returns_read(self):
+        ws = _get_web_server()
+        req = self._make_request("/rag/docs", "GET")
+        r_type, action, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "rag"
+        assert action == "read"
+
+    def test_rag_post_returns_write(self):
+        ws = _get_web_server()
+        req = self._make_request("/rag/docs", "POST")
+        r_type, action, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "rag"
+        assert action == "write"
+
+    def test_rag_delete_returns_resource_id(self):
+        ws = _get_web_server()
+        req = self._make_request("/rag/doc-123", "DELETE")
+        r_type, action, resource_id = ws._resolve_policy_from_request(req)
+        assert r_type == "rag"
+        assert resource_id == "doc-123"
+
+    def test_github_path_returns_github_resource(self):
+        ws = _get_web_server()
+        req = self._make_request("/github-repos", "GET")
+        r_type, action, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "github"
+
+    def test_set_repo_returns_github_resource(self):
+        ws = _get_web_server()
+        req = self._make_request("/set-repo", "POST")
+        r_type, _, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "github"
+
+    def test_agents_register_path(self):
+        ws = _get_web_server()
+        req = self._make_request("/api/agents/register", "POST")
+        r_type, action, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "agents"
+        assert action == "register"
+
+    def test_swarm_path_returns_swarm(self):
+        ws = _get_web_server()
+        req = self._make_request("/api/swarm/execute", "POST")
+        r_type, _, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "swarm"
+
+    def test_admin_path_returns_admin(self):
+        ws = _get_web_server()
+        req = self._make_request("/admin/prompts", "GET")
+        r_type, _, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "admin"
+
+    def test_ws_path_returns_swarm(self):
+        ws = _get_web_server()
+        req = self._make_request("/ws/chat", "GET")
+        r_type, _, _ = ws._resolve_policy_from_request(req)
+        assert r_type == "swarm"
+
+    def test_unknown_path_returns_empty(self):
+        ws = _get_web_server()
+        req = self._make_request("/unknown/path", "GET")
+        r_type, action, resource_id = ws._resolve_policy_from_request(req)
+        assert r_type == ""
+        assert action == ""
+        assert resource_id == ""
+
+
+class TestGetClientIp:
+    def _make_request(self, host, headers=None, trusted_proxies=None):
+        import types as _t
+        client = _t.SimpleNamespace(host=host)
+        url = _t.SimpleNamespace(path="/test")
+        return _t.SimpleNamespace(
+            client=client,
+            url=url,
+            headers=headers or {},
+        )
+
+    def test_returns_direct_ip_when_not_trusted_proxy(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", set(), raising=False)
+        req = self._make_request("1.2.3.4")
+        assert ws._get_client_ip(req) == "1.2.3.4"
+
+    def test_returns_xff_when_trusted_proxy(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", {"10.0.0.1"}, raising=False)
+        req = self._make_request("10.0.0.1", headers={"X-Forwarded-For": "5.6.7.8, 10.0.0.1"})
+        assert ws._get_client_ip(req) == "5.6.7.8"
+
+    def test_returns_x_real_ip_when_xff_missing(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", {"10.0.0.1"}, raising=False)
+        req = self._make_request("10.0.0.1", headers={"X-Real-IP": "9.8.7.6"})
+        assert ws._get_client_ip(req) == "9.8.7.6"
+
+    def test_returns_unknown_when_no_client(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", set(), raising=False)
+        req = types.SimpleNamespace(client=None, headers={})
+        assert ws._get_client_ip(req) == "unknown"
+
+
+class TestVerifyHmacSignature:
+    def test_valid_signature_does_not_raise(self):
+        import hashlib
+        import hmac as _hmac
+        ws = _get_web_server()
+        secret = b"mysecret"
+        body = b'{"event": "push"}'
+        sig = "sha256=" + _hmac.new(secret, body, hashlib.sha256).hexdigest()
+        # exception olmamalı
+        ws._verify_hmac_signature(body, "mysecret", sig, label="Test")
+
+    def test_invalid_signature_raises_401(self):
+        ws = _get_web_server()
+        body = b'{"event": "push"}'
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._verify_hmac_signature(body, "mysecret", "sha256=invalidhash", label="Test")
+        assert exc_info.value.status_code == 401
+
+    def test_empty_signature_header_raises_401(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._verify_hmac_signature(b"body", "mysecret", "", label="Test")
+        assert exc_info.value.status_code == 401
+
+    def test_empty_secret_skips_verification(self):
+        ws = _get_web_server()
+        # secret boşsa doğrulama yapılmamalı
+        ws._verify_hmac_signature(b"body", "", "anysig", label="Test")
+
+
+class TestMakeStaticFiles:
+    def test_returns_static_files_object(self):
+        ws = _get_web_server()
+        import pathlib
+        result = ws._make_static_files(pathlib.Path("/tmp"))
+        assert result is not None
+
+    def test_does_not_raise_for_nonexistent_dir(self):
+        ws = _get_web_server()
+        import pathlib
+        # Var olmayan dizin — exception fırlatmamalı
+        result = ws._make_static_files(pathlib.Path("/nonexistent/path"))
+        assert result is not None
+
+
+class TestReapChildProcessesNonblocking:
+    def test_returns_zero_when_no_children(self, monkeypatch):
+        ws = _get_web_server()
+        # ChildProcessError fırlatarak simüle edilir
+        monkeypatch.setattr(ws.os, "waitpid", lambda pid, flag: (_ for _ in ()).throw(ChildProcessError()))
+        assert ws._reap_child_processes_nonblocking() == 0
+
+    def test_returns_count_of_reaped_children(self, monkeypatch):
+        ws = _get_web_server()
+        calls = [0]
+
+        def fake_waitpid(pid, flag):
+            calls[0] += 1
+            if calls[0] == 1:
+                return (1234, 0)
+            raise ChildProcessError()
+
+        monkeypatch.setattr(ws.os, "waitpid", fake_waitpid)
+        assert ws._reap_child_processes_nonblocking() == 1
+
+
+class TestTerminateOllamaChildPids:
+    def test_empty_pids_does_nothing(self, monkeypatch):
+        ws = _get_web_server()
+        killed = []
+        monkeypatch.setattr(ws.os, "kill", lambda pid, sig: killed.append(pid))
+        ws._terminate_ollama_child_pids([], grace_seconds=0)
+        assert killed == []
+
+    def test_sends_sigterm_then_sigkill(self, monkeypatch):
+        import signal as _signal
+        ws = _get_web_server()
+        kills = []
+        monkeypatch.setattr(ws.os, "kill", lambda pid, sig: kills.append((pid, sig)))
+        monkeypatch.setattr(ws.time, "sleep", lambda s: None)
+        ws._terminate_ollama_child_pids([999], grace_seconds=0.01)
+        sigs = [sig for _, sig in kills]
+        assert _signal.SIGTERM in sigs
+        assert _signal.SIGKILL in sigs
+
+
+class TestListChildOllamaPids:
+    def test_returns_list(self):
+        ws = _get_web_server()
+        result = ws._list_child_ollama_pids()
+        assert isinstance(result, list)
+
+    def test_returns_empty_on_subprocess_failure(self, monkeypatch):
+        ws = _get_web_server()
+        import sys
+        # psutil yoksa subprocess'e düşer; subprocess.check_output hata fırlatır
+        monkeypatch.setitem(sys.modules, "psutil", None)
+        monkeypatch.setattr(ws.subprocess, "check_output", lambda *a, **kw: (_ for _ in ()).throw(Exception("fail")))
+        result = ws._list_child_ollama_pids()
+        assert result == []
+
+
+class TestForceShutdownLocalLlmProcesses:
+    def test_skips_when_already_done(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "_shutdown_cleanup_done", True)
+        reaped = []
+        monkeypatch.setattr(ws, "_reap_child_processes_nonblocking", lambda: reaped.append(1) or 0)
+        ws._force_shutdown_local_llm_processes()
+        assert reaped == []
+
+    def test_runs_cleanup_for_non_ollama(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "_shutdown_cleanup_done", False)
+        monkeypatch.setattr(ws.cfg, "AI_PROVIDER", "openai", raising=False)
+        reaped = []
+        monkeypatch.setattr(ws, "_reap_child_processes_nonblocking", lambda: reaped.append(1) or 0)
+        ws._force_shutdown_local_llm_processes()
+        assert len(reaped) >= 1
+        # cleanup sonrası flag set edilmeli
+        assert ws._shutdown_cleanup_done is True
+
+
+class TestLoadPluginAgentClass:
+    def test_loads_valid_agent_class(self, monkeypatch):
+        ws = _get_web_server()
+        # BaseAgent'ı object olarak monkeypatch ederek her sınıfın issubclass kontrolünü geçmesini sağla
+        monkeypatch.setattr(ws, "BaseAgent", object)
+        result = ws._load_plugin_agent_class(
+            "class MyAgent:\n    pass\n",
+            None,
+            "test_label",
+        )
+        assert result.__name__ == "MyAgent"
+
+    def test_raises_400_for_syntax_error(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class("def broken(:\n    pass", None, "bad_plugin")
+        assert exc_info.value.status_code == 400
+
+    def test_raises_400_when_no_agent_class_found(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class("x = 1\n", None, "empty_plugin")
+        assert exc_info.value.status_code == 400
+
+    def test_raises_400_for_named_class_not_found(self):
+        ws = _get_web_server()
+        source = "class Foo:\n    pass\n"
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class(source, "MissingClass", "label")
+        assert exc_info.value.status_code == 400
+
+
+class TestPluginMarketplaceStatePath:
+    def test_returns_path_object(self):
+        ws = _get_web_server()
+        import pathlib
+        result = ws._plugin_marketplace_state_path()
+        assert isinstance(result, pathlib.Path)
+        assert result.name == ".marketplace_state.json"
+
+
+class TestReadPluginMarketplaceState:
+    def test_returns_empty_dict_when_file_missing(self, tmp_path, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws, "_plugin_marketplace_state_path", lambda: tmp_path / "nonexistent.json")
+        result = ws._read_plugin_marketplace_state()
+        assert result == {}
+
+    def test_returns_parsed_json_when_file_exists(self, tmp_path, monkeypatch):
+        ws = _get_web_server()
+        state_file = tmp_path / ".marketplace_state.json"
+        state_file.write_text('{"aws_management": {"installed_at": "2026-01-01"}}', encoding="utf-8")
+        monkeypatch.setattr(ws, "_plugin_marketplace_state_path", lambda: state_file)
+        result = ws._read_plugin_marketplace_state()
+        assert "aws_management" in result
+
+    def test_returns_empty_dict_on_invalid_json(self, tmp_path, monkeypatch):
+        ws = _get_web_server()
+        state_file = tmp_path / ".marketplace_state.json"
+        state_file.write_text("not-json", encoding="utf-8")
+        monkeypatch.setattr(ws, "_plugin_marketplace_state_path", lambda: state_file)
+        result = ws._read_plugin_marketplace_state()
+        assert result == {}
+
+    def test_returns_empty_dict_when_json_is_not_dict(self, tmp_path, monkeypatch):
+        ws = _get_web_server()
+        state_file = tmp_path / ".marketplace_state.json"
+        state_file.write_text("[1, 2, 3]", encoding="utf-8")
+        monkeypatch.setattr(ws, "_plugin_marketplace_state_path", lambda: state_file)
+        result = ws._read_plugin_marketplace_state()
+        assert result == {}
+
+
+class TestWritePluginMarketplaceState:
+    def test_writes_json_to_file(self, tmp_path, monkeypatch):
+        ws = _get_web_server()
+        state_file = tmp_path / ".marketplace_state.json"
+        monkeypatch.setattr(ws, "_plugin_marketplace_state_path", lambda: state_file)
+        ws._write_plugin_marketplace_state({"aws_management": {"installed_at": "2026-01-01"}})
+        import json
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        assert "aws_management" in data
+
+
+class TestGetPluginMarketplaceEntry:
+    def test_returns_entry_for_known_plugin(self):
+        ws = _get_web_server()
+        result = ws._get_plugin_marketplace_entry("aws_management")
+        assert result["plugin_id"] == "aws_management"
+
+    def test_case_insensitive_lookup(self):
+        ws = _get_web_server()
+        result = ws._get_plugin_marketplace_entry("AWS_Management")
+        assert result["plugin_id"] == "aws_management"
+
+    def test_raises_404_for_unknown_plugin(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._get_plugin_marketplace_entry("nonexistent_plugin")
+        assert exc_info.value.status_code == 404
+
+
+class TestScheduleAccessAuditLog:
+    def test_skips_when_empty_resource(self):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(id="u1", tenant_id="acme")
+        # resource_type boş olduğunda _build_audit_resource "" döner → erken çıkar
+        ws._schedule_access_audit_log(
+            user=user,
+            resource_type="",
+            action="read",
+            resource_id="doc-1",
+            ip_address="1.2.3.4",
+            allowed=True,
+        )
+
+    def test_schedules_task_when_loop_running(self):
+        ws = _get_web_server()
+        import asyncio
+
+        user = types.SimpleNamespace(id="u1", tenant_id="acme")
+        created_tasks = []
+
+        async def runner():
+            loop = asyncio.get_running_loop()
+            orig_create = loop.create_task
+
+            def fake_create(coro, **kw):
+                task = orig_create(coro, **kw)
+                created_tasks.append(task)
+                return task
+
+            loop.create_task = fake_create
+            ws._schedule_access_audit_log(
+                user=user,
+                resource_type="rag",
+                action="read",
+                resource_id="doc-1",
+                ip_address="1.2.3.4",
+                allowed=True,
+            )
+            loop.create_task = orig_create
+            await asyncio.sleep(0)
+
+        asyncio.run(runner())
+        assert len(created_tasks) >= 1
+
+
+class TestBindLlmUsageSink:
+    def test_skips_when_already_bound(self, monkeypatch):
+        ws = _get_web_server()
+        collector = types.SimpleNamespace(_sidar_usage_sink_bound=True)
+        monkeypatch.setattr(ws, "get_llm_metrics_collector", lambda: collector)
+        ws._bind_llm_usage_sink(None)
+        # usage sink set edilmemeli (zaten bound)
+        assert not hasattr(collector, "_sink_set")
+
+    def test_binds_sink_when_not_yet_bound(self, monkeypatch):
+        ws = _get_web_server()
+        sinks = []
+        collector = types.SimpleNamespace(
+            _sidar_usage_sink_bound=False,
+            set_usage_sink=lambda s: sinks.append(s),
+        )
+        monkeypatch.setattr(ws, "get_llm_metrics_collector", lambda: collector)
+        ws._bind_llm_usage_sink(None)
+        assert len(sinks) == 1
+        assert collector._sidar_usage_sink_bound is True
