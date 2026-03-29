@@ -11,6 +11,8 @@ import tempfile
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _get_rag():
     cfg_stub = types.ModuleType("config")
@@ -288,3 +290,100 @@ class TestGraphIndexRebuild:
             gi = rag.GraphIndex(Path(tmpdir))
             result = gi.rebuild()
             assert result["nodes"] == 0  # .pyc not in SUPPORTED_EXTENSIONS
+
+
+def _make_store_stub(rag_module, tmpdir: Path):
+    store = rag_module.DocumentStore.__new__(rag_module.DocumentStore)
+    store.store_dir = tmpdir
+    store.cfg = types.SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=1)
+    store._is_local_llm_provider = False
+    store._bm25_available = False
+    store._pgvector_available = False
+    store._chroma_available = True
+    store.collection = None
+    return store
+
+
+class TestDocumentStoreVectorFetch:
+    def test_fetch_chroma_returns_empty_when_ids_missing(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _Collection:
+                def count(self):
+                    return 7
+
+                def query(self, **_kwargs):
+                    return {"ids": [[]], "documents": [[]], "metadatas": [[]]}
+
+            store.collection = _Collection()
+            result = rag.DocumentStore._fetch_chroma(store, "sidar", 3, "global")
+            assert result == []
+
+    def test_fetch_chroma_falls_back_to_chunk_id_when_parent_id_missing(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _Collection:
+                def count(self):
+                    return 10
+
+                def query(self, **_kwargs):
+                    return {
+                        "ids": [["chunk_1", "chunk_2"]],
+                        "documents": [["parca-1", "parca-2"]],
+                        "metadatas": [[{}, {"parent_id": "doc-2", "title": "Belge", "source": "file://x"}]],
+                    }
+
+            store.collection = _Collection()
+            result = rag.DocumentStore._fetch_chroma(store, "sidar", 5, "global")
+            assert len(result) == 2
+            assert result[0]["id"] == "chunk_1"
+            assert result[1]["id"] == "doc-2"
+            assert result[1]["snippet"] == "parca-2"
+
+    def test_fetch_pgvector_returns_empty_when_embedding_fails(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._pgvector_available = True
+            store.pg_engine = object()
+            store._pg_table = "rag_embeddings"
+            monkeypatch.setattr(store, "_pgvector_embed_texts", lambda _texts: [])
+            result = rag.DocumentStore._fetch_pgvector(store, "query", 3, "global")
+            assert result == []
+
+
+class TestDocumentStoreFileInputValidation:
+    def test_add_document_from_file_rejects_empty_content(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            empty_file = base_dir / "bos.md"
+            empty_file.write_text("   \n\t", encoding="utf-8")
+
+            store = _make_store_stub(rag, base_dir)
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(empty_file))
+            assert ok is False
+            assert "Dosya boş" in message
+
+    def test_add_document_from_file_handles_read_error(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            valid_file = base_dir / "dokuman.md"
+            valid_file.write_text("icerik", encoding="utf-8")
+
+            store = _make_store_stub(rag, base_dir)
+            monkeypatch.setattr(
+                rag.Path,
+                "read_text",
+                lambda *args, **kwargs: (_ for _ in ()).throw(OSError("read failed")),
+            )
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(valid_file))
+            assert ok is False
+            assert "Dosya eklenemedi" in message
