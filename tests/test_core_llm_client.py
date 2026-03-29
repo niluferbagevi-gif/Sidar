@@ -8,6 +8,7 @@ HTTP/LLM çağrıları gerektiren provider sınıfları stub'lanır.
 from __future__ import annotations
 
 import asyncio
+import time
 import sys
 import types
 from unittest.mock import AsyncMock, patch
@@ -632,3 +633,92 @@ class TestGeminiAndAnthropicApiMocking:
 
         assert exc_info.value.status_code is None
         assert exc_info.value.retryable is True
+
+
+class TestStreamMetricHelpers:
+    def test_track_stream_completion_records_success(self):
+        lc = _get_llm_client()
+        observed = []
+
+        async def _stream():
+            yield "a"
+            yield "b"
+
+        async def _collect():
+            out = []
+            async for chunk in lc._track_stream_completion(
+                _stream(),
+                provider="openai",
+                model="gpt-4o-mini",
+                started_at=time.monotonic(),
+            ):
+                out.append(chunk)
+            return out
+
+        with patch("core.llm_client._record_llm_metric", side_effect=lambda **kwargs: observed.append(kwargs)):
+            chunks = _run(_collect())
+
+        assert chunks == ["a", "b"]
+        assert len(observed) == 1
+        assert observed[0]["success"] is True
+        assert observed[0]["provider"] == "openai"
+
+    def test_track_stream_completion_records_failure_and_reraises(self):
+        lc = _get_llm_client()
+        observed = []
+
+        async def _broken():
+            yield "ok"
+            raise RuntimeError("stream exploded")
+
+        async def _consume():
+            items = []
+            async for x in lc._track_stream_completion(
+                _broken(),
+                provider="anthropic",
+                model="claude",
+                started_at=time.monotonic(),
+            ):
+                items.append(x)
+            return items
+
+        with patch("core.llm_client._record_llm_metric", side_effect=lambda **kwargs: observed.append(kwargs)):
+            import pytest
+            with pytest.raises(RuntimeError, match="stream exploded"):
+                _run(_consume())
+
+        assert observed
+        assert observed[0]["success"] is False
+        assert "exploded" in observed[0]["error"]
+
+    def test_trace_stream_metrics_sets_span_attributes_and_ends(self):
+        lc = _get_llm_client()
+
+        class _Span:
+            def __init__(self):
+                self.attrs = {}
+                self.ended = False
+
+            def set_attribute(self, key, value):
+                self.attrs[key] = value
+
+            def end(self):
+                self.ended = True
+
+        span = _Span()
+
+        async def _stream():
+            yield "chunk-1"
+            yield "chunk-2"
+
+        async def _collect():
+            collected = []
+            async for c in lc._trace_stream_metrics(_stream(), span, time.monotonic()):
+                collected.append(c)
+            return collected
+
+        chunks = _run(_collect())
+        assert chunks == ["chunk-1", "chunk-2"]
+        assert span.ended is True
+        assert "sidar.llm.total_ms" in span.attrs
+        assert "sidar.llm.ttft_ms" in span.attrs
