@@ -6,6 +6,7 @@ _quote_sql_identifier, _utc_now_iso) ve Database._configure_backend kapsar.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 import sys
 import tempfile
@@ -349,7 +350,7 @@ class TestDatabaseErrorAndAsyncFlows:
                     await database._run_sqlite_op(lambda: 1)
         asyncio.run(_scenario())
 
-    def test_connect_postgresql_timeout_is_propagated(self, monkeypatch):
+    def test_connect_postgresql_timeout_is_propagated_and_logged(self, monkeypatch, caplog):
         db_mod = _get_db()
 
         class _Cfg:
@@ -366,12 +367,14 @@ class TestDatabaseErrorAndAsyncFlows:
         database = db_mod.Database(cfg=_Cfg())
 
         async def _scenario():
-            with pytest.raises(asyncio.TimeoutError):
-                await database.connect()
+            with caplog.at_level(logging.WARNING, logger="core.db"):
+                with pytest.raises(asyncio.TimeoutError):
+                    await database.connect()
+            assert "zaman aşımına uğradı" in caplog.text
             assert database._pg_pool is None
         asyncio.run(_scenario())
 
-    def test_connect_postgresql_pool_error_is_propagated(self, monkeypatch):
+    def test_connect_postgresql_pool_error_is_propagated_and_logged(self, monkeypatch, caplog):
         db_mod = _get_db()
 
         class _Cfg:
@@ -391,8 +394,34 @@ class TestDatabaseErrorAndAsyncFlows:
         database = db_mod.Database(cfg=_Cfg())
 
         async def _scenario():
-            with pytest.raises(_FakePoolError):
-                await database.connect()
+            with caplog.at_level(logging.WARNING, logger="core.db"):
+                with pytest.raises(_FakePoolError):
+                    await database.connect()
+            assert "bağlantı havuzu kullanılamıyor" in caplog.text
+            assert database._pg_pool is None
+        asyncio.run(_scenario())
+
+    def test_connect_postgresql_non_pool_error_is_propagated_and_logged(self, monkeypatch, caplog):
+        db_mod = _get_db()
+
+        class _Cfg:
+            DATABASE_URL = "postgresql://user:pass@db.local/sidar"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+
+        async def _raise_generic_error(**_kwargs):
+            raise RuntimeError("dsn parse failure")
+
+        fake_asyncpg = types.SimpleNamespace(create_pool=_raise_generic_error, PoolError=type("PoolError", (Exception,), {}))
+        monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
+        database = db_mod.Database(cfg=_Cfg())
+
+        async def _scenario():
+            with caplog.at_level(logging.WARNING, logger="core.db"):
+                with pytest.raises(RuntimeError, match="dsn parse failure"):
+                    await database.connect()
+            assert "oluşturulamadı; üst katmana iletiliyor" in caplog.text
             assert database._pg_pool is None
         asyncio.run(_scenario())
 

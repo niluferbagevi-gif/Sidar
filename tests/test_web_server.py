@@ -7,6 +7,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1227,6 +1228,40 @@ class TestRegisterExceptionHandlers:
         fake_app = types.SimpleNamespace()
         # AttributeError fırlatmamalı
         ws._register_exception_handlers(fake_app)
+
+    def test_unhandled_exception_is_logged_by_registered_handler(self):
+        ws = _get_web_server()
+
+        class _CaptureApp:
+            def __init__(self):
+                self.handlers = {}
+
+            def exception_handler(self, exc_type):
+                def _decorator(fn):
+                    self.handlers[exc_type] = fn
+                    return fn
+                return _decorator
+
+        capture_app = _CaptureApp()
+        ws._register_exception_handlers(capture_app)
+        handler = capture_app.handlers[Exception]
+
+        request = types.SimpleNamespace(url=types.SimpleNamespace(path="/boom"))
+        with pytest.raises(RuntimeError, match="boom"):
+            raise RuntimeError("boom")
+
+        fake_logger = MagicMock()
+        fake_json_response = MagicMock(side_effect=lambda payload, status_code=500: {"payload": payload, "status_code": status_code})
+        ws.logger = fake_logger
+        ws.JSONResponse = fake_json_response
+
+        async def _scenario():
+            response = await handler(request, RuntimeError("boom"))
+            assert response["status_code"] == 500
+            assert response["payload"]["error"] == "İç sunucu hatası"
+
+        asyncio.run(_scenario())
+        assert fake_logger.exception.call_count == 1
 
 
 class TestResolvePolicyFromRequest:
