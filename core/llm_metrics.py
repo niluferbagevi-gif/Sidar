@@ -145,6 +145,8 @@ class LLMMetricsCollector:
                         loop = asyncio.get_running_loop()
                         loop.create_task(result)
                     except RuntimeError:
+                        if hasattr(result, "close"):
+                            result.close()
                         pass
             except Exception:
                 pass
