@@ -3,6 +3,7 @@ agent/roles/poyraz_agent.py için birim testleri.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import pathlib as _pl
@@ -198,3 +199,27 @@ class TestPoyrazAgentTools:
         agent = m.PoyrazAgent()
         result = await agent.call_tool("unknown_xyz", "arg")
         assert "HATA" in result or "hata" in result.lower()
+
+
+class TestPoyrazAgentPromptVariations:
+    @pytest.mark.parametrize(
+        "prompt, expected_fragment",
+        [
+            ("web_search|growth funnel", "web sonucu"),
+            ("fetch_url|https://example.com", "url içeriği"),
+            ("search_docs|kampanya", "doküman sonucu"),
+            ("publish_social|instagram|||merhaba", "SOCIAL"),
+        ],
+    )
+    def test_prompt_variations_for_tool_routing(self, prompt, expected_fragment):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        result = asyncio.run(agent.run_task(prompt))
+        assert expected_fragment in result
+
+    def test_marketing_keyword_prompt_uses_generation_path(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="[MARKETING:marketing_strategy]"))
+        result = asyncio.run(agent.run_task("SEO ve pazarlama funnel planı hazırla"))
+        assert "MARKETING:marketing_strategy" in result
