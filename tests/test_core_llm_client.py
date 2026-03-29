@@ -835,3 +835,26 @@ class TestStreamMetricHelpers:
         assert span.ended is True
         assert "sidar.llm.total_ms" in span.attrs
         assert "sidar.llm.ttft_ms" in span.attrs
+
+
+class TestRetryBackoffHttpStatusError:
+    def test_http_status_error_503_is_retryable_and_exposed(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+
+        request = lc.httpx.Request("GET", "https://example.com")
+        response = lc.httpx.Response(503, request=request)
+        status_exc = lc.httpx.HTTPStatusError("server err", request=request, response=response)
+
+        async def _operation():
+            raise status_exc
+
+        with pytest.raises(lc.LLMAPIError) as exc_info:
+            _run(lc._retry_with_backoff("openai", _operation, config=_Cfg(), retry_hint="openai test"))
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.retryable is True
