@@ -308,6 +308,40 @@ class TestMentionHelpers:
         assert ws._strip_sidar_mention("@sidar bunu yap") == "bunu yap"
 
 
+class TestWebSocketStreamHelpers:
+    def test_ws_close_policy_violation_calls_close_with_1008(self):
+        ws = _get_web_server()
+        closed = []
+
+        class _Socket:
+            async def close(self, code, reason):
+                closed.append((code, reason))
+
+        asyncio.run(ws._ws_close_policy_violation(_Socket(), "invalid token"))
+        assert closed == [(1008, "invalid token")]
+
+    def test_ws_stream_agent_text_response_emits_tool_thought_and_chunk(self):
+        ws = _get_web_server()
+        sent = []
+
+        class _Socket:
+            async def send_json(self, payload):
+                sent.append(payload)
+
+        class _Agent:
+            async def respond(self, _prompt):
+                yield "\x00TOOL:read_file(main.py)\x00"
+                yield "\x00THOUGHT:planning\x00"
+                yield "normal chunk"
+
+        asyncio.run(ws._ws_stream_agent_text_response(_Socket(), _Agent(), "test prompt"))
+        assert sent == [
+            {"tool_call": "read_file(main.py)"},
+            {"thought": "planning"},
+            {"chunk": "normal chunk"},
+        ]
+
+
 class TestPromptBuilder:
     def test_build_collaboration_prompt_includes_participants_and_command(self):
         ws = _get_web_server()
