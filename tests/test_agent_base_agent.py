@@ -251,3 +251,35 @@ class TestBaseAgentHandle:
         )
         result = await agent.handle(envelope)
         assert "hedef görev" in str(result.summary)
+
+    @pytest.mark.asyncio
+    async def test_handle_backfills_delegation_ids_and_depth(self):
+        ba = _get_base_agent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        class DelegatingAgent(ba.BaseAgent):
+            async def run_task(self, task_prompt: str):
+                return contracts.DelegationRequest(
+                    task_id="",
+                    reply_to=self.role_name,
+                    target_agent="reviewer",
+                    payload=task_prompt,
+                    parent_task_id=None,
+                    handoff_depth=1,
+                )
+
+        agent = DelegatingAgent(role_name="coder")
+        envelope = contracts.TaskEnvelope(
+            task_id="task-3",
+            sender="swarm",
+            receiver="coder",
+            goal="delegasyon görevi",
+            parent_task_id="root-task",
+            context={"p2p_handoff_depth": "4"},
+        )
+
+        result = await agent.handle(envelope)
+        assert isinstance(result.summary, contracts.DelegationRequest)
+        assert result.summary.task_id == "task-3"
+        assert result.summary.parent_task_id == "root-task"
+        assert result.summary.handoff_depth == 4
