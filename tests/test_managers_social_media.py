@@ -255,3 +255,53 @@ class TestSocialMediaApiMocking:
 
         assert ok is False
         assert "zaman aşımı" in str(err).lower()
+
+    def test_post_request_error_returns_http_failure_message(self):
+        sm = _get_sm()
+        httpx = __import__("httpx")
+
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=httpx.RequestError("network down"))
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is False
+        assert "http isteği başarısız" in str(err).lower()
+
+    def test_post_http_error_with_non_json_body_falls_back_to_raw_text(self):
+        sm = _get_sm()
+
+        response = MagicMock()
+        response.status_code = 500
+        response.text = "internal server error"
+        response.json.side_effect = ValueError("not json")
+
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is False
+        assert "internal server error" in str(err).lower()
