@@ -262,6 +262,16 @@ class TestQAAgentRunTask:
         parsed = json.loads(result)
         assert "coverage" in parsed
 
+
+    @pytest.mark.asyncio
+    async def test_non_qa_prompt_falls_back_to_generate_test_code(self):
+        m = _get_qa()
+        agent = m.QAAgent()
+        with patch.object(agent, '_generate_test_code', AsyncMock(return_value="def test_freeform(): pass")) as gen:
+            result = await agent.run_task("merhaba dunya")
+        assert "test_freeform" in result
+        gen.assert_awaited_once_with("", "merhaba dunya")
+
     @pytest.mark.asyncio
     async def test_generate_test_code_builds_prompt_and_calls_llm(self):
         m = _get_qa()

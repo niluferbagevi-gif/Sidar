@@ -430,3 +430,88 @@ class TestSocialMediaPlatformIntegrationMocking:
         ok, payload = asyncio.run(getattr(mgr, method_name)(**kwargs))
         assert ok is expected_ok
         assert expected_fragment.lower() in str(payload).lower()
+
+
+class TestSocialMediaUncoveredBranches:
+    def test_post_http_error_with_non_dict_json_body_uses_stringified_message(self):
+        sm = _get_sm()
+
+        response = MagicMock()
+        response.status_code = 429
+        response.json.return_value = ["rate", "limited"]
+        response.text = ""
+
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is False
+        assert "rate" in str(err).lower()
+
+    def test_publish_instagram_post_requires_non_empty_image_url(self):
+        sm = _get_sm()
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            instagram_business_account_id="ig_account",
+        )
+
+        ok, err = asyncio.run(mgr.publish_instagram_post(caption="merhaba", image_url="   "))
+
+        assert ok is False
+        assert "image_url" in err
+
+    def test_publish_instagram_post_returns_first_post_error(self):
+        sm = _get_sm()
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            instagram_business_account_id="ig_account",
+        )
+        mgr._post = AsyncMock(return_value=(False, "creation failed"))
+
+        ok, err = asyncio.run(mgr.publish_instagram_post(caption="merhaba", image_url="https://img/x.jpg"))
+
+        assert ok is False
+        assert "creation failed" in err
+
+    def test_publish_instagram_post_returns_publish_error(self):
+        sm = _get_sm()
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            instagram_business_account_id="ig_account",
+        )
+        mgr._post = AsyncMock(side_effect=[(True, {"id": "creation_1"}), (False, "publish failed")])
+
+        ok, err = asyncio.run(mgr.publish_instagram_post(caption="merhaba", image_url="https://img/x.jpg"))
+
+        assert ok is False
+        assert "publish failed" in err
+
+    def test_publish_content_routes_to_platform_specific_methods(self):
+        sm = _get_sm()
+        mgr = sm.SocialMediaManager(graph_api_token="tok")
+        mgr.publish_instagram_post = AsyncMock(return_value=(True, "ig_1"))
+        mgr.publish_facebook_post = AsyncMock(return_value=(True, "fb_1"))
+        mgr.send_whatsapp_message = AsyncMock(return_value=(True, "wa_1"))
+
+        ig = asyncio.run(mgr.publish_content(platform="instagram", text="caption", media_url="https://img/x.jpg"))
+        fb = asyncio.run(mgr.publish_content(platform="facebook", text="message", link_url="https://example.com"))
+        wa = asyncio.run(mgr.publish_content(platform="whatsapp", text="hello", destination="+90555", link_url=" https://preview "))
+
+        assert ig == (True, "ig_1")
+        assert fb == (True, "fb_1")
+        assert wa == (True, "wa_1")
+        mgr.publish_instagram_post.assert_awaited_once_with(caption="caption", image_url="https://img/x.jpg")
+        mgr.publish_facebook_post.assert_awaited_once_with(message="message", link_url="https://example.com")
+        mgr.send_whatsapp_message.assert_awaited_once_with(to="+90555", text="hello", preview_url=True)
