@@ -4,9 +4,31 @@ set -euo pipefail
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"
+AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
+
+open_artifact() {
+  local target="$1"
+  if [ ! -e "$target" ] || [ "${AUTO_OPEN_ARTIFACTS}" != "1" ]; then
+    return 0
+  fi
+
+  if command -v xdg-open >/dev/null 2>&1; then
+    nohup xdg-open "$target" >/dev/null 2>&1 || true
+  elif command -v open >/dev/null 2>&1; then
+    nohup open "$target" >/dev/null 2>&1 || true
+  elif command -v start >/dev/null 2>&1; then
+    start "$target" >/dev/null 2>&1 || true
+  else
+    echo "ℹ️ Otomatik açma için desteklenen komut bulunamadı: $target"
+  fi
+}
 
 # 1) Genel proje kapsam eşiği (quality gate)
-python -m pytest -v --cov=. --cov-report=term-missing --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+python -m pytest -v \
+  --cov=. \
+  --cov-report=term-missing \
+  --cov-report=html \
+  --cov-fail-under="${COVERAGE_FAIL_UNDER}"
 
 # 2) Kritik çekirdek dosyalar için hedef kapsam
 python -m pytest -v \
@@ -14,7 +36,10 @@ python -m pytest -v \
   --cov=core.memory \
   --cov=core.rag \
   --cov-report=term-missing \
+  --cov-report=html \
   --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+
+open_artifact "htmlcov/index.html"
 
 # 3) Kritik yol performans baseline testleri (pytest-benchmark)
 python -m pytest -v tests/test_benchmark.py
@@ -30,6 +55,9 @@ if [ -d "web_ui_react" ]; then
   pushd web_ui_react > /dev/null
   npm install
   npm run test:coverage
+  for report in coverage/lcov-report/index.html coverage/index.html; do
+    open_artifact "$PWD/$report"
+  done
   popd > /dev/null
 fi
 

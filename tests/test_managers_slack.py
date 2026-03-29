@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from unittest.mock import patch
 
 
 def _get_slack():
@@ -107,3 +108,67 @@ class TestSendWebhookDisabled:
         mgr = sl.SlackManager()
         ok, err = asyncio.run(mgr.send_webhook(text="test"))
         assert ok is False
+
+
+class _FakeSlackResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeSlackAsyncClient:
+    def __init__(self, *, response: _FakeSlackResponse):
+        self._response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        return self._response
+
+
+class TestSlackWebhookHttpResponses:
+    def test_send_webhook_200_returns_success(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/ok")
+        fake_response = _FakeSlackResponse(200, "ok")
+
+        with patch(
+            "managers.slack_manager.httpx.AsyncClient",
+            return_value=_FakeSlackAsyncClient(response=fake_response),
+        ):
+            ok, err = asyncio.run(mgr.send_webhook(text="hello"))
+
+        assert ok is True
+        assert err == ""
+
+    def test_send_webhook_400_returns_error(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/bad")
+        fake_response = _FakeSlackResponse(400, "bad request")
+
+        with patch(
+            "managers.slack_manager.httpx.AsyncClient",
+            return_value=_FakeSlackAsyncClient(response=fake_response),
+        ):
+            ok, err = asyncio.run(mgr.send_webhook(text="hello"))
+
+        assert ok is False
+        assert "HTTP 400" in err
+
+    def test_send_webhook_500_returns_error(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/fail")
+        fake_response = _FakeSlackResponse(500, "internal error")
+
+        with patch(
+            "managers.slack_manager.httpx.AsyncClient",
+            return_value=_FakeSlackAsyncClient(response=fake_response),
+        ):
+            ok, err = asyncio.run(mgr.send_webhook(text="hello"))
+
+        assert ok is False
+        assert "HTTP 500" in err
