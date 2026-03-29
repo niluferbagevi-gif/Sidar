@@ -57,6 +57,10 @@ class TestIsValidTckn:
         # Tamamen rastgele → büyük ihtimalle geçersiz
         assert self.fn("12345678901") is False
 
+    def test_invalid_when_11th_digit_checksum_mismatch(self):
+        # 10000000146 geçerli; son haneyi bozunca 11. hane doğrulaması patlar.
+        assert self.fn("10000000147") is False
+
 
 # ══════════════════════════════════════════════════════════════
 # DLPEngine.mask — Bearer token
@@ -294,6 +298,14 @@ class TestDLPEngineEdgeCases:
         engine = dlp.DLPEngine(mask_long_hex=True)
         result, dets = engine.mask("hash: " + "a" * 32)
         assert any(d.pattern_name == "long_hex" for d in dets)
+
+    def test_log_detections_emits_warning(self):
+        dlp = _get_dlp()
+        engine = dlp.DLPEngine(log_detections=True)
+        with patch.object(dlp.logger, "warning") as warning_mock:
+            _, dets = engine.mask("mail: ali@example.com")
+        assert dets
+        warning_mock.assert_called_once()
 
 
 # ══════════════════════════════════════════════════════════════

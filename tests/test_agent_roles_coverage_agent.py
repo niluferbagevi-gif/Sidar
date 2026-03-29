@@ -151,7 +151,7 @@ class TestCoverageAgentInit:
         m = _get_coverage()
         agent = m.CoverageAgent()
         for tool in ("run_pytest", "analyze_pytest_output",
-                     "generate_missing_tests", "write_missing_tests"):
+                     "analyze_coverage_report", "generate_missing_tests", "write_missing_tests"):
             assert tool in agent.tools, f"{tool} kayıtlı değil"
 
     def test_custom_cfg(self):
@@ -274,6 +274,64 @@ class TestNormalizeAnalysis:
         assert result["summary"] == ""
 
 
+class TestCoverageXmlParsing:
+    def test_parse_coverage_xml_extracts_missing_lines_and_branches(self, tmp_path):
+        m = _get_coverage()
+        xml_path = tmp_path / "coverage.xml"
+        xml_path.write_text(
+            """<?xml version="1.0" ?>
+<coverage>
+  <packages>
+    <package name="core">
+      <classes>
+        <class filename="core/sample.py" line-rate="0.5" branch-rate="0.5">
+          <lines>
+            <line number="10" hits="0" branch="true" condition-coverage="50% (1/2)"/>
+            <line number="11" hits="1"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+            encoding="utf-8",
+        )
+        parsed = m.CoverageAgent._parse_coverage_xml(str(xml_path), limit=10)
+        assert parsed["exists"] is True
+        assert parsed["total_findings"] == 1
+        finding = parsed["findings"][0]
+        assert finding["target_path"] == "core/sample.py"
+        assert 10 in finding["missing_lines"]
+        assert any(str(branch).startswith("10:") for branch in finding["missing_branches"])
+
+    def test_read_coveragerc_returns_run_and_report(self, tmp_path):
+        m = _get_coverage()
+        rc = tmp_path / ".coveragerc"
+        rc.write_text(
+            "[run]\ninclude = core/*\n[report]\nomit = tests/*\n",
+            encoding="utf-8",
+        )
+        parsed = m.CoverageAgent._read_coveragerc(str(rc))
+        assert parsed["exists"] is True
+        assert parsed["run"]["include"] == "core/*"
+        assert parsed["report"]["omit"] == "tests/*"
+
+    def test_build_dynamic_pytest_prompt_contains_coverage_hints(self):
+        m = _get_coverage()
+        prompt = m.CoverageAgent._build_dynamic_pytest_prompt(
+            finding={
+                "target_path": "core/llm_client.py",
+                "missing_lines": [100, 101],
+                "missing_branches": ["120:50% (1/2)"],
+            },
+            coveragerc={"run": {"include": "core/*"}, "report": {"omit": "tests/*"}},
+        )
+        assert "core/llm_client.py" in prompt
+        assert "200" in prompt
+        assert "404/500" in prompt
+
+
 # ─────────────────────────────────────────────────────────
 # run_task yönlendirme testleri
 # ─────────────────────────────────────────────────────────
@@ -308,6 +366,26 @@ class TestCoverageAgentRunTask:
         assert result is not None
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
+
+    @pytest.mark.asyncio
+    async def test_analyze_coverage_report_routing(self, tmp_path):
+        m = _get_coverage()
+        xml_path = tmp_path / "coverage.xml"
+        xml_path.write_text(
+            """<?xml version="1.0" ?>
+<coverage><packages><package name="x"><classes>
+<class filename="core/x.py" line-rate="0.0" branch-rate="1.0"><lines><line number="1" hits="0"/></lines></class>
+</classes></package></packages></coverage>
+""",
+            encoding="utf-8",
+        )
+        agent = m.CoverageAgent()
+        payload = json.dumps({"coverage_xml": str(xml_path), "limit": 5})
+        result = await agent.run_task(f"analyze_coverage_report|{payload}")
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+        assert parsed["coverage_xml"]["exists"] is True
+        assert parsed["findings"]
 
     @pytest.mark.asyncio
     async def test_generate_missing_tests_routing(self):

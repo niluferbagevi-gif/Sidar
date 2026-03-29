@@ -430,3 +430,89 @@ class TestOpenAIApiMocking:
             client = lc.OpenAIClient(_Cfg())
             with pytest.raises(lc.LLMAPIError):
                 _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+    def test_openai_chat_404_maps_to_non_retryable_llm_api_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 2
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 404
+
+            @staticmethod
+            def json():
+                return {"error": {"message": "not found"}}
+
+            def raise_for_status(self):
+                exc = RuntimeError("404")
+                exc.status_code = 404
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.retryable is False
+        fake_client.post.assert_awaited_once()
+
+    def test_openai_chat_500_retries_then_raises_retryable_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 1
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 500
+
+            @staticmethod
+            def json():
+                return {"error": {"message": "server error"}}
+
+            def raise_for_status(self):
+                exc = RuntimeError("500")
+                exc.status_code = 500
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.retryable is True
+        assert fake_client.post.await_count == 2  # 1 ilk çağrı + 1 retry

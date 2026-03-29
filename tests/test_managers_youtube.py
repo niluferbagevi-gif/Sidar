@@ -230,3 +230,67 @@ class TestYouTubeApiMocking:
 
         assert result["success"] is False
         assert "bulunamadı" in result["reason"].lower()
+
+    def test_fetch_transcript_404_then_200_falls_back_to_next_language(self):
+        yt = _get_yt()
+
+        class _Resp404:
+            status_code = 404
+
+            @staticmethod
+            def json():
+                return {}
+
+        class _Resp200:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "Hello"}]}]}
+
+        responses = [_Resp404(), _Resp200()]
+
+        class _FakeClient:
+            async def get(self, url):
+                return responses.pop(0)
+
+        class _FakeClientCM:
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: _FakeClientCM())
+        result = asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr", "en")))
+
+        assert result["success"] is True
+        assert result["language"] == "en"
+        assert "Hello" in result["text"]
+
+    def test_fetch_transcript_500_returns_failure(self):
+        yt = _get_yt()
+
+        class _Resp500:
+            status_code = 500
+
+            @staticmethod
+            def json():
+                return {"error": "server error"}
+
+        class _FakeClient:
+            async def get(self, url):
+                return _Resp500()
+
+        class _FakeClientCM:
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: _FakeClientCM())
+        result = asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr",)))
+
+        assert result["success"] is False
+        assert "bulunamadı" in result["reason"].lower()
