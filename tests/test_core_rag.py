@@ -301,6 +301,7 @@ def _make_store_stub(rag_module, tmpdir: Path):
     store._pgvector_available = False
     store._chroma_available = True
     store.collection = None
+    store._index = {}
     return store
 
 
