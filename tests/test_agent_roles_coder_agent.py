@@ -4,6 +4,7 @@ Tüm ağır bağımlılıklar stub'lanır; deterministik davranışlar test edil
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import pathlib as _pl
@@ -253,3 +254,23 @@ class TestCoderAgentRunTask:
         agent = m.CoderAgent()
         result = await agent.run_task("bilinmeyen komut xyz")
         assert "LEGACY_FALLBACK" in result or result is not None
+
+
+class TestCoderAgentPromptVariations:
+    @pytest.mark.parametrize(
+        "prompt, expected_fragment",
+        [
+            ("read_file|main.py", "dosya içeriği"),
+            ("write_file|out.py|print(1)", "yazıldı"),
+            ("patch_file|main.py|eski|yeni", "yamalandı"),
+            ("execute_code|print('ok')", "çalıştırıldı"),
+            ("qa_feedback|{\"decision\":\"approve\",\"summary\":\"ok\"}", "APPROVED"),
+            ("qa_feedback|{\"decision\":\"reject\",\"summary\":\"fix\"}", "REWORK_REQUIRED"),
+            ("bilinmeyen görev", "LEGACY_FALLBACK"),
+        ],
+    )
+    def test_prompt_variations_route_to_expected_outputs(self, prompt, expected_fragment):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = asyncio.run(agent.run_task(prompt))
+        assert expected_fragment in result

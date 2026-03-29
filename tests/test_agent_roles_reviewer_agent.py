@@ -4,6 +4,7 @@ Statik/deterministik metotlar ve run_task yönlendirme mantığı test edilir.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import types
@@ -257,6 +258,32 @@ class TestSummarizeLspDiagnostics:
         result = m.ReviewerAgent._summarize_lsp_diagnostics("")
         assert result["status"] == "clean"
         assert result["decision"] == "APPROVE"
+
+
+class TestReviewerAgentPromptVariations:
+    @pytest.mark.parametrize(
+        "prompt, expected_fragment",
+        [
+            ("repo_info", "repo bilgisi"),
+            ("list_prs|open", "PR listesi"),
+            ("pr_diff|12", "diff"),
+            ("list_issues|open", "issue listesi"),
+            ("run_tests|pytest -q", "test passed"),
+        ],
+    )
+    def test_prompt_variants_route_to_expected_tools(self, prompt, expected_fragment):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        result = asyncio.run(agent.run_task(prompt))
+        assert expected_fragment in result
+
+    def test_graph_and_lsp_variants_return_structured_outputs(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        lsp_result = asyncio.run(agent.run_task("lsp_diagnostics|core/app.py"))
+        graph_result = asyncio.run(agent.run_task("graph_impact|core/app.py"))
+        assert lsp_result is not None
+        assert graph_result is not None
 
     def test_errors_result_in_reject(self):
         m = _get_reviewer()

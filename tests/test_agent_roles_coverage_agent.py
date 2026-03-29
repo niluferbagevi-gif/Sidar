@@ -4,6 +4,7 @@ Tüm ağır bağımlılıklar stub'lanır; deterministik davranışlar test edil
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import types
@@ -382,6 +383,33 @@ class TestCoverageXmlParsing:
         assert "200" in prompt
         assert "404/500" in prompt
 
+    def test_parse_coverage_xml_ignores_fully_covered_branch_conditions(self, tmp_path):
+        m = _get_coverage()
+        xml_path = tmp_path / "coverage.xml"
+        xml_path.write_text(
+            """<?xml version="1.0" ?>
+<coverage>
+  <packages>
+    <package name="core">
+      <classes>
+        <class filename="core/full_branch.py" line-rate="1.0" branch-rate="1.0">
+          <lines>
+            <line number="15" hits="1" branch="true" condition-coverage="100% (2/2)"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+            encoding="utf-8",
+        )
+
+        parsed = m.CoverageAgent._parse_coverage_xml(str(xml_path), limit=5)
+        assert parsed["exists"] is True
+        assert parsed["total_findings"] == 0
+        assert parsed["findings"] == []
+
 
 # ─────────────────────────────────────────────────────────
 # run_task yönlendirme testleri
@@ -610,6 +638,25 @@ class TestCoverageAgentTools:
         })
         result = await agent._tool_generate_missing_tests(payload)
         assert isinstance(result, str)
+
+    def test_tool_generate_missing_tests_with_coverage_finding_without_target_path(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        payload = json.dumps(
+            {
+                "pytest_output": "FAILED core/service.py::test_x",
+                "coverage_finding": {
+                    "target_path": "core/service.py",
+                    "missing_lines": [257, 258, 260],
+                    "missing_branches": ["148:50% (1/2)"],
+                },
+                "coveragerc": {"run": {"include": "core/*"}, "report": {"omit": "tests/*"}},
+            }
+        )
+
+        result = asyncio.run(agent._tool_generate_missing_tests(payload))
+        assert isinstance(result, str)
+        assert "def test_generated" in result
 
     @pytest.mark.asyncio
     async def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):

@@ -3,6 +3,7 @@ agent/roles/researcher_agent.py için birim testleri.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import pathlib as _pl
@@ -175,3 +176,16 @@ class TestResearcherAgentTools:
         agent = m.ResearcherAgent()
         result = await agent.call_tool("unknown_tool", "arg")
         assert "HATA" in result or "hata" in result.lower()
+
+
+class TestResearcherAgentDocsSearchAwaitable:
+    def test_docs_search_awaits_when_document_store_returns_awaitable(self):
+        m = _get_researcher()
+        agent = m.ResearcherAgent()
+
+        async def _async_result():
+            return True, "await edilen doküman sonucu"
+
+        agent.docs.search = lambda *args, **kwargs: _async_result()
+        result = asyncio.run(agent._tool_docs_search("coverage raporu"))
+        assert result == "await edilen doküman sonucu"
