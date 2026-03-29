@@ -6,6 +6,7 @@ CodeManager._resolve_sandbox_limits.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import types
@@ -281,3 +282,112 @@ class TestExecuteCodeFallbackLoops:
         assert ok is True
         assert message == "local fallback ok"
         mgr.execute_code_local.assert_called_once()
+
+
+class TestRunShellInSandbox:
+    def test_denies_when_execute_permission_missing(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: False)
+        ok, message = mgr.run_shell_in_sandbox("pytest -q")
+        assert ok is False
+        assert "yetkisi yok" in message
+
+    def test_blank_command_returns_error(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        ok, message = mgr.run_shell_in_sandbox("   ")
+        assert ok is False
+        assert "belirtilmedi" in message
+
+    def test_invalid_cwd_returns_error(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd="/definitely/not/here")
+        assert ok is False
+        assert "Geçersiz çalışma dizini" in message
+
+    def test_outside_project_cwd_rejected(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: False)
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "proje kökü dışında" in message
+
+    def test_docker_cli_missing_returns_error(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "Docker CLI bulunamadı" in message
+
+    def test_timeout_returns_error(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(cm.subprocess, "run", MagicMock(side_effect=subprocess.TimeoutExpired("docker", 1)))
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "Zaman aşımı" in message
+
+    def test_nonzero_exit_includes_stderr(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=2, stdout="line1", stderr="boom")),
+        )
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "[stderr]" in message
+        assert "çıkış kodu: 2" in message
+
+    def test_success_with_empty_output(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=0, stdout="", stderr="")),
+        )
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is True
+        assert "çıktı üretmedi" in message
+
+
+class TestPytestOutputAnalysis:
+    def test_extracts_coverage_targets_and_branch_arcs(self):
+        mgr, _cm = _make_code_manager()
+        sample = (
+            "web_server.py 2406 1576 31% 100->exit, 152-165, 400\n"
+            "tests/test_web_server.py 10 0 100% -\n"
+            "TOTAL 2416 1576 35% ...\n"
+        )
+        result = mgr.analyze_pytest_output(sample)
+        assert result["has_coverage_gaps"] is True
+        assert result["coverage_targets"][0]["target_path"] == "web_server.py"
+        assert "100->exit" in result["coverage_targets"][0]["missing_branch_arcs"]
+
+    def test_extracts_failure_target_from_traceback_block(self):
+        mgr, _cm = _make_code_manager()
+        sample = (
+            "tests/test_core_db.py:123: AssertionError\n"
+            "=========================== short test summary info ===========================\n"
+            "1 failed, 10 passed in 0.12s\n"
+        )
+        result = mgr.analyze_pytest_output(sample)
+        assert result["has_failures"] is True
+        assert result["failure_targets"][0]["target_path"] == "tests/test_core_db.py"
+
+    def test_run_pytest_and_collect_rejects_non_pytest_commands(self):
+        mgr, _cm = _make_code_manager()
+        result = mgr.run_pytest_and_collect(command="echo hello")
+        assert result["success"] is False
+        assert "Yalnızca pytest" in result["output"]
