@@ -315,3 +315,44 @@ class TestAutoHandleSecurityStatus:
         handler, code, *_ = _make_auto_handle()
         handled, response = handler._try_security_status("erişim seviyesi nedir")
         assert handled is True
+
+
+class TestAutoHandleParametrizedBranches:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command_text,expected_substring",
+        [
+            (".status", "sistem sağlığı"),
+            (".health", "sistem sağlığı"),
+            (".clear", "temizlendi"),
+            (".audit", "denetim"),
+            (".gpu", "gpu"),
+        ],
+    )
+    async def test_dot_commands_with_single_parametrized_test(self, command_text, expected_substring):
+        handler, *_ = _make_auto_handle()
+
+        handled, response = await handler.handle(command_text)
+
+        assert handled is True
+        assert expected_substring in response.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "dosyayı oku ardından düzenle",
+            "önce test yaz sonra çalıştır",
+            "1) build al 2) deploy et",
+            "first run tests then open report",
+            "step 1: lint step 2: test",
+            "planı yap ve ardından uygula",
+        ],
+    )
+    async def test_multi_step_inputs_are_not_auto_handled(self, text):
+        handler, *_ = _make_auto_handle()
+
+        handled, response = await handler.handle(text)
+
+        assert handled is False
+        assert response == ""

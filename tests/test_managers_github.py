@@ -6,6 +6,7 @@ GitHubManager.SAFE_EXTENSIONLESS, constructor (no token).
 from __future__ import annotations
 
 import sys
+from unittest.mock import MagicMock
 
 
 def _get_gh():
@@ -111,3 +112,55 @@ class TestGitHubManagerInit:
         # With a fake token, it will try to import github and fail gracefully
         mgr = gh.GitHubManager(token="fake_token_xyz")
         assert mgr.token == "fake_token_xyz"
+
+
+class _GitHubHttpError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+class TestGitHubPatchedServiceResponses:
+    def test_set_repo_success_when_loader_returns_true(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._available = True
+        mgr._load_repo = MagicMock(return_value=True)
+
+        ok, msg = mgr.set_repo("owner/repo")
+
+        assert ok is True
+        assert "Depo değiştirildi" in msg
+
+    def test_set_repo_failure_when_loader_returns_false(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._available = True
+        mgr._load_repo = MagicMock(return_value=False)
+
+        ok, msg = mgr.set_repo("owner/missing")
+
+        assert ok is False
+        assert "bulunamadı" in msg
+
+    def test_list_repos_handles_404_from_service(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._gh = MagicMock()
+        mgr._gh.get_user.side_effect = _GitHubHttpError(404, "Not Found")
+
+        ok, repos = mgr.list_repos(owner="missing-owner")
+
+        assert ok is False
+        assert repos == []
+
+    def test_list_repos_handles_500_from_service(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._gh = MagicMock()
+        mgr._gh.get_user.side_effect = _GitHubHttpError(500, "Internal Server Error")
+
+        ok, repos = mgr.list_repos(owner="owner")
+
+        assert ok is False
+        assert repos == []
