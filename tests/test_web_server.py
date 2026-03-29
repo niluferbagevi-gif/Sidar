@@ -293,7 +293,8 @@ class TestWebServerErrorHandlers:
 
         ws._register_exception_handlers(_App())
         unhandled = handlers[Exception]
-        response = asyncio.run(unhandled(object(), RuntimeError("boom")))
+        request_mock = types.SimpleNamespace(url=types.SimpleNamespace(path="/test-error"))
+        response = asyncio.run(unhandled(request_mock, RuntimeError("boom")))
         assert getattr(response, "status_code", 500) == 500
 
 
