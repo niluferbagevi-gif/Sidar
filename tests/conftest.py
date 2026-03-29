@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+from pathlib import Path
 import sys
 import types
 
@@ -270,4 +271,11 @@ def _cleanup_logging_handlers():
             except Exception:
                 pass
     # Garbage collection'ı force et
-    gc.collect() 
+    gc.collect()
+
+
+@pytest.fixture
+def sqlite_test_db_url(tmp_path) -> str:
+    """core.db testleri için geçici SQLite veritabanı URL'i."""
+    db_file = Path(tmp_path) / "sidar_test.db"
+    return f"sqlite+aiosqlite:///{db_file}"

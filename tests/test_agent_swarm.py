@@ -337,6 +337,101 @@ class TestSwarmOrchestratorRun:
         assert "loop guard" in result.summary.lower() or "hop" in result.summary.lower()
 
 
+class TestSwarmHandoffIntegration:
+    @pytest.mark.asyncio
+    async def test_direct_handoff_coder_to_reviewer_chain_is_recorded(self):
+        sw = _get_swarm_module()
+        reg = sys.modules["agent.registry"]
+        contracts = sys.modules["agent.core.contracts"]
+
+        class _CoderAgent:
+            async def handle(self, envelope):
+                delegation = contracts.DelegationRequest(
+                    task_id=envelope.task_id,
+                    reply_to="coder",
+                    target_agent="reviewer",
+                    payload="kodu gözden geçir",
+                    intent="code_review",
+                    parent_task_id=envelope.task_id,
+                    meta={"reason": "review_required"},
+                )
+                return contracts.TaskResult(task_id=envelope.task_id, status="success", summary=delegation)
+
+        class _ReviewerAgent:
+            async def handle(self, envelope):
+                return contracts.TaskResult(
+                    task_id=envelope.task_id,
+                    status="success",
+                    summary=f"review ok: {envelope.goal}",
+                    evidence=["lint clean"],
+                )
+
+        reg.AgentRegistry._registry.clear()
+        coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+        reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
+        coder._agent_factory = lambda **_kw: _CoderAgent()
+        reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
+        reg.AgentRegistry._registry["coder"] = coder
+        reg.AgentRegistry._registry["reviewer"] = reviewer
+
+        orchestrator = sw.SwarmOrchestrator(cfg=None)
+        result = await orchestrator.run("refactor auth modülü", intent="code_generation", session_id="sess-1")
+
+        assert result.status == "success"
+        assert result.agent_role == "reviewer"
+        assert len(result.handoffs) == 1
+        assert result.handoffs[0]["sender"] == "coder"
+        assert result.handoffs[0]["receiver"] == "reviewer"
+        assert "review ok" in result.summary
+
+    @pytest.mark.asyncio
+    async def test_pipeline_passes_success_context_between_agents(self):
+        sw = _get_swarm_module()
+        reg = sys.modules["agent.registry"]
+        contracts = sys.modules["agent.core.contracts"]
+
+        captured_context = {"value": None}
+
+        class _CoderAgent:
+            async def handle(self, envelope):
+                return contracts.TaskResult(
+                    task_id=envelope.task_id,
+                    status="success",
+                    summary="kod üretimi tamam",
+                    evidence=["file:service.py"],
+                )
+
+        class _ReviewerAgent:
+            async def handle(self, envelope):
+                captured_context["value"] = dict(envelope.context or {})
+                return contracts.TaskResult(
+                    task_id=envelope.task_id,
+                    status="success",
+                    summary="review tamam",
+                    evidence=["no blocker"],
+                )
+
+        reg.AgentRegistry._registry.clear()
+        coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+        reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
+        coder._agent_factory = lambda **_kw: _CoderAgent()
+        reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
+        reg.AgentRegistry._registry["coder"] = coder
+        reg.AgentRegistry._registry["reviewer"] = reviewer
+
+        orchestrator = sw.SwarmOrchestrator(cfg=None)
+        tasks = [
+            sw.SwarmTask(goal="kod üret", intent="code_generation"),
+            sw.SwarmTask(goal="çıktıyı incele", intent="code_review"),
+        ]
+        results = await orchestrator.run_pipeline(tasks, session_id="sess-pipeline")
+
+        assert len(results) == 2
+        assert all(item.status == "success" for item in results)
+        assert captured_context["value"] is not None
+        assert captured_context["value"].get("prev_coder", "").startswith("kod üretimi tamam")
+
+
 class TestSwarmOrchestratorGoalFingerprint:
     def test_fingerprint_truncates_long_goal(self):
         sw = _get_swarm_module()
