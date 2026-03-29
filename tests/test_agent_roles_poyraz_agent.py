@@ -371,6 +371,42 @@ class TestPoyrazAdditionalCoverage:
         result = await agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}')
         assert result.startswith("[WHATSAPP:SENT]")
 
+
+    @pytest.mark.asyncio
+    async def test_ensure_db_reuses_existing_lock_instance(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        existing_lock = asyncio.Lock()
+        agent._db_lock = existing_lock
+
+        fake_db_instance = MagicMock()
+        fake_db_instance.connect = AsyncMock()
+        fake_db_instance.init_schema = AsyncMock()
+
+        db_mod = types.ModuleType("core.db")
+        db_mod.Database = MagicMock(return_value=fake_db_instance)
+        sys.modules["core.db"] = db_mod
+
+        result = await agent._ensure_db()
+
+        assert result is fake_db_instance
+        assert agent._db_lock is existing_lock
+        db_mod.Database.assert_called_once_with(agent.cfg)
+
+    @pytest.mark.asyncio
+    async def test_social_channel_specific_missing_branches(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        agent.social.publish_instagram_post = AsyncMock(return_value=(False, "ig-down"))
+        result = await agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}')
+        assert result.startswith("[INSTAGRAM:ERROR]")
+
+        agent.social.publish_facebook_post = AsyncMock(return_value=(True, "fb-ok"))
+        result = await agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}')
+        assert result.startswith("[FACEBOOK:PUBLISHED]")
+
     @pytest.mark.asyncio
     async def test_build_landing_page_with_store_asset(self, monkeypatch):
         m = _get_poyraz()
