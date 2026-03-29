@@ -518,6 +518,119 @@ class TestOpenAIApiMocking:
         assert exc_info.value.retryable is True
         assert fake_client.post.await_count == 2  # 1 ilk çağrı + 1 retry
 
+    def test_openai_chat_429_rate_limit_is_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 429
+
+            @staticmethod
+            def json():
+                return {"error": {"message": "rate limit exceeded"}}
+
+            def raise_for_status(self):
+                exc = RuntimeError("429")
+                exc.status_code = 429
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retryable is True
+
+    def test_openai_chat_timeout_raises_retryable_llm_api_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(side_effect=lc.httpx.TimeoutException("request timeout"))
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.retryable is True
+
+    def test_openai_chat_malformed_json_content_is_wrapped_to_final_answer(self):
+        lc = _get_llm_client()
+        import json
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "choices": [{"message": {"content": "{invalid json"}}],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 3},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            out = _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        parsed = json.loads(out)
+        assert parsed.get("tool") == "final_answer"
+
 
 class TestGeminiAndAnthropicApiMocking:
     def test_gemini_timeout_in_stream_returns_fallback_error_chunk(self, monkeypatch):

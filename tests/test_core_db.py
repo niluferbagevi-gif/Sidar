@@ -491,3 +491,91 @@ class TestDatabaseErrorAndAsyncFlows:
                 assert messages[0].content == "merhaba"
                 await database.close()
         asyncio.run(_scenario())
+
+
+class TestDatabaseCrudEdgeCases:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_test.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_update_and_delete_session_return_false_for_missing_records(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                updated = await database.update_session_title("missing-session", "Yeni Başlık")
+                deleted = await database.delete_session("missing-session")
+
+                assert updated is False
+                assert deleted is False
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_add_message_raises_integrity_error_for_missing_session(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database.add_message("missing-session", "user", "hello")
+
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_add_message_integrity_error_rolls_back_transaction(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                # FK ihlali ile hata üret ve rollback davranışını doğrula.
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database.add_message("missing-session", "assistant", "cevap")
+
+                rows = await database._run_sqlite_op(
+                    lambda: database._sqlite_conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]  # type: ignore[union-attr]
+                )
+                assert int(rows) == 0
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_upsert_access_policy_raises_for_invalid_effect(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                with pytest.raises(ValueError, match="effect must be allow or deny"):
+                    await database.upsert_access_policy(
+                        user_id="u1",
+                        tenant_id="default",
+                        resource_type="rag",
+                        resource_id="doc-1",
+                        action="read",
+                        effect="block",
+                    )
+                await database.close()
+
+        asyncio.run(_scenario())
