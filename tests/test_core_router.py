@@ -294,6 +294,14 @@ class TestCostAwareRouterLocalResult:
         assert provider == "ollama"
         assert model is None
 
+    def test_local_result_returns_defaults_when_local_provider_missing(self):
+        mod = _get_router()
+        router = mod.CostAwareRouter(_make_config(ENABLE_COST_ROUTING=True))
+        router.local_provider = None
+        provider, model = router._local_result("gemini", "gemini-pro")
+        assert provider == "gemini"
+        assert model == "gemini-pro"
+
 
 class TestCostAwareRouterComplexityScore:
     def test_complexity_score_delegates_to_analyzer(self):
