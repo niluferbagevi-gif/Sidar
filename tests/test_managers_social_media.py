@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from unittest.mock import AsyncMock, MagicMock
 
 
 def _get_sm():
@@ -201,3 +202,56 @@ class TestPublishContentDisabled:
         ok, err = asyncio.run(mgr.send_whatsapp_message(to="", text="hi"))
         assert ok is False
         assert "alıcı" in err.lower() or "to" in err.lower() or "gerekli" in err
+
+
+class TestSocialMediaApiMocking:
+    def test_post_success_with_mocked_http_client(self):
+        sm = _get_sm()
+
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"id": "post_1"}
+
+        client = MagicMock()
+        client.post = AsyncMock(return_value=response)
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            facebook_page_id="page_1",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, payload = asyncio.run(mgr._post("page_1/feed", {"message": "Merhaba"}))
+
+        assert ok is True
+        assert payload == {"id": "post_1"}
+        client.post.assert_awaited_once()
+
+    def test_post_timeout_returns_error_with_mocked_http_client(self):
+        sm = _get_sm()
+        httpx = __import__("httpx")
+
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(mgr._post("me/feed", {"message": "x"}))
+
+        assert ok is False
+        assert "zaman aşımı" in str(err).lower()

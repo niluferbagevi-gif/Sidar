@@ -418,6 +418,36 @@ class TestCoverageAgentRunTask:
 
 class TestCoverageAgentTools:
     @pytest.mark.asyncio
+    async def test_ensure_db_returns_cached_instance_immediately(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        cached = object()
+        agent._db = cached
+
+        result = await agent._ensure_db()
+
+        assert result is cached
+
+    @pytest.mark.asyncio
+    async def test_ensure_db_returns_cached_instance_inside_lock(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        marker = object()
+
+        class _LockThatSeedsDb:
+            async def __aenter__(self_inner):
+                agent._db = marker
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        agent._db_lock = _LockThatSeedsDb()
+
+        result = await agent._ensure_db()
+
+        assert result is marker
+
+    @pytest.mark.asyncio
     async def test_tool_run_pytest_default_command(self):
         m = _get_coverage()
         agent = m.CoverageAgent()
@@ -450,6 +480,22 @@ class TestCoverageAgentTools:
             "pytest_output": "1 failed",
         })
         result = await agent._tool_generate_missing_tests(payload)
+        assert isinstance(result, str)
+
+    @pytest.mark.asyncio
+    async def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        analysis = {"summary": "hazır", "findings": [{"target_path": "core/db.py"}]}
+        agent.code.analyze_pytest_output = MagicMock(side_effect=AssertionError("reanalyze edilmemeli"))
+        payload = json.dumps({
+            "target_path": "core/db.py",
+            "pytest_output": "FAILED core/db.py",
+            "analysis": analysis,
+        })
+
+        result = await agent._tool_generate_missing_tests(payload)
+
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
