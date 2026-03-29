@@ -240,6 +240,7 @@ class TestBrowserManagerAutomationMocking:
             url="https://example.com",
             content=lambda: "<html></html>",
             screenshot=lambda path=None, full_page=True: Path(path).write_bytes(b"png"),
+            locator=lambda selector: types.SimpleNamespace(inner_html=lambda timeout=None: "<div>dummy</div>"),
         )
         session = bm.BrowserSession(
             session_id="s1",
@@ -260,7 +261,7 @@ class TestBrowserManagerAutomationMocking:
         assert ok_fill is True
         assert ok_select is True
         assert ok_dom is True
-        assert "<html" in dom
+        assert "<div>dummy</div>" in dom
 
     def test_selenium_mocked_session_actions(self, tmp_path):
         bm = _get_bm()
