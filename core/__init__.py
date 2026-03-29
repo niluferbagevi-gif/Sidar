@@ -77,6 +77,19 @@ _EXPORTED_CORE_SYMBOLS = (
     LLMMetricsCollector,
 )
 
-__all__ = [sym.__name__ for sym in _EXPORTED_CORE_SYMBOLS] + ["__version__"]
-__all__ += ["MemoryManager", "RAGManager", "DatabaseManager"]
-__all__ += ["get_llm_metrics_collector"]
+# Testlerdeki Mock nesnelerinin __name__ özniteliğine sahip olmaması
+# nedeniyle reload sırasında çökmeyi önlemek için statik tanımlama:
+__all__ = [
+    "ConversationMemory",
+    "LLMClient",
+    "DocumentStore",
+    "Database",
+    "MultimodalPipeline",
+    "VoicePipeline",
+    "LLMMetricsCollector",
+    "__version__",
+    "MemoryManager",
+    "RAGManager",
+    "DatabaseManager",
+    "get_llm_metrics_collector",
+]
