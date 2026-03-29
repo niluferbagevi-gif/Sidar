@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 import types
+import asyncio
 
 
 def _get_yt():
@@ -163,3 +164,69 @@ class TestYouTubeManagerInit:
         mgr = yt.YouTubeManager()
         assert "tr" in mgr.DEFAULT_LANGUAGES
         assert "en" in mgr.DEFAULT_LANGUAGES
+
+
+class TestYouTubeApiMocking:
+    def test_fetch_transcript_uses_mocked_http_client(self):
+        yt = _get_yt()
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "Merhaba"}]}]}
+
+        class _FakeClient:
+            async def get(self, url):
+                return _Resp()
+
+        class _FakeClientCM:
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: _FakeClientCM())
+        result = asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ"))
+
+        assert result["success"] is True
+        assert result["language"] in ("tr", "en")
+        assert "Merhaba" in result["text"]
+
+    def test_fetch_transcript_invalid_video_id_returns_failure(self):
+        yt = _get_yt()
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: None)
+
+        result = asyncio.run(mgr.fetch_transcript("not-a-youtube-id"))
+
+        assert result["success"] is False
+        assert "video id" in result["reason"].lower()
+
+    def test_fetch_transcript_all_languages_empty_returns_failure_reason(self):
+        yt = _get_yt()
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "   "}]}]}
+
+        class _FakeClient:
+            async def get(self, url):
+                return _Resp()
+
+        class _FakeClientCM:
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: _FakeClientCM())
+        result = asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr",)))
+
+        assert result["success"] is False
+        assert "bulunamadı" in result["reason"].lower()

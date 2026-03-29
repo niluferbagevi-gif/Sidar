@@ -342,3 +342,91 @@ class TestRetryWithBackoff:
         with pytest.raises(lc.LLMAPIError):
             _run(lc._retry_with_backoff("openai", operation, config=_Cfg(), retry_hint="test"))
         assert call_count[0] == 1  # No retries
+
+
+class TestOpenAIApiMocking:
+    def test_openai_chat_uses_mocked_http_client(self):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "choices": [{"message": {"content": '{"thought":"t","tool":"final_answer","argument":"ok"}'}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            out = _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert '"tool":"final_answer"' in out
+        fake_client.post.assert_awaited_once()
+
+    def test_openai_chat_without_api_key_stream_returns_fallback_chunk(self):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            OPENAI_API_KEY = ""
+            OPENAI_MODEL = "gpt-4o-mini"
+            ENABLE_TRACING = False
+
+        client = lc.OpenAIClient(_Cfg())
+
+        async def _collect():
+            stream = await client.chat([{"role": "user", "content": "selam"}], stream=True, json_mode=True)
+            chunks = []
+            async for chunk in stream:
+                chunks.append(chunk)
+            return chunks
+
+        chunks = _run(_collect())
+        assert len(chunks) == 1
+        assert "OPENAI_API_KEY" in chunks[0]
+
+    def test_openai_chat_http_failure_raises_llm_api_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                raise RuntimeError("socket closed")
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError):
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
