@@ -356,3 +356,57 @@ class TestAutoHandleParametrizedBranches:
 
         assert handled is False
         assert response == ""
+
+
+class TestAutoHandleErrorAndBranchCoverage:
+    @pytest.mark.asyncio
+    async def test_audit_timeout_returns_warning(self):
+        handler, code, *_ = _make_auto_handle()
+        code.audit_project = MagicMock(side_effect=asyncio.TimeoutError)
+
+        handled, response = await handler.handle(".audit")
+
+        assert handled is True
+        assert "zaman aşım" in response.lower()
+
+    @pytest.mark.asyncio
+    async def test_gpu_optimize_exception_returns_warning(self):
+        handler, _, health, *_ = _make_auto_handle()
+        health.optimize_gpu_memory = MagicMock(side_effect=RuntimeError("gpu driver unavailable"))
+
+        handled, response = await handler.handle(".gpu")
+
+        assert handled is True
+        assert "başarısız" in response.lower()
+        assert "gpu driver unavailable" in response
+
+    @pytest.mark.asyncio
+    async def test_validate_json_success_path(self):
+        handler, code, *_ = _make_auto_handle()
+        code.read_file.return_value = (True, '{"ok": true}')
+        code.validate_json.return_value = (True, "JSON geçerli")
+
+        handled, response = await handler.handle('dosya doğrula "config.json"')
+
+        assert handled is True
+        assert response.startswith("✓")
+
+    @pytest.mark.asyncio
+    async def test_validate_unsupported_extension_returns_warning(self):
+        handler, code, *_ = _make_auto_handle()
+        code.read_file.return_value = (True, "[section]\nvalue=1")
+
+        handled, response = await handler.handle('dosya doğrula "settings.ini"')
+
+        assert handled is True
+        assert "desteklenmiyor" in response.lower()
+
+    @pytest.mark.asyncio
+    async def test_docs_add_secondary_url_form_with_title(self):
+        handler, *_, docs = _make_auto_handle()
+
+        handled, response = await handler.handle('bu URL\'yi belge deposuna ekle: https://example.com "Örnek Başlık"')
+
+        assert handled is True
+        assert "eklendi" in response.lower()
+        docs.add_document_from_url.assert_awaited_once_with("https://example.com", title="Örnek Başlık")
