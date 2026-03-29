@@ -387,3 +387,48 @@ class TestDocumentStoreFileInputValidation:
             ok, message = rag.DocumentStore.add_document_from_file(store, str(valid_file))
             assert ok is False
             assert "Dosya eklenemedi" in message
+
+
+class TestDocumentStoreChunkingAndFallback:
+    def _build_store(self, monkeypatch, tmp_path):
+        rag = _get_rag()
+        monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _name: False)
+        monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
+        return rag, rag.DocumentStore(store_dir=tmp_path)
+
+    def test_recursive_chunk_text_handles_empty_and_boundaries(self, monkeypatch, tmp_path):
+        _, store = self._build_store(monkeypatch, tmp_path)
+        assert store._recursive_chunk_text("", size=10, overlap=2) == []
+        chunks = store._recursive_chunk_text("abcdefghi", size=4, overlap=1)
+        assert len(chunks) >= 3
+        assert all(len(chunk) <= 4 for chunk in chunks)
+
+    def test_chunk_text_uses_explicit_chunk_settings(self, monkeypatch, tmp_path):
+        _, store = self._build_store(monkeypatch, tmp_path)
+        chunks = store._chunk_text("x" * 15, chunk_size=5, chunk_overlap=2)
+        assert chunks
+        assert max(len(c) for c in chunks) <= 5
+
+    def test_init_chroma_marks_backend_unavailable_on_exception(self, monkeypatch, tmp_path):
+        rag, store = self._build_store(monkeypatch, tmp_path)
+        store._chroma_available = True
+        fake_chromadb = types.SimpleNamespace(
+            PersistentClient=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("db down"))
+        )
+        monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
+        monkeypatch.setattr(rag, "_build_embedding_function", lambda **_kwargs: None)
+        store._init_chroma()
+        assert store._chroma_available is False
+
+    def test_search_sync_returns_empty_context_message_when_session_has_no_docs(self, monkeypatch, tmp_path):
+        _, store = self._build_store(monkeypatch, tmp_path)
+        ok, message = store._search_sync("test query", session_id="session-a")
+        assert ok is False
+        assert "belge deposu boş" in message
+
+    def test_vector_mode_returns_unavailable_when_no_vector_backend(self, monkeypatch, tmp_path):
+        _, store = self._build_store(monkeypatch, tmp_path)
+        store._index["doc1"] = {"session_id": "global"}
+        ok, message = store._search_sync("query", mode="vector", session_id="global")
+        assert ok is False
+        assert "Vektör arama kullanılamıyor" in message
