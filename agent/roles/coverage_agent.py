@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import configparser
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Optional
 
@@ -36,6 +38,7 @@ class CoverageAgent(BaseAgent):
         self._db_lock: asyncio.Lock | None = None
         self.register_tool("run_pytest", self._tool_run_pytest)
         self.register_tool("analyze_pytest_output", self._tool_analyze_pytest_output)
+        self.register_tool("analyze_coverage_report", self._tool_analyze_coverage_report)
         self.register_tool("generate_missing_tests", self._tool_generate_missing_tests)
         self.register_tool("write_missing_tests", self._tool_write_missing_tests)
 
@@ -85,6 +88,117 @@ class CoverageAgent(BaseAgent):
             "findings": normalized_findings,
         }
 
+    @staticmethod
+    def _read_coveragerc(coveragerc_path: str) -> dict[str, Any]:
+        path = Path((coveragerc_path or ".coveragerc").strip() or ".coveragerc")
+        if not path.exists():
+            return {"path": str(path), "exists": False, "run": {}, "report": {}}
+
+        parser = configparser.ConfigParser()
+        parser.read(path, encoding="utf-8")
+        run_cfg = dict(parser.items("run")) if parser.has_section("run") else {}
+        report_cfg = dict(parser.items("report")) if parser.has_section("report") else {}
+        return {"path": str(path), "exists": True, "run": run_cfg, "report": report_cfg}
+
+    @staticmethod
+    def _parse_coverage_xml(coverage_xml_path: str, *, limit: int = 25) -> dict[str, Any]:
+        path = Path((coverage_xml_path or "coverage.xml").strip() or "coverage.xml")
+        if not path.exists():
+            return {
+                "path": str(path),
+                "exists": False,
+                "summary": "coverage.xml bulunamadı.",
+                "files": [],
+                "findings": [],
+            }
+
+        root = ET.parse(path).getroot()
+        findings: list[dict[str, Any]] = []
+        files: list[dict[str, Any]] = []
+
+        for class_el in root.findall(".//class"):
+            filename = class_el.attrib.get("filename", "")
+            if not filename:
+                continue
+            line_rate = float(class_el.attrib.get("line-rate", "0") or 0.0)
+            branch_rate = float(class_el.attrib.get("branch-rate", "0") or 0.0)
+            missed_lines: list[int] = []
+            missed_branches: list[str] = []
+
+            for line_el in class_el.findall("./lines/line"):
+                number = int(line_el.attrib.get("number", "0") or 0)
+                hits = int(line_el.attrib.get("hits", "0") or 0)
+                if hits == 0 and number > 0:
+                    missed_lines.append(number)
+                if line_el.attrib.get("branch") == "true":
+                    cond_cov = str(line_el.attrib.get("condition-coverage", "") or "")
+                    if cond_cov and not cond_cov.startswith("100%"):
+                        missed_branches.append(f"{number}:{cond_cov}")
+
+            files.append(
+                {
+                    "path": filename,
+                    "line_rate": round(line_rate * 100, 2),
+                    "branch_rate": round(branch_rate * 100, 2),
+                    "missing_lines_count": len(missed_lines),
+                    "missing_branches_count": len(missed_branches),
+                }
+            )
+
+            if missed_lines or missed_branches:
+                findings.append(
+                    {
+                        "finding_type": "coverage_gap",
+                        "target_path": filename,
+                        "summary": (
+                            f"line={round(line_rate * 100, 2)}% branch={round(branch_rate * 100, 2)}% "
+                            f"missing_lines={len(missed_lines)} missing_branches={len(missed_branches)}"
+                        ),
+                        "missing_lines": missed_lines[:200],
+                        "missing_branches": missed_branches[:200],
+                        "suggested_test_path": CoverageAgent._suggest_test_path(filename),
+                    }
+                )
+
+        findings.sort(
+            key=lambda item: (
+                -len(item.get("missing_lines", []) or []),
+                -len(item.get("missing_branches", []) or []),
+                item.get("target_path", ""),
+            )
+        )
+        files_sorted = sorted(files, key=lambda x: (x["line_rate"], x["branch_rate"], x["path"]))
+        trimmed = findings[: max(1, int(limit or 25))]
+        return {
+            "path": str(path),
+            "exists": True,
+            "summary": f"{len(findings)} dosyada coverage açığı bulundu.",
+            "files": files_sorted,
+            "findings": trimmed,
+            "total_findings": len(findings),
+        }
+
+    @staticmethod
+    def _build_dynamic_pytest_prompt(*, finding: dict[str, Any], coveragerc: dict[str, Any]) -> str:
+        target = str(finding.get("target_path", "") or "")
+        missing_lines = ", ".join(str(x) for x in (finding.get("missing_lines", []) or [])[:50]) or "-"
+        missing_branches = ", ".join(str(x) for x in (finding.get("missing_branches", []) or [])[:50]) or "-"
+        omit_cfg = coveragerc.get("report", {}).get("omit", "") if isinstance(coveragerc, dict) else ""
+        include_cfg = coveragerc.get("run", {}).get("include", "") if isinstance(coveragerc, dict) else ""
+        return (
+            f"Hedef dosya: {target}\n"
+            f"Önerilen test dosyası: {CoverageAgent._suggest_test_path(target)}\n"
+            f"Eksik satırlar: {missing_lines}\n"
+            f"Eksik branch'ler: {missing_branches}\n"
+            f".coveragerc include: {include_cfg or '-'}\n"
+            f".coveragerc omit: {omit_cfg or '-'}\n\n"
+            "Görev: pytest uyumlu, deterministik ve ağ erişimsiz testler üret.\n"
+            "- Dış servis çağrılarını unittest.mock ile taklit et.\n"
+            "- Gerekirse fixture kullan.\n"
+            "- Hem başarılı (200) hem hata (404/500) akışları için test üret.\n"
+            "- Sadece Python test kodu döndür."
+        )
+
     async def _tool_run_pytest(self, arg: str) -> str:
         payload = self._parse_payload(arg)
         command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
@@ -97,6 +211,23 @@ class CoverageAgent(BaseAgent):
         output = str(payload.get("output", arg) or arg)
         analysis = await asyncio.to_thread(self.code.analyze_pytest_output, output)
         return json.dumps(analysis, ensure_ascii=False)
+
+    async def _tool_analyze_coverage_report(self, arg: str) -> str:
+        payload = self._parse_payload(arg)
+        coverage_xml_path = str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml")
+        coveragerc_path = str(payload.get("coveragerc", ".coveragerc") or ".coveragerc")
+        limit = int(payload.get("limit", 25) or 25)
+        coverage_analysis = self._parse_coverage_xml(coverage_xml_path, limit=limit)
+        coveragerc = self._read_coveragerc(coveragerc_path)
+        return json.dumps(
+            {
+                "summary": coverage_analysis.get("summary", ""),
+                "coverage_xml": coverage_analysis,
+                "coveragerc": coveragerc,
+                "findings": coverage_analysis.get("findings", []),
+            },
+            ensure_ascii=False,
+        )
 
     async def _generate_test_candidate(self, *, target_path: str, pytest_output: str, analysis: dict[str, Any]) -> str:
         read_ok, source_excerpt = await asyncio.to_thread(self.code.read_file, target_path) if target_path else (False, "")
@@ -119,6 +250,17 @@ class CoverageAgent(BaseAgent):
         target_path = str(payload.get("target_path", "") or "")
         pytest_output = str(payload.get("pytest_output", "") or "")
         analysis = payload.get("analysis")
+        coverage_finding = payload.get("coverage_finding") if isinstance(payload.get("coverage_finding"), dict) else None
+        coveragerc = payload.get("coveragerc") if isinstance(payload.get("coveragerc"), dict) else {}
+        if coverage_finding and not target_path:
+            target_path = str(coverage_finding.get("target_path", "") or "")
+        if coverage_finding:
+            payload_prompt = self._build_dynamic_pytest_prompt(finding=coverage_finding, coveragerc=coveragerc)
+            return await self.call_llm(
+                [{"role": "user", "content": payload_prompt}],
+                system_prompt=self.TEST_GENERATION_PROMPT,
+                temperature=0.1,
+            )
         if not isinstance(analysis, dict):
             analysis = await asyncio.to_thread(self.code.analyze_pytest_output, pytest_output)
         return await self._generate_test_candidate(target_path=target_path, pytest_output=pytest_output, analysis=analysis)
@@ -184,6 +326,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("run_pytest", prompt.split("|", 1)[1].strip())
         if lower.startswith("analyze_pytest_output|"):
             return await self.call_tool("analyze_pytest_output", prompt.split("|", 1)[1].strip())
+        if lower.startswith("analyze_coverage_report|"):
+            return await self.call_tool("analyze_coverage_report", prompt.split("|", 1)[1].strip())
         if lower.startswith("generate_missing_tests|"):
             return await self.call_tool("generate_missing_tests", prompt.split("|", 1)[1].strip())
         if lower.startswith("write_missing_tests|"):
