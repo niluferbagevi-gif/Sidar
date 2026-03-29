@@ -160,6 +160,42 @@ class TestQAAgentSuggestTestPath:
         assert "security" in result
 
 
+class TestQAAgentCoverageConfig:
+    def test_coverage_config_summary_reads_coveragerc(self, tmp_path):
+        m = _get_qa()
+        coveragerc = tmp_path / ".coveragerc"
+        coveragerc.write_text(
+            "[run]\n"
+            "omit =\n"
+            "    tests/*\n"
+            "    scripts/*\n\n"
+            "[report]\n"
+            "fail_under = 85\n"
+            "show_missing = true\n"
+            "skip_covered = false\n",
+            encoding="utf-8",
+        )
+        cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+        agent = m.QAAgent(cfg=cfg)
+        summary = agent._coverage_config_summary()
+        assert summary["exists"] is True
+        assert summary["fail_under"] == 85
+        assert summary["show_missing"] is True
+        assert summary["skip_covered"] is False
+        assert summary["omit"] == ["tests/*", "scripts/*"]
+
+    def test_coverage_config_summary_defaults_when_file_missing(self, tmp_path):
+        m = _get_qa()
+        cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path))
+        agent = m.QAAgent(cfg=cfg)
+        summary = agent._coverage_config_summary()
+        assert summary["exists"] is False
+        assert summary["fail_under"] == 0
+        assert summary["show_missing"] is False
+        assert summary["skip_covered"] is False
+        assert summary["omit"] == []
+
+
 class TestQAAgentRunTask:
     @pytest.mark.asyncio
     async def test_empty_prompt_returns_warning(self):
@@ -225,3 +261,31 @@ class TestQAAgentRunTask:
             result = await agent.run_task("coverage_plan|{}")
         parsed = json.loads(result)
         assert "coverage" in parsed
+
+    @pytest.mark.asyncio
+    async def test_generate_test_code_builds_prompt_and_calls_llm(self):
+        m = _get_qa()
+        agent = m.QAAgent()
+        with patch.object(
+            agent,
+            "_coverage_config_summary",
+            return_value={
+                "fail_under": 92,
+                "exists": True,
+                "omit": ["tests/*"],
+                "path": "/tmp/.coveragerc",
+                "show_missing": True,
+                "skip_covered": False,
+            },
+        ):
+            with patch.object(agent, "call_llm", AsyncMock(return_value="def test_case(): pass")) as call_llm:
+                result = await agent._generate_test_code("agent/roles/qa_agent.py", "edge case context")
+        assert "test_case" in result
+        kwargs = call_llm.call_args.kwargs
+        assert kwargs["system_prompt"] == agent.TEST_GENERATION_PROMPT
+        assert kwargs["temperature"] == 0.1
+        prompt_text = call_llm.call_args.args[0][0]["content"]
+        assert "Hedef modül: agent/roles/qa_agent.py" in prompt_text
+        assert "Coverage fail_under: 92" in prompt_text
+        assert "Coverage omit: tests/*" in prompt_text
+        assert "edge case context" in prompt_text
