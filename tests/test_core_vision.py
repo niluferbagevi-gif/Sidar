@@ -282,3 +282,35 @@ class TestVisionPipelineDisabled:
         vp = vision.VisionPipeline(mock_client, _make_config(ENABLE_VISION=False))
         result = _run(vp.mockup_to_code(image_bytes=b"\x89PNG" + b"\x00" * 50))
         assert result["success"] is False
+
+
+class TestVisionPipelineDummyMediaFiles:
+    def test_mockup_to_code_with_dummy_png_file(self, tmp_path):
+        vision = _get_vision()
+        dummy_png = tmp_path / "dummy_ui.png"
+        dummy_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "export default function UI(){return <div>ok</div>}"
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.mockup_to_code(image_path=str(dummy_png), framework="React", language="TypeScript"))
+        assert result["success"] is True
+        assert "export default" in result["code"]
+
+    def test_analyze_with_dummy_image_bytes_and_llm_error(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "gemini"
+
+            async def chat(self, **_kwargs):
+                raise RuntimeError("vision provider unavailable")
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.analyze(image_bytes=b"\x89PNG\r\n\x1a\n" + b"\x00" * 32, mime_type="image/png"))
+        assert result["success"] is False
+        assert "unavailable" in result["reason"]

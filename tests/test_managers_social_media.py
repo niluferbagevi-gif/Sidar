@@ -10,6 +10,8 @@ import json
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 
 def _get_sm():
     if "managers.social_media_manager" in sys.modules:
@@ -359,3 +361,72 @@ class TestSocialMediaApiMocking:
 
         assert ok is True
         assert payload == {"raw": "{broken-json"}
+
+
+class TestSocialMediaPlatformIntegrationMocking:
+    @pytest.mark.parametrize(
+        "method_name, kwargs, mock_side_effect, expected_ok, expected_fragment",
+        [
+            (
+                "publish_instagram_post",
+                {"caption": "merhaba", "image_url": "https://img/x.jpg"},
+                [(True, {"id": "creation_1"}), (True, {"id": "ig_1"})],
+                True,
+                "ig_1",
+            ),
+            (
+                "publish_instagram_post",
+                {"caption": "merhaba", "image_url": "https://img/x.jpg"},
+                [(True, {}), (True, {"id": "ig_1"})],
+                False,
+                "container",
+            ),
+            (
+                "publish_facebook_post",
+                {"message": "fb merhaba", "link_url": "https://example.com"},
+                [(True, {"id": "fb_1"})],
+                True,
+                "fb_1",
+            ),
+            (
+                "publish_facebook_post",
+                {"message": "fb merhaba", "link_url": ""},
+                [(False, "permission denied")],
+                False,
+                "permission denied",
+            ),
+            (
+                "send_whatsapp_message",
+                {"to": "+90555", "text": "selam", "preview_url": True},
+                [(True, {"messages": [{"id": "wa_1"}]})],
+                True,
+                "wa_1",
+            ),
+            (
+                "send_whatsapp_message",
+                {"to": "+90555", "text": "selam", "preview_url": False},
+                [(False, "template not approved")],
+                False,
+                "template not approved",
+            ),
+        ],
+    )
+    def test_platform_publish_paths_with_json_mock_responses(
+        self,
+        method_name,
+        kwargs,
+        mock_side_effect,
+        expected_ok,
+        expected_fragment,
+    ):
+        sm = _get_sm()
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            instagram_business_account_id="ig_account",
+            facebook_page_id="fb_page",
+            whatsapp_phone_number_id="wa_phone",
+        )
+        mgr._post = AsyncMock(side_effect=mock_side_effect)
+        ok, payload = asyncio.run(getattr(mgr, method_name)(**kwargs))
+        assert ok is expected_ok
+        assert expected_fragment.lower() in str(payload).lower()
