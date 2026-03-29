@@ -1,13 +1,16 @@
 """
 managers/web_search.py için birim testleri.
-WebSearchManager: constructor, is_available, status, _truncate_content,
-_clean_html (BeautifulSoup stub), _mark_no_results, _is_actionable_result,
-_normalize_result_text.
+WebSearchManager: constructor, availability/status, search routing,
+content helpers, scrape/fetch wrappers ve docs query helper akışları.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
+from unittest.mock import AsyncMock
+
+import httpx
 
 
 def _stub_deps():
@@ -41,12 +44,9 @@ def _get_ws():
     if "managers.web_search" in sys.modules:
         del sys.modules["managers.web_search"]
     import managers.web_search as ws
+
     return ws
 
-
-# ══════════════════════════════════════════════════════════════
-# Constructor
-# ══════════════════════════════════════════════════════════════
 
 class TestWebSearchManagerInit:
     def test_no_config_defaults(self):
@@ -89,16 +89,10 @@ class TestWebSearchManagerInit:
         assert mgr.MAX_RESULTS == 8
 
 
-# ══════════════════════════════════════════════════════════════
-# is_available
-# ══════════════════════════════════════════════════════════════
-
 class TestIsAvailable:
     def test_false_without_any_engine(self):
         ws = _get_ws()
         mgr = ws.WebSearchManager()
-        # If duckduckgo_search doesn't have DDGS, _ddg_available is False
-        # and no keys are set → False
         mgr._ddg_available = False
         assert mgr.is_available() is False
 
@@ -123,10 +117,6 @@ class TestIsAvailable:
         mgr._ddg_available = False
         assert mgr.is_available() is False
 
-
-# ══════════════════════════════════════════════════════════════
-# status
-# ══════════════════════════════════════════════════════════════
 
 class TestStatus:
     def test_no_engine_message(self):
@@ -159,9 +149,93 @@ class TestStatus:
         assert "AUTO" in result or "Mod" in result
 
 
-# ══════════════════════════════════════════════════════════════
-# _truncate_content
-# ══════════════════════════════════════════════════════════════
+class TestSearchRouting:
+    def test_search_direct_google_mode(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.engine = "google"
+        mgr.google_key = "k"
+        mgr.google_cx = "cx"
+        mgr._search_google = AsyncMock(return_value=(True, "[g]"))
+
+        ok, txt = asyncio.run(mgr.search("query", max_results=50))
+
+        assert ok is True
+        assert txt == "[g]"
+        mgr._search_google.assert_awaited_once_with("query", 10)
+
+    def test_search_fallback_after_tavily_failure(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.engine = "tavily"
+        mgr.tavily_key = "t"
+        mgr.google_key = "g"
+        mgr.google_cx = "cx"
+        mgr._search_tavily = AsyncMock(return_value=(False, "[HATA] Tavily: 401"))
+        mgr._search_google = AsyncMock(return_value=(True, "google-ok"))
+
+        ok, txt = asyncio.run(mgr.search("query"))
+
+        assert ok is True
+        assert txt == "google-ok"
+        mgr._search_tavily.assert_awaited_once()
+        mgr._search_google.assert_awaited_once()
+
+    def test_search_returns_no_engine_error_when_all_missing(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr._ddg_available = False
+        mgr.tavily_key = ""
+        mgr.google_key = ""
+        mgr.google_cx = ""
+
+        ok, txt = asyncio.run(mgr.search("query", max_results="bad"))
+
+        assert ok is False
+        assert "API anahtarları" in txt
+
+
+class TestScrapeAndFetch:
+    def test_fetch_url_wraps_success_content(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.scrape_url = AsyncMock(return_value="clean content")
+
+        ok, txt = asyncio.run(mgr.fetch_url("https://example.com"))
+
+        assert ok is True
+        assert "[URL: https://example.com]" in txt
+        assert "clean content" in txt
+
+    def test_fetch_url_passes_error_text(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.scrape_url = AsyncMock(return_value="Hata: Sayfa içeriği çekilemedi - HTTP 500")
+
+        ok, txt = asyncio.run(mgr.fetch_url("https://example.com"))
+
+        assert ok is False
+        assert "HTTP 500" in txt
+
+    def test_scrape_url_timeout_error_message(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, url):
+                raise httpx.TimeoutException("boom")
+
+        ws.httpx.AsyncClient = lambda **kwargs: _Client()
+
+        txt = asyncio.run(mgr.scrape_url("https://timeout.local"))
+        assert "zaman aşımı" in txt
+
 
 class TestTruncateContent:
     def _mgr(self):
@@ -183,18 +257,55 @@ class TestTruncateContent:
 
     def test_minimum_clamp_at_1000(self):
         mgr = self._mgr()
-        mgr.FETCH_MAX_CHARS = 50  # below minimum → clamped to 1000
+        mgr.FETCH_MAX_CHARS = 50
         text = "a" * 1500
         result = mgr._truncate_content(text)
-        # minimum is 1000, so 1500 > 1000 → truncated
         assert "kesildi" in result
 
 
-# ══════════════════════════════════════════════════════════════
-# _mark_no_results / _is_actionable_result / _normalize_result_text
-# ══════════════════════════════════════════════════════════════
+class TestDocsAndHelpers:
+    def test_search_docs_uses_site_filters_with_tavily(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.tavily_key = "tok"
+        mgr.search = AsyncMock(return_value=(True, "ok"))
 
-class TestResultHelpers:
+        asyncio.run(mgr.search_docs("fastapi", "middleware"))
+
+        called_q = mgr.search.await_args.args[0]
+        assert "site:docs.python.org" in called_q
+
+    def test_search_docs_uses_ddg_friendly_query_without_api_keys(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.tavily_key = ""
+        mgr.google_key = ""
+        mgr.google_cx = ""
+        mgr.search = AsyncMock(return_value=(True, "ok"))
+
+        asyncio.run(mgr.search_docs("pytest", "fixtures"))
+
+        called_q = mgr.search.await_args.args[0]
+        assert "official docs reference" in called_q
+
+    def test_search_stackoverflow_query_variants(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.search = AsyncMock(return_value=(True, "ok"))
+
+        mgr.tavily_key = "k"
+        asyncio.run(mgr.search_stackoverflow("asyncio timeout"))
+        with_site = mgr.search.await_args.args[0]
+
+        mgr.tavily_key = ""
+        mgr.google_key = ""
+        mgr.google_cx = ""
+        asyncio.run(mgr.search_stackoverflow("asyncio timeout"))
+        without_site = mgr.search.await_args.args[0]
+
+        assert with_site.startswith("site:stackoverflow.com")
+        assert without_site.startswith("stackoverflow")
+
     def test_mark_no_results_adds_prefix(self):
         ws = _get_ws()
         result = ws.WebSearchManager._mark_no_results("nothing found")
@@ -224,3 +335,16 @@ class TestResultHelpers:
         ws = _get_ws()
         text = "normal result"
         assert ws.WebSearchManager._normalize_result_text(text) == text
+
+    def test_repr_lists_available_engines(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.tavily_key = "t"
+        mgr.google_key = "g"
+        mgr.google_cx = "cx"
+        mgr._ddg_available = True
+
+        text = repr(mgr)
+        assert "Tavily" in text
+        assert "Google" in text
+        assert "DuckDuckGo" in text
