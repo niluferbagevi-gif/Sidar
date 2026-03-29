@@ -6,7 +6,7 @@ GitHubManager.SAFE_EXTENSIONLESS, constructor (no token).
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def _get_gh():
@@ -187,3 +187,38 @@ class TestGitHubPatchedServiceResponses:
         ok, message = mgr.read_remote_file("credentials")
         assert ok is False
         assert "güvenli listede değil" in message
+
+
+class TestGitHubManagerInitWithPatchedGithubModule:
+    def test_init_uses_patched_github_module_without_real_request(self):
+        gh = _get_gh()
+
+        fake_user = MagicMock()
+        fake_user.login = "sidar-bot"
+        fake_client = MagicMock()
+        fake_client.get_user.return_value = fake_user
+
+        fake_auth = MagicMock()
+        fake_auth.Token.return_value = "token-object"
+        fake_github_ctor = MagicMock(return_value=fake_client)
+
+        with patch.dict(sys.modules, {"github": MagicMock(Auth=fake_auth, Github=fake_github_ctor)}):
+            mgr = gh.GitHubManager(token="ghp_test_token")
+
+        assert mgr._available is True
+        fake_auth.Token.assert_called_once_with("ghp_test_token")
+        fake_github_ctor.assert_called_once_with(auth="token-object")
+
+    def test_init_handles_unauthorized_from_patched_github_module(self):
+        gh = _get_gh()
+
+        fake_client = MagicMock()
+        fake_client.get_user.side_effect = _GitHubHttpError(401, "Unauthorized")
+        fake_auth = MagicMock()
+        fake_auth.Token.return_value = "token-object"
+        fake_github_ctor = MagicMock(return_value=fake_client)
+
+        with patch.dict(sys.modules, {"github": MagicMock(Auth=fake_auth, Github=fake_github_ctor)}):
+            mgr = gh.GitHubManager(token="ghp_invalid")
+
+        assert mgr._available is False
