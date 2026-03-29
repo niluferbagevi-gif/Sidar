@@ -200,6 +200,38 @@ class TestPoyrazAgentTools:
         result = await agent.call_tool("unknown_xyz", "arg")
         assert "HATA" in result or "hata" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_publish_social_json_payload_success_branch(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        agent.social.publish_content = AsyncMock(return_value=(True, "ok-1"))
+
+        payload = {
+            "platform": "instagram",
+            "text": "kampanya metni",
+            "destination": "audience-segment-a",
+            "media_url": "https://img.example.com/promo.jpg",
+            "link_url": "https://example.com",
+        }
+        raw = __import__("json").dumps(payload, ensure_ascii=False)
+        result = await agent._tool_publish_social(raw)
+
+        assert result.startswith("[SOCIAL:PUBLISHED]")
+        assert "platform=instagram" in result
+        agent.social.publish_content.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_publish_social_pipe_payload_error_branch(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        agent.social.publish_content = AsyncMock(return_value=(False, "api down"))
+
+        result = await agent._tool_publish_social("facebook|||metin|||dest|||media|||link")
+
+        assert result.startswith("[SOCIAL:ERROR]")
+        assert "platform=facebook" in result
+        assert "api down" in result
+
 
 class TestPoyrazAgentPromptVariations:
     @pytest.mark.parametrize(

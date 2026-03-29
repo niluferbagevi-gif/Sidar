@@ -294,3 +294,116 @@ class TestYouTubeApiMocking:
 
         assert result["success"] is False
         assert "bulunamadı" in result["reason"].lower()
+
+
+class TestYouTubeVideoAnalysisBranches:
+    def test_analyze_video_file_missing_path_returns_failure(self, tmp_path):
+        yt = _get_yt()
+        mgr = yt.YouTubeManager(llm_client=object())
+        missing = tmp_path / "missing.mp4"
+
+        result = asyncio.run(mgr.analyze_video_file(missing))
+
+        assert result["success"] is False
+        assert "bulunamadı" in result["reason"].lower()
+
+    def test_analyze_video_file_without_llm_client_returns_failure(self, tmp_path):
+        yt = _get_yt()
+        video = tmp_path / "sample.mp4"
+        video.write_bytes(b"fake")
+        mgr = yt.YouTubeManager(llm_client=None)
+
+        result = asyncio.run(mgr.analyze_video_file(video))
+
+        assert result["success"] is False
+        assert "llm_client gerekli" in result["reason"].lower()
+
+    def test_analyze_video_file_success_builds_context(self, tmp_path, monkeypatch):
+        yt = _get_yt()
+        video = tmp_path / "sample.mp4"
+        video.write_bytes(b"fake")
+
+        class _Frame:
+            def __init__(self, path: str, ts: float):
+                self.path = path
+                self.timestamp_seconds = ts
+
+        async def _fake_extract(*args, **kwargs):
+            return [_Frame("f1.png", 1.0), _Frame("f2.png", 2.5)]
+
+        class _FakeVision:
+            def __init__(self, llm, cfg):
+                self.llm = llm
+                self.cfg = cfg
+
+            async def analyze(self, image_path, analysis_type="general"):
+                return {"success": True, "analysis": f"{analysis_type}:{image_path}"}
+
+        def _fake_context(**kwargs):
+            return {"kind": kwargs["media_kind"], "count": len(kwargs["frame_analyses"])}
+
+        monkeypatch.setattr(yt, "extract_video_frames", _fake_extract)
+        monkeypatch.setattr(yt, "VisionPipeline", _FakeVision)
+        monkeypatch.setattr(yt, "build_multimodal_context", _fake_context)
+
+        mgr = yt.YouTubeManager(llm_client=object())
+        result = asyncio.run(
+            mgr.analyze_video_file(
+                video,
+                analysis_type="marketing",
+                frame_interval_seconds=3.0,
+                max_frames=2,
+                extra_notes="not",
+            )
+        )
+
+        assert result["success"] is True
+        assert result["video_path"] == str(video)
+        assert len(result["frame_analyses"]) == 2
+        assert result["context"]["count"] == 2
+
+    def test_build_video_analysis_returns_failure_when_file_analysis_fails(self, tmp_path, monkeypatch):
+        yt = _get_yt()
+        video = tmp_path / "sample.mp4"
+        video.write_bytes(b"fake")
+        mgr = yt.YouTubeManager(llm_client=object())
+
+        monkeypatch.setattr(
+            mgr,
+            "fetch_transcript",
+            types.MethodType(lambda self, *a, **k: asyncio.sleep(0, result={"success": True, "text": "ok"}), mgr),
+        )
+        monkeypatch.setattr(
+            mgr,
+            "analyze_video_file",
+            types.MethodType(lambda self, *a, **k: asyncio.sleep(0, result={"success": False, "reason": "boom"}), mgr),
+        )
+
+        result = asyncio.run(mgr.build_video_analysis(video_url="https://youtu.be/dQw4w9WgXcQ", video_path=video))
+        assert result["success"] is False
+        assert result["reason"] == "boom"
+
+    def test_build_video_analysis_success_includes_video_metadata(self, tmp_path, monkeypatch):
+        yt = _get_yt()
+        video = tmp_path / "sample.mp4"
+        video.write_bytes(b"fake")
+        mgr = yt.YouTubeManager(llm_client=object())
+
+        monkeypatch.setattr(
+            mgr,
+            "fetch_transcript",
+            types.MethodType(
+                lambda self, *a, **k: asyncio.sleep(0, result={"success": True, "video_id": "dQw4w9WgXcQ", "text": "t"}),
+                mgr,
+            ),
+        )
+        monkeypatch.setattr(
+            mgr,
+            "analyze_video_file",
+            types.MethodType(lambda self, *a, **k: asyncio.sleep(0, result={"success": True, "frame_analyses": [], "context": {}}), mgr),
+        )
+
+        result = asyncio.run(mgr.build_video_analysis(video_url="https://youtu.be/dQw4w9WgXcQ", video_path=video))
+        assert result["success"] is True
+        assert result["video_url"] == "https://youtu.be/dQw4w9WgXcQ"
+        assert result["video_id"] == "dQw4w9WgXcQ"
