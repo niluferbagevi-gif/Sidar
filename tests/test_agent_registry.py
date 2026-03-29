@@ -175,6 +175,17 @@ class TestAgentRegistryDecorator:
 
         assert ReturnedAgent.custom_attr == 42
 
+    def test_register_decorator_infers_role_and_description_from_class(self):
+        reg = _get_registry()
+
+        @reg.AgentRegistry.register()
+        class InsightAgent:
+            """İçgörü üretir."""
+
+        spec = reg.AgentRegistry.get("insight")
+        assert spec is not None
+        assert spec.description == "İçgörü üretir."
+
 
 class TestAgentRegistryCreate:
     def test_create_agent(self):
@@ -193,3 +204,27 @@ class TestAgentRegistryCreate:
         import pytest
         with pytest.raises(KeyError, match="kayıt defterinde bulunamadı"):
             reg.AgentRegistry.create("unknown_role_xyz")
+
+
+class TestRegisterBuiltinAgents:
+    def test_register_builtin_agents_registers_importable_roles(self):
+        reg = _get_registry()
+        reg.AgentRegistry._registry.clear()
+
+        role_map = {
+            "agent.roles.coder_agent": "CoderAgent",
+            "agent.roles.researcher_agent": "ResearcherAgent",
+            "agent.roles.reviewer_agent": "ReviewerAgent",
+            "agent.roles.poyraz_agent": "PoyrazAgent",
+            "agent.roles.coverage_agent": "CoverageAgent",
+            "agent.roles.qa_agent": "QAAgent",
+        }
+        for module_name, class_name in role_map.items():
+            mod = types.ModuleType(module_name)
+            setattr(mod, class_name, type(class_name, (), {}))
+            sys.modules[module_name] = mod
+
+        reg._register_builtin_agents()
+
+        for role_name in ("coder", "researcher", "reviewer", "poyraz", "coverage", "qa"):
+            assert reg.AgentRegistry.get(role_name) is not None
