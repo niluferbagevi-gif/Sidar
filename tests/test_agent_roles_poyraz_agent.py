@@ -449,3 +449,148 @@ class TestPoyrazAdditionalCoverage:
             '{"tenant_id":"t1","title":"ops","items":[],"status":"pending","owner_user_id":"u1","campaign_id":77}'
         )
         assert __import__("json").loads(checklist)["checklist"]["id"] == 34
+
+
+class TestPoyrazAgentScenarioParametrized:
+    @pytest.mark.parametrize(
+        "tool_method, payload, expected_mode, should_persist",
+        [
+            (
+                "_tool_build_landing_page",
+                {
+                    "brand_name": "Sidar",
+                    "offer": "AI destekli CRM",
+                    "audience": "KOBİ",
+                    "call_to_action": "Demo iste",
+                    "tone": "professional",
+                    "sections": ["hero", "social proof"],
+                    "store_asset": True,
+                    "campaign_id": 11,
+                    "tenant_id": "tenant-a",
+                    "asset_title": "LP A",
+                    "channel": "web",
+                },
+                "landing_page",
+                True,
+            ),
+            (
+                "_tool_generate_campaign_copy",
+                {
+                    "campaign_name": "Bahar Satışı",
+                    "objective": "lead",
+                    "audience": "Genç ebeveyn",
+                    "channels": ["instagram", "facebook"],
+                    "offer": "%20 indirim",
+                    "tone": "enerjik",
+                    "call_to_action": "Hemen katıl",
+                    "store_asset": False,
+                    "campaign_id": 12,
+                    "tenant_id": "tenant-b",
+                    "asset_title": "Copy B",
+                },
+                "campaign_copy_tool",
+                False,
+            ),
+        ],
+    )
+    def test_content_production_scenarios_with_json_payload(
+        self,
+        monkeypatch,
+        tool_method,
+        payload,
+        expected_mode,
+        should_persist,
+    ):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="generated-output"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        raw = __import__("json").dumps(payload, ensure_ascii=False)
+        result = asyncio.run(getattr(agent, tool_method)(raw))
+
+        assert result == "generated-output"
+        agent._generate_marketing_output.assert_awaited_once()
+        called_mode = agent._generate_marketing_output.await_args.args[1]
+        assert called_mode == expected_mode
+        if should_persist:
+            agent._persist_content_asset.assert_awaited_once()
+        else:
+            agent._persist_content_asset.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "tool_method, raw_arg, expected_source, expected_max_frames",
+        [
+            ("_tool_ingest_video_insights", "https://video|||Özetle|||tr|||mkt-session|||4", "https://video", 4),
+            (
+                "_tool_ingest_video_insights",
+                '{"source_url":"https://video-json","prompt":"Analiz et","language":"tr","session_id":"sess-1","max_frames":2,"frame_interval_seconds":1.5}',
+                "https://video-json",
+                2,
+            ),
+        ],
+    )
+    def test_video_insight_scenarios_with_parameterized_inputs(
+        self,
+        tool_method,
+        raw_arg,
+        expected_source,
+        expected_max_frames,
+    ):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        pipe_mod = types.ModuleType("core.multimodal")
+        pipeline = MagicMock()
+        pipeline.analyze_media_source = AsyncMock(
+            return_value={"success": True, "scene_summary": "ok", "document_ingest": {"doc_id": "doc-42"}}
+        )
+        pipe_mod.MultimodalPipeline = MagicMock(return_value=pipeline)
+        sys.modules["core.multimodal"] = pipe_mod
+
+        result = asyncio.run(getattr(agent, tool_method)(raw_arg))
+
+        assert result.startswith("[VIDEO:INGESTED]")
+        kwargs = pipeline.analyze_media_source.await_args.kwargs
+        assert kwargs["media_source"] == expected_source
+        assert kwargs["max_frames"] == expected_max_frames
+
+    @pytest.mark.parametrize(
+        "prompt, expected_type, expected_target",
+        [
+            ("build_landing_page|brief", "tool", "build_landing_page"),
+            ("landing_page|brief", "tool", "build_landing_page"),
+            ("generate_campaign_copy|brief", "tool", "generate_campaign_copy"),
+            ("publish_instagram_post|{\"caption\":\"x\",\"image_url\":\"y\"}", "tool", "publish_instagram_post"),
+            ("publish_facebook_post|{\"message\":\"x\",\"link_url\":\"y\"}", "tool", "publish_facebook_post"),
+            ("send_whatsapp_message|{\"to\":\"+90\",\"text\":\"hi\",\"preview_url\":true}", "tool", "send_whatsapp_message"),
+            ("ingest_video_insights|https://v|||özet|||tr|||s1|||2", "tool", "ingest_video_insights"),
+            ("analyze_video|https://v|||özet|||tr|||s1|||2", "tool", "ingest_video_insights"),
+            ("create_marketing_campaign|{\"tenant_id\":\"t\",\"name\":\"n\",\"channel\":\"c\",\"objective\":\"o\",\"status\":\"draft\",\"owner_user_id\":\"u\",\"budget\":1,\"metadata\":{}}", "tool", "create_marketing_campaign"),
+            ("store_content_asset|{\"campaign_id\":1,\"tenant_id\":\"t\",\"asset_type\":\"copy\",\"title\":\"ttl\",\"content\":\"txt\",\"channel\":\"ig\",\"metadata\":{}}", "tool", "store_content_asset"),
+            ("create_operation_checklist|{\"tenant_id\":\"t\",\"title\":\"ops\",\"items\":[],\"status\":\"pending\",\"owner_user_id\":\"u\",\"campaign_id\":1}", "tool", "create_operation_checklist"),
+            ("plan_service_operations|{\"campaign_name\":\"K\",\"service_name\":\"S\",\"audience\":\"A\",\"menu_plan\":{},\"vendor_assignments\":{},\"timeline\":[],\"notes\":\"\",\"persist_checklist\":false}", "tool", "plan_service_operations"),
+            ("seo_audit|teknik denetim", "mode", "seo_audit"),
+            ("campaign_copy|kanal metni", "mode", "campaign_copy"),
+            ("audience_ops|segmentasyon", "mode", "audience_ops"),
+            ("research_to_marketing|araştırmayı plana çevir", "mode", "research_to_marketing"),
+            ("Bu bir landing page metni olsun", "tool", "build_landing_page"),
+            ("Yeni SEO ve pazarlama funnel operasyonu hazırla", "mode", "marketing_strategy"),
+            ("Tamamen nötr bir metin", "mode", "marketing_general"),
+        ],
+    )
+    def test_run_task_routes_for_marketing_and_operations(self, monkeypatch, prompt, expected_type, expected_target):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "call_tool", AsyncMock(return_value="TOOL_OK"))
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="MODE_OK"))
+
+        result = asyncio.run(agent.run_task(prompt))
+
+        if expected_type == "tool":
+            assert result == "TOOL_OK"
+            called_tool = agent.call_tool.await_args.args[0]
+            assert called_tool == expected_target
+        else:
+            assert result == "MODE_OK"
+            called_mode = agent._generate_marketing_output.await_args.args[1]
+            assert called_mode == expected_target
