@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import types
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 
 def _get_yt():
@@ -138,6 +139,13 @@ class TestNormalizeTranscriptEvents:
         yt = _get_yt()
         result = yt.YouTubeManager._normalize_transcript_events(["bad", 42])  # type: ignore
         assert result["text"] == ""
+
+    def test_non_list_segs_skipped(self):
+        yt = _get_yt()
+        events = [{"tStartMs": 0, "dDurationMs": 1000, "segs": "invalid"}]
+        result = yt.YouTubeManager._normalize_transcript_events(events)  # type: ignore[arg-type]
+        assert result["text"] == ""
+        assert result["segments"] == []
 
 
 # ══════════════════════════════════════════════════════════════
@@ -295,6 +303,33 @@ class TestYouTubeApiMocking:
         assert result["success"] is False
         assert "bulunamadı" in result["reason"].lower()
 
+    def test_fetch_transcript_uses_patch_with_httpx_client(self):
+        yt = _get_yt()
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"events": [{"tStartMs": 0, "dDurationMs": 700, "segs": [{"utf8": "Patch test"}]}]}
+
+        get_mock = AsyncMock(return_value=_Resp())
+        client_mock = AsyncMock()
+        client_mock.get = get_mock
+
+        cm_mock = AsyncMock()
+        cm_mock.__aenter__.return_value = client_mock
+        cm_mock.__aexit__.return_value = False
+
+        with patch.object(yt.httpx, "AsyncClient", return_value=cm_mock):
+            mgr = yt.YouTubeManager(http_client_factory=yt.httpx.AsyncClient)
+            result = asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr",)))
+
+        assert result["success"] is True
+        assert result["language"] == "tr"
+        assert "Patch test" in result["text"]
+        get_mock.assert_awaited_once()
+
 
 class TestYouTubeVideoAnalysisBranches:
     def test_analyze_video_file_missing_path_returns_failure(self, tmp_path):
@@ -407,3 +442,30 @@ class TestYouTubeVideoAnalysisBranches:
         assert result["success"] is True
         assert result["video_url"] == "https://youtu.be/dQw4w9WgXcQ"
         assert result["video_id"] == "dQw4w9WgXcQ"
+
+    def test_analyze_video_file_with_patch_mocks_external_dependencies(self, tmp_path):
+        yt = _get_yt()
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"fake")
+
+        class _Frame:
+            def __init__(self, path: str, ts: float):
+                self.path = path
+                self.timestamp_seconds = ts
+
+        fake_frames = [_Frame("f1.png", 1.2)]
+
+        vision_instance = AsyncMock()
+        vision_instance.analyze = AsyncMock(return_value={"success": True, "analysis": "ok"})
+
+        with (
+            patch.object(yt, "extract_video_frames", AsyncMock(return_value=fake_frames)),
+            patch.object(yt, "VisionPipeline", return_value=vision_instance),
+            patch.object(yt, "build_multimodal_context", return_value={"kind": "video", "count": 1}),
+        ):
+            mgr = yt.YouTubeManager(llm_client=object())
+            result = asyncio.run(mgr.analyze_video_file(video, analysis_type="general"))
+
+        assert result["success"] is True
+        assert result["frame_analyses"][0]["analysis"] == "ok"
+        assert result["context"]["count"] == 1

@@ -283,3 +283,34 @@ class TestBaseAgentHandle:
         assert result.summary.task_id == "task-3"
         assert result.summary.parent_task_id == "root-task"
         assert result.summary.handoff_depth == 4
+
+    @pytest.mark.asyncio
+    async def test_handle_keeps_existing_delegation_ids(self):
+        ba = _get_base_agent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        class DelegatingAgent(ba.BaseAgent):
+            async def run_task(self, task_prompt: str):
+                return contracts.DelegationRequest(
+                    task_id="already-set",
+                    reply_to=self.role_name,
+                    target_agent="reviewer",
+                    payload=task_prompt,
+                    parent_task_id="existing-parent",
+                    handoff_depth=2,
+                )
+
+        agent = DelegatingAgent(role_name="coder")
+        envelope = contracts.TaskEnvelope(
+            task_id="task-override",
+            sender="swarm",
+            receiver="coder",
+            goal="delegasyon görevi",
+            parent_task_id="root-task",
+            context={"p2p_handoff_depth": "1"},
+        )
+
+        result = await agent.handle(envelope)
+        assert result.summary.task_id == "already-set"
+        assert result.summary.parent_task_id == "existing-parent"
+        assert result.summary.handoff_depth == 2
