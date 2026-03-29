@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import asyncio
 import sys
 import types
 from pathlib import Path
@@ -425,6 +426,30 @@ class TestSerializeCollaborationRoom:
         result = ws._serialize_collaboration_room(room)
         assert len(result["messages"]) == 120
 
+    def test_participants_sorted_case_insensitive_by_display_name(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        room.participants = {
+            1: ws._CollaborationParticipant(types.SimpleNamespace(), "u1", "z", "zeta"),
+            2: ws._CollaborationParticipant(types.SimpleNamespace(), "u2", "a", "Alpha"),
+        }
+        result = ws._serialize_collaboration_room(room)
+        assert [item["display_name"] for item in result["participants"]] == ["Alpha", "zeta"]
+
+
+class TestCollaborationParticipantCompat:
+    def test_legacy_joined_at_passed_as_role_argument_is_supported(self):
+        ws = _get_web_server()
+        participant = ws._CollaborationParticipant(
+            websocket=types.SimpleNamespace(),
+            user_id="u-legacy",
+            username="legacy",
+            display_name="Legacy User",
+            role="2026-03-28T12:00:00+00:00",
+        )
+        assert participant.role == "user"
+        assert participant.joined_at == "2026-03-28T12:00:00+00:00"
+
 
 class TestMaskCollaborationText:
     def test_returns_string_when_dlp_unavailable(self):
@@ -821,6 +846,54 @@ class TestResolveCiFailureContext:
         monkeypatch.setattr(ws, "build_ci_failure_context", lambda e, p: {})
         result = ws._resolve_ci_failure_context("push", {"action": "opened"})
         assert result == {}
+
+
+class _WSClient:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.sent: list[dict] = []
+
+    async def send_json(self, payload: dict) -> None:
+        if self.fail:
+            raise RuntimeError("send failed")
+        self.sent.append(payload)
+
+
+class TestCollaborationRoomAsync:
+    @pytest.mark.asyncio
+    async def test_broadcast_room_payload_removes_stale_participants(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        healthy = ws._CollaborationParticipant(_WSClient(), "u1", "ok", "OK")
+        stale = ws._CollaborationParticipant(_WSClient(fail=True), "u2", "bad", "BAD")
+        room.participants = {1: healthy, 2: stale}
+
+        await ws._broadcast_room_payload(room, {"type": "ping"})
+
+        assert 1 in room.participants
+        assert 2 not in room.participants
+        assert healthy.websocket.sent == [{"type": "ping"}]
+
+    @pytest.mark.asyncio
+    async def test_leave_collaboration_room_cancels_active_task_for_empty_room(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        websocket = _WSClient()
+        room.participants[ws._socket_key(websocket)] = ws._CollaborationParticipant(
+            websocket,
+            "u1",
+            "ali",
+            "Ali",
+        )
+        ws._collaboration_rooms["workspace:default"] = room
+        setattr(websocket, "_sidar_room_id", "workspace:default")
+
+        room.active_task = asyncio.create_task(asyncio.sleep(60))
+        await ws._leave_collaboration_room(websocket)
+        await asyncio.sleep(0)
+
+        assert "workspace:default" not in ws._collaboration_rooms
+        assert room.active_task.cancelled() is True
 
 
 class TestEmbedEventDrivenFederationPayload:

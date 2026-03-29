@@ -369,3 +369,96 @@ class TestDefaultDeriveCorrelationId:
         sa = _get_sidar_agent()
         result = sa._default_derive_correlation_id("", None, "")
         assert result == ""
+
+
+class TestSidarAgentAutonomousSelfHealLoop:
+    def test_needs_human_approval_sets_awaiting_hitl(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+
+        remediation = {
+            "remediation_loop": {
+                "status": "planned",
+                "needs_human_approval": True,
+                "steps": [{"name": "handoff", "status": "pending", "detail": ""}],
+            }
+        }
+
+        async def _run_case():
+            result = await agent._attempt_autonomous_self_heal(
+                ci_context={},
+                diagnosis="riskli değişiklik",
+                remediation=remediation,
+            )
+            assert result["status"] == "awaiting_hitl"
+            assert remediation["remediation_loop"]["steps"][0]["status"] == "awaiting_hitl"
+
+        asyncio.run(_run_case())
+
+    def test_successful_self_heal_marks_loop_as_applied(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+
+        remediation = {
+            "remediation_loop": {
+                "status": "planned",
+                "needs_human_approval": False,
+                "steps": [
+                    {"name": "patch", "status": "pending", "detail": ""},
+                    {"name": "validate", "status": "pending", "detail": ""},
+                    {"name": "handoff", "status": "pending", "detail": ""},
+                ],
+            }
+        }
+        fake_plan = {"operations": [{"path": "x.py"}], "validation_commands": ["pytest -q"], "summary": "ok"}
+        fake_execution = {"status": "applied", "summary": "done", "operations_applied": ["x.py"], "validation_results": [{}]}
+
+        async def _run_case():
+            with patch.object(agent, "_build_self_heal_plan", AsyncMock(return_value=fake_plan)):
+                with patch.object(agent, "_execute_self_heal_plan", AsyncMock(return_value=fake_execution)):
+                    result = await agent._attempt_autonomous_self_heal(
+                        ci_context={},
+                        diagnosis="ci failed",
+                        remediation=remediation,
+                    )
+            assert result["status"] == "applied"
+            assert remediation["remediation_loop"]["status"] == "applied"
+            assert remediation["remediation_loop"]["steps"][0]["status"] == "completed"
+            assert remediation["remediation_loop"]["steps"][1]["status"] == "completed"
+
+        asyncio.run(_run_case())
+
+    def test_failed_self_heal_marks_patch_and_validate_failed(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+
+        remediation = {
+            "remediation_loop": {
+                "status": "planned",
+                "needs_human_approval": False,
+                "steps": [
+                    {"name": "patch", "status": "pending", "detail": ""},
+                    {"name": "validate", "status": "pending", "detail": ""},
+                ],
+            }
+        }
+        fake_plan = {"operations": [{"path": "x.py"}], "validation_commands": ["pytest -q"], "summary": "ok"}
+        fake_execution = {"status": "reverted", "summary": "rollback yapıldı", "operations_applied": [], "validation_results": []}
+
+        async def _run_case():
+            with patch.object(agent, "_build_self_heal_plan", AsyncMock(return_value=fake_plan)):
+                with patch.object(agent, "_execute_self_heal_plan", AsyncMock(return_value=fake_execution)):
+                    result = await agent._attempt_autonomous_self_heal(
+                        ci_context={},
+                        diagnosis="ci failed",
+                        remediation=remediation,
+                    )
+            assert result["status"] == "reverted"
+            assert remediation["remediation_loop"]["status"] == "reverted"
+            assert remediation["remediation_loop"]["steps"][0]["status"] == "failed"
+            assert remediation["remediation_loop"]["steps"][1]["status"] == "failed"
+
+        asyncio.run(_run_case())

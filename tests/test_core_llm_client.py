@@ -516,3 +516,119 @@ class TestOpenAIApiMocking:
         assert exc_info.value.status_code == 500
         assert exc_info.value.retryable is True
         assert fake_client.post.await_count == 2  # 1 ilk çağrı + 1 retry
+
+
+class TestGeminiAndAnthropicApiMocking:
+    def test_gemini_timeout_in_stream_returns_fallback_error_chunk(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            GEMINI_API_KEY = "gem-key"
+            GEMINI_MODEL = "gemini-1.5-flash"
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _ChatSession:
+            async def send_message_async(self, _prompt, stream=False):
+                assert stream is True
+                raise asyncio.TimeoutError("gemini timeout")
+
+        class _Model:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start_chat(self, history=None):
+                return _ChatSession()
+
+        fake_genai = types.SimpleNamespace(
+            configure=lambda **kwargs: None,
+            GenerativeModel=_Model,
+        )
+        fake_google_pkg = types.ModuleType("google")
+        fake_google_pkg.generativeai = fake_genai
+        monkeypatch.setitem(sys.modules, "google", fake_google_pkg)
+        monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+
+        client = lc.GeminiClient(_Cfg())
+
+        async def _collect():
+            stream_iter = await client.chat([{"role": "user", "content": "selam"}], stream=True, json_mode=True)
+            chunks = []
+            async for item in stream_iter:
+                chunks.append(item)
+            return chunks
+
+        chunks = _run(_collect())
+        assert len(chunks) == 1
+        assert "Gemini" in chunks[0]
+        assert '"tool": "final_answer"' in chunks[0]
+
+    def test_anthropic_429_raises_retryable_llm_api_error(self, monkeypatch):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            ANTHROPIC_API_KEY = "anth-key"
+            ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+            ANTHROPIC_TIMEOUT = 15
+            LLM_MAX_RETRIES = 1
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _RateLimitError(Exception):
+            def __init__(self):
+                super().__init__("rate limit")
+                self.status_code = 429
+
+        class _MessagesAPI:
+            async def create(self, **kwargs):
+                raise _RateLimitError()
+
+        class _AsyncAnthropic:
+            def __init__(self, *args, **kwargs):
+                self.messages = _MessagesAPI()
+
+        fake_anthropic_module = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
+        monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic_module)
+
+        client = lc.AnthropicClient(_Cfg())
+        with pytest.raises(lc.LLMAPIError) as exc_info:
+            _run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "anthropic"
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retryable is True
+
+    def test_anthropic_timeout_raises_retryable_llm_api_error(self, monkeypatch):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            ANTHROPIC_API_KEY = "anth-key"
+            ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+            ANTHROPIC_TIMEOUT = 15
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _MessagesAPI:
+            async def create(self, **kwargs):
+                raise asyncio.TimeoutError("request timed out")
+
+        class _AsyncAnthropic:
+            def __init__(self, *args, **kwargs):
+                self.messages = _MessagesAPI()
+
+        fake_anthropic_module = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
+        monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic_module)
+
+        client = lc.AnthropicClient(_Cfg())
+        with pytest.raises(lc.LLMAPIError) as exc_info:
+            _run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=True))
+
+        assert exc_info.value.status_code is None
+        assert exc_info.value.retryable is True
