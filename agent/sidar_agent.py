@@ -222,6 +222,29 @@ class SidarAgent:
         )
 
 
+    def _parse_tool_call(self, raw: str) -> Optional[Dict[str, Any]]:
+        """Ham LLM çıktısını araç çağrısı sözlüğüne dönüştürür.
+
+        Markdown JSON bloklarını (```json ... ```) soyar, JSON parse eder.
+        Geçersiz JSON durumunda ``final_answer`` aracına yönlendirir.
+        ``tool`` anahtarı eksikse varsayılan olarak ``final_answer`` atanır.
+        """
+        import re as _re
+        text = raw.strip() if isinstance(raw, str) else ""
+        # Markdown ```json ... ``` veya ``` ... ``` bloğunu soy
+        md_match = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if md_match:
+            text = md_match.group(1).strip()
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return {"tool": "final_answer", "argument": raw}
+        if not isinstance(data, dict):
+            return {"tool": "final_answer", "argument": raw}
+        if "tool" not in data:
+            data["tool"] = "final_answer"
+        return data
+
     async def initialize(self) -> None:
         if self._initialized:
             return
