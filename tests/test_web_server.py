@@ -1264,6 +1264,119 @@ class TestRegisterExceptionHandlers:
         assert fake_logger.exception.call_count == 1
 
 
+class TestBasicAuthMiddleware:
+    def test_open_path_bypasses_auth(self):
+        ws = _get_web_server()
+        called = []
+
+        async def _next(_request):
+            called.append(True)
+            return {"ok": True}
+
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/health"),
+            headers={},
+            state=types.SimpleNamespace(),
+        )
+
+        result = asyncio.run(ws.basic_auth_middleware(request, _next))
+        assert result == {"ok": True}
+        assert called == [True]
+
+    def test_missing_bearer_header_returns_401(self):
+        ws = _get_web_server()
+        ws.JSONResponse = lambda payload, status_code=500: {"payload": payload, "status_code": status_code}
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/secure"),
+            headers={},
+            state=types.SimpleNamespace(),
+        )
+        async def _next(_request):
+            return {"ok": True}
+
+        response = asyncio.run(ws.basic_auth_middleware(request, _next))
+        assert response["status_code"] == 401
+
+    def test_empty_token_returns_401(self):
+        ws = _get_web_server()
+        ws.JSONResponse = lambda payload, status_code=500: {"payload": payload, "status_code": status_code}
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/secure"),
+            headers={"Authorization": "Bearer    "},
+            state=types.SimpleNamespace(),
+        )
+        async def _next(_request):
+            return {"ok": True}
+
+        response = asyncio.run(ws.basic_auth_middleware(request, _next))
+        assert response["status_code"] == 401
+
+    def test_invalid_user_from_token_returns_401(self, monkeypatch):
+        ws = _get_web_server()
+        ws.JSONResponse = lambda payload, status_code=500: {"payload": payload, "status_code": status_code}
+        async def _resolve_user(_request, _token):
+            return None
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _resolve_user)
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/secure"),
+            headers={"Authorization": "Bearer t1"},
+            state=types.SimpleNamespace(),
+        )
+        async def _next(_request):
+            return {"ok": True}
+
+        response = asyncio.run(ws.basic_auth_middleware(request, _next))
+        assert response["status_code"] == 401
+
+    def test_valid_token_sets_user_and_resets_metrics_context(self, monkeypatch):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(id="u1", username="ali")
+        metrics_tokens = []
+        reset_tokens = []
+        active_users = []
+        next_called = []
+
+        async def _fake_next(_request):
+            next_called.append(True)
+            return {"ok": True}
+
+        class _Memory:
+            async def set_active_user(self, user_id, username):
+                active_users.append((user_id, username))
+
+        class _Agent:
+            memory = _Memory()
+
+        async def _resolve_user(_request, _token):
+            return user
+
+        async def _get_agent():
+            return _Agent()
+
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _resolve_user)
+        monkeypatch.setattr(ws, "get_agent", _get_agent)
+        monkeypatch.setattr(ws, "set_current_metrics_user_id", lambda uid: metrics_tokens.append(uid) or "tok-1")
+        monkeypatch.setattr(ws, "reset_current_metrics_user_id", lambda token: reset_tokens.append(token))
+
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/secure"),
+            headers={"Authorization": "Bearer valid-token"},
+            state=types.SimpleNamespace(),
+        )
+        result = asyncio.run(ws.basic_auth_middleware(request, _fake_next))
+
+        assert result == {"ok": True}
+        assert request.state.user is user
+        assert active_users == [("u1", "ali")]
+        assert metrics_tokens == ["u1"]
+        assert reset_tokens == ["tok-1"]
+        assert next_called == [True]
+
 class TestResolvePolicyFromRequest:
     def _make_request(self, path, method="GET"):
         url = types.SimpleNamespace(path=path)
