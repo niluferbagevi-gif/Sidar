@@ -385,6 +385,12 @@ class TestBrokerTaskResult:
         br = c.BrokerTaskResult(task_id="t1", sender="s", receiver="r", status="success", summary="özet")
         assert "[BROKER RESULT]" in br.to_prompt()
 
+    def test_explicit_routing_key_not_overridden(self):
+        c = _get_contracts()
+        br = c.BrokerTaskResult(
+            task_id="t1", sender="s", receiver="r", status="success", summary="özet", routing_key="custom.result"
+        )
+        assert br.routing_key == "custom.result"
 
 class TestActionFeedback:
     def test_post_init_derives_correlation_id(self):
