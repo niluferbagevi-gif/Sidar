@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
+from unittest.mock import patch
 
 
 def _get_em():
@@ -183,6 +184,43 @@ class TestEntityMemoryNoEngine:
         instance = em.EntityMemory(ttl_days=0)
         result = _run(instance.purge_expired())
         assert result == 0
+
+
+class TestGetEntityMemorySingleton:
+    def setup_method(self):
+        em = _get_em()
+        em._instance = None
+        self.em = em
+
+    def test_uses_given_config_and_returns_singleton(self):
+        cfg = types.SimpleNamespace(
+            DATABASE_URL="sqlite+aiosqlite:///:memory:",
+            ENTITY_MEMORY_TTL_DAYS=5,
+            ENTITY_MEMORY_MAX_PER_USER=12,
+            ENABLE_ENTITY_MEMORY=True,
+        )
+        first = self.em.get_entity_memory(config=cfg)
+        second = self.em.get_entity_memory(config=cfg)
+        assert first is second
+        assert first._db_url == "sqlite+aiosqlite:///:memory:"
+        assert first.ttl_days == 5
+        assert first.max_per_user == 12
+
+    def test_without_config_uses_config_module_default(self):
+        fake_config_module = types.ModuleType("config")
+
+        class _Cfg:
+            DATABASE_URL = "sqlite+aiosqlite:///tmp/sidar-test.db"
+            ENTITY_MEMORY_TTL_DAYS = 90
+            ENTITY_MEMORY_MAX_PER_USER = 100
+            ENABLE_ENTITY_MEMORY = True
+
+        fake_config_module.Config = _Cfg
+
+        with patch.dict(sys.modules, {"config": fake_config_module}):
+            instance = self.em.get_entity_memory()
+
+        assert instance._db_url == "sqlite+aiosqlite:///tmp/sidar-test.db"
 
 
 # ══════════════════════════════════════════════════════════════

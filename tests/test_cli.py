@@ -385,6 +385,20 @@ class TestInteractiveLoopAsync:
 
         asyncio.run(run())
 
+    def test_cancelled_error_from_input_breaks_loop(self):
+        cli = _get_cli()
+        agent = _make_agent()
+
+        async def fake_to_thread(fn, *a, **k):
+            raise asyncio.CancelledError
+
+        async def run():
+            with patch("asyncio.to_thread", side_effect=fake_to_thread):
+                with patch("builtins.print"):
+                    await cli._interactive_loop_async(agent)
+
+        asyncio.run(run())
+
     def test_agent_respond_called_for_freetext(self):
         cli = _get_cli()
         agent = _make_agent()
@@ -408,6 +422,27 @@ class TestInteractiveLoopAsync:
 
         agent.respond = bad_respond
         self._run(["hatalı sorgu", ".exit"], agent)
+
+    def test_agent_cancelled_error_stops_loop(self):
+        cli = _get_cli()
+        agent = _make_agent()
+        input_iter = iter(["merhaba"])
+
+        async def fake_to_thread(fn, *a, **k):
+            return next(input_iter)
+
+        async def cancelled_respond(text):
+            raise asyncio.CancelledError
+            yield
+
+        agent.respond = cancelled_respond
+
+        async def run():
+            with patch("asyncio.to_thread", side_effect=fake_to_thread):
+                with patch("builtins.print"):
+                    await cli._interactive_loop_async(agent)
+
+        asyncio.run(run())
 
     def test_gpu_info_displayed_when_use_gpu_true(self):
         cli = _get_cli()
