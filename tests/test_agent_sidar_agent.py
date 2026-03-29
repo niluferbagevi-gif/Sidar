@@ -9,6 +9,7 @@ import asyncio
 import json
 import sys
 import types
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -507,5 +508,211 @@ class TestSidarAgentAutonomousSelfHealLoop:
             assert remediation["remediation_loop"]["status"] == "reverted"
             assert remediation["remediation_loop"]["steps"][0]["status"] == "failed"
             assert remediation["remediation_loop"]["steps"][1]["status"] == "failed"
+
+        asyncio.run(_run_case())
+
+
+class TestSidarAgentRemediationBranches:
+    def test_execute_self_heal_plan_guard_branches(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        async def _run_case():
+            no_ops = await agent._execute_self_heal_plan(remediation_loop={}, plan={"operations": []})
+            assert no_ops["status"] == "skipped"
+
+            blocked = await agent._execute_self_heal_plan(
+                remediation_loop={},
+                plan={"operations": [{"path": "a.py", "target": "x", "replacement": "y"}], "validation_commands": []},
+            )
+            assert blocked["status"] == "blocked"
+
+        asyncio.run(_run_case())
+
+    def test_execute_self_heal_plan_success_path(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.code.read_file = MagicMock(return_value=(True, "old"))
+        agent.code.patch_file = MagicMock(return_value=(True, "ok"))
+        agent.code.run_shell_in_sandbox = MagicMock(return_value=(True, "ok"))
+
+        async def _run_case():
+            result = await agent._execute_self_heal_plan(
+                remediation_loop={"validation_commands": ["pytest -q"]},
+                plan={
+                    "operations": [{"path": "a.py", "target": "x", "replacement": "y"}],
+                    "validation_commands": ["pytest -q"],
+                },
+            )
+            assert result["status"] == "applied"
+            assert result["operations_applied"] == ["a.py"]
+
+        asyncio.run(_run_case())
+
+    def test_execute_self_heal_plan_failure_rolls_back(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.code.read_file = MagicMock(return_value=(True, "old"))
+        agent.code.patch_file = MagicMock(return_value=(False, "err"))
+        agent.code.write_file = MagicMock(return_value=(True, "ok"))
+
+        async def _run_case():
+            result = await agent._execute_self_heal_plan(
+                remediation_loop={"validation_commands": ["pytest -q"]},
+                plan={
+                    "operations": [{"path": "a.py", "target": "x", "replacement": "y"}],
+                    "validation_commands": ["pytest -q"],
+                },
+            )
+            assert result["status"] == "reverted"
+            assert result["reverted"] is True
+            agent.code.write_file.assert_called_once()
+
+        asyncio.run(_run_case())
+
+
+class TestSidarAgentTriggerCorrelationAndPrompt:
+    def test_build_trigger_prompt_variants(self):
+        sa = _get_sidar_agent()
+        contracts = __import__("sys").modules["agent.core.contracts"]
+        trigger = contracts.ExternalTrigger(trigger_id="t", source="src", event_name="evt", payload={})
+
+        ci_prompt = sa.SidarAgent._build_trigger_prompt(trigger, {}, {"workflow_name": "ci"})
+        assert isinstance(ci_prompt, str)
+
+        fed_prompt = sa.SidarAgent._build_trigger_prompt(
+            trigger,
+            {
+                "kind": "federation_task",
+                "federation_task": {"task_id": "k1", "goal": "goal"},
+            },
+            None,
+        )
+        assert "[FEDERATION TASK]" in fed_prompt
+
+        fb_prompt = sa.SidarAgent._build_trigger_prompt(
+            trigger,
+            {"kind": "action_feedback", "action_name": "deploy"},
+            None,
+        )
+        assert "[ACTION FEEDBACK]" in fb_prompt
+
+    def test_build_trigger_correlation_matches_history(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        contracts = __import__("sys").modules["agent.core.contracts"]
+        trigger = contracts.ExternalTrigger(
+            trigger_id="new-trigger",
+            source="src",
+            event_name="evt",
+            payload={},
+            correlation_id="corr-1",
+        )
+        agent._autonomy_history = [
+            {"trigger_id": "old-1", "source": "github", "status": "success", "payload": {"task_id": "task-1"}, "correlation": {"correlation_id": "corr-1"}},
+            {"trigger_id": "old-2", "source": "scheduler", "status": "failed", "payload": {"task_id": "task-2"}},
+        ]
+        result = agent._build_trigger_correlation(trigger, {"related_task_id": "task-1"})
+        assert result["matched_records"] >= 1
+        assert "old-1" in result["related_trigger_ids"]
+
+
+class TestSidarAgentMemoryAndMaintenance:
+    def test_get_memory_archive_context_sync_paths(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        class _Collection:
+            def query(self, **_kwargs):
+                return {
+                    "documents": [["doc-1", "doc-2"]],
+                    "metadatas": [[{"source": "memory_archive", "title": "T1"}, {"source": "other", "title": "T2"}]],
+                    "distances": [[0.1, 0.2]],
+                }
+
+        agent.docs.collection = _Collection()
+        text = agent._get_memory_archive_context_sync("hello", top_k=2, min_score=0.1, max_chars=2000)
+        assert "Geçmiş Sohbet Arşivinden" in text
+        assert "T1" in text
+
+        agent.docs.collection = None
+        assert agent._get_memory_archive_context_sync("hello", 2, 0.1, 1000) == ""
+
+    def test_load_instruction_files_reads_and_caches(self, tmp_path: Path):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.BASE_DIR = str(tmp_path)
+
+        sidar_md = tmp_path / "SIDAR.md"
+        sidar_md.write_text("kural-1", encoding="utf-8")
+        first = agent._load_instruction_files()
+        second = agent._load_instruction_files()
+        assert "kural-1" in first
+        assert second == first
+
+    def test_run_nightly_memory_maintenance_disabled_and_not_idle(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = False
+
+        async def _disabled():
+            with patch.object(agent, "initialize", AsyncMock()):
+                res = await agent.run_nightly_memory_maintenance()
+                assert res["status"] == "disabled"
+
+        asyncio.run(_disabled())
+
+        agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = True
+        agent.cfg.NIGHTLY_MEMORY_IDLE_SECONDS = 999999
+
+        async def _not_idle():
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "seconds_since_last_activity", MagicMock(return_value=1.0)):
+                    res = await agent.run_nightly_memory_maintenance(force=False)
+                    assert res["status"] == "skipped"
+                    assert res["reason"] == "not_idle"
+
+        asyncio.run(_not_idle())
+
+
+class TestSidarAgentToolHelpers:
+    def test_tool_docs_search_variants(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        async def _run_case():
+            empty = await agent._tool_docs_search("")
+            assert "Arama sorgusu" in empty
+
+            agent.docs.search = MagicMock(return_value=(True, "ok-result"))
+            out = await agent._tool_docs_search("query|hybrid")
+            assert out == "ok-result"
+
+            async def _coro_result():
+                return True, "async-ok"
+
+            agent.docs.search = MagicMock(return_value=_coro_result())
+            out2 = await agent._tool_docs_search("query")
+            assert out2 == "async-ok"
+
+        asyncio.run(_run_case())
+
+    def test_tool_github_smart_pr_guard_cases(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.github.is_available = MagicMock(return_value=False)
+
+        async def _run_case():
+            no_token = await agent._tool_github_smart_pr("title")
+            assert "token" in no_token.lower()
+
+            agent.github.is_available = MagicMock(return_value=True)
+            agent.code.run_shell = MagicMock(side_effect=[(False, ""), (True, "")])
+            no_branch = await agent._tool_github_smart_pr("title")
+            assert "Aktif branch" in no_branch
+
+            agent.code.run_shell = MagicMock(side_effect=[(True, "feat/x"), (True, "")])
+            no_changes = await agent._tool_github_smart_pr("title")
+            assert "Değişiklik bulunamadı" in no_changes
 
         asyncio.run(_run_case())

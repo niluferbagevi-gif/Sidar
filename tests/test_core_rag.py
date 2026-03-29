@@ -432,3 +432,56 @@ class TestDocumentStoreChunkingAndFallback:
         ok, message = store._search_sync("query", mode="vector", session_id="global")
         assert ok is False
         assert "Vektör arama kullanılamıyor" in message
+
+
+class TestDocumentStoreSearchEdgeCases:
+    def test_fetch_chroma_count_error_still_returns_results(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _Collection:
+                def count(self):
+                    raise RuntimeError("count unavailable")
+
+                def query(self, **_kwargs):
+                    return {
+                        "ids": [["chunk-1"]],
+                        "documents": [["parca-1"]],
+                        "metadatas": [[{"parent_id": "doc-1", "title": "Belge 1"}]],
+                    }
+
+            store.collection = _Collection()
+            results = rag.DocumentStore._fetch_chroma(store, "sorgu", 2, "global")
+            assert len(results) == 1
+            assert results[0]["id"] == "doc-1"
+
+    def test_search_sync_rrf_error_falls_back_to_pgvector(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._index["doc1"] = {"session_id": "global"}
+            store._bm25_available = True
+            store._pgvector_available = True
+            store._chroma_available = False
+            store._rrf_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("rrf down"))
+            store._pgvector_search = lambda _q, _k, _s: (True, "pgvector-result")
+
+            ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
+            assert ok is True
+            assert output == "pgvector-result"
+
+    def test_search_sync_no_vector_and_no_bm25_exits_keyword(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._index["doc1"] = {"session_id": "global"}
+            store._bm25_available = False
+            store._pgvector_available = False
+            store._chroma_available = False
+            store.collection = None
+            store._keyword_search = lambda _q, _k, _s: (True, "keyword-exit")
+
+            ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
+            assert ok is True
+            assert output == "keyword-exit"
