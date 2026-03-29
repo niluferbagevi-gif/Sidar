@@ -156,10 +156,10 @@ class AutoHandle:
         result = await self._try_docs_search(t, text)
         if result[0]: return result
 
-        result = self._try_docs_list(t, text)
+        result = await self._try_docs_add(t, text)
         if result[0]: return result
 
-        result = await self._try_docs_add(t, text)
+        result = self._try_docs_list(t, text)
         if result[0]: return result
 
         return False, ""
