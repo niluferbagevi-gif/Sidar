@@ -23,12 +23,22 @@ open_artifact() {
   fi
 }
 
-# 1) Genel proje kapsam eşiği (quality gate)
-python -m pytest -v \
-  --cov=. \
-  --cov-report=term-missing \
-  --cov-report=html \
-  --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+run_pytest_coverage_report() {
+  echo "📊 Pytest Coverage Raporu oluşturuluyor..."
+  echo "➡️ Çalıştırılan komut: pytest --cov=. --cov-report=html"
+
+  pytest --cov=. --cov-report=html --cov-report=term-missing
+
+  if [ -f "htmlcov/index.html" ]; then
+    echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
+    open_artifact "htmlcov/index.html"
+  else
+    echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
+  fi
+}
+
+# 1) İstenen Coverage raporu (htmlcov/index.html) + otomatik açma
+run_pytest_coverage_report
 
 # 2) Kritik çekirdek dosyalar için hedef kapsam
 python -m pytest -v \
@@ -38,9 +48,6 @@ python -m pytest -v \
   --cov-report=term-missing \
   --cov-report=html \
   --cov-fail-under="${COVERAGE_FAIL_UNDER}"
-
-open_artifact "htmlcov/index.html"
-
 # 3) Kritik yol performans baseline testleri (pytest-benchmark)
 python -m pytest -v tests/test_benchmark.py
 
