@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
+from pathlib import Path
 
 
 def _get_voice():
@@ -357,3 +358,44 @@ class TestShouldInterruptResponse:
 
     def test_interrupt_on_barge_in_event(self):
         assert self.vp.should_interrupt_response(500, event="barge_in") is True
+
+
+class TestVoicePipelineDummyAudioFlow:
+    def test_synthesize_text_with_mock_adapter_returns_audio_bytes(self):
+        voice = _get_voice()
+        vp = voice.VoicePipeline(_make_config(VOICE_TTS_PROVIDER="mock", VOICE_TTS_VOICE="dummy"))
+        result = _run(vp.synthesize_text("Dummy audio input"))
+        assert result["success"] is True
+        assert result["audio_bytes"] == b"Dummy audio input"
+        assert result["voice"] == "dummy"
+
+    def test_pyttsx3_adapter_with_fake_engine_writes_dummy_wav(self, monkeypatch):
+        voice = _get_voice()
+
+        class _FakeEngine:
+            def __init__(self):
+                self._output = None
+
+            def getProperty(self, _name):
+                return []
+
+            def setProperty(self, _name, _value):
+                return None
+
+            def save_to_file(self, _text, output):
+                self._output = output
+
+            def runAndWait(self):
+                if self._output:
+                    Path(self._output).write_bytes(b"RIFF" + b"\x00" * 32)
+
+            def stop(self):
+                return None
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("Merhaba ses", voice=""))
+        assert result["provider"] == "pyttsx3"
+        assert result["mime_type"] == "audio/wav"
+        assert isinstance(result["audio_bytes"], (bytes, bytearray))

@@ -222,3 +222,40 @@ class TestGitHubManagerInitWithPatchedGithubModule:
             mgr = gh.GitHubManager(token="ghp_invalid")
 
         assert mgr._available is False
+
+
+class TestGitHubManagerServiceOutcomes:
+    def test_create_pull_request_success_with_mock_repo(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        pr = MagicMock(title="My PR", html_url="https://example/pr/1", number=1)
+        repo = MagicMock(default_branch="main")
+        repo.create_pull.return_value = pr
+        mgr._repo = repo
+
+        ok, message = mgr.create_pull_request("My PR", "desc", "feat/test", "main")
+        assert ok is True
+        assert "#1" in message
+        repo.create_pull.assert_called_once()
+
+    def test_create_pull_request_failure_with_mock_repo(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(default_branch="main")
+        repo.create_pull.side_effect = RuntimeError("api down")
+        mgr._repo = repo
+
+        ok, message = mgr.create_pull_request("My PR", "desc", "feat/test", "main")
+        assert ok is False
+        assert "api down" in message
+
+    def test_list_pull_requests_empty_success_message(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(full_name="owner/repo")
+        repo.get_pulls.return_value = []
+        mgr._repo = repo
+
+        ok, message = mgr.list_pull_requests(state="open", limit=10)
+        assert ok is True
+        assert "Hiç" in message
