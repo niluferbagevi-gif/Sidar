@@ -315,6 +315,46 @@ class TestPoyrazServiceOperations:
 
 class TestPoyrazAdditionalCoverage:
     @pytest.mark.asyncio
+    async def test_ensure_db_returns_existing_instance(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        existing_db = MagicMock()
+        agent._db = existing_db
+        result = await agent._ensure_db()
+        assert result is existing_db
+
+    @pytest.mark.asyncio
+    async def test_ensure_db_initializes_once_with_lock(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        fake_db_instance = MagicMock()
+        fake_db_instance.connect = AsyncMock()
+        fake_db_instance.init_schema = AsyncMock()
+
+        db_mod = types.ModuleType("core.db")
+        db_mod.Database = MagicMock(return_value=fake_db_instance)
+        sys.modules["core.db"] = db_mod
+
+        first, second = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
+        assert first is second
+        db_mod.Database.assert_called_once_with(agent.cfg)
+        fake_db_instance.connect.assert_awaited_once()
+        fake_db_instance.init_schema.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_search_docs_awaits_async_result_object(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        async def _async_search(*_args, **_kwargs):
+            return (False, "timeout")
+
+        agent.docs.search = MagicMock(side_effect=_async_search)
+        result = await agent._tool_search_docs("kampanya")
+        assert result == "timeout"
+
+    @pytest.mark.asyncio
     async def test_social_channel_specific_tools_success_and_error(self):
         m = _get_poyraz()
         agent = m.PoyrazAgent()

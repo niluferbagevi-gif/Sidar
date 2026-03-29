@@ -410,3 +410,10 @@ class TestAutoHandleErrorAndBranchCoverage:
         assert handled is True
         assert "eklendi" in response.lower()
         docs.add_document_from_url.assert_awaited_once_with("https://example.com", title="Örnek Başlık")
+
+    @pytest.mark.asyncio
+    async def test_unmatched_input_returns_not_handled(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler.handle("bu ifade hiçbir kalıpla eşleşmez")
+        assert handled is False
+        assert response == ""
