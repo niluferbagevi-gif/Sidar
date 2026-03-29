@@ -230,3 +230,19 @@ class TestGetAgentMetricsCollector:
             t.join()
 
         assert all(r is results[0] for r in results)
+
+    def test_inner_double_check_branch_when_collector_set_inside_lock(self):
+        am = _get_agent_metrics()
+
+        class _InjectingLock:
+            def __enter__(self):
+                # Kilide girildiğinde singleton'ın başka bir thread tarafından
+                # set edildiği senaryoyu simüle eder.
+                am._COLLECTOR = am.AgentMetricsCollector()
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        am._COLLECTOR_LOCK = _InjectingLock()
+        collector = am.get_agent_metrics_collector()
+        assert collector is am._COLLECTOR
