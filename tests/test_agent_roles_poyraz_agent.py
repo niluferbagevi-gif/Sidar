@@ -311,3 +311,141 @@ class TestPoyrazServiceOperations:
         assert parsed["success"] is True
         assert parsed["service_plan"]["checklist"]["id"] == 42
         fake_db.add_operation_checklist.assert_awaited_once()
+
+
+class TestPoyrazAdditionalCoverage:
+    @pytest.mark.asyncio
+    async def test_social_channel_specific_tools_success_and_error(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        agent.social.publish_instagram_post = AsyncMock(return_value=(True, "ig-ok"))
+        result = await agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}')
+        assert result.startswith("[INSTAGRAM:PUBLISHED]")
+
+        agent.social.publish_facebook_post = AsyncMock(return_value=(False, "fb-down"))
+        result = await agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}')
+        assert result.startswith("[FACEBOOK:ERROR]")
+
+        agent.social.send_whatsapp_message = AsyncMock(return_value=(True, "wa-ok"))
+        result = await agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}')
+        assert result.startswith("[WHATSAPP:SENT]")
+
+    @pytest.mark.asyncio
+    async def test_build_landing_page_with_store_asset(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="lp-content"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        payload = {
+            "brand_name": "Sidar",
+            "offer": "İlk teklif",
+            "audience": "KOBİ",
+            "call_to_action": "Demo al",
+            "tone": "professional",
+            "sections": ["hero", "cta"],
+            "store_asset": True,
+            "campaign_id": 4,
+            "tenant_id": "tenant-a",
+            "asset_title": "LP",
+            "channel": "web",
+        }
+        result = await agent._tool_build_landing_page(__import__("json").dumps(payload, ensure_ascii=False))
+        assert result == "lp-content"
+        agent._persist_content_asset.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_generate_campaign_copy_with_store_asset(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="copy-content"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        payload = {
+            "campaign_name": "Bahar",
+            "objective": "lead",
+            "audience": "genç",
+            "channels": ["instagram"],
+            "offer": "indirim",
+            "tone": "friendly",
+            "call_to_action": "Katıl",
+            "store_asset": True,
+            "campaign_id": 8,
+            "tenant_id": "tenant-b",
+            "asset_title": "Copy",
+        }
+        result = await agent._tool_generate_campaign_copy(__import__("json").dumps(payload, ensure_ascii=False))
+        assert result == "copy-content"
+        agent._persist_content_asset.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_video_ingest_success_and_error_paths(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+
+        pipe_mod = types.ModuleType("core.multimodal")
+        pipeline = MagicMock()
+        pipeline.analyze_media_source = AsyncMock(return_value={"success": False, "reason": "timeout"})
+        pipe_mod.MultimodalPipeline = MagicMock(return_value=pipeline)
+        sys.modules["core.multimodal"] = pipe_mod
+
+        err = await agent._tool_ingest_video_insights("https://v|||özet|||tr|||s1|||4")
+        assert err.startswith("[VIDEO:ERROR]")
+
+        pipeline.analyze_media_source = AsyncMock(
+            return_value={"success": True, "scene_summary": "s", "document_ingest": {"doc_id": "d1"}}
+        )
+        ok = await agent._tool_ingest_video_insights(
+            '{"source_url":"https://v","prompt":"özet","language":"tr","session_id":"s2","max_frames":2,"frame_interval_seconds":1.0}'
+        )
+        assert ok.startswith("[VIDEO:INGESTED]")
+
+    @pytest.mark.asyncio
+    async def test_campaign_asset_and_checklist_tools(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        fake_db = MagicMock()
+        fake_db.upsert_marketing_campaign = AsyncMock(
+            return_value=types.SimpleNamespace(
+                id=77,
+                tenant_id="t1",
+                name="Kamp",
+                channel="instagram",
+                objective="lead",
+                status="draft",
+                owner_user_id="u1",
+                budget=99.0,
+            )
+        )
+        fake_db.add_content_asset = AsyncMock(
+            return_value=types.SimpleNamespace(
+                id=12,
+                campaign_id=77,
+                tenant_id="t1",
+                asset_type="copy",
+                title="başlık",
+                channel="instagram",
+            )
+        )
+        fake_db.add_operation_checklist = AsyncMock(
+            return_value=types.SimpleNamespace(
+                id=34, campaign_id=77, tenant_id="t1", title="ops", status="pending", items_json="[]"
+            )
+        )
+        monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
+
+        campaign = await agent._tool_create_marketing_campaign(
+            '{"tenant_id":"t1","name":"Kamp","channel":"instagram","objective":"lead","status":"draft","owner_user_id":"u1","budget":99.0,"metadata":{}}'
+        )
+        assert __import__("json").loads(campaign)["campaign"]["id"] == 77
+
+        asset = await agent._tool_store_content_asset(
+            '{"campaign_id":77,"tenant_id":"t1","asset_type":"copy","title":"başlık","content":"metin","channel":"instagram","metadata":{}}'
+        )
+        assert __import__("json").loads(asset)["asset"]["id"] == 12
+
+        checklist = await agent._tool_create_operation_checklist(
+            '{"tenant_id":"t1","title":"ops","items":[],"status":"pending","owner_user_id":"u1","campaign_id":77}'
+        )
+        assert __import__("json").loads(checklist)["checklist"]["id"] == 34
