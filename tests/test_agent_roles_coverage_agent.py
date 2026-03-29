@@ -275,6 +275,16 @@ class TestNormalizeAnalysis:
 
 
 class TestCoverageXmlParsing:
+    def test_parse_coverage_xml_when_file_missing_returns_exists_false(self, tmp_path):
+        m = _get_coverage()
+        missing = tmp_path / "not-found.xml"
+
+        parsed = m.CoverageAgent._parse_coverage_xml(str(missing))
+
+        assert parsed["exists"] is False
+        assert parsed["files"] == []
+        assert parsed["findings"] == []
+
     def test_parse_coverage_xml_extracts_missing_lines_and_branches(self, tmp_path):
         m = _get_coverage()
         xml_path = tmp_path / "coverage.xml"
@@ -316,6 +326,47 @@ class TestCoverageXmlParsing:
         assert parsed["exists"] is True
         assert parsed["run"]["include"] == "core/*"
         assert parsed["report"]["omit"] == "tests/*"
+
+    def test_read_coveragerc_when_missing_returns_empty_sections(self, tmp_path):
+        m = _get_coverage()
+        parsed = m.CoverageAgent._read_coveragerc(str(tmp_path / ".coveragerc"))
+
+        assert parsed["exists"] is False
+        assert parsed["run"] == {}
+        assert parsed["report"] == {}
+
+    def test_parse_coverage_xml_skips_entries_without_filename_and_respects_limit(self, tmp_path):
+        m = _get_coverage()
+        xml_path = tmp_path / "coverage.xml"
+        xml_path.write_text(
+            """<?xml version="1.0" ?>
+<coverage>
+  <packages>
+    <package name="core">
+      <classes>
+        <class filename="" line-rate="0.0" branch-rate="0.0">
+          <lines><line number="1" hits="0"/></lines>
+        </class>
+        <class filename="core/a.py" line-rate="0.1" branch-rate="0.9">
+          <lines><line number="10" hits="0"/></lines>
+        </class>
+        <class filename="core/b.py" line-rate="0.2" branch-rate="0.8">
+          <lines><line number="20" hits="0"/></lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+            encoding="utf-8",
+        )
+
+        parsed = m.CoverageAgent._parse_coverage_xml(str(xml_path), limit=0)
+
+        assert parsed["exists"] is True
+        assert parsed["total_findings"] == 2
+        assert len(parsed["findings"]) == 1
+        assert all(item["path"] for item in parsed["files"])
 
     def test_build_dynamic_pytest_prompt_contains_coverage_hints(self):
         m = _get_coverage()
