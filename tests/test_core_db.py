@@ -579,3 +579,84 @@ class TestDatabaseCrudEdgeCases:
                 await database.close()
 
         asyncio.run(_scenario())
+
+
+class TestDatabaseWithConftestFixture:
+    def test_fixture_backed_sqlite_crud_flow(self, sqlite_test_db_url):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = sqlite_test_db_url
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+                BASE_DIR = Path(".")
+
+            database = db_mod.Database(cfg=_Cfg())
+            await database.connect()
+            await database.init_schema()
+
+            user = await database.register_user("fixture_user", "secret", role="admin", tenant_id="tenant-1")
+            auth_user = await database.authenticate_user("fixture_user", "secret")
+            session = await database.create_session(user.id, "Fixture Session")
+            _ = await database.add_message(session.id, "user", "merhaba", tokens_used=5)
+            messages = await database.get_session_messages(session.id)
+
+            assert auth_user is not None
+            assert auth_user.id == user.id
+            assert len(messages) == 1
+            assert messages[0].content == "merhaba"
+            await database.close()
+
+        asyncio.run(_scenario())
+
+    @pytest.mark.parametrize(
+        "campaign_name, status, budget",
+        [
+            ("Kampanya A", "draft", 150.0),
+            ("Kampanya B", "active", 300.5),
+        ],
+    )
+    def test_fixture_backed_marketing_tables(self, sqlite_test_db_url, campaign_name, status, budget):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = sqlite_test_db_url
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+                BASE_DIR = Path(".")
+
+            database = db_mod.Database(cfg=_Cfg())
+            await database.connect()
+            await database.init_schema()
+            owner = await database.create_user(f"owner_{campaign_name[-1]}", role="manager", tenant_id="tenant-1")
+
+            campaign = await database.upsert_marketing_campaign(
+                tenant_id="tenant-1",
+                name=campaign_name,
+                channel="instagram",
+                objective="lead",
+                status=status,
+                owner_user_id=owner.id,
+                budget=budget,
+                metadata={"origin": "fixture"},
+            )
+            checklist = await database.add_operation_checklist(
+                tenant_id="tenant-1",
+                title=f"{campaign_name} Checklist",
+                items=[{"step": "brief"}],
+                status="planned",
+                owner_user_id=owner.id,
+                campaign_id=campaign.id,
+            )
+            assets = await database.list_content_assets(campaign_id=campaign.id, tenant_id="tenant-1")
+
+            assert campaign.name == campaign_name
+            assert checklist.campaign_id == campaign.id
+            assert isinstance(assets, list)
+            await database.close()
+
+        asyncio.run(_scenario())
