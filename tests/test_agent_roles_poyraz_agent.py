@@ -200,6 +200,38 @@ class TestPoyrazAgentTools:
         result = await agent.call_tool("unknown_xyz", "arg")
         assert "HATA" in result or "hata" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_publish_social_json_payload_success_branch(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        agent.social.publish_content = AsyncMock(return_value=(True, "ok-1"))
+
+        payload = {
+            "platform": "instagram",
+            "text": "kampanya metni",
+            "destination": "audience-segment-a",
+            "media_url": "https://img.example.com/promo.jpg",
+            "link_url": "https://example.com",
+        }
+        raw = __import__("json").dumps(payload, ensure_ascii=False)
+        result = await agent._tool_publish_social(raw)
+
+        assert result.startswith("[SOCIAL:PUBLISHED]")
+        assert "platform=instagram" in result
+        agent.social.publish_content.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_publish_social_pipe_payload_error_branch(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        agent.social.publish_content = AsyncMock(return_value=(False, "api down"))
+
+        result = await agent._tool_publish_social("facebook|||metin|||dest|||media|||link")
+
+        assert result.startswith("[SOCIAL:ERROR]")
+        assert "platform=facebook" in result
+        assert "api down" in result
+
 
 class TestPoyrazAgentPromptVariations:
     @pytest.mark.parametrize(
@@ -223,3 +255,59 @@ class TestPoyrazAgentPromptVariations:
         monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="[MARKETING:marketing_strategy]"))
         result = asyncio.run(agent.run_task("SEO ve pazarlama funnel planı hazırla"))
         assert "MARKETING:marketing_strategy" in result
+
+
+class TestPoyrazServiceOperations:
+    @pytest.mark.asyncio
+    async def test_plan_service_operations_without_persist(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        payload = {
+            "campaign_name": "İlkbahar Kampanyası",
+            "service_name": "Brunch",
+            "audience": "Aile",
+            "menu_plan": {"ana_yemek": ["  Pizza  ", "", "Pasta"]},
+            "vendor_assignments": {"DJ": "  Murat  ", "Fotoğrafçı": ""},
+            "timeline": ["10:00 kurulum", " ", "12:00 açılış"],
+            "notes": "  Ek personel ayarla ",
+            "persist_checklist": False,
+        }
+        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+        parsed = __import__("json").loads(result)
+        items = parsed["service_plan"]["items"]
+        assert parsed["success"] is True
+        assert any(item["type"] == "menu_plan" for item in items)
+        assert any(item["type"] == "vendor_assignment" for item in items)
+        assert any(item["type"] == "timeline" for item in items)
+        assert any(item["type"] == "note" for item in items)
+        assert "checklist" not in parsed["service_plan"]
+
+    @pytest.mark.asyncio
+    async def test_plan_service_operations_with_persist_adds_checklist(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        fake_db = MagicMock()
+        fake_db.add_operation_checklist = AsyncMock(
+            return_value=types.SimpleNamespace(id=42, title="Operasyon", status="planned")
+        )
+        monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
+
+        payload = {
+            "campaign_name": "Yaz Kampanyası",
+            "service_name": "After Party",
+            "audience": "Genç yetişkin",
+            "menu_plan": {},
+            "vendor_assignments": {},
+            "timeline": [],
+            "notes": "",
+            "persist_checklist": True,
+            "tenant_id": "tenant-1",
+            "checklist_title": "Operasyon",
+            "owner_user_id": "owner-1",
+            "campaign_id": 7,
+        }
+        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+        parsed = __import__("json").loads(result)
+        assert parsed["success"] is True
+        assert parsed["service_plan"]["checklist"]["id"] == 42
+        fake_db.add_operation_checklist.assert_awaited_once()
