@@ -168,7 +168,7 @@ class CoverageAgent(BaseAgent):
             )
         )
         files_sorted = sorted(files, key=lambda x: (x["line_rate"], x["branch_rate"], x["path"]))
-        trimmed = findings[: max(1, int(limit or 25))]
+        trimmed = findings[: max(1, int(limit) if limit is not None else 25)]
         return {
             "path": str(path),
             "exists": True,
@@ -216,7 +216,8 @@ class CoverageAgent(BaseAgent):
         payload = self._parse_payload(arg)
         coverage_xml_path = str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml")
         coveragerc_path = str(payload.get("coveragerc", ".coveragerc") or ".coveragerc")
-        limit = int(payload.get("limit", 25) or 25)
+        limit_val = payload.get("limit")
+        limit = int(limit_val) if limit_val is not None else 25
         coverage_analysis = self._parse_coverage_xml(coverage_xml_path, limit=limit)
         coveragerc = self._read_coveragerc(coveragerc_path)
         return json.dumps(
