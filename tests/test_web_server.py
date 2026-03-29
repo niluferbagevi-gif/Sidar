@@ -617,6 +617,49 @@ class TestBuildAuditResource:
         assert ws._build_audit_resource("RAG", "doc-1") == "rag:doc-1"
 
 
+class TestPluginLoadingHelpers:
+    def test_sanitize_capabilities_removes_blank_entries(self):
+        ws = _get_web_server()
+        capabilities = ws._sanitize_capabilities([" read ", "", "   ", "write"])
+        assert capabilities == ["read", "write"]
+
+    def test_plugin_source_filename_sanitizes_module_label(self):
+        ws = _get_web_server()
+        filename = ws._plugin_source_filename("my plugin/../danger")
+        assert filename == "<sidar-plugin:my_plugin_.._danger>"
+
+    def test_load_plugin_agent_class_raises_for_invalid_source(self):
+        ws = _get_web_server()
+        bad_source = "class Broken(:\n    pass\n"
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class(bad_source, None, "broken_module")
+        assert exc_info.value.status_code == 400
+        assert "derlenemedi" in exc_info.value.detail
+
+    def test_load_plugin_agent_class_raises_when_named_class_not_found(self):
+        ws = _get_web_server()
+        source = "class Demo:\n    pass\n"
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class(source, "MissingClass", "missing_named")
+        assert exc_info.value.status_code == 400
+        assert "bulunamadı" in exc_info.value.detail
+
+    def test_load_plugin_agent_class_raises_when_class_not_base_agent(self):
+        ws = _get_web_server()
+        source = "class Plain:\n    pass\n"
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class(source, "Plain", "plain_module")
+        assert exc_info.value.status_code == 400
+        assert "BaseAgent" in exc_info.value.detail
+
+    def test_load_plugin_agent_class_raises_when_no_derived_class_exists(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._load_plugin_agent_class("x = 1", None, "empty_module")
+        assert exc_info.value.status_code == 400
+        assert "BaseAgent türevi" in exc_info.value.detail
+
+
 class TestBuildUserFromJwtPayload:
     def test_valid_payload_returns_user(self):
         ws = _get_web_server()
