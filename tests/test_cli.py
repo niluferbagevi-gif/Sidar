@@ -513,6 +513,25 @@ class TestInteractiveLoopAsync:
         for cmd in ("exit", "quit", "çıkış"):
             self._run([cmd])
 
+
+
+    def test_web_unavailable_message_shown(self):
+        cli = _get_cli()
+        agent = _make_agent()
+        agent.web.is_available.return_value = False
+        printed = []
+
+        async def fake_to_thread(fn, *a, **k):
+            raise EOFError
+
+        async def run():
+            with patch("asyncio.to_thread", side_effect=fake_to_thread):
+                with patch("builtins.print", side_effect=lambda *a, **k: printed.append(str(a))):
+                    await cli._interactive_loop_async(agent)
+
+        asyncio.run(run())
+        assert "duckduckgo-search" in " ".join(printed)
+
     def test_github_unavailable_shown(self):
         cli = _get_cli()
         agent = _make_agent()
@@ -616,6 +635,29 @@ class TestMain:
                             cli.main()
         # memory.initialize + _run_command = 2 çağrı
         assert len(run_count) == 2
+
+
+
+    def test_command_flag_calls_agent_respond_with_command(self):
+        cli = _get_cli()
+        mock_cfg, mock_agent = self._make_mocks()
+        received = []
+
+        async def fake_respond(text):
+            received.append(text)
+            yield "parca"
+
+        mock_agent.respond = fake_respond
+        real_asyncio_run = asyncio.run
+
+        with patch.object(sys, "argv", ["cli.py", "-c", "tek komut"]):
+            with patch("cli.Config", return_value=mock_cfg):
+                with patch("cli.SidarAgent", return_value=mock_agent):
+                    with patch("asyncio.run", side_effect=lambda coro: real_asyncio_run(coro)):
+                        with patch("builtins.print"):
+                            cli.main()
+
+        assert received == ["tek komut"]
 
     def test_no_flags_calls_interactive_loop(self):
         cli = _get_cli()
