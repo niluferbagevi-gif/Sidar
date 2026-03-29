@@ -132,3 +132,31 @@ class TestSystemHealthManagerInit:
         sh = _get_sh()
         mgr = sh.SystemHealthManager()
         assert isinstance(mgr, sh.SystemHealthManager)
+
+
+class TestSystemHealthDependencyIsolation:
+    def test_check_redis_disabled_when_url_missing(self):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.REDIS_URL = ""
+        status = mgr.check_redis()
+        assert status["healthy"] is True
+        assert status["mode"] == "disabled"
+
+    def test_check_database_sqlite_missing_file_reports_failure(self, tmp_path):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        db_file = tmp_path / "missing.db"
+        mgr.cfg.DATABASE_URL = f"sqlite:///{db_file}"
+        status = mgr.check_database()
+        assert status["mode"] == "sqlite"
+        assert status["healthy"] is False
+
+    def test_check_database_tcp_failure_isolated(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.DATABASE_URL = "postgresql://user:pass@db.example.com:5432/sidar"
+        monkeypatch.setattr(mgr, "_tcp_dependency_health", lambda *_a, **_k: {"healthy": False, "error": "refused"})
+        status = mgr.check_database()
+        assert status["healthy"] is False
+        assert status["mode"] == "postgresql"

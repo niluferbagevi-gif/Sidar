@@ -209,6 +209,12 @@ class TestRoomNormalization:
             ws._normalize_room_id("bad room id")
         assert exc_info.value.status_code == 400
 
+    def test_plugin_role_name_validation_raises_400(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._validate_plugin_role_name("bad role with spaces")
+        assert exc_info.value.status_code == 400
+
 
 class TestRoleAndScope:
     def test_normalize_role_empty_to_user(self):
@@ -265,6 +271,30 @@ class TestRoomBuffers:
 
         assert room.telemetry[0]["content"] == "MASKED:token=abc"
         assert room.telemetry[0]["error"] == "MASKED:secret"
+
+
+class TestWebServerErrorHandlers:
+    def test_marketplace_entry_missing_returns_404(self):
+        ws = _get_web_server()
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._get_plugin_marketplace_entry("missing-plugin")
+        assert exc_info.value.status_code == 404
+
+    def test_registered_unhandled_exception_handler_returns_500(self):
+        ws = _get_web_server()
+        handlers = {}
+
+        class _App:
+            def exception_handler(self, exc_cls):
+                def _register(fn):
+                    handlers[exc_cls] = fn
+                    return fn
+                return _register
+
+        ws._register_exception_handlers(_App())
+        unhandled = handlers[Exception]
+        response = asyncio.run(unhandled(object(), RuntimeError("boom")))
+        assert getattr(response, "status_code", 500) == 500
 
 
 class TestMessageHelpers:
