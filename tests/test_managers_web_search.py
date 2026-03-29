@@ -348,3 +348,85 @@ class TestDocsAndHelpers:
         assert "Tavily" in text
         assert "Google" in text
         assert "DuckDuckGo" in text
+
+
+class TestWebSearchEngineApiMocking:
+    def test_search_tavily_success_with_mocked_json(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.tavily_key = "tok"
+
+        response = types.SimpleNamespace(
+            json=lambda: {"results": [{"title": "A", "content": "B", "url": "https://a"}]},
+            raise_for_status=lambda: None,
+        )
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, _url, json=None):
+                return response
+
+        ws.httpx.AsyncClient = lambda **_kwargs: _Client()
+        ok, out = asyncio.run(mgr._search_tavily("query", 5))
+        assert ok is True
+        assert "Web Arama (Tavily)" in out
+
+    def test_search_tavily_401_disables_key(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.tavily_key = "tok"
+
+        class _Response:
+            status_code = 401
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, _url, json=None):
+                raise httpx.HTTPStatusError("unauthorized", request=httpx.Request("POST", "https://x"), response=_Response())
+
+        ws.httpx.AsyncClient = lambda **_kwargs: _Client()
+        ok, out = asyncio.run(mgr._search_tavily("query", 5))
+        assert ok is False
+        assert mgr.tavily_key == ""
+        assert "Tavily" in out
+
+    def test_search_google_success_and_failure_paths(self):
+        ws = _get_ws()
+        mgr = ws.WebSearchManager()
+        mgr.google_key = "g"
+        mgr.google_cx = "cx"
+
+        success_resp = types.SimpleNamespace(
+            json=lambda: {"items": [{"title": "G1", "snippet": "S1", "link": "https://g"}]},
+            raise_for_status=lambda: None,
+        )
+
+        class _ClientOk:
+            async def __aenter__(self): return self
+            async def __aexit__(self, exc_type, exc, tb): return False
+            async def get(self, _url, params=None): return success_resp
+
+        ws.httpx.AsyncClient = lambda **_kwargs: _ClientOk()
+        ok, out = asyncio.run(mgr._search_google("query", 5))
+        assert ok is True
+        assert "Web Arama (Google)" in out
+
+        class _ClientFail:
+            async def __aenter__(self): return self
+            async def __aexit__(self, exc_type, exc, tb): return False
+            async def get(self, _url, params=None): raise RuntimeError("network fail")
+
+        ws.httpx.AsyncClient = lambda **_kwargs: _ClientFail()
+        ok, out = asyncio.run(mgr._search_google("query", 5))
+        assert ok is False
+        assert "Google Search" in out
