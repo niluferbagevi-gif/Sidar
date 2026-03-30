@@ -286,6 +286,15 @@ class TestSidarAgentToolJsonParse:
         if result is not None:
             assert "tool" in result
 
+    def test_parse_json_array_returns_final_answer_fallback(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        parse_fn = getattr(agent, "_parse_tool_call", None)
+        if parse_fn is None:
+            pytest.skip("_parse_tool_call metodu bu sürümde mevcut değil")
+        result = parse_fn('["not", "a", "dict"]')
+        assert result["tool"] == "final_answer"
+
 
 class TestSidarAgentMemoryMessages:
     def test_build_messages_returns_list(self):
