@@ -2135,3 +2135,212 @@ class TestBindLlmUsageSink:
         ws._bind_llm_usage_sink(None)
         assert len(sinks) == 1
         assert collector._sidar_usage_sink_bound is True
+
+
+class TestOperationsEndpoints:
+    def _patch_json_response(self, ws, monkeypatch):
+        class _Resp:
+            def __init__(self, content, status_code=200):
+                self.content = content
+                self.status_code = status_code
+
+        monkeypatch.setattr(ws, "JSONResponse", _Resp)
+
+    def test_list_campaigns_returns_serialized_rows(self, monkeypatch):
+        ws = _get_web_server()
+        self._patch_json_response(ws, monkeypatch)
+        calls = {}
+
+        class _DB:
+            async def list_marketing_campaigns(self, **kwargs):
+                calls.update(kwargs)
+                return [types.SimpleNamespace(id=3, name="Q2", status="active", tenant_id="acme")]
+
+        async def _fake_agent():
+            return types.SimpleNamespace(memory=types.SimpleNamespace(db=_DB()))
+
+        monkeypatch.setattr(ws, "get_agent", _fake_agent)
+        user = types.SimpleNamespace(id="u1", tenant_id="acme")
+        response = asyncio.run(ws.api_operations_list_campaigns(status="active", limit=25, _user=user))
+
+        assert response.status_code == 200
+        assert response.content["success"] is True
+        assert response.content["campaigns"][0]["id"] == 3
+        assert calls == {"tenant_id": "acme", "status": "active", "limit": 25}
+
+    def test_create_campaign_persists_initial_assets_and_checklists(self, monkeypatch):
+        ws = _get_web_server()
+        self._patch_json_response(ws, monkeypatch)
+        calls = {"assets": [], "checklists": []}
+
+        class _DB:
+            async def upsert_marketing_campaign(self, **kwargs):
+                calls["campaign"] = kwargs
+                return types.SimpleNamespace(
+                    id=7,
+                    tenant_id="acme",
+                    name=kwargs["name"],
+                    channel=kwargs["channel"],
+                    objective=kwargs["objective"],
+                    status=kwargs["status"],
+                    owner_user_id=kwargs["owner_user_id"],
+                    budget=kwargs["budget"],
+                    metadata_json="{}",
+                    created_at="",
+                    updated_at="",
+                )
+
+            async def add_content_asset(self, **kwargs):
+                calls["assets"].append(kwargs)
+                return types.SimpleNamespace(
+                    id=10,
+                    campaign_id=kwargs["campaign_id"],
+                    tenant_id=kwargs["tenant_id"],
+                    asset_type=kwargs["asset_type"],
+                    title=kwargs["title"],
+                    content=kwargs["content"],
+                    channel=kwargs["channel"],
+                    metadata_json="{}",
+                    created_at="",
+                    updated_at="",
+                )
+
+            async def add_operation_checklist(self, **kwargs):
+                calls["checklists"].append(kwargs)
+                return types.SimpleNamespace(
+                    id=20,
+                    campaign_id=kwargs["campaign_id"],
+                    tenant_id=kwargs["tenant_id"],
+                    title=kwargs["title"],
+                    items_json="[]",
+                    status=kwargs["status"],
+                    owner_user_id=kwargs["owner_user_id"],
+                    created_at="",
+                    updated_at="",
+                )
+
+        async def _fake_agent():
+            return types.SimpleNamespace(memory=types.SimpleNamespace(db=_DB()))
+
+        monkeypatch.setattr(ws, "get_agent", _fake_agent)
+        req = types.SimpleNamespace(
+            name="Launch",
+            channel="email",
+            objective="awareness",
+            status="draft",
+            budget=350.5,
+            metadata={"owner": "marketing"},
+            initial_assets=[
+                types.SimpleNamespace(
+                    asset_type="copy",
+                    title="Subject",
+                    content="Hello",
+                    channel="email",
+                    metadata={"lang": "tr"},
+                )
+            ],
+            initial_checklists=[
+                types.SimpleNamespace(title="Ready", items=["brief"], status="pending")
+            ],
+        )
+        user = types.SimpleNamespace(id="u2", tenant_id="acme")
+        response = asyncio.run(ws.api_operations_create_campaign(req=req, _user=user))
+
+        assert response.status_code == 200
+        assert response.content["campaign"]["id"] == 7
+        assert len(response.content["assets"]) == 1
+        assert len(response.content["checklists"]) == 1
+        assert calls["campaign"]["owner_user_id"] == "u2"
+        assert calls["assets"][0]["tenant_id"] == "acme"
+        assert calls["checklists"][0]["owner_user_id"] == "u2"
+
+    def test_asset_and_checklist_endpoints_call_expected_db_methods(self, monkeypatch):
+        ws = _get_web_server()
+        self._patch_json_response(ws, monkeypatch)
+        calls = {}
+
+        class _DB:
+            async def list_content_assets(self, **kwargs):
+                calls["list_assets"] = kwargs
+                return [
+                    types.SimpleNamespace(
+                        id=1,
+                        campaign_id=kwargs["campaign_id"],
+                        tenant_id=kwargs["tenant_id"],
+                        asset_type="image",
+                        title="Banner",
+                        content="...",
+                        channel="social",
+                        metadata_json="{}",
+                        created_at="",
+                        updated_at="",
+                    )
+                ]
+
+            async def add_content_asset(self, **kwargs):
+                calls["add_asset"] = kwargs
+                return types.SimpleNamespace(
+                    id=2,
+                    campaign_id=kwargs["campaign_id"],
+                    tenant_id=kwargs["tenant_id"],
+                    asset_type=kwargs["asset_type"],
+                    title=kwargs["title"],
+                    content=kwargs["content"],
+                    channel=kwargs["channel"],
+                    metadata_json="{}",
+                    created_at="",
+                    updated_at="",
+                )
+
+            async def list_operation_checklists(self, **kwargs):
+                calls["list_checklists"] = kwargs
+                return [
+                    types.SimpleNamespace(
+                        id=3,
+                        campaign_id=kwargs["campaign_id"],
+                        tenant_id=kwargs["tenant_id"],
+                        title="Ops",
+                        items_json="[]",
+                        status="pending",
+                        owner_user_id="u1",
+                        created_at="",
+                        updated_at="",
+                    )
+                ]
+
+            async def add_operation_checklist(self, **kwargs):
+                calls["add_checklist"] = kwargs
+                return types.SimpleNamespace(
+                    id=4,
+                    campaign_id=kwargs["campaign_id"],
+                    tenant_id=kwargs["tenant_id"],
+                    title=kwargs["title"],
+                    items_json="[]",
+                    status=kwargs["status"],
+                    owner_user_id=kwargs["owner_user_id"],
+                    created_at="",
+                    updated_at="",
+                )
+
+        async def _fake_agent():
+            return types.SimpleNamespace(memory=types.SimpleNamespace(db=_DB()))
+
+        monkeypatch.setattr(ws, "get_agent", _fake_agent)
+        user = types.SimpleNamespace(id="u7", tenant_id="acme")
+
+        assets_resp = asyncio.run(ws.api_operations_list_assets(campaign_id=77, limit=8, _user=user))
+        add_asset_req = types.SimpleNamespace(
+            asset_type="video", title="Reel", content="content", channel="social", metadata={"a": 1}
+        )
+        add_asset_resp = asyncio.run(ws.api_operations_add_asset(campaign_id=77, req=add_asset_req, _user=user))
+        checklists_resp = asyncio.run(ws.api_operations_list_checklists(campaign_id=77, limit=5, _user=user))
+        add_check_req = types.SimpleNamespace(title="Publish", items=["design"], status="done")
+        add_check_resp = asyncio.run(ws.api_operations_add_checklist(campaign_id=77, req=add_check_req, _user=user))
+
+        assert assets_resp.content["assets"][0]["id"] == 1
+        assert add_asset_resp.content["asset"]["id"] == 2
+        assert checklists_resp.content["checklists"][0]["id"] == 3
+        assert add_check_resp.content["checklist"]["id"] == 4
+        assert calls["list_assets"] == {"tenant_id": "acme", "campaign_id": 77, "limit": 8}
+        assert calls["list_checklists"] == {"tenant_id": "acme", "campaign_id": 77, "limit": 5}
+        assert calls["add_checklist"]["owner_user_id"] == "u7"

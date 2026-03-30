@@ -721,3 +721,67 @@ class TestCodeManagerShellGrepAndLspEdges:
         assert ok is False
         assert payload["status"] == "tool-error"
         assert "lsp offline" in payload["summary"].lower()
+
+
+class TestCodeManagerFsAndAstErrorEdges:
+    def test_write_file_returns_permission_error_when_parent_mkdir_denied(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            get_safe_write_path=lambda filename: Path("/safe") / filename,
+        )
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("mkdir denied")
+
+        monkeypatch.setattr("pathlib.Path.mkdir", _raise_permission)
+        ok, message = mgr.write_file("nested/file.py", "x = 1\n", validate=True)
+        assert ok is False
+        assert "Yazma erişimi reddedildi" in message
+
+    def test_list_directory_returns_error_when_iterdir_permission_denied(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        monkeypatch.setattr("pathlib.Path.exists", lambda _path: True)
+        monkeypatch.setattr("pathlib.Path.is_dir", lambda _path: True)
+        monkeypatch.setattr(
+            "pathlib.Path.iterdir",
+            lambda _path: (_ for _ in ()).throw(PermissionError("dir denied")),
+        )
+
+        ok, message = mgr.list_directory(".")
+        assert ok is False
+        assert "Dizin listeleme hatası" in message
+
+    def test_audit_project_reports_unreadable_python_file(self, tmp_path, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("print('ok')\n", encoding="utf-8")
+
+        original_read_text = Path.read_text
+
+        def _read_text(path_obj, *args, **kwargs):
+            if path_obj == broken_file:
+                raise PermissionError("read denied")
+            return original_read_text(path_obj, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", _read_text)
+        report = mgr.audit_project(root=str(tmp_path))
+        assert "Hatalı" in report
+        assert "Okunamadı" in report
+
+    def test_lsp_workspace_diagnostics_reports_file_not_found_for_missing_binary(self, tmp_path, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        py_file = tmp_path / "sample.py"
+        py_file.write_text("x = 1\n", encoding="utf-8")
+        mgr.enable_lsp = True
+        mgr.python_lsp_server = "pyright-langserver"
+
+        monkeypatch.setattr(
+            mgr,
+            "_run_lsp_sequence",
+            lambda **_kwargs: (_ for _ in ()).throw(FileNotFoundError("LSP binary bulunamadı: pyright-langserver")),
+        )
+
+        ok, message = mgr.lsp_workspace_diagnostics(paths=[str(py_file)])
+        assert ok is False
+        assert "LSP binary bulunamadı" in message
