@@ -449,6 +449,82 @@ class TestVoicePipelineDummyAudioFlow:
         assert result["success"] is True
         assert selected["id"] == "tr-female"
 
+    def test_pyttsx3_adapter_selects_voice_by_candidate_id(self, monkeypatch):
+        voice = _get_voice()
+        selected = {"id": None}
+
+        class _FakeVoice:
+            def __init__(self, voice_id, name):
+                self.id = voice_id
+                self.name = name
+
+        class _FakeEngine:
+            def __init__(self):
+                self._output = None
+
+            def getProperty(self, name):
+                if name == "voices":
+                    return [_FakeVoice("tr-female", "Turkish Female"), _FakeVoice("en-male", "English Male")]
+                return []
+
+            def setProperty(self, prop, value):
+                if prop == "voice":
+                    selected["id"] = value
+
+            def save_to_file(self, _text, output):
+                self._output = output
+
+            def runAndWait(self):
+                if self._output:
+                    Path(self._output).write_bytes(b"RIFF" + b"\x00" * 16)
+
+            def stop(self):
+                return None
+
+        monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: _FakeEngine()))
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("Merhaba", voice="tr-"))
+        assert result["success"] is True
+        assert selected["id"] == "tr-female"
+
+    def test_pyttsx3_adapter_keeps_default_voice_when_no_match(self, monkeypatch):
+        voice = _get_voice()
+        selected = {"id": None}
+
+        class _FakeVoice:
+            def __init__(self, voice_id, name):
+                self.id = voice_id
+                self.name = name
+
+        class _FakeEngine:
+            def __init__(self):
+                self._output = None
+
+            def getProperty(self, name):
+                if name == "voices":
+                    return [_FakeVoice("tr-female", "Turkish Female"), _FakeVoice("en-male", "English Male")]
+                return []
+
+            def setProperty(self, prop, value):
+                if prop == "voice":
+                    selected["id"] = value
+
+            def save_to_file(self, _text, output):
+                self._output = output
+
+            def runAndWait(self):
+                if self._output:
+                    Path(self._output).write_bytes(b"RIFF" + b"\x00" * 16)
+
+            def stop(self):
+                return None
+
+        monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: _FakeEngine()))
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("Merhaba", voice="german"))
+        assert result["success"] is True
+        assert selected["id"] is None
+
     def test_pyttsx3_stop_exception_is_swallowed(self, monkeypatch):
         voice = _get_voice()
 

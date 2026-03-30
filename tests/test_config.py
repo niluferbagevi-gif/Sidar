@@ -335,6 +335,10 @@ class TestConfigDefaults:
         cfg = _reload_config()
         assert cfg.Config.WEB_PORT == 7860
 
+    def test_invalid_web_port_env_falls_back_to_default(self):
+        cfg = _reload_config({"WEB_PORT": "not-a-number"})
+        assert cfg.Config.WEB_PORT == 7860
+
     def test_default_debug_mode_is_false(self):
         os.environ.pop("DEBUG_MODE", None)
         cfg = _reload_config()
