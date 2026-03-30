@@ -621,3 +621,27 @@ class TestDocumentStoreUrlValidation:
         rag = _get_rag()
         with pytest.raises(ValueError, match="http/https"):
             rag.DocumentStore._validate_url_safe("ftp://example.com/file")
+
+
+class TestDocumentStoreFormattingEdgeCases:
+    def test_format_results_returns_not_found_when_vector_db_empty(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            ok, message = rag.DocumentStore._format_results_from_struct(store, [], "boş sorgu", "Vektör Arama")
+            assert ok is False
+            assert "ilgili sonuç bulunamadı" in message
+
+    def test_format_results_truncates_overlong_snippet(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            long_snippet = "x" * 500
+            ok, message = rag.DocumentStore._format_results_from_struct(
+                store,
+                [{"id": "doc-1", "title": "Belge", "source": "file://a", "snippet": long_snippet, "score": 0.2}],
+                "sorgu",
+                "Vektör Arama",
+            )
+            assert ok is True
+            assert "..." in message

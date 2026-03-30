@@ -1049,3 +1049,39 @@ class TestRetryBackoffHttpStatusError:
             _run(lc._retry_with_backoff("openai", _operation, config=_Cfg(), retry_hint="openai test"))
         assert exc_info.value.status_code == 503
         assert exc_info.value.retryable is True
+
+
+class TestAnthropicInvalidApiKeyHandling:
+    def test_anthropic_401_invalid_key_is_non_retryable(self, monkeypatch):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            ANTHROPIC_API_KEY = "bad-key"
+            ANTHROPIC_MODEL = "claude-3-haiku-20240307"
+            ANTHROPIC_TIMEOUT = 10
+            LLM_MAX_RETRIES = 1
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _MessagesAPI:
+            async def create(self, **_kwargs):
+                err = RuntimeError("invalid api key")
+                err.status_code = 401
+                raise err
+
+        class _AsyncAnthropic:
+            def __init__(self, *args, **kwargs):
+                self.messages = _MessagesAPI()
+
+        fake_anthropic_module = types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic)
+        monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic_module)
+
+        client = lc.AnthropicClient(_Cfg())
+        with pytest.raises(lc.LLMAPIError) as exc_info:
+            _run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "anthropic"
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.retryable is False

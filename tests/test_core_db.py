@@ -720,6 +720,36 @@ class TestDatabaseWithConftestFixture:
 
         asyncio.run(_scenario())
 
+
+class TestDatabaseConnectionDropScenarios:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_drop_test.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_run_sqlite_op_raises_when_connection_drops_mid_operation(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                assert database._sqlite_conn is not None
+                database._sqlite_conn.close()  # ani bağlantı kesilmesi simülasyonu
+
+                with pytest.raises(sqlite3.ProgrammingError):
+                    await database._run_sqlite_op(lambda: database._sqlite_conn.execute("SELECT 1"))  # type: ignore[union-attr]
+
+        asyncio.run(_scenario())
+
     @pytest.mark.parametrize(
         "campaign_name, status, budget",
         [
