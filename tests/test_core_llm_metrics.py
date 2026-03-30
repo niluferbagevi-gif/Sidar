@@ -387,6 +387,26 @@ class TestUsageSinkAndAsyncPaths:
         snap = collector.snapshot()
         assert snap["totals"]["calls"] == 1
 
+    def test_record_usage_sink_awaitable_without_close_does_not_crash(self):
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+
+        class _AwaitableNoClose:
+            def __await__(self):
+                if False:
+                    yield
+                return None
+
+        def sink_async_like(_event):
+            return _AwaitableNoClose()
+
+        collector.set_usage_sink(sink_async_like)
+        with patch("core.llm_metrics.asyncio.get_running_loop", side_effect=RuntimeError):
+            collector.record(provider="openai", model="gpt-4o", latency_ms=10.0)
+
+        snap = collector.snapshot()
+        assert snap["totals"]["calls"] == 1
+
 
 class TestEnvFloatExtra:
     def test_none_default_is_normalized_to_zero(self):

@@ -318,6 +318,13 @@ class TestBuildCiFailureContext:
         assert result is not None
         assert result["kind"] == "generic_ci_failure"
 
+    def test_generic_context_uses_default_base_branch_when_missing(self):
+        ci = _get_ci()
+        payload = {"ci_failure": True, "failure_summary": "job failed"}
+        result = ci.build_ci_failure_context("custom_event", payload)
+        assert result is not None
+        assert result["base_branch"] == "main"
+
     def test_context_contains_required_keys(self):
         ci = _get_ci()
         payload = {

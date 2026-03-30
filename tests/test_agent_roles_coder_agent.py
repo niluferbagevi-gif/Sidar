@@ -270,6 +270,18 @@ class TestCoderAgentRunTask:
         result = await agent.run_task("bilinmeyen komut xyz")
         assert "LEGACY_FALLBACK" in result or result is not None
 
+    def test_write_file_tool_usage_error_when_missing_content(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = asyncio.run(agent.run_task("write_file|only_path.py"))
+        assert "Kullanım" in result
+
+    def test_patch_file_tool_usage_error_when_missing_blocks(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = asyncio.run(agent.run_task("patch_file|main.py|eski"))
+        assert "Kullanım" in result
+
 
 class TestCoderAgentPromptVariations:
     @pytest.mark.parametrize(

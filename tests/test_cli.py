@@ -812,3 +812,25 @@ class TestMain:
                 with pytest.raises(SystemExit) as exc:
                     cli.main()
         assert exc.value.code == 2
+
+    def test_empty_overrides_do_not_replace_config_values(self):
+        cli = _get_cli()
+        mock_cfg, mock_agent = self._make_mocks()
+        # parse_args sonucu elle verilerek "if args.level/provider/model" false dalları tetiklenir.
+        args = SimpleNamespace(
+            command=None,
+            status=True,
+            level="",
+            provider="",
+            model="",
+            log="info",
+        )
+        with patch("argparse.ArgumentParser.parse_args", return_value=args):
+            with patch("cli.Config", return_value=mock_cfg):
+                with patch("cli.SidarAgent", return_value=mock_agent):
+                    with patch("asyncio.run", side_effect=_safe_asyncio_run):
+                        with patch("builtins.print"):
+                            cli.main()
+        assert mock_cfg.ACCESS_LEVEL == "full"
+        assert mock_cfg.AI_PROVIDER == "ollama"
+        assert mock_cfg.CODING_MODEL == "qwen2.5-coder:7b"

@@ -400,6 +400,32 @@ class TestVoicePipelineDummyAudioFlow:
         assert result["mime_type"] == "audio/wav"
         assert isinstance(result["audio_bytes"], (bytes, bytearray))
 
+    def test_pyttsx3_stop_exception_is_swallowed(self, monkeypatch):
+        voice = _get_voice()
+
+        class _FakeEngine:
+            def __init__(self):
+                self._output = None
+
+            def getProperty(self, _name):
+                return []
+
+            def save_to_file(self, _text, output):
+                self._output = output
+
+            def runAndWait(self):
+                if self._output:
+                    Path(self._output).write_bytes(b"RIFF" + b"\x00" * 8)
+
+            def stop(self):
+                raise RuntimeError("engine stop failed")
+
+        monkeypatch.setitem(sys.modules, "pyttsx3", types.SimpleNamespace(init=lambda: _FakeEngine()))
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("Merhaba", voice=""))
+        assert result["success"] is True
+        assert result["provider"] == "pyttsx3"
+
 
 class TestVoicePipelineAdditionalCoverage:
     def test_build_voice_state_payload_defaults_unknown_event(self):
