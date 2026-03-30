@@ -486,3 +486,63 @@ class TestDocumentStoreSearchEdgeCases:
             ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
             assert ok is True
             assert output == "keyword-exit"
+
+
+class TestDocumentStoreUrlErrorHandling:
+    def test_add_document_from_url_handles_timeout(self, monkeypatch, tmp_path):
+        rag = _get_rag()
+        store = _make_store_stub(rag, tmp_path)
+        monkeypatch.setattr(store, "_validate_url_safe", lambda _url: None)
+
+        class _FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, _url):
+                raise TimeoutError("request timed out")
+
+        fake_httpx = types.SimpleNamespace(AsyncClient=_FakeAsyncClient)
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+        import asyncio
+        ok, message = asyncio.run(store.add_document_from_url("https://example.com/doc"))
+        assert ok is False
+        assert "URL belge eklenemedi" in message
+
+    def test_add_document_from_url_http_error_is_reported(self, monkeypatch, tmp_path):
+        rag = _get_rag()
+        store = _make_store_stub(rag, tmp_path)
+        monkeypatch.setattr(store, "_validate_url_safe", lambda _url: None)
+
+        class _Resp:
+            text = "<html><title>Fail</title></html>"
+
+            def raise_for_status(self):
+                raise RuntimeError("413 payload too large")
+
+        class _FakeAsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, _url):
+                return _Resp()
+
+        fake_httpx = types.SimpleNamespace(AsyncClient=_FakeAsyncClient)
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+        import asyncio
+        ok, message = asyncio.run(store.add_document_from_url("https://example.com/too-large"))
+        assert ok is False
+        assert "413 payload too large" in message

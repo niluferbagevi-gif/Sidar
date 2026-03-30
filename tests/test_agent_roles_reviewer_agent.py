@@ -409,3 +409,37 @@ class TestReviewerAgentRunTask:
         assert contracts.is_delegation_request(result)
         assert result.target_agent == "coder"
         assert "qa_feedback" in result.payload
+
+    def test_review_code_rejects_when_dynamic_tests_fail_closed(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        agent._run_dynamic_tests = AsyncMock(return_value="[TEST:FAIL-CLOSED] dynamic test derlenemedi")
+        agent._build_regression_commands = MagicMock(return_value=["pytest -q tests/test_dummy.py"])
+
+        async def _fake_call_tool(name, arg):
+            if name == "run_tests":
+                return "[TEST:PASS] pytest -q tests/test_dummy.py"
+            if name == "graph_impact":
+                return json.dumps({"status": "ok", "reports": []}, ensure_ascii=False)
+            if name == "browser_signals":
+                return json.dumps({"status": "ok", "risk": "düşük", "summary": "clean"}, ensure_ascii=False)
+            if name == "lsp_diagnostics":
+                return json.dumps(
+                    {"status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "summary": "temiz"},
+                    ensure_ascii=False,
+                )
+            return ""
+
+        agent.call_tool = AsyncMock(side_effect=_fake_call_tool)
+        async def _run_case():
+            result = await agent.run_task("review_code|def broken():")
+            assert contracts.is_delegation_request(result)
+
+            payload = result.payload.split("qa_feedback|", 1)[1]
+            parsed = json.loads(payload)
+            assert parsed["decision"] == "REJECT"
+            assert parsed["risk"] == "yüksek"
+
+        asyncio.run(_run_case())

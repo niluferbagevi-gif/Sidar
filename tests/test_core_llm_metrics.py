@@ -246,6 +246,25 @@ class TestLLMMetricsCollectorSnapshot:
         snap = self.collector.snapshot()
         assert "budget" in snap["by_provider"]["openai"]
 
+    def test_snapshot_empty_collector_never_divides_by_zero(self):
+        collector = self.lm.LLMMetricsCollector(max_events=0)
+        snap = collector.snapshot()
+        assert snap["totals"]["calls"] == 0
+        assert snap["totals"]["cost_usd"] == 0
+        assert snap["by_provider"] == {}
+
+    def test_snapshot_cache_metrics_exception_falls_back_to_zeroed_payload(self):
+        fake_cache_mod = type("FakeCacheMod", (), {})()
+
+        def _boom():
+            raise ZeroDivisionError("bad cache denominator")
+
+        fake_cache_mod.get_cache_metrics = _boom
+        with patch.dict(sys.modules, {"core.cache_metrics": fake_cache_mod}):
+            snap = self.collector.snapshot()
+        assert snap["cache"]["hit_rate"] == 0.0
+        assert snap["cache"]["total_lookups"] == 0
+
 
 # ══════════════════════════════════════════════════════════════
 # ContextVar user id helpers

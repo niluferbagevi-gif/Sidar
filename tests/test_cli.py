@@ -803,3 +803,12 @@ class TestMain:
                 with pytest.raises(SystemExit) as exc:
                     cli.main()
         assert exc.value.code == 2
+
+    def test_unknown_argument_exits_with_error(self):
+        cli = _get_cli()
+        mock_cfg, _ = self._make_mocks()
+        with patch.object(sys, "argv", ["cli.py", "--unknown-flag"]):
+            with patch("cli.Config", return_value=mock_cfg):
+                with pytest.raises(SystemExit) as exc:
+                    cli.main()
+        assert exc.value.code == 2

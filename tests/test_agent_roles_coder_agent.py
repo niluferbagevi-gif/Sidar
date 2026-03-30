@@ -248,6 +248,21 @@ class TestCoderAgentRunTask:
         assert contracts.is_delegation_request(result)
         assert result.target_agent == "reviewer"
 
+    def test_qa_feedback_reject_includes_compile_error_excerpt(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = asyncio.run(
+            agent.run_task(
+                'qa_feedback|{"decision":"reject","summary":"build kırmızı",'
+                '"dynamic_test_output":"SyntaxError: invalid syntax",'
+                '"regression_test_output":"[TEST:FAIL] pytest -q tests/test_compile.py",'
+                '"remediation_loop":{"summary":"Kod derlenmiyor, import ve girinti düzelt"}}'
+            )
+        )
+        assert "REWORK_REQUIRED" in result
+        assert "SyntaxError" in result
+        assert "REMEDIATION_LOOP" in result
+
     @pytest.mark.asyncio
     async def test_unhandled_returns_legacy_fallback(self):
         m = _get_coder()
