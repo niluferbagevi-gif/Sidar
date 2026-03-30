@@ -472,6 +472,67 @@ class TestDatabaseErrorAndAsyncFlows:
                 await database.close()
         asyncio.run(_scenario())
 
+    def test_run_sqlite_op_auto_rolls_back_on_integrity_error(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                def _setup():
+                    assert database._sqlite_conn is not None
+                    database._sqlite_conn.execute("CREATE TABLE IF NOT EXISTS t2 (v TEXT UNIQUE)")
+                    database._sqlite_conn.commit()
+
+                await database._run_sqlite_op(_setup)
+
+                def _broken_insert():
+                    assert database._sqlite_conn is not None
+                    database._sqlite_conn.execute("INSERT INTO t2 (v) VALUES ('x')")
+                    database._sqlite_conn.execute("INSERT INTO t2 (v) VALUES ('x')")
+                    # rollback çağrısı yok: _run_sqlite_op otomatik rollback yapmalı
+
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database._run_sqlite_op(_broken_insert)
+
+                count = await database._run_sqlite_op(
+                    lambda: int(database._sqlite_conn.execute("SELECT COUNT(*) FROM t2").fetchone()[0])  # type: ignore[union-attr]
+                )
+                assert count == 0
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_run_sqlite_op_auto_rolls_back_on_runtime_error(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                def _setup():
+                    assert database._sqlite_conn is not None
+                    database._sqlite_conn.execute("CREATE TABLE IF NOT EXISTS t3 (v TEXT)")
+                    database._sqlite_conn.commit()
+
+                await database._run_sqlite_op(_setup)
+
+                def _broken_runtime():
+                    assert database._sqlite_conn is not None
+                    database._sqlite_conn.execute("INSERT INTO t3 (v) VALUES ('partial')")
+                    raise RuntimeError("mid-transaction failure")
+
+                with pytest.raises(RuntimeError, match="mid-transaction failure"):
+                    await database._run_sqlite_op(_broken_runtime)
+
+                count = await database._run_sqlite_op(
+                    lambda: int(database._sqlite_conn.execute("SELECT COUNT(*) FROM t3").fetchone()[0])  # type: ignore[union-attr]
+                )
+                assert count == 0
+                await database.close()
+
+        asyncio.run(_scenario())
+
     def test_async_create_session_and_message_flow(self):
         async def _scenario():
             db_mod = _get_db()
