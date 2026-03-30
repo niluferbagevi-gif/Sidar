@@ -7,7 +7,9 @@ SQLAlchemy gerektiren entegrasyon testleri skip'lenebilir.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -212,6 +214,32 @@ class TestDatasetExporter:
         assert result["count"] == 0
         assert result["format"] == "jsonl"
 
+    def test_export_sharegpt_writes_expected_schema_and_marks_done(self, tmp_path):
+        al = _get_al()
+        marked_ids = []
+
+        class _Store:
+            async def get_pending_export(self, min_rating=1):
+                return [
+                    {"id": 10, "prompt": "Soru", "response": "Yanıt", "correction": ""},
+                    {"id": 11, "prompt": "Soru2", "response": "Eski", "correction": "Yeni"},
+                ]
+
+            async def mark_exported(self, ids):
+                marked_ids.extend(ids)
+
+        out = tmp_path / "dataset.sharegpt.jsonl"
+        exporter = al.DatasetExporter(_Store())
+
+        result = _run(exporter.export(str(out), fmt="sharegpt", mark_done=True))
+
+        assert result["count"] == 2
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        payload = json.loads(lines[1])
+        assert payload["conversations"][0]["from"] == "human"
+        assert payload["conversations"][1]["value"] == "Yeni"
+        assert marked_ids == [10, 11]
+
 
 # ══════════════════════════════════════════════════════════════
 # ContinuousLearningPipeline — static helpers
@@ -258,6 +286,55 @@ class TestIsJudgeReasoningSignal:
 
     def test_both_required_tags_detected(self):
         assert self._check({"tags": '["judge_reasoning", "weak_response"]'}) is True
+
+
+class TestContinuousLearningPipelineBundle:
+    def _check(self, row):
+        al = _get_al()
+        return al.ContinuousLearningPipeline._is_judge_reasoning_signal(row)
+
+    def test_build_dataset_bundle_generates_manifest_and_files(self, tmp_path):
+        al = _get_al()
+
+        class _Store:
+            min_rating_for_train = 1
+
+            async def get_pending_signals(self, limit=100):
+                return [
+                    {
+                        "id": 1,
+                        "prompt": "p1",
+                        "response": "r1",
+                        "correction": "c1",
+                        "rating": 1,
+                        "tags": "[]",
+                    },
+                    {
+                        "id": 2,
+                        "prompt": "p2",
+                        "response": "r2",
+                        "correction": "",
+                        "rating": 1,
+                        "tags": "[]",
+                    },
+                ]
+
+        class _Cfg:
+            ENABLE_CONTINUOUS_LEARNING = True
+            CONTINUOUS_LEARNING_OUTPUT_DIR = str(tmp_path / "bundles")
+            CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES = 1
+            CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES = 1
+            CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS = 50
+            CONTINUOUS_LEARNING_SFT_FORMAT = "alpaca"
+
+        pipeline = al.ContinuousLearningPipeline(_Store(), config=_Cfg(), trainer=object())
+        manifest = _run(pipeline.build_dataset_bundle())
+
+        assert manifest["counts"]["signals"] == 2
+        assert manifest["counts"]["sft_examples"] >= 1
+        assert manifest["counts"]["preference_examples"] == 1
+        assert Path(manifest["sft_path"]).exists()
+        assert Path(manifest["preference_path"]).exists()
 
     def test_only_judge_reasoning_returns_false(self):
         assert self._check({"tags": '["judge_reasoning"]'}) is False
