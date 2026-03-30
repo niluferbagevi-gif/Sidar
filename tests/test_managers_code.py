@@ -336,6 +336,28 @@ class TestExecuteCodeFallbackLoops:
         assert message == "local fallback ok"
         mgr.execute_code_local.assert_called_once()
 
+    def test_execute_code_rejects_when_sandbox_mode_and_docker_unavailable(self):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, level=cm.SANDBOX)
+        mgr.docker_available = False
+
+        ok, message = mgr.execute_code("print('hi')")
+        assert ok is False
+        assert "güvenlik politikası gereği" in message
+
+    def test_execute_code_local_surfaces_subprocess_errors(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True)
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("execution denied")
+
+        monkeypatch.setattr(cm.subprocess, "run", _raise_permission)
+        ok, message = mgr.execute_code_local("print('x')")
+        assert ok is False
+        assert "Subprocess çalıştırma hatası" in message
+        assert "execution denied" in message
+
 
 class TestRunShellInSandbox:
     def test_denies_when_execute_permission_missing(self):
@@ -410,6 +432,17 @@ class TestRunShellInSandbox:
         assert ok is False
         assert "Sandbox komutu hatası" in message
         assert "sandbox evasion detected" in message
+
+    def test_file_not_found_during_subprocess_returns_docker_cli_missing(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(cm.subprocess, "run", MagicMock(side_effect=FileNotFoundError("docker not found")))
+
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "Docker CLI bulunamadı" in message
 
     def test_success_with_empty_output(self, monkeypatch):
         mgr, cm = _make_code_manager()
