@@ -634,6 +634,44 @@ class TestDocumentStoreSearchEdgeCases:
             assert output == "bm25-after-chroma"
 
 
+class TestDocumentStoreConsolidationPaths:
+    def test_consolidate_skips_when_no_removable_documents(self, monkeypatch, tmp_path):
+        rag, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
+        store._index = {
+            "d1": {"session_id": "s1", "access_count": 5, "created_at": 10, "last_accessed_at": 12},
+            "d2": {"session_id": "s1", "tags": ["pinned"], "access_count": 0, "created_at": 9, "last_accessed_at": 11},
+            "d3": {"session_id": "s1", "tags": ["memory-summary"], "access_count": 0, "created_at": 8, "last_accessed_at": 10},
+        }
+        monkeypatch.setattr(store, "_add_document_sync", lambda **_kwargs: "should-not-run")
+
+        result = store.consolidate_session_documents("s1", keep_recent_docs=1)
+
+        assert result["status"] == "skipped"
+        assert result["removed_docs"] == 0
+        assert result["summary_doc_id"] == ""
+
+    def test_consolidate_creates_summary_and_deletes_old_and_digest_docs(self, monkeypatch, tmp_path):
+        rag, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
+        store._index = {
+            "recent": {"session_id": "s1", "access_count": 4, "created_at": 50, "last_accessed_at": 60, "title": "Recent"},
+            "old1": {"session_id": "s1", "access_count": 0, "created_at": 10, "last_accessed_at": 12, "title": "Old 1", "preview": "p1"},
+            "old2": {"session_id": "s1", "access_count": 1, "created_at": 9, "last_accessed_at": 11, "title": "Old 2", "preview": "p2"},
+            "digest": {"session_id": "s1", "source": "memory://nightly-digest/prev", "access_count": 0, "created_at": 5},
+        }
+        deleted = []
+        monkeypatch.setattr(store, "delete_document", lambda doc_id, session_id=None: deleted.append((doc_id, session_id)))
+        monkeypatch.setattr(store, "_add_document_sync", lambda **_kwargs: "summary-doc-1")
+
+        result = store.consolidate_session_documents("s1", keep_recent_docs=1)
+
+        assert result["status"] == "completed"
+        assert result["removed_docs"] == 3
+        assert result["summary_doc_id"] == "summary-doc-1"
+        assert ("digest", "s1") in deleted
+        assert ("old1", "s1") in deleted
+        assert ("old2", "s1") in deleted
+
+
 class TestDocumentStorePgvectorAndChunkingEdgeCases:
     def test_pgvector_embed_texts_returns_empty_when_encode_raises(self):
         rag = _get_rag()
