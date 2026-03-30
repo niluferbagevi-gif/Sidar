@@ -475,3 +475,11 @@ class TestReviewerAgentRunTask:
             assert "browser_signal_summary" in parsed
 
         asyncio.run(_run_case())
+
+class TestReviewerAgentFallbacks:
+    @pytest.mark.asyncio
+    async def test_unknown_prompt_uses_default_list_prs_fallback(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        result = await agent.run_task("tamamen alakasız bir istek")
+        assert "PR listesi" in result

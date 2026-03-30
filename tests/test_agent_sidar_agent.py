@@ -888,3 +888,62 @@ class TestSidarAgentRespondAndToolFallback:
             assert "conflict/rejected" in out
 
         asyncio.run(_run_case())
+
+
+class TestSidarAgentAutonomousSelfHealGuardBranches:
+    def test_self_heal_disabled_sets_disabled_status(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = False
+        remediation = {"remediation_loop": {"status": "planned"}}
+
+        async def _run_case():
+            result = await agent._attempt_autonomous_self_heal(
+                ci_context={},
+                diagnosis="ci fail",
+                remediation=remediation,
+            )
+            assert result["status"] == "disabled"
+            assert remediation["self_heal_execution"]["status"] == "disabled"
+
+        asyncio.run(_run_case())
+
+    def test_self_heal_non_planned_loop_is_skipped(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+        remediation = {"remediation_loop": {"status": "observe_only"}}
+
+        async def _run_case():
+            result = await agent._attempt_autonomous_self_heal(
+                ci_context={},
+                diagnosis="ci fail",
+                remediation=remediation,
+            )
+            assert result["status"] == "skipped"
+
+        asyncio.run(_run_case())
+
+    def test_self_heal_empty_plan_operations_blocks_patch_step(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_AUTONOMOUS_SELF_HEAL = True
+        remediation = {
+            "remediation_loop": {
+                "status": "planned",
+                "needs_human_approval": False,
+                "steps": [{"name": "patch", "status": "pending", "detail": ""}],
+            }
+        }
+
+        async def _run_case():
+            with patch.object(agent, "_build_self_heal_plan", AsyncMock(return_value={"operations": []})):
+                result = await agent._attempt_autonomous_self_heal(
+                    ci_context={},
+                    diagnosis="ci fail",
+                    remediation=remediation,
+                )
+            assert result["status"] == "blocked"
+            assert remediation["remediation_loop"]["steps"][0]["status"] == "blocked"
+
+        asyncio.run(_run_case())

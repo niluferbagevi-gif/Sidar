@@ -475,3 +475,36 @@ class TestAutoHandleNegativeBranchExits:
         handled, response = handler._try_security_status("kod kalitesini artır")
         assert handled is False
         assert response == ""
+
+
+class TestAutoHandleErrorBranches:
+    @pytest.mark.asyncio
+    async def test_audit_timeout_returns_warning(self):
+        handler, code, *_ = _make_auto_handle()
+        with patch.object(handler, "_run_blocking", AsyncMock(side_effect=asyncio.TimeoutError)):
+            handled, response = await handler.handle("sistemi tara")
+        assert handled is True
+        assert "zaman aşımı" in response.lower()
+
+    @pytest.mark.asyncio
+    async def test_health_without_manager_returns_warning(self):
+        handler, *_ = _make_auto_handle()
+        handler.health = None
+        handled, response = await handler.handle("sistem sağlık raporu")
+        assert handled is True
+        assert "başlatılamadı" in response.lower()
+
+    @pytest.mark.asyncio
+    async def test_gpu_optimize_exception_returns_warning(self):
+        handler, *_ = _make_auto_handle()
+        with patch.object(handler, "_run_blocking", AsyncMock(side_effect=RuntimeError("gpu busy"))):
+            handled, response = await handler.handle("gpu optimize et")
+        assert handled is True
+        assert "başarısız" in response.lower()
+
+    @pytest.mark.asyncio
+    async def test_docs_add_without_url_falls_back_to_react(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler.handle("belge deposuna ekle")
+        assert handled is False
+        assert response == ""
