@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import threading
 import importlib
+from unittest.mock import patch
 
 
 def _get_cache_metrics():
@@ -255,3 +256,93 @@ class TestModuleLevelFunctions:
         assert result["hits"] == 1
         assert result["misses"] == 1
         assert result["hit_rate"] == 0.5
+
+
+class TestPrometheusPaths:
+    def test_get_prometheus_metric_returns_none_when_import_fails(self):
+        cm = _get_cache_metrics()
+        with patch.object(importlib, "import_module", side_effect=ImportError("missing prometheus")):
+            metric = cm._get_prometheus_metric("sidar_test_missing", "desc", "counter")
+        assert metric is None
+
+    def test_get_prometheus_metric_returns_existing_registry_collector(self):
+        cm = _get_cache_metrics()
+
+        existing_metric = object()
+
+        class _Registry:
+            _names_to_collectors = {"sidar_existing_metric": existing_metric}
+
+        class _PromModule:
+            REGISTRY = _Registry()
+
+        with patch.object(importlib, "import_module", return_value=_PromModule):
+            first = cm._get_prometheus_metric("sidar_existing_metric", "desc", "counter")
+            second = cm._get_prometheus_metric("sidar_existing_metric", "desc", "counter")
+
+        assert first is existing_metric
+        assert second is existing_metric
+
+    def test_set_cache_items_uses_gauge_factory_path(self):
+        cm = _get_cache_metrics()
+        captured = {"name": None, "value": None}
+
+        class _Gauge:
+            def __init__(self, metric_name, _description):
+                captured["name"] = metric_name
+
+            def set(self, value):
+                captured["value"] = value
+
+        class _PromModule:
+            REGISTRY = type("_R", (), {"_names_to_collectors": {}})()
+            Gauge = _Gauge
+            Counter = None
+
+        with patch.object(importlib, "import_module", return_value=_PromModule):
+            cm.set_cache_items(11)
+
+        assert captured["name"] == "sidar_semantic_cache_items"
+        assert captured["value"] == 11
+
+    def test_record_cache_eviction_non_positive_count_returns_early(self):
+        cm = _get_cache_metrics()
+        calls = {"count": 0}
+
+        def _fake_get(*_args, **_kwargs):
+            calls["count"] += 1
+            return None
+
+        with patch.object(cm, "_get_prometheus_metric", side_effect=_fake_get):
+            cm.record_cache_eviction(0)
+            cm.record_cache_eviction(-2)
+
+        assert cm._cache_metrics.evictions == 0
+        assert calls["count"] == 0
+
+    def test_record_cache_skip_counter_function_is_callable(self):
+        cm = _get_cache_metrics()
+        cm.record_cache_skip()
+        assert cm._cache_metrics.skips == 1
+
+    def test_observe_cache_redis_latency_uses_gauge(self):
+        cm = _get_cache_metrics()
+        captured = {"name": None, "value": None}
+
+        class _Gauge:
+            def __init__(self, metric_name, _description):
+                captured["name"] = metric_name
+
+            def set(self, value):
+                captured["value"] = value
+
+        class _PromModule:
+            REGISTRY = type("_R", (), {"_names_to_collectors": {}})()
+            Gauge = _Gauge
+            Counter = None
+
+        with patch.object(importlib, "import_module", return_value=_PromModule):
+            cm.observe_cache_redis_latency(8.25)
+
+        assert captured["name"] == "sidar_semantic_cache_redis_latency_ms"
+        assert captured["value"] == 8.25

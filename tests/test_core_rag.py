@@ -768,6 +768,68 @@ class TestDocumentStoreJudgeScheduling:
         assert called["schedule"] == 0
 
 
+class TestDocumentStoreKnowledgeGraphProjection:
+    def test_projection_filters_session_and_includes_code_graph(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._vector_backend = "chroma"
+            store._pgvector_available = False
+            store._index = {
+                "doc-1": {"session_id": "s1", "title": "Belge1", "source": "src-a"},
+                "doc-2": {"session_id": "s2", "title": "Belge2", "source": "src-b"},
+            }
+            store._graph_rag_enabled = True
+            store._graph_index = types.SimpleNamespace(
+                nodes={"n1": {"kind": "file"}, "n2": {"kind": "func"}},
+                edges={"n1": {"n2"}},
+                edge_kinds={("n1", "n2"): {"IMPORTS"}},
+            )
+            calls = {"ensure": 0}
+            store._ensure_graph_ready = lambda: calls.__setitem__("ensure", calls["ensure"] + 1)
+
+            projection = rag.DocumentStore.build_knowledge_graph_projection(
+                store,
+                session_id="s1",
+                include_code_graph=True,
+                limit=50,
+            )
+
+            node_ids = {n.id for n in projection["nodes"]}
+            assert "doc:doc-1" in node_ids
+            assert "doc:doc-2" not in node_ids
+            assert "code:n1" in node_ids
+            assert calls["ensure"] == 1
+            assert projection["vector_backend"] == "chroma"
+
+
+class TestDocumentStoreBm25FetchPaths:
+    def test_fetch_bm25_returns_empty_when_no_alnum_words(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._bm25_available = True
+            store._write_lock = threading.Lock()
+            store.fts_conn = types.SimpleNamespace()
+            out = rag.DocumentStore._fetch_bm25(store, "!!! ???", 3, "global")
+            assert out == []
+
+    def test_fetch_bm25_returns_empty_on_query_exception(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._bm25_available = True
+            store._write_lock = threading.Lock()
+
+            class _BrokenFts:
+                def execute(self, *_args, **_kwargs):
+                    raise RuntimeError("fts unavailable")
+
+            store.fts_conn = _BrokenFts()
+            out = rag.DocumentStore._fetch_bm25(store, "query text", 3, "global")
+            assert out == []
+
+
 class TestDocumentStoreUrlValidation:
     def test_validate_url_safe_rejects_localhost(self):
         rag = _get_rag()

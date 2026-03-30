@@ -403,3 +403,51 @@ class TestGitHubManagerAuthAndRepoFlows:
         assert ok is False
         assert "Dal oluşturma hatası" in message
         assert "409" in message
+
+
+class TestGitHubManagerPrFormattingAndStateEdges:
+    def test_list_pull_requests_invalid_state_falls_back_to_open(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(full_name="owner/repo")
+        repo.get_pulls.return_value = []
+        mgr._repo = repo
+
+        ok, _message = mgr.list_pull_requests(state="invalid-state", limit=5)
+        assert ok is True
+        repo.get_pulls.assert_called_once_with(state="open", sort="updated")
+
+    def test_get_pull_request_includes_suffix_for_more_than_20_files(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+
+        from datetime import datetime
+
+        files = [
+            MagicMock(status="modified", additions=1, deletions=0, filename=f"file_{i}.py")
+            for i in range(25)
+        ]
+        pr = MagicMock(
+            number=17,
+            title="Big PR",
+            state="open",
+            user=MagicMock(login="dev"),
+            head=MagicMock(ref="feat/big"),
+            base=MagicMock(ref="main"),
+            created_at=datetime(2026, 1, 1, 10, 0),
+            updated_at=datetime(2026, 1, 2, 10, 0),
+            additions=100,
+            deletions=10,
+            changed_files=25,
+            comments=3,
+            html_url="https://example/pr/17",
+            body="description",
+        )
+        pr.get_files.return_value = files
+        repo = MagicMock(full_name="owner/repo")
+        repo.get_pull.return_value = pr
+        mgr._repo = repo
+
+        ok, details = mgr.get_pull_request(17)
+        assert ok is True
+        assert "(+5 dosya daha)" in details
