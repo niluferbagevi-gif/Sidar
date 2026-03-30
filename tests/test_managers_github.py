@@ -165,6 +165,17 @@ class TestGitHubPatchedServiceResponses:
         assert ok is False
         assert repos == []
 
+    def test_list_repos_handles_403_from_service(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._gh = MagicMock()
+        mgr._gh.get_user.side_effect = _GitHubHttpError(403, "Forbidden")
+
+        ok, repos = mgr.list_repos(owner="private-org")
+
+        assert ok is False
+        assert repos == []
+
     def test_read_remote_file_handles_forbidden_403(self):
         gh = _get_gh()
         mgr = gh.GitHubManager(token="")
