@@ -1005,6 +1005,144 @@ class TestDatabasePromptActivationAndPostgresSchema:
 
         asyncio.run(_scenario())
 
+
+class TestDatabaseAdditionalEdgeCases:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_additional_edges.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_empty_listing_queries_return_empty_lists(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database.init_schema()
+
+                campaigns = await database.list_marketing_campaigns(tenant_id="default")
+                assets = await database.list_content_assets(campaign_id=999, tenant_id="default")
+                checklists = await database.list_operation_checklists(campaign_id=999, tenant_id="default")
+
+                assert campaigns == []
+                assert assets == []
+                assert checklists == []
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_add_operation_checklist_rejects_blank_title(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database.init_schema()
+
+                with pytest.raises(ValueError, match="title is required"):
+                    await database.add_operation_checklist(
+                        campaign_id=1,
+                        tenant_id="default",
+                        title="   ",
+                        items=[],
+                        status="pending",
+                        owner_user_id="u1",
+                    )
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_replace_session_messages_sqlite_normalizes_payload_and_filters_blanks(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database.init_schema()
+
+                user = await database.create_user("msg_replace_user", role="user")
+                session = await database.create_session(user.id, "Replace Test")
+                await database.add_message(session.id, "user", "eski", tokens_used=1)
+
+                replaced = await database.replace_session_messages(
+                    session.id,
+                    [
+                        {"role": "", "content": "  yeni içerik  "},
+                        {"role": "assistant", "content": "   "},
+                    ],
+                )
+                assert replaced == 1
+
+                rows = await database.get_session_messages(session.id)
+                assert len(rows) == 1
+                assert rows[0].role == "assistant"
+                assert rows[0].content == "yeni içerik"
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_replace_session_messages_postgresql_rolls_outside_on_transaction_error(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            state = {"tx_exc_type": None, "exec_calls": 0}
+
+            class _Tx:
+                async def __aenter__(self):
+                    return None
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    state["tx_exc_type"] = exc_type
+                    return False
+
+            class _Conn:
+                def transaction(self):
+                    return _Tx()
+
+                async def execute(self, query, *_args):
+                    state["exec_calls"] += 1
+                    if "INSERT INTO messages" in query:
+                        raise RuntimeError("insert failed")
+
+            class _Acquire:
+                async def __aenter__(self):
+                    return _Conn()
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+            class _Pool:
+                def acquire(self):
+                    return _Acquire()
+
+            database = db_mod.Database(cfg=_Cfg())
+            database._pg_pool = _Pool()
+
+            with pytest.raises(RuntimeError, match="insert failed"):
+                await database.replace_session_messages(
+                    "s1",
+                    [{"role": "assistant", "content": "boom"}],
+                )
+
+            assert state["exec_calls"] >= 2  # delete + insert denemesi
+            assert state["tx_exc_type"] is RuntimeError
+
+        asyncio.run(_scenario())
+
     def test_init_schema_postgresql_executes_all_queries(self):
         async def _scenario():
             db_mod = _get_db()
