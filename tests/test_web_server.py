@@ -290,8 +290,18 @@ class TestMaskingAndSerialization:
         ws = _get_web_server()
         room = ws._CollaborationRoom(room_id="workspace:default")
         room.participants = {
-            2: ws._CollaborationParticipant(display_name="zeta", username="z", user_id="2"),
-            1: ws._CollaborationParticipant(display_name="Alpha", username="a", user_id="1"),
+            2: ws._CollaborationParticipant(
+                websocket=types.SimpleNamespace(),
+                display_name="zeta",
+                username="z",
+                user_id="2",
+            ),
+            1: ws._CollaborationParticipant(
+                websocket=types.SimpleNamespace(),
+                display_name="Alpha",
+                username="a",
+                user_id="1",
+            ),
         }
         room.messages = [{"id": str(i)} for i in range(130)]
         room.telemetry = [{"id": str(i)} for i in range(130)]

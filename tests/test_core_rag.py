@@ -558,7 +558,6 @@ class TestSemanticCacheEmbeddings:
 
         fake_st_module = types.SimpleNamespace(SentenceTransformer=_BrokenModel)
         monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st_module)
-
         vectors = rag.embed_texts_for_semantic_cache(["merhaba dünya"])
         assert vectors == []
 
@@ -583,3 +582,15 @@ class TestSemanticCacheEmbeddings:
 
         vectors = rag.embed_texts_for_semantic_cache(["sorgu"])
         assert vectors == [[0.1, 0.2, 0.3]]
+
+
+class TestDocumentStoreUrlValidation:
+    def test_validate_url_safe_rejects_localhost(self):
+        rag = _get_rag()
+        with pytest.raises(ValueError, match="localhost"):
+            rag.DocumentStore._validate_url_safe("http://localhost:8000/secret")
+
+    def test_validate_url_safe_rejects_disallowed_scheme(self):
+        rag = _get_rag()
+        with pytest.raises(ValueError, match="http/https"):
+            rag.DocumentStore._validate_url_safe("ftp://example.com/file")
