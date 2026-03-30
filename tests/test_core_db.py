@@ -6,6 +6,7 @@ _quote_sql_identifier, _utc_now_iso) ve Database._configure_backend kapsar.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import sqlite3
 import sys
@@ -797,5 +798,54 @@ class TestDatabaseConnectionDropScenarios:
             assert checklist.campaign_id == campaign.id
             assert isinstance(assets, list)
             await database.close()
+
+        asyncio.run(_scenario())
+
+
+class TestDatabasePromptRegistryBootstrap:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_prompt_test.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_ensure_default_prompt_registry_logs_warning_when_upsert_fails(self, monkeypatch, caplog):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                class _Loader:
+                    @staticmethod
+                    def exec_module(module):
+                        module.SIDAR_SYSTEM_PROMPT = "varsayilan sistem promptu"
+
+                fake_spec = types.SimpleNamespace(loader=_Loader())
+                monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_a, **_k: fake_spec)
+                monkeypatch.setattr(importlib.util, "module_from_spec", lambda _spec: types.SimpleNamespace())
+                async def _none_prompt(*_args, **_kwargs):
+                    return None
+
+                monkeypatch.setattr(database, "get_active_prompt", _none_prompt)
+
+                async def _boom(**_kwargs):
+                    raise RuntimeError("insert failed")
+
+                monkeypatch.setattr(database, "upsert_prompt", _boom)
+
+                with caplog.at_level(logging.WARNING, logger="core.db"):
+                    await database.ensure_default_prompt_registry()
+
+                assert "Varsayılan prompt kaydı oluşturulamadı" in caplog.text
+                await database.close()
 
         asyncio.run(_scenario())
