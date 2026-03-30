@@ -217,3 +217,43 @@ class TestSystemHealthHighLoadScenarios:
         report = mgr.full_report()
         assert "CPU       : %99.0 kullanımda" in report
         assert "RAM       : 63.0/64.0 GB (%98 kullanımda)" in report
+
+
+class TestSystemHealthExternalFailureScenarios:
+    def test_check_ollama_returns_false_when_http_500(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+
+        class _Resp:
+            status_code = 500
+
+        fake_requests = types.SimpleNamespace(get=lambda *_a, **_k: _Resp())
+        monkeypatch.setitem(sys.modules, "requests", fake_requests)
+
+        assert mgr.check_ollama() is False
+
+    def test_check_ollama_returns_false_when_request_times_out(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+
+        def _raise_timeout(*_a, **_k):
+            raise TimeoutError("network timeout")
+
+        fake_requests = types.SimpleNamespace(get=_raise_timeout)
+        monkeypatch.setitem(sys.modules, "requests", fake_requests)
+
+        assert mgr.check_ollama() is False
+
+    def test_tcp_dependency_health_returns_unhealthy_on_connection_error(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+
+        def _raise_connect_error(*_a, **_k):
+            raise ConnectionRefusedError("connection refused")
+
+        monkeypatch.setattr(sh.socket, "create_connection", _raise_connect_error)
+        status = mgr._tcp_dependency_health("api.local", 443, label="redis")
+
+        assert status["healthy"] is False
+        assert status["kind"] == "redis"
+        assert "connection refused" in status["error"]

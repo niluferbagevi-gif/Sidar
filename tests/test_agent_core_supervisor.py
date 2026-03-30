@@ -318,6 +318,15 @@ class TestSupervisorIsRejectFeedbackPayload:
         sv = _get_supervisor()
         assert sv.SupervisorAgent._is_reject_feedback_payload("qa_feedback|decision=reject") is True
 
+    def test_qa_feedback_prefix_with_empty_body_returns_false(self):
+        sv = _get_supervisor()
+        assert sv.SupervisorAgent._is_reject_feedback_payload("qa_feedback|   ") is False
+
+    def test_malformed_json_payload_without_reject_hint_returns_false(self):
+        sv = _get_supervisor()
+        payload = "qa_feedback|{decision: maybe}"
+        assert sv.SupervisorAgent._is_reject_feedback_payload(payload) is False
+
 
 class TestSupervisorP2PRouting:
     def test_route_p2p_stops_after_max_qa_retry(self):

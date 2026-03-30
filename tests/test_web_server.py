@@ -2344,3 +2344,61 @@ class TestOperationsEndpoints:
         assert calls["list_assets"] == {"tenant_id": "acme", "campaign_id": 77, "limit": 8}
         assert calls["list_checklists"] == {"tenant_id": "acme", "campaign_id": 77, "limit": 5}
         assert calls["add_checklist"]["owner_user_id"] == "u7"
+
+
+class TestIntegrationEndpointFailures:
+    def test_api_jira_create_issue_returns_503_when_unconfigured(self, monkeypatch):
+        ws = _get_web_server()
+        fake_mgr = types.SimpleNamespace(is_available=lambda: False)
+        monkeypatch.setattr(ws, "_get_jira_manager", lambda: fake_mgr)
+        req = types.SimpleNamespace(
+            project_key="SIDAR",
+            summary="Issue",
+            description="desc",
+            issue_type="Task",
+            priority=None,
+        )
+
+        with pytest.raises(ws.HTTPException) as exc_info:
+            asyncio.run(ws.api_jira_create_issue(req))
+
+        assert exc_info.value.status_code == 503
+
+    def test_api_jira_search_issues_returns_502_on_service_error(self, monkeypatch):
+        ws = _get_web_server()
+        fake_mgr = types.SimpleNamespace(
+            is_available=lambda: True,
+            search_issues=AsyncMock(return_value=(False, [], "HTTP 500")),
+        )
+        monkeypatch.setattr(ws, "_get_jira_manager", lambda: fake_mgr)
+
+        with pytest.raises(ws.HTTPException) as exc_info:
+            asyncio.run(ws.api_jira_search_issues(jql="project=SIDAR", max_results=10))
+
+        assert exc_info.value.status_code == 502
+        assert "Jira hatası" in str(exc_info.value.detail)
+
+    def test_api_slack_send_returns_503_when_unconfigured(self, monkeypatch):
+        ws = _get_web_server()
+        fake_mgr = types.SimpleNamespace(is_available=lambda: False)
+        monkeypatch.setattr(ws, "_get_slack_manager", AsyncMock(return_value=fake_mgr))
+        req = types.SimpleNamespace(text="hello", channel="#ops", thread_ts=None)
+
+        with pytest.raises(ws.HTTPException) as exc_info:
+            asyncio.run(ws.api_slack_send(req))
+
+        assert exc_info.value.status_code == 503
+
+    def test_api_slack_channels_returns_502_on_service_error(self, monkeypatch):
+        ws = _get_web_server()
+        fake_mgr = types.SimpleNamespace(
+            is_available=lambda: True,
+            list_channels=AsyncMock(return_value=(False, [], "HTTP 401")),
+        )
+        monkeypatch.setattr(ws, "_get_slack_manager", AsyncMock(return_value=fake_mgr))
+
+        with pytest.raises(ws.HTTPException) as exc_info:
+            asyncio.run(ws.api_slack_channels())
+
+        assert exc_info.value.status_code == 502
+        assert "Slack hatası" in str(exc_info.value.detail)

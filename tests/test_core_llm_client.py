@@ -266,6 +266,30 @@ class TestCosineSimilarity:
         assert abs(sim - 1.0 / math.sqrt(2)) < 1e-5
 
 
+class TestSemanticCacheManagerEdgeCases:
+    def test_get_returns_none_when_cached_embedding_is_malformed_json(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            ENABLE_SEMANTIC_CACHE = True
+            SEMANTIC_CACHE_THRESHOLD = 0.8
+
+        class _FakeRedis:
+            async def lrange(self, *_args, **_kwargs):
+                return ["k1"]
+
+            async def hgetall(self, _key):
+                return {"embedding": "{bad-json", "response": "cached response"}
+
+        cache = lc._SemanticCacheManager(_Cfg())
+        monkeypatch.setattr(cache, "_get_redis", AsyncMock(return_value=_FakeRedis()))
+        monkeypatch.setattr(cache, "_embed_prompt", lambda _prompt: [0.1, 0.2, 0.3])
+
+        result = _run(cache.get("prompt"))
+
+        assert result is None
+
+
 # ══════════════════════════════════════════════════════════════
 # _retry_with_backoff
 # ══════════════════════════════════════════════════════════════
