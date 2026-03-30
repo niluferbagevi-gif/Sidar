@@ -754,3 +754,21 @@ class TestPoyrazAgentScenarioParametrized:
             assert result == "MODE_OK"
             called_mode = agent._generate_marketing_output.await_args.args[1]
             assert called_mode == expected_target
+
+
+class TestPoyrazAgentFailureScenarios:
+    def test_web_search_timeout_is_propagated(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        agent.web.search = AsyncMock(side_effect=TimeoutError("web timeout"))
+
+        with pytest.raises(TimeoutError):
+            asyncio.run(agent._tool_web_search("sidar growth strategy"))
+
+    def test_generate_marketing_output_error_is_propagated(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(side_effect=RuntimeError("llm failed")))
+
+        with pytest.raises(RuntimeError):
+            asyncio.run(agent.run_task("seo_audit|teknik denetim"))

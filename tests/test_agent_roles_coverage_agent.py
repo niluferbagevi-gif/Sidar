@@ -763,3 +763,36 @@ class TestCoverageAgentTools:
         call_kwargs = fake_db.add_coverage_finding.await_args.kwargs
         assert call_kwargs["finding_type"] == "unknown"
         assert call_kwargs["target_path"] == ""
+
+
+class TestCoverageAgentRunTaskExtraBranches:
+    def test_run_task_returns_write_failed_when_test_file_cannot_be_written(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        agent.code.run_pytest_and_collect = MagicMock(
+            return_value={
+                "output": "FAILED tests/test_x.py::test_a",
+                "analysis": {"summary": "gap", "findings": [{"target_path": "core/x.py"}]},
+            }
+        )
+        agent.code.write_generated_test = MagicMock(return_value=(False, "disk dolu"))
+        agent._generate_test_candidate = AsyncMock(return_value="def test_auto(): pass")
+        agent._record_task = AsyncMock(side_effect=RuntimeError("db unavailable"))
+
+        result = asyncio.run(agent.run_task('{"command":"pytest -q","cwd":"/tmp"}'))
+        parsed = json.loads(result)
+        assert parsed["status"] == "write_failed"
+        assert parsed["success"] is False
+        assert parsed["target_path"] == "core/x.py"
+
+    def test_run_task_plain_text_prompt_uses_command_fallback(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        agent.code.run_pytest_and_collect = MagicMock(
+            return_value={"output": "", "analysis": {"summary": "ok", "findings": []}}
+        )
+
+        result = asyncio.run(agent.run_task("pytest -q tests/test_core_db.py"))
+        parsed = json.loads(result)
+        assert parsed["status"] == "no_gaps_detected"
+        assert parsed["command"] == "pytest -q tests/test_core_db.py"

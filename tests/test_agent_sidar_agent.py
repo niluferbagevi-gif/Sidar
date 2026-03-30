@@ -593,6 +593,59 @@ class TestSidarAgentRemediationBranches:
 
         asyncio.run(_run_case())
 
+    def test_execute_self_heal_plan_read_backup_failure_reverts(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.code.read_file = MagicMock(return_value=(False, "permission denied"))
+        agent.code.patch_file = MagicMock(return_value=(True, "ok"))
+        agent.code.write_file = MagicMock(return_value=(True, "ok"))
+
+        async def _run_case():
+            result = await agent._execute_self_heal_plan(
+                remediation_loop={"validation_commands": ["pytest -q"]},
+                plan={
+                    "operations": [{"path": "a.py", "target": "x", "replacement": "y"}],
+                    "validation_commands": ["pytest -q"],
+                },
+            )
+            assert result["status"] == "reverted"
+            assert result["reverted"] is True
+            agent.code.patch_file.assert_not_called()
+
+        asyncio.run(_run_case())
+
+    def test_update_remediation_step_keeps_steps_when_name_not_found(self):
+        sa = _get_sidar_agent()
+        remediation_loop = {
+            "steps": [
+                {"name": "diagnose", "status": "pending", "detail": ""},
+                {"name": "patch", "status": "pending", "detail": ""},
+            ]
+        }
+        original = json.loads(json.dumps(remediation_loop["steps"]))
+
+        sa.SidarAgent._update_remediation_step(
+            remediation_loop,
+            "validate",
+            status="completed",
+            detail="should not be applied",
+        )
+
+        assert remediation_loop["steps"] == original
+
+    def test_append_autonomy_history_caps_to_last_50_records(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        async def _run_case():
+            for i in range(70):
+                await agent._append_autonomy_history({"idx": i})
+            assert len(agent._autonomy_history) == 50
+            assert agent._autonomy_history[0]["idx"] == 20
+            assert agent._autonomy_history[-1]["idx"] == 69
+
+        asyncio.run(_run_case())
+
 
 class TestSidarAgentTriggerCorrelationAndPrompt:
     def test_build_trigger_prompt_variants(self):
