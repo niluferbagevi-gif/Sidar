@@ -446,6 +446,7 @@ class TestSwarmOrchestratorGoalFingerprint:
 
     def test_loop_repeat_limit_defaults_by_provider_and_respects_override(self):
         orchestrator, sw = _make_orchestrator()
+        orchestrator.cfg = MagicMock()
         orchestrator.cfg.AI_PROVIDER = "ollama"
         orchestrator.cfg.SWARM_LOOP_GUARD_MAX_REPEAT = 0
         assert orchestrator._loop_repeat_limit() == 2
