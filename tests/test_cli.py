@@ -477,6 +477,24 @@ class TestInteractiveLoopAsync:
         combined = " ".join(printed)
         assert "4 GPU" in combined or "A100" in combined
 
+    def test_gpu_mode_without_cuda_version_still_prints_gpu_line(self):
+        cli = _get_cli()
+        agent = _make_agent(use_gpu=True, gpu_info="RTX 3090", cuda_version="N/A", gpu_count=1)
+        printed = []
+
+        async def fake_to_thread(fn, *a, **k):
+            raise EOFError
+
+        async def run():
+            with patch("asyncio.to_thread", side_effect=fake_to_thread):
+                with patch("builtins.print", side_effect=lambda *a, **k: printed.append(str(a))):
+                    await cli._interactive_loop_async(agent)
+
+        asyncio.run(run())
+        combined = " ".join(printed)
+        assert "RTX 3090" in combined
+        assert "CUDA" not in combined
+
     def test_cpu_mode_displayed_when_gpu_false(self):
         cli = _get_cli()
         agent = _make_agent(use_gpu=False, gpu_info="CPU Modu")

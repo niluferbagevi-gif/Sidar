@@ -286,6 +286,19 @@ class TestLLMMetricsCollectorSnapshot:
         assert snap["cache"]["hit_rate"] == 0.0
         assert snap["cache"]["total_lookups"] == 0
 
+    def test_snapshot_daily_budget_ignores_events_older_than_24h(self):
+        now = 1_700_000_000.0
+        with patch("core.llm_metrics.time.time", return_value=now):
+            self.collector.record(provider="openai", model="gpt-4o-mini", latency_ms=10.0, cost_usd=2.5)
+            self.collector.record(provider="openai", model="gpt-4o-mini", latency_ms=10.0, cost_usd=1.5)
+            # En eski olayı 24 saatin dışına it
+            self.collector._events[0].timestamp = now - 86401
+            snap = self.collector.snapshot()
+
+        provider_budget = snap["by_provider"]["openai"]["budget"]
+        assert provider_budget["daily_usage_usd"] == 1.5
+        assert provider_budget["total_usage_usd"] == 4.0
+
 
 # ══════════════════════════════════════════════════════════════
 # ContextVar user id helpers
