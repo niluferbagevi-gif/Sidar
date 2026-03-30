@@ -914,6 +914,110 @@ class TestGeminiAndAnthropicApiMocking:
         assert exc_info.value.retryable is True
 
 
+class TestProviderStreamAndFormatEdgeCases:
+    def test_openai_stream_retries_after_timeout_and_yields_content(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 1
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        attempts = {"count": 0}
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            async def aiter_lines(self):
+                for line in [
+                    "data: {bad json",
+                    'data: {"choices":[{"delta":{"content":"Merhaba"}}]}',
+                    "data: [DONE]",
+                ]:
+                    yield line
+
+        class _StreamCM:
+            async def __aenter__(self):
+                attempts["count"] += 1
+                if attempts["count"] == 1:
+                    raise lc.httpx.TimeoutException("timeout")
+                return _Resp()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class _AsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def stream(self, *_args, **_kwargs):
+                return _StreamCM()
+
+            async def aclose(self):
+                return None
+
+        monkeypatch.setattr(lc.httpx, "AsyncClient", _AsyncClient)
+        client = lc.OpenAIClient(_Cfg())
+
+        async def _collect():
+            chunks = []
+            async for item in client._stream_openai(
+                payload={"stream": True},
+                headers={"Authorization": "Bearer test-key"},
+                timeout=lc.httpx.Timeout(10),
+                json_mode=True,
+            ):
+                chunks.append(item)
+            return chunks
+
+        chunks = _run(_collect())
+        assert attempts["count"] == 2
+        assert chunks == ["Merhaba"]
+
+    def test_anthropic_chat_wraps_unexpected_empty_content_as_json(self, monkeypatch):
+        lc = _get_llm_client()
+        import json
+
+        class _Cfg:
+            ANTHROPIC_API_KEY = "anth-key"
+            ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+            ANTHROPIC_TIMEOUT = 15
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Usage:
+            input_tokens = 1
+            output_tokens = 1
+
+        class _Response:
+            usage = _Usage()
+            # text alanı olmayan beklenmedik bloklar
+            content = [types.SimpleNamespace(type="tool_use")]
+
+        class _MessagesAPI:
+            async def create(self, **_kwargs):
+                return _Response()
+
+        class _AsyncAnthropic:
+            def __init__(self, *args, **kwargs):
+                self.messages = _MessagesAPI()
+
+        monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(AsyncAnthropic=_AsyncAnthropic))
+
+        client = lc.AnthropicClient(_Cfg())
+        out = _run(client.chat([{"role": "user", "content": "merhaba"}], stream=False, json_mode=True))
+        parsed = json.loads(out)
+        assert parsed["tool"] == "final_answer"
+        assert "UYARI" in parsed["argument"]
+
+
 class TestStreamMetricHelpers:
     def test_track_stream_completion_records_success(self):
         lc = _get_llm_client()
@@ -1038,9 +1142,13 @@ class TestRetryBackoffHttpStatusError:
             LLM_RETRY_BASE_DELAY = 0.001
             LLM_RETRY_MAX_DELAY = 0.01
 
-        request = lc.httpx.Request("GET", "https://example.com")
-        response = lc.httpx.Response(503, request=request)
-        status_exc = lc.httpx.HTTPStatusError("server err", request=request, response=response)
+        if all(hasattr(lc.httpx, attr) for attr in ("Request", "Response", "HTTPStatusError")):
+            request = lc.httpx.Request("GET", "https://example.com")
+            response = lc.httpx.Response(503, request=request)
+            status_exc = lc.httpx.HTTPStatusError("server err", request=request, response=response)
+        else:
+            status_exc = RuntimeError("server err")
+            status_exc.status_code = 503
 
         async def _operation():
             raise status_exc

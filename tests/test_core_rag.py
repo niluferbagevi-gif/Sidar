@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 import types
 from pathlib import Path
 
@@ -580,6 +581,64 @@ class TestDocumentStoreSearchEdgeCases:
             assert output == "keyword-exit"
 
 
+class TestDocumentStoreAddDocumentErrorPaths:
+    def test_add_document_sync_handles_chroma_upsert_exception(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._write_lock = threading.Lock()
+            store._chunk_size = 1000
+            store._chunk_overlap = 150
+            store._save_index = lambda: None
+            store._update_bm25_cache_on_add = lambda *_args, **_kwargs: None
+
+            calls = {"delete": 0, "upsert": 0}
+
+            class _Collection:
+                def delete(self, **_kwargs):
+                    calls["delete"] += 1
+
+                def upsert(self, **_kwargs):
+                    calls["upsert"] += 1
+                    raise RuntimeError("vector db unavailable")
+
+            store.collection = _Collection()
+            store._chroma_available = True
+
+            doc_id = rag.DocumentStore._add_document_sync(store, "Başlık", "içerik içeriği", "file://x", ["tag"], "global")
+            assert doc_id in store._index
+            assert calls["delete"] == 1
+            assert calls["upsert"] == 1
+
+    def test_add_document_sync_with_empty_chunks_does_not_upsert(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._write_lock = threading.Lock()
+            store._chunk_size = 1000
+            store._chunk_overlap = 150
+            store._save_index = lambda: None
+            store._update_bm25_cache_on_add = lambda *_args, **_kwargs: None
+            monkeypatch.setattr(store, "_chunk_text", lambda _content: [])
+
+            calls = {"delete": 0, "upsert": 0}
+
+            class _Collection:
+                def delete(self, **_kwargs):
+                    calls["delete"] += 1
+
+                def upsert(self, **_kwargs):
+                    calls["upsert"] += 1
+
+            store.collection = _Collection()
+            store._chroma_available = True
+
+            doc_id = rag.DocumentStore._add_document_sync(store, "Boş", "x", "file://x", [], "global")
+            assert doc_id in store._index
+            assert calls["delete"] == 1
+            assert calls["upsert"] == 0
+
+
 class TestDocumentStoreUrlErrorHandling:
     def test_add_document_from_url_handles_timeout(self, monkeypatch, tmp_path):
         rag = _get_rag()
@@ -674,6 +733,39 @@ class TestSemanticCacheEmbeddings:
 
         vectors = rag.embed_texts_for_semantic_cache(["sorgu"])
         assert vectors == [[0.1, 0.2, 0.3]]
+
+
+class TestDocumentStoreJudgeScheduling:
+    def test_schedule_judge_ignores_llm_service_timeout(self, monkeypatch):
+        rag = _get_rag()
+
+        class _Judge:
+            enabled = True
+
+            def schedule_background_evaluation(self, **_kwargs):
+                raise TimeoutError("llm service timeout")
+
+        fake_judge_module = types.SimpleNamespace(get_llm_judge=lambda: _Judge())
+        monkeypatch.setitem(sys.modules, "core.judge", fake_judge_module)
+
+        # Hata yutulmalı; exception yükselmemeli.
+        rag.DocumentStore._schedule_judge("sorgu", "yanıt")
+
+    def test_schedule_judge_returns_early_when_disabled(self, monkeypatch):
+        rag = _get_rag()
+        called = {"schedule": 0}
+
+        class _Judge:
+            enabled = False
+
+            def schedule_background_evaluation(self, **_kwargs):
+                called["schedule"] += 1
+
+        fake_judge_module = types.SimpleNamespace(get_llm_judge=lambda: _Judge())
+        monkeypatch.setitem(sys.modules, "core.judge", fake_judge_module)
+
+        rag.DocumentStore._schedule_judge("sorgu", "yanıt")
+        assert called["schedule"] == 0
 
 
 class TestDocumentStoreUrlValidation:
