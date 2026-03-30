@@ -10,6 +10,52 @@ from tests.test_web_server import _get_web_server
 
 
 class TestWebServerAuthHelpers:
+    def test_basic_auth_middleware_rejects_missing_bearer_header(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        monkeypatch.setattr(ws, "JSONResponse", _Response)
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/api/private"),
+            headers={},
+            state=types.SimpleNamespace(),
+        )
+
+        async def _call_next(_request):
+            return _Response({"ok": True}, status_code=200)
+
+        result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
+        assert result.status_code == 401
+        assert "Yetkisiz" in str(result.content.get("error", ""))
+
+    def test_basic_auth_middleware_rejects_empty_bearer_token(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        monkeypatch.setattr(ws, "JSONResponse", _Response)
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/api/private"),
+            headers={"Authorization": "Bearer   "},
+            state=types.SimpleNamespace(),
+        )
+
+        async def _call_next(_request):
+            return _Response({"ok": True}, status_code=200)
+
+        result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
+        assert result.status_code == 401
+        assert "Geçersiz token" in str(result.content.get("error", ""))
+
     def test_get_request_user_raises_when_missing(self):
         ws = _get_web_server()
         request = types.SimpleNamespace(state=types.SimpleNamespace())
@@ -75,3 +121,14 @@ class TestWebServerPolicyResolution:
         request = types.SimpleNamespace(url=types.SimpleNamespace(path=path), method=method)
 
         assert ws._resolve_policy_from_request(request) == expected
+
+
+class TestAuthPayloadValidation:
+    def test_register_user_rejects_invalid_payload(self):
+        ws = _get_web_server()
+        payload = types.SimpleNamespace(username="  ", password="", tenant_id="default")
+
+        with pytest.raises(ws.HTTPException) as exc_info:
+            __import__("asyncio").run(ws.register_user(payload))
+
+        assert exc_info.value.status_code == 400
