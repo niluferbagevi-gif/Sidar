@@ -1200,3 +1200,63 @@ class TestDatabaseAdditionalEdgeCases:
             assert any("CREATE TABLE IF NOT EXISTS prompt_registry" in q for q in executed)
 
         asyncio.run(_scenario())
+
+
+class TestMarketingCampaignCrudFailurePaths:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_campaign_failures.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 2
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            JWT_SECRET_KEY = "secret"
+            JWT_ALGORITHM = "HS256"
+            JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_upsert_marketing_campaign_update_raises_for_missing_record(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                with pytest.raises(ValueError, match="campaign not found"):
+                    await database.upsert_marketing_campaign(
+                        tenant_id="acme",
+                        name="Missing Campaign",
+                        campaign_id=99999,
+                    )
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_upsert_marketing_campaign_rolls_back_on_sqlite_lock_error(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                rollback_calls = {"count": 0}
+
+                class _ConnProxy:
+                    def execute(self, _query, *_params):
+                        raise sqlite3.OperationalError("database is locked")
+
+                    def rollback(self):
+                        rollback_calls["count"] += 1
+
+                database._sqlite_conn = _ConnProxy()  # type: ignore[assignment]
+                with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                    await database.upsert_marketing_campaign(tenant_id="acme", name="Locked Campaign")
+
+                assert rollback_calls["count"] == 1
+
+        asyncio.run(_scenario())

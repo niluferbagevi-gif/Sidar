@@ -812,3 +812,25 @@ class TestCodeManagerGeneratedTestPermissionEdges:
 
         assert ok is False
         assert "Yazma erişimi reddedildi" in message
+
+
+class TestCodeManagerPatchFileFailureModes:
+    def test_patch_file_returns_not_found_error_when_target_block_missing(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        monkeypatch.setattr(mgr, "read_file", lambda *_a, **_k: (True, "def a():\n    return 1\n"))
+
+        ok, message = mgr.patch_file("dummy.py", "def missing():\n    pass", "def replaced():\n    pass")
+
+        assert ok is False
+        assert "Hedef kod bloğu" in message
+        assert "bulunamadı" in message
+
+    def test_patch_file_returns_ambiguous_error_when_target_block_repeats(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        repeated = "x = 1\nx = 1\n"
+        monkeypatch.setattr(mgr, "read_file", lambda *_a, **_k: (True, repeated))
+
+        ok, message = mgr.patch_file("dummy.py", "x = 1", "x = 2")
+
+        assert ok is False
+        assert "kez geçiyor" in message
