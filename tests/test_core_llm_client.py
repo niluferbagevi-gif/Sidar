@@ -518,6 +518,48 @@ class TestOpenAIApiMocking:
         assert exc_info.value.retryable is True
         assert fake_client.post.await_count == 2  # 1 ilk çağrı + 1 retry
 
+
+class TestBaseClientHelpers:
+    def test_inject_json_instruction_prepends_system_message(self):
+        lc = _get_llm_client()
+
+        class _DummyClient(lc.BaseLLMClient):
+            def json_mode_config(self):
+                return {}
+
+            async def chat(self, messages, stream=False, json_mode=False):
+                return "ok"
+
+            async def list_models(self):
+                return []
+
+            async def is_available(self):
+                return True
+
+        client = _DummyClient(config=types.SimpleNamespace())
+        messages = [{"role": "user", "content": "merhaba"}]
+        out = client._inject_json_instruction(messages)
+        assert out[0]["role"] == "system"
+        assert "JSON" in out[0]["content"]
+        assert out[1:] == messages
+
+    def test_get_tracer_returns_none_when_tracing_disabled(self):
+        lc = _get_llm_client()
+        tracer = lc._get_tracer(types.SimpleNamespace(ENABLE_TRACING=False))
+        assert tracer is None
+
+    def test_fallback_stream_yields_single_message(self):
+        lc = _get_llm_client()
+
+        async def _collect():
+            chunks = []
+            async for item in lc._fallback_stream("fallback-message"):
+                chunks.append(item)
+            return chunks
+
+        chunks = _run(_collect())
+        assert chunks == ["fallback-message"]
+
     def test_openai_chat_429_rate_limit_is_retryable(self):
         lc = _get_llm_client()
         import pytest

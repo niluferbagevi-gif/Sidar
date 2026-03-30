@@ -158,6 +158,28 @@ class TestAgentEventBusFanout:
         evt = es.AgentEvent(ts=1.0, source="s", message="m")
         bus._fanout_local(evt)  # hata yok
 
+    @pytest.mark.asyncio
+    async def test_fanout_uses_buffer_then_drains_when_queue_has_space(self):
+        from collections import deque
+
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        sub_id, queue = bus.subscribe(maxsize=10)
+        # Kuyruğu doldurup bir buffer tanımla; drop yerine buffer'a yazılmalı.
+        for i in range(queue.maxsize):
+            queue.put_nowait(es.AgentEvent(ts=float(i), source="seed", message=f"seed-{i}"))
+        bus._buffered_events[sub_id] = deque(maxlen=3)
+
+        overflow_evt = es.AgentEvent(ts=99.0, source="src", message="overflow")
+        bus._fanout_local(overflow_evt)
+        assert sub_id in bus._subscribers
+        assert len(bus._buffered_events[sub_id]) == 1
+
+        _ = queue.get_nowait()  # yer aç
+        progressed = await bus._drain_buffered_events_once()
+        assert progressed is True
+        assert any(getattr(item, "message", "") == "overflow" for item in list(queue._queue))
+
 
 class TestAgentEventBusPublish:
     @pytest.mark.asyncio

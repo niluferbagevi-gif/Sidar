@@ -7,7 +7,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -290,8 +290,18 @@ class TestMaskingAndSerialization:
         ws = _get_web_server()
         room = ws._CollaborationRoom(room_id="workspace:default")
         room.participants = {
-            2: ws._CollaborationParticipant(display_name="zeta", username="z", user_id="2"),
-            1: ws._CollaborationParticipant(display_name="Alpha", username="a", user_id="1"),
+            2: ws._CollaborationParticipant(
+                websocket=types.SimpleNamespace(),
+                display_name="zeta",
+                username="z",
+                user_id="2",
+            ),
+            1: ws._CollaborationParticipant(
+                websocket=types.SimpleNamespace(),
+                display_name="Alpha",
+                username="a",
+                user_id="1",
+            ),
         }
         room.messages = [{"id": str(i)} for i in range(130)]
         room.telemetry = [{"id": str(i)} for i in range(130)]
@@ -418,6 +428,40 @@ class TestWebSocketStreamHelpers:
             {"thought": "planning"},
             {"chunk": "normal chunk"},
         ]
+
+    def test_ws_stream_agent_text_response_emits_audio_chunks_when_voice_pipeline_enabled(self):
+        ws = _get_web_server()
+        sent = []
+
+        class _Socket:
+            _sidar_voice_pipeline = types.SimpleNamespace(
+                enabled=True,
+                extract_ready_segments=lambda text, flush=False: (
+                    [text] if text.strip() and flush else [],
+                    "" if flush else text,
+                ),
+                synthesize_text=AsyncMock(
+                    side_effect=lambda segment: {
+                        "success": True,
+                        "audio_bytes": b"\x00\x01",
+                        "mime_type": "audio/wav",
+                        "provider": "stub",
+                        "voice": "test",
+                    }
+                ),
+            )
+            _sidar_voice_duplex_state = {}
+
+            async def send_json(self, payload):
+                sent.append(payload)
+
+        class _Agent:
+            async def respond(self, _prompt):
+                yield "Merhaba dünya"
+
+        asyncio.run(ws._ws_stream_agent_text_response(_Socket(), _Agent(), "test prompt"))
+        assert any("chunk" in item for item in sent)
+        assert any("audio_chunk" in item for item in sent)
 
 
 class TestPromptBuilder:
@@ -1051,6 +1095,42 @@ class TestCollaborationRoomAsync:
         assert room.active_task.cancelled() is True
 
 
+class TestCollaborationJoinLeaveEdges:
+    @pytest.mark.asyncio
+    async def test_join_collaboration_room_switches_previous_room(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Socket:
+            def __init__(self):
+                self._sidar_room_id = "workspace:old"
+                self.sent = []
+
+            async def send_json(self, payload):
+                self.sent.append(payload)
+
+        socket = _Socket()
+        leave_calls = []
+
+        async def _fake_leave(ws_obj):
+            leave_calls.append(ws_obj)
+            ws_obj._sidar_room_id = ""
+
+        monkeypatch.setattr(ws, "_leave_collaboration_room", _fake_leave)
+        room = await ws._join_collaboration_room(
+            socket,
+            room_id="workspace:new",
+            user_id="u1",
+            username="ali",
+            display_name="Ali",
+            user_role="user",
+        )
+
+        assert leave_calls == [socket]
+        assert room.room_id == "workspace:new"
+        assert socket._sidar_room_id == "workspace:new"
+        assert any(item.get("type") == "room_state" for item in socket.sent)
+
+
 class TestEmbedEventDrivenFederationPayload:
     def test_keys_present_in_result(self):
         ws = _get_web_server()
@@ -1312,6 +1392,15 @@ class TestRequireMetricsAccess:
         monkeypatch.setattr(ws.cfg, "METRICS_TOKEN", "", raising=False)
         user = types.SimpleNamespace(role="user", username="zeynep")
         request = types.SimpleNamespace(headers={"Authorization": ""})
+        with pytest.raises(ws.HTTPException) as exc_info:
+            ws._require_metrics_access(request=request, user=user)
+        assert exc_info.value.status_code == 403
+
+    def test_wrong_metrics_token_raises_403_for_non_admin(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.cfg, "METRICS_TOKEN", "expected-token", raising=False)
+        user = types.SimpleNamespace(role="user", username="zeynep")
+        request = types.SimpleNamespace(headers={"Authorization": "Bearer wrong-token"})
         with pytest.raises(ws.HTTPException) as exc_info:
             ws._require_metrics_access(request=request, user=user)
         assert exc_info.value.status_code == 403
@@ -1874,6 +1963,23 @@ class TestScheduleAccessAuditLog:
 
         asyncio.run(runner())
         assert len(created_tasks) >= 1
+
+    def test_handles_missing_running_loop_without_raising(self, monkeypatch):
+        ws = _get_web_server()
+        user = types.SimpleNamespace(id="u1", tenant_id="acme")
+        monkeypatch.setattr(
+            ws.asyncio,
+            "get_running_loop",
+            lambda: (_ for _ in ()).throw(RuntimeError("no loop")),
+        )
+        ws._schedule_access_audit_log(
+            user=user,
+            resource_type="rag",
+            action="read",
+            resource_id="doc-1",
+            ip_address="1.2.3.4",
+            allowed=True,
+        )
 
 
 class TestBindLlmUsageSink:
