@@ -183,6 +183,21 @@ class TestSendNotificationDisabled:
         assert colors["info"] == "0078D4"
         assert colors["success"] == "107C10"
 
+    def test_unknown_status_falls_back_to_info_color(self, monkeypatch):
+        tm = _get_teams()
+        mgr = tm.TeamsManager(webhook_url="https://teams.example/webhook")
+        captured = {}
+
+        async def _fake_send_message(*, text, title="", subtitle="", facts=None, actions=None, theme_color=""):
+            captured["theme_color"] = theme_color
+            return True, ""
+
+        monkeypatch.setattr(mgr, "send_message", _fake_send_message)
+        ok, err = asyncio.run(mgr.send_notification("Title", "Body", status="unexpected"))
+        assert ok is True
+        assert err == ""
+        assert captured["theme_color"] == "0078D4"
+
 
 class _FakeTeamsResponse:
     def __init__(self, status_code: int, text: str):
