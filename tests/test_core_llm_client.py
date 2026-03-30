@@ -1185,6 +1185,7 @@ class TestProviderStreamAndFormatEdgeCases:
 
             async def aiter_lines(self):
                 raise RuntimeError("stream parse failed")
+                yield
 
         class _StreamCM:
             async def __aenter__(self):
@@ -1219,8 +1220,10 @@ class TestProviderStreamAndFormatEdgeCases:
             return out
 
         chunks = _run(_collect())
+        import json
         assert len(chunks) == 1
-        assert "OpenAI akış hatası" in chunks[0]
+        payload = json.loads(chunks[0])
+        assert "OpenAI akış hatası" in payload["argument"]
         assert called["exit"] == 1
         assert called["close"] == 1
 
