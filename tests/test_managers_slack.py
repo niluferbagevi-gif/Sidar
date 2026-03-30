@@ -173,6 +173,26 @@ class TestSlackWebhookHttpResponses:
         assert ok is False
         assert "HTTP 500" in err
 
+    def test_send_webhook_timeout_exception_returns_error_text(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/timeout")
+
+        class _RaisingClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, *_args, **_kwargs):
+                raise TimeoutError("webhook timeout")
+
+        with patch("managers.slack_manager.httpx.AsyncClient", return_value=_RaisingClient()):
+            ok, err = asyncio.run(mgr.send_webhook(text="hello"))
+
+        assert ok is False
+        assert "timeout" in err.lower()
+
 
 class TestSlackSdkTokenFailures:
     def test_send_message_invalid_token_returns_api_error(self):
