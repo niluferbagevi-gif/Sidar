@@ -314,3 +314,38 @@ class TestVisionPipelineDummyMediaFiles:
         result = _run(vp.analyze(image_bytes=b"\x89PNG\r\n\x1a\n" + b"\x00" * 32, mime_type="image/png"))
         assert result["success"] is False
         assert "unavailable" in result["reason"]
+
+    def test_analyze_with_dummy_image_bytes_returns_success_payload(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "Arayüzde iki kart, bir CTA butonu ve üst menü bulunuyor."
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(
+            vp.analyze(
+                image_bytes=b"\x89PNG\r\n\x1a\n" + b"\x00" * 48,
+                mime_type="image/png",
+                analysis_type="ux_review",
+            )
+        )
+        assert result["success"] is True
+        assert result["analysis_type"] == "ux_review"
+        assert "CTA" in result["analysis"]
+
+    def test_mockup_to_code_requires_image_input(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "unused"
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.mockup_to_code())
+        assert result["success"] is False
+        assert "image_path veya image_bytes gerekli" in result["reason"]
