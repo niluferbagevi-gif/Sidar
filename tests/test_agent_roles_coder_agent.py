@@ -289,3 +289,21 @@ class TestCoderAgentPromptVariations:
         agent = m.CoderAgent()
         result = asyncio.run(agent.run_task(prompt))
         assert expected_fragment in result
+
+
+class TestCoderAgentEdgeCases:
+    @pytest.mark.asyncio
+    async def test_qa_feedback_with_invalid_shape_falls_back_to_approved_message(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = await agent.run_task('qa_feedback|["unexpected","array"]')
+        assert "APPROVED" in result
+
+    @pytest.mark.asyncio
+    async def test_request_review_handles_empty_payload(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        contracts = sys.modules["agent.core.contracts"]
+        result = await agent.run_task("request_review|")
+        assert contracts.is_delegation_request(result)
+        assert result.target_agent == "reviewer"

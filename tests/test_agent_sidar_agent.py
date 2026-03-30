@@ -383,6 +383,29 @@ class TestSidarAgentExternalTrigger:
         assert result["status"] == "empty"
         assert "boş çıktı" in result["summary"]
 
+    @pytest.mark.asyncio
+    async def test_handle_external_trigger_marks_failed_when_multi_agent_raises(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        contracts = sys.modules["agent.core.contracts"]
+        trigger = contracts.ExternalTrigger(
+            trigger_id="trig-fail",
+            source="webhook",
+            event_name="non_ci_event",
+            payload={"k": "v"},
+        )
+        if not hasattr(agent, "handle_external_trigger"):
+            pytest.skip("handle_external_trigger metodu bu sürümde mevcut değil")
+
+        with patch.object(agent, "initialize", AsyncMock()):
+            with patch.object(agent, "_try_multi_agent", AsyncMock(side_effect=RuntimeError("planner crashed"))):
+                with patch.object(agent, "_append_autonomy_history", AsyncMock()):
+                    with patch.object(agent, "_memory_add", AsyncMock()):
+                        result = await agent.handle_external_trigger(trigger)
+
+        assert result["status"] == "failed"
+        assert "planner crashed" in result["summary"]
+
 
 class TestSidarAgentAutonomyActivity:
     def test_get_autonomy_activity_aggregates_status_and_source_counts(self):
