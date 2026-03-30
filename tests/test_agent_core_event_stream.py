@@ -205,6 +205,21 @@ class TestAgentEventBusPublish:
         item = await queue.get()
         assert item.message == "yerel mesaj"
 
+    @pytest.mark.asyncio
+    async def test_publish_calls_redis_path_when_available(self):
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        bus._redis_available = True
+        sub_id, queue = bus.subscribe()
+        bus._publish_via_redis = AsyncMock(return_value=True)
+
+        await bus.publish("agent_y", "redis ve local")
+
+        bus._publish_via_redis.assert_awaited_once()
+        local_evt = await queue.get()
+        assert local_evt.source == "agent_y"
+        assert local_evt.message == "redis ve local"
+
 
 class TestAgentEventBusPublishViaRedis:
     @pytest.mark.asyncio
