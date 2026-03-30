@@ -7,7 +7,7 @@ import asyncio
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

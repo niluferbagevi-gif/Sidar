@@ -421,7 +421,13 @@ class TestBrowserManagerUrlAndSessionValidation:
 
     def test_validate_url_rejects_disallowed_domain(self):
         bm = _get_bm()
-        mgr = bm.BrowserManager(allowed_domains=["example.com"])
+        cfg = types.SimpleNamespace(
+            BROWSER_PROVIDER="auto",
+            BROWSER_HEADLESS=True,
+            BROWSER_TIMEOUT_MS=15000,
+            BROWSER_ALLOWED_DOMAINS=["example.com"],
+        )
+        mgr = bm.BrowserManager(config=cfg)
 
         import pytest
         with pytest.raises(ValueError, match="izinli değil"):

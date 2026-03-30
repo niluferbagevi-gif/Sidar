@@ -524,6 +524,9 @@ class TestBaseClientHelpers:
         lc = _get_llm_client()
 
         class _DummyClient(lc.BaseLLMClient):
+            def json_mode_config(self):
+                return {}
+
             async def chat(self, messages, stream=False, json_mode=False):
                 return "ok"
 
