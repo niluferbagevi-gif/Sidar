@@ -346,3 +346,16 @@ class TestPrometheusPaths:
 
         assert captured["name"] == "sidar_semantic_cache_redis_latency_ms"
         assert captured["value"] == 8.25
+
+    def test_get_prometheus_metric_returns_none_when_factory_missing(self):
+        cm = _get_cache_metrics()
+
+        class _PromModule:
+            REGISTRY = type("_R", (), {"_names_to_collectors": {}})()
+            Counter = None
+            Gauge = None
+
+        with patch.object(importlib, "import_module", return_value=_PromModule):
+            metric = cm._get_prometheus_metric("sidar_missing_factory", "desc", "counter")
+
+        assert metric is None

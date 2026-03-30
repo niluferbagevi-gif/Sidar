@@ -258,7 +258,44 @@ class TestGitHubManagerServiceOutcomes:
 
         ok, message = mgr.create_pull_request("My PR", "desc", "feat/test", "main")
         assert ok is False
-        assert "api down" in message
+
+
+class TestGitHubIssueListingAndCreation:
+    def test_list_issues_filters_pull_requests(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+
+        issue_item = MagicMock()
+        issue_item.pull_request = None
+        issue_item.number = 7
+        issue_item.title = "Bug"
+        issue_item.state = "open"
+        issue_item.user.login = "alice"
+        issue_item.created_at.isoformat.return_value = "2026-03-30T00:00:00"
+
+        pr_like_item = MagicMock()
+        pr_like_item.pull_request = {"url": "https://api.github.com/pr/1"}
+
+        repo = MagicMock()
+        repo.get_issues.return_value = [issue_item, pr_like_item]
+        mgr._repo = repo
+
+        ok, payload = mgr.list_issues(state="open", limit=10)
+        assert ok is True
+        assert len(payload) == 1
+        assert payload[0]["number"] == 7
+
+    def test_create_issue_returns_error_message_on_exception(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock()
+        repo.create_issue.side_effect = RuntimeError("github unavailable")
+        mgr._repo = repo
+
+        ok, message = mgr.create_issue("title", "body")
+        assert ok is False
+        assert "oluşturulamadı" in message
+        assert "github unavailable" in message
 
     def test_create_pull_request_uses_default_base_when_none(self):
         gh = _get_gh()

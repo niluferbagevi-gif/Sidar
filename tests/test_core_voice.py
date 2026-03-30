@@ -338,6 +338,9 @@ class TestShouldCommitAudio:
     def test_commit_on_vad_commit_event(self):
         assert self.vp.should_commit_audio(2048, event="vad_commit") is True
 
+    def test_commit_event_is_trimmed_and_case_insensitive(self):
+        assert self.vp.should_commit_audio(2048, event="  Speech_End  ") is True
+
 
 # ══════════════════════════════════════════════════════════════
 # should_interrupt_response
@@ -369,6 +372,9 @@ class TestShouldInterruptResponse:
 
     def test_interrupt_on_barge_in_event(self):
         assert self.vp.should_interrupt_response(500, event="barge_in") is True
+
+    def test_interrupt_event_is_trimmed_and_case_insensitive(self):
+        assert self.vp.should_interrupt_response(500, event="  USER_SPEAKING ") is True
 
 
 class TestVoicePipelineDummyAudioFlow:

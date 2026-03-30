@@ -319,6 +319,41 @@ class TestSupervisorIsRejectFeedbackPayload:
         assert sv.SupervisorAgent._is_reject_feedback_payload("qa_feedback|decision=reject") is True
 
 
+class TestSupervisorP2PRouting:
+    def test_route_p2p_stops_after_max_qa_retry(self):
+        sv = _get_supervisor()
+        agent = sv.SupervisorAgent()
+        agent.cfg.MAX_QA_RETRIES = 1
+        contracts = sys.modules["agent.core.contracts"]
+
+        request = contracts.DelegationRequest(
+            task_id="t1",
+            reply_to="reviewer",
+            target_agent="coder",
+            payload='qa_feedback|{"decision":"reject"}',
+            intent="review",
+        )
+
+        async def _delegate_loop(*_args, **_kwargs):
+            return contracts.TaskResult(
+                task_id="loop",
+                status="done",
+                summary=contracts.DelegationRequest(
+                    task_id="loop",
+                    reply_to="reviewer",
+                    target_agent="coder",
+                    payload='qa_feedback|{"decision":"reject"}',
+                    intent="review",
+                    handoff_depth=1,
+                ),
+            )
+
+        agent._delegate = _delegate_loop
+        result = asyncio.run(agent._route_p2p(request, max_hops=3))
+        assert result.status == "failed"
+        assert "QA retry limiti" in str(result.summary)
+
+
 class TestSupervisorRunTask:
     @pytest.mark.asyncio
     async def test_run_task_research_intent(self):

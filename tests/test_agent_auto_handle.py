@@ -117,6 +117,44 @@ class TestAutoHandleMultiStep:
         assert handled is False
 
 
+class TestAutoHandleEarlyExitBranches:
+    @pytest.mark.parametrize(
+        "method_name, command_text, expected_response",
+        [
+            ("_try_github_list_files", "github dosyaları listele", "dosya-list-branch"),
+            ("_try_github_read", "github'dan README oku", "uzak-okuma-branch"),
+        ],
+    )
+    def test_handle_stops_on_github_branch(self, method_name, command_text, expected_response, monkeypatch):
+        if "pydantic" not in sys.modules:
+            pydantic_stub = types.ModuleType("pydantic")
+            pydantic_stub.BaseModel = object
+            pydantic_stub.Field = lambda *a, **k: None
+            pydantic_stub.ValidationError = Exception
+            sys.modules["pydantic"] = pydantic_stub
+
+        handler, *_ = _make_auto_handle()
+
+        monkeypatch.setattr(handler, "_try_clear_memory", AsyncMock(return_value=(False, "")))
+        monkeypatch.setattr(handler, "_try_audit", AsyncMock(return_value=(False, "")))
+        monkeypatch.setattr(handler, "_try_health", AsyncMock(return_value=(False, "")))
+        monkeypatch.setattr(handler, "_try_gpu_optimize", AsyncMock(return_value=(False, "")))
+        monkeypatch.setattr(handler, "_try_github_commits", lambda *_: (False, ""))
+        monkeypatch.setattr(handler, "_try_github_info", lambda *_: (False, ""))
+
+        if method_name == "_try_github_list_files":
+            monkeypatch.setattr(handler, "_try_github_list_files", lambda *_: (True, expected_response))
+            monkeypatch.setattr(handler, "_try_github_read", lambda *_: (_ for _ in ()).throw(AssertionError("read branch should not run")))
+        else:
+            monkeypatch.setattr(handler, "_try_github_list_files", lambda *_: (False, ""))
+            monkeypatch.setattr(handler, "_try_github_read", lambda *_: (True, expected_response))
+            monkeypatch.setattr(handler, "_try_github_list_prs", lambda *_: (_ for _ in ()).throw(AssertionError("list_prs branch should not run")))
+
+        handled, response = asyncio.run(handler.handle(command_text))
+        assert handled is True
+        assert response == expected_response
+
+
 class TestAutoHandleDotCommands:
     @pytest.mark.asyncio
     async def test_dot_status_handled(self):
