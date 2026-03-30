@@ -433,3 +433,218 @@ class TestVoicePipelineAdditionalCoverage:
         assert result["success"] is False
         assert "pyttsx3" in result["provider"]
         assert result["audio_bytes"] == b""
+
+    def test_pyttsx3_voice_matching_sets_voice_property(self, monkeypatch):
+        """Lines 63-68: voice matching loop body when voice parameter matches a candidate."""
+        voice = _get_voice()
+        set_calls = {}
+
+        class _FakeVoice:
+            id = "en_female_01"
+            name = "Female Voice"
+
+        class _FakeEngine:
+            def getProperty(self, name):
+                if name == "voices":
+                    return [_FakeVoice()]
+                return None
+
+            def setProperty(self, name, value):
+                set_calls[name] = value
+
+            def save_to_file(self, text, output):
+                from pathlib import Path
+                Path(output).write_bytes(b"RIFF" + b"\x00" * 32)
+
+            def runAndWait(self):
+                pass
+
+            def stop(self):
+                pass
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("test voice match", voice="female"))
+        assert result["provider"] == "pyttsx3"
+        # setProperty("voice", ...) should have been called via the matching branch
+        assert "voice" in set_calls
+        assert set_calls["voice"] == "en_female_01"
+
+    def test_pyttsx3_voice_no_match_loop_exhausted(self, monkeypatch):
+        """63->70: voice set but NO candidate matches → loop exhausts without break."""
+        voice = _get_voice()
+
+        class _FakeVoiceNoMatch:
+            id = "en_male_01"
+            name = "Male Voice"
+
+        class _FakeEngine:
+            def getProperty(self, name):
+                if name == "voices":
+                    return [_FakeVoiceNoMatch()]
+                return None
+
+            def setProperty(self, name, value):
+                pass
+
+            def save_to_file(self, text, output):
+                from pathlib import Path
+                Path(output).write_bytes(b"RIFF" + b"\x00" * 32)
+
+            def runAndWait(self):
+                pass
+
+            def stop(self):
+                pass
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        # voice="female" but candidate is "Male Voice" → no match → loop runs to completion
+        result = _run(adapter.synthesize("no match test", voice="female"))
+        assert result["provider"] == "pyttsx3"
+        assert result["success"] is True
+
+    def test_pyttsx3_voice_second_candidate_matches(self, monkeypatch):
+        """66->63: first candidate doesn't match (False branch → back to loop), second matches."""
+        voice = _get_voice()
+        set_calls = {}
+
+        class _FakeVoiceMale:
+            id = "en_male_01"
+            name = "Male Voice"
+
+        class _FakeVoiceFemale:
+            id = "en_female_02"
+            name = "Female Voice"
+
+        class _FakeEngine:
+            def getProperty(self, name):
+                if name == "voices":
+                    return [_FakeVoiceMale(), _FakeVoiceFemale()]
+                return None
+
+            def setProperty(self, name, value):
+                set_calls[name] = value
+
+            def save_to_file(self, text, output):
+                from pathlib import Path
+                Path(output).write_bytes(b"RIFF" + b"\x00" * 32)
+
+            def runAndWait(self):
+                pass
+
+            def stop(self):
+                pass
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        # First candidate (male) doesn't match, second (female) does → break
+        result = _run(adapter.synthesize("second match test", voice="female"))
+        assert result["provider"] == "pyttsx3"
+        assert set_calls.get("voice") == "en_female_02"
+
+    def test_pyttsx3_stop_exception_is_swallowed(self, monkeypatch):
+        """Lines 77-78: engine.stop() raises Exception → swallowed, result still returned."""
+        voice = _get_voice()
+
+        class _FakeEngine:
+            def getProperty(self, name):
+                return []
+
+            def setProperty(self, name, value):
+                pass
+
+            def save_to_file(self, text, output):
+                from pathlib import Path
+                Path(output).write_bytes(b"RIFF" + b"\x00" * 32)
+
+            def runAndWait(self):
+                pass
+
+            def stop(self):
+                raise RuntimeError("engine stop error")
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("test stop exception", voice=""))
+        # Exception in stop() is swallowed; audio was already written
+        assert result["provider"] == "pyttsx3"
+        assert result["success"] is True
+
+    def test_pyttsx3_no_output_file_returns_failure(self, monkeypatch):
+        """Line 74 else branch: output.exists() is False → audio_bytes = b""."""
+        voice = _get_voice()
+
+        class _FakeEngine:
+            def getProperty(self, name):
+                return []
+
+            def setProperty(self, name, value):
+                pass
+
+            def save_to_file(self, text, output):
+                pass  # does NOT write the file
+
+            def runAndWait(self):
+                pass
+
+            def stop(self):
+                pass
+
+        fake_mod = types.SimpleNamespace(init=lambda: _FakeEngine())
+        monkeypatch.setitem(sys.modules, "pyttsx3", fake_mod)
+        adapter = voice._Pyttsx3Adapter()
+        result = _run(adapter.synthesize("no output", voice=""))
+        assert result["success"] is False
+        assert result["audio_bytes"] == b""
+        assert result["reason"] != ""
+
+
+class TestVoicePipelineMissingBranches:
+    """158->156, 204->207, 210->213 branch coverage."""
+
+    def setup_method(self):
+        voice = _get_voice()
+        self.vp = voice.VoicePipeline(_make_config())
+
+    def test_extract_segments_empty_chunk_skipped(self):
+        """158->156: chunk.strip()='' → False branch of 'if chunk:' loops back."""
+        # "\n  !  " produces parts=["\n", "!", ""] after boundary split.
+        # The "\n" part strips to "" → if chunk: is False → continue
+        text = "\n  !  "
+        segs, remainder = self.vp.extract_ready_segments(text)
+        # "!" part is non-empty, so it appears in segments or remainder
+        # The key is that the empty-chunk False branch was exercised
+        assert isinstance(segs, list)
+        assert isinstance(remainder, str)
+
+    def test_buffer_assistant_text_empty_text_false_branch(self):
+        """204->207: if text: False → state buffer not updated, continue normally."""
+        state = self.vp.create_duplex_state()
+        self.vp.begin_assistant_turn(state)
+        # Pre-load some buffer content
+        self.vp.buffer_assistant_text(state, "Some content here. ")
+        # Now call with empty text → `if text:` is False (line 204 False branch → 207)
+        turn_id, packets = self.vp.buffer_assistant_text(state, "")
+        assert turn_id == 1
+
+    def test_buffer_assistant_text_probe_segments_nonempty(self):
+        """210->213: probe_segments non-empty → don't return early, fall through to line 213."""
+        state = self.vp.create_duplex_state()
+        self.vp.begin_assistant_turn(state)
+        # Text with sentence boundary → probe finds segments even though buffer < buffer_chars
+        # This triggers the probe path AND probe_segments is non-empty → False branch of 'if not probe_segments:'
+        _, packets = self.vp.buffer_assistant_text(state, "Hello world sentence. More text")
+        # Probe found ["Hello world sentence."] → fell through to line 213 → packets produced
+        assert isinstance(packets, list)
+
+    def test_buffer_chars_minimum_enforced_when_less_than_segment_chars(self):
+        """When VOICE_TTS_BUFFER_CHARS < VOICE_TTS_SEGMENT_CHARS, buffer_chars = segment_chars."""
+        voice = _get_voice()
+        vp = voice.VoicePipeline(_make_config(VOICE_TTS_SEGMENT_CHARS=100, VOICE_TTS_BUFFER_CHARS=20))
+        assert vp.buffer_chars >= vp.segment_chars
+        assert vp.buffer_chars == 100

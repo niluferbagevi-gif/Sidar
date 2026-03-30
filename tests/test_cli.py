@@ -812,3 +812,56 @@ class TestMain:
                 with pytest.raises(SystemExit) as exc:
                     cli.main()
         assert exc.value.code == 2
+
+    def test_empty_default_access_level_skips_cfg_override(self):
+        """args.level/provider/model all falsy → 264->266, 266->268, 268->271 branches."""
+        cli = _get_cli()
+
+        class _EmptyCfg:
+            ACCESS_LEVEL = ""
+            AI_PROVIDER = ""
+            CODING_MODEL = ""
+            LOG_LEVEL = "INFO"
+            def initialize_directories(self): pass
+
+        mock_agent = MagicMock()
+        mock_agent.status.return_value = "OK"
+        mock_agent.memory.initialize = AsyncMock()
+
+        empty_cfg = _EmptyCfg()
+        with patch.object(sys, "argv", ["cli.py", "--status"]):
+            with patch("cli.Config", return_value=empty_cfg):
+                with patch("cli.SidarAgent", return_value=mock_agent):
+                    with patch("asyncio.run", side_effect=_safe_asyncio_run):
+                        with patch("builtins.print"):
+                            cli.main()
+        # ACCESS_LEVEL/AI_PROVIDER/CODING_MODEL should remain "" since args were falsy
+        assert empty_cfg.ACCESS_LEVEL == ""
+        assert empty_cfg.AI_PROVIDER == ""
+        assert empty_cfg.CODING_MODEL == ""
+
+
+# ══════════════════════════════════════════════════════════════
+# GPU branch: CUDA_VERSION == "N/A" (137->142 branch)
+# ══════════════════════════════════════════════════════════════
+
+class TestInteractiveLoopGpuBranches:
+    def test_gpu_present_but_no_cuda_version(self):
+        """USE_GPU=True, CUDA_VERSION='N/A' → False branch of CUDA_VERSION check (137->142)."""
+        cli = _get_cli()
+        agent = _make_agent(use_gpu=True, gpu_info="iGPU", cuda_version="N/A", gpu_count=1)
+        printed = []
+
+        async def fake_to_thread(fn, *a, **k):
+            raise EOFError
+
+        async def run():
+            with patch("asyncio.to_thread", side_effect=fake_to_thread):
+                with patch("builtins.print", side_effect=lambda *a, **k: printed.append(str(a))):
+                    await cli._interactive_loop_async(agent)
+
+        asyncio.run(run())
+        combined = " ".join(printed)
+        # GPU info should appear but NOT "(CUDA ..." since version is N/A
+        assert "iGPU" in combined
+        assert "(CUDA" not in combined

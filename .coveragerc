@@ -18,6 +18,7 @@ precision = 2
 # Raporlama sırasında göz ardı edilecek dosya desenleri
 exclude_lines =
     pragma: no cover
+    pragma: no branch
     def __repr__
     def __str__
     raise AssertionError

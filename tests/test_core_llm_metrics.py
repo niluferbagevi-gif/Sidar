@@ -395,3 +395,63 @@ class TestEnvFloatExtra:
             os.environ.pop("_SIDAR_TEST_VAR_NONE_DEFAULT", None)
             result = lm._env_float("_SIDAR_TEST_VAR_NONE_DEFAULT", None)
         assert result == 0.0
+
+
+# ══════════════════════════════════════════════════════════════
+# Eksik branch kapsamı için ek testler
+# ══════════════════════════════════════════════════════════════
+
+class TestMissingBranchCoverage:
+    """148->150 ve 205->204 dallarını kapatır."""
+
+    def test_record_awaitable_without_close_when_runtime_error(self):
+        """RuntimeError + awaitable has no .close() → hasattr(result, 'close') is False branch."""
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+
+        class _AwaitableNoClose:
+            """inspect.isawaitable returns True (has __await__), but no .close() method."""
+            def __await__(self):
+                return iter([])
+
+        def sink_no_close(_event):
+            return _AwaitableNoClose()
+
+        collector.set_usage_sink(sink_no_close)
+        with patch("core.llm_metrics.asyncio.get_running_loop", side_effect=RuntimeError("no running loop")):
+            collector.record(provider="openai", model="gpt-4o", latency_ms=5.0)
+
+        snap = collector.snapshot()
+        assert snap["totals"]["calls"] == 1
+
+    def test_snapshot_old_event_not_in_daily_cost(self):
+        """Event timestamp > 24h ago → if e.timestamp >= day_ago: False branch (205->204)."""
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+
+        # Record a fresh event normally, then manually insert an old event
+        collector.record(provider="openai", model="gpt-4o-mini", latency_ms=10.0, cost_usd=1.0)
+
+        # Inject an old event directly into the deque (timestamp 48h ago)
+        old_event = lm.LLMMetricEvent(
+            timestamp=time.time() - 172800,  # 48 hours ago
+            provider="openai",
+            model="gpt-4o-mini",
+            latency_ms=10.0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            cost_usd=5.0,
+            success=True,
+            rate_limited=False,
+        )
+        with collector._lock:
+            collector._events.appendleft(old_event)
+
+        snap = collector.snapshot()
+        # Old event contributes to total_cost (exercising the False branch)
+        assert snap["totals"]["calls"] >= 2
+        # Per-provider daily_usage reflects only recent events (fresh event only, cost=1.0)
+        # while total_usage includes the old event (6.0 total) — verifying the False branch ran
+        prov = snap["by_provider"].get("openai", {}).get("budget", {})
+        assert prov.get("daily_usage_usd", 0) < prov.get("total_usage_usd", 0)

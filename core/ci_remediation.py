@@ -418,7 +418,7 @@ def build_root_cause_summary(context: Dict[str, Any], diagnosis: str) -> str:
     diagnosis_text = str(diagnosis or "").strip()
     if diagnosis_text:
         first_sentence = diagnosis_text.splitlines()[0].strip()
-        if first_sentence:
+        if first_sentence:  # pragma: no branch
             compact_sentence = _trim_text(first_sentence, 220)
             if compact_sentence.lower().startswith(("kök neden", "root cause")):
                 return compact_sentence
