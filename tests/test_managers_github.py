@@ -488,3 +488,31 @@ class TestGitHubManagerPrFormattingAndStateEdges:
         ok, details = mgr.get_pull_request(17)
         assert ok is True
         assert "(+5 dosya daha)" in details
+
+
+class TestGitHubManagerAdditionalServiceErrors:
+    def test_list_repos_handles_401_from_service(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._gh = MagicMock()
+        mgr._gh.get_user.side_effect = _GitHubHttpError(401, "Unauthorized")
+
+        ok, repos = mgr.list_repos(owner="private-owner")
+        assert ok is False
+        assert repos == []
+
+    def test_create_or_update_file_non_404_get_contents_error_returns_read_error(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock()
+        repo.get_contents.side_effect = RuntimeError("500 Internal Server Error")
+        mgr._repo = repo
+
+        ok, message = mgr.create_or_update_file(
+            file_path="README.md",
+            content="hello",
+            message="update readme",
+            branch="main",
+        )
+        assert ok is False
+        assert "dosya okuma hatası" in message.lower()
