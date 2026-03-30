@@ -303,6 +303,26 @@ class TestYouTubeApiMocking:
         assert result["success"] is False
         assert "bulunamadı" in result["reason"].lower()
 
+    def test_fetch_transcript_timeout_exception_propagates(self):
+        yt = _get_yt()
+        httpx = __import__("httpx")
+
+        class _FakeClient:
+            async def get(self, _url):
+                raise httpx.TimeoutException("timed out")
+
+        class _FakeClientCM:
+            async def __aenter__(self):
+                return _FakeClient()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mgr = yt.YouTubeManager(http_client_factory=lambda **kwargs: _FakeClientCM())
+        import pytest
+        with pytest.raises(httpx.TimeoutException):
+            asyncio.run(mgr.fetch_transcript("https://youtu.be/dQw4w9WgXcQ"))
+
     def test_fetch_transcript_uses_patch_with_httpx_client(self):
         yt = _get_yt()
 

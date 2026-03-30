@@ -258,6 +258,37 @@ class TestSocialMediaApiMocking:
         assert ok is False
         assert "zaman aşımı" in str(err).lower()
 
+    def test_publish_instagram_post_second_step_rate_limit_error(self):
+        sm = _get_sm()
+        creation_resp = MagicMock()
+        creation_resp.status_code = 200
+        creation_resp.json.return_value = {"id": "creation_1"}
+
+        publish_resp = MagicMock()
+        publish_resp.status_code = 429
+        publish_resp.json.return_value = {"error": {"message": "Rate limit exceeded"}}
+
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=[creation_resp, publish_resp])
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        mgr = sm.SocialMediaManager(
+            graph_api_token="tok",
+            instagram_business_account_id="ig_1",
+            http_client_factory=lambda **kwargs: _FakeClientCM(),
+        )
+        ok, err = asyncio.run(
+            mgr.publish_instagram_post(caption="Merhaba", image_url="https://img.example.com/x.jpg")
+        )
+        assert ok is False
+        assert "rate limit" in str(err).lower()
+
     def test_post_request_error_returns_http_failure_message(self):
         sm = _get_sm()
         httpx = __import__("httpx")

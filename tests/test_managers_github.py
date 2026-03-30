@@ -249,6 +249,19 @@ class TestGitHubManagerServiceOutcomes:
         assert ok is False
         assert "api down" in message
 
+    def test_create_pull_request_uses_default_base_when_none(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        pr = MagicMock(title="My PR", html_url="https://example/pr/2", number=2)
+        repo = MagicMock(default_branch="develop")
+        repo.create_pull.return_value = pr
+        mgr._repo = repo
+
+        ok, _message = mgr.create_pull_request("My PR", "desc", "feat/test", None)
+        assert ok is True
+        kwargs = repo.create_pull.call_args.kwargs
+        assert kwargs["base"] == "develop"
+
     def test_list_pull_requests_empty_success_message(self):
         gh = _get_gh()
         mgr = gh.GitHubManager(token="")

@@ -522,3 +522,16 @@ class TestCodeManagerFileIOWithTmpPath:
         assert ok_second is True
         assert "zaten mevcut" in msg_second
         assert final_content.count("def test_new_case") == 1
+
+    def test_write_generated_test_rejects_empty_content(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "tests" / "test_empty.py"
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            can_read=lambda _path: True,
+            get_safe_write_path=lambda filename: tmp_path / filename,
+        )
+
+        ok, message = mgr.write_generated_test(str(target), "   ", append=True)
+        assert ok is False
+        assert "boş" in message.lower()
