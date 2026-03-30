@@ -945,6 +945,106 @@ class TestLiteLLMApiMocking:
         assert "LiteLLM hata" in str(exc_info.value)
         assert fake_client.post.await_count == 1
 
+    def test_litellm_fallback_model_succeeds_after_primary_rate_limit(self):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            LITELLM_GATEWAY_URL = "https://litellm.example"
+            LITELLM_API_KEY = "token"
+            LITELLM_MODEL = "primary-model"
+            LITELLM_FALLBACK_MODELS = ["fallback-model"]
+            LITELLM_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _RateLimitedResp:
+            status_code = 429
+
+            def raise_for_status(self):
+                exc = RuntimeError("rate limited")
+                exc.status_code = 429
+                raise exc
+
+        class _OkResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [{"message": {"content": '{"tool":"final_answer","argument":"ok"}'}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(side_effect=[_RateLimitedResp(), _OkResp()])
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.LiteLLMClient(_Cfg())
+            out = _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert '"argument":"ok"' in out.replace(" ", "")
+        assert fake_client.post.await_count == 2
+        first_model = fake_client.post.await_args_list[0].kwargs["json"]["model"]
+        second_model = fake_client.post.await_args_list[1].kwargs["json"]["model"]
+        assert first_model == "primary-model"
+        assert second_model == "fallback-model"
+
+    def test_litellm_timeout_on_primary_falls_back_and_malformed_json_is_wrapped(self):
+        lc = _get_llm_client()
+        import json
+
+        class _Cfg:
+            LITELLM_GATEWAY_URL = "https://litellm.example"
+            LITELLM_API_KEY = "token"
+            LITELLM_MODEL = "primary-model"
+            LITELLM_FALLBACK_MODELS = ["fallback-model"]
+            LITELLM_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _MalformedOkResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [{"message": {"content": "{bad json"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(side_effect=[lc.httpx.TimeoutException("timeout"), _MalformedOkResp()])
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.LiteLLMClient(_Cfg())
+            out = _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        parsed = json.loads(out)
+        assert parsed["tool"] == "final_answer"
+        assert fake_client.post.await_count == 2
+
 
 class TestGeminiAndAnthropicApiMocking:
     def test_gemini_timeout_in_stream_returns_fallback_error_chunk(self, monkeypatch):
@@ -1185,6 +1285,7 @@ class TestProviderStreamAndFormatEdgeCases:
 
             async def aiter_lines(self):
                 raise RuntimeError("stream parse failed")
+                yield
 
         class _StreamCM:
             async def __aenter__(self):
@@ -1219,8 +1320,10 @@ class TestProviderStreamAndFormatEdgeCases:
             return out
 
         chunks = _run(_collect())
+        import json
         assert len(chunks) == 1
-        assert "OpenAI akış hatası" in chunks[0]
+        payload = json.loads(chunks[0])
+        assert "OpenAI akış hatası" in payload["argument"]
         assert called["exit"] == 1
         assert called["close"] == 1
 
