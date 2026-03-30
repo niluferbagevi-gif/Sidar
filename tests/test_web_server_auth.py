@@ -85,8 +85,11 @@ class TestWebServerAuthHelpers:
                 self.content = content or {}
                 self.status_code = status_code
 
+        async def _mock_resolve_user(*_args, **_kwargs):
+            return None
+
         monkeypatch.setattr(ws, "JSONResponse", _Response)
-        monkeypatch.setattr(ws, "_resolve_user_from_token", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _mock_resolve_user)
         request = types.SimpleNamespace(
             method="GET",
             url=types.SimpleNamespace(path="/api/private"),

@@ -543,7 +543,7 @@ class AutoHandle:
 
     def _try_docs_list(self, t: str, raw: str) -> Tuple[bool, str]:
         """Belge deposunu listele."""
-        if re.search(r"belge.*listele|belge\s+deposu|rag.*listele|döküman.*listele", t):
+        if re.search(r"belge.*listele|belge\s+deposu.*listele|rag.*listele|döküman.*listele", t):
             return True, self.docs.list_documents()
         return False, ""
 

@@ -239,6 +239,8 @@ class TestCodeManagerPermissionErrors:
             raise PermissionError("no read permission")
 
         monkeypatch.setattr(builtins, "open", _raise_permission)
+        monkeypatch.setattr("pathlib.Path.exists", lambda _path: True)
+        monkeypatch.setattr("pathlib.Path.is_dir", lambda _path: False)
 
         ok, message = mgr.read_file("forbidden.txt")
         assert ok is False
