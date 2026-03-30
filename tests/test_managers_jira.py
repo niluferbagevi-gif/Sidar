@@ -177,6 +177,42 @@ class TestJiraRequestHttpResponses:
         assert body is None
         assert "HTTP 401" in err
 
+    def test_request_429_returns_rate_limit_error(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+        fake_response = _FakeJiraResponse(429, body=None, text="rate limit")
+
+        with patch(
+            "managers.jira_manager.httpx.AsyncClient",
+            return_value=_FakeJiraAsyncClient(response=fake_response),
+        ):
+            ok, body, err = asyncio.run(mgr._request("GET", "search"))
+
+        assert ok is False
+        assert body is None
+        assert "HTTP 429" in err
+
+    def test_request_timeout_exception_returns_error_text(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        class _RaisingClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, *_args, **_kwargs):
+                raise TimeoutError("request timeout")
+
+        with patch("managers.jira_manager.httpx.AsyncClient", return_value=_RaisingClient()):
+            ok, body, err = asyncio.run(mgr._request("GET", "issue/TEST-1"))
+
+        assert ok is False
+        assert body is None
+        assert "timeout" in err.lower()
+
 
 class TestJiraTransitionIssue:
     def test_transition_issue_returns_error_when_transition_not_found(self):

@@ -189,3 +189,29 @@ class TestSlackSdkTokenFailures:
         ok, err = asyncio.run(mgr.send_message("hello", channel="#general"))
         assert ok is False
         assert err == "invalid_auth"
+
+    def test_send_message_500_status_returns_formatted_error(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager()
+        mgr._available = True
+        mgr._webhook_only = False
+
+        class _FakeClient:
+            def chat_postMessage(self, **_kwargs):
+                return {"ok": False, "error": "internal_error", "status": 500}
+
+        mgr._client = _FakeClient()
+        ok, err = asyncio.run(mgr.send_message("hello", channel="#general"))
+        assert ok is False
+        assert "Slack API hatası (500)" in err
+
+    def test_send_message_missing_channel_returns_error(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(token="xoxb-token")
+        mgr._available = True
+        mgr._webhook_only = False
+        mgr._client = object()
+
+        ok, err = asyncio.run(mgr.send_message("hello", channel=""))
+        assert ok is False
+        assert "Kanal belirtilmedi" in err
