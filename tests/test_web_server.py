@@ -216,6 +216,40 @@ class TestRoomNormalization:
         assert exc_info.value.status_code == 400
 
 
+class TestWebServerExceptionHandlers:
+    def test_register_exception_handlers_noop_when_method_missing(self):
+        ws = _get_web_server()
+        # exception_handler attribute yoksa sessizce dönmeli
+        ws._register_exception_handlers(object())
+
+    def test_http_exception_handler_wraps_dict_detail(self, monkeypatch):
+        ws = _get_web_server()
+        captured = {}
+
+        class _FakeJSONResponse:
+            def __init__(self, content, status_code=200):
+                self.content = content
+                self.status_code = status_code
+
+        class _FakeApp:
+            def exception_handler(self, exc_type):
+                def _decorator(func):
+                    captured[exc_type] = func
+                    return func
+
+                return _decorator
+
+        monkeypatch.setattr(ws, "JSONResponse", _FakeJSONResponse)
+        fake_app = _FakeApp()
+        ws._register_exception_handlers(fake_app)
+
+        exc = ws.HTTPException(status_code=403, detail={"error": "forbidden", "code": "AUTH_403"})
+        response = asyncio.run(captured[ws.HTTPException](types.SimpleNamespace(), exc))
+        assert response.status_code == 403
+        assert response.content["success"] is False
+        assert response.content["code"] == "AUTH_403"
+
+
 class TestRoleAndScope:
     def test_normalize_role_empty_to_user(self):
         ws = _get_web_server()

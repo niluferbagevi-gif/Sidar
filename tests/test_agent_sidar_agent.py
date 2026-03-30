@@ -950,6 +950,26 @@ class TestSidarAgentContextAndSummaryEdges:
 
         asyncio.run(_run_case())
 
+    def test_try_multi_agent_lazy_initializes_supervisor_and_returns_output(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        class _FakeSupervisor:
+            def __init__(self, _cfg):
+                self.run_task = AsyncMock(return_value="supervisor sonucu")
+
+        async def _run_case():
+            import types as _types
+            supervisor_mod = _types.ModuleType("agent.core.supervisor")
+            supervisor_mod.SupervisorAgent = _FakeSupervisor
+            with patch.dict(sys.modules, {"agent.core.supervisor": supervisor_mod}):
+                agent._supervisor = None
+                out = await agent._try_multi_agent("görevi devret")
+                assert out == "supervisor sonucu"
+                assert agent._supervisor is not None
+
+        asyncio.run(_run_case())
+
     def test_tool_github_smart_pr_guard_cases(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()

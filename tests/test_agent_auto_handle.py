@@ -256,6 +256,19 @@ class TestAutoHandleGitHub:
         handled, response = await handler.handle("github repo bilgi")
         assert handled is True
 
+    def test_pr_detail_with_missing_number_is_not_auto_handled(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = asyncio.run(handler.handle("PR detayını göster"))
+        assert handled is True
+        assert "PR listesi" in response
+
+    def test_pr_detail_when_service_returns_error_is_prefixed(self):
+        handler, _, _, github, *_ = _make_auto_handle()
+        github.get_pull_request.return_value = (False, "404 not found")
+        handled, response = asyncio.run(handler.handle("PR #42 detayı"))
+        assert handled is True
+        assert response == "404 not found"
+
 
 class TestAutoHandleWebSearch:
     @pytest.mark.asyncio

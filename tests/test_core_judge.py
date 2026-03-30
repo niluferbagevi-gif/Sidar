@@ -334,6 +334,37 @@ class TestEvaluateResponseDisabled:
         assert result is None
 
 
+class TestEvaluateResponseParsing:
+    def test_json_parse_failure_sets_error_and_uses_default_score(self):
+        with patch.dict(os.environ, {"JUDGE_ENABLED": "true"}):
+            judge = _get_judge()
+            j = judge.LLMJudge()
+        j._call_llm_json = AsyncMock(return_value=None)
+        result = _run(j.evaluate_response("prompt", "response", {"ctx": "v"}))
+        assert result is not None
+        assert result.error == "judge_json_parse_failed"
+        assert result.score == 5
+
+    def test_non_numeric_score_with_embedded_number_uses_regex_fallback(self):
+        with patch.dict(os.environ, {"JUDGE_ENABLED": "true"}):
+            judge = _get_judge()
+            j = judge.LLMJudge()
+        j._call_llm_json = AsyncMock(return_value={"score": "bence 9/10", "reasoning": "iyi"})
+        result = _run(j.evaluate_response("prompt", "response", ["ctx"]))
+        assert result is not None
+        assert result.score == 9
+        assert result.reasoning == "iyi"
+
+    def test_score_is_clamped_to_upper_bound(self):
+        with patch.dict(os.environ, {"JUDGE_ENABLED": "true"}):
+            judge = _get_judge()
+            j = judge.LLMJudge()
+        j._call_llm_json = AsyncMock(return_value={"score": 999, "reasoning": ""})
+        result = _run(j.evaluate_response("prompt", "response", "ctx"))
+        assert result is not None
+        assert result.score == 10
+
+
 # ══════════════════════════════════════════════════════════════
 # get_llm_judge singleton
 # ══════════════════════════════════════════════════════════════
