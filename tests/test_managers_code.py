@@ -230,6 +230,37 @@ class TestResolveSandboxLimits:
         assert limits["timeout"] >= 1
 
 
+class TestCodeManagerPermissionErrors:
+    def test_read_file_permission_error_returns_access_denied(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_read=lambda _p: True)
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("no read permission")
+
+        monkeypatch.setattr(builtins, "open", _raise_permission)
+
+        ok, message = mgr.read_file("forbidden.txt")
+        assert ok is False
+        assert "Erişim reddedildi" in message
+
+    def test_write_file_permission_error_returns_access_denied(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _p: True,
+            get_safe_write_path=lambda _n: Path("/tmp/safe.txt"),
+        )
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("no write permission")
+
+        monkeypatch.setattr(builtins, "open", _raise_permission)
+
+        ok, message = mgr.write_file("forbidden.txt", "data", validate=False)
+        assert ok is False
+        assert "Yazma erişimi reddedildi" in message
+
+
 class TestExecuteCodeFallbackLoops:
     def test_execute_code_timeout_kills_container(self, monkeypatch):
         mgr, cm = _make_code_manager()

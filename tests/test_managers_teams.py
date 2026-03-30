@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from unittest.mock import patch
 
 
 def _get_teams():
@@ -181,3 +182,39 @@ class TestSendNotificationDisabled:
         }
         assert colors["info"] == "0078D4"
         assert colors["success"] == "107C10"
+
+
+class _FakeTeamsResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeTeamsAsyncClient:
+    def __init__(self, *, response: _FakeTeamsResponse):
+        self._response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, *args, **kwargs):
+        return self._response
+
+
+class TestTeamsWebhookHttpResponses:
+    def test_send_message_500_returns_error(self):
+        tm = _get_teams()
+        mgr = tm.TeamsManager(webhook_url="https://teams.example/webhook")
+        fake_response = _FakeTeamsResponse(500, "internal server error")
+
+        with patch(
+            "managers.teams_manager.httpx.AsyncClient",
+            return_value=_FakeTeamsAsyncClient(response=fake_response),
+        ):
+            ok, err = asyncio.run(mgr.send_message("hello teams"))
+
+        assert ok is False
+        assert "HTTP 500" in err

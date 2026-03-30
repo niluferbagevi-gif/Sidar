@@ -318,6 +318,52 @@ class TestBrowserManagerFailureEdges:
             mgr.goto_url("timeout-1", "https://example.com")
 
         assert mgr._audit_log[-1]["action"] == "browser_goto_url"
+
+    def test_capture_dom_when_selector_not_found_returns_false(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="dom-missing-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(
+                locator=lambda _selector: types.SimpleNamespace(
+                    inner_html=lambda timeout=None: (_ for _ in ()).throw(RuntimeError("No node found for selector"))
+                ),
+                url="https://example.com",
+            ),
+        )
+        mgr._sessions["dom-missing-1"] = session
+
+        ok, message = mgr.capture_dom("dom-missing-1", "#missing")
+        assert ok is False
+        assert "DOM yakalama hatası" in message
+        assert "No node found" in message
+
+    def test_click_element_captcha_challenge_is_recorded_as_execution_failed(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="captcha-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(
+                click=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("CAPTCHA challenge detected")),
+                url="https://example.com/login",
+            ),
+        )
+        mgr._sessions["captcha-1"] = session
+
+        import pytest
+        with pytest.raises(RuntimeError, match="CAPTCHA"):
+            mgr.click_element("captcha-1", "#login-submit")
+
+        assert mgr._audit_log[-1]["action"] == "browser_click"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
 
     def test_click_element_records_execution_failed_when_dom_missing(self):

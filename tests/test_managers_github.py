@@ -292,6 +292,30 @@ class TestGitHubManagerConflictAndRateLimitEdges:
         assert "dosya okuma hatası" in message
         assert "rate limit" in message.lower()
 
+    def test_create_branch_fails_when_source_branch_missing(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(default_branch="main")
+        repo.get_branch.side_effect = RuntimeError("Branch not found: missing-branch")
+        mgr._repo = repo
+
+        ok, message = mgr.create_branch("feature/new-flow", from_branch="missing-branch")
+        assert ok is False
+        assert "Dal oluşturma hatası" in message
+        assert "missing-branch" in message
+
+    def test_create_pull_request_returns_merge_conflict_error(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(default_branch="main")
+        repo.create_pull.side_effect = RuntimeError("merge conflict")
+        mgr._repo = repo
+
+        ok, message = mgr.create_pull_request("Conflict PR", "body", "feature/conflict", "main")
+        assert ok is False
+        assert "Pull Request oluşturma hatası" in message
+        assert "merge conflict" in message.lower()
+
 
 class TestGitHubManagerAuthAndRepoFlows:
     def test_list_repos_owner_organization_uses_all_repo_type(self):

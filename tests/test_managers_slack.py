@@ -172,3 +172,20 @@ class TestSlackWebhookHttpResponses:
 
         assert ok is False
         assert "HTTP 500" in err
+
+
+class TestSlackSdkTokenFailures:
+    def test_send_message_invalid_token_returns_api_error(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager()
+        mgr._available = True
+        mgr._webhook_only = False
+
+        class _FakeClient:
+            def chat_postMessage(self, **_kwargs):
+                return {"ok": False, "error": "invalid_auth"}
+
+        mgr._client = _FakeClient()
+        ok, err = asyncio.run(mgr.send_message("hello", channel="#general"))
+        assert ok is False
+        assert err == "invalid_auth"

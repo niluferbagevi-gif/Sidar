@@ -161,3 +161,18 @@ class TestJiraRequestHttpResponses:
         assert ok is False
         assert body is None
         assert "HTTP 500" in err
+
+    def test_request_401_returns_invalid_token_error(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="invalid-token")
+        fake_response = _FakeJiraResponse(401, body=None, text="Unauthorized")
+
+        with patch(
+            "managers.jira_manager.httpx.AsyncClient",
+            return_value=_FakeJiraAsyncClient(response=fake_response),
+        ):
+            ok, body, err = asyncio.run(mgr._request("GET", "issue/TEST-1"))
+
+        assert ok is False
+        assert body is None
+        assert "HTTP 401" in err
