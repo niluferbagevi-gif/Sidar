@@ -787,10 +787,14 @@ class DocumentStore:
             self._pgvector_available = False
 
     def _pgvector_embed_texts(self, texts: List[str]) -> List[List[float]]:
-        if not self._pg_embedding_model:
+        if not self._pg_embedding_model or not texts:
             return []
-        vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
-        return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+        try:
+            vectors = self._pg_embedding_model.encode(texts, normalize_embeddings=True)
+            return vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+        except Exception as exc:
+            logger.warning("pgvector embedding üretilemedi: %s", exc)
+            return []
 
     def _upsert_pgvector_chunks(
         self,
@@ -885,8 +889,11 @@ class DocumentStore:
         Metni kod yapısına uygun ayırıcılarla (separators) mantıksal parçalara böler.
         LangChain'in RecursiveCharacterTextSplitter mantığını simüle eder.
         """
-        if not text:
+        if not text or size <= 0:
             return []
+        overlap = max(0, int(overlap or 0))
+        if overlap >= size:
+            overlap = max(0, size - 1)
 
         # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
         separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
@@ -948,8 +955,14 @@ class DocumentStore:
         chunk_overlap: Optional[int] = None,
     ) -> List[str]:
         """Chunking ayarlarını Config'den çözerek recursive parçalama yap."""
-        c_size = chunk_size or getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
-        c_overlap = chunk_overlap or getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+        size_raw = chunk_size if chunk_size is not None else getattr(self.cfg, "RAG_CHUNK_SIZE", self._chunk_size)
+        overlap_raw = chunk_overlap if chunk_overlap is not None else getattr(self.cfg, "RAG_CHUNK_OVERLAP", self._chunk_overlap)
+        c_size = int(size_raw or 0)
+        c_overlap = int(overlap_raw or 0)
+        if c_size <= 0:
+            return []
+        if c_overlap < 0:
+            c_overlap = 0
         return self._recursive_chunk_text(text, c_size, c_overlap)
 
     def _add_document_sync(

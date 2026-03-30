@@ -785,3 +785,30 @@ class TestCodeManagerFsAndAstErrorEdges:
         ok, message = mgr.lsp_workspace_diagnostics(paths=[str(py_file)])
         assert ok is False
         assert "LSP binary bulunamadı" in message
+
+
+class TestCodeManagerGeneratedTestPermissionEdges:
+    def test_write_generated_test_returns_error_when_existing_file_cannot_be_read(self, monkeypatch, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "tests" / "test_blocked.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("def test_old():\n    assert True\n", encoding="utf-8")
+
+        monkeypatch.setattr(mgr, "read_file", lambda *_a, **_k: (False, "[OpenClaw] Erişim reddedildi"))
+        ok, message = mgr.write_generated_test(str(target), "def test_new():\n    assert True\n", append=True)
+
+        assert ok is False
+        assert "Erişim reddedildi" in message
+
+    def test_write_generated_test_surfaces_write_permission_error(self, monkeypatch, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "tests" / "test_denied.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("def test_old():\n    assert True\n", encoding="utf-8")
+
+        monkeypatch.setattr(mgr, "read_file", lambda *_a, **_k: (True, "def test_old():\n    assert True\n"))
+        monkeypatch.setattr(mgr, "write_file", lambda *_a, **_k: (False, "[OpenClaw] Yazma erişimi reddedildi"))
+        ok, message = mgr.write_generated_test(str(target), "def test_new():\n    assert True\n", append=True)
+
+        assert ok is False
+        assert "Yazma erişimi reddedildi" in message

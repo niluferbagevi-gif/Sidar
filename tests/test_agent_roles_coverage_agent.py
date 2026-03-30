@@ -411,6 +411,33 @@ class TestCoverageXmlParsing:
         assert parsed["findings"] == []
 
 
+class TestTerminalCoverageParsing:
+    def test_parse_terminal_coverage_output_extracts_files_and_findings(self):
+        m = _get_coverage()
+        terminal_output = """
+Name                      Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------
+web_server.py              3090   1310    750    230    42%   10-12, 40-58
+core/multimodal.py          411    150     88     24    55%   22, 44, 48-60
+tests/test_sample.py         20      0      0      0   100%
+"""
+        parsed = m.CoverageAgent._parse_terminal_coverage_output(terminal_output, limit=10)
+
+        assert parsed["total_findings"] == 2
+        assert parsed["files"][0]["path"] == "web_server.py"
+        assert parsed["files"][0]["missing_lines_count"] == 1310
+        assert parsed["findings"][0]["target_path"] == "web_server.py"
+        assert parsed["findings"][0]["suggested_test_path"] == "tests/test_web_server_coverage.py"
+
+    def test_parse_terminal_coverage_output_returns_parse_error_for_unmatched_rows(self):
+        m = _get_coverage()
+        parsed = m.CoverageAgent._parse_terminal_coverage_output("no coverage table here")
+
+        assert parsed["files"] == []
+        assert parsed["findings"] == []
+        assert "ayrıştırılamadı" in parsed["summary"]
+
+
 # ─────────────────────────────────────────────────────────
 # run_task yönlendirme testleri
 # ─────────────────────────────────────────────────────────
@@ -465,6 +492,23 @@ class TestCoverageAgentRunTask:
         assert isinstance(parsed, dict)
         assert parsed["coverage_xml"]["exists"] is True
         assert parsed["findings"]
+
+    @pytest.mark.asyncio
+    async def test_analyze_coverage_report_uses_terminal_findings_when_xml_missing(self):
+        m = _get_coverage()
+        agent = m.CoverageAgent()
+        payload = json.dumps(
+            {
+                "coverage_xml": "/tmp/does-not-exist.xml",
+                "coverage_output": "web_server.py 3090 1310 750 230 42% 10-12, 40-58",
+            }
+        )
+        result = await agent.run_task(f"analyze_coverage_report|{payload}")
+        parsed = json.loads(result)
+
+        assert parsed["coverage_xml"]["exists"] is False
+        assert parsed["coverage_terminal"]["total_findings"] == 1
+        assert parsed["findings"][0]["target_path"] == "web_server.py"
 
     @pytest.mark.asyncio
     async def test_generate_missing_tests_routing(self):
