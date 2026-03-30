@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import configparser
 import json
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Optional
@@ -179,6 +180,84 @@ class CoverageAgent(BaseAgent):
         }
 
     @staticmethod
+    def _parse_terminal_coverage_output(raw_output: str, *, limit: int = 25) -> dict[str, Any]:
+        text = str(raw_output or "")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines:
+            return {"summary": "Coverage terminal çıktısı boş.", "files": [], "findings": []}
+
+        collected: list[dict[str, Any]] = []
+        pattern = re.compile(
+            r"^(?P<path>[^\s].*?\.py)\s+"
+            r"(?P<stmts>\d+)\s+"
+            r"(?P<miss>\d+)\s+"
+            r"(?P<branch>\d+)\s+"
+            r"(?P<brpart>\d+)\s+"
+            r"(?P<cover>\d+)%"
+            r"(?:\s+(?P<missing>.+))?$"
+        )
+
+        for line in lines:
+            match = pattern.match(line)
+            if not match:
+                continue
+            data = match.groupdict()
+            path = str(data.get("path", "") or "").strip()
+            if not path:
+                continue
+            miss = int(data.get("miss", "0") or 0)
+            branch = int(data.get("branch", "0") or 0)
+            brpart = int(data.get("brpart", "0") or 0)
+            cover_pct = float(data.get("cover", "0") or 0)
+            missing_hint = str(data.get("missing", "") or "").strip()
+            collected.append(
+                {
+                    "path": path,
+                    "line_rate": round(cover_pct, 2),
+                    "branch_rate": round((branch - brpart) / branch * 100, 2) if branch > 0 else 100.0,
+                    "missing_lines_count": miss,
+                    "missing_branches_count": brpart,
+                    "missing_hint": missing_hint,
+                }
+            )
+
+        if not collected:
+            return {"summary": "Coverage terminal çıktısı ayrıştırılamadı.", "files": [], "findings": []}
+
+        collected_sorted = sorted(
+            collected,
+            key=lambda item: (
+                item.get("line_rate", 0.0),
+                -int(item.get("missing_lines_count", 0) or 0),
+                -int(item.get("missing_branches_count", 0) or 0),
+                str(item.get("path", "")),
+            ),
+        )
+        findings = []
+        for item in collected_sorted:
+            if float(item.get("line_rate", 0.0) or 0.0) >= 100.0:
+                continue
+            findings.append(
+                {
+                    "finding_type": "terminal_coverage_gap",
+                    "target_path": item.get("path", ""),
+                    "summary": (
+                        f"line={item.get('line_rate')}% missing_lines={item.get('missing_lines_count')} "
+                        f"missing_branches={item.get('missing_branches_count')}"
+                    ),
+                    "missing_lines_hint": item.get("missing_hint", ""),
+                    "suggested_test_path": CoverageAgent._suggest_test_path(str(item.get("path", ""))),
+                }
+            )
+
+        return {
+            "summary": f"Terminal çıktısında {len(findings)} coverage açığı bulundu.",
+            "files": collected_sorted,
+            "findings": findings[: max(1, int(limit) if limit is not None else 25)],
+            "total_findings": len(findings),
+        }
+
+    @staticmethod
     def _build_dynamic_pytest_prompt(*, finding: dict[str, Any], coveragerc: dict[str, Any]) -> str:
         target = str(finding.get("target_path", "") or "")
         missing_lines = ", ".join(str(x) for x in (finding.get("missing_lines", []) or [])[:50]) or "-"
@@ -216,16 +295,22 @@ class CoverageAgent(BaseAgent):
         payload = self._parse_payload(arg)
         coverage_xml_path = str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml")
         coveragerc_path = str(payload.get("coveragerc", ".coveragerc") or ".coveragerc")
+        terminal_output = str(payload.get("coverage_output", "") or "")
         limit_val = payload.get("limit")
         limit = int(limit_val) if limit_val is not None else 25
         coverage_analysis = self._parse_coverage_xml(coverage_xml_path, limit=limit)
+        terminal_analysis = self._parse_terminal_coverage_output(terminal_output, limit=limit)
         coveragerc = self._read_coveragerc(coveragerc_path)
+        findings = list(coverage_analysis.get("findings", []) or [])
+        if not findings:
+            findings = list(terminal_analysis.get("findings", []) or [])
         return json.dumps(
             {
                 "summary": coverage_analysis.get("summary", ""),
                 "coverage_xml": coverage_analysis,
+                "coverage_terminal": terminal_analysis,
                 "coveragerc": coveragerc,
-                "findings": coverage_analysis.get("findings", []),
+                "findings": findings,
             },
             ensure_ascii=False,
         )
