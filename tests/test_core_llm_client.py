@@ -858,6 +858,93 @@ class TestBaseClientHelpers:
         parsed = json.loads(out)
         assert parsed.get("tool") == "final_answer"
 
+    def test_openai_chat_unexpected_choice_shape_raises_llm_api_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                # Beklenmeyen içerik: message bir dict yerine string
+                return {
+                    "choices": [{"message": "unexpected-raw-string"}],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 3},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.retryable is False
+
+
+class TestLiteLLMApiMocking:
+    def test_litellm_401_invalid_token_raises_llm_api_error(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            LITELLM_GATEWAY_URL = "https://litellm.example"
+            LITELLM_API_KEY = "bad-token"
+            LITELLM_MODEL = "gpt-4o-mini"
+            LITELLM_FALLBACK_MODELS = []
+            LITELLM_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 401
+
+            def raise_for_status(self):
+                exc = RuntimeError("invalid token")
+                exc.status_code = 401
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.LiteLLMClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "litellm"
+        assert "LiteLLM hata" in str(exc_info.value)
+        assert fake_client.post.await_count == 1
+
 
 class TestGeminiAndAnthropicApiMocking:
     def test_gemini_timeout_in_stream_returns_fallback_error_chunk(self, monkeypatch):
@@ -1077,6 +1164,65 @@ class TestProviderStreamAndFormatEdgeCases:
         parsed = json.loads(out)
         assert parsed["tool"] == "final_answer"
         assert "UYARI" in parsed["argument"]
+
+    def test_openai_stream_line_iteration_error_returns_fallback_and_closes_resources(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        called = {"exit": 0, "close": 0}
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            async def aiter_lines(self):
+                raise RuntimeError("stream parse failed")
+
+        class _StreamCM:
+            async def __aenter__(self):
+                return _Resp()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                called["exit"] += 1
+                return False
+
+        class _AsyncClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def stream(self, *_args, **_kwargs):
+                return _StreamCM()
+
+            async def aclose(self):
+                called["close"] += 1
+
+        monkeypatch.setattr(lc.httpx, "AsyncClient", _AsyncClient)
+        client = lc.OpenAIClient(_Cfg())
+
+        async def _collect():
+            out = []
+            async for chunk in client._stream_openai(
+                payload={"stream": True},
+                headers={"Authorization": "Bearer test-key"},
+                timeout=lc.httpx.Timeout(10),
+                json_mode=True,
+            ):
+                out.append(chunk)
+            return out
+
+        chunks = _run(_collect())
+        assert len(chunks) == 1
+        assert "OpenAI akış hatası" in chunks[0]
+        assert called["exit"] == 1
+        assert called["close"] == 1
 
 
 class TestStreamMetricHelpers:
