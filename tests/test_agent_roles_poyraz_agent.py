@@ -394,18 +394,40 @@ class TestPoyrazAdditionalCoverage:
         assert agent._db_lock is existing_lock
         db_mod.Database.assert_called_once_with(agent.cfg)
 
-    @pytest.mark.asyncio
-    async def test_social_channel_specific_missing_branches(self):
+    def test_ensure_db_returns_cached_instance_after_lock_enter(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        cached_db = MagicMock()
+
+        class _LateCacheLock:
+            async def __aenter__(self_inner):
+                agent._db = cached_db
+                return None
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        agent._db = None
+        agent._db_lock = _LateCacheLock()
+
+        result = asyncio.run(agent._ensure_db())
+        assert result is cached_db
+
+    def test_social_channel_specific_missing_branches(self):
         m = _get_poyraz()
         agent = m.PoyrazAgent()
 
         agent.social.publish_instagram_post = AsyncMock(return_value=(False, "ig-down"))
-        result = await agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}')
+        result = asyncio.run(agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}'))
         assert result.startswith("[INSTAGRAM:ERROR]")
 
         agent.social.publish_facebook_post = AsyncMock(return_value=(True, "fb-ok"))
-        result = await agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}')
+        result = asyncio.run(agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}'))
         assert result.startswith("[FACEBOOK:PUBLISHED]")
+
+        agent.social.send_whatsapp_message = AsyncMock(return_value=(False, "wa-down"))
+        result = asyncio.run(agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}'))
+        assert result.startswith("[WHATSAPP:ERROR]")
 
     @pytest.mark.asyncio
     async def test_build_landing_page_with_store_asset(self, monkeypatch):
@@ -430,6 +452,36 @@ class TestPoyrazAdditionalCoverage:
         result = await agent._tool_build_landing_page(__import__("json").dumps(payload, ensure_ascii=False))
         assert result == "lp-content"
         agent._persist_content_asset.assert_awaited_once()
+
+    def test_build_landing_page_plain_text_does_not_store_asset(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="plain-landing"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        result = asyncio.run(agent._tool_build_landing_page("Kısa landing page briefi"))
+        assert result == "plain-landing"
+        agent._persist_content_asset.assert_not_awaited()
+
+    def test_build_landing_page_store_asset_enabled_without_campaign_id_skips_persist(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="landing-no-campaign"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        payload = {
+            "brand_name": "Sidar",
+            "offer": "İlk teklif",
+            "audience": "KOBİ",
+            "call_to_action": "Demo al",
+            "tone": "professional",
+            "sections": ["hero", "cta"],
+            "store_asset": True,
+            "campaign_id": None,
+        }
+        result = asyncio.run(agent._tool_build_landing_page(__import__("json").dumps(payload, ensure_ascii=False)))
+        assert result == "landing-no-campaign"
+        agent._persist_content_asset.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_generate_campaign_copy_with_store_asset(self, monkeypatch):

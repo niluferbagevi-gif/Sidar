@@ -259,3 +259,55 @@ class TestGitHubManagerServiceOutcomes:
         ok, message = mgr.list_pull_requests(state="open", limit=10)
         assert ok is True
         assert "Hiç" in message
+
+
+class TestGitHubManagerConflictAndRateLimitEdges:
+    def test_create_or_update_file_read_rate_limit_returns_error(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock()
+        repo.get_contents.side_effect = RuntimeError("API rate limit exceeded")
+        mgr._repo = repo
+
+        ok, message = mgr.create_or_update_file(
+            file_path="README.md",
+            content="hello",
+            message="update",
+            branch="main",
+        )
+        assert ok is False
+        assert "dosya okuma hatası" in message
+        assert "rate limit" in message.lower()
+
+    def test_create_or_update_file_update_conflict_returns_error(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        existing = MagicMock(sha="abc123")
+        repo = MagicMock()
+        repo.get_contents.return_value = existing
+        repo.update_file.side_effect = RuntimeError("409 Conflict: sha does not match")
+        mgr._repo = repo
+
+        ok, message = mgr.create_or_update_file(
+            file_path="src/app.py",
+            content="print('x')",
+            message="update app",
+            branch="feature/conflict",
+        )
+        assert ok is False
+        assert "dosya yazma hatası" in message
+        assert "conflict" in message.lower()
+
+    def test_create_branch_existing_ref_conflict_returns_error(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        source_ref = MagicMock(commit=MagicMock(sha="deadbeef"))
+        repo = MagicMock(default_branch="main")
+        repo.get_branch.return_value = source_ref
+        repo.create_git_ref.side_effect = RuntimeError("Reference already exists (409)")
+        mgr._repo = repo
+
+        ok, message = mgr.create_branch("feature/existing")
+        assert ok is False
+        assert "Dal oluşturma hatası" in message
+        assert "409" in message

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import sqlite3
@@ -280,7 +281,14 @@ class Database:
         if self._sqlite_lock is None:
             self._sqlite_lock = asyncio.Lock()
         async with self._sqlite_lock:
-            return await asyncio.to_thread(operation)
+            try:
+                return await asyncio.to_thread(operation)
+            except Exception:
+                # Hata durumunda açık transaction'ı geri al; aksi halde aynı bağlantıda
+                # sonraki çağrılar beklenmedik yarım-kalmış değişiklikler görebilir.
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(self._sqlite_conn.rollback)
+                raise
 
     async def _connect_postgresql(self) -> None:
         if self._pg_pool is not None:
