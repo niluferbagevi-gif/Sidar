@@ -617,3 +617,55 @@ class TestCodeManagerMissingPathAndAstEdges:
         ok, message = mgr.validate_python_syntax(code)
         assert ok is False
         assert "Satır" in message
+
+
+class TestCodeManagerShellGrepAndLspEdges:
+    def test_run_shell_blocks_shell_features_when_disabled(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_run_shell=lambda: True)
+        ok, message = mgr.run_shell("echo test | cat", allow_shell_features=False)
+        assert ok is False
+        assert "shell operatörleri içeriyor" in message
+
+    def test_run_shell_invalid_split_returns_parse_error(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_run_shell=lambda: True)
+        ok, message = mgr.run_shell("echo 'unterminated", allow_shell_features=False)
+        assert ok is False
+        assert "Komut ayrıştırılamadı" in message
+
+    def test_run_shell_timeout_returns_timeout_message(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_run_shell=lambda: True)
+
+        def _raise_timeout(*_args, **_kwargs):
+            raise subprocess.TimeoutExpired(cmd="x", timeout=60)
+
+        monkeypatch.setattr(cm.subprocess, "run", _raise_timeout)
+        ok, message = mgr.run_shell("python -c \"while True: pass\"")
+        assert ok is False
+        assert "Zaman aşımı" in message
+
+    def test_grep_files_invalid_regex_returns_error(self):
+        mgr, _cm = _make_code_manager()
+        ok, message = mgr.grep_files(pattern="(", path=".")
+        assert ok is False
+        assert "Geçersiz regex kalıbı" in message
+
+    def test_lsp_semantic_audit_returns_no_targets_for_unknown_extension(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        non_code = tmp_path / "note.txt"
+        non_code.write_text("hello", encoding="utf-8")
+        ok, payload = mgr.lsp_semantic_audit(paths=[str(non_code)])
+        assert ok is False
+        assert payload["status"] == "no-targets"
+
+    def test_lsp_semantic_audit_returns_tool_error_when_lsp_raises(self, tmp_path, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        py_file = tmp_path / "sample.py"
+        py_file.write_text("x = 1\n", encoding="utf-8")
+        monkeypatch.setattr(mgr, "_run_lsp_sequence", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("lsp offline")))
+        ok, payload = mgr.lsp_semantic_audit(paths=[str(py_file)])
+        assert ok is False
+        assert payload["status"] == "tool-error"
+        assert "lsp offline" in payload["summary"].lower()

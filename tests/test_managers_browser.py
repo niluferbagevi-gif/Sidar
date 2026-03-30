@@ -505,3 +505,33 @@ class TestBrowserManagerUrlAndSessionValidation:
         ok, message = mgr.close_session("missing-session")
         assert ok is False
         assert "bulunamadı" in message.lower()
+
+
+class TestBrowserManagerHitlAndProviderEdges:
+    def test_click_element_hitl_exception_records_failed_audit(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="hitl-err-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(url="https://example.com"),
+        )
+        mgr._sessions["hitl-err-1"] = session
+        monkeypatch.setattr(mgr, "_request_hitl_approval", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            mgr,
+            "_click_element_impl",
+            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("element detached")),
+        )
+
+        import asyncio
+        import pytest
+
+        with pytest.raises(RuntimeError, match="element detached"):
+            asyncio.run(mgr.click_element_hitl("hitl-err-1", "#publish"))
+
+        assert mgr._audit_log[-1]["action"] == "browser_click"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
