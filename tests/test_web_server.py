@@ -258,6 +258,52 @@ class TestRoomBuffers:
             ws._append_room_message(room, {"id": str(i)}, limit=3)
         assert [item["id"] for item in room.messages] == ["2", "3", "4"]
 
+    def test_append_room_telemetry_masks_fields(self, monkeypatch):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        monkeypatch.setattr(ws, "_mask_collaboration_text", lambda text: f"masked::{text}")
+
+        ws._append_room_telemetry(
+            room,
+            {"content": "secret", "error": "boom", "other": "kept"},
+            limit=5,
+        )
+
+        assert room.telemetry[0]["content"] == "masked::secret"
+        assert room.telemetry[0]["error"] == "masked::boom"
+        assert room.telemetry[0]["other"] == "kept"
+
+    def test_append_room_telemetry_applies_limit(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        for i in range(4):
+            ws._append_room_telemetry(room, {"id": str(i)}, limit=2)
+        assert [item["id"] for item in room.telemetry] == ["2", "3"]
+
+
+class TestMaskingAndSerialization:
+    def test_mask_collaboration_text_fallback_on_import_error(self):
+        ws = _get_web_server()
+        assert ws._mask_collaboration_text("plain") == "plain"
+
+    def test_serialize_room_sorts_participants_and_truncates_buffers(self):
+        ws = _get_web_server()
+        room = ws._CollaborationRoom(room_id="workspace:default")
+        room.participants = {
+            2: ws._CollaborationParticipant(display_name="zeta", username="z", user_id="2"),
+            1: ws._CollaborationParticipant(display_name="Alpha", username="a", user_id="1"),
+        }
+        room.messages = [{"id": str(i)} for i in range(130)]
+        room.telemetry = [{"id": str(i)} for i in range(130)]
+
+        payload = ws._serialize_collaboration_room(room)
+
+        assert [item["display_name"] for item in payload["participants"]] == ["Alpha", "zeta"]
+        assert len(payload["messages"]) == 120
+        assert len(payload["telemetry"]) == 120
+        assert payload["messages"][0]["id"] == "10"
+        assert payload["telemetry"][0]["id"] == "10"
+
     def test_append_room_telemetry_masks_sensitive_fields(self, monkeypatch):
         ws = _get_web_server()
         room = ws._CollaborationRoom(room_id="workspace:default")

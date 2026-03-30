@@ -429,3 +429,49 @@ class TestAutoHandleErrorAndBranchCoverage:
         handled, response = await handler.handle("bu ifade hiçbir kalıpla eşleşmez")
         assert handled is False
         assert response == ""
+
+
+class TestAutoHandleNegativeBranchExits:
+    @pytest.mark.asyncio
+    async def test_try_dot_command_returns_false_for_non_dot_text(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler._try_dot_command("status", "status")
+        assert handled is False
+        assert response == ""
+
+    @pytest.mark.asyncio
+    async def test_try_health_returns_false_when_pattern_not_matched(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler._try_health("selam nasılsın")
+        assert handled is False
+        assert response == ""
+
+    @pytest.mark.asyncio
+    async def test_try_gpu_optimize_returns_false_when_pattern_not_matched(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler._try_gpu_optimize("sadece sohbet")
+        assert handled is False
+        assert response == ""
+
+    @pytest.mark.asyncio
+    async def test_try_fetch_url_returns_false_when_intent_missing(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler._try_fetch_url("rastgele ifade", "rastgele ifade")
+        assert handled is False
+        assert response == ""
+
+    @pytest.mark.asyncio
+    async def test_try_docs_add_returns_false_without_add_intent(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = await handler._try_docs_add(
+            "doküman hakkında konuşalım",
+            "doküman hakkında konuşalım",
+        )
+        assert handled is False
+        assert response == ""
+
+    def test_try_security_status_returns_false_when_keywords_absent(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = handler._try_security_status("kod kalitesini artır")
+        assert handled is False
+        assert response == ""

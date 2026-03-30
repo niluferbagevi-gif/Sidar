@@ -403,3 +403,59 @@ class TestMultimodalPipelineEdgeCases:
         assert result["document_ingest"]["doc_id"] == "doc-42"
         kwargs = fake_analyze_local.await_args.kwargs
         assert kwargs["transcript_override"]["text"] == "Merhaba dünya"
+
+    def test_analyze_local_media_rejects_oversized_file(self, tmp_path):
+        mm = _get_mm()
+        media_file = tmp_path / "huge.mp4"
+        media_file.write_bytes(b"0123456789")
+        pipeline = mm.MultimodalPipeline(
+            llm_client=AsyncMock(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True, "MULTIMODAL_MAX_FILE_BYTES": 4})(),
+        )
+
+        result = asyncio.run(pipeline._analyze_local_media(media_path=str(media_file)))
+        assert result["success"] is False
+        assert "boyut limitini" in result["reason"]
+
+    def test_analyze_local_media_rejects_unsupported_media_kind(self, tmp_path, monkeypatch):
+        mm = _get_mm()
+        media_file = tmp_path / "archive.bin"
+        media_file.write_bytes(b"abc")
+        pipeline = mm.MultimodalPipeline(
+            llm_client=AsyncMock(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True})(),
+        )
+        monkeypatch.setattr(mm, "detect_media_kind", lambda **_kwargs: "unknown")
+
+        result = asyncio.run(pipeline._analyze_local_media(media_path=str(media_file)))
+        assert result["success"] is False
+        assert "Desteklenmeyen medya türü" in result["reason"]
+
+    def test_analyze_media_source_ffmpeg_fallback_to_download_remote(self, monkeypatch, tmp_path):
+        mm = _get_mm()
+        media_file = tmp_path / "fallback.mp4"
+        media_file.write_bytes(b"stub")
+
+        async def _broken_materialize(*_args, **_kwargs):
+            raise RuntimeError("ffmpeg pipeline crashed")
+
+        async def _fake_download(*_args, **_kwargs):
+            return mm.DownloadedMedia(
+                path=str(media_file),
+                source_url="https://example.com/video.mp4",
+                mime_type="video/mp4",
+                platform="generic",
+                resolved_url="https://example.com/video.mp4",
+                title="Fallback",
+            )
+
+        fake_analyze_local = AsyncMock(return_value={"success": True, "media_kind": "video", "analysis": "ok"})
+        monkeypatch.setattr(mm, "_command_exists", lambda _name: True)
+        monkeypatch.setattr(mm, "materialize_remote_media_for_ffmpeg", _broken_materialize)
+        monkeypatch.setattr(mm, "download_remote_media", _fake_download)
+        monkeypatch.setattr(mm.MultimodalPipeline, "_analyze_local_media", fake_analyze_local)
+
+        pipeline = mm.MultimodalPipeline(llm_client=AsyncMock(), config=type("Cfg", (), {"ENABLE_MULTIMODAL": True})())
+        result = asyncio.run(pipeline.analyze_media_source(media_source="https://example.com/video.mp4"))
+        assert result["success"] is True
+        assert result["download"]["path"] == str(media_file)

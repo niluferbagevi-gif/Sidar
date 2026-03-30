@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 
 def _get_bm():
@@ -295,6 +296,30 @@ class TestBrowserManagerAutomationMocking:
 
 
 class TestBrowserManagerFailureEdges:
+    def test_goto_url_timeout_records_execution_failed_audit(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="timeout-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(
+                goto=lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("page load timeout")),
+                url="https://example.com",
+            ),
+            current_url="",
+        )
+        mgr._sessions["timeout-1"] = session
+
+        import pytest
+        with pytest.raises(TimeoutError, match="page load timeout"):
+            mgr.goto_url("timeout-1", "https://example.com")
+
+        assert mgr._audit_log[-1]["action"] == "browser_goto_url"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
+
     def test_click_element_records_execution_failed_when_dom_missing(self):
         bm = _get_bm()
         mgr = bm.BrowserManager()
@@ -363,3 +388,23 @@ class TestBrowserManagerFailureEdges:
         assert "DOM yakalama hatası" in message
         assert mgr._audit_log[-1]["action"] == "browser_capture_dom"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
+
+    def test_click_element_hitl_rejected_returns_block_message(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="hitl-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(url="https://example.com"),
+        )
+        mgr._sessions["hitl-1"] = session
+        monkeypatch.setattr(mgr, "_request_hitl_approval", AsyncMock(return_value=False))
+        monkeypatch.setattr(mgr, "_click_element_impl", lambda *_a, **_k: (True, "ok"))
+
+        import asyncio
+        ok, message = asyncio.run(mgr.click_element_hitl("hitl-1", "#publish-button"))
+        assert ok is False
+        assert "reddedildi" in message
