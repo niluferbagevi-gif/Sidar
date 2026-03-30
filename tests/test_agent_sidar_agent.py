@@ -750,6 +750,57 @@ class TestSidarAgentMemoryAndMaintenance:
 
         asyncio.run(_not_idle())
 
+    def test_run_nightly_memory_maintenance_already_running_returns_skipped(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = True
+        agent.cfg.NIGHTLY_MEMORY_IDLE_SECONDS = 60
+
+        async def _run_case():
+            lock = asyncio.Lock()
+            await lock.acquire()
+            agent._nightly_maintenance_lock = lock
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "seconds_since_last_activity", MagicMock(return_value=3600.0)):
+                    res = await agent.run_nightly_memory_maintenance(force=False)
+            lock.release()
+            assert res["status"] == "skipped"
+            assert res["reason"] == "already_running"
+
+        asyncio.run(_run_case())
+
+    def test_run_nightly_memory_maintenance_completed_path(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.ENABLE_NIGHTLY_MEMORY_PRUNING = True
+        agent.cfg.NIGHTLY_MEMORY_IDLE_SECONDS = 60
+        agent.cfg.NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS = 2
+        agent.cfg.NIGHTLY_MEMORY_SESSION_MIN_MESSAGES = 2
+        agent.cfg.NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS = 1
+        agent.memory.run_nightly_consolidation = AsyncMock(
+            return_value={"session_ids": ["s1"], "sessions_compacted": 1}
+        )
+        agent.docs.consolidate_session_documents = MagicMock(return_value={"removed_docs": 2})
+
+        async def _run_case():
+            with (
+                patch.object(agent, "initialize", AsyncMock()),
+                patch.object(agent, "seconds_since_last_activity", MagicMock(return_value=3600.0)),
+                patch.object(agent, "_append_autonomy_history", AsyncMock()) as append_history,
+                patch("agent.sidar_agent.get_entity_memory", return_value=types.SimpleNamespace(
+                    initialize=AsyncMock(),
+                    purge_expired=AsyncMock(return_value=3),
+                )),
+            ):
+                result = await agent.run_nightly_memory_maintenance(force=False, reason="test")
+
+            assert result["status"] == "completed"
+            assert result["sessions_compacted"] == 1
+            assert result["rag_docs_pruned"] == 2
+            append_history.assert_awaited_once()
+
+        asyncio.run(_run_case())
+
 
 class TestSidarAgentToolHelpers:
     def test_tool_docs_search_variants(self):
@@ -792,6 +843,59 @@ class TestSidarAgentRespondAndToolFallback:
             assert memory_add.await_count == 2
             memory_add.assert_any_await("user", "Merhaba")
             memory_add.assert_any_await("assistant", "multi-agent sonucu")
+
+        asyncio.run(_run_case())
+
+
+class TestSidarAgentContextAndSummaryEdges:
+    def test_build_context_truncates_for_local_provider(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.AI_PROVIDER = "ollama"
+        agent.cfg.LOCAL_AGENT_CONTEXT_MAX_CHARS = 80
+        agent.cfg.LOCAL_INSTRUCTION_MAX_CHARS = 40
+        agent.cfg.PROJECT_NAME = "Sidar"
+        agent.cfg.VERSION = "1.0"
+        agent.cfg.CODING_MODEL = "code-model"
+        agent.cfg.TEXT_MODEL = "text-model"
+        agent.cfg.ACCESS_LEVEL = "standard"
+        agent.cfg.USE_GPU = False
+        agent.cfg.GPU_INFO = "none"
+        agent.cfg.GEMINI_MODEL = "gemini-x"
+        agent.security.level_name = "standard"
+        agent.github.is_available = MagicMock(return_value=False)
+        agent.web.is_available = MagicMock(return_value=False)
+        agent.docs.status = MagicMock(return_value="ok")
+        agent.code.get_metrics = MagicMock(return_value={"files_read": 0, "files_written": 0})
+        agent.memory.get_last_file = MagicMock(return_value=None)
+        agent.todo.__len__ = MagicMock(return_value=0)
+
+        async def _run_case():
+            with patch.object(agent, "_load_instruction_files", return_value=("x" * 5000)):
+                text = await agent._build_context()
+            assert "kırpıldı" in text
+
+        asyncio.run(_run_case())
+
+    def test_summarize_memory_handles_archive_and_llm_failures(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        history = [
+            {"role": "user", "content": "a", "timestamp": 1},
+            {"role": "assistant", "content": "b", "timestamp": 2},
+            {"role": "user", "content": "c", "timestamp": 3},
+            {"role": "assistant", "content": "d", "timestamp": 4},
+        ]
+        agent.memory.get_history = AsyncMock(return_value=history)
+        agent.docs.add_document = AsyncMock(side_effect=RuntimeError("rag down"))
+        agent.llm.chat = AsyncMock(side_effect=RuntimeError("llm down"))
+        agent.memory.apply_summary = AsyncMock()
+
+        async def _run_case():
+            await agent._summarize_memory()
+            agent.docs.add_document.assert_awaited_once()
+            agent.llm.chat.assert_awaited_once()
+            agent.memory.apply_summary.assert_not_awaited()
 
         asyncio.run(_run_case())
 

@@ -307,3 +307,58 @@ class TestAgentEventBusDrainBuffered:
         result = await bus._drain_buffered_events_once()
         assert result is True
         assert not queue.empty()
+
+
+class TestAgentEventBusRedisListenerFailures:
+    @pytest.mark.asyncio
+    async def test_redis_listener_loop_sets_fallback_on_stream_exception(self):
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        bus._redis_available = True
+        bus._redis_client = AsyncMock()
+        bus._redis_client.xreadgroup = AsyncMock(side_effect=RuntimeError("redis stream disconnected"))
+        bus._cleanup_redis = AsyncMock()
+
+        await bus._redis_listener_loop()
+        assert bus._redis_available is False
+        bus._cleanup_redis.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_listener_loop_invalid_payload_writes_dlq(self):
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        bus._redis_client = AsyncMock()
+        bus._redis_client.xreadgroup = AsyncMock(
+            side_effect=[
+                [("stream", [("1-0", {"payload": "{invalid json"})])],
+                asyncio.CancelledError(),
+            ]
+        )
+        bus._redis_client.xack = AsyncMock(return_value=1)
+        bus._write_dead_letter = AsyncMock()
+
+        with pytest.raises(asyncio.CancelledError):
+            await bus._redis_listener_loop()
+
+        assert bus._write_dead_letter.await_count >= 1
+        assert any(call.kwargs.get("reason") == "invalid_payload" for call in bus._write_dead_letter.await_args_list)
+
+    @pytest.mark.asyncio
+    async def test_redis_listener_loop_ack_failure_writes_dlq(self):
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        bus._instance_id = "self"
+        bus._redis_client = AsyncMock()
+        bus._redis_client.xreadgroup = AsyncMock(
+            side_effect=[
+                [("stream", [("1-1", {"payload": "{\"sid\":\"other\",\"source\":\"a\",\"message\":\"m\",\"ts\":1}"})])],
+                asyncio.CancelledError(),
+            ]
+        )
+        bus._redis_client.xack = AsyncMock(side_effect=RuntimeError("ack lost"))
+        bus._write_dead_letter = AsyncMock()
+
+        with pytest.raises(asyncio.CancelledError):
+            await bus._redis_listener_loop()
+
+        assert any(call.kwargs.get("reason") == "ack_failed" for call in bus._write_dead_letter.await_args_list)
