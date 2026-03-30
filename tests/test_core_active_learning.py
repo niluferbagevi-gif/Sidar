@@ -133,6 +133,49 @@ class TestFeedbackStoreDisabled:
         assert fs._engine is None
 
 
+class TestFeedbackStoreFlagWeakResponse:
+    def test_flag_weak_response_adds_reasoning_tag_and_clamps_score(self, monkeypatch):
+        al = _get_al()
+        fs = al.FeedbackStore()
+        fs._engine = object()  # initialize çağrısını atlamak için
+        captured = {}
+
+        async def _fake_record(**kwargs):
+            captured.update(kwargs)
+            return True
+
+        monkeypatch.setattr(fs, "record", _fake_record)
+        ok = _run(
+            fs.flag_weak_response(
+                prompt="p",
+                response="r",
+                score=99,
+                reasoning="neden",
+                tags=["manual"],
+            )
+        )
+        assert ok is True
+        assert "manual" in captured["tags"]
+        assert "judge_reasoning" in captured["tags"]
+        assert "score:10" in captured["tags"]
+
+    def test_flag_weak_response_without_reasoning_skips_reasoning_tag(self, monkeypatch):
+        al = _get_al()
+        fs = al.FeedbackStore()
+        fs._engine = object()
+        captured = {}
+
+        async def _fake_record(**kwargs):
+            captured.update(kwargs)
+            return True
+
+        monkeypatch.setattr(fs, "record", _fake_record)
+        ok = _run(fs.flag_weak_response(prompt="p", response="r", score=0, reasoning=""))
+        assert ok is True
+        assert "judge_reasoning" not in captured["tags"]
+        assert "score:1" in captured["tags"]
+
+
 # ══════════════════════════════════════════════════════════════
 # DatasetExporter
 # ══════════════════════════════════════════════════════════════

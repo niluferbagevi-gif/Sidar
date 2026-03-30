@@ -201,6 +201,10 @@ class TestVerifyPassword:
         encoded = db._hash_password("")
         assert db._verify_password("", encoded) is True
 
+    def test_non_string_encoded_returns_false(self):
+        db = _get_db()
+        assert db._verify_password("secret", None) is False
+
 
 # ══════════════════════════════════════════════════════════════
 # _quote_sql_identifier
