@@ -628,3 +628,24 @@ class TestSwarmDelegationEdgeCases:
 
         assert result.status == "success"
         assert result.handoffs[0]["sender"] == "coder"
+
+
+class TestSwarmDistributedDelegation:
+    def test_dispatch_distributed_raises_when_backend_missing(self):
+        orchestrator, sw = _make_orchestrator()
+        orchestrator.configure_delegation_backend(None)
+        task = sw.SwarmTask(goal="görev", intent="code_generation")
+        async def _run_case():
+            with pytest.raises(RuntimeError, match="backend"):
+                await orchestrator.dispatch_distributed(task, session_id="s1")
+        asyncio.run(_run_case())
+
+    def test_dispatch_distributed_raises_when_no_agent_for_intent(self):
+        orchestrator, sw = _make_orchestrator(registered_agents={"reviewer": ["code_review"]})
+        backend = sw.InMemoryDelegationBackend()
+        orchestrator.configure_delegation_backend(backend)
+        task = sw.SwarmTask(goal="görev", intent="coverage_analysis")
+        async def _run_case():
+            with pytest.raises(RuntimeError, match="uygun ajan"):
+                await orchestrator.dispatch_distributed(task, session_id="s2", receiver="ghost")
+        asyncio.run(_run_case())

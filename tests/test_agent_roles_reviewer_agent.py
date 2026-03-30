@@ -523,3 +523,18 @@ class TestReviewerAgentFallbacks:
         agent = m.ReviewerAgent()
         result = await agent.run_task("tamamen alakasız bir istek")
         assert "PR listesi" in result
+
+
+class TestReviewerDecisionSignals:
+    def test_summarize_lsp_diagnostics_rejects_on_error_severity(self):
+        m = _get_reviewer()
+        output = "core/foo.py:12 severity=1 message=Syntax error"
+        summary = m.ReviewerAgent._summarize_lsp_diagnostics(output)
+        assert summary["decision"] == "REJECT"
+        assert summary["risk"] == "yüksek"
+
+    def test_summarize_lsp_diagnostics_approves_clean_text(self):
+        m = _get_reviewer()
+        summary = m.ReviewerAgent._summarize_lsp_diagnostics("LSP temiz")
+        assert summary["decision"] == "APPROVE"
+        assert summary["status"] == "clean"
