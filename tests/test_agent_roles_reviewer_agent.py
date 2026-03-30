@@ -443,3 +443,35 @@ class TestReviewerAgentRunTask:
             assert parsed["risk"] == "yüksek"
 
         asyncio.run(_run_case())
+
+    def test_review_code_handles_malformed_tool_outputs_with_safe_fallbacks(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        agent._run_dynamic_tests = AsyncMock(return_value="[TEST:PASS] dynamic")
+        agent._build_regression_commands = MagicMock(return_value=["pytest -q tests/test_dummy.py"])
+
+        async def _fake_call_tool(name, arg):
+            if name == "run_tests":
+                return "[TEST:PASS] pytest -q tests/test_dummy.py"
+            if name == "graph_impact":
+                return "{broken-json"
+            if name == "browser_signals":
+                return "{broken-json"
+            if name == "lsp_diagnostics":
+                return "unexpected plain text"
+            return ""
+
+        agent.call_tool = AsyncMock(side_effect=_fake_call_tool)
+
+        async def _run_case():
+            result = await agent.run_task("review_code|def ok(): pass")
+            assert contracts.is_delegation_request(result)
+            payload = result.payload.split("qa_feedback|", 1)[1]
+            parsed = json.loads(payload)
+            assert parsed["decision"] in {"APPROVE", "REJECT"}
+            assert "combined_impact_report" in parsed
+            assert "browser_signal_summary" in parsed
+
+        asyncio.run(_run_case())

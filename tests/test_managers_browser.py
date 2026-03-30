@@ -408,3 +408,28 @@ class TestBrowserManagerFailureEdges:
         ok, message = asyncio.run(mgr.click_element_hitl("hitl-1", "#publish-button"))
         assert ok is False
         assert "reddedildi" in message
+
+
+class TestBrowserManagerUrlAndSessionValidation:
+    def test_validate_url_rejects_non_http_scheme(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+
+        import pytest
+        with pytest.raises(ValueError, match="http/https"):
+            mgr._validate_url("file:///tmp/x.html")
+
+    def test_validate_url_rejects_disallowed_domain(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager(allowed_domains=["example.com"])
+
+        import pytest
+        with pytest.raises(ValueError, match="izinli değil"):
+            mgr._validate_url("https://forbidden.test/page")
+
+    def test_close_session_returns_not_found_for_unknown_session(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        ok, message = mgr.close_session("missing-session")
+        assert ok is False
+        assert "bulunamadı" in message.lower()
