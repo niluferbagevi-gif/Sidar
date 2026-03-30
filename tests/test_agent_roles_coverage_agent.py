@@ -437,6 +437,29 @@ tests/test_sample.py         20      0      0      0   100%
         assert parsed["findings"] == []
         assert "ayrıştırılamadı" in parsed["summary"]
 
+    def test_parse_terminal_coverage_output_skips_row_when_path_is_empty_after_strip(self):
+        m = _get_coverage()
+
+        fake_match = MagicMock()
+        fake_match.groupdict.return_value = {
+            "path": "   ",
+            "stmts": "10",
+            "miss": "1",
+            "branch": "2",
+            "brpart": "1",
+            "cover": "90",
+            "missing": "10",
+        }
+        fake_pattern = MagicMock()
+        fake_pattern.match.return_value = fake_match
+
+        with patch.object(m.re, "compile", return_value=fake_pattern):
+            parsed = m.CoverageAgent._parse_terminal_coverage_output("dummy coverage row")
+
+        assert parsed["files"] == []
+        assert parsed["findings"] == []
+        assert "ayrıştırılamadı" in parsed["summary"]
+
 
 # ─────────────────────────────────────────────────────────
 # run_task yönlendirme testleri
