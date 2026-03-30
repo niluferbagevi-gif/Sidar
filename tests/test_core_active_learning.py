@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,18 @@ class TestFeedbackStoreFlagWeakResponse:
         assert "judge_reasoning" not in captured["tags"]
         assert "score:1" in captured["tags"]
 
+    def test_flag_weak_response_returns_false_when_engine_still_missing_after_initialize(self, monkeypatch):
+        al = _get_al()
+        fs = al.FeedbackStore()
+        fs._engine = None
+
+        async def _fake_initialize():
+            fs._engine = None
+
+        monkeypatch.setattr(fs, "initialize", _fake_initialize)
+        ok = _run(fs.flag_weak_response(prompt="p", response="r", score=4, reasoning="neden"))
+        assert ok is False
+
 
 # ══════════════════════════════════════════════════════════════
 # DatasetExporter
@@ -277,6 +290,37 @@ class TestNormalizeTags:
     def test_json_list_with_empty_strings_filtered(self):
         result = self._norm('["ok", "", "fine"]')
         assert "" not in result
+
+
+class TestFeedbackStorePendingSignalsTagParsing:
+    def test_get_pending_signals_invalid_json_tags_falls_back_to_empty_list(self):
+        al = _get_al()
+        if not hasattr(al, "sql_text"):
+            al.sql_text = lambda value: value
+        fs = al.FeedbackStore()
+
+        class _Result:
+            @staticmethod
+            def fetchall():
+                return [types.SimpleNamespace(_mapping={"id": 1, "tags": "{invalid}"})]
+
+        class _Conn:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def execute(self, *_args, **_kwargs):
+                return _Result()
+
+        class _Engine:
+            def connect(self):
+                return _Conn()
+
+        fs._engine = _Engine()
+        rows = _run(fs.get_pending_signals())
+        assert rows[0]["tags"] == []
 
 
 class TestIsJudgeReasoningSignal:

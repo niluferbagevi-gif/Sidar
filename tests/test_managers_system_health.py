@@ -177,3 +177,43 @@ class TestSystemHealthDependencyIsolation:
 
         assert captured == {"host": "cache.internal", "port": 6380, "label": "redis"}
         assert status["mode"] == "tcp"
+
+
+class TestSystemHealthHighLoadScenarios:
+    def test_get_health_summary_reports_degraded_when_dependency_unhealthy(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.ENABLE_DEPENDENCY_HEALTHCHECKS = True
+        monkeypatch.setattr(
+            mgr,
+            "get_dependency_health",
+            lambda: {
+                "redis": {"healthy": True},
+                "database": {"healthy": False, "error": "connection refused"},
+            },
+        )
+        monkeypatch.setattr(mgr, "get_cpu_usage", lambda *_a, **_k: 98.5)
+        monkeypatch.setattr(mgr, "get_memory_info", lambda: {"percent": 97.2})
+        monkeypatch.setattr(mgr, "get_gpu_info", lambda: {"available": False})
+        monkeypatch.setattr(mgr, "check_ollama", lambda: True)
+
+        summary = mgr.get_health_summary()
+        assert summary["status"] == "degraded"
+        assert summary["cpu_percent"] == 98.5
+        assert summary["ram_percent"] == 97.2
+
+    def test_full_report_contains_high_cpu_and_ram_values(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        monkeypatch.setattr(mgr, "get_cpu_usage", lambda *_a, **_k: 99.0)
+        monkeypatch.setattr(
+            mgr,
+            "get_memory_info",
+            lambda: {"total_gb": 64.0, "used_gb": 63.0, "available_gb": 1.0, "percent": 98.0},
+        )
+        monkeypatch.setattr(mgr, "check_ollama", lambda: False)
+        monkeypatch.setattr(mgr, "get_gpu_info", lambda: {"available": False, "reason": "CUDA unavailable"})
+
+        report = mgr.full_report()
+        assert "CPU       : %99.0 kullanımda" in report
+        assert "RAM       : 63.0/64.0 GB (%98 kullanımda)" in report

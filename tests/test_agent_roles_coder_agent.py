@@ -320,6 +320,14 @@ class TestCoderAgentEdgeCases:
         assert contracts.is_delegation_request(result)
         assert result.target_agent == "reviewer"
 
+    def test_qa_feedback_unknown_decision_defaults_to_approved(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        result = asyncio.run(
+            agent.run_task('qa_feedback|{"decision":"needs_info","summary":"ek bilgi gerekli"}')
+        )
+        assert "APPROVED" in result
+
 
 class TestCoderAgentToolArgumentDefaults:
     def test_list_directory_uses_dot_when_argument_empty(self):
