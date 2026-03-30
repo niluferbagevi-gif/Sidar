@@ -1193,3 +1193,79 @@ class TestAnthropicInvalidApiKeyHandling:
         assert exc_info.value.provider == "anthropic"
         assert exc_info.value.status_code == 401
         assert exc_info.value.retryable is False
+
+
+class TestLLMClientRoutingAndCachePaths:
+    def test_chat_routing_failure_falls_back_to_primary_client(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            COST_ROUTING_TOKEN_COST_USD = 2e-6
+
+        class _FakeCache:
+            async def get(self, _prompt):
+                return None
+
+            async def set(self, _prompt, _response):
+                return None
+
+        class _PrimaryClient:
+            async def chat(self, **_kwargs):
+                return "primary-response"
+
+        class _BrokenRoutedClient:
+            async def chat(self, **_kwargs):
+                raise RuntimeError("routed provider down")
+
+        class _Router:
+            def select(self, _messages, _provider, _model):
+                return "gemini", "gemini-pro"
+
+        monkeypatch.setattr(lc, "_SemanticCacheManager", lambda _cfg: _FakeCache())
+        monkeypatch.setattr(lc, "CostAwareRouter", lambda _cfg: _Router())
+        monkeypatch.setattr(lc, "OpenAIClient", lambda _cfg: _PrimaryClient())
+        monkeypatch.setattr(lc, "GeminiClient", lambda _cfg: _BrokenRoutedClient())
+
+        client = lc.LLMClient("openai", _Cfg())
+        out = _run(client.chat(messages=[{"role": "user", "content": "merhaba"}], stream=False, json_mode=False))
+        assert out == "primary-response"
+
+    def test_chat_non_stream_records_cost_and_sets_semantic_cache(self, monkeypatch):
+        lc = _get_llm_client()
+
+        class _Cfg:
+            COST_ROUTING_TOKEN_COST_USD = 1e-6
+
+        state = {"set_calls": 0, "cost_calls": 0}
+
+        class _FakeCache:
+            async def get(self, _prompt):
+                return None
+
+            async def set(self, _prompt, _response):
+                state["set_calls"] += 1
+
+        class _PrimaryClient:
+            async def chat(self, **_kwargs):
+                return "yanit"
+
+        class _Router:
+            def select(self, _messages, provider, model):
+                return provider, model
+
+        monkeypatch.setattr(lc, "_SemanticCacheManager", lambda _cfg: _FakeCache())
+        monkeypatch.setattr(lc, "CostAwareRouter", lambda _cfg: _Router())
+        monkeypatch.setattr(lc, "OpenAIClient", lambda _cfg: _PrimaryClient())
+        monkeypatch.setattr(lc, "record_routing_cost", lambda _value: state.__setitem__("cost_calls", state["cost_calls"] + 1))
+
+        client = lc.LLMClient("openai", _Cfg())
+        out = _run(
+            client.chat(
+                messages=[{"role": "user", "content": "kullanici sorusu"}],
+                stream=False,
+                json_mode=False,
+            )
+        )
+        assert out == "yanit"
+        assert state["set_calls"] == 1
+        assert state["cost_calls"] == 1

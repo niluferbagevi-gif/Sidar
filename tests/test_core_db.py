@@ -917,3 +917,80 @@ class TestDatabasePromptRegistryBootstrap:
                 await database.close()
 
         asyncio.run(_scenario())
+
+
+class TestDatabasePromptActivationAndPostgresSchema:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_prompt_activation.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_activate_prompt_sqlite_paths(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                assert await database.activate_prompt(0) is None
+                assert await database.activate_prompt(99999) is None
+
+                first = await database.upsert_prompt("system", "v1", activate=True)
+                second = await database.upsert_prompt("system", "v2", activate=False)
+                activated = await database.activate_prompt(second.id)
+                assert activated is not None
+                assert activated.id == second.id
+
+                current = await database.get_active_prompt("system")
+                assert current is not None
+                assert current.id == second.id
+                assert current.id != first.id
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_init_schema_postgresql_executes_all_queries(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            executed = []
+
+            class _Conn:
+                async def execute(self, query):
+                    executed.append(query)
+
+            class _Acquire:
+                async def __aenter__(self):
+                    return _Conn()
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+            class _Pool:
+                def acquire(self):
+                    return _Acquire()
+
+            database = db_mod.Database(cfg=_Cfg())
+            database._pg_pool = _Pool()
+            await database._init_schema_postgresql()
+
+            assert len(executed) > 15
+            assert any("CREATE TABLE IF NOT EXISTS users" in q for q in executed)
+            assert any("CREATE TABLE IF NOT EXISTS prompt_registry" in q for q in executed)
+
+        asyncio.run(_scenario())
