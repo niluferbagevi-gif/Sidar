@@ -1531,8 +1531,14 @@ class CodeManager:
 
     def lsp_semantic_audit(self, paths: Optional[List[str]] = None) -> Tuple[bool, Dict[str, Any]]:
         """Reviewer kalite kapısı için yapılandırılmış LSP semantik denetim raporu üretir."""
-        candidate_paths = [self._normalize_lsp_path(p) for p in (paths or [])]
-        if not candidate_paths:
+        candidate_paths: List[Path]
+        if paths:
+            normalized_paths = [self._normalize_lsp_path(p) for p in paths]
+            candidate_paths = [
+                path for path in normalized_paths
+                if path.is_file() and self._detect_language_id(path) in {"python", "typescript"}
+            ][:100]
+        else:
             candidate_paths = [
                 path for path in self.base_dir.rglob("*")
                 if path.is_file() and self._detect_language_id(path) in {"python", "typescript"}
