@@ -444,6 +444,16 @@ class TestSwarmOrchestratorGoalFingerprint:
         fp = sw.SwarmOrchestrator._goal_fingerprint("  merhaba   dünya  ")
         assert fp == "merhaba dünya"
 
+    def test_loop_repeat_limit_defaults_by_provider_and_respects_override(self):
+        orchestrator, sw = _make_orchestrator()
+        orchestrator.cfg.AI_PROVIDER = "ollama"
+        orchestrator.cfg.SWARM_LOOP_GUARD_MAX_REPEAT = 0
+        assert orchestrator._loop_repeat_limit() == 2
+
+        orchestrator.cfg.AI_PROVIDER = "openai"
+        orchestrator.cfg.SWARM_LOOP_GUARD_MAX_REPEAT = 5
+        assert orchestrator._loop_repeat_limit() == 5
+
 
 class TestSwarmOrchestratorShouldFallback:
     def test_json_decode_error_should_fallback(self):

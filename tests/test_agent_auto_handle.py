@@ -266,6 +266,18 @@ class TestAutoHandleHealth:
         assert handled is True
         assert "⚠" in response
 
+    @pytest.mark.asyncio
+    async def test_health_timeout_returns_warning_message(self, monkeypatch):
+        handler, *_ = _make_auto_handle()
+
+        async def _raise_timeout(*_args, **_kwargs):
+            raise asyncio.TimeoutError()
+
+        monkeypatch.setattr(handler, "_run_blocking", _raise_timeout)
+        handled, response = await handler.handle("sistem sağlık raporu")
+        assert handled is True
+        assert "zaman aşımı" in response.lower()
+
 
 class TestAutoHandleExtractors:
     def test_extract_path_quoted(self):

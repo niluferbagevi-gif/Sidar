@@ -732,6 +732,21 @@ class TestSidarAgentRespondAndToolFallback:
 
         asyncio.run(_run_case())
 
+    def test_try_multi_agent_returns_warning_for_empty_or_non_string_output(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        async def _run_case():
+            agent._supervisor = types.SimpleNamespace(run_task=AsyncMock(return_value="   "))
+            out_empty = await agent._try_multi_agent("durum nedir")
+            assert "geçerli bir çıktı" in out_empty
+
+            agent._supervisor = types.SimpleNamespace(run_task=AsyncMock(return_value={"raw": "not-string"}))
+            out_non_str = await agent._try_multi_agent("durum nedir")
+            assert "geçerli bir çıktı" in out_non_str
+
+        asyncio.run(_run_case())
+
     def test_tool_github_smart_pr_guard_cases(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()

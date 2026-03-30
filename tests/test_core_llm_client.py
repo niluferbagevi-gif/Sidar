@@ -885,6 +885,31 @@ class TestStreamMetricHelpers:
         assert observed[0]["success"] is False
         assert "exploded" in observed[0]["error"]
 
+    def test_record_llm_metric_forwards_current_user_id(self):
+        lc = _get_llm_client()
+        observed = {}
+
+        class _Collector:
+            def record(self, **kwargs):
+                observed.update(kwargs)
+
+        with (
+            patch("core.llm_client.get_llm_metrics_collector", return_value=_Collector()),
+            patch("core.llm_client.get_current_metrics_user_id", return_value="tenant-user-7"),
+        ):
+            lc._record_llm_metric(
+                provider="openai",
+                model="gpt-4o-mini",
+                started_at=time.monotonic(),
+                prompt_tokens=12,
+                completion_tokens=5,
+                success=True,
+            )
+
+        assert observed["user_id"] == "tenant-user-7"
+        assert observed["provider"] == "openai"
+        assert observed["model"] == "gpt-4o-mini"
+
     def test_trace_stream_metrics_sets_span_attributes_and_ends(self):
         lc = _get_llm_client()
 

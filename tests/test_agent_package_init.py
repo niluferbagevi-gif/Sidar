@@ -38,6 +38,13 @@ def test_agent_core_lazy_getattr_and_all(monkeypatch):
     assert core_pkg.MemoryHub is MemoryHub
     assert core_pkg.AgentRegistry is AgentRegistry
     assert core_pkg.SupervisorAgent is SupervisorAgent
+    try:
+        _ = core_pkg.UnknownSymbol
+        raised = False
+    except AttributeError as exc:
+        raised = True
+        assert str(exc) == "UnknownSymbol"
+    assert raised is True
 
 
 

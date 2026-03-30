@@ -546,3 +546,40 @@ class TestDocumentStoreUrlErrorHandling:
         ok, message = asyncio.run(store.add_document_from_url("https://example.com/too-large"))
         assert ok is False
         assert "413 payload too large" in message
+
+
+class TestSemanticCacheEmbeddings:
+    def test_embed_texts_for_semantic_cache_returns_empty_on_model_error(self, monkeypatch):
+        rag = _get_rag()
+
+        class _BrokenModel:
+            def __init__(self, *_args, **_kwargs):
+                raise RuntimeError("model load failed")
+
+        fake_st_module = types.SimpleNamespace(SentenceTransformer=_BrokenModel)
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st_module)
+
+        vectors = rag.embed_texts_for_semantic_cache(["merhaba dünya"])
+        assert vectors == []
+
+    def test_embed_texts_for_semantic_cache_returns_vectors_from_model(self, monkeypatch):
+        rag = _get_rag()
+
+        class _FakeVectors:
+            def tolist(self):
+                return [[0.1, 0.2, 0.3]]
+
+        class _Model:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def encode(self, texts, normalize_embeddings=True):
+                assert texts == ["sorgu"]
+                assert normalize_embeddings is True
+                return _FakeVectors()
+
+        fake_st_module = types.SimpleNamespace(SentenceTransformer=_Model)
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st_module)
+
+        vectors = rag.embed_texts_for_semantic_cache(["sorgu"])
+        assert vectors == [[0.1, 0.2, 0.3]]
