@@ -482,3 +482,43 @@ class TestPytestOutputAnalysis:
         result = mgr.run_pytest_and_collect(command="echo hello")
         assert result["success"] is False
         assert "Yalnızca pytest" in result["output"]
+
+
+class TestCodeManagerFileIOWithTmpPath:
+    def test_write_and_read_file_roundtrip_without_line_numbers(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "roundtrip.py"
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            can_read=lambda _path: True,
+            get_safe_write_path=lambda filename: tmp_path / filename,
+        )
+
+        ok_write, _msg = mgr.write_file(str(target), "print('ok')\n", validate=True)
+        ok_read, content = mgr.read_file(str(target), line_numbers=False)
+
+        assert ok_write is True
+        assert ok_read is True
+        assert content == "print('ok')\n"
+
+    def test_write_generated_test_appends_once_and_is_idempotent(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "tests" / "test_sample.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("def test_existing():\n    assert True\n", encoding="utf-8")
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            can_read=lambda _path: True,
+            get_safe_write_path=lambda filename: tmp_path / filename,
+        )
+
+        snippet = "```python\ndef test_new_case():\n    assert 1 == 1\n```"
+        ok_first, msg_first = mgr.write_generated_test(str(target), snippet, append=True)
+        ok_second, msg_second = mgr.write_generated_test(str(target), snippet, append=True)
+        final_content = target.read_text(encoding="utf-8")
+
+        assert ok_first is True
+        assert "kaydedildi" in msg_first
+        assert ok_second is True
+        assert "zaten mevcut" in msg_second
+        assert final_content.count("def test_new_case") == 1

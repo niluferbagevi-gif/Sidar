@@ -279,6 +279,50 @@ class TestGitHubManagerConflictAndRateLimitEdges:
         assert "dosya okuma hatası" in message
         assert "rate limit" in message.lower()
 
+
+class TestGitHubManagerAuthAndRepoFlows:
+    def test_list_repos_owner_organization_uses_all_repo_type(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        org_repo = MagicMock(full_name="org/repo", default_branch="main", private=True)
+        org_account = MagicMock(type="Organization")
+        org_account.get_repos.return_value = [org_repo]
+        mgr._gh = MagicMock()
+        mgr._gh.get_user.return_value = org_account
+
+        ok, repos = mgr.list_repos(owner="org")
+
+        assert ok is True
+        assert repos[0]["full_name"] == "org/repo"
+        org_account.get_repos.assert_called_once_with(type="all")
+
+    def test_create_or_update_file_creates_new_when_not_found(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock()
+        repo.get_contents.side_effect = _GitHubHttpError(404, "Not Found")
+        mgr._repo = repo
+
+        ok, msg = mgr.create_or_update_file(
+            file_path="docs/new.md",
+            content="# hello",
+            message="add file",
+            branch="main",
+        )
+
+        assert ok is True
+        assert "oluşturuldu" in msg
+        repo.create_file.assert_called_once()
+
+    def test_create_branch_rejects_invalid_branch_name(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._repo = MagicMock(default_branch="main")
+
+        ok, message = mgr.create_branch("bad branch name", from_branch="main")
+        assert ok is False
+        assert "Geçersiz dal adı" in message
+
     def test_create_or_update_file_update_conflict_returns_error(self):
         gh = _get_gh()
         mgr = gh.GitHubManager(token="")
