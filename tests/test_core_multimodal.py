@@ -459,3 +459,66 @@ class TestMultimodalPipelineEdgeCases:
         result = asyncio.run(pipeline.analyze_media_source(media_source="https://example.com/video.mp4"))
         assert result["success"] is True
         assert result["download"]["path"] == str(media_file)
+
+    def test_analyze_local_video_with_dummy_frame_metadata_and_mocked_vision(self, monkeypatch, tmp_path):
+        mm = _get_mm()
+        media_file = tmp_path / "campaign.mp4"
+        media_file.write_bytes(b"video-dummy")
+
+        async def _fake_extract_audio_track(_source, output_path):
+            Path(output_path).write_bytes(b"audio-dummy")
+            return output_path
+
+        async def _fake_transcribe_audio(*_args, **_kwargs):
+            return {
+                "success": True,
+                "text": "Video içeriği: ürün tanıtımı ve kampanya mesajı.",
+                "language": "tr",
+                "segments": [{"start_seconds": 0.0, "duration_seconds": 3.0, "text": "ürün tanıtımı"}],
+            }
+
+        async def _fake_extract_video_frames(*_args, **_kwargs):
+            frame1 = tmp_path / "frame_001.jpg"
+            frame2 = tmp_path / "frame_002.jpg"
+            frame1.write_bytes(b"jpg1")
+            frame2.write_bytes(b"jpg2")
+            return [
+                mm.ExtractedFrame(path=str(frame1), timestamp_seconds=0.0),
+                mm.ExtractedFrame(path=str(frame2), timestamp_seconds=5.0),
+            ]
+
+        class _FakeVisionPipeline:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def analyze(self, image_path=None, **_kwargs):
+                return {"success": True, "analysis": f"Frame analiz edildi: {Path(image_path).name}"}
+
+        class _FakeLLM:
+            async def chat(self, **_kwargs):
+                return "Özet: Kampanya videosu analiz edildi."
+
+        monkeypatch.setattr(mm, "extract_audio_track", _fake_extract_audio_track)
+        monkeypatch.setattr(mm, "transcribe_audio", _fake_transcribe_audio)
+        monkeypatch.setattr(mm, "extract_video_frames", _fake_extract_video_frames)
+        monkeypatch.setitem(sys.modules, "core.vision", type("VMod", (), {"VisionPipeline": _FakeVisionPipeline}))
+
+        pipeline = mm.MultimodalPipeline(
+            llm_client=_FakeLLM(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True, "MULTIMODAL_MAX_FILE_BYTES": 1024 * 1024})(),
+        )
+        result = asyncio.run(
+            pipeline._analyze_local_media(
+                media_path=str(media_file),
+                mime_type="video/mp4",
+                frame_interval_seconds=5.0,
+                max_frames=2,
+            )
+        )
+
+        assert result["success"] is True
+        assert result["media_kind"] == "video"
+        assert len(result["frame_analyses"]) == 2
+        assert result["frame_analyses"][0]["timestamp_seconds"] == 0.0
+        assert "Frame analiz edildi" in result["frame_analyses"][1]["analysis"]
+        assert "ürün tanıtımı" in result["transcript"]["text"]

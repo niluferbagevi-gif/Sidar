@@ -690,6 +690,53 @@ class TestDatabaseCrudEdgeCases:
 
         asyncio.run(_scenario())
 
+    def test_create_session_raises_integrity_error_for_missing_user(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+                await database._init_schema_sqlite()
+
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database.create_session("missing-user-id", "Yetim Oturum")
+
+                sessions_count = await database._run_sqlite_op(
+                    lambda: int(database._sqlite_conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0])  # type: ignore[union-attr]
+                )
+                assert sessions_count == 0
+                await database.close()
+
+        asyncio.run(_scenario())
+
+    def test_create_user_commit_failure_triggers_rollback(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                rollback_calls = {"count": 0}
+
+                class _ConnProxy:
+                    def execute(self, *_args, **_kwargs):
+                        return None
+
+                    def commit(self):
+                        raise sqlite3.OperationalError("disk I/O error")
+
+                    def rollback(self):
+                        rollback_calls["count"] += 1
+
+                database._sqlite_conn = _ConnProxy()  # type: ignore[assignment]
+
+                with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+                    await database.create_user("rollback_user", role="user")
+
+                assert rollback_calls["count"] == 1
+
+        asyncio.run(_scenario())
+
 
 class TestDatabaseWithConftestFixture:
     def test_fixture_backed_sqlite_crud_flow(self, sqlite_test_db_url):
