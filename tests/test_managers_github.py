@@ -364,6 +364,41 @@ class TestGitHubManagerConflictAndRateLimitEdges:
         assert "Pull Request oluşturma hatası" in message
         assert "merge conflict" in message.lower()
 
+    def test_create_branch_returns_sync_error_when_git_ref_creation_fails(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        source_branch = MagicMock(commit=MagicMock(sha="abc123"))
+        repo = MagicMock(default_branch="main")
+        repo.get_branch.return_value = source_branch
+        repo.create_git_ref.side_effect = RuntimeError("reference update failed")
+        mgr._repo = repo
+
+        ok, message = mgr.create_branch("feature/sync-error", from_branch="main")
+        assert ok is False
+        assert "Dal oluşturma hatası" in message
+        assert "reference update failed" in message
+
+    def test_list_branches_handles_api_failure(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock()
+        repo.get_branches.side_effect = RuntimeError("branch API timeout")
+        mgr._repo = repo
+
+        ok, message = mgr.list_branches(limit=20)
+        assert ok is False
+        assert "Branch listesi alınamadı" in message
+        assert "timeout" in message.lower()
+
+    def test_create_pull_request_returns_error_when_repo_not_set(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        mgr._repo = None
+
+        ok, message = mgr.create_pull_request("Title", "Body", "feature/x", "main")
+        assert ok is False
+        assert "Aktif depo yok" in message
+
 
 class TestGitHubManagerAuthAndRepoFlows:
     def test_list_repos_owner_organization_uses_all_repo_type(self):
