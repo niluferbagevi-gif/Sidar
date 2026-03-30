@@ -430,7 +430,7 @@ class TestBrowserManagerUrlAndSessionValidation:
         mgr = bm.BrowserManager(config=cfg)
 
         import pytest
-        with pytest.raises(ValueError, match="izinli değil"):
+        with pytest.raises(ValueError, match="allowlist dışında"):
             mgr._validate_url("https://forbidden.test/page")
 
     def test_close_session_returns_not_found_for_unknown_session(self):
