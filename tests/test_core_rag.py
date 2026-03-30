@@ -503,6 +503,12 @@ class TestDocumentStoreChunkingAndFallback:
         assert chunks
         assert max(len(c) for c in chunks) <= 5
 
+    def test_recursive_chunk_text_handles_overlap_greater_than_size(self, monkeypatch, tmp_path):
+        _, store = self._build_store(monkeypatch, tmp_path)
+        chunks = store._recursive_chunk_text("abcdefghij", size=3, overlap=10)
+        assert chunks
+        assert all(len(chunk) > 0 for chunk in chunks)
+
     def test_init_chroma_marks_backend_unavailable_on_exception(self, monkeypatch, tmp_path):
         rag, store = self._build_store(monkeypatch, tmp_path)
         store._chroma_available = True
@@ -610,6 +616,22 @@ class TestDocumentStoreSearchEdgeCases:
             ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
             assert ok is True
             assert output == "bm25-fallback"
+
+    def test_search_sync_chroma_exception_falls_back_to_bm25(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._index["doc1"] = {"session_id": "global"}
+            store._bm25_available = True
+            store._pgvector_available = False
+            store._chroma_available = True
+            store.collection = object()
+            store._chroma_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("chroma timeout"))
+            store._bm25_search = lambda _q, _k, _s: (True, "bm25-after-chroma")
+
+            ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
+            assert ok is True
+            assert output == "bm25-after-chroma"
 
 
 class TestDocumentStoreAddDocumentErrorPaths:
@@ -883,6 +905,26 @@ class TestDocumentStoreChromaMetadataRobustness:
             assert len(out) == 1
             assert out[0]["id"] == "chunk-1"
             assert out[0]["title"] == "?"
+
+    def test_fetch_chroma_returns_empty_when_documents_missing(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _Collection:
+                def count(self):
+                    return 1
+
+                def query(self, **_kwargs):
+                    return {
+                        "ids": [["chunk-1"]],
+                        "documents": [[]],
+                        "metadatas": [[{"parent_id": "doc-1", "title": "Belge 1"}]],
+                    }
+
+            store.collection = _Collection()
+            out = rag.DocumentStore._fetch_chroma(store, "query", 1, "global")
+            assert out == []
 
 
 class TestDocumentStoreUrlValidation:
