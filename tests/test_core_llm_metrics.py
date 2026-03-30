@@ -5,6 +5,7 @@ fonksiyonlarını kapsar.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -195,6 +196,26 @@ class TestLLMMetricsCollectorRecord:
         self.collector.record(provider="openai", model="gpt-4o", latency_ms=50.0, error=long_error)
         snap = self.collector.snapshot()
         assert len(snap["recent"][0]["error"]) == 500
+
+    @patch("core.llm_metrics.asyncio.get_running_loop")
+    def test_record_usage_sink_awaitable_schedules_task_when_loop_exists(self, mock_get_loop):
+        lm = _get_llm_metrics()
+        collector = lm.LLMMetricsCollector()
+        done = {"value": False}
+
+        async def _sink(_event):
+            done["value"] = True
+
+        class _FakeLoop:
+            def create_task(self, coro):
+                asyncio.run(coro)
+
+        collector._usage_sink = _sink
+        mock_get_loop.return_value = _FakeLoop()
+
+        collector.record(provider="openai", model="gpt-4o", latency_ms=12.0)
+
+        assert done["value"] is True
 
 
 # ══════════════════════════════════════════════════════════════

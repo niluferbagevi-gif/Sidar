@@ -507,6 +507,38 @@ class TestPoyrazAdditionalCoverage:
         assert result == "copy-content"
         agent._persist_content_asset.assert_awaited_once()
 
+    def test_generate_campaign_copy_plain_text_branch(self, monkeypatch):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="copy-plain"))
+        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+
+        result = asyncio.run(agent._tool_generate_campaign_copy("Serbest metin briefi"))
+        assert result == "copy-plain"
+        prompt = agent._generate_marketing_output.await_args.args[0]
+        assert "Serbest metin briefi" in prompt
+        agent._persist_content_asset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_plan_service_operations_skips_empty_menu_option_groups(self):
+        m = _get_poyraz()
+        agent = m.PoyrazAgent()
+        payload = {
+            "campaign_name": "Sonbahar Kampanyası",
+            "service_name": "Coffee Break",
+            "audience": "Çalışanlar",
+            "menu_plan": {"ana_yemek": [], "tatlı": None, "içecek": ["Filtre Kahve"]},
+            "vendor_assignments": {},
+            "timeline": [],
+            "notes": "",
+            "persist_checklist": False,
+        }
+        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+        parsed = __import__("json").loads(result)
+        menu_items = [item for item in parsed["service_plan"]["items"] if item["type"] == "menu_plan"]
+        assert len(menu_items) == 1
+        assert menu_items[0]["group"] == "içecek"
+
     @pytest.mark.asyncio
     async def test_video_ingest_success_and_error_paths(self):
         m = _get_poyraz()
