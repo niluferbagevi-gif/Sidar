@@ -475,6 +475,49 @@ class TestOpenAIApiMocking:
         assert exc_info.value.retryable is False
         fake_client.post.assert_awaited_once()
 
+    def test_openai_chat_401_invalid_api_key_is_non_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "bad-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 2
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 401
+
+            @staticmethod
+            def json():
+                return {"error": {"message": "Invalid API key"}}
+
+            def raise_for_status(self):
+                exc = RuntimeError("401")
+                exc.status_code = 401
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.retryable is False
+        assert fake_client.post.await_count == 1
+
     def test_openai_chat_500_retries_then_raises_retryable_error(self):
         lc = _get_llm_client()
         import pytest

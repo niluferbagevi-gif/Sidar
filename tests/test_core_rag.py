@@ -356,6 +356,33 @@ class TestDocumentStoreVectorFetch:
             result = rag.DocumentStore._fetch_pgvector(store, "query", 3, "global")
             assert result == []
 
+    def test_fetch_pgvector_returns_empty_when_db_query_raises(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._pgvector_available = True
+            store._pg_table = "rag_embeddings"
+            monkeypatch.setattr(store, "_pgvector_embed_texts", lambda _texts: [[0.1, 0.2]])
+
+            class _BrokenConn:
+                def execute(self, *_a, **_k):
+                    raise RuntimeError("db connection lost")
+
+            class _BrokenEngine:
+                def connect(self):
+                    class _CM:
+                        def __enter__(self_inner):
+                            return _BrokenConn()
+
+                        def __exit__(self_inner, exc_type, exc, tb):
+                            return False
+
+                    return _CM()
+
+            store.pg_engine = _BrokenEngine()
+            result = rag.DocumentStore._fetch_pgvector(store, "query", 3, "global")
+            assert result == []
+
 
 class TestDocumentStoreFileInputValidation:
     def test_add_document_from_file_rejects_empty_content(self, monkeypatch):
