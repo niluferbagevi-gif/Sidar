@@ -259,6 +259,24 @@ class TestModuleLevelFunctions:
 
 
 class TestPrometheusPaths:
+    def test_get_prometheus_metric_returns_cached_value_from_second_check_inside_lock(self):
+        cm = _get_cache_metrics()
+        metric_name = "sidar_metric_from_lock"
+        injected_metric = object()
+
+        class _InjectingLock:
+            def __enter__(self):
+                cm._prometheus_metric_cache[metric_name] = injected_metric
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with patch.object(cm, "_prometheus_metric_lock", _InjectingLock()):
+            metric = cm._get_prometheus_metric(metric_name, "desc", "counter")
+
+        assert metric is injected_metric
+
     def test_get_prometheus_metric_returns_none_when_import_fails(self):
         cm = _get_cache_metrics()
         with patch.object(importlib, "import_module", side_effect=ImportError("missing prometheus")):
@@ -359,3 +377,16 @@ class TestPrometheusPaths:
             metric = cm._get_prometheus_metric("sidar_missing_factory", "desc", "counter")
 
         assert metric is None
+
+    def test_inc_prometheus_counter_calls_inc_when_metric_has_inc(self):
+        cm = _get_cache_metrics()
+        observed = {"count": 0}
+
+        class _Counter:
+            def inc(self, value):
+                observed["count"] = value
+
+        with patch.object(cm, "_get_prometheus_metric", return_value=_Counter()):
+            cm._inc_prometheus_counter("sidar_counter", "desc", count=4)
+
+        assert observed["count"] == 4
