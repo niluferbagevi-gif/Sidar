@@ -296,3 +296,73 @@ class TestMemoryWithStubDb:
         m.active_session_id = "sid1"
         self._run(m.update_title("New Title"))
         m.db.update_session_title.assert_called_once_with("sid1", "New Title")
+
+
+class TestMemoryCompactionAndMultimodalLikeHistoryEdges:
+    def _make_with_stub_db(self):
+        memory = _get_memory()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            m = memory.ConversationMemory(base_dir=Path(tmpdir))
+
+        m.db = MagicMock()
+        m.db.connect = AsyncMock()
+        m.db.init_schema = AsyncMock()
+        m.db.list_sessions = AsyncMock(return_value=[])
+        m.db.create_session = AsyncMock(return_value=MagicMock(id="sid1", title="Test"))
+        m.db.get_session_messages = AsyncMock(return_value=[])
+        m.db.load_session = AsyncMock(return_value=None)
+        m.db.replace_session_messages = AsyncMock(return_value=0)
+        return m, memory
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.run(coro)
+
+    def test_build_compaction_summary_counts_code_and_link_references(self):
+        m, _ = self._make_with_stub_db()
+        messages = [
+            types.SimpleNamespace(role="user", content="YouTube videosunu analiz et: https://youtu.be/dQw4w9WgXcQ"),
+            types.SimpleNamespace(role="assistant", content="`main.py` içinde /api/posts endpointine bakacağım."),
+            types.SimpleNamespace(role="assistant", content="```python\nprint('ok')\n```"),
+        ]
+        summary = m._build_compaction_summary("Sosyal Medya", messages)
+        assert "Toplam mesaj: 3" in summary
+        assert "Kod/araç referansı görülen mesaj sayısı: 2" in summary
+        assert "Öne çıkan kullanıcı istekleri" in summary
+
+    def test_compact_session_skips_when_message_threshold_not_met(self):
+        m, _ = self._make_with_stub_db()
+        self._run(m.initialize())
+        m.db.load_session = AsyncMock(return_value=types.SimpleNamespace(id="sid9", title="Kısa Oturum"))
+        m.db.get_session_messages = AsyncMock(
+            return_value=[types.SimpleNamespace(role="user", content="kısa", created_at="2026-01-01T00:00:00+00:00")]
+        )
+
+        result = self._run(m.compact_session(user_id="u1", session_id="sid9", min_messages=5))
+        assert result["status"] == "skipped"
+        assert result["reason"] == "message_threshold"
+
+    def test_compact_session_keeps_recent_messages_and_updates_active_turns(self):
+        m, _ = self._make_with_stub_db()
+        self._run(m.initialize())
+        m.active_user_id = "u1"
+        m.active_session_id = "sid42"
+        m.db.load_session = AsyncMock(return_value=types.SimpleNamespace(id="sid42", title="Analiz Oturumu"))
+        m.db.get_session_messages = AsyncMock(
+            return_value=[
+                types.SimpleNamespace(role="user", content="1. mesaj", created_at="2026-01-01T00:00:00+00:00"),
+                types.SimpleNamespace(role="assistant", content="2. mesaj", created_at="2026-01-01T00:01:00+00:00"),
+                types.SimpleNamespace(role="user", content="3. mesaj", created_at="2026-01-01T00:02:00+00:00"),
+            ]
+        )
+        m.db.replace_session_messages = AsyncMock(return_value=4)
+
+        result = self._run(
+            m.compact_session(user_id="u1", session_id="sid42", keep_last=1, min_messages=2)
+        )
+        assert result["status"] == "compacted"
+        assert result["messages_after"] == 4
+        payload = m.db.replace_session_messages.await_args.args[1]
+        assert payload[0]["content"].startswith("[GECE DÖNGÜSÜ]")
+        assert payload[-1]["content"] == "3. mesaj"
+        assert len(m._turns) == 3

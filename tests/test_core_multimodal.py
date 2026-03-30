@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 
 def _get_mm():
@@ -315,3 +316,90 @@ class TestMultimodalRemoteAndTranscriptFlows:
         import pytest
         with pytest.raises(ValueError):
             asyncio.run(mm.resolve_remote_media_stream("/tmp/video.mp4"))
+
+    def test_fetch_youtube_transcript_skips_invalid_json_payload(self):
+        mm = _get_mm()
+
+        class _Resp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return ["unexpected-list-payload"]
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def get(self, _url):
+                return _Resp()
+
+        result = asyncio.run(
+            mm.fetch_youtube_transcript(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                http_client_factory=lambda **_kwargs: _Client(),
+            )
+        )
+        assert result["success"] is False
+        assert "bulunamadı" in result["reason"].lower()
+
+
+class TestMultimodalPipelineEdgeCases:
+    def test_analyze_media_source_empty_media_source_returns_error(self):
+        mm = _get_mm()
+        pipeline = mm.MultimodalPipeline(llm_client=AsyncMock(), config=type("Cfg", (), {"ENABLE_MULTIMODAL": True})())
+        result = asyncio.run(pipeline.analyze_media_source(media_source="   "))
+        assert result["success"] is False
+        assert "media_source boş" in result["reason"]
+
+    def test_analyze_media_source_youtube_remote_uses_transcript_override_and_ingests(self, monkeypatch, tmp_path):
+        mm = _get_mm()
+        media_file = tmp_path / "video.mp4"
+        media_file.write_bytes(b"stub")
+
+        async def _fake_download(*_args, **_kwargs):
+            return mm.DownloadedMedia(
+                path=str(media_file),
+                source_url="https://youtu.be/dQw4w9WgXcQ",
+                mime_type="video/mp4",
+                platform="youtube",
+                resolved_url="https://cdn.example.com/stream.mp4",
+                title="Demo",
+            )
+
+        async def _fake_transcript(*_args, **_kwargs):
+            return {"success": True, "text": "Merhaba dünya", "language": "tr", "segments": []}
+
+        fake_analyze_local = AsyncMock(
+            return_value={"success": True, "media_kind": "video", "analysis": "ok", "transcript": {}, "frame_analyses": []}
+        )
+        fake_ingest = AsyncMock(return_value={"success": True, "doc_id": "doc-42"})
+
+        monkeypatch.setattr(mm, "_command_exists", lambda _name: False)
+        monkeypatch.setattr(mm, "download_remote_media", _fake_download)
+        monkeypatch.setattr(mm, "fetch_youtube_transcript", _fake_transcript)
+        monkeypatch.setattr(mm.MultimodalPipeline, "_analyze_local_media", fake_analyze_local)
+        monkeypatch.setattr(mm, "ingest_multimodal_analysis", fake_ingest)
+
+        pipeline = mm.MultimodalPipeline(
+            llm_client=AsyncMock(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True, "MULTIMODAL_REMOTE_DOWNLOAD_TIMEOUT": 5.0})(),
+        )
+        result = asyncio.run(
+            pipeline.analyze_media_source(
+                media_source="https://youtu.be/dQw4w9WgXcQ",
+                ingest_document_store=object(),
+                ingest_session_id="social",
+                ingest_title="YouTube İçgörüsü",
+                ingest_tags=["youtube", "campaign"],
+            )
+        )
+
+        assert result["success"] is True
+        assert result["download"]["platform"] == "youtube"
+        assert result["document_ingest"]["doc_id"] == "doc-42"
+        kwargs = fake_analyze_local.await_args.kwargs
+        assert kwargs["transcript_override"]["text"] == "Merhaba dünya"
