@@ -425,6 +425,48 @@ class TestDatabaseErrorAndAsyncFlows:
             assert database._pg_pool is None
         asyncio.run(_scenario())
 
+    def test_connect_postgresql_returns_early_when_pool_already_initialized(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@db.local/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            database = db_mod.Database(cfg=_Cfg())
+            existing_pool = object()
+            database._pg_pool = existing_pool
+
+            await database._connect_postgresql()
+            assert database._pg_pool is existing_pool
+
+        asyncio.run(_scenario())
+
+    def test_ensure_schema_version_sqlite_applies_missing_versions(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                database.target_schema_version = 3
+                await database.connect()
+
+                await database._ensure_schema_version_sqlite()
+
+                versions = await database._run_sqlite_op(
+                    lambda: [
+                        int(row[0])
+                        for row in database._sqlite_conn.execute(  # type: ignore[union-attr]
+                            f"SELECT version FROM {database._schema_version_table_quoted} ORDER BY version"
+                        ).fetchall()
+                    ]
+                )
+                assert versions == [1, 2, 3]
+                await database.close()
+
+        asyncio.run(_scenario())
+
     def test_unique_constraint_violation_on_duplicate_username(self):
         async def _scenario():
             db_mod = _get_db()
