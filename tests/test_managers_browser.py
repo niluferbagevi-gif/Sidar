@@ -177,6 +177,18 @@ class TestAuditLog:
         assert summary["status"] == "failed"
         assert summary["risk"] == "yüksek"
 
+    def test_summarize_pending_approval_becomes_attention(self):
+        mgr = self._mgr()
+        mgr._record_audit_event(
+            session_id="s2",
+            action="browser_click",
+            status="pending_approval",
+            selector="#delete-account",
+        )
+        summary = mgr.summarize_audit_log(session_id="s2")
+        assert summary["status"] == "attention"
+        assert summary["risk"] == "orta"
+
 
 class TestBrowserManagerUnhappyPaths:
     def test_start_session_returns_last_error_when_all_providers_fail(self, monkeypatch):

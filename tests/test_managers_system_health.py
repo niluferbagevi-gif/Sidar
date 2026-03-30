@@ -160,3 +160,20 @@ class TestSystemHealthDependencyIsolation:
         status = mgr.check_database()
         assert status["healthy"] is False
         assert status["mode"] == "postgresql"
+
+    def test_check_redis_uses_url_host_and_port(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.REDIS_URL = "redis://cache.internal:6380/0"
+
+        captured = {}
+
+        def _fake_tcp(host, port, *, label):
+            captured.update({"host": host, "port": port, "label": label})
+            return {"healthy": True, "target": f"{host}:{port}", "kind": label}
+
+        monkeypatch.setattr(mgr, "_tcp_dependency_health", _fake_tcp)
+        status = mgr.check_redis()
+
+        assert captured == {"host": "cache.internal", "port": 6380, "label": "redis"}
+        assert status["mode"] == "tcp"

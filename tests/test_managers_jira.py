@@ -176,3 +176,36 @@ class TestJiraRequestHttpResponses:
         assert ok is False
         assert body is None
         assert "HTTP 401" in err
+
+
+class TestJiraTransitionIssue:
+    def test_transition_issue_returns_error_when_transition_not_found(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(method, endpoint, **kwargs):
+            if method == "GET":
+                return True, {"transitions": [{"id": "31", "name": "In Progress"}]}, ""
+            return True, {}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, err = asyncio.run(mgr.transition_issue("TEST-1", "Done"))
+        assert ok is False
+        assert "Geçiş bulunamadı" in err
+
+    def test_transition_issue_posts_transition_when_found(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+        calls = []
+
+        async def _fake_request(method, endpoint, **kwargs):
+            calls.append((method, endpoint, kwargs))
+            if method == "GET":
+                return True, {"transitions": [{"id": "41", "name": "Done"}]}, ""
+            return True, {}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, err = asyncio.run(mgr.transition_issue("TEST-2", "Done"))
+        assert ok is True
+        assert err == ""
+        assert any(call[0] == "POST" and "transitions" in call[1] for call in calls)
