@@ -278,3 +278,63 @@ class TestWebServerWsHelpers:
 
         asyncio.run(ws.websocket_chat(_FakeWebSocket()))
         assert leave_mock.await_count in (0, 1)
+
+    def test_websocket_voice_ignores_invalid_json_text_payload_and_exits_on_disconnect(self, monkeypatch):
+        ws = _get_web_server()
+        ws.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
+
+        class _MultimodalPipeline:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def transcribe_bytes(self, *_args, **_kwargs):
+                return {"success": True, "text": "ok", "language": "tr", "provider": "stub"}
+
+        monkeypatch.setitem(sys.modules, "core.multimodal", types.SimpleNamespace(MultimodalPipeline=_MultimodalPipeline))
+        monkeypatch.setitem(sys.modules, "core.voice", types.ModuleType("core.voice"))
+
+        fake_user = types.SimpleNamespace(id="u1", username="ali")
+        fake_agent = types.SimpleNamespace(
+            llm=object(),
+            memory=types.SimpleNamespace(set_active_user=AsyncMock()),
+        )
+
+        async def _fake_get_agent():
+            return fake_agent
+
+        async def _fake_resolve_user(_agent, token):
+            return fake_user if token == "ok-token" else None
+
+        monkeypatch.setattr(ws, "get_agent", _fake_get_agent)
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _fake_resolve_user)
+
+        class _FakeWebSocket:
+            def __init__(self):
+                self.headers = {}
+                self.sent = []
+                self.closed = []
+                self._packets = iter(
+                    [
+                        {"type": "websocket.receive", "text": '{"action":"auth","token":"ok-token"}'},
+                        {"type": "websocket.receive", "text": "{this is invalid json"},
+                        {"type": "websocket.disconnect"},
+                    ]
+                )
+
+            async def accept(self, **_kwargs):
+                return None
+
+            async def receive(self):
+                return next(self._packets)
+
+            async def send_json(self, payload):
+                self.sent.append(payload)
+
+            async def close(self, code, reason):
+                self.closed.append((code, reason))
+
+        fake_ws = _FakeWebSocket()
+        asyncio.run(ws.websocket_voice(fake_ws))
+
+        assert any(item.get("auth_ok") is True for item in fake_ws.sent)
+        assert fake_ws.closed == []

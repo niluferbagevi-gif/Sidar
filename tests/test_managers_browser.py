@@ -326,6 +326,66 @@ class TestBrowserManagerAutomationMocking:
         assert Path(shot_path).exists()
         assert ok_close is True
 
+    def test_start_playwright_session_uses_fully_mocked_playwright_runtime(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+
+        class _FakePage:
+            def __init__(self):
+                self.timeout = None
+
+            def set_default_timeout(self, timeout):
+                self.timeout = timeout
+
+        fake_page = _FakePage()
+        fake_context = types.SimpleNamespace(new_page=lambda: fake_page)
+        fake_browser = types.SimpleNamespace(new_context=lambda: fake_context)
+        fake_launcher = types.SimpleNamespace(launch=lambda headless=True: fake_browser)
+        fake_runtime = types.SimpleNamespace(chromium=fake_launcher, stop=lambda: None)
+
+        class _FakeSyncPlaywright:
+            def start(self):
+                return fake_runtime
+
+        fake_sync_api = types.SimpleNamespace(sync_playwright=lambda: _FakeSyncPlaywright())
+        monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync_api)
+
+        session = mgr._start_playwright_session("chromium", headless=True)
+        assert session.provider == "playwright"
+        assert session.browser_name == "chromium"
+        assert session.page is fake_page
+        assert fake_page.timeout == mgr.timeout_ms
+
+    def test_start_selenium_session_uses_mocked_webdriver_classes(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+
+        class _FakeChromeOptions:
+            def __init__(self):
+                self.args = []
+
+            def add_argument(self, arg):
+                self.args.append(arg)
+
+        class _FakeDriver:
+            def __init__(self, options=None):
+                self.options = options
+                self.page_timeout = None
+
+            def set_page_load_timeout(self, value):
+                self.page_timeout = value
+
+        fake_webdriver = types.SimpleNamespace(
+            ChromeOptions=_FakeChromeOptions,
+            Chrome=lambda options=None: _FakeDriver(options=options),
+        )
+        monkeypatch.setitem(sys.modules, "selenium", types.SimpleNamespace(webdriver=fake_webdriver))
+
+        session = mgr._start_selenium_session("chrome", headless=True)
+        assert session.provider == "selenium"
+        assert session.driver.page_timeout == max(5, mgr.timeout_ms // 1000)
+        assert "--headless=new" in session.driver.options.args
+
 
 class TestBrowserManagerFailureEdges:
     def test_goto_url_timeout_records_execution_failed_audit(self):

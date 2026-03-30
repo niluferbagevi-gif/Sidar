@@ -538,3 +538,56 @@ class TestReviewerDecisionSignals:
         summary = m.ReviewerAgent._summarize_lsp_diagnostics("LSP temiz")
         assert summary["decision"] == "APPROVE"
         assert summary["status"] == "clean"
+
+
+class TestReviewerLargeAndBrokenCodeBlocks:
+    def test_build_dynamic_test_content_returns_fail_closed_for_large_non_test_output(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        # LLM büyük ama geçersiz (pytest test fonksiyonu yok) bir metin döndürsün.
+        agent.call_llm = AsyncMock(return_value=("```python\n" + ("x = 1\n" * 5000) + "```"))
+
+        async def _run_case():
+            out = await agent._build_dynamic_test_content("def foo():\n    pass\n")
+            assert "fail_closed" in out
+            assert "pytest test fonksiyonu içermedi" in out
+            agent.call_llm.assert_awaited_once()
+
+        asyncio.run(_run_case())
+
+    def test_review_code_with_large_syntax_broken_context_finishes_without_loop(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        broken_large_context = "def broken(:\n" + ("print('x')\n" * 4000)
+        agent._run_dynamic_tests = AsyncMock(return_value="[TEST:FAIL-CLOSED] syntax error in generated test")
+        agent._build_regression_commands = MagicMock(return_value=["pytest -q tests/test_dummy.py"])
+
+        async def _fake_call_tool(name, arg):
+            if name == "run_tests":
+                return "[TEST:PASS] pytest -q tests/test_dummy.py"
+            if name == "graph_impact":
+                return json.dumps({"status": "ok", "reports": []}, ensure_ascii=False)
+            if name == "browser_signals":
+                return json.dumps({"status": "ok", "risk": "düşük", "summary": "clean"}, ensure_ascii=False)
+            if name == "lsp_diagnostics":
+                return json.dumps(
+                    {"status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "summary": "temiz"},
+                    ensure_ascii=False,
+                )
+            return ""
+
+        agent.call_tool = AsyncMock(side_effect=_fake_call_tool)
+
+        async def _run_case():
+            result = await agent.run_task(f"review_code|{broken_large_context}")
+            assert contracts.is_delegation_request(result)
+            agent._run_dynamic_tests.assert_awaited_once()
+
+            payload = result.payload.split("qa_feedback|", 1)[1]
+            parsed = json.loads(payload)
+            assert parsed["decision"] == "REJECT"
+            assert parsed["risk"] == "yüksek"
+
+        asyncio.run(_run_case())
