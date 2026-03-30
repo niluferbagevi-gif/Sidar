@@ -580,6 +580,37 @@ class TestDocumentStoreSearchEdgeCases:
             assert ok is True
             assert output == "keyword-exit"
 
+    def test_search_sync_auto_local_llm_prefers_pgvector_when_hybrid_disabled(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._index["doc1"] = {"session_id": "global"}
+            store._is_local_llm_provider = True
+            store._local_hybrid_enabled = False
+            store._pgvector_available = True
+            store._chroma_available = False
+            store._bm25_available = True
+            store._pgvector_search = lambda _q, _k, _s: (True, "local-pgvector")
+
+            ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
+            assert ok is True
+            assert output == "local-pgvector"
+
+    def test_search_sync_pgvector_exception_falls_back_to_bm25(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._index["doc1"] = {"session_id": "global"}
+            store._bm25_available = True
+            store._pgvector_available = True
+            store._chroma_available = False
+            store._pgvector_search = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("pgvector timeout"))
+            store._bm25_search = lambda _q, _k, _s: (True, "bm25-fallback")
+
+            ok, output = rag.DocumentStore._search_sync(store, "query", top_k=3, mode="auto", session_id="global")
+            assert ok is True
+            assert output == "bm25-fallback"
+
 
 class TestDocumentStoreAddDocumentErrorPaths:
     def test_add_document_sync_handles_chroma_upsert_exception(self, monkeypatch):
@@ -828,6 +859,30 @@ class TestDocumentStoreBm25FetchPaths:
             store.fts_conn = _BrokenFts()
             out = rag.DocumentStore._fetch_bm25(store, "query text", 3, "global")
             assert out == []
+
+
+class TestDocumentStoreChromaMetadataRobustness:
+    def test_fetch_chroma_ignores_non_dict_metadata_items(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _Collection:
+                def count(self):
+                    return 2
+
+                def query(self, **_kwargs):
+                    return {
+                        "ids": [["chunk-1"]],
+                        "documents": [["icerik"]],
+                        "metadatas": [["not-a-dict"]],
+                    }
+
+            store.collection = _Collection()
+            out = rag.DocumentStore._fetch_chroma(store, "query", 1, "global")
+            assert len(out) == 1
+            assert out[0]["id"] == "chunk-1"
+            assert out[0]["title"] == "?"
 
 
 class TestDocumentStoreUrlValidation:
