@@ -747,6 +747,14 @@ class TestMain:
                     m.main()
         assert exc.value.code != 0
 
+    def test_invalid_provider_choice_causes_argparse_error(self):
+        m = _get_main()
+        with patch.object(sys, "argv", ["main.py", "--quick", "cli", "--provider", "unknown-provider"]):
+            with patch("builtins.print"):
+                with pytest.raises(SystemExit) as exc:
+                    m.main()
+        assert exc.value.code != 0
+
     def test_runtime_dependency_fail_exits_2(self):
         m = _get_main()
         with patch.object(sys, "argv", ["main.py", "--quick", "web"]):

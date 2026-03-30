@@ -236,6 +236,30 @@ class TestGithubUploadMainFlow:
             mod.main()
         assert exc_info.value.code == 1
 
+    def test_main_exits_when_remote_missing_and_repo_url_invalid(self, monkeypatch):
+        mod = _get_github_upload()
+        monkeypatch.setattr(mod.cfg, "GITHUB_TOKEN", "tok", raising=False)
+        monkeypatch.setattr(sys, "argv", ["github_upload.py"])
+        monkeypatch.setattr(mod.os.path, "exists", lambda p: True if p == ".git" else False)
+
+        def _fake_run(args, show_output=False):
+            if args[:2] == ["git", "--version"]:
+                return True, "git version 2.0"
+            if args[:3] == ["git", "config", "user.name"]:
+                return True, "sidar-user"
+            if args[:3] == ["git", "remote", "-v"]:
+                return True, ""  # origin yok
+            if args[:4] == ["git", "branch", "--show-current"]:
+                return True, "main"
+            return True, ""
+
+        monkeypatch.setattr(mod, "run_command", _fake_run)
+        monkeypatch.setattr(builtins, "input", lambda *_a, **_k: "https://example.com/not-github")
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+        assert exc_info.value.code == 1
+
     def test_main_rollback_cancelled_exits_zero(self, monkeypatch):
         mod = _get_github_upload()
         monkeypatch.setattr(sys, "argv", ["github_upload.py", "-2"])
