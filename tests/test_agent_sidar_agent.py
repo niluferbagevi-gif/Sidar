@@ -732,6 +732,29 @@ class TestSidarAgentRespondAndToolFallback:
 
         asyncio.run(_run_case())
 
+    def test_tool_subtask_empty_argument_returns_warning(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+
+        async def _run_case():
+            result = await agent._tool_subtask("   ")
+            assert "Alt görev belirtilmedi" in result
+
+        asyncio.run(_run_case())
+
+    def test_tool_subtask_non_string_llm_output_hits_max_iteration(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.SUBTASK_MAX_STEPS = 2
+        agent.llm.chat = AsyncMock(return_value={"tool": "final_answer"})  # type: ignore[return-value]
+
+        async def _run_case():
+            result = await agent._tool_subtask("rapor hazırla")
+            assert "Maksimum adım sınırı" in result
+            assert agent.llm.chat.await_count == 2
+
+        asyncio.run(_run_case())
+
     def test_try_multi_agent_returns_warning_for_empty_or_non_string_output(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()
