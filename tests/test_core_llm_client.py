@@ -1185,6 +1185,7 @@ class TestProviderStreamAndFormatEdgeCases:
 
             async def aiter_lines(self):
                 raise RuntimeError("stream parse failed")
+                yield
 
         class _StreamCM:
             async def __aenter__(self):
