@@ -292,3 +292,54 @@ class TestBrowserManagerAutomationMocking:
         assert ok_shot is True
         assert Path(shot_path).exists()
         assert ok_close is True
+
+
+class TestBrowserManagerFailureEdges:
+    def test_click_element_records_execution_failed_when_dom_missing(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_page = types.SimpleNamespace(
+            click=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("element not found: #missing")),
+            url="https://example.com",
+        )
+        session = bm.BrowserSession(
+            session_id="missing-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=fake_page,
+        )
+        mgr._sessions["missing-1"] = session
+
+        import pytest
+        with pytest.raises(RuntimeError, match="element not found"):
+            mgr.click_element("missing-1", "#missing")
+
+        assert mgr._audit_log[-1]["action"] == "browser_click"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
+
+    def test_capture_dom_returns_false_when_selector_missing(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_page = types.SimpleNamespace(
+            locator=lambda _selector: types.SimpleNamespace(
+                inner_html=lambda timeout=None: (_ for _ in ()).throw(RuntimeError("No node found"))
+            ),
+            url="https://example.com",
+        )
+        session = bm.BrowserSession(
+            session_id="dom-err-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=fake_page,
+        )
+        mgr._sessions["dom-err-1"] = session
+
+        ok, message = mgr.capture_dom("dom-err-1", selector="#does-not-exist")
+        assert ok is False
+        assert "DOM yakalama hatası" in message
+        assert mgr._audit_log[-1]["action"] == "browser_capture_dom"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
