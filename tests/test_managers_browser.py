@@ -319,6 +319,26 @@ class TestBrowserManagerFailureEdges:
         assert mgr._audit_log[-1]["action"] == "browser_click"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
 
+    def test_fill_form_blocked_by_sync_hitl_guard_records_blocked_audit(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="blocked-1",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(url="https://example.com"),
+        )
+        mgr._sessions["blocked-1"] = session
+        monkeypatch.setattr(mgr, "_sync_hitl_guard", lambda *_a, **_k: (False, "blocked by policy"))
+
+        ok, message = mgr.fill_form("blocked-1", "#password", "secret", clear=True)
+        assert ok is False
+        assert "blocked by policy" in message
+        assert mgr._audit_log[-1]["action"] == "browser_fill_form"
+        assert mgr._audit_log[-1]["status"] == "blocked_hitl"
+
     def test_capture_dom_returns_false_when_selector_missing(self):
         bm = _get_bm()
         mgr = bm.BrowserManager()

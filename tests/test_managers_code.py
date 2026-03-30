@@ -348,6 +348,17 @@ class TestRunShellInSandbox:
         assert "[stderr]" in message
         assert "çıkış kodu: 2" in message
 
+    def test_unexpected_subprocess_error_returns_sandbox_error(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.base_dir = Path(".").resolve()
+        mgr.security = types.SimpleNamespace(can_execute=lambda: True, is_path_under=lambda *_a, **_k: True)
+        monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
+        monkeypatch.setattr(cm.subprocess, "run", MagicMock(side_effect=RuntimeError("sandbox evasion detected")))
+        ok, message = mgr.run_shell_in_sandbox("pytest -q", cwd=".")
+        assert ok is False
+        assert "Sandbox komutu hatası" in message
+        assert "sandbox evasion detected" in message
+
     def test_success_with_empty_output(self, monkeypatch):
         mgr, cm = _make_code_manager()
         mgr.base_dir = Path(".").resolve()
