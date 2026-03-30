@@ -262,6 +262,25 @@ class TestCodeManagerPermissionErrors:
         assert ok is False
         assert "Yazma erişimi reddedildi" in message
 
+    def test_read_file_returns_not_found_for_missing_path(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_read=lambda _p: True)
+
+        ok, message = mgr.read_file("missing-file.py")
+        assert ok is False
+        assert "Dosya bulunamadı" in message
+
+    def test_write_file_rejects_invalid_python_when_validation_enabled(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _p: True,
+            get_safe_write_path=lambda _n: Path("/tmp/safe.py"),
+        )
+
+        ok, message = mgr.write_file("broken.py", "def foo(:\n", validate=True)
+        assert ok is False
+        assert "Sözdizimi hatası" in message
+
 
 class TestExecuteCodeFallbackLoops:
     def test_execute_code_timeout_kills_container(self, monkeypatch):

@@ -351,6 +351,46 @@ class TestCollectGraphFollowupPaths:
         assert "core/memory.py" in result
 
 
+class TestCombinedImpactAndRemediation:
+    def test_combined_impact_marks_critical_for_indirect_severity_one(self):
+        m = _get_reviewer()
+        semantic_report = {
+            "counts": {"1": 1},
+            "issues": [{"path": "/workspace/Sidar/core/rag.py", "message": "critical type error"}],
+        }
+        graph_summary = {"followup_paths": ["core/rag.py"], "risk": "orta", "high_risk_targets": ["core/rag.py"]}
+
+        result = m.ReviewerAgent._build_combined_impact_report(
+            semantic_report=semantic_report,
+            graph_summary=graph_summary,
+            direct_scope_paths=["core/db.py"],
+            lsp_scope_paths=[],
+        )
+
+        assert result["impact_level"] == "critical"
+        assert "core/rag.py" in result["indirect_breakage_paths"]
+
+    def test_remediation_loop_observe_only_when_no_findings(self):
+        m = _get_reviewer()
+        loop = m.ReviewerAgent._build_remediation_loop(
+            semantic_report={"counts": {}, "summary": "clean"},
+            graph_summary={"risk": "düşük", "summary": "no signal"},
+            combined_impact={
+                "impact_level": "low",
+                "direct_scope_paths": [],
+                "graph_followup_paths": [],
+                "issue_paths": [],
+                "indirect_breakage_paths": [],
+            },
+            fix_recommendations=[],
+            regression_commands=["pytest tests/test_smoke.py"],
+        )
+
+        assert loop["status"] == "observe_only"
+        assert loop["needs_human_approval"] is False
+        assert "python -m pytest" in loop["validation_commands"]
+
+
 class TestSummarizeGraphPayload:
     def test_no_ok_reports_returns_no_signal(self):
         m = _get_reviewer()

@@ -345,6 +345,67 @@ class TestRetryWithBackoff:
         assert call_count[0] == 1  # No retries
 
 
+class TestStreamHelpers:
+    def test_fallback_stream_yields_single_message(self):
+        lc = _get_llm_client()
+
+        async def _collect():
+            out = []
+            async for chunk in lc._fallback_stream("fallback-error"):
+                out.append(chunk)
+            return out
+
+        assert _run(_collect()) == ["fallback-error"]
+
+    def test_track_stream_completion_records_success_metric(self, monkeypatch):
+        lc = _get_llm_client()
+        metric_calls = []
+        monkeypatch.setattr(lc, "_record_llm_metric", lambda **kwargs: metric_calls.append(kwargs))
+
+        async def _stream():
+            yield "a"
+            yield "b"
+
+        async def _collect():
+            chunks = []
+            async for chunk in lc._track_stream_completion(
+                _stream(),
+                provider="openai",
+                model="gpt-test",
+                started_at=1.0,
+            ):
+                chunks.append(chunk)
+            return chunks
+
+        assert _run(_collect()) == ["a", "b"]
+        assert metric_calls[-1]["success"] is True
+
+    def test_track_stream_completion_records_failure_metric(self, monkeypatch):
+        lc = _get_llm_client()
+        metric_calls = []
+        monkeypatch.setattr(lc, "_record_llm_metric", lambda **kwargs: metric_calls.append(kwargs))
+
+        async def _broken_stream():
+            yield "before-error"
+            raise RuntimeError("stream boom")
+
+        async def _consume():
+            async for _ in lc._track_stream_completion(
+                _broken_stream(),
+                provider="anthropic",
+                model="claude-test",
+                started_at=2.0,
+            ):
+                pass
+
+        import pytest
+
+        with pytest.raises(RuntimeError, match="stream boom"):
+            _run(_consume())
+        assert metric_calls[-1]["success"] is False
+        assert "stream boom" in metric_calls[-1]["error"]
+
+
 class TestOpenAIApiMocking:
     def test_openai_chat_uses_mocked_http_client(self):
         lc = _get_llm_client()

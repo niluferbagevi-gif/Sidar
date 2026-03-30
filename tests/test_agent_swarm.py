@@ -456,6 +456,34 @@ class TestSwarmOrchestratorGoalFingerprint:
         assert orchestrator._loop_repeat_limit() == 5
 
 
+class TestSwarmP2PContext:
+    def test_p2p_context_includes_trace_and_handoff_depth(self):
+        orchestrator, sw = _make_orchestrator()
+        contracts = sys.modules["agent.core.contracts"]
+        msg = contracts.DelegationRequest(
+            task_id="t1",
+            reply_to="reviewer",
+            target_agent="coder",
+            payload="patch uygula",
+            intent="review",
+            handoff_depth=2,
+            meta={"reason": "qa_reject"},
+        )
+
+        ctx = orchestrator._p2p_context(
+            {"existing": "1"},
+            msg,
+            session_id="sess-1",
+            hop=3,
+            route_trace=["supervisor", "reviewer", "coder"],
+        )
+
+        assert ctx["session_id"] == "sess-1"
+        assert ctx["swarm_hop"] == "3"
+        assert ctx["p2p_handoff_depth"] == "2"
+        assert "reviewer -> coder" in ctx["swarm_trace"]
+
+
 class TestSwarmOrchestratorShouldFallback:
     def test_json_decode_error_should_fallback(self):
         sw = _get_swarm_module()
