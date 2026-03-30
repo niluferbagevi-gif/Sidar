@@ -568,3 +568,52 @@ class TestCodeManagerFileIOWithTmpPath:
         ok, message = mgr.write_generated_test(str(target), "   ", append=True)
         assert ok is False
         assert "boş" in message.lower()
+
+
+class TestCodeManagerMissingPathAndAstEdges:
+    def test_read_file_returns_not_found_for_missing_file(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_read=lambda _path: True)
+
+        ok, message = mgr.read_file("olmayan_dosya.py")
+        assert ok is False
+        assert "Dosya bulunamadı" in message
+
+    def test_list_directory_returns_error_for_missing_directory(self):
+        mgr, _cm = _make_code_manager()
+        ok, message = mgr.list_directory("olmayan_dizin")
+        assert ok is False
+        assert "Dizin bulunamadı" in message
+
+    def test_write_file_creates_missing_parent_directory(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "nested" / "deeper" / "created.py"
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            get_safe_write_path=lambda filename: tmp_path / filename,
+        )
+
+        ok, message = mgr.write_file(str(target), "x = 1\n", validate=True)
+        assert ok is True
+        assert "başarıyla kaydedildi" in message
+        assert target.exists()
+
+    def test_write_file_rejects_invalid_python_syntax_and_does_not_create_file(self, tmp_path):
+        mgr, _cm = _make_code_manager()
+        target = tmp_path / "broken.py"
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            get_safe_write_path=lambda filename: tmp_path / filename,
+        )
+
+        ok, message = mgr.write_file(str(target), "def broken(:\n    pass\n", validate=True)
+        assert ok is False
+        assert "Sözdizimi hatası" in message
+        assert not target.exists()
+
+    def test_validate_python_syntax_reports_line_for_ast_edge_case(self):
+        mgr, _cm = _make_code_manager()
+        code = "x = 1\nif True print('x')\n"
+        ok, message = mgr.validate_python_syntax(code)
+        assert ok is False
+        assert "Satır" in message

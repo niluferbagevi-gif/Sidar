@@ -319,3 +319,25 @@ class TestCoderAgentEdgeCases:
         result = await agent.run_task("request_review|")
         assert contracts.is_delegation_request(result)
         assert result.target_agent == "reviewer"
+
+
+class TestCoderAgentToolArgumentDefaults:
+    def test_list_directory_uses_dot_when_argument_empty(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        agent.code.list_directory = MagicMock(return_value=(True, "ok"))
+
+        result = asyncio.run(agent._tool_list_directory(""))
+
+        assert result == "ok"
+        agent.code.list_directory.assert_called_once_with(".")
+
+    def test_glob_search_uses_dot_base_when_missing_separator(self):
+        m = _get_coder()
+        agent = m.CoderAgent()
+        agent.code.glob_search = MagicMock(return_value=(True, "glob-ok"))
+
+        result = asyncio.run(agent._tool_glob_search("*.py"))
+
+        assert result == "glob-ok"
+        agent.code.glob_search.assert_called_once_with("*.py", ".")

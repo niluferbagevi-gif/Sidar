@@ -802,6 +802,74 @@ class TestDatabaseConnectionDropScenarios:
         asyncio.run(_scenario())
 
 
+class TestDatabaseRollbackAndConnectionFailures:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_rollback_test.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            BASE_DIR = Path(tmpdir)
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_run_sqlite_op_calls_rollback_on_integrity_error(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                rollback_calls = {"count": 0}
+
+                class _ConnProxy:
+                    def rollback(self):
+                        rollback_calls["count"] += 1
+
+                database._sqlite_conn = _ConnProxy()  # type: ignore[assignment]
+
+                def _broken_op():
+                    raise sqlite3.IntegrityError("unique constraint failed")
+
+                with pytest.raises(sqlite3.IntegrityError):
+                    await database._run_sqlite_op(_broken_op)
+
+                assert rollback_calls["count"] == 1
+
+        asyncio.run(_scenario())
+
+    def test_create_user_surfaces_operational_error_and_rolls_back(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                state = {"rollback": 0}
+
+                class _ConnProxy:
+                    def execute(self, *_args, **_kwargs):
+                        raise sqlite3.OperationalError("database is locked")
+
+                    def commit(self):
+                        raise AssertionError("commit should not run on failed execute")
+
+                    def rollback(self):
+                        state["rollback"] += 1
+
+                database._sqlite_conn = _ConnProxy()  # type: ignore[assignment]
+
+                with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                    await database.create_user("kilitli_kullanici", role="user")
+
+                assert state["rollback"] == 1
+
+        asyncio.run(_scenario())
+
+
 class TestDatabasePromptRegistryBootstrap:
     @staticmethod
     def _make_sqlite_db(db_mod, tmpdir: str):

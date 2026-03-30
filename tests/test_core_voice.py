@@ -183,6 +183,17 @@ class TestExtractReadySegments:
         segs, remainder = self.vp.extract_ready_segments("   ")
         assert segs == []
 
+    def test_sentence_split_skips_empty_chunk_from_double_whitespace(self):
+        segs, remainder = self.vp.extract_ready_segments("Merhaba.   ")
+        assert segs == ["Merhaba."]
+        assert remainder == ""
+
+    def test_remainder_shorter_than_segment_chars_not_emitted(self):
+        self.vp.segment_chars = 20
+        segs, remainder = self.vp.extract_ready_segments("kısa kalan")
+        assert segs == []
+        assert remainder == "kısa kalan"
+
 
 # ══════════════════════════════════════════════════════════════
 # DuplexState

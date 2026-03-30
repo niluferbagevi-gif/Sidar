@@ -11,6 +11,8 @@ import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 
 def _get_memory():
     # config stub
@@ -366,3 +368,19 @@ class TestMemoryCompactionAndMultimodalLikeHistoryEdges:
         assert payload[0]["content"].startswith("[GECE DÖNGÜSÜ]")
         assert payload[-1]["content"] == "3. mesaj"
         assert len(m._turns) == 3
+
+
+class TestMemoryParametricParsing:
+    @pytest.mark.parametrize(
+        "raw_value, should_be_positive",
+        [
+            ("2026-01-01T00:00:00+00:00", True),
+            ("2026-01-01T00:00:00Z", True),
+            ("invalid-date", False),
+            (None, False),
+        ],
+    )
+    def test_parse_iso_ts_handles_multiple_input_types(self, raw_value, should_be_positive):
+        memory = _get_memory()
+        parsed = memory.ConversationMemory._parse_iso_ts(raw_value)  # type: ignore[arg-type]
+        assert (parsed > 0) is should_be_positive

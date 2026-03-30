@@ -210,6 +210,26 @@ class TestBrowserManagerUnhappyPaths:
 
         assert mgr._audit_log[-1]["status"] == "execution_failed"
 
+    def test_goto_url_timeout_records_failed_audit_and_raises(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = types.SimpleNamespace(
+            session_id="s-timeout",
+            provider="playwright",
+            page=types.SimpleNamespace(
+                goto=lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("page load timeout"))
+            ),
+            current_url="",
+        )
+        mgr._sessions["s-timeout"] = session
+
+        import pytest
+        with pytest.raises(TimeoutError, match="page load timeout"):
+            mgr.goto_url("s-timeout", "https://example.com/slow")
+
+        assert mgr._audit_log[-1]["action"] == "browser_goto_url"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
+
 
 class TestBrowserManagerAutomationMocking:
     def test_start_session_playwright_mock_success(self, monkeypatch):
