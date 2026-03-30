@@ -385,6 +385,71 @@ class TestDocumentStoreVectorFetch:
 
 
 class TestDocumentStoreFileInputValidation:
+    def test_add_document_from_file_rejects_missing_path(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            store = _make_store_stub(rag, base_dir)
+
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(base_dir / "missing.md"))
+            assert ok is False
+            assert "Dosya bulunamadı" in message
+
+    def test_add_document_from_file_rejects_directory_path(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            store = _make_store_stub(rag, base_dir)
+
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(base_dir))
+            assert ok is False
+            assert "bir dosya değil" in message
+
+    def test_add_document_from_file_rejects_outside_allowed_roots(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as base_tmpdir:
+            base_dir = Path(base_tmpdir).resolve()
+            external_file = (Path.cwd() / "external_outside_allowed.md").resolve()
+            external_file.write_text("external content", encoding="utf-8")
+            try:
+                monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+                store = _make_store_stub(rag, base_dir)
+
+                ok, message = rag.DocumentStore.add_document_from_file(store, str(external_file))
+                assert ok is False
+                assert "proje dizini dışında" in message
+            finally:
+                external_file.unlink(missing_ok=True)
+
+    def test_add_document_from_file_rejects_blocked_path_parts(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            blocked_file = base_dir / "sessions" / "chat.md"
+            blocked_file.parent.mkdir(parents=True, exist_ok=True)
+            blocked_file.write_text("gizli", encoding="utf-8")
+            store = _make_store_stub(rag, base_dir)
+
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(blocked_file))
+            assert ok is False
+            assert "güvenlik politikası" in message
+
+    def test_add_document_from_file_rejects_unsupported_extension(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir).resolve()
+            monkeypatch.setattr(rag.Config, "BASE_DIR", base_dir, raising=False)
+            binary_file = base_dir / "weights.bin"
+            binary_file.write_text("binary-like", encoding="utf-8")
+            store = _make_store_stub(rag, base_dir)
+
+            ok, message = rag.DocumentStore.add_document_from_file(store, str(binary_file))
+            assert ok is False
+            assert "Desteklenmeyen dosya türü" in message
+
     def test_add_document_from_file_rejects_empty_content(self, monkeypatch):
         rag = _get_rag()
         with tempfile.TemporaryDirectory() as tmpdir:
