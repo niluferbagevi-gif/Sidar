@@ -736,6 +736,125 @@ class TestBaseClientHelpers:
         assert exc_info.value.provider == "openai"
         assert exc_info.value.retryable is True
 
+
+class TestOllamaApiMocking:
+    def test_ollama_chat_429_rate_limit_is_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OLLAMA_URL = "http://localhost:11434"
+            CODING_MODEL = "qwen2.5-coder:7b"
+            OLLAMA_TIMEOUT = 20
+            USE_GPU = False
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 429
+
+            def raise_for_status(self):
+                exc = RuntimeError("429 rate limit")
+                exc.status_code = 429
+                raise exc
+
+            @staticmethod
+            def json():
+                return {"error": "too many requests"}
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OllamaClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "ollama"
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retryable is True
+
+    def test_ollama_chat_timeout_is_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OLLAMA_URL = "http://localhost:11434"
+            CODING_MODEL = "qwen2.5-coder:7b"
+            OLLAMA_TIMEOUT = 20
+            USE_GPU = False
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(side_effect=lc.httpx.TimeoutException("request timeout"))
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OllamaClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "ollama"
+        assert exc_info.value.retryable is True
+
+    def test_ollama_chat_malformed_json_payload_is_wrapped_to_safe_json(self):
+        lc = _get_llm_client()
+        import json
+
+        class _Cfg:
+            OLLAMA_URL = "http://localhost:11434"
+            CODING_MODEL = "qwen2.5-coder:7b"
+            OLLAMA_TIMEOUT = 20
+            USE_GPU = False
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {"message": {"content": "JSON olmayan düz metin"}}
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OllamaClient(_Cfg())
+            output = _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        payload = json.loads(output)
+        assert payload["tool"] == "final_answer"
+        assert "JSON olmayan düz metin" in payload["argument"]
+
     def test_openai_chat_token_limit_error_is_non_retryable(self):
         lc = _get_llm_client()
         import pytest

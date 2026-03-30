@@ -509,6 +509,15 @@ class TestAutoHandleNegativeBranchExits:
         assert handled is False
         assert response == ""
 
+    def test_try_dot_command_gpu_routes_to_gpu_handler(self, monkeypatch):
+        handler, *_ = _make_auto_handle()
+        monkeypatch.setattr(handler, "_try_gpu_optimize", AsyncMock(return_value=(True, "gpu-ok")))
+
+        handled, response = asyncio.run(handler._try_dot_command(".gpu", ".gpu"))
+
+        assert handled is True
+        assert response == "gpu-ok"
+
     @pytest.mark.asyncio
     async def test_try_health_returns_false_when_pattern_not_matched(self):
         handler, *_ = _make_auto_handle()

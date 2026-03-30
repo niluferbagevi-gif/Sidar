@@ -607,3 +607,29 @@ class TestBrowserManagerHitlAndProviderEdges:
 
         assert mgr._audit_log[-1]["action"] == "browser_click"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
+
+
+class TestBrowserSeleniumFailureEdges:
+    def test_goto_url_selenium_page_load_failure_records_execution_failed(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        fake_driver = types.SimpleNamespace(
+            current_url="",
+            get=lambda _url: (_ for _ in ()).throw(RuntimeError("page load failed")),
+        )
+        session = bm.BrowserSession(
+            session_id="sel-fail-1",
+            provider="selenium",
+            browser_name="chrome",
+            headless=True,
+            started_at=1.0,
+            driver=fake_driver,
+        )
+        mgr._sessions["sel-fail-1"] = session
+
+        import pytest
+        with pytest.raises(RuntimeError, match="page load failed"):
+            mgr.goto_url("sel-fail-1", "https://unreachable.example")
+
+        assert mgr._audit_log[-1]["action"] == "browser_goto_url"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"

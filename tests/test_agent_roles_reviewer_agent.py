@@ -306,6 +306,19 @@ class TestReviewerAgentPromptVariations:
         result = m.ReviewerAgent._summarize_lsp_diagnostics(payload)
         assert result["decision"] == "APPROVE"
 
+    def test_no_signal_phrase_maps_to_approve_with_medium_risk(self):
+        m = _get_reviewer()
+        result = m.ReviewerAgent._summarize_lsp_diagnostics("LSP bildirimi dönmedi")
+        assert result["status"] == "no-signal"
+        assert result["decision"] == "APPROVE"
+        assert result["risk"] == "orta"
+
+    def test_tool_error_phrase_maps_to_tool_error_status(self):
+        m = _get_reviewer()
+        result = m.ReviewerAgent._summarize_lsp_diagnostics("lsp hatası: timeout")
+        assert result["status"] == "tool-error"
+        assert result["decision"] == "APPROVE"
+
 
 class TestParseReviewPayload:
     def test_empty_returns_defaults(self):
