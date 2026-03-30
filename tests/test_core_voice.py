@@ -581,6 +581,13 @@ class TestVoicePipelineAdditionalCoverage:
         assert segments == ["A!"]
         assert remainder == ""
 
+    def test_extract_ready_segments_ignores_whitespace_only_part_from_newline_split(self):
+        voice = _get_voice()
+        vp = voice.VoicePipeline(_make_config(VOICE_TTS_PROVIDER="mock", VOICE_TTS_SEGMENT_CHARS=999))
+        segments, remainder = vp.extract_ready_segments("\n\nKalan metin", flush=False)
+        assert segments == []
+        assert remainder == "Kalan metin"
+
     def test_buffer_assistant_text_with_empty_delta_can_emit_probe_segments(self):
         voice = _get_voice()
         vp = voice.VoicePipeline(_make_config(VOICE_TTS_PROVIDER="mock", VOICE_TTS_BUFFER_CHARS=500))
