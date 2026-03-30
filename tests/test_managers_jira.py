@@ -213,6 +213,27 @@ class TestJiraRequestHttpResponses:
         assert body is None
         assert "timeout" in err.lower()
 
+    def test_request_permission_denied_exception_returns_error_text(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        class _RaisingClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def request(self, *_args, **_kwargs):
+                raise PermissionError("access denied")
+
+        with patch("managers.jira_manager.httpx.AsyncClient", return_value=_RaisingClient()):
+            ok, body, err = asyncio.run(mgr._request("GET", "issue/TEST-1"))
+
+        assert ok is False
+        assert body is None
+        assert "access denied" in err.lower()
+
 
 class TestJiraTransitionIssue:
     def test_transition_issue_returns_error_when_transition_not_found(self):

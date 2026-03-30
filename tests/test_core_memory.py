@@ -384,3 +384,32 @@ class TestMemoryParametricParsing:
         memory = _get_memory()
         parsed = memory.ConversationMemory._parse_iso_ts(raw_value)  # type: ignore[arg-type]
         assert (parsed > 0) is should_be_positive
+
+
+class TestMemoryNightlyConsolidationExceptionPaths:
+    def _make_with_stub_db(self):
+        memory = _get_memory()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            m = memory.ConversationMemory(base_dir=Path(tmpdir))
+
+        m.db = MagicMock()
+        m.db.connect = AsyncMock()
+        m.db.init_schema = AsyncMock()
+        m.db.list_users_with_quotas = AsyncMock(side_effect=RuntimeError("quota source down"))
+        m.db.list_sessions = AsyncMock(return_value=[])
+        return m
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.run(coro)
+
+    def test_run_nightly_consolidation_falls_back_to_active_user_when_user_listing_fails(self):
+        m = self._make_with_stub_db()
+        self._run(m.initialize())
+        m.active_user_id = "u-active"
+
+        result = self._run(m.run_nightly_consolidation(keep_recent_sessions=1, min_messages=5))
+
+        assert result["status"] == "completed"
+        assert result["users_scanned"] == 1
+        m.db.list_sessions.assert_called_once_with("u-active")
