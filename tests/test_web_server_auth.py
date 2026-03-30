@@ -10,6 +10,27 @@ from tests.test_web_server import _get_web_server
 
 
 class TestWebServerAuthHelpers:
+    def test_basic_auth_middleware_skips_auth_for_open_paths(self):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/health"),
+            headers={},
+            state=types.SimpleNamespace(),
+        )
+
+        async def _call_next(_request):
+            return _Response({"ok": True}, status_code=200)
+
+        result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
+        assert result.status_code == 200
+
     def test_basic_auth_middleware_rejects_missing_bearer_header(self, monkeypatch):
         ws = _get_web_server()
 
@@ -55,6 +76,76 @@ class TestWebServerAuthHelpers:
         result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
         assert result.status_code == 401
         assert "Geçersiz token" in str(result.content.get("error", ""))
+
+    def test_basic_auth_middleware_rejects_when_resolved_user_missing(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        monkeypatch.setattr(ws, "JSONResponse", _Response)
+        monkeypatch.setattr(ws, "_resolve_user_from_token", lambda *_args, **_kwargs: None)
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/api/private"),
+            headers={"Authorization": "Bearer valid-but-expired"},
+            state=types.SimpleNamespace(),
+        )
+
+        async def _call_next(_request):
+            return _Response({"ok": True}, status_code=200)
+
+        result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
+        assert result.status_code == 401
+        assert "süresi dolmuş" in str(result.content.get("error", ""))
+
+    def test_basic_auth_middleware_sets_user_and_calls_next_on_valid_token(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        user = types.SimpleNamespace(id="u1", username="ali")
+        active_user_calls = []
+        metrics_calls = []
+        reset_calls = []
+
+        async def _resolve_user(_agent, _token):
+            return user
+
+        async def _set_active_user(user_id, username):
+            active_user_calls.append((user_id, username))
+
+        async def _call_next(_request):
+            return _Response({"ok": True}, status_code=200)
+
+        fake_agent = types.SimpleNamespace(memory=types.SimpleNamespace(set_active_user=_set_active_user))
+
+        async def _get_agent():
+            return fake_agent
+
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _resolve_user)
+        monkeypatch.setattr(ws, "get_agent", _get_agent)
+        monkeypatch.setattr(ws, "set_current_metrics_user_id", lambda user_id: metrics_calls.append(user_id) or "tok")
+        monkeypatch.setattr(ws, "reset_current_metrics_user_id", lambda token: reset_calls.append(token))
+        request = types.SimpleNamespace(
+            method="GET",
+            url=types.SimpleNamespace(path="/api/private"),
+            headers={"Authorization": "Bearer live-token"},
+            state=types.SimpleNamespace(),
+        )
+
+        result = __import__("asyncio").run(ws.basic_auth_middleware(request, _call_next))
+
+        assert result.status_code == 200
+        assert request.state.user is user
+        assert active_user_calls == [("u1", "ali")]
+        assert metrics_calls == ["u1"]
+        assert reset_calls == ["tok"]
 
     def test_get_request_user_raises_when_missing(self):
         ws = _get_web_server()
