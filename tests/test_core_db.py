@@ -916,6 +916,27 @@ class TestDatabaseRollbackAndConnectionFailures:
 
         asyncio.run(_scenario())
 
+    def test_run_sqlite_op_preserves_original_error_when_rollback_also_fails(self):
+        async def _scenario():
+            db_mod = _get_db()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                database = self._make_sqlite_db(db_mod, tmpdir)
+                await database.connect()
+
+                class _ConnProxy:
+                    def rollback(self):
+                        raise RuntimeError("rollback failed")
+
+                database._sqlite_conn = _ConnProxy()  # type: ignore[assignment]
+
+                def _broken_op():
+                    raise ValueError("primary failure")
+
+                with pytest.raises(ValueError, match="primary failure"):
+                    await database._run_sqlite_op(_broken_op)
+
+        asyncio.run(_scenario())
+
 
 class TestDatabasePromptRegistryBootstrap:
     @staticmethod

@@ -634,6 +634,42 @@ class TestDocumentStoreSearchEdgeCases:
             assert output == "bm25-after-chroma"
 
 
+class TestDocumentStorePgvectorAndChunkingEdgeCases:
+    def test_pgvector_embed_texts_returns_empty_when_encode_raises(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+
+            class _BrokenEmbeddingModel:
+                def encode(self, *_args, **_kwargs):
+                    raise RuntimeError("embedding api down")
+
+            store._pg_embedding_model = _BrokenEmbeddingModel()
+            vectors = rag.DocumentStore._pgvector_embed_texts(store, ["merhaba"])
+            assert vectors == []
+
+    def test_pgvector_embed_texts_returns_empty_for_empty_input(self):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._pg_embedding_model = object()
+            vectors = rag.DocumentStore._pgvector_embed_texts(store, [])
+            assert vectors == []
+
+    def test_recursive_chunk_text_returns_empty_when_size_non_positive(self, monkeypatch, tmp_path):
+        rag, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
+        assert rag.DocumentStore._recursive_chunk_text(store, "abc", size=0, overlap=2) == []
+
+    def test_chunk_text_normalizes_negative_overlap(self, monkeypatch, tmp_path):
+        _, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
+        chunks = store._chunk_text("abcdef", chunk_size=3, chunk_overlap=-5)
+        assert chunks == store._chunk_text("abcdef", chunk_size=3, chunk_overlap=0)
+
+    def test_chunk_text_returns_empty_for_zero_chunk_size(self, monkeypatch, tmp_path):
+        _, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
+        assert store._chunk_text("abcdef", chunk_size=0, chunk_overlap=1) == []
+
+
 class TestDocumentStoreAddDocumentErrorPaths:
     def test_add_document_sync_handles_chroma_upsert_exception(self, monkeypatch):
         rag = _get_rag()

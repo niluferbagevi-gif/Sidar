@@ -525,3 +525,19 @@ class TestContinuousLearningPipelineLoop:
         assert manifest["counts"]["signals"] == 2
         assert manifest["counts"]["sft_examples"] >= 1
         assert manifest["counts"]["preference_examples"] >= 1
+
+    def test_schedule_cycle_swallows_run_cycle_exception_in_background_task(self):
+        pipeline = self._make_pipeline([], enabled=True)
+
+        async def _boom(*, reason="background"):
+            raise RuntimeError("background cycle failed")
+
+        pipeline.run_cycle = _boom  # type: ignore[assignment]
+
+        async def _scenario():
+            scheduled = pipeline.schedule_cycle(reason="test-exception")
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            return scheduled
+
+        assert _run(_scenario()) is True
