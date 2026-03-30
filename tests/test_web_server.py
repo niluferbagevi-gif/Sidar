@@ -520,6 +520,105 @@ class TestCollaborationNowIso:
         assert "+" in result or result.endswith("Z")
 
 
+class TestHealthAndRateLimitHelpers:
+    def test_await_if_needed_with_plain_value(self):
+        ws = _get_web_server()
+        assert asyncio.run(ws._await_if_needed(42)) == 42
+
+    def test_await_if_needed_with_coroutine(self):
+        ws = _get_web_server()
+
+        async def _value():
+            return "ok"
+
+        assert asyncio.run(ws._await_if_needed(_value())) == "ok"
+
+    def test_health_response_returns_503_when_get_agent_fails(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        async def _get_agent():
+            raise RuntimeError("agent missing")
+
+        monkeypatch.setattr(ws, "JSONResponse", _Response)
+        monkeypatch.setattr(ws, "get_agent", _get_agent)
+
+        result = asyncio.run(ws._health_response(require_dependencies=False))
+
+        assert result.status_code == 503
+        assert result.content["status"] == "degraded"
+        assert result.content["error"] == "health_check_failed"
+
+    def test_health_response_requires_dependencies_and_flags_unhealthy(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Response:
+            def __init__(self, content=None, status_code=200):
+                self.content = content or {}
+                self.status_code = status_code
+
+        fake_agent = types.SimpleNamespace(
+            cfg=types.SimpleNamespace(AI_PROVIDER="openai"),
+            health=types.SimpleNamespace(
+                get_health_summary=lambda: {"status": "ok", "ollama_online": True},
+                get_dependency_health=lambda: {
+                    "redis": {"healthy": True},
+                    "postgres": {"healthy": False, "detail": "down"},
+                },
+            ),
+        )
+
+        async def _get_agent():
+            return fake_agent
+
+        monkeypatch.setattr(ws, "JSONResponse", _Response)
+        monkeypatch.setattr(ws, "get_agent", _get_agent)
+
+        result = asyncio.run(ws._health_response(require_dependencies=True))
+
+        assert result.status_code == 503
+        assert result.content["status"] == "degraded"
+        assert result.content["dependencies"]["postgres"]["healthy"] is False
+
+    def test_get_client_ip_uses_forwarded_header_for_trusted_proxy(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", ["127.0.0.1"], raising=False)
+        request = types.SimpleNamespace(
+            client=types.SimpleNamespace(host="127.0.0.1"),
+            headers={"X-Forwarded-For": "198.51.100.20, 127.0.0.1"},
+        )
+
+        assert ws._get_client_ip(request) == "198.51.100.20"
+
+    def test_get_client_ip_ignores_forwarded_header_for_untrusted_proxy(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.Config, "TRUSTED_PROXIES", ["10.0.0.1"], raising=False)
+        request = types.SimpleNamespace(
+            client=types.SimpleNamespace(host="203.0.113.2"),
+            headers={"X-Forwarded-For": "198.51.100.20"},
+        )
+
+        assert ws._get_client_ip(request) == "203.0.113.2"
+
+    def test_local_rate_limiter_blocks_after_limit(self, monkeypatch):
+        ws = _get_web_server()
+        ws._local_rate_limits.clear()
+        ws._local_rate_lock = asyncio.Lock()
+
+        now = {"v": 1000.0}
+        monkeypatch.setattr(ws.time, "time", lambda: now["v"])
+
+        assert asyncio.run(ws._local_is_rate_limited("k", limit=2, window_sec=60)) is False
+        now["v"] += 1
+        assert asyncio.run(ws._local_is_rate_limited("k", limit=2, window_sec=60)) is False
+        now["v"] += 1
+        assert asyncio.run(ws._local_is_rate_limited("k", limit=2, window_sec=60)) is True
+
+
 class TestSerializeCollaborationParticipant:
     def test_all_fields_present(self):
         ws = _get_web_server()
