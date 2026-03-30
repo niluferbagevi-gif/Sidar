@@ -751,3 +751,26 @@ class TestSidarAgentRespondAndToolFallback:
             assert "Değişiklik bulunamadı" in no_changes
 
         asyncio.run(_run_case())
+
+    def test_tool_github_smart_pr_returns_failure_when_pr_rejected(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.github.is_available = MagicMock(return_value=True)
+        agent.github.default_branch = "main"
+        agent.github.create_pull_request = MagicMock(return_value=(False, "PR conflict/rejected"))
+        agent.code.run_shell = MagicMock(
+            side_effect=[
+                (True, "feature/reject-pr"),        # current branch
+                (True, " M agent/sidar_agent.py"),  # git status --short
+                (True, " agent/sidar_agent.py | 4 ++--"),  # git diff --stat HEAD
+                (True, "diff --git a/x b/x\n+line"),       # git diff --no-color HEAD
+                (True, "abc123 fix"),                      # git log
+            ]
+        )
+
+        async def _run_case():
+            out = await agent._tool_github_smart_pr("Automated PR|||main|||notes")
+            assert "PR oluşturulamadı" in out
+            assert "conflict/rejected" in out
+
+        asyncio.run(_run_case())

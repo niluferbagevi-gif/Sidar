@@ -6,6 +6,7 @@ CodeManager._resolve_sandbox_limits.
 from __future__ import annotations
 
 import json
+import builtins
 import subprocess
 import sys
 import tempfile
@@ -391,6 +392,54 @@ class TestCodeManagerDockerCliMocking:
         )
         assert ok is True
         assert "ÇIKTI KIRPILDI" in output
+
+
+class TestReadWritePermissionAndErrorEdges:
+    def test_read_file_denied_when_security_rejects_path(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_read=lambda _path: False)
+        ok, message = mgr.read_file("secret.py")
+        assert ok is False
+        assert "Okuma yetkisi yok" in message
+
+    def test_read_file_permission_error_surface_message(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(can_read=lambda _path: True)
+        target = Path(cm.__file__).resolve()
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(builtins, "open", _raise_permission)
+        ok, message = mgr.read_file(str(target))
+        assert ok is False
+        assert "Erişim reddedildi" in message
+
+    def test_write_file_denied_when_security_rejects_path(self):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: False,
+            get_safe_write_path=lambda filename: Path("/safe") / filename,
+        )
+        ok, message = mgr.write_file("blocked/test.py", "print('x')")
+        assert ok is False
+        assert "Yazma yetkisi yok" in message
+        assert "/safe/test.py" in message
+
+    def test_write_file_permission_error_surface_message(self, monkeypatch):
+        mgr, _cm = _make_code_manager()
+        mgr.security = types.SimpleNamespace(
+            can_write=lambda _path: True,
+            get_safe_write_path=lambda filename: Path("/safe") / filename,
+        )
+
+        def _raise_permission(*_args, **_kwargs):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(builtins, "open", _raise_permission)
+        ok, message = mgr.write_file("test_denied.txt", "abc", validate=False)
+        assert ok is False
+        assert "Yazma erişimi reddedildi" in message
 
 
 class TestPytestOutputAnalysis:

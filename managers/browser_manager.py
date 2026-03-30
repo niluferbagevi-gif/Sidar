@@ -761,17 +761,27 @@ class BrowserManager:
 
     def capture_dom(self, session_id: str, selector: str = "html") -> tuple[bool, str]:
         session = self._require_session(session_id)
-        if session.provider == "playwright":
-            dom = session.page.locator(selector).inner_html(timeout=self.timeout_ms)
-        else:
-            dom = session.driver.page_source
-        self._audit_session_action(
-            session,
-            action="browser_capture_dom",
-            status="executed",
-            selector=selector,
-        )
-        return True, dom
+        try:
+            if session.provider == "playwright":
+                dom = session.page.locator(selector).inner_html(timeout=self.timeout_ms)
+            else:
+                dom = session.driver.page_source
+            self._audit_session_action(
+                session,
+                action="browser_capture_dom",
+                status="executed",
+                selector=selector,
+            )
+            return True, dom
+        except Exception as exc:
+            self._audit_session_action(
+                session,
+                action="browser_capture_dom",
+                status="execution_failed",
+                selector=selector,
+                details={"error": str(exc)},
+            )
+            return False, f"DOM yakalama hatası: {exc}"
 
     def capture_screenshot(
         self,
