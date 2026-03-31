@@ -417,7 +417,6 @@ class TestAutoHandleHealth:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_health_timeout_returns_warning_message(self, monkeypatch):
         async def _run():
             handler, *_ = _make_auto_handle()
@@ -483,7 +482,6 @@ class TestAutoHandleSecurityStatus:
 
 
 class TestAutoHandleParametrizedBranches:
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "command_text,expected_substring",
         [
@@ -505,7 +503,6 @@ class TestAutoHandleParametrizedBranches:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "text",
         [
