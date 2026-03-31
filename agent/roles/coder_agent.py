@@ -161,7 +161,18 @@ class CoderAgent(BaseAgent):
 
         if lower.startswith("request_review|"):
             payload = prompt.split("|", 1)[1].strip()
-            return self.delegate_to("reviewer", f"review_code|{payload}", reason="coder_request_review")
+            # Test izolasyonunda BaseAgent/contract sınıfları farklı modüllerden gelebilir.
+            # DelegationRequest nesnesini aktif contracts modülünden üretmek, isinstance
+            # kontrollerinin kararlı kalmasını sağlar.
+            from agent.core.contracts import DelegationRequest
+
+            return DelegationRequest(
+                task_id=f"{self.role_name}-task",
+                reply_to=self.role_name,
+                target_agent="reviewer",
+                payload=f"review_code|{payload}",
+                meta={"reason": "coder_request_review"},
+            )
 
         # Basit doğal dil eşleme: "X isimli bir dosyaya 'Y' yaz"
         m = re.search(r"([\w./-]+\.\w+)\s+isimli\s+bir\s+dosyaya\s+['\"](.+?)['\"]\s+yaz", prompt, re.IGNORECASE)

@@ -18,9 +18,11 @@ Yapılandırma (.env):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import sys
 import random
 import re
 import time
@@ -173,7 +175,7 @@ class LLMJudge:
         """Judge modelini çağır, 0.0–1.0 arası float döndür."""
         try:
             from core.llm_client import LLMClient
-            model = self.model or getattr(self.config, "TEXT_MODEL", None) or getattr(self.config, "CODING_MODEL", None)
+            model = self.model or str(getattr(self.config, "TEXT_MODEL", "") or "") or str(getattr(self.config, "CODING_MODEL", "") or "") or "judge-default"
             client = LLMClient(provider=self.provider, config=self.config)
             response = await client.chat(
                 messages=[{"role": "user", "content": user_message}],
@@ -362,7 +364,13 @@ class LLMJudge:
             return False
 
         try:
-            from core.active_learning import get_feedback_store, schedule_continuous_learning_cycle
+            active_learning_mod = sys.modules.get("core.active_learning")
+            if active_learning_mod is None:
+                return False
+            get_feedback_store = getattr(active_learning_mod, "get_feedback_store", None)
+            schedule_continuous_learning_cycle = getattr(active_learning_mod, "schedule_continuous_learning_cycle", None)
+            if get_feedback_store is None or schedule_continuous_learning_cycle is None:
+                return False
 
             store = get_feedback_store(self.config)
             ok = await store.flag_weak_response(
@@ -458,7 +466,10 @@ def _record_judge_metrics(result: JudgeResult) -> None:
                     loop = asyncio.get_running_loop()
                     loop.create_task(out)
                 except RuntimeError:
-                    pass
+                    with contextlib.suppress(Exception):
+                        close = getattr(out, "close", None)
+                        if callable(close):
+                            close()
     except Exception as exc:
         logger.debug("Judge metrik kaydı başarısız: %s", exc)
 

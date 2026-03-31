@@ -98,7 +98,8 @@ class AgentEventBus:
                     raise
 
             self._redis_available = True
-            self._redis_listener_task = asyncio.create_task(self._redis_listener_loop())
+            loop = asyncio.get_running_loop()
+            self._redis_listener_task = loop.create_task(self._redis_listener_loop())
         except Exception as exc:
             self._redis_available = False
             logger.debug("AgentEventBus Redis bootstrap başarısız, local fallback kullanılacak: %s", exc)

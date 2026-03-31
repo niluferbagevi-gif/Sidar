@@ -7,6 +7,7 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 """
 
 import asyncio
+import contextlib
 import logging
 from html import unescape
 from typing import Optional, Tuple, TYPE_CHECKING
@@ -253,10 +254,16 @@ class WebSearchManager:
                         return list(ddgs.text(query, max_results=n))
 
                 # Thread işlemini de timeout ile sınırlandır (Sessiz bloklanmaları önler)
-                results = await asyncio.wait_for(
-                    asyncio.to_thread(_sync_search),
-                    timeout=self.FETCH_TIMEOUT,
-                )
+                thread_coro = asyncio.to_thread(_sync_search)
+                try:
+                    results = await asyncio.wait_for(
+                        thread_coro,
+                        timeout=self.FETCH_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    with contextlib.suppress(Exception):
+                        thread_coro.close()
+                    raise
 
             if not results:
                 return True, self._mark_no_results(f"'{query}' için DuckDuckGo'da sonuç bulunamadı.")
