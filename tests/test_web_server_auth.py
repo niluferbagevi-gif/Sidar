@@ -294,3 +294,104 @@ class TestAuthPayloadValidation:
         assert response.status_code == 200
         assert response.content["access_token"] == "jwt-token"
         assert response.content["user"]["username"] == "alice"
+
+
+class TestJwtTokenResolution:
+    def test_resolve_user_from_token_prefers_valid_jwt_payload(self, monkeypatch):
+        ws = _get_web_server()
+        expected_payload = {"sub": "u-1", "username": "alice", "role": "admin", "tenant_id": "acme"}
+
+        class _JwtError(Exception):
+            pass
+
+        fake_jwt = types.SimpleNamespace(
+            decode=lambda token, secret, algorithms: expected_payload,
+            PyJWTError=_JwtError,
+        )
+
+        monkeypatch.setattr(ws, "jwt", fake_jwt)
+        monkeypatch.setattr(ws, "_get_jwt_secret", lambda: "secret")
+        monkeypatch.setattr(ws.cfg, "JWT_ALGORITHM", "HS256", raising=False)
+
+        resolved = __import__("asyncio").run(ws._resolve_user_from_token(None, "jwt-token"))
+        assert resolved is not None
+        assert resolved.id == "u-1"
+        assert resolved.username == "alice"
+        assert resolved.role == "admin"
+        assert resolved.tenant_id == "acme"
+
+    def test_resolve_user_from_token_falls_back_to_db_for_non_jwt_tokens(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _JwtError(Exception):
+            pass
+
+        def _decode(*_args, **_kwargs):
+            raise _JwtError("invalid signature")
+
+        fake_jwt = types.SimpleNamespace(decode=_decode, PyJWTError=_JwtError)
+        monkeypatch.setattr(ws, "jwt", fake_jwt)
+        monkeypatch.setattr(ws, "_get_jwt_secret", lambda: "secret")
+        monkeypatch.setattr(ws.cfg, "JWT_ALGORITHM", "HS256", raising=False)
+
+        fallback_user = types.SimpleNamespace(id="db-user", username="legacy")
+
+        class _FakeDb:
+            async def get_user_by_token(self, token):
+                assert token == "opaque-token"
+                return fallback_user
+
+        agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_FakeDb()))
+
+        resolved = __import__("asyncio").run(ws._resolve_user_from_token(agent, "opaque-token"))
+        assert resolved is fallback_user
+
+    def test_resolve_user_from_token_returns_none_when_jwt_and_db_lookup_fail(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _JwtError(Exception):
+            pass
+
+        def _decode(*_args, **_kwargs):
+            raise _JwtError("expired")
+
+        fake_jwt = types.SimpleNamespace(decode=_decode, PyJWTError=_JwtError)
+        monkeypatch.setattr(ws, "jwt", fake_jwt)
+        monkeypatch.setattr(ws, "_get_jwt_secret", lambda: "secret")
+        monkeypatch.setattr(ws.cfg, "JWT_ALGORITHM", "HS256", raising=False)
+
+        class _FakeDb:
+            async def get_user_by_token(self, _token):
+                return None
+
+        agent = types.SimpleNamespace(memory=types.SimpleNamespace(db=_FakeDb()))
+        resolved = __import__("asyncio").run(ws._resolve_user_from_token(agent, "invalid-token"))
+        assert resolved is None
+
+
+class TestJwtTokenIssue:
+    def test_issue_auth_token_uses_minimum_one_day_ttl_and_defaults(self, monkeypatch):
+        ws = _get_web_server()
+        encoded = {}
+
+        def _encode(payload, secret, algorithm):
+            encoded["payload"] = payload
+            encoded["secret"] = secret
+            encoded["algorithm"] = algorithm
+            return "signed-token"
+
+        monkeypatch.setattr(ws.jwt, "encode", _encode, raising=False)
+        monkeypatch.setattr(ws, "_get_jwt_secret", lambda: "secret-key")
+        monkeypatch.setattr(ws.cfg, "JWT_ALGORITHM", "HS384", raising=False)
+        monkeypatch.setattr(ws.cfg, "JWT_TTL_DAYS", 0, raising=False)
+        user = types.SimpleNamespace(id="u1", username="alice")
+
+        token = __import__("asyncio").run(ws._issue_auth_token(types.SimpleNamespace(), user))
+        assert token == "signed-token"
+        assert encoded["secret"] == "secret-key"
+        assert encoded["algorithm"] == "HS384"
+        assert encoded["payload"]["sub"] == "u1"
+        assert encoded["payload"]["username"] == "alice"
+        assert encoded["payload"]["role"] == "user"
+        assert encoded["payload"]["tenant_id"] == "default"
+        assert encoded["payload"]["exp"] > encoded["payload"]["iat"]
