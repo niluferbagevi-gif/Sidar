@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
+
 
 def _get_mm():
     if "core.multimodal" in sys.modules:
