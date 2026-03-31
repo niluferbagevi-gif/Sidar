@@ -16,6 +16,13 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 
+# Stub dotenv so patch("dotenv.load_dotenv") works without the package installed
+if "dotenv" not in sys.modules:
+    _dotenv_mod = types.ModuleType("dotenv")
+    _dotenv_mod.load_dotenv = lambda *a, **k: None
+    sys.modules["dotenv"] = _dotenv_mod
+
+
 # ──────────────────────────────────────────────────────────────
 # Yardımcılar
 # ──────────────────────────────────────────────────────────────
