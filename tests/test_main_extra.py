@@ -5,6 +5,8 @@ Hedef satırlar: 50-53, 157-159, 200-201, 203-204, 298-301, 317-395,
 """
 from __future__ import annotations
 
+import builtins
+import importlib
 import subprocess
 import sys
 import threading
@@ -32,11 +34,22 @@ def _get_main():
 class TestConfigImportFallback:
     def test_dummy_config_used_when_import_fails(self):
         """config import başarısız olursa DummyConfig kullanılmalı (satır 50-53)."""
-        # Bu test mevcut main modülünün zaten yüklenmiş olduğunu kullanır;
-        # CONFIG_IMPORT_OK değerini doğrular.
-        m = _get_main()
-        # Modül yüklendi — cfg bir nesne olmalı
-        assert m.cfg is not None
+        real_import = builtins.__import__
+        old_main = sys.modules.pop("main", None)
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "config":
+                raise ImportError("forced by test")
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            m = importlib.import_module("main")
+            assert m.CONFIG_IMPORT_OK is False
+            assert isinstance(m.cfg, m.DummyConfig)
+
+        sys.modules.pop("main", None)
+        if old_main is not None:
+            sys.modules["main"] = old_main
 
     def test_dummy_config_attributes(self):
         """DummyConfig varsayılan değerleri doğru (satır 33-42)."""
