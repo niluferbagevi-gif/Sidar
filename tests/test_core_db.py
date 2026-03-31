@@ -1365,3 +1365,100 @@ class TestPostgresqlConnectionFailurePaths:
                 assert rollback_calls["count"] == 1
 
         asyncio.run(_scenario())
+
+
+class TestDatabaseSessionErrorBranches:
+    def test_update_session_title_postgresql_returns_false_on_unparseable_result(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            class _Conn:
+                async def execute(self, *_args, **_kwargs):
+                    return "UPDATE done"
+
+            class _Acquire:
+                async def __aenter__(self):
+                    return _Conn()
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+            class _Pool:
+                def acquire(self):
+                    return _Acquire()
+
+            database = db_mod.Database(cfg=_Cfg())
+            database._pg_pool = _Pool()
+
+            updated = await database.update_session_title("s1", "Yeni Başlık")
+            assert updated is False
+
+        asyncio.run(_scenario())
+
+    def test_delete_session_postgresql_returns_false_on_unparseable_result(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            class _Conn:
+                async def execute(self, *_args, **_kwargs):
+                    return "DELETE done"
+
+            class _Acquire:
+                async def __aenter__(self):
+                    return _Conn()
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+            class _Pool:
+                def acquire(self):
+                    return _Acquire()
+
+            database = db_mod.Database(cfg=_Cfg())
+            database._pg_pool = _Pool()
+
+            deleted = await database.delete_session("s1")
+            assert deleted is False
+
+        asyncio.run(_scenario())
+
+    def test_create_session_postgresql_propagates_connection_drop(self):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            class _Acquire:
+                async def __aenter__(self):
+                    raise ConnectionResetError("connection dropped")
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+            class _Pool:
+                def acquire(self):
+                    return _Acquire()
+
+            database = db_mod.Database(cfg=_Cfg())
+            database._pg_pool = _Pool()
+
+            with pytest.raises(ConnectionResetError, match="connection dropped"):
+                await database.create_session("u1", "Bağlantı kopması testi")
+
+        asyncio.run(_scenario())

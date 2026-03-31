@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import types
 
 import pytest
 import subprocess
@@ -189,3 +191,62 @@ class TestCodeManagerAdditionalBranches:
         assert "--memory=128m" in cmd
         assert "--cpus=0.25" in cmd
         assert "--network=none" in cmd
+
+
+class TestReadWriteExceptionPaths:
+    def _make_manager(self):
+        cm = CodeManager.__new__(CodeManager)
+        cm._lock = threading.RLock()
+        cm._files_read = 0
+        cm._files_written = 0
+        cm.security = types.SimpleNamespace(
+            can_read=lambda _path: True,
+            can_write=lambda _path: True,
+            get_safe_write_path=lambda name: Path("/tmp") / name,
+        )
+        cm.validate_python_syntax = lambda _content: (True, "ok")
+        return cm
+
+    def test_read_file_returns_permission_error_message(self, tmp_path, monkeypatch):
+        cm = self._make_manager()
+        target = tmp_path / "restricted.txt"
+        target.write_text("secret", encoding="utf-8")
+        monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("denied")))
+
+        ok, message = cm.read_file(str(target), line_numbers=False)
+
+        assert ok is False
+        assert "Erişim reddedildi" in message
+
+    def test_read_file_returns_generic_error_message(self, tmp_path, monkeypatch):
+        cm = self._make_manager()
+        target = tmp_path / "broken.txt"
+        target.write_text("x", encoding="utf-8")
+        monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(OSError("i/o failure")))
+
+        ok, message = cm.read_file(str(target), line_numbers=False)
+
+        assert ok is False
+        assert "Okuma hatası" in message
+        assert "i/o failure" in message
+
+    def test_write_file_returns_permission_error_message(self, tmp_path, monkeypatch):
+        cm = self._make_manager()
+        target = tmp_path / "readonly.txt"
+        monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(PermissionError("denied")))
+
+        ok, message = cm.write_file(str(target), "data", validate=False)
+
+        assert ok is False
+        assert "Yazma erişimi reddedildi" in message
+
+    def test_write_file_returns_generic_error_message(self, tmp_path, monkeypatch):
+        cm = self._make_manager()
+        target = tmp_path / "diskfull.txt"
+        monkeypatch.setattr("builtins.open", lambda *_a, **_k: (_ for _ in ()).throw(OSError("disk full")))
+
+        ok, message = cm.write_file(str(target), "data", validate=False)
+
+        assert ok is False
+        assert "Yazma hatası" in message
+        assert "disk full" in message
