@@ -767,6 +767,20 @@ class TestDocumentStoreAddDocumentErrorPaths:
 
 
 class TestDocumentStoreUrlErrorHandling:
+    def test_add_document_from_url_reports_value_error_from_url_validation(self, monkeypatch, tmp_path):
+        rag = _get_rag()
+        store = _make_store_stub(rag, tmp_path)
+
+        def _raise_validation_error(_url):
+            raise ValueError("Engellenen hostname: localhost")
+
+        monkeypatch.setattr(store, "_validate_url_safe", _raise_validation_error)
+
+        import asyncio
+        ok, message = asyncio.run(store.add_document_from_url("http://localhost:8000/private"))
+        assert ok is False
+        assert "Engellenen hostname" in message
+
     def test_add_document_from_url_handles_timeout(self, monkeypatch, tmp_path):
         rag = _get_rag()
         store = _make_store_stub(rag, tmp_path)
@@ -1011,6 +1025,18 @@ class TestDocumentStoreUrlValidation:
         rag = _get_rag()
         with pytest.raises(ValueError, match="http/https"):
             rag.DocumentStore._validate_url_safe("ftp://example.com/file")
+
+    def test_parse_python_source_propagates_value_error_from_parser(self, monkeypatch, tmp_path):
+        rag = _get_rag()
+        index = rag.GraphIndex(tmp_path)
+
+        def _raise_value_error(_content):
+            raise ValueError("parse failed")
+
+        monkeypatch.setattr(rag.ast, "parse", _raise_value_error)
+
+        with pytest.raises(ValueError, match="parse failed"):
+            index._parse_python_source(tmp_path / "x.py", "print('x')")
 
 
 class TestDocumentStoreFormattingEdgeCases:
