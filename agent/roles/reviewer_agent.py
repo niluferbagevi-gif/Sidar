@@ -155,7 +155,7 @@ class ReviewerAgent(BaseAgent):
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        commands.append(self.config.REVIEWER_TEST_COMMAND)
+        commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "python -m pytest"))
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
 
     @staticmethod
@@ -826,7 +826,11 @@ class ReviewerAgent(BaseAgent):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else "open"
             return await self.call_tool("list_issues", arg)
         if lower.startswith("run_tests"):
-            arg = prompt.split("|", 1)[1].strip() if "|" in prompt else self.config.REVIEWER_TEST_COMMAND
+            arg = (
+                prompt.split("|", 1)[1].strip()
+                if "|" in prompt
+                else getattr(self.config, "REVIEWER_TEST_COMMAND", "python -m pytest")
+            )
             return await self.call_tool("run_tests", arg)
         if lower.startswith("lsp_diagnostics"):
             arg = prompt.split("|", 1)[1].strip() if "|" in prompt else ""

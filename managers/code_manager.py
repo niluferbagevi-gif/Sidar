@@ -6,6 +6,7 @@ Sürüm: 2.7.0
 """
 
 import ast
+import contextlib
 import fnmatch
 import json
 import logging
@@ -603,6 +604,7 @@ class CodeManager:
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
 
+        tmp_path: Optional[str] = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".py", delete=False, encoding="utf-8"
@@ -610,18 +612,14 @@ class CodeManager:
                 tmp.write(code)
                 tmp_path = tmp.name
 
+            python_bin = sys.executable or shutil.which("python3") or shutil.which("python") or "python"
             result = subprocess.run(
-                [sys.executable, tmp_path],
+                [python_bin, tmp_path],
                 capture_output=True,
                 text=True,
                 timeout=self.docker_exec_timeout,
                 cwd=str(self.base_dir),
             )
-
-            try:
-                Path(tmp_path).unlink(missing_ok=True)
-            except Exception:
-                pass
 
             output = (result.stdout + result.stderr).strip()
 
@@ -636,16 +634,16 @@ class CodeManager:
             return True, f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(kod çalıştı, çıktı yok)'}"
 
         except subprocess.TimeoutExpired:
-            try:
-                Path(tmp_path).unlink(missing_ok=True)
-            except Exception:
-                pass
             return False, (
                 f"⚠ Zaman aşımı! Kod {self.docker_exec_timeout} saniyeden uzun sürdü "
                 "(sonsuz döngü koruması)."
             )
         except Exception as exc:
             return False, f"Subprocess çalıştırma hatası: {exc}"
+        finally:
+            if tmp_path:
+                with contextlib.suppress(Exception):
+                    Path(tmp_path).unlink(missing_ok=True)
 
     # ─────────────────────────────────────────────
     #  KABUK KOMUTU ÇALIŞTIRMA (SHELL EXECUTION)
