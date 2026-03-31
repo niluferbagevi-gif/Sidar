@@ -137,7 +137,7 @@ class TestFileUriToPath:
 
     def test_windows_drive_returns_pure_windows_path_on_non_windows(self, monkeypatch):
         cm = _get_cm()
-        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm, "_OS_NAME", "nt")
         monkeypatch.setattr(cm.sys, "platform", "linux")
 
         result = cm._file_uri_to_path("file:///C:/Users/Test/file.py")
@@ -147,22 +147,23 @@ class TestFileUriToPath:
 
     def test_windows_drive_returns_path_on_win32(self, monkeypatch):
         cm = _get_cm()
-        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm, "_OS_NAME", "nt")
         monkeypatch.setattr(cm.sys, "platform", "win32")
 
         result = cm._file_uri_to_path("file:///D:/Work/repo/main.py")
 
+        assert isinstance(result, PureWindowsPath)
         assert str(result).endswith("D:\\Work\\repo\\main.py")
 
     def test_windows_non_drive_path_returns_pure_windows_path(self, monkeypatch):
         cm = _get_cm()
-        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm, "_OS_NAME", "nt")
         monkeypatch.setattr(cm.sys, "platform", "win32")
 
         result = cm._file_uri_to_path("file:///Users/Test/file.py")
 
         assert isinstance(result, PureWindowsPath)
-        assert str(result) == "\\Users\\Test\\file.py"
+        assert str(result) == "Users\\Test\\file.py"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -876,7 +877,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _get_cm():
+def _extra_get_cm():
     cfg_stub = types.ModuleType("config")
 
     class _Cfg:
@@ -922,8 +923,8 @@ def _get_cm():
     return cm
 
 
-def _make_code_manager(tmpdir=None):
-    cm = _get_cm()
+def _extra_make_code_manager(tmpdir=None):
+    cm = _extra_get_cm()
     base = Path(tmpdir) if tmpdir else Path(tempfile.mkdtemp())
     cfg = cm.sys.modules["config"].Config()
 
@@ -952,18 +953,18 @@ def _make_code_manager(tmpdir=None):
 
 class Extra_TestUriHelpers:
     def test_path_to_file_uri(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         result = cm._path_to_file_uri(Path("/tmp/test.py"))
         assert result.startswith("file://")
         assert "test.py" in result
 
     def test_file_uri_to_path_posix(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         result = cm._file_uri_to_path("file:///tmp/test.py")
         assert str(result).endswith("test.py")
 
     def test_file_uri_invalid_scheme(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         with pytest.raises(ValueError, match="Desteklenmeyen"):
             cm._file_uri_to_path("http:///tmp/test.py")
 
@@ -974,7 +975,7 @@ class Extra_TestUriHelpers:
 
 class Extra_TestDecodeLSPStream:
     def test_valid_message(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         import json
         body = json.dumps({"method": "test"}).encode("utf-8")
         header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
@@ -984,12 +985,12 @@ class Extra_TestDecodeLSPStream:
         assert messages[0]["method"] == "test"
 
     def test_no_header_separator(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         messages = cm._decode_lsp_stream(b"no separator here")
         assert messages == []
 
     def test_incomplete_body_raises(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         # Create a message claiming 100 bytes but only providing 10
         raw = b"Content-Length: 100\r\n\r\n" + b"tooshort"
         with pytest.raises(cm._LSPProtocolError):
@@ -1003,7 +1004,7 @@ class Extra_TestDecodeLSPStream:
 class Extra_TestResolveRuntime:
     def test_gvisor_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.docker_microvm_mode = "gvisor"
             manager.docker_runtime = ""
             manager.docker_allowed_runtimes = ["", "runsc"]
@@ -1012,7 +1013,7 @@ class Extra_TestResolveRuntime:
 
     def test_kata_mode(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.docker_microvm_mode = "kata"
             manager.docker_runtime = ""
             manager.docker_allowed_runtimes = ["", "kata-runtime"]
@@ -1021,7 +1022,7 @@ class Extra_TestResolveRuntime:
 
     def test_not_in_allowed_list(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.docker_runtime = "custom_runtime"
             manager.docker_allowed_runtimes = ["", "runc"]
             result = manager._resolve_runtime()
@@ -1035,14 +1036,14 @@ class Extra_TestResolveRuntime:
 class Extra_TestTryDockerCliFallback:
     def test_docker_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("subprocess.run", side_effect=FileNotFoundError):
                 result = manager._try_docker_cli_fallback()
             assert result is False
 
     def test_docker_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=1)
             with patch("subprocess.run", return_value=mock_result):
                 result = manager._try_docker_cli_fallback()
@@ -1050,7 +1051,7 @@ class Extra_TestTryDockerCliFallback:
 
     def test_docker_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=0)
             with patch("subprocess.run", return_value=mock_result):
                 result = manager._try_docker_cli_fallback()
@@ -1059,14 +1060,14 @@ class Extra_TestTryDockerCliFallback:
 
     def test_docker_cli_timeout_returns_false(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker info", 5)):
                 result = manager._try_docker_cli_fallback()
             assert result is False
 
     def test_docker_cli_permission_error_returns_false(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("subprocess.run", side_effect=PermissionError("permission denied")):
                 result = manager._try_docker_cli_fallback()
             assert result is False
@@ -1075,7 +1076,7 @@ class Extra_TestTryDockerCliFallback:
 class Extra_TestTryWslSocketFallback:
     def test_returns_false_when_socket_stat_fails(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             docker_module = types.SimpleNamespace(DockerClient=MagicMock())
 
             with patch.object(cm.os, "stat", side_effect=OSError("missing")):
@@ -1086,7 +1087,7 @@ class Extra_TestTryWslSocketFallback:
 
     def test_returns_true_when_valid_socket_and_ping_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             fake_client = types.SimpleNamespace(ping=MagicMock())
             docker_module = types.SimpleNamespace(DockerClient=MagicMock(return_value=fake_client))
             fake_stat = types.SimpleNamespace(st_mode=0o140000)
@@ -1100,7 +1101,7 @@ class Extra_TestTryWslSocketFallback:
 
     def test_tries_next_socket_when_ping_fails_with_connection_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             failing_client = types.SimpleNamespace(ping=MagicMock(side_effect=Exception("Connection refused")))
             healthy_client = types.SimpleNamespace(ping=MagicMock())
             docker_module = types.SimpleNamespace(
@@ -1123,7 +1124,7 @@ class Extra_TestTryWslSocketFallback:
 class Extra_TestReadFile:
     def test_read_file_success_with_line_numbers(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("x = 1\ny = 2\n")
             ok, content = manager.read_file(str(test_file))
@@ -1132,7 +1133,7 @@ class Extra_TestReadFile:
 
     def test_read_file_no_line_numbers(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("x = 1\n")
             ok, content = manager.read_file(str(test_file), line_numbers=False)
@@ -1141,28 +1142,28 @@ class Extra_TestReadFile:
 
     def test_read_file_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.read_file("/nonexistent/file.py")
             assert ok is False
             assert "bulunamadı" in msg
 
     def test_read_file_is_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.read_file(tmpdir)
             assert ok is False
             assert "dizin" in msg
 
     def test_read_file_no_permission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.security.can_read = lambda p: False
             ok, msg = manager.read_file("/tmp/file.py")
             assert ok is False
 
     def test_read_file_permission_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             test_file = Path(tmpdir) / "test.py"
             test_file.write_text("x = 1\n")
             with patch("builtins.open", side_effect=PermissionError):
@@ -1178,7 +1179,7 @@ class Extra_TestReadFile:
 class Extra_TestWriteFile:
     def test_write_file_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "output.txt"
             ok, msg = manager.write_file(str(target), "content here")
             assert ok is True
@@ -1186,14 +1187,14 @@ class Extra_TestWriteFile:
 
     def test_write_file_no_permission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.security.can_write = lambda p: False
             ok, msg = manager.write_file("/tmp/file.txt", "content")
             assert ok is False
 
     def test_write_file_syntax_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "bad.py"
             ok, msg = manager.write_file(str(target), "def broken(:\n", validate=True)
             assert ok is False
@@ -1201,7 +1202,7 @@ class Extra_TestWriteFile:
 
     def test_write_file_permission_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "file.txt"
             with patch("builtins.open", side_effect=PermissionError):
                 ok, msg = manager.write_file(str(target), "content")
@@ -1215,7 +1216,7 @@ class Extra_TestWriteFile:
 class Extra_TestWriteGeneratedTest:
     def test_append_to_existing_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "tests/test_extra.py"
             target.parent.mkdir()
             target.write_text("# existing content\n")
@@ -1224,7 +1225,7 @@ class Extra_TestWriteGeneratedTest:
 
     def test_idempotent_append(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "test_extra.py"
             target.write_text("def test_existing(): pass\n")
             ok, msg = manager.write_generated_test(str(target), "def test_existing(): pass")
@@ -1233,7 +1234,7 @@ class Extra_TestWriteGeneratedTest:
 
     def test_empty_content(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.write_generated_test("/tmp/test.py", "")
             assert ok is False
             assert "boş" in msg
@@ -1246,7 +1247,7 @@ class Extra_TestWriteGeneratedTest:
 class Extra_TestPatchFile:
     def test_patch_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "code.py"
             target.write_text("x = 1\ny = 2\n")
             ok, msg = manager.patch_file(str(target), "x = 1", "x = 10")
@@ -1255,7 +1256,7 @@ class Extra_TestPatchFile:
 
     def test_patch_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "code.py"
             target.write_text("x = 1\n")
             ok, msg = manager.patch_file(str(target), "z = 99", "z = 100")
@@ -1264,7 +1265,7 @@ class Extra_TestPatchFile:
 
     def test_patch_multiple_matches(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             target = Path(tmpdir) / "code.py"
             target.write_text("x = 1\nx = 1\n")
             ok, msg = manager.patch_file(str(target), "x = 1", "x = 2")
@@ -1273,7 +1274,7 @@ class Extra_TestPatchFile:
 
     def test_patch_read_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.patch_file("/nonexistent/file.py", "old", "new")
             assert ok is False
 
@@ -1285,7 +1286,7 @@ class Extra_TestPatchFile:
 class Extra_TestExecuteCodeLocal:
     def test_local_execution_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=0, stdout="hello\n", stderr="")
             with patch("subprocess.run", return_value=mock_result) as run_mock:
                 ok, output = manager.execute_code_local("print('hello')")
@@ -1295,20 +1296,20 @@ class Extra_TestExecuteCodeLocal:
 
     def test_local_execution_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, output = manager.execute_code_local("raise ValueError('test error')")
             assert ok is False
 
     def test_local_execution_no_permission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.security.can_execute = lambda: False
             ok, msg = manager.execute_code_local("print('x')")
             assert ok is False
 
     def test_local_execution_timeout(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.docker_exec_timeout = 1
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 1)):
                 ok, msg = manager.execute_code_local("while True: pass")
@@ -1317,7 +1318,7 @@ class Extra_TestExecuteCodeLocal:
 
     def test_local_execution_output_truncated(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.max_output_chars = 10
             mock_result = MagicMock(returncode=0, stdout=("x" * 100), stderr="")
             with patch("subprocess.run", return_value=mock_result) as run_mock:
@@ -1334,14 +1335,14 @@ class Extra_TestExecuteCodeLocal:
 class Extra_TestExecuteCode:
     def test_no_permission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.security.can_execute = lambda: False
             ok, msg = manager.execute_code("print('x')")
             assert ok is False
 
     def test_no_docker_fallback_to_local(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.docker_available = False
             manager.security.level = 2  # Not SANDBOX
             with patch.object(manager, "execute_code_local", return_value=(True, "fallback-ok")) as local_exec:
@@ -1358,20 +1359,20 @@ class Extra_TestExecuteCode:
 class Extra_TestRunShellInSandbox:
     def test_no_permission(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.security.can_execute = lambda: False
             ok, msg = manager.run_shell_in_sandbox("ls")
             assert ok is False
 
     def test_empty_command(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.run_shell_in_sandbox("")
             assert ok is False
 
     def test_docker_not_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("shutil.which", return_value=None):
                 ok, msg = manager.run_shell_in_sandbox("ls")
             assert ok is False
@@ -1379,7 +1380,7 @@ class Extra_TestRunShellInSandbox:
 
     def test_timeout_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("shutil.which", return_value="/usr/bin/docker"), \
                  patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker", 10)):
                 ok, msg = manager.run_shell_in_sandbox("sleep 100")
@@ -1388,7 +1389,7 @@ class Extra_TestRunShellInSandbox:
 
     def test_filenotfounderror(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             with patch("shutil.which", return_value="/usr/bin/docker"), \
                  patch("subprocess.run", side_effect=FileNotFoundError):
                 ok, msg = manager.run_shell_in_sandbox("ls")
@@ -1396,7 +1397,7 @@ class Extra_TestRunShellInSandbox:
 
     def test_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=0, stdout="output\n", stderr="")
             with patch("shutil.which", return_value="/usr/bin/docker"), \
                  patch("subprocess.run", return_value=mock_result):
@@ -1406,7 +1407,7 @@ class Extra_TestRunShellInSandbox:
 
     def test_failed_command(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=1, stdout="", stderr="error\n")
             with patch("shutil.which", return_value="/usr/bin/docker"), \
                  patch("subprocess.run", return_value=mock_result):
@@ -1420,7 +1421,7 @@ class Extra_TestRunShellInSandbox:
 
 class Extra_TestAnalyzePytestOutput:
     def test_parse_coverage_data(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         output = (
             "core/module.py     100    20    50   80%   30-50\n"
             "tests/test_a.py     50     5    90%\n"
@@ -1430,7 +1431,7 @@ class Extra_TestAnalyzePytestOutput:
         assert "findings" in result
 
     def test_parse_failure(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         output = (
             "FAILED tests/test_core.py::TestFoo::test_bar - AssertionError\n"
             "1 failed in 0.5s\n"
@@ -1439,7 +1440,7 @@ class Extra_TestAnalyzePytestOutput:
         assert "1 failed" in result.get("summary", "")
 
     def test_empty_output(self):
-        cm = _get_cm()
+        cm = _extra_get_cm()
         result = cm.CodeManager.analyze_pytest_output("")
         assert result is not None
 
@@ -1451,13 +1452,13 @@ class Extra_TestAnalyzePytestOutput:
 class Extra_TestValidatePythonSyntax:
     def test_valid_syntax(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.validate_python_syntax("x = 1\ny = 2\n")
             assert ok is True
 
     def test_invalid_syntax(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             ok, msg = manager.validate_python_syntax("def broken(:\n    pass\n")
             assert ok is False
 
@@ -1469,7 +1470,7 @@ class Extra_TestValidatePythonSyntax:
 class Extra_TestExecuteCodeWithDockerCLI:
     def test_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=0, stdout="hello\n", stderr="")
             limits = {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "timeout": 10, "network_mode": "none"}
             with patch("subprocess.run", return_value=mock_result):
@@ -1478,7 +1479,7 @@ class Extra_TestExecuteCodeWithDockerCLI:
 
     def test_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             mock_result = MagicMock(returncode=1, stdout="", stderr="error")
             limits = {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "timeout": 10, "network_mode": "none"}
             with patch("subprocess.run", return_value=mock_result):
@@ -1487,7 +1488,7 @@ class Extra_TestExecuteCodeWithDockerCLI:
 
     def test_output_truncated(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager, base, cm = _make_code_manager(tmpdir)
+            manager, base, cm = _extra_make_code_manager(tmpdir)
             manager.max_output_chars = 5
             mock_result = MagicMock(returncode=0, stdout="x" * 100, stderr="")
             limits = {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "timeout": 10, "network_mode": "none"}

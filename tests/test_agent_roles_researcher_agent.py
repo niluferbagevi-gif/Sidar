@@ -407,7 +407,7 @@ for _k in list(sys.modules.keys()):
 _rag_mod = types.ModuleType("core.rag")
 
 
-class Extra__FakeDocumentStore:
+class _FakeDocumentStore:
     def __init__(self, path, top_k=3, chunk_size=512, chunk_overlap=50,
                  use_gpu=False, gpu_device=0, mixed_precision=False, cfg=None):
         self.path = path
@@ -423,7 +423,7 @@ sys.modules["core.rag"] = _rag_mod
 _wsm_mod = types.ModuleType("managers.web_search")
 
 
-class Extra__FakeWebSearchManager:
+class _FakeWebSearchManager:
     def __init__(self, cfg=None):
         self.cfg = cfg
 
