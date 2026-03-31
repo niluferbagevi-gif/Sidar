@@ -490,11 +490,12 @@ class TestHelpers:
         ws = _get_web_search()
         with patch.object(ws.WebSearchManager, "_check_ddg", return_value=False):
             manager = ws.WebSearchManager(None)
-            manager.FETCH_MAX_CHARS = 100
-            long_text = "a" * 200
+            # max_len = max(1000, configured_limit), so need > 1000 chars to trigger truncation
+            manager.FETCH_MAX_CHARS = 1000
+            long_text = "a" * 1500  # 1500 > max(1000, 1000) = 1000
             result = manager._truncate_content(long_text)
             assert "kesildi" in result
-            assert len(result) < 200
+            assert len(result) < 1500
 
     def test_truncate_short_content(self):
         ws = _get_web_search()

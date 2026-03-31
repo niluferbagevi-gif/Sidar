@@ -170,6 +170,12 @@ if importlib.util.find_spec("bs4") is None:
         def find_all(self, *args, **kwargs):
             return []
 
+        def __call__(self, *args, **kwargs):
+            return []
+
+        def decompose(self):
+            pass
+
     _bs4.BeautifulSoup = BeautifulSoup
     sys.modules["bs4"] = _bs4
 
