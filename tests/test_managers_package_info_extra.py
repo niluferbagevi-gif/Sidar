@@ -75,6 +75,17 @@ class TestConstructorTimeoutFallbacks:
         mgr = pi.PackageInfoManager(config=_Cfg())
         assert "SidarAI/9.9.9" in mgr.headers["User-Agent"]
 
+    def test_cache_ttl_seconds_has_minimum_sixty_seconds(self):
+        pi = _get_pi()
+
+        class _Cfg:
+            PACKAGE_INFO_TIMEOUT = 12
+            PACKAGE_INFO_CACHE_TTL = 1
+            VERSION = "1.0.0"
+
+        mgr = pi.PackageInfoManager(config=_Cfg())
+        assert mgr.cache_ttl.total_seconds() == 60
+
 
 # ══════════════════════════════════════════════════════════════
 # _get_json — cache hit path, 404, raise_for_status, cache set

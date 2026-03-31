@@ -2406,3 +2406,39 @@ class TestIntegrationEndpointFailures:
 
         assert exc_info.value.status_code == 502
         assert "Slack hatası" in str(exc_info.value.detail)
+
+
+class TestGitHelpers:
+    def test_git_run_returns_decoded_output(self, monkeypatch):
+        ws = _get_web_server()
+        monkeypatch.setattr(ws.subprocess, "check_output", lambda *_a, **_k: b"feature/test-branch\n")
+
+        result = ws._git_run(["git", "rev-parse", "--abbrev-ref", "HEAD"], ".")
+        assert result == "feature/test-branch"
+
+    def test_git_run_returns_empty_string_on_exception(self, monkeypatch):
+        ws = _get_web_server()
+
+        def _raise(*_a, **_k):
+            raise RuntimeError("git failed")
+
+        monkeypatch.setattr(ws.subprocess, "check_output", _raise)
+        assert ws._git_run(["git", "status"], ".") == ""
+
+    def test_git_info_parses_remote_and_default_branch(self, monkeypatch):
+        ws = _get_web_server()
+        responses = {
+            ("git", "rev-parse", "--abbrev-ref", "HEAD"): "feature/x",
+            ("git", "remote", "get-url", "origin"): "git@github.com:owner/repo.git",
+            ("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"): "origin/main",
+        }
+
+        async def _fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(ws.asyncio, "to_thread", _fake_to_thread)
+        monkeypatch.setattr(ws, "JSONResponse", lambda payload: payload)
+        monkeypatch.setattr(ws, "_git_run", lambda cmd, _cwd, stderr=None: responses.get(tuple(cmd), ""))
+
+        result = asyncio.run(ws.git_info())
+        assert result == {"branch": "feature/x", "repo": "owner/repo", "default_branch": "main"}

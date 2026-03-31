@@ -119,6 +119,12 @@ class TestIsWsl2:
             result = cfg._is_wsl2()
         assert result is False
 
+    def test_returns_true_when_microsoft_is_uppercase(self):
+        cfg = _get_config()
+        with patch("pathlib.Path.read_text", return_value="5.15.0-MICROSOFT-WSL2"):
+            result = cfg._is_wsl2()
+        assert result is True
+
 
 # ══════════════════════════════════════════════════════════════
 # check_hardware (lines 165-240)

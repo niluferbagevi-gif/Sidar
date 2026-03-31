@@ -433,6 +433,23 @@ class TestEstimateTokens:
         result = m._estimate_tokens()
         assert result == 0
 
+    def test_estimate_uses_tiktoken_when_available(self, monkeypatch):
+        memory = _get_memory()
+        m = _make_memory_obj(memory)
+        m._turns = [{"role": "user", "content": "abc"}, {"role": "assistant", "content": "def"}]
+
+        class _Enc:
+            def encode(self, text):
+                return list(text)
+
+        class _Tiktoken:
+            @staticmethod
+            def get_encoding(_name):
+                return _Enc()
+
+        monkeypatch.setitem(sys.modules, "tiktoken", _Tiktoken)
+        assert m._estimate_tokens() == len("abcdef")
+
 
 # ===========================================================================
 # needs_summarization (lines 243-246)

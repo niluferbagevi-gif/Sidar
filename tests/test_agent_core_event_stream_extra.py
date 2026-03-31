@@ -501,3 +501,9 @@ class TestSingletonEventBus:
         es = _get_event_stream()
         bus = es.AgentEventBus()
         assert bus._dlq_buffer.maxlen >= 10
+
+    def test_bus_dlq_buffer_maxlen_enforces_minimum_with_small_env(self, monkeypatch):
+        monkeypatch.setenv("SIDAR_EVENT_BUS_DLQ_MAXLEN", "1")
+        es = _get_event_stream()
+        bus = es.AgentEventBus()
+        assert bus._dlq_buffer.maxlen == 10

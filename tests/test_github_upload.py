@@ -331,3 +331,9 @@ class TestGithubUploadAdditionalBranches:
     def test_is_valid_repo_url_trims_whitespace(self):
         mod = _get_github_upload()
         assert mod._is_valid_repo_url("   https://github.com/org/repo   ") is True
+
+    def test_colors_constants_are_ansi_sequences(self):
+        mod = _get_github_upload()
+        assert mod.Colors.HEADER.startswith("\033[")
+        assert mod.Colors.OKGREEN.startswith("\033[")
+        assert mod.Colors.ENDC == "\033[0m"
