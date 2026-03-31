@@ -466,7 +466,6 @@ tests/test_sample.py         20      0      0      0   100%
 # ─────────────────────────────────────────────────────────
 
 class TestCoverageAgentRunTask:
-    @pytest.mark.asyncio
     def test_empty_prompt_returns_warning(self):
         async def _run():
             m = _get_coverage()
@@ -475,7 +474,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_whitespace_prompt_returns_warning(self):
         async def _run():
             m = _get_coverage()
@@ -484,7 +482,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_run_pytest_routing(self):
         async def _run():
             m = _get_coverage()
@@ -496,7 +493,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_analyze_pytest_output_routing(self):
         async def _run():
             m = _get_coverage()
@@ -508,7 +504,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_analyze_coverage_report_routing(self, tmp_path):
         async def _run():
             m = _get_coverage()
@@ -531,7 +526,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_analyze_coverage_report_uses_terminal_findings_when_xml_missing(self):
         async def _run():
             m = _get_coverage()
@@ -551,7 +545,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_generate_missing_tests_routing(self):
         async def _run():
             m = _get_coverage()
@@ -561,7 +554,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_write_missing_tests_routing(self):
         async def _run():
             m = _get_coverage()
@@ -576,7 +568,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_no_findings_returns_no_gaps_status(self):
         async def _run():
             m = _get_coverage()
@@ -589,7 +580,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_findings_present_triggers_test_generation(self):
         async def _run():
             m = _get_coverage()
@@ -610,7 +600,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_findings_write_success(self):
         async def _run():
             m = _get_coverage()
@@ -628,7 +617,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_findings_write_failure(self):
         async def _run():
             m = _get_coverage()
@@ -646,7 +634,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_run_task_returns_json_string(self):
         async def _run():
             m = _get_coverage()
@@ -658,7 +645,6 @@ class TestCoverageAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_db_record_exception_does_not_propagate(self):
         async def _run():
             """_record_task içindeki istisnanın run_task'ı patlatmaması gerekir."""
@@ -683,7 +669,6 @@ class TestCoverageAgentRunTask:
 # ─────────────────────────────────────────────────────────
 
 class TestCoverageAgentTools:
-    @pytest.mark.asyncio
     def test_ensure_db_returns_cached_instance_immediately(self):
         async def _run():
             m = _get_coverage()
@@ -697,7 +682,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_ensure_db_returns_cached_instance_inside_lock(self):
         async def _run():
             m = _get_coverage()
@@ -719,7 +703,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_run_pytest_default_command(self):
         async def _run():
             m = _get_coverage()
@@ -730,7 +713,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_run_pytest_custom_command(self):
         async def _run():
             m = _get_coverage()
@@ -741,7 +723,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_analyze_pytest_output(self):
         async def _run():
             m = _get_coverage()
@@ -752,7 +733,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_generate_missing_tests(self):
         async def _run():
             m = _get_coverage()
@@ -785,7 +765,6 @@ class TestCoverageAgentTools:
         assert isinstance(result, str)
         assert "def test_generated" in result
 
-    @pytest.mark.asyncio
     def test_tool_generate_missing_tests_with_coverage_finding_uses_dynamic_prompt(self):
         async def _run():
             m = _get_coverage()
@@ -810,7 +789,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):
         async def _run():
             m = _get_coverage()
@@ -829,7 +807,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_write_missing_tests_success(self):
         async def _run():
             m = _get_coverage()
@@ -845,7 +822,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_write_missing_tests_failure(self):
         async def _run():
             m = _get_coverage()
@@ -862,7 +838,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_tool_write_missing_tests_append_flag(self):
         async def _run():
             m = _get_coverage()
@@ -884,7 +859,6 @@ class TestCoverageAgentTools:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
-    @pytest.mark.asyncio
     def test_record_task_persists_findings_with_fallback_defaults(self):
         async def _run():
             m = _get_coverage()
