@@ -519,6 +519,52 @@ class TestCodeManagerDockerCliMocking:
         assert ok is True
         assert "ÇIKTI KIRPILDI" in output
 
+    def test_build_docker_cli_command_contains_limits_and_code(self):
+        mgr, _cm = _make_code_manager()
+        limits = {
+            "memory": "128m",
+            "cpus": "0.25",
+            "pids_limit": 32,
+            "network_mode": "none",
+            "timeout": 5,
+        }
+        cmd = mgr._build_docker_cli_command("print('ok')", limits)
+        assert cmd[:3] == ["docker", "run", "--rm"]
+        assert "--memory=128m" in cmd
+        assert "--cpus=0.25" in cmd
+        assert "--pids-limit=32" in cmd
+        assert "--network=none" in cmd
+        assert cmd[-3:] == ["python", "-c", "print('ok')"]
+
+    def test_execute_code_with_docker_cli_returns_error_on_nonzero_exit(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=1, stdout="", stderr="traceback")),
+        )
+        ok, output = mgr._execute_code_with_docker_cli(
+            "raise RuntimeError('boom')",
+            {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "network_mode": "none", "timeout": 10},
+        )
+        assert ok is False
+        assert "Docker CLI Sandbox" in output
+        assert "traceback" in output
+
+    def test_execute_code_with_docker_cli_uses_empty_output_fallback_on_error(self, monkeypatch):
+        mgr, cm = _make_code_manager()
+        monkeypatch.setattr(
+            cm.subprocess,
+            "run",
+            MagicMock(return_value=types.SimpleNamespace(returncode=2, stdout="", stderr="")),
+        )
+        ok, output = mgr._execute_code_with_docker_cli(
+            "print('x')",
+            {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "network_mode": "none", "timeout": 10},
+        )
+        assert ok is False
+        assert "(çıktı yok)" in output
+
 
 class TestReadWritePermissionAndErrorEdges:
     def test_read_file_denied_when_security_rejects_path(self):
