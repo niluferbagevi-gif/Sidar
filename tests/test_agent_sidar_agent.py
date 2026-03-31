@@ -981,7 +981,9 @@ class TestSidarAgentContextAndSummaryEdges:
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()
         agent.cfg.SUBTASK_MAX_STEPS = 2
-        agent.llm.chat = AsyncMock(return_value='{"tool":"read_file","argument":"README.md"}')
+        agent.llm.chat = AsyncMock(
+            return_value='{"thought":"Önce dosyayı okuyayım.","tool":"read_file","argument":"README.md"}'
+        )
         agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool backend unavailable"))
 
         async def _run_case():
