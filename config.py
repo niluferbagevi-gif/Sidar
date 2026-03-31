@@ -108,6 +108,13 @@ _LOG_BACKUP_CNT = get_int_env("LOG_BACKUP_COUNT", 5)
 
 _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+_root_logger = logging.getLogger()
+for _handler in list(_root_logger.handlers):
+    with contextlib.suppress(Exception):
+        _handler.flush()
+        _handler.close()
+    _root_logger.removeHandler(_handler)
+
 logging.basicConfig(
     level=getattr(logging, _LOG_LEVEL_STR, logging.INFO),
     format="%(asctime)s - [%(levelname)s] - %(name)s - (%(filename)s:%(lineno)d) - %(message)s",
@@ -120,6 +127,7 @@ logging.basicConfig(
             encoding="utf-8",
         ),
     ],
+    force=True,
 )
 logger = logging.getLogger("Sidar.Config")
 
