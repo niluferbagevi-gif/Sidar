@@ -335,6 +335,16 @@ class TestSidarAgentEarlyExitBranches:
         assert result["tool"] == "final_answer"
         assert isinstance(result["argument"], dict)
 
+    def test_parse_tool_call_markdown_non_json_falls_back(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        parse_fn = getattr(agent, "_parse_tool_call", None)
+        if parse_fn is None:
+            pytest.skip("_parse_tool_call metodu bu sürümde mevcut değil")
+        raw = "```json\nthis is not valid json\n```"
+        result = parse_fn(raw)
+        assert result["tool"] == "final_answer"
+
 
 class TestSidarAgentFallbackFederation:
     def test_fallback_federation_envelope_to_prompt(self):
@@ -364,6 +374,17 @@ class TestSidarAgentFallbackFederation:
         prompt = fb.to_prompt()
         assert "[ACTION FEEDBACK]" in prompt
         assert "deploy" in prompt
+
+    def test_fallback_action_feedback_uses_meta_correlation_id_when_explicit_missing(self):
+        sa = _get_sidar_agent()
+        fb = sa._FallbackActionFeedback(
+            feedback_id="f2",
+            source_system="sys_a",
+            source_agent="bot",
+            action_name="test",
+            meta={"correlation_id": "corr-meta-42"},
+        )
+        assert fb.correlation_id == "corr-meta-42"
 
 
 class TestSidarAgentExternalTrigger:

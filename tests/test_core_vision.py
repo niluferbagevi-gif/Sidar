@@ -349,3 +349,67 @@ class TestVisionPipelineDummyMediaFiles:
         result = _run(vp.mockup_to_code())
         assert result["success"] is False
         assert "image_path veya image_bytes gerekli" in result["reason"]
+
+
+class TestVisionPipelineMoreBranches:
+    def test_max_image_bytes_defaults_when_config_is_zero(self):
+        vision = _get_vision()
+        mock_client = type("C", (), {"provider": "openai"})()
+        vp = vision.VisionPipeline(mock_client, _make_config(VISION_MAX_IMAGE_BYTES=0))
+        assert vp.max_image_bytes == 10 * 1024 * 1024
+
+    def test_mockup_to_code_returns_failure_on_missing_file(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "unused"
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.mockup_to_code(image_path="/not/found.png"))
+        assert result["success"] is False
+        assert "Görsel bulunamadı" in result["reason"]
+
+    def test_mockup_to_code_returns_failure_when_llm_raises(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                raise RuntimeError("provider error")
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.mockup_to_code(image_bytes=b"fake-png-bytes", mime_type="image/png"))
+        assert result["success"] is False
+        assert "provider error" in result["reason"]
+
+    def test_analyze_returns_failure_when_disabled(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "unused"
+
+        vp = vision.VisionPipeline(_LLM(), _make_config(ENABLE_VISION=False))
+        result = _run(vp.analyze(image_bytes=b"fake-png-bytes"))
+        assert result["success"] is False
+        assert "devre dışı" in result["reason"]
+
+    def test_analyze_requires_image_input(self):
+        vision = _get_vision()
+
+        class _LLM:
+            provider = "openai"
+
+            async def chat(self, **_kwargs):
+                return "unused"
+
+        vp = vision.VisionPipeline(_LLM(), _make_config())
+        result = _run(vp.analyze())
+        assert result["success"] is False
+        assert "image_path veya image_bytes gerekli" in result["reason"]

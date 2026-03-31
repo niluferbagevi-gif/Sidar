@@ -295,3 +295,139 @@ class TestJiraProjectListGracefulDegradation:
         assert ok is False
         assert projects == []
         assert "500" in err
+
+
+class TestJiraIssueOperations:
+    def test_create_issue_uses_default_project(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok", default_project="PROJ")
+
+        async def _fake_request(method, endpoint, **kwargs):
+            assert method == "POST"
+            assert endpoint == "issue"
+            fields = kwargs["json"]["fields"]
+            assert fields["project"]["key"] == "PROJ"
+            return True, {"key": "PROJ-1"}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issue, err = asyncio.run(mgr.create_issue(summary="Bug bulundu"))
+        assert ok is True
+        assert issue["key"] == "PROJ-1"
+        assert err == ""
+
+    def test_create_issue_requires_project(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+        ok, issue, err = asyncio.run(mgr.create_issue(summary="Bug bulundu"))
+        assert ok is False
+        assert issue == {}
+        assert "Proje anahtarı" in err
+
+    def test_get_issue_returns_empty_dict_when_data_none(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, None, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issue, err = asyncio.run(mgr.get_issue("PROJ-2"))
+        assert ok is True
+        assert issue == {}
+        assert err == ""
+
+    def test_update_issue_returns_error_from_request(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return False, None, "HTTP 400"
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, err = asyncio.run(mgr.update_issue("PROJ-2", {"summary": "x"}))
+        assert ok is False
+        assert "400" in err
+
+    def test_add_comment_returns_empty_dict_when_none(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, None, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, body, err = asyncio.run(mgr.add_comment("PROJ-2", "yorum"))
+        assert ok is True
+        assert body == {}
+        assert err == ""
+
+
+class TestJiraSearchAndStatuses:
+    def test_search_issues_simplifies_fields(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, {
+                "issues": [
+                    {
+                        "key": "PROJ-3",
+                        "fields": {
+                            "summary": "Deneme",
+                            "status": {"name": "To Do"},
+                            "assignee": {"displayName": "Ada"},
+                            "priority": {"name": "High"},
+                            "issuetype": {"name": "Bug"},
+                        },
+                    }
+                ]
+            }, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issues, err = asyncio.run(mgr.search_issues("project = PROJ", max_results=500))
+        assert ok is True
+        assert issues[0]["key"] == "PROJ-3"
+        assert issues[0]["assignee"] == "Ada"
+        assert err == ""
+
+    def test_search_issues_propagates_failure(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return False, None, "HTTP 429"
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issues, err = asyncio.run(mgr.search_issues("project = PROJ"))
+        assert ok is False
+        assert issues == []
+        assert "429" in err
+
+    def test_get_project_statuses_deduplicates_names(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, [
+                {"statuses": [{"name": "To Do"}, {"name": "Done"}]},
+                {"statuses": [{"name": "Done"}, {"name": "In Progress"}]},
+            ], ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, statuses, err = asyncio.run(mgr.get_project_statuses("PROJ"))
+        assert ok is True
+        assert statuses == ["To Do", "Done", "In Progress"]
+        assert err == ""
+
+    def test_get_project_statuses_propagates_failure(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return False, None, "HTTP 403"
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, statuses, err = asyncio.run(mgr.get_project_statuses("PROJ"))
+        assert ok is False
+        assert statuses == []
+        assert "403" in err

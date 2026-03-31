@@ -254,6 +254,20 @@ class TestAutoHandleReadFile:
         assert handled is True
         assert "⚠" in response
 
+    def test_read_file_long_content_is_truncated_with_suffix(self):
+        if "pydantic" not in sys.modules:
+            pydantic_stub = types.ModuleType("pydantic")
+            pydantic_stub.BaseModel = object
+            pydantic_stub.Field = lambda *a, **k: None
+            pydantic_stub.ValidationError = Exception
+            sys.modules["pydantic"] = pydantic_stub
+        handler, code, *_ = _make_auto_handle()
+        long_content = "\n".join(f"line {i}" for i in range(100))
+        code.read_file.return_value = (True, long_content)
+        handled, response = asyncio.run(handler.handle('dosyayı oku "main.py"'))
+        assert handled is True
+        assert "satır daha" in response
+
 
 class TestAutoHandleGitHub:
     @pytest.mark.asyncio
@@ -595,6 +609,19 @@ class TestAutoHandleErrorBranches:
             handled, response = await handler.handle("gpu optimize et")
         assert handled is True
         assert "başarısız" in response.lower()
+
+    def test_health_exception_returns_warning(self):
+        if "pydantic" not in sys.modules:
+            pydantic_stub = types.ModuleType("pydantic")
+            pydantic_stub.BaseModel = object
+            pydantic_stub.Field = lambda *a, **k: None
+            pydantic_stub.ValidationError = Exception
+            sys.modules["pydantic"] = pydantic_stub
+        handler, *_ = _make_auto_handle()
+        with patch.object(handler, "_run_blocking", AsyncMock(side_effect=RuntimeError("sensor unavailable"))):
+            handled, response = asyncio.run(handler.handle("sistem sağlık raporu"))
+        assert handled is True
+        assert "alınamadı" in response.lower()
 
     @pytest.mark.asyncio
     async def test_docs_add_without_url_falls_back_to_react(self):

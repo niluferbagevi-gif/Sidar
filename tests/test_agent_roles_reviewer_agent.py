@@ -343,6 +343,20 @@ class TestParseReviewPayload:
         result = m.ReviewerAgent._parse_review_payload("kod browser_session_id=sess-123 değişikliği")
         assert result["browser_session_id"] == "sess-123"
 
+    def test_json_payload_supports_alternative_context_key_and_flags(self):
+        m = _get_reviewer()
+        payload = json.dumps(
+            {
+                "code_context": "def alt_context(): pass",
+                "browser_include_dom": True,
+                "browser_include_screenshot": True,
+            }
+        )
+        result = m.ReviewerAgent._parse_review_payload(payload)
+        assert "alt_context" in result["review_context"]
+        assert result["browser_include_dom"] is True
+        assert result["browser_include_screenshot"] is True
+
 
 class TestCollectGraphFollowupPaths:
     def test_empty_reports_returns_empty(self):
@@ -421,6 +435,39 @@ class TestSummarizeGraphPayload:
         result = m.ReviewerAgent._summarize_graph_payload(payload)
         assert "summary" in result
 
+
+class TestReviewerAgentToolEdgeCases:
+    def test_tool_pr_diff_requires_numeric_id(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        result = asyncio.run(agent._tool_pr_diff("not-a-number"))
+        assert "Kullanım" in result
+
+    def test_tool_run_tests_rejects_unsafe_prefix(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        result = asyncio.run(agent._tool_run_tests("rm -rf /"))
+        assert "Kullanım" in result
+
+    def test_tool_graph_impact_returns_no_targets_when_empty(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        raw = asyncio.run(agent._tool_graph_impact(""))
+        payload = json.loads(raw)
+        assert payload["status"] == "no-targets"
+        assert payload["targets"] == []
+
+    def test_tool_browser_signals_returns_inline_payload_directly(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        raw = asyncio.run(
+            agent._tool_browser_signals(
+                json.dumps({"browser_signals": {"status": "ok", "risk": "düşük", "summary": "inline"}})
+            )
+        )
+        payload = json.loads(raw)
+        assert payload["status"] == "ok"
+        assert payload["summary"] == "inline"
 
 class TestReviewerAgentRunTask:
     @pytest.mark.asyncio
