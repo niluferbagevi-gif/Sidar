@@ -1,7 +1,4 @@
-"""
-agent/definitions.py için birim testleri.
-SIDAR_KEYS, SIDAR_WAKE_WORDS ve DEFAULT_SYSTEM_PROMPT sabitlerini kapsar.
-"""
+"""agent/definitions.py için davranış odaklı testler."""
 from __future__ import annotations
 
 import sys
@@ -17,68 +14,64 @@ def _get_definitions():
     return defs
 
 
-class TestSidarKeys:
+class TestWakeWordContracts:
+    def test_keys_and_wake_words_are_normalized_and_unique(self):
+        defs = _get_definitions()
+        normalized_keys = [key.strip().lower() for key in defs.SIDAR_KEYS]
+        normalized_wake_words = [word.strip().lower() for word in defs.SIDAR_WAKE_WORDS]
+
+        assert "sidar" in normalized_keys
+        assert "sidar" in normalized_wake_words
+        assert len(normalized_keys) == len(set(normalized_keys))
+        assert len(normalized_wake_words) == len(set(normalized_wake_words))
+
+
+class TestDefaultSystemPromptContracts:
     @pytest.mark.parametrize(
-        ("attribute", "validator"),
+        "critical_section",
         [
-            ("SIDAR_KEYS", lambda value: isinstance(value, list)),
-            ("SIDAR_KEYS", lambda value: "sidar" in value),
-            ("SIDAR_KEYS", lambda value: len(value) > 0),
+            "HALLUCINATION YASAĞI",
+            "DOSYA ERİŞİM STRATEJİSİ",
+            "ARAÇ KULLANIM STRATEJİLERİ",
+            "DÖNGÜ YASAĞI",
+            "HATA KURTARMA",
         ],
     )
-    def test_sidar_keys_common_guards(self, attribute, validator):
+    def test_prompt_contains_operational_guardrail_sections(self, critical_section):
         defs = _get_definitions()
-        assert validator(getattr(defs, attribute))
+        assert critical_section in defs.DEFAULT_SYSTEM_PROMPT
 
-    def test_sidar_keys_all_strings(self):
-        defs = _get_definitions()
-        for key in defs.SIDAR_KEYS:
-            assert isinstance(key, str)
-
-
-class TestSidarWakeWords:
     @pytest.mark.parametrize(
-        ("attribute", "validator"),
+        "required_tool",
         [
-            ("SIDAR_WAKE_WORDS", lambda value: isinstance(value, list)),
-            ("SIDAR_WAKE_WORDS", lambda value: "sidar" in value),
-            ("SIDAR_WAKE_WORDS", lambda value: len(value) > 0),
+            "get_config",
+            "glob_search",
+            "grep_files",
+            "read_file",
+            "patch_file",
+            "run_shell",
+            "todo_write",
+            "final_answer",
         ],
     )
-    def test_wake_words_common_guards(self, attribute, validator):
+    def test_prompt_declares_core_toolchain(self, required_tool):
         defs = _get_definitions()
-        assert validator(getattr(defs, attribute))
+        assert required_tool in defs.DEFAULT_SYSTEM_PROMPT
 
-    def test_wake_words_all_lowercase(self):
+    def test_prompt_declares_json_response_contract_fields(self):
         defs = _get_definitions()
-        for word in defs.SIDAR_WAKE_WORDS:
-            assert word == word.lower()
+        prompt = defs.DEFAULT_SYSTEM_PROMPT
 
+        assert '"thought"' in prompt
+        assert '"tool"' in prompt
+        assert '"argument"' in prompt
 
-class TestDefaultSystemPrompt:
-    @pytest.mark.parametrize(
-        "validator",
-        [
-            lambda value: isinstance(value, str),
-            lambda value: len(value.strip()) > 0,
-        ],
-    )
-    def test_prompt_type_and_content_guards(self, validator):
+    def test_prompt_includes_runtime_truth_source_contract(self):
         defs = _get_definitions()
-        assert validator(defs.DEFAULT_SYSTEM_PROMPT)
+        prompt = defs.DEFAULT_SYSTEM_PROMPT
+        assert "GERÇEK RUNTIME DEĞERLERİ" in prompt
+        assert "TAHMİN ETME" in prompt
 
-    def test_prompt_contains_sidar_identity(self):
-        defs = _get_definitions()
-        assert "SİDAR" in defs.DEFAULT_SYSTEM_PROMPT or "SIDAR" in defs.DEFAULT_SYSTEM_PROMPT.upper()
-
-    def test_prompt_contains_json_format_instruction(self):
-        defs = _get_definitions()
-        assert "JSON" in defs.DEFAULT_SYSTEM_PROMPT
-
-    def test_prompt_contains_tool_section(self):
-        defs = _get_definitions()
-        assert "tool" in defs.DEFAULT_SYSTEM_PROMPT.lower()
-
-    def test_sidar_system_prompt_alias_equals_default(self):
+    def test_alias_points_to_default_prompt(self):
         defs = _get_definitions()
         assert defs.SIDAR_SYSTEM_PROMPT == defs.DEFAULT_SYSTEM_PROMPT
