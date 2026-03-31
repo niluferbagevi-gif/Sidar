@@ -1,10 +1,11 @@
 """LLM çıktısının bellek katmanına yazım entegrasyonu."""
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from agent.base_agent import BaseAgent
 from core.db import Database
@@ -32,35 +33,32 @@ def _build_cfg(tmp_path: Path):
     )
 
 
-def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
+@pytest.mark.asyncio
+async def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
     cfg = _build_cfg(tmp_path)
+    fake_llm = AsyncMock()
+    fake_llm.chat = AsyncMock(return_value="Yanıt: build geçti")
 
-    async def _run_case() -> None:
-        fake_llm = AsyncMock()
-        fake_llm.chat = AsyncMock(return_value="Yanıt: build geçti")
+    with patch("agent.base_agent.LLMClient", return_value=fake_llm):
+        agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
 
-        with patch("agent.base_agent.LLMClient", return_value=fake_llm):
-            agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
+    memory_hub = MemoryHub()
+    db = Database(cfg)
+    try:
+        await db.connect()
+        await db.init_schema()
+        user = await db.create_user("llm_memory_user", password="secret")
+        session = await db.create_session(user.id, "LLM memory integration")
 
-        memory_hub = MemoryHub()
-        db = Database(cfg)
-        try:
-            await db.connect()
-            await db.init_schema()
-            user = await db.create_user("llm_memory_user", password="secret")
-            session = await db.create_session(user.id, "LLM memory integration")
+        output = await agent.run_task("CI durumunu özetle")
+        memory_hub.add_role_note("integration", output)
+        await db.add_message(session.id, "assistant", output)
 
-            output = await agent.run_task("CI durumunu özetle")
-            memory_hub.add_role_note("integration", output)
-            await db.add_message(session.id, "assistant", output)
+        role_notes = memory_hub.role_context("integration")
+        messages = await db.get_session_messages(session.id)
 
-            role_notes = memory_hub.role_context("integration")
-            messages = await db.get_session_messages(session.id)
-
-            assert role_notes[-1] == "Yanıt: build geçti"
-            assert messages[-1].content == "Yanıt: build geçti"
-            fake_llm.chat.assert_awaited_once()
-        finally:
-            await db.close()
-
-    asyncio.run(_run_case())
+        assert role_notes[-1] == "Yanıt: build geçti"
+        assert messages[-1].content == "Yanıt: build geçti"
+        fake_llm.chat.assert_awaited_once()
+    finally:
+        await db.close()
