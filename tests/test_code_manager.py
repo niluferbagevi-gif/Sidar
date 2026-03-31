@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import subprocess
 
 from managers.code_manager import (
     CodeManager,
@@ -120,3 +121,46 @@ class TestWriteGeneratedTest:
         assert "def test_a()" in captured["content"]
         assert "def test_b()" in captured["content"]
         assert captured["validate"] is True
+
+
+class TestDockerFallbackPaths:
+    def test_execute_code_with_docker_cli_returns_error_on_nonzero_exit(self, tmp_path, monkeypatch):
+        cm = CodeManager.__new__(CodeManager)
+        cm.base_dir = tmp_path
+        cm.max_output_chars = 200
+        cm.docker_image = "python:3.11-alpine"
+
+        def _fake_run(*_args, **_kwargs):
+            return subprocess.CompletedProcess(
+                args=["docker"],
+                returncode=1,
+                stdout="",
+                stderr="boom",
+            )
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        ok, message = cm._execute_code_with_docker_cli(
+            "print('x')",
+            {"memory": "256m", "cpus": "0.5", "pids_limit": 64, "network_mode": "none", "timeout": 5},
+        )
+        assert ok is False
+        assert "REPL Hatası" in message
+        assert "boom" in message
+
+    def test_try_docker_cli_fallback_sets_available_on_success(self, tmp_path, monkeypatch):
+        cm = CodeManager.__new__(CodeManager)
+        cm.base_dir = tmp_path
+        cm.docker_available = False
+        cm.docker_client = object()
+
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *_args, **_kwargs: subprocess.CompletedProcess(
+                args=["docker", "info"], returncode=0, stdout="ok", stderr=""
+            ),
+        )
+        ok = cm._try_docker_cli_fallback()
+        assert ok is True
+        assert cm.docker_available is True
+        assert cm.docker_client is None
