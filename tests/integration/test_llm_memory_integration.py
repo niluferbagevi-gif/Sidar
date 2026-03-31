@@ -50,7 +50,7 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
             user = await db.create_user("llm_memory_user", password="secret")
             session = await db.create_session(user.id, "LLM memory integration")
 
-            output = await agent.run_task("CI durumunu özetle")
+            output = await asyncio.wait_for(agent.run_task("CI durumunu özetle"), timeout=30)
             memory_hub.add_role_note("integration", output)
             await db.add_message(session.id, "assistant", output)
 

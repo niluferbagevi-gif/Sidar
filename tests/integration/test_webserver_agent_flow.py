@@ -1,9 +1,10 @@
 """web_server akışında swarm route -> ajan seçimi entegrasyonu."""
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+from fastapi.testclient import TestClient
 
 import web_server
 
@@ -33,29 +34,42 @@ def test_execute_swarm_routes_marketing_intent_to_poyraz(monkeypatch):
             ]
 
     monkeypatch.setattr(web_server, "SwarmOrchestrator", _FakeOrchestrator)
-    monkeypatch.setattr(web_server, "get_agent", AsyncMock(return_value=SimpleNamespace(cfg=web_server.cfg)))
 
-    payload = web_server._SwarmExecuteRequest(
-        mode="parallel",
-        tasks=[
-            web_server._SwarmTaskRequest(
-                goal="Kampanya mesajı üret",
-                intent="marketing",
-            )
-        ],
-        session_id="",
-        max_concurrency=2,
+    user = SimpleNamespace(id="u-test", username="u-test")
+
+    async def _mock_resolve_user(*_args, **_kwargs):
+        return user
+
+    async def _set_active_user(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _mock_resolve_user)
+    monkeypatch.setattr(
+        web_server,
+        "get_agent",
+        AsyncMock(return_value=SimpleNamespace(cfg=web_server.cfg, memory=SimpleNamespace(set_active_user=_set_active_user))),
     )
+    web_server.app.dependency_overrides[web_server._get_request_user] = lambda: user
 
-    async def _run_case() -> None:
-        user = SimpleNamespace(id="u-test")
-        response = await web_server.execute_swarm(payload, user=user)
-        body = response.body.decode("utf-8")
+    try:
+        with TestClient(web_server.app) as client:
+            response = client.post(
+                "/api/swarm/execute",
+                headers={"Authorization": "Bearer test-token"},
+                json={
+                    "mode": "parallel",
+                    "tasks": [{"goal": "Kampanya mesajı üret", "intent": "marketing"}],
+                    "session_id": "",
+                    "max_concurrency": 2,
+                },
+            )
 
-        assert '"success":true' in body
-        assert '"agent_role":"poyraz"' in body
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["results"][0]["agent_role"] == "poyraz"
         assert captured["intent"] == "marketing"
         assert captured["goal"] == "Kampanya mesajı üret"
         assert captured["session_id"].startswith("swarm-u-test")
-
-    asyncio.run(_run_case())
+    finally:
+        web_server.app.dependency_overrides.pop(web_server._get_request_user, None)

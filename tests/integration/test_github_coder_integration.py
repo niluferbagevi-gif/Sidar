@@ -48,7 +48,7 @@ def test_github_content_can_be_written_locally_and_read_via_coder_agent(tmp_path
         ok_write, _ = coder.code.write_file("src/sample.py", remote_content)
         assert ok_write is True
 
-        read_result = await coder.run_task("read_file|src/sample.py")
+        read_result = await asyncio.wait_for(coder.run_task("read_file|src/sample.py"), timeout=30)
         assert "def greet(name)" in read_result
         assert "hello" in read_result
         github.read_remote_file.assert_called_once_with("src/sample.py", ref="main")

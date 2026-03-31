@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from agent.registry import AgentRegistry
@@ -25,8 +24,11 @@ def test_swarm_orchestrator_distributes_tasks_between_researcher_and_coder(monke
         async def _noop(*_args, **_kwargs):
             return None
 
+        def _create_agent(role, *_args, **_kwargs):
+            return _FakeResearcher() if role == "researcher" else _FakeCoder()
+
         monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role: SimpleNamespace(role_name=role))
-        monkeypatch.setattr(AgentRegistry, "create", lambda role, cfg=None: _FakeResearcher() if role == "researcher" else _FakeCoder())
+        monkeypatch.setattr(AgentRegistry, "create", _create_agent)
         monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", _noop)
 
         tasks = [
@@ -34,7 +36,9 @@ def test_swarm_orchestrator_distributes_tasks_between_researcher_and_coder(monke
             SwarmTask(goal="Araştırma raporundan özet kod bloğu yaz", intent="code", preferred_agent="coder"),
         ]
 
-        results = await orchestrator.run_pipeline(tasks, session_id="swarm-e2e")
+        results = await asyncio.wait_for(
+            orchestrator.run_pipeline(tasks, session_id="swarm-e2e"), timeout=30
+        )
 
         assert len(results) == 2
         assert results[0].agent_role == "researcher"
