@@ -190,63 +190,79 @@ class TestCoderAgentParseQaFeedback:
 
 
 class TestCoderAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("")
-        assert "UYARI" in result or "uyarı" in result.lower() or "Boş" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("")
+            assert "UYARI" in result or "uyarı" in result.lower() or "Boş" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_read_file_routing(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("read_file|main.py")
-        assert result is not None
+    def test_read_file_routing(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("read_file|main.py")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_write_file_routing(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("write_file|out.py|# kod")
-        assert result is not None
+    def test_write_file_routing(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("write_file|out.py|# kod")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_patch_file_routing(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("patch_file|main.py|eski|yeni")
-        assert result is not None
+    def test_patch_file_routing(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("patch_file|main.py|eski|yeni")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_execute_code_routing(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("execute_code|print('hello')")
-        assert result is not None
+    def test_execute_code_routing(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("execute_code|print('hello')")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_qa_feedback_reject(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task('qa_feedback|{"decision": "reject", "summary": "hata bulundu"}')
-        assert "REWORK_REQUIRED" in result or "rework" in result.lower()
+    def test_qa_feedback_reject(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task('qa_feedback|{"decision": "reject", "summary": "hata bulundu"}')
+            assert "REWORK_REQUIRED" in result or "rework" in result.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_qa_feedback_approve(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task('qa_feedback|{"decision": "approve", "summary": "tamam"}')
-        assert "APPROVED" in result
+    def test_qa_feedback_approve(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task('qa_feedback|{"decision": "approve", "summary": "tamam"}')
+            assert "APPROVED" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_request_review_routing(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        contracts = sys.modules["agent.core.contracts"]
-        result = await agent.run_task("request_review|def hello(): pass")
-        assert contracts.is_delegation_request(result)
-        assert result.target_agent == "reviewer"
+    def test_request_review_routing(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            contracts = sys.modules["agent.core.contracts"]
+            result = await agent.run_task("request_review|def hello(): pass")
+            assert contracts.is_delegation_request(result)
+            assert result.target_agent == "reviewer"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_qa_feedback_reject_includes_compile_error_excerpt(self):
         m = _get_coder()
@@ -263,12 +279,14 @@ class TestCoderAgentRunTask:
         assert "SyntaxError" in result
         assert "REMEDIATION_LOOP" in result
 
-    @pytest.mark.asyncio
-    async def test_unhandled_returns_legacy_fallback(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task("bilinmeyen komut xyz")
-        assert "LEGACY_FALLBACK" in result or result is not None
+    def test_unhandled_returns_legacy_fallback(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task("bilinmeyen komut xyz")
+            assert "LEGACY_FALLBACK" in result or result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_write_file_tool_usage_error_when_missing_content(self):
         m = _get_coder()
@@ -304,21 +322,25 @@ class TestCoderAgentPromptVariations:
 
 
 class TestCoderAgentEdgeCases:
-    @pytest.mark.asyncio
-    async def test_qa_feedback_with_invalid_shape_falls_back_to_approved_message(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        result = await agent.run_task('qa_feedback|["unexpected","array"]')
-        assert "APPROVED" in result
+    def test_qa_feedback_with_invalid_shape_falls_back_to_approved_message(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            result = await agent.run_task('qa_feedback|["unexpected","array"]')
+            assert "APPROVED" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_request_review_handles_empty_payload(self):
-        m = _get_coder()
-        agent = m.CoderAgent()
-        contracts = sys.modules["agent.core.contracts"]
-        result = await agent.run_task("request_review|")
-        assert contracts.is_delegation_request(result)
-        assert result.target_agent == "reviewer"
+    def test_request_review_handles_empty_payload(self):
+        async def _run():
+            m = _get_coder()
+            agent = m.CoderAgent()
+            contracts = sys.modules["agent.core.contracts"]
+            result = await agent.run_task("request_review|")
+            assert contracts.is_delegation_request(result)
+            assert result.target_agent == "reviewer"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_qa_feedback_unknown_decision_defaults_to_approved(self):
         m = _get_coder()

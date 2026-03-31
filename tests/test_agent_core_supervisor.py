@@ -364,98 +364,112 @@ class TestSupervisorP2PRouting:
 
 
 class TestSupervisorRunTask:
-    @pytest.mark.asyncio
-    async def test_run_task_research_intent(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        # researcher mock
-        researcher = MagicMock()
-        researcher.run_task = AsyncMock(return_value="araştırma sonucu")
-        agent.registry.register("researcher", researcher)
-        result = await agent.run_task("Python nedir?")
-        assert "araştırma sonucu" in result
+    def test_run_task_research_intent(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            # researcher mock
+            researcher = MagicMock()
+            researcher.run_task = AsyncMock(return_value="araştırma sonucu")
+            agent.registry.register("researcher", researcher)
+            result = await agent.run_task("Python nedir?")
+            assert "araştırma sonucu" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_task_review_intent(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        reviewer = MagicMock()
-        reviewer.run_task = AsyncMock(return_value="inceleme tamam")
-        agent.registry.register("reviewer", reviewer)
-        result = await agent.run_task("pull request incele")
-        assert "inceleme tamam" in result
+    def test_run_task_review_intent(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            reviewer = MagicMock()
+            reviewer.run_task = AsyncMock(return_value="inceleme tamam")
+            agent.registry.register("reviewer", reviewer)
+            result = await agent.run_task("pull request incele")
+            assert "inceleme tamam" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_task_marketing_intent(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        poyraz = MagicMock()
-        poyraz.run_task = AsyncMock(return_value="pazarlama planı")
-        agent.registry.register("poyraz", poyraz)
-        result = await agent.run_task("seo kampanyası yap")
-        assert "pazarlama planı" in result
+    def test_run_task_marketing_intent(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            poyraz = MagicMock()
+            poyraz.run_task = AsyncMock(return_value="pazarlama planı")
+            agent.registry.register("poyraz", poyraz)
+            result = await agent.run_task("seo kampanyası yap")
+            assert "pazarlama planı" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_task_code_intent_with_clean_review(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        coder = MagicMock()
-        coder.run_task = AsyncMock(return_value="def hello(): pass")
-        reviewer = MagicMock()
-        reviewer.run_task = AsyncMock(return_value="onaylandı, güzel kod")
-        agent.registry.register("coder", coder)
-        agent.registry.register("reviewer", reviewer)
-        result = await agent.run_task("bir fonksiyon yaz")
-        assert "def hello(): pass" in result
-        assert "Reviewer QA Özeti" in result
+    def test_run_task_code_intent_with_clean_review(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            coder = MagicMock()
+            coder.run_task = AsyncMock(return_value="def hello(): pass")
+            reviewer = MagicMock()
+            reviewer.run_task = AsyncMock(return_value="onaylandı, güzel kod")
+            agent.registry.register("coder", coder)
+            agent.registry.register("reviewer", reviewer)
+            result = await agent.run_task("bir fonksiyon yaz")
+            assert "def hello(): pass" in result
+            assert "Reviewer QA Özeti" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_task_coverage_intent(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        coverage = MagicMock()
-        coverage.run_task = AsyncMock(return_value="coverage raporu")
-        agent.registry.register("coverage", coverage)
-        result = await agent.run_task("pytest coverage eksik test yaz")
-        assert "coverage raporu" in result
+    def test_run_task_coverage_intent(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            coverage = MagicMock()
+            coverage.run_task = AsyncMock(return_value="coverage raporu")
+            agent.registry.register("coverage", coverage)
+            result = await agent.run_task("pytest coverage eksik test yaz")
+            assert "coverage raporu" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_task_stores_global_note(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        researcher = MagicMock()
-        researcher.run_task = AsyncMock(return_value="araştırma tamamlandı")
-        agent.registry.register("researcher", researcher)
-        await agent.run_task("araştır: Python")
-        ctx = agent.memory_hub.global_context()
-        assert len(ctx) >= 1
-
+    def test_run_task_stores_global_note(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            researcher = MagicMock()
+            researcher.run_task = AsyncMock(return_value="araştırma tamamlandı")
+            agent.registry.register("researcher", researcher)
+            await agent.run_task("araştır: Python")
+            ctx = agent.memory_hub.global_context()
+            assert len(ctx) >= 1
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSupervisorDelegate:
-    @pytest.mark.asyncio
-    async def test_delegate_creates_task_result(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        contracts = sys.modules["agent.core.contracts"]
-        mock_agent = MagicMock()
-        mock_agent.run_task = AsyncMock(return_value="delegasyon sonucu")
-        agent.registry.register("test_role", mock_agent)
-        result = await agent._delegate("test_role", "görev", "code")
-        assert isinstance(result, contracts.TaskResult)
-        assert result.status == "done"
-        assert result.summary == "delegasyon sonucu"
+    def test_delegate_creates_task_result(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            contracts = sys.modules["agent.core.contracts"]
+            mock_agent = MagicMock()
+            mock_agent.run_task = AsyncMock(return_value="delegasyon sonucu")
+            agent.registry.register("test_role", mock_agent)
+            result = await agent._delegate("test_role", "görev", "code")
+            assert isinstance(result, contracts.TaskResult)
+            assert result.status == "done"
+            assert result.summary == "delegasyon sonucu"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_delegate_adds_role_note(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        mock_agent = MagicMock()
-        mock_agent.run_task = AsyncMock(return_value="not eklendi")
-        agent.registry.register("noter", mock_agent)
-        await agent._delegate("noter", "not al", "mixed")
-        ctx = agent.memory_hub.role_context("noter")
-        assert "not eklendi" in ctx
-
+    def test_delegate_adds_role_note(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            mock_agent = MagicMock()
+            mock_agent.run_task = AsyncMock(return_value="not eklendi")
+            agent.registry.register("noter", mock_agent)
+            await agent._delegate("noter", "not al", "mixed")
+            ctx = agent.memory_hub.role_context("noter")
+            assert "not eklendi" in ctx
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSupervisorMaxQaRetries:
     def test_max_qa_retries_default(self):
@@ -470,15 +484,18 @@ class TestSupervisorMaxQaRetries:
         agent = sv.SupervisorAgent(cfg=cfg)
         assert agent._max_qa_retries() == 7
 
-    @pytest.mark.asyncio
-    async def test_run_task_stops_after_max_retries(self):
-        sv = _get_supervisor()
-        agent = sv.SupervisorAgent()
-        coder = MagicMock()
-        coder.run_task = AsyncMock(return_value="kod")
-        reviewer = MagicMock()
-        reviewer.run_task = AsyncMock(return_value="hata: rework_required")
-        agent.registry.register("coder", coder)
-        agent.registry.register("reviewer", reviewer)
-        result = await agent.run_task("kod yaz")
-        assert "P2P:STOP" in result or "limit aşıldı" in result or "Reviewer QA Özeti" in result
+    def test_run_task_stops_after_max_retries(self):
+        async def _run():
+            sv = _get_supervisor()
+            agent = sv.SupervisorAgent()
+            coder = MagicMock()
+            coder.run_task = AsyncMock(return_value="kod")
+            reviewer = MagicMock()
+            reviewer.run_task = AsyncMock(return_value="hata: rework_required")
+            agent.registry.register("coder", coder)
+            agent.registry.register("reviewer", reviewer)
+            result = await agent.run_task("kod yaz")
+            assert "P2P:STOP" in result or "limit aşıldı" in result or "Reviewer QA Özeti" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

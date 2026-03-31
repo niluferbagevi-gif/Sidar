@@ -250,29 +250,32 @@ class TestSwarmResult:
 
 
 class TestInMemoryDelegationBackend:
-    @pytest.mark.asyncio
-    async def test_dispatch_queues_envelope(self):
-        sw = _get_swarm_module()
-        backend = sw.InMemoryDelegationBackend()
-        contracts = sys.modules["agent.core.contracts"]
-        envelope = contracts.BrokerTaskEnvelope(
-            task_id="b1", sender="s", receiver="r", goal="hedef"
-        )
-        result = await backend.dispatch(envelope)
-        assert len(backend.dispatched) == 1
-        assert result.status == "queued"
+    def test_dispatch_queues_envelope(self):
+        async def _run():
+            sw = _get_swarm_module()
+            backend = sw.InMemoryDelegationBackend()
+            contracts = sys.modules["agent.core.contracts"]
+            envelope = contracts.BrokerTaskEnvelope(
+                task_id="b1", sender="s", receiver="r", goal="hedef"
+            )
+            result = await backend.dispatch(envelope)
+            assert len(backend.dispatched) == 1
+            assert result.status == "queued"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_dispatch_returns_broker_result(self):
-        sw = _get_swarm_module()
-        backend = sw.InMemoryDelegationBackend()
-        contracts = sys.modules["agent.core.contracts"]
-        envelope = contracts.BrokerTaskEnvelope(
-            task_id="b2", sender="s", receiver="r", goal="hedef"
-        )
-        result = await backend.dispatch(envelope)
-        assert result.task_id == "b2"
-
+    def test_dispatch_returns_broker_result(self):
+        async def _run():
+            sw = _get_swarm_module()
+            backend = sw.InMemoryDelegationBackend()
+            contracts = sys.modules["agent.core.contracts"]
+            envelope = contracts.BrokerTaskEnvelope(
+                task_id="b2", sender="s", receiver="r", goal="hedef"
+            )
+            result = await backend.dispatch(envelope)
+            assert result.task_id == "b2"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestTaskRouter:
     def test_route_known_intent(self):
@@ -308,129 +311,139 @@ class TestSwarmOrchestratorProperties:
 
 
 class TestSwarmOrchestratorRun:
-    @pytest.mark.asyncio
-    async def test_run_no_agents_returns_skipped(self):
-        orchestrator, sw = _make_orchestrator(registered_agents={})
-        result = await orchestrator.run("bir görev")
-        assert result.status == "skipped"
+    def test_run_no_agents_returns_skipped(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator(registered_agents={})
+            result = await orchestrator.run("bir görev")
+            assert result.status == "skipped"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_parallel_empty_list(self):
-        orchestrator, sw = _make_orchestrator()
-        results = await orchestrator.run_parallel([])
-        assert results == []
+    def test_run_parallel_empty_list(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            results = await orchestrator.run_parallel([])
+            assert results == []
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_pipeline_empty_list(self):
-        orchestrator, sw = _make_orchestrator()
-        results = await orchestrator.run_pipeline([])
-        assert results == []
+    def test_run_pipeline_empty_list(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            results = await orchestrator.run_pipeline([])
+            assert results == []
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_run_max_hops_exceeded(self):
-        """Maksimum hop aşıldığında failed döndürülmelidir."""
-        orchestrator, sw = _make_orchestrator()
-        task = sw.SwarmTask(goal="görev", preferred_agent="coder")
-        # _hop > max_hops simülasyonu
-        result = await orchestrator._execute_task(task, _hop=999)
-        assert result.status == "failed"
-        assert "loop guard" in result.summary.lower() or "hop" in result.summary.lower()
-
+    def test_run_max_hops_exceeded(self):
+        async def _run():
+            """Maksimum hop aşıldığında failed döndürülmelidir."""
+            orchestrator, sw = _make_orchestrator()
+            task = sw.SwarmTask(goal="görev", preferred_agent="coder")
+            # _hop > max_hops simülasyonu
+            result = await orchestrator._execute_task(task, _hop=999)
+            assert result.status == "failed"
+            assert "loop guard" in result.summary.lower() or "hop" in result.summary.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSwarmHandoffIntegration:
-    @pytest.mark.asyncio
-    async def test_direct_handoff_coder_to_reviewer_chain_is_recorded(self):
-        sw = _get_swarm_module()
-        reg = sys.modules["agent.registry"]
-        contracts = sys.modules["agent.core.contracts"]
+    def test_direct_handoff_coder_to_reviewer_chain_is_recorded(self):
+        async def _run():
+            sw = _get_swarm_module()
+            reg = sys.modules["agent.registry"]
+            contracts = sys.modules["agent.core.contracts"]
 
-        class _CoderAgent:
-            async def handle(self, envelope):
-                delegation = contracts.DelegationRequest(
-                    task_id=envelope.task_id,
-                    reply_to="coder",
-                    target_agent="reviewer",
-                    payload="kodu gözden geçir",
-                    intent="code_review",
-                    parent_task_id=envelope.task_id,
-                    meta={"reason": "review_required"},
-                )
-                return contracts.TaskResult(task_id=envelope.task_id, status="success", summary=delegation)
+            class _CoderAgent:
+                async def handle(self, envelope):
+                    delegation = contracts.DelegationRequest(
+                        task_id=envelope.task_id,
+                        reply_to="coder",
+                        target_agent="reviewer",
+                        payload="kodu gözden geçir",
+                        intent="code_review",
+                        parent_task_id=envelope.task_id,
+                        meta={"reason": "review_required"},
+                    )
+                    return contracts.TaskResult(task_id=envelope.task_id, status="success", summary=delegation)
 
-        class _ReviewerAgent:
-            async def handle(self, envelope):
-                return contracts.TaskResult(
-                    task_id=envelope.task_id,
-                    status="success",
-                    summary=f"review ok: {envelope.goal}",
-                    evidence=["lint clean"],
-                )
+            class _ReviewerAgent:
+                async def handle(self, envelope):
+                    return contracts.TaskResult(
+                        task_id=envelope.task_id,
+                        status="success",
+                        summary=f"review ok: {envelope.goal}",
+                        evidence=["lint clean"],
+                    )
 
-        reg.AgentRegistry._registry.clear()
-        coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
-        reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
-        coder._agent_factory = lambda **_kw: _CoderAgent()
-        reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
-        reg.AgentRegistry._registry["coder"] = coder
-        reg.AgentRegistry._registry["reviewer"] = reviewer
+            reg.AgentRegistry._registry.clear()
+            coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
+            coder._agent_factory = lambda **_kw: _CoderAgent()
+            reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
+            reg.AgentRegistry._registry["coder"] = coder
+            reg.AgentRegistry._registry["reviewer"] = reviewer
 
-        orchestrator = sw.SwarmOrchestrator(cfg=None)
-        result = await orchestrator.run("refactor auth modülü", intent="code_generation", session_id="sess-1")
+            orchestrator = sw.SwarmOrchestrator(cfg=None)
+            result = await orchestrator.run("refactor auth modülü", intent="code_generation", session_id="sess-1")
 
-        assert result.status == "success"
-        assert result.agent_role == "reviewer"
-        assert len(result.handoffs) == 1
-        assert result.handoffs[0]["sender"] == "coder"
-        assert result.handoffs[0]["receiver"] == "reviewer"
-        assert "review ok" in result.summary
+            assert result.status == "success"
+            assert result.agent_role == "reviewer"
+            assert len(result.handoffs) == 1
+            assert result.handoffs[0]["sender"] == "coder"
+            assert result.handoffs[0]["receiver"] == "reviewer"
+            assert "review ok" in result.summary
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_pipeline_passes_success_context_between_agents(self):
-        sw = _get_swarm_module()
-        reg = sys.modules["agent.registry"]
-        contracts = sys.modules["agent.core.contracts"]
+    def test_pipeline_passes_success_context_between_agents(self):
+        async def _run():
+            sw = _get_swarm_module()
+            reg = sys.modules["agent.registry"]
+            contracts = sys.modules["agent.core.contracts"]
 
-        captured_context = {"value": None}
+            captured_context = {"value": None}
 
-        class _CoderAgent:
-            async def handle(self, envelope):
-                return contracts.TaskResult(
-                    task_id=envelope.task_id,
-                    status="success",
-                    summary="kod üretimi tamam",
-                    evidence=["file:service.py"],
-                )
+            class _CoderAgent:
+                async def handle(self, envelope):
+                    return contracts.TaskResult(
+                        task_id=envelope.task_id,
+                        status="success",
+                        summary="kod üretimi tamam",
+                        evidence=["file:service.py"],
+                    )
 
-        class _ReviewerAgent:
-            async def handle(self, envelope):
-                captured_context["value"] = dict(envelope.context or {})
-                return contracts.TaskResult(
-                    task_id=envelope.task_id,
-                    status="success",
-                    summary="review tamam",
-                    evidence=["no blocker"],
-                )
+            class _ReviewerAgent:
+                async def handle(self, envelope):
+                    captured_context["value"] = dict(envelope.context or {})
+                    return contracts.TaskResult(
+                        task_id=envelope.task_id,
+                        status="success",
+                        summary="review tamam",
+                        evidence=["no blocker"],
+                    )
 
-        reg.AgentRegistry._registry.clear()
-        coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
-        reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
-        coder._agent_factory = lambda **_kw: _CoderAgent()
-        reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
-        reg.AgentRegistry._registry["coder"] = coder
-        reg.AgentRegistry._registry["reviewer"] = reviewer
+            reg.AgentRegistry._registry.clear()
+            coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
+            coder._agent_factory = lambda **_kw: _CoderAgent()
+            reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
+            reg.AgentRegistry._registry["coder"] = coder
+            reg.AgentRegistry._registry["reviewer"] = reviewer
 
-        orchestrator = sw.SwarmOrchestrator(cfg=None)
-        tasks = [
-            sw.SwarmTask(goal="kod üret", intent="code_generation"),
-            sw.SwarmTask(goal="çıktıyı incele", intent="code_review"),
-        ]
-        results = await orchestrator.run_pipeline(tasks, session_id="sess-pipeline")
+            orchestrator = sw.SwarmOrchestrator(cfg=None)
+            tasks = [
+                sw.SwarmTask(goal="kod üret", intent="code_generation"),
+                sw.SwarmTask(goal="çıktıyı incele", intent="code_review"),
+            ]
+            results = await orchestrator.run_pipeline(tasks, session_id="sess-pipeline")
 
-        assert len(results) == 2
-        assert all(item.status == "success" for item in results)
-        assert captured_context["value"] is not None
-        assert captured_context["value"].get("prev_coder", "").startswith("kod üretimi tamam")
-
+            assert len(results) == 2
+            assert all(item.status == "success" for item in results)
+            assert captured_context["value"] is not None
+            assert captured_context["value"].get("prev_coder", "").startswith("kod üretimi tamam")
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSwarmOrchestratorGoalFingerprint:
     def test_fingerprint_truncates_long_goal(self):
@@ -503,132 +516,143 @@ class TestSwarmOrchestratorShouldFallback:
 
 
 class TestSwarmOrchestratorDistributedDispatch:
-    @pytest.mark.asyncio
-    async def test_dispatch_distributed_no_backend_raises(self):
-        orchestrator, sw = _make_orchestrator()
-        task = sw.SwarmTask(goal="dağıtık görev", preferred_agent="coder")
-        with pytest.raises(RuntimeError, match="backend"):
-            await orchestrator.dispatch_distributed(task)
+    def test_dispatch_distributed_no_backend_raises(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            task = sw.SwarmTask(goal="dağıtık görev", preferred_agent="coder")
+            with pytest.raises(RuntimeError, match="backend"):
+                await orchestrator.dispatch_distributed(task)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_dispatch_distributed_with_backend(self):
-        orchestrator, sw = _make_orchestrator()
-        backend = sw.InMemoryDelegationBackend()
-        orchestrator.configure_delegation_backend(backend)
-        task = sw.SwarmTask(goal="dağıtık görev", preferred_agent="coder")
-        result = await orchestrator.dispatch_distributed(task)
-        assert result.status == "queued"
-
+    def test_dispatch_distributed_with_backend(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            backend = sw.InMemoryDelegationBackend()
+            orchestrator.configure_delegation_backend(backend)
+            task = sw.SwarmTask(goal="dağıtık görev", preferred_agent="coder")
+            result = await orchestrator.dispatch_distributed(task)
+            assert result.status == "queued"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSwarmOrchestratorFailureBranches:
-    @pytest.mark.asyncio
-    async def test_direct_handoff_without_target_raises(self):
-        orchestrator, sw = _make_orchestrator()
-        contracts = sys.modules["agent.core.contracts"]
-        task = sw.SwarmTask(goal="görev", intent="mixed")
-        delegation = contracts.DelegationRequest(
-            task_id=task.task_id,
-            reply_to="coder",
-            target_agent="",
-            payload="payload",
-        )
-        with pytest.raises(RuntimeError, match="target_agent"):
-            await orchestrator._direct_handoff(
-                task,
-                delegation,
-                session_id="sess",
-                hop=1,
-                route_trace=["coder|mixed|x"],
-                handoff_chain=[],
-            )
-
-    @pytest.mark.asyncio
-    async def test_execute_task_agent_create_failure_returns_failed(self):
-        orchestrator, sw = _make_orchestrator()
-        task = sw.SwarmTask(goal="görev", preferred_agent="coder")
-        with patch("agent.swarm.AgentRegistry.create", side_effect=RuntimeError("agent unavailable")):
-            result = await orchestrator._execute_task(task)
-        assert result.status == "failed"
-        assert "oluşturulamadı" in result.summary.lower()
-
-    @pytest.mark.asyncio
-    async def test_execute_task_supervisor_fallback_success(self):
-        orchestrator, sw = _make_orchestrator()
-        task = sw.SwarmTask(goal="görev", preferred_agent="coder")
-
-        async def _raise_json(_envelope):
-            raise ValueError("json schema mismatch")
-
-        failing_agent = MagicMock()
-        failing_agent.handle = AsyncMock(side_effect=_raise_json)
-
-        with patch("agent.swarm.AgentRegistry.create", return_value=failing_agent):
-            with patch.object(orchestrator, "_run_supervisor_fallback", AsyncMock(return_value=sw.SwarmResult(
+    def test_direct_handoff_without_target_raises(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            contracts = sys.modules["agent.core.contracts"]
+            task = sw.SwarmTask(goal="görev", intent="mixed")
+            delegation = contracts.DelegationRequest(
                 task_id=task.task_id,
-                agent_role="supervisor",
-                status="success",
-                summary="fallback ok",
-                elapsed_ms=1,
-            ))):
-                result = await orchestrator._execute_task(task, session_id="s1")
+                reply_to="coder",
+                target_agent="",
+                payload="payload",
+            )
+            with pytest.raises(RuntimeError, match="target_agent"):
+                await orchestrator._direct_handoff(
+                    task,
+                    delegation,
+                    session_id="sess",
+                    hop=1,
+                    route_trace=["coder|mixed|x"],
+                    handoff_chain=[],
+                )
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-        assert result.agent_role == "supervisor"
-        assert result.status == "success"
+    def test_execute_task_agent_create_failure_returns_failed(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            task = sw.SwarmTask(goal="görev", preferred_agent="coder")
+            with patch("agent.swarm.AgentRegistry.create", side_effect=RuntimeError("agent unavailable")):
+                result = await orchestrator._execute_task(task)
+            assert result.status == "failed"
+            assert "oluşturulamadı" in result.summary.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_execute_task_supervisor_fallback_failure_returns_failed(self):
-        orchestrator, sw = _make_orchestrator()
-        task = sw.SwarmTask(goal="görev", preferred_agent="coder")
-        failing_agent = MagicMock()
-        failing_agent.handle = AsyncMock(side_effect=RuntimeError("rate limit 429"))
+    def test_execute_task_supervisor_fallback_success(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            task = sw.SwarmTask(goal="görev", preferred_agent="coder")
 
-        with patch("agent.swarm.AgentRegistry.create", return_value=failing_agent):
-            with patch.object(orchestrator, "_run_supervisor_fallback", AsyncMock(side_effect=RuntimeError("supervisor down"))):
-                result = await orchestrator._execute_task(task, session_id="s1")
+            async def _raise_json(_envelope):
+                raise ValueError("json schema mismatch")
 
-        assert result.status == "failed"
-        assert "fallback" in result.summary.lower()
+            failing_agent = MagicMock()
+            failing_agent.handle = AsyncMock(side_effect=_raise_json)
 
+            with patch("agent.swarm.AgentRegistry.create", return_value=failing_agent):
+                with patch.object(orchestrator, "_run_supervisor_fallback", AsyncMock(return_value=sw.SwarmResult(
+                    task_id=task.task_id,
+                    agent_role="supervisor",
+                    status="success",
+                    summary="fallback ok",
+                    elapsed_ms=1,
+                ))):
+                    result = await orchestrator._execute_task(task, session_id="s1")
+
+            assert result.agent_role == "supervisor"
+            assert result.status == "success"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_execute_task_supervisor_fallback_failure_returns_failed(self):
+        async def _run():
+            orchestrator, sw = _make_orchestrator()
+            task = sw.SwarmTask(goal="görev", preferred_agent="coder")
+            failing_agent = MagicMock()
+            failing_agent.handle = AsyncMock(side_effect=RuntimeError("rate limit 429"))
+
+            with patch("agent.swarm.AgentRegistry.create", return_value=failing_agent):
+                with patch.object(orchestrator, "_run_supervisor_fallback", AsyncMock(side_effect=RuntimeError("supervisor down"))):
+                    result = await orchestrator._execute_task(task, session_id="s1")
+
+            assert result.status == "failed"
+            assert "fallback" in result.summary.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSwarmDelegationEdgeCases:
-    @pytest.mark.asyncio
-    async def test_delegation_missing_reply_to_is_filled_from_spec_role(self):
-        sw = _get_swarm_module()
-        reg = sys.modules["agent.registry"]
-        contracts = sys.modules["agent.core.contracts"]
+    def test_delegation_missing_reply_to_is_filled_from_spec_role(self):
+        async def _run():
+            sw = _get_swarm_module()
+            reg = sys.modules["agent.registry"]
+            contracts = sys.modules["agent.core.contracts"]
 
-        class _CoderAgent:
-            async def handle(self, envelope):
-                return contracts.TaskResult(
-                    task_id=envelope.task_id,
-                    status="success",
-                    summary=contracts.DelegationRequest(
+            class _CoderAgent:
+                async def handle(self, envelope):
+                    return contracts.TaskResult(
                         task_id=envelope.task_id,
-                        reply_to="",
-                        target_agent="reviewer",
-                        payload="review_code|x",
-                        intent="code_review",
-                    ),
-                )
+                        status="success",
+                        summary=contracts.DelegationRequest(
+                            task_id=envelope.task_id,
+                            reply_to="",
+                            target_agent="reviewer",
+                            payload="review_code|x",
+                            intent="code_review",
+                        ),
+                    )
 
-        class _ReviewerAgent:
-            async def handle(self, envelope):
-                return contracts.TaskResult(task_id=envelope.task_id, status="success", summary="ok")
+            class _ReviewerAgent:
+                async def handle(self, envelope):
+                    return contracts.TaskResult(task_id=envelope.task_id, status="success", summary="ok")
 
-        reg.AgentRegistry._registry.clear()
-        coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
-        reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
-        coder._agent_factory = lambda **_kw: _CoderAgent()
-        reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
-        reg.AgentRegistry._registry["coder"] = coder
-        reg.AgentRegistry._registry["reviewer"] = reviewer
+            reg.AgentRegistry._registry.clear()
+            coder = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", capabilities=["code_review"])
+            coder._agent_factory = lambda **_kw: _CoderAgent()
+            reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
+            reg.AgentRegistry._registry["coder"] = coder
+            reg.AgentRegistry._registry["reviewer"] = reviewer
 
-        orchestrator = sw.SwarmOrchestrator(cfg=None)
-        result = await orchestrator.run("kod üret", intent="code_generation")
+            orchestrator = sw.SwarmOrchestrator(cfg=None)
+            result = await orchestrator.run("kod üret", intent="code_generation")
 
-        assert result.status == "success"
-        assert result.handoffs[0]["sender"] == "coder"
-
+            assert result.status == "success"
+            assert result.handoffs[0]["sender"] == "coder"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestSwarmDistributedDelegation:
     def test_dispatch_distributed_raises_when_backend_missing(self):

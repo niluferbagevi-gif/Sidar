@@ -117,66 +117,82 @@ class TestResearcherAgentInit:
 
 
 class TestResearcherAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_researcher()
-        result = await m.ResearcherAgent().run_task("")
-        assert "UYARI" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_researcher()
+            result = await m.ResearcherAgent().run_task("")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_fetch_url_routing(self):
-        m = _get_researcher()
-        result = await m.ResearcherAgent().run_task("fetch_url|https://example.com")
-        assert result is not None
+    def test_fetch_url_routing(self):
+        async def _run():
+            m = _get_researcher()
+            result = await m.ResearcherAgent().run_task("fetch_url|https://example.com")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_search_docs_routing(self):
-        m = _get_researcher()
-        result = await m.ResearcherAgent().run_task("search_docs|requests get method")
-        assert result is not None
+    def test_search_docs_routing(self):
+        async def _run():
+            m = _get_researcher()
+            result = await m.ResearcherAgent().run_task("search_docs|requests get method")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_docs_search_routing(self):
-        m = _get_researcher()
-        result = await m.ResearcherAgent().run_task("docs_search|asyncio kullanımı")
-        assert result is not None
+    def test_docs_search_routing(self):
+        async def _run():
+            m = _get_researcher()
+            result = await m.ResearcherAgent().run_task("docs_search|asyncio kullanımı")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_default_web_search(self):
-        m = _get_researcher()
-        result = await m.ResearcherAgent().run_task("Python asyncio nedir?")
-        assert result is not None
-
+    def test_default_web_search(self):
+        async def _run():
+            m = _get_researcher()
+            result = await m.ResearcherAgent().run_task("Python asyncio nedir?")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestResearcherAgentTools:
-    @pytest.mark.asyncio
-    async def test_web_search_tool(self):
-        m = _get_researcher()
-        agent = m.ResearcherAgent()
-        result = await agent.call_tool("web_search", "test sorgusu")
-        assert "web arama sonucu" in result
+    def test_web_search_tool(self):
+        async def _run():
+            m = _get_researcher()
+            agent = m.ResearcherAgent()
+            result = await agent.call_tool("web_search", "test sorgusu")
+            assert "web arama sonucu" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_fetch_url_tool(self):
-        m = _get_researcher()
-        agent = m.ResearcherAgent()
-        result = await agent.call_tool("fetch_url", "https://example.com")
-        assert "sayfa içeriği" in result
+    def test_fetch_url_tool(self):
+        async def _run():
+            m = _get_researcher()
+            agent = m.ResearcherAgent()
+            result = await agent.call_tool("fetch_url", "https://example.com")
+            assert "sayfa içeriği" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_search_docs_tool(self):
-        m = _get_researcher()
-        agent = m.ResearcherAgent()
-        result = await agent.call_tool("search_docs", "requests get")
-        assert result is not None
+    def test_search_docs_tool(self):
+        async def _run():
+            m = _get_researcher()
+            agent = m.ResearcherAgent()
+            result = await agent.call_tool("search_docs", "requests get")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_unknown_tool_returns_error(self):
-        m = _get_researcher()
-        agent = m.ResearcherAgent()
-        result = await agent.call_tool("unknown_tool", "arg")
-        assert "HATA" in result or "hata" in result.lower()
-
+    def test_unknown_tool_returns_error(self):
+        async def _run():
+            m = _get_researcher()
+            agent = m.ResearcherAgent()
+            result = await agent.call_tool("unknown_tool", "arg")
+            assert "HATA" in result or "hata" in result.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestResearcherAgentDocsSearchAwaitable:
     def test_docs_search_awaits_when_document_store_returns_awaitable(self):

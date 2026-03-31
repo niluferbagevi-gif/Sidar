@@ -1192,77 +1192,81 @@ class _WSClient:
 
 
 class TestCollaborationRoomAsync:
-    @pytest.mark.asyncio
-    async def test_broadcast_room_payload_removes_stale_participants(self):
-        ws = _get_web_server()
-        room = ws._CollaborationRoom(room_id="workspace:default")
-        healthy = ws._CollaborationParticipant(_WSClient(), "u1", "ok", "OK")
-        stale = ws._CollaborationParticipant(_WSClient(fail=True), "u2", "bad", "BAD")
-        room.participants = {1: healthy, 2: stale}
+    def test_broadcast_room_payload_removes_stale_participants(self):
+        async def _run():
+            ws = _get_web_server()
+            room = ws._CollaborationRoom(room_id="workspace:default")
+            healthy = ws._CollaborationParticipant(_WSClient(), "u1", "ok", "OK")
+            stale = ws._CollaborationParticipant(_WSClient(fail=True), "u2", "bad", "BAD")
+            room.participants = {1: healthy, 2: stale}
 
-        await ws._broadcast_room_payload(room, {"type": "ping"})
+            await ws._broadcast_room_payload(room, {"type": "ping"})
 
-        assert 1 in room.participants
-        assert 2 not in room.participants
-        assert healthy.websocket.sent == [{"type": "ping"}]
+            assert 1 in room.participants
+            assert 2 not in room.participants
+            assert healthy.websocket.sent == [{"type": "ping"}]
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_leave_collaboration_room_cancels_active_task_for_empty_room(self):
-        ws = _get_web_server()
-        room = ws._CollaborationRoom(room_id="workspace:default")
-        websocket = _WSClient()
-        room.participants[ws._socket_key(websocket)] = ws._CollaborationParticipant(
-            websocket,
-            "u1",
-            "ali",
-            "Ali",
-        )
-        ws._collaboration_rooms["workspace:default"] = room
-        setattr(websocket, "_sidar_room_id", "workspace:default")
+    def test_leave_collaboration_room_cancels_active_task_for_empty_room(self):
+        async def _run():
+            ws = _get_web_server()
+            room = ws._CollaborationRoom(room_id="workspace:default")
+            websocket = _WSClient()
+            room.participants[ws._socket_key(websocket)] = ws._CollaborationParticipant(
+                websocket,
+                "u1",
+                "ali",
+                "Ali",
+            )
+            ws._collaboration_rooms["workspace:default"] = room
+            setattr(websocket, "_sidar_room_id", "workspace:default")
 
-        room.active_task = asyncio.create_task(asyncio.sleep(60))
-        await ws._leave_collaboration_room(websocket)
-        await asyncio.sleep(0)
+            room.active_task = asyncio.create_task(asyncio.sleep(60))
+            await ws._leave_collaboration_room(websocket)
+            await asyncio.sleep(0)
 
-        assert "workspace:default" not in ws._collaboration_rooms
-        assert room.active_task.cancelled() is True
-
+            assert "workspace:default" not in ws._collaboration_rooms
+            assert room.active_task.cancelled() is True
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestCollaborationJoinLeaveEdges:
-    @pytest.mark.asyncio
-    async def test_join_collaboration_room_switches_previous_room(self, monkeypatch):
-        ws = _get_web_server()
+    def test_join_collaboration_room_switches_previous_room(self, monkeypatch):
+        async def _run():
+            ws = _get_web_server()
 
-        class _Socket:
-            def __init__(self):
-                self._sidar_room_id = "workspace:old"
-                self.sent = []
+            class _Socket:
+                def __init__(self):
+                    self._sidar_room_id = "workspace:old"
+                    self.sent = []
 
-            async def send_json(self, payload):
-                self.sent.append(payload)
+                async def send_json(self, payload):
+                    self.sent.append(payload)
 
-        socket = _Socket()
-        leave_calls = []
+            socket = _Socket()
+            leave_calls = []
 
-        async def _fake_leave(ws_obj):
-            leave_calls.append(ws_obj)
-            ws_obj._sidar_room_id = ""
+            async def _fake_leave(ws_obj):
+                leave_calls.append(ws_obj)
+                ws_obj._sidar_room_id = ""
 
-        monkeypatch.setattr(ws, "_leave_collaboration_room", _fake_leave)
-        room = await ws._join_collaboration_room(
-            socket,
-            room_id="workspace:new",
-            user_id="u1",
-            username="ali",
-            display_name="Ali",
-            user_role="user",
-        )
+            monkeypatch.setattr(ws, "_leave_collaboration_room", _fake_leave)
+            room = await ws._join_collaboration_room(
+                socket,
+                room_id="workspace:new",
+                user_id="u1",
+                username="ali",
+                display_name="Ali",
+                user_role="user",
+            )
 
-        assert leave_calls == [socket]
-        assert room.room_id == "workspace:new"
-        assert socket._sidar_room_id == "workspace:new"
-        assert any(item.get("type") == "room_state" for item in socket.sent)
-
+            assert leave_calls == [socket]
+            assert room.room_id == "workspace:new"
+            assert socket._sidar_room_id == "workspace:new"
+            assert any(item.get("type") == "room_state" for item in socket.sent)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestEmbedEventDrivenFederationPayload:
     def test_keys_present_in_result(self):

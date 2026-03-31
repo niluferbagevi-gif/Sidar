@@ -189,77 +189,94 @@ class TestCryptoPriceAgentExtractSymbol:
 
 
 class TestCryptoPriceAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_unsupported_symbol_returns_message(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        result = await agent.run_task("doge fiyatı nedir?")
-        assert "Desteklenmeyen" in result or "desteklenmeyen" in result.lower()
+    def test_unsupported_symbol_returns_message(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            result = await agent.run_task("doge fiyatı nedir?")
+            assert "Desteklenmeyen" in result or "desteklenmeyen" in result.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_btc_price_success(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        mock_payload = json.dumps({"bitcoin": {"usd": 65000}}).encode("utf-8")
-        mock_resp = _MockResponse(mock_payload)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = await agent.run_task("BTC fiyatı nedir?")
-        assert "65000" in result
-        assert "BTC" in result
+    def test_btc_price_success(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            mock_payload = json.dumps({"bitcoin": {"usd": 65000}}).encode("utf-8")
+            mock_resp = _MockResponse(mock_payload)
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = await agent.run_task("BTC fiyatı nedir?")
+            assert "65000" in result
+            assert "BTC" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_eth_price_success(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        mock_payload = json.dumps({"ethereum": {"usd": 3200}}).encode("utf-8")
-        mock_resp = _MockResponse(mock_payload)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = await agent.run_task("ethereum fiyatı nedir?")
-        assert "3200" in result
-        assert "ETH" in result or "ETHEREUM" in result
+    def test_eth_price_success(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            mock_payload = json.dumps({"ethereum": {"usd": 3200}}).encode("utf-8")
+            mock_resp = _MockResponse(mock_payload)
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = await agent.run_task("ethereum fiyatı nedir?")
+            assert "3200" in result
+            assert "ETH" in result or "ETHEREUM" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_sol_price_success(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        mock_payload = json.dumps({"solana": {"usd": 150}}).encode("utf-8")
-        mock_resp = _MockResponse(mock_payload)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = await agent.run_task("sol fiyatı")
-        assert "150" in result
+    def test_sol_price_success(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            mock_payload = json.dumps({"solana": {"usd": 150}}).encode("utf-8")
+            mock_resp = _MockResponse(mock_payload)
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = await agent.run_task("sol fiyatı")
+            assert "150" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_missing_usd_field_returns_message(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        mock_payload = json.dumps({"bitcoin": {}}).encode("utf-8")
-        mock_resp = _MockResponse(mock_payload)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = await agent.run_task("bitcoin fiyatı")
-        assert "alınamadı" in result
+    def test_missing_usd_field_returns_message(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            mock_payload = json.dumps({"bitcoin": {}}).encode("utf-8")
+            mock_resp = _MockResponse(mock_payload)
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = await agent.run_task("bitcoin fiyatı")
+            assert "alınamadı" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_network_error_returns_message(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        with patch("urllib.request.urlopen", side_effect=OSError("bağlantı hatası")):
-            result = await agent.run_task("btc fiyatı")
-        assert "alınamadı" in result
+    def test_network_error_returns_message(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            with patch("urllib.request.urlopen", side_effect=OSError("bağlantı hatası")):
+                result = await agent.run_task("btc fiyatı")
+            assert "alınamadı" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_supported_symbols_listed_on_error(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        result = await agent.run_task("xyz fiyatı nedir?")
-        # Desteklenenlerin listesi dönmeli
-        assert any(s in result for s in ("btc", "eth", "sol"))
+    def test_supported_symbols_listed_on_error(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            result = await agent.run_task("xyz fiyatı nedir?")
+            # Desteklenenlerin listesi dönmeli
+            assert any(s in result for s in ("btc", "eth", "sol"))
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_result_contains_dollar_sign(self):
-        m = _get_crypto_agent()
-        agent = m.CryptoPriceAgent()
-        mock_payload = json.dumps({"bitcoin": {"usd": 70000}}).encode("utf-8")
-        mock_resp = _MockResponse(mock_payload)
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = await agent.run_task("bitcoin fiyatı")
-        assert "$" in result
+    def test_result_contains_dollar_sign(self):
+        async def _run():
+            m = _get_crypto_agent()
+            agent = m.CryptoPriceAgent()
+            mock_payload = json.dumps({"bitcoin": {"usd": 70000}}).encode("utf-8")
+            mock_resp = _MockResponse(mock_payload)
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = await agent.run_task("bitcoin fiyatı")
+            assert "$" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

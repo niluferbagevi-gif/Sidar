@@ -158,122 +158,135 @@ class TestAgentEventBusFanout:
         evt = es.AgentEvent(ts=1.0, source="s", message="m")
         bus._fanout_local(evt)  # hata yok
 
-    @pytest.mark.asyncio
-    async def test_fanout_uses_buffer_then_drains_when_queue_has_space(self):
-        from collections import deque
+    def test_fanout_uses_buffer_then_drains_when_queue_has_space(self):
+        async def _run():
+            from collections import deque
 
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        sub_id, queue = bus.subscribe(maxsize=10)
-        # Kuyruğu doldurup bir buffer tanımla; drop yerine buffer'a yazılmalı.
-        for i in range(queue.maxsize):
-            queue.put_nowait(es.AgentEvent(ts=float(i), source="seed", message=f"seed-{i}"))
-        bus._buffered_events[sub_id] = deque(maxlen=3)
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            sub_id, queue = bus.subscribe(maxsize=10)
+            # Kuyruğu doldurup bir buffer tanımla; drop yerine buffer'a yazılmalı.
+            for i in range(queue.maxsize):
+                queue.put_nowait(es.AgentEvent(ts=float(i), source="seed", message=f"seed-{i}"))
+            bus._buffered_events[sub_id] = deque(maxlen=3)
 
-        overflow_evt = es.AgentEvent(ts=99.0, source="src", message="overflow")
-        bus._fanout_local(overflow_evt)
-        assert sub_id in bus._subscribers
-        assert len(bus._buffered_events[sub_id]) == 1
+            overflow_evt = es.AgentEvent(ts=99.0, source="src", message="overflow")
+            bus._fanout_local(overflow_evt)
+            assert sub_id in bus._subscribers
+            assert len(bus._buffered_events[sub_id]) == 1
 
-        _ = queue.get_nowait()  # yer aç
-        progressed = await bus._drain_buffered_events_once()
-        assert progressed is True
-        assert any(getattr(item, "message", "") == "overflow" for item in list(queue._queue))
-
+            _ = queue.get_nowait()  # yer aç
+            progressed = await bus._drain_buffered_events_once()
+            assert progressed is True
+            assert any(getattr(item, "message", "") == "overflow" for item in list(queue._queue))
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestAgentEventBusPublish:
-    @pytest.mark.asyncio
-    async def test_publish_delivers_locally(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        # Redis kullanılmaması için _redis_available = False olarak ayarla
-        bus._redis_available = False
-        sub_id, queue = bus.subscribe()
-        await bus.publish("supervisor", "test mesajı")
-        assert not queue.empty()
-        evt = await queue.get()
-        assert evt.source == "supervisor"
-        assert evt.message == "test mesajı"
+    def test_publish_delivers_locally(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            # Redis kullanılmaması için _redis_available = False olarak ayarla
+            bus._redis_available = False
+            sub_id, queue = bus.subscribe()
+            await bus.publish("supervisor", "test mesajı")
+            assert not queue.empty()
+            evt = await queue.get()
+            assert evt.source == "supervisor"
+            assert evt.message == "test mesajı"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_redis_unavailable_falls_back(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = False
-        sub_id, queue = bus.subscribe()
-        await bus.publish("agent_x", "yerel mesaj")
-        item = await queue.get()
-        assert item.message == "yerel mesaj"
+    def test_publish_redis_unavailable_falls_back(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = False
+            sub_id, queue = bus.subscribe()
+            await bus.publish("agent_x", "yerel mesaj")
+            item = await queue.get()
+            assert item.message == "yerel mesaj"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_calls_redis_path_when_available(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = True
-        sub_id, queue = bus.subscribe()
-        bus._publish_via_redis = AsyncMock(return_value=True)
+    def test_publish_calls_redis_path_when_available(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = True
+            sub_id, queue = bus.subscribe()
+            bus._publish_via_redis = AsyncMock(return_value=True)
 
-        await bus.publish("agent_y", "redis ve local")
+            await bus.publish("agent_y", "redis ve local")
 
-        bus._publish_via_redis.assert_awaited_once()
-        local_evt = await queue.get()
-        assert local_evt.source == "agent_y"
-        assert local_evt.message == "redis ve local"
-
+            bus._publish_via_redis.assert_awaited_once()
+            local_evt = await queue.get()
+            assert local_evt.source == "agent_y"
+            assert local_evt.message == "redis ve local"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestAgentEventBusPublishViaRedis:
-    @pytest.mark.asyncio
-    async def test_publish_via_redis_returns_false_when_unavailable(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = False
-        evt = es.AgentEvent(ts=1.0, source="s", message="m")
-        result = await bus._publish_via_redis(evt)
-        assert result is False
+    def test_publish_via_redis_returns_false_when_unavailable(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = False
+            evt = es.AgentEvent(ts=1.0, source="s", message="m")
+            result = await bus._publish_via_redis(evt)
+            assert result is False
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_via_redis_returns_false_when_no_client(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        # _redis_available None → bootstrap denenir ama redis yoksa False olur
-        bus._redis_available = False
-        bus._redis_client = None
-        evt = es.AgentEvent(ts=1.0, source="s", message="m")
-        result = await bus._publish_via_redis(evt)
-        assert result is False
-
+    def test_publish_via_redis_returns_false_when_no_client(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            # _redis_available None → bootstrap denenir ama redis yoksa False olur
+            bus._redis_available = False
+            bus._redis_client = None
+            evt = es.AgentEvent(ts=1.0, source="s", message="m")
+            result = await bus._publish_via_redis(evt)
+            assert result is False
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestAgentEventBusDLQ:
-    @pytest.mark.asyncio
-    async def test_write_dead_letter_appends_to_buffer(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = False
-        await bus._write_dead_letter(reason="test_error", payload={"x": 1})
-        assert len(bus._dlq_buffer) == 1
-        item = bus._dlq_buffer[0]
-        assert item["reason"] == "test_error"
+    def test_write_dead_letter_appends_to_buffer(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = False
+            await bus._write_dead_letter(reason="test_error", payload={"x": 1})
+            assert len(bus._dlq_buffer) == 1
+            item = bus._dlq_buffer[0]
+            assert item["reason"] == "test_error"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_write_dead_letter_includes_error_str(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = False
-        exc = ValueError("test exception")
-        await bus._write_dead_letter(reason="r", payload={}, error=exc)
-        assert "test exception" in bus._dlq_buffer[0]["error"]
-
+    def test_write_dead_letter_includes_error_str(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = False
+            exc = ValueError("test exception")
+            await bus._write_dead_letter(reason="r", payload={}, error=exc)
+            assert "test exception" in bus._dlq_buffer[0]["error"]
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestAgentEventBusCleanup:
-    @pytest.mark.asyncio
-    async def test_cleanup_redis_no_error_when_clean(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        # Hiç redis client yok — cleanup hata vermemeli
-        await bus._cleanup_redis()
-        assert bus._redis_client is None
-        assert bus._redis_listener_task is None
-
+    def test_cleanup_redis_no_error_when_clean(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            # Hiç redis client yok — cleanup hata vermemeli
+            await bus._cleanup_redis()
+            assert bus._redis_client is None
+            assert bus._redis_listener_task is None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestGetAgentEventBus:
     def test_returns_same_singleton(self):
@@ -289,76 +302,86 @@ class TestGetAgentEventBus:
 
 
 class TestAgentEventBusDrainBuffered:
-    @pytest.mark.asyncio
-    async def test_drain_empty_buffers_returns_false(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        result = await bus._drain_buffered_events_once()
-        assert result is False
+    def test_drain_empty_buffers_returns_false(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            result = await bus._drain_buffered_events_once()
+            assert result is False
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_drain_with_buffered_event(self):
-        from collections import deque
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        sub_id, queue = bus.subscribe(maxsize=10)
-        evt = es.AgentEvent(ts=1.0, source="s", message="buffered")
-        bus._buffered_events[sub_id] = deque([evt])
-        result = await bus._drain_buffered_events_once()
-        assert result is True
-        assert not queue.empty()
-
+    def test_drain_with_buffered_event(self):
+        async def _run():
+            from collections import deque
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            sub_id, queue = bus.subscribe(maxsize=10)
+            evt = es.AgentEvent(ts=1.0, source="s", message="buffered")
+            bus._buffered_events[sub_id] = deque([evt])
+            result = await bus._drain_buffered_events_once()
+            assert result is True
+            assert not queue.empty()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestAgentEventBusRedisListenerFailures:
-    @pytest.mark.asyncio
-    async def test_redis_listener_loop_sets_fallback_on_stream_exception(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_available = True
-        bus._redis_client = AsyncMock()
-        bus._redis_client.xreadgroup = AsyncMock(side_effect=RuntimeError("redis stream disconnected"))
-        bus._cleanup_redis = AsyncMock()
+    def test_redis_listener_loop_sets_fallback_on_stream_exception(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_available = True
+            bus._redis_client = AsyncMock()
+            bus._redis_client.xreadgroup = AsyncMock(side_effect=RuntimeError("redis stream disconnected"))
+            bus._cleanup_redis = AsyncMock()
 
-        await bus._redis_listener_loop()
-        assert bus._redis_available is False
-        bus._cleanup_redis.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_redis_listener_loop_invalid_payload_writes_dlq(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._redis_client = AsyncMock()
-        bus._redis_client.xreadgroup = AsyncMock(
-            side_effect=[
-                [("stream", [("1-0", {"payload": "{invalid json"})])],
-                asyncio.CancelledError(),
-            ]
-        )
-        bus._redis_client.xack = AsyncMock(return_value=1)
-        bus._write_dead_letter = AsyncMock()
-
-        with pytest.raises(asyncio.CancelledError):
             await bus._redis_listener_loop()
+            assert bus._redis_available is False
+            bus._cleanup_redis.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-        assert bus._write_dead_letter.await_count >= 1
-        assert any(call.kwargs.get("reason") == "invalid_payload" for call in bus._write_dead_letter.await_args_list)
+    def test_redis_listener_loop_invalid_payload_writes_dlq(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._redis_client = AsyncMock()
+            bus._redis_client.xreadgroup = AsyncMock(
+                side_effect=[
+                    [("stream", [("1-0", {"payload": "{invalid json"})])],
+                    asyncio.CancelledError(),
+                ]
+            )
+            bus._redis_client.xack = AsyncMock(return_value=1)
+            bus._write_dead_letter = AsyncMock()
 
-    @pytest.mark.asyncio
-    async def test_redis_listener_loop_ack_failure_writes_dlq(self):
-        es = _get_event_stream()
-        bus = es.AgentEventBus()
-        bus._instance_id = "self"
-        bus._redis_client = AsyncMock()
-        bus._redis_client.xreadgroup = AsyncMock(
-            side_effect=[
-                [("stream", [("1-1", {"payload": "{\"sid\":\"other\",\"source\":\"a\",\"message\":\"m\",\"ts\":1}"})])],
-                asyncio.CancelledError(),
-            ]
-        )
-        bus._redis_client.xack = AsyncMock(side_effect=RuntimeError("ack lost"))
-        bus._write_dead_letter = AsyncMock()
+            with pytest.raises(asyncio.CancelledError):
+                await bus._redis_listener_loop()
 
-        with pytest.raises(asyncio.CancelledError):
-            await bus._redis_listener_loop()
+            assert bus._write_dead_letter.await_count >= 1
+            assert any(call.kwargs.get("reason") == "invalid_payload" for call in bus._write_dead_letter.await_args_list)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-        assert any(call.kwargs.get("reason") == "ack_failed" for call in bus._write_dead_letter.await_args_list)
+    def test_redis_listener_loop_ack_failure_writes_dlq(self):
+        async def _run():
+            es = _get_event_stream()
+            bus = es.AgentEventBus()
+            bus._instance_id = "self"
+            bus._redis_client = AsyncMock()
+            bus._redis_client.xreadgroup = AsyncMock(
+                side_effect=[
+                    [("stream", [("1-1", {"payload": "{\"sid\":\"other\",\"source\":\"a\",\"message\":\"m\",\"ts\":1}"})])],
+                    asyncio.CancelledError(),
+                ]
+            )
+            bus._redis_client.xack = AsyncMock(side_effect=RuntimeError("ack lost"))
+            bus._write_dead_letter = AsyncMock()
+
+            with pytest.raises(asyncio.CancelledError):
+                await bus._redis_listener_loop()
+
+            assert any(call.kwargs.get("reason") == "ack_failed" for call in bus._write_dead_letter.await_args_list)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

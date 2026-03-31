@@ -159,191 +159,215 @@ class TestLoadRows:
 # ─────────────────────────────────────────────────────────
 
 class TestCopyTable:
-    @pytest.mark.asyncio
-    async def test_dry_run_returns_row_count_without_writing(self):
-        mod = _import_script()
-        path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}, {"id": "2", "name": "veli"}]})
-        conn = _make_mock_asyncpg_conn()
-        try:
-            count = await mod._copy_table(conn, path, "users", dry_run=True)
-            assert count == 2
-            conn.execute.assert_not_awaited()
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_dry_run_empty_table_returns_zero(self):
-        mod = _import_script()
-        path = _make_test_sqlite({"users": []})
-        conn = _make_mock_asyncpg_conn()
-        try:
-            count = await mod._copy_table(conn, path, "users", dry_run=True)
-            assert count == 0
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_live_run_calls_truncate_and_insert(self):
-        mod = _import_script()
-        path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}]})
-        conn = _make_mock_asyncpg_conn()
-        try:
-            count = await mod._copy_table(conn, path, "users", dry_run=False)
-            assert count == 1
-            # TRUNCATE ve INSERT çağrılmış olmalı
-            calls = [str(c) for c in conn.execute.await_args_list]
-            assert any("TRUNCATE" in c or "INSERT" in c for c in calls)
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_live_run_uses_transaction(self):
-        mod = _import_script()
-        path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}]})
-        conn = _make_mock_asyncpg_conn()
-        try:
-            await mod._copy_table(conn, path, "users", dry_run=False)
-            conn.transaction.assert_called_once()
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_empty_columns_returns_zero(self):
-        """Tabloda hiç kolon yoksa 0 dönmeli."""
-        mod = _import_script()
-        path = _make_test_sqlite({"users": []})
-        conn = _make_mock_asyncpg_conn()
-        # Boş tabloda _load_rows (id INTEGER) gibi bir şey döner
-        with patch.object(mod, "_load_rows", return_value=([], [])):
+    def test_dry_run_returns_row_count_without_writing(self):
+        async def _run():
+            mod = _import_script()
+            path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}, {"id": "2", "name": "veli"}]})
+            conn = _make_mock_asyncpg_conn()
             try:
-                count = await mod._copy_table(conn, path, "users", dry_run=False)
+                count = await mod._copy_table(conn, path, "users", dry_run=True)
+                assert count == 2
+                conn.execute.assert_not_awaited()
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_dry_run_empty_table_returns_zero(self):
+        async def _run():
+            mod = _import_script()
+            path = _make_test_sqlite({"users": []})
+            conn = _make_mock_asyncpg_conn()
+            try:
+                count = await mod._copy_table(conn, path, "users", dry_run=True)
                 assert count == 0
             finally:
                 path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
+    def test_live_run_calls_truncate_and_insert(self):
+        async def _run():
+            mod = _import_script()
+            path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}]})
+            conn = _make_mock_asyncpg_conn()
+            try:
+                count = await mod._copy_table(conn, path, "users", dry_run=False)
+                assert count == 1
+                # TRUNCATE ve INSERT çağrılmış olmalı
+                calls = [str(c) for c in conn.execute.await_args_list]
+                assert any("TRUNCATE" in c or "INSERT" in c for c in calls)
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_live_run_uses_transaction(self):
+        async def _run():
+            mod = _import_script()
+            path = _make_test_sqlite({"users": [{"id": "1", "name": "ali"}]})
+            conn = _make_mock_asyncpg_conn()
+            try:
+                await mod._copy_table(conn, path, "users", dry_run=False)
+                conn.transaction.assert_called_once()
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_empty_columns_returns_zero(self):
+        async def _run():
+            """Tabloda hiç kolon yoksa 0 dönmeli."""
+            mod = _import_script()
+            path = _make_test_sqlite({"users": []})
+            conn = _make_mock_asyncpg_conn()
+            # Boş tabloda _load_rows (id INTEGER) gibi bir şey döner
+            with patch.object(mod, "_load_rows", return_value=([], [])):
+                try:
+                    count = await mod._copy_table(conn, path, "users", dry_run=False)
+                    assert count == 0
+                finally:
+                    path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 # ─────────────────────────────────────────────────────────
 # migrate() fonksiyon testleri
 # ─────────────────────────────────────────────────────────
 
 class TestMigrate:
-    @pytest.mark.asyncio
-    async def test_missing_sqlite_raises_file_not_found(self):
-        mod = _import_script(stub_asyncpg=True)
-        # asyncpg stub'ının connect'ini gerçekten çağrılmayacak şekilde ayarla
-        mock_asyncpg = _make_mock_asyncpg()
-        with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-            with pytest.raises(FileNotFoundError, match="bulunamadı"):
-                await mod.migrate(pathlib.Path("/tmp/nonexistent_sidar.db"), "postgresql://localhost/test", dry_run=True)
-
-    @pytest.mark.asyncio
-    async def test_migrate_dry_run_prints_dry_run_label(self, capsys):
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
-        try:
+    def test_missing_sqlite_raises_file_not_found(self):
+        async def _run():
+            mod = _import_script(stub_asyncpg=True)
+            # asyncpg stub'ının connect'ini gerçekten çağrılmayacak şekilde ayarla
+            mock_asyncpg = _make_mock_asyncpg()
             with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-            out = capsys.readouterr().out
-            assert "DRY-RUN" in out
-        finally:
-            path.unlink(missing_ok=True)
+                with pytest.raises(FileNotFoundError, match="bulunamadı"):
+                    await mod.migrate(pathlib.Path("/tmp/nonexistent_sidar.db"), "postgresql://localhost/test", dry_run=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_migrate_live_prints_migrated_label(self, capsys):
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
-        try:
-            with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                await mod.migrate(path, "postgresql://localhost/test", dry_run=False)
-            out = capsys.readouterr().out
-            assert "MIGRATED" in out
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_migrate_processes_all_tables(self, capsys):
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
-        try:
-            with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-            out = capsys.readouterr().out
-            for table in mod.TABLES_IN_ORDER:
-                assert table in out, f"{table} çıktıda bulunamadı"
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_migrate_closes_connection_on_success(self):
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
-        try:
-            with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-            conn.close.assert_awaited_once()
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_migrate_closes_connection_on_error(self):
-        """_copy_table hata fırlattığında bile conn.close() çağrılmalı."""
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
-        try:
-            with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                with patch.object(mod, "_copy_table", AsyncMock(side_effect=RuntimeError("pg hatası"))):
-                    with pytest.raises(RuntimeError, match="pg hatası"):
-                        await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-            conn.close.assert_awaited_once()
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_migrate_with_data_rows(self, capsys):
-        conn = _make_mock_asyncpg_conn()
-        mock_asyncpg = _make_mock_asyncpg()
-        mock_asyncpg.connect = AsyncMock(return_value=conn)
-        mod = _import_script(stub_asyncpg=False)
-        tables_data = {t: [] for t in mod.TABLES_IN_ORDER}
-        tables_data["users"] = [{"id": "1", "username": "ali"}, {"id": "2", "username": "veli"}]
-        path = _make_test_sqlite(tables_data)
-        try:
-            with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
-                await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-            out = capsys.readouterr().out
-            assert "users: 2 row" in out
-        finally:
-            path.unlink(missing_ok=True)
-
-    @pytest.mark.asyncio
-    async def test_asyncpg_import_error_raises_runtime_error(self):
-        """asyncpg yoksa RuntimeError fırlatılmalı (pragma: no cover satırının testi)."""
-        mod = _import_script(stub_asyncpg=False)
-        path = _make_test_sqlite({})
-        path.touch()
-        try:
-            # sys.modules'a None atamak import'u ImportError ile durdurur
-            with patch.dict(sys.modules, {"asyncpg": None}):
-                with pytest.raises((RuntimeError, ImportError)):
+    def test_migrate_dry_run_prints_dry_run_label(self, capsys):
+        async def _run():
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
                     await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
-        finally:
-            path.unlink(missing_ok=True)
+                out = capsys.readouterr().out
+                assert "DRY-RUN" in out
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
+    def test_migrate_live_prints_migrated_label(self, capsys):
+        async def _run():
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
+                    await mod.migrate(path, "postgresql://localhost/test", dry_run=False)
+                out = capsys.readouterr().out
+                assert "MIGRATED" in out
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_migrate_processes_all_tables(self, capsys):
+        async def _run():
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
+                    await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
+                out = capsys.readouterr().out
+                for table in mod.TABLES_IN_ORDER:
+                    assert table in out, f"{table} çıktıda bulunamadı"
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_migrate_closes_connection_on_success(self):
+        async def _run():
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
+                    await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
+                conn.close.assert_awaited_once()
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_migrate_closes_connection_on_error(self):
+        async def _run():
+            """_copy_table hata fırlattığında bile conn.close() çağrılmalı."""
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({t: [] for t in mod.TABLES_IN_ORDER})
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
+                    with patch.object(mod, "_copy_table", AsyncMock(side_effect=RuntimeError("pg hatası"))):
+                        with pytest.raises(RuntimeError, match="pg hatası"):
+                            await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
+                conn.close.assert_awaited_once()
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_migrate_with_data_rows(self, capsys):
+        async def _run():
+            conn = _make_mock_asyncpg_conn()
+            mock_asyncpg = _make_mock_asyncpg()
+            mock_asyncpg.connect = AsyncMock(return_value=conn)
+            mod = _import_script(stub_asyncpg=False)
+            tables_data = {t: [] for t in mod.TABLES_IN_ORDER}
+            tables_data["users"] = [{"id": "1", "username": "ali"}, {"id": "2", "username": "veli"}]
+            path = _make_test_sqlite(tables_data)
+            try:
+                with patch.dict(sys.modules, {"asyncpg": mock_asyncpg}):
+                    await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
+                out = capsys.readouterr().out
+                assert "users: 2 row" in out
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_asyncpg_import_error_raises_runtime_error(self):
+        async def _run():
+            """asyncpg yoksa RuntimeError fırlatılmalı (pragma: no cover satırının testi)."""
+            mod = _import_script(stub_asyncpg=False)
+            path = _make_test_sqlite({})
+            path.touch()
+            try:
+                # sys.modules'a None atamak import'u ImportError ile durdurur
+                with patch.dict(sys.modules, {"asyncpg": None}):
+                    with pytest.raises((RuntimeError, ImportError)):
+                        await mod.migrate(path, "postgresql://localhost/test", dry_run=True)
+            finally:
+                path.unlink(missing_ok=True)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 # ─────────────────────────────────────────────────────────
 # main() / argparse testleri

@@ -108,25 +108,30 @@ class TestDotCommandExtraBranches:
             handled, response = await handler.handle(".audit")
             assert handled is True
 
-        @pytest.mark.asyncio
-        async def test_dot_gpu_handled(self):
-            handler, _, health, *_ = _make_auto_handle()
-            handled, response = await handler.handle(".gpu")
-            assert handled is True
+        def test_dot_gpu_handled(self):
+            async def _run():
+                handler, _, health, *_ = _make_auto_handle()
+                handled, response = await handler.handle(".gpu")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_dot_command_unknown_returns_false(self):
-            handler, *_ = _make_auto_handle()
-            # .xyz is not a known dot command
-            handled, response = await handler.handle(".xyz")
-            assert handled is False
+        def test_dot_command_unknown_returns_false(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                # .xyz is not a known dot command
+                handled, response = await handler.handle(".xyz")
+                assert handled is False
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_dot_command_no_match_returns_false(self):
-            handler, *_ = _make_auto_handle()
-            r = await handler._try_dot_command("normal text", "normal text")
-            assert r == (False, "")
-
+        def test_dot_command_no_match_returns_false(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                r = await handler._try_dot_command("normal text", "normal text")
+                assert r == (False, "")
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_health timeout and error ─────────────────────────────────────────────
 
@@ -140,22 +145,25 @@ class TestTryHealthErrors:
             assert handled is True
             assert "zaman aşımı" in response.lower()
 
-        @pytest.mark.asyncio
-        async def test_health_generic_exception(self):
-            handler, *_ = _make_auto_handle()
-            handler._run_blocking = AsyncMock(side_effect=RuntimeError("test hata"))
-            handled, response = await handler._try_health("sistem sağlık raporu")
-            assert handled is True
-            assert "hata" in response.lower() or "alınamadı" in response.lower()
+        def test_health_generic_exception(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handler._run_blocking = AsyncMock(side_effect=RuntimeError("test hata"))
+                handled, response = await handler._try_health("sistem sağlık raporu")
+                assert handled is True
+                assert "hata" in response.lower() or "alınamadı" in response.lower()
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_health_no_health_manager(self):
-            handler, _, health, *_ = _make_auto_handle()
-            handler.health = None
-            handled, response = await handler._try_health("sistem sağlık raporu")
-            assert handled is True
-            assert "başlatılamadı" in response
-
+        def test_health_no_health_manager(self):
+            async def _run():
+                handler, _, health, *_ = _make_auto_handle()
+                handler.health = None
+                handled, response = await handler._try_health("sistem sağlık raporu")
+                assert handled is True
+                assert "başlatılamadı" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_gpu_optimize timeout and error ─────────────────────────────────────
 
@@ -169,22 +177,25 @@ class TestTryGpuErrors:
             assert handled is True
             assert "zaman aşımı" in response.lower()
 
-        @pytest.mark.asyncio
-        async def test_gpu_generic_error(self):
-            handler, *_ = _make_auto_handle()
-            handler._run_blocking = AsyncMock(side_effect=OSError("gpu hata"))
-            handled, response = await handler._try_gpu_optimize("gpu optimize")
-            assert handled is True
-            assert "başarısız" in response.lower() or "hata" in response.lower()
+        def test_gpu_generic_error(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handler._run_blocking = AsyncMock(side_effect=OSError("gpu hata"))
+                handled, response = await handler._try_gpu_optimize("gpu optimize")
+                assert handled is True
+                assert "başarısız" in response.lower() or "hata" in response.lower()
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_gpu_no_health_manager(self):
-            handler, _, health, *_ = _make_auto_handle()
-            handler.health = None
-            handled, response = await handler._try_gpu_optimize(".gpu")
-            assert handled is True
-            assert "başlatılamadı" in response
-
+        def test_gpu_no_health_manager(self):
+            async def _run():
+                handler, _, health, *_ = _make_auto_handle()
+                handler.health = None
+                handled, response = await handler._try_gpu_optimize(".gpu")
+                assert handled is True
+                assert "başlatılamadı" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_audit timeout and error ─────────────────────────────────────────────
 
@@ -198,13 +209,14 @@ class TestTryAuditErrors:
             assert handled is True
             assert "hata" in response.lower()
 
-        @pytest.mark.asyncio
-        async def test_audit_no_match_returns_false(self):
-            handler, *_ = _make_auto_handle()
-            handled, response = await handler._try_audit("merhaba dünya")
-            assert handled is False
-            assert response == ""
-
+        def test_audit_no_match_returns_false(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handled, response = await handler._try_audit("merhaba dünya")
+                assert handled is False
+                assert response == ""
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_read_file error path ─────────────────────────────────────────────────
 
@@ -218,21 +230,24 @@ class TestTryReadFileErrors:
             assert handled is True
             assert "✗" in response
 
-        @pytest.mark.asyncio
-        async def test_read_file_uses_memory_last_file(self):
-            handler, code, _, _, memory, *_ = _make_auto_handle()
-            memory.get_last_file.return_value = "cached.py"
-            code.read_file.return_value = (True, "cached content")
-            handled, response = await handler.handle("dosyayı oku")
-            assert handled is True
+        def test_read_file_uses_memory_last_file(self):
+            async def _run():
+                handler, code, _, _, memory, *_ = _make_auto_handle()
+                memory.get_last_file.return_value = "cached.py"
+                code.read_file.return_value = (True, "cached content")
+                handled, response = await handler.handle("dosyayı oku")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_read_file_cat_keyword(self):
-            handler, code, *_ = _make_auto_handle()
-            code.read_file.return_value = (True, "file content here")
-            handled, response = await handler.handle('cat "main.py"')
-            assert handled is True
-
+        def test_read_file_cat_keyword(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                code.read_file.return_value = (True, "file content here")
+                handled, response = await handler.handle('cat "main.py"')
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_validate_file edge cases ────────────────────────────────────────────
 
@@ -247,38 +262,45 @@ class TestTryValidateFile:
             assert handled is True
             assert "✓" in response
 
-        @pytest.mark.asyncio
-        async def test_validate_unsupported_extension(self):
-            handler, code, *_ = _make_auto_handle()
-            code.read_file.return_value = (True, "content")
-            handled, response = await handler.handle('sözdizimi doğrula "file.txt"')
-            assert handled is True
-            assert "desteklenmiyor" in response
+        def test_validate_unsupported_extension(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                code.read_file.return_value = (True, "content")
+                handled, response = await handler.handle('sözdizimi doğrula "file.txt"')
+                assert handled is True
+                assert "desteklenmiyor" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_validate_read_error(self):
-            handler, code, *_ = _make_auto_handle()
-            code.read_file.return_value = (False, "okunamadı")
-            handled, response = await handler.handle('sözdizimi doğrula "bad.py"')
-            assert handled is True
-            assert "okunamadı" in response
+        def test_validate_read_error(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                code.read_file.return_value = (False, "okunamadı")
+                handled, response = await handler.handle('sözdizimi doğrula "bad.py"')
+                assert handled is True
+                assert "okunamadı" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_validate_no_path_returns_warning(self):
-            handler, *_ = _make_auto_handle()
-            handled, response = await handler.handle("sözdizimi doğrula")
-            assert handled is True
-            assert "⚠" in response
+        def test_validate_no_path_returns_warning(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handled, response = await handler.handle("sözdizimi doğrula")
+                assert handled is True
+                assert "⚠" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_validate_python_fail(self):
-            handler, code, *_ = _make_auto_handle()
-            code.read_file.return_value = (True, "def broken(")
-            code.validate_python_syntax.return_value = (False, "SyntaxError")
-            handled, response = await handler.handle('sözdizimi doğrula "script.py"')
-            assert handled is True
-            assert "✗" in response
-
+        def test_validate_python_fail(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                code.read_file.return_value = (True, "def broken(")
+                code.validate_python_syntax.return_value = (False, "SyntaxError")
+                handled, response = await handler.handle('sözdizimi doğrula "script.py"')
+                assert handled is True
+                assert "✗" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_github_read error path ───────────────────────────────────────────────
 
@@ -291,22 +313,25 @@ class TestTryGithubReadErrors:
             assert handled is True
             assert "⚠" in response
 
-        @pytest.mark.asyncio
-        async def test_github_read_unavailable(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.is_available.return_value = False
-            handled, response = await handler.handle('github oku "README.md"')
-            assert handled is True
-            assert "token" in response.lower() or "ayarlanmamış" in response
+        def test_github_read_unavailable(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.is_available.return_value = False
+                handled, response = await handler.handle('github oku "README.md"')
+                assert handled is True
+                assert "token" in response.lower() or "ayarlanmamış" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_github_read_error_response(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.read_remote_file.return_value = (False, "erişim reddedildi")
-            handled, response = await handler.handle('github oku "README.md"')
-            assert handled is True
-            assert "✗" in response
-
+        def test_github_read_error_response(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.read_remote_file.return_value = (False, "erişim reddedildi")
+                handled, response = await handler.handle('github oku "README.md"')
+                assert handled is True
+                assert "✗" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_github_list_prs various states ──────────────────────────────────────
 
@@ -318,43 +343,52 @@ class TestTryGithubListPrs:
             handled, response = await handler.handle("kapalı PR listele")
             assert handled is True
 
-        @pytest.mark.asyncio
-        async def test_pr_list_all_state(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            handled, response = await handler.handle("tüm pull request listele")
-            assert handled is True
+        def test_pr_list_all_state(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                handled, response = await handler.handle("tüm pull request listele")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_pr_list_unavailable(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.is_available.return_value = False
-            handled, response = await handler.handle("PR listele")
-            assert handled is True
-            assert "token" in response.lower() or "ayarlanmamış" in response
+        def test_pr_list_unavailable(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.is_available.return_value = False
+                handled, response = await handler.handle("PR listele")
+                assert handled is True
+                assert "token" in response.lower() or "ayarlanmamış" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_pr_get_files(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.get_pr_files.return_value = (True, "PR dosya listesi")
-            handled, response = await handler.handle("PR #7 dosyaları")
-            assert handled is True
+        def test_pr_get_files(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.get_pr_files.return_value = (True, "PR dosya listesi")
+                handled, response = await handler.handle("PR #7 dosyaları")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_pr_get_unavailable(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.is_available.return_value = False
-            handled, response = await handler.handle("PR #3 detayı")
-            assert handled is True
-            assert "token" in response.lower() or "ayarlanmamış" in response
+        def test_pr_get_unavailable(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.is_available.return_value = False
+                handled, response = await handler.handle("PR #3 detayı")
+                assert handled is True
+                assert "token" in response.lower() or "ayarlanmamış" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_pr_files_unavailable(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.is_available.return_value = False
-            handled, response = await handler.handle("PR #5 dosyaları")
-            assert handled is True
-            assert "token" in response.lower() or "ayarlanmamış" in response
-
+        def test_pr_files_unavailable(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.is_available.return_value = False
+                handled, response = await handler.handle("PR #5 dosyaları")
+                assert handled is True
+                assert "token" in response.lower() or "ayarlanmamış" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_github_info and _try_github_list_files unavailable ─────────────────
 
@@ -368,20 +402,23 @@ class TestGithubInfoListUnavailable:
             assert handled is True
             assert "token" in response.lower() or "ayarlanmamış" in response
 
-        @pytest.mark.asyncio
-        async def test_github_list_files_unavailable(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            github.is_available.return_value = False
-            handled, response = await handler.handle("github repo dosyaları listele")
-            assert handled is True
-            assert "token" in response.lower() or "ayarlanmamış" in response
+        def test_github_list_files_unavailable(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                github.is_available.return_value = False
+                handled, response = await handler.handle("github repo dosyaları listele")
+                assert handled is True
+                assert "token" in response.lower() or "ayarlanmamış" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_github_commits_with_number(self):
-            handler, _, _, github, *_ = _make_auto_handle()
-            handled, response = await handler.handle("5 commit listele")
-            assert handled is True
-
+        def test_github_commits_with_number(self):
+            async def _run():
+                handler, _, _, github, *_ = _make_auto_handle()
+                handled, response = await handler.handle("5 commit listele")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_clear_memory awaitable ───────────────────────────────────────────────
 
@@ -395,18 +432,21 @@ class TestClearMemoryAwaitable:
             assert handled is True
             assert "temizlendi" in response
 
-        @pytest.mark.asyncio
-        async def test_hafiza_sifirla(self):
-            handler, *_ = _make_auto_handle()
-            handled, response = await handler.handle("hafızayı sıfırla")
-            assert handled is True
+        def test_hafiza_sifirla(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handled, response = await handler.handle("hafızayı sıfırla")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_konusmayi_sil(self):
-            handler, *_ = _make_auto_handle()
-            handled, response = await handler.handle("konuşmayı sil")
-            assert handled is True
-
+        def test_konusmayi_sil(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handled, response = await handler.handle("konuşmayı sil")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_web_search empty query ───────────────────────────────────────────────
 
@@ -420,33 +460,40 @@ class TestWebSearchEdgeCases:
             assert isinstance(handled, bool)
             assert isinstance(response, str)
 
-        @pytest.mark.asyncio
-        async def test_fetch_url_no_url(self):
-            handler, *_ = _make_auto_handle()
-            handled, response = await handler.handle("url oku")
-            assert handled is True
-            assert "⚠" in response
+        def test_fetch_url_no_url(self):
+            async def _run():
+                handler, *_ = _make_auto_handle()
+                handled, response = await handler.handle("url oku")
+                assert handled is True
+                assert "⚠" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_fetch_url_with_url(self):
-            handler, _, _, _, _, web, *_ = _make_auto_handle()
-            handled, response = await handler.handle("url oku https://example.com")
-            assert handled is True
-            assert "URL içeriği" in response
+        def test_fetch_url_with_url(self):
+            async def _run():
+                handler, _, _, _, _, web, *_ = _make_auto_handle()
+                handled, response = await handler.handle("url oku https://example.com")
+                assert handled is True
+                assert "URL içeriği" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_stackoverflow_search(self):
-            handler, _, _, _, _, web, *_ = _make_auto_handle()
-            handled, response = await handler.handle("stackoverflow: python async")
-            assert handled is True
-            assert "SO sonuçları" in response
+        def test_stackoverflow_search(self):
+            async def _run():
+                handler, _, _, _, _, web, *_ = _make_auto_handle()
+                handled, response = await handler.handle("stackoverflow: python async")
+                assert handled is True
+                assert "SO sonuçları" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_search_docs_with_topic(self):
-            handler, _, _, _, _, web, *_ = _make_auto_handle()
-            handled, response = await handler.handle("docs ara fastapi routing")
-            assert handled is True
-
+        def test_search_docs_with_topic(self):
+            async def _run():
+                handler, _, _, _, _, web, *_ = _make_auto_handle()
+                handled, response = await handler.handle("docs ara fastapi routing")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_pypi with version compare ───────────────────────────────────────────
 
@@ -459,20 +506,23 @@ class TestPypiNpmGh:
             assert handled is True
             assert "pypi karşılaştırma" in response
 
-        @pytest.mark.asyncio
-        async def test_npm_package_info(self):
-            handler, _, _, _, _, _, pkg, _ = _make_auto_handle()
-            handled, response = await handler.handle("npm react")
-            assert handled is True
-            assert "npm bilgisi" in response
+        def test_npm_package_info(self):
+            async def _run():
+                handler, _, _, _, _, _, pkg, _ = _make_auto_handle()
+                handled, response = await handler.handle("npm react")
+                assert handled is True
+                assert "npm bilgisi" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_github_releases(self):
-            handler, _, _, _, _, _, pkg, _ = _make_auto_handle()
-            handled, response = await handler.handle("github releases tiangolo/fastapi")
-            assert handled is True
-            assert "releases" in response
-
+        def test_github_releases(self):
+            async def _run():
+                handler, _, _, _, _, _, pkg, _ = _make_auto_handle()
+                handled, response = await handler.handle("github releases tiangolo/fastapi")
+                assert handled is True
+                assert "releases" in response
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_docs_search mode selection ──────────────────────────────────────────
 
@@ -485,41 +535,50 @@ class TestDocsSearch:
             handled, response = await handler.handle("depoda ara python mode:vector")
             assert handled is True
 
-        @pytest.mark.asyncio
-        async def test_docs_list(self):
-            handler, _, _, _, _, _, _, docs = _make_auto_handle()
-            handled, response = await handler.handle("belge listele")
-            assert handled is True
-            assert "belge listesi" in response
-
-        @pytest.mark.asyncio
-        async def test_docs_add_primary_form(self):
-            handler, _, _, _, _, _, _, docs = _make_auto_handle()
-            handled, response = await handler.handle("belge ekle https://example.com/doc")
-            assert handled is True
-
-        @pytest.mark.asyncio
-        async def test_docs_add_secondary_form(self):
-            handler, _, _, _, _, _, _, docs = _make_auto_handle()
-            handled, response = await handler.handle("belge depo ekle https://example.com")
-            assert handled is True
-
-        @pytest.mark.asyncio
-        async def test_docs_add_with_title(self):
-            handler, _, _, _, _, _, _, docs = _make_auto_handle()
-            handled, response = await handler.handle('belge ekle https://example.com "Başlık"')
-            assert handled is True
-
-        @pytest.mark.asyncio
-        async def test_docs_search_awaitable(self):
+        def test_docs_list(self):
+            async def _run():
+                handler, _, _, _, _, _, _, docs = _make_auto_handle()
+                handled, response = await handler.handle("belge listele")
+                assert handled is True
+                assert "belge listesi" in response
             import asyncio as _asyncio
-            handler, _, _, _, _, _, _, docs = _make_auto_handle()
-            async def fake_search(*args):
-                return (True, "async sonuç")
-            docs.search.return_value = fake_search()
-            handled, response = await handler.handle("depoda ara python")
-            assert handled is True
+            _asyncio.run(_run())
 
+        def test_docs_add_primary_form(self):
+            async def _run():
+                handler, _, _, _, _, _, _, docs = _make_auto_handle()
+                handled, response = await handler.handle("belge ekle https://example.com/doc")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
+
+        def test_docs_add_secondary_form(self):
+            async def _run():
+                handler, _, _, _, _, _, _, docs = _make_auto_handle()
+                handled, response = await handler.handle("belge depo ekle https://example.com")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
+
+        def test_docs_add_with_title(self):
+            async def _run():
+                handler, _, _, _, _, _, _, docs = _make_auto_handle()
+                handled, response = await handler.handle('belge ekle https://example.com "Başlık"')
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
+
+        def test_docs_search_awaitable(self):
+            async def _run():
+                import asyncio as _asyncio
+                handler, _, _, _, _, _, _, docs = _make_auto_handle()
+                async def fake_search(*args):
+                    return (True, "async sonuç")
+                docs.search.return_value = fake_search()
+                handled, response = await handler.handle("depoda ara python")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _try_security_status ─────────────────────────────────────────────────────
 
@@ -532,18 +591,21 @@ class TestSecurityStatus:
             assert handled is True
             assert "güvenlik raporu" in response
 
-        @pytest.mark.asyncio
-        async def test_erisim_seviyesi_keyword(self):
-            handler, code, *_ = _make_auto_handle()
-            handled, response = await handler.handle("erişim seviyesi ne")
-            assert handled is True
+        def test_erisim_seviyesi_keyword(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                handled, response = await handler.handle("erişim seviyesi ne")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_sandbox_mod_keyword(self):
-            handler, code, *_ = _make_auto_handle()
-            handled, response = await handler.handle("sandbox mod kontrol")
-            assert handled is True
-
+        def test_sandbox_mod_keyword(self):
+            async def _run():
+                handler, code, *_ = _make_auto_handle()
+                handled, response = await handler.handle("sandbox mod kontrol")
+                assert handled is True
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── Helpers ────────────────────────────────────────────────────────────────────
 

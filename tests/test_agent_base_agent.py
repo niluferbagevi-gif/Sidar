@@ -154,35 +154,39 @@ class TestBaseAgentTools:
         agent.register_tool("my_tool", my_tool)
         assert "my_tool" in agent.tools
 
-    @pytest.mark.asyncio
-    async def test_call_tool_registered(self):
-        ba = _get_base_agent()
-        agent = _make_concrete_agent(ba)
+    def test_call_tool_registered(self):
+        async def _run():
+            ba = _get_base_agent()
+            agent = _make_concrete_agent(ba)
 
-        async def echo(arg: str) -> str:
-            return f"echo:{arg}"
+            async def echo(arg: str) -> str:
+                return f"echo:{arg}"
 
-        agent.register_tool("echo", echo)
-        result = await agent.call_tool("echo", "hello")
-        assert result == "echo:hello"
+            agent.register_tool("echo", echo)
+            result = await agent.call_tool("echo", "hello")
+            assert result == "echo:hello"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_call_tool_unregistered_returns_error(self):
-        ba = _get_base_agent()
-        agent = _make_concrete_agent(ba)
-        result = await agent.call_tool("nonexistent", "arg")
-        assert "HATA" in result or "hata" in result.lower()
-        assert "nonexistent" in result
-
+    def test_call_tool_unregistered_returns_error(self):
+        async def _run():
+            ba = _get_base_agent()
+            agent = _make_concrete_agent(ba)
+            result = await agent.call_tool("nonexistent", "arg")
+            assert "HATA" in result or "hata" in result.lower()
+            assert "nonexistent" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestBaseAgentCallLlm:
-    @pytest.mark.asyncio
-    async def test_call_llm_returns_string(self):
-        ba = _get_base_agent()
-        agent = _make_concrete_agent(ba)
-        result = await agent.call_llm([{"role": "user", "content": "merhaba"}])
-        assert isinstance(result, str)
-
+    def test_call_llm_returns_string(self):
+        async def _run():
+            ba = _get_base_agent()
+            agent = _make_concrete_agent(ba)
+            result = await agent.call_llm([{"role": "user", "content": "merhaba"}])
+            assert isinstance(result, str)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestBaseAgentDelegateTo:
     def test_delegate_to_creates_delegation_request(self):
@@ -220,97 +224,106 @@ class TestBaseAgentDelegateTo:
 
 
 class TestBaseAgentHandle:
-    @pytest.mark.asyncio
-    async def test_handle_returns_task_result(self):
-        ba = _get_base_agent()
-        agent = _make_concrete_agent(ba)
-        contracts = sys.modules["agent.core.contracts"]
+    def test_handle_returns_task_result(self):
+        async def _run():
+            ba = _get_base_agent()
+            agent = _make_concrete_agent(ba)
+            contracts = sys.modules["agent.core.contracts"]
 
-        envelope = contracts.TaskEnvelope(
-            task_id="task-1",
-            sender="swarm",
-            receiver="test",
-            goal="bir görev yap",
-        )
-        result = await agent.handle(envelope)
-        assert isinstance(result, contracts.TaskResult)
-        assert result.task_id == "task-1"
-        assert result.status == "success"
+            envelope = contracts.TaskEnvelope(
+                task_id="task-1",
+                sender="swarm",
+                receiver="test",
+                goal="bir görev yap",
+            )
+            result = await agent.handle(envelope)
+            assert isinstance(result, contracts.TaskResult)
+            assert result.task_id == "task-1"
+            assert result.status == "success"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_handle_summary_contains_goal(self):
-        ba = _get_base_agent()
-        agent = _make_concrete_agent(ba)
-        contracts = sys.modules["agent.core.contracts"]
+    def test_handle_summary_contains_goal(self):
+        async def _run():
+            ba = _get_base_agent()
+            agent = _make_concrete_agent(ba)
+            contracts = sys.modules["agent.core.contracts"]
 
-        envelope = contracts.TaskEnvelope(
-            task_id="task-2",
-            sender="s",
-            receiver="r",
-            goal="hedef görev",
-        )
-        result = await agent.handle(envelope)
-        assert "hedef görev" in str(result.summary)
+            envelope = contracts.TaskEnvelope(
+                task_id="task-2",
+                sender="s",
+                receiver="r",
+                goal="hedef görev",
+            )
+            result = await agent.handle(envelope)
+            assert "hedef görev" in str(result.summary)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_handle_backfills_delegation_ids_and_depth(self):
-        ba = _get_base_agent()
-        contracts = sys.modules["agent.core.contracts"]
+    def test_handle_backfills_delegation_ids_and_depth(self):
+        async def _run():
+            ba = _get_base_agent()
+            contracts = sys.modules["agent.core.contracts"]
 
-        class DelegatingAgent(ba.BaseAgent):
-            async def run_task(self, task_prompt: str):
-                return contracts.DelegationRequest(
-                    task_id="",
-                    reply_to=self.role_name,
-                    target_agent="reviewer",
-                    payload=task_prompt,
-                    parent_task_id=None,
-                    handoff_depth=1,
-                )
+            class DelegatingAgent(ba.BaseAgent):
+                async def run_task(self, task_prompt: str):
+                    return contracts.DelegationRequest(
+                        task_id="",
+                        reply_to=self.role_name,
+                        target_agent="reviewer",
+                        payload=task_prompt,
+                        parent_task_id=None,
+                        handoff_depth=1,
+                    )
 
-        agent = DelegatingAgent(role_name="coder")
-        envelope = contracts.TaskEnvelope(
-            task_id="task-3",
-            sender="swarm",
-            receiver="coder",
-            goal="delegasyon görevi",
-            parent_task_id="root-task",
-            context={"p2p_handoff_depth": "4"},
-        )
+            agent = DelegatingAgent(role_name="coder")
+            envelope = contracts.TaskEnvelope(
+                task_id="task-3",
+                sender="swarm",
+                receiver="coder",
+                goal="delegasyon görevi",
+                parent_task_id="root-task",
+                context={"p2p_handoff_depth": "4"},
+            )
 
-        result = await agent.handle(envelope)
-        assert isinstance(result.summary, contracts.DelegationRequest)
-        assert result.summary.task_id == "task-3"
-        assert result.summary.parent_task_id == "root-task"
-        assert result.summary.handoff_depth == 4
+            result = await agent.handle(envelope)
+            assert isinstance(result.summary, contracts.DelegationRequest)
+            assert result.summary.task_id == "task-3"
+            assert result.summary.parent_task_id == "root-task"
+            assert result.summary.handoff_depth == 4
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_handle_keeps_existing_delegation_ids(self):
-        ba = _get_base_agent()
-        contracts = sys.modules["agent.core.contracts"]
+    def test_handle_keeps_existing_delegation_ids(self):
+        async def _run():
+            ba = _get_base_agent()
+            contracts = sys.modules["agent.core.contracts"]
 
-        class DelegatingAgent(ba.BaseAgent):
-            async def run_task(self, task_prompt: str):
-                return contracts.DelegationRequest(
-                    task_id="already-set",
-                    reply_to=self.role_name,
-                    target_agent="reviewer",
-                    payload=task_prompt,
-                    parent_task_id="existing-parent",
-                    handoff_depth=2,
-                )
+            class DelegatingAgent(ba.BaseAgent):
+                async def run_task(self, task_prompt: str):
+                    return contracts.DelegationRequest(
+                        task_id="already-set",
+                        reply_to=self.role_name,
+                        target_agent="reviewer",
+                        payload=task_prompt,
+                        parent_task_id="existing-parent",
+                        handoff_depth=2,
+                    )
 
-        agent = DelegatingAgent(role_name="coder")
-        envelope = contracts.TaskEnvelope(
-            task_id="task-override",
-            sender="swarm",
-            receiver="coder",
-            goal="delegasyon görevi",
-            parent_task_id="root-task",
-            context={"p2p_handoff_depth": "1"},
-        )
+            agent = DelegatingAgent(role_name="coder")
+            envelope = contracts.TaskEnvelope(
+                task_id="task-override",
+                sender="swarm",
+                receiver="coder",
+                goal="delegasyon görevi",
+                parent_task_id="root-task",
+                context={"p2p_handoff_depth": "1"},
+            )
 
-        result = await agent.handle(envelope)
-        assert result.summary.task_id == "already-set"
-        assert result.summary.parent_task_id == "existing-parent"
-        assert result.summary.handoff_depth == 2
+            result = await agent.handle(envelope)
+            assert result.summary.task_id == "already-set"
+            assert result.summary.parent_task_id == "existing-parent"
+            assert result.summary.handoff_depth == 2
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

@@ -431,34 +431,35 @@ class TestSupervisorFallback:
             assert result.agent_role == "supervisor"
             assert result.status == "success"
 
-        @pytest.mark.asyncio
-        async def test_supervisor_fallback_itself_fails(self):
-            sw = _get_swarm_module()
-            reg = sys.modules["agent.registry"]
+        def test_supervisor_fallback_itself_fails(self):
+            async def _run():
+                sw = _get_swarm_module()
+                reg = sys.modules["agent.registry"]
 
-            registry = reg.AgentRegistry
-            registry._registry.clear()
+                registry = reg.AgentRegistry
+                registry._registry.clear()
 
-            spec = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
-            def _make_bad_agent(**kw):
-                a = MagicMock()
-                a.handle = AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))
-                return a
-            spec._agent_factory = _make_bad_agent
-            registry._registry["coder"] = spec
+                spec = reg.AgentSpec(role_name="coder", capabilities=["code_generation"])
+                def _make_bad_agent(**kw):
+                    a = MagicMock()
+                    a.handle = AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))
+                    return a
+                spec._agent_factory = _make_bad_agent
+                registry._registry["coder"] = spec
 
-            orchestrator = sw.SwarmOrchestrator(cfg=None)
+                orchestrator = sw.SwarmOrchestrator(cfg=None)
 
-            async def _failing_fallback(*args, **kwargs):
-                raise RuntimeError("supervisor also failed")
+                async def _failing_fallback(*args, **kwargs):
+                    raise RuntimeError("supervisor also failed")
 
-            orchestrator._run_supervisor_fallback = _failing_fallback
+                orchestrator._run_supervisor_fallback = _failing_fallback
 
-            task = sw.SwarmTask(goal="code something", intent="code_generation")
-            result = await orchestrator._execute_task(task)
-            assert result.status == "failed"
-            assert "supervisor" in result.agent_role.lower()
-
+                task = sw.SwarmTask(goal="code something", intent="code_generation")
+                result = await orchestrator._execute_task(task)
+                assert result.status == "failed"
+                assert "supervisor" in result.agent_role.lower()
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── Non-fallback exception path ───────────────────────────────────────────────
 
@@ -503,15 +504,16 @@ class TestRunPipeline:
             # second task should have prev context from first
             assert "prev_coder" in tasks[1].context or True  # context may vary by agent
 
-        @pytest.mark.asyncio
-        async def test_pipeline_skipped_task_does_not_add_context(self):
-            orchestrator, sw = _make_orchestrator(registered_agents={})
-            tasks = [
-                sw.SwarmTask(goal="step 1", intent="code_generation"),
-            ]
-            results = await orchestrator.run_pipeline(tasks)
-            assert results[0].status == "skipped"
-
+        def test_pipeline_skipped_task_does_not_add_context(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator(registered_agents={})
+                tasks = [
+                    sw.SwarmTask(goal="step 1", intent="code_generation"),
+                ]
+                results = await orchestrator.run_pipeline(tasks)
+                assert results[0].status == "skipped"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── dispatch_distributed ─────────────────────────────────────────────────────
 
@@ -524,78 +526,85 @@ class TestDispatchDistributed:
             with pytest.raises(RuntimeError, match="backend"):
                 await orchestrator.dispatch_distributed(task)
 
-        @pytest.mark.asyncio
-        async def test_dispatch_with_backend_succeeds(self):
-            orchestrator, sw = _make_orchestrator()
-            contracts = sys.modules["agent.core.contracts"]
+        def test_dispatch_with_backend_succeeds(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
+                contracts = sys.modules["agent.core.contracts"]
 
-            async def _fake_dispatch(envelope):
-                return contracts.BrokerTaskResult(
-                    task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
-                    status="queued", summary="queued"
-                )
+                async def _fake_dispatch(envelope):
+                    return contracts.BrokerTaskResult(
+                        task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
+                        status="queued", summary="queued"
+                    )
 
-            backend = MagicMock()
-            backend.dispatch = _fake_dispatch
-            orchestrator.configure_delegation_backend(backend)
+                backend = MagicMock()
+                backend.dispatch = _fake_dispatch
+                orchestrator.configure_delegation_backend(backend)
 
-            task = sw.SwarmTask(goal="test", intent="code_generation")
-            result = await orchestrator.dispatch_distributed(task)
-            assert result.status == "queued"
+                task = sw.SwarmTask(goal="test", intent="code_generation")
+                result = await orchestrator.dispatch_distributed(task)
+                assert result.status == "queued"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_dispatch_no_agent_found_raises(self):
-            orchestrator, sw = _make_orchestrator(registered_agents={})
+        def test_dispatch_no_agent_found_raises(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator(registered_agents={})
 
-            async def _fake_dispatch(envelope):
-                return MagicMock()
+                async def _fake_dispatch(envelope):
+                    return MagicMock()
 
-            backend = MagicMock()
-            backend.dispatch = _fake_dispatch
-            orchestrator.configure_delegation_backend(backend)
+                backend = MagicMock()
+                backend.dispatch = _fake_dispatch
+                orchestrator.configure_delegation_backend(backend)
 
-            task = sw.SwarmTask(goal="test", intent="code_generation")
-            with pytest.raises(RuntimeError, match="ajan"):
-                await orchestrator.dispatch_distributed(task)
+                task = sw.SwarmTask(goal="test", intent="code_generation")
+                with pytest.raises(RuntimeError, match="ajan"):
+                    await orchestrator.dispatch_distributed(task)
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_dispatch_with_receiver_override(self):
-            orchestrator, sw = _make_orchestrator()
-            contracts = sys.modules["agent.core.contracts"]
+        def test_dispatch_with_receiver_override(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
+                contracts = sys.modules["agent.core.contracts"]
 
-            async def _fake_dispatch(envelope):
-                return contracts.BrokerTaskResult(
-                    task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
-                    status="queued", summary="queued"
-                )
+                async def _fake_dispatch(envelope):
+                    return contracts.BrokerTaskResult(
+                        task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
+                        status="queued", summary="queued"
+                    )
 
-            backend = MagicMock()
-            backend.dispatch = _fake_dispatch
-            orchestrator.configure_delegation_backend(backend)
+                backend = MagicMock()
+                backend.dispatch = _fake_dispatch
+                orchestrator.configure_delegation_backend(backend)
 
-            task = sw.SwarmTask(goal="test", intent="code_generation")
-            result = await orchestrator.dispatch_distributed(task, receiver="coder")
-            assert result.status == "queued"
+                task = sw.SwarmTask(goal="test", intent="code_generation")
+                result = await orchestrator.dispatch_distributed(task, receiver="coder")
+                assert result.status == "queued"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_dispatch_with_preferred_agent(self):
-            orchestrator, sw = _make_orchestrator()
-            contracts = sys.modules["agent.core.contracts"]
+        def test_dispatch_with_preferred_agent(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
+                contracts = sys.modules["agent.core.contracts"]
 
-            async def _fake_dispatch(envelope):
-                return contracts.BrokerTaskResult(
-                    task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
-                    status="queued", summary="queued"
-                )
+                async def _fake_dispatch(envelope):
+                    return contracts.BrokerTaskResult(
+                        task_id=envelope.task_id, sender="swarm", receiver=envelope.receiver,
+                        status="queued", summary="queued"
+                    )
 
-            backend = MagicMock()
-            backend.dispatch = _fake_dispatch
-            orchestrator.configure_delegation_backend(backend)
+                backend = MagicMock()
+                backend.dispatch = _fake_dispatch
+                orchestrator.configure_delegation_backend(backend)
 
-            task = sw.SwarmTask(goal="test", intent="code_generation", preferred_agent="coder")
-            result = await orchestrator.dispatch_distributed(task)
-            assert result.status == "queued"
-
+                task = sw.SwarmTask(goal="test", intent="code_generation", preferred_agent="coder")
+                result = await orchestrator.dispatch_distributed(task)
+                assert result.status == "queued"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _run_supervisor_fallback ──────────────────────────────────────────────────
 
@@ -655,31 +664,34 @@ class TestRunAutonomousFeedback:
                 task_id="t1",
             )
 
-        @pytest.mark.asyncio
-        async def test_empty_response_returns_early(self):
-            orchestrator, sw = _make_orchestrator()
-            await orchestrator._run_autonomous_feedback(
-                prompt="do something",
-                response="",
-                context={},
-                session_id="s1",
-                agent_role="coder",
-                task_id="t1",
-            )
-
-        @pytest.mark.asyncio
-        async def test_exception_in_judge_is_suppressed(self):
-            orchestrator, sw = _make_orchestrator()
-            with patch.dict("sys.modules", {"core.judge": MagicMock(side_effect=ImportError)}):
+        def test_empty_response_returns_early(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
                 await orchestrator._run_autonomous_feedback(
-                    prompt="a",
-                    response="b",
+                    prompt="do something",
+                    response="",
                     context={},
                     session_id="s1",
                     agent_role="coder",
                     task_id="t1",
                 )
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
+        def test_exception_in_judge_is_suppressed(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
+                with patch.dict("sys.modules", {"core.judge": MagicMock(side_effect=ImportError)}):
+                    await orchestrator._run_autonomous_feedback(
+                        prompt="a",
+                        response="b",
+                        context={},
+                        session_id="s1",
+                        agent_role="coder",
+                        task_id="t1",
+                    )
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ── _schedule_autonomous_feedback ────────────────────────────────────────────
 
@@ -758,11 +770,13 @@ class TestRunParallel:
             for r in results:
                 assert r.status in ("success", "failed", "skipped")
 
-        @pytest.mark.asyncio
-        async def test_run_parallel_with_concurrency_1(self):
-            orchestrator, sw = _make_orchestrator()
-            tasks = [sw.SwarmTask(goal=f"task {i}", intent="code_generation") for i in range(3)]
-            results = await orchestrator.run_parallel(tasks, max_concurrency=1)
-            assert len(results) == 3
+        def test_run_parallel_with_concurrency_1(self):
+            async def _run():
+                orchestrator, sw = _make_orchestrator()
+                tasks = [sw.SwarmTask(goal=f"task {i}", intent="code_generation") for i in range(3)]
+                results = await orchestrator.run_parallel(tasks, max_concurrency=1)
+                assert len(results) == 3
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
         asyncio.run(_run())

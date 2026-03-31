@@ -228,70 +228,83 @@ class TestSlackFormatResponse:
 
 
 class TestSlackNotificationAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_message(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        result = await agent.run_task("")
-        assert "mesaj gerekli" in result
+    def test_empty_prompt_returns_message(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            result = await agent.run_task("")
+            assert "mesaj gerekli" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_whitespace_only_prompt(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        result = await agent.run_task("   ")
-        assert "mesaj gerekli" in result
+    def test_whitespace_only_prompt(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            result = await agent.run_task("   ")
+            assert "mesaj gerekli" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_no_webhook_returns_config_warning(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        agent.cfg.SLACK_WEBHOOK_URL = ""
-        result = await agent.run_task("sunucu çöktü bildirimi gönder")
-        assert "SLACK_WEBHOOK_URL" in result or "yapılandırın" in result
+    def test_no_webhook_returns_config_warning(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            agent.cfg.SLACK_WEBHOOK_URL = ""
+            result = await agent.run_task("sunucu çöktü bildirimi gönder")
+            assert "SLACK_WEBHOOK_URL" in result or "yapılandırın" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_send_success(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
+    def test_send_success(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
 
-        class _MockResp:
-            def read(self):
-                return b"ok"
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
+            class _MockResp:
+                def read(self):
+                    return b"ok"
+                def __enter__(self):
+                    return self
+                def __exit__(self, *a):
+                    pass
 
-        with patch("asyncio.to_thread", new=AsyncMock(return_value=_MockResp())):
-            result = await agent.run_task("deploy tamamlandı")
-        assert "gönderildi" in result
+            with patch("asyncio.to_thread", new=AsyncMock(return_value=_MockResp())):
+                result = await agent.run_task("deploy tamamlandı")
+            assert "gönderildi" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_send_with_channel(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
+    def test_send_with_channel(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
 
-        class _MockResp:
-            def read(self):
-                return b"ok"
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
+            class _MockResp:
+                def read(self):
+                    return b"ok"
+                def __enter__(self):
+                    return self
+                def __exit__(self, *a):
+                    pass
 
-        with patch("asyncio.to_thread", new=AsyncMock(return_value=_MockResp())):
-            result = await agent.run_task("#alerts sunucu uyarısı")
-        assert "alerts" in result
+            with patch("asyncio.to_thread", new=AsyncMock(return_value=_MockResp())):
+                result = await agent.run_task("#alerts sunucu uyarısı")
+            assert "alerts" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_send_failure_returns_error(self):
-        m = _get_slack_agent()
-        agent = m.SlackNotificationAgent()
-        agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
+    def test_send_failure_returns_error(self):
+        async def _run():
+            m = _get_slack_agent()
+            agent = m.SlackNotificationAgent()
+            agent.cfg.SLACK_WEBHOOK_URL = "https://hooks.slack.com/fake"
 
-        with patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı reddedildi"))):
-            result = await agent.run_task("test bildirimi")
-        assert "gönderilemedi" in result or "bağlantı" in result
+            with patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı reddedildi"))):
+                result = await agent.run_task("test bildirimi")
+            assert "gönderilemedi" in result or "bağlantı" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

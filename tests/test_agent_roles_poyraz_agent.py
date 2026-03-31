@@ -147,91 +147,109 @@ class TestPoyrazAgentInit:
 
 
 class TestPoyrazAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_poyraz()
-        result = await m.PoyrazAgent().run_task("")
-        assert "UYARI" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_poyraz()
+            result = await m.PoyrazAgent().run_task("")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_web_search_routing(self):
-        m = _get_poyraz()
-        result = await m.PoyrazAgent().run_task("web_search|SEO stratejileri")
-        assert result is not None
+    def test_web_search_routing(self):
+        async def _run():
+            m = _get_poyraz()
+            result = await m.PoyrazAgent().run_task("web_search|SEO stratejileri")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_fetch_url_routing(self):
-        m = _get_poyraz()
-        result = await m.PoyrazAgent().run_task("fetch_url|https://example.com")
-        assert result is not None
+    def test_fetch_url_routing(self):
+        async def _run():
+            m = _get_poyraz()
+            result = await m.PoyrazAgent().run_task("fetch_url|https://example.com")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_search_docs_routing(self):
-        m = _get_poyraz()
-        result = await m.PoyrazAgent().run_task("search_docs|pazarlama stratejisi")
-        assert result is not None
+    def test_search_docs_routing(self):
+        async def _run():
+            m = _get_poyraz()
+            result = await m.PoyrazAgent().run_task("search_docs|pazarlama stratejisi")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_social_routing_text(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        result = await agent.run_task("publish_social|twitter|||merhaba dünya")
-        assert "SOCIAL" in result
+    def test_publish_social_routing_text(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            result = await agent.run_task("publish_social|twitter|||merhaba dünya")
+            assert "SOCIAL" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_default_generates_content(self):
-        m = _get_poyraz()
-        result = await m.PoyrazAgent().run_task("yaz kampanyası için içerik üret")
-        assert result is not None
-
+    def test_default_generates_content(self):
+        async def _run():
+            m = _get_poyraz()
+            result = await m.PoyrazAgent().run_task("yaz kampanyası için içerik üret")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestPoyrazAgentTools:
-    @pytest.mark.asyncio
-    async def test_web_search_tool(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        result = await agent.call_tool("web_search", "dijital pazarlama")
-        assert "web sonucu" in result
+    def test_web_search_tool(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            result = await agent.call_tool("web_search", "dijital pazarlama")
+            assert "web sonucu" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_unknown_tool_returns_error(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        result = await agent.call_tool("unknown_xyz", "arg")
-        assert "HATA" in result or "hata" in result.lower()
+    def test_unknown_tool_returns_error(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            result = await agent.call_tool("unknown_xyz", "arg")
+            assert "HATA" in result or "hata" in result.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_social_json_payload_success_branch(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        agent.social.publish_content = AsyncMock(return_value=(True, "ok-1"))
+    def test_publish_social_json_payload_success_branch(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            agent.social.publish_content = AsyncMock(return_value=(True, "ok-1"))
 
-        payload = {
-            "platform": "instagram",
-            "text": "kampanya metni",
-            "destination": "audience-segment-a",
-            "media_url": "https://img.example.com/promo.jpg",
-            "link_url": "https://example.com",
-        }
-        raw = __import__("json").dumps(payload, ensure_ascii=False)
-        result = await agent._tool_publish_social(raw)
+            payload = {
+                "platform": "instagram",
+                "text": "kampanya metni",
+                "destination": "audience-segment-a",
+                "media_url": "https://img.example.com/promo.jpg",
+                "link_url": "https://example.com",
+            }
+            raw = __import__("json").dumps(payload, ensure_ascii=False)
+            result = await agent._tool_publish_social(raw)
 
-        assert result.startswith("[SOCIAL:PUBLISHED]")
-        assert "platform=instagram" in result
-        agent.social.publish_content.assert_awaited_once()
+            assert result.startswith("[SOCIAL:PUBLISHED]")
+            assert "platform=instagram" in result
+            agent.social.publish_content.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_publish_social_pipe_payload_error_branch(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        agent.social.publish_content = AsyncMock(return_value=(False, "api down"))
+    def test_publish_social_pipe_payload_error_branch(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            agent.social.publish_content = AsyncMock(return_value=(False, "api down"))
 
-        result = await agent._tool_publish_social("facebook|||metin|||dest|||media|||link")
+            result = await agent._tool_publish_social("facebook|||metin|||dest|||media|||link")
 
-        assert result.startswith("[SOCIAL:ERROR]")
-        assert "platform=facebook" in result
-        assert "api down" in result
-
+            assert result.startswith("[SOCIAL:ERROR]")
+            assert "platform=facebook" in result
+            assert "api down" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestPoyrazAgentPromptVariations:
     @pytest.mark.parametrize(
@@ -258,141 +276,153 @@ class TestPoyrazAgentPromptVariations:
 
 
 class TestPoyrazServiceOperations:
-    @pytest.mark.asyncio
-    async def test_plan_service_operations_without_persist(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        payload = {
-            "campaign_name": "İlkbahar Kampanyası",
-            "service_name": "Brunch",
-            "audience": "Aile",
-            "menu_plan": {"ana_yemek": ["  Pizza  ", "", "Pasta"]},
-            "vendor_assignments": {"DJ": "  Murat  ", "Fotoğrafçı": ""},
-            "timeline": ["10:00 kurulum", " ", "12:00 açılış"],
-            "notes": "  Ek personel ayarla ",
-            "persist_checklist": False,
-        }
-        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
-        parsed = __import__("json").loads(result)
-        items = parsed["service_plan"]["items"]
-        assert parsed["success"] is True
-        assert any(item["type"] == "menu_plan" for item in items)
-        assert any(item["type"] == "vendor_assignment" for item in items)
-        assert any(item["type"] == "timeline" for item in items)
-        assert any(item["type"] == "note" for item in items)
-        assert "checklist" not in parsed["service_plan"]
+    def test_plan_service_operations_without_persist(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            payload = {
+                "campaign_name": "İlkbahar Kampanyası",
+                "service_name": "Brunch",
+                "audience": "Aile",
+                "menu_plan": {"ana_yemek": ["  Pizza  ", "", "Pasta"]},
+                "vendor_assignments": {"DJ": "  Murat  ", "Fotoğrafçı": ""},
+                "timeline": ["10:00 kurulum", " ", "12:00 açılış"],
+                "notes": "  Ek personel ayarla ",
+                "persist_checklist": False,
+            }
+            result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+            parsed = __import__("json").loads(result)
+            items = parsed["service_plan"]["items"]
+            assert parsed["success"] is True
+            assert any(item["type"] == "menu_plan" for item in items)
+            assert any(item["type"] == "vendor_assignment" for item in items)
+            assert any(item["type"] == "timeline" for item in items)
+            assert any(item["type"] == "note" for item in items)
+            assert "checklist" not in parsed["service_plan"]
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_plan_service_operations_with_persist_adds_checklist(self, monkeypatch):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        fake_db = MagicMock()
-        fake_db.add_operation_checklist = AsyncMock(
-            return_value=types.SimpleNamespace(id=42, title="Operasyon", status="planned")
-        )
-        monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
+    def test_plan_service_operations_with_persist_adds_checklist(self, monkeypatch):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            fake_db = MagicMock()
+            fake_db.add_operation_checklist = AsyncMock(
+                return_value=types.SimpleNamespace(id=42, title="Operasyon", status="planned")
+            )
+            monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
 
-        payload = {
-            "campaign_name": "Yaz Kampanyası",
-            "service_name": "After Party",
-            "audience": "Genç yetişkin",
-            "menu_plan": {},
-            "vendor_assignments": {},
-            "timeline": [],
-            "notes": "",
-            "persist_checklist": True,
-            "tenant_id": "tenant-1",
-            "checklist_title": "Operasyon",
-            "owner_user_id": "owner-1",
-            "campaign_id": 7,
-        }
-        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
-        parsed = __import__("json").loads(result)
-        assert parsed["success"] is True
-        assert parsed["service_plan"]["checklist"]["id"] == 42
-        fake_db.add_operation_checklist.assert_awaited_once()
-
+            payload = {
+                "campaign_name": "Yaz Kampanyası",
+                "service_name": "After Party",
+                "audience": "Genç yetişkin",
+                "menu_plan": {},
+                "vendor_assignments": {},
+                "timeline": [],
+                "notes": "",
+                "persist_checklist": True,
+                "tenant_id": "tenant-1",
+                "checklist_title": "Operasyon",
+                "owner_user_id": "owner-1",
+                "campaign_id": 7,
+            }
+            result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+            parsed = __import__("json").loads(result)
+            assert parsed["success"] is True
+            assert parsed["service_plan"]["checklist"]["id"] == 42
+            fake_db.add_operation_checklist.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestPoyrazAdditionalCoverage:
-    @pytest.mark.asyncio
-    async def test_ensure_db_returns_existing_instance(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        existing_db = MagicMock()
-        agent._db = existing_db
-        result = await agent._ensure_db()
-        assert result is existing_db
+    def test_ensure_db_returns_existing_instance(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            existing_db = MagicMock()
+            agent._db = existing_db
+            result = await agent._ensure_db()
+            assert result is existing_db
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_ensure_db_initializes_once_with_lock(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
+    def test_ensure_db_initializes_once_with_lock(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
 
-        fake_db_instance = MagicMock()
-        fake_db_instance.connect = AsyncMock()
-        fake_db_instance.init_schema = AsyncMock()
+            fake_db_instance = MagicMock()
+            fake_db_instance.connect = AsyncMock()
+            fake_db_instance.init_schema = AsyncMock()
 
-        db_mod = types.ModuleType("core.db")
-        db_mod.Database = MagicMock(return_value=fake_db_instance)
-        sys.modules["core.db"] = db_mod
+            db_mod = types.ModuleType("core.db")
+            db_mod.Database = MagicMock(return_value=fake_db_instance)
+            sys.modules["core.db"] = db_mod
 
-        first, second = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
-        assert first is second
-        db_mod.Database.assert_called_once_with(agent.cfg)
-        fake_db_instance.connect.assert_awaited_once()
-        fake_db_instance.init_schema.assert_awaited_once()
+            first, second = await asyncio.gather(agent._ensure_db(), agent._ensure_db())
+            assert first is second
+            db_mod.Database.assert_called_once_with(agent.cfg)
+            fake_db_instance.connect.assert_awaited_once()
+            fake_db_instance.init_schema.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_search_docs_awaits_async_result_object(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
+    def test_search_docs_awaits_async_result_object(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
 
-        async def _async_search(*_args, **_kwargs):
-            return (False, "timeout")
+            async def _async_search(*_args, **_kwargs):
+                return (False, "timeout")
 
-        agent.docs.search = MagicMock(side_effect=_async_search)
-        result = await agent._tool_search_docs("kampanya")
-        assert result == "timeout"
+            agent.docs.search = MagicMock(side_effect=_async_search)
+            result = await agent._tool_search_docs("kampanya")
+            assert result == "timeout"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_social_channel_specific_tools_success_and_error(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
+    def test_social_channel_specific_tools_success_and_error(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
 
-        agent.social.publish_instagram_post = AsyncMock(return_value=(True, "ig-ok"))
-        result = await agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}')
-        assert result.startswith("[INSTAGRAM:PUBLISHED]")
+            agent.social.publish_instagram_post = AsyncMock(return_value=(True, "ig-ok"))
+            result = await agent._tool_publish_instagram_post('{"caption":"hello","image_url":"https://img"}')
+            assert result.startswith("[INSTAGRAM:PUBLISHED]")
 
-        agent.social.publish_facebook_post = AsyncMock(return_value=(False, "fb-down"))
-        result = await agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}')
-        assert result.startswith("[FACEBOOK:ERROR]")
+            agent.social.publish_facebook_post = AsyncMock(return_value=(False, "fb-down"))
+            result = await agent._tool_publish_facebook_post('{"message":"msg","link_url":"https://lnk"}')
+            assert result.startswith("[FACEBOOK:ERROR]")
 
-        agent.social.send_whatsapp_message = AsyncMock(return_value=(True, "wa-ok"))
-        result = await agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}')
-        assert result.startswith("[WHATSAPP:SENT]")
+            agent.social.send_whatsapp_message = AsyncMock(return_value=(True, "wa-ok"))
+            result = await agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}')
+            assert result.startswith("[WHATSAPP:SENT]")
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
+    def test_ensure_db_reuses_existing_lock_instance(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
 
-    @pytest.mark.asyncio
-    async def test_ensure_db_reuses_existing_lock_instance(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
+            existing_lock = asyncio.Lock()
+            agent._db_lock = existing_lock
 
-        existing_lock = asyncio.Lock()
-        agent._db_lock = existing_lock
+            fake_db_instance = MagicMock()
+            fake_db_instance.connect = AsyncMock()
+            fake_db_instance.init_schema = AsyncMock()
 
-        fake_db_instance = MagicMock()
-        fake_db_instance.connect = AsyncMock()
-        fake_db_instance.init_schema = AsyncMock()
+            db_mod = types.ModuleType("core.db")
+            db_mod.Database = MagicMock(return_value=fake_db_instance)
+            sys.modules["core.db"] = db_mod
 
-        db_mod = types.ModuleType("core.db")
-        db_mod.Database = MagicMock(return_value=fake_db_instance)
-        sys.modules["core.db"] = db_mod
+            result = await agent._ensure_db()
 
-        result = await agent._ensure_db()
-
-        assert result is fake_db_instance
-        assert agent._db_lock is existing_lock
-        db_mod.Database.assert_called_once_with(agent.cfg)
+            assert result is fake_db_instance
+            assert agent._db_lock is existing_lock
+            db_mod.Database.assert_called_once_with(agent.cfg)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_ensure_db_returns_cached_instance_after_lock_enter(self):
         m = _get_poyraz()
@@ -429,29 +459,31 @@ class TestPoyrazAdditionalCoverage:
         result = asyncio.run(agent._tool_send_whatsapp_message('{"to":"+90555","text":"selam","preview_url":true}'))
         assert result.startswith("[WHATSAPP:ERROR]")
 
-    @pytest.mark.asyncio
-    async def test_build_landing_page_with_store_asset(self, monkeypatch):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="lp-content"))
-        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+    def test_build_landing_page_with_store_asset(self, monkeypatch):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="lp-content"))
+            monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
 
-        payload = {
-            "brand_name": "Sidar",
-            "offer": "İlk teklif",
-            "audience": "KOBİ",
-            "call_to_action": "Demo al",
-            "tone": "professional",
-            "sections": ["hero", "cta"],
-            "store_asset": True,
-            "campaign_id": 4,
-            "tenant_id": "tenant-a",
-            "asset_title": "LP",
-            "channel": "web",
-        }
-        result = await agent._tool_build_landing_page(__import__("json").dumps(payload, ensure_ascii=False))
-        assert result == "lp-content"
-        agent._persist_content_asset.assert_awaited_once()
+            payload = {
+                "brand_name": "Sidar",
+                "offer": "İlk teklif",
+                "audience": "KOBİ",
+                "call_to_action": "Demo al",
+                "tone": "professional",
+                "sections": ["hero", "cta"],
+                "store_asset": True,
+                "campaign_id": 4,
+                "tenant_id": "tenant-a",
+                "asset_title": "LP",
+                "channel": "web",
+            }
+            result = await agent._tool_build_landing_page(__import__("json").dumps(payload, ensure_ascii=False))
+            assert result == "lp-content"
+            agent._persist_content_asset.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_build_landing_page_plain_text_does_not_store_asset(self, monkeypatch):
         m = _get_poyraz()
@@ -483,29 +515,31 @@ class TestPoyrazAdditionalCoverage:
         assert result == "landing-no-campaign"
         agent._persist_content_asset.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_generate_campaign_copy_with_store_asset(self, monkeypatch):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="copy-content"))
-        monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
+    def test_generate_campaign_copy_with_store_asset(self, monkeypatch):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            monkeypatch.setattr(agent, "_generate_marketing_output", AsyncMock(return_value="copy-content"))
+            monkeypatch.setattr(agent, "_persist_content_asset", AsyncMock(return_value='{"success":true}'))
 
-        payload = {
-            "campaign_name": "Bahar",
-            "objective": "lead",
-            "audience": "genç",
-            "channels": ["instagram"],
-            "offer": "indirim",
-            "tone": "friendly",
-            "call_to_action": "Katıl",
-            "store_asset": True,
-            "campaign_id": 8,
-            "tenant_id": "tenant-b",
-            "asset_title": "Copy",
-        }
-        result = await agent._tool_generate_campaign_copy(__import__("json").dumps(payload, ensure_ascii=False))
-        assert result == "copy-content"
-        agent._persist_content_asset.assert_awaited_once()
+            payload = {
+                "campaign_name": "Bahar",
+                "objective": "lead",
+                "audience": "genç",
+                "channels": ["instagram"],
+                "offer": "indirim",
+                "tone": "friendly",
+                "call_to_action": "Katıl",
+                "store_asset": True,
+                "campaign_id": 8,
+                "tenant_id": "tenant-b",
+                "asset_title": "Copy",
+            }
+            result = await agent._tool_generate_campaign_copy(__import__("json").dumps(payload, ensure_ascii=False))
+            assert result == "copy-content"
+            agent._persist_content_asset.assert_awaited_once()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_generate_campaign_copy_plain_text_branch(self, monkeypatch):
         m = _get_poyraz()
@@ -519,97 +553,102 @@ class TestPoyrazAdditionalCoverage:
         assert "Serbest metin briefi" in prompt
         agent._persist_content_asset.assert_not_awaited()
 
-    @pytest.mark.asyncio
-    async def test_plan_service_operations_skips_empty_menu_option_groups(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        payload = {
-            "campaign_name": "Sonbahar Kampanyası",
-            "service_name": "Coffee Break",
-            "audience": "Çalışanlar",
-            "menu_plan": {"ana_yemek": [], "tatlı": None, "içecek": ["Filtre Kahve"]},
-            "vendor_assignments": {},
-            "timeline": [],
-            "notes": "",
-            "persist_checklist": False,
-        }
-        result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
-        parsed = __import__("json").loads(result)
-        menu_items = [item for item in parsed["service_plan"]["items"] if item["type"] == "menu_plan"]
-        assert len(menu_items) == 1
-        assert menu_items[0]["group"] == "içecek"
+    def test_plan_service_operations_skips_empty_menu_option_groups(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            payload = {
+                "campaign_name": "Sonbahar Kampanyası",
+                "service_name": "Coffee Break",
+                "audience": "Çalışanlar",
+                "menu_plan": {"ana_yemek": [], "tatlı": None, "içecek": ["Filtre Kahve"]},
+                "vendor_assignments": {},
+                "timeline": [],
+                "notes": "",
+                "persist_checklist": False,
+            }
+            result = await agent._tool_plan_service_operations(__import__("json").dumps(payload, ensure_ascii=False))
+            parsed = __import__("json").loads(result)
+            menu_items = [item for item in parsed["service_plan"]["items"] if item["type"] == "menu_plan"]
+            assert len(menu_items) == 1
+            assert menu_items[0]["group"] == "içecek"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_video_ingest_success_and_error_paths(self):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
+    def test_video_ingest_success_and_error_paths(self):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
 
-        pipe_mod = types.ModuleType("core.multimodal")
-        pipeline = MagicMock()
-        pipeline.analyze_media_source = AsyncMock(return_value={"success": False, "reason": "timeout"})
-        pipe_mod.MultimodalPipeline = MagicMock(return_value=pipeline)
-        sys.modules["core.multimodal"] = pipe_mod
+            pipe_mod = types.ModuleType("core.multimodal")
+            pipeline = MagicMock()
+            pipeline.analyze_media_source = AsyncMock(return_value={"success": False, "reason": "timeout"})
+            pipe_mod.MultimodalPipeline = MagicMock(return_value=pipeline)
+            sys.modules["core.multimodal"] = pipe_mod
 
-        err = await agent._tool_ingest_video_insights("https://v|||özet|||tr|||s1|||4")
-        assert err.startswith("[VIDEO:ERROR]")
+            err = await agent._tool_ingest_video_insights("https://v|||özet|||tr|||s1|||4")
+            assert err.startswith("[VIDEO:ERROR]")
 
-        pipeline.analyze_media_source = AsyncMock(
-            return_value={"success": True, "scene_summary": "s", "document_ingest": {"doc_id": "d1"}}
-        )
-        ok = await agent._tool_ingest_video_insights(
-            '{"source_url":"https://v","prompt":"özet","language":"tr","session_id":"s2","max_frames":2,"frame_interval_seconds":1.0}'
-        )
-        assert ok.startswith("[VIDEO:INGESTED]")
-
-    @pytest.mark.asyncio
-    async def test_campaign_asset_and_checklist_tools(self, monkeypatch):
-        m = _get_poyraz()
-        agent = m.PoyrazAgent()
-        fake_db = MagicMock()
-        fake_db.upsert_marketing_campaign = AsyncMock(
-            return_value=types.SimpleNamespace(
-                id=77,
-                tenant_id="t1",
-                name="Kamp",
-                channel="instagram",
-                objective="lead",
-                status="draft",
-                owner_user_id="u1",
-                budget=99.0,
+            pipeline.analyze_media_source = AsyncMock(
+                return_value={"success": True, "scene_summary": "s", "document_ingest": {"doc_id": "d1"}}
             )
-        )
-        fake_db.add_content_asset = AsyncMock(
-            return_value=types.SimpleNamespace(
-                id=12,
-                campaign_id=77,
-                tenant_id="t1",
-                asset_type="copy",
-                title="başlık",
-                channel="instagram",
+            ok = await agent._tool_ingest_video_insights(
+                '{"source_url":"https://v","prompt":"özet","language":"tr","session_id":"s2","max_frames":2,"frame_interval_seconds":1.0}'
             )
-        )
-        fake_db.add_operation_checklist = AsyncMock(
-            return_value=types.SimpleNamespace(
-                id=34, campaign_id=77, tenant_id="t1", title="ops", status="pending", items_json="[]"
+            assert ok.startswith("[VIDEO:INGESTED]")
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    def test_campaign_asset_and_checklist_tools(self, monkeypatch):
+        async def _run():
+            m = _get_poyraz()
+            agent = m.PoyrazAgent()
+            fake_db = MagicMock()
+            fake_db.upsert_marketing_campaign = AsyncMock(
+                return_value=types.SimpleNamespace(
+                    id=77,
+                    tenant_id="t1",
+                    name="Kamp",
+                    channel="instagram",
+                    objective="lead",
+                    status="draft",
+                    owner_user_id="u1",
+                    budget=99.0,
+                )
             )
-        )
-        monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
+            fake_db.add_content_asset = AsyncMock(
+                return_value=types.SimpleNamespace(
+                    id=12,
+                    campaign_id=77,
+                    tenant_id="t1",
+                    asset_type="copy",
+                    title="başlık",
+                    channel="instagram",
+                )
+            )
+            fake_db.add_operation_checklist = AsyncMock(
+                return_value=types.SimpleNamespace(
+                    id=34, campaign_id=77, tenant_id="t1", title="ops", status="pending", items_json="[]"
+                )
+            )
+            monkeypatch.setattr(agent, "_ensure_db", AsyncMock(return_value=fake_db))
 
-        campaign = await agent._tool_create_marketing_campaign(
-            '{"tenant_id":"t1","name":"Kamp","channel":"instagram","objective":"lead","status":"draft","owner_user_id":"u1","budget":99.0,"metadata":{}}'
-        )
-        assert __import__("json").loads(campaign)["campaign"]["id"] == 77
+            campaign = await agent._tool_create_marketing_campaign(
+                '{"tenant_id":"t1","name":"Kamp","channel":"instagram","objective":"lead","status":"draft","owner_user_id":"u1","budget":99.0,"metadata":{}}'
+            )
+            assert __import__("json").loads(campaign)["campaign"]["id"] == 77
 
-        asset = await agent._tool_store_content_asset(
-            '{"campaign_id":77,"tenant_id":"t1","asset_type":"copy","title":"başlık","content":"metin","channel":"instagram","metadata":{}}'
-        )
-        assert __import__("json").loads(asset)["asset"]["id"] == 12
+            asset = await agent._tool_store_content_asset(
+                '{"campaign_id":77,"tenant_id":"t1","asset_type":"copy","title":"başlık","content":"metin","channel":"instagram","metadata":{}}'
+            )
+            assert __import__("json").loads(asset)["asset"]["id"] == 12
 
-        checklist = await agent._tool_create_operation_checklist(
-            '{"tenant_id":"t1","title":"ops","items":[],"status":"pending","owner_user_id":"u1","campaign_id":77}'
-        )
-        assert __import__("json").loads(checklist)["checklist"]["id"] == 34
-
+            checklist = await agent._tool_create_operation_checklist(
+                '{"tenant_id":"t1","title":"ops","items":[],"status":"pending","owner_user_id":"u1","campaign_id":77}'
+            )
+            assert __import__("json").loads(checklist)["checklist"]["id"] == 34
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestPoyrazAgentScenarioParametrized:
     @pytest.mark.parametrize(

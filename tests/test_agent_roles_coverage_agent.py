@@ -467,173 +467,215 @@ tests/test_sample.py         20      0      0      0   100%
 
 class TestCoverageAgentRunTask:
     @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_coverage()
-        result = await m.CoverageAgent().run_task("")
-        assert "UYARI" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_coverage()
+            result = await m.CoverageAgent().run_task("")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_whitespace_prompt_returns_warning(self):
-        m = _get_coverage()
-        result = await m.CoverageAgent().run_task("   ")
-        assert "UYARI" in result
+    def test_whitespace_prompt_returns_warning(self):
+        async def _run():
+            m = _get_coverage()
+            result = await m.CoverageAgent().run_task("   ")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_run_pytest_routing(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent.run_task('run_pytest|{"command": "pytest -q"}')
-        assert result is not None
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_run_pytest_routing(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent.run_task('run_pytest|{"command": "pytest -q"}')
+            assert result is not None
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_analyze_pytest_output_routing(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent.run_task('analyze_pytest_output|{"output": "1 failed"}')
-        assert result is not None
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_analyze_pytest_output_routing(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent.run_task('analyze_pytest_output|{"output": "1 failed"}')
+            assert result is not None
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_analyze_coverage_report_routing(self, tmp_path):
-        m = _get_coverage()
-        xml_path = tmp_path / "coverage.xml"
-        xml_path.write_text(
-            """<?xml version="1.0" ?>
-<coverage><packages><package name="x"><classes>
-<class filename="core/x.py" line-rate="0.0" branch-rate="1.0"><lines><line number="1" hits="0"/></lines></class>
-</classes></package></packages></coverage>
-""",
-            encoding="utf-8",
-        )
-        agent = m.CoverageAgent()
-        payload = json.dumps({"coverage_xml": str(xml_path), "limit": 5})
-        result = await agent.run_task(f"analyze_coverage_report|{payload}")
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
-        assert parsed["coverage_xml"]["exists"] is True
-        assert parsed["findings"]
+    def test_analyze_coverage_report_routing(self, tmp_path):
+        async def _run():
+            m = _get_coverage()
+            xml_path = tmp_path / "coverage.xml"
+            xml_path.write_text(
+                """<?xml version="1.0" ?>
+    <coverage><packages><package name="x"><classes>
+    <class filename="core/x.py" line-rate="0.0" branch-rate="1.0"><lines><line number="1" hits="0"/></lines></class>
+    </classes></package></packages></coverage>
+    """,
+                encoding="utf-8",
+            )
+            agent = m.CoverageAgent()
+            payload = json.dumps({"coverage_xml": str(xml_path), "limit": 5})
+            result = await agent.run_task(f"analyze_coverage_report|{payload}")
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+            assert parsed["coverage_xml"]["exists"] is True
+            assert parsed["findings"]
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_analyze_coverage_report_uses_terminal_findings_when_xml_missing(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps(
-            {
-                "coverage_xml": "/tmp/does-not-exist.xml",
-                "coverage_output": "web_server.py 3090 1310 750 230 42% 10-12, 40-58",
+    def test_analyze_coverage_report_uses_terminal_findings_when_xml_missing(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps(
+                {
+                    "coverage_xml": "/tmp/does-not-exist.xml",
+                    "coverage_output": "web_server.py 3090 1310 750 230 42% 10-12, 40-58",
+                }
+            )
+            result = await agent.run_task(f"analyze_coverage_report|{payload}")
+            parsed = json.loads(result)
+    
+            assert parsed["coverage_xml"]["exists"] is False
+            assert parsed["coverage_terminal"]["total_findings"] == 1
+            assert parsed["findings"][0]["target_path"] == "web_server.py"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_generate_missing_tests_routing(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent.run_task('generate_missing_tests|{"target_path": "core/db.py", "pytest_output": "1 failed"}')
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_write_missing_tests_routing(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps({
+                "suggested_test_path": "tests/test_db_coverage.py",
+                "generated_test": "def test_foo(): pass",
+            })
+            result = await agent.run_task(f"write_missing_tests|{payload}")
+            parsed = json.loads(result)
+            assert "success" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_no_findings_returns_no_gaps_status(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            # code.run_pytest_and_collect analiz findings'i boş döndürüyor (mock zaten böyle ayarlı)
+            result = await agent.run_task('{"command": "pytest -q"}')
+            parsed = json.loads(result)
+            assert parsed.get("status") == "no_gaps_detected"
+            assert parsed.get("success") is True
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_findings_present_triggers_test_generation(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            finding = {
+                "finding_type": "missing_tests",
+                "target_path": "core/memory.py",
+                "summary": "hiç test yok",
             }
-        )
-        result = await agent.run_task(f"analyze_coverage_report|{payload}")
-        parsed = json.loads(result)
-
-        assert parsed["coverage_xml"]["exists"] is False
-        assert parsed["coverage_terminal"]["total_findings"] == 1
-        assert parsed["findings"][0]["target_path"] == "web_server.py"
-
-    @pytest.mark.asyncio
-    async def test_generate_missing_tests_routing(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent.run_task('generate_missing_tests|{"target_path": "core/db.py", "pytest_output": "1 failed"}')
-        assert result is not None
+            agent.code.run_pytest_and_collect = MagicMock(return_value={
+                "output": "FAILED core/memory.py",
+                "analysis": {"summary": "eksik", "findings": [finding]},
+            })
+            result = await agent.run_task('{"command": "pytest -q"}')
+            parsed = json.loads(result)
+            assert parsed.get("target_path") == "core/memory.py"
+            assert "suggested_test_path" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_write_missing_tests_routing(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps({
-            "suggested_test_path": "tests/test_db_coverage.py",
-            "generated_test": "def test_foo(): pass",
-        })
-        result = await agent.run_task(f"write_missing_tests|{payload}")
-        parsed = json.loads(result)
-        assert "success" in parsed
-
-    @pytest.mark.asyncio
-    async def test_no_findings_returns_no_gaps_status(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        # code.run_pytest_and_collect analiz findings'i boş döndürüyor (mock zaten böyle ayarlı)
-        result = await agent.run_task('{"command": "pytest -q"}')
-        parsed = json.loads(result)
-        assert parsed.get("status") == "no_gaps_detected"
-        assert parsed.get("success") is True
-
-    @pytest.mark.asyncio
-    async def test_findings_present_triggers_test_generation(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        finding = {
-            "finding_type": "missing_tests",
-            "target_path": "core/memory.py",
-            "summary": "hiç test yok",
-        }
-        agent.code.run_pytest_and_collect = MagicMock(return_value={
-            "output": "FAILED core/memory.py",
-            "analysis": {"summary": "eksik", "findings": [finding]},
-        })
-        result = await agent.run_task('{"command": "pytest -q"}')
-        parsed = json.loads(result)
-        assert parsed.get("target_path") == "core/memory.py"
-        assert "suggested_test_path" in parsed
-
-    @pytest.mark.asyncio
-    async def test_findings_write_success(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
-        agent.code.run_pytest_and_collect = MagicMock(return_value={
-            "output": "1 failed",
-            "analysis": {"summary": "eksik", "findings": [finding]},
-        })
-        agent.code.write_generated_test = MagicMock(return_value=(True, "yazıldı"))
-        result = await agent.run_task("{}")
-        parsed = json.loads(result)
-        assert parsed.get("success") is True
-        assert parsed.get("status") == "tests_written"
-
-    @pytest.mark.asyncio
-    async def test_findings_write_failure(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
-        agent.code.run_pytest_and_collect = MagicMock(return_value={
-            "output": "1 failed",
-            "analysis": {"summary": "eksik", "findings": [finding]},
-        })
-        agent.code.write_generated_test = MagicMock(return_value=(False, "izin hatası"))
-        result = await agent.run_task("{}")
-        parsed = json.loads(result)
-        assert parsed.get("success") is False
-        assert parsed.get("status") == "write_failed"
-
-    @pytest.mark.asyncio
-    async def test_run_task_returns_json_string(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent.run_task("{}")
-        # Boş olmayan JSON string dönmeli
-        assert isinstance(result, str)
-        json.loads(result)  # parse edilebilmeli
-
-    @pytest.mark.asyncio
-    async def test_db_record_exception_does_not_propagate(self):
-        """_record_task içindeki istisnanın run_task'ı patlatmaması gerekir."""
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
-        agent.code.run_pytest_and_collect = MagicMock(return_value={
-            "output": "1 failed",
-            "analysis": {"summary": "eksik", "findings": [finding]},
-        })
-        with patch.object(agent, "_record_task", AsyncMock(side_effect=RuntimeError("db hatası"))):
+    def test_findings_write_success(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
+            agent.code.run_pytest_and_collect = MagicMock(return_value={
+                "output": "1 failed",
+                "analysis": {"summary": "eksik", "findings": [finding]},
+            })
+            agent.code.write_generated_test = MagicMock(return_value=(True, "yazıldı"))
             result = await agent.run_task("{}")
-        # İstisna yutulmuş olmalı, hâlâ JSON sonuç dönmeli
-        parsed = json.loads(result)
-        assert "success" in parsed
+            parsed = json.loads(result)
+            assert parsed.get("success") is True
+            assert parsed.get("status") == "tests_written"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_findings_write_failure(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
+            agent.code.run_pytest_and_collect = MagicMock(return_value={
+                "output": "1 failed",
+                "analysis": {"summary": "eksik", "findings": [finding]},
+            })
+            agent.code.write_generated_test = MagicMock(return_value=(False, "izin hatası"))
+            result = await agent.run_task("{}")
+            parsed = json.loads(result)
+            assert parsed.get("success") is False
+            assert parsed.get("status") == "write_failed"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_run_task_returns_json_string(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent.run_task("{}")
+            # Boş olmayan JSON string dönmeli
+            assert isinstance(result, str)
+            json.loads(result)  # parse edilebilmeli
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_db_record_exception_does_not_propagate(self):
+        async def _run():
+            """_record_task içindeki istisnanın run_task'ı patlatmaması gerekir."""
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            finding = {"finding_type": "missing", "target_path": "core/db.py", "summary": "test yok"}
+            agent.code.run_pytest_and_collect = MagicMock(return_value={
+                "output": "1 failed",
+                "analysis": {"summary": "eksik", "findings": [finding]},
+            })
+            with patch.object(agent, "_record_task", AsyncMock(side_effect=RuntimeError("db hatası"))):
+                result = await agent.run_task("{}")
+            # İstisna yutulmuş olmalı, hâlâ JSON sonuç dönmeli
+            parsed = json.loads(result)
+            assert "success" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 
 # ─────────────────────────────────────────────────────────
@@ -642,69 +684,87 @@ class TestCoverageAgentRunTask:
 
 class TestCoverageAgentTools:
     @pytest.mark.asyncio
-    async def test_ensure_db_returns_cached_instance_immediately(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        cached = object()
-        agent._db = cached
-
-        result = await agent._ensure_db()
-
-        assert result is cached
-
-    @pytest.mark.asyncio
-    async def test_ensure_db_returns_cached_instance_inside_lock(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        marker = object()
-
-        class _LockThatSeedsDb:
-            async def __aenter__(self_inner):
-                agent._db = marker
-
-            async def __aexit__(self_inner, exc_type, exc, tb):
-                return False
-
-        agent._db_lock = _LockThatSeedsDb()
-
-        result = await agent._ensure_db()
-
-        assert result is marker
+    def test_ensure_db_returns_cached_instance_immediately(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            cached = object()
+            agent._db = cached
+    
+            result = await agent._ensure_db()
+    
+            assert result is cached
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_tool_run_pytest_default_command(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent._tool_run_pytest("{}")
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_ensure_db_returns_cached_instance_inside_lock(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            marker = object()
+    
+            class _LockThatSeedsDb:
+                async def __aenter__(self_inner):
+                    agent._db = marker
+    
+                async def __aexit__(self_inner, exc_type, exc, tb):
+                    return False
+    
+            agent._db_lock = _LockThatSeedsDb()
+    
+            result = await agent._ensure_db()
+    
+            assert result is marker
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_tool_run_pytest_custom_command(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent._tool_run_pytest('{"command": "pytest tests/ -v"}')
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_tool_run_pytest_default_command(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent._tool_run_pytest("{}")
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_tool_analyze_pytest_output(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        result = await agent._tool_analyze_pytest_output('{"output": "1 passed, 2 failed"}')
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_tool_run_pytest_custom_command(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent._tool_run_pytest('{"command": "pytest tests/ -v"}')
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     @pytest.mark.asyncio
-    async def test_tool_generate_missing_tests(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps({
-            "target_path": "core/memory.py",
-            "pytest_output": "1 failed",
-        })
-        result = await agent._tool_generate_missing_tests(payload)
-        assert isinstance(result, str)
+    def test_tool_analyze_pytest_output(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            result = await agent._tool_analyze_pytest_output('{"output": "1 passed, 2 failed"}')
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_tool_generate_missing_tests(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps({
+                "target_path": "core/memory.py",
+                "pytest_output": "1 failed",
+            })
+            result = await agent._tool_generate_missing_tests(payload)
+            assert isinstance(result, str)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_tool_generate_missing_tests_with_coverage_finding_without_target_path(self):
         m = _get_coverage()
@@ -726,110 +786,128 @@ class TestCoverageAgentTools:
         assert "def test_generated" in result
 
     @pytest.mark.asyncio
-    async def test_tool_generate_missing_tests_with_coverage_finding_uses_dynamic_prompt(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps(
-            {
-                "coverage_finding": {
-                    "target_path": "agent/roles/coverage_agent.py",
-                    "missing_lines": [260, 261],
-                    "missing_branches": ["320:50% (1/2)"],
-                },
-                "coveragerc": {"run": {"include": "agent/*"}, "report": {"omit": "tests/*"}},
-            }
-        )
-        with patch.object(agent, "call_llm", AsyncMock(return_value="def test_dynamic(): pass")) as llm_mock:
-            result = await agent._tool_generate_missing_tests(payload)
-        assert "test_dynamic" in result
-        prompt = llm_mock.await_args.args[0][0]["content"]
-        assert "Hedef dosya: agent/roles/coverage_agent.py" in prompt
-        assert ".coveragerc include: agent/*" in prompt
-        assert ".coveragerc omit: tests/*" in prompt
-
-    @pytest.mark.asyncio
-    async def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        analysis = {"summary": "hazır", "findings": [{"target_path": "core/db.py"}]}
-        agent.code.analyze_pytest_output = MagicMock(side_effect=AssertionError("reanalyze edilmemeli"))
-        payload = json.dumps({
-            "target_path": "core/db.py",
-            "pytest_output": "FAILED core/db.py",
-            "analysis": analysis,
-        })
-
-        result = await agent._tool_generate_missing_tests(payload)
-
-        assert isinstance(result, str)
-
-    @pytest.mark.asyncio
-    async def test_tool_write_missing_tests_success(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps({
-            "suggested_test_path": "tests/test_memory_coverage.py",
-            "generated_test": "def test_x(): pass",
-        })
-        result = await agent._tool_write_missing_tests(payload)
-        parsed = json.loads(result)
-        assert parsed["success"] is True
-        assert parsed["suggested_test_path"] == "tests/test_memory_coverage.py"
-
-    @pytest.mark.asyncio
-    async def test_tool_write_missing_tests_failure(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        agent.code.write_generated_test = MagicMock(return_value=(False, "yazma hatası"))
-        payload = json.dumps({
-            "suggested_test_path": "tests/test_fail_coverage.py",
-            "generated_test": "def test_y(): pass",
-        })
-        result = await agent._tool_write_missing_tests(payload)
-        parsed = json.loads(result)
-        assert parsed["success"] is False
-        assert "message" in parsed
-
-    @pytest.mark.asyncio
-    async def test_tool_write_missing_tests_append_flag(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        payload = json.dumps({
-            "suggested_test_path": "tests/test_append_coverage.py",
-            "generated_test": "def test_append(): pass",
-            "append": False,
-        })
-        result = await agent._tool_write_missing_tests(payload)
-        parsed = json.loads(result)
-        assert "success" in parsed
-        # append=False ile çağrıldığında write_generated_test doğru argümanla çağrılmış olmalı
-        agent.code.write_generated_test.assert_called_once_with(
-            "tests/test_append_coverage.py",
-            "def test_append(): pass",
-            append=False,
-        )
-
-    @pytest.mark.asyncio
-    async def test_record_task_persists_findings_with_fallback_defaults(self):
-        m = _get_coverage()
-        agent = m.CoverageAgent()
-        fake_db = MagicMock()
-        fake_db.create_coverage_task = AsyncMock(return_value=types.SimpleNamespace(id=99))
-        fake_db.add_coverage_finding = AsyncMock()
-        with patch.object(agent, "_ensure_db", AsyncMock(return_value=fake_db)):
-            await agent._record_task(
-                command="pytest -q",
-                pytest_output="FAILED ...",
-                analysis={"findings": [{"summary": "eksik test"}]},
-                generated_test="def test_x(): pass",
-                review_payload={"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
-                status="tests_written",
+    def test_tool_generate_missing_tests_with_coverage_finding_uses_dynamic_prompt(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps(
+                {
+                    "coverage_finding": {
+                        "target_path": "agent/roles/coverage_agent.py",
+                        "missing_lines": [260, 261],
+                        "missing_branches": ["320:50% (1/2)"],
+                    },
+                    "coveragerc": {"run": {"include": "agent/*"}, "report": {"omit": "tests/*"}},
+                }
             )
-        fake_db.create_coverage_task.assert_awaited_once()
-        fake_db.add_coverage_finding.assert_awaited_once()
-        call_kwargs = fake_db.add_coverage_finding.await_args.kwargs
-        assert call_kwargs["finding_type"] == "unknown"
-        assert call_kwargs["target_path"] == ""
+            with patch.object(agent, "call_llm", AsyncMock(return_value="def test_dynamic(): pass")) as llm_mock:
+                result = await agent._tool_generate_missing_tests(payload)
+            assert "test_dynamic" in result
+            prompt = llm_mock.await_args.args[0][0]["content"]
+            assert "Hedef dosya: agent/roles/coverage_agent.py" in prompt
+            assert ".coveragerc include: agent/*" in prompt
+            assert ".coveragerc omit: tests/*" in prompt
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_tool_generate_missing_tests_uses_given_analysis_without_reanalyze(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            analysis = {"summary": "hazır", "findings": [{"target_path": "core/db.py"}]}
+            agent.code.analyze_pytest_output = MagicMock(side_effect=AssertionError("reanalyze edilmemeli"))
+            payload = json.dumps({
+                "target_path": "core/db.py",
+                "pytest_output": "FAILED core/db.py",
+                "analysis": analysis,
+            })
+    
+            result = await agent._tool_generate_missing_tests(payload)
+    
+            assert isinstance(result, str)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_tool_write_missing_tests_success(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps({
+                "suggested_test_path": "tests/test_memory_coverage.py",
+                "generated_test": "def test_x(): pass",
+            })
+            result = await agent._tool_write_missing_tests(payload)
+            parsed = json.loads(result)
+            assert parsed["success"] is True
+            assert parsed["suggested_test_path"] == "tests/test_memory_coverage.py"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_tool_write_missing_tests_failure(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            agent.code.write_generated_test = MagicMock(return_value=(False, "yazma hatası"))
+            payload = json.dumps({
+                "suggested_test_path": "tests/test_fail_coverage.py",
+                "generated_test": "def test_y(): pass",
+            })
+            result = await agent._tool_write_missing_tests(payload)
+            parsed = json.loads(result)
+            assert parsed["success"] is False
+            assert "message" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_tool_write_missing_tests_append_flag(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            payload = json.dumps({
+                "suggested_test_path": "tests/test_append_coverage.py",
+                "generated_test": "def test_append(): pass",
+                "append": False,
+            })
+            result = await agent._tool_write_missing_tests(payload)
+            parsed = json.loads(result)
+            assert "success" in parsed
+            # append=False ile çağrıldığında write_generated_test doğru argümanla çağrılmış olmalı
+            agent.code.write_generated_test.assert_called_once_with(
+                "tests/test_append_coverage.py",
+                "def test_append(): pass",
+                append=False,
+            )
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
+    @pytest.mark.asyncio
+    def test_record_task_persists_findings_with_fallback_defaults(self):
+        async def _run():
+            m = _get_coverage()
+            agent = m.CoverageAgent()
+            fake_db = MagicMock()
+            fake_db.create_coverage_task = AsyncMock(return_value=types.SimpleNamespace(id=99))
+            fake_db.add_coverage_finding = AsyncMock()
+            with patch.object(agent, "_ensure_db", AsyncMock(return_value=fake_db)):
+                await agent._record_task(
+                    command="pytest -q",
+                    pytest_output="FAILED ...",
+                    analysis={"findings": [{"summary": "eksik test"}]},
+                    generated_test="def test_x(): pass",
+                    review_payload={"target_path": "core/x.py", "suggested_test_path": "tests/test_x.py"},
+                    status="tests_written",
+                )
+            fake_db.create_coverage_task.assert_awaited_once()
+            fake_db.add_coverage_finding.assert_awaited_once()
+            call_kwargs = fake_db.add_coverage_finding.await_args.kwargs
+            assert call_kwargs["finding_type"] == "unknown"
+            assert call_kwargs["target_path"] == ""
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 
 class TestCoverageAgentRunTaskExtraBranches:

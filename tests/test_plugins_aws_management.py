@@ -250,78 +250,95 @@ class TestAWSManagementAgentSummarizeOutput:
 
 
 class TestAWSManagementAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_message(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        result = await agent.run_task("")
-        assert "gerekli" in result
+    def test_empty_prompt_returns_message(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            result = await agent.run_task("")
+            assert "gerekli" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_whitespace_only_prompt(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        result = await agent.run_task("   ")
-        assert "gerekli" in result
+    def test_whitespace_only_prompt(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            result = await agent.run_task("   ")
+            assert "gerekli" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_no_aws_cli_returns_message(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        with patch("shutil.which", return_value=None):
-            result = await agent.run_task("ec2 instance listele")
-        assert "AWS CLI" in result
+    def test_no_aws_cli_returns_message(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            with patch("shutil.which", return_value=None):
+                result = await agent.run_task("ec2 instance listele")
+            assert "AWS CLI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_unknown_task_returns_supported_list(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        with patch("shutil.which", return_value="/usr/bin/aws"):
-            result = await agent.run_task("bilinmeyen görev yap")
-        assert "Desteklenen" in result or "desteklenen" in result.lower()
+    def test_unknown_task_returns_supported_list(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            with patch("shutil.which", return_value="/usr/bin/aws"):
+                result = await agent.run_task("bilinmeyen görev yap")
+            assert "Desteklenen" in result or "desteklenen" in result.lower()
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_ec2_command_success(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        payload = json.dumps({
-            "Reservations": [{"Instances": [{"InstanceId": "i-abc", "State": {"Name": "running"}}]}]
-        })
-        mock_result = MagicMock()
-        mock_result.stdout = payload
-        with patch("shutil.which", return_value="/usr/bin/aws"), \
-             patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
-            result = await agent.run_task("ec2 instance listele")
-        assert "i-abc" in result
+    def test_ec2_command_success(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            payload = json.dumps({
+                "Reservations": [{"Instances": [{"InstanceId": "i-abc", "State": {"Name": "running"}}]}]
+            })
+            mock_result = MagicMock()
+            mock_result.stdout = payload
+            with patch("shutil.which", return_value="/usr/bin/aws"), \
+                 patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
+                result = await agent.run_task("ec2 instance listele")
+            assert "i-abc" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_s3_command_success(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        payload = json.dumps({"Buckets": [{"Name": "test-bucket"}]})
-        mock_result = MagicMock()
-        mock_result.stdout = payload
-        with patch("shutil.which", return_value="/usr/bin/aws"), \
-             patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
-            result = await agent.run_task("s3 bucket listele")
-        assert "test-bucket" in result
+    def test_s3_command_success(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            payload = json.dumps({"Buckets": [{"Name": "test-bucket"}]})
+            mock_result = MagicMock()
+            mock_result.stdout = payload
+            with patch("shutil.which", return_value="/usr/bin/aws"), \
+                 patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
+                result = await agent.run_task("s3 bucket listele")
+            assert "test-bucket" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_command_failure_returns_error(self):
-        import subprocess
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        exc = subprocess.CalledProcessError(1, "aws", stderr="AccessDenied")
-        with patch("shutil.which", return_value="/usr/bin/aws"), \
-             patch("asyncio.to_thread", new=AsyncMock(side_effect=exc)):
-            result = await agent.run_task("ec2 instance listele")
-        assert "başarısız" in result or "AWS" in result
+    def test_command_failure_returns_error(self):
+        async def _run():
+            import subprocess
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            exc = subprocess.CalledProcessError(1, "aws", stderr="AccessDenied")
+            with patch("shutil.which", return_value="/usr/bin/aws"), \
+                 patch("asyncio.to_thread", new=AsyncMock(side_effect=exc)):
+                result = await agent.run_task("ec2 instance listele")
+            assert "başarısız" in result or "AWS" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_generic_exception_returns_error(self):
-        m = _get_aws_agent()
-        agent = m.AWSManagementAgent()
-        with patch("shutil.which", return_value="/usr/bin/aws"), \
-             patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı yok"))):
-            result = await agent.run_task("cloudwatch alarm listele")
-        assert "çalıştırılamadı" in result or "AWS" in result
+    def test_generic_exception_returns_error(self):
+        async def _run():
+            m = _get_aws_agent()
+            agent = m.AWSManagementAgent()
+            with patch("shutil.which", return_value="/usr/bin/aws"), \
+                 patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı yok"))):
+                result = await agent.run_task("cloudwatch alarm listele")
+            assert "çalıştırılamadı" in result or "AWS" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+

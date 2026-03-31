@@ -197,105 +197,127 @@ class TestQAAgentCoverageConfig:
 
 
 class TestQAAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_qa()
-        result = await m.QAAgent().run_task("")
-        assert "UYARI" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_qa()
+            result = await m.QAAgent().run_task("")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_coverage_config_routing(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
-            result = await agent.run_task("coverage_config")
-        assert result is not None
+    def test_coverage_config_routing(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
+                result = await agent.run_task("coverage_config")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_read_file_routing(self):
-        m = _get_qa()
-        result = await m.QAAgent().run_task("read_file|main.py")
-        assert result is not None
+    def test_read_file_routing(self):
+        async def _run():
+            m = _get_qa()
+            result = await m.QAAgent().run_task("read_file|main.py")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_list_directory_routing(self):
-        m = _get_qa()
-        result = await m.QAAgent().run_task("list_directory|.")
-        assert result is not None
+    def test_list_directory_routing(self):
+        async def _run():
+            m = _get_qa()
+            result = await m.QAAgent().run_task("list_directory|.")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_grep_search_routing(self):
-        m = _get_qa()
-        result = await m.QAAgent().run_task("grep_search|def test_|||*.py")
-        assert result is not None
+    def test_grep_search_routing(self):
+        async def _run():
+            m = _get_qa()
+            result = await m.QAAgent().run_task("grep_search|def test_|||*.py")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_ci_remediation_routing(self):
-        m = _get_qa()
-        result = await m.QAAgent().run_task('ci_remediation|{"diagnosis": "test hatası"}')
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+    def test_ci_remediation_routing(self):
+        async def _run():
+            m = _get_qa()
+            result = await m.QAAgent().run_task('ci_remediation|{"diagnosis": "test hatası"}')
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_coverage_keyword_triggers_plan(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
-            result = await agent.run_task("coverage eksik testleri bul")
-        parsed = json.loads(result)
-        assert "coverage" in parsed
+    def test_coverage_keyword_triggers_plan(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
+                result = await agent.run_task("coverage eksik testleri bul")
+            parsed = json.loads(result)
+            assert "coverage" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_write_missing_tests_routing(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(agent, '_generate_test_code', AsyncMock(return_value="def test_foo(): pass")):
-            result = await agent.run_task("write_missing_tests|core/memory.py|bağlam")
-        assert "test_foo" in result or result is not None
+    def test_write_missing_tests_routing(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(agent, '_generate_test_code', AsyncMock(return_value="def test_foo(): pass")):
+                result = await agent.run_task("write_missing_tests|core/memory.py|bağlam")
+            assert "test_foo" in result or result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_coverage_plan_routing(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
-            result = await agent.run_task("coverage_plan|{}")
-        parsed = json.loads(result)
-        assert "coverage" in parsed
+    def test_coverage_plan_routing(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(agent, '_coverage_config_summary', return_value={"fail_under": 100, "exists": False, "omit": [], "path": "/tmp/.coveragerc", "show_missing": False, "skip_covered": False}):
+                result = await agent.run_task("coverage_plan|{}")
+            parsed = json.loads(result)
+            assert "coverage" in parsed
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
+    def test_non_qa_prompt_falls_back_to_generate_test_code(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(agent, '_generate_test_code', AsyncMock(return_value="def test_freeform(): pass")) as gen:
+                result = await agent.run_task("merhaba dunya")
+            assert "test_freeform" in result
+            gen.assert_awaited_once_with("", "merhaba dunya")
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_non_qa_prompt_falls_back_to_generate_test_code(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(agent, '_generate_test_code', AsyncMock(return_value="def test_freeform(): pass")) as gen:
-            result = await agent.run_task("merhaba dunya")
-        assert "test_freeform" in result
-        gen.assert_awaited_once_with("", "merhaba dunya")
+    def test_generate_test_code_builds_prompt_and_calls_llm(self):
+        async def _run():
+            m = _get_qa()
+            agent = m.QAAgent()
+            with patch.object(
+                agent,
+                "_coverage_config_summary",
+                return_value={
+                    "fail_under": 92,
+                    "exists": True,
+                    "omit": ["tests/*"],
+                    "path": "/tmp/.coveragerc",
+                    "show_missing": True,
+                    "skip_covered": False,
+                },
+            ):
+                with patch.object(agent, "call_llm", AsyncMock(return_value="def test_case(): pass")) as call_llm:
+                    result = await agent._generate_test_code("agent/roles/qa_agent.py", "edge case context")
+            assert "test_case" in result
+            kwargs = call_llm.call_args.kwargs
+            assert kwargs["system_prompt"] == agent.TEST_GENERATION_PROMPT
+            assert kwargs["temperature"] == 0.1
+            prompt_text = call_llm.call_args.args[0][0]["content"]
+            assert "Hedef modül: agent/roles/qa_agent.py" in prompt_text
+            assert "Coverage fail_under: 92" in prompt_text
+            assert "Coverage omit: tests/*" in prompt_text
+            assert "edge case context" in prompt_text
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_generate_test_code_builds_prompt_and_calls_llm(self):
-        m = _get_qa()
-        agent = m.QAAgent()
-        with patch.object(
-            agent,
-            "_coverage_config_summary",
-            return_value={
-                "fail_under": 92,
-                "exists": True,
-                "omit": ["tests/*"],
-                "path": "/tmp/.coveragerc",
-                "show_missing": True,
-                "skip_covered": False,
-            },
-        ):
-            with patch.object(agent, "call_llm", AsyncMock(return_value="def test_case(): pass")) as call_llm:
-                result = await agent._generate_test_code("agent/roles/qa_agent.py", "edge case context")
-        assert "test_case" in result
-        kwargs = call_llm.call_args.kwargs
-        assert kwargs["system_prompt"] == agent.TEST_GENERATION_PROMPT
-        assert kwargs["temperature"] == 0.1
-        prompt_text = call_llm.call_args.args[0][0]["content"]
-        assert "Hedef modül: agent/roles/qa_agent.py" in prompt_text
-        assert "Coverage fail_under: 92" in prompt_text
-        assert "Coverage omit: tests/*" in prompt_text
-        assert "edge case context" in prompt_text

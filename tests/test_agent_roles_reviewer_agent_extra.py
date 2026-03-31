@@ -191,46 +191,53 @@ class TestBuildDynamicTestContent:
             assert "def test_reviewer_dynamic_generation_fail_closed" in result
             assert "AssertionError" in result
 
-        @pytest.mark.asyncio
-        async def test_llm_exception_returns_fail_closed(self):
-            """LLM exception fırlatırsa fail-closed test döndürmeli (L104-107)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.call_llm = AsyncMock(side_effect=RuntimeError("LLM çöktü"))
-            result = await agent._build_dynamic_test_content("def foo(): pass")
-            assert "def test_reviewer_dynamic_generation_fail_closed" in result
-            assert "LLM" in result or "başarısız" in result
+        def test_llm_exception_returns_fail_closed(self):
+            async def _run():
+                """LLM exception fırlatırsa fail-closed test döndürmeli (L104-107)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.call_llm = AsyncMock(side_effect=RuntimeError("LLM çöktü"))
+                result = await agent._build_dynamic_test_content("def foo(): pass")
+                assert "def test_reviewer_dynamic_generation_fail_closed" in result
+                assert "LLM" in result or "başarısız" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_llm_output_without_test_fn_returns_fail_closed(self):
-            """LLM çıktısı test fonksiyonu içermiyorsa fail-closed döndürmeli (L110-113)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.call_llm = AsyncMock(return_value="x = 1 + 1")
-            result = await agent._build_dynamic_test_content("some code context")
-            assert "def test_reviewer_dynamic_generation_fail_closed" in result
+        def test_llm_output_without_test_fn_returns_fail_closed(self):
+            async def _run():
+                """LLM çıktısı test fonksiyonu içermiyorsa fail-closed döndürmeli (L110-113)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.call_llm = AsyncMock(return_value="x = 1 + 1")
+                result = await agent._build_dynamic_test_content("some code context")
+                assert "def test_reviewer_dynamic_generation_fail_closed" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_valid_llm_output_returned_as_is(self):
-            """Geçerli test kodu döndürülmeli (L114)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.call_llm = AsyncMock(return_value="def test_my_func():\n    assert 1 == 1\n")
-            result = await agent._build_dynamic_test_content("my function code")
-            assert "def test_my_func" in result
+        def test_valid_llm_output_returned_as_is(self):
+            async def _run():
+                """Geçerli test kodu döndürülmeli (L114)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.call_llm = AsyncMock(return_value="def test_my_func():\n    assert 1 == 1\n")
+                result = await agent._build_dynamic_test_content("my function code")
+                assert "def test_my_func" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_llm_output_with_fenced_code_block(self):
-            """Fenced code block'tan test kodu çıkarılmalı."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.call_llm = AsyncMock(
-                return_value="```python\ndef test_extracted():\n    assert True\n```"
-            )
-            result = await agent._build_dynamic_test_content("context")
-            assert "def test_extracted" in result
-            assert "```" not in result
-
+        def test_llm_output_with_fenced_code_block(self):
+            async def _run():
+                """Fenced code block'tan test kodu çıkarılmalı."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.call_llm = AsyncMock(
+                    return_value="```python\ndef test_extracted():\n    assert True\n```"
+                )
+                result = await agent._build_dynamic_test_content("context")
+                assert "def test_extracted" in result
+                assert "```" not in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ─────────────────────────────────────────────────────────────────────────────
     # _run_dynamic_tests: write_file başarısız yolu
@@ -250,19 +257,20 @@ class TestRunDynamicTests:
             assert "FAIL-CLOSED" in result
             assert "yazma hatası" in result
 
-        @pytest.mark.asyncio
-        async def test_write_success_calls_run_tests(self):
-            """write_file başarılıysa run_tests tool çağrılmalı (L128-130)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent._build_dynamic_test_content = AsyncMock(return_value="def test_foo(): pass\n")
-            agent.code.write_file = MagicMock(return_value=(True, "yazıldı"))
-            agent.call_tool = AsyncMock(return_value="[TEST:OK]")
+        def test_write_success_calls_run_tests(self):
+            async def _run():
+                """write_file başarılıysa run_tests tool çağrılmalı (L128-130)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent._build_dynamic_test_content = AsyncMock(return_value="def test_foo(): pass\n")
+                agent.code.write_file = MagicMock(return_value=(True, "yazıldı"))
+                agent.call_tool = AsyncMock(return_value="[TEST:OK]")
 
-            result = await agent._run_dynamic_tests("kod bağlamı")
-            assert result == "[TEST:OK]"
-            agent.call_tool.assert_awaited_once()
-
+                result = await agent._run_dynamic_tests("kod bağlamı")
+                assert result == "[TEST:OK]"
+                agent.call_tool.assert_awaited_once()
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ─────────────────────────────────────────────────────────────────────────────
     # _collect_graph_followup_paths
@@ -656,75 +664,92 @@ class TestRunTaskExtra:
             result = await agent.run_task("")
             assert "UYARI" in result or "boş" in result.lower()
 
-        @pytest.mark.asyncio
-        async def test_run_tests_command_with_pipe_arg(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("run_tests|pytest -q tests/")
-            assert "test" in result.lower() or "OK" in result or "FAIL" in result
+        def test_run_tests_command_with_pipe_arg(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("run_tests|pytest -q tests/")
+                assert "test" in result.lower() or "OK" in result or "FAIL" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_run_tests_no_pipe_uses_default(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("run_tests")
-            assert result is not None
+        def test_run_tests_no_pipe_uses_default(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("run_tests")
+                assert result is not None
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_lsp_diagnostics_route(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("lsp_diagnostics|core/agent.py")
-            assert result is not None
+        def test_lsp_diagnostics_route(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("lsp_diagnostics|core/agent.py")
+                assert result is not None
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_graph_impact_route(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("graph_impact|core/agent.py")
-            assert result is not None
+        def test_graph_impact_route(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("graph_impact|core/agent.py")
+                assert result is not None
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_pr_diff_invalid_number_returns_warning(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("pr_diff|abc")
-            assert "Kullanım" in result or "⚠" in result
+        def test_pr_diff_invalid_number_returns_warning(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("pr_diff|abc")
+                assert "Kullanım" in result or "⚠" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_run_tests_disallowed_command_returns_warning(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("run_tests|rm -rf /")
-            assert "Kullanım" in result or "⚠" in result
+        def test_run_tests_disallowed_command_returns_warning(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("run_tests|rm -rf /")
+                assert "Kullanım" in result or "⚠" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_review_keyword_dispatches_review_code(self):
-            """'review' içeren prompt review_code yoluna gitmeli (L947-948)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            # Sonsuz özyinelemeyi önlemek için call_tool'u patch et
-            agent.call_tool = AsyncMock(return_value='{"status":"ok","summary":"","reports":[]}')
-            agent._run_dynamic_tests = AsyncMock(return_value="[TEST:OK]")
-            agent._build_regression_commands = MagicMock(return_value=[])
-            result = await agent.run_task("bu kodu review et lütfen")
-            assert result is not None
+        def test_review_keyword_dispatches_review_code(self):
+            async def _run():
+                """'review' içeren prompt review_code yoluna gitmeli (L947-948)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                # Sonsuz özyinelemeyi önlemek için call_tool'u patch et
+                agent.call_tool = AsyncMock(return_value='{"status":"ok","summary":"","reports":[]}')
+                agent._run_dynamic_tests = AsyncMock(return_value="[TEST:OK]")
+                agent._build_regression_commands = MagicMock(return_value=[])
+                result = await agent.run_task("bu kodu review et lütfen")
+                assert result is not None
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_unknown_prompt_falls_back_to_list_prs(self):
-            """Tanımsız prompt list_prs fallback döndürmeli (L950)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("bilinmeyen bir komut")
-            assert result is not None
+        def test_unknown_prompt_falls_back_to_list_prs(self):
+            async def _run():
+                """Tanımsız prompt list_prs fallback döndürmeli (L950)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("bilinmeyen bir komut")
+                assert result is not None
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_list_issues_without_pipe_uses_default(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent.run_task("list_issues")
-            assert "issue" in result.lower() or "listesi" in result.lower()
-
+        def test_list_issues_without_pipe_uses_default(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent.run_task("list_issues")
+                assert "issue" in result.lower() or "listesi" in result.lower()
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Tool metodları
@@ -740,48 +765,58 @@ class TestToolMethods:
             result = await agent._tool_repo_info("")
             assert "HATA" in result
 
-        @pytest.mark.asyncio
-        async def test_tool_list_prs_error_path(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.github.list_pull_requests = MagicMock(return_value=(False, "PR hatası"))
-            result = await agent._tool_list_prs("open")
-            assert "HATA" in result
+        def test_tool_list_prs_error_path(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.github.list_pull_requests = MagicMock(return_value=(False, "PR hatası"))
+                result = await agent._tool_list_prs("open")
+                assert "HATA" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_tool_list_issues_error_path(self):
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            agent.github.list_issues = MagicMock(return_value=(False, "issue hatası"))
-            result = await agent._tool_list_issues("open")
-            assert "HATA" in result
+        def test_tool_list_issues_error_path(self):
+            async def _run():
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                agent.github.list_issues = MagicMock(return_value=(False, "issue hatası"))
+                result = await agent._tool_list_issues("open")
+                assert "HATA" in result
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_tool_browser_signals_no_session_id(self):
-            """session_id olmadan no-signal döndürmeli (L792-800)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            result = await agent._tool_browser_signals("")
-            data = json.loads(result)
-            assert data["status"] == "no-signal"
+        def test_tool_browser_signals_no_session_id(self):
+            async def _run():
+                """session_id olmadan no-signal döndürmeli (L792-800)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                result = await agent._tool_browser_signals("")
+                data = json.loads(result)
+                assert data["status"] == "no-signal"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_tool_browser_signals_with_inline_payload(self):
-            """Inline browser_signals varsa doğrudan döndürmeli (L790-791)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            payload = json.dumps({"browser_signals": {"status": "ok", "risk": "düşük"}})
-            result = await agent._tool_browser_signals(payload)
-            data = json.loads(result)
-            assert data["status"] == "ok"
+        def test_tool_browser_signals_with_inline_payload(self):
+            async def _run():
+                """Inline browser_signals varsa doğrudan döndürmeli (L790-791)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                payload = json.dumps({"browser_signals": {"status": "ok", "risk": "düşük"}})
+                result = await agent._tool_browser_signals(payload)
+                data = json.loads(result)
+                assert data["status"] == "ok"
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
-        @pytest.mark.asyncio
-        async def test_get_graph_store_creates_once(self):
-            """_get_graph_store singleton davranışı göstermeli (L729-740)."""
-            m = _get_reviewer()
-            agent = m.ReviewerAgent()
-            store1 = agent._get_graph_store()
-            store2 = agent._get_graph_store()
-            assert store1 is store2
+        def test_get_graph_store_creates_once(self):
+            async def _run():
+                """_get_graph_store singleton davranışı göstermeli (L729-740)."""
+                m = _get_reviewer()
+                agent = m.ReviewerAgent()
+                store1 = agent._get_graph_store()
+                store2 = agent._get_graph_store()
+                assert store1 is store2
+            import asyncio as _asyncio
+            _asyncio.run(_run())
 
         asyncio.run(_run())

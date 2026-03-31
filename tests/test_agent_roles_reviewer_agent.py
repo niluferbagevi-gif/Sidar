@@ -470,45 +470,57 @@ class TestReviewerAgentToolEdgeCases:
         assert payload["summary"] == "inline"
 
 class TestReviewerAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_warning(self):
-        m = _get_reviewer()
-        result = await m.ReviewerAgent().run_task("")
-        assert "UYARI" in result
+    def test_empty_prompt_returns_warning(self):
+        async def _run():
+            m = _get_reviewer()
+            result = await m.ReviewerAgent().run_task("")
+            assert "UYARI" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_repo_info_routing(self):
-        m = _get_reviewer()
-        result = await m.ReviewerAgent().run_task("repo_info")
-        assert result is not None
+    def test_repo_info_routing(self):
+        async def _run():
+            m = _get_reviewer()
+            result = await m.ReviewerAgent().run_task("repo_info")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_list_prs_routing(self):
-        m = _get_reviewer()
-        result = await m.ReviewerAgent().run_task("list_prs|open")
-        assert result is not None
+    def test_list_prs_routing(self):
+        async def _run():
+            m = _get_reviewer()
+            result = await m.ReviewerAgent().run_task("list_prs|open")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_pr_diff_routing(self):
-        m = _get_reviewer()
-        result = await m.ReviewerAgent().run_task("pr_diff|5")
-        assert result is not None
+    def test_pr_diff_routing(self):
+        async def _run():
+            m = _get_reviewer()
+            result = await m.ReviewerAgent().run_task("pr_diff|5")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_list_issues_routing(self):
-        m = _get_reviewer()
-        result = await m.ReviewerAgent().run_task("list_issues|open")
-        assert result is not None
+    def test_list_issues_routing(self):
+        async def _run():
+            m = _get_reviewer()
+            result = await m.ReviewerAgent().run_task("list_issues|open")
+            assert result is not None
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_review_code_returns_delegation(self):
-        m = _get_reviewer()
-        agent = m.ReviewerAgent()
-        contracts = sys.modules["agent.core.contracts"]
-        result = await agent.run_task("review_code|def hello(): pass")
-        assert contracts.is_delegation_request(result)
-        assert result.target_agent == "coder"
-        assert "qa_feedback" in result.payload
+    def test_review_code_returns_delegation(self):
+        async def _run():
+            m = _get_reviewer()
+            agent = m.ReviewerAgent()
+            contracts = sys.modules["agent.core.contracts"]
+            result = await agent.run_task("review_code|def hello(): pass")
+            assert contracts.is_delegation_request(result)
+            assert result.target_agent == "coder"
+            assert "qa_feedback" in result.payload
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
     def test_review_code_rejects_when_dynamic_tests_fail_closed(self):
         m = _get_reviewer()
@@ -577,13 +589,14 @@ class TestReviewerAgentRunTask:
         asyncio.run(_run_case())
 
 class TestReviewerAgentFallbacks:
-    @pytest.mark.asyncio
-    async def test_unknown_prompt_uses_default_list_prs_fallback(self):
-        m = _get_reviewer()
-        agent = m.ReviewerAgent()
-        result = await agent.run_task("tamamen alakasız bir istek")
-        assert "PR listesi" in result
-
+    def test_unknown_prompt_uses_default_list_prs_fallback(self):
+        async def _run():
+            m = _get_reviewer()
+            agent = m.ReviewerAgent()
+            result = await agent.run_task("tamamen alakasız bir istek")
+            assert "PR listesi" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
 class TestReviewerDecisionSignals:
     def test_summarize_lsp_diagnostics_rejects_on_error_severity(self):

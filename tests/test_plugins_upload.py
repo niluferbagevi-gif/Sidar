@@ -129,69 +129,88 @@ class TestUploadAgentInit:
 
 
 class TestUploadAgentRunTask:
-    @pytest.mark.asyncio
-    async def test_empty_prompt_returns_message(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("")
-        assert "Boş görev" in result
+    def test_empty_prompt_returns_message(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("")
+            assert "Boş görev" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_whitespace_only_prompt(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("   ")
-        assert "Boş görev" in result
+    def test_whitespace_only_prompt(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("   ")
+            assert "Boş görev" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_valid_prompt_echoed_back(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("dosya yükle")
-        assert "dosya yükle" in result
+    def test_valid_prompt_echoed_back(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("dosya yükle")
+            assert "dosya yükle" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_result_contains_agent_prefix(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("test görevi")
-        assert "UploadAgent" in result
+    def test_result_contains_agent_prefix(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("test görevi")
+            assert "UploadAgent" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_prompt_preserved_in_result(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        prompt = "plugin yükleme işlemi başlat"
-        result = await agent.run_task(prompt)
-        assert prompt in result
+    def test_prompt_preserved_in_result(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            prompt = "plugin yükleme işlemi başlat"
+            result = await agent.run_task(prompt)
+            assert prompt in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_strips_whitespace_from_prompt(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("  temizlenmiş görev  ")
-        assert "temizlenmiş görev" in result
+    def test_strips_whitespace_from_prompt(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("  temizlenmiş görev  ")
+            assert "temizlenmiş görev" in result
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_returns_string(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("herhangi bir görev")
-        assert isinstance(result, str)
+    def test_returns_string(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("herhangi bir görev")
+            assert isinstance(result, str)
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_non_empty_result_for_valid_task(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        result = await agent.run_task("yükleme görevi")
-        assert len(result) > 0
+    def test_non_empty_result_for_valid_task(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task("yükleme görevi")
+            assert len(result) > 0
+        import asyncio as _asyncio
+        _asyncio.run(_run())
 
-    @pytest.mark.asyncio
-    async def test_multiple_calls_independent(self):
-        m = _get_upload_agent()
-        agent = m.UploadAgent()
-        r1 = await agent.run_task("görev 1")
-        r2 = await agent.run_task("görev 2")
-        assert "görev 1" in r1
-        assert "görev 2" in r2
-        assert r1 != r2
+    def test_multiple_calls_independent(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            r1 = await agent.run_task("görev 1")
+            r2 = await agent.run_task("görev 2")
+            assert "görev 1" in r1
+            assert "görev 2" in r2
+            assert r1 != r2
+        import asyncio as _asyncio
+        _asyncio.run(_run())
+
