@@ -8,6 +8,7 @@ import sys
 import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -196,6 +197,39 @@ def _get_web_server():
     _inject_web_server_stubs()
     sys.modules.pop("web_server", None)
     return importlib.import_module("web_server")
+
+
+class TestOptionalDependencyFallbacks:
+    def test_opentelemetry_import_failure_sets_fallback_symbols(self):
+        _inject_web_server_stubs()
+        sys.modules.pop("web_server", None)
+
+        missing_otel_modules = {
+            "opentelemetry": None,
+            "opentelemetry.trace": None,
+            "opentelemetry.exporter": None,
+            "opentelemetry.exporter.otlp": None,
+            "opentelemetry.exporter.otlp.proto": None,
+            "opentelemetry.exporter.otlp.proto.grpc": None,
+            "opentelemetry.exporter.otlp.proto.grpc.trace_exporter": None,
+            "opentelemetry.instrumentation": None,
+            "opentelemetry.instrumentation.fastapi": None,
+            "opentelemetry.instrumentation.httpx": None,
+            "opentelemetry.sdk": None,
+            "opentelemetry.sdk.resources": None,
+            "opentelemetry.sdk.trace": None,
+            "opentelemetry.sdk.trace.export": None,
+        }
+        with patch.dict(sys.modules, missing_otel_modules):
+            ws = importlib.import_module("web_server")
+
+        assert ws.trace is None
+        assert ws.OTLPSpanExporter is None
+        assert ws.FastAPIInstrumentor is None
+        assert ws.HTTPXClientInstrumentor is None
+        assert ws.TracerProvider is None
+        assert ws.Resource is None
+        assert ws.BatchSpanProcessor is None
 
 
 class TestRoomNormalization:
