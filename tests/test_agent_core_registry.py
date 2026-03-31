@@ -86,7 +86,11 @@ def _get_core_registry():
 
 def _make_mock_agent(role_name="test"):
     ba = sys.modules["agent.base_agent"].BaseAgent
-    agent = ba(role_name=role_name)
+    class DummyAgent(ba):
+        async def run_task(self, task_prompt: str, **kwargs):
+            return "ok"
+
+    agent = DummyAgent(role_name=role_name)
     return agent
 
 
