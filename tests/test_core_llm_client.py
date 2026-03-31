@@ -758,6 +758,157 @@ class TestBaseClientHelpers:
             with pytest.raises(lc.LLMAPIError) as exc_info:
                 _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
         assert exc_info.value.provider == "openai"
+
+
+class TestLLMProviderFailureScenarios:
+    def test_openai_token_limit_error_is_non_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 2
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            status_code = 400
+
+            @staticmethod
+            def json():
+                return {"error": {"message": "context_length_exceeded"}}
+
+            def raise_for_status(self):
+                exc = RuntimeError("400")
+                exc.status_code = 400
+                raise exc
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "uzun prompt"}], stream=False, json_mode=True))
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.retryable is False
+        assert fake_client.post.await_count == 1
+
+    def test_openai_connect_error_is_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(side_effect=lc.httpx.ConnectError("network disconnected"))
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.retryable is True
+
+    def test_openai_malformed_json_content_is_wrapped_in_safe_json(self):
+        lc = _get_llm_client()
+        import json
+
+        class _Cfg:
+            OPENAI_API_KEY = "test-key"
+            OPENAI_MODEL = "gpt-4o-mini"
+            OPENAI_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {
+                    "choices": [{"message": {"content": "{broken-json"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+                }
+
+        fake_client = AsyncMock()
+        fake_client.post = AsyncMock(return_value=_Resp())
+
+        class _FakeClientCM:
+            async def __aenter__(self_inner):
+                return fake_client
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return False
+
+        with patch("core.llm_client.httpx.AsyncClient", return_value=_FakeClientCM()):
+            client = lc.OpenAIClient(_Cfg())
+            out = _run(client.chat([{"role": "user", "content": "çıktıyı json dön"}], stream=False, json_mode=True))
+
+        parsed = json.loads(out)
+        assert parsed["tool"] == "final_answer"
+        assert parsed["argument"] == "{broken-json"
+
+    def test_anthropic_429_rate_limit_is_retryable(self):
+        lc = _get_llm_client()
+        import pytest
+
+        class _Cfg:
+            ANTHROPIC_API_KEY = "test-key"
+            ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+            ANTHROPIC_TIMEOUT = 20
+            LLM_MAX_RETRIES = 0
+            LLM_RETRY_BASE_DELAY = 0.001
+            LLM_RETRY_MAX_DELAY = 0.01
+            ENABLE_TRACING = False
+
+        class _Messages:
+            async def create(self, **_kwargs):
+                err = RuntimeError("rate limit")
+                err.status_code = 429
+                raise err
+
+        class _FakeAsyncAnthropic:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+                self.messages = _Messages()
+
+        with patch.dict(sys.modules, {"anthropic": types.SimpleNamespace(AsyncAnthropic=_FakeAsyncAnthropic)}):
+            client = lc.AnthropicClient(_Cfg())
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "selam"}], stream=False, json_mode=True))
+
+        assert exc_info.value.provider == "anthropic"
+        assert exc_info.value.status_code == 429
         assert exc_info.value.retryable is True
 
 
