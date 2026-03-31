@@ -761,9 +761,10 @@ class TestCoverageAgentTools:
             }
         )
 
-        result = asyncio.run(agent._tool_generate_missing_tests(payload))
+        with patch.object(agent, "call_llm", AsyncMock(return_value="def test_dynamic(): pass")):
+            result = asyncio.run(agent._tool_generate_missing_tests(payload))
         assert isinstance(result, str)
-        assert "def test_generated" in result
+        assert "def test_dynamic" in result
 
     def test_tool_generate_missing_tests_with_coverage_finding_uses_dynamic_prompt(self):
         async def _run():

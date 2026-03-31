@@ -269,6 +269,7 @@ class TestCleanupRedis:
             bus._redis_listener_task = task
 
             await bus._cleanup_redis()
+            await asyncio.sleep(0)
             assert task.cancelled()
             assert bus._redis_listener_task is None
 

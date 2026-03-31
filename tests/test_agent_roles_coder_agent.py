@@ -35,19 +35,18 @@ def _stub_coder_deps():
         if not hasattr(c, "__path__"):
             c.__path__ = [str(_proj / "agent" / "core")]
 
-    # agent.core.contracts stub
-    if "agent.core.contracts" not in sys.modules:
-        from dataclasses import dataclass, field
-        contracts = types.ModuleType("agent.core.contracts")
-        @dataclass
-        class DelegationRequest:
-            task_id: str; reply_to: str; target_agent: str; payload: str
-            intent: str = "mixed"; parent_task_id: str = None
-            handoff_depth: int = 0; meta: dict = field(default_factory=dict)
-            def bumped(self): return DelegationRequest(self.task_id, self.reply_to, self.target_agent, self.payload, self.intent, self.parent_task_id, self.handoff_depth + 1, dict(self.meta))
-        contracts.DelegationRequest = DelegationRequest
-        contracts.is_delegation_request = lambda v: isinstance(v, DelegationRequest)
-        sys.modules["agent.core.contracts"] = contracts
+    # agent.core.contracts stub (always replace to avoid stale class identity)
+    from dataclasses import dataclass, field
+    contracts = types.ModuleType("agent.core.contracts")
+    @dataclass
+    class DelegationRequest:
+        task_id: str; reply_to: str; target_agent: str; payload: str
+        intent: str = "mixed"; parent_task_id: str = None
+        handoff_depth: int = 0; meta: dict = field(default_factory=dict)
+        def bumped(self): return DelegationRequest(self.task_id, self.reply_to, self.target_agent, self.payload, self.intent, self.parent_task_id, self.handoff_depth + 1, dict(self.meta))
+    contracts.DelegationRequest = DelegationRequest
+    contracts.is_delegation_request = lambda v: isinstance(v, DelegationRequest)
+    sys.modules["agent.core.contracts"] = contracts
 
     # agent.core.event_stream stub
     if "agent.core.event_stream" not in sys.modules:
@@ -56,19 +55,18 @@ def _stub_coder_deps():
         es.get_agent_event_bus = MagicMock(return_value=_bus)
         sys.modules["agent.core.event_stream"] = es
 
-    # config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
-        class _Config:
-            AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
-            BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = ""; GITHUB_TOKEN = ""
-            USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
-            RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
-            RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
-            CODING_MODEL = "qwen2.5-coder:7b"; TEXT_MODEL = "gemma2:9b"
-            DOCKER_PYTHON_IMAGE = "python:3.11-alpine"; DOCKER_EXEC_TIMEOUT = 10
-        cfg_mod.Config = _Config
-        sys.modules["config"] = cfg_mod
+    # config stub (always replace to avoid polluted Config instances)
+    cfg_mod = types.ModuleType("config")
+    class _Config:
+        AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
+        BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = ""; GITHUB_TOKEN = ""
+        USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
+        RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
+        RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
+        CODING_MODEL = "qwen2.5-coder:7b"; TEXT_MODEL = "gemma2:9b"
+        DOCKER_PYTHON_IMAGE = "python:3.11-alpine"; DOCKER_EXEC_TIMEOUT = 10
+    cfg_mod.Config = _Config
+    sys.modules["config"] = cfg_mod
 
     # core/core.llm_client stubs
     for mod in ("core", "core.llm_client"):

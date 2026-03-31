@@ -50,19 +50,18 @@ def _stub_reviewer_deps():
         es.get_agent_event_bus = MagicMock(return_value=_bus)
         sys.modules["agent.core.event_stream"] = es
 
-    # config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
-        class _Config:
-            AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
-            BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = "owner/repo"; GITHUB_TOKEN = ""
-            USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
-            RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
-            RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
-            DOCKER_PYTHON_IMAGE = "python:3.11-alpine"; DOCKER_EXEC_TIMEOUT = 10
-            REVIEWER_TEST_COMMAND = "pytest -q"
-        cfg_mod.Config = _Config
-        sys.modules["config"] = cfg_mod
+    # config stub (always replace to avoid polluted Config instances)
+    cfg_mod = types.ModuleType("config")
+    class _Config:
+        AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
+        BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = "owner/repo"; GITHUB_TOKEN = ""
+        USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
+        RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
+        RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
+        DOCKER_PYTHON_IMAGE = "python:3.11-alpine"; DOCKER_EXEC_TIMEOUT = 10
+        REVIEWER_TEST_COMMAND = "pytest -q"
+    cfg_mod.Config = _Config
+    sys.modules["config"] = cfg_mod
 
     # core stubs — always replace so real modules don't interfere
     llm_stub = types.ModuleType("core.llm_client")

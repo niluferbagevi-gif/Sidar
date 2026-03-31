@@ -600,7 +600,8 @@ class TestExecuteCommand:
     def test_failed_run_returns_nonzero(self):
         m = _get_main()
         cmd = [sys.executable, "-c", "import sys; sys.exit(3)"]
-        with patch("builtins.print"):
+        err = subprocess.CalledProcessError(returncode=3, cmd=cmd)
+        with patch("subprocess.run", side_effect=err), patch("builtins.print"):
             result = m.execute_command(cmd)
         assert result == 3
 

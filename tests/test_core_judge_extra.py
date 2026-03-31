@@ -41,10 +41,6 @@ def _get_judge(
         CODING_MODEL = coding_model
 
     cfg_stub.Config = _Cfg
-    sys.modules["config"] = cfg_stub
-
-    if "core.judge" in sys.modules:
-        del sys.modules["core.judge"]
 
     env = {
         "JUDGE_ENABLED": judge_enabled,
@@ -58,11 +54,13 @@ def _get_judge(
     if extra_env:
         env.update(extra_env)
 
-    with patch.dict(os.environ, env):
+    with patch.dict(sys.modules, {"config": cfg_stub}), patch.dict(os.environ, env):
+        if "core.judge" in sys.modules:
+            del sys.modules["core.judge"]
         import core.judge as judge
-        judge._JUDGE = None
-        judge._prometheus_gauges = {}
-        return judge
+    judge._JUDGE = None
+    judge._prometheus_gauges = {}
+    return judge
 
 
 def _run(coro):
@@ -702,15 +700,19 @@ class TestScheduleBackgroundEvaluation:
 
         async def _run_test():
             completed = asyncio.Event()
+            scheduled = []
 
             async def _failing_eval_rag(query, docs, answer=None):
                 completed.set()
                 raise RuntimeError("eval error")
 
             j.evaluate_rag = _failing_eval_rag
+            loop = asyncio.get_running_loop()
 
-            j.schedule_background_evaluation("query", ["doc"])
+            with patch("asyncio.create_task", side_effect=lambda c: scheduled.append(loop.create_task(c)) or scheduled[-1]):
+                j.schedule_background_evaluation("query", ["doc"])
             await asyncio.wait_for(completed.wait(), timeout=2.0)
+            await asyncio.gather(*scheduled, return_exceptions=True)
             # İstisna dışarıya sızmamalı
 
         _run(_run_test())
@@ -735,6 +737,7 @@ class TestScheduleBackgroundEvaluation:
 
         async def _run_test():
             cancelled_ev = asyncio.Event()
+            scheduled = []
 
             async def _raising_eval_rag(query, docs, answer=None):
                 cancel_reached.append(True)
@@ -742,10 +745,12 @@ class TestScheduleBackgroundEvaluation:
                 raise asyncio.CancelledError()
 
             j.evaluate_rag = _raising_eval_rag
-            j.schedule_background_evaluation("query", ["doc"])
+            loop = asyncio.get_running_loop()
+            with patch("asyncio.create_task", side_effect=lambda c: scheduled.append(loop.create_task(c)) or scheduled[-1]):
+                j.schedule_background_evaluation("query", ["doc"])
             # Görevin çalışması için bekle
             await asyncio.wait_for(cancelled_ev.wait(), timeout=2.0)
-            await asyncio.sleep(0.05)
+            await asyncio.gather(*scheduled, return_exceptions=True)
 
         _run(_run_test())
         assert cancel_reached, "evaluate_rag çağrılmadı"
