@@ -234,6 +234,25 @@ class TestJiraRequestHttpResponses:
         assert body is None
         assert "access denied" in err.lower()
 
+    def test_request_200_with_invalid_json_body_returns_error(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        class _BadJsonResponse(_FakeJiraResponse):
+            def json(self):
+                raise ValueError("invalid json body")
+
+        fake_response = _BadJsonResponse(200, body={"ignored": True}, text="ok")
+        with patch(
+            "managers.jira_manager.httpx.AsyncClient",
+            return_value=_FakeJiraAsyncClient(response=fake_response),
+        ):
+            ok, body, err = asyncio.run(mgr._request("GET", "issue/TEST-1"))
+
+        assert ok is False
+        assert body is None
+        assert "invalid json body" in err
+
 
 class TestJiraTransitionIssue:
     def test_transition_issue_returns_error_when_transition_not_found(self):
@@ -403,6 +422,22 @@ class TestJiraSearchAndStatuses:
         assert issues == []
         assert "429" in err
 
+    def test_search_issues_handles_malformed_items_with_defaults(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, {"issues": [{"fields": None}, {}]}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issues, err = asyncio.run(mgr.search_issues("project = PROJ"))
+        assert ok is True
+        assert issues == [
+            {"key": "", "summary": "", "status": "", "assignee": "", "priority": "", "type": ""},
+            {"key": "", "summary": "", "status": "", "assignee": "", "priority": "", "type": ""},
+        ]
+        assert err == ""
+
     def test_get_project_statuses_deduplicates_names(self):
         jira = _get_jira()
         mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
@@ -475,4 +510,20 @@ class TestJiraPayloadShapeCoverage:
 
         assert ok is True
         assert projects == [{"key": "PROJ", "name": "Project", "id": "10001"}]
+        assert err == ""
+
+    def test_list_projects_handles_missing_fields_with_defaults(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, [{"name": "Only Name"}, {}], ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, projects, err = asyncio.run(mgr.list_projects())
+        assert ok is True
+        assert projects == [
+            {"key": "", "name": "Only Name", "id": ""},
+            {"key": "", "name": "", "id": ""},
+        ]
         assert err == ""

@@ -1059,6 +1059,21 @@ class TestSidarAgentContextAndSummaryEdges:
 
         asyncio.run(_run_case())
 
+    def test_tool_subtask_llm_timeout_retries_until_max_steps(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent.cfg.SUBTASK_MAX_STEPS = 2
+        agent.llm.chat = AsyncMock(side_effect=TimeoutError("llm api timeout"))
+        agent._execute_tool = AsyncMock()
+
+        async def _run_case():
+            result = await agent._tool_subtask("zaman aşımı senaryosu")
+            assert "Maksimum adım sınırı" in result
+            assert agent.llm.chat.await_count == 2
+            agent._execute_tool.assert_not_awaited()
+
+        asyncio.run(_run_case())
+
     def test_try_multi_agent_returns_warning_for_empty_or_non_string_output(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()

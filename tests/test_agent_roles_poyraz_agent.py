@@ -561,7 +561,7 @@ class TestPoyrazAdditionalCoverage:
                 "campaign_name": "Sonbahar Kampanyası",
                 "service_name": "Coffee Break",
                 "audience": "Çalışanlar",
-                "menu_plan": {"ana_yemek": [], "tatlı": None, "içecek": ["Filtre Kahve"]},
+                "menu_plan": {"ana_yemek": [], "tatlı": [], "içecek": ["Filtre Kahve"]},
                 "vendor_assignments": {},
                 "timeline": [],
                 "notes": "",

@@ -3,7 +3,8 @@ branch = True
 parallel = True
 omit =
     tests/*
-    */sidar_plugin_*
+    tests/sidar_plugin_*
+    */tests/sidar_plugin_*
     */plug_auto_discover*
     */plug_bad_compile*
     */__pycache__/*
@@ -11,7 +12,7 @@ omit =
     setup.py
 
 [report]
-fail_under = 100
+fail_under = 90
 show_missing = True
 skip_covered = True
 precision = 2

@@ -4,9 +4,11 @@ import hmac
 import importlib
 import importlib.util
 import json
+import pathlib as _pl
 from pathlib import Path
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -45,6 +47,8 @@ def _stub_broken_native_deps() -> None:
 
 
 _stub_broken_native_deps()
+
+_PROJECT_ROOT = _pl.Path(__file__).parent.parent
 
 
 def _ensure_config_contract() -> None:
@@ -349,3 +353,100 @@ def sqlite_test_db_url(tmp_path) -> str:
     """core.db testleri için geçici SQLite veritabanı URL'i."""
     db_file = Path(tmp_path) / "sidar_test.db"
     return f"sqlite+aiosqlite:///{db_file}"
+
+
+@pytest.fixture
+def stub_aws_plugin_dependencies():
+    """AWS plugin testleri için ortak modül stub'ları."""
+    # agent package stub
+    if "agent" not in sys.modules:
+        pkg = types.ModuleType("agent")
+        pkg.__path__ = [str(_PROJECT_ROOT / "agent")]
+        pkg.__package__ = "agent"
+        sys.modules["agent"] = pkg
+
+    # agent.core stub
+    if "agent.core" not in sys.modules:
+        core = types.ModuleType("agent.core")
+        core.__path__ = [str(_PROJECT_ROOT / "agent" / "core")]
+        core.__package__ = "agent.core"
+        sys.modules["agent.core"] = core
+    else:
+        core = sys.modules["agent.core"]
+        if not hasattr(core, "__path__"):
+            core.__path__ = [str(_PROJECT_ROOT / "agent" / "core")]
+
+    # agent.core.contracts stub
+    if "agent.core.contracts" not in sys.modules:
+        contracts = types.ModuleType("agent.core.contracts")
+        contracts.is_delegation_request = lambda _value: False
+        contracts.DelegationRequest = type("DelegationRequest", (), {})
+        contracts.TaskEnvelope = type("TaskEnvelope", (), {})
+        contracts.TaskResult = type("TaskResult", (), {})
+        sys.modules["agent.core.contracts"] = contracts
+
+    # config stub
+    if "config" not in sys.modules:
+        cfg_mod = types.ModuleType("config")
+
+        class _Config:
+            AI_PROVIDER = "ollama"
+            OLLAMA_MODEL = "qwen2.5-coder:7b"
+            BASE_DIR = "/tmp/sidar_test"
+            USE_GPU = False
+            GPU_DEVICE = 0
+            GPU_MIXED_PRECISION = False
+            RAG_DIR = "/tmp/sidar_test/rag"
+            RAG_TOP_K = 3
+            RAG_CHUNK_SIZE = 1000
+            RAG_CHUNK_OVERLAP = 200
+            SLACK_WEBHOOK_URL = ""
+            SLACK_DEFAULT_CHANNEL = "general"
+
+        cfg_mod.Config = _Config
+        sys.modules["config"] = cfg_mod
+
+    # core stubs
+    if "core" not in sys.modules:
+        sys.modules["core"] = types.ModuleType("core")
+
+    llm_stub = types.ModuleType("core.llm_client")
+    mock_llm = MagicMock()
+    mock_llm.chat = AsyncMock(return_value="llm yanıtı")
+    llm_stub.LLMClient = MagicMock(return_value=mock_llm)
+    sys.modules["core.llm_client"] = llm_stub
+
+    # agent.base_agent stub
+    if "agent.base_agent" not in sys.modules:
+        ba_mod = types.ModuleType("agent.base_agent")
+
+        class _BaseAgent:
+            SYSTEM_PROMPT = "You are a specialist agent."
+
+            def __init__(self, cfg=None, *, role_name="base", **_kwargs):
+                self.cfg = cfg or sys.modules["config"].Config()
+                self.role_name = role_name
+                self.llm = MagicMock()
+                self.llm.chat = AsyncMock(return_value="llm yanıtı")
+                self.tools = {}
+
+            def register_tool(self, name, fn):
+                self.tools[name] = fn
+
+            async def call_tool(self, name, arg):
+                if name not in self.tools:
+                    return f"[HATA] '{name}' aracı bu ajan için tanımlı değil."
+                return await self.tools[name](arg)
+
+            async def call_llm(self, _msgs, system_prompt=None, temperature=0.3, **_kwargs):
+                return "llm yanıtı"
+
+        ba_mod.BaseAgent = _BaseAgent
+        sys.modules["agent.base_agent"] = ba_mod
+
+    # plugins package stub
+    if "plugins" not in sys.modules:
+        plugins_pkg = types.ModuleType("plugins")
+        plugins_pkg.__path__ = [str(_PROJECT_ROOT / "plugins")]
+        plugins_pkg.__package__ = "plugins"
+        sys.modules["plugins"] = plugins_pkg
