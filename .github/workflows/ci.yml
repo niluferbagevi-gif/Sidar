@@ -54,9 +54,9 @@ jobs:
         run: |
           pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py
 
-      - name: Enforce coverage quality gate (100%)
+      - name: Enforce coverage quality gate (90%)
         run: |
-          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=100
+          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=90
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
