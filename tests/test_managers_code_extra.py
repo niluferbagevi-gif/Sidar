@@ -418,9 +418,11 @@ class TestExecuteCode:
             manager, base, cm = _make_code_manager(tmpdir)
             manager.docker_available = False
             manager.security.level = 2  # Not SANDBOX
-            ok, output = manager.execute_code("print('fallback')")
+            with patch.object(manager, "execute_code_local", return_value=(True, "fallback-ok")) as local_exec:
+                ok, output = manager.execute_code("print('fallback')")
+            local_exec.assert_called_once_with("print('fallback')")
             assert ok is True
-            assert "fallback" in output
+            assert "fallback-ok" in output
 
 
 # ══════════════════════════════════════════════════════════════
