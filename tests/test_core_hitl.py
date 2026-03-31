@@ -319,12 +319,16 @@ class TestHITLGateRespond:
 
         async def _run_test():
             await store.add(req)
+            before = time.time()
             updated = await gate.respond(
                 "r-reject", approved=False,
                 decided_by="operator", rejection_reason="güvensiz"
             )
             assert updated.decision == hitl.HITLDecision.REJECTED
             assert "güvensiz" in updated.rejection_reason
+            assert updated.decided_by == "operator"
+            assert updated.decided_at is not None
+            assert updated.decided_at >= before
 
         _run(_run_test())
 
