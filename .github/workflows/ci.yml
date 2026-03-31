@@ -40,28 +40,11 @@ jobs:
           fi
           echo "✅ No empty test artifacts found"
 
-      - name: Run test suite
+      - name: Run test suite (single pass + coverage gate)
         run: bash run_tests.sh
 
       - name: Check .env.example ↔ config.py parity
         run: bash scripts/check_env_parity.sh
-
-      - name: Run sandbox/reviewer hardening checks
-        run: |
-          pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
-
-      - name: Run targeted Swarm + Active Learning regression slice
-        run: |
-          pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py
-
-      - name: Enforce coverage quality gate (90%)
-        run: |
-          python -m pytest -q tests \
-            --cov=agent \
-            --cov=managers \
-            --cov=core \
-            --cov-report=term-missing \
-            --cov-fail-under=90
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
