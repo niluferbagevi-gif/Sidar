@@ -642,7 +642,20 @@ class SwarmOrchestrator:
 
             for attempt in range(max_retries + 1):
                 try:
-                    result = await agent.handle(envelope)
+                    if hasattr(agent, "handle"):
+                        result = await agent.handle(envelope)
+                    elif hasattr(agent, "run_task"):
+                        legacy_summary = await agent.run_task(envelope.goal)
+                        result = TaskResult(
+                            task_id=envelope.task_id,
+                            status="success",
+                            summary=legacy_summary,
+                            evidence=[],
+                        )
+                    else:
+                        raise AttributeError(
+                            f"Ajan '{spec.role_name}' ne handle ne de run_task metodu sağlıyor."
+                        )
                     break
                 except Exception as exc:  # pragma: no cover - branch specific tests verify behavior
                     last_exc = exc
