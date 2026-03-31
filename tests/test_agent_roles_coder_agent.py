@@ -76,28 +76,27 @@ def _stub_coder_deps():
         mock_llm = MagicMock(); mock_llm.chat = AsyncMock(return_value='{"tool":"final_answer","argument":"ok"}')
         sys.modules["core.llm_client"].LLMClient = MagicMock(return_value=mock_llm)
 
-    # agent.base_agent stub
-    if "agent.base_agent" not in sys.modules:
-        ba_mod = types.ModuleType("agent.base_agent")
-        contracts = sys.modules["agent.core.contracts"]
-        class _BaseAgent:
-            def __init__(self, *a, cfg=None, role_name="base", **kw):
-                self.cfg = cfg or sys.modules["config"].Config()
-                self.role_name = role_name
-                self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value="llm yanıtı")
-                self.tools = {}
-            def register_tool(self, name, fn): self.tools[name] = fn
-            async def call_tool(self, name, arg):
-                if name not in self.tools: return f"HATA: {name} bulunamadı"
-                return await self.tools[name](arg)
-            async def call_llm(self, msgs, system_prompt=None, temperature=0.7, json_mode=False):
-                return "llm yanıtı"
-            def delegate_to(self, target, payload, task_id=None, reason=""):
-                return contracts.DelegationRequest(task_id=task_id or f"{self.role_name}-task", reply_to=self.role_name, target_agent=target, payload=payload)
-            @staticmethod
-            def is_delegation_message(v): return contracts.is_delegation_request(v)
-        ba_mod.BaseAgent = _BaseAgent
-        sys.modules["agent.base_agent"] = ba_mod
+    # agent.base_agent stub (always replace to avoid stale DelegationRequest identity)
+    ba_mod = types.ModuleType("agent.base_agent")
+    contracts = sys.modules["agent.core.contracts"]
+    class _BaseAgent:
+        def __init__(self, *a, cfg=None, role_name="base", **kw):
+            self.cfg = cfg or sys.modules["config"].Config()
+            self.role_name = role_name
+            self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value="llm yanıtı")
+            self.tools = {}
+        def register_tool(self, name, fn): self.tools[name] = fn
+        async def call_tool(self, name, arg):
+            if name not in self.tools: return f"HATA: {name} bulunamadı"
+            return await self.tools[name](arg)
+        async def call_llm(self, msgs, system_prompt=None, temperature=0.7, json_mode=False):
+            return "llm yanıtı"
+        def delegate_to(self, target, payload, task_id=None, reason=""):
+            return contracts.DelegationRequest(task_id=task_id or f"{self.role_name}-task", reply_to=self.role_name, target_agent=target, payload=payload)
+        @staticmethod
+        def is_delegation_message(v): return contracts.is_delegation_request(v)
+    ba_mod.BaseAgent = _BaseAgent
+    sys.modules["agent.base_agent"] = ba_mod
 
     # managers stubs
     for mod, cls in [

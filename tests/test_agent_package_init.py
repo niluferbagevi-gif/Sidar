@@ -12,6 +12,7 @@ def test_agent_core_lazy_getattr_and_all(monkeypatch):
     fake_agent_pkg.__path__ = [str(project_root / "agent")]
     fake_agent_pkg.__package__ = "agent"
     monkeypatch.setitem(sys.modules, "agent", fake_agent_pkg)
+    sys.modules.pop("agent.core", None)
 
     import agent.core as core_pkg
 

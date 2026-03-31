@@ -41,7 +41,9 @@ class ReviewerAgent(BaseAgent):
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="reviewer")
         self.config = self.cfg
-        self.github = GitHubManager(self.config.GITHUB_TOKEN, self.config.GITHUB_REPO)
+        github_token = getattr(self.config, "GITHUB_TOKEN", None)
+        github_repo = getattr(self.config, "GITHUB_REPO", None)
+        self.github = GitHubManager(github_token, github_repo)
         self.events = get_agent_event_bus()
         self.security = SecurityManager(cfg=self.config)
         self.code = CodeManager(

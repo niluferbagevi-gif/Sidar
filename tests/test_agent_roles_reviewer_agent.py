@@ -54,7 +54,7 @@ def _stub_reviewer_deps():
     cfg_mod = types.ModuleType("config")
     class _Config:
         AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
-        BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = "owner/repo"; GITHUB_TOKEN = ""
+        BASE_DIR = "/tmp/sidar_test"; GITHUB_REPO = "dummy/repo"; GITHUB_TOKEN = "dummy_token"
         USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
         RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
         RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200

@@ -61,27 +61,26 @@ def _get_cm():
 
 def _make_code_manager(tmpdir=None):
     cm = _get_cm()
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(tmpdir or td)
-        cfg = cm.sys.modules["config"].Config()
+    base = Path(tmpdir) if tmpdir else Path(tempfile.mkdtemp())
+    cfg = cm.sys.modules["config"].Config()
 
-        class _FakeSM:
-            level = 2
-            def can_read(self, path): return True
-            def can_write(self, path): return True
-            def can_execute(self): return True
-            def get_safe_write_path(self, name): return base / name
-            def is_path_under(self, path, b): return True
+    class _FakeSM:
+        level = 2
+        def can_read(self, path): return True
+        def can_write(self, path): return True
+        def can_execute(self): return True
+        def get_safe_write_path(self, name): return base / name
+        def is_path_under(self, path, b): return True
 
-        with patch.object(cm.CodeManager, "_init_docker"):
-            manager = cm.CodeManager(
-                security=_FakeSM(),
-                base_dir=base,
-                cfg=cfg,
-            )
-            manager.docker_available = False
-            manager.docker_client = None
-        return manager, base, cm
+    with patch.object(cm.CodeManager, "_init_docker"):
+        manager = cm.CodeManager(
+            security=_FakeSM(),
+            base_dir=base,
+            cfg=cfg,
+        )
+        manager.docker_available = False
+        manager.docker_client = None
+    return manager, base, cm
 
 
 # ══════════════════════════════════════════════════════════════
