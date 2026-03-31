@@ -25,6 +25,7 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -33,7 +34,8 @@ import pytest
 # Stub heavy dependencies so core.rag can be imported without them installed.
 # ---------------------------------------------------------------------------
 
-def _install_stubs():
+def _build_stubs():
+    stubs: dict[str, types.ModuleType] = {}
     for mod in (
         "chromadb",
         "chromadb.utils",
@@ -50,50 +52,48 @@ def _install_stubs():
         "core.judge",
         "httpx",
     ):
-        if mod not in sys.modules:
-            sys.modules[mod] = types.ModuleType(mod)
+        stubs[mod] = sys.modules.get(mod) or types.ModuleType(mod)
 
     # opentelemetry.trace needs get_tracer → return None so tracing branch is skipped
-    otel = sys.modules.get("opentelemetry.trace") or types.ModuleType("opentelemetry.trace")
+    otel = stubs.get("opentelemetry.trace") or types.ModuleType("opentelemetry.trace")
     otel.get_tracer = lambda *a, **kw: None  # type: ignore[attr-defined]
-    sys.modules["opentelemetry.trace"] = otel
+    stubs["opentelemetry.trace"] = otel
 
     # chromadb.utils.embedding_functions needs SentenceTransformerEmbeddingFunction
-    ef_mod = sys.modules["chromadb.utils.embedding_functions"]
+    ef_mod = stubs["chromadb.utils.embedding_functions"]
     ef_mod.SentenceTransformerEmbeddingFunction = type(  # type: ignore[attr-defined]
         "SentenceTransformerEmbeddingFunction", (), {"__init__": lambda s, **kw: None, "__call__": lambda s, x: []}
     )
 
     # Config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
+    cfg_mod = types.ModuleType("config")
 
-        class _Cfg:
-            DATABASE_URL = ""
-            CHROMA_PERSIST_DIRECTORY = "data/chroma"
-            USE_GPU = False
-            GPU_MIXED_PRECISION = False
-            RAG_CHUNK_SIZE = 512
-            RAG_CHUNK_OVERLAP = 50
-            RAG_TOP_K = 3
-            PGVECTOR_TABLE = "rag_embeddings"
-            PGVECTOR_EMBEDDING_DIM = 384
-            PGVECTOR_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-            RAG_VECTOR_BACKEND = "chroma"
-            AI_PROVIDER = ""
-            RAG_LOCAL_ENABLE_HYBRID = False
-            ENABLE_GRAPH_RAG = True
-            BASE_DIR = Path("/tmp")
-            GRAPH_RAG_MAX_FILES = 5000
-            HF_TOKEN = ""
-            HF_HUB_OFFLINE = False
-            RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER = 1
+    class _Cfg:
+        DATABASE_URL = ""
+        CHROMA_PERSIST_DIRECTORY = "data/chroma"
+        USE_GPU = False
+        GPU_MIXED_PRECISION = False
+        RAG_CHUNK_SIZE = 512
+        RAG_CHUNK_OVERLAP = 50
+        RAG_TOP_K = 3
+        PGVECTOR_TABLE = "rag_embeddings"
+        PGVECTOR_EMBEDDING_DIM = 384
+        PGVECTOR_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+        RAG_VECTOR_BACKEND = "chroma"
+        AI_PROVIDER = ""
+        RAG_LOCAL_ENABLE_HYBRID = False
+        ENABLE_GRAPH_RAG = True
+        BASE_DIR = Path("/tmp")
+        GRAPH_RAG_MAX_FILES = 5000
+        HF_TOKEN = ""
+        HF_HUB_OFFLINE = False
+        RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER = 1
 
-        cfg_mod.Config = _Cfg
-        sys.modules["config"] = cfg_mod
+    cfg_mod.Config = _Cfg
+    stubs["config"] = cfg_mod
 
     # core.judge stub
-    judge_mod = sys.modules.get("core.judge") or types.ModuleType("core.judge")
+    judge_mod = stubs.get("core.judge") or types.ModuleType("core.judge")
 
     class _FakeJudge:
         enabled = False
@@ -102,17 +102,14 @@ def _install_stubs():
             pass
 
     judge_mod.get_llm_judge = lambda: _FakeJudge()  # type: ignore[attr-defined]
-    sys.modules["core.judge"] = judge_mod
+    stubs["core.judge"] = judge_mod
+    return stubs
 
 
-_install_stubs()
-
-# Remove cached module so we get a fresh import with stubs in place
-for _k in list(sys.modules.keys()):
-    if _k in ("core.rag",):
-        del sys.modules[_k]
-
-import core.rag as rag  # noqa: E402  — must come after stubs
+with patch.dict(sys.modules, _build_stubs(), clear=False):
+    # Remove cached module so we get a fresh import with stubs in place
+    sys.modules.pop("core.rag", None)
+    import core.rag as rag  # noqa: E402  — must come after stubs
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +118,9 @@ import core.rag as rag  # noqa: E402  — must come after stubs
 
 def _make_store(tmp_path: Path) -> rag.DocumentStore:
     """Build a DocumentStore with ChromaDB and pgvector disabled."""
-    store = rag.DocumentStore.__new__(rag.DocumentStore)
-    store.cfg = sys.modules["config"].Config()
+    with patch.object(rag.DocumentStore, "__init__", return_value=None):
+        store = rag.DocumentStore()
+    store.cfg = rag.Config()
     store.store_dir = tmp_path
     store.store_dir.mkdir(parents=True, exist_ok=True)
     store.index_file = tmp_path / "index.json"

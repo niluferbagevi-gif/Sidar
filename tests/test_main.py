@@ -587,9 +587,12 @@ class TestExecuteCommand:
     def test_successful_run_returns_0(self):
         m = _get_main()
         cmd = [sys.executable, "-c", "pass"]
-        with patch("builtins.print"):
-            result = m.execute_command(cmd)
+        mock_completed = SimpleNamespace(returncode=0)
+        with patch("subprocess.run", return_value=mock_completed) as mock_run:
+            with patch("builtins.print"):
+                result = m.execute_command(cmd)
         assert result == 0
+        mock_run.assert_called_once_with(cmd, check=True)
 
     def test_failed_run_returns_nonzero(self):
         m = _get_main()
