@@ -388,8 +388,7 @@ class TestSidarAgentFallbackFederation:
 
 
 class TestSidarAgentExternalTrigger:
-    @pytest.mark.asyncio
-    async def test_handle_external_trigger_basic(self):
+    def test_handle_external_trigger_basic(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()
         contracts = sys.modules["agent.core.contracts"]
@@ -401,14 +400,17 @@ class TestSidarAgentExternalTrigger:
         )
         if not hasattr(agent, "handle_external_trigger"):
             pytest.skip("handle_external_trigger metodu bu sürümde mevcut değil")
-        # Derin async bağımlılıkları patch ile devre dışı bırak
-        with patch.object(agent, "initialize", AsyncMock()):
-            with patch.object(agent, "_try_multi_agent", AsyncMock(return_value="trigger yanıtı")):
-                with patch.object(agent, "_append_autonomy_history", AsyncMock()):
-                    with patch.object(agent, "_memory_add", AsyncMock()):
-                        result = await agent.handle_external_trigger(trigger)
-                        assert result is not None
-                        assert result.get("trigger_id") == "trig-1"
+
+        async def _run():
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "_try_multi_agent", AsyncMock(return_value="trigger yanıtı")):
+                    with patch.object(agent, "_append_autonomy_history", AsyncMock()):
+                        with patch.object(agent, "_memory_add", AsyncMock()):
+                            result = await agent.handle_external_trigger(trigger)
+                            assert result is not None
+                            assert result.get("trigger_id") == "trig-1"
+
+        asyncio.run(_run())
 
     def test_handle_external_trigger_marks_empty_when_llm_returns_blank(self):
         sa = _get_sidar_agent()
@@ -434,8 +436,7 @@ class TestSidarAgentExternalTrigger:
         assert result["status"] == "empty"
         assert "boş çıktı" in result["summary"]
 
-    @pytest.mark.asyncio
-    async def test_handle_external_trigger_marks_failed_when_multi_agent_raises(self):
+    def test_handle_external_trigger_marks_failed_when_multi_agent_raises(self):
         sa = _get_sidar_agent()
         agent = sa.SidarAgent()
         contracts = sys.modules["agent.core.contracts"]
@@ -448,12 +449,14 @@ class TestSidarAgentExternalTrigger:
         if not hasattr(agent, "handle_external_trigger"):
             pytest.skip("handle_external_trigger metodu bu sürümde mevcut değil")
 
-        with patch.object(agent, "initialize", AsyncMock()):
-            with patch.object(agent, "_try_multi_agent", AsyncMock(side_effect=RuntimeError("planner crashed"))):
-                with patch.object(agent, "_append_autonomy_history", AsyncMock()):
-                    with patch.object(agent, "_memory_add", AsyncMock()):
-                        result = await agent.handle_external_trigger(trigger)
+        async def _run():
+            with patch.object(agent, "initialize", AsyncMock()):
+                with patch.object(agent, "_try_multi_agent", AsyncMock(side_effect=RuntimeError("planner crashed"))):
+                    with patch.object(agent, "_append_autonomy_history", AsyncMock()):
+                        with patch.object(agent, "_memory_add", AsyncMock()):
+                            return await agent.handle_external_trigger(trigger)
 
+        result = asyncio.run(_run())
         assert result["status"] == "failed"
         assert "planner crashed" in result["summary"]
 
