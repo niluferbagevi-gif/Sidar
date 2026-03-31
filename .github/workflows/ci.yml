@@ -56,7 +56,12 @@ jobs:
 
       - name: Enforce coverage quality gate (90%)
         run: |
-          python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=90
+          python -m pytest -q tests \
+            --cov=agent \
+            --cov=managers \
+            --cov=core \
+            --cov-report=term-missing \
+            --cov-fail-under=90
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
