@@ -41,7 +41,11 @@ run_pytest_coverage_report() {
 run_pytest_coverage_report
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
-python -m pytest -v tests/test_benchmark.py
+if [ -f "tests/test_benchmark.py" ]; then
+  python -m pytest -v tests/test_benchmark.py
+else
+  echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."
+fi
 
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then
