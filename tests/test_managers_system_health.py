@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 import types
+from unittest.mock import Mock
 
 
 def _get_sh():
@@ -293,3 +294,19 @@ class TestSystemHealthAdditionalBranches:
 
         assert captured == {"host": "localhost", "port": 6379, "label": "redis"}
         assert status["mode"] == "tcp"
+
+    def test_init_nvml_wsl2_osrelease_unreadable_falls_back_false(self, monkeypatch):
+        sh = _get_sh()
+
+        class _FakePynvml:
+            @staticmethod
+            def nvmlInit():
+                raise Exception("NVML error")
+
+        monkeypatch.setitem(sys.modules, "pynvml", _FakePynvml)
+        monkeypatch.setattr(sh.SystemHealthManager, "_check_import", lambda *_a, **_k: True)
+        monkeypatch.setattr(sh.SystemHealthManager, "_check_gpu", lambda *_a, **_k: True)
+        monkeypatch.setattr("builtins.open", Mock(side_effect=FileNotFoundError("missing osrelease")))
+
+        mgr = sh.SystemHealthManager(use_gpu=True)
+        assert mgr._nvml_initialized is False
