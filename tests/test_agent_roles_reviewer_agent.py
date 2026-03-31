@@ -753,7 +753,7 @@ import pytest
 _proj = _pl.Path(__file__).parent.parent
 
 
-def _stub_reviewer_deps():
+def _extra_stub_reviewer_deps():
     if "agent" not in sys.modules:
         pkg = types.ModuleType("agent")
         pkg.__path__ = [str(_proj / "agent")]
@@ -899,8 +899,8 @@ def _stub_reviewer_deps():
         sys.modules["agent.base_agent"] = ba_mod
 
 
-def _get_reviewer():
-    _stub_reviewer_deps()
+def _extra_get_reviewer():
+    _extra_stub_reviewer_deps()
     sys.modules.pop("agent.roles.reviewer_agent", None)
     if "agent.roles" not in sys.modules:
         roles = types.ModuleType("agent.roles")
@@ -918,7 +918,7 @@ class Extra_TestBuildDynamicTestContent:
     def test_empty_context_returns_fail_closed(self):
         async def _run(self_ref=self):
             """Boş bağlam fail-closed test döndürmeli (L85-86)."""
-            m = _get_reviewer()
+            m = _extra_get_reviewer()
             agent = m.ReviewerAgent()
             result = await agent._build_dynamic_test_content("")
             assert "def test_reviewer_dynamic_generation_fail_closed" in result
@@ -927,7 +927,7 @@ class Extra_TestBuildDynamicTestContent:
         def test_llm_exception_returns_fail_closed(self):
             async def _run():
                 """LLM exception fırlatırsa fail-closed test döndürmeli (L104-107)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.call_llm = AsyncMock(side_effect=RuntimeError("LLM çöktü"))
                 result = await agent._build_dynamic_test_content("def foo(): pass")
@@ -939,7 +939,7 @@ class Extra_TestBuildDynamicTestContent:
         def test_llm_output_without_test_fn_returns_fail_closed(self):
             async def _run():
                 """LLM çıktısı test fonksiyonu içermiyorsa fail-closed döndürmeli (L110-113)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.call_llm = AsyncMock(return_value="x = 1 + 1")
                 result = await agent._build_dynamic_test_content("some code context")
@@ -950,7 +950,7 @@ class Extra_TestBuildDynamicTestContent:
         def test_valid_llm_output_returned_as_is(self):
             async def _run():
                 """Geçerli test kodu döndürülmeli (L114)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.call_llm = AsyncMock(return_value="def test_my_func():\n    assert 1 == 1\n")
                 result = await agent._build_dynamic_test_content("my function code")
@@ -961,7 +961,7 @@ class Extra_TestBuildDynamicTestContent:
         def test_llm_output_with_fenced_code_block(self):
             async def _run():
                 """Fenced code block'tan test kodu çıkarılmalı."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.call_llm = AsyncMock(
                     return_value="```python\ndef test_extracted():\n    assert True\n```"
@@ -981,7 +981,7 @@ class Extra_TestRunDynamicTests:
     def test_write_file_failure_returns_fail_closed(self):
         async def _run(self_ref=self):
             """write_file başarısız olursa FAIL-CLOSED döndürmeli (L122-126)."""
-            m = _get_reviewer()
+            m = _extra_get_reviewer()
             agent = m.ReviewerAgent()
             agent._build_dynamic_test_content = AsyncMock(return_value="def test_foo(): pass\n")
             agent.code.write_file = MagicMock(return_value=(False, "yazma hatası"))
@@ -993,7 +993,7 @@ class Extra_TestRunDynamicTests:
         def test_write_success_calls_run_tests(self):
             async def _run():
                 """write_file başarılıysa run_tests tool çağrılmalı (L128-130)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent._build_dynamic_test_content = AsyncMock(return_value="def test_foo(): pass\n")
                 agent.code.write_file = MagicMock(return_value=(True, "yazıldı"))
@@ -1012,23 +1012,23 @@ class Extra_TestRunDynamicTests:
         asyncio.run(_run())
 class Extra_TestCollectGraphFollowupPaths:
     def test_empty_graph_payload_returns_empty(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._collect_graph_followup_paths({})
         assert result == []
 
     def test_non_dict_payload_returns_empty(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._collect_graph_followup_paths("not a dict")
         assert result == []
 
     def test_ok_false_reports_skipped(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {"reports": [{"ok": False, "details": {"review_targets": ["a.py"]}}]}
         result = m.ReviewerAgent._collect_graph_followup_paths(payload)
         assert result == []
 
     def test_collects_paths_from_ok_reports(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {
             "reports": [
                 {
@@ -1045,7 +1045,7 @@ class Extra_TestCollectGraphFollowupPaths:
         assert "tests/test_agent.py" in result
 
     def test_non_supported_extension_excluded(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {
             "reports": [
                 {"ok": True, "details": {"review_targets": ["config.json", "module.py"]}}
@@ -1062,13 +1062,13 @@ class Extra_TestCollectGraphFollowupPaths:
 
 class Extra_TestSummarizeGraphPayload:
     def test_empty_payload_returns_no_signal(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_graph_payload({})
         assert result["status"] == "no-signal"
         assert result["risk"] == "düşük"
 
     def test_high_risk_target_sets_orta(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {
             "status": "ok",
             "reports": [
@@ -1084,7 +1084,7 @@ class Extra_TestSummarizeGraphPayload:
         assert "agent/core.py" in result["high_risk_targets"]
 
     def test_no_high_risk_stays_dusuk(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {
             "status": "ok",
             "reports": [
@@ -1102,7 +1102,7 @@ class Extra_TestSummarizeGraphPayload:
 class Extra_TestSummarizeLspDiagnosticsExtra:
     def test_json_with_summary_parsed_directly(self):
         """JSON payload summary alanı varsa doğrudan parse edilmeli (L268-278)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = json.dumps({
             "status": "issues-found",
             "risk": "yüksek",
@@ -1117,25 +1117,25 @@ class Extra_TestSummarizeLspDiagnosticsExtra:
 
     def test_temiz_keyword_returns_clean(self):
         """'temiz' içeren çıktı clean döndürmeli (L281-288)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_lsp_diagnostics("Workspace temiz durumda.")
         assert result["status"] == "clean"
 
     def test_bildirimi_donmedi_returns_no_signal(self):
         """'bildirimi dönmedi' içeren çıktı no-signal döndürmeli (L289-296)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_lsp_diagnostics("LSP bildirimi dönmedi")
         assert result["status"] == "no-signal"
 
     def test_hatasi_keyword_returns_tool_error(self):
         """'hatası:' içeren çıktı tool-error döndürmeli (L297-304)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_lsp_diagnostics("LSP çalıştırılırken hatası: timeout")
         assert result["status"] == "tool-error"
 
     def test_warnings_only_sets_orta_risk(self):
         """Yalnızca warning (severity=2) orta risk olmalı (L318-320)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_lsp_diagnostics(
             "file.py:10 severity=2 warning: unused variable"
         )
@@ -1144,7 +1144,7 @@ class Extra_TestSummarizeLspDiagnosticsExtra:
 
     def test_info_only_sets_info_only_status(self):
         """Sadece info/hint (severity=3/4) info-only olmalı (L326-330)."""
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_lsp_diagnostics(
             "file.py:5 severity=3 hint: consider refactoring"
         )
@@ -1157,22 +1157,22 @@ class Extra_TestSummarizeLspDiagnosticsExtra:
 
 class Extra_TestNormalizeIssuePath:
     def test_strips_workspace_prefix(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._normalize_issue_path("/workspace/Sidar/core/agent.py")
         assert result == "core/agent.py"
 
     def test_strips_leading_dot_slash(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._normalize_issue_path("./core/agent.py")
         assert result == "core/agent.py"
 
     def test_normalizes_backslash(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._normalize_issue_path("core\\agent.py")
         assert result == "core/agent.py"
 
     def test_none_returns_empty(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._normalize_issue_path(None)
         assert result == ""
 
@@ -1183,14 +1183,14 @@ class Extra_TestNormalizeIssuePath:
 
 class Extra_TestBuildCombinedImpactReport:
     def test_no_signals_returns_low_impact(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {"counts": {}, "issues": []}
         graph = {"risk": "düşük", "followup_paths": [], "high_risk_targets": []}
         result = m.ReviewerAgent._build_combined_impact_report(semantic, graph, [], [])
         assert result["impact_level"] == "low"
 
     def test_issue_paths_gives_medium_impact(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {
             "counts": {},
             "issues": [{"path": "/workspace/Sidar/core/agent.py", "message": "error"}],
@@ -1200,7 +1200,7 @@ class Extra_TestBuildCombinedImpactReport:
         assert result["impact_level"] == "medium"
 
     def test_orta_graph_risk_gives_high_impact(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {"counts": {}, "issues": []}
         graph = {"risk": "orta", "followup_paths": [], "high_risk_targets": []}
         result = m.ReviewerAgent._build_combined_impact_report(semantic, graph, [], [])
@@ -1213,12 +1213,12 @@ class Extra_TestBuildCombinedImpactReport:
 
 class Extra_TestBuildFixRecommendations:
     def test_empty_inputs_returns_empty(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._build_fix_recommendations({}, {}, {"indirect_breakage_paths": []})
         assert result == []
 
     def test_semantic_issues_creates_recommendations(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {
             "issues": [
                 {"path": "/workspace/Sidar/core/agent.py", "message": "undefined var"},
@@ -1231,7 +1231,7 @@ class Extra_TestBuildFixRecommendations:
         assert result[0]["reason"] == "semantic"
 
     def test_indirect_breakage_paths_creates_graph_semantic_rec(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {
             "issues": [
                 {"path": "/workspace/Sidar/core/agent.py", "message": "type error"},
@@ -1257,33 +1257,33 @@ class Extra_TestBuildFixRecommendations:
 
 class Extra_TestParseReviewPayload:
     def test_empty_returns_defaults(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._parse_review_payload("")
         assert result["review_context"] == ""
         assert result["browser_session_id"] == ""
 
     def test_json_payload_with_review_context(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = json.dumps({"review_context": "def foo(): pass", "browser_session_id": "sess-123"})
         result = m.ReviewerAgent._parse_review_payload(payload)
         assert result["review_context"] == "def foo(): pass"
         assert result["browser_session_id"] == "sess-123"
 
     def test_plain_text_with_browser_session_id(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         text = "diff context browser_session_id=abc123"
         result = m.ReviewerAgent._parse_review_payload(text)
         assert result["browser_session_id"] == "abc123"
         assert "browser_session_id=abc123" not in result["review_context"]
 
     def test_plain_text_without_session_id(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._parse_review_payload("some plain code diff")
         assert result["review_context"] == "some plain code diff"
         assert result["browser_session_id"] == ""
 
     def test_json_with_code_context_fallback(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = json.dumps({"code_context": "class MyClass: pass"})
         result = m.ReviewerAgent._parse_review_payload(payload)
         assert result["review_context"] == "class MyClass: pass"
@@ -1295,19 +1295,19 @@ class Extra_TestParseReviewPayload:
 
 class Extra_TestSummarizeBrowserSignals:
     def test_none_returns_no_signal(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._summarize_browser_signals(None)
         assert result["status"] == "no-signal"
 
     def test_failed_status_propagated(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {"status": "failed", "risk": "yüksek", "failed_actions": ["click btn"]}
         result = m.ReviewerAgent._summarize_browser_signals(payload)
         assert result["status"] == "failed"
         assert "click btn" in result["failed_actions"]
 
     def test_limits_actions_to_8(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         payload = {"failed_actions": [f"action_{i}" for i in range(20)]}
         result = m.ReviewerAgent._summarize_browser_signals(payload)
         assert len(result["failed_actions"]) <= 8
@@ -1319,12 +1319,12 @@ class Extra_TestSummarizeBrowserSignals:
 
 class Extra_TestBuildBrowserFixRecommendations:
     def test_no_actions_returns_empty(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         result = m.ReviewerAgent._build_browser_fix_recommendations({})
         assert result == []
 
     def test_failed_actions_returns_recommendation(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         browser_summary = {
             "failed_actions": ["click .btn"],
             "pending_actions": [],
@@ -1342,7 +1342,7 @@ class Extra_TestBuildBrowserFixRecommendations:
 
 class Extra_TestBuildRemediationLoop:
     def test_no_issues_observe_only(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {"counts": {}, "summary": "temiz"}
         graph = {"risk": "düşük", "followup_paths": [], "summary": "ok"}
         combined = {
@@ -1356,7 +1356,7 @@ class Extra_TestBuildRemediationLoop:
         assert result["status"] == "observe_only"
 
     def test_with_issues_planned_status(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {"counts": {"1": 2}, "summary": "hata var"}
         graph = {"risk": "düşük", "followup_paths": [], "summary": "ok"}
         combined = {
@@ -1371,7 +1371,7 @@ class Extra_TestBuildRemediationLoop:
         assert result["status"] == "planned"
 
     def test_high_impact_needs_human_approval(self):
-        m = _get_reviewer()
+        m = _extra_get_reviewer()
         semantic = {"counts": {}, "summary": "ok"}
         graph = {"risk": "düşük", "followup_paths": [], "summary": "ok"}
         combined = {
@@ -1392,14 +1392,14 @@ class Extra_TestBuildRemediationLoop:
 class Extra_TestRunTaskExtra:
     def test_empty_prompt_returns_warning(self):
         async def _run(self_ref=self):
-            m = _get_reviewer()
+            m = _extra_get_reviewer()
             agent = m.ReviewerAgent()
             result = await agent.run_task("")
             assert "UYARI" in result or "boş" in result.lower()
 
         def test_run_tests_command_with_pipe_arg(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("run_tests|pytest -q tests/")
                 assert "test" in result.lower() or "OK" in result or "FAIL" in result
@@ -1408,7 +1408,7 @@ class Extra_TestRunTaskExtra:
 
         def test_run_tests_no_pipe_uses_default(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("run_tests")
                 assert result is not None
@@ -1417,7 +1417,7 @@ class Extra_TestRunTaskExtra:
 
         def test_lsp_diagnostics_route(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("lsp_diagnostics|core/agent.py")
                 assert result is not None
@@ -1426,7 +1426,7 @@ class Extra_TestRunTaskExtra:
 
         def test_graph_impact_route(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("graph_impact|core/agent.py")
                 assert result is not None
@@ -1435,7 +1435,7 @@ class Extra_TestRunTaskExtra:
 
         def test_pr_diff_invalid_number_returns_warning(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("pr_diff|abc")
                 assert "Kullanım" in result or "⚠" in result
@@ -1444,7 +1444,7 @@ class Extra_TestRunTaskExtra:
 
         def test_run_tests_disallowed_command_returns_warning(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("run_tests|rm -rf /")
                 assert "Kullanım" in result or "⚠" in result
@@ -1454,7 +1454,7 @@ class Extra_TestRunTaskExtra:
         def test_review_keyword_dispatches_review_code(self):
             async def _run():
                 """'review' içeren prompt review_code yoluna gitmeli (L947-948)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 # Sonsuz özyinelemeyi önlemek için call_tool'u patch et
                 agent.call_tool = AsyncMock(return_value='{"status":"ok","summary":"","reports":[]}')
@@ -1468,7 +1468,7 @@ class Extra_TestRunTaskExtra:
         def test_unknown_prompt_falls_back_to_list_prs(self):
             async def _run():
                 """Tanımsız prompt list_prs fallback döndürmeli (L950)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("bilinmeyen bir komut")
                 assert result is not None
@@ -1477,7 +1477,7 @@ class Extra_TestRunTaskExtra:
 
         def test_list_issues_without_pipe_uses_default(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent.run_task("list_issues")
                 assert "issue" in result.lower() or "listesi" in result.lower()
@@ -1492,7 +1492,7 @@ class Extra_TestRunTaskExtra:
 class Extra_TestToolMethods:
     def test_tool_repo_info_error_path(self):
         async def _run(self_ref=self):
-            m = _get_reviewer()
+            m = _extra_get_reviewer()
             agent = m.ReviewerAgent()
             agent.github.get_repo_info = MagicMock(return_value=(False, "hata mesajı"))
             result = await agent._tool_repo_info("")
@@ -1500,7 +1500,7 @@ class Extra_TestToolMethods:
 
         def test_tool_list_prs_error_path(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.github.list_pull_requests = MagicMock(return_value=(False, "PR hatası"))
                 result = await agent._tool_list_prs("open")
@@ -1510,7 +1510,7 @@ class Extra_TestToolMethods:
 
         def test_tool_list_issues_error_path(self):
             async def _run():
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 agent.github.list_issues = MagicMock(return_value=(False, "issue hatası"))
                 result = await agent._tool_list_issues("open")
@@ -1521,7 +1521,7 @@ class Extra_TestToolMethods:
         def test_tool_browser_signals_no_session_id(self):
             async def _run():
                 """session_id olmadan no-signal döndürmeli (L792-800)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 result = await agent._tool_browser_signals("")
                 data = json.loads(result)
@@ -1532,7 +1532,7 @@ class Extra_TestToolMethods:
         def test_tool_browser_signals_with_inline_payload(self):
             async def _run():
                 """Inline browser_signals varsa doğrudan döndürmeli (L790-791)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 payload = json.dumps({"browser_signals": {"status": "ok", "risk": "düşük"}})
                 result = await agent._tool_browser_signals(payload)
@@ -1544,7 +1544,7 @@ class Extra_TestToolMethods:
         def test_get_graph_store_creates_once(self):
             async def _run():
                 """_get_graph_store singleton davranışı göstermeli (L729-740)."""
-                m = _get_reviewer()
+                m = _extra_get_reviewer()
                 agent = m.ReviewerAgent()
                 store1 = agent._get_graph_store()
                 store2 = agent._get_graph_store()

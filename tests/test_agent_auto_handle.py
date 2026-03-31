@@ -485,8 +485,8 @@ class TestAutoHandleParametrizedBranches:
     @pytest.mark.parametrize(
         "command_text,expected_substring",
         [
-            (".status", "sistem sağlığı"),
-            (".health", "sistem sağlığı"),
+            (".status", "sağlık raporu"),
+            (".health", "sağlık raporu"),
             (".clear", "temizlendi"),
             (".audit", "denetim"),
             (".gpu", "gpu"),
