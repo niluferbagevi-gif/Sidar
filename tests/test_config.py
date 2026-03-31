@@ -752,3 +752,39 @@ class TestSandboxLimits:
         cfg = _reload_config({"SANDBOX_MEMORY": "512m", "SANDBOX_TIMEOUT": "30"})
         assert cfg.SANDBOX_LIMITS["memory"] == "512m"
         assert cfg.SANDBOX_LIMITS["timeout"] == 30
+
+class TestConfigTelemetryAndSingleton:
+    def test_get_config_returns_singleton_instance(self):
+        import config
+        config._config_instance = None
+        first = config.get_config()
+        second = config.get_config()
+        assert first is second
+
+    def test_init_telemetry_returns_false_when_disabled(self):
+        import config
+        with patch.object(config.Config, "ENABLE_TRACING", False):
+            assert config.Config.init_telemetry() is False
+
+    def test_init_telemetry_returns_false_when_dependencies_missing(self):
+        import config
+        with patch.object(config.Config, "ENABLE_TRACING", True):
+            with patch.dict(sys.modules, {"opentelemetry": None}):
+                result = config.Config.init_telemetry(
+                    trace_module=None,
+                    otlp_exporter_cls=None,
+                    tracer_provider_cls=None,
+                    resource_cls=None,
+                    batch_span_processor_cls=None,
+                )
+        assert result is False
+
+    def test_print_config_summary_in_ollama_mode_contains_model_lines(self, capsys):
+        import config
+        with patch.object(config.Config, "AI_PROVIDER", "ollama"):
+            with patch.object(config.Config, "USE_GPU", False):
+                with patch.object(config.Config, "GPU_INFO", "CPU"):
+                    config.Config.print_config_summary()
+        out = capsys.readouterr().out
+        assert "CODING Modeli" in out
+        assert "TEXT Modeli" in out

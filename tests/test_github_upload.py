@@ -315,3 +315,19 @@ class TestGithubUploadMainFlow:
         output = capsys.readouterr().out
         assert "Yükleme sırasında bilinmeyen bir hata" in output
         assert "Permission to org/repo denied" in output
+
+class TestGithubUploadAdditionalBranches:
+    def test_collect_safe_files_skips_directories(self, monkeypatch):
+        mod = _get_github_upload()
+        monkeypatch.setattr(mod, "run_command", lambda *_a, **_k: (True, "src\nREADME.md"))
+        monkeypatch.setattr(mod.os.path, "isdir", lambda p: p == "src")
+        monkeypatch.setattr(mod, "get_file_content", lambda _p: "ok")
+
+        safe, blocked = mod.collect_safe_files()
+        assert "src" not in safe
+        assert "README.md" in safe
+        assert blocked == []
+
+    def test_is_valid_repo_url_trims_whitespace(self):
+        mod = _get_github_upload()
+        assert mod._is_valid_repo_url("   https://github.com/org/repo   ") is True

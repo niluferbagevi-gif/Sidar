@@ -804,3 +804,28 @@ class TestPrintBanner:
         _get_main().print_banner()
         captured = capsys.readouterr()
         assert "SIDAR" in captured.out.upper() or "Sidar" in captured.out
+
+class TestMainAdditionalBranches:
+    def test_validate_runtime_dependencies_unknown_mode_uses_cli_target_message(self):
+        m = _get_main()
+        with patch.object(m, "CONFIG_IMPORT_OK", False):
+            ok, err = m.validate_runtime_dependencies("unknown")
+        assert ok is False
+        assert "cli.py" in err
+
+    def test_preflight_warns_for_malformed_database_url(self):
+        m = _get_main()
+        fake_cfg = SimpleNamespace(
+            BASE_DIR=".",
+            DATABASE_URL="not-a-url",
+            GEMINI_API_KEY="x",
+            OPENAI_API_KEY="x",
+            ANTHROPIC_API_KEY="x",
+            OLLAMA_URL="http://localhost:11434/api",
+        )
+        with patch.object(m, "cfg", fake_cfg):
+            with patch("pathlib.Path.exists", return_value=False):
+                with patch.object(m.logger, "warning") as warning_mock:
+                    m.preflight("gemini")
+        warning_args = " ".join(str(call.args[0]) for call in warning_mock.call_args_list if call.args)
+        assert "DATABASE_URL" in warning_args
