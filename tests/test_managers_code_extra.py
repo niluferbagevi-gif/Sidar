@@ -365,7 +365,10 @@ class TestExecuteCodeLocal:
     def test_local_execution_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             manager, base, cm = _make_code_manager(tmpdir)
-            ok, output = manager.execute_code_local("print('hello')")
+            mock_result = MagicMock(returncode=0, stdout="hello\n", stderr="")
+            with patch("subprocess.run", return_value=mock_result) as run_mock:
+                ok, output = manager.execute_code_local("print('hello')")
+            run_mock.assert_called_once()
             assert ok is True
             assert "hello" in output
 
@@ -395,7 +398,10 @@ class TestExecuteCodeLocal:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager, base, cm = _make_code_manager(tmpdir)
             manager.max_output_chars = 10
-            ok, output = manager.execute_code_local("print('x' * 100)")
+            mock_result = MagicMock(returncode=0, stdout=("x" * 100), stderr="")
+            with patch("subprocess.run", return_value=mock_result) as run_mock:
+                ok, output = manager.execute_code_local("print('x' * 100)")
+            run_mock.assert_called_once()
             assert ok is True
             assert "KIRPILDI" in output
 
