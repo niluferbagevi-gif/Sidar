@@ -511,13 +511,13 @@ def _make_mock_engine(scalar_value=0, fetchone_value=None, fetchall_value=None, 
 # Fixtures
 # ---------------------------------------------------------------------------
 
-class Extra__FakeConfig:
+class _FakeConfig:
     ENABLE_ENTITY_MEMORY = True
     ENTITY_MEMORY_TTL_DAYS = 30
     ENTITY_MEMORY_MAX_PER_USER = 50
 
 
-class Extra__FakeConfigDisabled:
+class _FakeConfigDisabled:
     ENABLE_ENTITY_MEMORY = False
     ENTITY_MEMORY_TTL_DAYS = 30
     ENTITY_MEMORY_MAX_PER_USER = 50
