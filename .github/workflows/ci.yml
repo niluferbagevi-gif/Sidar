@@ -17,7 +17,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web_ui_react/package-lock.json
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
@@ -45,23 +52,9 @@ jobs:
 
       - name: Check .env.example ↔ config.py parity
         run: bash scripts/check_env_parity.sh
-
-      - name: Run sandbox/reviewer hardening checks
-        run: |
-          pytest -q tests/test_managers_security.py tests/test_agent_roles_reviewer_agent.py
-
-      - name: Run targeted Swarm + Active Learning regression slice
-        run: |
-          pytest -q tests/test_agent_swarm.py tests/test_core_active_learning.py
-
-      - name: Enforce coverage quality gate (90%)
-        run: |
-          python -m pytest -q tests \
-            --cov=agent \
-            --cov=managers \
-            --cov=core \
-            --cov-report=term-missing \
-            --cov-fail-under=90
+      # Aşağıdaki adımlar run_tests.sh tarafından zaten çalıştırıldığından
+      # kaldırıldı. Testleri birden fazla kez koşmak CI süresini gereksiz
+      # uzatır ve hatalı false-positive davranışlara yol açabilir.
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test

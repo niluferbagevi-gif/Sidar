@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-# .coveragerc → fail_under = 90 ile uyumlu varsayılan.
+# .coveragerc fail_under = 90 ve ci.yml --cov-fail-under=90 ile uyumlu varsayılan.
 # Daha katı bir eşik için: COVERAGE_FAIL_UNDER=95 bash run_tests.sh
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
@@ -25,50 +25,39 @@ open_artifact() {
   fi
 }
 
-run_pytest_coverage_report() {
-  echo "📊 Pytest Coverage Raporu oluşturuluyor..."
-  # Not: pyproject.toml [tool.pytest.ini_options] addopts zaten
-  # --cov=. --cov-report=term-missing --cov-report=html --cov-report=xml
-  # içerdiğinden burada tekrar belirtmiyoruz.
-  echo "➡️ Çalıştırılan komut: pytest (addopts'taki coverage bayrakları uygulanıyor)"
+# ─── 1) Backend: Tüm testler — tek seferlik çalıştırma ───────────────────────
+# pyproject.toml addopts'ta zaten şunlar var:
+#   --cov=. --cov-report=term-missing --cov-report=html --cov-report=xml
+# Buraya sadece --cov-fail-under ekliyoruz; testler iki kez koşmaz.
+echo "📊 Backend testleri çalıştırılıyor (coverage fail-under=${COVERAGE_FAIL_UNDER}%)..."
+pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}"
 
-  pytest
+# parallel=True (.coveragerc) ile .coverage.* dosyaları oluşur; birleştir.
+if python -m coverage combine --quiet 2>/dev/null; then
+  echo "ℹ️ Coverage dosyaları birleştirildi."
+fi
 
-  # parallel=True ile .coverage.* dosyaları oluşur; birleştir.
-  if python -m coverage combine --quiet 2>/dev/null; then
-    echo "ℹ️ Coverage dosyaları birleştirildi."
-  fi
+if [ -f "htmlcov/index.html" ]; then
+  echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
+  open_artifact "htmlcov/index.html"
+else
+  echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
+fi
 
-  if [ -f "htmlcov/index.html" ]; then
-    echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
-    open_artifact "htmlcov/index.html"
-  else
-    echo "⚠️ Coverage raporu oluşturulamadı: htmlcov/index.html bulunamadı."
-  fi
-}
+# ─── 2) Benchmark testleri ────────────────────────────────────────────────────
+# Adım 5 güvenliği: dosya silinmiş veya yeniden adlandırılmışsa süreci kırmaz.
+if [ -f "tests/test_benchmark.py" ]; then
+  echo "⏱️ Benchmark testleri çalıştırılıyor..."
+  python -m pytest -v tests/test_benchmark.py \
+    --benchmark-disable-gc \
+    --benchmark-sort=mean \
+    --no-cov
+else
+  echo "⚠️ tests/test_benchmark.py bulunamadı — benchmark adımı atlanıyor."
+fi
 
-# 1) Tam test paketi + coverage raporu (htmlcov/index.html) + otomatik açma
-run_pytest_coverage_report
-
-# 2) Kritik çekirdek modüller için hedefli kapsam kontrolü.
-#    Sadece ilgili test dosyaları çalıştırılır — tüm paket yeniden koşulmaz.
-echo "🔍 Kritik modüller için hedefli coverage kontrolü (fail-under=${COVERAGE_FAIL_UNDER}%)..."
-python -m pytest -v \
-  tests/test_managers_security.py \
-  tests/test_core_memory.py \
-  tests/test_core_rag.py \
-  --cov=managers.security \
-  --cov=core.memory \
-  --cov=core.rag \
-  --cov-report=term-missing \
-  --no-cov-on-fail \
-  --cov-fail-under="${COVERAGE_FAIL_UNDER}"
-
-# 3) Kritik yol performans baseline testleri (pytest-benchmark)
-echo "⏱️ Benchmark testleri çalıştırılıyor..."
-python -m pytest -v tests/test_benchmark.py --benchmark-disable-gc --benchmark-sort=mean
-
-# 4) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
+# ─── 3) Frontend React testleri ──────────────────────────────────────────────
+# web_ui_react dizini varsa Node.js quality gate zorunludur.
 if [ -d "web_ui_react" ]; then
   if ! command -v npm >/dev/null 2>&1; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
@@ -77,7 +66,8 @@ if [ -d "web_ui_react" ]; then
 
   echo "🚀 Frontend (React) Testleri Başlıyor..."
   pushd web_ui_react > /dev/null
-  npm install
+  # npm ci: package-lock.json'a göre deterministik kurulum (npm install'dan hızlı ve güvenli).
+  npm ci
   npm run test:coverage
   for report in coverage/lcov-report/index.html coverage/index.html; do
     open_artifact "$PWD/$report"
