@@ -135,9 +135,15 @@ if importlib.util.find_spec("httpx") is None:
     class ConnectError(RequestError):
         pass
 
+    class Request:
+        def __init__(self, method="GET", url=""):
+            self.method = method
+            self.url = url
+
     class HTTPStatusError(HTTPError):
-        def __init__(self, message="", response=None):
+        def __init__(self, message="", request=None, response=None):
             super().__init__(message)
+            self.request = request
             self.response = response
 
     class Timeout:
@@ -150,6 +156,7 @@ if importlib.util.find_spec("httpx") is None:
     _httpx.TimeoutException = TimeoutException
     _httpx.ConnectError = ConnectError
     _httpx.HTTPStatusError = HTTPStatusError
+    _httpx.Request = Request
     _httpx.Response = Response
     _httpx.AsyncClient = AsyncClient
     _httpx.Timeout = Timeout

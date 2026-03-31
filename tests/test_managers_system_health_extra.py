@@ -335,7 +335,7 @@ class TestGetGpuInfo:
         assert dev["name"] == "TestGPU"
         assert dev["compute_capability"] == "8.6"
         assert dev["total_vram_gb"] == 8.0
-        assert dev["cuda_version"] == "11.8"
+        assert info["cuda_version"] == "11.8"
 
     def test_returns_error_on_torch_exception(self):
         mgr, _ = _make_manager()
@@ -907,7 +907,7 @@ class TestTcpDependencyHealth:
     def test_minimum_timeout_50ms(self, monkeypatch):
         sh = _get_sh()
         mgr = sh.SystemHealthManager(use_gpu=False)
-        mgr.cfg.HEALTHCHECK_CONNECT_TIMEOUT_MS = 0  # below minimum
+        mgr.cfg.HEALTHCHECK_CONNECT_TIMEOUT_MS = 10  # below minimum (50ms)
         captured = {}
 
         class _FakeConn:
@@ -920,7 +920,7 @@ class TestTcpDependencyHealth:
 
         monkeypatch.setattr(sh.socket, "create_connection", _fake_create)
         mgr._tcp_dependency_health("host", 5432, label="database")
-        # minimum 50ms = 0.05s
+        # max(50, 10) = 50ms = 0.05s
         assert captured["timeout"] == pytest.approx(0.05)
 
 
