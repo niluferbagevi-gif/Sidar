@@ -18,6 +18,7 @@ Yapılandırma (.env):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -458,7 +459,8 @@ def _record_judge_metrics(result: JudgeResult) -> None:
                     loop = asyncio.get_running_loop()
                     loop.create_task(out)
                 except RuntimeError:
-                    pass
+                    with contextlib.suppress(Exception):
+                        out.close()
     except Exception as exc:
         logger.debug("Judge metrik kaydı başarısız: %s", exc)
 

@@ -156,7 +156,13 @@ class TestEnsureRedisListener:
         bus = es.AgentEventBus()
 
         async def _run():
-            with patch("asyncio.create_task", return_value=MagicMock()):
+            def _safe_create_task(coro):
+                coro.close()
+                mock_task = MagicMock()
+                mock_task.done.return_value = False
+                return mock_task
+
+            with patch("asyncio.create_task", side_effect=_safe_create_task):
                 await bus._ensure_redis_listener()
             assert bus._redis_available is True
 

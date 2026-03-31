@@ -372,13 +372,8 @@ class TestSearchDuckDuckGo:
             manager.FETCH_TIMEOUT = 0.001  # Very short timeout
 
             ddg_mod = types.ModuleType("duckduckgo_search")
-
-            async def _slow_search():
-                import asyncio as _asyncio
-                await _asyncio.sleep(10)
-
-            async def _mock_text(*a, **kw):
-                raise asyncio.TimeoutError()
+            def _mock_text(*a, **kw):
+                return []
 
             mock_ddgs = MagicMock()
             mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
@@ -387,7 +382,11 @@ class TestSearchDuckDuckGo:
             ddg_mod.DDGS = MagicMock(return_value=mock_ddgs)
 
             with patch.dict(sys.modules, {"duckduckgo_search": ddg_mod}):
-                with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+                async def _slow_to_thread(*_a, **_kw):
+                    await asyncio.sleep(0.05)
+                    return []
+
+                with patch("asyncio.to_thread", side_effect=_slow_to_thread):
                     ok, text = asyncio.run(manager._search_duckduckgo("test", 3))
             assert ok is False
             assert "Zaman aşımı" in text

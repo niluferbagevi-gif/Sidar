@@ -54,7 +54,7 @@ def _get_judge(
     if extra_env:
         env.update(extra_env)
 
-    with patch.dict(sys.modules, {"config": cfg_stub}), patch.dict(os.environ, env):
+    with patch.dict(sys.modules, {"config": cfg_stub}), patch.dict(os.environ, env, clear=True):
         if "core.judge" in sys.modules:
             del sys.modules["core.judge"]
         import core.judge as judge
@@ -242,6 +242,7 @@ class TestCallLlm:
         """self.model None iken config.TEXT_MODEL kullanılmalı."""
         judge, j = self._make_judge(text_model="config-text-model")
         j.model = None  # açıkça sıfırla
+        j.config = types.SimpleNamespace(TEXT_MODEL="config-text-model", CODING_MODEL="")
 
         used_models = []
         llm_stub = types.ModuleType("core.llm_client")
@@ -567,15 +568,19 @@ class TestMaybeRecordFeedback:
         j = judge.LLMJudge()
         result = self._make_result(judge)
 
-        # core.active_learning mevcut değil
-        saved = sys.modules.pop("core.active_learning", None)
-        try:
+        # import sırasında zorunlu ImportError üret
+        import builtins
+        real_import = builtins.__import__
+
+        def _failing_import(name, *args, **kwargs):
+            if name == "core.active_learning":
+                raise ImportError("simulated missing module")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_failing_import):
             ok = _run(j._maybe_record_feedback(
                 query="q", documents=["d"], answer="a", result=result
             ))
-        finally:
-            if saved is not None:
-                sys.modules["core.active_learning"] = saved
 
         assert ok is False
 
