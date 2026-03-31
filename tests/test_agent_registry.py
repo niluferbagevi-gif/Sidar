@@ -228,3 +228,22 @@ class TestRegisterBuiltinAgents:
 
         for role_name in ("coder", "researcher", "reviewer", "poyraz", "coverage", "qa"):
             assert reg.AgentRegistry.get(role_name) is not None
+
+    def test_register_builtin_agents_includes_core_engineering_roles(self):
+        reg = _get_registry()
+        reg.AgentRegistry._registry.clear()
+
+        role_map = {
+            "agent.roles.coder_agent": "CoderAgent",
+            "agent.roles.researcher_agent": "ResearcherAgent",
+            "agent.roles.reviewer_agent": "ReviewerAgent",
+            "agent.roles.qa_agent": "QAAgent",
+        }
+        for module_name, class_name in role_map.items():
+            mod = types.ModuleType(module_name)
+            setattr(mod, class_name, type(class_name, (), {}))
+            sys.modules[module_name] = mod
+
+        reg._register_builtin_agents()
+        registered_roles = {spec.role_name for spec in reg.AgentRegistry.list_all()}
+        assert {"coder", "researcher", "reviewer", "qa"}.issubset(registered_roles)

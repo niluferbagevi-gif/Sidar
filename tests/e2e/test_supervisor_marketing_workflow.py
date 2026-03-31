@@ -3,34 +3,33 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from agent.core.supervisor import SupervisorAgent
 from agent.roles.poyraz_agent import PoyrazAgent
+from config import Config
 
 
-def _build_cfg(tmp_path: Path):
-    return SimpleNamespace(
-        AI_PROVIDER="ollama",
-        CODING_MODEL="qwen2.5-coder:7b",
-        TEXT_MODEL="qwen2.5-coder:7b",
-        REACT_TIMEOUT=30,
-        MAX_QA_RETRIES=2,
-        RAG_DIR=str(tmp_path / "rag"),
-        RAG_TOP_K=3,
-        RAG_CHUNK_SIZE=256,
-        RAG_CHUNK_OVERLAP=24,
-        USE_GPU=False,
-        GPU_DEVICE=0,
-        GPU_MIXED_PRECISION=False,
-        META_GRAPH_API_TOKEN="",
-        INSTAGRAM_BUSINESS_ACCOUNT_ID="",
-        FACEBOOK_PAGE_ID="",
-        WHATSAPP_PHONE_NUMBER_ID="",
-        META_GRAPH_API_VERSION="v20.0",
-    )
+def _build_cfg(tmp_path):
+    cfg = Config()
+    cfg.AI_PROVIDER = "ollama"
+    cfg.CODING_MODEL = "qwen2.5-coder:7b"
+    cfg.TEXT_MODEL = "qwen2.5-coder:7b"
+    cfg.REACT_TIMEOUT = 30
+    cfg.MAX_QA_RETRIES = 2
+    cfg.RAG_DIR = str(tmp_path / "rag")
+    cfg.RAG_TOP_K = 3
+    cfg.RAG_CHUNK_SIZE = 256
+    cfg.RAG_CHUNK_OVERLAP = 24
+    cfg.USE_GPU = False
+    cfg.GPU_DEVICE = 0
+    cfg.GPU_MIXED_PRECISION = False
+    cfg.META_GRAPH_API_TOKEN = ""
+    cfg.INSTAGRAM_BUSINESS_ACCOUNT_ID = ""
+    cfg.FACEBOOK_PAGE_ID = ""
+    cfg.WHATSAPP_PHONE_NUMBER_ID = ""
+    cfg.META_GRAPH_API_VERSION = "v20.0"
+    return cfg
 
 
 def test_supervisor_routes_marketing_prompt_to_poyraz_and_returns_llm_text(tmp_path):
