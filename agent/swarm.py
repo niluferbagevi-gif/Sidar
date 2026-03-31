@@ -20,6 +20,7 @@ Kullanım:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -642,10 +643,15 @@ class SwarmOrchestrator:
 
             for attempt in range(max_retries + 1):
                 try:
-                    if hasattr(agent, "handle"):
-                        result = await agent.handle(envelope)
-                    elif hasattr(agent, "run_task"):
-                        legacy_summary = await agent.run_task(envelope.goal)
+                    has_handle = "handle" in vars(agent) or hasattr(type(agent), "handle")
+                    has_run_task = "run_task" in vars(agent) or hasattr(type(agent), "run_task")
+
+                    if has_handle:
+                        handle_result = agent.handle(envelope)
+                        result = await handle_result if inspect.isawaitable(handle_result) else handle_result
+                    elif has_run_task:
+                        run_result = agent.run_task(envelope.goal)
+                        legacy_summary = await run_result if inspect.isawaitable(run_result) else run_result
                         result = TaskResult(
                             task_id=envelope.task_id,
                             status="success",
