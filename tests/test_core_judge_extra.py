@@ -581,6 +581,24 @@ class TestMaybeRecordFeedback:
 
         assert ok is False
 
+    def test_get_feedback_store_raises_returns_false(self):
+        """get_feedback_store Exception fırlatırsa lines 402-404 tetiklenmeli."""
+        judge = _get_judge()
+        j = judge.LLMJudge()
+        result = self._make_result(judge)
+
+        al_stub = types.ModuleType("core.active_learning")
+        al_stub.get_feedback_store = MagicMock(
+            side_effect=RuntimeError("store unavailable")
+        )
+        al_stub.schedule_continuous_learning_cycle = MagicMock()
+
+        with patch.dict(sys.modules, {"core.active_learning": al_stub}):
+            ok = _run(j._maybe_record_feedback(
+                query="q", documents=["d"], answer="a", result=result
+            ))
+        assert ok is False
+
     def test_cancelled_error_propagates(self):
         judge = _get_judge()
         j = judge.LLMJudge()

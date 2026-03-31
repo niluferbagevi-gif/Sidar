@@ -499,6 +499,40 @@ class TestHITLGateRequestApprovalEnabled:
 
         _run(_run_test())
 
+    # -- zaman aşımı sonrası kayıt zaten kararlanmış (line 241 False branch) --
+
+    def test_timeout_does_not_overwrite_already_decided_request(self):
+        """Deadline dolduğunda kayıt zaten karar almışsa TIMEOUT yazılmamalı."""
+        with patch.dict(os.environ, {
+            "HITL_ENABLED": "true",
+            "HITL_TIMEOUT_SECONDS": "10",
+        }):
+            hitl = _get_hitl()
+            gate = hitl.HITLGate()
+
+        async def _run_test():
+            store = hitl.get_hitl_store()
+
+            async def _approve_then_expire():
+                await asyncio.sleep(0.1)
+                all_r = await store.all_recent()
+                if all_r:
+                    req = all_r[-1]
+                    # Önce onaylıyoruz, sonra expires_at'i geçmişe alıyoruz
+                    req.decision = hitl.HITLDecision.APPROVED
+                    req.expires_at = time.time() - 1
+
+            task = asyncio.create_task(_approve_then_expire())
+            result = await gate.request_approval(
+                action="file_delete",
+                description="Zaten onaylanmış",
+            )
+            await task
+            # Onaylandı, zaman aşımı APPROVED'ı ezmemeli
+            assert result is True
+
+        _run(_run_test())
+
     # -- Varsayılan timeout ile defalarca çağrı --
 
     def test_multiple_requests_are_independent(self):
