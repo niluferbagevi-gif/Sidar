@@ -621,3 +621,49 @@ class TestReviewerLargeAndBrokenCodeBlocks:
             assert temp_files == []
 
         asyncio.run(_run_case())
+
+    def test_build_dynamic_test_content_fail_closed_when_llm_api_crashes(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        agent.call_llm = AsyncMock(side_effect=RuntimeError("api down"))
+
+        async def _run_case():
+            out = await agent._build_dynamic_test_content("def ok():\n    return True\n")
+            assert "fail_closed" in out
+            assert "başarısız oldu" in out
+
+        asyncio.run(_run_case())
+
+    def test_review_code_approves_when_no_quality_or_semantic_issue_found(self):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        contracts = sys.modules["agent.core.contracts"]
+
+        agent._run_dynamic_tests = AsyncMock(return_value="[TEST:PASS] dynamic")
+        agent._build_regression_commands = MagicMock(return_value=["pytest -q tests/test_dummy.py"])
+
+        async def _fake_call_tool(name, arg):
+            if name == "run_tests":
+                return "[TEST:PASS] pytest -q tests/test_dummy.py"
+            if name == "graph_impact":
+                return json.dumps({"status": "ok", "reports": []}, ensure_ascii=False)
+            if name == "browser_signals":
+                return json.dumps({"status": "ok", "risk": "düşük", "summary": "Browser temiz."}, ensure_ascii=False)
+            if name == "lsp_diagnostics":
+                return json.dumps(
+                    {"status": "clean", "risk": "düşük", "decision": "APPROVE", "counts": {}, "summary": "LSP temiz."},
+                    ensure_ascii=False,
+                )
+            return ""
+
+        agent.call_tool = AsyncMock(side_effect=_fake_call_tool)
+
+        async def _run_case():
+            result = await agent.run_task("review_code|def healthy():\n    return 1")
+            assert contracts.is_delegation_request(result)
+            payload = result.payload.split("qa_feedback|", 1)[1]
+            parsed = json.loads(payload)
+            assert parsed["decision"] == "APPROVE"
+            assert parsed["risk"] == "düşük"
+
+        asyncio.run(_run_case())
