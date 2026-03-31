@@ -242,8 +242,9 @@ class TestSearchTavily:
             manager = ws.WebSearchManager(None)
             manager.tavily_key = "key"
 
+            mock_req = MagicMock()
             mock_resp = MagicMock(status_code=401)
-            error = httpx.HTTPStatusError("401", response=mock_resp)
+            error = httpx.HTTPStatusError("401", request=mock_req, response=mock_resp)
 
             async def _raise(*a, **kw):
                 raise error
@@ -451,8 +452,9 @@ class TestScrapeUrl:
 
         with patch.object(ws.WebSearchManager, "_check_ddg", return_value=False):
             manager = ws.WebSearchManager(None)
+            mock_req = MagicMock()
             mock_resp = MagicMock(status_code=404)
-            error = httpx.HTTPStatusError("404", response=mock_resp)
+            error = httpx.HTTPStatusError("404", request=mock_req, response=mock_resp)
 
             with patch("httpx.AsyncClient") as mock_client:
                 mock_ctx = MagicMock()

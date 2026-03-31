@@ -45,6 +45,40 @@ def _stub_broken_native_deps() -> None:
 
 _stub_broken_native_deps()
 
+
+def _ensure_config_contract() -> None:
+    """Testlerde kullanılan config stub'larını ortak bir minimum arayüze tamamlar."""
+    cfg_mod = sys.modules.get("config")
+    if not cfg_mod:
+        return
+
+    cfg_cls = getattr(cfg_mod, "Config", None)
+    if cfg_cls is None:
+        return
+
+    defaults = {
+        "AI_PROVIDER": "ollama",
+        "ACCESS_LEVEL": "full",
+        "WEB_HOST": "0.0.0.0",
+        "WEB_PORT": 7860,
+        "BASE_DIR": ".",
+    }
+    for key, value in defaults.items():
+        if not hasattr(cfg_cls, key):
+            setattr(cfg_cls, key, value)
+
+    if not hasattr(cfg_cls, "initialize_directories"):
+        setattr(cfg_cls, "initialize_directories", staticmethod(lambda: True))
+
+    if not hasattr(cfg_mod, "get_bool_env"):
+        setattr(cfg_mod, "get_bool_env", lambda _key, default=False: default)
+
+    if not hasattr(cfg_mod, "_is_wsl2"):
+        setattr(cfg_mod, "_is_wsl2", lambda: False)
+
+
+_ensure_config_contract()
+
 if "jwt" not in sys.modules:
     _jwt = types.ModuleType("jwt")
 
@@ -199,6 +233,7 @@ except Exception:
 @pytest.fixture(autouse=True)
 def _restore_critical_modules_between_tests():
     """Bazı testlerin sys.modules üzerinde bıraktığı stub modülleri test sonunda geri al."""
+    _ensure_config_contract()
     module_names = (
         "config",
         "managers",
@@ -259,6 +294,7 @@ def _restore_critical_modules_between_tests():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+        _ensure_config_contract()
 
 
 @pytest.fixture(autouse=True)
