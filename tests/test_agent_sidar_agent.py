@@ -206,15 +206,20 @@ def _stub_all_sidar_deps():
         mock_instance = MagicMock()
         sys.modules[mod_path].__dict__[cls_name] = MagicMock(return_value=mock_instance)
 
-    # pydantic stub (eğer yoksa)
+    # pydantic stub/uyumluluk düzeltmesi:
+    # Bazı testler pydantic'i kısmi stub'ladığı için Field/BaseModel eksik olabiliyor.
     try:
-        import pydantic
+        import pydantic as pydantic_mod
     except ImportError:
         pydantic_mod = types.ModuleType("pydantic")
-        pydantic_mod.BaseModel = object
-        pydantic_mod.Field = lambda *a, **kw: None
-        pydantic_mod.ValidationError = Exception
         sys.modules["pydantic"] = pydantic_mod
+
+    if not hasattr(pydantic_mod, "BaseModel"):
+        pydantic_mod.BaseModel = object
+    if not hasattr(pydantic_mod, "Field"):
+        pydantic_mod.Field = lambda *a, **kw: None
+    if not hasattr(pydantic_mod, "ValidationError"):
+        pydantic_mod.ValidationError = Exception
 
 
 def _get_sidar_agent():
