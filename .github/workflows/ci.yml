@@ -48,11 +48,11 @@ jobs:
 
       - name: Run sandbox/reviewer hardening checks
         run: |
-          pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py
+          pytest -q tests/test_managers_security.py tests/test_agent_roles_reviewer_agent.py
 
       - name: Run targeted Swarm + Active Learning regression slice
         run: |
-          pytest -q tests/test_swarm_orchestrator.py tests/test_active_learning.py
+          pytest -q tests/test_agent_swarm.py tests/test_core_active_learning.py
 
       - name: Enforce coverage quality gate (90%)
         run: |

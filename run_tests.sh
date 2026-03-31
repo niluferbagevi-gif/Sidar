@@ -3,7 +3,9 @@ set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"
+# .coveragerc → fail_under = 90 ile uyumlu varsayılan.
+# Daha katı bir eşik için: COVERAGE_FAIL_UNDER=95 bash run_tests.sh
+COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 open_artifact() {
@@ -25,9 +27,17 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest Coverage Raporu oluşturuluyor..."
-  echo "➡️ Çalıştırılan komut: pytest --cov=. --cov-report=html"
+  # Not: pyproject.toml [tool.pytest.ini_options] addopts zaten
+  # --cov=. --cov-report=term-missing --cov-report=html --cov-report=xml
+  # içerdiğinden burada tekrar belirtmiyoruz.
+  echo "➡️ Çalıştırılan komut: pytest (addopts'taki coverage bayrakları uygulanıyor)"
 
-  pytest --cov=. --cov-report=html --cov-report=term-missing
+  pytest
+
+  # parallel=True ile .coverage.* dosyaları oluşur; birleştir.
+  if python -m coverage combine --quiet 2>/dev/null; then
+    echo "ℹ️ Coverage dosyaları birleştirildi."
+  fi
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
@@ -37,19 +47,26 @@ run_pytest_coverage_report() {
   fi
 }
 
-# 1) İstenen Coverage raporu (htmlcov/index.html) + otomatik açma
+# 1) Tam test paketi + coverage raporu (htmlcov/index.html) + otomatik açma
 run_pytest_coverage_report
 
-# 2) Kritik çekirdek dosyalar için hedef kapsam
+# 2) Kritik çekirdek modüller için hedefli kapsam kontrolü.
+#    Sadece ilgili test dosyaları çalıştırılır — tüm paket yeniden koşulmaz.
+echo "🔍 Kritik modüller için hedefli coverage kontrolü (fail-under=${COVERAGE_FAIL_UNDER}%)..."
 python -m pytest -v \
+  tests/test_managers_security.py \
+  tests/test_core_memory.py \
+  tests/test_core_rag.py \
   --cov=managers.security \
   --cov=core.memory \
   --cov=core.rag \
   --cov-report=term-missing \
-  --cov-report=html \
+  --no-cov-on-fail \
   --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+
 # 3) Kritik yol performans baseline testleri (pytest-benchmark)
-python -m pytest -v tests/test_benchmark.py
+echo "⏱️ Benchmark testleri çalıştırılıyor..."
+python -m pytest -v tests/test_benchmark.py --benchmark-disable-gc --benchmark-sort=mean
 
 # 4) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then

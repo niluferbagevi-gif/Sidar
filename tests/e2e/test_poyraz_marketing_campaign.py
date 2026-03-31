@@ -4,13 +4,11 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
-import pytest
-
 from agent.roles.poyraz_agent import PoyrazAgent
 from config import Config
 
 
-@pytest.mark.asyncio
+# asyncio_mode = "auto" (pyproject.toml) nedeniyle @pytest.mark.asyncio gereksizdir.
 async def test_poyraz_research_copy_and_publish_campaign_flow():
     agent = PoyrazAgent(cfg=Config())
 
