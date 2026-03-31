@@ -431,8 +431,6 @@ class TestJiraSearchAndStatuses:
         assert ok is False
         assert statuses == []
         assert "403" in err
-<<<<<<< HEAD
-=======
 
 class TestJiraPayloadShapeCoverage:
     def test_create_issue_includes_optional_fields(self):
@@ -478,4 +476,3 @@ class TestJiraPayloadShapeCoverage:
         assert ok is True
         assert projects == [{"key": "PROJ", "name": "Project", "id": "10001"}]
         assert err == ""
->>>>>>> 1df995a76d63d1aac245e76b583f52267e1f5154
