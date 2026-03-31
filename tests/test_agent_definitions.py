@@ -5,7 +5,8 @@ SIDAR_KEYS, SIDAR_WAKE_WORDS ve DEFAULT_SYSTEM_PROMPT sabitlerini kapsar.
 from __future__ import annotations
 
 import sys
-import types
+
+import pytest
 
 
 def _get_definitions():
@@ -17,17 +18,17 @@ def _get_definitions():
 
 
 class TestSidarKeys:
-    def test_sidar_keys_is_list(self):
+    @pytest.mark.parametrize(
+        ("attribute", "validator"),
+        [
+            ("SIDAR_KEYS", lambda value: isinstance(value, list)),
+            ("SIDAR_KEYS", lambda value: "sidar" in value),
+            ("SIDAR_KEYS", lambda value: len(value) > 0),
+        ],
+    )
+    def test_sidar_keys_common_guards(self, attribute, validator):
         defs = _get_definitions()
-        assert isinstance(defs.SIDAR_KEYS, list)
-
-    def test_sidar_keys_contains_sidar(self):
-        defs = _get_definitions()
-        assert "sidar" in defs.SIDAR_KEYS
-
-    def test_sidar_keys_not_empty(self):
-        defs = _get_definitions()
-        assert len(defs.SIDAR_KEYS) > 0
+        assert validator(getattr(defs, attribute))
 
     def test_sidar_keys_all_strings(self):
         defs = _get_definitions()
@@ -36,17 +37,17 @@ class TestSidarKeys:
 
 
 class TestSidarWakeWords:
-    def test_wake_words_is_list(self):
+    @pytest.mark.parametrize(
+        ("attribute", "validator"),
+        [
+            ("SIDAR_WAKE_WORDS", lambda value: isinstance(value, list)),
+            ("SIDAR_WAKE_WORDS", lambda value: "sidar" in value),
+            ("SIDAR_WAKE_WORDS", lambda value: len(value) > 0),
+        ],
+    )
+    def test_wake_words_common_guards(self, attribute, validator):
         defs = _get_definitions()
-        assert isinstance(defs.SIDAR_WAKE_WORDS, list)
-
-    def test_wake_words_contains_sidar(self):
-        defs = _get_definitions()
-        assert "sidar" in defs.SIDAR_WAKE_WORDS
-
-    def test_wake_words_not_empty(self):
-        defs = _get_definitions()
-        assert len(defs.SIDAR_WAKE_WORDS) > 0
+        assert validator(getattr(defs, attribute))
 
     def test_wake_words_all_lowercase(self):
         defs = _get_definitions()
@@ -55,13 +56,16 @@ class TestSidarWakeWords:
 
 
 class TestDefaultSystemPrompt:
-    def test_prompt_is_string(self):
+    @pytest.mark.parametrize(
+        "validator",
+        [
+            lambda value: isinstance(value, str),
+            lambda value: len(value.strip()) > 0,
+        ],
+    )
+    def test_prompt_type_and_content_guards(self, validator):
         defs = _get_definitions()
-        assert isinstance(defs.DEFAULT_SYSTEM_PROMPT, str)
-
-    def test_prompt_not_empty(self):
-        defs = _get_definitions()
-        assert len(defs.DEFAULT_SYSTEM_PROMPT.strip()) > 0
+        assert validator(defs.DEFAULT_SYSTEM_PROMPT)
 
     def test_prompt_contains_sidar_identity(self):
         defs = _get_definitions()
