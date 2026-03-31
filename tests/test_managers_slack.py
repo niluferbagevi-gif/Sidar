@@ -235,3 +235,35 @@ class TestSlackSdkTokenFailures:
         ok, err = asyncio.run(mgr.send_message("hello", channel=""))
         assert ok is False
         assert "Kanal belirtilmedi" in err
+
+
+class TestSlackInitializeGracefulDegradation:
+    def test_initialize_falls_back_to_webhook_when_sdk_auth_raises(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/fallback")
+        mgr._webhook_only = False
+        mgr._available = False
+
+        class _FailingClient:
+            def auth_test(self):
+                raise RuntimeError("slack auth crashed")
+
+        mgr._client = _FailingClient()
+        asyncio.run(mgr.initialize())
+        assert mgr._available is True
+        assert mgr._webhook_only is True
+
+    def test_initialize_falls_back_to_webhook_when_sdk_auth_not_ok(self):
+        sl = _get_slack()
+        mgr = sl.SlackManager(webhook_url="https://hooks.slack.com/services/T/B/fallback2")
+        mgr._webhook_only = False
+        mgr._available = False
+
+        class _InvalidTokenClient:
+            def auth_test(self):
+                return {"ok": False, "error": "invalid_auth"}
+
+        mgr._client = _InvalidTokenClient()
+        asyncio.run(mgr.initialize())
+        assert mgr._available is True
+        assert mgr._webhook_only is True

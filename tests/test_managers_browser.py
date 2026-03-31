@@ -242,6 +242,38 @@ class TestBrowserManagerUnhappyPaths:
         assert mgr._audit_log[-1]["action"] == "browser_goto_url"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
 
+    def test_start_session_with_unknown_provider_gracefully_degrades(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        mgr.provider = "unknown-provider"
+        ok, payload = mgr.start_session(browser_name="chromium")
+        assert ok is False
+        assert "Desteklenmeyen browser provider" in payload.get("error", "")
+
+    def test_collect_session_signals_keeps_running_when_dom_and_screenshot_fail(self, monkeypatch):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+        session = bm.BrowserSession(
+            session_id="s-signal",
+            provider="playwright",
+            browser_name="chromium",
+            headless=True,
+            started_at=1.0,
+            page=types.SimpleNamespace(url="https://example.com"),
+        )
+        mgr._sessions["s-signal"] = session
+        monkeypatch.setattr(mgr, "capture_dom", lambda *_a, **_k: (False, "dom crash"))
+        monkeypatch.setattr(mgr, "capture_screenshot", lambda *_a, **_k: (False, "shot crash"))
+
+        signal = mgr.collect_session_signals(
+            "s-signal",
+            include_dom=True,
+            include_screenshot=True,
+        )
+        assert signal["dom_capture"]["ok"] is False
+        assert signal["screenshot"]["ok"] is False
+        assert signal["status"] in {"ok", "no-signal", "attention", "failed"}
+
 
 class TestBrowserManagerAutomationMocking:
     def test_start_session_playwright_mock_success(self, monkeypatch):

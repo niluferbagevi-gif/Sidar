@@ -266,3 +266,32 @@ class TestJiraTransitionIssue:
         assert ok is True
         assert err == ""
         assert any(call[0] == "POST" and "transitions" in call[1] for call in calls)
+
+    def test_transition_issue_graceful_when_transition_list_api_fails(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="bad-token")
+
+        async def _fake_request(method, endpoint, **kwargs):
+            if method == "GET":
+                return False, None, "HTTP 401: Unauthorized"
+            return True, {}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, err = asyncio.run(mgr.transition_issue("TEST-9", "Done"))
+        assert ok is False
+        assert "401" in err
+
+
+class TestJiraProjectListGracefulDegradation:
+    def test_list_projects_returns_empty_on_api_failure(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return False, None, "HTTP 500: upstream down"
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, projects, err = asyncio.run(mgr.list_projects())
+        assert ok is False
+        assert projects == []
+        assert "500" in err
