@@ -52,7 +52,7 @@ if [ -d "web_ui_react" ]; then
 
   echo "🚀 Frontend (React) Testleri Başlıyor..."
   pushd web_ui_react > /dev/null
-  npm install
+  npm ci
   npm run test:coverage
   for report in coverage/lcov-report/index.html coverage/index.html; do
     open_artifact "$PWD/$report"
