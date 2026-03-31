@@ -148,6 +148,7 @@ markers = [
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
   "integration: harici sistem entegrasyonları",
+  "e2e: uçtan uca testler",
 ]
 filterwarnings = [
   "error",
