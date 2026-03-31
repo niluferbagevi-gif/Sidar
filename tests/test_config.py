@@ -453,6 +453,16 @@ class TestConfigEnvOverrides:
         cfg = _reload_config({"GPU_MEMORY_FRACTION": "invalid-float"})
         assert cfg.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8)
 
+    def test_invalid_judge_sample_rate_env_fails_fast_with_value_error(self):
+        import importlib
+        import os
+        import sys
+
+        with patch.dict(os.environ, {"JUDGE_SAMPLE_RATE": "not-a-float"}, clear=False):
+            sys.modules.pop("config", None)
+            with pytest.raises(ValueError):
+                importlib.import_module("config")
+
 
 # ══════════════════════════════════════════════════════════════
 # Config.set_provider_mode
