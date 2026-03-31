@@ -92,8 +92,7 @@ class SecurityManager:
         """
         return bool(_DANGEROUS_PATH_RE.search(path_str))
 
-    @staticmethod
-    def _resolve_safe(path_str: str) -> Optional[Path]:
+    def _resolve_safe(self, path_str: str) -> Optional[Path]:
         """
         Yolu güvenle çözümler. Hata durumunda None döndürür.
 
@@ -104,7 +103,10 @@ class SecurityManager:
             Çözümlenmiş Path veya None (çözümleme başarısız)
         """
         try:
-            return Path(path_str).resolve()
+            candidate = Path(path_str)
+            if not candidate.is_absolute():
+                candidate = self.base_dir / candidate
+            return candidate.resolve()
         except Exception:
             return None
 

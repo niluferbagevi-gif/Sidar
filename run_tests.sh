@@ -5,6 +5,7 @@ echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
+TEST_SCOPE="${TEST_SCOPE:-unit}" # unit|integration|e2e|all
 
 open_artifact() {
   local target="$1"
@@ -23,11 +24,43 @@ open_artifact() {
   fi
 }
 
-run_pytest_coverage_report() {
-  echo "📊 Pytest Coverage Raporu oluşturuluyor..."
-  echo "➡️ Çalıştırılan komut: pytest --cov=. --cov-report=html"
+build_pytest_target_args() {
+  case "${TEST_SCOPE}" in
+    unit)
+      echo "--ignore=tests/integration --ignore=tests/e2e"
+      ;;
+    integration)
+      echo "tests/integration"
+      ;;
+    e2e)
+      echo "tests/e2e"
+      ;;
+    all)
+      echo ""
+      ;;
+    *)
+      echo "❌ Geçersiz TEST_SCOPE='${TEST_SCOPE}'. Desteklenen değerler: unit, integration, e2e, all" >&2
+      exit 2
+      ;;
+  esac
+}
 
-  pytest --cov=. --cov-report=html --cov-report=term-missing
+run_pytest_coverage_report() {
+  local target_args
+  target_args="$(build_pytest_target_args)"
+
+  echo "📊 Pytest Coverage Raporu oluşturuluyor..."
+  echo "➡️ Çalıştırılan komut: pytest -v ${target_args} --cov=managers.security --cov=core.memory --cov=core.rag --cov-fail-under=${COVERAGE_FAIL_UNDER}"
+
+  # shellcheck disable=SC2086
+  pytest -v ${target_args} \
+    --cov=managers.security \
+    --cov=core.memory \
+    --cov=core.rag \
+    --cov-report=term-missing \
+    --cov-report=html \
+    --cov-report=xml \
+    --cov-fail-under="${COVERAGE_FAIL_UNDER}"
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
@@ -37,21 +70,14 @@ run_pytest_coverage_report() {
   fi
 }
 
-# 1) İstenen Coverage raporu (htmlcov/index.html) + otomatik açma
 run_pytest_coverage_report
 
-# 2) Kritik çekirdek dosyalar için hedef kapsam
-python -m pytest -v \
-  --cov=managers.security \
-  --cov=core.memory \
-  --cov=core.rag \
-  --cov-report=term-missing \
-  --cov-report=html \
-  --cov-fail-under="${COVERAGE_FAIL_UNDER}"
-# 3) Kritik yol performans baseline testleri (pytest-benchmark)
-python -m pytest -v tests/test_benchmark.py
+# Kritik yol performans baseline testleri (pytest-benchmark)
+if [ "${TEST_SCOPE}" = "all" ] || [ "${TEST_SCOPE}" = "unit" ]; then
+  python -m pytest -v tests/test_benchmark.py
+fi
 
-# 4) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
+# Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then
   if ! command -v npm >/dev/null 2>&1; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
@@ -68,4 +94,4 @@ if [ -d "web_ui_react" ]; then
   popd > /dev/null
 fi
 
-echo "✅ Tüm Backend ve Frontend testleri başarıyla tamamlandı!"
+echo "✅ Backend ve Frontend test akışı başarıyla tamamlandı!"

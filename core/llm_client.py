@@ -396,7 +396,7 @@ class OllamaClient(BaseLLMClient):
 
     @property
     def base_url(self) -> str:
-        return self.config.OLLAMA_URL.removesuffix("/api")
+        return str(getattr(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
 
     def _build_timeout(self) -> httpx.Timeout:
         timeout_seconds = max(10, int(getattr(self.config, "OLLAMA_TIMEOUT", 120)))
@@ -1234,7 +1234,7 @@ class LLMClient:
         """Geriye dönük uyumluluk: Ollama taban URL bilgisi."""
         if isinstance(self._client, OllamaClient):
             return self._client.base_url
-        return self.config.OLLAMA_URL.removesuffix("/api")
+        return str(getattr(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix("/api")
 
     def _build_ollama_timeout(self) -> httpx.Timeout:
         """Geriye dönük uyumluluk: eski timeout yardımcı adı."""
