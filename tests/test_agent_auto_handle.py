@@ -194,6 +194,12 @@ class TestAutoHandleDotCommands:
         assert handled is True
         assert "temizlendi" in response.lower()
 
+    def test_dot_unknown_command_falls_back_to_llm(self):
+        handler, *_ = _make_auto_handle()
+        handled, response = asyncio.run(handler.handle(".unknown"))
+        assert handled is False
+        assert response == ""
+
 
 class TestAutoHandleClearMemory:
     @pytest.mark.asyncio
@@ -208,6 +214,15 @@ class TestAutoHandleClearMemory:
         handler, *_ = _make_auto_handle()
         handled, response = await handler.handle("sohbeti sıfırla")
         assert handled is True
+
+
+class TestAutoHandleTimeoutBranches:
+    def test_audit_timeout_returns_expected_warning(self):
+        handler, *_ = _make_auto_handle()
+        handler._run_blocking = AsyncMock(side_effect=asyncio.TimeoutError())
+        handled, response = asyncio.run(handler._try_audit(".audit"))
+        assert handled is True
+        assert "zaman aşımı" in response.lower()
 
 
 class TestAutoHandleListDirectory:
