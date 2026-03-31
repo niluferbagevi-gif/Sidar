@@ -642,10 +642,12 @@ class SwarmOrchestrator:
 
             for attempt in range(max_retries + 1):
                 try:
-                    if hasattr(agent, "handle"):
-                        result = await agent.handle(envelope)
-                    elif hasattr(agent, "run_task"):
-                        legacy_summary = await agent.run_task(envelope.goal)
+                    handle_fn = getattr(agent, "handle", None)
+                    run_task_fn = getattr(agent, "run_task", None)
+                    if callable(handle_fn):
+                        result = await handle_fn(envelope)
+                    elif callable(run_task_fn):
+                        legacy_summary = await run_task_fn(envelope.goal)
                         result = TaskResult(
                             task_id=envelope.task_id,
                             status="success",
