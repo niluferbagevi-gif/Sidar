@@ -32,6 +32,7 @@ except ImportError:
 from .security import SANDBOX, SecurityManager
 
 logger = logging.getLogger(__name__)
+_OS_NAME = os.name
 
 
 class _LSPProtocolError(RuntimeError):
@@ -48,11 +49,11 @@ def _file_uri_to_path(uri: str) -> Path | PureWindowsPath:
     if parsed.scheme != "file":
         raise ValueError(f"Desteklenmeyen URI şeması: {uri}")
     raw_path = unquote(parsed.path)
-    if os.name == "nt":
+    if _OS_NAME == "nt":
         normalized_path = raw_path[1:] if raw_path.startswith("/") else raw_path
         drive_path = re.match(r"^[A-Za-z]:[\\/]", normalized_path)
         if drive_path:
-            return Path(normalized_path) if sys.platform == "win32" else PureWindowsPath(normalized_path)
+            return PureWindowsPath(normalized_path)
         return PureWindowsPath(normalized_path)
     return PosixPath(raw_path)
 
