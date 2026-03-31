@@ -30,18 +30,19 @@ def _stub_reviewer_deps():
         c = sys.modules["agent.core"]
         if not hasattr(c, "__path__"): c.__path__ = [str(_proj / "agent" / "core")]
 
-    # agent.core.contracts stub
-    if "agent.core.contracts" not in sys.modules:
-        from dataclasses import dataclass, field
-        contracts = types.ModuleType("agent.core.contracts")
-        @dataclass
-        class DelegationRequest:
-            task_id: str; reply_to: str; target_agent: str; payload: str
-            intent: str = "mixed"; parent_task_id: str = None
-            handoff_depth: int = 0; meta: dict = field(default_factory=dict)
-        contracts.DelegationRequest = DelegationRequest
-        contracts.is_delegation_request = lambda v: isinstance(v, DelegationRequest)
-        sys.modules["agent.core.contracts"] = contracts
+    # agent.core.contracts stub (always replace to avoid cross-test pollution)
+    from dataclasses import dataclass, field
+    contracts = types.ModuleType("agent.core.contracts")
+
+    @dataclass
+    class DelegationRequest:
+        task_id: str; reply_to: str; target_agent: str; payload: str
+        intent: str = "mixed"; parent_task_id: str = None
+        handoff_depth: int = 0; meta: dict = field(default_factory=dict)
+
+    contracts.DelegationRequest = DelegationRequest
+    contracts.is_delegation_request = lambda v: isinstance(v, DelegationRequest)
+    sys.modules["agent.core.contracts"] = contracts
 
     # agent.core.event_stream stub
     if "agent.core.event_stream" not in sys.modules:
@@ -102,28 +103,39 @@ def _stub_reviewer_deps():
             mock_inst.collect_session_signals = MagicMock(return_value={"status": "no-signal", "risk": "düşük", "summary": ""})
             sys.modules[mod].__dict__[cls] = MagicMock(return_value=mock_inst)
 
-    # agent.base_agent stub
-    if "agent.base_agent" not in sys.modules:
-        ba_mod = types.ModuleType("agent.base_agent")
-        contracts = sys.modules["agent.core.contracts"]
-        class _BaseAgent:
-            def __init__(self, *a, cfg=None, role_name="base", **kw):
-                self.cfg = cfg or sys.modules["config"].Config()
-                self.role_name = role_name
-                self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value='def test_foo(): pass')
-                self.tools = {}
-            def register_tool(self, name, fn): self.tools[name] = fn
-            async def call_tool(self, name, arg):
-                if name not in self.tools: return f"HATA: {name} bulunamadı"
-                return await self.tools[name](arg)
-            async def call_llm(self, msgs, system_prompt=None, temperature=0.7, json_mode=False, **kw):
-                return 'def test_foo(): pass'
-            def delegate_to(self, target, payload, task_id=None, reason=""):
-                return contracts.DelegationRequest(task_id=task_id or f"{self.role_name}-task", reply_to=self.role_name, target_agent=target, payload=payload)
-            @staticmethod
-            def is_delegation_message(v): return contracts.is_delegation_request(v)
-        ba_mod.BaseAgent = _BaseAgent
-        sys.modules["agent.base_agent"] = ba_mod
+    # agent.base_agent stub (always replace so delegate/contract shape is stable)
+    ba_mod = types.ModuleType("agent.base_agent")
+    contracts = sys.modules["agent.core.contracts"]
+
+    class _BaseAgent:
+        def __init__(self, *a, cfg=None, role_name="base", **kw):
+            self.cfg = cfg or sys.modules["config"].Config()
+            self.role_name = role_name
+            self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value='def test_foo(): pass')
+            self.tools = {}
+
+        def register_tool(self, name, fn): self.tools[name] = fn
+
+        async def call_tool(self, name, arg):
+            if name not in self.tools: return f"HATA: {name} bulunamadı"
+            return await self.tools[name](arg)
+
+        async def call_llm(self, msgs, system_prompt=None, temperature=0.7, json_mode=False, **kw):
+            return 'def test_foo(): pass'
+
+        def delegate_to(self, target, payload, task_id=None, reason=""):
+            return contracts.DelegationRequest(
+                task_id=task_id or f"{self.role_name}-task",
+                reply_to=self.role_name,
+                target_agent=target,
+                payload=payload,
+            )
+
+        @staticmethod
+        def is_delegation_message(v): return contracts.is_delegation_request(v)
+
+    ba_mod.BaseAgent = _BaseAgent
+    sys.modules["agent.base_agent"] = ba_mod
 
 
 def _get_reviewer():

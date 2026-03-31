@@ -19,6 +19,7 @@ Uses asyncio.run() for async tests (NO @pytest.mark.asyncio).
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -62,6 +63,13 @@ for _k in list(sys.modules.keys()):
         del sys.modules[_k]
 
 import core.entity_memory as em_mod  # noqa: E402
+
+
+def _fresh_entity_memory_module():
+    """Return a freshly imported core.entity_memory module."""
+    _install_stubs()
+    sys.modules.pop("core.entity_memory", None)
+    return importlib.import_module("core.entity_memory")
 
 
 # ---------------------------------------------------------------------------
@@ -543,33 +551,30 @@ def test_well_known_keys_contains_expected():
 
 def test_get_entity_memory_returns_instance():
     """get_entity_memory() returns an EntityMemory instance (uses singleton)."""
-    # Patch config import so we don't need real Config
-    cfg_mod = types.ModuleType("config")
-
     class _Cfg:
         DATABASE_URL = "sqlite+aiosqlite:///data/test.db"
         ENABLE_ENTITY_MEMORY = True
         ENTITY_MEMORY_TTL_DAYS = 90
         ENTITY_MEMORY_MAX_PER_USER = 100
 
-    cfg_mod.Config = _Cfg
-    old_instance = em_mod._instance
+    local_em = _fresh_entity_memory_module()
+    old_instance = local_em._instance
     try:
-        em_mod._instance = None
-        with patch.dict(sys.modules, {"config": cfg_mod}):
-            instance = em_mod.get_entity_memory()
-        assert isinstance(instance, em_mod.EntityMemory)
+        local_em._instance = None
+        instance = local_em.get_entity_memory(config=_Cfg())
+        assert isinstance(instance, local_em.EntityMemory)
     finally:
-        em_mod._instance = old_instance
+        local_em._instance = old_instance
 
 
 def test_get_entity_memory_reuses_singleton():
     """get_entity_memory() returns the same instance on repeated calls."""
-    old_instance = em_mod._instance
+    local_em = _fresh_entity_memory_module()
+    old_instance = local_em._instance
     try:
-        sentinel = em_mod.EntityMemory()
-        em_mod._instance = sentinel
-        result = em_mod.get_entity_memory()
+        sentinel = local_em.EntityMemory()
+        local_em._instance = sentinel
+        result = local_em.get_entity_memory()
         assert result is sentinel
     finally:
-        em_mod._instance = old_instance
+        local_em._instance = old_instance
