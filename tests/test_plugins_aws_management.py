@@ -7,8 +7,9 @@ import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-def _get_aws_agent(stub_aws_plugin_dependencies):
-    del stub_aws_plugin_dependencies
+import pytest
+
+def _get_aws_agent(stub=None):
     sys.modules.pop("plugins.aws_management_agent", None)
     import plugins.aws_management_agent as m
     return m
@@ -33,68 +34,69 @@ class TestAWSManagementAgentInit:
         assert "cloudwatch" in agent._COMMAND_MAP
 
 
+@pytest.mark.usefixtures("stub_aws_plugin_dependencies")
 class TestAWSManagementAgentSelectCommand:
-    def test_select_ec2_by_ec2_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_ec2_by_ec2_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("EC2 instance listele")
         assert cmd is not None
         assert "ec2" in cmd
 
-    def test_select_ec2_by_instance_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_ec2_by_instance_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("tüm instance'ları göster")
         assert cmd is not None
         assert "ec2" in cmd
 
-    def test_select_ec2_by_sunucu_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_ec2_by_sunucu_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("sunucu listesi")
         assert cmd is not None
 
-    def test_select_s3_by_s3_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_s3_by_s3_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("s3 bucket'larını listele")
         assert cmd is not None
         assert "s3api" in cmd
 
-    def test_select_s3_by_bucket_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_s3_by_bucket_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("bucket listesi")
         assert cmd is not None
 
-    def test_select_s3_by_storage_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_s3_by_storage_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("storage nedir")
         assert cmd is not None
 
-    def test_select_cloudwatch_by_alarm_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_cloudwatch_by_alarm_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("alarm durumları")
         assert cmd is not None
         assert "cloudwatch" in cmd
 
-    def test_select_cloudwatch_by_metric_keyword(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_cloudwatch_by_metric_keyword(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("metric sorgula")
         assert cmd is not None
 
-    def test_select_none_for_unknown(self, stub_aws_plugin_dependencies):
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+    def test_select_none_for_unknown(self):
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd = agent._select_command("bilinmeyen görev")
         assert cmd is None
 
-    def test_command_is_copy_not_original(self, stub_aws_plugin_dependencies):
+    def test_command_is_copy_not_original(self):
         """_select_command orijinal listeyi değil kopya döndürmeli."""
-        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        m = _get_aws_agent()
         agent = m.AWSManagementAgent()
         cmd1 = agent._select_command("ec2")
         cmd2 = agent._select_command("ec2")
@@ -148,94 +150,70 @@ class TestAWSManagementAgentSummarizeOutput:
 
 
 class TestAWSManagementAgentRunTask:
-    def test_empty_prompt_returns_message(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            result = await agent.run_task("")
-            assert "gerekli" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_empty_prompt_returns_message(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        result = await agent.run_task("")
+        assert "gerekli" in result
 
-    def test_whitespace_only_prompt(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            result = await agent.run_task("   ")
-            assert "gerekli" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_whitespace_only_prompt(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        result = await agent.run_task("   ")
+        assert "gerekli" in result
 
-    def test_no_aws_cli_returns_message(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            with patch("shutil.which", return_value=None):
-                result = await agent.run_task("ec2 instance listele")
-            assert "AWS CLI" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_no_aws_cli_returns_message(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        with patch("shutil.which", return_value=None):
+            result = await agent.run_task("ec2 instance listele")
+        assert "AWS CLI" in result
 
-    def test_unknown_task_returns_supported_list(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            with patch("shutil.which", return_value="/usr/bin/aws"):
-                result = await agent.run_task("bilinmeyen görev yap")
-            assert "Desteklenen" in result or "desteklenen" in result.lower()
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_unknown_task_returns_supported_list(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        with patch("shutil.which", return_value="/usr/bin/aws"):
+            result = await agent.run_task("bilinmeyen görev yap")
+        assert "Desteklenen" in result or "desteklenen" in result.lower()
 
-    def test_ec2_command_success(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            payload = json.dumps({
-                "Reservations": [{"Instances": [{"InstanceId": "i-abc", "State": {"Name": "running"}}]}]
-            })
-            mock_result = MagicMock()
-            mock_result.stdout = payload
-            with patch("shutil.which", return_value="/usr/bin/aws"), \
-                 patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
-                result = await agent.run_task("ec2 instance listele")
-            assert "i-abc" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_ec2_command_success(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        payload = json.dumps({
+            "Reservations": [{"Instances": [{"InstanceId": "i-abc", "State": {"Name": "running"}}]}]
+        })
+        mock_result = MagicMock()
+        mock_result.stdout = payload
+        with patch("shutil.which", return_value="/usr/bin/aws"), \
+             patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
+            result = await agent.run_task("ec2 instance listele")
+        assert "i-abc" in result
 
-    def test_s3_command_success(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            payload = json.dumps({"Buckets": [{"Name": "test-bucket"}]})
-            mock_result = MagicMock()
-            mock_result.stdout = payload
-            with patch("shutil.which", return_value="/usr/bin/aws"), \
-                 patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
-                result = await agent.run_task("s3 bucket listele")
-            assert "test-bucket" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_s3_command_success(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        payload = json.dumps({"Buckets": [{"Name": "test-bucket"}]})
+        mock_result = MagicMock()
+        mock_result.stdout = payload
+        with patch("shutil.which", return_value="/usr/bin/aws"), \
+             patch("asyncio.to_thread", new=AsyncMock(return_value=mock_result)):
+            result = await agent.run_task("s3 bucket listele")
+        assert "test-bucket" in result
 
-    def test_command_failure_returns_error(self, stub_aws_plugin_dependencies):
-        async def _run():
-            import subprocess
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            exc = subprocess.CalledProcessError(1, "aws", stderr="AccessDenied")
-            with patch("shutil.which", return_value="/usr/bin/aws"), \
-                 patch("asyncio.to_thread", new=AsyncMock(side_effect=exc)):
-                result = await agent.run_task("ec2 instance listele")
-            assert "başarısız" in result or "AWS" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_command_failure_returns_error(self, stub_aws_plugin_dependencies):
+        import subprocess
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        exc = subprocess.CalledProcessError(1, "aws", stderr="AccessDenied")
+        with patch("shutil.which", return_value="/usr/bin/aws"), \
+             patch("asyncio.to_thread", new=AsyncMock(side_effect=exc)):
+            result = await agent.run_task("ec2 instance listele")
+        assert "başarısız" in result or "AWS" in result
 
-    def test_generic_exception_returns_error(self, stub_aws_plugin_dependencies):
-        async def _run():
-            m = _get_aws_agent(stub_aws_plugin_dependencies)
-            agent = m.AWSManagementAgent()
-            with patch("shutil.which", return_value="/usr/bin/aws"), \
-                 patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı yok"))):
-                result = await agent.run_task("cloudwatch alarm listele")
-            assert "çalıştırılamadı" in result or "AWS" in result
-        import asyncio as _asyncio
-        _asyncio.run(_run())
+    async def test_generic_exception_returns_error(self, stub_aws_plugin_dependencies):
+        m = _get_aws_agent(stub_aws_plugin_dependencies)
+        agent = m.AWSManagementAgent()
+        with patch("shutil.which", return_value="/usr/bin/aws"), \
+             patch("asyncio.to_thread", new=AsyncMock(side_effect=OSError("bağlantı yok"))):
+            result = await agent.run_task("cloudwatch alarm listele")
+        assert "çalıştırılamadı" in result or "AWS" in result

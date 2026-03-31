@@ -1,11 +1,12 @@
 """Supervisor -> Poyraz -> tool -> LLM uçtan uca workflow testi."""
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+import pytest
 
 from agent.core.supervisor import SupervisorAgent
 from agent.roles.poyraz_agent import PoyrazAgent
@@ -33,28 +34,26 @@ def _build_cfg(tmp_path: Path):
     )
 
 
-def test_supervisor_routes_marketing_prompt_to_poyraz_and_returns_llm_text(tmp_path):
+@pytest.mark.asyncio
+async def test_supervisor_routes_marketing_prompt_to_poyraz_and_returns_llm_text(tmp_path: Path):
     cfg = _build_cfg(tmp_path)
 
-    async def _run_case() -> None:
-        supervisor = SupervisorAgent(cfg=cfg)
-        poyraz = PoyrazAgent(cfg=cfg)
+    supervisor = SupervisorAgent(cfg=cfg)
+    poyraz = PoyrazAgent(cfg=cfg)
 
-        # Dış bağımlılıkları izole et: web araması + LLM çağrısı
-        poyraz.web.search = AsyncMock(return_value=(True, "[WEB] trendler"))
-        poyraz.call_llm = AsyncMock(return_value=json.dumps({
-            "channel": "instagram",
-            "headline": "Kampanya açılış metni",
-            "cta": "Hemen incele",
-        }, ensure_ascii=False))
+    # Dış bağımlılıkları izole et: web araması + LLM çağrısı
+    poyraz.web.search = AsyncMock(return_value=(True, "[WEB] trendler"))
+    poyraz.call_llm = AsyncMock(return_value=json.dumps({
+        "channel": "instagram",
+        "headline": "Kampanya açılış metni",
+        "cta": "Hemen incele",
+    }, ensure_ascii=False))
 
-        supervisor.registry.register("poyraz", poyraz)
-        supervisor.poyraz = poyraz
+    supervisor.registry.register("poyraz", poyraz)
+    supervisor.poyraz = poyraz
 
-        result = await supervisor.run_task("Landing page kampanya metni oluştur")
+    result = await supervisor.run_task("Landing page kampanya metni oluştur")
 
-        assert "instagram" in result
-        assert "Kampanya açılış metni" in result
-        poyraz.call_llm.assert_awaited_once()
-
-    asyncio.run(_run_case())
+    assert "instagram" in result
+    assert "Kampanya açılış metni" in result
+    poyraz.call_llm.assert_awaited_once()
