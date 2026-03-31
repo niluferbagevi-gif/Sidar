@@ -205,12 +205,12 @@ class JiraManager:
         issues = (data or {}).get("issues", [])
         simplified = [
             {
-                "key": i["key"],
-                "summary": i["fields"].get("summary", ""),
-                "status": i["fields"].get("status", {}).get("name", ""),
-                "assignee": (i["fields"].get("assignee") or {}).get("displayName", ""),
-                "priority": i["fields"].get("priority", {}).get("name", ""),
-                "type": i["fields"].get("issuetype", {}).get("name", ""),
+                "key": i.get("key", ""),
+                "summary": (i.get("fields") or {}).get("summary", ""),
+                "status": ((i.get("fields") or {}).get("status") or {}).get("name", ""),
+                "assignee": (((i.get("fields") or {}).get("assignee") or {}).get("displayName", "")),
+                "priority": ((i.get("fields") or {}).get("priority") or {}).get("name", ""),
+                "type": ((i.get("fields") or {}).get("issuetype") or {}).get("name", ""),
             }
             for i in issues
         ]
@@ -226,7 +226,7 @@ class JiraManager:
         if not ok:
             return False, [], err
         projects = [
-            {"key": p["key"], "name": p["name"], "id": p["id"]}
+            {"key": p.get("key", ""), "name": p.get("name", ""), "id": p.get("id", "")}
             for p in (data or [])
         ]
         return True, projects, ""

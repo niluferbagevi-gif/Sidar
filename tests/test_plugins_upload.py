@@ -214,3 +214,11 @@ class TestUploadAgentRunTask:
         import asyncio as _asyncio
         _asyncio.run(_run())
 
+    def test_non_string_prompt_is_coerced_and_does_not_crash(self):
+        async def _run():
+            m = _get_upload_agent()
+            agent = m.UploadAgent()
+            result = await agent.run_task(12345)  # type: ignore[arg-type]
+            assert result == "UploadAgent: 12345"
+        import asyncio as _asyncio
+        _asyncio.run(_run())
