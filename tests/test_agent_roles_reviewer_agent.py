@@ -604,3 +604,20 @@ class TestReviewerLargeAndBrokenCodeBlocks:
             assert parsed["risk"] == "yüksek"
 
         asyncio.run(_run_case())
+
+    def test_run_dynamic_tests_cleans_temp_file_when_run_tests_tool_crashes(self, tmp_path):
+        m = _get_reviewer()
+        agent = m.ReviewerAgent()
+        agent.config.BASE_DIR = str(tmp_path)
+        agent._build_dynamic_test_content = AsyncMock(return_value="def test_ok():\n    assert True\n")
+        agent.code.write_file = MagicMock(return_value=(True, "ok"))
+        agent.call_tool = AsyncMock(side_effect=RuntimeError("sandbox runner crashed"))
+
+        async def _run_case():
+            with pytest.raises(RuntimeError, match="sandbox runner crashed"):
+                await agent._run_dynamic_tests("def foo():\n    pass\n")
+
+            temp_files = list((tmp_path / "temp").glob("reviewer_dynamic_*.py"))
+            assert temp_files == []
+
+        asyncio.run(_run_case())
