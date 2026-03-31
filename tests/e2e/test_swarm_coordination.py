@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from agent.core.contracts import TaskResult
 from agent.swarm import SwarmOrchestrator, SwarmTask
 from agent.registry import AgentRegistry
 from config import Config
@@ -14,12 +15,12 @@ def test_swarm_orchestrator_distributes_tasks_between_researcher_and_coder(monke
         orchestrator = SwarmOrchestrator(cfg=Config())
 
         class _FakeResearcher:
-            async def run_task(self, prompt: str):
-                return f"[RESEARCH] {prompt}"
+            async def handle(self, envelope):
+                return TaskResult(task_id=envelope.task_id, status="success", summary=f"[RESEARCH] {envelope.goal}")
 
         class _FakeCoder:
-            async def run_task(self, prompt: str):
-                return f"[CODE] {prompt}"
+            async def handle(self, envelope):
+                return TaskResult(task_id=envelope.task_id, status="success", summary=f"[CODE] {envelope.goal}")
 
         async def _noop(*_args, **_kwargs):
             return None

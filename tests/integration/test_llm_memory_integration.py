@@ -22,6 +22,7 @@ class _LLMMemoryAgent(BaseAgent):
 def _build_cfg(tmp_path: Path):
     return SimpleNamespace(
         AI_PROVIDER="ollama",
+        OLLAMA_URL="http://localhost:11434",
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'llm_memory.db'}",
         BASE_DIR=str(tmp_path),
         DB_POOL_SIZE=3,

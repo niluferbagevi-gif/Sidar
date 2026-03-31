@@ -35,6 +35,7 @@ def test_github_content_can_be_written_locally_and_read_via_coder_agent(tmp_path
 
     async def _run_case() -> None:
         coder = CoderAgent(cfg=cfg)
+        (tmp_path / "src").mkdir(parents=True, exist_ok=True)
 
         github = MagicMock(spec=GitHubManager)
         github.read_remote_file.return_value = (
