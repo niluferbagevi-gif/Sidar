@@ -353,9 +353,15 @@ class TestCallLlmJson:
 class TestEvaluateRagHallucinationBranch:
     """hall_val is not None dalının çalıştığını doğrula."""
 
+    def _make_enabled_judge(self):
+        """JUDGE_ENABLED=true, JUDGE_SAMPLE_RATE=1.0 ile LLMJudge oluştur."""
+        judge = _get_judge(judge_enabled="true", judge_sample_rate="1.0")
+        with patch.dict(os.environ, {"JUDGE_ENABLED": "true", "JUDGE_SAMPLE_RATE": "1.0"}):
+            j = judge.LLMJudge()
+        return judge, j
+
     def test_hallucination_score_used_when_llm_returns_value(self):
-        judge = _get_judge()
-        j = judge.LLMJudge()
+        judge, j = self._make_enabled_judge()
 
         call_counter = {"n": 0}
 
@@ -374,8 +380,7 @@ class TestEvaluateRagHallucinationBranch:
         assert result.hallucination_risk == pytest.approx(0.3)
 
     def test_hallucination_remains_zero_when_llm_returns_none(self):
-        judge = _get_judge()
-        j = judge.LLMJudge()
+        judge, j = self._make_enabled_judge()
 
         call_count = {"n": 0}
 
@@ -393,8 +398,7 @@ class TestEvaluateRagHallucinationBranch:
         assert result.hallucination_risk == 0.0
 
     def test_no_hallucination_call_when_answer_is_none(self):
-        judge = _get_judge()
-        j = judge.LLMJudge()
+        judge, j = self._make_enabled_judge()
 
         call_count = {"n": 0}
 
@@ -631,59 +635,65 @@ class TestMaybeRecordFeedback:
 class TestScheduleBackgroundEvaluation:
     """Asyncio arka plan görevinin doğru oluşturulduğunu doğrula."""
 
-    @pytest.mark.asyncio
-    async def test_creates_task_when_should_evaluate(self):
+    def test_creates_task_when_should_evaluate(self):
         judge = _get_judge()
         j = judge.LLMJudge()
         j._should_evaluate = MagicMock(return_value=True)
 
-        completed = asyncio.Event()
+        async def _run_test():
+            completed = asyncio.Event()
 
-        async def _fake_eval_rag(query, docs, answer=None):
-            completed.set()
-            return None
+            async def _fake_eval_rag(query, docs, answer=None):
+                completed.set()
+                return None
 
-        j.evaluate_rag = _fake_eval_rag
+            j.evaluate_rag = _fake_eval_rag
 
-        j.schedule_background_evaluation("query", ["doc"], "answer")
-        await asyncio.wait_for(completed.wait(), timeout=2.0)
+            j.schedule_background_evaluation("query", ["doc"], "answer")
+            await asyncio.wait_for(completed.wait(), timeout=2.0)
 
-    @pytest.mark.asyncio
-    async def test_does_not_create_task_when_should_not_evaluate(self):
+        _run(_run_test())
+
+    def test_does_not_create_task_when_should_not_evaluate(self):
         judge = _get_judge()
         j = judge.LLMJudge()
         j._should_evaluate = MagicMock(return_value=False)
 
-        was_called = []
+        async def _run_test():
+            was_called = []
 
-        async def _fake_eval_rag(query, docs, answer=None):
-            was_called.append(True)
-            return None
+            async def _fake_eval_rag(query, docs, answer=None):
+                was_called.append(True)
+                return None
 
-        j.evaluate_rag = _fake_eval_rag
+            j.evaluate_rag = _fake_eval_rag
 
-        j.schedule_background_evaluation("query", ["doc"])
-        # Kısa süre bekle — görev oluşturulmamalı
-        await asyncio.sleep(0.05)
-        assert not was_called
+            j.schedule_background_evaluation("query", ["doc"])
+            # Kısa süre bekle — görev oluşturulmamalı
+            await asyncio.sleep(0.05)
+            assert not was_called
 
-    @pytest.mark.asyncio
-    async def test_background_exception_is_silenced(self):
+        _run(_run_test())
+
+    def test_background_exception_is_silenced(self):
         judge = _get_judge()
         j = judge.LLMJudge()
         j._should_evaluate = MagicMock(return_value=True)
 
-        completed = asyncio.Event()
+        async def _run_test():
+            completed = asyncio.Event()
 
-        async def _failing_eval_rag(query, docs, answer=None):
-            completed.set()
-            raise RuntimeError("eval error")
+            async def _failing_eval_rag(query, docs, answer=None):
+                completed.set()
+                raise RuntimeError("eval error")
 
-        j.evaluate_rag = _failing_eval_rag
+            j.evaluate_rag = _failing_eval_rag
 
-        j.schedule_background_evaluation("query", ["doc"])
-        await asyncio.wait_for(completed.wait(), timeout=2.0)
-        # İstisna dışarıya sızmamalı
+            j.schedule_background_evaluation("query", ["doc"])
+            await asyncio.wait_for(completed.wait(), timeout=2.0)
+            # İstisna dışarıya sızmamalı
+
+        _run(_run_test())
 
     def test_no_running_loop_is_silenced(self):
         """Event loop yokken RuntimeError sessizce atlatılmalı."""
