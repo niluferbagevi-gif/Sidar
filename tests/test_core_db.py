@@ -1274,6 +1274,73 @@ class TestMarketingCampaignCrudFailurePaths:
 
         asyncio.run(_scenario())
 
+
+class TestPostgresqlConnectionFailurePaths:
+    @staticmethod
+    def _make_sqlite_db(db_mod, tmpdir: str):
+        db_file = Path(tmpdir) / "sidar_campaign_failures.db"
+
+        class _Cfg:
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_file}"
+            DB_POOL_SIZE = 2
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+            JWT_SECRET_KEY = "secret"
+            JWT_ALGORITHM = "HS256"
+            JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+        return db_mod.Database(cfg=_Cfg())
+
+    def test_connect_postgresql_raises_runtime_error_without_asyncpg(self, monkeypatch):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            import builtins
+            real_import = builtins.__import__
+
+            def _fake_import(name, *args, **kwargs):
+                if name == "asyncpg":
+                    raise ImportError("asyncpg missing")
+                return real_import(name, *args, **kwargs)
+
+            monkeypatch.setattr(builtins, "__import__", _fake_import)
+            database = db_mod.Database(cfg=_Cfg())
+            with pytest.raises(RuntimeError, match="asyncpg"):
+                await database._connect_postgresql()
+
+        asyncio.run(_scenario())
+
+    def test_connect_postgresql_propagates_timeout_error(self, monkeypatch):
+        async def _scenario():
+            db_mod = _get_db()
+
+            class _Cfg:
+                DATABASE_URL = "postgresql://user:pass@localhost/sidar"
+                DB_POOL_SIZE = 5
+                DB_SCHEMA_VERSION_TABLE = "schema_versions"
+                DB_SCHEMA_TARGET_VERSION = 1
+
+            class _FakeAsyncpg:
+                class PoolError(Exception):
+                    pass
+
+                @staticmethod
+                async def create_pool(**_kwargs):
+                    raise asyncio.TimeoutError("pool timeout")
+
+            monkeypatch.setitem(sys.modules, "asyncpg", _FakeAsyncpg)
+            database = db_mod.Database(cfg=_Cfg())
+            with pytest.raises(asyncio.TimeoutError, match="pool timeout"):
+                await database._connect_postgresql()
+
+        asyncio.run(_scenario())
+
     def test_upsert_marketing_campaign_rolls_back_on_sqlite_lock_error(self):
         async def _scenario():
             db_mod = _get_db()

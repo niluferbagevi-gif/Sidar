@@ -315,6 +315,27 @@ class TestSidarAgentMemoryMessages:
             assert "test sorgusu" in all_content
 
 
+class TestSidarAgentEarlyExitBranches:
+    def test_initialize_returns_early_when_already_initialized(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        agent._initialized = True
+        agent.memory.initialize = AsyncMock(side_effect=AssertionError("initialize should not run"))
+
+        asyncio.run(agent.initialize())
+        agent.memory.initialize.assert_not_called()
+
+    def test_parse_tool_call_with_non_string_input_falls_back_to_final_answer(self):
+        sa = _get_sidar_agent()
+        agent = sa.SidarAgent()
+        parse_fn = getattr(agent, "_parse_tool_call", None)
+        if parse_fn is None:
+            pytest.skip("_parse_tool_call metodu bu sürümde mevcut değil")
+        result = parse_fn({"tool": "repo_info"})  # beklenmeyen veri formatı
+        assert result["tool"] == "final_answer"
+        assert isinstance(result["argument"], dict)
+
+
 class TestSidarAgentFallbackFederation:
     def test_fallback_federation_envelope_to_prompt(self):
         sa = _get_sidar_agent()
