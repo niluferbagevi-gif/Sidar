@@ -1718,6 +1718,99 @@ class Extra_TestDatabaseConfig:
         instance = db.Database(_Cfg())
         assert instance._backend == "postgresql"
 
+
+class TestDatabaseSqliteInMemoryPersistence:
+    @staticmethod
+    def _make_db():
+        db_mod = _get_db()
+
+        class _Cfg:
+            DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+            DB_POOL_SIZE = 3
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+
+        return db_mod, db_mod.Database(cfg=_Cfg())
+
+    def test_inmemory_user_session_message_roundtrip(self):
+        db_mod, database = self._make_db()
+
+        async def _run_case():
+            await database.connect()
+            await database.init_schema()
+            try:
+                user = await database.create_user("mem_user", role="user", password="secret")
+                session = await database.create_session(user.id, "InMemory Chat")
+                await database.add_message(session.id, "user", "merhaba", tokens_used=7)
+                await database.add_message(session.id, "assistant", "selam", tokens_used=9)
+                messages = await database.get_session_messages(session.id)
+
+                assert user.username == "mem_user"
+                assert session.title == "InMemory Chat"
+                assert len(messages) == 2
+                assert messages[0].content == "merhaba"
+                assert messages[1].content == "selam"
+            finally:
+                await database.close()
+
+        asyncio.run(_run_case())
+
+    def test_inmemory_coverage_task_and_finding_persisted(self):
+        db_mod, database = self._make_db()
+
+        async def _run_case():
+            await database.connect()
+            await database.init_schema()
+            try:
+                task = await database.create_coverage_task(
+                    tenant_id="tenant-x",
+                    requester_role="coverage",
+                    command="pytest -q",
+                    pytest_output="2 failed",
+                    status="pending_review",
+                    target_path="core/db.py",
+                    suggested_test_path="tests/test_core_db.py",
+                    review_payload_json='{"note":"needs tests"}',
+                )
+                finding = await database.add_coverage_finding(
+                    task_id=task.id,
+                    finding_type="missing_branch",
+                    target_path="core/db.py",
+                    summary="branch not covered",
+                    severity="high",
+                    details={"line": 120},
+                )
+                tasks = await database.list_coverage_tasks(tenant_id="tenant-x", status="pending_review", limit=10)
+
+                assert task.id > 0
+                assert finding.task_id == task.id
+                assert finding.finding_type == "missing_branch"
+                assert len(tasks) == 1
+                assert tasks[0].target_path == "core/db.py"
+            finally:
+                await database.close()
+
+        asyncio.run(_run_case())
+
+    def test_init_schema_idempotent_for_inmemory_sqlite(self):
+        _db_mod, database = self._make_db()
+
+        async def _run_case():
+            await database.connect()
+            try:
+                await database.init_schema()
+                await database.init_schema()
+                assert database._sqlite_conn is not None
+                row = database._sqlite_conn.execute(
+                    f"SELECT MAX(version) AS v FROM {database._schema_version_table_quoted}"
+                ).fetchone()
+                assert row is not None
+                assert int(row["v"] or 0) >= 1
+            finally:
+                await database.close()
+
+        asyncio.run(_run_case())
+
     def test_sqlite_path_resolved(self):
         db = _get_db_module()
         with tempfile.TemporaryDirectory() as td:
