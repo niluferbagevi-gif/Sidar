@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import types
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock
 
 
@@ -134,6 +134,35 @@ class TestFileUriToPath:
         cm = _get_cm()
         result = cm._file_uri_to_path("file:///tmp/my%20file.py")
         assert "my file.py" in str(result)
+
+    def test_windows_drive_returns_pure_windows_path_on_non_windows(self, monkeypatch):
+        cm = _get_cm()
+        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm.sys, "platform", "linux")
+
+        result = cm._file_uri_to_path("file:///C:/Users/Test/file.py")
+
+        assert isinstance(result, PureWindowsPath)
+        assert str(result) == "C:\\Users\\Test\\file.py"
+
+    def test_windows_drive_returns_path_on_win32(self, monkeypatch):
+        cm = _get_cm()
+        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm.sys, "platform", "win32")
+
+        result = cm._file_uri_to_path("file:///D:/Work/repo/main.py")
+
+        assert str(result).endswith("D:\\Work\\repo\\main.py")
+
+    def test_windows_non_drive_path_returns_pure_windows_path(self, monkeypatch):
+        cm = _get_cm()
+        monkeypatch.setattr(cm.os, "name", "nt")
+        monkeypatch.setattr(cm.sys, "platform", "win32")
+
+        result = cm._file_uri_to_path("file:///Users/Test/file.py")
+
+        assert isinstance(result, PureWindowsPath)
+        assert str(result) == "\\Users\\Test\\file.py"
 
 
 # ══════════════════════════════════════════════════════════════
