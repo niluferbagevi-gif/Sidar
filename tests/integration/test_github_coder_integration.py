@@ -45,6 +45,8 @@ def test_github_content_can_be_written_locally_and_read_via_coder_agent(tmp_path
         ok_remote, remote_content = github.read_remote_file("src/sample.py", ref="main")
         assert ok_remote is True
 
+        (Path(cfg.BASE_DIR) / "src").mkdir(parents=True, exist_ok=True)
+
         ok_write, _ = coder.code.write_file("src/sample.py", remote_content)
         assert ok_write is True
 

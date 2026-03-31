@@ -29,7 +29,10 @@ class CoderAgent(BaseAgent):
 
     def __init__(self, cfg: Optional[Config] = None) -> None:
         super().__init__(cfg=cfg, role_name="coder")
-        self.security = SecurityManager(cfg=self.cfg)
+        self.security = SecurityManager(
+            cfg=self.cfg,
+            access_level=getattr(self.cfg, "ACCESS_LEVEL", "full"),
+        )
         self.events = get_agent_event_bus()
         self.code = CodeManager(self.security, base_dir=self.cfg.BASE_DIR)
         self.pkg = PackageInfoManager(self.cfg)

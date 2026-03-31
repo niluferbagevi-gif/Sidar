@@ -13,6 +13,8 @@ omit =
 
 [report]
 fail_under = 90
+# run_tests.sh ve CI pipeline ile uyumlu eşik: 90
+# Daha yüksek bir eşik için COVERAGE_FAIL_UNDER ortam değişkeni kullanın.
 show_missing = True
 skip_covered = True
 precision = 2
@@ -35,3 +37,4 @@ exclude_lines =
 directory = htmlcov
 
 [xml]
+output = coverage.xml

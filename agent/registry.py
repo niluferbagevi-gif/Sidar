@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class AgentSpec:
     """Kayıtlı bir ajan tipinin meta verisi."""
 
     role_name: str
-    agent_class: Type
+    agent_class: Optional[Type[Any]] = None
     capabilities: List[str] = field(default_factory=list)
     description: str = ""
     version: str = "1.0.0"
@@ -132,7 +132,16 @@ class AgentRegistry:
                 f"'{role_name}' ajan tipi kayıt defterinde bulunamadı. "
                 f"Mevcut tipler: {available}"
             )
-        return spec.agent_class(**kwargs)
+        if spec.agent_class is not None:
+            return spec.agent_class(**kwargs)
+
+        factory = getattr(spec, "_agent_factory", None)
+        if callable(factory):
+            return factory(**kwargs)
+
+        raise TypeError(
+            f"'{role_name}' için agent_class veya _agent_factory tanımlı değil."
+        )
 
     @classmethod
     def unregister(cls, role_name: str) -> bool:

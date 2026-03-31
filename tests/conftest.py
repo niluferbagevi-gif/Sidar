@@ -13,6 +13,30 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ⚠️  STUB MİMARİSİ HAKKINDA ÖNEMLİ UYARI (Anti-Pattern)
+# ──────────────────────────────────────────────────────────────────────────────
+# Aşağıdaki _stub_broken_native_deps() ve ardından gelen httpx/bs4 stub'ları,
+# yalnızca native bağımlılıkların (cffi, pyaudio, vb.) derlenmediği kısıtlı
+# CI/geliştirme ortamlarında testlerin çökmesini engellemek amacıyla
+# geçici olarak eklenmiştir.
+#
+# Bu yaklaşımın SAKINCALARI:
+#   1. False Positive riski — Testler kendi ürettiği sahte modülle "geçer",
+#      ancak production ortamında gerçek kütüphane eksikse uygulama çöker.
+#   2. sys.modules kirliliği — Fixture'lar arası sızıntı riski taşır.
+#
+# HEDEF MİGRASYON YOLU:
+#   • httpx çağrıları  → `respx` (pip: respx~=0.21.0)
+#     Örnek: respx.mock(assert_all_called=False) context manager ile patch
+#   • requests çağrısı → `responses` (pip: responses~=0.25.3)
+#   • Genel mock       → `pytest-mock` mocker fixture'ı (pip: pytest-mock~=3.14.0)
+#
+# Bu kütüphaneler pyproject.toml [project.optional-dependencies.dev] ve
+# requirements-dev.txt içine eklenmiştir. Yeni testlerde manuel stub yerine
+# bu kütüphaneler kullanılmalıdır.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Çevrede bozuk native kütüphaneler varsa (cffi/cryptography/jwt) testlerin
 # tamamen çökmemesi için stub'ları erken enjekte et.
 # ──────────────────────────────────────────────────────────────────────────────
