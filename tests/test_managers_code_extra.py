@@ -194,6 +194,64 @@ class TestTryDockerCliFallback:
             assert result is True
             assert manager.docker_available is True
 
+    def test_docker_cli_timeout_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, base, cm = _make_code_manager(tmpdir)
+            with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker info", 5)):
+                result = manager._try_docker_cli_fallback()
+            assert result is False
+
+    def test_docker_cli_permission_error_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, base, cm = _make_code_manager(tmpdir)
+            with patch("subprocess.run", side_effect=PermissionError("permission denied")):
+                result = manager._try_docker_cli_fallback()
+            assert result is False
+
+
+class TestTryWslSocketFallback:
+    def test_returns_false_when_socket_stat_fails(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, base, cm = _make_code_manager(tmpdir)
+            docker_module = types.SimpleNamespace(DockerClient=MagicMock())
+
+            with patch.object(cm.os, "stat", side_effect=OSError("missing")):
+                result = manager._try_wsl_socket_fallback(docker_module)
+
+            assert result is False
+            assert manager.docker_available is False
+
+    def test_returns_true_when_valid_socket_and_ping_success(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, base, cm = _make_code_manager(tmpdir)
+            fake_client = types.SimpleNamespace(ping=MagicMock())
+            docker_module = types.SimpleNamespace(DockerClient=MagicMock(return_value=fake_client))
+            fake_stat = types.SimpleNamespace(st_mode=0o140000)
+
+            with patch.object(cm.os, "stat", return_value=fake_stat), patch.object(cm.stat, "S_ISSOCK", return_value=True):
+                result = manager._try_wsl_socket_fallback(docker_module)
+
+            assert result is True
+            assert manager.docker_available is True
+            assert manager.docker_client is fake_client
+
+    def test_tries_next_socket_when_ping_fails_with_connection_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, base, cm = _make_code_manager(tmpdir)
+            failing_client = types.SimpleNamespace(ping=MagicMock(side_effect=Exception("Connection refused")))
+            healthy_client = types.SimpleNamespace(ping=MagicMock())
+            docker_module = types.SimpleNamespace(
+                DockerClient=MagicMock(side_effect=[failing_client, healthy_client])
+            )
+            fake_stat = types.SimpleNamespace(st_mode=0o140000)
+
+            with patch.object(cm.os, "stat", return_value=fake_stat), patch.object(cm.stat, "S_ISSOCK", return_value=True):
+                result = manager._try_wsl_socket_fallback(docker_module)
+
+            assert result is True
+            assert manager.docker_available is True
+            assert manager.docker_client is healthy_client
+
 
 # ══════════════════════════════════════════════════════════════
 # read_file() — (326, 336-342, 346-349)
