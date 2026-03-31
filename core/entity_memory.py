@@ -273,7 +273,7 @@ _instance: Optional[EntityMemory] = None
 def get_entity_memory(config=None) -> EntityMemory:
     """Process-içi tekil EntityMemory örneğini döner; ilk çağrıda oluşturur."""
     global _instance
-    if _instance is None:
+    if _instance is None or not isinstance(_instance, EntityMemory):
         from config import Config
         cfg = config or Config()
         db_url = str(getattr(cfg, "DATABASE_URL", "sqlite+aiosqlite:///data/sidar.db") or "")
