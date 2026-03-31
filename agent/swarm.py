@@ -697,7 +697,7 @@ class SwarmOrchestrator:
                 task.task_id, spec.role_name, elapsed, result.status,
             )
             if result.status == "success":
-                self._schedule_autonomous_feedback(
+                feedback_job = self._schedule_autonomous_feedback(
                     prompt=task.goal,
                     response=str(result.summary),
                     context={
@@ -711,6 +711,8 @@ class SwarmOrchestrator:
                     agent_role=spec.role_name,
                     task_id=task.task_id,
                 )
+                if asyncio.iscoroutine(feedback_job):
+                    await feedback_job
             return SwarmResult(
                 task_id=task.task_id,
                 agent_role=spec.role_name,
