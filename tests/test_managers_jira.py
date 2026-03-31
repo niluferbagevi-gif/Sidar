@@ -431,3 +431,51 @@ class TestJiraSearchAndStatuses:
         assert ok is False
         assert statuses == []
         assert "403" in err
+<<<<<<< HEAD
+=======
+
+class TestJiraPayloadShapeCoverage:
+    def test_create_issue_includes_optional_fields(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok", default_project="PROJ")
+
+        captured = {}
+
+        async def _fake_request(method, endpoint, **kwargs):
+            captured["method"] = method
+            captured["endpoint"] = endpoint
+            captured["json"] = kwargs.get("json", {})
+            return True, {"key": "PROJ-11"}, ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, issue, err = asyncio.run(
+            mgr.create_issue(
+                summary="Bug",
+                description="detay",
+                labels=["triage", "backend"],
+                assignee_account_id="acc-1",
+            )
+        )
+
+        fields = captured["json"]["fields"]
+        assert ok is True
+        assert issue["key"] == "PROJ-11"
+        assert err == ""
+        assert fields["labels"] == ["triage", "backend"]
+        assert fields["assignee"]["accountId"] == "acc-1"
+        assert fields["description"]["type"] == "doc"
+
+    def test_list_projects_maps_payload(self):
+        jira = _get_jira()
+        mgr = jira.JiraManager(url="https://company.atlassian.net", token="tok")
+
+        async def _fake_request(_method, _endpoint, **_kwargs):
+            return True, [{"key": "PROJ", "name": "Project", "id": "10001"}], ""
+
+        mgr._request = _fake_request  # type: ignore[assignment]
+        ok, projects, err = asyncio.run(mgr.list_projects())
+
+        assert ok is True
+        assert projects == [{"key": "PROJ", "name": "Project", "id": "10001"}]
+        assert err == ""
+>>>>>>> 1df995a76d63d1aac245e76b583f52267e1f5154
