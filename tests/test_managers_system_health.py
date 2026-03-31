@@ -257,3 +257,39 @@ class TestSystemHealthExternalFailureScenarios:
         assert status["healthy"] is False
         assert status["kind"] == "redis"
         assert "connection refused" in status["error"]
+
+class TestSystemHealthAdditionalBranches:
+    def test_check_database_disabled_when_url_missing(self):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.DATABASE_URL = ""
+        status = mgr.check_database()
+        assert status["healthy"] is True
+        assert status["mode"] == "disabled"
+
+    def test_check_database_sqlite_existing_file_is_healthy(self, tmp_path):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        db_file = tmp_path / "existing.db"
+        db_file.write_text("ok", encoding="utf-8")
+        mgr.cfg.DATABASE_URL = f"sqlite:///{db_file}"
+        status = mgr.check_database()
+        assert status["mode"] == "sqlite"
+        assert status["healthy"] is True
+
+    def test_check_redis_defaults_to_localhost_when_host_missing(self, monkeypatch):
+        sh = _get_sh()
+        mgr = sh.SystemHealthManager()
+        mgr.cfg.REDIS_URL = "redis:///0"
+
+        captured = {}
+
+        def _fake_tcp(host, port, *, label):
+            captured.update({"host": host, "port": port, "label": label})
+            return {"healthy": True, "target": f"{host}:{port}", "kind": label}
+
+        monkeypatch.setattr(mgr, "_tcp_dependency_health", _fake_tcp)
+        status = mgr.check_redis()
+
+        assert captured == {"host": "localhost", "port": 6379, "label": "redis"}
+        assert status["mode"] == "tcp"

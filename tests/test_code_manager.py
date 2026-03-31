@@ -164,3 +164,28 @@ class TestDockerFallbackPaths:
         assert ok is True
         assert cm.docker_available is True
         assert cm.docker_client is None
+
+class TestCodeManagerAdditionalBranches:
+    def test_decode_lsp_stream_returns_empty_for_incomplete_header(self):
+        raw = b"Content-Length: 20"  # missing CRLF terminator
+        decoded = _decode_lsp_stream(raw)
+        assert decoded == []
+
+    def test_resolve_runtime_prefers_runsc_when_microvm_mode_gvisor(self):
+        cm = CodeManager.__new__(CodeManager)
+        cm.docker_runtime = ""
+        cm.docker_microvm_mode = "gvisor"
+        cm.docker_allowed_runtimes = ["", "runsc", "runc"]
+
+        assert cm._resolve_runtime() == "runsc"
+
+    def test_build_docker_cli_command_contains_limits(self):
+        cm = CodeManager.__new__(CodeManager)
+        cm.docker_image = "python:3.11-alpine"
+        cmd = cm._build_docker_cli_command(
+            "print('x')",
+            {"memory": "128m", "cpus": "0.25", "pids_limit": 32, "network_mode": "none", "timeout": 5},
+        )
+        assert "--memory=128m" in cmd
+        assert "--cpus=0.25" in cmd
+        assert "--network=none" in cmd

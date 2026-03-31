@@ -577,3 +577,59 @@ class TestGitHubManagerAdditionalServiceErrors:
         assert ok is False
         assert "pull request oluşturma hatası" in message.lower()
         assert "conflict" in message.lower()
+
+class TestGitHubManagerCoverageBoost:
+    def test_list_commits_clamps_limit_to_100(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        commits = []
+        for i in range(150):
+            c = MagicMock()
+            c.sha = f"{i:040d}"
+            c.commit.message = f"commit {i}"
+            c.commit.author.name = "dev"
+            c.commit.author.date.strftime.return_value = "2026-03-31 00:00"
+            commits.append(c)
+
+        repo = MagicMock()
+        repo.full_name = "owner/repo"
+        repo.get_commits.return_value = commits
+        mgr._repo = repo
+
+        ok, out = mgr.list_commits(limit=999)
+        assert ok is True
+        assert "[Son 100 Commit" in out
+
+    def test_read_remote_file_returns_directory_listing_when_path_is_dir(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        dir_item = MagicMock()
+        dir_item.type = "dir"
+        dir_item.name = "src"
+        file_item = MagicMock()
+        file_item.type = "file"
+        file_item.name = "README.md"
+
+        repo = MagicMock()
+        repo.get_contents.return_value = [dir_item, file_item]
+        mgr._repo = repo
+
+        ok, out = mgr.read_remote_file("docs")
+        assert ok is True
+        assert "[Dizin: docs]" in out
+        assert "📂 src" in out
+        assert "📄 README.md" in out
+
+    def test_read_remote_file_blocks_unsafe_extension(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        item = MagicMock()
+        item.name = "archive.zip"
+        item.decoded_content = b"pk.."
+        repo = MagicMock()
+        repo.get_contents.return_value = item
+        mgr._repo = repo
+
+        ok, out = mgr.read_remote_file("archive.zip")
+        assert ok is False
+        assert "desteklenmeyen" in out.lower() or "binary" in out.lower()
