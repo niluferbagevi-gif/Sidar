@@ -431,6 +431,29 @@ class TestMultimodalPipelineEdgeCases:
         assert result["success"] is False
         assert "Desteklenmeyen medya türü" in result["reason"]
 
+    def test_analyze_local_image_unsupported_format_from_vision_pipeline_raises(self, tmp_path, monkeypatch):
+        mm = _get_mm()
+        media_file = tmp_path / "photo.heic"
+        media_file.write_bytes(b"heic-dummy")
+
+        class _BrokenVisionPipeline:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def analyze(self, **_kwargs):
+                raise ValueError("unsupported image format: image/heic")
+
+        monkeypatch.setattr(mm, "detect_media_kind", lambda **_kwargs: "image")
+        monkeypatch.setitem(sys.modules, "core.vision", type("VMod", (), {"VisionPipeline": _BrokenVisionPipeline}))
+
+        pipeline = mm.MultimodalPipeline(
+            llm_client=AsyncMock(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True})(),
+        )
+
+        with pytest.raises(ValueError, match="unsupported image format"):
+            asyncio.run(pipeline._analyze_local_media(media_path=str(media_file), mime_type="image/heic"))
+
     def test_analyze_media_source_ffmpeg_fallback_to_download_remote(self, monkeypatch, tmp_path):
         mm = _get_mm()
         media_file = tmp_path / "fallback.mp4"
@@ -522,3 +545,25 @@ class TestMultimodalPipelineEdgeCases:
         assert result["frame_analyses"][0]["timestamp_seconds"] == 0.0
         assert "Frame analiz edildi" in result["frame_analyses"][1]["analysis"]
         assert "ürün tanıtımı" in result["transcript"]["text"]
+
+    def test_transcribe_bytes_broken_audio_decoder_error_is_propagated(self, monkeypatch):
+        mm = _get_mm()
+
+        async def _broken_transcribe(*_args, **_kwargs):
+            raise RuntimeError("audio decode failed: invalid header")
+
+        monkeypatch.setattr(mm, "transcribe_audio", _broken_transcribe)
+
+        pipeline = mm.MultimodalPipeline(
+            llm_client=AsyncMock(),
+            config=type("Cfg", (), {"ENABLE_MULTIMODAL": True, "MULTIMODAL_MAX_FILE_BYTES": 1024 * 1024})(),
+        )
+
+        with pytest.raises(RuntimeError, match="audio decode failed"):
+            asyncio.run(
+                pipeline.transcribe_bytes(
+                    b"broken-audio-bytes",
+                    mime_type="audio/wav",
+                    language="tr",
+                )
+            )

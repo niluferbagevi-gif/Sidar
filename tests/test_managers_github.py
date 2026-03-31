@@ -551,3 +551,29 @@ class TestGitHubManagerAdditionalServiceErrors:
         )
         assert ok is False
         assert "dosya okuma hatası" in message.lower()
+
+    def test_create_pull_request_handles_404_repo_not_found(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(default_branch="main")
+        repo.create_pull.side_effect = _GitHubHttpError(404, "Repository not found")
+        mgr._repo = repo
+
+        ok, message = mgr.create_pull_request("PR", "body", "feature/abc", "main")
+
+        assert ok is False
+        assert "pull request oluşturma hatası" in message.lower()
+        assert "repository not found" in message.lower()
+
+    def test_create_pull_request_handles_409_conflict_from_api(self):
+        gh = _get_gh()
+        mgr = gh.GitHubManager(token="")
+        repo = MagicMock(default_branch="main")
+        repo.create_pull.side_effect = _GitHubHttpError(409, "Conflict: base branch changed")
+        mgr._repo = repo
+
+        ok, message = mgr.create_pull_request("PR", "body", "feature/conflict", "main")
+
+        assert ok is False
+        assert "pull request oluşturma hatası" in message.lower()
+        assert "conflict" in message.lower()

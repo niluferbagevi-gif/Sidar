@@ -633,3 +633,31 @@ class TestBrowserSeleniumFailureEdges:
 
         assert mgr._audit_log[-1]["action"] == "browser_goto_url"
         assert mgr._audit_log[-1]["status"] == "execution_failed"
+
+    def test_click_element_selenium_missing_element_records_execution_failed(self):
+        bm = _get_bm()
+        mgr = bm.BrowserManager()
+
+        class _FakeDriver:
+            def find_element(self, *_args, **_kwargs):
+                raise RuntimeError("NoSuchElement: #missing")
+
+        session = bm.BrowserSession(
+            session_id="sel-click-missing",
+            provider="selenium",
+            browser_name="chrome",
+            headless=True,
+            started_at=1.0,
+            driver=_FakeDriver(),
+        )
+        mgr._sessions["sel-click-missing"] = session
+
+        by_module = types.SimpleNamespace(By=types.SimpleNamespace(CSS_SELECTOR="css"))
+        sys.modules["selenium.webdriver.common.by"] = by_module
+
+        import pytest
+        with pytest.raises(RuntimeError, match="NoSuchElement"):
+            mgr.click_element("sel-click-missing", "#missing")
+
+        assert mgr._audit_log[-1]["action"] == "browser_click"
+        assert mgr._audit_log[-1]["status"] == "execution_failed"
