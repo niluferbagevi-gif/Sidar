@@ -986,11 +986,26 @@ class TestSidarAgentContextAndSummaryEdges:
         )
         agent._execute_tool = AsyncMock(side_effect=RuntimeError("tool backend unavailable"))
 
+        class _ParsedAction:
+            def __init__(self, tool: str, argument: str):
+                self.tool = tool
+                self.argument = argument
+
+        class _ToolCallStub:
+            @staticmethod
+            def model_validate_json(_raw: str):
+                return _ParsedAction("read_file", "README.md")
+
+            @staticmethod
+            def model_validate(_data):
+                return _ParsedAction("read_file", "README.md")
+
         async def _run_case():
-            result = await agent._tool_subtask("dosyayı oku")
-            assert "Maksimum adım sınırı" in result
-            assert agent.llm.chat.await_count == 2
-            assert agent._execute_tool.await_count == 2
+            with patch.object(sa, "ToolCall", _ToolCallStub):
+                result = await agent._tool_subtask("dosyayı oku")
+                assert "Maksimum adım sınırı" in result
+                assert agent.llm.chat.await_count == 2
+                assert agent._execute_tool.await_count == 2
 
         asyncio.run(_run_case())
 
