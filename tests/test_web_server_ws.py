@@ -11,6 +11,86 @@ from tests.test_web_server import _get_web_server
 
 
 class TestWebServerWsHelpers:
+    def test_websocket_chat_rejects_invalid_header_token(self, monkeypatch):
+        ws = _get_web_server()
+
+        fake_agent = types.SimpleNamespace(memory=types.SimpleNamespace(set_active_user=AsyncMock()))
+
+        async def _fake_get_agent():
+            return fake_agent
+
+        async def _fake_resolve_user(_agent, _token):
+            return None
+
+        monkeypatch.setattr(ws, "get_agent", _fake_get_agent)
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _fake_resolve_user)
+
+        class _FakeWebSocket:
+            def __init__(self):
+                self.headers = {"sec-websocket-protocol": "invalid-token"}
+                self.client = types.SimpleNamespace(host="127.0.0.1")
+                self.closed = []
+
+            async def accept(self, **_kwargs):
+                return None
+
+            async def close(self, code, reason):
+                self.closed.append((code, reason))
+
+            async def send_json(self, _payload):
+                return None
+
+        fake_ws = _FakeWebSocket()
+        asyncio.run(ws.websocket_chat(fake_ws))
+
+        assert fake_ws.closed == [(1008, "Invalid or expired token")]
+
+    def test_websocket_chat_invalid_room_id_sends_terminal_error(self, monkeypatch):
+        ws = _get_web_server()
+
+        class _Disconnect(Exception):
+            pass
+
+        ws.WebSocketDisconnect = _Disconnect
+        fake_user = types.SimpleNamespace(id="u1", username="alice", role="user")
+        fake_agent = types.SimpleNamespace(memory=types.SimpleNamespace(set_active_user=AsyncMock()))
+
+        async def _fake_get_agent():
+            return fake_agent
+
+        async def _fake_resolve_user(_agent, _token):
+            return fake_user
+
+        monkeypatch.setattr(ws, "get_agent", _fake_get_agent)
+        monkeypatch.setattr(ws, "_resolve_user_from_token", _fake_resolve_user)
+
+        class _FakeWebSocket:
+            def __init__(self):
+                self.headers = {}
+                self.client = types.SimpleNamespace(host="127.0.0.1")
+                self.sent = []
+                self._messages = iter(
+                    [
+                        '{"action":"auth","token":"ok-token"}',
+                        '{"action":"join_room","room_id":"bad room id"}',
+                    ]
+                )
+
+            async def accept(self, **_kwargs):
+                return None
+
+            async def receive_text(self):
+                return next(self._messages)
+
+            async def send_json(self, payload):
+                self.sent.append(payload)
+
+        fake_ws = _FakeWebSocket()
+        asyncio.run(ws.websocket_chat(fake_ws))
+
+        assert any(payload.get("auth_ok") is True for payload in fake_ws.sent)
+        assert any(payload.get("error") == "WebSocket oturumu beklenmedik şekilde sonlandı." for payload in fake_ws.sent)
+
     def test_websocket_voice_returns_error_when_multimodal_module_missing(self, monkeypatch):
         ws = _get_web_server()
         monkeypatch.setitem(sys.modules, "core.multimodal", types.ModuleType("core.multimodal"))
