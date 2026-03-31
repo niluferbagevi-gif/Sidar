@@ -26,6 +26,7 @@ import tempfile
 import types
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -54,9 +55,8 @@ def _get_db_module():
         BASE_DIR = Path(tempfile.gettempdir())
 
     cfg_mod.Config = _Cfg
-    sys.modules["config"] = cfg_mod
-
-    import core.db as db
+    with patch.dict(sys.modules, {"config": cfg_mod}):
+        import core.db as db
     return db
 
 
@@ -77,8 +77,6 @@ def _fresh_db(tmp_path: Path):
         JWT_ALGORITHM = "HS256"
         JWT_TTL_DAYS = 1
         BASE_DIR = tmp_path
-
-    sys.modules["config"].Config = _Cfg
 
     # Monkey-patch ensure_default_prompt_registry to be a no-op (avoids
     # reading agent/definitions.py which may not exist in test env)
@@ -259,7 +257,6 @@ class TestDatabaseConfig:
             DB_SCHEMA_TARGET_VERSION = 1
             BASE_DIR = Path(tempfile.gettempdir())
 
-        sys.modules["config"].Config = _Cfg
         instance = db.Database(_Cfg())
         assert instance._backend == "sqlite"
 
@@ -273,7 +270,6 @@ class TestDatabaseConfig:
             DB_SCHEMA_TARGET_VERSION = 1
             BASE_DIR = Path(tempfile.gettempdir())
 
-        sys.modules["config"].Config = _Cfg
         instance = db.Database(_Cfg())
         assert instance._backend == "postgresql"
 
@@ -287,7 +283,6 @@ class TestDatabaseConfig:
                 DB_SCHEMA_TARGET_VERSION = 1
                 BASE_DIR = Path(td)
 
-            sys.modules["config"].Config = _Cfg
             instance = db.Database(_Cfg())
             assert instance._sqlite_path is not None
             assert str(instance._sqlite_path).endswith("mydb.db")

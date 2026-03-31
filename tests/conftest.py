@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import importlib
 import importlib.util
 import json
 from pathlib import Path
@@ -233,6 +234,25 @@ except Exception:
 @pytest.fixture(autouse=True)
 def _restore_critical_modules_between_tests():
     """Bazı testlerin sys.modules üzerinde bıraktığı stub modülleri test sonunda geri al."""
+    def _reload_real_config_module() -> None:
+        """config modülünü gerçek dosyadan yeniden yükle (stub sızıntısını engelle)."""
+        cfg = sys.modules.get("config")
+        try:
+            if cfg is None:
+                importlib.import_module("config")
+                return
+            cfg_file = getattr(cfg, "__file__", "")
+            # Stub modüllerde __file__ olmaz; gerçek modül için reload, stub için fresh import.
+            if cfg_file and Path(cfg_file).name == "config.py":
+                importlib.reload(cfg)
+            else:
+                sys.modules.pop("config", None)
+                importlib.import_module("config")
+        except Exception:
+            # Bazı testler config import'unu bilinçli olarak kırabilir; fixture testleri engellemesin.
+            pass
+
+    _reload_real_config_module()
     _ensure_config_contract()
     module_names = (
         "config",
@@ -294,6 +314,7 @@ def _restore_critical_modules_between_tests():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+        _reload_real_config_module()
         _ensure_config_contract()
 
 

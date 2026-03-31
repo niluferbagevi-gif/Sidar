@@ -75,45 +75,44 @@ def _install_stubs():
     if "pgvector" not in sys.modules:
         sys.modules["pgvector"] = types.ModuleType("pgvector")
 
-    # Config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
+    # Config stub (her çağrıda taze; kirli config'i devralma)
+    cfg_mod = types.ModuleType("config")
 
-        class _Cfg:
-            DATABASE_URL = ""
-            CHROMA_PERSIST_DIRECTORY = "data/chroma"
-            USE_GPU = False
-            GPU_MIXED_PRECISION = False
-            GPU_DEVICE = 0
-            RAG_CHUNK_SIZE = 512
-            RAG_CHUNK_OVERLAP = 50
-            RAG_TOP_K = 3
-            RAG_DIR = "/tmp/rag_test"
-            PGVECTOR_TABLE = "rag_embeddings"
-            PGVECTOR_EMBEDDING_DIM = 384
-            PGVECTOR_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-            RAG_VECTOR_BACKEND = "chroma"
-            AI_PROVIDER = "openai"
-            RAG_LOCAL_ENABLE_HYBRID = False
-            ENABLE_GRAPH_RAG = False
-            BASE_DIR = Path("/tmp")
-            GRAPH_RAG_MAX_FILES = 5000
-            HF_TOKEN = ""
-            HF_HUB_OFFLINE = False
-            RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER = 1
-            SEARCH_ENGINE = "auto"
-            TAVILY_API_KEY = ""
-            GOOGLE_SEARCH_API_KEY = ""
-            GOOGLE_SEARCH_CX = ""
-            WEB_SEARCH_MAX_RESULTS = 5
-            WEB_FETCH_TIMEOUT = 15
-            WEB_SCRAPE_MAX_CHARS = 12000
-            ENABLE_ENTITY_MEMORY = False
-            ENTITY_MEMORY_TTL_DAYS = 90
-            ENTITY_MEMORY_MAX_PER_USER = 100
+    class _Cfg:
+        DATABASE_URL = ""
+        CHROMA_PERSIST_DIRECTORY = "data/chroma"
+        USE_GPU = False
+        GPU_MIXED_PRECISION = False
+        GPU_DEVICE = 0
+        RAG_CHUNK_SIZE = 512
+        RAG_CHUNK_OVERLAP = 50
+        RAG_TOP_K = 3
+        RAG_DIR = "/tmp/rag_test"
+        PGVECTOR_TABLE = "rag_embeddings"
+        PGVECTOR_EMBEDDING_DIM = 384
+        PGVECTOR_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+        RAG_VECTOR_BACKEND = "chroma"
+        AI_PROVIDER = "openai"
+        RAG_LOCAL_ENABLE_HYBRID = False
+        ENABLE_GRAPH_RAG = False
+        BASE_DIR = Path("/tmp")
+        GRAPH_RAG_MAX_FILES = 5000
+        HF_TOKEN = ""
+        HF_HUB_OFFLINE = False
+        RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER = 1
+        SEARCH_ENGINE = "auto"
+        TAVILY_API_KEY = ""
+        GOOGLE_SEARCH_API_KEY = ""
+        GOOGLE_SEARCH_CX = ""
+        WEB_SEARCH_MAX_RESULTS = 5
+        WEB_FETCH_TIMEOUT = 15
+        WEB_SCRAPE_MAX_CHARS = 12000
+        ENABLE_ENTITY_MEMORY = False
+        ENTITY_MEMORY_TTL_DAYS = 90
+        ENTITY_MEMORY_MAX_PER_USER = 100
 
-        cfg_mod.Config = _Cfg
-        sys.modules["config"] = cfg_mod
+    cfg_mod.Config = _Cfg
+    sys.modules["config"] = cfg_mod
 
     # core.judge stub
     judge_mod = types.ModuleType("core.judge")

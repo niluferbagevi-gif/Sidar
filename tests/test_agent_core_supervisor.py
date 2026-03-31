@@ -36,18 +36,17 @@ def _stub_supervisor_deps():
             core_pkg.__path__ = [str(_proj / "agent" / "core")]
             core_pkg.__package__ = "agent.core"
 
-    # config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
+    # config stub (her çağrıda taze; kirli config'i devralma)
+    cfg_mod = types.ModuleType("config")
 
-        class _Config:
-            AI_PROVIDER = "ollama"
-            OLLAMA_MODEL = "qwen2.5-coder:7b"
-            REACT_TIMEOUT = 60
-            MAX_QA_RETRIES = 3
+    class _Config:
+        AI_PROVIDER = "ollama"
+        OLLAMA_MODEL = "qwen2.5-coder:7b"
+        REACT_TIMEOUT = 60
+        MAX_QA_RETRIES = 3
 
-        cfg_mod.Config = _Config
-        sys.modules["config"] = cfg_mod
+    cfg_mod.Config = _Config
+    sys.modules["config"] = cfg_mod
 
     # core/core.llm_client stubs
     for mod in ("core", "core.llm_client"):
@@ -155,21 +154,20 @@ def _stub_supervisor_deps():
         sys.modules["agent.core.event_stream"] = es_mod
 
     # agent.base_agent stub
-    if "agent.base_agent" not in sys.modules:
-        ba_mod = types.ModuleType("agent.base_agent")
+    ba_mod = types.ModuleType("agent.base_agent")
 
-        class _BaseAgent:
-            def __init__(self, *args, cfg=None, role_name="base", **kwargs):
-                self.cfg = cfg or sys.modules["config"].Config()
-                self.role_name = role_name
-                self.llm = MagicMock()
-                self.tools = {}
+    class _BaseAgent:
+        def __init__(self, *args, cfg=None, role_name="base", **kwargs):
+            self.cfg = cfg or sys.modules["config"].Config()
+            self.role_name = role_name
+            self.llm = MagicMock()
+            self.tools = {}
 
-            async def run_task(self, task_prompt: str):
-                return f"stub: {task_prompt}"
+        async def run_task(self, task_prompt: str):
+            return f"stub: {task_prompt}"
 
-        ba_mod.BaseAgent = _BaseAgent
-        sys.modules["agent.base_agent"] = ba_mod
+    ba_mod.BaseAgent = _BaseAgent
+    sys.modules["agent.base_agent"] = ba_mod
 
     # role agent stubs
     for role_mod, cls_name in [
@@ -183,20 +181,19 @@ def _stub_supervisor_deps():
         parent = role_mod.rsplit(".", 1)[0]
         if "agent.roles" not in sys.modules:
             sys.modules["agent.roles"] = types.ModuleType("agent.roles")
-        if role_mod not in sys.modules:
-            mod = types.ModuleType(role_mod)
-            base = sys.modules["agent.base_agent"].BaseAgent
+        mod = types.ModuleType(role_mod)
+        base = sys.modules["agent.base_agent"].BaseAgent
 
-            def _make_cls(cn, b):
-                class _RoleAgent(b):
-                    async def run_task(self, p):
-                        return f"{cn}: {p}"
-                _RoleAgent.__name__ = cn
-                _RoleAgent.__qualname__ = cn
-                return _RoleAgent
+        def _make_cls(cn, b):
+            class _RoleAgent(b):
+                async def run_task(self, p):
+                    return f"{cn}: {p}"
+            _RoleAgent.__name__ = cn
+            _RoleAgent.__qualname__ = cn
+            return _RoleAgent
 
-            setattr(mod, cls_name, _make_cls(cls_name, base))
-            sys.modules[role_mod] = mod
+        setattr(mod, cls_name, _make_cls(cls_name, base))
+        sys.modules[role_mod] = mod
 
     # opentelemetry stub (isteğe bağlı)
     if "opentelemetry" not in sys.modules:
@@ -498,4 +495,3 @@ class TestSupervisorMaxQaRetries:
             assert "P2P:STOP" in result or "limit aşıldı" in result or "Reviewer QA Özeti" in result
         import asyncio as _asyncio
         _asyncio.run(_run())
-

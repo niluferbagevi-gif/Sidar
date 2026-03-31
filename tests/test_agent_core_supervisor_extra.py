@@ -36,17 +36,16 @@ def _stub_supervisor_deps():
             core_pkg.__path__ = [str(_proj / "agent" / "core")]
             core_pkg.__package__ = "agent.core"
 
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
+    cfg_mod = types.ModuleType("config")
 
-        class _Config:
-            AI_PROVIDER = "ollama"
-            OLLAMA_MODEL = "qwen2.5-coder:7b"
-            REACT_TIMEOUT = 60
-            MAX_QA_RETRIES = 3
+    class _Config:
+        AI_PROVIDER = "ollama"
+        OLLAMA_MODEL = "qwen2.5-coder:7b"
+        REACT_TIMEOUT = 60
+        MAX_QA_RETRIES = 3
 
-        cfg_mod.Config = _Config
-        sys.modules["config"] = cfg_mod
+    cfg_mod.Config = _Config
+    sys.modules["config"] = cfg_mod
 
     for mod in ("core", "core.llm_client"):
         if mod not in sys.modules:
@@ -144,21 +143,20 @@ def _stub_supervisor_deps():
         es_mod.get_agent_event_bus = MagicMock(return_value=_bus)
         sys.modules["agent.core.event_stream"] = es_mod
 
-    if "agent.base_agent" not in sys.modules:
-        ba_mod = types.ModuleType("agent.base_agent")
+    ba_mod = types.ModuleType("agent.base_agent")
 
-        class _BaseAgent:
-            def __init__(self, *args, cfg=None, role_name="base", **kwargs):
-                self.cfg = cfg or sys.modules["config"].Config()
-                self.role_name = role_name
-                self.llm = MagicMock()
-                self.tools = {}
+    class _BaseAgent:
+        def __init__(self, *args, cfg=None, role_name="base", **kwargs):
+            self.cfg = cfg or sys.modules["config"].Config()
+            self.role_name = role_name
+            self.llm = MagicMock()
+            self.tools = {}
 
-            async def run_task(self, task_prompt: str):
-                return f"stub: {task_prompt}"
+        async def run_task(self, task_prompt: str):
+            return f"stub: {task_prompt}"
 
-        ba_mod.BaseAgent = _BaseAgent
-        sys.modules["agent.base_agent"] = ba_mod
+    ba_mod.BaseAgent = _BaseAgent
+    sys.modules["agent.base_agent"] = ba_mod
 
     for role_mod, cls_name in [
         ("agent.roles.coder_agent", "CoderAgent"),
@@ -170,20 +168,19 @@ def _stub_supervisor_deps():
     ]:
         if "agent.roles" not in sys.modules:
             sys.modules["agent.roles"] = types.ModuleType("agent.roles")
-        if role_mod not in sys.modules:
-            mod = types.ModuleType(role_mod)
-            base = sys.modules["agent.base_agent"].BaseAgent
+        mod = types.ModuleType(role_mod)
+        base = sys.modules["agent.base_agent"].BaseAgent
 
-            def _make_cls(cn, b):
-                class _RoleAgent(b):
-                    async def run_task(self, p):
-                        return f"{cn}: {p}"
-                _RoleAgent.__name__ = cn
-                _RoleAgent.__qualname__ = cn
-                return _RoleAgent
+        def _make_cls(cn, b):
+            class _RoleAgent(b):
+                async def run_task(self, p):
+                    return f"{cn}: {p}"
+            _RoleAgent.__name__ = cn
+            _RoleAgent.__qualname__ = cn
+            return _RoleAgent
 
-            setattr(mod, cls_name, _make_cls(cls_name, base))
-            sys.modules[role_mod] = mod
+        setattr(mod, cls_name, _make_cls(cls_name, base))
+        sys.modules[role_mod] = mod
 
     if "opentelemetry" not in sys.modules:
         otel_mod = types.ModuleType("opentelemetry")

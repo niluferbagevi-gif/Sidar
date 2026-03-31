@@ -34,17 +34,16 @@ def _stub_qa_deps():
         contracts.is_delegation_request = lambda v: False
         sys.modules["agent.core.contracts"] = contracts
 
-    # config stub
-    if "config" not in sys.modules:
-        cfg_mod = types.ModuleType("config")
-        class _Config:
-            AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
-            BASE_DIR = "/tmp/sidar_test"
-            USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
-            RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
-            RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
-        cfg_mod.Config = _Config
-        sys.modules["config"] = cfg_mod
+    # config stub (her çağrıda taze; kirli config'i devralma)
+    cfg_mod = types.ModuleType("config")
+    class _Config:
+        AI_PROVIDER = "ollama"; OLLAMA_MODEL = "qwen2.5-coder:7b"
+        BASE_DIR = "/tmp/sidar_test"
+        USE_GPU = False; GPU_DEVICE = 0; GPU_MIXED_PRECISION = False
+        RAG_DIR = "/tmp/sidar_test/rag"; RAG_TOP_K = 3
+        RAG_CHUNK_SIZE = 1000; RAG_CHUNK_OVERLAP = 200
+    cfg_mod.Config = _Config
+    sys.modules["config"] = cfg_mod
 
     # core stubs
     for mod in ("core", "core.llm_client", "core.ci_remediation"):
@@ -70,22 +69,21 @@ def _stub_qa_deps():
             mock_inst.grep_files = MagicMock(return_value=(True, "grep sonucu"))
             sys.modules[mod].__dict__[cls] = MagicMock(return_value=mock_inst)
 
-    # agent.base_agent stub
-    if "agent.base_agent" not in sys.modules:
-        ba_mod = types.ModuleType("agent.base_agent")
-        class _BaseAgent:
-            def __init__(self, *a, cfg=None, role_name="base", **kw):
-                self.cfg = cfg or sys.modules["config"].Config()
-                self.role_name = role_name
-                self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value="llm yanıtı")
-                self.tools = {}
-            def register_tool(self, name, fn): self.tools[name] = fn
-            async def call_tool(self, name, arg):
-                if name not in self.tools: return f"HATA: {name} bulunamadı"
-                return await self.tools[name](arg)
-            async def call_llm(self, msgs, system_prompt=None, temperature=0.7, **kw): return "llm test kodu"
-        ba_mod.BaseAgent = _BaseAgent
-        sys.modules["agent.base_agent"] = ba_mod
+    # agent.base_agent stub (her çağrıda taze)
+    ba_mod = types.ModuleType("agent.base_agent")
+    class _BaseAgent:
+        def __init__(self, *a, cfg=None, role_name="base", **kw):
+            self.cfg = cfg or sys.modules["config"].Config()
+            self.role_name = role_name
+            self.llm = MagicMock(); self.llm.chat = AsyncMock(return_value="llm yanıtı")
+            self.tools = {}
+        def register_tool(self, name, fn): self.tools[name] = fn
+        async def call_tool(self, name, arg):
+            if name not in self.tools: return f"HATA: {name} bulunamadı"
+            return await self.tools[name](arg)
+        async def call_llm(self, msgs, system_prompt=None, temperature=0.7, **kw): return "llm test kodu"
+    ba_mod.BaseAgent = _BaseAgent
+    sys.modules["agent.base_agent"] = ba_mod
 
 
 def _get_qa():
@@ -320,4 +318,3 @@ class TestQAAgentRunTask:
             assert "edge case context" in prompt_text
         import asyncio as _asyncio
         _asyncio.run(_run())
-

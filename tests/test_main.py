@@ -592,7 +592,10 @@ class TestExecuteCommand:
             with patch("builtins.print"):
                 result = m.execute_command(cmd)
         assert result == 0
-        mock_run.assert_called_once_with(cmd, check=True)
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("check") is True
+        assert kwargs.get("cwd") == str(Path.cwd())
 
     def test_failed_run_returns_nonzero(self):
         m = _get_main()
