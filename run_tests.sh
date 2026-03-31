@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"
+COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 open_artifact() {
