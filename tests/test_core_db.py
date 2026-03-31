@@ -451,6 +451,44 @@ class TestDatabaseErrorAndAsyncFlows:
 
         asyncio.run(_scenario())
 
+    def test_connect_postgresql_raises_runtime_error_when_asyncpg_missing(self, monkeypatch):
+        db_mod = _get_db()
+
+        class _Cfg:
+            DATABASE_URL = "postgresql://user:pass@db.local/sidar"
+            DB_POOL_SIZE = 5
+            DB_SCHEMA_VERSION_TABLE = "schema_versions"
+            DB_SCHEMA_TARGET_VERSION = 1
+
+        monkeypatch.setitem(sys.modules, "asyncpg", None)
+        database = db_mod.Database(cfg=_Cfg())
+
+        async def _scenario():
+            with pytest.raises(RuntimeError, match="asyncpg bağımlılığı gerekli"):
+                await database.connect()
+
+        asyncio.run(_scenario())
+
+    def test_connect_sqlite_propagates_operational_error_when_database_locked(self, monkeypatch):
+        db_mod = _get_db()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database = self._make_sqlite_db(db_mod, tmpdir)
+            real_connect = db_mod.sqlite3.connect
+
+            def _locked_connect(*args, **kwargs):
+                del args, kwargs
+                raise sqlite3.OperationalError("database is locked")
+
+            monkeypatch.setattr(db_mod.sqlite3, "connect", _locked_connect)
+
+            async def _scenario():
+                with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                    await database.connect()
+
+            asyncio.run(_scenario())
+            monkeypatch.setattr(db_mod.sqlite3, "connect", real_connect)
+
     def test_ensure_schema_version_sqlite_applies_missing_versions(self):
         async def _scenario():
             db_mod = _get_db()
