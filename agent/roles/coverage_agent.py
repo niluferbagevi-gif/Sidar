@@ -66,7 +66,9 @@ class CoverageAgent(BaseAgent):
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            return {"command": text}
+            if re.match(r"^(pytest|python\s+-m\s+pytest)\b", text, re.IGNORECASE):
+                return {"command": text}
+            return {"instruction": text, "command": "pytest -q"}
         return parsed if isinstance(parsed, dict) else {"command": text}
 
     @staticmethod

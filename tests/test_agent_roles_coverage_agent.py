@@ -190,6 +190,14 @@ class TestParsePayload:
         result = m.CoverageAgent._parse_payload("pytest --tb=short")
         assert result.get("command") == "pytest --tb=short"
 
+    def test_natural_language_instruction_defaults_to_safe_pytest_command(self):
+        m = _get_coverage()
+        result = m.CoverageAgent._parse_payload(
+            "test_agent_definitions.py dosyasını analiz et ve trivial testleri iyileştir"
+        )
+        assert result.get("instruction")
+        assert result.get("command") == "pytest -q"
+
     def test_json_array_falls_back_to_command_key(self):
         m = _get_coverage()
         result = m.CoverageAgent._parse_payload('["a","b"]')
