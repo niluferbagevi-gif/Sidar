@@ -435,7 +435,8 @@ class TestMaybeRecordFeedback:
 
     def test_returns_false_when_auto_feedback_disabled(self):
         judge = _get_judge(extra_env={"JUDGE_AUTO_FEEDBACK_ENABLED": "false"})
-        j = judge.LLMJudge()
+        with patch.dict(os.environ, {"JUDGE_AUTO_FEEDBACK_ENABLED": "false"}):
+            j = judge.LLMJudge()
         result = self._make_result(judge)
 
         ok = _run(j._maybe_record_feedback(
@@ -445,7 +446,8 @@ class TestMaybeRecordFeedback:
 
     def test_returns_false_when_quality_above_threshold(self):
         judge = _get_judge(extra_env={"JUDGE_AUTO_FEEDBACK_THRESHOLD": "5.0"})
-        j = judge.LLMJudge()
+        with patch.dict(os.environ, {"JUDGE_AUTO_FEEDBACK_THRESHOLD": "5.0"}):
+            j = judge.LLMJudge()
         # quality_score_10 yüksek olsun: relevance=1.0, hallucination=0.0 → 10.0
         result = judge.JudgeResult(
             relevance_score=1.0,
@@ -704,6 +706,31 @@ class TestScheduleBackgroundEvaluation:
         # Event loop dışından çağır
         j.schedule_background_evaluation("query", ["doc"])
         # Hata fırlatılmamalı
+
+    def test_background_cancelled_error_propagates_within_task(self):
+        """CancelledError arka plan görevinde raise edilmeli (satır 423)."""
+        judge = _get_judge()
+        j = judge.LLMJudge()
+        j._should_evaluate = MagicMock(return_value=True)
+
+        cancel_reached = []
+
+        async def _run_test():
+            cancelled_ev = asyncio.Event()
+
+            async def _raising_eval_rag(query, docs, answer=None):
+                cancel_reached.append(True)
+                cancelled_ev.set()
+                raise asyncio.CancelledError()
+
+            j.evaluate_rag = _raising_eval_rag
+            j.schedule_background_evaluation("query", ["doc"])
+            # Görevin çalışması için bekle
+            await asyncio.wait_for(cancelled_ev.wait(), timeout=2.0)
+            await asyncio.sleep(0.05)
+
+        _run(_run_test())
+        assert cancel_reached, "evaluate_rag çağrılmadı"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
