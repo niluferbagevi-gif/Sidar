@@ -13,6 +13,8 @@ import sys
 import types
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 
 def _get_llm_client():
     # redis stub — redis.asyncio optional
@@ -2464,6 +2466,124 @@ class Extra_TestOpenAIClient:
         client = lc.OpenAIClient(cfg)
         cfg_res = client.json_mode_config()
         assert cfg_res.get("response_format", {}).get("type") == "json_schema"
+
+    def test_chat_http_429_raises_retryable_llm_api_error(self):
+        lc = _get_llm_client()
+        cfg = _make_config(OPENAI_API_KEY="test-key", LLM_MAX_RETRIES=0)
+
+        class _FakeClient:
+            def __init__(self2, *a, **kw):
+                pass
+
+            async def __aenter__(self2):
+                return self2
+
+            async def __aexit__(self2, *a):
+                return False
+
+            async def post(self2, *a, **kw):
+                err = RuntimeError("429 rate limit")
+                err.status_code = 429
+                raise err
+
+        import httpx
+
+        orig = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = _FakeClient
+            client = lc.OpenAIClient(cfg)
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "hello"}]))
+        finally:
+            httpx.AsyncClient = orig
+
+        assert exc_info.value.provider == "openai"
+        assert exc_info.value.retryable is True
+        assert exc_info.value.status_code == 429
+
+    def test_chat_empty_content_is_wrapped_in_json_mode(self):
+        lc = _get_llm_client()
+        cfg = _make_config(OPENAI_API_KEY="test-key")
+        FakeCls = self._make_fake_client_cls(
+            {
+                "choices": [{"message": {"content": ""}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 0},
+            }
+        )
+        import httpx
+
+        orig = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = FakeCls
+            client = lc.OpenAIClient(cfg)
+            result = _run(client.chat([{"role": "user", "content": "hello"}], json_mode=True))
+        finally:
+            httpx.AsyncClient = orig
+
+        assert '"tool": "final_answer"' in result
+
+
+class Extra_TestProviderErrorHandlingViaHttpx:
+    def test_ollama_chat_malformed_json_response_raises_llm_api_error(self):
+        lc = _get_llm_client()
+        cfg = _make_config(LLM_MAX_RETRIES=0)
+
+        class _BadJsonClient:
+            def __init__(self2, *a, **kw):
+                pass
+
+            async def __aenter__(self2):
+                return self2
+
+            async def __aexit__(self2, *a):
+                return False
+
+            async def post(self2, *a, **kw):
+                resp = MagicMock()
+                resp.raise_for_status = MagicMock()
+                resp.json.side_effect = ValueError("invalid json payload")
+                return resp
+
+        import httpx
+
+        orig = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = _BadJsonClient
+            client = lc.OllamaClient(cfg)
+            with pytest.raises(lc.LLMAPIError) as exc_info:
+                _run(client.chat([{"role": "user", "content": "hi"}]))
+        finally:
+            httpx.AsyncClient = orig
+
+        assert exc_info.value.provider == "ollama"
+        assert "invalid json payload" in str(exc_info.value)
+
+    def test_gemini_chat_empty_text_is_json_wrapped(self):
+        lc = _get_llm_client()
+        cfg = _make_config(GEMINI_API_KEY="gem-key", GEMINI_MODEL="gemini-1.5-flash")
+        client = lc.GeminiClient(cfg)
+
+        class _FakeChatSession:
+            async def send_message_async(self, *_args, **_kwargs):
+                return types.SimpleNamespace(text="")
+
+        class _FakeGenerativeModel:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start_chat(self, history=None):
+                return _FakeChatSession()
+
+        genai_stub = types.ModuleType("google.generativeai")
+        genai_stub.configure = MagicMock()
+        genai_stub.GenerativeModel = _FakeGenerativeModel
+        google_stub = types.ModuleType("google")
+        google_stub.generativeai = genai_stub
+
+        with patch.dict(sys.modules, {"google": google_stub, "google.generativeai": genai_stub}):
+            result = _run(client.chat([{"role": "user", "content": "soru"}], json_mode=True))
+
+        assert '"tool": "final_answer"' in result
 
 
 # ══════════════════════════════════════════════════════════════

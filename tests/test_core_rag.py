@@ -707,6 +707,81 @@ class TestDocumentStorePgvectorAndChunkingEdgeCases:
         _, store = TestDocumentStoreChunkingAndFallback()._build_store(monkeypatch, tmp_path)
         assert store._chunk_text("abcdef", chunk_size=0, chunk_overlap=1) == []
 
+    def test_upsert_pgvector_chunks_executes_delete_and_insert(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._pgvector_available = True
+            store._pg_table = "rag_embeddings"
+            store._format_vector_for_sql = lambda vec: ",".join(str(v) for v in vec)
+            monkeypatch.setattr(store, "_pgvector_embed_texts", lambda chunks: [[0.1, 0.2] for _ in chunks])
+
+            executed = []
+
+            class _Conn:
+                def execute(self, stmt, params=None):
+                    executed.append((stmt, params))
+
+            class _BeginCtx:
+                def __enter__(self):
+                    return _Conn()
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+            store.pg_engine = types.SimpleNamespace(begin=lambda: _BeginCtx())
+            monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda q: q))
+
+            rag.DocumentStore._upsert_pgvector_chunks(
+                store,
+                doc_id="doc-1",
+                parent_id="parent-1",
+                session_id="s1",
+                title="Başlık",
+                source="file://x",
+                chunks=["parça-a", "parça-b"],
+            )
+
+            assert len(executed) == 2
+            delete_stmt, delete_params = executed[0]
+            insert_stmt, insert_rows = executed[1]
+            assert "DELETE FROM rag_embeddings" in delete_stmt
+            assert delete_params == {"parent_id": "parent-1", "session_id": "s1"}
+            assert "INSERT INTO rag_embeddings" in insert_stmt
+            assert isinstance(insert_rows, list)
+            assert len(insert_rows) == 2
+            assert insert_rows[0]["embedding"] == "0.1,0.2"
+
+    def test_delete_pgvector_parent_executes_delete_when_backend_available(self, monkeypatch):
+        rag = _get_rag()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = _make_store_stub(rag, Path(tmpdir))
+            store._pgvector_available = True
+            store._pg_table = "rag_embeddings"
+
+            executed = []
+
+            class _Conn:
+                def execute(self, stmt, params=None):
+                    executed.append((stmt, params))
+
+            class _BeginCtx:
+                def __enter__(self):
+                    return _Conn()
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+            store.pg_engine = types.SimpleNamespace(begin=lambda: _BeginCtx())
+            monkeypatch.setitem(sys.modules, "sqlalchemy", types.SimpleNamespace(text=lambda q: q))
+
+            rag.DocumentStore._delete_pgvector_parent(store, "parent-x", "sess-2")
+
+            assert len(executed) == 1
+            stmt, params = executed[0]
+            assert "DELETE FROM rag_embeddings" in stmt
+            assert params == {"parent_id": "parent-x", "session_id": "sess-2"}
+
 
 class TestDocumentStoreAddDocumentErrorPaths:
     def test_add_document_sync_handles_chroma_upsert_exception(self, monkeypatch):

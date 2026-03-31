@@ -642,10 +642,12 @@ class SwarmOrchestrator:
 
             for attempt in range(max_retries + 1):
                 try:
-                    if hasattr(agent, "handle"):
-                        result = await agent.handle(envelope)
-                    elif hasattr(agent, "run_task"):
-                        legacy_summary = await agent.run_task(envelope.goal)
+                    handle_fn = getattr(agent, "handle", None)
+                    run_task_fn = getattr(agent, "run_task", None)
+                    if callable(handle_fn):
+                        result = await handle_fn(envelope)
+                    elif callable(run_task_fn):
+                        legacy_summary = await run_task_fn(envelope.goal)
                         result = TaskResult(
                             task_id=envelope.task_id,
                             status="success",
@@ -695,7 +697,7 @@ class SwarmOrchestrator:
                 task.task_id, spec.role_name, elapsed, result.status,
             )
             if result.status == "success":
-                self._schedule_autonomous_feedback(
+                feedback_job = self._schedule_autonomous_feedback(
                     prompt=task.goal,
                     response=str(result.summary),
                     context={
@@ -709,6 +711,8 @@ class SwarmOrchestrator:
                     agent_role=spec.role_name,
                     task_id=task.task_id,
                 )
+                if asyncio.iscoroutine(feedback_job):
+                    await feedback_job
             return SwarmResult(
                 task_id=task.task_id,
                 agent_role=spec.role_name,
