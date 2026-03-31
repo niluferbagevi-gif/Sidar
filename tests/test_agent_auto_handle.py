@@ -587,3 +587,11 @@ class TestAutoHandleErrorBranches:
         handled, response = await handler.handle("belge deposuna ekle")
         assert handled is False
         assert response == ""
+
+    @pytest.mark.asyncio
+    async def test_handle_very_long_unrecognized_input_falls_back_to_react(self):
+        handler, *_ = _make_auto_handle()
+        text = "x" * 2101
+        handled, response = await handler.handle(text)
+        assert handled is False
+        assert response == ""
