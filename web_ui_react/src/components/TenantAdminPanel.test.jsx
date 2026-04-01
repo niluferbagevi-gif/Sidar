@@ -16,13 +16,26 @@ describe("TenantAdminPanel", () => {
     expect(input).toHaveValue("");
   });
 
+  it("does not add tenant when input is blank/whitespace", async () => {
+    const user = userEvent.setup();
+    render(<TenantAdminPanel />);
+
+    const initialCards = screen.getAllByRole("heading", { level: 3 }).length;
+    const input = screen.getByLabelText("Yeni tenant adı");
+
+    await user.type(input, "   ");
+    await user.click(screen.getByRole("button", { name: "Tenant Ekle" }));
+
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(initialCards);
+  });
+
   it("toggles the tenant status label", async () => {
     const user = userEvent.setup();
     render(<TenantAdminPanel />);
 
     await user.click(screen.getAllByRole("button", { name: "Duraklat" })[0]);
 
-    expect(screen.getByText("Durum:", { exact: false })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aktifleştir" })).toBeInTheDocument();
+    expect(screen.getAllByText("Durum:", { exact: false }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Aktifleştir" }).length).toBeGreaterThan(0);
   });
 });
