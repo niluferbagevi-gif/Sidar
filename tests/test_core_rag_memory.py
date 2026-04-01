@@ -15,7 +15,13 @@ from core.rag import DocumentStore
 @pytest.mark.asyncio
 async def test_rag_chunking_handles_small_and_large_texts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
-    rag = DocumentStore(store_dir=tmp_path / "rag", chunk_size=50, chunk_overlap=10)
+    mock_cfg = SimpleNamespace(
+        RAG_CHUNK_SIZE=50,
+        RAG_CHUNK_OVERLAP=10,
+        RAG_VECTOR_BACKEND="chroma",
+        ENABLE_GRAPH_RAG=False,
+    )
+    rag = DocumentStore(store_dir=tmp_path / "rag", chunk_size=50, chunk_overlap=10, cfg=mock_cfg)
 
     short = "kısa metin"
     assert rag._chunk_text(short) == [short]
@@ -34,7 +40,8 @@ async def test_conversation_memory_evicts_old_turns(tmp_path: Path):
         max_turns=2,
     )
     await memory.initialize()
-    await memory.set_active_user("u1", "alice")
+    user = await memory.db.ensure_user("alice")
+    await memory.set_active_user(user.id, user.username)
 
     for i in range(6):
         role = "user" if i % 2 == 0 else "assistant"
