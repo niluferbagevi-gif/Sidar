@@ -341,7 +341,10 @@ class TestSupervisorP2PRouting:
             intent="review",
         )
 
+        call_count = [0]
+
         async def _delegate_loop(*_args, **_kwargs):
+            call_count[0] += 1
             return contracts.TaskResult(
                 task_id="loop",
                 status="done",
@@ -351,7 +354,7 @@ class TestSupervisorP2PRouting:
                     target_agent="coder",
                     payload='qa_feedback|{"decision":"reject"}',
                     intent="review",
-                    handoff_depth=1,
+                    handoff_depth=call_count[0],
                 ),
             )
 
@@ -876,13 +879,20 @@ class Extra_TestRoutP2PExtra:
             intent="code",
         )
 
+        call_count = [0]
+
         # Her delegate çağrısında yeni DelegationRequest döndür
         async def _always_delegate(*_args, **_kwargs):
+            call_count[0] += 1
             return contracts.TaskResult(
                 task_id="inner",
                 status="done",
                 summary=contracts.DelegationRequest(
-                    task_id="t2", reply_to="coder", target_agent="reviewer", payload="incele"
+                    task_id="t2",
+                    reply_to="coder",
+                    target_agent="reviewer",
+                    payload="incele",
+                    handoff_depth=call_count[0],
                 ),
             )
 
