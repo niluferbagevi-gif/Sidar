@@ -10,3 +10,4 @@ def mock_config(monkeypatch):
     monkeypatch.setattr("config.Config.WEB_PORT", 7860, raising=False)
     monkeypatch.setattr("config.Config.BASE_DIR", ".", raising=False)
     monkeypatch.setattr("config.Config.initialize_directories", staticmethod(lambda: True), raising=False)
+ 
