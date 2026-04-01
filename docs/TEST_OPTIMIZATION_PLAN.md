@@ -1,41 +1,192 @@
-# Test Optimizasyon Planı (Sidar)
+# Test ve Coverage Yükseltme Planı (Sidar)
 
-Bu plan, mevcut yüksek test hacmini (unit/integration/e2e/frontend) korurken çalıştırma süresini ve bakım maliyetini düşürmek için uygulanacak adımları içerir.
+Bu belge, mevcut coverage seviyesinden kalite geçidini güvenli şekilde geçecek bir seviyeye ilerlemek için **modül bazlı ve risk odaklı** bir yol haritası sunar.
 
-## 1) Hızlı Kazanımlar
+> Not: Büyük projelerde %100 line coverage hedefi teknik olarak mümkün olsa da, sürdürülebilir kalite için tek metrik değildir. Öncelik; kritik iş akışları + hata patikaları + regresyon riski yüksek noktalar olmalıdır.
 
-1. `run_tests.sh` içinde `pytest-xdist` varsa paralel çalıştırma (`-n auto`) kullan.
-2. Benchmark koşumunu `RUN_BENCHMARKS=0/1/auto` ile kontrol et.
-3. Coverage quality gate (`fail_under=90`) korunurken flaky testler için ayrı quarantine listesi tut.
 
-## 2) Piramit Disiplini
+> **Bu dosya ne işe yarıyor?**
+> Bu belge bir **uygulama rehberi / plan dokümanıdır**; test kodunun kendisi değildir.
+> Yeni test yazarken birebir satır satır zorunlu bir "checklist" değil, **önceliklendirme ve karar desteği** sağlar.
 
-- Unit test: saf fonksiyon/sınıf davranışı (mock serbest).
-- Integration test: gerçek bileşen iletişimi (örn. in-memory DB, local adapter).
-- E2E test: yalnızca kritik kullanıcı akışları (tekrar eden detay assertion'lar unit'e taşınmalı).
+### Bu plan nasıl kullanılmalı?
 
-## 3) Benchmark Kapsamı
+- Evet, testleri oluştururken **referans plan** olarak bunu takip edeceğim.
+- Ancak uygulamada her PR’da yalnızca ilgili modülün bölümü ele alınır (hepsi birden değil).
+- Kaynak dosya değiştikçe plan da güncellenir; yani yaşayan bir dokümandır.
 
-`tests/test_benchmark.py` zamanla aşağıdaki kritik patikaları kapsamalı:
+### Testleri sıfırdan yazma (greenfield) yaklaşımı
 
-- RAG retrieval pipeline gecikmesi.
-- DB pool altında eşzamanlı sorgu performansı.
-- Agent routing + delegation latency.
-- WebSocket broadcast throughput.
+Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
 
-## 4) Coverage Agent Akışı
+1. Önce **kritik akış listesi** çıkar (giriş noktası, yan etki, hata etkisi).
+2. Her akış için önce **başarılı senaryo**, sonra en az bir **hata senaryosu** yaz.
+3. Dış bağımlılıkları (LLM/API/DB/ağ/zaman) gerçek çağrı yerine mock/stub/fake ile izole et.
+4. Testleri `Arrange-Act-Assert` formatında kısa tut; tek test tek davranış doğrulasın.
+5. Modül tamamlandığında branch coverage raporundan eksik `if/else` ve `except` bloklarını kapat.
+6. Son adımda entegrasyon testi ekleyip modülün diğer bileşenlerle uyumunu doğrula.
 
-1. Coverage raporundan düşük kapsama dosyalarını çıkar.
-2. Aynı davranışı tekrar test eden dosyaları işaretle.
-3. `qa/coverage` ajanlarından hedefli test önerisi üret.
-4. Üretilen testleri deterministik hale getir (network/random/time bağımlılıklarını izole et).
+Önerilen minimum şablon (sıfırdan başlarken):
+- `tests/unit/<modul>/test_<davranis>.py`
+- `tests/integration/<modul>/test_<akis>.py`
+- Ortak fixture: `tests/conftest.py`
 
-## 5) Operasyonel Öneri
+---
 
-- CI'da:
-  - PR: hızlı smoke + kritik unit/integration seti
-  - nightly: full suite + benchmark + mutation/smoke e2e
-- Lokal geliştirmede:
-  - `pytest -m "not e2e"` ile hızlı çevrim
-  - dosya bazlı incremental test çalıştırma
+## 1) Stratejik Hedefler
 
+1. **Önce kırmızı bölgeyi kaldır**: `%0` coverage dosyaları için en azından smoke + hata senaryoları ekle.
+2. **Sonra sarı/turuncu bölgeyi derinleştir**: mevcut testleri edge-case ve exception akışlarıyla tamamla.
+3. **Dış bağımlılık izolasyonu**: ağ, saat, dosya sistemi, LLM çağrıları deterministik mock/stub ile sabitlenmeli.
+4. **Katmanlı test mimarisi**:
+   - Unit (hızlı, yoğun mock)
+   - Integration (in-memory DB / local adapter)
+   - E2E (az sayıda kritik uçtan uca akış)
+
+---
+
+## 2) Önceliklendirme Matrisi
+
+### A) %0 Coverage Modüller (Kırmızı Bölge)
+
+#### Ajan sistemi (`agent/`)
+Örnek dosyalar: `sidar_agent.py`, `swarm.py`, `auto_handle.py`, `reviewer_agent.py`
+
+Test yaklaşımı:
+- Agent oluşturma, karar/routing akışını doğrulama.
+- LLM yanıtlarını mock ederek farklı karar kombinasyonlarını tetikleme.
+- Doğru tool çağrısı ve EventStream çıktısını assertion ile doğrulama.
+- Hata akışları: invalid tool response, timeout, boş/bozuk model yanıtı.
+
+Önerilen fixture’lar:
+- `fake_llm_response`
+- `fake_event_stream`
+- `agent_factory`
+
+#### Web sunucusu ve arayüz girişleri
+Örnek dosyalar: `web_server.py`, `main.py`, `cli.py`, `gui_launcher.py`
+
+Test yaklaşımı:
+- API endpoint testleri için `FastAPI TestClient` (veya mevcut framework’ün async test client’ı).
+- Doğrulama başlıkları, authorization ve schema doğrulaması.
+- 2xx + 4xx + 5xx senaryoları (özellikle validation ve internal error path).
+- CLI komutları için `click.testing.CliRunner` ile argüman/hata simülasyonu.
+
+#### Tamamen eksik manager’lar
+Örnek dosyalar: `system_health.py`, `todo_manager.py`, `web_search.py`, `package_info.py`
+
+Test yaklaşımı:
+- Dış servis çağrılarını (`httpx`, entegrasyon SDK’ları) mock ile kes.
+- Başarılı cevap, timeout, rate-limit, malformed payload senaryoları.
+- `system_health` için metric toplama fallback davranışlarını test et.
+
+---
+
+### B) Kısmi Coverage Modüller (Sarı/Turuncu Bölge)
+
+#### `core/db.py`
+Odak:
+- CRUD hata patikaları (invalid input, conflict, timeout, transaction rollback).
+- `IntegrityError` / bağlantı kesintisi / retry davranışı.
+
+Test yaklaşımı:
+- Unit seviyede repository fonksiyonlarını izole test et.
+- Integration seviyede `sqlite:///:memory:` (veya test container) ile transaction akışlarını doğrula.
+
+#### `core/llm_client.py`
+Odak:
+- Provider bazlı dallanmalar (OpenAI/Anthropic/Gemini vb.).
+- Context limit, rate-limit ve provider error mapping.
+
+Test yaklaşımı:
+- Provider çağrılarını `unittest.mock.patch` veya `pytest-mock` ile kes.
+- Uzun prompt, boş prompt, invalid model, retry/backoff akışlarını ayrı testle.
+
+#### `core/rag.py`
+Odak:
+- Chunking sınırları, boş input, çok büyük input.
+- Retrieval boş dönmesi, vector DB erişim hataları.
+
+Test yaklaşımı:
+- Küçük deterministik fixture dokümanlar.
+- Vector store adapter mock’ları ile hem hit hem no-hit durumları.
+
+#### `managers/code_manager.py`
+Odak:
+- Dosya/klasör I/O edge case’leri.
+- `PermissionError`, `FileNotFoundError`, encoding sorunları.
+
+Test yaklaşımı:
+- `tmp_path` ile izole dosya sistemi testleri.
+- İzin ve hata senaryoları için controlled monkeypatch.
+
+---
+
+## 3) Uygulama Takvimi (Sprint Bazlı)
+
+### Sprint 1 — Stabil temel
+- Dış bağımlılık mock altyapısı ve ortak fixture seti.
+- `%0` modüller için smoke testler.
+- CI’da hızlı test job’ı (kritik unit set).
+
+### Sprint 2 — Kritik path derinleştirme
+- `core/db.py`, `core/llm_client.py`, `core/rag.py` hata patikaları.
+- Branch coverage artışı için `if/else` ve `try/except` odaklı testler.
+
+### Sprint 3 — Sertleştirme
+- Regresyon test seti ve flaky test temizliği.
+- Nightly tam koşu + coverage trend raporu.
+
+---
+
+## 4) Teknik Kurallar (Zorunlu)
+
+1. **Network bağımsız test**: Unit testler internetsiz çalışmalı.
+2. **Deterministiklik**: Rastgelelik/saat bağımlılığı fixture ile sabitlenmeli.
+3. **Küçük ve amaç odaklı test**: Her test tek davranışı doğrulamalı.
+4. **Hata mesajı doğrulaması**: Sadece exception tipi değil, anlamlı mesaj/alanlar da assert edilmeli.
+5. **Regresyon etiketi**: Bulunan bug için önce test, sonra düzeltme.
+
+---
+
+## 5) Örnek Test İskeleti
+
+```python
+import pytest
+from unittest.mock import patch
+
+
+def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
+    with patch("core.llm_client.provider_call") as mocked:
+        mocked.side_effect = RuntimeError("rate limit")
+
+        with pytest.raises(Exception):
+            llm_client.complete("hello")
+```
+
+---
+
+## 6) CI / Quality Gate Önerisi
+
+- PR pipeline:
+  - hızlı unit + kritik integration
+  - değişen dosyalara hedefli coverage raporu
+- Nightly pipeline:
+  - full suite
+  - coverage trend karşılaştırması
+  - flaky test raporu
+
+Öneri: tek adımda `%100` yerine, **kademeli quality gate** uygulanmalı:
+- Faz 1: `%70`
+- Faz 2: `%80`
+- Faz 3: `%90+`
+- Faz 4: risk-temelli hedef coverage (modül kritikliğine göre farklı eşik)
+
+---
+
+## 7) Beklenen Çıktılar
+
+- Daha hızlı ve deterministik test suite.
+- Kritik iş akışlarında yüksek güven.
+- Coverage artışıyla birlikte gerçek regresyon yakalama oranında artış.
+- Bakımı zor “gösteriş” testleri yerine sürdürülebilir kalite güvence katmanı.
