@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import configparser
 import json
+import logging
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -78,8 +79,26 @@ class CoverageAgent(BaseAgent):
         normalized = str(target_path or "").strip().lstrip("./")
         if not normalized:
             return "tests/test_generated_coverage_agent.py"
-        stem = Path(normalized).stem
+        path_obj = Path(normalized)
+        parent_dir = str(path_obj.parent).strip(".").strip("/")
+        stem = path_obj.stem
+        if parent_dir:
+            return f"tests/{parent_dir}/test_{stem}_coverage.py"
         return f"tests/test_{stem}_coverage.py"
+
+    @staticmethod
+    def _clean_code_output(raw_output: str) -> str:
+        """LLM çıktısından gelebilecek markdown kod çitlerini temizler."""
+        clean_text = str(raw_output or "").strip()
+        if not clean_text.startswith("```"):
+            return clean_text
+
+        lines = clean_text.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _normalize_analysis(raw: Any) -> dict[str, Any]:
@@ -358,7 +377,7 @@ class CoverageAgent(BaseAgent):
     async def _tool_write_missing_tests(self, arg: str) -> str:
         payload = self._parse_payload(arg)
         suggested_test_path = str(payload.get("suggested_test_path", "") or "")
-        generated_test = str(payload.get("generated_test", "") or "")
+        generated_test = self._clean_code_output(str(payload.get("generated_test", "") or ""))
         append = bool(payload.get("append", True))
         ok, message = await asyncio.to_thread(
             self.code.write_generated_test,
@@ -448,6 +467,7 @@ class CoverageAgent(BaseAgent):
             pytest_output=str(pytest_result.get("output", "") or ""),
             analysis=analysis,
         )
+        generated_test = self._clean_code_output(generated_test)
         review_payload = {
             "review_context": (
                 f"[COVERAGE AGENT]\ncommand={command}\n"
@@ -480,8 +500,8 @@ class CoverageAgent(BaseAgent):
                 review_payload=review_payload,
                 status="tests_written" if write_ok else "write_failed",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.exception("[CoverageAgent] Görev kaydedilirken hata oluştu: %s", exc)
         return json.dumps(
             {
                 "success": write_ok,
