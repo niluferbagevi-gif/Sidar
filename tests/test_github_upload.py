@@ -964,6 +964,8 @@ def _upload_run(
             return True, ""
         if args[:2] == ["git", "ls-files"]:
             return True, safe_files
+        if args[:3] == ["git", "diff", "--cached"]:
+            return True, "M	main.py" if has_changes else ""
         if args[:3] == ["git", "status", "--porcelain"]:
             return True, "M main.py" if has_changes else ""
         if args[:2] == ["git", "add"]:
