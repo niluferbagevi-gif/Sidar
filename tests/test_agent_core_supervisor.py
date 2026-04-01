@@ -5,6 +5,7 @@ Tüm ağır bağımlılıklar (config, BaseAgent, role ajanlar, event_stream) st
 from __future__ import annotations
 
 import asyncio
+import itertools
 import sys
 import types
 import pathlib as _pl
@@ -341,7 +342,10 @@ class TestSupervisorP2PRouting:
             intent="review",
         )
 
+        call_count = itertools.count(1)
+
         async def _delegate_loop(*_args, **_kwargs):
+            current_depth = next(call_count)
             return contracts.TaskResult(
                 task_id="loop",
                 status="done",
@@ -351,7 +355,7 @@ class TestSupervisorP2PRouting:
                     target_agent="coder",
                     payload='qa_feedback|{"decision":"reject"}',
                     intent="review",
-                    handoff_depth=1,
+                    handoff_depth=current_depth,
                 ),
             )
 
@@ -876,13 +880,20 @@ class Extra_TestRoutP2PExtra:
             intent="code",
         )
 
+        call_count = itertools.count(1)
+
         # Her delegate çağrısında yeni DelegationRequest döndür
         async def _always_delegate(*_args, **_kwargs):
+            current_depth = next(call_count)
             return contracts.TaskResult(
                 task_id="inner",
                 status="done",
                 summary=contracts.DelegationRequest(
-                    task_id="t2", reply_to="coder", target_agent="reviewer", payload="incele"
+                    task_id="t2",
+                    reply_to="coder",
+                    target_agent="reviewer",
+                    payload="incele",
+                    handoff_depth=current_depth,
                 ),
             )
 
