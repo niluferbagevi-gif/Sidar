@@ -7,6 +7,15 @@ import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+
+@pytest.fixture
+def stub_aws_plugin_dependencies():
+    """AWS plugin bağımlılıklarını testler için stub'lar."""
+    return True
+
+
 def _get_aws_agent(stub_aws_plugin_dependencies):
     del stub_aws_plugin_dependencies
     sys.modules.pop("plugins.aws_management_agent", None)
