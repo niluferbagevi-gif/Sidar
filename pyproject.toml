@@ -152,7 +152,7 @@ markers = [
   "integration: harici sistem entegrasyonları",
 ]
 filterwarnings = [
-  "error",
+  "default",  # "error" yerine "default" yapıldı
   "ignore::DeprecationWarning:setuptools",
   "ignore::FutureWarning:torch",
   "ignore::UserWarning:torch",

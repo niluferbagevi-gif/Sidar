@@ -42,7 +42,7 @@ run_pytest_coverage_report
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ -f "tests/test_benchmark.py" ]; then
-  python -m pytest -v tests/test_benchmark.py
+  python -m pytest -v tests/test_benchmark.py --no-cov
 else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."
 fi
