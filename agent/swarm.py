@@ -27,7 +27,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol
 
-from agent.registry import AgentRegistry, AgentSpec
+from agent.registry import AgentCatalog, AgentSpec
 from agent.core.contracts import (
     BrokerTaskEnvelope,
     BrokerTaskResult,
@@ -143,16 +143,16 @@ class TaskRouter:
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
         """
         capability = _INTENT_CAPABILITY_MAP.get(intent, intent)
-        candidates = AgentRegistry.find_by_capability(capability)
+        candidates = AgentCatalog.find_by_capability(capability)
         if not candidates:
             # Fallback: herhangi bir kayıtlı ajan
-            all_agents = AgentRegistry.list_all()
+            all_agents = AgentCatalog.list_all()
             return all_agents[0] if all_agents else None
         return candidates[0]
 
     def route_by_role(self, role_name: str) -> Optional[AgentSpec]:
         """Doğrudan rol adıyla ajan seç."""
-        return AgentRegistry.get(role_name)
+        return AgentCatalog.get(role_name)
 
 
 class SwarmOrchestrator:
@@ -606,7 +606,7 @@ class SwarmOrchestrator:
 
         # Ajan örneği oluştur (hafif — konfigürasyon paylaşılır)
         try:
-            agent = AgentRegistry.create(spec.role_name, cfg=self.cfg)
+            agent = AgentCatalog.create(spec.role_name, cfg=self.cfg)
         except Exception as exc:
             logger.error("SwarmOrchestrator: ajan oluşturma hatası [%s]: %s", spec.role_name, exc)
             return SwarmResult(
@@ -797,4 +797,4 @@ class SwarmOrchestrator:
 
     def available_agents(self) -> List[str]:
         """Kayıtlı tüm ajan rollerini listeler."""
-        return [spec.role_name for spec in AgentRegistry.list_all()]
+        return [spec.role_name for spec in AgentCatalog.list_all()]

@@ -18,9 +18,11 @@ from managers.github_manager import GitHubManager
 from managers.security import SecurityManager
 
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 from agent.core.event_stream import get_agent_event_bus
 
 
+@AgentCatalog.register(capabilities=['code_review', 'security_audit', 'quality_check'], is_builtin=True)
 class ReviewerAgent(BaseAgent):
     """PR, issue ve repo gözden geçirme akışlarını yöneten uzman ajan."""
 

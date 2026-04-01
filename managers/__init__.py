@@ -1,34 +1,42 @@
-"""Sidar Project - Manager Modülleri"""
-from .browser_manager import BrowserManager
-from .code_manager import CodeManager
-from .github_manager import GitHubManager
-from .jira_manager import JiraManager
-from .package_info import PackageInfoManager
-from .security import SecurityManager
-from .slack_manager import SlackManager
-from .social_media_manager import SocialMediaManager
-from .system_health import SystemHealthManager
-from .teams_manager import TeamsManager
-from .todo_manager import TodoManager
-from .web_search import WebSearchManager
-from .youtube_manager import YouTubeManager
+"""Sidar Project - Manager Modülleri.
 
-# Tek kaynak: Export edilecek manager sınıfları bu tuple'da tutulur.
-# __all__ bu listedan türetildiği için manuel drift riski azaltılır.
-_EXPORTED_MANAGERS = (
-    BrowserManager,
-    CodeManager,
-    SystemHealthManager,
-    GitHubManager,
-    JiraManager,
-    SlackManager,
-    SocialMediaManager,
-    TeamsManager,
-    SecurityManager,
-    WebSearchManager,
-    YouTubeManager,
-    PackageInfoManager,
-    TodoManager,
-)
+Manager sınıfları ağır/opsiyonel bağımlılıklara (örn. httpx, browser stack)
+sahip olabildiği için package-level eager import yapılmaz.
+Gerektiğinde `from managers import CodeManager` benzeri erişimler __getattr__
+üzerinden lazy olarak çözülür.
+"""
 
-__all__ = [cls.__name__ for cls in _EXPORTED_MANAGERS]
+from __future__ import annotations
+
+from importlib import import_module
+
+
+_MANAGER_IMPORT_MAP = {
+    "BrowserManager": "managers.browser_manager",
+    "CodeManager": "managers.code_manager",
+    "GitHubManager": "managers.github_manager",
+    "JiraManager": "managers.jira_manager",
+    "PackageInfoManager": "managers.package_info",
+    "SecurityManager": "managers.security",
+    "SlackManager": "managers.slack_manager",
+    "SocialMediaManager": "managers.social_media_manager",
+    "SystemHealthManager": "managers.system_health",
+    "TeamsManager": "managers.teams_manager",
+    "TodoManager": "managers.todo_manager",
+    "WebSearchManager": "managers.web_search",
+    "YouTubeManager": "managers.youtube_manager",
+}
+
+
+__all__ = list(_MANAGER_IMPORT_MAP.keys())
+
+
+def __getattr__(name: str):
+    module_path = _MANAGER_IMPORT_MAP.get(name)
+    if module_path is None:
+        raise AttributeError(name)
+
+    module = import_module(module_path)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

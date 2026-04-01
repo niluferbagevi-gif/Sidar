@@ -5,6 +5,10 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+pytest.importorskip("jwt")
+
 from core.db import Database
 from core.rag import DocumentStore
 
