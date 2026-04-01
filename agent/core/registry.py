@@ -7,7 +7,7 @@ from typing import Dict, Iterable
 from agent.base_agent import BaseAgent
 
 
-class AgentRegistry:
+class ActiveAgentRegistry:
     """Role adına göre ajan örneklerini saklar."""
 
     def __init__(self) -> None:
@@ -28,3 +28,6 @@ class AgentRegistry:
 
     def roles(self) -> Iterable[str]:
         return tuple(self._agents.keys())
+
+# Geriye dönük uyumluluk
+AgentRegistry = ActiveAgentRegistry

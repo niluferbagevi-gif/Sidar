@@ -13,7 +13,7 @@ from config import Config
 from agent.base_agent import BaseAgent
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
 from agent.core.memory_hub import MemoryHub
-from agent.core.registry import AgentRegistry
+from agent.core.registry import ActiveAgentRegistry
 from agent.core.event_stream import get_agent_event_bus
 from agent.roles.coder_agent import CoderAgent
 from agent.roles.researcher_agent import ResearcherAgent
@@ -64,7 +64,7 @@ class SupervisorAgent(BaseAgent):
             self.llm = None
             self.tools = {}
 
-        self.registry = AgentRegistry()
+        self.registry = ActiveAgentRegistry()
         self.events = get_agent_event_bus()
         self.memory_hub = MemoryHub()
 

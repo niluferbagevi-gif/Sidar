@@ -14,8 +14,10 @@ from managers.code_manager import CodeManager
 from managers.security import SecurityManager
 
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 
 
+@AgentCatalog.register(capabilities=['test_generation', 'ci_remediation'], is_builtin=True)
 class QAAgent(BaseAgent):
     """Coverage açığını analiz edip pytest tabanlı test taslağı üreten uzman ajan."""
 

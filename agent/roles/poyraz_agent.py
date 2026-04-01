@@ -13,6 +13,7 @@ from managers.social_media_manager import SocialMediaManager
 from managers.web_search import WebSearchManager
 
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 
 try:
     from agent.tooling import parse_tool_argument
@@ -28,6 +29,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
         return _FallbackPayload(json.loads(raw_arg))
 
 
+@AgentCatalog.register(capabilities=['marketing_strategy', 'seo_analysis', 'campaign_copy', 'audience_ops'], is_builtin=True)
 class PoyrazAgent(BaseAgent):
     """SEO, kampanya içeriği ve hedef kitle operasyonları için uzman ajan."""
 
