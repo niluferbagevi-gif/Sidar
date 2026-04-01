@@ -6,13 +6,11 @@ from pathlib import Path
 import pytest
 
 from agent.roles.poyraz_agent import PoyrazAgent
-import agent.sidar_agent as sidar_agent_module
-from agent.sidar_agent import SidarAgent, _FallbackActionFeedback, _FallbackFederationTaskEnvelope
-
-_default_derive_correlation_id = getattr(
-    sidar_agent_module,
-    "_default_derive_correlation_id",
-    getattr(sidar_agent_module, "default_derive_correlation_id"),
+from agent.sidar_agent import (
+    SidarAgent,
+    _default_derive_correlation_id,
+    _FallbackActionFeedback,
+    _FallbackFederationTaskEnvelope,
 )
 from core.rag import GraphIndex
 
