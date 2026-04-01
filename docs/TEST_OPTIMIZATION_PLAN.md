@@ -41,10 +41,11 @@ Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
 
 ## 1) Stratejik Hedefler
 
-1. **Önce kırmızı bölgeyi kaldır**: `%0` coverage dosyaları için en azından smoke + hata senaryoları ekle.
+1. **Önce kırmızı bölgeyi kaldır**: düşük coverage dosyaları için en azından smoke + hata senaryoları ekle.
 2. **Sonra sarı/turuncu bölgeyi derinleştir**: mevcut testleri edge-case ve exception akışlarıyla tamamla.
 3. **Dış bağımlılık izolasyonu**: ağ, saat, dosya sistemi, LLM çağrıları deterministik mock/stub ile sabitlenmeli.
-4. **Katmanlı test mimarisi**:
+4. **Coverage ajanı + HITL akışı**: Sprint önceliklerine göre Coverage Agent hedef dosyaları analiz edip taslak test üretebilir; bu çıktılar CI’a girmeden önce Reviewer Agent veya insan geliştirici onayından (HITL) geçmelidir.
+5. **Katmanlı test mimarisi**:
    - Unit (hızlı, yoğun mock)
    - Integration (in-memory DB / local adapter)
    - E2E (az sayıda kritik uçtan uca akış)
@@ -58,18 +59,22 @@ Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
 > Not: Bu bölümdeki liste “örnek”tir. Kesin öncelik sırası, son coverage raporundan otomatik üretilen tabloya göre belirlenmelidir.
 
 #### Ajan sistemi (`agent/`)
-Örnek dosyalar: `sidar_agent.py`, `swarm.py`, `auto_handle.py`, `reviewer_agent.py`
+Örnek dosyalar: `sidar_agent.py`, `swarm.py`, `auto_handle.py`, `reviewer_agent.py`, `coverage_agent.py`, `poyraz_agent.py`
 
 Test yaklaşımı:
 - Agent oluşturma, karar/routing akışını doğrulama.
 - LLM yanıtlarını mock ederek farklı karar kombinasyonlarını tetikleme.
 - Doğru tool çağrısı ve EventStream çıktısını assertion ile doğrulama.
 - Hata akışları: invalid tool response, timeout, boş/bozuk model yanıtı.
+- Coverage Agent için: hedef dosya seçimi, test taslağı üretimi ve onay/HITL zorunluluğu akışını test et.
+- Uzman ajanlar (Poyraz vb.) için: sosyal medya ve medya analizi yeteneklerinde auth/rate-limit/bozuk payload akışlarını ayrı test et.
 
 Önerilen fixture’lar:
 - `fake_llm_response`
 - `fake_event_stream`
 - `agent_factory`
+- `fake_social_api`
+- `fake_video_stream`
 
 #### Web sunucusu ve arayüz girişleri
 Örnek dosyalar: `web_server.py`, `main.py`, `cli.py`, `gui_launcher.py`
@@ -135,6 +140,7 @@ Test yaklaşımı:
 ### Sprint 1 — Stabil temel
 - Dış bağımlılık mock altyapısı ve ortak fixture seti.
 - Düşük coverage modüller için smoke testler.
+- Coverage Agent / test-oluşturucu agent workflow’unun, en az smoke seviyede deterministik test taslağı üretebildiğinin doğrulanması.
 - CI’da hızlı test job’ı (kritik unit set).
 
 ### Sprint 2 — Kritik path derinleştirme
@@ -154,6 +160,8 @@ Test yaklaşımı:
 3. **Küçük ve amaç odaklı test**: Her test tek davranışı doğrulamalı.
 4. **Hata mesajı doğrulaması**: Sadece exception tipi değil, anlamlı mesaj/alanlar da assert edilmeli.
 5. **Regresyon etiketi**: Bulunan bug için önce test, sonra düzeltme.
+6. **Agent-üretimli test güvenliği**: Coverage Agent tarafından üretilen testler doğrudan merge edilmez; Reviewer Agent/HITL onayı zorunludur.
+7. **Platform-özel mock standardı**: Instagram/WhatsApp/YouTube benzeri uzman ajan entegrasyonlarında auth, quota/rate-limit ve servis kesintisi senaryoları için ayrı fake adapter kullanılmalıdır.
 
 ---
 
