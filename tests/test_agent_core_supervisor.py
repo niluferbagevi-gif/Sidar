@@ -362,6 +362,7 @@ class TestSupervisorP2PRouting:
         result = asyncio.run(agent._route_p2p(request, max_hops=3))
         assert result.status == "failed"
         assert "QA retry limiti" in str(result.summary)
+        assert call_count[0] == 2
 
 
 class TestSupervisorRunTask:
@@ -866,7 +867,7 @@ class Extra_TestDelegateMethod:
 
 class Extra_TestRoutP2PExtra:
     def test_route_p2p_max_hops_returns_fail(self):
-        """max_hops=1 ve sürekli DelegationRequest dönünce FAIL döneceğini test et (L241)."""
+        """Sürekli DelegationRequest dönerse max_hops sınırında FAIL döneceğini test et."""
         sv = _get_supervisor()
         agent = sv.SupervisorAgent()
         contracts = sys.modules["agent.core.contracts"]
@@ -900,8 +901,10 @@ class Extra_TestRoutP2PExtra:
         agent.events.publish = AsyncMock()
 
         async def _run():
-            result = await agent._route_p2p(request, max_hops=1)
-            assert "FAIL" in result.summary.upper() or "STOP" in result.summary.upper() or result.status == "failed"
+            result = await agent._route_p2p(request, max_hops=3)
+            assert result.status == "failed"
+            assert "Maksimum delegasyon hop sayısı" in str(result.summary)
+            assert call_count[0] == 3
 
         asyncio.run(_run())
 
