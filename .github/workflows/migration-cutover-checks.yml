@@ -2,7 +2,9 @@ name: Migration Cutover Checks
 
 on:
   push:
+    branches: ["main", "master"]
   pull_request:
+    branches: ["main", "master"]
 
 jobs:
   migration-and-pool-checks:
@@ -33,6 +35,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install dependencies
         run: |
