@@ -1,4 +1,3 @@
-
 """
 Sidar Project - Kod Yöneticisi
 Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL).
@@ -28,6 +27,7 @@ try:
     from config import Config, SANDBOX_LIMITS
 except ImportError:
     from config import Config
+
     SANDBOX_LIMITS = {}
 from .security import SANDBOX, SecurityManager
 
@@ -80,7 +80,7 @@ def _decode_lsp_stream(raw: bytes) -> List[Dict[str, Any]]:
             headers[key.strip().lower()] = value.strip()
         content_length = int(headers.get("content-length", "0") or 0)
         cursor = header_end + 4
-        body = raw[cursor:cursor + content_length]
+        body = raw[cursor : cursor + content_length]
         if len(body) < content_length:
             raise _LSPProtocolError("Eksik LSP mesaj gövdesi alındı.")
         cursor += content_length
@@ -97,26 +97,49 @@ class CodeManager:
 
     SUPPORTED_EXTENSIONS = {".py", ".js", ".ts", ".json", ".yaml", ".yml", ".md", ".txt", ".sh"}
 
-    def __init__(self, security: SecurityManager, base_dir: Path,
-                 docker_image: Optional[str] = None,
-                 docker_exec_timeout: Optional[int] = None,
-                 cfg: Optional[Config] = None) -> None:
+    def __init__(
+        self,
+        security: SecurityManager,
+        base_dir: Path,
+        docker_image: Optional[str] = None,
+        docker_exec_timeout: Optional[int] = None,
+        cfg: Optional[Config] = None,
+    ) -> None:
         self.security = security
         self.base_dir = base_dir.resolve()
         self.cfg = cfg or Config()
-        self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or "").strip()
-        self.docker_allowed_runtimes = list(getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"]) or [""])
-        self.docker_microvm_mode = str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
-        self.docker_mem_limit = str(getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m").strip()
-        self.docker_network_disabled = bool(getattr(self.cfg, "DOCKER_NETWORK_DISABLED", os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on")))
-        self.docker_nano_cpus = int(getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000")) or 1000000000)
+        self.docker_runtime = str(
+            getattr(self.cfg, "DOCKER_RUNTIME", os.getenv("DOCKER_RUNTIME", "")) or ""
+        ).strip()
+        self.docker_allowed_runtimes = list(
+            getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
+            or [""]
+        )
+        self.docker_microvm_mode = (
+            str(getattr(self.cfg, "DOCKER_MICROVM_MODE", "off") or "off").strip().lower()
+        )
+        self.docker_mem_limit = str(
+            getattr(self.cfg, "DOCKER_MEM_LIMIT", os.getenv("DOCKER_MEM_LIMIT", "256m")) or "256m"
+        ).strip()
+        self.docker_network_disabled = bool(
+            getattr(
+                self.cfg,
+                "DOCKER_NETWORK_DISABLED",
+                os.getenv("DOCKER_NETWORK_DISABLED", "true").lower() in ("1", "true", "yes", "on"),
+            )
+        )
+        self.docker_nano_cpus = int(
+            getattr(self.cfg, "DOCKER_NANO_CPUS", os.getenv("DOCKER_NANO_CPUS", "1000000000"))
+            or 1000000000
+        )
         self.docker_image = (
             docker_image
             or os.getenv("DOCKER_IMAGE", "")
             or os.getenv("DOCKER_PYTHON_IMAGE", "python:3.11-alpine")
         )
         self.docker_exec_timeout = (
-            int(docker_exec_timeout) if docker_exec_timeout is not None
+            int(docker_exec_timeout)
+            if docker_exec_timeout is not None
             else int(os.getenv("DOCKER_EXEC_TIMEOUT", str(SANDBOX_LIMITS.get("timeout", 10))))
         )
         self.max_output_chars = 10000
@@ -130,7 +153,9 @@ class CodeManager:
         self.enable_lsp = bool(getattr(self.cfg, "ENABLE_LSP", True))
         self.lsp_timeout_seconds = int(getattr(self.cfg, "LSP_TIMEOUT_SECONDS", 15) or 15)
         self.lsp_max_references = int(getattr(self.cfg, "LSP_MAX_REFERENCES", 200) or 200)
-        self.python_lsp_server = str(getattr(self.cfg, "PYTHON_LSP_SERVER", "pyright-langserver") or "pyright-langserver")
+        self.python_lsp_server = str(
+            getattr(self.cfg, "PYTHON_LSP_SERVER", "pyright-langserver") or "pyright-langserver"
+        )
         self.typescript_lsp_server = str(
             getattr(self.cfg, "TYPESCRIPT_LSP_SERVER", "typescript-language-server")
             or "typescript-language-server"
@@ -149,7 +174,11 @@ class CodeManager:
             runtime = "kata-runtime"
 
         if runtime not in self.docker_allowed_runtimes:
-            logger.warning("Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.", runtime, self.docker_allowed_runtimes)
+            logger.warning(
+                "Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.",
+                runtime,
+                self.docker_allowed_runtimes,
+            )
             return ""
         return runtime
 
@@ -172,7 +201,10 @@ class CodeManager:
                 if cpu_val > 0:
                     nano_cpus = int(cpu_val * 1_000_000_000)
             except (TypeError, ValueError):
-                logger.warning("Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.", cpus)
+                logger.warning(
+                    "Geçersiz SANDBOX_LIMITS['cpus'] değeri: %s. DOCKER_NANO_CPUS kullanılacak.",
+                    cpus,
+                )
 
         if pids_limit < 1:
             pids_limit = 64
@@ -191,16 +223,22 @@ class CodeManager:
     def _build_docker_cli_command(self, code: str, limits: Dict[str, object]) -> List[str]:
         """Docker CLI ile sandbox çalıştırma komutunu oluşturur."""
         return [
-            "docker", "run", "--rm",
+            "docker",
+            "run",
+            "--rm",
             f"--memory={limits['memory']}",
             f"--cpus={limits['cpus']}",
             f"--pids-limit={limits['pids_limit']}",
             f"--network={limits['network_mode']}",
             self.docker_image,
-            "python", "-c", code,
+            "python",
+            "-c",
+            code,
         ]
 
-    def _execute_code_with_docker_cli(self, code: str, limits: Dict[str, object]) -> Tuple[bool, str]:
+    def _execute_code_with_docker_cli(
+        self, code: str, limits: Dict[str, object]
+    ) -> Tuple[bool, str]:
         """Docker SDK başarısız olursa docker CLI ile çalıştırmayı dener."""
         docker_cmd = self._build_docker_cli_command(code, limits)
         result = subprocess.run(
@@ -212,7 +250,7 @@ class CodeManager:
         )
         output = (result.stdout + result.stderr).strip()
         if len(output) > self.max_output_chars:
-            output = output[:self.max_output_chars] + (
+            output = output[: self.max_output_chars] + (
                 f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
             )
         if result.returncode != 0:
@@ -263,7 +301,9 @@ class CodeManager:
 
         self.docker_client = None
         self.docker_available = True
-        logger.info("Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi.")
+        logger.info(
+            "Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi."
+        )
         return True
 
     def _init_docker(self):
@@ -272,6 +312,7 @@ class CodeManager:
         self.docker_client = None
         try:
             import docker
+
             self.docker_client = docker.from_env()
             self.docker_client.ping()
             self.docker_available = True
@@ -287,6 +328,7 @@ class CodeManager:
             # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
             # (docker modülü zaten try bloğunda import edildi; yeniden import gerekmez)
             import docker as _docker_mod  # noqa: F811 — try bloğu ImportError vermediyse önbellektedir
+
             if self._try_wsl_socket_fallback(_docker_mod):
                 return
             # SDK kurulu ama daemon/socket erişimi başarısız olduğunda CLI fallback'e
@@ -296,7 +338,8 @@ class CodeManager:
                 "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
                 "WSL2 kullanıcıları: Docker Desktop'u açın ve "
                 "Settings > Resources > WSL Integration'dan bu dağıtımı etkinleştirin. "
-                "Hata: %s", first_err
+                "Hata: %s",
+                first_err,
             )
 
     # ─────────────────────────────────────────────
@@ -338,8 +381,7 @@ class CodeManager:
                 lines = content.splitlines()
                 width = len(str(len(lines)))
                 numbered = "\n".join(
-                    f"{str(i + 1).rjust(width)}\t{line}"
-                    for i, line in enumerate(lines)
+                    f"{str(i + 1).rjust(width)}\t{line}" for i, line in enumerate(lines)
                 )
                 return True, numbered
 
@@ -363,10 +405,7 @@ class CodeManager:
         """
         if not self.security.can_write(path):
             safe = str(self.security.get_safe_write_path(Path(path).name))
-            return False, (
-                f"[OpenClaw] Yazma yetkisi yok: {path}\n"
-                f"  Güvenli alternatif: {safe}"
-            )
+            return False, (f"[OpenClaw] Yazma yetkisi yok: {path}\n  Güvenli alternatif: {safe}")
 
         # Python dosyaları için sözdizimi kontrolü
         if validate and path.endswith(".py"):
@@ -382,6 +421,7 @@ class CodeManager:
                 with open(target, "w", encoding="utf-8") as f:
                     f.write(content)
                 self._files_written += 1
+                self._post_process_written_file(target)
 
             logger.info("Dosya yazıldı: %s", path)
             return True, f"Dosya başarıyla kaydedildi: {path}"
@@ -402,6 +442,25 @@ class CodeManager:
                 lines = lines[:-1]
             text = "\n".join(lines).strip()
         return text
+
+    def _post_process_written_file(self, target: Path) -> None:
+        """Otonom ajanların yazdığı kodu kayıttan sonra normalize eder."""
+        if target.suffix != ".py":
+            return
+        ruff_bin = shutil.which("ruff")
+        if not ruff_bin:
+            return
+        try:
+            subprocess.run(
+                [ruff_bin, "format", str(target)],
+                cwd=str(self.base_dir),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Post-process ruff format atlandı (%s): %s", target, exc)
 
     def write_generated_test(
         self,
@@ -428,7 +487,9 @@ class CodeManager:
             if normalized in current:
                 return True, f"Test içeriği zaten mevcut: {path}"
             separator = "\n\n" if current.strip() else ""
-            return self.write_file(str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True)
+            return self.write_file(
+                str(target), f"{current.rstrip()}{separator}{normalized.rstrip()}\n", validate=True
+            )
 
         return self.write_file(str(target), f"{normalized.rstrip()}\n", validate=True)
 
@@ -556,7 +617,7 @@ class CodeManager:
 
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(logs) > self.max_output_chars:
-                logs = logs[:self.max_output_chars] + (
+                logs = logs[: self.max_output_chars] + (
                     f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
@@ -566,10 +627,10 @@ class CodeManager:
                 return True, "(Kod başarıyla çalıştı ancak konsola bir çıktı üretmedi)"
 
         except docker.errors.ImageNotFound:
-             return False, (
-                 f"Çalıştırma hatası: '{self.docker_image}' imajı bulunamadı. "
-                 f"Lütfen terminalde 'docker pull {self.docker_image}' komutunu çalıştırın."
-             )
+            return False, (
+                f"Çalıştırma hatası: '{self.docker_image}' imajı bulunamadı. "
+                f"Lütfen terminalde 'docker pull {self.docker_image}' komutunu çalıştırın."
+            )
         except Exception as exc:
             if self.security.level == SANDBOX:
                 return False, (
@@ -586,7 +647,9 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                logger.warning("Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc)
+                logger.warning(
+                    "Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc
+                )
                 return self.execute_code_local(code)
 
     def execute_code_local(self, code: str) -> Tuple[bool, str]:
@@ -613,7 +676,9 @@ class CodeManager:
                 tmp.write(code)
                 tmp_path = tmp.name
 
-            python_bin = sys.executable or shutil.which("python3") or shutil.which("python") or "python"
+            python_bin = (
+                sys.executable or shutil.which("python3") or shutil.which("python") or "python"
+            )
             result = subprocess.run(
                 [python_bin, tmp_path],
                 capture_output=True,
@@ -626,13 +691,16 @@ class CodeManager:
 
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(output) > self.max_output_chars:
-                output = output[:self.max_output_chars] + (
+                output = output[: self.max_output_chars] + (
                     f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if result.returncode != 0:
                 return False, f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(çıktı yok)'}"
-            return True, f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(kod çalıştı, çıktı yok)'}"
+            return (
+                True,
+                f"REPL Çıktısı (Subprocess — Docker yok):\n{output or '(kod çalıştı, çıktı yok)'}",
+            )
 
         except subprocess.TimeoutExpired:
             return False, (
@@ -718,7 +786,7 @@ class CodeManager:
 
         combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
         if len(combined) > self.max_output_chars:
-            combined = combined[:self.max_output_chars] + (
+            combined = combined[: self.max_output_chars] + (
                 f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
             )
 
@@ -824,7 +892,6 @@ class CodeManager:
             "analysis": self.analyze_pytest_output(output),
         }
 
-
     def run_shell(
         self,
         command: str,
@@ -871,9 +938,18 @@ class CodeManager:
 
         # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle
         _BLOCKED_SHELL_PATTERNS = (
-            "rm -rf /", "rm -fr /", ":(){ :|:& };", "> /dev/sda", "dd if=/dev/zero of=/dev/",
-            "mkfs", "chmod -R 777 /", "chown -R root /", "> /etc/passwd", "> /etc/shadow",
-            "shred /dev/", "wipefs /dev/",
+            "rm -rf /",
+            "rm -fr /",
+            ":(){ :|:& };",
+            "> /dev/sda",
+            "dd if=/dev/zero of=/dev/",
+            "mkfs",
+            "chmod -R 777 /",
+            "chown -R root /",
+            "> /etc/passwd",
+            "> /etc/shadow",
+            "shred /dev/",
+            "wipefs /dev/",
         )
         if allow_shell_features:
             cmd_lower = command.lower()
@@ -924,14 +1000,12 @@ class CodeManager:
 
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(combined) > self.max_output_chars:
-                combined = combined[:self.max_output_chars] + (
+                combined = combined[: self.max_output_chars] + (
                     f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if result.returncode != 0:
-                return False, (
-                    f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}"
-                )
+                return False, (f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}")
             return True, combined
 
         except ValueError as exc:
@@ -940,7 +1014,6 @@ class CodeManager:
             return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
         except Exception as exc:
             return False, f"Kabuk hatası: {exc}"
-
 
     # ─────────────────────────────────────────────
     #  GLOB DOSYA ARAMA
@@ -1052,7 +1125,11 @@ class CodeManager:
                 if "**" in file_glob or "/" in file_glob:
                     files_to_search = [f for f in target.rglob(file_glob) if f.is_file()]
                 else:
-                    files_to_search = [f for f in target.rglob("*") if f.is_file() and fnmatch.fnmatch(f.name, file_glob)]
+                    files_to_search = [
+                        f
+                        for f in target.rglob("*")
+                        if f.is_file() and fnmatch.fnmatch(f.name, file_glob)
+                    ]
             else:
                 return False, f"Yol bulunamadı: {path}"
 
@@ -1093,7 +1170,9 @@ class CodeManager:
                     results.append("")
 
                 if match_count >= max_results:
-                    results.append(f"⚠ Maksimum eşleşme sayısına ulaşıldı ({max_results}). Desen daraltılabilir.")
+                    results.append(
+                        f"⚠ Maksimum eşleşme sayısına ulaşıldı ({max_results}). Desen daraltılabilir."
+                    )
                     break
 
             if not results:
@@ -1291,12 +1370,16 @@ class CodeManager:
 
         if proc.returncode not in (0, None):
             stderr_text = stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(stderr_text or f"LSP sunucusu hata kodu ile sonlandı: {proc.returncode}")
+            raise RuntimeError(
+                stderr_text or f"LSP sunucusu hata kodu ile sonlandı: {proc.returncode}"
+            )
 
         return _decode_lsp_stream(stdout)
 
     @staticmethod
-    def _extract_lsp_result(messages: List[Dict[str, Any]], request_id: int = 2) -> Tuple[Any, List[Dict[str, Any]]]:
+    def _extract_lsp_result(
+        messages: List[Dict[str, Any]], request_id: int = 2
+    ) -> Tuple[Any, List[Dict[str, Any]]]:
         result = None
         notifications: List[Dict[str, Any]] = []
         for message in messages:
@@ -1355,7 +1438,9 @@ class CodeManager:
                 request_params=self._position_params(target, line, character),
             )
             result, _ = self._extract_lsp_result(messages)
-            return True, self._format_lsp_locations(result if isinstance(result, list) else [result], limit=20)
+            return True, self._format_lsp_locations(
+                result if isinstance(result, list) else [result], limit=20
+            )
         except Exception as exc:
             return False, f"LSP tanım sorgusu hatası: {exc}"
 
@@ -1455,7 +1540,8 @@ class CodeManager:
             workspace_files = [
                 candidate
                 for candidate in self.base_dir.rglob("*")
-                if candidate.is_file() and self._detect_language_id(candidate) == self._detect_language_id(target)
+                if candidate.is_file()
+                and self._detect_language_id(candidate) == self._detect_language_id(target)
             ]
             messages = self._run_lsp_sequence(
                 primary_path=target,
@@ -1534,12 +1620,14 @@ class CodeManager:
         if paths:
             normalized_paths = [self._normalize_lsp_path(p) for p in paths]
             candidate_paths = [
-                path for path in normalized_paths
+                path
+                for path in normalized_paths
                 if path.is_file() and self._detect_language_id(path) in {"python", "typescript"}
             ][:100]
         else:
             candidate_paths = [
-                path for path in self.base_dir.rglob("*")
+                path
+                for path in self.base_dir.rglob("*")
                 if path.is_file() and self._detect_language_id(path) in {"python", "typescript"}
             ][:100]
 
@@ -1563,7 +1651,8 @@ class CodeManager:
             )
             _, notifications = self._extract_lsp_result(messages, request_id=-1)
             diagnostics = [
-                item for item in notifications
+                item
+                for item in notifications
                 if item.get("method") == "textDocument/publishDiagnostics"
             ]
             if not diagnostics:
@@ -1638,9 +1727,7 @@ class CodeManager:
 
         target = Path(root).resolve()
         if exclude_dirs is None:
-            exclude_dirs = [
-                ".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"
-            ]
+            exclude_dirs = [".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build"]
         exclude_set = {name.strip() for name in exclude_dirs if name and name.strip()}
 
         py_files: List[Path] = []
@@ -1676,7 +1763,9 @@ class CodeManager:
             f"  Hatalı              : {len(errors)}",
         ]
         if len(py_files) >= max_files:
-            report_lines.append(f"  Uyarı               : Dosya limiti nedeniyle ilk {max_files} dosya tarandı")
+            report_lines.append(
+                f"  Uyarı               : Dosya limiti nedeniyle ilk {max_files} dosya tarandı"
+            )
         if errors:
             report_lines.append("\n  Hatalar:")
             report_lines.extend(errors)
@@ -1684,7 +1773,6 @@ class CodeManager:
             report_lines.append("  Tüm dosyalar sözdizimi açısından temiz. ✓")
 
         return "\n".join(report_lines)
-
 
     # ─────────────────────────────────────────────
     #  METRİKLER

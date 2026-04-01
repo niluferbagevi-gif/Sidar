@@ -37,6 +37,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web_ui_react/package-lock.json
 
+      - name: Run Python lint gate (ruff)
+        run: ruff check .
+
+      - name: Run Python format check gate (ruff format)
+        run: ruff format --check .
+
+      - name: Run frontend lint gate (eslint)
+        run: |
+          cd web_ui_react
+          npm ci
+          npm run lint
+
+      - name: Run SAST gates (Bandit + Safety)
+        run: |
+          pip install bandit safety
+          bandit -q -r . -x tests,web_ui_react,node_modules,.venv
+          safety check --full-report
+
       - name: Collect repository metrics
         run: bash scripts/collect_repo_metrics.sh
 
@@ -47,6 +65,9 @@ jobs:
 
       - name: Check empty test artifacts
         run: bash scripts/check_empty_test_artifacts.sh
+
+      - name: Run deterministic LLM quality gate
+        run: pytest -q -m quality_gate tests/quality/test_llm_quality_gate.py
 
       - name: Run test suite (single pass + coverage gate)
         run: bash run_tests.sh

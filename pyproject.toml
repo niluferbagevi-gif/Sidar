@@ -150,6 +150,7 @@ markers = [
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
   "integration: harici sistem entegrasyonları",
+  "quality_gate: LLM kalite kapısı doğrulamaları",
 ]
 filterwarnings = [
   "default",  # "error" yerine "default" yapıldı
