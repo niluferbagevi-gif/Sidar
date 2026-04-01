@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PromptAdminPanel } from "./PromptAdminPanel.jsx";
 
-const fetchJson = vi.fn();
+const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));
 

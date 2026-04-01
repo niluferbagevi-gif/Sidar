@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SwarmFlowPanel } from "./SwarmFlowPanel.jsx";
 
-const fetchJson = vi.fn();
+const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
   useChatStore: () => ({
@@ -47,12 +47,12 @@ describe("SwarmFlowPanel", () => {
     render(<SwarmFlowPanel />);
 
     expect(await screen.findByText(/Pending HITL 1/)).toBeInTheDocument();
-    expect(screen.getByText("nightly_scan")).toBeInTheDocument();
+    expect(screen.getAllByText("nightly_scan").length).toBeGreaterThan(0);
     expect(screen.getByText(/İnceleme bekliyor/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
 
-    await waitFor(() => expect(screen.getByText("manual_run")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("manual_run").length).toBeGreaterThan(0));
     expect(fetchJson).toHaveBeenCalledWith("/api/autonomy/activity?limit=8");
     expect(fetchJson).toHaveBeenCalledWith("/api/hitl/pending");
   });

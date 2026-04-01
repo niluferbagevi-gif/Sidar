@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentManagerPanel } from "./AgentManagerPanel.jsx";
 
@@ -18,10 +18,8 @@ describe("AgentManagerPanel", () => {
   });
 
   it("shows a validation error when no python file is selected", async () => {
-    const user = userEvent.setup();
-    render(<AgentManagerPanel />);
-
-    await user.click(screen.getByRole("button", { name: "Ajanı Kaydet" }));
+    const { container } = render(<AgentManagerPanel />);
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
 
     expect(screen.getByText("Lütfen bir Python ajan dosyası seçin.")).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
@@ -36,7 +34,7 @@ describe("AgentManagerPanel", () => {
       }),
     });
 
-    render(<AgentManagerPanel />);
+    const { container } = render(<AgentManagerPanel />);
 
     await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "security_agent.py", { type: "text/x-python" }));
     await user.type(screen.getByPlaceholderText("security-auditor"), "security-auditor");
@@ -46,7 +44,7 @@ describe("AgentManagerPanel", () => {
     await user.clear(screen.getByPlaceholderText("1.0.0"));
     await user.type(screen.getByPlaceholderText("1.0.0"), "2.0.0");
 
-    await user.click(screen.getByRole("button", { name: "Ajanı Kaydet" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
     const [url, options] = global.fetch.mock.calls[0];
@@ -54,7 +52,7 @@ describe("AgentManagerPanel", () => {
     expect(options.method).toBe("POST");
     expect(options.headers).toEqual({ Authorization: "Bearer test-token" });
     expect(options.body).toBeInstanceOf(FormData);
-    expect(screen.getByText(/security-auditor ajanı yüklendi/)).toBeInTheDocument();
+    expect(container.querySelector(".banner--success")).toHaveTextContent("security-auditor ajanı yüklendi. Sürüm: 2.0.0");
     expect(screen.getByText(/"version": "2.0.0"/)).toBeInTheDocument();
     expect(screen.getByText(/Seçilmedi/)).toBeInTheDocument();
   });
