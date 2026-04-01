@@ -37,10 +37,6 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
     cfg = _build_cfg(tmp_path)
 
     async def _run_case() -> None:
-        with patch("core.llm_client.LLMClient.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = "Yanıt: build geçti"
-            agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
-
         memory_hub = MemoryHub()
         db = Database(cfg)
         try:
@@ -49,16 +45,20 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
             user = await db.create_user("llm_memory_user", password="secret")
             session = await db.create_session(user.id, "LLM memory integration")
 
-            output = await asyncio.wait_for(agent.run_task("CI durumunu özetle"), timeout=30)
-            memory_hub.add_role_note("integration", output)
-            await db.add_message(session.id, "assistant", output)
+            with patch("core.llm_client.LLMClient.chat", new_callable=AsyncMock) as mock_chat:
+                mock_chat.return_value = "Yanıt: build geçti"
+                agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
 
-            role_notes = memory_hub.role_context("integration")
-            messages = await db.get_session_messages(session.id)
+                output = await asyncio.wait_for(agent.run_task("CI durumunu özetle"), timeout=30)
+                memory_hub.add_role_note("integration", output)
+                await db.add_message(session.id, "assistant", output)
 
-            assert role_notes[-1] == "Yanıt: build geçti"
-            assert messages[-1].content == "Yanıt: build geçti"
-            mock_chat.assert_awaited_once()
+                role_notes = memory_hub.role_context("integration")
+                messages = await db.get_session_messages(session.id)
+
+                assert role_notes[-1] == "Yanıt: build geçti"
+                assert messages[-1].content == "Yanıt: build geçti"
+                mock_chat.assert_awaited_once()
         finally:
             await db.close()
 
