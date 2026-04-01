@@ -224,7 +224,7 @@ def _make_orchestrator(registered_agents=None):
     registry._registry.clear()
 
     for role, caps in agents_to_register.items():
-        spec = reg.AgentSpec(role_name=role, agent_class=MagicMock, capabilities=caps)
+        spec = reg.AgentSpec(role_name=role, agent_class=AsyncMock, capabilities=caps)
         spec._agent_factory = lambda **kw: _make_mock_agent()
         registry._registry[role] = spec
 
@@ -390,8 +390,8 @@ class TestSwarmHandoffIntegration:
                     )
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=AsyncMock, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
@@ -437,8 +437,8 @@ class TestSwarmHandoffIntegration:
                     )
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=AsyncMock, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
@@ -652,8 +652,8 @@ class TestSwarmDelegationEdgeCases:
                     return contracts.TaskResult(task_id=envelope.task_id, status="success", summary="ok")
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=AsyncMock, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
@@ -891,7 +891,7 @@ def _make_orchestrator(registered_agents=None, cfg=None):
     registry._registry.clear()
 
     for role, caps in agents_to_register.items():
-        spec = reg.AgentSpec(role_name=role, agent_class=MagicMock, capabilities=caps)
+        spec = reg.AgentSpec(role_name=role, agent_class=AsyncMock, capabilities=caps)
         spec._agent_factory = lambda **kw: _make_mock_agent()
         registry._registry[role] = spec
 
@@ -1050,7 +1050,7 @@ class Extra_TestLoopGuard:
             registry = reg.AgentRegistry
             registry._registry.clear()
 
-            spec = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
+            spec = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
             spec._agent_factory = lambda **kw: _make_mock_agent("görev tamamlandı")
             registry._registry["coder"] = spec
 
@@ -1078,7 +1078,7 @@ class Extra_TestAgentCreationFailure:
             registry = reg.AgentRegistry
             registry._registry.clear()
 
-            spec = reg.AgentSpec(role_name="badagent", agent_class=MagicMock, capabilities=["code_generation"])
+            spec = reg.AgentSpec(role_name="badagent", agent_class=AsyncMock, capabilities=["code_generation"])
             # factory raises
             def _bad_factory(**kw):
                 raise RuntimeError("agent init failed")
@@ -1104,7 +1104,7 @@ class Extra_TestSupervisorFallback:
             registry = reg.AgentRegistry
             registry._registry.clear()
 
-            spec = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
+            spec = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
             # Agent raises JSONDecodeError
             def _make_bad_agent(**kw):
                 a = MagicMock()
@@ -1137,7 +1137,7 @@ class Extra_TestSupervisorFallback:
                 registry = reg.AgentRegistry
                 registry._registry.clear()
 
-                spec = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
+                spec = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
                 def _make_bad_agent(**kw):
                     a = MagicMock()
                     a.handle = AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))
@@ -1171,7 +1171,7 @@ class Extra_TestNonFallbackException:
             registry = reg.AgentRegistry
             registry._registry.clear()
 
-            spec = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
+            spec = reg.AgentSpec(role_name="coder", agent_class=AsyncMock, capabilities=["code_generation"])
             def _make_error_agent(**kw):
                 a = MagicMock()
                 a.handle = AsyncMock(side_effect=RuntimeError("unexpected crash"))
