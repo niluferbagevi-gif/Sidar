@@ -45,8 +45,11 @@ async def test_auth_me_returns_current_user(
         )
 
     async def _fake_get_agent() -> SimpleNamespace:
+        async def _fake_set_active_user(*_args, **_kwargs) -> None:
+            return None
+
         return SimpleNamespace(
-            memory=SimpleNamespace(set_active_user=lambda *_args, **_kwargs: None)
+            memory=SimpleNamespace(set_active_user=_fake_set_active_user)
         )
 
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _fake_redis_is_rate_limited)

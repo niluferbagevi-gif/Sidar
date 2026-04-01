@@ -208,7 +208,7 @@ export function SwarmFlowPanel() {
       actor: inferTelemetryActor(step, roleHints),
     }));
 
-    const lanes = ["supervisor", ...Array.from(new Set([...roleHints, ...telemetryWithActors.map((step) => step.actor)]))]
+    const lanes = Array.from(new Set(["supervisor", ...roleHints, ...telemetryWithActors.map((step) => step.actor)]))
       .filter(Boolean)
       .map((role, index) => ({
         id: role,
@@ -954,8 +954,8 @@ export function SwarmFlowPanel() {
                 <strong>Bekleyen Onaylar</strong>
                 <div className="swarm-graph__approval-list">
                   {pendingApprovals.length === 0 && <div className="empty-state">Bekleyen HITL kaydı yok.</div>}
-                  {pendingApprovals.map((item) => (
-                    <article key={item.request_id} className="swarm-graph__approval-item">
+                  {pendingApprovals.map((item, idx) => (
+                    <article key={`${item.request_id || "pending"}-${idx}`} className="swarm-graph__approval-item">
                       <div>
                         <strong>{item.action || "manual"}</strong>
                         <p>{item.description || "Açıklama yok."}</p>
@@ -1025,7 +1025,7 @@ export function SwarmFlowPanel() {
             <ol className="timeline">
               {(autonomyActivity.items || []).length === 0 && <li className="empty-state">Henüz proaktif aktivite kaydı yok.</li>}
               {(autonomyActivity.items || []).map((item, idx) => (
-                <li key={item.trigger_id || idx} className="timeline__item">
+                <li key={`${item.trigger_id || "trigger"}-${idx}`} className="timeline__item">
                   <span className={`timeline__badge ${item.status === "success" ? "timeline__badge--success" : "timeline__badge--warning"}`}>
                     {idx + 1}
                   </span>
