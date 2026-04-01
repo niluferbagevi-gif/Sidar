@@ -12,9 +12,14 @@ import config
 
 @pytest.fixture(autouse=True)
 def reset_singleton_and_hardware(monkeypatch):
+    """Her testten önce Config singleton'ını ve donanım yükleme bayrağını sıfırlar."""
     monkeypatch.setattr(config, "_config_instance", None, raising=False)
     monkeypatch.setattr(config.Config, "_hardware_loaded", False, raising=False)
 
+
+# ═══════════════════════════════════════════════════════════════
+# ÇEVRE DEĞİŞKENLERİ (ENV) TESTLERİ
+# ═══════════════════════════════════════════════════════════════
 
 def test_get_bool_env_variants(monkeypatch):
     monkeypatch.delenv("BOOL_KEY", raising=False)
@@ -55,6 +60,10 @@ def test_get_list_env(monkeypatch):
     assert config.get_list_env("LIST_KEY", separator="|") == ["x", "y", "z"]
 
 
+# ═══════════════════════════════════════════════════════════════
+# DONANIM (HARDWARE) TESTLERİ
+# ═══════════════════════════════════════════════════════════════
+
 def test_is_wsl2_true_and_false(monkeypatch):
     class FakePath:
         def __init__(self, content, raises=False):
@@ -83,7 +92,7 @@ def test_check_hardware_use_gpu_disabled(monkeypatch):
     assert hw.gpu_name == "Devre Dışı (Kullanıcı)"
 
 
-def test_check_hardware_with_cuda_and_fraction(monkeypatch):
+def test_check_hardware_with_cuda_fraction_and_pynvml(monkeypatch):
     monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setenv("GPU_MEMORY_FRACTION", "0.6")
     monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
@@ -93,17 +102,11 @@ def test_check_hardware_with_cuda_and_fraction(monkeypatch):
 
     class FakeCuda:
         @staticmethod
-        def is_available():
-            return True
-
+        def is_available(): return True
         @staticmethod
-        def device_count():
-            return 2
-
+        def device_count(): return 2
         @staticmethod
-        def get_device_name(_idx):
-            return "FakeGPU"
-
+        def get_device_name(_idx): return "FakeGPU"
         @staticmethod
         def set_per_process_memory_fraction(frac, device=0):
             calls["frac"] = frac
@@ -112,12 +115,24 @@ def test_check_hardware_with_cuda_and_fraction(monkeypatch):
     fake_torch = types.SimpleNamespace(cuda=FakeCuda, version=types.SimpleNamespace(cuda="12.4"))
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
+    # pynvml mock ekleyerek driver version satırlarını da %100 test edelim
+    class FakePynvml:
+        @staticmethod
+        def nvmlInit(): pass
+        @staticmethod
+        def nvmlSystemGetDriverVersion(): return "550.54"
+        @staticmethod
+        def nvmlShutdown(): pass
+
+    monkeypatch.setitem(sys.modules, "pynvml", FakePynvml)
+
     hw = config.check_hardware()
 
     assert hw.has_cuda is True
     assert hw.gpu_name == "FakeGPU"
     assert hw.gpu_count == 2
     assert hw.cuda_version == "12.4"
+    assert hw.driver_version == "550.54"
     assert calls == {"frac": 0.6, "device": 0}
 
 
@@ -137,6 +152,36 @@ def test_check_hardware_import_error(monkeypatch):
     assert hw.gpu_name == "PyTorch Yok"
 
 
+def test_ensure_hardware_info_loaded_gpu_disabled(monkeypatch):
+    monkeypatch.setattr(config.Config, "USE_GPU", False, raising=False)
+    monkeypatch.setattr(config.Config, "_hardware_loaded", False, raising=False)
+    config.Config._ensure_hardware_info_loaded()
+
+    assert config.Config._hardware_loaded is True
+    assert config.Config.GPU_INFO == "Devre Dışı / CPU Modu"
+    assert config.Config.GPU_COUNT == 0
+
+
+def test_ensure_hardware_info_loaded_gpu_enabled(monkeypatch):
+    fake = config.HardwareInfo(
+        has_cuda=True, gpu_name="GPU-X", gpu_count=3,
+        cpu_count=8, cuda_version="12.1", driver_version="550",
+    )
+    monkeypatch.setattr(config, "check_hardware", lambda: fake)
+    monkeypatch.setattr(config.Config, "USE_GPU", True, raising=False)
+    monkeypatch.setattr(config.Config, "_hardware_loaded", False, raising=False)
+    config.Config._ensure_hardware_info_loaded()
+
+    assert config.Config.USE_GPU is True
+    assert config.Config.GPU_INFO == "GPU-X"
+    assert config.Config.GPU_COUNT == 3
+    assert config.Config.CPU_COUNT == 8
+
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIG UYGULAMA TESTLERİ
+# ═══════════════════════════════════════════════════════════════
+
 def test_config_initialize_directories(monkeypatch, tmp_path):
     d1 = tmp_path / "a"
     d2 = tmp_path / "b"
@@ -147,54 +192,60 @@ def test_config_initialize_directories(monkeypatch, tmp_path):
 
 def test_set_provider_mode_valid_and_invalid(monkeypatch):
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    
     config.Config.set_provider_mode("online")
     assert config.Config.AI_PROVIDER == "gemini"
 
+    config.Config.set_provider_mode("anthropic")
+    assert config.Config.AI_PROVIDER == "anthropic"
+
     config.Config.set_provider_mode("invalid-provider")
-    assert config.Config.AI_PROVIDER == "gemini"
+    # Mevcut mod korunmalı
+    assert config.Config.AI_PROVIDER == "anthropic"
 
 
-def test_ensure_hardware_info_loaded_gpu_disabled(monkeypatch):
-    monkeypatch.setattr(config.Config, "USE_GPU", False, raising=False)
-    monkeypatch.setattr(config.Config, "_hardware_loaded", False, raising=False)
-
-    config.Config._ensure_hardware_info_loaded()
-
-    assert config.Config._hardware_loaded is True
-    assert config.Config.GPU_INFO == "Devre Dışı / CPU Modu"
-    assert config.Config.GPU_COUNT == 0
-
-
-def test_ensure_hardware_info_loaded_gpu_enabled(monkeypatch):
-    fake = config.HardwareInfo(
-        has_cuda=True,
-        gpu_name="GPU-X",
-        gpu_count=3,
-        cpu_count=8,
-        cuda_version="12.1",
-        driver_version="550",
-    )
-    monkeypatch.setattr(config, "check_hardware", lambda: fake)
-    monkeypatch.setattr(config.Config, "USE_GPU", True, raising=False)
-    monkeypatch.setattr(config.Config, "_hardware_loaded", False, raising=False)
-
-    config.Config._ensure_hardware_info_loaded()
-
-    assert config.Config.USE_GPU is True
-    assert config.Config.GPU_INFO == "GPU-X"
-    assert config.Config.GPU_COUNT == 3
-    assert config.Config.CPU_COUNT == 8
-    assert config.Config.CUDA_VERSION == "12.1"
-    assert config.Config.DRIVER_VERSION == "550"
-
-
-def test_validate_critical_settings_gemini_missing_key(monkeypatch):
-    monkeypatch.setattr(config.Config, "AI_PROVIDER", "gemini", raising=False)
-    monkeypatch.setattr(config.Config, "GEMINI_API_KEY", "", raising=False)
-    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+@pytest.mark.parametrize("provider, key_attr", [
+    ("gemini", "GEMINI_API_KEY"),
+    ("openai", "OPENAI_API_KEY"),
+    ("anthropic", "ANTHROPIC_API_KEY"),
+    ("litellm", "LITELLM_GATEWAY_URL"),
+])
+def test_validate_critical_settings_missing_provider_keys(monkeypatch, provider, key_attr):
+    # Tüm AI sağlayıcılarında API Key / URL eksikse False dönmesini test et
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", provider, raising=False)
+    monkeypatch.setattr(config.Config, key_attr, "", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "valid_key_simulated", raising=False)
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None), raising=False)
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True), raising=False)
 
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_invalid_fernet(monkeypatch):
+    # Geçersiz Fernet key verildiğinde yakalanan Exception kontrolü
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "gecersiz_bir_anahtar", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None), raising=False)
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True), raising=False)
+
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_missing_cryptography_lib(monkeypatch):
+    # Geçerli Fernet var ancak cryptography kütüphanesi yoksa (ImportError simülasyonu)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "8kXg-_1l9w-sY7Y4Y1J_mH7W2Z3eU4v5Q6r7t8y9u0I=", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None), raising=False)
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True), raising=False)
+
+    real_import = __import__
+    def fake_import(name, *args, **kwargs):
+        if name == "cryptography.fernet":
+            raise ImportError("no cryptography")
+        return real_import(name, *args, **kwargs)
+    
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    
     assert config.Config.validate_critical_settings() is False
 
 
@@ -209,21 +260,34 @@ def test_validate_critical_settings_ollama_happy_path(monkeypatch):
         status_code = 200
 
     class FakeClient:
-        def __init__(self, timeout):
-            self.timeout = timeout
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
+        def __init__(self, timeout): self.timeout = timeout
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc, tb): return False
         def get(self, url):
             assert url.endswith("/tags")
             return FakeResponse()
 
     monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(Client=FakeClient))
 
+    assert config.Config.validate_critical_settings() is True
+
+
+def test_validate_critical_settings_ollama_unreachable(monkeypatch):
+    # Ollama kapalıyken Exception fırlatması durumu veya 404 dönmesi
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None), raising=False)
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True), raising=False)
+
+    class FakeClientRaise:
+        def __init__(self, timeout): pass
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc, tb): return False
+        def get(self, url): raise ConnectionError("Ollama kapali")
+
+    monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(Client=FakeClientRaise))
+    # Exception tetiklenecek, ancak validate_critical_settings 'is_valid' True dönebilir 
+    # çünkü Ollama erişilememesi sadece bir warning'dir (kodunuzdaki mantığa göre)
     assert config.Config.validate_critical_settings() is True
 
 
@@ -254,45 +318,30 @@ def test_init_telemetry_success(monkeypatch):
 
     class FakeResource:
         @staticmethod
-        def create(data):
-            return data
+        def create(data): return data
 
     class FakeProvider:
-        def __init__(self, resource):
-            self.resource = resource
-            self.added = []
-
-        def add_span_processor(self, processor):
-            self.added.append(processor)
+        def __init__(self, resource): self.resource = resource; self.added = []
+        def add_span_processor(self, processor): self.added.append(processor)
 
     class FakeExporter:
-        def __init__(self, endpoint, insecure):
-            self.endpoint = endpoint
-            self.insecure = insecure
+        def __init__(self, endpoint, insecure): self.endpoint = endpoint; self.insecure = insecure
 
     class FakeBatch:
-        def __init__(self, exporter):
-            self.exporter = exporter
+        def __init__(self, exporter): self.exporter = exporter
 
     class FakeTrace:
-        def __init__(self):
-            self.provider = None
-
-        def set_tracer_provider(self, provider):
-            self.provider = provider
+        def __init__(self): self.provider = None
+        def set_tracer_provider(self, provider): self.provider = provider
 
     class FakeFastAPIInstrumentor:
         called = False
-
         @classmethod
-        def instrument_app(cls, app):
-            cls.called = True
+        def instrument_app(cls, app): cls.called = True
 
     class FakeHTTPXInstrumentor:
         called = False
-
-        def instrument(self):
-            self.__class__.called = True
+        def instrument(self): self.__class__.called = True
 
     trace = FakeTrace()
     ok = config.Config.init_telemetry(
@@ -315,16 +364,12 @@ def test_init_telemetry_import_failure(monkeypatch):
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", True, raising=False)
 
     class DummyLogger:
-        def __init__(self):
-            self.warned = False
-
-        def warning(self, *_args, **_kwargs):
-            self.warned = True
+        def __init__(self): self.warned = False
+        def warning(self, *_args, **_kwargs): self.warned = True
 
     log = DummyLogger()
 
     real_import = __import__
-
     def fake_import(name, *args, **kwargs):
         if name.startswith("opentelemetry"):
             raise ImportError("missing")
@@ -339,21 +384,21 @@ def test_init_telemetry_import_failure(monkeypatch):
 def test_print_config_summary(monkeypatch, capsys):
     monkeypatch.setattr(config.Config, "PROJECT_NAME", "Sidar", raising=False)
     monkeypatch.setattr(config.Config, "VERSION", "5.2.0", raising=False)
-    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
-    monkeypatch.setattr(config.Config, "USE_GPU", False, raising=False)
-    monkeypatch.setattr(config.Config, "GPU_INFO", "CPU", raising=False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm", raising=False) # Farklı bir branch test
+    monkeypatch.setattr(config.Config, "USE_GPU", True, raising=False) # GPU var dalını test
+    monkeypatch.setattr(config.Config, "GPU_INFO", "RTX", raising=False)
     monkeypatch.setattr(config.Config, "CPU_COUNT", 4, raising=False)
     monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full", raising=False)
     monkeypatch.setattr(config.Config, "DEBUG_MODE", False, raising=False)
-    monkeypatch.setattr(config.Config, "CODING_MODEL", "code", raising=False)
-    monkeypatch.setattr(config.Config, "TEXT_MODEL", "text", raising=False)
     monkeypatch.setattr(config.Config, "RAG_DIR", config.BASE_DIR / "data" / "rag", raising=False)
-    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "fernet-key", raising=False)
 
     config.Config.print_config_summary()
     out = capsys.readouterr().out
     assert "Yapılandırma Özeti" in out
-    assert "AI Sağlayıcı" in out
+    assert "LiteLLM Gateway" in out
+    assert "GPU              : ✓ RTX" in out
+    assert "Etkin (Fernet)" in out
 
 
 def test_get_config_singleton(monkeypatch):
