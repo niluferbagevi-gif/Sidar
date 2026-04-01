@@ -36,6 +36,9 @@ run_pytest_coverage_report() {
 
   "${PYTEST_CMD[@]}"
 
+  # parallel=True nedeniyle oluşan .coverage.* dosyalarını birleştir
+  coverage combine || true
+
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
     open_artifact "htmlcov/index.html"
