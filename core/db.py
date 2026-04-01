@@ -203,6 +203,13 @@ def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value if value is not None else default)
+    except (TypeError, ValueError):
+        return default
+
+
 class Database:
     """Asenkron veritabanı erişim katmanı.
 
@@ -2719,10 +2726,10 @@ class Database:
                     provider_name,
                     today,
                 )
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+            q_tokens = _coerce_int(quota["daily_token_limit"] if quota else 0)
+            q_reqs = _coerce_int(quota["daily_request_limit"] if quota else 0)
+            u_tokens = _coerce_int(usage["tokens_used"] if usage else 0)
+            u_reqs = _coerce_int(usage["requests_used"] if usage else 0)
         else:
             assert self._sqlite_conn is not None
             def _run() -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
@@ -2737,10 +2744,10 @@ class Database:
                 ).fetchone()
                 return q, u
             quota, usage = await self._run_sqlite_op(_run)
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+            q_tokens = _coerce_int(quota["daily_token_limit"] if quota else 0)
+            q_reqs = _coerce_int(quota["daily_request_limit"] if quota else 0)
+            u_tokens = _coerce_int(usage["tokens_used"] if usage else 0)
+            u_reqs = _coerce_int(usage["requests_used"] if usage else 0)
 
         return {
             "daily_token_limit": q_tokens,
@@ -2772,8 +2779,8 @@ class Database:
                         "username": str(row["username"]),
                         "role": str(row["role"]),
                         "created_at": str(row["created_at"]),
-                        "daily_token_limit": int(row["daily_token_limit"] or 0),
-                        "daily_request_limit": int(row["daily_request_limit"] or 0),
+                        "daily_token_limit": _coerce_int(row["daily_token_limit"]),
+                        "daily_request_limit": _coerce_int(row["daily_request_limit"]),
                     }
                     for row in rows
                 ]
@@ -2798,8 +2805,8 @@ class Database:
                     "username": str(row["username"]),
                     "role": str(row["role"]),
                     "created_at": str(row["created_at"]),
-                    "daily_token_limit": int(row["daily_token_limit"] or 0),
-                    "daily_request_limit": int(row["daily_request_limit"] or 0),
+                    "daily_token_limit": _coerce_int(row["daily_token_limit"]),
+                    "daily_request_limit": _coerce_int(row["daily_request_limit"]),
                 }
                 for row in rows
             ]
@@ -2840,8 +2847,8 @@ class Database:
 
         return {
             "total_users": len(users),
-            "total_tokens_used": int(totals["total_tokens_used"] or 0),
-            "total_api_requests": int(totals["total_api_requests"] or 0),
+            "total_tokens_used": _coerce_int(totals["total_tokens_used"]),
+            "total_api_requests": _coerce_int(totals["total_api_requests"]),
             "users": users,
         }
 
