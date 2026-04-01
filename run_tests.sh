@@ -25,9 +25,9 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  echo "➡️ Çalıştırılan komut: pytest --cov-fail-under=${COVERAGE_FAIL_UNDER}"
+  echo "➡️ Çalıştırılan komut: pytest -n auto --cov-fail-under=${COVERAGE_FAIL_UNDER}"
 
-  pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+  pytest -n auto --cov-fail-under="${COVERAGE_FAIL_UNDER}"
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
