@@ -185,8 +185,20 @@ def _make_mock_agent(summary="görev tamamlandı", status="success"):
     contracts = sys.modules["agent.core.contracts"]
 
     agent = MagicMock()
-    result = contracts.TaskResult(task_id="t", status=status, summary=summary, evidence=[])
-    agent.handle = AsyncMock(return_value=result)
+    async def _handle(envelope):
+        normalized_summary = summary
+        if not contracts.is_delegation_request(summary) and not isinstance(
+            summary, (str, int, float, bool, dict, list, type(None))
+        ):
+            normalized_summary = str(summary)
+        return contracts.TaskResult(
+            task_id=envelope.task_id,
+            status=status,
+            summary=normalized_summary,
+            evidence=[],
+        )
+
+    agent.handle = AsyncMock(side_effect=_handle)
     return agent
 
 
@@ -841,8 +853,20 @@ def _stub_swarm_deps():
 def _make_mock_agent(summary="görev tamamlandı", status="success"):
     contracts = sys.modules["agent.core.contracts"]
     agent = MagicMock()
-    result = contracts.TaskResult(task_id="t", status=status, summary=summary, evidence=[])
-    agent.handle = AsyncMock(return_value=result)
+    async def _handle(envelope):
+        normalized_summary = summary
+        if not contracts.is_delegation_request(summary) and not isinstance(
+            summary, (str, int, float, bool, dict, list, type(None))
+        ):
+            normalized_summary = str(summary)
+        return contracts.TaskResult(
+            task_id=envelope.task_id,
+            status=status,
+            summary=normalized_summary,
+            evidence=[],
+        )
+
+    agent.handle = AsyncMock(side_effect=_handle)
     return agent
 
 
