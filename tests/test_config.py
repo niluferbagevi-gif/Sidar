@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import types
+import pathlib
 from pathlib import Path
 
 import pytest
@@ -414,3 +415,216 @@ def test_reload_config_without_dotenv(monkeypatch):
     mod = importlib.reload(config)
     assert callable(mod.load_dotenv)
     importlib.reload(mod)
+
+
+def test_reload_config_env_file_branches(monkeypatch, capsys):
+    load_calls = []
+
+    def fake_load_dotenv(*_args, **kwargs):
+        load_calls.append(kwargs)
+        return True
+
+    def fake_exists(self):
+        name = self.name
+        if name == ".env":
+            return True
+        if name == ".env.production":
+            return True
+        return False
+
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setattr(pathlib.Path, "exists", fake_exists, raising=False)
+    monkeypatch.setitem(sys.modules, "dotenv", types.SimpleNamespace(load_dotenv=fake_load_dotenv))
+
+    mod = importlib.reload(config)
+    out = capsys.readouterr().out
+    assert "Ortama özgü yapılandırma yüklendi" in out
+    assert any(str(call.get("dotenv_path", "")).endswith(".env") for call in load_calls)
+    assert any(call.get("override") is True for call in load_calls)
+    assert mod.ENV_PATH.exists()
+
+
+def test_reload_config_missing_env_file_warning(monkeypatch, capsys):
+    def fake_exists(_self):
+        return False
+
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.setattr(pathlib.Path, "exists", fake_exists, raising=False)
+    importlib.reload(config)
+    out = capsys.readouterr().out
+    assert ".env' dosyası bulunamadı" in out
+
+
+def test_check_hardware_wsl2_cuda_not_found(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: True)
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return False
+
+    fake_torch = types.SimpleNamespace(cuda=FakeCuda, version=types.SimpleNamespace(cuda="N/A"))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.delitem(sys.modules, "pynvml", raising=False)
+
+    hw = config.check_hardware()
+    assert hw.gpu_name == "CUDA Bulunamadı"
+
+
+def test_check_hardware_invalid_fraction_and_set_fraction_exception(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setenv("LLM_GPU_MEMORY_FRACTION", "0.9")
+    monkeypatch.setenv("RAG_GPU_MEMORY_FRACTION", "0.5")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_name(_idx):
+            return "GPU-Z"
+
+        @staticmethod
+        def set_per_process_memory_fraction(_frac, device=0):
+            raise RuntimeError(f"cannot set on {device}")
+
+    fake_torch = types.SimpleNamespace(cuda=FakeCuda, version=types.SimpleNamespace(cuda="12.2"))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    hw = config.check_hardware()
+    assert hw.has_cuda is True
+    assert hw.gpu_name == "GPU-Z"
+
+
+def test_check_hardware_generic_exception_and_cpu_fallback(monkeypatch):
+    monkeypatch.setenv("USE_GPU", "true")
+    monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+
+    real_import = __import__
+
+    class FakeMP:
+        @staticmethod
+        def cpu_count():
+            raise RuntimeError("no cpu")
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch":
+            raise RuntimeError("torch boom")
+        if name == "multiprocessing":
+            return FakeMP
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    hw = config.check_hardware()
+    assert hw.gpu_name == "Tespit Edilemedi"
+    assert hw.cpu_count == 1
+
+
+def test_ensure_hardware_info_loaded_when_already_loaded(monkeypatch):
+    monkeypatch.setattr(config.Config, "_hardware_loaded", True, raising=False)
+    called = {"check": False}
+
+    def fake_check():
+        called["check"] = True
+        return config.HardwareInfo(False, "N/A")
+
+    monkeypatch.setattr(config, "check_hardware", fake_check)
+    config.Config._ensure_hardware_info_loaded()
+    assert called["check"] is False
+
+
+def test_initialize_directories_failure_path(monkeypatch):
+    class BadFolder:
+        name = "bad"
+
+        def mkdir(self, *args, **kwargs):
+            raise OSError("no permission")
+
+    monkeypatch.setattr(config.Config, "REQUIRED_DIRS", [BadFolder()], raising=False)
+    assert config.Config.initialize_directories() is False
+
+
+def test_validate_critical_settings_ollama_non_api_url_and_non_200(monkeypatch):
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "OLLAMA_URL", "http://localhost:11434", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None), raising=False)
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True), raising=False)
+
+    called = {"url": None}
+
+    class FakeResponse:
+        status_code = 404
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url):
+            called["url"] = url
+            return FakeResponse()
+
+    monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(Client=FakeClient))
+    assert config.Config.validate_critical_settings() is True
+    assert called["url"].endswith("/api/tags")
+
+
+def test_init_telemetry_import_default_classes_and_runtime_failure(monkeypatch):
+    monkeypatch.setattr(config.Config, "ENABLE_TRACING", True, raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_INSTRUMENT_FASTAPI", True, raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_INSTRUMENT_HTTPX", True, raising=False)
+
+    fake_trace_exporter_mod = types.SimpleNamespace(OTLPSpanExporter=lambda **_kwargs: object())
+    fake_sdk_trace_mod = types.SimpleNamespace(TracerProvider=lambda resource: (_ for _ in ()).throw(RuntimeError("provider fail")))
+    fake_resource_mod = types.SimpleNamespace(Resource=types.SimpleNamespace(create=lambda data: data))
+    fake_span_export_mod = types.SimpleNamespace(BatchSpanProcessor=lambda _exporter: object())
+    fake_fastapi_mod = types.SimpleNamespace(FastAPIInstrumentor=types.SimpleNamespace(instrument_app=lambda _app: None))
+
+    monkeypatch.setitem(sys.modules, "opentelemetry.exporter.otlp.proto.grpc.trace_exporter", fake_trace_exporter_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace", fake_sdk_trace_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.resources", fake_resource_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace.export", fake_span_export_mod)
+    monkeypatch.setitem(sys.modules, "opentelemetry.instrumentation.fastapi", fake_fastapi_mod)
+    monkeypatch.delitem(sys.modules, "opentelemetry.instrumentation.httpx", raising=False)
+
+    fake_trace_module = types.SimpleNamespace(set_tracer_provider=lambda _provider: None)
+    assert config.Config.init_telemetry(trace_module=fake_trace_module, fastapi_app=object()) is False
+
+
+def test_print_config_summary_anthropic_branch(monkeypatch, capsys):
+    monkeypatch.setattr(config.Config, "PROJECT_NAME", "Sidar", raising=False)
+    monkeypatch.setattr(config.Config, "VERSION", "5.2.0", raising=False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "anthropic", raising=False)
+    monkeypatch.setattr(config.Config, "USE_GPU", True, raising=False)
+    monkeypatch.setattr(config.Config, "GPU_INFO", "RTX", raising=False)
+    monkeypatch.setattr(config.Config, "GPU_COUNT", 1, raising=False)
+    monkeypatch.setattr(config.Config, "GPU_DEVICE", 0, raising=False)
+    monkeypatch.setattr(config.Config, "GPU_MIXED_PRECISION", False, raising=False)
+    monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.5, raising=False)
+    monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.2, raising=False)
+    monkeypatch.setattr(config.Config, "DRIVER_VERSION", "551.23", raising=False)
+    monkeypatch.setattr(config.Config, "CUDA_VERSION", "12.4", raising=False)
+    monkeypatch.setattr(config.Config, "CPU_COUNT", 8, raising=False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full", raising=False)
+    monkeypatch.setattr(config.Config, "DEBUG_MODE", False, raising=False)
+    monkeypatch.setattr(config.Config, "ANTHROPIC_MODEL", "claude-x", raising=False)
+    monkeypatch.setattr(config.Config, "RAG_DIR", config.BASE_DIR / "data" / "rag", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+
+    config.Config.print_config_summary()
+    out = capsys.readouterr().out
+    assert "Sürücü Sürümü" in out
+    assert "Anthropic Modeli : claude-x" in out
