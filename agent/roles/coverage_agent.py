@@ -13,8 +13,10 @@ from typing import Any, Optional
 from config import Config
 
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 
 
+@AgentCatalog.register(capabilities=['coverage_analysis', 'pytest_output_analysis', 'autonomous_test_generation'], is_builtin=True)
 class CoverageAgent(BaseAgent):
     """Pytest çıktısını okuyup eksik senaryoları belirleyen ve reviewer onayına sunan ajan."""
 

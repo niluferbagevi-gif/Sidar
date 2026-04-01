@@ -6,6 +6,9 @@ echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
+PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
+RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
+
 open_artifact() {
   local target="$1"
   if [ ! -e "$target" ] || [ "${AUTO_OPEN_ARTIFACTS}" != "1" ]; then
@@ -25,9 +28,13 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  echo "➡️ Çalıştırılan komut: pytest --cov-fail-under=${COVERAGE_FAIL_UNDER}"
+  PYTEST_CMD=(pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  if python -c "import xdist" >/dev/null 2>&1; then
+    PYTEST_CMD+=( -n "${PYTEST_WORKERS}" )
+  fi
+  echo "➡️ Çalıştırılan komut: ${PYTEST_CMD[*]}"
 
-  pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+  "${PYTEST_CMD[@]}"
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
@@ -41,7 +48,9 @@ run_pytest_coverage_report() {
 run_pytest_coverage_report
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
-if [ -f "tests/test_benchmark.py" ]; then
+if [ "${RUN_BENCHMARKS}" = "0" ]; then
+  echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
+elif [ -f "tests/test_benchmark.py" ]; then
   python -m pytest -v tests/test_benchmark.py --no-cov
 else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."

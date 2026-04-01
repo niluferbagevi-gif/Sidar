@@ -5,7 +5,7 @@ import asyncio
 from types import SimpleNamespace
 
 from agent.swarm import SwarmOrchestrator, SwarmTask
-from agent.registry import AgentRegistry
+from agent.registry import AgentCatalog
 from config import Config
 from agent.core.contracts import TaskResult
 
@@ -29,7 +29,7 @@ def test_swarm_orchestrator_distributes_tasks_between_researcher_and_coder(monke
             return _FakeResearcher() if role == "researcher" else _FakeCoder()
 
         monkeypatch.setattr(orchestrator.router, "route_by_role", lambda role: SimpleNamespace(role_name=role))
-        monkeypatch.setattr(AgentRegistry, "create", _create_agent)
+        monkeypatch.setattr(AgentCatalog, "create", _create_agent)
         monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", _noop)
 
         tasks = [

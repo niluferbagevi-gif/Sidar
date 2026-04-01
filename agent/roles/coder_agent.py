@@ -14,9 +14,11 @@ from managers.security import SecurityManager
 from managers.todo_manager import TodoManager
 
 from agent.base_agent import BaseAgent
+from agent.registry import AgentCatalog
 from agent.core.event_stream import get_agent_event_bus
 
 
+@AgentCatalog.register(capabilities=['code_generation', 'file_io', 'shell_execution', 'code_review'], is_builtin=True)
 class CoderAgent(BaseAgent):
     """Yalnızca kodlama ve proje denetim araçlarını kullanan uzman ajan."""
 
