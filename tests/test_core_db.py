@@ -17,6 +17,11 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture
+def sqlite_test_db_url(tmp_path):
+    return f"sqlite+aiosqlite:///{tmp_path}/fixture_test.db"
+
+
 def _get_db():
     # config stub
     cfg_stub = types.ModuleType("config")
