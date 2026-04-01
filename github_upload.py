@@ -115,8 +115,20 @@ def get_file_content(path: str):
         return None
 
 
-def collect_safe_files():
+def get_deleted_files():
+    """Sistemden silinmiş ama Git'in geçmişte takip ettiği dosyaları bulur."""
+    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
+    if not success or not output:
+        return []
+
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def collect_safe_files(deleted_files_list=None):
     """Yalnızca güvenli dosyaları stage listesine alır."""
+    if deleted_files_list is None:
+        deleted_files_list = []
+
     success, output = run_command(["git", "ls-files", "-co", "--exclude-standard"], show_output=False)
     if not success:
         return [], []
@@ -131,6 +143,8 @@ def collect_safe_files():
         if not file_path:
             continue
         if os.path.isdir(file_path):
+            continue
+        if file_path in deleted_files_list:
             continue
 
         if is_forbidden_path(file_path):
@@ -325,7 +339,29 @@ def main():
     # ═══════════════════════════════════════════════════════════════
     print(f"\n{Colors.OKBLUE}📦 Yerel dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
-    safe_files, blocked_files = collect_safe_files()
+
+    # 1. Silinmiş dosyaları kontrol et ve onaya sun
+    deleted_files = get_deleted_files()
+    if deleted_files:
+        print(f"\n{Colors.WARNING}🗑️ Aşağıdaki dosyaların yerel sistemden silindiği tespit edildi:{Colors.ENDC}")
+        for deleted_file in deleted_files:
+            print(f"  - {deleted_file}")
+
+        confirm_del = input(
+            f"{Colors.OKBLUE}Bu dosyaları kalıcı olarak silip GitHub'dan da kaldırmak istiyor musunuz? "
+            f"(evet / hayır): {Colors.ENDC}"
+        ).strip().lower()
+        if confirm_del in ["e", "evet", "y", "yes"]:
+            run_command(["git", "rm", "--ignore-unmatch"] + deleted_files, show_output=False)
+            print(f"{Colors.OKGREEN}✅ Silinen dosyalar onaylandı ve Git'e bildirildi.{Colors.ENDC}")
+        else:
+            print(
+                f"{Colors.WARNING}⚠️ Silme işlemi onaylanmadı. "
+                f"Bu dosyaların silinme işlemi GitHub'a gönderilmeyecek.{Colors.ENDC}"
+            )
+
+    # 2. Değiştirilmiş/Yeni dosyaları topla (silinen dosyaları atlayarak)
+    safe_files, blocked_files = collect_safe_files(deleted_files_list=deleted_files)
 
     if safe_files:
         add_success, add_err = stage_files(safe_files)
