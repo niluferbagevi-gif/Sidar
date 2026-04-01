@@ -14,6 +14,12 @@ Bu belge, mevcut coverage seviyesinden kalite geçidini güvenli şekilde geçec
 - Evet, testleri oluştururken **referans plan** olarak bunu takip edeceğim.
 - Ancak uygulamada her PR’da yalnızca ilgili modülün bölümü ele alınır (hepsi birden değil).
 - Kaynak dosya değiştikçe plan da güncellenir; yani yaşayan bir dokümandır.
+- Planın başındaki metrikler (coverage, kırmızı/sarı liste, hedef eşikler) **her sprint başında coverage raporuna göre** güncellenir.
+
+### Mevcut kalite geçidi ile hizalama (zorunlu not)
+
+- Repo’daki `.coveragerc` ayarına göre güncel global kalite geçidi `fail_under = 90` olarak uygulanır.
+- Bu nedenle aşağıdaki “kademeli hedefler”, global gate’in alternatifi değil; **modül bazlı iyileştirme hedefi** olarak yorumlanmalıdır.
 
 ### Testleri sıfırdan yazma (greenfield) yaklaşımı
 
@@ -47,7 +53,9 @@ Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
 
 ## 2) Önceliklendirme Matrisi
 
-### A) %0 Coverage Modüller (Kırmızı Bölge)
+### A) Düşük Coverage Modüller (Kırmızı Bölge)
+
+> Not: Bu bölümdeki liste “örnek”tir. Kesin öncelik sırası, son coverage raporundan otomatik üretilen tabloya göre belirlenmelidir.
 
 #### Ajan sistemi (`agent/`)
 Örnek dosyalar: `sidar_agent.py`, `swarm.py`, `auto_handle.py`, `reviewer_agent.py`
@@ -72,7 +80,7 @@ Test yaklaşımı:
 - 2xx + 4xx + 5xx senaryoları (özellikle validation ve internal error path).
 - CLI komutları için `click.testing.CliRunner` ile argüman/hata simülasyonu.
 
-#### Tamamen eksik manager’lar
+#### Coverage’ı düşük manager’lar
 Örnek dosyalar: `system_health.py`, `todo_manager.py`, `web_search.py`, `package_info.py`
 
 Test yaklaşımı:
@@ -126,7 +134,7 @@ Test yaklaşımı:
 
 ### Sprint 1 — Stabil temel
 - Dış bağımlılık mock altyapısı ve ortak fixture seti.
-- `%0` modüller için smoke testler.
+- Düşük coverage modüller için smoke testler.
 - CI’da hızlı test job’ı (kritik unit set).
 
 ### Sprint 2 — Kritik path derinleştirme
@@ -160,7 +168,7 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
     with patch("core.llm_client.provider_call") as mocked:
         mocked.side_effect = RuntimeError("rate limit")
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError, match="rate limit"):
             llm_client.complete("hello")
 ```
 
@@ -169,22 +177,39 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
 ## 6) CI / Quality Gate Önerisi
 
 - PR pipeline:
-  - hızlı unit + kritik integration
-  - değişen dosyalara hedefli coverage raporu
+  - `pytest -m "not slow"` ile hızlı unit + kritik integration
+  - değişen dosyalara hedefli coverage raporu (line + branch)
+  - global quality gate: coverage `%90` altına düşerse fail
 - Nightly pipeline:
-  - full suite
+  - full suite (`pytest`)
   - coverage trend karşılaştırması
   - flaky test raporu
 
-Öneri: tek adımda `%100` yerine, **kademeli quality gate** uygulanmalı:
+Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygulanmalı:
 - Faz 1: `%70`
 - Faz 2: `%80`
 - Faz 3: `%90+`
 - Faz 4: risk-temelli hedef coverage (modül kritikliğine göre farklı eşik)
 
+Önemli:
+- Bu fazlar global `%90` gate’i düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
+
 ---
 
-## 7) Beklenen Çıktılar
+## 7) Operasyonel Takip Alanları (Yeni)
+
+Her sprintte aşağıdaki tablo güncellenmelidir:
+
+| Modül | Mevcut Line% | Mevcut Branch% | Hedef | Sorumlu | Hedef Sprint | Durum |
+|---|---:|---:|---:|---|---|---|
+| `agent/*` | TBD | TBD | 90+ | TBD | S1-S2 | planned |
+| `core/llm_client.py` | TBD | TBD | 90+ | TBD | S2 | planned |
+| `core/rag.py` | TBD | TBD | 90+ | TBD | S2 | planned |
+| `managers/*` (kritik) | TBD | TBD | 85-90+ | TBD | S1-S3 | planned |
+
+---
+
+## 8) Beklenen Çıktılar
 
 - Daha hızlı ve deterministik test suite.
 - Kritik iş akışlarında yüksek güven.
