@@ -341,6 +341,11 @@ class Database:
             await pool.close()
 
     async def init_schema(self) -> None:
+        if self._backend == "postgresql" and self._pg_pool is None:
+            await self.connect()
+        elif self._backend == "sqlite" and self._sqlite_conn is None:
+            await self.connect()
+
         if self._backend == "postgresql":
             await self._init_schema_postgresql()
             await self._ensure_access_control_schema_postgresql()

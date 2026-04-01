@@ -313,6 +313,11 @@ def pg_db(monkeypatch):
     cfg.DATABASE_URL = "postgresql://user:pass@localhost/db"
     db = Database(cfg)
     db._pg_pool = FakePgPool()
+
+    async def _fake_create_pool(*args, **kwargs):
+        return FakePgPool()
+
+    monkeypatch.setattr("asyncpg.create_pool", _fake_create_pool, raising=False)
     return db
 
 @pytest.mark.asyncio
