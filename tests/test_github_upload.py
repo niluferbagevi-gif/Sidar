@@ -949,8 +949,6 @@ def _upload_run(
     blocked_files="",
     safe_files="main.py",
 ):
-    call_count = {"status": 0}
-
     def _run(args, show_output=False):
         if args[:2] == ["git", "--version"]:
             return True, "git version 2"
@@ -964,6 +962,9 @@ def _upload_run(
             return True, ""
         if args[:2] == ["git", "ls-files"]:
             return True, safe_files
+        if args[:3] == ["git", "diff", "--cached"]:
+            # stage sonrası commit yoluna girilip girilmeyeceğini belirler
+            return True, "M\tmain.py" if has_changes else ""
         if args[:3] == ["git", "status", "--porcelain"]:
             return True, "M main.py" if has_changes else ""
         if args[:2] == ["git", "add"]:

@@ -37,10 +37,8 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
     cfg = _build_cfg(tmp_path)
 
     async def _run_case() -> None:
-        fake_llm = AsyncMock()
-        fake_llm.chat = AsyncMock(return_value="Yanıt: build geçti")
-
-        with patch("agent.base_agent.LLMClient", return_value=fake_llm):
+        with patch("core.llm_client.LLMClient.chat", new_callable=AsyncMock) as mock_chat:
+            mock_chat.return_value = "Yanıt: build geçti"
             agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
 
         memory_hub = MemoryHub()
@@ -60,7 +58,7 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
 
             assert role_notes[-1] == "Yanıt: build geçti"
             assert messages[-1].content == "Yanıt: build geçti"
-            fake_llm.chat.assert_awaited_once()
+            mock_chat.assert_awaited_once()
         finally:
             await db.close()
 
