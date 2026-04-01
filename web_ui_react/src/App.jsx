@@ -20,7 +20,7 @@ const NAV_ITEMS = [
 ];
 
 export default function App() {
-  const [tokenValue, setTokenValue] = useState(() => getStoredToken());
+  const [tokenValue, setTokenValue] = useState(() => getStoredToken() || "");
   const [savedAt, setSavedAt] = useState(0);
 
   const tokenHint = useMemo(() => {

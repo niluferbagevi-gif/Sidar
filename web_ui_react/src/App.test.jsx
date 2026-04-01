@@ -1,17 +1,27 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { describe, beforeEach, expect, it, vi } from "vitest";
 import App from "./App.jsx";
 import { BrowserRouter } from "./lib/routerShim.jsx";
-import { TOKEN_KEY } from "./lib/api.js";
+import * as api from "./lib/api.js";
 
-vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div>ChatPanel Mock</div> }));
+vi.mock("./components/ChatPanel.jsx", () => ({ ChatPanel: () => <div data-testid="chat-panel">Chat Panel Mock</div> }));
 vi.mock("./components/P2PDialoguePanel.jsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
 vi.mock("./components/SwarmFlowPanel.jsx", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
 vi.mock("./components/PromptAdminPanel.jsx", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
 vi.mock("./components/AgentManagerPanel.jsx", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
 vi.mock("./components/PluginMarketplacePanel.jsx", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
+
+vi.mock("./lib/api.js", async () => {
+  const actual = await vi.importActual("./lib/api.js");
+  return {
+    ...actual,
+    getStoredToken: vi.fn(),
+    setStoredToken: vi.fn(),
+  };
+});
 
 function renderApp(initialPath = "/") {
   window.history.replaceState({}, "Test", initialPath);
@@ -24,29 +34,41 @@ function renderApp(initialPath = "/") {
 
 describe("App", () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.clearAllMocks();
     window.history.replaceState({}, "Test", "/");
+    api.getStoredToken.mockReturnValue(null);
   });
 
-  it("stores the bearer token and updates the token hint", async () => {
-    const user = userEvent.setup();
-    renderApp();
+  it("başlık bilgisini render eder ve / rotasında chat paneline yönlendirir", () => {
+    renderApp("/");
 
-    const input = screen.getByLabelText("Bearer token");
-    await user.type(input, "secret-token");
-    await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
-
-    expect(localStorage.getItem(TOKEN_KEY)).toBe("secret-token");
-    expect(screen.getByText(/Token hazır/)).toBeInTheDocument();
+    expect(screen.getByText(/SİDAR/i)).toBeInTheDocument();
+    expect(screen.getByText(/Kurumsal Agent Control Center/i)).toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/chat");
   });
 
-  it("navigates to the agent manager route from the tab bar", async () => {
+  it("token kaydet akışında API yardımcılarını doğru çağırır", async () => {
     const user = userEvent.setup();
+    api.getStoredToken.mockReturnValue("eski-token");
+
     renderApp("/chat");
 
-    await user.click(screen.getByRole("link", { name: "Agent Manager" }));
+    const input = screen.getByLabelText("Bearer token");
+    expect(input).toHaveValue("eski-token");
 
-    expect(screen.getByText("Agent Manager Mock")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/admin/agents");
+    await user.clear(input);
+    await user.type(input, "yeni-gizli-token");
+    await user.click(screen.getByRole("button", { name: "Token Kaydet" }));
+
+    expect(api.setStoredToken).toHaveBeenCalledWith("yeni-gizli-token");
+    expect(screen.getByText(/Token hazır/i)).toBeInTheDocument();
+  });
+
+  it("navigasyondaki P2P bağlantısının doğru adrese gittiğini gösterir", () => {
+    renderApp("/chat");
+
+    const p2pLink = screen.getByRole("link", { name: "P2P Diyalog" });
+    expect(p2pLink).toHaveAttribute("href", "/p2p");
   });
 });
