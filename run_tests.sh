@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-100}"
+COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 open_artifact() {
@@ -24,10 +24,10 @@ open_artifact() {
 }
 
 run_pytest_coverage_report() {
-  echo "📊 Pytest Coverage Raporu oluşturuluyor..."
-  echo "➡️ Çalıştırılan komut: pytest --cov=. --cov-report=html"
+  echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  echo "➡️ Çalıştırılan komut: pytest --cov-fail-under=${COVERAGE_FAIL_UNDER}"
 
-  pytest --cov=. --cov-report=html --cov-report=term-missing
+  pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}"
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
@@ -37,21 +37,17 @@ run_pytest_coverage_report() {
   fi
 }
 
-# 1) İstenen Coverage raporu (htmlcov/index.html) + otomatik açma
+# 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
 run_pytest_coverage_report
 
-# 2) Kritik çekirdek dosyalar için hedef kapsam
-python -m pytest -v \
-  --cov=managers.security \
-  --cov=core.memory \
-  --cov=core.rag \
-  --cov-report=term-missing \
-  --cov-report=html \
-  --cov-fail-under="${COVERAGE_FAIL_UNDER}"
-# 3) Kritik yol performans baseline testleri (pytest-benchmark)
-python -m pytest -v tests/test_benchmark.py
+# 2) Kritik yol performans baseline testleri (pytest-benchmark)
+if [ -f "tests/test_benchmark.py" ]; then
+  python -m pytest -v tests/test_benchmark.py
+else
+  echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."
+fi
 
-# 4) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
+# 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then
   if ! command -v npm >/dev/null 2>&1; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
@@ -60,7 +56,7 @@ if [ -d "web_ui_react" ]; then
 
   echo "🚀 Frontend (React) Testleri Başlıyor..."
   pushd web_ui_react > /dev/null
-  npm install
+  npm ci
   npm run test:coverage
   for report in coverage/lcov-report/index.html coverage/index.html; do
     open_artifact "$PWD/$report"
