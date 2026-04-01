@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import configparser
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -42,6 +43,8 @@ class QAAgent(BaseAgent):
         self.register_tool("grep_search", self._tool_grep_search)
         self.register_tool("coverage_config", self._tool_coverage_config)
         self.register_tool("ci_remediation", self._tool_ci_remediation)
+        self.register_tool("write_file", self._tool_write_file)
+        self.register_tool("run_pytest", self._tool_run_pytest)
 
     async def _tool_read_file(self, arg: str) -> str:
         _ok, out = await asyncio.to_thread(self.code.read_file, arg)
@@ -65,7 +68,7 @@ class QAAgent(BaseAgent):
         coveragerc_path = Path(self.cfg.BASE_DIR) / ".coveragerc"
         parser.read(coveragerc_path, encoding="utf-8")
         omit_raw = parser.get("run", "omit", fallback="")
-        omit = [line.strip() for line in omit_raw.splitlines() if line.strip()]
+        omit = [part.strip() for part in re.split(r"[\n,]", omit_raw) if part.strip()]
         return {
             "path": str(coveragerc_path),
             "exists": coveragerc_path.exists(),
@@ -100,8 +103,26 @@ class QAAgent(BaseAgent):
         normalized = str(target_path or "").strip().lstrip("./")
         if not normalized:
             return "tests/test_generated_coverage.py"
-        stem = Path(normalized).stem
+
+        path_obj = Path(normalized)
+        stem = path_obj.stem
+        parent_dir = str(path_obj.parent).strip(".").strip("/")
+        if parent_dir:
+            return f"tests/{parent_dir}/test_{stem}.py"
         return f"tests/test_{stem}.py"
+
+    @staticmethod
+    def _sanitize_llm_code(raw_output: str) -> str:
+        clean_text = str(raw_output or "").strip()
+        if not clean_text.startswith("```"):
+            return clean_text
+
+        lines = clean_text.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
 
     async def _generate_test_code(self, target_path: str, context: str) -> str:
         coverage = self._coverage_config_summary()
@@ -113,11 +134,32 @@ class QAAgent(BaseAgent):
             "Aşağıdaki bağlama göre eksik senaryoları kapsayan pytest testleri yaz.\n"
             f"[BAGLAM]\n{context.strip()}"
         )
-        return await self.call_llm(
+        raw_output = await self.call_llm(
             [{"role": "user", "content": prompt}],
             system_prompt=self.TEST_GENERATION_PROMPT,
             temperature=0.1,
         )
+        return self._sanitize_llm_code(raw_output)
+
+
+    async def _tool_write_file(self, arg: str) -> str:
+        payload = self._parse_json_payload(arg)
+        path = str(payload.get("path", "")).strip()
+        content = str(payload.get("content", ""))
+        append = bool(payload.get("append", True))
+
+        if not path:
+            return json.dumps({"success": False, "message": "'path' alanı zorunludur."}, ensure_ascii=False)
+
+        ok, msg = await asyncio.to_thread(self.code.write_generated_test, path, content, append=append)
+        return json.dumps({"success": ok, "message": msg, "path": path}, ensure_ascii=False)
+
+    async def _tool_run_pytest(self, arg: str) -> str:
+        payload = self._parse_json_payload(arg)
+        command = str(payload.get("command", "pytest -q")).strip() or "pytest -q"
+        cwd = str(payload.get("cwd", self.cfg.BASE_DIR)).strip() or str(self.cfg.BASE_DIR)
+        result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
+        return json.dumps(result, ensure_ascii=False)
 
     async def _build_coverage_plan(self, payload: str) -> str:
         structured = self._parse_json_payload(payload)
@@ -159,11 +201,27 @@ class QAAgent(BaseAgent):
             return await self.call_tool("ci_remediation", prompt.split("|", 1)[1].strip())
         if lower.startswith("coverage_plan|"):
             return await self._build_coverage_plan(prompt.split("|", 1)[1].strip())
+        if lower.startswith("write_file|"):
+            return await self.call_tool("write_file", prompt.split("|", 1)[1].strip())
+        if lower.startswith("run_pytest|"):
+            return await self.call_tool("run_pytest", prompt.split("|", 1)[1].strip())
         if lower.startswith("write_missing_tests|"):
             parts = prompt.split("|", 2)
             target_path = parts[1].strip() if len(parts) > 1 else ""
             context = parts[2].strip() if len(parts) > 2 else ""
-            return await self._generate_test_code(target_path.strip(), context.strip())
+            generated = await self._generate_test_code(target_path.strip(), context.strip())
+            test_path = self._suggest_test_path(target_path)
+            ok, msg = await asyncio.to_thread(self.code.write_generated_test, test_path, generated, append=True)
+            return json.dumps(
+                {
+                    "success": ok,
+                    "target_path": target_path,
+                    "test_path": test_path,
+                    "message": msg,
+                    "generated_test": generated,
+                },
+                ensure_ascii=False,
+            )
 
         if any(keyword in lower for keyword in ("coverage", "kapsama", "eksik test", "pytest", "test yaz", "test üret", "qa")):
             return await self._build_coverage_plan(prompt)
