@@ -45,7 +45,7 @@ def test_agent_receives_llm_answer_and_persists_to_memory_layers(tmp_path):
             user = await db.create_user("llm_memory_user", password="secret")
             session = await db.create_session(user.id, "LLM memory integration")
 
-            with patch("core.llm_client.LLMClient.chat", new_callable=AsyncMock) as mock_chat:
+            with patch.object(_LLMMemoryAgent, "call_llm", new_callable=AsyncMock) as mock_chat:
                 mock_chat.return_value = "Yanıt: build geçti"
                 agent = _LLMMemoryAgent(cfg=cfg, role_name="integration")
 

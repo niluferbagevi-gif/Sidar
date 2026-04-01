@@ -390,8 +390,8 @@ class TestSwarmHandoffIntegration:
                     )
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=_CoderAgent, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=_ReviewerAgent, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
@@ -437,8 +437,8 @@ class TestSwarmHandoffIntegration:
                     )
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=_CoderAgent, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=_ReviewerAgent, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
@@ -652,8 +652,8 @@ class TestSwarmDelegationEdgeCases:
                     return contracts.TaskResult(task_id=envelope.task_id, status="success", summary="ok")
 
             reg.AgentRegistry._registry.clear()
-            coder = reg.AgentSpec(role_name="coder", agent_class=MagicMock, capabilities=["code_generation"])
-            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=MagicMock, capabilities=["code_review"])
+            coder = reg.AgentSpec(role_name="coder", agent_class=_CoderAgent, capabilities=["code_generation"])
+            reviewer = reg.AgentSpec(role_name="reviewer", agent_class=_ReviewerAgent, capabilities=["code_review"])
             coder._agent_factory = lambda **_kw: _CoderAgent()
             reviewer._agent_factory = lambda **_kw: _ReviewerAgent()
             reg.AgentRegistry._registry["coder"] = coder
