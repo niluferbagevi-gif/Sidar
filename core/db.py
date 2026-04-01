@@ -2702,6 +2702,12 @@ class Database:
         provider_name = (provider or "unknown").lower().strip() or "unknown"
         today = datetime.now(timezone.utc).date().isoformat()
 
+        def _as_int(value: Any) -> int:
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             async with self._pg_pool.acquire() as conn:
@@ -2719,10 +2725,10 @@ class Database:
                     provider_name,
                     today,
                 )
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+            q_tokens = _as_int(quota["daily_token_limit"] if quota else 0)
+            q_reqs = _as_int(quota["daily_request_limit"] if quota else 0)
+            u_tokens = _as_int(usage["tokens_used"] if usage else 0)
+            u_reqs = _as_int(usage["requests_used"] if usage else 0)
         else:
             assert self._sqlite_conn is not None
             def _run() -> tuple[Optional[sqlite3.Row], Optional[sqlite3.Row]]:
@@ -2737,10 +2743,10 @@ class Database:
                 ).fetchone()
                 return q, u
             quota, usage = await self._run_sqlite_op(_run)
-            q_tokens = int((quota["daily_token_limit"] if quota else 0) or 0)
-            q_reqs = int((quota["daily_request_limit"] if quota else 0) or 0)
-            u_tokens = int((usage["tokens_used"] if usage else 0) or 0)
-            u_reqs = int((usage["requests_used"] if usage else 0) or 0)
+            q_tokens = _as_int(quota["daily_token_limit"] if quota else 0)
+            q_reqs = _as_int(quota["daily_request_limit"] if quota else 0)
+            u_tokens = _as_int(usage["tokens_used"] if usage else 0)
+            u_reqs = _as_int(usage["requests_used"] if usage else 0)
 
         return {
             "daily_token_limit": q_tokens,
