@@ -148,6 +148,15 @@ def collect_safe_files():
     return safe_files, blocked_files
 
 
+def stage_files(file_paths):
+    """Dosyaları git'e literal pathspec ile güvenli biçimde ekler."""
+    if not file_paths:
+        return True, ""
+
+    literal_paths = [f":(literal){path}" for path in file_paths]
+    return run_command(["git", "add", "--"] + literal_paths, show_output=False)
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -319,16 +328,19 @@ def main():
     safe_files, blocked_files = collect_safe_files()
 
     if safe_files:
-        run_command(["git", "add", "--"] + safe_files, show_output=False)
+        add_success, add_err = stage_files(safe_files)
+        if not add_success:
+            print(f"{Colors.FAIL}❌ Dosyalar eklenirken hata oluştu: {add_err}{Colors.ENDC}")
+            sys.exit(1)
 
     if blocked_files:
         print(f"{Colors.WARNING}⛔ Güvenlik/kararlılık nedeniyle atlanan dosyalar:{Colors.ENDC}")
         for blocked in blocked_files:
             print(f"  - {blocked}")
 
-    _, status = run_command(["git", "status", "--porcelain"], show_output=False)
-    
-    if status:
+    _, staged_status = run_command(["git", "diff", "--cached", "--name-status"], show_output=False)
+
+    if staged_status.strip():
         version_str = getattr(cfg, 'VERSION', '2.1')
         default_msg = (
             f"🚀 Sidar {version_str} - Otomatik Dağıtım "
@@ -352,6 +364,12 @@ def main():
             print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
             sys.exit(1)
     else:
+        _, status = run_command(["git", "status", "--porcelain"], show_output=False)
+        if status.strip():
+            print(
+                f"{Colors.WARNING}ℹ️ Commit'e uygun bir dosya bulunamadı "
+                f"(atlanan/boş klasör veya desteklenmeyen girdiler olabilir).{Colors.ENDC}"
+            )
         _, unpushed = run_command(["git", "log", f"origin/{current_branch}..HEAD"], show_output=False)
         if not unpushed:
             print(f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}")
