@@ -1,14 +1,29 @@
 [run]
 branch = True
 parallel = True
+source =
+    agent
+    core
+    managers
+    plugins
+    main.py
+    web_server.py
 omit =
     tests/*
     tests/sidar_plugin_*
     */tests/sidar_plugin_*
     */plug_auto_discover*
     */plug_bad_compile*
+    conftest.py
+    migrations/*
+    scripts/*
+    docs/*
     */__pycache__/*
     */site-packages/*
+    .venv/*
+    venv/*
+    .tox/*
+    .env
     setup.py
 
 [report]
@@ -30,6 +45,7 @@ exclude_lines =
     @abstractproperty
     if 0:
     if False:
+    pass
 
 [html]
 directory = htmlcov
