@@ -13,7 +13,14 @@ def auth_headers() -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_auth_me_requires_authorization_header() -> None:
+async def test_auth_me_requires_authorization_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_redis_is_rate_limited(*_args, **_kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _fake_redis_is_rate_limited)
+
     transport = ASGITransport(app=web_server.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/auth/me")
@@ -26,6 +33,9 @@ async def test_auth_me_requires_authorization_header() -> None:
 async def test_auth_me_returns_current_user(
     monkeypatch: pytest.MonkeyPatch, auth_headers: dict[str, str]
 ) -> None:
+    async def _fake_redis_is_rate_limited(*_args, **_kwargs) -> bool:
+        return False
+
     async def _fake_resolve_user_from_token(_agent, _token: str) -> SimpleNamespace:
         return SimpleNamespace(
             id="user-1",
@@ -39,6 +49,7 @@ async def test_auth_me_returns_current_user(
             memory=SimpleNamespace(set_active_user=lambda *_args, **_kwargs: None)
         )
 
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _fake_redis_is_rate_limited)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve_user_from_token)
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
@@ -57,6 +68,9 @@ async def test_auth_me_returns_current_user(
 async def test_admin_stats_requires_admin_role(
     monkeypatch: pytest.MonkeyPatch, auth_headers: dict[str, str]
 ) -> None:
+    async def _fake_redis_is_rate_limited(*_args, **_kwargs) -> bool:
+        return False
+
     async def _fake_resolve_user_from_token(_agent, _token: str) -> SimpleNamespace:
         return SimpleNamespace(
             id="user-1",
@@ -74,6 +88,7 @@ async def test_admin_stats_requires_admin_role(
     async def _fake_get_agent() -> SimpleNamespace:
         return SimpleNamespace(memory=_Memory())
 
+    monkeypatch.setattr(web_server, "_redis_is_rate_limited", _fake_redis_is_rate_limited)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _fake_resolve_user_from_token)
     monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
 
