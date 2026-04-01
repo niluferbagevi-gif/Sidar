@@ -1,9 +1,45 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
+
+if "httpx" not in sys.modules:
+    _httpx_stub = types.SimpleNamespace(
+        TimeoutException=Exception,
+        RequestError=Exception,
+        Timeout=lambda *args, **kwargs: None,
+    )
+
+    class _AsyncClientStub:
+        def __init__(self, *args, **kwargs) -> None:
+            raise ModuleNotFoundError("httpx is required for networked managers")
+
+    _httpx_stub.AsyncClient = _AsyncClientStub
+    sys.modules["httpx"] = _httpx_stub
+
+if "managers.web_search" not in sys.modules:
+    _web_search_stub = types.ModuleType("managers.web_search")
+
+    class _WebSearchManagerStub:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    _web_search_stub.WebSearchManager = _WebSearchManagerStub
+    sys.modules["managers.web_search"] = _web_search_stub
+
+if "managers.social_media_manager" not in sys.modules:
+    _social_stub = types.ModuleType("managers.social_media_manager")
+
+    class _SocialMediaManagerStub:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    _social_stub.SocialMediaManager = _SocialMediaManagerStub
+    sys.modules["managers.social_media_manager"] = _social_stub
 
 from agent.roles.poyraz_agent import PoyrazAgent
 from agent.sidar_agent import (

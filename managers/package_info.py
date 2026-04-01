@@ -10,7 +10,25 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
-import httpx
+try:
+    import httpx
+except ModuleNotFoundError:  # test/yalın ortamlarda opsiyonel bağımlılık
+    class _MissingHttpx:
+        class TimeoutException(Exception):
+            pass
+
+        class RequestError(Exception):
+            pass
+
+        class Timeout:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        class AsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise ModuleNotFoundError("httpx paketi yüklü değil")
+
+    httpx = _MissingHttpx()
 from packaging.version import InvalidVersion, Version
 
 logger = logging.getLogger(__name__)

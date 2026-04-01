@@ -5,7 +5,21 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Optional, Tuple
 
-import httpx
+try:
+    import httpx
+except ModuleNotFoundError:  # test/yalın ortamlarda opsiyonel bağımlılık
+    class _MissingHttpx:
+        class TimeoutException(Exception):
+            pass
+
+        class RequestError(Exception):
+            pass
+
+        class AsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise ModuleNotFoundError("httpx paketi yüklü değil")
+
+    httpx = _MissingHttpx()
 
 
 class SocialMediaManager:
