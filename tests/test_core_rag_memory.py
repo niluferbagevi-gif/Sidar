@@ -9,13 +9,13 @@ pytest.importorskip("jwt")
 
 from core.entity_memory import EntityMemory
 from core.memory import ConversationMemory, MemoryAuthError
-from core.rag import LocalRAGSearch
+from core.rag import DocumentStore
 
 
 @pytest.mark.asyncio
 async def test_rag_chunking_handles_small_and_large_texts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(LocalRAGSearch, "_check_import", lambda self, _: False)
-    rag = LocalRAGSearch(store_dir=tmp_path / "rag", chunk_size=50, chunk_overlap=10)
+    monkeypatch.setattr(DocumentStore, "_check_import", lambda self, _: False)
+    rag = DocumentStore(store_dir=tmp_path / "rag", chunk_size=50, chunk_overlap=10)
 
     short = "kısa metin"
     assert rag._chunk_text(short) == [short]
