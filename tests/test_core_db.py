@@ -12,6 +12,7 @@ import sqlite3
 import sys
 import tempfile
 import types
+import uuid
 from pathlib import Path
 
 import pytest
@@ -1728,9 +1729,10 @@ class TestDatabaseSqliteInMemoryPersistence:
     @staticmethod
     def _make_db():
         db_mod = _get_db()
+        db_name = f"file:memdb_{uuid.uuid4().hex}?mode=memory&cache=shared"
 
         class _Cfg:
-            DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+            DATABASE_URL = f"sqlite+aiosqlite:///{db_name}"
             DB_POOL_SIZE = 3
             DB_SCHEMA_VERSION_TABLE = "schema_versions"
             DB_SCHEMA_TARGET_VERSION = 1
