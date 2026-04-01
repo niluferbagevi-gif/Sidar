@@ -48,12 +48,12 @@ def _stub_supervisor_deps():
     cfg_mod.Config = _Config
     sys.modules["config"] = cfg_mod
 
-    # core/core.llm_client stubs
-    for mod in ("core", "core.llm_client"):
-        if mod not in sys.modules:
-            sys.modules[mod] = types.ModuleType(mod)
-    if not hasattr(sys.modules["core.llm_client"], "LLMClient"):
-        sys.modules["core.llm_client"].LLMClient = MagicMock()
+    # core/core.llm_client stubs (her durumda zorla patch et)
+    if "core" not in sys.modules:
+        sys.modules["core"] = types.ModuleType("core")
+    if "core.llm_client" not in sys.modules:
+        sys.modules["core.llm_client"] = types.ModuleType("core.llm_client")
+    sys.modules["core.llm_client"].LLMClient = MagicMock()
 
     # core.agent_metrics stub (isteğe bağlı import)
     if "core.agent_metrics" not in sys.modules:
@@ -145,13 +145,14 @@ def _stub_supervisor_deps():
         reg_mod.AgentRegistry = _AgentRegistry
         sys.modules["agent.core.registry"] = reg_mod
 
-    # agent.core.event_stream stub
-    if "agent.core.event_stream" not in sys.modules:
+    # agent.core.event_stream stub (her durumda zorla patch et)
+    es_mod = sys.modules.get("agent.core.event_stream")
+    if es_mod is None:
         es_mod = types.ModuleType("agent.core.event_stream")
-        _bus = MagicMock()
-        _bus.publish = AsyncMock()
-        es_mod.get_agent_event_bus = MagicMock(return_value=_bus)
         sys.modules["agent.core.event_stream"] = es_mod
+    _bus = MagicMock()
+    _bus.publish = AsyncMock()
+    es_mod.get_agent_event_bus = MagicMock(return_value=_bus)
 
     # agent.base_agent stub
     ba_mod = types.ModuleType("agent.base_agent")
