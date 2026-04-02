@@ -555,7 +555,7 @@ export function useVoiceAssistant({
       setStatus("listening");
       pushDiagnostic("Mikrofon", "Canlı VAD izleme başlatıldı.");
       pumpVad();
-      void ensureVoiceSocket();
+      void ensureVoiceSocket().catch(() => {});
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus("error", `Mikrofon başlatılamadı: ${message}`);
