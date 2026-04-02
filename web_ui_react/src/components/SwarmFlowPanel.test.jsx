@@ -562,6 +562,48 @@ describe("SwarmFlowPanel", () => {
     expect(await screen.findAllByText("Decision")).not.toHaveLength(0);
   });
 
+
+  it("handles runSelectedNode execution failure correctly", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        throw new Error("Targeted swarm execution failed");
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "Run node" }));
+
+    expect(await screen.findByText("Targeted swarm execution failed")).toBeInTheDocument();
+    expect(screen.queryByText(/Seçili düğüm için hedefli swarm çalıştı/i)).not.toBeInTheDocument();
+  });
+
+  it("sends HITL request for supervisor node to cover graph_review branch", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      if (url === "/api/hitl/request" && options?.method === "POST") return { request_id: "hitl-req-supervisor" };
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    const hitlCall = fetchJson.mock.calls.find(([url]) => url === "/api/hitl/request");
+    expect(hitlCall).toBeTruthy();
+    expect(hitlCall[1].body).toContain('"action":"graph_review"');
+  });
+
   it("preserves previous error state when multiple fetches fail concurrently", async () => {
     fetchJson.mockImplementation(async (url) => {
       if (url === "/api/autonomy/activity?limit=8") {
