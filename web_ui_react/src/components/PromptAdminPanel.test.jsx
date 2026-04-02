@@ -113,4 +113,36 @@ describe("PromptAdminPanel", () => {
     expect(activateCheckbox).not.toBeChecked();
   });
 
+  it("falls back to an empty list when API response has no items field", async () => {
+    fetchJson.mockResolvedValueOnce({});
+
+    render(<PromptAdminPanel />);
+
+    expect(await screen.findByText("Kayıt bulunamadı.")).toBeInTheDocument();
+    expect(screen.queryAllByRole("article")).toHaveLength(0);
+  });
+
+  it("truncates long prompt text with ellipsis in the list", async () => {
+    const longPrompt = "a".repeat(225);
+    const truncated = `${"a".repeat(220)}…`;
+
+    fetchJson.mockResolvedValueOnce({
+      items: [
+        {
+          id: "p-long",
+          role_name: "system",
+          is_active: true,
+          version: 9,
+          prompt_text: longPrompt,
+          updated_at: "2026-01-01",
+        },
+      ],
+    });
+
+    render(<PromptAdminPanel />);
+
+    expect(await screen.findByText(truncated)).toBeInTheDocument();
+    expect(screen.queryByText(longPrompt)).not.toBeInTheDocument();
+  });
+
 });
