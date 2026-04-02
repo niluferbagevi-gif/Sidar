@@ -2230,6 +2230,10 @@ async def _get_redis() -> Redis | None:
 
 
 async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
+    global _local_rate_lock
+    if _local_rate_lock is None:
+        _local_rate_lock = asyncio.Lock()
+
     now = time.time()
     async with _local_rate_lock:
         timestamps = _local_rate_limits.get(key, [])
