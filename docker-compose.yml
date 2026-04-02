@@ -252,7 +252,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker_setup/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
       - sidar-web
 
@@ -266,8 +266,8 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
 
