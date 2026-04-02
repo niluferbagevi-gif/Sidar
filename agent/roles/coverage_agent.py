@@ -71,7 +71,7 @@ class CoverageAgent(BaseAgent):
         except json.JSONDecodeError:
             if re.match(r"^(pytest|python\s+-m\s+pytest)\b", text, re.IGNORECASE):
                 return {"command": text}
-            return {"instruction": text, "command": "pytest -q"}
+            return {"instruction": text, "command": "pytest --cov=. --cov-report=xml --cov-report=term"}
         return parsed if isinstance(parsed, dict) else {"command": text}
 
     @staticmethod
@@ -303,7 +303,8 @@ class CoverageAgent(BaseAgent):
 
     async def _tool_run_pytest(self, arg: str) -> str:
         payload = self._parse_payload(arg)
-        command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
+        default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
+        command = str(payload.get("command", default_cmd) or default_cmd).strip()
         cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
         result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
         return json.dumps(result, ensure_ascii=False)
@@ -443,7 +444,8 @@ class CoverageAgent(BaseAgent):
             return await self.call_tool("write_missing_tests", prompt.split("|", 1)[1].strip())
 
         payload = self._parse_payload(prompt)
-        command = str(payload.get("command", "pytest -q") or "pytest -q").strip()
+        default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
+        command = str(payload.get("command", default_cmd) or default_cmd).strip()
         cwd = str(payload.get("cwd", self.cfg.BASE_DIR) or self.cfg.BASE_DIR)
         pytest_result = await asyncio.to_thread(self.code.run_pytest_and_collect, command, cwd)
         analysis = self._normalize_analysis(pytest_result.get("analysis"))

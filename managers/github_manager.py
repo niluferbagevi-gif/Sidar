@@ -45,7 +45,10 @@ class GitHubManager:
     }
 
     def __init__(self, token: str, repo_name: str = "", require_token: bool = False) -> None:
-        self.token = token
+        # Token sonuna yanlışlıkla eklenen boşluk veya hatalı karakterleri temizle
+        self.token = str(token).strip() if token else ""
+        # Olası Türkçe karakter kazalarını önlemek için ascii formatına zorla
+        self.token = self.token.encode("ascii", "ignore").decode("ascii")
         self.repo_name = repo_name
         self.require_token = require_token
         self._gh = None
