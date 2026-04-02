@@ -74,7 +74,7 @@ const toDetailEntries = (record) =>
       value: Array.isArray(value) ? value.join(" · ") : String(value),
     }));
 
-const buildTaskDraftFromNode = (node) => {
+export const buildTaskDraftFromNode = (node) => {
   if (!node) {
     return { goal: "", intent: "mixed", preferred_agent: "" };
   }
@@ -881,8 +881,7 @@ export function SwarmFlowPanel() {
                 <h4>Node Inspector</h4>
                 <p className="panel__hint">Seçili düğümün handoff_depth, p2p_reason ve karar zinciri detayları.</p>
               </div>
-              {selectedNode ? (
-                <div className="swarm-graph__inspector-card">
+              <div className="swarm-graph__inspector-card">
                   <div className="swarm-graph__inspector-header">
                     <strong>{selectedNode.title}</strong>
                     <span>{selectedNode.subtitle}</span>
@@ -921,12 +920,7 @@ export function SwarmFlowPanel() {
                     </div>
                   </div>
                   <dl className="swarm-graph__detail-list">
-                    {(selectedNode.details || toDetailEntries({
-                      node_id: selectedNode.id,
-                      type: selectedNode.type,
-                      lane_x: selectedNode.x,
-                      y: selectedNode.y,
-                    })).map((item) => (
+                    {(selectedNode.details || []).map((item) => (
                       <React.Fragment key={`${selectedNode.id}-${item.key}`}>
                         <dt>{item.key}</dt>
                         <dd>{item.value}</dd>
@@ -934,9 +928,6 @@ export function SwarmFlowPanel() {
                     ))}
                   </dl>
                 </div>
-              ) : (
-                <div className="empty-state">İncelemek için grafikten bir düğüm seçin.</div>
-              )}
             </div>
           </div>
 

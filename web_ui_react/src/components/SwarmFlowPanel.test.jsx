@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SwarmFlowPanel } from "./SwarmFlowPanel.jsx";
+import { SwarmFlowPanel, buildTaskDraftFromNode } from "./SwarmFlowPanel.jsx";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({
@@ -324,6 +324,55 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getAllByPlaceholderText("Görevin açıklaması")).toHaveLength(3);
   });
 
+  it("draws pipeline context handoff edges between results and next tasks", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [
+            { task_id: "t1", agent_role: "coder", status: "success", summary: "ok" },
+            { task_id: "t2", agent_role: "reviewer", status: "success", summary: "ok" },
+          ],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+
+    expect(await screen.findByText("context handoff")).toBeInTheDocument();
+  });
+
+  it("resets invalid selected node when removed from the graph", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    await user.click(await screen.findByRole("button", { name: /Task 2/i }));
+    expect(screen.getByText("Selected Task 2")).toBeInTheDocument();
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Görevi Sil" });
+    await user.click(deleteButtons[1]);
+
+    expect(await screen.findByText("Selected Supervisor")).toBeInTheDocument();
+  });
+
   it("infers HITL actions for autonomy, result, handoff and task nodes", async () => {
     const user = userEvent.setup();
     const requestBodies = [];
@@ -458,4 +507,36 @@ it("logs approval response errors when HITL decision endpoint fails", async () =
 
   expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
   expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
+});
+
+it("shows pending approval load failures and swarm execute failures in operation log", async () => {
+  const user = userEvent.setup();
+  fetchJson.mockImplementation(async (url, options) => {
+    if (url === "/api/autonomy/activity?limit=8") {
+      return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+    }
+    if (url === "/api/hitl/pending") {
+      throw new Error("pending unavailable");
+    }
+    if (url === "/api/swarm/execute" && options?.method === "POST") {
+      throw new Error("swarm unavailable");
+    }
+    throw new Error(`Beklenmeyen çağrı: ${url}`);
+  });
+
+  render(<SwarmFlowPanel />);
+  expect(await screen.findByText("pending unavailable")).toBeInTheDocument();
+  expect(await screen.findByText(/HITL bekleyen kayıtları alınamadı: pending unavailable/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Run node" }));
+  expect(await screen.findByText("swarm unavailable")).toBeInTheDocument();
+  expect(await screen.findByText(/Swarm tetiklenemedi: swarm unavailable/)).toBeInTheDocument();
+});
+
+it("buildTaskDraftFromNode returns defaults for null node", () => {
+  expect(buildTaskDraftFromNode(null)).toEqual({
+    goal: "",
+    intent: "mixed",
+    preferred_agent: "",
+  });
 });
