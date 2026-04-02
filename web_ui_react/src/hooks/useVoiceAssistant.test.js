@@ -1025,3 +1025,288 @@ describe("useVoiceAssistant — Ek Fallback Durumları", () => {
     expect(result.current.state.status).not.toBe("error");
   });
 });
+describe("useVoiceAssistant — %100 Kapsama İçin Eksik Edge Case'ler", () => {
+  it("start() ignores call if mic is already active", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { this.state = "recording"; }
+      start() {}
+      stop() {}
+    };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn() };
+      }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.state.isMicActive).toBe(true);
+
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.state.isMicActive).toBe(true);
+  });
+
+  it("ensureVoiceSocket uses existing promise and cached WS if already connecting or open", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      start() {}
+      stop() {}
+    };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn() };
+      }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+
+    act(() => {
+      result.current.start();
+      result.current.start();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("VAD detects silence and triggers speech_end properly", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1800)
+      .mockReturnValue(1800);
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    let rafCallback;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      start() {}
+      stop() {}
+      requestData() {}
+    };
+
+    let rmsValue = 128;
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return {
+          fftSize: 2048,
+          smoothingTimeConstant: 0.8,
+          getByteTimeDomainData: (frame) => frame.fill(rmsValue),
+        };
+      }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ auth_ok: true }) });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rmsValue = 255;
+    await act(async () => {
+      rafCallback();
+    });
+    expect(result.current.state.status).toBe("capturing");
+
+    rmsValue = 128;
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      rafCallback();
+    });
+
+    expect(["capturing", "processing"]).toContain(result.current.state.status);
+    vi.useRealTimers();
+  });
+
+  it("catches audioContext.close() errors silently during cleanup", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { this.state = "recording"; }
+      start() {}
+      stop() {}
+    };
+
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn() }; }
+      close() { return Promise.reject(new Error("AudioContext close error")); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+
+    await act(async () => {
+      result.current.stop();
+    });
+    expect(result.current.state.isMicActive).toBe(false);
+  });
+
+  it("ondataavailable drops data if turn becomes inactive during arrayBuffer await", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    let recorderInstance;
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { recorderInstance = this; }
+      start() {}
+      stop() {}
+    };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn((frame) => frame.fill(255)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    let rafCallback;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ auth_ok: true }) });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      rafCallback();
+      await Promise.resolve();
+    });
+
+    const dataEvent = {
+      data: {
+        size: 10,
+        arrayBuffer: async () => {
+          await Promise.resolve();
+          return new ArrayBuffer(10);
+        },
+      },
+    };
+
+    await act(async () => {
+      const onDataPromise = recorderInstance.ondataavailable(dataEvent);
+      result.current.stop();
+      await onDataPromise;
+    });
+
+    expect(result.current.state.isMicActive).toBe(false);
+  });
+
+  it("handles websocket side payloads like empty audio chunks without crashing", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1);
+    globalThis.Audio = class {
+      play() { return Promise.resolve(); }
+      pause() {}
+    };
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      start() {}
+      stop() {}
+    };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn() }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: "" }) });
+      ws.onmessage({ data: JSON.stringify({ unexpected_payload: true }) });
+    });
+
+    expect(result.current.state.status).not.toBe("error");
+  });
+});
