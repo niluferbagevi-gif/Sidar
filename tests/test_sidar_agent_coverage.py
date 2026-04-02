@@ -290,7 +290,7 @@ async def test_tool_subtask_returns_final_answer_immediately() -> None:
 
     class _LLM:
         async def chat(self, **_kwargs):
-            return '{"tool":"final_answer","argument":"bitti"}'
+            return '{"thought":"tamamlandı","tool":"final_answer","argument":"bitti"}'
 
     agent.llm = _LLM()
 
