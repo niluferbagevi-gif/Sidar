@@ -1,4 +1,5 @@
 import json
+from types import MethodType
 from types import SimpleNamespace
 
 import pytest
@@ -128,3 +129,119 @@ async def test_attempt_autonomous_self_heal_marks_applied_when_plan_executes(mon
     assert remediation["remediation_loop"]["status"] == "applied"
     step_statuses = {s["name"]: s["status"] for s in remediation["remediation_loop"]["steps"]}
     assert step_statuses == {"patch": "completed", "validate": "completed", "handoff": "completed"}
+
+
+@pytest.mark.asyncio
+async def test_respond_returns_warning_for_empty_input() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    chunks = []
+    async for chunk in agent.respond("   "):
+        chunks.append(chunk)
+    assert chunks == ["⚠ Boş girdi."]
+
+
+@pytest.mark.asyncio
+async def test_respond_streams_supervisor_output_and_updates_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent._lock = None
+    agent._last_activity_ts = 0.0
+    agent.cfg = SimpleNamespace()
+
+    calls: list[tuple[str, str]] = []
+
+    async def _fake_initialize():
+        return None
+
+    async def _fake_try_multi_agent(user_input: str) -> str:
+        assert user_input == "merhaba sidar"
+        return "tamamlandı"
+
+    async def _fake_memory_add(role: str, content: str) -> None:
+        calls.append((role, content))
+
+    monkeypatch.setattr(agent, "initialize", _fake_initialize)
+    monkeypatch.setattr(agent, "_try_multi_agent", _fake_try_multi_agent)
+    monkeypatch.setattr(agent, "_memory_add", _fake_memory_add)
+
+    chunks = []
+    async for chunk in agent.respond("merhaba sidar"):
+        chunks.append(chunk)
+
+    assert chunks == ["tamamlandı"]
+    assert calls == [("user", "merhaba sidar"), ("assistant", "tamamlandı")]
+    assert agent.seconds_since_last_activity() >= 0
+
+
+@pytest.mark.asyncio
+async def test_run_nightly_memory_maintenance_disabled_by_config() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = SimpleNamespace(ENABLE_NIGHTLY_MEMORY_PRUNING=False)
+
+    async def _fake_initialize():
+        return None
+
+    agent.initialize = _fake_initialize
+    result = await agent.run_nightly_memory_maintenance()
+    assert result == {"status": "disabled", "reason": "config_disabled"}
+
+
+@pytest.mark.asyncio
+async def test_run_nightly_memory_maintenance_skips_when_not_idle() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = SimpleNamespace(
+        ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+        NIGHTLY_MEMORY_IDLE_SECONDS=1800,
+    )
+
+    async def _fake_initialize():
+        return None
+
+    agent.initialize = _fake_initialize
+    agent.seconds_since_last_activity = MethodType(lambda _self: 60.0, agent)
+
+    result = await agent.run_nightly_memory_maintenance(force=False)
+    assert result["status"] == "skipped"
+    assert result["reason"] == "not_idle"
+    assert result["idle_threshold_seconds"] == 1800
+
+
+@pytest.mark.asyncio
+async def test_summarize_memory_archives_and_applies_summary() -> None:
+    class _Memory:
+        def __init__(self):
+            self.summary = None
+
+        async def get_history(self):
+            return [
+                {"role": "user", "content": "ilk", "timestamp": 1},
+                {"role": "assistant", "content": "yanıt", "timestamp": 2},
+                {"role": "user", "content": "dosya değişikliği", "timestamp": 3},
+                {"role": "assistant", "content": "tamam", "timestamp": 4},
+            ]
+
+        async def apply_summary(self, summary: str):
+            self.summary = summary
+
+    class _Docs:
+        def __init__(self):
+            self.calls = []
+
+        async def add_document(self, **kwargs):
+            self.calls.append(kwargs)
+
+    class _Llm:
+        async def chat(self, **kwargs):
+            assert kwargs["stream"] is False
+            return "özet metni"
+
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.memory = _Memory()
+    agent.docs = _Docs()
+    agent.llm = _Llm()
+    agent.cfg = SimpleNamespace(TEXT_MODEL="text", CODING_MODEL="code")
+
+    await agent._summarize_memory()
+
+    assert len(agent.docs.calls) == 1
+    assert agent.docs.calls[0]["source"] == "memory_archive"
+    assert agent.memory.summary == "özet metni"
