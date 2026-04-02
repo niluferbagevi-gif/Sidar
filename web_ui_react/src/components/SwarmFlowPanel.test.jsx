@@ -621,6 +621,181 @@ describe("SwarmFlowPanel", () => {
     expect(screen.queryByText("Second Ignored Error")).not.toBeInTheDocument();
   });
 
+
+  it("covers disabled states during actionBusy and running", async () => {
+    const user = userEvent.setup();
+    let resolveSwarm;
+    let resolveHitl;
+
+    fetchJson.mockImplementation((url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
+      }
+      if (url === "/api/hitl/pending") {
+        return Promise.resolve({ pending: [] });
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveSwarm = resolve;
+        });
+      }
+      if (url === "/api/hitl/request" && options?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveHitl = resolve;
+        });
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await screen.findByRole("button", { name: "Swarm Başlat" });
+    const firstNode = screen.getAllByRole("button").find((node) => node.className?.includes("swarm-graph__node"));
+    expect(firstNode).toBeTruthy();
+    firstNode.focus();
+    await user.keyboard("[Enter]");
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
+
+    resolveSwarm({ results: [] });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Swarm Başlat" })).not.toBeDisabled());
+
+    const reviewBtn = screen.getByRole("button", { name: "İnceleme İsteği Aç" });
+    await user.click(reviewBtn);
+
+    expect(reviewBtn).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Task’e ekle" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Takip Görevi Ekle" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "İlk Goal’ı Değiştir" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bu Node’u Çalıştır" })).toBeDisabled();
+
+    resolveHitl({ request_id: "hitl-test-id" });
+    await waitFor(() => expect(reviewBtn).not.toBeDisabled());
+  });
+
+  it("covers fallback values for empty maxConcurrency and sessionId", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return { results: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    const sessionInput = await screen.findByPlaceholderText("ui-swarm-session");
+    await user.clear(sessionInput);
+
+    const concurrencyInput = screen.getByLabelText(/Maksimum eşzamanlılık/i);
+    await user.clear(concurrencyInput);
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/api/swarm/execute",
+        expect.objectContaining({
+          body: expect.stringContaining('"max_concurrency":1'),
+        }),
+      );
+    });
+
+    const firstNode = screen.getAllByRole("button").find((node) => node.className?.includes("swarm-graph__node"));
+    expect(firstNode).toBeTruthy();
+    firstNode.focus();
+    await user.keyboard("[Enter]");
+
+    await user.click(screen.getByRole("button", { name: "Run node" }));
+
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/api/swarm/execute",
+        expect.objectContaining({
+          body: expect.stringContaining('"session_id":"ui-swarm-session-node"'),
+        }),
+      );
+    });
+  });
+
+
+  it("covers pipeline context-handoff edge creation branch", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [
+            { task_id: "pipe-1", agent_role: "reviewer", status: "success", summary: "ilk" },
+            { task_id: "pipe-2", agent_role: "supervisor", status: "success", summary: "ikinci" },
+          ],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    await user.click(screen.getByRole("button", { name: "Yeni Görev Ekle" }));
+
+    const goals = screen.getAllByPlaceholderText("Görevin açıklaması");
+    await user.clear(goals[0]);
+    await user.type(goals[0], "ilk görev");
+    await user.type(goals[1], "ikinci görev");
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+
+    await waitFor(() => expect(screen.getAllByText("context handoff").length).toBeGreaterThan(0));
+  });
+
+  it("covers selected-node fallback when previous node disappears", async () => {
+    const user = userEvent.setup();
+    let activityCall = 0;
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        activityCall += 1;
+        if (activityCall === 1) {
+          return {
+            activity: {
+              items: [{ trigger_id: "trg-fallback", event_name: "nightly_scan", summary: "ilk yük", source: "cron", status: "success" }],
+              counts_by_status: { success: 1 },
+              counts_by_source: { cron: 1 },
+              total: 1,
+            },
+          };
+        }
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    const disappearingNode = await screen.findByRole("button", { name: /nightly_scan/i });
+    await user.click(disappearingNode);
+    expect(screen.getByText(/Selected nightly_scan/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
+
+    await waitFor(() => expect(screen.getByText(/Selected Supervisor/i)).toBeInTheDocument());
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
