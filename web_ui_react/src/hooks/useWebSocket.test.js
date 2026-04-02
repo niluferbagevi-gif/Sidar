@@ -365,3 +365,158 @@ describe("useWebSocket — disconnect", () => {
     expect(wsMockInstance.close).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
+  it("uses wss:// when protocol is https: (Satır 4)", () => {
+    const originalLocation = globalThis.location;
+    delete globalThis.location;
+    globalThis.location = { protocol: "https:", host: "localhost" };
+
+    localStorage.setItem("sidar_access_token", "tok");
+    renderHook(() => useWebSocket("s1", {}));
+
+    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
+
+    globalThis.location = originalLocation;
+  });
+
+  it("does not reconnect if already OPEN (Satır 44)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    globalThis.WebSocket.mockClear();
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      result.current.connect();
+    });
+
+    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+  });
+
+  it("handles joinRoom edge cases and fallbacks (Satır 33-36)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    wsMockInstance.send.mockClear();
+
+    act(() => {
+      result.current.joinRoom("new_room", null);
+    });
+
+    const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);
+    expect(payload.display_name).toBe("Operatör");
+  });
+
+  it("handles missing optional fields in incoming WS messages (Satır 76-113)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onRoomState = vi.fn();
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    const onStatus = vi.fn();
+    const onRoomMessage = vi.fn();
+
+    renderHook(() => useWebSocket("s1", {
+      onRoomState,
+      onChunk,
+      onDone,
+      onStatus,
+      onRoomMessage,
+    }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_state" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_message" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_chunk" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_done" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: {} }) });
+    });
+
+    expect(onRoomState).toHaveBeenCalled();
+    expect(onRoomMessage).not.toHaveBeenCalled();
+    expect(onChunk).toHaveBeenCalledWith("", "");
+    expect(onDone).toHaveBeenCalledWith(null, "");
+    expect(onStatus).toHaveBeenCalledWith("room: ");
+  });
+
+  it("sends an object payload directly instead of a string (Satır 174)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", { roomId: "ws:demo", displayName: "Test" }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+    });
+
+    wsMockInstance.send.mockClear();
+
+    act(() => {
+      result.current.send({ action: "custom_ping", customValue: 123 });
+    });
+
+    const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);
+    expect(payload.action).toBe("custom_ping");
+    expect(payload.customValue).toBe(123);
+    expect(payload.room_id).toBe("ws:demo");
+  });
+
+  it("covers collaboration/tool/thought and room_error fallback branches", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    const onError = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onToolCall, onThought, onError }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: { kind: "tool_call" } }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: { kind: "thought" } }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_error" }) });
+    });
+
+    expect(onToolCall).toHaveBeenCalledWith("");
+    expect(onThought).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("Ortak çalışma alanı hatası.");
+  });
+
+  it("covers done fallback when buffer and content are empty", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onDone = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onDone }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "done" }) });
+    });
+
+    expect(onDone).toHaveBeenCalledWith("");
+  });
+
+  it("covers presence and assistant_start fallback branches", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onPresence = vi.fn();
+    const onAssistantStart = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onPresence, onAssistantStart }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "presence" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_stream_start" }) });
+    });
+
+    expect(onPresence).toHaveBeenCalledWith([]);
+    expect(onAssistantStart).toHaveBeenCalledWith("");
+  });
+});
