@@ -42,6 +42,7 @@ describe("SwarmFlowPanel helpers", () => {
     expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
     expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
     expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
+    expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
     expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
     expect(inferHitlActionFromNode()).toBe("graph_review");
   });
@@ -954,6 +955,80 @@ describe("SwarmFlowPanel", () => {
     render(<SwarmFlowPanel />);
     expect(await screen.findByText("Bekleyen HITL kaydı yok.")).toBeInTheDocument();
     expect(screen.getByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
+  });
+
+  it("covers fallback branches for task/result/handoff linking and preserves earlier error on pending refresh failure", async () => {
+    const user = userEvent.setup();
+    let pendingRefreshCount = 0;
+    let resolveApproval;
+
+    fetchJson.mockImplementation((url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return Promise.resolve({
+          activity: {
+            items: [{ event_name: "fallback_event", summary: "payload", source: "manual" }],
+          },
+        });
+      }
+      if (url === "/api/hitl/pending") {
+        pendingRefreshCount += 1;
+        if (pendingRefreshCount === 1) {
+          return Promise.resolve({ pending: [{ request_id: "hitl-keep", description: "bekliyor" }] });
+        }
+        throw new Error("pending refresh failed");
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return Promise.resolve({
+          results: [
+            {
+              task_id: "task-a",
+              status: "success",
+              summary: "ok",
+              handoffs: [{ sender: "supervisor", receiver: "reviewer", reason: "delegation" }],
+            },
+            { task_id: "task-b", status: "success", summary: "ok-2" },
+            {
+              status: "failed",
+              summary: "extra",
+              handoffs: [{ sender: "reviewer", receiver: "coder", reason: "escalation" }],
+            },
+          ],
+        });
+      }
+      if (url === "/api/hitl/respond/hitl-keep" && options?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveApproval = resolve;
+        });
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("Pending HITL 1")).toBeInTheDocument();
+    expect(screen.getAllByText("manual · unknown").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    await waitFor(() => expect(screen.getAllByText("output").length).toBeGreaterThan(1));
+    expect(screen.getByText(/Reviewer → Coder/i)).toBeInTheDocument();
+
+    const approvalButton = screen.getByRole("button", { name: "Approve" });
+    const rejectButton = screen.getByRole("button", { name: "Reject" });
+    await user.click(approvalButton);
+    expect(rejectButton).toBeDisabled();
+
+    resolveApproval({ request_id: "hitl-keep", decision: "approved" });
+    expect(await screen.findByText(/HITL kararı işlendi: hitl-keep → approved/)).toBeInTheDocument();
+
+    const goalBoxes = screen.getAllByPlaceholderText("Görevin açıklaması");
+    for (const area of goalBoxes) {
+      await user.clear(area);
+    }
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(await screen.findByText("En az bir görev girmelisiniz.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Bekleyenleri Yenile" }));
+    expect((await screen.findAllByText(/HITL bekleyen kayıtları alınamadı: pending refresh failed/)).length).toBeGreaterThan(0);
+    expect(screen.getByText("En az bir görev girmelisiniz.")).toBeInTheDocument();
   });
 
 });
