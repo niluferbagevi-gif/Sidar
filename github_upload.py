@@ -97,6 +97,11 @@ def _normalize_path(path: str) -> str:
 def is_forbidden_path(path: str) -> bool:
     """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
     normalized = _normalize_path(path)
+
+    # .env.example dosyasının güvenlik filtresine takılmasını önleyen istisna
+    if os.path.basename(normalized) == ".env.example":
+        return False
+
     return any(
         normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
         for forbidden in FORBIDDEN_PATHS
@@ -136,7 +141,7 @@ def collect_safe_files(deleted_files_list=None):
     safe_files = []
     blocked_files = []
     
-    TEXT_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yml", ".yaml", ".html", ".css", ".js", ".sh", ".csv"}
+    TEXT_EXTENSIONS = {".py", ".md", ".txt", ".json", ".yml", ".yaml", ".html", ".css", ".js", ".sh", ".csv", ".example"}
 
     for line in output.splitlines():
         file_path = line.strip()
