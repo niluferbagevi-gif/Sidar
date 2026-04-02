@@ -43,9 +43,14 @@ class _FakeAgent:
             },
         )()
         self.active_user_calls = []
+        self.initialize_calls = 0
 
     async def _initialize(self) -> None:
         return None
+
+    async def initialize(self) -> None:
+        self.initialize_calls += 1
+        await self.memory.initialize()
 
     async def _ensure_user(self, username: str):
         return type("User", (), {"id": "u-cli", "username": username})()
@@ -109,4 +114,5 @@ def test_main_command_path_streams_response(monkeypatch, capsys) -> None:
 
     cli.main()
     assert "Sidar > merhaba dünya" in capsys.readouterr().out
+    assert created_agents[0].initialize_calls == 1
     assert created_agents[0].active_user_calls == [("u-cli", "cli")]
