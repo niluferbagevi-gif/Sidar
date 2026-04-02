@@ -64,6 +64,8 @@ async def test_attempt_autonomous_self_heal_disabled_sets_execution_status() -> 
 async def test_attempt_autonomous_self_heal_waits_for_hitl_when_required() -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = object()
+    agent.llm = object()
 
     remediation = {
         "remediation_loop": {
@@ -87,6 +89,8 @@ async def test_attempt_autonomous_self_heal_waits_for_hitl_when_required() -> No
 async def test_attempt_autonomous_self_heal_marks_applied_when_plan_executes(monkeypatch: pytest.MonkeyPatch) -> None:
     agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
     agent.cfg = SimpleNamespace(ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = object()
+    agent.llm = object()
 
     async def _fake_build_self_heal_plan(**_kwargs):
         return {"operations": [{"path": "a.py"}], "validation_commands": ["pytest -q"]}

@@ -201,8 +201,9 @@ def _serialize_collaboration_participant(participant: _CollaborationParticipant)
 
 
 def _normalize_collaboration_role(role: str) -> str:
+    allowed_roles = {"admin", "maintainer", "developer", "editor", "user"}
     normalized = (role or "").strip().lower()
-    return normalized or "user"
+    return normalized if normalized in allowed_roles else "user"
 
 
 def _collaboration_write_scopes_for_role(role: str, room_id: str) -> List[str]:
