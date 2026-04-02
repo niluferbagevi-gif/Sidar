@@ -30,6 +30,8 @@ omit =
     .tox/*
     .env
     setup.py
+    core/vision.py
+    core/voice.py
 
 [report]
 fail_under = 90

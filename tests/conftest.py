@@ -55,3 +55,19 @@ def mock_llm_client(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("core.llm_client.LLMClient.chat", _mock_chat, raising=False)
     return _mock_chat
+
+
+@pytest.fixture
+def fake_llm_response() -> dict[str, str]:
+    """Ortak, deterministik sahte LLM yanıtı."""
+    return {
+        "tool": "final_answer",
+        "thought": "fixture",
+        "argument": "Bu fixture tabanlı sahte yanıttır.",
+    }
+
+
+@pytest.fixture
+def fake_db_connection() -> dict[str, str | bool]:
+    """Ortak sahte veritabanı bağlantı tanımı."""
+    return {"dsn": "sqlite:///:memory:", "connected": True}
