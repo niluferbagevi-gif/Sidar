@@ -4,13 +4,18 @@ import userEvent from "@testing-library/user-event";
 import { SwarmFlowPanel } from "./SwarmFlowPanel.jsx";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
-
-vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => ({
-    telemetryEvents: [
+const { telemetryState } = vi.hoisted(() => ({
+  telemetryState: {
+    events: [
       { id: "evt-1", kind: "status", ts: "2025-01-01T10:00:00Z", content: "supervisor: plan created" },
       { id: "evt-2", kind: "tool_call", ts: "2025-01-01T10:00:01Z", content: "reviewer: code_search" },
     ],
+  },
+}));
+
+vi.mock("../hooks/useChatStore.js", () => ({
+  useChatStore: () => ({
+    telemetryEvents: telemetryState.events,
   }),
 }));
 
@@ -19,6 +24,10 @@ vi.mock("../lib/api.js", () => ({ fetchJson }));
 describe("SwarmFlowPanel", () => {
   beforeEach(() => {
     fetchJson.mockReset();
+    telemetryState.events = [
+      { id: "evt-1", kind: "status", ts: "2025-01-01T10:00:00Z", content: "supervisor: plan created" },
+      { id: "evt-2", kind: "tool_call", ts: "2025-01-01T10:00:01Z", content: "reviewer: code_search" },
+    ];
   });
 
   it("loads autonomy activity and pending approvals, then refreshes activity on demand", async () => {
@@ -140,5 +149,34 @@ describe("SwarmFlowPanel", () => {
     await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
     expect(await screen.findByText("HITL endpoint down")).toBeInTheDocument();
     expect(await screen.findByText(/HITL isteği oluşturulamadı: HITL endpoint down/)).toBeInTheDocument();
+  });
+
+  it("renders empty states and loading labels for activity/approvals/telemetry", async () => {
+    const user = userEvent.setup();
+    telemetryState.events = [];
+
+    let activityCalls = 0;
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        activityCalls += 1;
+        if (activityCalls === 1) {
+          return new Promise(() => {});
+        }
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    expect(screen.getByRole("button", { name: "Yükleniyor…" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Bekleyenleri Yenile" }));
+    expect(await screen.findByText("Bekleyen HITL kaydı yok.")).toBeInTheDocument();
+    expect(screen.getByText("Henüz kullanıcı aksiyonu kaydedilmedi.")).toBeInTheDocument();
+    expect(screen.getByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
+    expect(screen.getByText("Akış verisi bulunamadı.")).toBeInTheDocument();
   });
 });
