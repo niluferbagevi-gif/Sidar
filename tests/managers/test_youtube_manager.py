@@ -55,3 +55,52 @@ def test_analyze_video_file_returns_error_when_file_or_llm_missing(tmp_path: Pat
     no_llm = asyncio.run(manager.analyze_video_file(sample))
     assert no_llm["success"] is False
     assert "llm_client" in no_llm["reason"]
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None) -> None:
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = str(self._payload)
+
+    def json(self):
+        return self._payload
+
+
+class _FakeAsyncClient:
+    def __init__(self, responses: list[_FakeResponse], *args, **kwargs) -> None:
+        self.responses = list(responses)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, _url: str):
+        return self.responses.pop(0)
+
+
+def test_fetch_transcript_tries_fallback_language_and_succeeds() -> None:
+    responses = [
+        _FakeResponse(404, {}),
+        _FakeResponse(200, {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "Merhaba"}]}]}),
+    ]
+    manager = YouTubeManager(http_client_factory=lambda **kwargs: _FakeAsyncClient(responses, **kwargs))
+
+    result = asyncio.run(manager.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr", "en")))
+
+    assert result["success"] is True
+    assert result["language"] == "en"
+    assert result["text"] == "Merhaba"
+
+
+def test_fetch_transcript_returns_error_for_quota_or_private_like_statuses() -> None:
+    responses = [_FakeResponse(429, {}), _FakeResponse(403, {})]
+    manager = YouTubeManager(http_client_factory=lambda **kwargs: _FakeAsyncClient(responses, **kwargs))
+
+    result = asyncio.run(manager.fetch_transcript("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+
+    assert result["success"] is False
+    assert result["video_id"] == "dQw4w9WgXcQ"
+    assert "bulunamadı" in result["reason"]
