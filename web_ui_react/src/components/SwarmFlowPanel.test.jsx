@@ -291,6 +291,135 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getByText(/depth 2 · hop 2/i)).toBeInTheDocument();
   });
 
+  it("handles form edits, task add/remove, and pipeline-specific graph edges", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-pipe", event_name: "manual_run", summary: "pipeline görünümü", source: "manual", status: "success" }],
+            counts_by_status: { success: 1 },
+            counts_by_source: { manual: 1 },
+            total: 1,
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect((await screen.findAllByText("manual_run")).length).toBeGreaterThan(0);
+
+    const sessionInput = screen.getByPlaceholderText("ui-swarm-session");
+    await user.clear(sessionInput);
+    await user.type(sessionInput, "custom-session");
+
+    const concurrencyInput = screen.getByLabelText(/Maksimum eşzamanlılık/i);
+    await user.clear(concurrencyInput);
+    await user.type(concurrencyInput, "5");
+
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    await user.click(screen.getByRole("button", { name: "Yeni Görev Ekle" }));
+
+    const intentInputs = screen.getAllByPlaceholderText("security_audit");
+    await user.clear(intentInputs[intentInputs.length - 1]);
+    await user.type(intentInputs[intentInputs.length - 1], "custom_intent");
+
+    const agentInputs = screen.getAllByPlaceholderText("opsiyonel role_name");
+    await user.type(agentInputs[agentInputs.length - 1], "custom_agent");
+
+    const removeButtons = screen.getAllByRole("button", { name: "Görevi Sil" });
+    await user.click(removeButtons[0]);
+
+    expect(screen.getByDisplayValue("custom-session")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("5")).toBeInTheDocument();
+    expect(screen.getByText("next stage")).toBeInTheDocument();
+  });
+
+  it("handles space-key node selection and truncates long autonomy summaries", async () => {
+    const user = userEvent.setup();
+    const longSummary = "A".repeat(180);
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-long", event_name: "test_event", summary: longSummary, source: "manual", status: "success" }],
+            counts_by_status: { success: 1 },
+            counts_by_source: { manual: 1 },
+            total: 1,
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    const truncated = `${longSummary.slice(0, 159)}…`;
+    const truncatedNodeBody = await screen.findByText(truncated);
+    expect(truncatedNodeBody).toBeInTheDocument();
+
+    const node = screen.getByRole("button", { name: /test_event/i });
+    node.focus();
+    await user.keyboard(" ");
+
+    expect(screen.getByRole("button", { name: "Task’e ekle" })).toBeInTheDocument();
+  });
+
+  it("covers inferHitlActionFromNode branches for task, result-warning and handoff nodes", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "task-hitl",
+            agent_role: "multi_word-role",
+            status: "failed",
+            summary: "Failed test",
+            handoffs: [{ task_id: "task-hitl", sender: "supervisor", receiver: "coder", reason: "delegation" }],
+          }],
+        };
+      }
+      if (url === "/api/hitl/request" && options?.method === "POST") {
+        return { request_id: "hitl-req-test" };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    await user.click(await screen.findByRole("button", { name: "Swarm Başlat" }));
+    await waitFor(() => expect(screen.getByText("handoff outcome")).toBeInTheDocument());
+
+    const openReviewForNode = async (predicate) => {
+      const node = screen.getAllByRole("button").find(predicate);
+      expect(node).toBeTruthy();
+      node.focus();
+      await user.keyboard("[Enter]");
+      await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+    };
+
+    await openReviewForNode((button) => button.className.includes("swarm-graph__node--task"));
+    await openReviewForNode((button) => button.className.includes("swarm-graph__node--result-warning"));
+    await openReviewForNode((button) => button.className.includes("swarm-graph__node--handoff"));
+
+    const hitlCalls = fetchJson.mock.calls.filter(([url]) => url === "/api/hitl/request");
+    expect(hitlCalls).toHaveLength(3);
+
+    const parsedPayloads = hitlCalls.map(([, options]) => JSON.parse(options.body));
+    expect(parsedPayloads.map((payload) => payload.action)).toEqual([
+      "task_review",
+      "result_review",
+      "handoff_review",
+    ]);
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
