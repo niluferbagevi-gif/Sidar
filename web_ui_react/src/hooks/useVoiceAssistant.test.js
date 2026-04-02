@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react";
-import { useVoiceAssistant } from "./useVoiceAssistant.js";
+import { __voiceAssistantTestables, useVoiceAssistant } from "./useVoiceAssistant.js";
 
 // getStoredToken stub
 vi.mock("../lib/api.js", () => ({
@@ -1742,5 +1742,228 @@ describe("useVoiceAssistant — eksik dallar için hedefli akışlar", () => {
 
     const actions = ws.send.mock.calls.map(([payload]) => JSON.parse(payload).action);
     expect(actions).toContain("cancel");
+  });
+});
+
+describe("useVoiceAssistant — coverage gap tamamlayıcı testler", () => {
+  it("statusSummary helper error ve processing özetlerini döndürür", () => {
+    expect(__voiceAssistantTestables.statusSummary("processing")).toContain("işliyor");
+    expect(__voiceAssistantTestables.statusSummary("error")).toContain("hata");
+  });
+
+  it("unknown voice_state sırasında mic aktifse status listening olur (line 310)", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      ws.onmessage?.({ data: JSON.stringify({ voice_state: "anything_else" }) });
+    });
+    expect(result.current.state.status).toBe("listening");
+  });
+
+  it("VAD speech_end + append_data akışında commit gönderir; ws açık değilse sendJson false döner", async () => {
+    vi.useFakeTimers();
+
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    let rafCb;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { rafCb = cb; return 1; });
+
+    let recorderInstance;
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { this.state = "recording"; recorderInstance = this; }
+      start() {}
+      stop() { this.state = "inactive"; }
+      requestData() {}
+    };
+    let tick = 0;
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return { fftSize: 2048, getByteTimeDomainData: (f) => { tick += 1; f.fill(tick === 1 ? 255 : 128); } };
+      }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => { ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) }); });
+
+    await act(async () => { rafCb?.(); await Promise.resolve(); }); // speech_start
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      rafCb?.(); // speech_end
+      await Promise.resolve();
+    });
+
+    ws.readyState = 0;
+    await act(async () => {
+      await recorderInstance.ondataavailable({
+        data: { size: 4, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer },
+      });
+    });
+    act(() => { vi.advanceTimersByTime(220); });
+    expect(ws.send.mock.calls.map(([v]) => JSON.parse(v).action)).toContain("vad_event");
+    expect(["processing", "capturing"]).toContain(result.current.state.status);
+    vi.useRealTimers();
+  });
+
+  it("stopPlayback kuyruktaki URL'leri revoke eder ve shift undefined dalını güvenli işler", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:queued");
+
+    let resolvePlay;
+    globalThis.Audio = class {
+      play() { return new Promise((res) => { resolvePlay = res; }); }
+      pause() {}
+    };
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ audio_chunk: btoa("a") }) });
+      ws.onmessage?.({ data: JSON.stringify({ audio_chunk: btoa("b") }) });
+      result.current.stop();
+    });
+    expect(revokeSpy).toHaveBeenCalled();
+    resolvePlay?.();
+
+    const shiftSpy = vi.spyOn(Array.prototype, "shift").mockImplementation(() => undefined);
+    await act(async () => { await result.current.start(); });
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ audio_chunk: btoa("c") }) });
+    });
+    expect(result.current.state.isAssistantAudioPlaying).toBe(false);
+    shiftSpy.mockRestore();
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+  });
+
+  it("playNextAudio shift undefined dönerse güvenli şekilde playback'i kapatır", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:shift-undefined");
+
+    globalThis.Audio = class {
+      play() { return Promise.resolve(); }
+      pause() {}
+    };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: vi.fn(() => [{ stop: vi.fn() }]) }) },
+      configurable: true,
+    });
+
+    const shiftSpy = vi.spyOn(Array.prototype, "shift").mockImplementationOnce(() => undefined);
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ audio_chunk: btoa("z") }) });
+    });
+    expect(result.current.state.isAssistantAudioPlaying).toBe(false);
+    shiftSpy.mockRestore();
+  });
+
+  it("flushCommit timeout callback'i çalışır ve koşul sağlanmıyorsa erken döner", async () => {
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    let rafCb;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { rafCb = cb; return 1; });
+    let recorderInstance;
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { this.state = "recording"; recorderInstance = this; }
+      start() {}
+      stop() { this.state = "inactive"; }
+      requestData() {}
+    };
+    let tick = 0;
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return { fftSize: 2048, getByteTimeDomainData: (f) => { tick += 1; f.fill(tick === 1 ? 255 : 128); } };
+      }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: vi.fn(() => [{ stop: vi.fn() }]) }) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => { ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) }); });
+    await act(async () => { rafCb?.(); await Promise.resolve(); });
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+      rafCb?.();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await recorderInstance.ondataavailable({
+        data: { size: 4, arrayBuffer: async () => new Uint8Array([7, 7, 7, 7]).buffer },
+      });
+    });
+    act(() => { vi.advanceTimersByTime(220); });
+
+    expect(result.current.state.status).toBe("processing");
+    clearTimeoutSpy.mockRestore();
+    vi.useRealTimers();
   });
 });

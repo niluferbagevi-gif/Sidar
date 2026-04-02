@@ -65,6 +65,10 @@ function statusSummary(status) {
   }
 }
 
+export const __voiceAssistantTestables = {
+  statusSummary,
+};
+
 function toBase64(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   let binary = "";
@@ -177,11 +181,8 @@ export function useVoiceAssistant({
     if (activeAudioRef.current || audioQueueRef.current.length === 0) {
       return;
     }
-    const nextItem = audioQueueRef.current.shift();
-    if (!nextItem) {
-      setVoiceState({ isAssistantAudioPlaying: false, queueDepth: 0 });
-      return;
-    }
+    const nextItem = audioQueueRef.current.splice(0, 1)[0];
+    if (!nextItem) return;
 
     const audio = new Audio(nextItem.url);
     activeAudioRef.current = audio;
