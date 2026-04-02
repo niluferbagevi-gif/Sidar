@@ -738,3 +738,86 @@ describe("useVoiceAssistant — toggle coverage", () => {
     expect(result.current.state.status).toBe("idle");
   });
 });
+
+
+describe("useVoiceAssistant — VAD speech end processing", () => {
+  it("switches to processing when speech ends after silence threshold", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    let rafCallback = null;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    let recorderInstance;
+    class MockMediaRecorder {
+      static isTypeSupported() { return true; }
+      constructor() {
+        this.state = "recording";
+        this.requestData = vi.fn();
+        recorderInstance = this;
+      }
+      start() {}
+      stop() { this.state = "inactive"; }
+    }
+
+    let frameCount = 0;
+    class MockAudioContext {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return {
+          fftSize: 2048,
+          smoothingTimeConstant: 0.82,
+          getByteTimeDomainData: (frame) => {
+            frameCount += 1;
+            if (frameCount === 1) frame.fill(255); // speaking
+            else frame.fill(128); // silence
+          },
+        };
+      }
+      close() { return Promise.resolve(); }
+    }
+
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+    globalThis.MediaRecorder = MockMediaRecorder;
+    globalThis.AudioContext = MockAudioContext;
+
+    const { result } = renderHook(() => useVoiceAssistant({ onError: vi.fn() }));
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    await act(async () => {
+      rafCallback?.(); // speech start
+    });
+
+    now = 1_900; // > VAD_SILENCE_MS
+    await act(async () => {
+      rafCallback?.(); // speech end
+    });
+
+    expect(result.current.state.status).toBe("processing");
+    expect(result.current.state.summary).toContain("Konuşma bitti");
+    expect(recorderInstance.requestData).toHaveBeenCalledTimes(1);
+
+    const sentActions = ws.send.mock.calls.map(([payload]) => JSON.parse(payload).action);
+    expect(sentActions).toContain("vad_event");
+  });
+});

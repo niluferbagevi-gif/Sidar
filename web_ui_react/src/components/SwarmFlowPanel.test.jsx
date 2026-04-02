@@ -180,6 +180,37 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getByText("Akış verisi bulunamadı.")).toBeInTheDocument();
   });
 
+
+  it("shows loading state during swarm execution and recovers after success", async () => {
+    const user = userEvent.setup();
+    let resolveExecute;
+    fetchJson.mockImplementation((url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
+      }
+      if (url === "/api/hitl/pending") {
+        return Promise.resolve({ pending: [] });
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveExecute = resolve;
+        });
+      }
+      return Promise.reject(new Error(`Beklenmeyen çağrı: ${url}`));
+    });
+
+    render(<SwarmFlowPanel />);
+    await screen.findByText("Bekleyen HITL kaydı yok.");
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Çalışıyor…" })).toBeDisabled();
+
+    resolveExecute({
+      results: [{ task_id: "task-loading", agent_role: "reviewer", status: "success", summary: "ok", elapsed_ms: 7 }],
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Swarm Başlat" })).toBeEnabled());
+  });
   it("supports keyboard node selection and sync operation failure logging", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation(async (url, options) => {
