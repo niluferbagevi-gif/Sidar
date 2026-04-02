@@ -1,7 +1,16 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SwarmFlowPanel } from "./SwarmFlowPanel.jsx";
+import {
+  SwarmFlowPanel,
+  buildTaskDraftFromNode,
+  clampText,
+  inferHitlActionFromNode,
+  inferTelemetryActor,
+  prettifyReason,
+  prettifyRole,
+  toDetailEntries,
+} from "./SwarmFlowPanel.jsx";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({
@@ -20,6 +29,23 @@ vi.mock("../hooks/useChatStore.js", () => ({
 }));
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));
+
+describe("SwarmFlowPanel helpers", () => {
+  it("covers helper fallback branches", () => {
+    expect(prettifyRole("")).toBe("Unknown");
+    expect(prettifyRole("multi_word-role")).toBe("Multi Word Role");
+    expect(clampText("   ")).toBe("Açıklama bekleniyor.");
+    expect(prettifyReason("")).toBe("");
+    expect(toDetailEntries(null)).toEqual([]);
+    expect(toDetailEntries({ key: ["a", "b"] })[0].value).toBe("a · b");
+    expect(inferTelemetryActor({ content: "", kind: "status" }, [])).toBe("system");
+    expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
+    expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
+    expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
+    expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
+    expect(inferHitlActionFromNode()).toBe("graph_review");
+  });
+});
 
 describe("SwarmFlowPanel", () => {
   beforeEach(() => {
@@ -882,6 +908,52 @@ describe("SwarmFlowPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
     expect((await screen.findAllByText("manual · unknown")).length).toBeGreaterThan(0);
+  });
+
+  it("covers autonomy edge chaining and extra-result lane fallback branches", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [
+              { trigger_id: "a1", event_name: "cron_a", summary: "A", source: "cron", status: "success" },
+              { trigger_id: "a2", event_name: "cron_b", summary: "B", source: "cron", status: "success" },
+            ],
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") return { pending: [] };
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [
+            { task_id: "r1", agent_role: "reviewer", status: "success", summary: "ok" },
+            { task_id: "r2", status: "failed", summary: "fallback lane" },
+            { status: "success", summary: "index fallback id" },
+          ],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("wake signal")).toBeInTheDocument();
+    expect(screen.getByText("trigger chain")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    await waitFor(() => expect(screen.getAllByText("output").length).toBeGreaterThan(1));
+  });
+
+  it("covers omitted activity/pending payload keys on initial loaders", async () => {
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") return {};
+      if (url === "/api/hitl/pending") return {};
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("Bekleyen HITL kaydı yok.")).toBeInTheDocument();
+    expect(screen.getByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
   });
 
 });
