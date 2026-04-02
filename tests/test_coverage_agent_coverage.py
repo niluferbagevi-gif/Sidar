@@ -171,3 +171,38 @@ def test_tool_generate_missing_tests_uses_coverage_finding_prompt():
 
     assert "Hedef dosya: agent/auto_handle.py" in result
     assert "Eksik satırlar: 10, 11" in result
+
+def test_run_task_routes_prefixed_commands_to_tools():
+    agent = CoverageAgent.__new__(CoverageAgent)
+    seen = {}
+
+    async def _fake_call_tool(name, arg):
+        seen["name"] = name
+        seen["arg"] = arg
+        return "ok"
+
+    agent.call_tool = _fake_call_tool
+
+    result = asyncio.run(agent.run_task('analyze_coverage_report|{"coverage_xml":"coverage.xml"}'))
+
+    assert result == "ok"
+    assert seen == {"name": "analyze_coverage_report", "arg": '{"coverage_xml":"coverage.xml"}'}
+
+
+def test_run_task_no_gaps_detected_returns_success_payload():
+    class DummyCode:
+        def run_pytest_and_collect(self, command, cwd):
+            return {
+                "analysis": {"summary": "all good", "findings": []},
+                "output": "",
+            }
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.cfg = type("Cfg", (), {"BASE_DIR": "."})()
+    agent.code = DummyCode()
+
+    raw = asyncio.run(agent.run_task('{"command":"pytest -q"}'))
+    payload = json.loads(raw)
+
+    assert payload["status"] == "no_gaps_detected"
+    assert payload["command"] == "pytest -q"
