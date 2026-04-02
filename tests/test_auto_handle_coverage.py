@@ -1,5 +1,6 @@
 import sys
 import types
+import asyncio
 
 for _mod_name, _class_name in [
     ("managers.web_search", "WebSearchManager"),
@@ -143,3 +144,49 @@ def test_try_clear_memory_supports_async_clear():
     assert handled is True
     assert response == "✓ Konuşma belleği temizlendi."
     assert memory.called is True
+
+
+def test_try_github_get_pr_handles_missing_token_and_file_mode():
+    handler = _build_auto_handle()
+
+    class _GitHub:
+        def is_available(self):
+            return False
+
+    handler.github = _GitHub()
+    handled, response = asyncio.run(handler._try_github_get_pr("pr #12 dosyaları", "pr #12 dosyaları"))
+    assert handled is True
+    assert "token ayarlanmamış" in response
+
+    class _GitHubOk:
+        def is_available(self):
+            return True
+
+        def get_pr_files(self, number):
+            return True, f"files:{number}"
+
+    handler.github = _GitHubOk()
+    handled, response = asyncio.run(handler._try_github_get_pr("pr #34 dosya değişiklik", "pr #34 dosya değişiklik"))
+    assert handled is True
+    assert response == "files:34"
+
+
+def test_try_audit_timeout_and_exception_paths(monkeypatch):
+    handler = _build_auto_handle()
+    handler.code = SimpleNamespace(audit_project=lambda _path: "ok")
+
+    async def _timeout(*_args, **_kwargs):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(handler, "_run_blocking", _timeout)
+    handled, response = asyncio.run(handler._try_audit(".audit"))
+    assert handled is True
+    assert "zaman aşımına" in response
+
+    async def _error(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(handler, "_run_blocking", _error)
+    handled, response = asyncio.run(handler._try_audit("sistemi tara"))
+    assert handled is True
+    assert "hata oluştu: boom" in response

@@ -112,3 +112,53 @@ def test_dataset_exporter_serialization_and_multimodal_helpers(tmp_path: Path) -
     pipeline = multimodal.MultimodalPipeline(llm_client=SimpleNamespace(), config=SimpleNamespace(ENABLE_MULTIMODAL=False))
     transcribed = asyncio.run(pipeline.transcribe_bytes(b"abc"))
     assert transcribed["success"] is False
+
+
+def test_multimodal_pipeline_negative_media_paths(tmp_path: Path) -> None:
+    llm = SimpleNamespace(chat=lambda **_kwargs: "ok")
+    pipeline = multimodal.MultimodalPipeline(
+        llm_client=llm,
+        config=SimpleNamespace(ENABLE_MULTIMODAL=True, MULTIMODAL_MAX_FILE_BYTES=4),
+    )
+
+    missing = asyncio.run(pipeline.analyze_media(media_path=str(tmp_path / "missing.mp4")))
+    assert missing["success"] is False
+    assert "bulunamadı" in missing["reason"]
+
+    oversized = tmp_path / "big.mp3"
+    oversized.write_bytes(b"abcdef")
+    too_big = asyncio.run(pipeline.analyze_media(media_path=str(oversized), mime_type="audio/mpeg"))
+    assert too_big["success"] is False
+    assert "boyut limitini aşıyor" in too_big["reason"]
+
+    unsupported = tmp_path / "blob.bin"
+    unsupported.write_bytes(b"abc")
+    bad_kind = asyncio.run(pipeline.analyze_media(media_path=str(unsupported)))
+    assert bad_kind["success"] is False
+    assert "Desteklenmeyen medya türü" in bad_kind["reason"]
+
+
+def test_multimodal_transcribe_bytes_negative_cases() -> None:
+    pipeline = multimodal.MultimodalPipeline(
+        llm_client=SimpleNamespace(),
+        config=SimpleNamespace(ENABLE_MULTIMODAL=True, MULTIMODAL_MAX_FILE_BYTES=3),
+    )
+
+    empty = asyncio.run(pipeline.transcribe_bytes(b""))
+    assert empty["success"] is False
+    assert "boş" in empty["reason"]
+
+    oversize = asyncio.run(pipeline.transcribe_bytes(b"abcd"))
+    assert oversize["success"] is False
+    assert "boyut limitini aşıyor" in oversize["reason"]
+
+
+def test_analyze_media_source_empty_input_rejected() -> None:
+    pipeline = multimodal.MultimodalPipeline(
+        llm_client=SimpleNamespace(),
+        config=SimpleNamespace(ENABLE_MULTIMODAL=True),
+    )
+
+    result = asyncio.run(pipeline.analyze_media_source(media_source="   "))
+    assert result["success"] is False
+    assert "media_source boş" in result["reason"]

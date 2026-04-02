@@ -160,3 +160,84 @@ def test_generate_campaign_copy_persists_asset_when_enabled(monkeypatch: pytest.
     assert persisted["asset_type"] == "campaign_copy"
     assert persisted["title"] == "Q2 Kampanya"
     assert persisted["metadata"]["channels"] == ["instagram", "facebook"]
+
+
+def test_build_landing_page_persists_asset_with_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+    persisted: dict[str, object] = {}
+
+    class _Payload:
+        sections = []
+        brand_name = "Sidar"
+        offer = "Demo"
+        audience = "KOBİ"
+        call_to_action = "Kaydol"
+        tone = "güven veren"
+        store_asset = True
+        campaign_id = 9
+        tenant_id = " "
+        asset_title = " "
+        channel = " "
+
+    async def _fake_generate(prompt: str, mode: str) -> str:
+        assert "Bölümler: hero, problem, çözüm, sosyal kanıt, CTA" in prompt
+        assert mode == "landing_page"
+        return "landing taslağı"
+
+    async def _fake_persist_content_asset(**kwargs):
+        persisted.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda *_args, **_kwargs: _Payload())
+    agent._generate_marketing_output = _fake_generate
+    agent._persist_content_asset = _fake_persist_content_asset
+
+    result = asyncio.run(agent._tool_build_landing_page("{}"))
+
+    assert result == "landing taslağı"
+    assert persisted["campaign_id"] == 9
+    assert persisted["tenant_id"] == "default"
+    assert persisted["title"] == "Landing Page Taslağı"
+    assert persisted["channel"] == "web"
+
+
+def test_ingest_video_insights_handles_success_and_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+    agent.llm = object()
+    agent.cfg = object()
+    agent.docs = object()
+
+    calls: list[dict[str, object]] = []
+
+    class _Pipeline:
+        def __init__(self, _llm, _cfg) -> None:
+            return None
+
+        async def analyze_media_source(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "success": True,
+                "scene_summary": "ürün tanıtımı",
+                "document_ingest": {"doc_id": "doc-1"},
+            }
+
+    fake_multimodal = types.ModuleType("core.multimodal")
+    fake_multimodal.MultimodalPipeline = _Pipeline
+    monkeypatch.setitem(sys.modules, "core.multimodal", fake_multimodal)
+
+    success = asyncio.run(
+        agent._tool_ingest_video_insights("https://youtu.be/demo|||ürün analizi|||tr|||session-1|||7")
+    )
+    assert success.startswith("[VIDEO:INGESTED]")
+    assert "doc_id=doc-1" in success
+    assert calls[0]["max_frames"] == 7
+    assert calls[0]["frame_interval_seconds"] == 5.0
+
+    class _FailingPipeline(_Pipeline):
+        async def analyze_media_source(self, **kwargs):
+            calls.append(kwargs)
+            return {"success": False, "reason": "timeout"}
+
+    fake_multimodal.MultimodalPipeline = _FailingPipeline
+    error = asyncio.run(agent._tool_ingest_video_insights("https://youtu.be/demo|||analiz"))
+    assert error == "[VIDEO:ERROR] source=https://youtu.be/demo reason=timeout"
