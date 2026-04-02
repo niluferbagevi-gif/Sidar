@@ -796,6 +796,94 @@ describe("SwarmFlowPanel", () => {
     await waitFor(() => expect(screen.getByText(/Selected Supervisor/i)).toBeInTheDocument());
   });
 
+  it("covers fallback branches for sparse swarm/autonomy/HITL payloads and approve flow", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-fallback", payload: { raw: true } }],
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") {
+        return {
+          pending: [{ request_id: "hitl-fallback" }],
+        };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "task-fallback",
+            elapsed_ms: 1,
+            handoffs: [{ resultIndex: 0 }],
+          }],
+        };
+      }
+      if (url === "/api/hitl/respond/hitl-fallback" && options?.method === "POST") {
+        return { request_id: "hitl-fallback", decision: "approved" };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("Pending HITL 1")).toBeInTheDocument();
+    expect(screen.getAllByText("trigger").length).toBeGreaterThan(0);
+    expect(screen.getByText("Özet yok.")).toBeInTheDocument();
+    expect(screen.getAllByText("manual · unknown").length).toBeGreaterThan(0);
+    expect(screen.getByText("Açıklama yok.")).toBeInTheDocument();
+    expect(screen.getByText("operator")).toBeInTheDocument();
+
+    const intentInput = screen.getAllByPlaceholderText("security_audit")[0];
+    await user.clear(intentInput);
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    await waitFor(() => expect(screen.getByText("result")).toBeInTheDocument());
+    expect(screen.getByText(/Unknown → Unknown/i)).toBeInTheDocument();
+    expect(screen.getByText("Delegation")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/api/swarm/execute",
+        expect.objectContaining({
+          body: expect.stringContaining("\"intent\":\"mixed\""),
+        }),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText(/HITL kararı işlendi: hitl-fallback → approved/)).toBeInTheDocument();
+  });
+
+  it("covers proactive activity fallback when activity.items is omitted", async () => {
+    const user = userEvent.setup();
+    let activityCalls = 0;
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        activityCalls += 1;
+        if (activityCalls === 1) {
+          return { activity: {} };
+        }
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-refresh" }],
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
+    expect((await screen.findAllByText("manual · unknown")).length).toBeGreaterThan(0);
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
