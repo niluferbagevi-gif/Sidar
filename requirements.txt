@@ -340,7 +340,7 @@ pgvector==0.3.6
     # via sidar (pyproject.toml)
 pillow==12.1.1
     # via sentence-transformers
-posthog==7.9.12
+posthog<6.0.0
     # via chromadb
 primp==1.1.3
     # via duckduckgo-search
