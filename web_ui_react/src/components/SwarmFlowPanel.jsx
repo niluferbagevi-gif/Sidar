@@ -18,13 +18,13 @@ const ROLE_LABELS = {
   system: "System",
 };
 
-const prettifyRole = (value) => {
+export const prettifyRole = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "Unknown";
   return ROLE_LABELS[normalized] || normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-const clampText = (value, maxLength = 140) => {
+export const clampText = (value, maxLength = 140) => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return "Açıklama bekleniyor.";
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
@@ -33,7 +33,7 @@ const clampText = (value, maxLength = 140) => {
 const formatTime = (value) =>
   new Date(value).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-const inferTelemetryActor = (step, roleHints) => {
+export const inferTelemetryActor = (step, roleHints) => {
   const content = String(step?.content || "").trim();
   if (!content) return "system";
 
@@ -60,13 +60,13 @@ const NODE_WIDTH = 220;
 const NODE_HEIGHT = 104;
 const OPERATION_LOG_LIMIT = 10;
 
-const prettifyReason = (value) =>
+export const prettifyReason = (value) =>
   String(value || "")
     .trim()
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const toDetailEntries = (record) =>
+export const toDetailEntries = (record) =>
   Object.entries(record || {})
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
     .map(([key, value]) => ({
@@ -74,7 +74,7 @@ const toDetailEntries = (record) =>
       value: Array.isArray(value) ? value.join(" · ") : String(value),
     }));
 
-const buildTaskDraftFromNode = (node) => {
+export const buildTaskDraftFromNode = (node) => {
   const intent = String(node.subtitle || "mixed")
     .split("·")[0]
     .trim()
@@ -90,7 +90,7 @@ const buildTaskDraftFromNode = (node) => {
   };
 };
 
-const inferHitlActionFromNode = (node) => {
+export const inferHitlActionFromNode = (node) => {
   const type = String(node?.type || "manual").toLowerCase();
   if (type.includes("handoff")) return "handoff_review";
   if (type.includes("autonomy")) return "autonomy_review";
@@ -144,7 +144,20 @@ export function SwarmFlowPanel() {
     setActivityLoading(true);
     try {
       const data = await fetchJson("/api/autonomy/activity?limit=8");
-      setAutonomyActivity(data.activity || { items: [], counts_by_status: {}, counts_by_source: {} });
+      const activity = data.activity || { items: [], counts_by_status: {}, counts_by_source: {} };
+      const normalizedItems = (activity.items || []).map((item) => ({
+        ...item,
+        event_name: item.event_name || "trigger",
+        summary: item.summary || "Özet yok.",
+        source: item.source || "manual",
+        status: item.status || "unknown",
+      }));
+      setAutonomyActivity({
+        ...activity,
+        items: normalizedItems,
+        counts_by_status: activity.counts_by_status || {},
+        counts_by_source: activity.counts_by_source || {},
+      });
     } catch (err) {
       setAutonomyActivity({ items: [], counts_by_status: {}, counts_by_source: {} });
       setError((prev) => prev || err.message);
@@ -254,7 +267,7 @@ export function SwarmFlowPanel() {
       title: "Supervisor",
       subtitle: mode === "parallel" ? "run_parallel" : "run_pipeline",
       body: clampText(sessionId.trim() || "ui-swarm-session", 80),
-      x: laneMap.get("supervisor")?.x || 40,
+      x: laneMap.get("supervisor").x,
       y: rowY.supervisor,
       details: toDetailEntries({
         session_id: sessionId.trim() || "ui-swarm-session",
@@ -265,7 +278,7 @@ export function SwarmFlowPanel() {
 
     const taskNodes = tasks.map((task, index) => {
       const laneId = getTaskTargetRole(task, responseResults, index);
-      const lane = laneMap.get(laneId) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const lane = laneMap.get(laneId);
       return {
         id: `task-${index}`,
         type: "task",
@@ -304,7 +317,7 @@ export function SwarmFlowPanel() {
 
     const handoffNodes = handoffEvents.map((handoff, index) => {
       const receiverRole = String(handoff.receiver || "supervisor").toLowerCase();
-      const lane = laneMap.get(receiverRole) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const lane = laneMap.get(receiverRole);
       const sender = prettifyRole(handoff.sender || "unknown");
       const receiver = prettifyRole(handoff.receiver || "unknown");
       const reason = prettifyReason(handoff.reason || "delegation");
@@ -329,7 +342,7 @@ export function SwarmFlowPanel() {
 
     const resultNodes = responseResults.map((item, index) => {
       const laneRole = String(item.agent_role || "").toLowerCase();
-      const lane = laneMap.get(laneRole) || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const lane = laneMap.get(laneRole) || laneMap.get("supervisor");
       const graph = item.graph || {};
       return {
         id: `result-${item.task_id || index}`,
@@ -353,7 +366,7 @@ export function SwarmFlowPanel() {
     });
 
     const telemetryNodes = telemetryWithActors.map((step) => {
-      const lane = laneMap.get(step.actor) || laneMap.get("system") || laneMap.get("supervisor") || lanes[0] || { x: 40 };
+      const lane = laneMap.get(step.actor);
       const laneCount = laneDecisionCounts.get(step.actor) || 0;
       laneDecisionCounts.set(step.actor, laneCount + 1);
       return {
@@ -436,7 +449,7 @@ export function SwarmFlowPanel() {
 
     resultNodes.forEach((resultNode, index) => {
       const result = responseResults[index];
-      const role = String(result?.agent_role || taskNodes[index]?.laneId || "supervisor").toLowerCase();
+      const role = String(result?.agent_role || taskNodes[index]?.laneId || taskNodes[taskNodes.length - 1]?.laneId || "supervisor").toLowerCase();
       const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
       const resultHandoffs = handoffNodes.filter((node) => node.id.startsWith(`handoff-${result?.task_id || index}`));
       if (taskNode) {
@@ -470,10 +483,10 @@ export function SwarmFlowPanel() {
       const senderRole = String(handoff.sender || "supervisor").toLowerCase();
       const receiverRole = String(handoff.receiver || "supervisor").toLowerCase();
       const result = responseResults[handoff.resultIndex];
-      const taskNode = taskNodes.find((task) => task.id === `task-${handoff.resultIndex}`) || taskNodes[handoff.resultIndex];
+      const taskNode = taskNodes.find((task) => task.id === `task-${handoff.resultIndex}`) || taskNodes[handoff.resultIndex] || taskNodes[taskNodes.length - 1];
       edges.push({
         id: `edge-task-handoff-${node.id}`,
-        from: taskNode?.id || "supervisor",
+        from: taskNode.id,
         to: node.id,
         label: "p2p decision",
         emphasis: "light",
@@ -577,12 +590,12 @@ export function SwarmFlowPanel() {
     if (!selectedNodeId && graphData.nodes.length) {
       setSelectedNodeId(graphData.nodes[0].id);
     } else if (selectedNodeId && !graphData.nodeMap.has(selectedNodeId)) {
-      setSelectedNodeId(graphData.nodes[0]?.id || "");
+      setSelectedNodeId(graphData.nodes[0].id);
     }
   }, [graphData, selectedNodeId]);
 
   const selectedNode = useMemo(
-    () => graphData.nodeMap.get(selectedNodeId) || graphData.nodes[0] || null,
+    () => graphData.nodeMap.get(selectedNodeId) || graphData.nodes[0],
     [graphData, selectedNodeId],
   );
 
@@ -791,7 +804,7 @@ export function SwarmFlowPanel() {
               <span className="pill">Task {graphData.metrics.tasks}</span>
               <span className="pill pill--success">Decision {graphData.metrics.decisions}</span>
               <span className="pill">Handoff {graphData.metrics.handoffs}</span>
-              <span className="pill">Selected {selectedNode ? selectedNode.title : "n/a"}</span>
+              <span className="pill">Selected {selectedNode.title}</span>
               <button type="button" className="button-secondary" onClick={loadAutonomyActivity} disabled={activityLoading}>
                 {activityLoading ? "Yükleniyor…" : "Aktiviteyi Yenile"}
               </button>
@@ -891,7 +904,7 @@ export function SwarmFlowPanel() {
                     <div className="swarm-graph__operation-grid">
                       <div className="swarm-graph__operation-card">
                         <span className="pill">Selected node draft</span>
-                        <p><strong>{selectedTaskDraft.intent}</strong> → {selectedTaskDraft.goal || "Taslak bekleniyor"}</p>
+                        <p><strong>{selectedTaskDraft.intent}</strong> → {selectedTaskDraft.goal}</p>
                         <div className="swarm-graph__action-row">
                           <button type="button" onClick={addDraftTaskFromSelected} disabled={actionBusy}>Takip Görevi Ekle</button>
                           <button type="button" className="button-secondary" onClick={replaceFirstTaskFromSelected} disabled={actionBusy}>İlk Goal’ı Değiştir</button>
@@ -1011,9 +1024,9 @@ export function SwarmFlowPanel() {
                     {idx + 1}
                   </span>
                   <div>
-                    <strong>{item.event_name || "trigger"}</strong>
-                    <p>{item.summary || "Özet yok."}</p>
-                    <small className="panel__hint">{item.source || "manual"} · {item.status || "unknown"}</small>
+                    <strong>{item.event_name}</strong>
+                    <p>{item.summary}</p>
+                    <small className="panel__hint">{item.source} · {item.status}</small>
                   </div>
                 </li>
               ))}
