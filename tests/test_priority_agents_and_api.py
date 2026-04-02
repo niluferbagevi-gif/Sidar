@@ -19,6 +19,7 @@ def test_web_register_validation_error_returns_422() -> None:
     import asyncio
 
     web_server._redis_lock = asyncio.Lock()
+    web_server._local_rate_lock = asyncio.Lock()
 
     async def _run() -> int:
         transport = ASGITransport(app=web_server.app)
@@ -116,7 +117,8 @@ def test_sidar_subtask_tool_error_branch_then_final_answer() -> None:
     import asyncio
 
     async def _run() -> str:
-        agent = SimpleNamespace(cfg=SimpleNamespace(TEXT_MODEL="x", CODING_MODEL="x", SUBTASK_MAX_STEPS=2))
+        agent = SidarAgent.__new__(SidarAgent)
+        agent.cfg = SimpleNamespace(TEXT_MODEL="x", CODING_MODEL="x", SUBTASK_MAX_STEPS=2)
 
         class _FakeLLM:
             def __init__(self):
@@ -134,7 +136,7 @@ def test_sidar_subtask_tool_error_branch_then_final_answer() -> None:
             raise RuntimeError("dosya bulunamadı")
 
         agent._execute_tool = _explode
-        return await SidarAgent._tool_subtask(agent, "kayıp dosyayı incele")
+        return await agent._tool_subtask("kayıp dosyayı incele")
 
     output = asyncio.run(_run())
     assert output.startswith("✓ Alt Görev Tamamlandı")
