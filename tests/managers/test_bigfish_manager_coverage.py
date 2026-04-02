@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -68,6 +69,44 @@ def test_code_manager_read_file_with_line_numbers(tmp_path: Path) -> None:
     assert ok is True
     assert "1\tilk satır" in content
     assert "2\tikinci satır" in content
+
+
+def test_code_manager_read_file_handles_permission_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    manager = _build_code_manager(tmp_path)
+    manager.security = SimpleNamespace(can_read=lambda _path: True)
+    sample = tmp_path / "secret.txt"
+    sample.write_text("x", encoding="utf-8")
+
+    real_open = builtins.open
+
+    def _raise_permission(path, *args, **kwargs):
+        if str(path).endswith("secret.txt"):
+            raise PermissionError("denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", _raise_permission)
+    ok, msg = manager.read_file(str(sample))
+
+    assert ok is False
+    assert "Erişim reddedildi" in msg
+
+
+def test_code_manager_write_file_handles_permission_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    manager = _build_code_manager(tmp_path)
+    manager.security = SimpleNamespace(can_write=lambda _path: True)
+
+    real_open = builtins.open
+
+    def _raise_permission(path, *args, **kwargs):
+        if str(path).endswith("readonly.py"):
+            raise PermissionError("denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", _raise_permission)
+    ok, msg = manager.write_file(str(tmp_path / "readonly.py"), "print('x')", validate=False)
+
+    assert ok is False
+    assert "Yazma erişimi reddedildi" in msg
 
 
 class _Cfg:
@@ -162,3 +201,44 @@ def test_browser_capture_dom_returns_error_when_dom_lookup_fails() -> None:
 
     assert ok is False
     assert "DOM yakalama hatası" in msg
+
+
+def test_browser_start_session_falls_back_to_selenium_when_playwright_fails() -> None:
+    manager = _build_browser_manager()
+    manager.provider = "auto"
+    manager._start_playwright_session = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("pw yok"))
+    manager._start_selenium_session = lambda *_args, **_kwargs: BrowserSession(
+        session_id="s-fallback",
+        provider="selenium",
+        browser_name="chrome",
+        headless=True,
+        started_at=0.0,
+        driver=SimpleNamespace(current_url=""),
+    )
+
+    ok, payload = manager.start_session(browser_name="chrome")
+
+    assert ok is True
+    assert payload["provider"] == "selenium"
+    assert "s-fallback" in manager._sessions
+    failed_starts = [x for x in manager.list_audit_log() if x["session_id"].startswith("startup:")]
+    assert failed_starts
+
+
+def test_browser_capture_screenshot_reports_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _build_browser_manager()
+    session = BrowserSession(
+        session_id="s-shot",
+        provider="playwright",
+        browser_name="chromium",
+        headless=True,
+        started_at=0.0,
+        page=SimpleNamespace(screenshot=lambda **_kwargs: None),
+    )
+    manager._sessions[session.session_id] = session
+
+    ok, path = manager.capture_screenshot(session.session_id, file_name="x.png")
+
+    assert ok is True
+    assert path.endswith("x.png")
+    assert manager.list_audit_log()[-1]["action"] == "browser_capture_screenshot"
