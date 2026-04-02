@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatPanel } from "./ChatPanel.jsx";
 
@@ -106,7 +106,7 @@ describe("ChatPanel", () => {
     expect(send).toHaveBeenCalledWith("Merhaba SİDAR");
   });
 
-  it("stops the voice assistant before starting a fresh session", async () => {
+  it("triggers StatusBar onNewSession and starts a fresh session after stopping voice", async () => {
     const user = userEvent.setup();
     render(<ChatPanel />);
 
@@ -114,16 +114,7 @@ describe("ChatPanel", () => {
 
     expect(stop).toHaveBeenCalledTimes(1);
     expect(store.newSession).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls voice.stop and newSession when new session is triggered from StatusBar", () => {
-    render(<ChatPanel />);
-
-    const newSessionButton = screen.getByRole("button", { name: "Yeni Oturum" });
-    fireEvent.click(newSessionButton);
-
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(store.newSession).toHaveBeenCalledTimes(1);
+    expect(stop.mock.invocationCallOrder[0]).toBeLessThan(store.newSession.mock.invocationCallOrder[0]);
   });
 
   it("disables chat input action when websocket is disconnected", async () => {
