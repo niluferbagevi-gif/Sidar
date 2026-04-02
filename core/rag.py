@@ -660,6 +660,10 @@ class DocumentStore:
 
     def _init_chroma(self) -> None:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
+        # PostHog telemetri kütüphanesinin capture() API uyuşmazlığını
+        # tetiklememesi için ChromaDB telemetrisini ortam değişkeniyle kapat.
+        os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
+
         try:
             import chromadb
             from chromadb.config import Settings
