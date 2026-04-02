@@ -216,6 +216,12 @@ def interactive_loop(agent: SidarAgent) -> None:
     asyncio.run(_interactive_loop_async(agent))
 
 
+async def _ensure_cli_memory_user(agent: SidarAgent) -> None:
+    """CLI oturumları için varsayılan bir kullanıcı bağlamı hazırlar."""
+    user = await agent.memory.db.ensure_user("cli")
+    await agent.memory.set_active_user(user.id, user.username)
+
+
 # ─────────────────────────────────────────────
 #  GİRİŞ NOKTASI
 # ─────────────────────────────────────────────
@@ -269,11 +275,13 @@ def main() -> None:
         cfg.CODING_MODEL = args.model
 
     agent = SidarAgent(cfg)
-    asyncio.run(agent.memory.initialize())
+    asyncio.run(agent.initialize())
 
     if args.status:
         print(agent.status())
         return
+
+    asyncio.run(_ensure_cli_memory_user(agent))
 
     if args.command:
         # respond() async generator olduğu için asyncio.run() ile çalıştırılır
