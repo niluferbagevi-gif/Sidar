@@ -215,4 +215,43 @@ describe("SwarmFlowPanel", () => {
     expect(await screen.findByText("review request failed")).toBeInTheDocument();
   });
 
+  it("renders handoff outcome edges when swarm result includes p2p handoff chain", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "task-99",
+            agent_role: "reviewer",
+            status: "success",
+            elapsed_ms: 14,
+            summary: "handoff tamamlandı",
+            handoffs: [{
+              task_id: "task-99",
+              sender: "supervisor",
+              receiver: "reviewer",
+              reason: "delegation",
+              intent: "review",
+              handoff_depth: 1,
+              swarm_hop: 1,
+            }],
+          }],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    await user.click(await screen.findByRole("button", { name: "Run node" }));
+
+    await waitFor(() => expect(screen.getByText("handoff outcome")).toBeInTheDocument());
+    expect(screen.getByText(/supervisor → reviewer/i)).toBeInTheDocument();
+  });
+
 });

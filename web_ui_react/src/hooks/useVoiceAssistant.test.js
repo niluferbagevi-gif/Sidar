@@ -231,6 +231,7 @@ describe("useVoiceAssistant — token yokken ensureVoiceSocket", () => {
     const { result } = renderHook(() => useVoiceAssistant({ onError }));
     expect(result.current.state.isAuthenticated).toBe(false);
   });
+
 });
 
 describe("useVoiceAssistant — cleanup ve recorder hata akışları", () => {

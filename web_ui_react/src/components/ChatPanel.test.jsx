@@ -27,13 +27,14 @@ const store = {
 
 const send = vi.fn();
 const stop = vi.fn();
+let wsStatus = "connected";
 
 vi.mock("../hooks/useChatStore.js", () => ({
   useChatStore: () => store,
 }));
 
 vi.mock("../hooks/useWebSocket.js", () => ({
-  useWebSocket: () => ({ send, status: "connected" }),
+  useWebSocket: () => ({ send, status: wsStatus }),
 }));
 
 vi.mock("../hooks/useVoiceAssistant.js", () => ({
@@ -84,6 +85,7 @@ describe("ChatPanel", () => {
     store.displayName = "Operatör";
     send.mockClear();
     stop.mockClear();
+    wsStatus = "connected";
     Object.values(store).forEach((value) => {
       if (typeof value === "function" && "mockClear" in value) value.mockClear();
     });
@@ -112,5 +114,12 @@ describe("ChatPanel", () => {
 
     expect(stop).toHaveBeenCalledTimes(1);
     expect(store.newSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables chat input action when websocket is disconnected", async () => {
+    wsStatus = "disconnected";
+    render(<ChatPanel />);
+
+    expect(screen.getByRole("button", { name: "Test Send" })).toBeDisabled();
   });
 });

@@ -72,4 +72,28 @@ describe("AgentManagerPanel", () => {
 
     expect(await screen.findByText("Agent kaydı başarısız")).toBeInTheDocument();
   });
+
+  it("falls back to generic backend error field and toggles submitting state", async () => {
+    const user = userEvent.setup();
+    let resolveResponse;
+    global.fetch.mockReturnValue(
+      new Promise((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+
+    render(<AgentManagerPanel />);
+    await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('bad')"], "bad_agent.py", { type: "text/x-python" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    expect(screen.getByRole("button", { name: "Yükleniyor…" })).toBeDisabled();
+
+    resolveResponse({
+      ok: false,
+      json: async () => ({ error: "Upload blocked" }),
+    });
+
+    expect(await screen.findByText("Upload blocked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ajanı Kaydet" })).toBeEnabled();
+  });
 });
