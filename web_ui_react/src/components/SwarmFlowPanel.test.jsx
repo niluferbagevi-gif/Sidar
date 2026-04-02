@@ -1075,3 +1075,48 @@ it("logs approval response errors when HITL decision endpoint fails", async () =
   expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
   expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
 });
+
+it("disables reject action while approval response is in-flight", async () => {
+  const user = userEvent.setup();
+  let resolveDecision;
+  fetchJson.mockImplementation((url, options) => {
+    if (url === "/api/autonomy/activity?limit=8") {
+      return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
+    }
+    if (url === "/api/hitl/pending") {
+      return Promise.resolve({
+        pending: [{ request_id: "hitl-busy", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
+      });
+    }
+    if (url === "/api/hitl/respond/hitl-busy" && options?.method === "POST") {
+      return new Promise((resolve) => {
+        resolveDecision = resolve;
+      });
+    }
+    throw new Error(`Beklenmeyen çağrı: ${url}`);
+  });
+
+  render(<SwarmFlowPanel />);
+  const rejectButton = await screen.findByRole("button", { name: "Reject" });
+  await user.click(rejectButton);
+  expect(rejectButton).toBeDisabled();
+
+  resolveDecision({ request_id: "hitl-busy", decision: "rejected" });
+  expect(await screen.findByText(/HITL kararı işlendi: hitl-busy → rejected/)).toBeInTheDocument();
+});
+
+it("renders pending approval rows with fallback key/id fields", async () => {
+  fetchJson.mockImplementation(async (url) => {
+    if (url === "/api/autonomy/activity?limit=8") {
+      return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+    }
+    if (url === "/api/hitl/pending") {
+      return { pending: [{}] };
+    }
+    throw new Error(`Beklenmeyen çağrı: ${url}`);
+  });
+
+  render(<SwarmFlowPanel />);
+  expect(await screen.findByText("manual")).toBeInTheDocument();
+  expect(screen.getByText("Açıklama yok.")).toBeInTheDocument();
+});
