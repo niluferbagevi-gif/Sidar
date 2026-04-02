@@ -3,6 +3,7 @@ import importlib
 import logging
 import sys
 import types
+import pytest
 
 
 _original_sidar_agent_module = sys.modules.get("agent.sidar_agent")
@@ -76,6 +77,7 @@ def test_setup_logging_sets_root_level() -> None:
 def test_main_status_path_prints_status(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "SidarAgent", _FakeAgent)
     monkeypatch.setattr(cli.Config, "initialize_directories", staticmethod(lambda: True), raising=False)
+    monkeypatch.setattr(cli.Config, "validate_critical_settings", staticmethod(lambda: True), raising=False)
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: argparse.Namespace(
         command=None,
         status=True,
@@ -103,6 +105,7 @@ def test_main_command_path_streams_response(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(cli, "SidarAgent", _AgentWithRespond)
     monkeypatch.setattr(cli.Config, "initialize_directories", staticmethod(lambda: True), raising=False)
+    monkeypatch.setattr(cli.Config, "validate_critical_settings", staticmethod(lambda: True), raising=False)
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: argparse.Namespace(
         command="selam",
         status=False,
@@ -116,3 +119,19 @@ def test_main_command_path_streams_response(monkeypatch, capsys) -> None:
     assert "Sidar > merhaba dünya" in capsys.readouterr().out
     assert created_agents[0].initialize_calls == 1
     assert created_agents[0].active_user_calls == [("u-cli", "cli")]
+
+
+def test_main_exits_when_critical_validation_fails(monkeypatch) -> None:
+    monkeypatch.setattr(cli.Config, "initialize_directories", staticmethod(lambda: True), raising=False)
+    monkeypatch.setattr(cli.Config, "validate_critical_settings", staticmethod(lambda: False), raising=False)
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: argparse.Namespace(
+        command=None,
+        status=False,
+        level="full",
+        provider="ollama",
+        model="model-x",
+        log="INFO",
+    ))
+
+    with pytest.raises(SystemExit):
+        cli.main()

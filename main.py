@@ -446,6 +446,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if hasattr(cfg, "validate_critical_settings") and not cfg.validate_critical_settings():
+        print(f"{RED}❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.{RESET}")
+        sys.exit(2)
+
     # --port değeri verilmişse 1-65535 aralığında olduğunu doğrula
     if args.port is not None:
         try:

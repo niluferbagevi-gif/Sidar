@@ -12,6 +12,12 @@ import pytest
 main = importlib.import_module("main")
 
 
+@pytest.fixture(autouse=True)
+def _mock_critical_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    if hasattr(main, "cfg"):
+        monkeypatch.setattr(main.cfg, "validate_critical_settings", lambda: True, raising=False)
+
+
 def test_dummy_config_has_initialize_directories() -> None:
     dummy = main.DummyConfig()
     assert dummy.initialize_directories() is None
@@ -86,6 +92,30 @@ def test_main_quick_mode_executes_command(monkeypatch: pytest.MonkeyPatch) -> No
     assert called["capture_output"] is True
     assert called["child_log_path"] == "logs/child.log"
     assert "--model" in called["cmd"]
+
+
+def test_main_exits_when_critical_validation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            quick="cli",
+            provider="ollama",
+            level="sandbox",
+            model=None,
+            host=None,
+            port=None,
+            log="info",
+            capture_output=False,
+            child_log=None,
+        ),
+    )
+    monkeypatch.setattr(main.cfg, "validate_critical_settings", lambda: False, raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
 
 
 def test_import_falls_back_when_config_constructor_attribute_error(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -267,6 +267,8 @@ def main() -> None:
     # Config sınıf attribute'ları module import anında bir kez değerlendirilir.
     cfg = Config()
     cfg.initialize_directories()
+    if not cfg.validate_critical_settings():
+        raise SystemExit("❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.")
     if args.level:
         cfg.ACCESS_LEVEL = args.level
     if args.provider:

@@ -324,6 +324,7 @@ class Config:
 
     # ─── Donanım & GPU ───────────────────────────────────────
     USE_GPU:       bool  = get_bool_env("USE_GPU", True)
+    REQUIRE_GPU:   bool  = get_bool_env("REQUIRE_GPU", True)
     GPU_INFO:      str   = "Devre Dışı / CPU Modu"
     GPU_COUNT:     int   = 0
     CPU_COUNT:     int   = os.cpu_count() or 1
@@ -657,6 +658,13 @@ class Config:
         is_valid = True
         cls._ensure_hardware_info_loaded()
         cls.initialize_directories()
+
+        if cls.REQUIRE_GPU and not cls.USE_GPU:
+            logger.error(
+                "❌ GPU zorunlu mod aktif (REQUIRE_GPU=true) ancak CUDA/PyTorch uygun değil veya USE_GPU=false.\n"
+                "   Çözüm: CUDA destekli PyTorch kurun ve .env içinde USE_GPU=true yapın."
+            )
+            is_valid = False
 
         if cls.AI_PROVIDER == "gemini" and not cls.GEMINI_API_KEY:
             logger.error(

@@ -620,8 +620,9 @@ RAG_CHUNK_OVERLAP=200
 # Paket Bilgi
 PACKAGE_INFO_TIMEOUT=12
 
-# GPU (opsiyonel)
-USE_GPU=false                   # true: GPU embedding aktif
+# GPU (önerilen)
+USE_GPU=true                    # true: GPU embedding aktif
+REQUIRE_GPU=true                # true: GPU yoksa uygulama başlangıçta durdurulur
 GPU_DEVICE=0
 GPU_MEMORY_FRACTION=0.8
 GPU_MIXED_PRECISION=false
