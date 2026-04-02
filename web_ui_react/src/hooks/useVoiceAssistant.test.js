@@ -922,6 +922,25 @@ describe("useVoiceAssistant — Audio Kuyruğu ve Oynatma (Playback)", () => {
 
     expect(onError).toHaveBeenCalledWith(expect.stringContaining("Ses parçası çözülemedi"));
   });
+
+  it("audio chunk çözümlemede Error dışı hata string ise String(error) yolunu kullanır", async () => {
+    const onError = vi.fn();
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    URL.createObjectURL.mockImplementationOnce(() => { throw "blob-string-fail"; });
+
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => { await result.current.start(); });
+
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("err2") }) });
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("blob-string-fail"));
+  });
 });
 
 describe("useVoiceAssistant — VAD Barge-in ve Unmount Cleanup", () => {
