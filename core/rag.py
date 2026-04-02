@@ -516,14 +516,36 @@ def _build_embedding_function(use_gpu: bool = False,
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
     """
     if not use_gpu:
+        logger.info("ℹ️  USE_GPU=false olduğu için ChromaDB embedding CPU modunda çalışacak.")
         return None  # ChromaDB varsayılan (CPU) embedding fonksiyonu
 
     try:
         from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+    except Exception as exc:
+        logger.warning(
+            "⚠️  ChromaDB sentence-transformer embedding fonksiyonu yüklenemedi (%s). "
+            "Muhtemel neden: sentence-transformers veya chromadb bağımlılığı eksik.",
+            exc,
+        )
+        return None
+
+    try:
         import torch
+    except Exception as exc:
+        logger.warning(
+            "⚠️  PyTorch yüklenemedi (%s). GPU embedding devre dışı; CPU fallback kullanılacak.",
+            exc,
+        )
+        return None
 
-        device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
+    device = f"cuda:{gpu_device}" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        logger.warning(
+            "⚠️  torch.cuda.is_available()=False. "
+            "CUDA destekli PyTorch, NVIDIA sürücüsü veya görünür GPU bulunamadı; CPU fallback kullanılacak."
+        )
 
+    try:
         if mixed_precision and device.startswith("cuda"):
             # FP16 desteği — torch.amp ile embedding modeli daha az VRAM kullanır
             import torch.amp  # noqa: F401  (import kontrolü)
