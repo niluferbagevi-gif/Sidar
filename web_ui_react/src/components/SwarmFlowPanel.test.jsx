@@ -420,6 +420,68 @@ describe("SwarmFlowPanel", () => {
     ]);
   });
 
+  it("covers neutral results, thought telemetry, empty contents, and ignored keys", async () => {
+    const user = userEvent.setup();
+
+    telemetryState.events = [
+      { id: "evt-empty", kind: "status", ts: "2025-01-01T10:00:00Z", content: "   " },
+      { id: "evt-thought", kind: "thought", ts: "2025-01-01T10:00:01Z", content: "I should analyze this without prefix." },
+    ];
+
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "t-neutral",
+            agent_role: "planner",
+            status: "processing",
+            elapsed_ms: 10,
+            summary: "",
+          }],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    const nodes = await screen.findAllByRole("button");
+    const nodeElements = nodes.filter((node) => node.className && node.className.includes("swarm-graph__node"));
+    if (nodeElements.length > 0) {
+      nodeElements[0].focus();
+      await user.keyboard("{Escape}");
+      await user.keyboard("A");
+    }
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+
+    expect(await screen.findByText("Açıklama bekleniyor.")).toBeInTheDocument();
+    expect(await screen.findAllByText("Decision")).not.toHaveLength(0);
+  });
+
+  it("preserves previous error state when multiple fetches fail concurrently", async () => {
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        throw new Error("First Priority Error");
+      }
+      if (url === "/api/hitl/pending") {
+        throw new Error("Second Ignored Error");
+      }
+      return {};
+    });
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("First Priority Error")).toBeInTheDocument();
+    expect(screen.queryByText("Second Ignored Error")).not.toBeInTheDocument();
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
