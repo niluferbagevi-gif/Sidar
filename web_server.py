@@ -1867,7 +1867,10 @@ async def login_user(payload: _LoginRequest):
     username = payload.username.strip()
     password = payload.password
     agent = await get_agent()
-    user = await agent.memory.db.authenticate_user(username=username, password=password)
+    try:
+        user = await agent.memory.db.authenticate_user(username=username, password=password)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı") from exc
     if not user:
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı")
 
