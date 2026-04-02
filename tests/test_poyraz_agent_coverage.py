@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 
@@ -241,3 +242,56 @@ def test_ingest_video_insights_handles_success_and_error(monkeypatch: pytest.Mon
     fake_multimodal.MultimodalPipeline = _FailingPipeline
     error = asyncio.run(agent._tool_ingest_video_insights("https://youtu.be/demo|||analiz"))
     assert error == "[VIDEO:ERROR] source=https://youtu.be/demo reason=timeout"
+
+
+def test_plan_service_operations_builds_structured_items_and_persists(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    class _Payload:
+        menu_plan = {"ana_yemek": ["Köfte", " "], "içecek": ["Ayran"]}
+        vendor_assignments = {"fotoğraf": "Ajans X", "dj": " "}
+        timeline = ["T-7 duyuru", " "]
+        notes = "Saha ekibi hazır olsun"
+        persist_checklist = True
+        tenant_id = "tenant-a"
+        checklist_title = "Lansman Planı"
+        owner_user_id = "user-1"
+        campaign_id = 12
+        campaign_name = "Yaz Lansmanı"
+        service_name = "Açılış"
+        audience = "Genç yetişkin"
+
+    class _Db:
+        async def add_operation_checklist(self, **kwargs):
+            assert kwargs["status"] == "planned"
+            assert kwargs["tenant_id"] == "tenant-a"
+            return SimpleNamespace(id=77, title=kwargs["title"], status=kwargs["status"])
+
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda *_args, **_kwargs: _Payload())
+    async def _fake_ensure_db():
+        return _Db()
+
+    agent._ensure_db = _fake_ensure_db
+
+    result = asyncio.run(agent._tool_plan_service_operations("{}"))
+    payload = json.loads(result)
+
+    assert payload["success"] is True
+    items = payload["service_plan"]["items"]
+    assert any(item["type"] == "menu_plan" and item["group"] == "ana_yemek" for item in items)
+    assert any(item["type"] == "vendor_assignment" and item["role"] == "fotoğraf" for item in items)
+    assert payload["service_plan"]["checklist"]["id"] == 77
+
+
+def test_run_task_routes_marketing_keywords_to_strategy_mode() -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    async def _fake_generate(prompt: str, mode: str) -> str:
+        return f"{mode}:{prompt}"
+
+    agent._generate_marketing_output = _fake_generate
+
+    result = asyncio.run(agent.run_task("Funnel optimizasyonu ve pazarlama operasyon planı hazırla"))
+
+    assert result.startswith("marketing_strategy:")
+    assert "funnel" in result.lower()

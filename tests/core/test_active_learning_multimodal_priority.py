@@ -162,3 +162,60 @@ def test_analyze_media_source_empty_input_rejected() -> None:
     result = asyncio.run(pipeline.analyze_media_source(media_source="   "))
     assert result["success"] is False
     assert "media_source boş" in result["reason"]
+
+
+class _MMResponse:
+    def __init__(self, status_code: int, payload: dict[str, object]) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class _MMClient:
+    def __init__(self, responses, *args, **kwargs) -> None:
+        self._responses = list(responses)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, _url: str):
+        return self._responses.pop(0)
+
+
+def test_multimodal_fetch_youtube_transcript_invalid_and_empty_cases() -> None:
+    invalid = asyncio.run(multimodal.fetch_youtube_transcript("not-a-youtube-url"))
+    assert invalid["success"] is False
+    assert invalid["video_id"] == ""
+
+    responses = [_MMResponse(200, {"events": []}), _MMResponse(404, {})]
+    empty = asyncio.run(
+        multimodal.fetch_youtube_transcript(
+            "https://youtu.be/dQw4w9WgXcQ",
+            languages=("tr", "en"),
+            http_client_factory=lambda **kwargs: _MMClient(responses, **kwargs),
+        )
+    )
+    assert empty["success"] is False
+    assert empty["video_id"] == "dQw4w9WgXcQ"
+
+
+def test_resolve_remote_media_stream_youtube_uses_yt_dlp(monkeypatch) -> None:
+    monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
+
+    async def _fake_to_thread(fn, command):
+        if "--dump-single-json" in command:
+            return '{"title": "Demo Video"}'
+        return "https://cdn.example/stream.m3u8\n"
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(multimodal.resolve_remote_media_stream("https://youtu.be/dQw4w9WgXcQ"))
+
+    assert result["platform"] == "youtube"
+    assert result["resolved_url"].startswith("https://cdn.example")
+    assert result["title"] == "Demo Video"

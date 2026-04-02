@@ -19,6 +19,7 @@ except ModuleNotFoundError:
     fake_httpx.__spec__ = importlib.machinery.ModuleSpec("httpx", loader=None)
     sys.modules["httpx"] = fake_httpx
 
+from core.multimodal import ExtractedFrame
 from managers.youtube_manager import YouTubeManager
 
 
@@ -104,3 +105,50 @@ def test_fetch_transcript_returns_error_for_quota_or_private_like_statuses() -> 
     assert result["success"] is False
     assert result["video_id"] == "dQw4w9WgXcQ"
     assert "bulunamadı" in result["reason"]
+
+
+def test_analyze_video_file_success_builds_context(monkeypatch, tmp_path: Path) -> None:
+    video = tmp_path / "demo.mp4"
+    video.write_bytes(b"binary")
+
+    manager = YouTubeManager(llm_client=object(), config=None)
+
+    async def _fake_extract_video_frames(*_args, **_kwargs):
+        return [ExtractedFrame(path="frame-1.jpg", timestamp_seconds=1.5)]
+
+    class _FakeVision:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def analyze(self, **_kwargs):
+            return {"success": True, "analysis": "ürün logosu görünür"}
+
+    monkeypatch.setattr("managers.youtube_manager.extract_video_frames", _fake_extract_video_frames)
+    monkeypatch.setattr("managers.youtube_manager.VisionPipeline", _FakeVision)
+    monkeypatch.setattr("managers.youtube_manager.build_multimodal_context", lambda **_kwargs: "özet bağlam")
+
+    result = asyncio.run(manager.analyze_video_file(video_path=video, transcript={"text": "merhaba"}))
+
+    assert result["success"] is True
+    assert result["context"] == "özet bağlam"
+    assert result["frame_analyses"][0]["success"] is True
+
+
+def test_build_video_analysis_returns_analyze_error(monkeypatch, tmp_path: Path) -> None:
+    manager = YouTubeManager(llm_client=object(), config=None)
+
+    async def _fake_fetch(*_args, **_kwargs):
+        return {"success": False, "reason": "transcript yok"}
+
+    async def _fake_analyze(*_args, **_kwargs):
+        return {"success": False, "reason": "video parse edilemedi"}
+
+    monkeypatch.setattr(manager, "fetch_transcript", _fake_fetch)
+    monkeypatch.setattr(manager, "analyze_video_file", _fake_analyze)
+
+    result = asyncio.run(
+        manager.build_video_analysis(video_url="https://youtu.be/dQw4w9WgXcQ", video_path=tmp_path / "missing.mp4")
+    )
+
+    assert result["success"] is False
+    assert "parse" in result["reason"]
