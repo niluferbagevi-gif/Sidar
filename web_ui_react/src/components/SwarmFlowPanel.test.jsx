@@ -255,3 +255,46 @@ describe("SwarmFlowPanel", () => {
   });
 
 });
+
+it("shows global error banner when autonomy activity fetch fails", async () => {
+  fetchJson.mockImplementation(async (url) => {
+    if (url === "/api/autonomy/activity?limit=8") {
+      throw new Error("activity unavailable");
+    }
+    if (url === "/api/hitl/pending") {
+      return { pending: [] };
+    }
+    throw new Error(`Beklenmeyen çağrı: ${url}`);
+  });
+
+  render(<SwarmFlowPanel />);
+
+  expect(await screen.findByText("activity unavailable")).toBeInTheDocument();
+  expect(await screen.findByText(/Autonomy aktivitesi alınamadı/)).toBeInTheDocument();
+});
+
+it("logs approval response errors when HITL decision endpoint fails", async () => {
+  const user = userEvent.setup();
+  fetchJson.mockImplementation(async (url, options) => {
+    if (url === "/api/autonomy/activity?limit=8") {
+      return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+    }
+    if (url === "/api/hitl/pending") {
+      return {
+        pending: [{ request_id: "hitl-err", action: "graph_review", description: "karar bekliyor", requested_by: "qa" }],
+      };
+    }
+    if (url === "/api/hitl/respond/hitl-err" && options?.method === "POST") {
+      throw new Error("decision endpoint failed");
+    }
+    throw new Error(`Beklenmeyen çağrı: ${url}`);
+  });
+
+  render(<SwarmFlowPanel />);
+  expect(await screen.findByText(/karar bekliyor/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Approve" }));
+
+  expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
+  expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
+});
