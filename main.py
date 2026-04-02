@@ -40,16 +40,21 @@ class DummyConfig:
     OLLAMA_URL = "http://localhost:11434/api"
     BASE_DIR = "."
 
+    def initialize_directories(self) -> None:
+        """Gerçek Config ile arayüz uyumluluğu için no-op."""
+        return None
+
 CONFIG_IMPORT_OK = True
 logger = logging.getLogger(__name__)
 
 try:
     from config import Config
     cfg = Config()
-    cfg.initialize_directories()
-except ImportError:
+    if hasattr(cfg, "initialize_directories"):
+        cfg.initialize_directories()
+except (ImportError, AttributeError):
     CONFIG_IMPORT_OK = False
-    print(f"{YELLOW}⚠ config.py bulunamadı, varsayılan ayarlar kullanılıyor.{RESET}")
+    print(f"{YELLOW}⚠ config.py bulunamadı veya geçersiz, varsayılan ayarlar kullanılıyor.{RESET}")
     cfg = DummyConfig()
 
 

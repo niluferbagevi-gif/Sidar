@@ -441,4 +441,103 @@ describe("useVoiceAssistant — websocket kesinti ve runtime hata akışları", 
     expect(result.current.state.status).toBe("error");
     expect(onError).toHaveBeenCalledWith("Speech recognition failed");
   });
+
+  it("handles VAD speech_end commit flow and flushes append_base64 payload", async () => {
+    vi.useFakeTimers();
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1800)
+      .mockReturnValue(1800);
+
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    let analyserTick = 0;
+    let rafCallback = null;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    let recorderInstance;
+    const requestData = vi.fn();
+    class MockMediaRecorder {
+      static isTypeSupported() { return true; }
+      constructor() {
+        this.state = "recording";
+        recorderInstance = this;
+      }
+      start() {}
+      stop() { this.state = "inactive"; }
+      requestData() { requestData(); }
+    }
+    class MockAudioContext {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return {
+          fftSize: 2048,
+          smoothingTimeConstant: 0.8,
+          getByteTimeDomainData: (frame) => {
+            analyserTick += 1;
+            frame.fill(analyserTick === 1 ? 255 : 128);
+          },
+        };
+      }
+      close() { return Promise.resolve(); }
+    }
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+    globalThis.MediaRecorder = MockMediaRecorder;
+    globalThis.AudioContext = MockAudioContext;
+
+    const { result } = renderHook(() => useVoiceAssistant({ onError: vi.fn() }));
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      rafCallback?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      rafCallback?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await recorderInstance.ondataavailable({
+        data: {
+          size: 4,
+          arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+        },
+      });
+    });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    const sentActions = ws.send.mock.calls.map(([payload]) => JSON.parse(payload).action);
+    expect(sentActions).toContain("vad_event");
+    expect(sentActions).toContain("append_base64");
+
+    vi.useRealTimers();
+  });
 });
