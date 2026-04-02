@@ -26,7 +26,7 @@ const store = {
 };
 
 const send = vi.fn();
-const stop = vi.fn();
+const mockVoiceStop = vi.fn();
 let wsStatus = "connected";
 
 vi.mock("../hooks/useChatStore.js", () => ({
@@ -39,7 +39,7 @@ vi.mock("../hooks/useWebSocket.js", () => ({
 
 vi.mock("../hooks/useVoiceAssistant.js", () => ({
   useVoiceAssistant: () => ({
-    stop,
+    stop: mockVoiceStop,
     statusLabel: "Hazır",
     state: {
       status: "idle",
@@ -84,7 +84,7 @@ describe("ChatPanel", () => {
     store.roomId = "workspace:sidar";
     store.displayName = "Operatör";
     send.mockClear();
-    stop.mockClear();
+    mockVoiceStop.mockClear();
     wsStatus = "connected";
     Object.values(store).forEach((value) => {
       if (typeof value === "function" && "mockClear" in value) value.mockClear();
@@ -112,9 +112,9 @@ describe("ChatPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Yeni Oturum" }));
 
-    expect(stop).toHaveBeenCalledTimes(1);
+    expect(mockVoiceStop).toHaveBeenCalled();
     expect(store.newSession).toHaveBeenCalledTimes(1);
-    expect(stop.mock.invocationCallOrder[0]).toBeLessThan(store.newSession.mock.invocationCallOrder[0]);
+    expect(mockVoiceStop.mock.invocationCallOrder[0]).toBeLessThan(store.newSession.mock.invocationCallOrder[0]);
   });
 
   it("disables chat input action when websocket is disconnected", async () => {
