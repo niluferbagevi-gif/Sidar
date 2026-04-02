@@ -5,11 +5,17 @@ import sys
 import types
 
 
+_original_sidar_agent_module = sys.modules.get("agent.sidar_agent")
 sidar_agent_mod = types.ModuleType("agent.sidar_agent")
 sidar_agent_mod.SidarAgent = object
 sys.modules["agent.sidar_agent"] = sidar_agent_mod
 
 cli = importlib.import_module("cli")
+
+if _original_sidar_agent_module is not None:
+    sys.modules["agent.sidar_agent"] = _original_sidar_agent_module
+else:
+    sys.modules.pop("agent.sidar_agent", None)
 
 
 class _FakeAgent:
