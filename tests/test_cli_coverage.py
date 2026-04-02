@@ -33,10 +33,25 @@ class _FakeAgent:
                 "GPU_INFO": "cpu",
             },
         )()
-        self.memory = type("Mem", (), {"initialize": self._initialize})()
+        self.memory = type(
+            "Mem",
+            (),
+            {
+                "initialize": self._initialize,
+                "set_active_user": self._set_active_user,
+                "db": type("DB", (), {"ensure_user": self._ensure_user})(),
+            },
+        )()
+        self.active_user_calls = []
 
     async def _initialize(self) -> None:
         return None
+
+    async def _ensure_user(self, username: str):
+        return type("User", (), {"id": "u-cli", "username": username})()
+
+    async def _set_active_user(self, user_id: str, username: str) -> None:
+        self.active_user_calls.append((user_id, username))
 
     def status(self) -> str:
         return "OK"
@@ -70,7 +85,13 @@ def test_main_status_path_prints_status(monkeypatch, capsys) -> None:
 
 
 def test_main_command_path_streams_response(monkeypatch, capsys) -> None:
+    created_agents = []
+
     class _AgentWithRespond(_FakeAgent):
+        def __init__(self, cfg) -> None:
+            super().__init__(cfg)
+            created_agents.append(self)
+
         async def respond(self, _command):
             for part in ("merhaba", " dünya"):
                 yield part
@@ -88,3 +109,4 @@ def test_main_command_path_streams_response(monkeypatch, capsys) -> None:
 
     cli.main()
     assert "Sidar > merhaba dünya" in capsys.readouterr().out
+    assert created_agents[0].active_user_calls == [("u-cli", "cli")]
