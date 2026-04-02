@@ -217,6 +217,16 @@ describe("Routes", () => {
     expect(screen.getByText("Yıldız Rota")).toBeInTheDocument();
   });
 
+  it("handles routes without a path prop by defaulting to '*'", () => {
+    renderWithRouter(
+      <Routes>
+        <Route element={<div>Path Olmayan Rota</div>} />
+      </Routes>,
+      "/*",
+    );
+    expect(screen.getByText("Path Olmayan Rota")).toBeInTheDocument();
+  });
+
   it("updates rendered route after navigation", async () => {
     window.history.replaceState({}, "", "/chat");
     const user = userEvent.setup();
@@ -235,6 +245,16 @@ describe("Routes", () => {
     await user.click(screen.getByRole("link", { name: "Ayarlar'a git" }));
     expect(screen.getByText("Ayarlar Sayfası")).toBeInTheDocument();
     expect(screen.queryByText("Chat Sayfası")).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────
+// RouterContext Varsayılan Değeri
+// ─────────────────────────────────────────────────────────
+
+describe("RouterContext Default Value", () => {
+  it("provides a no-op navigate function to prevent crashes outside BrowserRouter", () => {
+    expect(() => render(<Navigate to="/test" />)).not.toThrow();
   });
 });
 
