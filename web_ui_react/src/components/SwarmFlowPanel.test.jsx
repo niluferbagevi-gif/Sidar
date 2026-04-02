@@ -291,6 +291,130 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getByText(/depth 2 · hop 2/i)).toBeInTheDocument();
   });
 
+  it("supports pipeline mode with task add/remove and selected-node task replacement", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    expect(screen.getByRole("combobox")).toHaveValue("pipeline");
+    expect(await screen.findByText("stage 1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yeni Görev Ekle" }));
+    expect(screen.getAllByPlaceholderText("Görevin açıklaması")).toHaveLength(3);
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Görevi Sil" });
+    await user.click(deleteButtons[1]);
+    expect(screen.getAllByPlaceholderText("Görevin açıklaması")).toHaveLength(2);
+
+    await user.click(await screen.findByRole("button", { name: /Task 1/i }));
+    await user.click(screen.getByRole("button", { name: "İlk Goal’ı Değiştir" }));
+    expect(screen.getAllByPlaceholderText("Görevin açıklaması")[0].value.startsWith("Task 1:")).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Task’e ekle" }));
+    expect(screen.getAllByPlaceholderText("Görevin açıklaması")).toHaveLength(3);
+  });
+
+  it("infers HITL actions for autonomy, result, handoff and task nodes", async () => {
+    const user = userEvent.setup();
+    const requestBodies = [];
+    let requestCount = 0;
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-auto", event_name: "Auto", summary: "Auto", source: "cron", status: "failed" }],
+            counts_by_status: { failed: 1 },
+            counts_by_source: { cron: 1 },
+            total: 1,
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "t-1",
+            agent_role: "coder",
+            status: "failed",
+            summary: "Hata",
+            handoffs: [{ sender: "coder", receiver: "reviewer", reason: "hata", handoff_depth: 1, swarm_hop: 1 }],
+          }],
+        };
+      }
+      if (url === "/api/hitl/request" && options?.method === "POST") {
+        requestBodies.push(JSON.parse(options.body));
+        requestCount += 1;
+        return { request_id: `req-${requestCount}` };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    await user.click(await screen.findByRole("button", { name: /Auto/i }));
+    await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    const resultNode = document.querySelector(".swarm-graph__node--result-warning");
+    expect(resultNode).toBeTruthy();
+    await user.click(resultNode);
+    await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    await user.click(await screen.findByRole("button", { name: /Coder → Reviewer/i }));
+    await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    await user.click(await screen.findByRole("button", { name: /Task 1/i }));
+    await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    expect(requestBodies.map((item) => item.action)).toEqual([
+      "autonomy_review",
+      "result_review",
+      "handoff_review",
+      "task_review",
+    ]);
+  });
+
+  it("handles telemetry actor inference edge cases and supports space-key node selection", async () => {
+    const user = userEvent.setup();
+    telemetryState.events = [
+      { id: "evt-empty-content", kind: "tool_call", ts: "2025-01-01T10:00:00Z", content: "" },
+      { id: "evt-no-role", kind: "thought", ts: "2025-01-01T10:00:01Z", content: "Düz metin, rol bilgisi yok." },
+      { id: "evt-fallback-tool", kind: "tool_call", ts: "2025-01-01T10:00:02Z", content: "Arama tamamlandı." },
+    ];
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("System")).toBeInTheDocument();
+    expect(screen.getAllByText("Supervisor").length).toBeGreaterThan(0);
+
+    const taskTwoNode = await screen.findByRole("button", { name: /Task 2/i });
+    taskTwoNode.focus();
+    await user.keyboard(" ");
+
+    expect(screen.getByText("Selected Task 2")).toBeInTheDocument();
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
