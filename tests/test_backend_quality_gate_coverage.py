@@ -214,7 +214,7 @@ def test_gemini_and_anthropic_missing_keys_return_error_payload() -> None:
         messages=[{"role": "user", "content": "hi"}], stream=False
     ))
 
-    assert ("GEMINI_API_KEY" in str(gemini_text)) or ("google-generativeai" in str(gemini_text))
+    assert ("GEMINI_API_KEY" in str(gemini_text)) or ("google-genai" in str(gemini_text))
     assert "ANTHROPIC_API_KEY" in str(anthropic_text)
 
 

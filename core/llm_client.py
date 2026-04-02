@@ -6,6 +6,7 @@ Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP taban
 from __future__ import annotations
 
 import codecs
+import inspect
 import hashlib
 import asyncio
 import json
@@ -582,23 +583,20 @@ class GeminiClient(BaseLLMClient):
     ) -> Union[str, AsyncIterator[str]]:
         genai_client = None
         genai_types = None
-        legacy_genai = None
         try:
             from google import genai as google_genai  # type: ignore[import-not-found]
             from google.genai import types as google_genai_types  # type: ignore[import-not-found]
             genai_client = google_genai.Client(api_key=self.config.GEMINI_API_KEY)
             genai_types = google_genai_types
         except Exception:
-            try:
-                import google.generativeai as legacy_genai  # type: ignore[import-not-found]
-            except ImportError:
-                legacy_genai = None
+            genai_client = None
+            genai_types = None
 
-        if genai_client is None and legacy_genai is None:
+        if genai_client is None or genai_types is None:
             msg = json.dumps(
                 {
                     "tool": "final_answer",
-                    "argument": "[HATA] Gemini istemcisi kurulu değil (google-genai / google-generativeai).",
+                    "argument": "[HATA] Gemini istemcisi kurulu değil (google-genai).",
                     "thought": "Paket eksik",
                 }
             )
@@ -641,78 +639,46 @@ class GeminiClient(BaseLLMClient):
             span.set_attribute("sidar.llm.stream", stream)
 
         try:
-            if genai_client is not None and genai_types is not None:
-                config_kwargs = {"temperature": 0.2 if json_mode else temperature}
-                if json_mode:
-                    config_kwargs["response_mime_type"] = "application/json"
-                if system_text:
-                    config_kwargs["system_instruction"] = system_text
-                generate_config = genai_types.GenerateContentConfig(**config_kwargs)
-                model_name = model or self.config.GEMINI_MODEL
-                contents = history or [{"role": "user", "parts": ["Merhaba"]}]
-                if stream:
-                    async def _start_stream():
-                        call = genai_client.aio.models.generate_content_stream(
-                            model=model_name,
-                            contents=contents,
-                            config=generate_config,
-                        )
-                        return await call if inspect.isawaitable(call) else call
-
-                    response_stream = await _retry_with_backoff(
-                        "gemini",
-                        _start_stream,
-                        config=self.config,
-                        retry_hint="Gemini stream başlatma başarısız",
-                    )
-                    stream_iter = self._stream_gemini_generator(response_stream)
-                    return _trace_stream_metrics(stream_iter, span, started_at)
-
-                async def _send_non_stream():
-                    call = genai_client.aio.models.generate_content(
+            config_kwargs = {"temperature": 0.2 if json_mode else temperature}
+            if json_mode:
+                config_kwargs["response_mime_type"] = "application/json"
+            if system_text:
+                config_kwargs["system_instruction"] = system_text
+            generate_config = genai_types.GenerateContentConfig(**config_kwargs)
+            model_name = model or self.config.GEMINI_MODEL
+            contents = history or [{"role": "user", "parts": ["Merhaba"]}]
+            if stream:
+                async def _start_stream():
+                    call = genai_client.aio.models.generate_content_stream(
                         model=model_name,
                         contents=contents,
                         config=generate_config,
                     )
                     return await call if inspect.isawaitable(call) else call
 
-                response = await _retry_with_backoff(
+                response_stream = await _retry_with_backoff(
                     "gemini",
-                    _send_non_stream,
+                    _start_stream,
                     config=self.config,
-                    retry_hint="Gemini yanıtı alınamadı",
+                    retry_hint="Gemini stream başlatma başarısız",
                 )
-            else:
-                legacy_genai.configure(api_key=self.config.GEMINI_API_KEY)
-                from google.generativeai.types import HarmBlockThreshold, HarmCategory  # type: ignore[import-not-found]
+                stream_iter = self._stream_gemini_generator(response_stream)
+                return _trace_stream_metrics(stream_iter, span, started_at)
 
-                safety_settings = {
-                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                }
-                gm = legacy_genai.GenerativeModel(
-                    model_name=model or self.config.GEMINI_MODEL,
-                    system_instruction=system_text or None,
-                    generation_config=gen_config,
-                    safety_settings=safety_settings,
+            async def _send_non_stream():
+                call = genai_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=generate_config,
                 )
-                prompt = (chat_messages[-1]["content"] if chat_messages else "Merhaba") or "Merhaba"
-                chat_session = gm.start_chat(history=history[:-1] if history else [])
-                if stream:
-                    async def _start_stream():
-                        return await chat_session.send_message_async(prompt, stream=True)
+                return await call if inspect.isawaitable(call) else call
 
-                    response_stream = await _retry_with_backoff(
-                        "gemini",
-                        _start_stream,
-                        config=self.config,
-                        retry_hint="Gemini stream başlatma başarısız",
-                    )
-                    stream_iter = self._stream_gemini_generator(response_stream)
-                    return _trace_stream_metrics(stream_iter, span, started_at)
-                response = await chat_session.send_message_async(prompt)
+            response = await _retry_with_backoff(
+                "gemini",
+                _send_non_stream,
+                config=self.config,
+                retry_hint="Gemini yanıtı alınamadı",
+            )
 
             text = getattr(response, "text", "") or ""
             if span is not None:
