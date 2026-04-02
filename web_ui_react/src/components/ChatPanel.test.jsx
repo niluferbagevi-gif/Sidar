@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatPanel } from "./ChatPanel.jsx";
 
@@ -111,6 +111,16 @@ describe("ChatPanel", () => {
     render(<ChatPanel />);
 
     await user.click(screen.getByRole("button", { name: "Yeni Oturum" }));
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(store.newSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls voice.stop and newSession when new session is triggered from StatusBar", () => {
+    render(<ChatPanel />);
+
+    const newSessionButton = screen.getByRole("button", { name: "Yeni Oturum" });
+    fireEvent.click(newSessionButton);
 
     expect(stop).toHaveBeenCalledTimes(1);
     expect(store.newSession).toHaveBeenCalledTimes(1);
