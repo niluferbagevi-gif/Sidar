@@ -1967,3 +1967,236 @@ describe("useVoiceAssistant — coverage gap tamamlayıcı testler", () => {
     vi.useRealTimers();
   });
 });
+
+describe("useVoiceAssistant — ek hedefli branch testleri", () => {
+  it("https protokolünde wss url ile websocket oluşturur", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    const wsCtor = withOpenSocketCtor(() => ws);
+    globalThis.WebSocket = wsCtor;
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: { ...originalLocation, protocol: "https:", host: "example.test" },
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(wsCtor).toHaveBeenCalledWith("wss://example.test/ws/voice", ["token"]);
+
+    Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
+  });
+
+  it("voice_state unknown ve mic kapalı iken mevcut status'u korur", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => result.current.stop());
+    expect(result.current.state.status).toBe("idle");
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ voice_state: "weird_state" }) });
+    });
+    expect(result.current.state.status).toBe("idle");
+  });
+
+  it("done mesajında mic kapalıysa status idle kalır", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => result.current.stop());
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ done: true }) });
+    });
+    expect(result.current.state.status).toBe("idle");
+  });
+});
+
+describe("useVoiceAssistant — kalan branch boşlukları için testler", () => {
+  it("getUserMedia string reject döndüğünde String(error) yolunu kullanır", async () => {
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockRejectedValue("raw-reject") },
+      configurable: true,
+    });
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } };
+    const onError = vi.fn();
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("raw-reject"));
+    expect(result.current.state.status).toBe("error");
+  });
+
+  it("recorder arrayBuffer string hata fırlatırsa String(error) dalını kullanır", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    let rafCallback;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+    let recorderInstance;
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { recorderInstance = this; this.state = "recording"; }
+      start() {}
+      stop() { this.state = "inactive"; }
+    };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(255)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+    const onError = vi.fn();
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => { await result.current.start(); });
+    act(() => ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) }));
+    await act(async () => { rafCallback?.(); });
+
+    await act(async () => {
+      await recorderInstance.ondataavailable({
+        data: { size: 4, arrayBuffer: async () => { throw "chunk-fail"; } },
+      });
+    });
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("chunk-fail"));
+  });
+
+  it("voice payload fallback alanlarını (assistant_turn_id/transcript/cancelled seq) işler", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ assistant_turn: "started" }) });
+      ws.onmessage?.({ data: JSON.stringify({ transcript: "" }) });
+      ws.onmessage?.({ data: JSON.stringify({ voice_interruption: "cut" }) });
+    });
+    expect(result.current.state.assistantTurnId).toBe(0);
+    expect(result.current.state.transcript).toBe("");
+    expect(result.current.state.lastInterruptReason).toBe("cut");
+    expect(result.current.state.diagnostics.some((d) => d.value.includes("#0"))).toBe(true);
+  });
+
+  it("speech_start ikinci kez gelirse erken return eder ve stop sonrası eski RAF callback'i güvenli döner", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+
+    let rafCallback;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 3;
+    });
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      start() {}
+      stop() {}
+      requestData() {}
+    };
+    let frameVal = 255;
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: (f) => f.fill(frameVal) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) }));
+    await act(async () => { rafCallback?.(); });
+    const startActions = ws.send.mock.calls
+      .map(([payload]) => JSON.parse(payload).action)
+      .filter((a) => a === "start");
+    await act(async () => { rafCallback?.(); }); // speechActive true -> early return branch
+    expect(ws.send.mock.calls.map(([payload]) => JSON.parse(payload).action).filter((a) => a === "start"))
+      .toHaveLength(startActions.length);
+
+    act(() => result.current.stop());
+    frameVal = 128;
+    await act(async () => { rafCallback?.(); }); // analyser temizlendikten sonra line 440 guard
+    expect(result.current.state.status).toBe("idle");
+  });
+});
