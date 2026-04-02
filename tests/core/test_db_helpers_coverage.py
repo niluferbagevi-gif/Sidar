@@ -67,3 +67,20 @@ def test_database_configures_sqlite_relative_path(tmp_path: Path) -> None:
     assert db._backend == "sqlite"
     assert db._sqlite_path == (tmp_path / "nested/sidar.db")
     assert db._sqlite_path.parent.exists()
+
+
+def test_helper_functions_cover_expiry_and_json_and_postgres_backend(tmp_path: Path) -> None:
+    db_mod = _load_db_module_with_jwt_stub()
+
+    assert "T" in db_mod._expires_in(1)
+    assert db_mod._json_dumps({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+
+    cfg = types.SimpleNamespace(
+        DATABASE_URL="postgresql://user:pass@localhost:5432/sidar",
+        BASE_DIR=tmp_path,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+        DB_POOL_SIZE=1,
+    )
+    db = db_mod.Database(cfg)
+    assert db._backend == "postgresql"

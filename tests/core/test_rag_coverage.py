@@ -46,3 +46,27 @@ def run():
     assert deps == []
     assert endpoint_defs[0]["endpoint_id"] == "endpoint:GET /api/ping"
     assert endpoint_calls[0]["endpoint_id"] == "endpoint:POST /api/items"
+
+
+def test_iter_source_files_skips_build_and_respects_extensions(tmp_path: Path):
+    (tmp_path / "api.py").write_text("print('ok')", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "index.js").write_text("fetch('/api/x')", encoding="utf-8")
+    (tmp_path / "docs.txt").write_text("text", encoding="utf-8")
+
+    graph = GraphIndex(tmp_path)
+    files = graph._iter_source_files(tmp_path)
+
+    assert [p.name for p in files] == ["api.py"]
+
+
+def test_script_import_candidates_and_endpoint_node_id(tmp_path: Path):
+    (tmp_path / "src").mkdir()
+    current = tmp_path / "src" / "app.js"
+    current.write_text("import './util'", encoding="utf-8")
+    util = tmp_path / "src" / "util.js"
+    util.write_text("export const x = 1", encoding="utf-8")
+
+    candidates = GraphIndex._script_import_candidates(current, "./util", tmp_path)
+    assert util in candidates
+    assert GraphIndex._endpoint_node_id("get", "api/items") == "endpoint:GET /api/items"

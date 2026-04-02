@@ -1,8 +1,25 @@
 import json
+import importlib.util
+import sys
+import types
 from types import MethodType
 from types import SimpleNamespace
 
 import pytest
+
+if importlib.util.find_spec("pydantic") is None:
+    fake_pydantic = types.ModuleType("pydantic")
+    fake_pydantic.BaseModel = object
+    fake_pydantic.Field = lambda *a, **k: None
+    fake_pydantic.ValidationError = Exception
+    sys.modules["pydantic"] = fake_pydantic
+
+if importlib.util.find_spec("jwt") is None:
+    fake_jwt = types.ModuleType("jwt")
+    fake_jwt.PyJWTError = Exception
+    fake_jwt.encode = lambda payload, *_args, **_kwargs: f"token:{payload.get('sub', '')}"
+    fake_jwt.decode = lambda *_args, **_kwargs: {"sub": "stub"}
+    sys.modules["jwt"] = fake_jwt
 
 from agent import sidar_agent
 
@@ -43,6 +60,25 @@ def test_fallback_action_feedback_prefers_explicit_correlation_id():
     assert feedback.correlation_id == "corr-explicit"
     assert "[ACTION FEEDBACK]" in feedback.to_prompt()
     assert "action_name=run_tests" in feedback.to_prompt()
+
+
+def test_fallback_action_feedback_uses_related_ids_when_correlation_missing():
+    feedback = sidar_agent._FallbackActionFeedback(
+        feedback_id="fb-1",
+        related_task_id="task-9",
+        summary="ok",
+    )
+    assert feedback.correlation_id == "task-9"
+
+
+def test_parse_tool_call_handles_markdown_and_invalid_json():
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+
+    parsed = agent._parse_tool_call("""```json\n{\"tool\":\"read_file\",\"argument\":\"README.md\"}\n```""")
+    assert parsed == {"tool": "read_file", "argument": "README.md"}
+
+    fallback = agent._parse_tool_call("not-json")
+    assert fallback == {"tool": "final_answer", "argument": "not-json"}
 
 
 @pytest.mark.asyncio

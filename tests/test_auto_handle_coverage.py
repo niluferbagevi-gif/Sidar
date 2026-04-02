@@ -27,6 +27,17 @@ class DummyCode:
     def list_directory(self, path):
         return True, f"list:{path}"
 
+    def read_file(self, path):
+        if path == "missing.py":
+            return False, "not found"
+        return True, "print('ok')\n"
+
+    def validate_python_syntax(self, _content):
+        return True, "valid python"
+
+    def validate_json(self, _content):
+        return False, "invalid json"
+
 
 def _build_auto_handle():
     return AutoHandle(
@@ -88,3 +99,47 @@ def test_dot_clear_routes_to_memory_handler(monkeypatch):
     assert handled is True
     assert response == "cleared"
     handler._try_clear_memory.assert_awaited_once()
+
+
+def test_try_read_file_uses_last_file_when_path_missing():
+    handler = _build_auto_handle()
+    handler.memory = SimpleNamespace(
+        get_last_file=lambda: "agent/auto_handle.py",
+        set_last_file=lambda _path: None,
+    )
+    handled, response = handler._try_read_file("dosya içeriğini göster", "dosya içeriğini göster")
+    assert handled is True
+    assert "[agent/auto_handle.py]" in response
+
+
+def test_try_validate_file_json_and_missing_path_branches():
+    handler = _build_auto_handle()
+    handler.memory = SimpleNamespace(get_last_file=lambda: None)
+
+    handled, response = handler._try_validate_file("dosya doğrula", "dosya doğrula")
+    assert handled is True
+    assert "Doğrulanacak dosya yolunu belirtin" in response
+
+    handled, response = handler._try_validate_file("json dosya doğrula", "json dosya doğrula config.json")
+    assert handled is True
+    assert response.startswith("✗")
+
+
+def test_try_clear_memory_supports_async_clear():
+    import asyncio
+
+    class _Memory:
+        def __init__(self):
+            self.called = False
+
+        async def clear(self):
+            self.called = True
+
+    memory = _Memory()
+    handler = _build_auto_handle()
+    handler.memory = memory
+
+    handled, response = asyncio.run(handler._try_clear_memory(".clear"))
+    assert handled is True
+    assert response == "✓ Konuşma belleği temizlendi."
+    assert memory.called is True
