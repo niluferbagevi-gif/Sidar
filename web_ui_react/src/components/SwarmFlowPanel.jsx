@@ -229,7 +229,7 @@ export function SwarmFlowPanel() {
     const pushNode = (node) => nodes.push({ ...node, width: NODE_WIDTH, height: NODE_HEIGHT });
 
     const autonomyNodes = (autonomyActivity.items || []).map((item, index) => {
-      const lane = lanes[Math.min(index, Math.max(lanes.length - 1, 0))] || { x: 40 };
+      const lane = lanes[Math.min(index, Math.max(lanes.length - 1, 0))];
       return {
         id: `autonomy-${item.trigger_id || index}`,
         type: item.status === "failed" ? "autonomy-warning" : "autonomy",
@@ -436,7 +436,7 @@ export function SwarmFlowPanel() {
 
     resultNodes.forEach((resultNode, index) => {
       const result = responseResults[index];
-      const role = String(result?.agent_role || taskNodes[index]?.laneId || taskNodes[taskNodes.length - 1]?.laneId || "supervisor").toLowerCase();
+      const role = String(result?.agent_role || taskNodes[index]?.laneId || taskNodes[taskNodes.length - 1]?.laneId).toLowerCase();
       const taskNode = taskNodes.find((task) => task.id === `task-${index}`) || taskNodes[index] || taskNodes[taskNodes.length - 1];
       const resultHandoffs = handoffNodes.filter((node) => node.id.startsWith(`handoff-${result?.task_id || index}`));
       if (taskNode) {
@@ -577,7 +577,7 @@ export function SwarmFlowPanel() {
     if (!selectedNodeId && graphData.nodes.length) {
       setSelectedNodeId(graphData.nodes[0].id);
     } else if (selectedNodeId && !graphData.nodeMap.has(selectedNodeId)) {
-      setSelectedNodeId(graphData.nodes[0]?.id || "");
+      setSelectedNodeId(graphData.nodes[0].id);
     }
   }, [graphData, selectedNodeId]);
 
@@ -633,13 +633,13 @@ export function SwarmFlowPanel() {
         }),
       });
       setResponse(data);
+      setRunning(false);
       return true;
     } catch (err) {
       setError(err.message);
       pushOperationLog(`Swarm tetiklenemedi: ${err.message}`, "error");
-      return false;
-    } finally {
       setRunning(false);
+      return false;
     }
   }, [maxConcurrency, mode, pushOperationLog, sessionId, tasks]);
 
@@ -944,7 +944,7 @@ export function SwarmFlowPanel() {
                       </div>
                       <div className="swarm-graph__action-row">
                         <button type="button" onClick={() => void respondToApproval(item.request_id, true)} disabled={actionBusy}>Approve</button>
-                        <button type="button" className="button-secondary" onClick={() => void respondToApproval(item.request_id, false)} disabled={actionBusy}>Reject</button>
+                        <button type="button" className="button-secondary" onClick={() => void respondToApproval(item.request_id, false)} disabled={Boolean(actionBusy)}>Reject</button>
                       </div>
                     </article>
                   ))}
