@@ -464,3 +464,73 @@ it("logs approval response errors when HITL decision endpoint fails", async () =
   expect(await screen.findByText("decision endpoint failed")).toBeInTheDocument();
   expect(await screen.findByText(/HITL kararı gönderilemedi: decision endpoint failed/)).toBeInTheDocument();
 });
+
+it("covers neutral results, thought telemetry, empty contents, and ignored keys", async () => {
+    const user = userEvent.setup();
+
+    // 1. inferTelemetryActor için empty content (!content -> "system") ve "thought" event
+    telemetryState.events = [
+      { id: "evt-empty", kind: "status", ts: "2025-01-01T10:00:00Z", content: "   " },
+      { id: "evt-thought", kind: "thought", ts: "2025-01-01T10:00:01Z", content: "I should analyze this without prefix." }
+    ];
+
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "t-neutral",
+            agent_role: "planner",
+            status: "processing", // "success" veya "failed" değil, "result-neutral" dalını kapsar
+            elapsed_ms: 10,
+            summary: "", // clampText boş string fallback'ini ("Açıklama bekleniyor.") kapsar
+          }],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+
+    // 2. Klavye branch coverage (Enter ve Space dışı bir tuşa basarak if dalının false kısmını kapsamak)
+    const nodes = await screen.findAllByRole("button");
+    const nodeElements = nodes.filter(n => n.className && n.className.includes("swarm-graph__node"));
+    if (nodeElements.length > 0) {
+      nodeElements[0].focus();
+      await user.keyboard("{Escape}"); // İlgili onKeyDown dalında event.preventDefault() çalışmaz
+      await user.keyboard("A");
+    }
+
+    // 3. Nötr sonucu tetiklemek için Swarm Başlat butonuna basıyoruz
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+
+    // clampText fallback'inin render edildiğini doğrula
+    expect(await screen.findByText("Açıklama bekleniyor.")).toBeInTheDocument();
+    
+    // "thought" eventi için Decision etiketinin render edildiğini doğrula
+    expect(await screen.findAllByText("Decision")).not.toHaveLength(0);
+  });
+
+  it("preserves previous error state when multiple fetches fail concurrently", async () => {
+    // catch bloklarındaki setError((prev) => prev || err.message) logic'inde prev'in var olma durumunu test eder.
+    fetchJson.mockImplementation(async (url) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        throw new Error("First Priority Error");
+      }
+      if (url === "/api/hitl/pending") {
+        throw new Error("Second Ignored Error");
+      }
+      return {};
+    });
+
+    render(<SwarmFlowPanel />);
+    
+    // Ekranda ilk fırlatılan hatanın kaldığını ve ikinci hatanın onu ezmediğini doğrulayın
+    expect(await screen.findByText("First Priority Error")).toBeInTheDocument();
+    expect(screen.queryByText("Second Ignored Error")).not.toBeInTheDocument();
+  });
