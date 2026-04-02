@@ -254,6 +254,43 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getByText(/supervisor → reviewer/i)).toBeInTheDocument();
   });
 
+  it("renders graph fallback handoff when result has p2p_sender/p2p_receiver without handoff array", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return { activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [{
+            task_id: "task-graph",
+            agent_role: "reviewer",
+            status: "success",
+            summary: "graph fallback",
+            graph: {
+              p2p_sender: "supervisor",
+              p2p_receiver: "reviewer",
+              p2p_reason: "delegation",
+              intent: "review",
+              p2p_handoff_depth: 2,
+              swarm_hop: 2,
+            },
+          }],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    await user.click(await screen.findByRole("button", { name: "Run node" }));
+
+    await waitFor(() => expect(screen.getByText(/supervisor → reviewer/i)).toBeInTheDocument());
+    expect(screen.getByText(/depth 2 · hop 2/i)).toBeInTheDocument();
+  });
+
 });
 
 it("shows global error banner when autonomy activity fetch fails", async () => {
