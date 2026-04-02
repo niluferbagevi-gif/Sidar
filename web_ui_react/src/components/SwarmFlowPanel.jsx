@@ -75,9 +75,6 @@ const toDetailEntries = (record) =>
     }));
 
 const buildTaskDraftFromNode = (node) => {
-  if (!node) {
-    return { goal: "", intent: "mixed", preferred_agent: "" };
-  }
   const intent = String(node.subtitle || "mixed")
     .split("·")[0]
     .trim()
@@ -652,22 +649,16 @@ export function SwarmFlowPanel() {
   }, [loadAutonomyActivity, loadPendingApprovals, pushOperationLog]);
 
   const addDraftTaskFromSelected = useCallback(() => {
-    if (!selectedNode) return;
     setTasks((prev) => [...prev, selectedTaskDraft]);
     pushOperationLog(`Seçili düğüm görev taslağına eklendi: ${selectedNode.title}`, "success");
   }, [pushOperationLog, selectedNode, selectedTaskDraft]);
 
   const replaceFirstTaskFromSelected = useCallback(() => {
-    if (!selectedNode) return;
-    setTasks((prev) => {
-      if (!prev.length) return [selectedTaskDraft];
-      return prev.map((task, idx) => (idx === 0 ? selectedTaskDraft : task));
-    });
+    setTasks((prev) => prev.map((task, idx) => (idx === 0 ? selectedTaskDraft : task)));
     pushOperationLog(`İlk görev seçili düğümden yeniden yazıldı: ${selectedNode.title}`, "info");
   }, [pushOperationLog, selectedNode, selectedTaskDraft]);
 
   const runSelectedNode = useCallback(async () => {
-    if (!selectedNode) return;
     setActionBusy(true);
     const draft = buildTaskDraftFromNode(selectedNode);
     const ok = await executeSwarm([draft], {
@@ -681,7 +672,6 @@ export function SwarmFlowPanel() {
   }, [executeSwarm, pushOperationLog, selectedNode, sessionId]);
 
   const requestNodeReview = useCallback(async () => {
-    if (!selectedNode) return;
     setActionBusy(true);
     try {
       const data = await fetchJson("/api/hitl/request", {
@@ -697,7 +687,7 @@ export function SwarmFlowPanel() {
             title: selectedNode.title,
             subtitle: selectedNode.subtitle,
             body: selectedNode.body,
-            details: Object.fromEntries((selectedNode.details || []).map((item) => [item.key, item.value])),
+            details: Object.fromEntries(selectedNode.details.map((item) => [item.key, item.value])),
           },
         }),
       });
@@ -881,8 +871,7 @@ export function SwarmFlowPanel() {
                 <h4>Node Inspector</h4>
                 <p className="panel__hint">Seçili düğümün handoff_depth, p2p_reason ve karar zinciri detayları.</p>
               </div>
-              {selectedNode ? (
-                <div className="swarm-graph__inspector-card">
+              <div className="swarm-graph__inspector-card">
                   <div className="swarm-graph__inspector-header">
                     <strong>{selectedNode.title}</strong>
                     <span>{selectedNode.subtitle}</span>
@@ -921,12 +910,7 @@ export function SwarmFlowPanel() {
                     </div>
                   </div>
                   <dl className="swarm-graph__detail-list">
-                    {(selectedNode.details || toDetailEntries({
-                      node_id: selectedNode.id,
-                      type: selectedNode.type,
-                      lane_x: selectedNode.x,
-                      y: selectedNode.y,
-                    })).map((item) => (
+                    {selectedNode.details.map((item) => (
                       <React.Fragment key={`${selectedNode.id}-${item.key}`}>
                         <dt>{item.key}</dt>
                         <dd>{item.value}</dd>
@@ -934,9 +918,6 @@ export function SwarmFlowPanel() {
                     ))}
                   </dl>
                 </div>
-              ) : (
-                <div className="empty-state">İncelemek için grafikten bir düğüm seçin.</div>
-              )}
             </div>
           </div>
 
