@@ -51,7 +51,7 @@ export function useWebSocket(
     }
 
     setStatus("connecting");
-    const ws = new WebSocket(WS_URL(), token ? [token] : undefined);
+    const ws = new WebSocket(WS_URL(), [token]);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
