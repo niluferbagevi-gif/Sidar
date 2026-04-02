@@ -237,3 +237,24 @@ def test_is_retryable_exception_handles_asyncio_timeout() -> None:
     retryable, status = llm_client._is_retryable_exception(asyncio.TimeoutError())
     assert retryable is True
     assert status is None
+
+
+def test_retry_with_backoff_marks_non_retryable_errors() -> None:
+    cfg = SimpleNamespace(LLM_MAX_RETRIES=3, LLM_RETRY_BASE_DELAY=0.01, LLM_RETRY_MAX_DELAY=0.05)
+
+    async def failing_op():
+        raise ValueError("invalid request payload")
+
+    with pytest.raises(llm_client.LLMAPIError) as err:
+        asyncio.run(llm_client._retry_with_backoff("openai", failing_op, config=cfg, retry_hint="badreq"))
+
+    assert err.value.provider == "openai"
+    assert err.value.retryable is False
+    assert "badreq" in str(err.value)
+
+
+def test_fallback_stream_yields_single_message() -> None:
+    async def _collect() -> list[str]:
+        return [chunk async for chunk in llm_client._fallback_stream("temporary fallback")]
+
+    assert asyncio.run(_collect()) == ["temporary fallback"]
