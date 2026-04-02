@@ -174,3 +174,31 @@ describe("VoiceAssistantPanel — tanılama olayları", () => {
     expect(screen.getByText("başlatıldı")).toBeInTheDocument();
   });
 });
+
+describe("VoiceAssistantPanel — edge case branch coverage (Köşe Durumlar)", () => {
+  it("handles fallback and truthy values for optional state fields", () => {
+    const voice = makeVoice();
+    
+    // 1. audioMimeType boş olduğunda fallback çalışmalı (Eksik Satır 54 için)
+    voice.state.audioMimeType = ""; 
+    
+    // 2. lastInterruptReason ve assistantTurnId dolu olduğunda asıl değerleri dönmeli
+    voice.state.lastInterruptReason = "kullanici_iptali";
+    voice.state.assistantTurnId = 42;
+    
+    // 3. VAD speaking false (Sessizlik durumu eksik kalmış olabilir)
+    voice.state.vad = { level: 0.01, speaking: false };
+
+    render(<VoiceAssistantPanel voice={voice} />);
+
+    // Satır 54: audioMimeType boştu, varsayılan "audio/wav" fallback olarak render edildi mi?
+    expect(screen.getByText(/audio\/wav/)).toBeInTheDocument();
+    
+    // turnId ve kesme sebebi (reason) düzgün render edildi mi?
+    expect(screen.getByText(/kullanici_iptali/)).toBeInTheDocument();
+    expect(screen.getByText(/turn #42/)).toBeInTheDocument();
+    
+    // speaking: false durumu "sessizlik" metnini render etti mi?
+    expect(screen.getByText(/sessizlik/)).toBeInTheDocument();
+  });
+});

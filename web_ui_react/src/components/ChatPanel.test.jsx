@@ -29,36 +29,48 @@ const send = vi.fn();
 const stop = vi.fn();
 let wsStatus = "connected";
 
+// 1. ADIM: Hook'lara geçilen ayarları (options) yakalamak için dışarıda değişkenler tanımlıyoruz
+let webSocketOptions = {};
+let voiceAssistantOptions = {};
+
 vi.mock("../hooks/useChatStore.js", () => ({
   useChatStore: () => store,
 }));
 
+// 2. ADIM: useWebSocket mock'unu options'ı yakalayacak şekilde güncelliyoruz
 vi.mock("../hooks/useWebSocket.js", () => ({
-  useWebSocket: () => ({ send, status: wsStatus }),
+  useWebSocket: (sessionId, options) => {
+    webSocketOptions = options;
+    return { send, status: wsStatus };
+  },
 }));
 
+// 3. ADIM: useVoiceAssistant mock'unu options'ı yakalayacak şekilde güncelliyoruz
 vi.mock("../hooks/useVoiceAssistant.js", () => ({
-  useVoiceAssistant: () => ({
-    stop,
-    statusLabel: "Hazır",
-    state: {
-      status: "idle",
-      isMicActive: false,
-      isAssistantAudioPlaying: false,
-      queueDepth: 0,
-      summary: "Hazır",
-      transcript: "",
-      vad: { level: 0, speaking: false },
-      lastInterruptReason: "",
-      assistantTurnId: 0,
-      bufferedBytes: 0,
-      audioMimeType: "audio/wav",
-      diagnostics: [],
-    },
-    toggle: vi.fn(),
-    interrupt: vi.fn(),
-    supported: true,
-  }),
+  useVoiceAssistant: (options) => {
+    voiceAssistantOptions = options;
+    return {
+      stop,
+      statusLabel: "Hazır",
+      state: {
+        status: "idle",
+        isMicActive: false,
+        isAssistantAudioPlaying: false,
+        queueDepth: 0,
+        summary: "Hazır",
+        transcript: "",
+        vad: { level: 0, speaking: false },
+        lastInterruptReason: "",
+        assistantTurnId: 0,
+        bufferedBytes: 0,
+        audioMimeType: "audio/wav",
+        diagnostics: [],
+      },
+      toggle: vi.fn(),
+      interrupt: vi.fn(),
+      supported: true,
+    };
+  },
 }));
 
 vi.mock("./ChatWindow.jsx", () => ({ ChatWindow: () => <div>ChatWindow Mock</div> }));
@@ -86,6 +98,9 @@ describe("ChatPanel", () => {
     send.mockClear();
     stop.mockClear();
     wsStatus = "connected";
+    webSocketOptions = {};
+    voiceAssistantOptions = {};
+    
     Object.values(store).forEach((value) => {
       if (typeof value === "function" && "mockClear" in value) value.mockClear();
     });
@@ -122,5 +137,34 @@ describe("ChatPanel", () => {
     render(<ChatPanel />);
 
     expect(screen.getByRole("button", { name: "Test Send" })).toBeDisabled();
+  });
+
+  // 4. ADIM: YENİ TEST - Tüm callback fonksiyonlarını tetikleyerek %100 coverage sağlıyoruz
+  it("handles all websocket and voice assistant callbacks correctly", () => {
+    render(<ChatPanel />);
+
+    // WebSocket event'leri tetiklemesi ve testleri
+    webSocketOptions.onStatus("Status Test");
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("status", "Status Test");
+
+    webSocketOptions.onToolCall("Tool Test");
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("tool_call", "Tool Test");
+
+    webSocketOptions.onThought("Thought Test");
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("thought", "Thought Test");
+
+    webSocketOptions.onRoomEvent({ kind: "room_event", content: "Room Info" });
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("room_event", "Room Info", { kind: "room_event", content: "Room Info" });
+
+    // RoomEvent - kind veya content undefined durumu (fallback)
+    webSocketOptions.onRoomEvent({ content: null });
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("status", "", { content: null });
+
+    // Voice Assistant event'leri tetiklemesi ve testleri
+    voiceAssistantOptions.onUserTranscript("Nasılsın");
+    expect(send).toHaveBeenCalledWith("@Sidar Nasılsın"); // 54. ve 55. Satırların çözümü!
+
+    voiceAssistantOptions.onTelemetry("voice_event", "Mic Active");
+    expect(store.addTelemetryEvent).toHaveBeenCalledWith("voice_event", "Mic Active");
   });
 });

@@ -132,4 +132,45 @@ describe("PluginMarketplacePanel", () => {
     );
     expect(await screen.findByText("Remove failed")).toBeInTheDocument();
   });
+
+  // --- YENİ EKLENEN EDGE CASE (KÖŞE DURUM) TESTLERİ ---
+
+  it("handles missing items array gracefully (falls back to empty array)", async () => {
+    // 22. Satırı çözer: data.items'ın tanımsız olduğu durum (data.items || [])
+    fetchJson.mockResolvedValueOnce({});
+    render(<PluginMarketplacePanel />);
+    expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
+  });
+
+  it("handles missing capabilities and mixed boolean states for installed/live_registered", async () => {
+    // 47. ve 121. Satırları çözer: Eksik boolean (||) eşleşmeleri ve boş capabilities
+    const edgeCatalog = {
+      items: [
+        {
+          plugin_id: "partial-1",
+          name: "Partial Install 1",
+          category: "test",
+          installed: true,
+          live_registered: false, // Sadece installed true
+        },
+        {
+          plugin_id: "partial-2",
+          name: "Partial Install 2",
+          category: "test",
+          installed: false,
+          live_registered: true, // Sadece live_registered true
+          capabilities: null,    // 121. Satır (item.capabilities || [])
+        }
+      ]
+    };
+
+    fetchJson.mockResolvedValueOnce(edgeCatalog);
+    render(<PluginMarketplacePanel />);
+
+    expect(await screen.findByText("Partial Install 1")).toBeInTheDocument();
+    expect(await screen.findByText("Partial Install 2")).toBeInTheDocument();
+    
+    // "installed || live_registered" şartı sağlandığı için ikisi de "Canlı" pill'ine sahip olmalı
+    expect(screen.getAllByText("Canlı")).toHaveLength(2);
+  });
 });

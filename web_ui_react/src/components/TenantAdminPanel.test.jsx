@@ -29,13 +29,25 @@ describe("TenantAdminPanel", () => {
     expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(initialCards);
   });
 
-  it("toggles the tenant status label", async () => {
+  // GÜNCELLENEN TEST: Her iki toggle (değiştirme) yönünü de test eder
+  it("toggles the tenant status label in both directions (active <-> paused)", async () => {
     const user = userEvent.setup();
     render(<TenantAdminPanel />);
 
-    await user.click(screen.getAllByRole("button", { name: "Duraklat" })[0]);
+    // --- 1. YÖN: Active -> Paused (True Dalı) ---
+    // Acme Finans başlangıçta "active"dir, "Duraklat" butonuna tıklıyoruz.
+    const pauseButtons = screen.getAllByRole("button", { name: "Duraklat" });
+    await user.click(pauseButtons[0]);
 
-    expect(screen.getAllByText("Durum:", { exact: false }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "Aktifleştir" }).length).toBeGreaterThan(0);
+    // Ekrandaki "Aktifleştir" butonu sayısı artmış olmalı (Başlangıçta sadece Nova Lojistik için vardı, şimdi Acme için de var)
+    expect(screen.getAllByRole("button", { name: "Aktifleştir" })).toHaveLength(2);
+
+    // --- 2. YÖN: Paused -> Active (False Dalı - Eksik Olan Satır 33 İçin) ---
+    // Şimdi ekrandaki herhangi bir "Aktifleştir" butonuna tıklıyoruz.
+    const activateButtons = screen.getAllByRole("button", { name: "Aktifleştir" });
+    await user.click(activateButtons[0]);
+
+    // Tıkladığımız tenant yeniden aktif olduğu için "Duraklat" butonlarının sayısı da doğru şekilde güncellenmiş olmalı.
+    expect(screen.getAllByRole("button", { name: "Duraklat" })).toHaveLength(2);
   });
 });
