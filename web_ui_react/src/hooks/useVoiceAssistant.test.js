@@ -348,3 +348,12 @@ describe("useVoiceAssistant — cleanup ve recorder hata akışları", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 });
+
+describe("useVoiceAssistant — telemetry", () => {
+  it("onTelemetry callback'ini durum özetiyle çağırır", () => {
+    const onTelemetry = vi.fn();
+    renderHook(() => useVoiceAssistant({ onTelemetry }));
+
+    expect(onTelemetry).toHaveBeenCalledWith("voice_status", expect.stringContaining("idle"));
+  });
+});
