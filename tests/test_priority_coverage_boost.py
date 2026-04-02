@@ -135,6 +135,7 @@ def test_ws_chat_rejects_invalid_header_token(monkeypatch: pytest.MonkeyPatch) -
     pytest.importorskip("fastapi")
     import web_server
     from fastapi.testclient import TestClient
+    from fastapi.websockets import WebSocketDisconnect
 
     class _Mem:
         async def set_active_user(self, *_args, **_kwargs):
@@ -153,8 +154,9 @@ def test_ws_chat_rejects_invalid_header_token(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _resolve_none)
 
     with TestClient(web_server.app) as client:
-        with pytest.raises(Exception):
-            client.websocket_connect("/ws/chat", subprotocols=["invalid-token"])
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/chat", subprotocols=["invalid-token"]) as ws:
+                ws.receive_text()
 
 
 def test_document_store_add_document_from_file_and_fetch_chroma(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -301,56 +303,63 @@ def test_db_campaign_and_asset_crud_paths(tmp_path: Path) -> None:
 def test_sidar_handle_external_trigger_and_nightly_success(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("httpx")
     from agent.sidar_agent import SidarAgent
+    from unittest.mock import patch
 
     async def _run() -> None:
-        agent = SidarAgent.__new__(SidarAgent)
-        agent.cfg = SimpleNamespace(
-            ENABLE_NIGHTLY_MEMORY_PRUNING=True,
-            NIGHTLY_MEMORY_IDLE_SECONDS=30,
-            NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=1,
-            NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=2,
-            NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
-        )
-        agent._nightly_maintenance_lock = None
-        agent._append_autonomy_history = lambda _record: asyncio.sleep(0)
-        agent._memory_add = lambda _role, _content: asyncio.sleep(0)
-        agent._ensure_autonomy_runtime_state = lambda: None
-        agent.mark_activity = lambda _name: None
-        agent._build_trigger_correlation = lambda *_args, **_kwargs: {"correlation_id": "corr-1"}
-        agent._build_trigger_prompt = lambda *_args, **_kwargs: "prompt"
-        agent._try_multi_agent = lambda _prompt: asyncio.sleep(0, result="özet")
-        agent._attempt_autonomous_self_heal = lambda **_kwargs: asyncio.sleep(0, result={"status": "applied"})
-        agent.initialize = lambda: asyncio.sleep(0)
-        agent.seconds_since_last_activity = MethodType(lambda _self: 999.0, agent)
-        agent._autonomy_history = []
+        with patch.object(SidarAgent, "__init__", return_value=None):
+            agent = SidarAgent()
+            agent.cfg = SimpleNamespace(
+                ENABLE_NIGHTLY_MEMORY_PRUNING=True,
+                NIGHTLY_MEMORY_IDLE_SECONDS=30,
+                NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS=1,
+                NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=2,
+                NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=1,
+            )
+            agent._nightly_maintenance_lock = None
+            agent._append_autonomy_history = lambda _record: asyncio.sleep(0)
+            agent._memory_add = lambda _role, _content: asyncio.sleep(0)
+            agent._ensure_autonomy_runtime_state = lambda: None
+            agent.mark_activity = lambda _name: None
+            agent._build_trigger_correlation = lambda *_args, **_kwargs: {"correlation_id": "corr-1"}
+            agent._build_trigger_prompt = lambda *_args, **_kwargs: "prompt"
+            agent._try_multi_agent = lambda _prompt: asyncio.sleep(0, result="özet")
+            agent._attempt_autonomous_self_heal = lambda **_kwargs: asyncio.sleep(0, result={"status": "applied"})
+            agent.initialize = lambda: asyncio.sleep(0)
+            agent.seconds_since_last_activity = MethodType(lambda _self: 999.0, agent)
+            agent._autonomy_history = []
 
-        class _Mem:
-            async def run_nightly_consolidation(self, **_kwargs):
-                return {"session_ids": ["s1"], "sessions_compacted": 1}
+            class _Mem:
+                async def run_nightly_consolidation(self, **_kwargs):
+                    return {"session_ids": ["s1"], "sessions_compacted": 1}
 
-        class _Docs:
-            def consolidate_session_documents(self, _session_id: str, keep_recent_docs: int):
-                assert keep_recent_docs == 1
-                return {"removed_docs": 2}
+            class _Docs:
+                def consolidate_session_documents(self, _session_id: str, keep_recent_docs: int):
+                    assert keep_recent_docs == 1
+                    return {"removed_docs": 2}
 
-        agent.memory = _Mem()
-        agent.docs = _Docs()
+            agent.memory = _Mem()
+            agent.docs = _Docs()
 
-        class _EntityMemory:
-            async def initialize(self):
-                return None
+            class _EntityMemory:
+                async def initialize(self):
+                    return None
 
-            async def purge_expired(self):
-                return 3
+                async def purge_expired(self):
+                    return 3
 
-        monkeypatch.setattr("agent.sidar_agent.get_entity_memory", lambda _cfg: _EntityMemory())
+            monkeypatch.setattr("agent.sidar_agent.get_entity_memory", lambda _cfg: _EntityMemory())
 
-        record = await agent.handle_external_trigger(
-            {"trigger_id": "tr-1", "source": "cron", "event_name": "nightly", "payload": {"kind": "workflow_run", "workflow_name": "ci"}}
-        )
-        nightly = await agent.run_nightly_memory_maintenance(force=True)
-        assert record["status"] == "success"
-        assert nightly["status"] == "completed"
-        assert nightly["rag_docs_pruned"] == 2
+            record = await agent.handle_external_trigger(
+                {
+                    "trigger_id": "tr-1",
+                    "source": "cron",
+                    "event_name": "nightly",
+                    "payload": {"kind": "workflow_run", "workflow_name": "ci"},
+                }
+            )
+            nightly = await agent.run_nightly_memory_maintenance(force=True)
+            assert record["status"] == "success"
+            assert nightly["status"] == "completed"
+            assert nightly["rag_docs_pruned"] == 2
 
     asyncio.run(_run())

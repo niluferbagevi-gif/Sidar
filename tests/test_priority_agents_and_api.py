@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -117,26 +117,27 @@ def test_sidar_subtask_tool_error_branch_then_final_answer() -> None:
     import asyncio
 
     async def _run() -> str:
-        agent = SidarAgent.__new__(SidarAgent)
-        agent.cfg = SimpleNamespace(TEXT_MODEL="x", CODING_MODEL="x", SUBTASK_MAX_STEPS=2)
+        with patch.object(SidarAgent, "__init__", return_value=None):
+            agent = SidarAgent()
+            agent.cfg = SimpleNamespace(TEXT_MODEL="x", CODING_MODEL="x", SUBTASK_MAX_STEPS=2)
 
-        class _FakeLLM:
-            def __init__(self):
-                self.calls = 0
+            class _FakeLLM:
+                def __init__(self):
+                    self.calls = 0
 
-            async def chat(self, **_kwargs):
-                self.calls += 1
-                if self.calls == 1:
-                    return '{"thought":"t","tool":"read_file","argument":"missing.py"}'
-                return '{"thought":"t","tool":"final_answer","argument":"kod hatası işlendi"}'
+                async def chat(self, **_kwargs):
+                    self.calls += 1
+                    if self.calls == 1:
+                        return '{"thought":"t","tool":"read_file","argument":"missing.py"}'
+                    return '{"thought":"t","tool":"final_answer","argument":"kod hatası işlendi"}'
 
-        agent.llm = _FakeLLM()
+            agent.llm = _FakeLLM()
 
-        async def _explode(_tool: str, _arg: str) -> str:
-            raise RuntimeError("dosya bulunamadı")
+            async def _explode(_tool: str, _arg: str) -> str:
+                raise RuntimeError("dosya bulunamadı")
 
-        agent._execute_tool = _explode
-        return await agent._tool_subtask("kayıp dosyayı incele")
+            agent._execute_tool = _explode
+            return await agent._tool_subtask("kayıp dosyayı incele")
 
     output = asyncio.run(_run())
     assert output.startswith("✓ Alt Görev Tamamlandı")
