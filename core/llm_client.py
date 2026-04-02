@@ -580,13 +580,25 @@ class GeminiClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> Union[str, AsyncIterator[str]]:
+        genai_client = None
+        genai_types = None
+        legacy_genai = None
         try:
-            import google.generativeai as genai
-        except ImportError:
+            from google import genai as google_genai  # type: ignore[import-not-found]
+            from google.genai import types as google_genai_types  # type: ignore[import-not-found]
+            genai_client = google_genai.Client(api_key=self.config.GEMINI_API_KEY)
+            genai_types = google_genai_types
+        except Exception:
+            try:
+                import google.generativeai as legacy_genai  # type: ignore[import-not-found]
+            except ImportError:
+                legacy_genai = None
+
+        if genai_client is None and legacy_genai is None:
             msg = json.dumps(
                 {
                     "tool": "final_answer",
-                    "argument": "[HATA] 'google-generativeai' kurulu değil.",
+                    "argument": "[HATA] Gemini istemcisi kurulu değil (google-genai / google-generativeai).",
                     "thought": "Paket eksik",
                 }
             )
@@ -601,8 +613,6 @@ class GeminiClient(BaseLLMClient):
                 }
             )
             return _fallback_stream(msg) if stream else msg
-
-        genai.configure(api_key=self.config.GEMINI_API_KEY)
 
         if json_mode:
             messages = self._inject_json_instruction(messages)
@@ -619,44 +629,7 @@ class GeminiClient(BaseLLMClient):
         if json_mode:
             gen_config.update(self.json_mode_config().get("generation_config", {}))
 
-        try:
-            from google.generativeai.types import HarmBlockThreshold, HarmCategory
-
-            safety_settings = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
-        except Exception:
-            safety_settings = {
-                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-            }
-
-        gm = genai.GenerativeModel(
-            model_name=model or self.config.GEMINI_MODEL,
-            system_instruction=system_text or None,
-            generation_config=gen_config,
-            safety_settings=safety_settings,
-        )
-
-        history = []
-        last_user = None
-        for m in chat_messages:
-            role = "user" if m["role"] == "user" else "model"
-            if role == "user":
-                last_user = m["content"]
-                if history or last_user:
-                    history.append({"role": role, "parts": [m["content"]]})
-            else:
-                history.append({"role": role, "parts": [m["content"]]})
-
-        if not last_user and chat_messages:
-            last_user = chat_messages[-1]["content"]
-        prompt = last_user or "Merhaba"
+        history = [{"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]} for m in chat_messages]
 
         tracer = _get_tracer(self.config)
         span_cm = tracer.start_as_current_span("llm.gemini.chat") if (tracer and not stream) else None
@@ -668,21 +641,79 @@ class GeminiClient(BaseLLMClient):
             span.set_attribute("sidar.llm.stream", stream)
 
         try:
-            chat_session = gm.start_chat(history=history[:-1] if history else [])
-            if stream:
-                async def _start_stream():
-                    return await chat_session.send_message_async(prompt, stream=True)
+            if genai_client is not None and genai_types is not None:
+                config_kwargs = {"temperature": 0.2 if json_mode else temperature}
+                if json_mode:
+                    config_kwargs["response_mime_type"] = "application/json"
+                if system_text:
+                    config_kwargs["system_instruction"] = system_text
+                generate_config = genai_types.GenerateContentConfig(**config_kwargs)
+                model_name = model or self.config.GEMINI_MODEL
+                contents = history or [{"role": "user", "parts": ["Merhaba"]}]
+                if stream:
+                    async def _start_stream():
+                        call = genai_client.aio.models.generate_content_stream(
+                            model=model_name,
+                            contents=contents,
+                            config=generate_config,
+                        )
+                        return await call if inspect.isawaitable(call) else call
 
-                response_stream = await _retry_with_backoff(
+                    response_stream = await _retry_with_backoff(
+                        "gemini",
+                        _start_stream,
+                        config=self.config,
+                        retry_hint="Gemini stream başlatma başarısız",
+                    )
+                    stream_iter = self._stream_gemini_generator(response_stream)
+                    return _trace_stream_metrics(stream_iter, span, started_at)
+
+                async def _send_non_stream():
+                    call = genai_client.aio.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=generate_config,
+                    )
+                    return await call if inspect.isawaitable(call) else call
+
+                response = await _retry_with_backoff(
                     "gemini",
-                    _start_stream,
+                    _send_non_stream,
                     config=self.config,
-                    retry_hint="Gemini stream başlatma başarısız",
+                    retry_hint="Gemini yanıtı alınamadı",
                 )
-                stream_iter = self._stream_gemini_generator(response_stream)
-                return _trace_stream_metrics(stream_iter, span, started_at)
+            else:
+                legacy_genai.configure(api_key=self.config.GEMINI_API_KEY)
+                from google.generativeai.types import HarmBlockThreshold, HarmCategory  # type: ignore[import-not-found]
 
-            response = await chat_session.send_message_async(prompt)
+                safety_settings = {
+                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                }
+                gm = legacy_genai.GenerativeModel(
+                    model_name=model or self.config.GEMINI_MODEL,
+                    system_instruction=system_text or None,
+                    generation_config=gen_config,
+                    safety_settings=safety_settings,
+                )
+                prompt = (chat_messages[-1]["content"] if chat_messages else "Merhaba") or "Merhaba"
+                chat_session = gm.start_chat(history=history[:-1] if history else [])
+                if stream:
+                    async def _start_stream():
+                        return await chat_session.send_message_async(prompt, stream=True)
+
+                    response_stream = await _retry_with_backoff(
+                        "gemini",
+                        _start_stream,
+                        config=self.config,
+                        retry_hint="Gemini stream başlatma başarısız",
+                    )
+                    stream_iter = self._stream_gemini_generator(response_stream)
+                    return _trace_stream_metrics(stream_iter, span, started_at)
+                response = await chat_session.send_message_async(prompt)
+
             text = getattr(response, "text", "") or ""
             if span is not None:
                 span.set_attribute("sidar.llm.total_ms", (time.monotonic() - started_at) * 1000)
