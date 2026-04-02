@@ -56,4 +56,20 @@ describe("AgentManagerPanel", () => {
     expect(screen.getByText(/"version": "2.0.0"/)).toBeInTheDocument();
     expect(screen.getByText(/Seçilmedi/)).toBeInTheDocument();
   });
+
+  it("renders backend error banner when registration fails", async () => {
+    const user = userEvent.setup();
+    global.fetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "Agent kaydı başarısız" }),
+    });
+
+    render(<AgentManagerPanel />);
+    await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('bad')"], "bad_agent.py", { type: "text/x-python" }));
+    await user.type(screen.getByPlaceholderText("security-auditor"), "security-auditor");
+
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    expect(await screen.findByText("Agent kaydı başarısız")).toBeInTheDocument();
+  });
 });
