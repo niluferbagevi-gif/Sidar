@@ -89,4 +89,47 @@ describe("PluginMarketplacePanel", () => {
       ),
     );
   });
+
+  it("renders empty state when catalog has no plugins", async () => {
+    fetchJson.mockResolvedValueOnce({ items: [] });
+    render(<PluginMarketplacePanel />);
+
+    expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
+  });
+
+  it("sends DELETE for remove action and surfaces action errors", async () => {
+    const user = userEvent.setup();
+    const liveCatalog = {
+      items: [{
+        plugin_id: "live-plugin",
+        name: "Live Plugin",
+        category: "ops",
+        summary: "Canlı plugin",
+        description: "Açıklama",
+        role_name: "ops",
+        version: "1.0.1",
+        entrypoint: "plugins/live.py",
+        capabilities: ["ops"],
+        installed: true,
+        live_registered: true,
+      }],
+    };
+
+    fetchJson
+      .mockResolvedValueOnce(liveCatalog)
+      .mockRejectedValueOnce(new Error("Remove failed"));
+
+    render(<PluginMarketplacePanel />);
+    expect(await screen.findByText("Live Plugin")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Devre Dışı Bırak" }));
+
+    await waitFor(() =>
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/api/plugin-marketplace/install/live-plugin",
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+    expect(await screen.findByText("Remove failed")).toBeInTheDocument();
+  });
 });

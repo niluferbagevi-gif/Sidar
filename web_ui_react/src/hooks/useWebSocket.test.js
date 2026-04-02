@@ -154,6 +154,70 @@ describe("useWebSocket — mesaj işleme", () => {
     expect(onError).toHaveBeenCalledWith("bir hata");
   });
 
+  it("routes collaboration_event kinds to status/tool/thought callbacks", () => {
+    const onRoomEvent = vi.fn();
+    const onStatus = vi.fn();
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    setup({ onRoomEvent, onStatus, onToolCall, onThought });
+
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "status", source: "supervisor", content: "Plan hazır" },
+        }),
+      });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "tool_call", source: "reviewer", content: "repo_search" },
+        }),
+      });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "thought", source: "coder", content: "Refactor gerekli" },
+        }),
+      });
+    });
+
+    expect(onRoomEvent).toHaveBeenCalledTimes(3);
+    expect(onStatus).toHaveBeenCalledWith("supervisor: Plan hazır");
+    expect(onToolCall).toHaveBeenCalledWith("repo_search");
+    expect(onThought).toHaveBeenCalledWith("Refactor gerekli");
+  });
+
+  it("handles legacy status/tool_call/thought fields and done fallback", () => {
+    const onStatus = vi.fn();
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    const onDone = vi.fn();
+    setup({ onStatus, onToolCall, onThought, onDone });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ status: "işleniyor" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ tool_call: "fs.read" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ thought: "hipotez" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ done: true, content: "tamam" }) });
+    });
+
+    expect(onStatus).toHaveBeenCalledWith("işleniyor");
+    expect(onToolCall).toHaveBeenCalledWith("fs.read");
+    expect(onThought).toHaveBeenCalledWith("hipotez");
+    expect(onDone).toHaveBeenCalledWith("tamam");
+  });
+
   it("calls onChunk for raw non-JSON text", () => {
     const onChunk = vi.fn();
     setup({ onChunk });
