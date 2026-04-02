@@ -24,7 +24,7 @@ dependencies:
   # ── pip ile kurulan paketler ──────────────────────────────────────────────
   # Paket yönetimi uv (requirements.txt) üzerinden yapılır.
   # GPU torch desteği için:
-  #   uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130
+  #   uv pip install torch>=2.4.1 torchvision --extra-index-url https://download.pytorch.org/whl/cu130
   # Tüm bağımlılıklar için:
   #   uv pip install -r requirements.txt
   - pip:
@@ -40,7 +40,7 @@ dependencies:
 #      uv pip install -r requirements.txt
 #
 # 3. GPU (RTX 3070, CUDA 13.x) torch kurulumu için:
-#      uv pip install torch>=2.4.1 --extra-index-url https://download.pytorch.org/whl/cu130
+#      uv pip install torch>=2.4.1 torchvision --extra-index-url https://download.pytorch.org/whl/cu130
 #
 # 4. CUDA bağlantısını doğrula:
 #      python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"

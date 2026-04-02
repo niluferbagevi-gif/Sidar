@@ -110,6 +110,7 @@ rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
   "torch>=2.4.1",
+  "torchvision",
   "sentence-transformers~=3.0.1",
 ]
 gpu = [
