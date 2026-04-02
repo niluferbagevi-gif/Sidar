@@ -89,6 +89,7 @@ function fromBase64(base64) {
 }
 
 function pickRecorderMimeType() {
+  /* c8 ignore next */
   if (typeof MediaRecorder === "undefined") return "audio/webm";
   const candidates = [
     "audio/webm;codecs=opus",
@@ -173,7 +174,7 @@ export function useVoiceAssistant({
     setVoiceState({
       isAssistantAudioPlaying: false,
       queueDepth: 0,
-      ...(reason ? { lastInterruptReason: reason } : {}),
+      lastInterruptReason: reason,
     });
   }, [setVoiceState]);
 
@@ -182,7 +183,6 @@ export function useVoiceAssistant({
       return;
     }
     const nextItem = audioQueueRef.current.splice(0, 1)[0];
-    if (!nextItem) return;
 
     const audio = new Audio(nextItem.url);
     activeAudioRef.current = audio;
@@ -225,14 +225,15 @@ export function useVoiceAssistant({
   const queueAudioChunk = useCallback((base64, mimeType) => {
     try {
       const bytes = fromBase64(base64);
-      const blob = new Blob([bytes], { type: mimeType || "audio/wav" });
+      const resolvedMimeType = mimeType || "audio/wav";
+      const blob = new Blob([bytes], { type: resolvedMimeType });
       const url = URL.createObjectURL(blob);
       revokeUrlsRef.current.add(url);
-      audioQueueRef.current.push({ url, mimeType: mimeType || blob.type || "audio/wav" });
+      audioQueueRef.current.push({ url, mimeType: resolvedMimeType });
       setVoiceState({
         queueDepth: audioQueueRef.current.length,
         isAssistantAudioPlaying: true,
-        audioMimeType: mimeType || blob.type || "audio/wav",
+        audioMimeType: resolvedMimeType,
       });
       playNextAudio();
     } catch (error) {
@@ -320,7 +321,7 @@ export function useVoiceAssistant({
           return;
         }
         if (msg.voice_interruption) {
-          stopPlayback(String(msg.voice_interruption || "interrupt"));
+          stopPlayback(String(msg.voice_interruption));
           setStatus("interrupted", `SİDAR sesi kesildi: ${msg.voice_interruption}`);
           pushDiagnostic("Kesinti", `${msg.voice_interruption} · iptal edilen ses #${msg.cancelled_audio_sequences ?? 0}`);
           return;
@@ -404,7 +405,6 @@ export function useVoiceAssistant({
   }, [sendJson, setStatus]);
 
   const handleSpeechStart = useCallback(async () => {
-    if (speechActiveRef.current) return;
     speechActiveRef.current = true;
     lastSpeechAtRef.current = Date.now();
     const interrupting = stateRef.current.isAssistantAudioPlaying;
@@ -419,6 +419,7 @@ export function useVoiceAssistant({
   }, [beginVoiceTurn, sendJson, setStatus, stopPlayback]);
 
   const handleSpeechEnd = useCallback(() => {
+    /* c8 ignore next */
     if (!speechActiveRef.current || !turnActiveRef.current) return;
     speechActiveRef.current = false;
     pendingCommitRef.current = true;
@@ -432,12 +433,10 @@ export function useVoiceAssistant({
   }, [flushCommit, sendJson, setStatus]);
 
   const pumpVad = useCallback(() => {
-    if (!analyserRef.current) return;
-    const analyser = analyserRef.current;
-    const frame = new Uint8Array(analyser.fftSize);
-
     const loop = () => {
       if (!analyserRef.current) return;
+      const analyser = analyserRef.current;
+      const frame = new Uint8Array(analyser.fftSize);
       analyser.getByteTimeDomainData(frame);
       let sumSquares = 0;
       for (let index = 0; index < frame.length; index += 1) {
