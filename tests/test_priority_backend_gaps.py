@@ -111,3 +111,80 @@ def test_database_verify_auth_token_returns_none_for_missing_role(
     db = Database(cfg)
     monkeypatch.setattr("core.db.jwt.decode", lambda *_args, **_kwargs: {"sub": "u-1", "username": "alice"})
     assert db.verify_auth_token("opaque-token") is None
+
+
+def test_grep_files_invalid_regex_and_missing_path(tmp_path: Path) -> None:
+    manager = _build_manager(tmp_path)
+
+    ok_regex, msg_regex = manager.grep_files("(", path=str(tmp_path))
+    ok_missing, msg_missing = manager.grep_files("hello", path=str(tmp_path / "missing"))
+
+    assert ok_regex is False
+    assert "Geçersiz regex" in msg_regex
+    assert ok_missing is False
+    assert "Yol bulunamadı" in msg_missing
+
+
+def test_grep_files_context_and_max_results(tmp_path: Path) -> None:
+    manager = _build_manager(tmp_path)
+    sample = tmp_path / "notes.txt"
+    sample.write_text("alpha\nbeta\nalpha\ngamma\n", encoding="utf-8")
+
+    ok, report = manager.grep_files("alpha", path=str(sample), context_lines=1, max_results=1)
+
+    assert ok is True
+    assert "Grep sonuçları" in report
+    assert "Maksimum eşleşme" in report
+    assert "beta" in report
+
+
+def test_list_directory_handles_non_directory_and_lists_items(tmp_path: Path) -> None:
+    manager = _build_manager(tmp_path)
+    child_dir = tmp_path / "src"
+    child_dir.mkdir()
+    child_file = tmp_path / "README.md"
+    child_file.write_text("ok", encoding="utf-8")
+
+    ok_file, msg_file = manager.list_directory(str(child_file))
+    ok_dir, msg_dir = manager.list_directory(str(tmp_path))
+
+    assert ok_file is False
+    assert "dizin değil" in msg_file
+    assert ok_dir is True
+    assert "📂 src/" in msg_dir
+    assert "📄 README.md" in msg_dir
+
+
+def test_apply_workspace_edit_applies_reverse_order_and_enforces_permissions(tmp_path: Path) -> None:
+    manager = _build_manager(tmp_path)
+    target = tmp_path / "module.py"
+    target.write_text("name = old\n", encoding="utf-8")
+
+    manager.security = SimpleNamespace(can_write=lambda *_args, **_kwargs: True)
+    manager.write_file = lambda _path, content, validate=True: (target.write_text(content, encoding="utf-8") or True, "ok")
+
+    uri = target.resolve().as_uri()
+    edit = {
+        "changes": {
+            uri: [
+                {
+                    "range": {
+                        "start": {"line": 0, "character": 7},
+                        "end": {"line": 0, "character": 10},
+                    },
+                    "newText": "new",
+                }
+            ]
+        }
+    }
+
+    ok, message = manager._apply_workspace_edit(edit)
+
+    assert ok is True
+    assert "Değişen dosya sayısı: 1" in message
+    assert target.read_text(encoding="utf-8") == "name = new\n"
+
+    manager.security = SimpleNamespace(can_write=lambda *_args, **_kwargs: False)
+    denied_ok, denied_msg = manager._apply_workspace_edit(edit)
+    assert denied_ok is False
+    assert "yazma yetkisi yok" in denied_msg
