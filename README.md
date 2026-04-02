@@ -622,6 +622,7 @@ PACKAGE_INFO_TIMEOUT=12
 
 # GPU (opsiyonel)
 USE_GPU=false                   # true: GPU embedding aktif
+REQUIRE_GPU=true               # true: GPU yoksa kritik doğrulama başarısız olur
 GPU_DEVICE=0
 GPU_MEMORY_FRACTION=0.8
 GPU_MIXED_PRECISION=false

@@ -25,6 +25,7 @@ def test_check_hardware_handles_missing_torch(monkeypatch) -> None:
 def test_validate_critical_settings_requires_provider_keys(monkeypatch) -> None:
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False, raising=False)
 
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "gemini", raising=False)
     monkeypatch.setattr(config.Config, "GEMINI_API_KEY", "", raising=False)
@@ -37,6 +38,7 @@ def test_validate_critical_settings_requires_provider_keys(monkeypatch) -> None:
 def test_validate_critical_settings_litellm_gateway_required(monkeypatch) -> None:
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False, raising=False)
 
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm", raising=False)
     monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "", raising=False)
@@ -48,6 +50,7 @@ def test_validate_critical_settings_litellm_gateway_required(monkeypatch) -> Non
 def test_validate_critical_settings_invalid_memory_key(monkeypatch) -> None:
     monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
     monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False, raising=False)
 
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
     monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "not-a-fernet-key", raising=False)
@@ -58,5 +61,16 @@ def test_validate_critical_settings_invalid_memory_key(monkeypatch) -> None:
 
     fake_fernet_module = SimpleNamespace(Fernet=_BadFernet)
     monkeypatch.setitem(__import__("sys").modules, "cryptography.fernet", fake_fernet_module)
+
+    assert config.Config.validate_critical_settings() is False
+
+
+def test_validate_critical_settings_fails_when_gpu_required_but_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None))
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", True, raising=False)
+    monkeypatch.setattr(config.Config, "USE_GPU", False, raising=False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
 
     assert config.Config.validate_critical_settings() is False
