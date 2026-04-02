@@ -224,3 +224,16 @@ def test_track_stream_completion_records_error_metrics(monkeypatch: pytest.Monke
 
     assert calls[-1]["success"] is False
     assert "boom" in calls[-1]["error"]
+
+
+def test_ensure_json_text_wraps_empty_plaintext() -> None:
+    wrapped = llm_client._ensure_json_text("", "openai")
+    payload = __import__("json").loads(wrapped)
+    assert payload["tool"] == "final_answer"
+    assert "boş içerik" in payload["argument"]
+
+
+def test_is_retryable_exception_handles_asyncio_timeout() -> None:
+    retryable, status = llm_client._is_retryable_exception(asyncio.TimeoutError())
+    assert retryable is True
+    assert status is None

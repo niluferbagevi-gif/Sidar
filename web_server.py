@@ -2208,8 +2208,10 @@ _start_time = time.monotonic()  # Sunucu başlangıç zamanı (/metrics için)
 
 
 async def _get_redis() -> Redis | None:
-    global _redis_client
+    global _redis_client, _redis_lock
     if _redis_client is None:
+        if _redis_lock is None:
+            _redis_lock = asyncio.Lock()
         async with _redis_lock:
             if _redis_client is None:
                 try:

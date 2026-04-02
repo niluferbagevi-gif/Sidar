@@ -67,3 +67,21 @@ def test_build_user_from_jwt_payload_requires_subject_and_username() -> None:
     assert web_server._build_user_from_jwt_payload({"sub": "1", "username": "alice", "role": "maintainer"}).username == "alice"
     assert web_server._build_user_from_jwt_payload({"sub": "1"}) is None
     assert web_server._build_user_from_jwt_payload({"username": "alice"}) is None
+
+
+@pytest.mark.asyncio
+async def test_get_redis_initializes_lock_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeRedis:
+        @staticmethod
+        def from_url(*_args, **_kwargs):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr(web_server, "Redis", _FakeRedis)
+    monkeypatch.setattr(web_server, "cfg", SimpleNamespace(REDIS_URL="redis://invalid", REDIS_MAX_CONNECTIONS=1))
+    web_server._redis_client = None
+    web_server._redis_lock = None
+
+    resolved = await web_server._get_redis()
+
+    assert resolved is None
+    assert web_server._redis_lock is not None

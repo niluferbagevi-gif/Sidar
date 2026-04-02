@@ -84,3 +84,16 @@ def test_rebuild_graph_index_marks_graph_ready_and_reports_summary(tmp_path):
     assert "edges=7" in message
     assert store._graph_index.rebuild_called_with == tmp_path.resolve()
     assert store._graph_ready is True
+
+
+def test_validate_url_safe_rejects_private_and_non_http() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="http/https"):
+        DocumentStore._validate_url_safe("ftp://example.com/file.txt")
+    with pytest.raises(ValueError, match="İç ağ"):
+        DocumentStore._validate_url_safe("http://127.0.0.1/admin")
+
+
+def test_validate_url_safe_allows_public_hostname() -> None:
+    DocumentStore._validate_url_safe("https://example.com/docs")

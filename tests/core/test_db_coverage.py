@@ -68,3 +68,18 @@ async def test_init_schema_creates_coverage_tables_and_indexes(tmp_path: Path) -
     assert "audit_logs" in tables
 
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_requires_connection(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'no_connect.db'}",
+        BASE_DIR=tmp_path,
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
+    db = Database(cfg)
+
+    with pytest.raises(RuntimeError, match="SQLite bağlantısı başlatılmadı"):
+        await db._run_sqlite_op(lambda: None)
