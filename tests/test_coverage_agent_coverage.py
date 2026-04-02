@@ -289,6 +289,72 @@ def test_generate_test_candidate_uses_fallback_when_source_read_fails():
     assert captured["kwargs"]["system_prompt"] == "prompt"
 
 
+def test_init_registers_tools_and_builds_managers(monkeypatch):
+    import types as _types
+
+    registered: list[str] = []
+
+    class _Security:
+        def __init__(self, cfg=None):
+            self.cfg = cfg
+
+    class _Code:
+        def __init__(self, security, base_dir):
+            self.security = security
+            self.base_dir = base_dir
+
+    monkeypatch.setattr(CoverageAgent, "register_tool", lambda _self, name, _fn: registered.append(name))
+    security_mod = _types.ModuleType("managers.security")
+    security_mod.SecurityManager = _Security
+    code_mod = _types.ModuleType("managers.code_manager")
+    code_mod.CodeManager = _Code
+    monkeypatch.setitem(sys.modules, "managers.security", security_mod)
+    monkeypatch.setitem(sys.modules, "managers.code_manager", code_mod)
+
+    cfg = _types.SimpleNamespace(BASE_DIR="/tmp/project")
+    agent = CoverageAgent(cfg=cfg)
+
+    assert agent.code.base_dir == "/tmp/project"
+    assert sorted(registered) == sorted(
+        [
+            "run_pytest",
+            "analyze_pytest_output",
+            "analyze_coverage_report",
+            "generate_missing_tests",
+            "write_missing_tests",
+        ]
+    )
+
+
+def test_ensure_db_initializes_once(monkeypatch):
+    class _Database:
+        def __init__(self, _cfg):
+            self.connect_calls = 0
+            self.schema_calls = 0
+
+        async def connect(self):
+            self.connect_calls += 1
+
+        async def init_schema(self):
+            self.schema_calls += 1
+
+    db_mod = types.ModuleType("core.db")
+    db_mod.Database = _Database
+    monkeypatch.setitem(sys.modules, "core.db", db_mod)
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.cfg = object()
+    agent._db = None
+    agent._db_lock = None
+
+    first = asyncio.run(agent._ensure_db())
+    second = asyncio.run(agent._ensure_db())
+
+    assert first is second
+    assert first.connect_calls == 1
+    assert first.schema_calls == 1
+
+
 def test_record_task_persists_all_findings():
     agent = CoverageAgent.__new__(CoverageAgent)
     agent.role_name = "coverage"

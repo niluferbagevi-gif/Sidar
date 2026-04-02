@@ -18,6 +18,7 @@ if _httpx_spec is None and "httpx" not in sys.modules:
     sys.modules["httpx"] = fake_httpx
 
 from agent.roles.reviewer_agent import ReviewerAgent
+import asyncio
 
 
 def test_extract_python_code_block_prefers_fenced_content():
@@ -118,3 +119,25 @@ def test_build_remediation_loop_toggles_hitl_by_risk_level():
     assert "semantic_issues" in planned["blocked_by"]
     assert "high_graph_risk" in planned["blocked_by"]
     assert planned["max_auto_attempts"] == 1
+
+
+def test_build_dynamic_test_content_fail_closed_paths():
+    agent = ReviewerAgent.__new__(ReviewerAgent)
+    agent.TEST_GENERATION_PROMPT = "prompt"
+
+    empty = asyncio.run(agent._build_dynamic_test_content(""))
+    assert "fail_closed" in empty
+
+    async def _bad_llm(*_args, **_kwargs):
+        return "print('no tests')"
+
+    agent.call_llm = _bad_llm
+    invalid = asyncio.run(agent._build_dynamic_test_content("diff content"))
+    assert "geçerli pytest test fonksiyonu" in invalid
+
+    async def _raising_llm(*_args, **_kwargs):
+        raise RuntimeError("service down")
+
+    agent.call_llm = _raising_llm
+    errored = asyncio.run(agent._build_dynamic_test_content("diff content"))
+    assert "başarısız oldu" in errored
