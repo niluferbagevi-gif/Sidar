@@ -97,6 +97,39 @@ describe("AgentManagerPanel", () => {
     expect(screen.getByRole("button", { name: "Ajanı Kaydet" })).toBeEnabled();
   });
 
+
+  it("uses default version in payload when version input is blank", async () => {
+    const user = userEvent.setup();
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        agent: { role_name: "security-auditor", version: "1.0.0" },
+      }),
+    });
+
+    render(<AgentManagerPanel />);
+    await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "security_agent.py", { type: "text/x-python" }));
+    await user.clear(screen.getByPlaceholderText("1.0.0"));
+
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.body.get("version")).toBe("1.0.0");
+  });
+
+  it("sets file back to null when file input change event has no files", () => {
+    render(<AgentManagerPanel />);
+
+    const fileInput = screen.getByLabelText(/Python dosyası/);
+    fireEvent.change(fileInput, { target: { files: [new File(["print('ok')"], "my_agent.py", { type: "text/x-python" })] } });
+    expect(screen.getByText("my_agent")).toBeInTheDocument();
+
+    fireEvent.change(fileInput, { target: { files: [] } });
+    expect(screen.getByText("Seçilmedi")).toBeInTheDocument();
+    expect(screen.getByText("Otomatik")).toBeInTheDocument();
+  });
   it("uses default error message when detail and error are missing", async () => {
     const user = userEvent.setup();
     global.fetch.mockResolvedValue({
