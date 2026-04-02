@@ -662,13 +662,17 @@ class DocumentStore:
         """ChromaDB istemcisini ve koleksiyonunu başlat (GPU embedding destekli)."""
         try:
             import chromadb
+            from chromadb.config import Settings
 
             # Embedding modeli başlatılmadan önce HF runtime değişkenlerini uygula.
             self._apply_hf_runtime_env()
 
             # Veritabanını data/rag/chroma_db içinde tut
             db_path = self.store_dir / "chroma_db"
-            self.chroma_client = chromadb.PersistentClient(path=str(db_path))
+            self.chroma_client = chromadb.PersistentClient(
+                path=str(db_path),
+                settings=Settings(anonymized_telemetry=False),
+            )
 
             # GPU-farkında embedding fonksiyonu
             embedding_fn = _build_embedding_function(
