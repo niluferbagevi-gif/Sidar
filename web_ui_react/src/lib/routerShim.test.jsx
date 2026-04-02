@@ -181,6 +181,20 @@ describe("Routes", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+
+  it("returns null without crashing for an unmatched invalid location", () => {
+    const { container } = renderWithRouter(
+      <Routes>
+        <Route path="/profil" element={<div>Profil</div>} />
+        <Route path="/ayarlar" element={<div>Ayarlar</div>} />
+      </Routes>,
+      "invalid-location",
+    );
+
+    expect(screen.queryByText("Profil")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ayarlar")).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
   it("matches root path exactly", () => {
     renderWithRouter(
       <Routes>
