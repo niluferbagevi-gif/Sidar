@@ -96,4 +96,30 @@ describe("AgentManagerPanel", () => {
     expect(await screen.findByText("Upload blocked")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ajanı Kaydet" })).toBeEnabled();
   });
+
+  it("uses default error message when detail and error are missing", async () => {
+    const user = userEvent.setup();
+    global.fetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({}),
+    });
+
+    render(<AgentManagerPanel />);
+    await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "test.py", { type: "text/x-python" }));
+
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
+  });
+
+  it("displays auto-generated role name from file if role name is omitted", async () => {
+    const user = userEvent.setup();
+    render(<AgentManagerPanel />);
+
+    expect(screen.getByText("Otomatik")).toBeInTheDocument();
+
+    await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "my_agent.py", { type: "text/x-python" }));
+
+    expect(screen.getByText("my_agent")).toBeInTheDocument();
+  });
 });
