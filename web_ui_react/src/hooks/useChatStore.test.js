@@ -56,6 +56,19 @@ describe("useChatStore — setDisplayName", () => {
   });
 });
 
+describe("useChatStore — localStorage removeItem", () => {
+  it("removes keys from localStorage when empty strings are provided", () => {
+    useChatStore.getState().setRoomId("test-room");
+    useChatStore.getState().setDisplayName("test-user");
+
+    useChatStore.getState().setRoomId("");
+    useChatStore.getState().setDisplayName("");
+
+    expect(localStorage.getItem("sidar_collab_room_id")).toBeNull();
+    expect(localStorage.getItem("sidar_collab_display_name")).toBeNull();
+  });
+});
+
 describe("useChatStore — pushRoomMessage", () => {
   it("appends a new message to messages array", () => {
     const msg = { id: "m1", role: "user", content: "merhaba" };

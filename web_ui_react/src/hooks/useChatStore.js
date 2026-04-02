@@ -36,15 +36,15 @@ export const useChatStore = create((set, get) => ({
   participants: [],
 
   setRoomId(roomId) {
-    const normalized = String(roomId || "").trim() || "workspace:sidar";
+    const normalized = String(roomId || "").trim();
     persistValue(ROOM_ID_KEY, normalized);
-    set({ roomId: normalized });
+    set({ roomId: normalized || "workspace:sidar" });
   },
 
   setDisplayName(displayName) {
-    const normalized = String(displayName || "").trim() || "Operatör";
+    const normalized = String(displayName || "").trim();
     persistValue(DISPLAY_NAME_KEY, normalized);
-    set({ displayName: normalized });
+    set({ displayName: normalized || "Operatör" });
   },
 
   hydrateRoom(snapshot = {}) {
