@@ -184,6 +184,12 @@ describe("useChatStore — startAssistantStream", () => {
     expect(useChatStore.getState().streamingRequestId).toBe("req-xyz");
   });
 
+  it("falls back to empty streamingRequestId when requestId is not provided", () => {
+    useChatStore.setState({ streamingRequestId: "eski-istek" });
+    useChatStore.getState().startAssistantStream();
+    expect(useChatStore.getState().streamingRequestId).toBe("");
+  });
+
   it("clears error", () => {
     useChatStore.setState({ error: "önceki hata" });
     useChatStore.getState().startAssistantStream("req-1");
@@ -202,6 +208,12 @@ describe("useChatStore — appendChunk", () => {
     useChatStore.setState({ streamingText: "eski", streamingRequestId: "req-1", isStreaming: true });
     useChatStore.getState().appendChunk("yeni", "req-2");
     expect(useChatStore.getState().streamingText).toBe("yeni");
+  });
+
+  it("appends text correctly when streamingRequestId is currently empty", () => {
+    useChatStore.setState({ streamingText: "başlangıç ", streamingRequestId: "", isStreaming: false });
+    useChatStore.getState().appendChunk("devam");
+    expect(useChatStore.getState().streamingText).toBe("başlangıç devam");
   });
 });
 
@@ -237,6 +249,27 @@ describe("useChatStore — commitAssistantMessage", () => {
     useChatStore.setState({ streamingText: "akış metni", isStreaming: true });
     useChatStore.getState().commitAssistantMessage({ id: "custom-1", content: "özel içerik", role: "assistant" });
     expect(useChatStore.getState().messages[0].content).toBe("özel içerik");
+  });
+
+  it("uses streamingText if provided message object lacks content", () => {
+    useChatStore.setState({ streamingText: "akış metni", isStreaming: true });
+    useChatStore.getState().commitAssistantMessage({ id: "custom-1", role: "assistant" });
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect(useChatStore.getState().messages[0].id).toBe("custom-1");
+  });
+
+  it("uses explicitly provided requestId", () => {
+    useChatStore.setState({ streamingText: "akış", isStreaming: true, streamingRequestId: "eski-req" });
+    useChatStore.getState().commitAssistantMessage(null, "yeni-req");
+    expect(useChatStore.getState().messages[0].request_id).toBe("yeni-req");
+  });
+
+  it("does not duplicate an assistant message if it already exists", () => {
+    useChatStore.setState({ messages: [{ id: "msg-1", role: "assistant", content: "ilk mesaj" }] });
+    useChatStore.getState().commitAssistantMessage({ id: "msg-1", role: "assistant", content: "ikinci mesaj" });
+
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect(useChatStore.getState().messages[0].content).toBe("ilk mesaj");
   });
 });
 
@@ -316,6 +349,15 @@ describe("useChatStore — hydrateRoom", () => {
     expect(useChatStore.getState().isStreaming).toBe(false);
     expect(useChatStore.getState().streamingText).toBe("");
   });
+
+  it("hydrates telemetry and participants successfully when arrays are provided", () => {
+    const telemetry = [{ id: "t1", content: "test" }];
+    const participants = [{ id: "p1", name: "User" }];
+    useChatStore.getState().hydrateRoom({ telemetry, participants });
+
+    expect(useChatStore.getState().telemetryEvents).toEqual(telemetry);
+    expect(useChatStore.getState().participants).toEqual(participants);
+  });
 });
 
 describe("useChatStore — addTelemetryEvent", () => {
@@ -335,6 +377,27 @@ describe("useChatStore — addTelemetryEvent", () => {
       useChatStore.getState().addTelemetryEvent("status", `event-${i}`);
     }
     expect(useChatStore.getState().telemetryEvents.length).toBeLessThanOrEqual(120);
+  });
+
+  it("uses provided meta properties (id, ts, source)", () => {
+    const meta = { id: "t-özel", ts: "2024-01-01T00:00:00.000Z", source: "agent" };
+    useChatStore.getState().addTelemetryEvent("status", "özel mesaj", meta);
+
+    const evt = useChatStore.getState().telemetryEvents[0];
+    expect(evt.id).toBe("t-özel");
+    expect(evt.ts).toBe("2024-01-01T00:00:00.000Z");
+    expect(evt.source).toBe("agent");
+  });
+
+  it("updates existing telemetry event by filtering out the old one", () => {
+    useChatStore.setState({
+      telemetryEvents: [{ id: "t1", kind: "status", content: "eski", ts: "1", source: "" }],
+    });
+    useChatStore.getState().addTelemetryEvent("status", "yeni", { id: "t1" });
+
+    const events = useChatStore.getState().telemetryEvents;
+    expect(events).toHaveLength(1);
+    expect(events[0].content).toBe("yeni");
   });
 });
 
