@@ -70,6 +70,29 @@ describe("setStoredToken", () => {
   });
 });
 
+describe("api.js localStorage checks", () => {
+  it("handles missing localStorage gracefully", () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+
+    Object.defineProperty(globalThis, "localStorage", {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      expect(getStoredToken()).toBe("");
+      expect(() => setStoredToken("test-token")).not.toThrow();
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, "localStorage", originalDescriptor);
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  });
+});
+
 describe("buildAuthHeaders", () => {
   it("returns Authorization header when token exists", () => {
     localStorage.setItem(TOKEN_KEY, "my-token");
