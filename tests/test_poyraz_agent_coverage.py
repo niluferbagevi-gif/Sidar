@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+from pathlib import Path
 import sys
 import types
+
+import pytest
 
 _httpx_spec = None
 if "httpx" not in sys.modules:
@@ -29,11 +32,36 @@ if "redis.asyncio" not in sys.modules:
 
     fake_redis_asyncio.Redis = Redis
     fake_redis = types.ModuleType("redis")
+    fake_redis_exceptions = types.ModuleType("redis.exceptions")
+
+    class ResponseError(Exception):
+        pass
+
+    fake_redis_exceptions.ResponseError = ResponseError
     fake_redis.asyncio = fake_redis_asyncio
+    fake_redis.exceptions = fake_redis_exceptions
     sys.modules["redis"] = fake_redis
     sys.modules["redis.asyncio"] = fake_redis_asyncio
+    sys.modules["redis.exceptions"] = fake_redis_exceptions
 
-from agent.roles.poyraz_agent import PoyrazAgent
+for _mod_name, _class_name in [
+    ("managers.web_search", "WebSearchManager"),
+    ("managers.social_media_manager", "SocialMediaManager"),
+    ("core.rag", "DocumentStore"),
+]:
+    if _mod_name not in sys.modules:
+        _mod = types.ModuleType(_mod_name)
+        _mod.__dict__[_class_name] = type(_class_name, (), {})
+        sys.modules[_mod_name] = _mod
+
+_poyraz_spec = importlib.util.spec_from_file_location(
+    "poyraz_agent_direct",
+    Path(__file__).resolve().parents[1] / "agent/roles/poyraz_agent.py",
+)
+_poyraz_mod = importlib.util.module_from_spec(_poyraz_spec)
+assert _poyraz_spec and _poyraz_spec.loader
+_poyraz_spec.loader.exec_module(_poyraz_mod)
+PoyrazAgent = _poyraz_mod.PoyrazAgent
 
 
 class _SocialStub:
@@ -93,3 +121,42 @@ def test_run_task_routes_publish_social_and_blank_prompt_warning() -> None:
     assert asyncio.run(agent.run_task("")) == "[UYARI] Boş pazarlama görevi verildi."
     assert asyncio.run(agent.run_task("publish_social|instagram|||metin")) == "publish_social:instagram|||metin"
     assert asyncio.run(agent.run_task("seo_audit|teknik seo")) == "seo_audit:teknik seo"
+
+
+def test_generate_campaign_copy_persists_asset_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+    persisted: dict[str, object] = {}
+
+    class _Payload:
+        channels = ["instagram", "facebook"]
+        campaign_name = "Yaz Kampanyası"
+        objective = "Lead"
+        audience = "SMB"
+        offer = "%20 indirim"
+        tone = "samimi"
+        call_to_action = "Hemen dene"
+        store_asset = True
+        campaign_id = 42
+        tenant_id = "tenant-1"
+        asset_title = "Q2 Kampanya"
+
+    async def _fake_generate(prompt: str, mode: str) -> str:
+        assert "Yaz Kampanyası" in prompt
+        assert mode == "campaign_copy_tool"
+        return "üretilen içerik"
+
+    async def _fake_persist_content_asset(**kwargs):
+        persisted.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda *_args, **_kwargs: _Payload())
+    agent._generate_marketing_output = _fake_generate
+    agent._persist_content_asset = _fake_persist_content_asset
+
+    result = asyncio.run(agent._tool_generate_campaign_copy("{}"))
+
+    assert result == "üretilen içerik"
+    assert persisted["campaign_id"] == 42
+    assert persisted["asset_type"] == "campaign_copy"
+    assert persisted["title"] == "Q2 Kampanya"
+    assert persisted["metadata"]["channels"] == ["instagram", "facebook"]

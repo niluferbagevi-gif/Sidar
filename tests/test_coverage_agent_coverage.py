@@ -253,3 +253,83 @@ def test_analyze_and_generate_missing_tests_flow_from_xml(tmp_path):
     )
 
     assert "def test_generated" in generated
+
+
+def test_generate_test_candidate_uses_fallback_when_source_read_fails():
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.TEST_GENERATION_PROMPT = "prompt"
+
+    class _Code:
+        def read_file(self, _target):
+            return False, "not readable"
+
+    agent.code = _Code()
+
+    captured = {}
+
+    async def _fake_call_llm(messages, **kwargs):
+        captured["prompt"] = messages[0]["content"]
+        captured["kwargs"] = kwargs
+        return "generated"
+
+    agent.call_llm = _fake_call_llm
+    agent._suggest_test_path = lambda path: f"tests/test_{Path(path).stem}.py"
+
+    result = asyncio.run(
+        agent._generate_test_candidate(
+            target_path="agent/sidar_agent.py",
+            pytest_output="1 failed",
+            analysis={"summary": "1 failed", "findings": [{"target_path": "agent/sidar_agent.py"}]},
+        )
+    )
+
+    assert result == "generated"
+    assert "kaynak okunamadı" in captured["prompt"]
+    assert "tests/test_sidar_agent.py" in captured["prompt"]
+    assert captured["kwargs"]["system_prompt"] == "prompt"
+
+
+def test_record_task_persists_all_findings():
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.role_name = "coverage"
+
+    class _Db:
+        def __init__(self) -> None:
+            self.added: list[dict[str, object]] = []
+            self.create_calls: list[dict[str, object]] = []
+
+        async def create_coverage_task(self, **kwargs):
+            self.create_calls.append(kwargs)
+            return type("Task", (), {"id": 99})()
+
+        async def add_coverage_finding(self, **kwargs):
+            self.added.append(kwargs)
+
+    db = _Db()
+
+    async def _fake_ensure_db():
+        return db
+
+    agent._ensure_db = _fake_ensure_db
+
+    asyncio.run(
+        agent._record_task(
+            command="pytest -q",
+            pytest_output="failed",
+            analysis={
+                "findings": [
+                    {"finding_type": "missing_coverage", "target_path": "agent/sidar_agent.py", "summary": "gap 1"},
+                    {"finding_type": "test_failure", "target_path": "agent/roles/poyraz_agent.py", "summary": "gap 2"},
+                ]
+            },
+            generated_test="def test_x(): pass",
+            review_payload={"target_path": "agent/sidar_agent.py", "suggested_test_path": "tests/test_sidar.py"},
+            status="generated",
+        )
+    )
+
+    assert len(db.create_calls) == 1
+    assert db.create_calls[0]["requester_role"] == "coverage"
+    assert len(db.added) == 2
+    assert db.added[0]["task_id"] == 99
+    assert db.added[1]["finding_type"] == "test_failure"
