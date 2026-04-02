@@ -171,3 +171,24 @@ def test_tool_generate_missing_tests_uses_coverage_finding_prompt():
 
     assert "Hedef dosya: agent/auto_handle.py" in result
     assert "Eksik satırlar: 10, 11" in result
+
+
+def test_run_task_handles_empty_prompt() -> None:
+    agent = CoverageAgent.__new__(CoverageAgent)
+
+    result = asyncio.run(agent.run_task("   "))
+
+    assert "Boş coverage görevi" in result
+
+
+def test_run_task_delegates_prefixed_command() -> None:
+    agent = CoverageAgent.__new__(CoverageAgent)
+
+    async def _fake_call_tool(name: str, arg: str) -> str:
+        return f"{name}:{arg}"
+
+    agent.call_tool = _fake_call_tool
+
+    result = asyncio.run(agent.run_task("analyze_coverage_report|{}"))
+
+    assert result == "analyze_coverage_report:{}"
