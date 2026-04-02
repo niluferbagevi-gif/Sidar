@@ -15,6 +15,7 @@ from plugins.slack_notification_agent import SlackNotificationAgent
 
 
 class _Cfg:
+    AI_PROVIDER = "openai"
     SLACK_DEFAULT_CHANNEL = "genel"
     SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/T/X/Y"
 

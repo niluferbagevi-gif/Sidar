@@ -14,6 +14,7 @@ def test_check_hardware_handles_missing_torch(monkeypatch) -> None:
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(config, "_is_wsl2", lambda: False)
+    monkeypatch.setenv("USE_GPU", "true")
     monkeypatch.setattr("builtins.__import__", _fake_import)
 
     info = config.check_hardware()
