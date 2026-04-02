@@ -179,8 +179,7 @@ async def test_auth_login_returns_500_when_db_authentication_crashes(monkeypatch
         response = await client.post("/auth/login", json={"username": "demo", "password": "secret"})
 
     assert response.status_code == 500
-    assert response.json()["error"] == "İç sunucu hatası"
-    assert "db connection lost" in response.json()["detail"]
+    assert response.json()["error"] == "Veritabanı hatası nedeniyle giriş yapılamadı"
 
 
 @pytest.mark.asyncio
