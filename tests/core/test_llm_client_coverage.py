@@ -194,3 +194,33 @@ def test_semantic_cache_cosine_similarity_edges() -> None:
     assert llm_client._SemanticCacheManager._cosine_similarity([], [1.0]) == 0.0
     assert llm_client._SemanticCacheManager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert llm_client._SemanticCacheManager._cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_ensure_json_text_preserves_valid_json() -> None:
+    raw = '{"tool":"final_answer","argument":"ok"}'
+    assert llm_client._ensure_json_text(raw, "openai") == raw
+
+
+def test_track_stream_completion_records_error_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
+
+    def _fake_record(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(llm_client, "_record_llm_metric", _fake_record)
+
+    async def _failing_stream():
+        yield "start"
+        raise RuntimeError("boom")
+
+    async def _consume() -> None:
+        async for _chunk in llm_client._track_stream_completion(
+            _failing_stream(), provider="openai", model="gpt", started_at=0.0
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(_consume())
+
+    assert calls[-1]["success"] is False
+    assert "boom" in calls[-1]["error"]

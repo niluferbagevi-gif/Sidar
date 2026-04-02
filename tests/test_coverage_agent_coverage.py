@@ -206,3 +206,50 @@ def test_run_task_no_gaps_detected_returns_success_payload():
 
     assert payload["status"] == "no_gaps_detected"
     assert payload["command"] == "pytest -q"
+
+
+def test_analyze_and_generate_missing_tests_flow_from_xml(tmp_path):
+    coverage_xml = tmp_path / "coverage.xml"
+    coverage_xml.write_text(
+        """<?xml version=\"1.0\" ?>
+<coverage>
+  <packages>
+    <package name=\"core\">
+      <classes>
+        <class filename=\"core/llm_client.py\" line-rate=\"0.22\" branch-rate=\"0.1\">
+          <lines>
+            <line number=\"10\" hits=\"0\"/>
+            <line number=\"11\" hits=\"0\" branch=\"true\" condition-coverage=\"50% (1/2)\"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+        encoding="utf-8",
+    )
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+
+    async def _fake_call_llm(messages, **_kwargs):
+        return "def test_generated():\n    assert True"
+
+    agent.call_llm = _fake_call_llm
+
+    analyzed_raw = asyncio.run(
+        agent._tool_analyze_coverage_report(
+            json.dumps({"coverage_xml": str(coverage_xml), "limit": 5})
+        )
+    )
+    analyzed = json.loads(analyzed_raw)
+
+    assert analyzed["findings"][0]["target_path"] == "core/llm_client.py"
+
+    generated = asyncio.run(
+        agent._tool_generate_missing_tests(
+            json.dumps({"coverage_finding": analyzed["findings"][0]})
+        )
+    )
+
+    assert "def test_generated" in generated
