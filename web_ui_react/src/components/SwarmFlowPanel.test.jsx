@@ -43,6 +43,7 @@ describe("SwarmFlowPanel helpers", () => {
     expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
     expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
     expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
+    expect(buildTaskDraftFromNode({ actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
     expect(inferHitlActionFromNode()).toBe("graph_review");
   });
 });
@@ -856,7 +857,7 @@ describe("SwarmFlowPanel", () => {
 
     expect(await screen.findByText("Pending HITL 1")).toBeInTheDocument();
     expect(screen.getAllByText("trigger").length).toBeGreaterThan(0);
-    expect(screen.getByText("Özet yok.")).toBeInTheDocument();
+    expect(screen.getAllByText("Özet yok.").length).toBeGreaterThan(0);
     expect(screen.getAllByText("manual · unknown").length).toBeGreaterThan(0);
     expect(screen.getByText("Açıklama yok.")).toBeInTheDocument();
     expect(screen.getByText("operator")).toBeInTheDocument();
@@ -954,6 +955,40 @@ describe("SwarmFlowPanel", () => {
     render(<SwarmFlowPanel />);
     expect(await screen.findByText("Bekleyen HITL kaydı yok.")).toBeInTheDocument();
     expect(screen.getByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
+  });
+
+  it("covers remaining branch fallbacks for error precedence and graph edge defaults", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        throw new Error("primary-error");
+      }
+      if (url === "/api/hitl/pending") {
+        await Promise.resolve();
+        throw new Error("secondary-error");
+      }
+      if (url === "/api/swarm/execute" && options?.method === "POST") {
+        return {
+          results: [
+            { task_id: "r-ok", agent_role: "reviewer", status: "success", summary: "ok" },
+            { status: "failed", summary: "missing task_id + agent_role", handoffs: [{ reason: "delegation" }] },
+            { summary: "index fallback again" },
+          ],
+        };
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    expect(await screen.findByText("primary-error")).toBeInTheDocument();
+    expect(screen.queryByText("secondary-error")).not.toBeInTheDocument();
+
+    const node = screen.getAllByRole("button").find((item) => item.className?.includes("swarm-graph__node"));
+    node.focus();
+    await user.keyboard("[Enter]");
+    await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+
+    await waitFor(() => expect(screen.getByText("index fallback again")).toBeInTheDocument());
   });
 
 });

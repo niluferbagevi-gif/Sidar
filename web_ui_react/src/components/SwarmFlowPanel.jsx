@@ -144,7 +144,20 @@ export function SwarmFlowPanel() {
     setActivityLoading(true);
     try {
       const data = await fetchJson("/api/autonomy/activity?limit=8");
-      setAutonomyActivity(data.activity || { items: [], counts_by_status: {}, counts_by_source: {} });
+      const activity = data.activity || { items: [], counts_by_status: {}, counts_by_source: {} };
+      const normalizedItems = (activity.items || []).map((item) => ({
+        ...item,
+        event_name: item.event_name || "trigger",
+        summary: item.summary || "Özet yok.",
+        source: item.source || "manual",
+        status: item.status || "unknown",
+      }));
+      setAutonomyActivity({
+        ...activity,
+        items: normalizedItems,
+        counts_by_status: activity.counts_by_status || {},
+        counts_by_source: activity.counts_by_source || {},
+      });
     } catch (err) {
       setAutonomyActivity({ items: [], counts_by_status: {}, counts_by_source: {} });
       setError((prev) => prev || err.message);
@@ -577,7 +590,7 @@ export function SwarmFlowPanel() {
     if (!selectedNodeId && graphData.nodes.length) {
       setSelectedNodeId(graphData.nodes[0].id);
     } else if (selectedNodeId && !graphData.nodeMap.has(selectedNodeId)) {
-      setSelectedNodeId(graphData.nodes[0]?.id || "");
+      setSelectedNodeId(graphData.nodes[0].id);
     }
   }, [graphData, selectedNodeId]);
 
@@ -1011,9 +1024,9 @@ export function SwarmFlowPanel() {
                     {idx + 1}
                   </span>
                   <div>
-                    <strong>{item.event_name || "trigger"}</strong>
-                    <p>{item.summary || "Özet yok."}</p>
-                    <small className="panel__hint">{item.source || "manual"} · {item.status || "unknown"}</small>
+                    <strong>{item.event_name}</strong>
+                    <p>{item.summary}</p>
+                    <small className="panel__hint">{item.source} · {item.status}</small>
                   </div>
                 </li>
               ))}
