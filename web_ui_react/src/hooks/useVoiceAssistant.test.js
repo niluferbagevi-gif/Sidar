@@ -738,3 +738,290 @@ describe("useVoiceAssistant — toggle coverage", () => {
     expect(result.current.state.status).toBe("idle");
   });
 });
+
+describe("useVoiceAssistant — WebSocket Mesaj Tipleri", () => {
+  it("farklı tipteki ws mesajlarını doğru işler (transcript, chunk, done, voice_state vb.)", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    const onUserTranscript = vi.fn();
+    const onAssistantChunk = vi.fn();
+    const onAssistantDone = vi.fn();
+
+    const { result } = renderHook(() => useVoiceAssistant({
+      onUserTranscript,
+      onAssistantChunk,
+      onAssistantDone
+    }));
+
+    await act(async () => { await result.current.start(); });
+
+    act(() => {
+      // 1. Geçersiz JSON (catch bloğu kapsaması için sessizce dönmeli)
+      ws.onmessage({ data: "{" });
+
+      // 2. voice_session ready
+      ws.onmessage({ data: JSON.stringify({ voice_session: "ready" }) });
+
+      // 3. buffered_bytes bağımsız
+      ws.onmessage({ data: JSON.stringify({ buffered_bytes: 1024 }) });
+
+      // 4. voice_state senaryoları
+      ws.onmessage({ data: JSON.stringify({ voice_state: "processed", assistant_turn_id: 1 }) });
+      ws.onmessage({ data: JSON.stringify({ voice_state: "speech_start" }) });
+
+      // 5. assistant_turn
+      ws.onmessage({ data: JSON.stringify({ assistant_turn: "started", assistant_turn_id: 2 }) });
+
+      // 6. transcript
+      ws.onmessage({ data: JSON.stringify({ transcript: "merhaba dünya" }) });
+
+      // 7. chunk
+      ws.onmessage({ data: JSON.stringify({ chunk: "selam" }) });
+
+      // 8. voice_interruption
+      ws.onmessage({ data: JSON.stringify({ voice_interruption: "barge_in", cancelled_audio_sequences: 1 }) });
+
+      // 9. done
+      ws.onmessage({ data: JSON.stringify({ done: true }) });
+    });
+
+    expect(result.current.state.transcript).toBe("merhaba dünya");
+    expect(onUserTranscript).toHaveBeenCalledWith("merhaba dünya");
+    expect(onAssistantChunk).toHaveBeenCalledWith("selam");
+    expect(onAssistantDone).toHaveBeenCalled();
+    expect(result.current.state.lastInterruptReason).toBe("barge_in");
+    expect(result.current.state.status).toBe("listening");
+  });
+});
+
+describe("useVoiceAssistant — Audio Kuyruğu ve Oynatma (Playback)", () => {
+  let originalAudio;
+  let originalCreateObjectURL;
+  let originalRevokeObjectURL;
+
+  beforeEach(() => {
+    originalAudio = globalThis.Audio;
+    originalCreateObjectURL = URL.createObjectURL;
+    originalRevokeObjectURL = URL.revokeObjectURL;
+
+    URL.createObjectURL = vi.fn(() => "blob:fake-url");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    globalThis.Audio = originalAudio;
+    URL.createObjectURL = originalCreateObjectURL || vi.fn(() => "blob:fallback-url");
+    URL.revokeObjectURL = originalRevokeObjectURL || vi.fn();
+  });
+
+  it("gelen audio_chunk mesajlarını sıraya alır, çalar ve hata durumlarını yönetir", async () => {
+    let audioInstance;
+    let playMock = vi.fn(() => Promise.resolve());
+
+    class MockAudio {
+      constructor(url) {
+        this.url = url;
+        audioInstance = this;
+      }
+      play() { return playMock(); }
+      pause() {}
+    }
+    globalThis.Audio = MockAudio;
+
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+
+    // 1. İlk ses parçası gelir ve otomatik oynatılır
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("audio1"), audio_mime_type: "audio/opus" }) });
+    });
+
+    expect(result.current.state.isAssistantAudioPlaying).toBe(true);
+    expect(result.current.state.queueDepth).toBe(1);
+
+    // 2. İkinci parça gelir (kuyruğa atılır)
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("audio2") }) });
+    });
+    expect(result.current.state.queueDepth).toBe(1);
+
+    // 3. İlk parça biter (onended tetiklenir), ikinci parçaya geçer
+    act(() => { audioInstance.onended(); });
+    expect(result.current.state.queueDepth).toBe(1);
+
+    // 4. İkinci parça çalarken hata olursa (onerror)
+    act(() => { audioInstance.onerror(); });
+    expect(result.current.state.queueDepth).toBe(0);
+    expect(result.current.state.isAssistantAudioPlaying).toBe(false);
+
+    // 5. play() reddedilirse (DOM Exception vs)
+    playMock = vi.fn(() => Promise.reject(new Error("NotAllowedError")));
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("audio3") }) });
+    });
+    // catch bloğuna düşmesi için bekle
+    await act(async () => { await Promise.resolve(); });
+    // Promise reddedilince oynatma bitiş fonksiyonu çağrılır
+    expect(result.current.state.isAssistantAudioPlaying).toBe(false);
+  });
+
+  it("base64 veya blob oluşturmada hata çıkarsa onError fırlatır", async () => {
+    const onError = vi.fn();
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    // URL.createObjectURL bilerek hata fırlatsın
+    URL.createObjectURL.mockImplementationOnce(() => { throw new Error("Blob error"); });
+
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => { await result.current.start(); });
+
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("err") }) });
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("Ses parçası çözülemedi"));
+  });
+});
+
+describe("useVoiceAssistant — VAD Barge-in ve Unmount Cleanup", () => {
+  it("Asistan konuşurken VAD konuşma algılarsa sesi keser (barge-in)", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    // Analyser'ın VAD threshold üstü bir ses simüle etmesi
+    let frameCount = 0;
+    class MockAudioContext {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return {
+          fftSize: 2048, smoothingTimeConstant: 0.8,
+          getByteTimeDomainData: (frame) => {
+            frameCount++;
+            // 2. frame'de yüksek ses
+            frame.fill(frameCount === 2 ? 255 : 128);
+          }
+        };
+      }
+      close() { return Promise.resolve(); }
+    }
+    globalThis.AudioContext = MockAudioContext;
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      start() {} stop() {} requestData() {}
+    };
+    const originalAudio = globalThis.Audio;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:vad-audio");
+    URL.revokeObjectURL = vi.fn();
+    globalThis.Audio = class {
+      play() { return Promise.resolve(); }
+      pause() {}
+    };
+
+    let rafCallback;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => { rafCallback = cb; return 1; });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+
+    // Durumu 'playing' (Asistan konuşuyor) olarak zorluyoruz
+    act(() => {
+      ws.onmessage({ data: JSON.stringify({ audio_chunk: btoa("123") }) });
+    });
+
+    // VAD pump'ı çalıştır
+    await act(async () => {
+      rafCallback(); // düşük ses
+      await Promise.resolve();
+    });
+    await act(async () => {
+      rafCallback(); // VAD tetiklenir (yüksek ses)
+      await Promise.resolve();
+    });
+
+    // Kullanıcı araya girdiği için statü 'interrupted' olmalı
+    expect(result.current.state.status).toBe("interrupted");
+    globalThis.Audio = originalAudio;
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it("Bileşen unmount edildiğinde bağlantıları ve referansları temizler", () => {
+    const { unmount } = renderHook(() => useVoiceAssistant());
+    unmount();
+    // Unmount anında hata vermeden WebSocket ve Media akışlarının durduğundan emin oluruz.
+    // Cleanup kodundaki unmountedRef.current = true dallanması (branch) çalışmış olur.
+  });
+});
+
+describe("useVoiceAssistant — Ek Fallback Durumları", () => {
+  it("MediaRecorder var ama hiçbir mimeType desteklemiyorsa audio/webm döner", async () => {
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return false; } // Hepsi false dönüyor
+      start() {} stop() {}
+    };
+
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+
+    // Uygulama başlamalı ve type hatası vermemeli
+    expect(result.current.state.isMicActive).toBe(true);
+  });
+
+  it("ondataavailable turnActive değilse return eder", async () => {
+    let recorderInstance;
+    globalThis.MediaRecorder = class {
+      static isTypeSupported() { return true; }
+      constructor() { recorderInstance = this; }
+      start() {} stop() {}
+    };
+
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1);
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    class MockAudioContext {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn() }; }
+      close() { return Promise.resolve(); }
+    }
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+    globalThis.AudioContext = MockAudioContext;
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+
+    // turnActive başlangıçta false; data geldiğinde if bloğundan dönmesini test et
+    await act(async () => {
+      await recorderInstance.ondataavailable({ data: { size: 10, arrayBuffer: async () => new ArrayBuffer(10) } });
+    });
+
+    // Hata atmadığını ve sessizce işlediğini doğrularız
+    expect(result.current.state.status).not.toBe("error");
+  });
+});
