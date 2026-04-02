@@ -44,7 +44,10 @@ def _install_coverage_agent_stubs() -> None:
 
 
 _install_coverage_agent_stubs()
-_spec = importlib.util.spec_from_file_location("coverage_agent_direct", Path("/workspace/Sidar/agent/roles/coverage_agent.py"))
+_spec = importlib.util.spec_from_file_location(
+    "coverage_agent_direct",
+    Path(__file__).resolve().parents[1] / "agent/roles/coverage_agent.py",
+)
 _mod = importlib.util.module_from_spec(_spec)
 assert _spec and _spec.loader
 _spec.loader.exec_module(_mod)
