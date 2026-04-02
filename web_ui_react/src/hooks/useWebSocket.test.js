@@ -218,6 +218,58 @@ describe("useWebSocket — mesaj işleme", () => {
     expect(onDone).toHaveBeenCalledWith("tamam");
   });
 
+
+  it("handles generic chunk and error payloads outside main message types", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ chunk: "legacy chunk" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ error: "legacy error" }) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("legacy chunk");
+    expect(onError).toHaveBeenCalledWith("legacy error");
+  });
+
+  it("routes standalone tool_call and thought payloads", () => {
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    setup({ onToolCall, onThought });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ tool_call: "python.exec" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ thought: "analysis note" }) });
+    });
+
+    expect(onToolCall).toHaveBeenCalledWith("python.exec");
+    expect(onThought).toHaveBeenCalledWith("analysis note");
+  });
+
+  it("buffers raw text when JSON parsing fails and flushes on [DONE]", () => {
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    setup({ onChunk, onDone });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "ham metin" });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: " ikinci" });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "[DONE]" });
+    });
+
+    expect(onChunk).toHaveBeenNthCalledWith(1, "ham metin");
+    expect(onChunk).toHaveBeenNthCalledWith(2, " ikinci");
+    expect(onDone).toHaveBeenCalledWith("ham metin ikinci");
+  });
   it("calls onChunk for raw non-JSON text", () => {
     const onChunk = vi.fn();
     setup({ onChunk });
