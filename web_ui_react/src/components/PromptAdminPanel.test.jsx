@@ -88,4 +88,29 @@ describe("PromptAdminPanel", () => {
     await user.click(activateButtonsAfterRefresh[0]);
     expect(await screen.findByText("Aktifleştirme başarısız")).toBeInTheDocument();
   });
+
+  it("updates filter, refreshes list and toggles activate checkbox", async () => {
+    const user = userEvent.setup();
+    fetchJson
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({ items: [] });
+
+    render(<PromptAdminPanel />);
+
+    expect(await screen.findByText("Kayıt bulunamadı.")).toBeInTheDocument();
+    const filterInput = screen.getByLabelText("role_name filtresi");
+    await user.clear(filterInput);
+    await user.type(filterInput, "reviewer");
+    await user.click(screen.getByRole("button", { name: "Yenile" }));
+
+    await waitFor(() => {
+      expect(fetchJson).toHaveBeenLastCalledWith("/admin/prompts?role_name=reviewer");
+    });
+
+    const activateCheckbox = screen.getByRole("checkbox", { name: "Kaydeder kaydetmez aktif yap" });
+    expect(activateCheckbox).toBeChecked();
+    await user.click(activateCheckbox);
+    expect(activateCheckbox).not.toBeChecked();
+  });
+
 });

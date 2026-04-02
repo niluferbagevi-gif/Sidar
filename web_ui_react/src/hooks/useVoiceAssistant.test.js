@@ -540,4 +540,70 @@ describe("useVoiceAssistant — websocket kesinti ve runtime hata akışları", 
 
     vi.useRealTimers();
   });
+
+  it("calls onError when recorder chunk arrayBuffer rejects", async () => {
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = vi.fn(() => ws);
+    let rafCallback = null;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallback = cb;
+      return 1;
+    });
+
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    let recorderInstance;
+    class MockMediaRecorder {
+      static isTypeSupported() { return true; }
+      constructor() {
+        this.state = "recording";
+        recorderInstance = this;
+      }
+      start() {}
+      stop() { this.state = "inactive"; }
+    }
+    class MockAudioContext {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() {
+        return { fftSize: 2048, smoothingTimeConstant: 0.8, getByteTimeDomainData: vi.fn((frame) => frame.fill(255)) };
+      }
+      close() { return Promise.resolve(); }
+    }
+
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+    globalThis.MediaRecorder = MockMediaRecorder;
+    globalThis.AudioContext = MockAudioContext;
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useVoiceAssistant({ onError }));
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    await act(async () => {
+      rafCallback?.();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await recorderInstance.ondataavailable({
+        data: {
+          size: 8,
+          arrayBuffer: async () => { throw new Error("chunk read failed"); },
+        },
+      });
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("Mikrofon verisi gönderilemedi"));
+  });
+
 });

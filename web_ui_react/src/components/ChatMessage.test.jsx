@@ -4,7 +4,13 @@ import { ChatMessage } from "./ChatMessage.jsx";
 
 // ReactMarkdown ve eklentilerini stub'la — jsdom ortamında sorunsuz çalışsın
 vi.mock("react-markdown", () => ({
-  default: ({ children }) => <div data-testid="markdown">{children}</div>,
+  default: ({ children, components }) => {
+    const text = String(children || "");
+    if (text.includes("```") && components?.pre) {
+      return <div data-testid="markdown">{components.pre({ children: <code>demo</code> })}</div>;
+    }
+    return <div data-testid="markdown">{children}</div>;
+  },
 }));
 vi.mock("remark-gfm", () => ({ default: () => {} }));
 vi.mock("rehype-highlight", () => ({ default: () => {} }));
@@ -73,6 +79,13 @@ describe("ChatMessage — asistan mesajı", () => {
   it("applies message--assistant CSS class", () => {
     const { container } = render(<ChatMessage message={makeMsg({ role: "assistant" })} />);
     expect(container.querySelector(".message--assistant")).toBeInTheDocument();
+  });
+
+
+  it("wraps markdown code blocks in .code-block-wrapper", () => {
+    const msg = makeMsg({ role: "assistant", content: "```js\nconsole.log('x')\n```" });
+    const { container } = render(<ChatMessage message={msg} />);
+    expect(container.querySelector(".code-block-wrapper")).toBeInTheDocument();
   });
 });
 

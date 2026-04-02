@@ -179,4 +179,40 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getByText("Henüz proaktif aktivite kaydı yok.")).toBeInTheDocument();
     expect(screen.getByText("Akış verisi bulunamadı.")).toBeInTheDocument();
   });
+
+  it("supports keyboard node selection and sync operation failure logging", async () => {
+    const user = userEvent.setup();
+    fetchJson.mockImplementation(async (url, options) => {
+      if (url === "/api/autonomy/activity?limit=8") {
+        return {
+          activity: {
+            items: [{ trigger_id: "trg-kb", event_name: "nightly_scan", summary: "Klavye test", source: "cron", status: "success" }],
+            counts_by_status: { success: 1 },
+            counts_by_source: { cron: 1 },
+            total: 1,
+          },
+        };
+      }
+      if (url === "/api/hitl/pending") {
+        return { pending: [] };
+      }
+      if (url === "/api/hitl/request" && options?.method === "POST") {
+        throw new Error("review request failed");
+      }
+      throw new Error(`Beklenmeyen çağrı: ${url}`);
+    });
+
+    render(<SwarmFlowPanel />);
+    const nightlyNode = await screen.findByRole("button", { name: /nightly_scan/i });
+
+    await user.keyboard("[Tab]");
+    nightlyNode.focus();
+    await user.keyboard("[Enter]");
+
+    await user.click(screen.getByRole("button", { name: "Yüzeyi Yenile" }));
+    await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
+
+    expect(await screen.findByText("review request failed")).toBeInTheDocument();
+  });
+
 });
