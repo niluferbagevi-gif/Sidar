@@ -1,3 +1,4 @@
+import asyncio
 import json
 import importlib.util
 import sys
@@ -20,6 +21,29 @@ if importlib.util.find_spec("jwt") is None:
     fake_jwt.encode = lambda payload, *_args, **_kwargs: f"token:{payload.get('sub', '')}"
     fake_jwt.decode = lambda *_args, **_kwargs: {"sub": "stub"}
     sys.modules["jwt"] = fake_jwt
+
+if importlib.util.find_spec("httpx") is None:
+    fake_httpx = types.ModuleType("httpx")
+
+    class AsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+    fake_httpx.AsyncClient = AsyncClient
+    fake_httpx.TimeoutException = Exception
+    fake_httpx.ConnectError = Exception
+    fake_httpx.HTTPStatusError = Exception
+    sys.modules["httpx"] = fake_httpx
+
+if importlib.util.find_spec("bs4") is None:
+    fake_bs4 = types.ModuleType("bs4")
+
+    class BeautifulSoup:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+    fake_bs4.BeautifulSoup = BeautifulSoup
+    sys.modules["bs4"] = fake_bs4
 
 from agent import sidar_agent
 
@@ -315,5 +339,20 @@ async def test_tool_subtask_handles_tool_exception_and_hits_max_steps() -> None:
     agent._execute_tool = _boom
 
     result = await agent._tool_subtask("testleri çalıştır")
+
+    assert "Maksimum adım sınırına ulaşıldı" in result
+
+
+def test_tool_subtask_non_string_llm_output_hits_max_steps() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="gpt-test", CODING_MODEL="gpt-code")
+
+    class _LLM:
+        async def chat(self, **_kwargs):
+            return {"tool": "final_answer", "argument": "bitti"}  # intentionally non-string
+
+    agent.llm = _LLM()
+
+    result = asyncio.run(agent._tool_subtask("kriz modu"))
 
     assert "Maksimum adım sınırına ulaşıldı" in result
