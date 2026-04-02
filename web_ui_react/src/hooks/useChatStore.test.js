@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStore } from "./useChatStore.js";
 
 // Her testten önce store'u sıfırla
@@ -32,6 +32,69 @@ describe("useChatStore — başlangıç durumu", () => {
   });
 });
 
+
+
+describe("useChatStore — environment fallbacks", () => {
+  it("falls back to Math.random id generation when crypto is unavailable", async () => {
+    const originalCrypto = globalThis.crypto;
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.123456789);
+
+    try {
+      Object.defineProperty(globalThis, "crypto", {
+        value: undefined,
+        configurable: true,
+        writable: true,
+      });
+      vi.resetModules();
+      const { useChatStore: fallbackStore } = await import("./useChatStore.js");
+
+      expect(fallbackStore.getState().sessionId).toBeTruthy();
+      expect(randomSpy).toHaveBeenCalled();
+    } finally {
+      if (originalCrypto === undefined) {
+        delete globalThis.crypto;
+      } else {
+        Object.defineProperty(globalThis, "crypto", {
+          value: originalCrypto,
+          configurable: true,
+          writable: true,
+        });
+      }
+      randomSpy.mockRestore();
+      vi.resetModules();
+    }
+  });
+
+  it("uses default room and display name when localStorage is unavailable", async () => {
+    const originalLocalStorage = globalThis.localStorage;
+
+    try {
+      Object.defineProperty(globalThis, "localStorage", {
+        value: undefined,
+        configurable: true,
+        writable: true,
+      });
+      vi.resetModules();
+      const { useChatStore: fallbackStore } = await import("./useChatStore.js");
+
+      expect(fallbackStore.getState().roomId).toBe("workspace:sidar");
+      expect(fallbackStore.getState().displayName).toBe("Operatör");
+      expect(() => fallbackStore.getState().setRoomId("workspace:demo")).not.toThrow();
+      expect(() => fallbackStore.getState().setDisplayName("Demo Kullanıcı")).not.toThrow();
+    } finally {
+      if (originalLocalStorage === undefined) {
+        delete globalThis.localStorage;
+      } else {
+        Object.defineProperty(globalThis, "localStorage", {
+          value: originalLocalStorage,
+          configurable: true,
+          writable: true,
+        });
+      }
+      vi.resetModules();
+    }
+  });
+});
 describe("useChatStore — setRoomId", () => {
   it("sets roomId to provided value", () => {
     useChatStore.getState().setRoomId("workspace:test");
@@ -82,6 +145,14 @@ describe("useChatStore — pushRoomMessage", () => {
     useChatStore.getState().pushRoomMessage(msg);
     useChatStore.getState().pushRoomMessage(msg);
     expect(useChatStore.getState().messages).toHaveLength(1);
+  });
+
+  it("keeps message list unchanged when a different payload has an existing id", () => {
+    useChatStore.getState().pushRoomMessage({ id: "m1", role: "user", content: "ilk" });
+    useChatStore.getState().pushRoomMessage({ id: "m1", role: "assistant", content: "ikinci" });
+
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect(useChatStore.getState().messages[0]).toEqual({ id: "m1", role: "user", content: "ilk" });
   });
 
   it("clears error on push", () => {
