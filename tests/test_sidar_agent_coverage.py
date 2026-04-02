@@ -281,3 +281,39 @@ async def test_summarize_memory_archives_and_applies_summary() -> None:
     assert len(agent.docs.calls) == 1
     assert agent.docs.calls[0]["source"] == "memory_archive"
     assert agent.memory.summary == "özet metni"
+
+
+@pytest.mark.asyncio
+async def test_tool_subtask_returns_final_answer_immediately() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=3, TEXT_MODEL="gpt-test", CODING_MODEL="gpt-code")
+
+    class _LLM:
+        async def chat(self, **_kwargs):
+            return '{"tool":"final_answer","argument":"bitti"}'
+
+    agent.llm = _LLM()
+
+    result = await agent._tool_subtask("coverage artır")
+
+    assert result == "✓ Alt Görev Tamamlandı: bitti"
+
+
+@pytest.mark.asyncio
+async def test_tool_subtask_handles_tool_exception_and_hits_max_steps() -> None:
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+    agent.cfg = SimpleNamespace(SUBTASK_MAX_STEPS=1, TEXT_MODEL="gpt-test", CODING_MODEL="gpt-code")
+
+    class _LLM:
+        async def chat(self, **_kwargs):
+            return '{"tool":"run_tests","argument":"pytest -q"}'
+
+    async def _boom(_tool: str, _arg: str) -> str:
+        raise RuntimeError("tool crashed")
+
+    agent.llm = _LLM()
+    agent._execute_tool = _boom
+
+    result = await agent._tool_subtask("testleri çalıştır")
+
+    assert "Maksimum adım sınırına ulaşıldı" in result

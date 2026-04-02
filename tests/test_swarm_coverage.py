@@ -44,3 +44,41 @@ def test_should_fallback_to_supervisor_detects_json_style_errors() -> None:
     exc = json.JSONDecodeError("bad json", "{", 1)
     assert SwarmOrchestrator._should_fallback_to_supervisor(exc) is True
     assert SwarmOrchestrator._should_fallback_to_supervisor(RuntimeError("other error")) is False
+
+
+def test_execute_task_returns_skipped_when_router_cannot_resolve_agent() -> None:
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    orchestrator.router.route = lambda _intent: None
+
+    result = asyncio.run(
+        orchestrator._execute_task(
+            SwarmTask(task_id="t-1", goal="noop", intent="unknown", preferred_agent=None),
+            session_id="sess-2",
+        )
+    )
+
+    assert result.status == "skipped"
+    assert result.agent_role == "none"
+
+
+def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch) -> None:
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    orchestrator.router.route = lambda _intent: SimpleNamespace(role_name="legacy")
+
+    class _LegacyAgent:
+        async def run_task(self, goal: str) -> str:
+            return f"legacy:{goal}"
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_args, **_kwargs: _LegacyAgent())
+    monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", lambda **_kwargs: None)
+
+    result = asyncio.run(
+        orchestrator._execute_task(
+            SwarmTask(task_id="t-legacy", goal="kodu gözden geçir", intent="review", context={}),
+            session_id="sess-3",
+        )
+    )
+
+    assert result.status == "success"
+    assert result.agent_role == "legacy"
+    assert result.summary == "legacy:kodu gözden geçir"
