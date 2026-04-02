@@ -173,4 +173,42 @@ describe("PluginMarketplacePanel", () => {
     // "installed || live_registered" şartı sağlandığı için ikisi de "Canlı" pill'ine sahip olmalı
     expect(screen.getAllByText("Canlı")).toHaveLength(2);
   });
+
+  it("successfully removes a plugin without errors", async () => {
+    const user = userEvent.setup();
+    const liveCatalog = {
+      items: [{
+        plugin_id: "plugin-to-remove",
+        name: "Plugin To Remove",
+        category: "ops",
+        summary: "Kaldırılacak plugin",
+        description: "Açıklama",
+        role_name: "ops",
+        version: "1.0.0",
+        entrypoint: "plugins/remove.py",
+        capabilities: ["remove"],
+        installed: true,
+        live_registered: true,
+      }],
+    };
+
+    fetchJson
+      .mockResolvedValueOnce(liveCatalog)
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ items: [] });
+
+    render(<PluginMarketplacePanel />);
+    expect(await screen.findByText("Plugin To Remove")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Devre Dışı Bırak" }));
+
+    await waitFor(() =>
+      expect(fetchJson).toHaveBeenCalledWith(
+        "/api/plugin-marketplace/install/plugin-to-remove",
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+
+    expect(await screen.findByText("Plugin işlemi tamamlandı: plugin-to-remove → Kaldır.")).toBeInTheDocument();
+  });
 });
