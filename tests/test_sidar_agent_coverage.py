@@ -22,7 +22,14 @@ if importlib.util.find_spec("jwt") is None:
     fake_jwt.decode = lambda *_args, **_kwargs: {"sub": "stub"}
     sys.modules["jwt"] = fake_jwt
 
-if importlib.util.find_spec("httpx") is None:
+def _has_module(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ValueError:
+        return name in sys.modules
+
+
+if not _has_module("httpx"):
     fake_httpx = types.ModuleType("httpx")
 
     class AsyncClient:
@@ -356,3 +363,14 @@ def test_tool_subtask_non_string_llm_output_hits_max_steps() -> None:
     result = asyncio.run(agent._tool_subtask("kriz modu"))
 
     assert "Maksimum adım sınırına ulaşıldı" in result
+
+
+def test_parse_tool_call_defaults_to_final_answer_for_non_object_or_missing_tool():
+    agent = sidar_agent.SidarAgent.__new__(sidar_agent.SidarAgent)
+
+    non_object = agent._parse_tool_call('["x"]')
+    assert non_object == {"tool": "final_answer", "argument": '["x"]'}
+
+    missing_tool = agent._parse_tool_call('{"argument":"done"}')
+    assert missing_tool["tool"] == "final_answer"
+    assert missing_tool["argument"] == "done"

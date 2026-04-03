@@ -114,3 +114,35 @@ def test_max_qa_retries_uses_config_override() -> None:
 
     supervisor.cfg = object()
     assert supervisor._max_qa_retries() == SupervisorAgent.MAX_QA_RETRIES
+
+
+def test_is_reject_feedback_payload_handles_malformed_json() -> None:
+    assert SupervisorAgent._is_reject_feedback_payload('qa_feedback|{"decision":') is False
+
+
+def test_route_p2p_stops_when_qa_retry_limit_exceeded() -> None:
+    supervisor = SupervisorAgent.__new__(SupervisorAgent)
+    supervisor.cfg = type("Cfg", (), {"MAX_QA_RETRIES": 0, "REACT_TIMEOUT": 1})()
+
+    class _Bus:
+        async def publish(self, *_args, **_kwargs):
+            return None
+
+    supervisor.events = _Bus()
+
+    class _Req:
+        target_agent = "coder"
+        payload = "qa_feedback|decision=reject"
+        reply_to = "reviewer"
+        intent = "p2p"
+        parent_task_id = "p"
+        task_id = "t"
+        protocol = "federation.v1"
+        handoff_depth = 0
+        meta = {}
+
+    import asyncio
+
+    result = asyncio.run(supervisor._route_p2p(_Req()))
+    assert result.status == "failed"
+    assert "Maksimum QA retry limiti aşıldı" in str(result.summary)

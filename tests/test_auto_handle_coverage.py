@@ -190,3 +190,22 @@ def test_try_audit_timeout_and_exception_paths(monkeypatch):
     handled, response = asyncio.run(handler._try_audit("sistemi tara"))
     assert handled is True
     assert "hata oluştu: boom" in response
+
+
+def test_dot_command_routes_audit_and_gpu(monkeypatch):
+    handler = _build_auto_handle()
+    monkeypatch.setattr(handler, "_try_audit", AsyncMock(return_value=(True, "audit-ok")))
+    monkeypatch.setattr(handler, "_try_gpu_optimize", AsyncMock(return_value=(True, "gpu-ok")))
+
+    handled, response = asyncio.run(handler.handle(".audit"))
+    assert handled is True and response == "audit-ok"
+
+    handled, response = asyncio.run(handler.handle(".gpu"))
+    assert handled is True and response == "gpu-ok"
+
+
+def test_dot_command_unknown_returns_false():
+    handler = _build_auto_handle()
+    handled, response = asyncio.run(handler._try_dot_command(".unknown", ".unknown"))
+    assert handled is False
+    assert response == ""
