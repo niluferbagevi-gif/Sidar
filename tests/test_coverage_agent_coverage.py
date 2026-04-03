@@ -39,7 +39,21 @@ def _install_coverage_agent_stubs() -> None:
 
             return _decorator
 
+        @classmethod
+        def find_by_capability(cls, capability):
+            return []
+
+        @classmethod
+        def list_all(cls):
+            return []
+
+    class AgentSpec:
+        def __init__(self, role_name="", capabilities=None):
+            self.role_name = role_name
+            self.capabilities = capabilities or []
+
     registry_mod.AgentCatalog = AgentCatalog
+    registry_mod.AgentSpec = AgentSpec
     sys.modules["agent.registry"] = registry_mod
 
 
