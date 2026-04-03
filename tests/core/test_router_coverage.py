@@ -47,6 +47,21 @@ def test_query_complexity_analyzer_complex_prompt_caps_to_max() -> None:
     assert score == 0.5
 
 
+def test_query_complexity_analyzer_without_simple_keywords_keeps_full_score() -> None:
+    analyzer = router_mod.QueryComplexityAnalyzer()
+    prompt = [
+        {
+            "role": "user",
+            "content": "analyze algorithm complexity and compare tradeoff decisions ???",
+        }
+    ]
+
+    score = analyzer.score(prompt)
+
+    assert score > 0.0
+    assert score > 0.35
+
+
 def test_daily_budget_tracker_add_usage_exceeded_and_reset(monkeypatch: pytest.MonkeyPatch) -> None:
     timeline = iter(
         [
