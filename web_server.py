@@ -3744,7 +3744,7 @@ async def upload_rag_file(file: UploadFile = File(...)):
         if len(data) > max_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB",
+                detail={"detail": f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB"},
             )
 
         # Dosyayı orijinal adıyla güvenli bir geçici klasöre kaydet
@@ -3771,6 +3771,8 @@ async def upload_rag_file(file: UploadFile = File(...)):
             return JSONResponse({"success": True, "message": msg})
         return JSONResponse({"success": False, "error": msg}, status_code=400)
 
+    except HTTPException:
+        raise
     except Exception as exc:
         return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
     finally:
