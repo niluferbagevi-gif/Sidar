@@ -76,7 +76,7 @@ def test_qa_agent_tools_and_run_task_routes(monkeypatch) -> None:
     async def _gen(_target: str, _ctx: str):
         return "def test_generated():\n    assert True"
 
-    monkeypatch.setattr(agent, "call_tool", _call_tool)
+    monkeypatch.setattr(agent, "call_tool", _call_tool, raising=False)
     monkeypatch.setattr(agent, "_build_coverage_plan", _build)
     monkeypatch.setattr(agent, "_generate_test_code", _gen)
 
