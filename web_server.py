@@ -3744,7 +3744,7 @@ async def upload_rag_file(file: UploadFile = File(...)):
         if len(data) > max_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB",
+                detail={"detail": f"Dosya çok büyük. Maksimum izin verilen boyut: {max_bytes // (1024 * 1024)} MB"},
             )
 
         # Dosyayı orijinal adıyla güvenli bir geçici klasöre kaydet
