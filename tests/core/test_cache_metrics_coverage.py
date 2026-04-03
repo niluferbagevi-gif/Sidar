@@ -64,6 +64,38 @@ def test_get_prometheus_metric_reuses_registry_collector(monkeypatch) -> None:
     assert metric is existing
 
 
+def test_get_prometheus_metric_returns_cached_without_lock() -> None:
+    cached = _Metric()
+    mod._prometheus_metric_cache["sidar_cached"] = cached
+
+    metric = mod._get_prometheus_metric("sidar_cached", "desc", "counter")
+    assert metric is cached
+
+
+def test_get_prometheus_metric_returns_cached_after_lock(monkeypatch) -> None:
+    cached = _Metric()
+
+    class _LockThatInjectsCache:
+        def __enter__(self):
+            mod._prometheus_metric_cache["sidar_cached_after_lock"] = cached
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(mod, "_prometheus_metric_lock", _LockThatInjectsCache())
+
+    metric = mod._get_prometheus_metric("sidar_cached_after_lock", "desc", "counter")
+    assert metric is cached
+
+
+def test_get_prometheus_metric_returns_none_when_metric_factory_missing(monkeypatch) -> None:
+    fake_prom = types.SimpleNamespace(REGISTRY=types.SimpleNamespace(_names_to_collectors={}), Counter=_Metric)
+    monkeypatch.setattr(importlib, "import_module", lambda _name: fake_prom)
+
+    assert mod._get_prometheus_metric("sidar_missing_gauge", "desc", "gauge") is None
+
+
 def test_counter_and_gauge_helpers(monkeypatch) -> None:
     counter = _Metric()
     gauge = _Metric()
@@ -82,3 +114,9 @@ def test_counter_and_gauge_helpers(monkeypatch) -> None:
 
     assert counter.inc_calls == [2]
     assert gauge.set_calls == [1.25]
+
+
+def test_inc_prometheus_counter_ignores_metric_without_inc(monkeypatch) -> None:
+    monkeypatch.setattr(mod, "_get_prometheus_metric", lambda *_args, **_kwargs: object())
+
+    mod._inc_prometheus_counter("hit", "d", 3)
