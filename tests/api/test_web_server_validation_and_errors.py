@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+from types import SimpleNamespace
 from typing import Iterator
 
 import pytest
@@ -20,7 +21,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         return False
 
     async def _mock_user_from_token(*_args, **_kwargs):
-        return object()
+        return SimpleNamespace(id="u1", username="test_user", role="user", tenant_id="default")
 
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _no_rate_limit)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _mock_user_from_token)

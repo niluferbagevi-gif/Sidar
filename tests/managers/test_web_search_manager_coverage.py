@@ -98,9 +98,9 @@ def test_search_tavily_disables_key_on_403(monkeypatch: pytest.MonkeyPatch) -> N
         status_code = 403
 
         def raise_for_status(self):
-            exc = httpx.HTTPStatusError("forbidden")
-            setattr(exc, "response", SimpleNamespace(status_code=403))
-            raise exc
+            req = httpx.Request("POST", "https://api.tavily.com/search")
+            resp = httpx.Response(403, request=req)
+            raise httpx.HTTPStatusError("forbidden", request=req, response=resp)
 
         def json(self):
             return {}

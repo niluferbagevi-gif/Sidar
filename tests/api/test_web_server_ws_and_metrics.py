@@ -89,6 +89,7 @@ def test_register_agent_plugin_file_accepts_utf8_upload(client: TestClient, monk
         "/api/agents/register-file",
         data={"capabilities": "code_generation,review", "role_name": "custom_agent"},
         files={"file": ("plugin.py", b"class Demo: pass", "text/plain")},
+        headers={"Authorization": "Bearer test-token"},
     )
 
     assert response.status_code == 200
@@ -99,7 +100,7 @@ def test_register_agent_plugin_file_accepts_utf8_upload(client: TestClient, monk
 
 
 def test_metrics_returns_json_payload(client: TestClient) -> None:
-    response = client.get("/metrics")
+    response = client.get("/metrics", headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 200
     payload = response.json()
     assert payload["version"] == "5.1.0"
