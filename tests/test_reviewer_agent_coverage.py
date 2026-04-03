@@ -17,6 +17,40 @@ if _httpx_spec is None and "httpx" not in sys.modules:
     fake_httpx.AsyncClient = AsyncClient
     sys.modules["httpx"] = fake_httpx
 
+
+if "redis.asyncio" not in sys.modules:
+    fake_redis_asyncio = types.ModuleType("redis.asyncio")
+
+    class Redis:
+        @classmethod
+        def from_url(cls, *_args, **_kwargs):
+            return cls()
+
+    fake_redis_asyncio.Redis = Redis
+    fake_redis = types.ModuleType("redis")
+    fake_redis.asyncio = fake_redis_asyncio
+    fake_redis_exceptions = types.ModuleType("redis.exceptions")
+
+    class ResponseError(Exception):
+        pass
+
+    fake_redis_exceptions.ResponseError = ResponseError
+    fake_redis.exceptions = fake_redis_exceptions
+    sys.modules["redis.exceptions"] = fake_redis_exceptions
+    sys.modules["redis"] = fake_redis
+    sys.modules["redis.asyncio"] = fake_redis_asyncio
+
+
+if "bs4" not in sys.modules:
+    fake_bs4 = types.ModuleType("bs4")
+
+    class BeautifulSoup:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+    fake_bs4.BeautifulSoup = BeautifulSoup
+    sys.modules["bs4"] = fake_bs4
+
 from agent.roles.reviewer_agent import ReviewerAgent
 import asyncio
 
@@ -141,3 +175,14 @@ def test_build_dynamic_test_content_fail_closed_paths():
     agent.call_llm = _raising_llm
     errored = asyncio.run(agent._build_dynamic_test_content("diff content"))
     assert "başarısız oldu" in errored
+
+
+def test_summarize_lsp_diagnostics_special_text_branches():
+    clean = ReviewerAgent._summarize_lsp_diagnostics("LSP temiz")
+    assert clean["status"] == "clean"
+
+    no_signal = ReviewerAgent._summarize_lsp_diagnostics("LSP bildirimi dönmedi")
+    assert no_signal["status"] == "no-signal"
+
+    tool_error = ReviewerAgent._summarize_lsp_diagnostics("Araç hatası: timeout")
+    assert tool_error["status"] == "tool-error"

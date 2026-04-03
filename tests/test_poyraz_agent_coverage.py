@@ -295,3 +295,66 @@ def test_run_task_routes_marketing_keywords_to_strategy_mode() -> None:
 
     assert result.startswith("marketing_strategy:")
     assert "funnel" in result.lower()
+
+
+def test_ensure_db_initializes_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+    agent._db = None
+    agent._db_lock = None
+    agent.cfg = object()
+
+    calls = {"connect": 0, "schema": 0}
+
+    class _Db:
+        def __init__(self, _cfg) -> None:
+            return None
+
+        async def connect(self):
+            calls["connect"] += 1
+
+        async def init_schema(self):
+            calls["schema"] += 1
+
+    fake_db_mod = types.ModuleType("core.db")
+    fake_db_mod.Database = _Db
+    monkeypatch.setitem(sys.modules, "core.db", fake_db_mod)
+
+    first = asyncio.run(agent._ensure_db())
+    second = asyncio.run(agent._ensure_db())
+
+    assert first is second
+    assert calls == {"connect": 1, "schema": 1}
+
+
+def test_social_specific_tools_return_expected_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    class _Social:
+        async def publish_instagram_post(self, **_kwargs):
+            return True, "ok"
+
+        async def publish_facebook_post(self, **_kwargs):
+            return False, "fail"
+
+        async def send_whatsapp_message(self, **_kwargs):
+            return True, "sent"
+
+    class _Payload:
+        caption = "cap"
+        image_url = "img"
+        message = "msg"
+        link_url = "link"
+        to = "+90500"
+        text = "hello"
+        preview_url = True
+
+    agent.social = _Social()
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda *_a, **_k: _Payload())
+
+    insta = asyncio.run(agent._tool_publish_instagram_post("{}"))
+    face = asyncio.run(agent._tool_publish_facebook_post("{}"))
+    wa = asyncio.run(agent._tool_send_whatsapp_message("{}"))
+
+    assert insta.startswith("[INSTAGRAM:PUBLISHED]")
+    assert face.startswith("[FACEBOOK:ERROR]")
+    assert wa.startswith("[WHATSAPP:SENT]")
