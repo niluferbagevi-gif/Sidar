@@ -127,6 +127,45 @@ def test_researcher_agent_init_registers_tools_and_dependencies(monkeypatch) -> 
     assert set(agent.tools) == {"web_search", "fetch_url", "search_docs", "docs_search"}
 
 
+def test_researcher_agent_init_populates_tools_when_register_tool_is_noop(monkeypatch) -> None:
+    cfg = SimpleNamespace(
+        RAG_DIR="/tmp/rag",
+        RAG_TOP_K=4,
+        RAG_CHUNK_SIZE=300,
+        RAG_CHUNK_OVERLAP=25,
+        USE_GPU=False,
+        GPU_DEVICE="cpu",
+        GPU_MIXED_PRECISION=False,
+    )
+
+    def _fake_base_init(self, cfg=None, role_name="base"):
+        self.cfg = cfg
+        self.role_name = role_name
+        self.tools = {}
+
+    class FakeWeb:
+        def __init__(self, passed_cfg):
+            self.cfg = passed_cfg
+
+    class FakeStore:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(_mod.BaseAgent, "__init__", _fake_base_init)
+    monkeypatch.setattr(_mod.BaseAgent, "register_tool", lambda self, name, func: None)
+    monkeypatch.setattr(_mod, "WebSearchManager", FakeWeb)
+    monkeypatch.setattr(_mod, "DocumentStore", FakeStore)
+
+    agent = ResearcherAgent(cfg)
+
+    assert set(agent.tools) == {"web_search", "fetch_url", "search_docs", "docs_search"}
+    assert callable(agent.tools["web_search"])
+    assert callable(agent.tools["fetch_url"])
+    assert callable(agent.tools["search_docs"])
+    assert callable(agent.tools["docs_search"])
+
+
 def test_tool_docs_search_accepts_awaitable_from_document_store(monkeypatch) -> None:
     agent = _agent()
 
