@@ -41,6 +41,21 @@ def test_create_with_factory_and_unregister() -> None:
     assert registry_mod.AgentCatalog.unregister("factory-role") is False
 
 
+def test_create_with_agent_class_instantiates_with_kwargs() -> None:
+    registry_mod.AgentCatalog._registry = {}
+
+    class _ConcreteAgent:
+        def __init__(self, *, token: str) -> None:
+            self.token = token
+
+    registry_mod.AgentCatalog.register_type(role_name="concrete", agent_class=_ConcreteAgent)
+
+    created = registry_mod.AgentCatalog.create("concrete", token="abc123")
+
+    assert isinstance(created, _ConcreteAgent)
+    assert created.token == "abc123"
+
+
 def test_create_raises_for_missing_and_invalid_spec() -> None:
     registry_mod.AgentCatalog._registry = {}
     with pytest.raises(KeyError):
