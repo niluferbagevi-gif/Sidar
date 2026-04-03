@@ -68,6 +68,7 @@ from core.db import Database, _quote_sql_identifier
 from core.rag import DocumentStore
 from managers.code_manager import CodeManager
 from agent import sidar_agent
+from agent.registry import AgentCatalog
 from agent.swarm import SwarmOrchestrator, SwarmTask, TaskRouter
 
 
@@ -157,8 +158,8 @@ def test_sidar_agent_and_swarm_yellow_zone_helpers(monkeypatch: pytest.MonkeyPat
         def __init__(self, role_name: str):
             self.role_name = role_name
 
-    monkeypatch.setattr("agent.swarm.AgentCatalog.find_by_capability", lambda _cap: [])
-    monkeypatch.setattr("agent.swarm.AgentCatalog.list_all", lambda: [_Spec("researcher")])
+    monkeypatch.setattr(AgentCatalog, "find_by_capability", lambda _cap: [])
+    monkeypatch.setattr(AgentCatalog, "list_all", lambda: [_Spec("researcher")])
     assert router.route("unknown").role_name == "researcher"
 
     orch = SwarmOrchestrator(SimpleNamespace(AI_PROVIDER="openai"))
