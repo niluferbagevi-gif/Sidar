@@ -32,11 +32,19 @@ __all__ = list(_MANAGER_IMPORT_MAP.keys())
 
 
 def __getattr__(name: str):
+    # 1. Sınıf isimleri için (Örn: CodeManager)
     module_path = _MANAGER_IMPORT_MAP.get(name)
-    if module_path is None:
-        raise AttributeError(name)
+    if module_path is not None:
+        module = import_module(module_path)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
 
-    module = import_module(module_path)
-    value = getattr(module, name)
-    globals()[name] = value
-    return value
+    # 2. Pytest monkeypatch ve doğrudan modül erişimleri için (Örn: managers.package_info)
+    for path in _MANAGER_IMPORT_MAP.values():
+        if path.endswith(f".{name}"):
+            module = import_module(path)
+            globals()[name] = module
+            return module
+
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
