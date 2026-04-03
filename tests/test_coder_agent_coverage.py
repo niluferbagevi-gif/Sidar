@@ -133,3 +133,18 @@ def test_parse_qa_feedback_supports_json_key_value_and_raw() -> None:
     assert parsed_kv["decision"] == "reject"
     assert parsed_kv["summary"] == "broken"
     assert parsed_raw["raw"] == "{invalid json"
+
+
+def test_run_task_returns_legacy_fallback_for_unhandled_prompt() -> None:
+    agent = CoderAgent.__new__(CoderAgent)
+
+    async def _publish(*_args, **_kwargs):
+        return None
+
+    agent.events = SimpleNamespace(publish=_publish)
+    agent.call_tool = MethodType(lambda _self, _name, _arg: "should-not-be-called", agent)
+
+    result = asyncio.run(agent.run_task("buna özel bir araç eşlemesi yok"))
+
+    assert result.startswith("[LEGACY_FALLBACK]")
+    assert "coder_unhandled" in result

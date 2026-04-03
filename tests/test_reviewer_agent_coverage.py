@@ -186,3 +186,12 @@ def test_summarize_lsp_diagnostics_special_text_branches():
 
     tool_error = ReviewerAgent._summarize_lsp_diagnostics("Araç hatası: timeout")
     assert tool_error["status"] == "tool-error"
+
+
+def test_build_regression_commands_without_explicit_test_paths():
+    agent = ReviewerAgent.__new__(ReviewerAgent)
+    agent.config = types.SimpleNamespace(REVIEWER_TEST_COMMAND="pytest -q tests/core/test_db_coverage.py")
+
+    commands = agent._build_regression_commands("core/db.py ve docs/notes.md değişti")
+
+    assert commands == ["pytest -q tests/core/test_db_coverage.py"]
