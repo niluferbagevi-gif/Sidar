@@ -3771,6 +3771,8 @@ async def upload_rag_file(file: UploadFile = File(...)):
             return JSONResponse({"success": True, "message": msg})
         return JSONResponse({"success": False, "error": msg}, status_code=400)
 
+    except HTTPException:
+        raise
     except Exception as exc:
         return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
     finally:
