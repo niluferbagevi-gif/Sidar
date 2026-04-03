@@ -19,7 +19,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     async def _no_rate_limit(*_args, **_kwargs) -> bool:
         return False
 
+    async def _mock_user_from_token(*_args, **_kwargs):
+        return object()
+
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _no_rate_limit)
+    monkeypatch.setattr(web_server, "_resolve_user_from_token", _mock_user_from_token)
     with TestClient(web_server.app, raise_server_exceptions=False) as test_client:
         yield test_client
 
@@ -29,12 +33,11 @@ def test_auth_register_returns_422_for_short_username(client: TestClient) -> Non
 
     assert response.status_code == 422
     body = response.json()
-    assert body["success"] is False
-    assert "error" in body
+    assert "detail" in body
 
 
 def test_set_branch_rejects_invalid_branch_name(client: TestClient) -> None:
-    response = client.post("/set-branch", json={"branch": "bad branch name"})
+    response = client.post("/set-branch", json={"branch": "bad branch name"}, headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 400
     assert response.json()["success"] is False
@@ -47,7 +50,7 @@ def test_set_branch_returns_400_when_checkout_fails(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr("web_server.asyncio.to_thread", _raise_called_process_error)
 
-    response = client.post("/set-branch", json={"branch": "feature/x"})
+    response = client.post("/set-branch", json={"branch": "feature/x"}, headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 400
     assert response.json()["success"] is False
@@ -67,7 +70,7 @@ def test_git_branches_returns_500_on_unhandled_error(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr("web_server.asyncio.to_thread", _raise_runtime_error)
 
-    response = client.get("/git-branches")
+    response = client.get("/git-branches", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 500
     body = response.json()

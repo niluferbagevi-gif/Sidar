@@ -208,6 +208,7 @@ async def test_run_sqlite_op_propagates_timeout_and_attempts_rollback(
         await db._run_sqlite_op(lambda: 42)
 
     assert rollback_called["value"] is True
+    monkeypatch.undo()
     await db.close()
 
 

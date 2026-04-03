@@ -4,6 +4,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+from agent.registry import AgentCatalog
 from agent.swarm import InMemoryDelegationBackend, SwarmOrchestrator, SwarmTask
 
 
@@ -69,7 +70,7 @@ def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch) -> N
         async def run_task(self, goal: str) -> str:
             return f"legacy:{goal}"
 
-    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_args, **_kwargs: _LegacyAgent())
+    monkeypatch.setattr(AgentCatalog, "create", lambda *_args, **_kwargs: _LegacyAgent())
     monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", lambda **_kwargs: None)
 
     result = asyncio.run(
