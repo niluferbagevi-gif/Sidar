@@ -26,6 +26,9 @@ describe("PromptAdminPanel", () => {
     render(<PromptAdminPanel />);
 
     expect(await screen.findByText("system")).toBeInTheDocument();
+    const roleInput = screen.getByLabelText(/Rol adı/i);
+    await user.clear(roleInput);
+    await user.type(roleInput, "test_rol_adi");
     await user.clear(screen.getByPlaceholderText("Yeni sistem promptu"));
     await user.type(screen.getByPlaceholderText("Yeni sistem promptu"), "Yeni prompt metni");
     await user.click(screen.getByRole("button", { name: "Kaydet" }));
