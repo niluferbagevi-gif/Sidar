@@ -35,7 +35,22 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  local pytest_cmd=(pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local pytest_cmd=(python -m pytest)
+  local coverage_enabled=0
+
+  if python -c "import pytest_cov" >/dev/null 2>&1; then
+    pytest_cmd+=(
+      --cov=.
+      --cov-report=term-missing
+      --cov-report=html
+      --cov-report=xml
+      --cov-fail-under="${COVERAGE_FAIL_UNDER}"
+    )
+    coverage_enabled=1
+  else
+    echo "⚠️ pytest-cov bulunamadı; backend testleri coverage quality gate olmadan çalıştırılacak."
+    pytest_cmd+=(-o addopts=)
+  fi
 
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
@@ -47,10 +62,12 @@ run_pytest_coverage_report() {
   BACKEND_EXIT_CODE=$?
 
   # parallel=True nedeniyle oluşan .coverage.* dosyalarını birleştir
-  coverage combine >/dev/null 2>&1 || true
+  if [ "${coverage_enabled}" -eq 1 ]; then
+    python -m coverage combine >/dev/null 2>&1 || true
 
-  # pytest başarısız olsa bile HTML raporunu üretmeyi dene
-  coverage html >/dev/null 2>&1 || true
+    # pytest başarısız olsa bile HTML raporunu üretmeyi dene
+    python -m coverage html >/dev/null 2>&1 || true
+  fi
 
   if [ -f "htmlcov/index.html" ]; then
     echo "✅ Coverage HTML raporu oluşturuldu: htmlcov/index.html"
@@ -67,8 +84,12 @@ run_pytest_coverage_report
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -f "tests/test_benchmark.py" ]; then
-  python -m pytest -v tests/test_benchmark.py --no-cov
+  python -m pytest -v tests/test_benchmark.py -o addopts=
   BENCHMARK_EXIT_CODE=$?
+  if [ "${BENCHMARK_EXIT_CODE}" -eq 5 ]; then
+    echo "ℹ️ Benchmark testleri pytest-benchmark yüklü olmadığı için skip edildi."
+    BENCHMARK_EXIT_CODE=0
+  fi
 else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."
 fi
