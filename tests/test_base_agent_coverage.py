@@ -75,3 +75,34 @@ def test_handle_non_delegation_success(monkeypatch) -> None:
     assert result.status == "success"
     assert result.summary == "done:plain"
     assert BaseAgent.is_delegation_message(result.summary) is False
+
+
+def test_handle_preserves_existing_delegation_ids(monkeypatch) -> None:
+    monkeypatch.setattr(base_agent_mod, "LLMClient", lambda *_args, **_kwargs: _DummyLLM())
+
+    class _PreFilledDelegationAgent(BaseAgent):
+        async def run_task(self, task_prompt: str):
+            return DelegationRequest(
+                task_id="delegated-42",
+                reply_to="reviewer",
+                target_agent="qa",
+                payload=task_prompt,
+                parent_task_id="parent-fixed",
+                handoff_depth=1,
+            )
+
+    agent = _PreFilledDelegationAgent(cfg=SimpleNamespace(AI_PROVIDER="ollama"), role_name="reviewer")
+    envelope = TaskEnvelope(
+        task_id="env-1",
+        sender="supervisor",
+        receiver="reviewer",
+        goal="delegate with ids",
+        context={"p2p_handoff_depth": "0"},
+        parent_task_id="env-parent",
+    )
+
+    result = asyncio.run(agent.handle(envelope))
+
+    assert isinstance(result.summary, DelegationRequest)
+    assert result.summary.task_id == "delegated-42"
+    assert result.summary.parent_task_id == "parent-fixed"
