@@ -142,17 +142,23 @@ class TaskRouter:
         Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
         """
+        # AgentCatalog'u çağrı zamanında çözerek olası module reload/monkeypatch
+        # senaryolarında güncel sınıf referansını kullan.
+        from agent.registry import AgentCatalog as LiveAgentCatalog
+
         capability = _INTENT_CAPABILITY_MAP.get(intent, intent)
-        candidates = AgentCatalog.find_by_capability(capability)
+        candidates = LiveAgentCatalog.find_by_capability(capability)
         if not candidates:
             # Fallback: herhangi bir kayıtlı ajan
-            all_agents = AgentCatalog.list_all()
+            all_agents = LiveAgentCatalog.list_all()
             return all_agents[0] if all_agents else None
         return candidates[0]
 
     def route_by_role(self, role_name: str) -> Optional[AgentSpec]:
         """Doğrudan rol adıyla ajan seç."""
-        return AgentCatalog.get(role_name)
+        from agent.registry import AgentCatalog as LiveAgentCatalog
+
+        return LiveAgentCatalog.get(role_name)
 
 
 class SwarmOrchestrator:
