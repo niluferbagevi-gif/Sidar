@@ -79,6 +79,8 @@ Test yaklaşımı:
 #### Web sunucusu ve arayüz girişleri
 Örnek dosyalar: `web_server.py`, `main.py`, `cli.py`, `gui_launcher.py`
 
+> **Fazlama notu (2026-04-03):** `web_server.py` çok büyük bir dosya olduğu ve ~1533 eksik satır içerdiği için, tek PR içinde agresif coverage artışı maliyetlidir. Verimlilik için bu dosya sonraki fazlara bırakılmalı; mevcut sprintte küçük/orta ölçekli modüller (agent rolleri ve manager katmanı) önceliklendirilmelidir.
+
 Test yaklaşımı:
 - API endpoint testleri için `FastAPI TestClient` (veya mevcut framework’ün async test client’ı).
 - Doğrulama başlıkları, authorization ve schema doğrulaması.

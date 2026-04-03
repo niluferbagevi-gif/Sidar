@@ -95,3 +95,49 @@ def test_web_search_stackoverflow_query_without_keys(monkeypatch) -> None:
     assert ok is True
     assert "stackoverflow python timeout" in text
     assert "N=5" in text
+
+
+def test_web_search_truncate_and_clean_helpers() -> None:
+    manager = WebSearchManager(SimpleNamespace(SEARCH_ENGINE="auto"))
+    manager.FETCH_MAX_CHARS = 10
+    truncated = manager._truncate_content("x" * 2000)
+    assert truncated.endswith("kesildi]")
+
+    cleaned = manager._clean_html("<html><body><script>x</script><h1>Başlık</h1><p>Açıklama</p></body></html>")
+    assert "Başlık" in cleaned
+    assert cleaned
+
+
+def test_web_search_scrape_url_error_paths(monkeypatch) -> None:
+    manager = WebSearchManager(SimpleNamespace(SEARCH_ENGINE="auto"))
+
+    class _TimeoutExc(Exception):
+        pass
+
+    class _ReqExc(Exception):
+        pass
+
+    monkeypatch.setattr("managers.web_search.httpx.TimeoutException", _TimeoutExc)
+    monkeypatch.setattr("managers.web_search.httpx.RequestError", _ReqExc)
+
+    class _TimeoutClient:
+        async def __aenter__(self):
+            raise _TimeoutExc("timeout")
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("managers.web_search.httpx.AsyncClient", lambda *a, **k: _TimeoutClient())
+    timeout_text = asyncio.run(manager.scrape_url("https://example.com"))
+    assert "zaman aşımı" in timeout_text
+
+    class _ReqClient:
+        async def __aenter__(self):
+            raise _ReqExc("boom")
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("managers.web_search.httpx.AsyncClient", lambda *a, **k: _ReqClient())
+    req_text = asyncio.run(manager.scrape_url("https://example.com"))
+    assert "bağlantı/istek hatası" in req_text

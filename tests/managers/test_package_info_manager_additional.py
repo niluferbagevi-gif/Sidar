@@ -76,3 +76,54 @@ def test_package_info_error_and_version_helpers(monkeypatch):
 
     assert PackageInfoManager._is_prerelease("1.2.3-alpha.1") is True
     assert str(PackageInfoManager._version_sort_key("bad-version")) == "0.0.0"
+
+
+def test_package_info_get_json_error_paths(monkeypatch):
+    mgr = PackageInfoManager()
+
+    class _TimeoutExc(Exception):
+        pass
+
+    class _ReqExc(Exception):
+        pass
+
+    monkeypatch.setattr("managers.package_info.httpx.TimeoutException", _TimeoutExc)
+    monkeypatch.setattr("managers.package_info.httpx.RequestError", _ReqExc)
+
+    class _TimeoutClient:
+        async def __aenter__(self):
+            raise _TimeoutExc("timeout")
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("managers.package_info.httpx.AsyncClient", lambda **_kwargs: _TimeoutClient())
+    ok_t, data_t, err_t = asyncio.run(mgr._get_json("https://x"))
+    assert ok_t is False and data_t == {} and err_t == "timeout"
+
+    class _ReqClient:
+        async def __aenter__(self):
+            raise _ReqExc("network")
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("managers.package_info.httpx.AsyncClient", lambda **_kwargs: _ReqClient())
+    ok_r, _, err_r = asyncio.run(mgr._get_json("https://x"))
+    assert ok_r is False and err_r.startswith("request:")
+
+
+def test_package_info_pypi_info_filters_prerelease(monkeypatch):
+    mgr = PackageInfoManager()
+
+    async def _fake_fetch(_package: str):
+        return True, {
+            "info": {"version": "2.0.0", "author": "dev", "license": "MIT", "requires_python": ">=3.11", "summary": "demo"},
+            "releases": {"2.0.0": {}, "2.0.0rc1": {}, "1.9.0": {}},
+        }, ""
+
+    monkeypatch.setattr(mgr, "_fetch_pypi_json", _fake_fetch)
+    ok, text = asyncio.run(mgr.pypi_info("demo"))
+    assert ok is True
+    assert "2.0.0rc1" not in text
+    assert "1.9.0" in text

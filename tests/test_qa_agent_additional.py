@@ -105,3 +105,24 @@ def test_qa_agent_tool_write_file_and_pytest() -> None:
 
     run = asyncio.run(agent._tool_run_pytest(json.dumps({"command": "pytest -q tests", "cwd": "/tmp"})))
     assert json.loads(run)["command"] == "pytest -q tests"
+
+
+def test_qa_agent_build_coverage_plan_payload(monkeypatch) -> None:
+    agent = _build_agent()
+    monkeypatch.setattr(agent, "_coverage_config_summary", lambda: {"fail_under": 90, "omit": ["web_server.py"], "path": ".coveragerc", "exists": True, "show_missing": True, "skip_covered": False})
+
+    def _fake_remediation(payload, diagnosis):
+        assert diagnosis
+        return {
+            "suspected_targets": ["managers/web_search.py", "agent/roles/qa_agent.py"],
+            "remediation_loop": {"step": "write tests"},
+            "root_cause_summary": "eksik branch testleri",
+        }
+
+    monkeypatch.setattr(_mod, "build_ci_remediation_payload", _fake_remediation)
+    out = asyncio.run(agent._build_coverage_plan('{"diagnosis":"x"}'))
+    parsed = json.loads(out)
+
+    assert parsed["coverage"]["omit"] == ["web_server.py"]
+    assert parsed["suggested_tests"][0] == "tests/managers/test_web_search.py"
+    assert parsed["root_cause_summary"] == "eksik branch testleri"
