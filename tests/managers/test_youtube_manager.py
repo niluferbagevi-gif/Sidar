@@ -152,3 +152,34 @@ def test_build_video_analysis_returns_analyze_error(monkeypatch, tmp_path: Path)
 
     assert result["success"] is False
     assert "parse" in result["reason"]
+
+
+def test_fetch_transcript_invalid_video_id_short_circuit() -> None:
+    manager = YouTubeManager()
+    result = asyncio.run(manager.fetch_transcript("bad"))
+    assert result["success"] is False
+    assert result["video_id"] == ""
+
+
+def test_build_video_analysis_success_includes_video_metadata(monkeypatch, tmp_path: Path) -> None:
+    manager = YouTubeManager(llm_client=object(), config=None)
+
+    async def _fake_fetch(*_args, **_kwargs):
+        return {"success": True, "text": "ok"}
+
+    async def _fake_analyze(*_args, **_kwargs):
+        return {"success": True, "context": "ctx", "frame_analyses": []}
+
+    monkeypatch.setattr(manager, "fetch_transcript", _fake_fetch)
+    monkeypatch.setattr(manager, "analyze_video_file", _fake_analyze)
+
+    result = asyncio.run(
+        manager.build_video_analysis(
+            video_url="https://youtu.be/dQw4w9WgXcQ",
+            video_path=tmp_path / "demo.mp4",
+        )
+    )
+
+    assert result["success"] is True
+    assert result["video_url"].startswith("https://")
+    assert result["video_id"] == "dQw4w9WgXcQ"
