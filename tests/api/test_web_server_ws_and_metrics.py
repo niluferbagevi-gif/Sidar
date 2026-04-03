@@ -87,7 +87,7 @@ def test_register_agent_plugin_file_accepts_utf8_upload(client: TestClient, monk
 
     response = client.post(
         "/api/agents/register-file",
-        data={"capabilities": "code_generation,review", "role_name": "custom_agent"},
+        params={"capabilities": "code_generation,review", "role_name": "custom_agent"},
         files={"file": ("plugin.py", b"class Demo: pass", "text/plain")},
         headers={"Authorization": "Bearer test-token"},
     )

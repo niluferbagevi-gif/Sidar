@@ -62,8 +62,6 @@ def test_execute_task_returns_skipped_when_router_cannot_resolve_agent() -> None
 
 
 def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch) -> None:
-    import agent.swarm
-
     orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
     orchestrator.router.route = lambda _intent: SimpleNamespace(role_name="legacy")
 
@@ -76,7 +74,7 @@ def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch) -> N
         def create(*_args, **_kwargs):
             return _LegacyAgent()
 
-    monkeypatch.setattr(agent.swarm, "AgentCatalog", FakeCatalog)
+    monkeypatch.setattr("agent.swarm.AgentCatalog", FakeCatalog)
     monkeypatch.setattr(orchestrator, "_schedule_autonomous_feedback", lambda **_kwargs: None)
 
     result = asyncio.run(

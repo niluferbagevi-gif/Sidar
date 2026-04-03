@@ -17,12 +17,24 @@ import web_server
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    class _MemoryStub:
+        async def set_active_user(self, _id, _usr):
+            return None
+
+    class _AgentStub:
+        def __init__(self) -> None:
+            self.memory = _MemoryStub()
+
+    async def _fake_get_agent():
+        return _AgentStub()
+
     async def _no_rate_limit(*_args, **_kwargs) -> bool:
         return False
 
     async def _mock_user_from_token(*_args, **_kwargs):
         return SimpleNamespace(id="u1", username="test_user", role="user", tenant_id="default")
 
+    monkeypatch.setattr(web_server, "get_agent", _fake_get_agent)
     monkeypatch.setattr(web_server, "_redis_is_rate_limited", _no_rate_limit)
     monkeypatch.setattr(web_server, "_resolve_user_from_token", _mock_user_from_token)
     with TestClient(web_server.app, raise_server_exceptions=False) as test_client:
