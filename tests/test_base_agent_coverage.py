@@ -106,3 +106,34 @@ def test_handle_preserves_existing_delegation_ids(monkeypatch) -> None:
     assert isinstance(result.summary, DelegationRequest)
     assert result.summary.task_id == "delegated-42"
     assert result.summary.parent_task_id == "parent-fixed"
+
+
+def test_handle_fills_empty_delegation_task_id_from_envelope(monkeypatch) -> None:
+    monkeypatch.setattr(base_agent_mod, "LLMClient", lambda *_args, **_kwargs: _DummyLLM())
+
+    class _EmptyTaskIdDelegationAgent(BaseAgent):
+        async def run_task(self, task_prompt: str):
+            delegation = DelegationRequest(
+                task_id="seed",
+                reply_to="reviewer",
+                target_agent="qa",
+                payload=task_prompt,
+            )
+            delegation.task_id = ""
+            return delegation
+
+    agent = _EmptyTaskIdDelegationAgent(cfg=SimpleNamespace(AI_PROVIDER="ollama"), role_name="reviewer")
+    envelope = TaskEnvelope(
+        task_id="env-77",
+        sender="supervisor",
+        receiver="reviewer",
+        goal="delegate with empty task id",
+        context={},
+        parent_task_id="",
+    )
+
+    result = asyncio.run(agent.handle(envelope))
+
+    assert isinstance(result.summary, DelegationRequest)
+    assert result.summary.task_id == "env-77"
+    assert result.summary.parent_task_id == "env-77"
