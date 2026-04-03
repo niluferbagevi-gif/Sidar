@@ -108,41 +108,18 @@ fsspec==2026.2.0
     # via
     #   huggingface-hub
     #   torch
-google-ai-generativelanguage==0.6.15
-    # via google-generativeai
-google-api-core==2.30.0
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-python-client
-    #   google-generativeai
-google-api-python-client==2.193.0
-    # via google-generativeai
 google-auth==2.49.1
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
-    #   google-api-python-client
-    #   google-auth-httplib2
-    #   google-generativeai
-google-auth-httplib2==0.3.0
-    # via google-api-python-client
+    # via google-genai
 google-genai==0.5.0
     # via sidar (pyproject.toml)
 googleapis-common-protos==1.73.0
-    # via
-    #   google-api-core
-    #   grpcio-status
-    #   opentelemetry-exporter-otlp-proto-grpc
+    # via opentelemetry-exporter-otlp-proto-grpc
 greenlet==3.3.2
     # via sqlalchemy
 grpcio==1.78.0
     # via
     #   chromadb
-    #   google-api-core
-    #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
-grpcio-status==1.71.2
-    # via google-api-core
 h11==0.16.0
     # via
     #   httpcore
@@ -151,10 +128,6 @@ hf-xet==1.4.2
     # via huggingface-hub
 httpcore==1.0.9
     # via httpx
-httplib2==0.31.2
-    # via
-    #   google-api-python-client
-    #   google-auth-httplib2
 httptools==0.7.1
     # via uvicorn
 httpx==0.27.2
@@ -164,6 +137,7 @@ httpx==0.27.2
     #   chromadb
     #   litellm
     #   openai
+    #   respx
 huggingface-hub==0.36.2
     # via
     #   sentence-transformers
@@ -347,12 +321,17 @@ packaging==24.2
     #   transformers
 pgvector==0.3.6
     # via sidar (pyproject.toml)
-pillow==12.1.1
-    # via sentence-transformers
+pillow==11.3.0
+    # via
+    #   sidar (pyproject.toml)
+    #   google-genai
+    #   sentence-transformers
 pluggy==1.6.0
     # via pytest
-posthog==7.9.12
-    # via chromadb
+posthog==5.4.0
+    # via
+    #   sidar (pyproject.toml)
+    #   chromadb
 primp==1.1.3
     # via duckduckgo-search
 prometheus-client==0.21.1
@@ -361,20 +340,11 @@ propcache==0.4.1
     # via
     #   aiohttp
     #   yarl
-proto-plus==1.27.1
-    # via
-    #   google-ai-generativelanguage
-    #   google-api-core
 protobuf==5.29.6
     # via
-    #   google-ai-generativelanguage
-    #   google-api-core
-    #   google-generativeai
     #   googleapis-common-protos
-    #   grpcio-status
     #   onnxruntime
     #   opentelemetry-proto
-    #   proto-plus
 psutil==6.0.0
     # via sidar (pyproject.toml)
 py-cpuinfo==9.0.0
@@ -393,7 +363,7 @@ pydantic==2.8.2
     #   anthropic
     #   chromadb
     #   fastapi
-    #   google-generativeai
+    #   google-genai
     #   litellm
     #   openai
 pydantic-core==2.20.1
@@ -410,8 +380,6 @@ pyjwt==2.9.0
     #   pygithub
 pynacl==1.6.2
     # via pygithub
-pyparsing==3.3.2
-    # via httplib2
 pypika==0.51.1
     # via chromadb
 pyproject-hooks==1.2.0
@@ -422,6 +390,7 @@ pytest==9.0.2
     #   pytest-asyncio
     #   pytest-benchmark
     #   pytest-cov
+    #   pytest-mock
 pytest-asyncio==1.3.0
     # via sidar (pyproject.toml)
 pytest-benchmark==4.0.0
@@ -463,11 +432,9 @@ regex==2026.2.28
     # via
     #   tiktoken
     #   transformers
-respx==0.22.0
-    # via sidar (pyproject.toml)
 requests==2.33.0
     # via
-    #   google-api-core
+    #   google-genai
     #   huggingface-hub
     #   kubernetes
     #   posthog
@@ -478,6 +445,8 @@ requests==2.33.0
     #   transformers
 requests-oauthlib==2.0.0
     # via kubernetes
+respx==0.22.0
+    # via sidar (pyproject.toml)
 rich==14.3.3
     # via
     #   chromadb
@@ -548,7 +517,6 @@ torch==2.11.0
 tqdm==4.67.3
     # via
     #   chromadb
-    #   google-generativeai
     #   huggingface-hub
     #   openai
     #   openai-whisper
@@ -571,7 +539,6 @@ typing-extensions==4.15.0
     #   anyio
     #   chromadb
     #   fastapi
-    #   google-generativeai
     #   grpcio
     #   huggingface-hub
     #   mypy
@@ -580,7 +547,6 @@ typing-extensions==4.15.0
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-    #   posthog
     #   pydantic
     #   pydantic-core
     #   pygithub
@@ -589,8 +555,6 @@ typing-extensions==4.15.0
     #   speechrecognition
     #   sqlalchemy
     #   torch
-uritemplate==4.2.0
-    # via google-api-python-client
 urllib3==2.6.3
     # via
     #   kubernetes
@@ -608,8 +572,11 @@ webencodings==0.5.1
     # via bleach
 websocket-client==1.9.0
     # via kubernetes
-websockets==16.0
-    # via uvicorn
+websockets==14.2
+    # via
+    #   sidar (pyproject.toml)
+    #   google-genai
+    #   uvicorn
 wrapt==1.17.3
     # via
     #   deprecated
