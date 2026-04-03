@@ -56,7 +56,7 @@ def test_researcher_agent_tools_and_run_task_routes(monkeypatch) -> None:
     async def _call_tool(name: str, arg: str):
         return f"TOOL:{name}:{arg}"
 
-    monkeypatch.setattr(agent, "call_tool", _call_tool)
+    monkeypatch.setattr(agent, "call_tool", _call_tool, raising=False)
     monkeypatch.setattr(asyncio, "to_thread", lambda fn, *args, **kwargs: asyncio.sleep(0, result=fn(*args, **kwargs)))
 
     assert asyncio.run(agent._tool_web_search("sidar")) == "SEARCH:sidar"
