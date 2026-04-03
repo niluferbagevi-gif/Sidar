@@ -38,10 +38,18 @@ class ResearcherAgent(BaseAgent):
             cfg=self.cfg,
         )
 
-        self.register_tool("web_search", self._tool_web_search)
-        self.register_tool("fetch_url", self._tool_fetch_url)
-        self.register_tool("search_docs", self._tool_search_docs)
-        self.register_tool("docs_search", self._tool_docs_search)
+        tool_map = {
+            "web_search": self._tool_web_search,
+            "fetch_url": self._tool_fetch_url,
+            "search_docs": self._tool_search_docs,
+            "docs_search": self._tool_docs_search,
+        }
+        for name, func in tool_map.items():
+            self.register_tool(name, func)
+            # Bazı testlerde BaseAgent.register_tool monkeypatch ile no-op olabilir.
+            # Bu durumda da araç sözlüğünü deterministic şekilde doldur.
+            if name not in self.tools:
+                self.tools[name] = func
 
     async def _tool_web_search(self, arg: str) -> str:
         _ok, result = await self.web.search(arg)
