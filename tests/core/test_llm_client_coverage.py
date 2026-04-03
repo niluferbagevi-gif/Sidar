@@ -258,3 +258,111 @@ def test_fallback_stream_yields_single_message() -> None:
         return [chunk async for chunk in llm_client._fallback_stream("temporary fallback")]
 
     assert asyncio.run(_collect()) == ["temporary fallback"]
+
+
+def test_openai_chat_handles_long_prompt_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = SimpleNamespace(OPENAI_API_KEY="sk-test", OPENAI_MODEL="gpt-4o-mini", OPENAI_TIMEOUT=30, ENABLE_TRACING=False)
+    client = llm_client.OpenAIClient(cfg)
+    long_prompt = "A" * 12000
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [{"message": {"content": '{"tool":"final_answer","argument":"ok","thought":"done"}'}}],
+                "usage": {"prompt_tokens": 25, "completion_tokens": 4},
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            return None
+
+        async def post(self, _url: str, *, json: dict, headers: dict):
+            captured["payload"] = json
+            captured["headers"] = headers
+            return _FakeResponse()
+
+    async def _retry_passthrough(_provider: str, operation, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(llm_client.httpx, "Timeout", lambda *_args, **_kwargs: object(), raising=False)
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", _FakeAsyncClient)
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _retry_passthrough)
+    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **_kwargs: None)
+
+    result = asyncio.run(
+        client.chat(
+            messages=[{"role": "user", "content": long_prompt}],
+            json_mode=True,
+            stream=False,
+        )
+    )
+
+    assert json.loads(result)["argument"] == "ok"
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert any(msg.get("role") == "user" and msg.get("content") == long_prompt for msg in payload["messages"])
+    assert payload["response_format"]["type"] == "json_schema"
+
+
+def test_openai_chat_rate_limit_error_bubbles_as_llm_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = SimpleNamespace(OPENAI_API_KEY="sk-test", OPENAI_MODEL="gpt-4o-mini", OPENAI_TIMEOUT=30, ENABLE_TRACING=False)
+    client = llm_client.OpenAIClient(cfg)
+    metric_calls: list[dict] = []
+
+    async def _raise_rate_limit(_provider: str, _operation, **_kwargs):
+        raise llm_client.LLMAPIError("openai", "rate limit", status_code=429, retryable=True)
+
+    monkeypatch.setattr(llm_client.httpx, "Timeout", lambda *_args, **_kwargs: object(), raising=False)
+    monkeypatch.setattr(llm_client, "_retry_with_backoff", _raise_rate_limit)
+    monkeypatch.setattr(llm_client, "_record_llm_metric", lambda **kwargs: metric_calls.append(kwargs))
+
+    with pytest.raises(llm_client.LLMAPIError) as err:
+        asyncio.run(client.chat(messages=[{"role": "user", "content": "Merhaba"}], json_mode=True))
+
+    assert err.value.status_code == 429
+    assert err.value.retryable is True
+    assert metric_calls[-1]["success"] is False
+
+
+def test_llm_client_skips_semantic_cache_for_empty_user_prompt() -> None:
+    cfg = SimpleNamespace(ENABLE_TRACING=False)
+    llm = llm_client.LLMClient("openai", cfg)
+    calls = {"get": 0, "set": 0}
+
+    class _FakeSemanticCache:
+        async def get(self, _prompt: str):
+            calls["get"] += 1
+            return None
+
+        async def set(self, _prompt: str, _response: str) -> None:
+            calls["set"] += 1
+
+    class _FakeClient:
+        async def chat(self, **_kwargs):
+            return '{"tool":"final_answer","argument":"ok","thought":"done"}'
+
+    llm._semantic_cache = _FakeSemanticCache()
+    llm._client = _FakeClient()
+    llm._router.select = lambda _messages, provider, model: (provider, model)
+
+    result = asyncio.run(
+        llm.chat(
+            messages=[{"role": "assistant", "content": "Önceki çıktı"}],
+            json_mode=True,
+            stream=False,
+        )
+    )
+
+    assert json.loads(result)["argument"] == "ok"
+    assert calls["get"] == 0
+    assert calls["set"] == 0

@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 import importlib.util
+import asyncio
+import sqlite3
 import sys
 import types
 
@@ -138,9 +140,92 @@ def test_get_user_by_token_falls_back_to_jwt_payload_when_db_user_missing(tmp_pa
     db.verify_auth_token = lambda _token: SimpleNamespace(id="u-1", username="alice", role="admin", tenant_id="tenant-a")
     db._get_user_by_id = lambda _user_id: __import__("asyncio").sleep(0, result=None)
 
-    import asyncio
     resolved = asyncio.run(db.get_user_by_token("opaque"))
 
     assert resolved is not None
     assert resolved.id == "u-1"
     assert resolved.role == "admin"
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_rolls_back_on_operation_failure(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'rollback.db'}",
+        BASE_DIR=tmp_path,
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
+    db = Database(cfg)
+    await db.connect()
+    await db.init_schema()
+    user = await db.create_user("rollback-user")
+    session = await db.create_session(user.id, title="rollback-session")
+
+    def _broken_insert() -> None:
+        assert db._sqlite_conn is not None
+        db._sqlite_conn.execute(
+            "INSERT INTO messages (session_id, role, content, tokens_used, created_at) VALUES (?, ?, ?, ?, ?)",
+            (session.id, "user", "should rollback", 0, "2026-01-01T00:00:00+00:00"),
+        )
+        raise sqlite3.OperationalError("forced failure")
+
+    with pytest.raises(sqlite3.OperationalError, match="forced failure"):
+        await db._run_sqlite_op(_broken_insert)
+
+    rows = await db.get_session_messages(session.id)
+    assert rows == []
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_propagates_timeout_and_attempts_rollback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'timeout.db'}",
+        BASE_DIR=tmp_path,
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
+    db = Database(cfg)
+    await db.connect()
+    await db.init_schema()
+
+    real_to_thread = asyncio.to_thread
+    rollback_called = {"value": False}
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        if db._sqlite_conn is not None and func == db._sqlite_conn.rollback:
+            rollback_called["value"] = True
+            return await real_to_thread(func, *args, **kwargs)
+        raise asyncio.TimeoutError("simulated timeout")
+
+    monkeypatch.setattr("core.db.asyncio.to_thread", _fake_to_thread)
+
+    with pytest.raises(asyncio.TimeoutError, match="simulated timeout"):
+        await db._run_sqlite_op(lambda: 42)
+
+    assert rollback_called["value"] is True
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_create_user_raises_integrity_error_on_duplicate_username(tmp_path: Path) -> None:
+    cfg = SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'integrity.db'}",
+        BASE_DIR=tmp_path,
+        DB_POOL_SIZE=1,
+        DB_SCHEMA_VERSION_TABLE="schema_versions",
+        DB_SCHEMA_TARGET_VERSION=1,
+    )
+    db = Database(cfg)
+    await db.connect()
+    await db.init_schema()
+
+    await db.create_user("duplicate-user")
+    with pytest.raises(sqlite3.IntegrityError):
+        await db.create_user("duplicate-user")
+
+    await db.close()
