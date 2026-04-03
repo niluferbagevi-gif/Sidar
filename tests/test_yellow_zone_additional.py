@@ -157,9 +157,9 @@ def test_sidar_agent_and_swarm_yellow_zone_helpers(monkeypatch: pytest.MonkeyPat
     class _Spec:
         def __init__(self, role_name: str):
             self.role_name = role_name
+            self.capabilities = []
 
-    monkeypatch.setattr(AgentCatalog, "find_by_capability", lambda _cap: [])
-    monkeypatch.setattr(AgentCatalog, "list_all", lambda: [_Spec("researcher")])
+    monkeypatch.setattr(AgentCatalog, "_registry", {"researcher": _Spec("researcher")})
     assert router.route("unknown").role_name == "researcher"
 
     orch = SwarmOrchestrator(SimpleNamespace(AI_PROVIDER="openai"))
