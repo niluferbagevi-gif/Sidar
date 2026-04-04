@@ -413,3 +413,148 @@ def test_record_task_persists_all_findings():
     assert len(db.added) == 2
     assert db.added[0]["task_id"] == 99
     assert db.added[1]["finding_type"] == "test_failure"
+
+
+def test_parse_payload_and_helpers_cover_edge_paths(tmp_path):
+    assert CoverageAgent._parse_payload("") == {}
+    assert CoverageAgent._parse_payload("pytest -q") == {"command": "pytest -q"}
+    fallback = CoverageAgent._parse_payload("run everything")
+    assert fallback["instruction"] == "run everything"
+    assert "pytest --cov=." in fallback["command"]
+    assert CoverageAgent._parse_payload(json.dumps(["not", "dict"])) == {"command": '["not", "dict"]'}
+
+    assert CoverageAgent._suggest_test_path("") == "tests/test_generated_coverage_agent.py"
+    assert CoverageAgent._clean_code_output("plain text") == "plain text"
+    assert CoverageAgent._clean_code_output("```py\nx=1\n") == "x=1"
+    assert CoverageAgent._normalize_analysis("nope") == {"summary": "", "findings": []}
+
+    coveragerc = tmp_path / ".coveragerc"
+    coveragerc.write_text("[run]\ninclude = agent/*\n[report]\nomit = tests/*\n", encoding="utf-8")
+    cfg = CoverageAgent._read_coveragerc(str(coveragerc))
+    assert cfg["exists"] is True and cfg["run"]["include"] == "agent/*"
+
+
+def test_parse_coverage_xml_skips_invalid_and_full_branch(tmp_path):
+    coverage_xml = tmp_path / "coverage.xml"
+    coverage_xml.write_text(
+        """<?xml version="1.0"?>
+<coverage><packages><package name="p"><classes>
+<class filename="" line-rate="0.1" branch-rate="0.2"><lines><line number="5" hits="0"/></lines></class>
+<class filename="agent/x.py" line-rate="0.9" branch-rate="1.0"><lines>
+  <line number="0" hits="0"/>
+  <line number="9" hits="1" branch="true" condition-coverage="100% (2/2)"/>
+</lines></class>
+</classes></package></packages></coverage>
+""",
+        encoding="utf-8",
+    )
+    parsed = CoverageAgent._parse_coverage_xml(str(coverage_xml))
+    assert parsed["exists"] is True
+    assert parsed["total_findings"] == 0
+    assert parsed["files"][0]["path"] == "agent/x.py"
+
+
+def test_parse_terminal_coverage_output_empty_unmatched_and_hundred_percent():
+    assert CoverageAgent._parse_terminal_coverage_output("")["summary"].endswith("boş.")
+    assert CoverageAgent._parse_terminal_coverage_output("not a coverage line")["summary"].endswith("ayrıştırılamadı.")
+    parsed = CoverageAgent._parse_terminal_coverage_output("agent/full.py 10 0 0 0 100%")
+    assert parsed["total_findings"] == 0
+
+
+def test_tool_run_and_analyze_pytest_output_use_defaults():
+    class DummyCode:
+        def run_pytest_and_collect(self, command, cwd):
+            return {"command": command, "cwd": cwd}
+
+        def analyze_pytest_output(self, output):
+            return {"summary": output}
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.cfg = type("Cfg", (), {"BASE_DIR": "/repo"})()
+    agent.code = DummyCode()
+
+    run_payload = json.loads(asyncio.run(agent._tool_run_pytest("{}")))
+    assert run_payload["command"].startswith("pytest --cov=.")
+    assert run_payload["cwd"] == "/repo"
+
+    analyzed = json.loads(asyncio.run(agent._tool_analyze_pytest_output("boom")))
+    assert analyzed["summary"] == "boom"
+
+
+def test_tool_generate_missing_tests_analyzes_output_when_analysis_missing():
+    class DummyCode:
+        def analyze_pytest_output(self, output):
+            return {"summary": f"analyzed:{output}", "findings": []}
+
+        def read_file(self, _path):
+            return True, "def fn(): pass"
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.code = DummyCode()
+
+    async def _fake_call_llm(messages, **_kwargs):
+        return messages[0]["content"]
+
+    agent.call_llm = _fake_call_llm
+    result = asyncio.run(
+        agent._tool_generate_missing_tests(json.dumps({"target_path": "agent/a.py", "pytest_output": "E   boom"}))
+    )
+    assert "analyzed:E   boom" in result
+
+
+def test_run_task_empty_prompt_and_prefixed_routes():
+    agent = CoverageAgent.__new__(CoverageAgent)
+    assert asyncio.run(agent.run_task("   ")) == "[UYARI] Boş coverage görevi verildi."
+
+    routed = []
+
+    async def _fake_tool(name, arg):
+        routed.append((name, arg))
+        return "ok"
+
+    agent.call_tool = _fake_tool
+    assert asyncio.run(agent.run_task("run_pytest|{}")) == "ok"
+    assert asyncio.run(agent.run_task("analyze_pytest_output|x")) == "ok"
+    assert asyncio.run(agent.run_task("generate_missing_tests|{}")) == "ok"
+    assert asyncio.run(agent.run_task("write_missing_tests|{}")) == "ok"
+    assert [name for name, _ in routed] == [
+        "run_pytest",
+        "analyze_pytest_output",
+        "generate_missing_tests",
+        "write_missing_tests",
+    ]
+
+
+def test_run_task_handles_record_task_error_with_logging(monkeypatch):
+    class DummyCode:
+        def run_pytest_and_collect(self, _command, _cwd):
+            return {
+                "analysis": {"summary": "needs tests", "findings": [{"target_path": "agent/a.py", "summary": "gap"}]},
+                "output": "FAILED",
+            }
+
+        def write_generated_test(self, *_args, **_kwargs):
+            return True, "written"
+
+    agent = CoverageAgent.__new__(CoverageAgent)
+    agent.cfg = type("Cfg", (), {"BASE_DIR": "."})()
+    agent.code = DummyCode()
+
+    async def _fake_generate(**_kwargs):
+        return "```python\ndef test_ok():\n    assert True\n```"
+
+    async def _fake_record(**_kwargs):
+        raise RuntimeError("db down")
+
+    calls = {}
+
+    def _fake_log(msg, *args):
+        calls["msg"] = msg % args
+
+    monkeypatch.setattr(_mod.logging, "exception", _fake_log)
+    agent._generate_test_candidate = _fake_generate
+    agent._record_task = _fake_record
+
+    payload = json.loads(asyncio.run(agent.run_task('{"command":"pytest -q"}')))
+    assert payload["status"] == "tests_written"
+    assert "db down" in calls["msg"]
