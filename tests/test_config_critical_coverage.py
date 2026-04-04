@@ -179,6 +179,7 @@ def test_config_hardware_lazy_load_cpu_branch(monkeypatch) -> None:
 
 
 def test_initialize_directories_failure(monkeypatch, tmp_path) -> None:
+    sys.modules["config"] = config
     importlib.reload(config)
     bad_dir = tmp_path / "blocked"
     monkeypatch.setattr(config.Config, "REQUIRED_DIRS", [bad_dir], raising=False)
@@ -417,12 +418,14 @@ def test_import_time_env_branches_reload(monkeypatch, tmp_path, capsys) -> None:
     monkeypatch.setattr(Path, "resolve", _fake_resolve)
     monkeypatch.setattr(Path, "exists", _fake_exists)
 
+    sys.modules["config"] = config
     importlib.reload(config)
     output = capsys.readouterr().out
     assert ".env.qa" in output
 
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr(Path, "exists", lambda _self: False)
+    sys.modules["config"] = config
     importlib.reload(config)
     output = capsys.readouterr().out
     assert "'.env' dosyası bulunamadı" in output

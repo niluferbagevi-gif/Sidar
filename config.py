@@ -131,6 +131,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Sidar.Config")
 
+_DEPENDENCY_AUTO = object()
+
 if ENV_PATH.exists():
     logger.info("✅ Ortam değişkenleri yüklendi: %s", ENV_PATH)
 
@@ -795,29 +797,39 @@ class Config:
         service_name: Optional[str] = None,
         fastapi_app=None,
         logger_obj: Optional[logging.Logger] = None,
-        trace_module=None,
-        otlp_exporter_cls=None,
-        tracer_provider_cls=None,
-        resource_cls=None,
-        batch_span_processor_cls=None,
-        fastapi_instrumentor_cls=None,
-        httpx_instrumentor_cls=None,
+        trace_module=_DEPENDENCY_AUTO,
+        otlp_exporter_cls=_DEPENDENCY_AUTO,
+        tracer_provider_cls=_DEPENDENCY_AUTO,
+        resource_cls=_DEPENDENCY_AUTO,
+        batch_span_processor_cls=_DEPENDENCY_AUTO,
+        fastapi_instrumentor_cls=_DEPENDENCY_AUTO,
+        httpx_instrumentor_cls=_DEPENDENCY_AUTO,
     ) -> bool:
         """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
         log = logger_obj or logger
         if not cls.ENABLE_TRACING:
             return False
 
+        if (
+            trace_module is None
+            or otlp_exporter_cls is None
+            or tracer_provider_cls is None
+            or resource_cls is None
+            or batch_span_processor_cls is None
+        ):
+            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
+            return False
+
         try:
-            if trace_module is None:
+            if trace_module is _DEPENDENCY_AUTO:
                 from opentelemetry import trace as trace_module
-            if otlp_exporter_cls is None:
+            if otlp_exporter_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter as otlp_exporter_cls
-            if tracer_provider_cls is None:
+            if tracer_provider_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.trace import TracerProvider as tracer_provider_cls
-            if resource_cls is None:
+            if resource_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.resources import Resource as resource_cls
-            if batch_span_processor_cls is None:
+            if batch_span_processor_cls is _DEPENDENCY_AUTO:
                 from opentelemetry.sdk.trace.export import BatchSpanProcessor as batch_span_processor_cls
         except Exception:
             log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
@@ -832,12 +844,12 @@ class Config:
             trace_module.set_tracer_provider(provider)
 
             if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
-                if fastapi_instrumentor_cls is None:
+                if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
                     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor as fastapi_instrumentor_cls
                 fastapi_instrumentor_cls.instrument_app(fastapi_app)
 
             if cls.OTEL_INSTRUMENT_HTTPX:
-                if httpx_instrumentor_cls is None:
+                if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
                     try:
                         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor as httpx_instrumentor_cls
                     except Exception:
