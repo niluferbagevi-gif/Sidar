@@ -360,3 +360,83 @@ def test_is_reject_feedback_payload_empty_body():
     _install_stubs()
     sup_mod = _reload_supervisor_module()
     assert sup_mod.SupervisorAgent._is_reject_feedback_payload("qa_feedback|   ") is False
+
+
+def test_delegate_without_tracer_attribute_and_without_metrics_collector(monkeypatch):
+    _install_stubs()
+    sup_mod = _reload_supervisor_module()
+    s = sup_mod.SupervisorAgent()
+
+    class SpanCtx:
+        def __enter__(self):
+            # set_attribute özelliği olmayan obje ile line-185 false kolunu tetikler.
+            return object()
+
+        def __exit__(self, *_):
+            return False
+
+    class Tracer:
+        def start_as_current_span(self, *_a, **_k):
+            return SpanCtx()
+
+    monkeypatch.setattr(sup_mod, "_tracer", Tracer())
+    monkeypatch.setattr(sup_mod, "_get_agent_metrics", None)
+
+    result = asyncio.run(s._delegate("coder", "x", "code"))
+    assert result.status == "done"
+    assert s.memory_hub.role_notes[-1] == ("coder", "coder:x")
+
+
+def test_route_and_run_task_cover_remaining_supervisor_branches(monkeypatch):
+    _install_stubs()
+    sup_mod = _reload_supervisor_module()
+    s = sup_mod.SupervisorAgent()
+    s.cfg = type("Cfg", (), {"MAX_QA_RETRIES": 1, "REACT_TIMEOUT": 5})()
+
+    async def _delegate_route(_receiver, _goal, intent=None, **_kwargs):
+        return _DummyTaskResult("ok", "done", "plain-result")
+
+    s._delegate = _delegate_route
+
+    req = _Delegation(
+        target_agent="coder",
+        payload="qa_feedback|decision=reject",
+        intent="p2p",
+        parent_task_id="p0",
+        task_id="t0",
+        reply_to="reviewer",
+        protocol="p2p.v1",
+        meta={},
+        handoff_depth=0,
+    )
+    routed = asyncio.run(s._route_p2p(req, max_hops=2))
+    assert routed.summary == "plain-result"
+    s.cfg = type("Cfg", (), {"MAX_QA_RETRIES": 2, "REACT_TIMEOUT": 5})()
+
+    async def _delegate_run(receiver, goal, intent, **_kwargs):
+        if intent == "research":
+            return _DummyTaskResult("r", "done", "research-ok")
+        if intent == "review" and not str(goal).startswith("review_code|"):
+            return _DummyTaskResult("v", "done", "review-ok")
+        if intent == "marketing":
+            return _DummyTaskResult("m", "done", "marketing-ok")
+        if intent == "coverage":
+            return _DummyTaskResult("c", "done", "coverage-ok")
+        if receiver == "coder" and "düzeltme" not in str(goal):
+            return _DummyTaskResult("code1", "done", "first code")
+        if receiver == "coder":
+            return _DummyTaskResult("code2", "done", "second code")
+        if receiver == "reviewer" and str(goal).startswith("review_code|first code"):
+            return _DummyTaskResult("rev1", "done", "decision=reject")
+        return _DummyTaskResult("rev2", "done", "all checks passed")
+
+    s._delegate = _delegate_run
+    monkeypatch.setattr(sup_mod, "is_delegation_request", lambda _x: False)
+
+    assert asyncio.run(s.run_task("web araştırması yap")) == "research-ok"
+    assert asyncio.run(s.run_task("pull request incele")) == "review-ok"
+    assert asyncio.run(s.run_task("growth kampanyası hazırla")) == "marketing-ok"
+    assert asyncio.run(s.run_task("pytest coverage yükselt")) == "coverage-ok"
+
+    code_out = asyncio.run(s.run_task("özellik geliştir"))
+    assert "Reviewer QA Özeti (2. tur):" in code_out
