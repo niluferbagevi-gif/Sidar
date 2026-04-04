@@ -9,8 +9,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 import agent.swarm as swarm
-from agent.core.contracts import DelegationRequest, TaskResult
 from agent.swarm import SwarmOrchestrator, SwarmTask, SwarmResult, TaskRouter
+
+
+def _contracts_classes() -> tuple[type, type]:
+    mod = swarm._contracts_module()
+    return mod.DelegationRequest, mod.TaskResult
 
 
 def test_task_router_route_and_route_by_role(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,6 +175,7 @@ def test_schedule_autonomous_feedback_runtimeerror_and_task_creation(monkeypatch
 
 def test_p2p_context_and_direct_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
     orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    DelegationRequest, _ = _contracts_classes()
     req = DelegationRequest(
         task_id="t",
         reply_to="src",
@@ -255,6 +260,7 @@ def test_execute_task_retry_attribute_error_and_feedback_coroutine(monkeypatch: 
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("retry")
+            _, TaskResult = _contracts_classes()
             return TaskResult(task_id="t", status="success", summary="ok", evidence=["e1"])
 
     monkeypatch.setattr(swarm, "AgentCatalog", SimpleNamespace(create=lambda *_a, **_k: _RetryAgent()))
@@ -274,6 +280,7 @@ def test_execute_task_delegation_and_exception_fallbacks(monkeypatch: pytest.Mon
 
     class _DelegatingAgent:
         async def handle(self, _env):
+            DelegationRequest, TaskResult = _contracts_classes()
             req = DelegationRequest(task_id="t", reply_to="", target_agent="qa", payload="child", intent="review")
             return TaskResult(task_id="t", status="success", summary=req, evidence=[])
 
