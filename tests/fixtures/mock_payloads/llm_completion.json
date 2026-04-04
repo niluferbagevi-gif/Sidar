@@ -1,0 +1,14 @@
+{
+  "id": "cmpl_test_001",
+  "model": "gpt-test",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": "İşlem başarıyla tamamlandı."
+      }
+    }
+  ]
+}

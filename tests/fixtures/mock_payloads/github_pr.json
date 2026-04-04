@@ -1,0 +1,7 @@
+{
+  "id": 101,
+  "number": 42,
+  "state": "open",
+  "title": "Test PR",
+  "html_url": "https://example.com/repo/pull/42"
+}
