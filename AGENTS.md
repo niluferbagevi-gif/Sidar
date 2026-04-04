@@ -117,18 +117,20 @@ Aşağıdaki sistem skill’leri bu oturumda kullanılabilir:
 
 1. `agent/roles/` altında yeni ajan sınıfını oluştur.
 2. `@AgentCatalog.register(...)` dekoratörüyle role/capability metadata’sını tanımla.
-3. Gerekirse `agent/roles/__init__.py` içinde dışa aktar.
-4. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
-5. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
+3. `agent/roles/__init__.py` içinde dışa aktar.
+4. `agent/registry.py::_import_builtin_roles()` listesine yeni modülü ekle.
+5. Ajanın rol adı, capability seti ve kullanım amacını dokümante et.
+6. Testler ve entegrasyon kontrolleriyle kaydın çalıştığını doğrula (`AgentCatalog.list_all()` vb.).
 
 Örnek şablon:
 
 ```python
+from typing import List, Optional
 from agent.registry import AgentCatalog
 from agent.base_agent import BaseAgent
 
 @AgentCatalog.register(
-    capabilities=["example_capability"],
+    capabilities=["example_capability"],  # type: Optional[List[str]]
     description="Örnek uzman ajan",
     version="1.0.0",
     is_builtin=True,
@@ -153,3 +155,8 @@ class ExampleAgent(BaseAgent):
   `agent/registry.py::_import_builtin_roles()` listesi tutarlı olmalıdır.
 - `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki
   `@AgentCatalog.register(capabilities=[...])` ile eşleşmelidir.
+
+### 5.2 Ayrıştırma (SoC) yol haritası
+
+- Doküman boyutu büyüdüğünde `Codex skills` kurallarını ayrı bir `SKILLS.md` dosyasına taşıyın.
+- `AGENTS.md` dosyasını repo içi multi-agent mimari ve operasyonel standartlara odaklı tutun.
