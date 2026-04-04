@@ -68,6 +68,17 @@ def test_schedule_bootstrap_guard_paths(monkeypatch) -> None:
     bus._schedule_redis_bootstrap()
 
 
+def test_schedule_bootstrap_creates_task_when_loop_available() -> None:
+    bus = event_stream.AgentEventBus()
+
+    async def _runner():
+        bus._schedule_redis_bootstrap()
+        assert bus._redis_bootstrap_task is not None
+        await _cancel_task(bus._redis_bootstrap_task)
+
+    asyncio.run(_runner())
+
+
 def test_fanout_local_buffers_or_drops_when_queue_full() -> None:
     bus = event_stream.AgentEventBus()
     sid_a, q_a = 1, asyncio.Queue(maxsize=1)
@@ -143,6 +154,17 @@ def test_publish_via_redis_short_circuit_and_success() -> None:
     assert client.calls and client.calls[0][0] == bus._channel
 
 
+def test_publish_via_redis_returns_false_when_listener_not_ready() -> None:
+    bus = event_stream.AgentEventBus()
+    bus._redis_available = None
+
+    async def _noop_listener():
+        return None
+
+    bus._ensure_redis_listener = _noop_listener
+    assert asyncio.run(bus._publish_via_redis(_evt("not-ready"))) is False
+
+
 def test_publish_via_redis_failure_writes_dlq_and_cleans_up() -> None:
     bus = event_stream.AgentEventBus()
 
@@ -210,6 +232,20 @@ def test_ensure_redis_listener_bootstrap_success_with_busygroup(monkeypatch) -> 
             asyncio.run(_cancel_task(task))
 
 
+def test_ensure_redis_listener_short_circuit_paths() -> None:
+    bus = event_stream.AgentEventBus()
+    bus._redis_available = False
+    asyncio.run(bus._ensure_redis_listener())
+
+    async def _runner():
+        bus2 = event_stream.AgentEventBus()
+        bus2._redis_listener_task = asyncio.create_task(asyncio.sleep(0.2))
+        await bus2._ensure_redis_listener()
+        await _cancel_task(bus2._redis_listener_task)
+
+    asyncio.run(_runner())
+
+
 async def _cancel_task(task):
     if not task.done():
         task.cancel()
@@ -241,6 +277,28 @@ def test_ensure_redis_listener_failure_sets_fallback(monkeypatch) -> None:
 
     assert bus._redis_available is False
     assert cleaned["value"] is True
+
+
+def test_ensure_redis_listener_reuses_existing_client(monkeypatch) -> None:
+    bus = event_stream.AgentEventBus()
+
+    class _Redis:
+        def __init__(self):
+            self.called = False
+
+        async def xgroup_create(self, **_kwargs):
+            self.called = True
+
+    existing_client = _Redis()
+    bus._redis_client = existing_client
+    monkeypatch.setattr(event_stream.Redis, "from_url", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("from_url should not be called")))
+    bus._redis_listener_loop = lambda: asyncio.sleep(0)
+
+    asyncio.run(bus._ensure_redis_listener())
+    assert bus._redis_available is True
+    assert existing_client.called is True
+    if bus._redis_listener_task is not None:
+        asyncio.run(_cancel_task(bus._redis_listener_task))
 
 
 def test_redis_listener_loop_processes_payload_invalid_payload_and_ack_failure() -> None:
@@ -296,6 +354,62 @@ def test_redis_listener_loop_processes_payload_invalid_payload_and_ack_failure()
     assert cleaned["value"] is True
 
 
+def test_redis_listener_loop_cancelled_and_empty_and_self_payload_paths() -> None:
+    bus = event_stream.AgentEventBus()
+    bus._instance_id = "self"
+
+    class _RedisCancelled:
+        async def xreadgroup(self, **_kwargs):
+            raise asyncio.CancelledError()
+
+    bus._redis_client = _RedisCancelled()
+    try:
+        asyncio.run(bus._redis_listener_loop())
+    except asyncio.CancelledError:
+        pass
+
+    class _Redis:
+        def __init__(self):
+            self.calls = 0
+            self.acked = []
+
+        async def xreadgroup(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return []
+            if self.calls == 2:
+                own_payload = json.dumps({"sid": "self", "ts": 1.0, "source": "me", "message": "skip"})
+                return [("stream", [("1-0", {"payload": own_payload})])]
+            raise RuntimeError("stop")
+
+        async def xack(self, *_args):
+            self.acked.append(args := _args)
+            return 1
+
+    client = _Redis()
+    bus._redis_client = client
+    delivered = []
+    bus._fanout_local = lambda evt: delivered.append(evt)
+    cleaned = {"value": False}
+
+    async def _fake_cleanup():
+        cleaned["value"] = True
+
+    bus._cleanup_redis = _fake_cleanup
+    asyncio.run(bus._redis_listener_loop())
+    assert delivered == []
+    assert client.acked
+    assert cleaned["value"] is True
+
+
+def test_drain_buffered_events_once_skips_missing_buffer() -> None:
+    bus = event_stream.AgentEventBus()
+    sid, q = 1, asyncio.Queue(maxsize=2)
+    bus._subscribers = {sid: q}
+    progressed = asyncio.run(bus._drain_buffered_events_once())
+    assert progressed is False
+
+
 def test_cleanup_redis_closes_listener_and_client_paths() -> None:
     bus = event_stream.AgentEventBus()
 
@@ -319,6 +433,32 @@ def test_cleanup_redis_closes_listener_and_client_paths() -> None:
 
     client = asyncio.run(_runner())
 
+    assert client.closed is True
+    assert bus._redis_listener_task is None
+    assert bus._redis_client is None
+
+
+def test_cleanup_redis_handles_done_task_and_close_fallback() -> None:
+    bus = event_stream.AgentEventBus()
+
+    async def _runner():
+        done_task = asyncio.create_task(asyncio.sleep(0))
+        await done_task
+        bus._redis_listener_task = done_task
+
+        class _Client:
+            def __init__(self):
+                self.closed = False
+
+            async def close(self):
+                self.closed = True
+
+        client = _Client()
+        bus._redis_client = client
+        await bus._cleanup_redis()
+        return client
+
+    client = asyncio.run(_runner())
     assert client.closed is True
     assert bus._redis_listener_task is None
     assert bus._redis_client is None
