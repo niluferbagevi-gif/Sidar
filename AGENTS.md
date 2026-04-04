@@ -19,7 +19,7 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 
 ## 2) Repo içi ajan mimarisi
 
-### 2.1 Yerleşik ajan rollerı
+### 2.1 Yerleşik ajan rolleri
 
 `agent/roles/__init__.py` içinde dışa açılan yerleşik roller:
 
@@ -29,6 +29,9 @@ Kapsam: Bu dosyanın bulunduğu dizin ve tüm alt dizinler.
 - `PoyrazAgent`
 - `QAAgent`
 - `CoverageAgent`
+
+> Kaynak doğrulama notu: Bu listedeki rollerin **tek doğruluk kaynağı**
+> `agent/roles/__init__.py` ve dekoratör kayıtlarıdır.
 
 ### 2.2 AgentCatalog kayıt sistemi
 
@@ -46,6 +49,9 @@ Ajanlar çalışma zamanında `agent/registry.py` içindeki `AgentCatalog` ile y
 
 Yerleşik roller, `agent/registry.py` içindeki `_import_builtin_roles()` ile import edilerek
 otomatik kaydedilir.
+
+> Operasyonel kural: Yeni bir rol eklendiğinde hem `agent/roles/__init__.py` hem de
+> `_import_builtin_roles()` listesi birlikte güncellenmelidir.
 
 ### 2.3 Roller ve temel yetenekler
 
@@ -138,3 +144,12 @@ class ExampleAgent(BaseAgent):
 - Bu dosya **ajan + skill** kapsamını birlikte taşır; içerik adıyla uyumludur.
 - Skill listesi değişirse `Available skills` bölümü güncellenmelidir.
 - Yeni role/capability eklendiğinde bu dosyanın 2. bölümünü güncelleyin.
+
+### 5.1 Hızlı doğrulama checklist’i
+
+- `python -c "from agent.registry import AgentCatalog; print([s.role_name for s in AgentCatalog.list_all()])"`
+  çıktısında beklenen yerleşik roller görünmelidir.
+- `agent/roles/__init__.py` içindeki dışa açılan roller ile
+  `agent/registry.py::_import_builtin_roles()` listesi tutarlı olmalıdır.
+- `AGENTS.md` içindeki capability listeleri, ilgili ajan dosyalarındaki
+  `@AgentCatalog.register(capabilities=[...])` ile eşleşmelidir.
