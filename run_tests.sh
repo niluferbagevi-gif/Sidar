@@ -69,8 +69,11 @@ if [ "${RUN_BENCHMARKS}" = "0" ]; then
 elif [ -f "tests/test_benchmark.py" ]; then
   python -m pytest -v tests/test_benchmark.py --no-cov
   BENCHMARK_EXIT_CODE=$?
+elif [ -f "tests/performance/test_benchmark.py" ]; then
+  python -m pytest -v tests/performance/test_benchmark.py --no-cov
+  BENCHMARK_EXIT_CODE=$?
 else
-  echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py bulunamadı."
+  echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py veya tests/performance/test_benchmark.py bulunamadı."
 fi
 
 # 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
