@@ -32,7 +32,6 @@ __all__ = [
     "SidarAgent",
     "AutoHandle",
     "AutoHandler",
-    "registry",
     "SIDAR_SYSTEM_PROMPT",
     "SIDAR_KEYS",
     "SIDAR_WAKE_WORDS",
