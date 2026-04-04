@@ -83,7 +83,12 @@ class AgentCatalog:
 
     @classmethod
     def find_by_capability(cls, capability: str) -> List[AgentSpec]:
-        return [spec for spec in cls._registry.values() if capability in spec.capabilities]
+        matches: List[AgentSpec] = []
+        for spec in cls._registry.values():
+            capabilities = getattr(spec, "capabilities", []) or []
+            if capability in capabilities:
+                matches.append(spec)
+        return matches
 
     @classmethod
     def list_all(cls) -> List[AgentSpec]:
