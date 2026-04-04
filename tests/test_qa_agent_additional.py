@@ -126,3 +126,111 @@ def test_qa_agent_build_coverage_plan_payload(monkeypatch) -> None:
     assert parsed["coverage"]["omit"] == ["web_server.py"]
     assert parsed["suggested_tests"][0] == "tests/managers/test_web_search.py"
     assert parsed["root_cause_summary"] == "eksik branch testleri"
+
+
+def test_qa_agent_init_registers_tools(monkeypatch) -> None:
+    registered: list[str] = []
+
+    def fake_base_init(self, cfg=None, role_name=None):
+        self.cfg = SimpleNamespace(BASE_DIR="/tmp/project")
+
+    def fake_register_tool(self, name, fn):
+        registered.append(name)
+
+    monkeypatch.setattr(_mod.BaseAgent, "__init__", fake_base_init)
+    monkeypatch.setattr(_mod.BaseAgent, "register_tool", fake_register_tool)
+    monkeypatch.setattr(_mod, "SecurityManager", lambda cfg: "SEC")
+    monkeypatch.setattr(_mod, "CodeManager", lambda security, base_dir: SimpleNamespace(security=security, base_dir=base_dir))
+
+    agent = QAAgent()
+
+    assert agent.security == "SEC"
+    assert agent.code.base_dir == "/tmp/project"
+    assert registered == [
+        "read_file",
+        "list_directory",
+        "grep_search",
+        "coverage_config",
+        "ci_remediation",
+        "write_file",
+        "run_pytest",
+    ]
+
+
+def test_qa_agent_tool_helpers_and_remediation(monkeypatch, tmp_path) -> None:
+    agent = _build_agent()
+    agent.cfg = SimpleNamespace(BASE_DIR=str(tmp_path))
+
+    (tmp_path / ".coveragerc").write_text(
+        "[run]\nomit =\n  web_server.py,\n  tests/*\n[report]\nfail_under = 88\nshow_missing = true\nskip_covered = false\n",
+        encoding="utf-8",
+    )
+
+    summary = agent._coverage_config_summary()
+    assert summary["exists"] is True
+    assert summary["fail_under"] == 88
+    assert summary["omit"] == ["web_server.py", "tests/*"]
+
+    assert json.loads(asyncio.run(agent._tool_coverage_config("")))["fail_under"] == 88
+
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(_mod.asyncio, "to_thread", fake_to_thread)
+
+    assert asyncio.run(agent._tool_read_file("x.py")) == "READ:x.py"
+    assert asyncio.run(agent._tool_list_directory("")) == "LIST:."
+    assert asyncio.run(agent._tool_grep_search("needle|||src|||*.py|||5")) == "GREP:needle:src:*.py:5"
+    assert asyncio.run(agent._tool_grep_search("needle|||src|||*.py|||oops")) == "GREP:needle:src:*.py:2"
+
+    monkeypatch.setattr(_mod, "build_ci_remediation_payload", lambda payload, diagnosis: {"payload": payload, "diagnosis": diagnosis})
+    rem = json.loads(asyncio.run(agent._tool_ci_remediation('{"diagnosis":"ozet","x":1}')))
+    assert rem == {"payload": {"x": 1}, "diagnosis": "ozet"}
+
+
+def test_qa_agent_generate_test_code_and_run_task_paths(monkeypatch) -> None:
+    agent = _build_agent()
+
+    monkeypatch.setattr(agent, "_coverage_config_summary", lambda: {"fail_under": 91, "omit": ["a.py"], "path": ".coveragerc", "exists": True, "show_missing": True, "skip_covered": False})
+
+    captured = {}
+
+    async def fake_call_llm(messages, system_prompt=None, temperature=None):
+        captured["messages"] = messages
+        captured["system_prompt"] = system_prompt
+        captured["temperature"] = temperature
+        return "```python\nassert 1\n```"
+
+    monkeypatch.setattr(agent, "call_llm", fake_call_llm, raising=False)
+
+    generated = asyncio.run(agent._generate_test_code("agent/roles/qa_agent.py", "  context here  "))
+    assert generated == "assert 1"
+    assert "Coverage fail_under: 91" in captured["messages"][0]["content"]
+    assert "[BAGLAM]\ncontext here" in captured["messages"][0]["content"]
+    assert captured["system_prompt"] == QAAgent.TEST_GENERATION_PROMPT
+
+    async def fake_call_tool(name: str, arg: str):
+        return f"TOOL:{name}:{arg}"
+
+    async def fake_gen(target: str, ctx: str):
+        return f"GEN:{target}:{ctx}"
+
+    monkeypatch.setattr(agent, "call_tool", fake_call_tool, raising=False)
+    monkeypatch.setattr(agent, "_generate_test_code", fake_gen)
+
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(_mod.asyncio, "to_thread", fake_to_thread)
+
+    assert asyncio.run(agent.run_task("list_directory|docs")) == "TOOL:list_directory:docs"
+    assert asyncio.run(agent.run_task("grep_search|x|||.")) == "TOOL:grep_search:x|||."
+    assert asyncio.run(agent.run_task("ci_remediation|{}")) == "TOOL:ci_remediation:{}"
+    assert asyncio.run(agent.run_task("write_file|{}")) == "TOOL:write_file:{}"
+    assert asyncio.run(agent.run_task("run_pytest|{}")) == "TOOL:run_pytest:{}"
+
+    out = json.loads(asyncio.run(agent.run_task("write_missing_tests|mod.py|ctx")))
+    assert out["generated_test"] == "GEN:mod.py:ctx"
+    assert out["test_path"] == "tests/test_mod.py"
+
+    assert asyncio.run(agent.run_task("düz bir istem")) == "GEN::düz bir istem"
