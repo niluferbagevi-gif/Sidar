@@ -31,6 +31,12 @@ def test_extract_video_id_supports_multiple_youtube_url_patterns() -> None:
     assert YouTubeManager.extract_video_id("https://example.com/nope") == ""
 
 
+def test_extract_video_id_rejects_empty_and_non_video_youtube_paths() -> None:
+    assert YouTubeManager.extract_video_id("") == ""
+    assert YouTubeManager.extract_video_id("   ") == ""
+    assert YouTubeManager.extract_video_id("https://www.youtube.com/channel/UC1234567890") == ""
+
+
 def test_normalize_transcript_events_decodes_html_and_timestamps() -> None:
     payload = [
         {"tStartMs": 1200, "dDurationMs": 800, "segs": [{"utf8": "Merhaba &amp; dünya"}]},
@@ -42,6 +48,19 @@ def test_normalize_transcript_events_decodes_html_and_timestamps() -> None:
     assert normalized["text"] == "Merhaba & dünya !"
     assert normalized["segments"][0]["start_seconds"] == 1.2
     assert normalized["segments"][0]["duration_seconds"] == 0.8
+
+
+def test_normalize_transcript_events_skips_invalid_or_empty_items() -> None:
+    payload = [
+        "invalid-item",
+        {"tStartMs": 1200, "dDurationMs": 800, "segs": "invalid"},
+        {"tStartMs": 2200, "dDurationMs": 1000, "segs": [{"utf8": ""}]},
+    ]
+
+    normalized = YouTubeManager._normalize_transcript_events(payload)
+
+    assert normalized["text"] == ""
+    assert normalized["segments"] == []
 
 
 def test_analyze_video_file_returns_error_when_file_or_llm_missing(tmp_path: Path) -> None:
@@ -105,6 +124,20 @@ def test_fetch_transcript_returns_error_for_quota_or_private_like_statuses() -> 
     assert result["success"] is False
     assert result["video_id"] == "dQw4w9WgXcQ"
     assert "bulunamadı" in result["reason"]
+
+
+def test_fetch_transcript_continues_when_response_payload_has_no_text() -> None:
+    responses = [
+        _FakeResponse(200, {"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": ""}]}]}),
+        _FakeResponse(200, {"events": [{"tStartMs": 1000, "dDurationMs": 1000, "segs": [{"utf8": "fallback"}]}]}),
+    ]
+    manager = YouTubeManager(http_client_factory=lambda **kwargs: _FakeAsyncClient(responses, **kwargs))
+
+    result = asyncio.run(manager.fetch_transcript("https://youtu.be/dQw4w9WgXcQ", languages=("tr", "en")))
+
+    assert result["success"] is True
+    assert result["language"] == "en"
+    assert result["text"] == "fallback"
 
 
 def test_analyze_video_file_success_builds_context(monkeypatch, tmp_path: Path) -> None:
