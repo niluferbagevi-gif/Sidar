@@ -12,9 +12,49 @@ RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
+LINT_EXIT_CODE=0
 
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+run_required_check() {
+  local label="$1"
+  shift
+
+  echo "   -> ${label} çalışıyor..."
+  "$@"
+  local exit_code=$?
+
+  if [ "${exit_code}" -ne 0 ]; then
+    LINT_EXIT_CODE=1
+    echo "❌ ${label} başarısız oldu."
+  else
+    echo "✅ ${label} başarılı."
+  fi
+}
+
+run_optional_check() {
+  local tool_name="$1"
+  local label="$2"
+  shift 2
+
+  if command_exists "${tool_name}"; then
+    echo "   -> ${label} çalışıyor..."
+    "$@"
+    local exit_code=$?
+    if [ "${exit_code}" -ne 0 ]; then
+      echo "⚠️ ${label} uyarılar/hatalar içeriyor (exit=${exit_code})."
+    else
+      echo "✅ ${label} başarılı."
+    fi
+  else
+    echo "ℹ️ ${label} atlandı (${tool_name} bulunamadı)."
+  fi
+}
 
 open_artifact() {
   local target="$1"
@@ -22,14 +62,60 @@ open_artifact() {
     return 0
   fi
 
-  if command -v xdg-open >/dev/null 2>&1; then
+  if command_exists xdg-open; then
     xdg-open "$target" >/dev/null 2>&1 &
-  elif command -v open >/dev/null 2>&1; then
+  elif command_exists open; then
     open "$target" >/dev/null 2>&1 &
-  elif command -v start >/dev/null 2>&1; then
+  elif command_exists start; then
     start "" "$target" >/dev/null 2>&1 &
   else
     echo "ℹ️ Otomatik açma için desteklenen komut bulunamadı: $target"
+  fi
+}
+
+run_static_quality_checks() {
+  echo "🧹 Tüm dosyalar için Linting ve Statik Analiz yapılıyor..."
+
+  run_required_check "Python Linter (Ruff)" ruff check .
+
+  # Mypy çıktısı kalite sinyali olarak raporlanır, fail etmesi zorunlu değildir.
+  run_optional_check "mypy" "Python Tip Kontrolü (Mypy)" mypy .
+
+  if command_exists pip-audit; then
+    echo "   -> Bağımlılık Güvenlik Taraması (pip-audit) çalışıyor..."
+
+    local audit_exit=0
+    if [ -f "requirements.txt" ]; then
+      pip-audit -r requirements.txt || audit_exit=$?
+    fi
+
+    if [ -f "requirements-dev.txt" ]; then
+      pip-audit -r requirements-dev.txt || audit_exit=$?
+    fi
+
+    if [ "${audit_exit}" -ne 0 ]; then
+      echo "⚠️ pip-audit güvenlik uyarıları tespit etti."
+    else
+      echo "✅ pip-audit tamamlandı."
+    fi
+  else
+    echo "ℹ️ pip-audit atlandı (pip-audit bulunamadı)."
+  fi
+
+  run_optional_check "yamllint" "YAML Linter (yamllint)" yamllint .
+
+  if command_exists shellcheck; then
+    if find . -type f -name "*.sh" -print -quit | grep -q .; then
+      run_optional_check "shellcheck" "Shell Script Linter (shellcheck)" bash -lc 'find . -type f -name "*.sh" -exec shellcheck {} +'
+    else
+      echo "ℹ️ Shell script lint atlandı (*.sh dosyası bulunamadı)."
+    fi
+  else
+    echo "ℹ️ Shell script lint atlandı (shellcheck bulunamadı)."
+  fi
+
+  if [ "${LINT_EXIT_CODE}" -ne 0 ]; then
+    echo "❌ Zorunlu statik analiz adımlarında hata var."
   fi
 }
 
@@ -60,10 +146,13 @@ run_pytest_coverage_report() {
   fi
 }
 
-# 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
+# 1) Statik analiz ve lint adımları
+run_static_quality_checks
+
+# 2) Backend testleri + coverage (pyproject addopts ile) + quality gate
 run_pytest_coverage_report
 
-# 2) Kritik yol performans baseline testleri (pytest-benchmark)
+# 3) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -f "tests/test_benchmark.py" ]; then
@@ -76,9 +165,9 @@ else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py veya tests/performance/test_benchmark.py bulunamadı."
 fi
 
-# 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
+# 4) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then
-  if ! command -v npm >/dev/null 2>&1; then
+  if ! command_exists npm; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
     FRONTEND_EXIT_CODE=1
   else
@@ -106,14 +195,15 @@ fi
 
 echo "======================================================"
 
-# 4) Final Durum Değerlendirmesi
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
-  echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
+# 5) Final Durum Değerlendirmesi
+if [ "${LINT_EXIT_CODE}" -ne 0 ] || [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
+  echo "❌ Bazı testler veya kalite kapıları (coverage/linting) başarısız oldu!"
+  echo "   Lint Çıkış Kodu: ${LINT_EXIT_CODE}"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
   echo "   Frontend Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE}"
   exit 1
 else
-  echo "✅ Tüm Backend, Frontend ve Benchmark testleri BAŞARIYLA tamamlandı!"
+  echo "✅ Tüm Backend, Frontend, Benchmark ve linting adımları BAŞARIYLA tamamlandı!"
   exit 0
 fi
