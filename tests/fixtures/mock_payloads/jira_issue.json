@@ -1,0 +1,10 @@
+{
+  "id": "10001",
+  "key": "SIDAR-42",
+  "fields": {
+    "summary": "Test issue",
+    "status": {
+      "name": "To Do"
+    }
+  }
+}
