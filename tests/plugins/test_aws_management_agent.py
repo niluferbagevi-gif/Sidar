@@ -50,6 +50,22 @@ def test_aws_management_agent_subprocess_error(monkeypatch):
     assert result == "AWS komutu başarısız oldu: failed"
 
 
+def test_aws_management_agent_unexpected_error(monkeypatch):
+    agent = AWSManagementAgent()
+    monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda *_: "/usr/bin/aws")
+
+    def _raise_runtime(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    async def _fake_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr("plugins.aws_management_agent.subprocess.run", _raise_runtime)
+    monkeypatch.setattr("plugins.aws_management_agent.asyncio.to_thread", _fake_to_thread)
+    result = asyncio.run(agent.run_task("ec2 listele"))
+    assert result == "AWS komutu çalıştırılamadı: boom"
+
+
 def test_aws_management_agent_success_path(monkeypatch):
     agent = AWSManagementAgent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda *_: "/usr/bin/aws")
@@ -67,6 +83,7 @@ def test_aws_management_agent_success_path(monkeypatch):
 
 def test_aws_select_command_and_summarize():
     agent = AWSManagementAgent()
+    assert agent._select_command("ec2 instance") is not None
     assert agent._select_command("cloudwatch alarm") is not None
     assert agent._select_command("?") is None
     assert "EC2 instance envanteri" in agent._summarize_output(
@@ -78,3 +95,4 @@ def test_aws_select_command_and_summarize():
         '{"MetricAlarms":[{"AlarmName":"high-cpu","StateValue":"ALARM"}]}',
     )
     assert "AWS yanıtı" in agent._summarize_output("raw", "not-json")
+    assert 'AWS yanıtı (raw): {"Other": "value"}' == agent._summarize_output("raw", '{"Other":"value"}')
