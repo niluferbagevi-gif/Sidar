@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from pathlib import Path
 
 _httpx_spec = None
 if "httpx" not in sys.modules:
@@ -410,3 +411,198 @@ def test_run_task_routing_and_review_code_flow():
     payload = json.loads(raw.split("qa_feedback|", 1)[1])
     assert payload["decision"] == "APPROVE"
     assert payload["risk"] == "orta"
+
+def test_run_dynamic_tests_handles_write_failure_and_cleanup(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    agent = ReviewerAgent.__new__(ReviewerAgent)
+    agent.config = SimpleNamespace(BASE_DIR=str(tmp_path))
+
+    async def _build(_ctx: str):
+        return "def test_dyn():\n    assert True\n"
+
+    class _CodeFail:
+        def write_file(self, *_args, **_kwargs):
+            return False, "disk full"
+
+    agent._build_dynamic_test_content = _build
+    agent.code = _CodeFail()
+    failed = asyncio.run(agent._run_dynamic_tests("ctx"))
+    assert "[TEST:FAIL-CLOSED]" in failed
+    assert "disk full" in failed
+
+    class _CodeOk:
+        def write_file(self, path, content, _append):
+            Path(path).write_text(content, encoding="utf-8")
+            return True, "ok"
+
+    async def _run_tool(_name: str, _arg: str):
+        return "[TEST:OK]"
+
+    agent.code = _CodeOk()
+    agent.call_tool = _run_tool
+    ok = asyncio.run(agent._run_dynamic_tests("ctx"))
+    assert ok == "[TEST:OK]"
+    assert not list((tmp_path / "temp").glob("reviewer_dynamic_*.py"))
+
+
+def test_collect_and_summarize_graph_payload_edge_cases():
+    assert ReviewerAgent._collect_graph_followup_paths({"reports": "bad"}) == []
+
+    payload = {
+        "status": "ok",
+        "reports": [
+            {"ok": False, "details": {}},
+            {"ok": True, "details": "invalid"},
+            {
+                "ok": True,
+                "target": "core/h.py",
+                "details": {"risk_level": "low", "impacted_endpoints": [], "review_targets": ["core/h.py"]},
+            },
+        ],
+    }
+    summary = ReviewerAgent._summarize_graph_payload(payload)
+    assert summary["risk"] == "düşük"
+    assert summary["followup_paths"] == ["core/h.py"]
+
+
+def test_combined_impact_and_fix_recommendation_additional_branches():
+    semantic_medium = {
+        "counts": {"x": 1, "1": 0},
+        "issues": ["bad", {"path": "core/m.py", "message": "warn"}],
+    }
+    combined_medium = ReviewerAgent._build_combined_impact_report(
+        semantic_medium,
+        {"risk": "düşük", "followup_paths": []},
+        ["core/direct.py"],
+        ["core/m.py"],
+    )
+    assert combined_medium["impact_level"] == "medium"
+
+    combined_high = ReviewerAgent._build_combined_impact_report(
+        {"counts": {}, "issues": []},
+        {"risk": "orta", "followup_paths": []},
+        [],
+        [],
+    )
+    assert combined_high["impact_level"] == "high"
+
+    graph_payload = {
+        "reports": [
+            "bad",
+            {"ok": True, "target": "core/t.py", "details": "x"},
+            {"ok": True, "target": "core/t.py", "details": {"risk_level": "low"}},
+            {
+                "ok": True,
+                "target": "core/t.py",
+                "details": {"risk_level": "high", "review_targets": ["core/t.py", "core/u.py", "core/u.py"]},
+            },
+        ]
+    }
+    recs = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload, {"indirect_breakage_paths": []})
+    assert len([r for r in recs if r["path"] == "core/u.py"]) == 1
+
+
+def test_parse_review_payload_empty_and_invalid_json_fallback():
+    empty = ReviewerAgent._parse_review_payload("")
+    assert empty["review_context"] == ""
+
+    fallback = ReviewerAgent._parse_review_payload('{"a":')
+    assert fallback["review_context"] == '{"a":'
+
+
+def test_get_graph_store_initializes_once(monkeypatch: pytest.MonkeyPatch):
+    import agent.roles.reviewer_agent as mod
+
+    calls = []
+
+    class _Docs:
+        pass
+
+    def _factory(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _Docs()
+
+    monkeypatch.setattr(mod, "DocumentStore", _factory)
+    agent = ReviewerAgent.__new__(ReviewerAgent)
+    agent._graph_docs = None
+    agent.config = SimpleNamespace(
+        RAG_DIR=".",
+        RAG_TOP_K=1,
+        RAG_CHUNK_SIZE=32,
+        RAG_CHUNK_OVERLAP=4,
+        USE_GPU=False,
+        GPU_DEVICE="cpu",
+        GPU_MIXED_PRECISION=False,
+    )
+
+    first = agent._get_graph_store()
+    second = agent._get_graph_store()
+    assert first is second
+    assert len(calls) == 1
+
+
+def test_run_task_decision_branches_for_risk_and_reject():
+    agent = ReviewerAgent.__new__(ReviewerAgent)
+    agent.config = SimpleNamespace(REVIEWER_TEST_COMMAND="pytest -q")
+
+    class _Events:
+        async def publish(self, *_args, **_kwargs):
+            return None
+
+    agent.events = _Events()
+
+    async def _run_dynamic(_ctx: str):
+        return "[TEST:PASS]"
+
+    scenarios = [
+        (
+            "semantic_reject",
+            '{"status":"issues-found","risk":"yüksek","decision":"REJECT","summary":"s","counts":{"1":1}}',
+            json.dumps({"status": "ok", "summary": "g", "reports": []}, ensure_ascii=False),
+            json.dumps({"status": "ok", "risk": "düşük", "summary": "b"}, ensure_ascii=False),
+            "REJECT",
+            "yüksek",
+        ),
+        (
+            "semantic_orta",
+            '{"status":"issues-found","risk":"orta","decision":"APPROVE","summary":"s","counts":{"2":1}}',
+            json.dumps({"status": "ok", "summary": "g", "reports": []}, ensure_ascii=False),
+            json.dumps({"status": "ok", "risk": "düşük", "summary": "b"}, ensure_ascii=False),
+            "APPROVE",
+            "orta",
+        ),
+        (
+            "graph_orta",
+            '{"status":"clean","risk":"düşük","decision":"APPROVE","summary":"s","counts":{}}',
+            json.dumps({"status": "ok", "summary": "g", "reports": [{"ok": True, "target": "core/x.py", "details": {"risk_level": "high", "review_targets": ["core/x.py"]}}]}, ensure_ascii=False),
+            json.dumps({"status": "ok", "risk": "düşük", "summary": "b"}, ensure_ascii=False),
+            "APPROVE",
+            "orta",
+        ),
+        (
+            "browser_failed",
+            '{"status":"clean","risk":"düşük","decision":"APPROVE","summary":"s","counts":{}}',
+            json.dumps({"status": "ok", "summary": "g", "reports": []}, ensure_ascii=False),
+            json.dumps({"status": "failed", "risk": "orta", "summary": "b", "failed_actions": ["x"]}, ensure_ascii=False),
+            "REJECT",
+            "yüksek",
+        ),
+    ]
+
+    for name, lsp_out, graph_out, browser_out, expected_decision, expected_risk in scenarios:
+        async def _call_tool(tool_name: str, _arg: str, _l=lsp_out, _g=graph_out, _b=browser_out):
+            mapping = {
+                "run_tests": "[TEST:PASS]",
+                "lsp_diagnostics": _l,
+                "graph_impact": _g,
+                "browser_signals": _b,
+            }
+            return mapping.get(tool_name, "ok")
+
+        agent.call_tool = _call_tool
+        agent._run_dynamic_tests = _run_dynamic
+        agent.delegate_to = lambda _a, payload, reason="": payload
+
+        raw = asyncio.run(agent.run_task(f"review_code|{{\"review_context\":\"core/{name}.py\"}}"))
+        payload = json.loads(raw.split("qa_feedback|", 1)[1])
+        assert payload["decision"] == expected_decision
+        assert payload["risk"] == expected_risk
