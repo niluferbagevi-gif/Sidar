@@ -172,7 +172,23 @@ class TaskRouter:
         getter = getattr(catalog, "get", None)
         if callable(getter):
             return getter(role_name)
+        lister = getattr(catalog, "list_all", None)
+        if callable(lister):
+            for spec in lister() or []:
+                if getattr(spec, "role_name", "") == role_name:
+                    return spec
         return None
+
+
+def _looks_like_delegation_request(value: object) -> bool:
+    checker = is_delegation_request if callable(is_delegation_request) else None
+    if checker is not None:
+        try:
+            if checker(value):
+                return True
+        except Exception:
+            pass
+    return all(hasattr(value, attr) for attr in ("target_agent", "payload", "reply_to"))
 
 
 class SwarmOrchestrator:
@@ -697,7 +713,7 @@ class SwarmOrchestrator:
             if result is None and last_exc is not None:
                 raise last_exc
 
-            if is_delegation_request(result.summary):
+            if _looks_like_delegation_request(result.summary):
                 delegation = result.summary
                 if not getattr(delegation, "reply_to", ""):
                     delegation.reply_to = spec.role_name
