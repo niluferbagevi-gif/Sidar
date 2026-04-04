@@ -389,6 +389,9 @@ class SystemHealthManager:
         if not metrics_dict:
             return
         if self._prometheus_gauges is None:
+            if not self._check_import("prometheus_client"):
+                self._prometheus_gauges = {}
+                return
             try:
                 from prometheus_client import Gauge
                 self._prometheus_gauges = {
