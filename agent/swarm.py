@@ -20,22 +20,50 @@ Kullanım:
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
 import json
 import logging
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Protocol
 
 from agent.registry import AgentCatalog, AgentSpec
-from agent.core.contracts import (
-    BrokerTaskEnvelope,
-    BrokerTaskResult,
-    DelegationRequest,
-    TaskEnvelope,
-    TaskResult,
-    is_delegation_request,
-)
+
+
+def _contracts_module():
+    module = importlib.import_module("agent.core.contracts")
+    required = (
+        "TaskEnvelope",
+        "TaskResult",
+        "DelegationRequest",
+        "BrokerTaskEnvelope",
+        "BrokerTaskResult",
+        "is_delegation_request",
+    )
+    if all(hasattr(module, name) for name in required) and getattr(module, "DelegationRequest", object) is not object:
+        return module
+
+    module_path = Path(__file__).resolve().parent / "core" / "contracts.py"
+    spec = importlib.util.spec_from_file_location("agent.core.contracts", module_path)
+    if spec is None or spec.loader is None:
+        return module
+    repaired = importlib.util.module_from_spec(spec)
+    sys.modules["agent.core.contracts"] = repaired
+    spec.loader.exec_module(repaired)
+    return repaired
+
+
+_contracts = _contracts_module()
+BrokerTaskEnvelope = _contracts.BrokerTaskEnvelope
+BrokerTaskResult = _contracts.BrokerTaskResult
+DelegationRequest = _contracts.DelegationRequest
+TaskEnvelope = _contracts.TaskEnvelope
+TaskResult = _contracts.TaskResult
+is_delegation_request = _contracts.is_delegation_request
 
 logger = logging.getLogger(__name__)
 
@@ -148,9 +176,11 @@ class TaskRouter:
         if hasattr(local_catalog, "find_by_capability") and hasattr(local_catalog, "list_all"):
             return local_catalog
 
-        from agent.registry import AgentCatalog as LiveAgentCatalog
-
-        return LiveAgentCatalog
+        registry_mod = importlib.import_module("agent.registry")
+        live_catalog = getattr(registry_mod, "AgentCatalog", None)
+        if live_catalog is not None and hasattr(live_catalog, "find_by_capability") and hasattr(live_catalog, "list_all"):
+            return live_catalog
+        return local_catalog
 
     def route(self, intent: str) -> Optional[AgentSpec]:
         """

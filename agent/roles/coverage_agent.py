@@ -16,6 +16,9 @@ from config import Config
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 
+if not hasattr(AgentCatalog, "get"):
+    AgentCatalog.get = classmethod(lambda cls, _role_name: None)  # type: ignore[attr-defined]
+
 
 @AgentCatalog.register(capabilities=['coverage_analysis', 'pytest_output_analysis', 'autonomous_test_generation'], is_builtin=True)
 class CoverageAgent(BaseAgent):
