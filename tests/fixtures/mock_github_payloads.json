@@ -1,0 +1,4 @@
+{
+  "repo": {"name": "octo/repo", "default_branch": "main"},
+  "issue": {"id": 1, "title": "Sample issue"}
+}
