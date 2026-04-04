@@ -358,3 +358,260 @@ def test_social_specific_tools_return_expected_prefix(monkeypatch: pytest.Monkey
     assert insta.startswith("[INSTAGRAM:PUBLISHED]")
     assert face.startswith("[FACEBOOK:ERROR]")
     assert wa.startswith("[WHATSAPP:SENT]")
+
+def test_init_registers_all_tools_and_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_base_init(self, cfg=None, role_name=None):
+        self.cfg = SimpleNamespace(
+            META_GRAPH_API_TOKEN="tok",
+            INSTAGRAM_BUSINESS_ACCOUNT_ID="ig",
+            FACEBOOK_PAGE_ID="fb",
+            WHATSAPP_PHONE_NUMBER_ID="wa",
+            META_GRAPH_API_VERSION="v99",
+            RAG_DIR="/tmp/rag",
+            RAG_TOP_K=3,
+            RAG_CHUNK_SIZE=100,
+            RAG_CHUNK_OVERLAP=10,
+            USE_GPU=False,
+            GPU_DEVICE="cpu",
+            GPU_MIXED_PRECISION=False,
+        )
+        captured["role_name"] = role_name
+
+    class _FakeWeb:
+        def __init__(self, cfg):
+            captured["web_cfg"] = cfg
+
+    class _FakeSocial:
+        def __init__(self, **kwargs):
+            captured["social_kwargs"] = kwargs
+
+    class _FakeDocs:
+        def __init__(self, rag_dir, **kwargs):
+            captured["rag_dir"] = str(rag_dir)
+            captured["docs_kwargs"] = kwargs
+
+    tools: list[str] = []
+
+    def _fake_register_tool(self, name, _fn):
+        tools.append(name)
+
+    monkeypatch.setattr(_poyraz_mod.BaseAgent, "__init__", _fake_base_init)
+    monkeypatch.setattr(_poyraz_mod, "WebSearchManager", _FakeWeb)
+    monkeypatch.setattr(_poyraz_mod, "SocialMediaManager", _FakeSocial)
+    monkeypatch.setattr(_poyraz_mod, "DocumentStore", _FakeDocs)
+    monkeypatch.setattr(_poyraz_mod.PoyrazAgent, "register_tool", _fake_register_tool)
+
+    agent = _poyraz_mod.PoyrazAgent()
+
+    assert isinstance(agent, _poyraz_mod.PoyrazAgent)
+    assert captured["role_name"] == "poyraz"
+    assert captured["rag_dir"] == "/tmp/rag"
+    assert captured["social_kwargs"]["api_version"] == "v99"
+    assert set(tools) == {
+        "web_search",
+        "fetch_url",
+        "search_docs",
+        "publish_social",
+        "publish_instagram_post",
+        "publish_facebook_post",
+        "send_whatsapp_message",
+        "build_landing_page",
+        "generate_campaign_copy",
+        "ingest_video_insights",
+        "create_marketing_campaign",
+        "store_content_asset",
+        "create_operation_checklist",
+        "plan_service_operations",
+    }
+
+
+def test_tool_web_fetch_and_search_docs_paths() -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    class _Web:
+        async def search(self, arg: str):
+            return True, f"SEARCH:{arg}"
+
+        async def fetch_url(self, arg: str):
+            return False, f"FETCH:{arg}"
+
+    class _AwaitableDocs:
+        async def _co(self):
+            return True, "DOCS-AWAIT"
+
+        def search(self, *_args):
+            return self._co()
+
+    class _SyncDocs:
+        def search(self, *_args):
+            return True, "DOCS-SYNC"
+
+    agent.web = _Web()
+    agent.docs = _AwaitableDocs()
+    assert asyncio.run(agent._tool_web_search("q")) == "SEARCH:q"
+    assert asyncio.run(agent._tool_fetch_url("u")) == "FETCH:u"
+    assert asyncio.run(agent._tool_search_docs("x")) == "DOCS-AWAIT"
+
+    agent.docs = _SyncDocs()
+    assert asyncio.run(agent._tool_search_docs("x")) == "DOCS-SYNC"
+
+
+def test_create_campaign_store_asset_and_checklist_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    class _CampaignPayload:
+        tenant_id = ""
+        name = " Kamp "
+        channel = "social"
+        objective = "lead"
+        status = ""
+        owner_user_id = "u1"
+        budget = "12.5"
+        metadata = {"k": "v"}
+        campaign_id = None
+
+    class _AssetPayload:
+        campaign_id = "5"
+        tenant_id = ""
+        asset_type = "copy"
+        title = "  Başlık "
+        content = "icerik"
+        channel = "insta"
+        metadata = {"m": 1}
+
+    class _ChecklistPayload:
+        tenant_id = ""
+        title = " Plan "
+        items = ["a", "b"]
+        status = ""
+        owner_user_id = "owner"
+        campaign_id = 3
+
+    class _Db:
+        async def upsert_marketing_campaign(self, **kwargs):
+            assert kwargs["tenant_id"] == "default"
+            assert kwargs["status"] == "draft"
+            return SimpleNamespace(id=11, **kwargs)
+
+        async def add_operation_checklist(self, **kwargs):
+            assert kwargs["tenant_id"] == "default"
+            assert kwargs["status"] == "pending"
+            return SimpleNamespace(id=21, campaign_id=kwargs["campaign_id"], tenant_id=kwargs["tenant_id"], title=kwargs["title"], status=kwargs["status"], items_json='["a","b"]')
+
+    async def _fake_ensure_db():
+        return _Db()
+
+    persisted: dict[str, object] = {}
+
+    async def _fake_persist_content_asset(**kwargs):
+        persisted.update(kwargs)
+        return "stored"
+
+    agent._ensure_db = _fake_ensure_db
+    agent._persist_content_asset = _fake_persist_content_asset
+
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda tool, _raw: {
+        "create_marketing_campaign": _CampaignPayload(),
+        "store_content_asset": _AssetPayload(),
+        "create_operation_checklist": _ChecklistPayload(),
+    }[tool])
+
+    campaign = json.loads(asyncio.run(agent._tool_create_marketing_campaign("{}")))
+    assert campaign["campaign"]["id"] == 11
+
+    stored = asyncio.run(agent._tool_store_content_asset("{}"))
+    assert stored == "stored"
+    assert persisted["campaign_id"] == 5
+    assert persisted["tenant_id"] == "default"
+
+    checklist = json.loads(asyncio.run(agent._tool_create_operation_checklist("{}")))
+    assert checklist["checklist"]["id"] == 21
+
+
+def test_generate_marketing_output_and_additional_run_task_routes() -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+    calls: list[tuple[str, str]] = []
+
+    async def _fake_call_tool(name: str, arg: str) -> str:
+        return f"tool:{name}:{arg}"
+
+    async def _fake_llm(messages, **kwargs):
+        calls.append((messages[0]["content"], kwargs["system_prompt"]))
+        return "llm-ok"
+
+    agent.call_tool = _fake_call_tool
+    agent.call_llm = _fake_llm
+
+    out = asyncio.run(agent._generate_marketing_output(" deneme ", "audience_ops"))
+    assert out == "llm-ok"
+    assert "Görev modu: audience_ops" in calls[0][0]
+
+    assert asyncio.run(agent.run_task("web_search|kedi")) == "tool:web_search:kedi"
+    assert asyncio.run(agent.run_task("fetch_url|https://a")) == "tool:fetch_url:https://a"
+    assert asyncio.run(agent.run_task("search_docs|prompt")) == "tool:search_docs:prompt"
+    assert asyncio.run(agent.run_task("landing_page|brief")) == "tool:build_landing_page:brief"
+    assert asyncio.run(agent.run_task("generate_campaign_copy|brief")) == "tool:generate_campaign_copy:brief"
+    assert asyncio.run(agent.run_task("publish_instagram_post|{}")) == "tool:publish_instagram_post:{}"
+    assert asyncio.run(agent.run_task("publish_facebook_post|{}")) == "tool:publish_facebook_post:{}"
+    assert asyncio.run(agent.run_task("send_whatsapp_message|{}")) == "tool:send_whatsapp_message:{}"
+    assert asyncio.run(agent.run_task("analyze_video|{}")) == "tool:ingest_video_insights:{}"
+    assert asyncio.run(agent.run_task("create_marketing_campaign|{}")) == "tool:create_marketing_campaign:{}"
+    assert asyncio.run(agent.run_task("store_content_asset|{}")) == "tool:store_content_asset:{}"
+    assert asyncio.run(agent.run_task("create_operation_checklist|{}")) == "tool:create_operation_checklist:{}"
+    assert asyncio.run(agent.run_task("plan_service_operations|{}")) == "tool:plan_service_operations:{}"
+
+
+def test_run_task_non_tool_modes_and_fallbacks() -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    async def _fake_call_tool(name: str, arg: str) -> str:
+        return f"{name}:{arg}"
+
+    async def _fake_generate(prompt: str, mode: str) -> str:
+        return f"{mode}:{prompt}"
+
+    agent.call_tool = _fake_call_tool
+    agent._generate_marketing_output = _fake_generate
+
+    assert asyncio.run(agent.run_task("campaign_copy|x")) == "campaign_copy:x"
+    assert asyncio.run(agent.run_task("audience_ops|x")) == "audience_ops:x"
+    assert asyncio.run(agent.run_task("research_to_marketing|x")) == "research_to_marketing:x"
+    assert asyncio.run(agent.run_task("Landing page içeriği hazırla")) .startswith("build_landing_page:{")
+    assert asyncio.run(agent.run_task("genel metin")) == "marketing_general:genel metin"
+
+
+def test_plan_service_operations_without_persist(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    class _Payload:
+        menu_plan = {"ana": []}
+        vendor_assignments = {"dj": " "}
+        timeline = [" "]
+        notes = " "
+        persist_checklist = False
+        tenant_id = ""
+        checklist_title = ""
+        owner_user_id = ""
+        campaign_id = None
+        campaign_name = "Kamp"
+        service_name = "Servis"
+        audience = "Genel"
+
+    monkeypatch.setattr(_poyraz_mod, "parse_tool_argument", lambda *_a, **_k: _Payload())
+    payload = json.loads(asyncio.run(agent._tool_plan_service_operations("{}")))
+    assert payload["service_plan"]["items"] == []
+    assert "checklist" not in payload["service_plan"]
+
+
+def test_build_and_campaign_copy_without_json_payload() -> None:
+    agent = PoyrazAgent.__new__(PoyrazAgent)
+
+    async def _fake_generate(prompt: str, mode: str) -> str:
+        return f"{mode}:{prompt.splitlines()[-1]}"
+
+    agent._generate_marketing_output = _fake_generate
+
+    assert asyncio.run(agent._tool_build_landing_page("ham brief")).startswith("landing_page:ham brief")
+    assert asyncio.run(agent._tool_generate_campaign_copy("ham copy")).startswith("campaign_copy_tool:ham copy")
