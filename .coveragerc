@@ -8,6 +8,10 @@ source =
     plugins
     main.py
     web_server.py
+    cli.py
+    config.py
+    gui_launcher.py
+    github_upload.py
 omit =
     tests/*
     tests/sidar_plugin_*
