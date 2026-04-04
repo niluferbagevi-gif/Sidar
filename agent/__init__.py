@@ -1,5 +1,7 @@
 """Sidar Project - Agent Modülleri"""
 
+from importlib import import_module
+
 def __getattr__(name: str):
     """Ağır bağımlılıkları sadece gerektiğinde içe aktar."""
     if name == "SidarAgent":
@@ -11,9 +13,7 @@ def __getattr__(name: str):
 
         return AutoHandle
     if name == "roles":
-        from . import roles as roles_module
-
-        return roles_module
+        return import_module(".roles", __name__)
     if name in {"SIDAR_SYSTEM_PROMPT", "SIDAR_KEYS", "SIDAR_WAKE_WORDS"}:
         from .definitions import SIDAR_KEYS, SIDAR_SYSTEM_PROMPT, SIDAR_WAKE_WORDS
 
@@ -33,5 +33,4 @@ __all__ = [
     "SIDAR_SYSTEM_PROMPT",
     "SIDAR_KEYS",
     "SIDAR_WAKE_WORDS",
-    "roles",
 ]
