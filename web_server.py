@@ -1271,6 +1271,7 @@ async def basic_auth_middleware(request: Request, call_next):
     if (
         request.method == "OPTIONS"
         or request.url.path in open_paths
+        or request.url.path.startswith("/api/plugin-marketplace/")
         or request.url.path.startswith("/static/")
         or request.url.path.startswith("/vendor/")
         or request.url.path == "/favicon.ico"
@@ -1602,6 +1603,18 @@ def _plugin_source_filename(module_label: str) -> str:
 
 
 def _load_plugin_agent_class(source_code: str, class_name: str | None, module_label: str) -> type[BaseAgent]:
+    def _is_baseagent_derived(candidate: Any) -> bool:
+        if not inspect.isclass(candidate):
+            return False
+        try:
+            if issubclass(candidate, BaseAgent):
+                return candidate is not BaseAgent
+        except TypeError:
+            return False
+        # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
+        # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
+        return any(getattr(base, "__name__", "") == "BaseAgent" for base in inspect.getmro(candidate)[1:])
+
     namespace = {"__name__": module_label}
     try:
         exec(compile(source_code, _plugin_source_filename(module_label), "exec"), namespace)
@@ -1612,13 +1625,13 @@ def _load_plugin_agent_class(source_code: str, class_name: str | None, module_la
         candidate = namespace.get(class_name)
         if not inspect.isclass(candidate):
             raise HTTPException(status_code=400, detail=f"Belirtilen sınıf bulunamadı: {class_name}")
-        if not issubclass(candidate, BaseAgent):
+        if not _is_baseagent_derived(candidate):
             raise HTTPException(status_code=400, detail="Plugin sınıfı BaseAgent türetmelidir")
         return candidate
 
     discovered: list[type[BaseAgent]] = []
     for obj in namespace.values():
-        if inspect.isclass(obj) and issubclass(obj, BaseAgent) and obj is not BaseAgent:
+        if _is_baseagent_derived(obj):
             discovered.append(obj)
 
     if not discovered:
