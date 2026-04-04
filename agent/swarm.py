@@ -86,6 +86,18 @@ is_delegation_request = _contracts.is_delegation_request
 logger = logging.getLogger(__name__)
 
 
+def _ensure_contract_aliases() -> None:
+    """Global kontrat aliaslarını sağlıklı modüle yeniden bağlar."""
+    global BrokerTaskEnvelope, BrokerTaskResult, DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
+    module = _contracts_module()
+    BrokerTaskEnvelope = module.BrokerTaskEnvelope
+    BrokerTaskResult = module.BrokerTaskResult
+    DelegationRequest = module.DelegationRequest
+    TaskEnvelope = module.TaskEnvelope
+    TaskResult = module.TaskResult
+    is_delegation_request = module.is_delegation_request
+
+
 # ── Görev intent → yetenek eşlemesi ──────────────────────────────────────
 
 _INTENT_CAPABILITY_MAP: Dict[str, str] = {
@@ -228,6 +240,7 @@ class TaskRouter:
 
 
 def _looks_like_delegation_request(value: object) -> bool:
+    _ensure_contract_aliases()
     checker = is_delegation_request if callable(is_delegation_request) else None
     if checker is not None:
         try:
@@ -268,6 +281,7 @@ class SwarmOrchestrator:
         reply_queue: str = "",
     ) -> BrokerTaskResult:
         """Görevi broker uyumlu zarf ile dış/backplane delegasyonuna hazırlar."""
+        _ensure_contract_aliases()
         if self.delegation_backend is None:
             raise RuntimeError("Dağıtık delegasyon backend'i yapılandırılmadı.")
 
@@ -512,6 +526,7 @@ class SwarmOrchestrator:
         route_trace: List[str],
         handoff_chain: List[Dict[str, str]],
     ) -> SwarmResult:
+        _ensure_contract_aliases()
         target_role = (delegation.target_agent or "").strip()
         if not target_role:
             raise RuntimeError("DelegationRequest target_agent boş")
@@ -625,6 +640,7 @@ class SwarmOrchestrator:
         _handoff_chain: Optional[List[Dict[str, str]]] = None,
     ) -> SwarmResult:
         """Görevi uygun ajana yönlendirip çalıştırır."""
+        _ensure_contract_aliases()
         started_at = time.monotonic()
         max_retries = max(0, int(getattr(self.cfg, "SWARM_TASK_MAX_RETRIES", 0) or 0))
         retry_delay_ms = max(0, int(getattr(self.cfg, "SWARM_TASK_RETRY_DELAY_MS", 0) or 0))
