@@ -34,8 +34,7 @@ from typing import Dict, List, Optional, Protocol
 from agent.registry import AgentCatalog, AgentSpec
 
 
-def _contracts_module():
-    module = importlib.import_module("agent.core.contracts")
+def _is_contracts_module_healthy(module: object) -> bool:
     required = (
         "TaskEnvelope",
         "TaskResult",
@@ -44,7 +43,26 @@ def _contracts_module():
         "BrokerTaskResult",
         "is_delegation_request",
     )
-    if all(hasattr(module, name) for name in required) and getattr(module, "DelegationRequest", object) is not object:
+    if not all(hasattr(module, name) for name in required):
+        return False
+
+    try:
+        if getattr(module, "DelegationRequest", object) is object:
+            return False
+
+        module.TaskEnvelope(task_id="t", sender="s", receiver="r", goal="g")
+        module.TaskResult(task_id="t", status="success", summary="ok", evidence=[])
+        module.DelegationRequest(task_id="t", reply_to="s", target_agent="r", payload="p")
+    except Exception:
+        return False
+
+    checker = getattr(module, "is_delegation_request", None)
+    return callable(checker)
+
+
+def _contracts_module():
+    module = importlib.import_module("agent.core.contracts")
+    if _is_contracts_module_healthy(module):
         return module
 
     module_path = Path(__file__).resolve().parent / "core" / "contracts.py"
