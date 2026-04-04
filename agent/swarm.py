@@ -172,15 +172,14 @@ class TaskRouter:
         Testlerde `agent.swarm.AgentCatalog` monkeypatch edildiğinde bu referansı
         korur; aksi halde registry modülündeki canlı sınıfa düşer.
         """
-        local_catalog = AgentCatalog
-        if hasattr(local_catalog, "find_by_capability") and hasattr(local_catalog, "list_all"):
-            return local_catalog
-
         registry_mod = importlib.import_module("agent.registry")
         live_catalog = getattr(registry_mod, "AgentCatalog", None)
         if live_catalog is not None and hasattr(live_catalog, "find_by_capability") and hasattr(live_catalog, "list_all"):
             return live_catalog
-        return local_catalog
+        local_catalog = AgentCatalog
+        if hasattr(local_catalog, "find_by_capability") and hasattr(local_catalog, "list_all"):
+            return local_catalog
+        return live_catalog
 
     def route(self, intent: str) -> Optional[AgentSpec]:
         """
