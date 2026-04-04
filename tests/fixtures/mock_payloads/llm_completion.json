@@ -1,0 +1,5 @@
+{
+  "id": "cmpl_test_001",
+  "model": "test-model",
+  "output": "Test completion output"
+}
