@@ -10,6 +10,10 @@ def __getattr__(name: str):
         from .auto_handle import AutoHandle
 
         return AutoHandle
+    if name == "roles":
+        from . import roles as roles_module
+
+        return roles_module
     if name in {"SIDAR_SYSTEM_PROMPT", "SIDAR_KEYS", "SIDAR_WAKE_WORDS"}:
         from .definitions import SIDAR_KEYS, SIDAR_SYSTEM_PROMPT, SIDAR_WAKE_WORDS
 
@@ -29,4 +33,5 @@ __all__ = [
     "SIDAR_SYSTEM_PROMPT",
     "SIDAR_KEYS",
     "SIDAR_WAKE_WORDS",
+    "roles",
 ]
