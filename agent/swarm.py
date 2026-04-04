@@ -137,28 +137,42 @@ class TaskRouter:
     AgentRegistry üzerinden çalışır — yeni kayıtlı ajanlar otomatik görünür.
     """
 
+    @staticmethod
+    def _catalog():
+        """Geçerli AgentCatalog referansını döndürür.
+
+        Testlerde `agent.swarm.AgentCatalog` monkeypatch edildiğinde bu referansı
+        korur; aksi halde registry modülündeki canlı sınıfa düşer.
+        """
+        local_catalog = AgentCatalog
+        if hasattr(local_catalog, "find_by_capability") and hasattr(local_catalog, "list_all"):
+            return local_catalog
+
+        from agent.registry import AgentCatalog as LiveAgentCatalog
+
+        return LiveAgentCatalog
+
     def route(self, intent: str) -> Optional[AgentSpec]:
         """
         Intent → yetenek → ajan spec zinciriyle yönlendirme yapar.
         Birden fazla eşleşme varsa ilk bulunanı döndürür.
         """
-        # AgentCatalog'u çağrı zamanında çözerek olası module reload/monkeypatch
-        # senaryolarında güncel sınıf referansını kullan.
-        from agent.registry import AgentCatalog as LiveAgentCatalog
-
+        catalog = self._catalog()
         capability = _INTENT_CAPABILITY_MAP.get(intent, intent)
-        candidates = LiveAgentCatalog.find_by_capability(capability)
+        candidates = catalog.find_by_capability(capability)
         if not candidates:
             # Fallback: herhangi bir kayıtlı ajan
-            all_agents = LiveAgentCatalog.list_all()
+            all_agents = catalog.list_all()
             return all_agents[0] if all_agents else None
         return candidates[0]
 
     def route_by_role(self, role_name: str) -> Optional[AgentSpec]:
         """Doğrudan rol adıyla ajan seç."""
-        from agent.registry import AgentCatalog as LiveAgentCatalog
-
-        return LiveAgentCatalog.get(role_name)
+        catalog = self._catalog()
+        getter = getattr(catalog, "get", None)
+        if callable(getter):
+            return getter(role_name)
+        return None
 
 
 class SwarmOrchestrator:
