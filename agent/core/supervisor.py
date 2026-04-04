@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import time
 import uuid
@@ -21,6 +22,44 @@ from agent.roles.reviewer_agent import ReviewerAgent
 from agent.roles.poyraz_agent import PoyrazAgent
 from agent.roles.qa_agent import QAAgent
 from agent.roles.coverage_agent import CoverageAgent
+
+
+def _ensure_delegation_request_shape():
+    contracts_mod = importlib.import_module("agent.core.contracts")
+    req_cls = getattr(contracts_mod, "DelegationRequest", None)
+    if req_cls is not object:
+        return req_cls
+
+    class _CompatDelegationRequest:
+        def __init__(self, **kwargs) -> None:
+            self.task_id = kwargs.get("task_id", "")
+            self.reply_to = kwargs.get("reply_to", "")
+            self.target_agent = kwargs.get("target_agent", "")
+            self.payload = kwargs.get("payload", "")
+            self.intent = kwargs.get("intent", "mixed")
+            self.parent_task_id = kwargs.get("parent_task_id")
+            self.handoff_depth = int(kwargs.get("handoff_depth", 0) or 0)
+            self.protocol = kwargs.get("protocol", "p2p.v1")
+            self.meta = dict(kwargs.get("meta", {}) or {})
+
+        def bumped(self):
+            return type(self)(
+                task_id=self.task_id,
+                reply_to=self.reply_to,
+                target_agent=self.target_agent,
+                payload=self.payload,
+                intent=self.intent,
+                parent_task_id=self.parent_task_id,
+                handoff_depth=self.handoff_depth + 1,
+                protocol=self.protocol,
+                meta=dict(self.meta),
+            )
+
+    contracts_mod.DelegationRequest = _CompatDelegationRequest
+    return _CompatDelegationRequest
+
+
+DelegationRequest = _ensure_delegation_request_shape()
 
 try:
     from opentelemetry import trace as otel_trace
