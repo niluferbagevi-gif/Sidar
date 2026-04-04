@@ -236,3 +236,182 @@ def test_extract_dir_path_variants_and_try_defaults():
 def test_handle_falls_back_when_nothing_matches():
     h = build_handler()
     assert asyncio.run(h.handle("merhaba nasılsın")) == (False, "")
+
+
+def test_handle_short_circuit_exits_each_stage(monkeypatch):
+    h = build_handler()
+
+    async def _false_async(*_args, **_kwargs):
+        return False, ""
+
+    def _false_sync(*_args, **_kwargs):
+        return False, ""
+
+    # Multi-step regex by-pass etmek için, tüm alt çağrıları false döndürecek hale getir
+    monkeypatch.setattr(h, "_try_dot_command", _false_async)
+    monkeypatch.setattr(h, "_try_clear_memory", _false_async)
+    monkeypatch.setattr(h, "_try_list_directory", _false_sync)
+    monkeypatch.setattr(h, "_try_read_file", _false_sync)
+    monkeypatch.setattr(h, "_try_audit", _false_async)
+    monkeypatch.setattr(h, "_try_health", _false_async)
+    monkeypatch.setattr(h, "_try_gpu_optimize", _false_async)
+    monkeypatch.setattr(h, "_try_validate_file", _false_sync)
+    monkeypatch.setattr(h, "_try_github_commits", _false_sync)
+    monkeypatch.setattr(h, "_try_github_info", _false_sync)
+    monkeypatch.setattr(h, "_try_github_list_files", _false_sync)
+    monkeypatch.setattr(h, "_try_github_read", _false_sync)
+    monkeypatch.setattr(h, "_try_github_list_prs", _false_sync)
+    monkeypatch.setattr(h, "_try_github_get_pr", _false_async)
+    monkeypatch.setattr(h, "_try_security_status", _false_sync)
+    monkeypatch.setattr(h, "_try_web_search", _false_async)
+    monkeypatch.setattr(h, "_try_fetch_url", _false_async)
+    monkeypatch.setattr(h, "_try_search_docs", _false_async)
+    monkeypatch.setattr(h, "_try_search_stackoverflow", _false_async)
+    monkeypatch.setattr(h, "_try_pypi", _false_async)
+    monkeypatch.setattr(h, "_try_npm", _false_async)
+    monkeypatch.setattr(h, "_try_gh_releases", _false_async)
+    monkeypatch.setattr(h, "_try_docs_search", _false_async)
+    monkeypatch.setattr(h, "_try_docs_add", _false_async)
+    monkeypatch.setattr(h, "_try_docs_list", _false_sync)
+
+    stages = [
+        ("_try_list_directory", "list"),
+        ("_try_read_file", "read"),
+        ("_try_audit", "audit"),
+        ("_try_health", "health"),
+        ("_try_gpu_optimize", "gpu"),
+        ("_try_validate_file", "validate"),
+        ("_try_github_commits", "commits"),
+        ("_try_github_info", "info"),
+        ("_try_github_list_files", "files"),
+        ("_try_github_read", "gh-read"),
+        ("_try_github_list_prs", "prs"),
+        ("_try_github_get_pr", "pr"),
+        ("_try_security_status", "security"),
+        ("_try_web_search", "web"),
+        ("_try_fetch_url", "url"),
+        ("_try_search_docs", "docs"),
+        ("_try_search_stackoverflow", "so"),
+        ("_try_pypi", "pypi"),
+        ("_try_npm", "npm"),
+        ("_try_gh_releases", "rel"),
+        ("_try_docs_search", "rag-search"),
+        ("_try_docs_add", "rag-add"),
+        ("_try_docs_list", "rag-list"),
+    ]
+
+    for name, token in stages:
+        if name in {
+            "_try_audit",
+            "_try_health",
+            "_try_gpu_optimize",
+            "_try_github_get_pr",
+            "_try_web_search",
+            "_try_fetch_url",
+            "_try_search_docs",
+            "_try_search_stackoverflow",
+            "_try_pypi",
+            "_try_npm",
+            "_try_gh_releases",
+            "_try_docs_search",
+            "_try_docs_add",
+        }:
+            async def _hit(*_args, _token=token, **_kwargs):
+                return True, _token
+        else:
+            def _hit(*_args, _token=token, **_kwargs):
+                return True, _token
+
+        monkeypatch.setattr(h, name, _hit)
+        assert asyncio.run(h.handle("tek adım komut")) == (True, token)
+        monkeypatch.setattr(h, name, _false_async if name.startswith("_try_") and name in {
+            "_try_audit",
+            "_try_health",
+            "_try_gpu_optimize",
+            "_try_github_get_pr",
+            "_try_web_search",
+            "_try_fetch_url",
+            "_try_search_docs",
+            "_try_search_stackoverflow",
+            "_try_pypi",
+            "_try_npm",
+            "_try_gh_releases",
+            "_try_docs_search",
+            "_try_docs_add",
+        } else _false_sync)
+
+
+def test_additional_specific_missing_paths(monkeypatch):
+    h = build_handler()
+
+    # _try_dot_command: regex eşleşse de tanınmayan komut dalı
+    original_re = h._DOT_CMD_RE
+    h._DOT_CMD_RE = __import__("re").compile(r"^\.(status|unknown)\b", __import__("re").IGNORECASE)
+    assert asyncio.run(h._try_dot_command(".unknown", ".unknown")) == (False, "")
+    h._DOT_CMD_RE = original_re
+
+    # _try_read_file: path yoksa uyarı
+    h.memory = SimpleNamespace(get_last_file=lambda: None, set_last_file=lambda _p: None)
+    assert asyncio.run(asyncio.to_thread(h._try_read_file, "dosya içeriğini göster", "dosya içeriğini göster")) == (
+        True,
+        "⚠ Hangi dosyayı okumamı istiyorsunuz? Lütfen dosya yolunu belirtin.",
+    )
+
+    # _try_audit: başarılı yol
+    monkeypatch.setattr(h, "_run_blocking", lambda *_args, **_kwargs: asyncio.sleep(0, result="audit-ok"))
+    assert asyncio.run(h._try_audit(".audit")) == (True, "audit-ok")
+
+    # _try_health: başarı, timeout, exception
+    monkeypatch.setattr(h, "_run_blocking", lambda *_args, **_kwargs: asyncio.sleep(0, result="health-ok"))
+    assert asyncio.run(h._try_health(".status")) == (True, "health-ok")
+
+    async def _timeout(*_args, **_kwargs):
+        raise asyncio.TimeoutError()
+
+    async def _err(*_args, **_kwargs):
+        raise RuntimeError("hf")
+
+    monkeypatch.setattr(h, "_run_blocking", _timeout)
+    assert asyncio.run(h._try_health(".health")) == (True, "⚠ Sağlık raporu zaman aşımına uğradı.")
+    monkeypatch.setattr(h, "_run_blocking", _err)
+    assert asyncio.run(h._try_health("sistem sağlık rapor")) == (True, "⚠ Sağlık raporu alınamadı: hf")
+
+    # _try_gpu_optimize: başarı, timeout, exception
+    monkeypatch.setattr(h, "_run_blocking", lambda *_args, **_kwargs: asyncio.sleep(0, result="gpu-ok"))
+    assert asyncio.run(h._try_gpu_optimize(".gpu")) == (True, "gpu-ok")
+    monkeypatch.setattr(h, "_run_blocking", _timeout)
+    assert asyncio.run(h._try_gpu_optimize("gpu clear")) == (True, "⚠ GPU optimizasyonu zaman aşımına uğradı.")
+    monkeypatch.setattr(h, "_run_blocking", _err)
+    assert asyncio.run(h._try_gpu_optimize("vram temizle")) == (True, "⚠ GPU optimizasyonu başarısız: hf")
+
+    # _try_validate_file: .py başarılı dal
+    h.memory = SimpleNamespace(get_last_file=lambda: None, set_last_file=lambda _p: None)
+    assert h._try_validate_file("python doğrula", "python doğrula main.py") == (True, "✓ py:11")
+
+    # _try_github_read: path yok dalı
+    assert h._try_github_read("github dosya oku", "github dosya oku") == (
+        True,
+        "⚠ Okunacak GitHub dosya yolunu belirtin.",
+    )
+
+    # _try_clear_memory: non-awaitable clear dalı
+    sync_mem = SimpleNamespace(called=False)
+
+    def _clear():
+        sync_mem.called = True
+        return None
+
+    sync_mem.clear = _clear
+    h.memory = sync_mem
+    assert asyncio.run(h._try_clear_memory(".clear")) == (True, "✓ Konuşma belleği temizlendi.")
+    assert sync_mem.called is True
+
+    # _try_docs_search: awaitable result_obj dalı
+    async def _search_async(query, _filters, mode):
+        return True, f"async:{mode}:{query}"
+
+    h.docs = SimpleNamespace(search=_search_async)
+    assert asyncio.run(h._try_docs_search("depoda ara q mode:vector", "depoda ara q mode:vector")) == (
+        True,
+        "async:vector:q",
+    )
