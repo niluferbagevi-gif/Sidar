@@ -114,10 +114,19 @@ def test_ollama_stream_response_parses_trailing_and_error_fallback(monkeypatch: 
     assert "Akış kesildi" in err_payload["argument"]
 
 
-def test_gemini_chat_missing_package_and_missing_key() -> None:
+def test_gemini_chat_missing_package_and_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_import = __import__
+
+    def _fake_import_missing(name, *args, **kwargs):
+        if name in {"google", "google.genai"}:
+            raise ImportError("missing google-genai")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import_missing)
     client_missing_pkg = llm.GeminiClient(SimpleNamespace(GEMINI_API_KEY="x", GEMINI_MODEL="m"))
     msg = asyncio.run(client_missing_pkg.chat(messages=[{"role": "user", "content": "hi"}], stream=False))
     assert "google-genai" in json.loads(msg)["argument"]
+    monkeypatch.setattr("builtins.__import__", real_import)
 
     google_mod = types.ModuleType("google")
     genai_mod = types.ModuleType("google.genai")
