@@ -27,3 +27,47 @@ A skill is a set of local instructions to follow that is stored in a `SKILL.md` 
   - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
 
 - Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.
+
+## Instruction precedence and conflict resolution
+When instructions conflict, follow this order (highest priority first):
+1) System instructions
+2) Developer instructions
+3) User instructions
+4) `AGENTS.md` instructions
+5) Skill-specific instructions (`SKILL.md`)
+
+If there is still ambiguity, choose the safest option and explain the decision briefly in the response.
+
+## Default workflow for non-skill tasks
+If no listed skill is triggered, follow this default workflow:
+1) Understand scope and identify impacted files.
+2) Read only required files (avoid bulk reads).
+3) Implement the smallest correct change.
+4) Run relevant checks.
+5) Summarize changes, checks, and known limitations.
+
+## Repo-specific execution standards
+- Use `rg` for file discovery; avoid recursive `ls -R` and `grep -R` in large trees.
+- Keep changes minimal and task-scoped; do not perform unrelated refactors.
+- Prefer deterministic commands and include exact commands executed in the final report.
+- For code changes, run the most relevant checks for touched areas (tests, lint, type-check).
+- If a check cannot run due to environment limits, report it explicitly as a warning.
+
+## Final response contract
+Every implementation response should include:
+- Summary of what changed.
+- Files changed list.
+- Validation/check commands and their outcomes.
+- Risks, assumptions, or follow-up suggestions (if any).
+
+Use clear status markers for checks:
+- ✅ Pass
+- ⚠️ Warning (environment or external limitation)
+- ❌ Fail (actual issue to fix)
+
+## Pull request readiness checklist
+Before opening/recording a PR, verify:
+- [ ] Task requirements are fully addressed.
+- [ ] No unrelated files are modified.
+- [ ] Relevant checks were executed or explicitly documented as blocked.
+- [ ] User-facing notes are concise and actionable.
