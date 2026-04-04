@@ -357,6 +357,87 @@ def test_init_telemetry_success_and_runtime_failure(monkeypatch) -> None:
     assert fail is False
 
 
+def test_init_telemetry_auto_import_paths(monkeypatch) -> None:
+    monkeypatch.setattr(config.Config, "ENABLE_TRACING", True, raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_EXPORTER_ENDPOINT", "http://otel:4317", raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_SERVICE_NAME", "sidar-auto", raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_INSTRUMENT_FASTAPI", True, raising=False)
+    monkeypatch.setattr(config.Config, "OTEL_INSTRUMENT_HTTPX", True, raising=False)
+
+    class _TraceModule:
+        provider = None
+
+        @staticmethod
+        def set_tracer_provider(provider):
+            _TraceModule.provider = provider
+
+    class _Resource:
+        @staticmethod
+        def create(payload):
+            return payload
+
+    class _Provider:
+        def __init__(self, resource):
+            self.resource = resource
+            self.processors = []
+
+        def add_span_processor(self, processor):
+            self.processors.append(processor)
+
+    class _Exporter:
+        def __init__(self, endpoint, insecure):
+            self.endpoint = endpoint
+            self.insecure = insecure
+
+    class _Batch:
+        def __init__(self, exporter):
+            self.exporter = exporter
+
+    class _FastAPIInstrumentor:
+        called = False
+
+        @classmethod
+        def instrument_app(cls, _app):
+            cls.called = True
+
+    class _HttpxInstrumentor:
+        called = False
+
+        def instrument(self):
+            _HttpxInstrumentor.called = True
+
+    monkeypatch.setitem(sys.modules, "opentelemetry", SimpleNamespace(trace=_TraceModule))
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto.grpc.trace_exporter",
+        SimpleNamespace(OTLPSpanExporter=_Exporter),
+    )
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.trace", SimpleNamespace(TracerProvider=_Provider))
+    monkeypatch.setitem(sys.modules, "opentelemetry.sdk.resources", SimpleNamespace(Resource=_Resource))
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.sdk.trace.export",
+        SimpleNamespace(BatchSpanProcessor=_Batch),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.instrumentation.fastapi",
+        SimpleNamespace(FastAPIInstrumentor=_FastAPIInstrumentor),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.instrumentation.httpx",
+        SimpleNamespace(HTTPXClientInstrumentor=_HttpxInstrumentor),
+    )
+
+    assert config.Config.init_telemetry(fastapi_app=object()) is True
+    assert _FastAPIInstrumentor.called is True
+    assert _HttpxInstrumentor.called is True
+
+    monkeypatch.delitem(sys.modules, "opentelemetry.instrumentation.httpx", raising=False)
+    assert config.Config.init_telemetry(fastapi_app=object()) is True
+
+
 def test_print_config_summary_provider_branches(monkeypatch, capsys) -> None:
     monkeypatch.setattr(config.Config, "PROJECT_NAME", "Sidar", raising=False)
     monkeypatch.setattr(config.Config, "VERSION", "x", raising=False)
@@ -395,6 +476,40 @@ def test_print_config_summary_provider_branches(monkeypatch, capsys) -> None:
     assert "LiteLLM Gateway" in output
 
 
+def test_print_config_summary_ollama_and_gemini(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(config.Config, "PROJECT_NAME", "Sidar", raising=False)
+    monkeypatch.setattr(config.Config, "VERSION", "x", raising=False)
+    monkeypatch.setattr(config.Config, "USE_GPU", True, raising=False)
+    monkeypatch.setattr(config.Config, "GPU_INFO", "GPU", raising=False)
+    monkeypatch.setattr(config.Config, "CUDA_VERSION", "12.0", raising=False)
+    monkeypatch.setattr(config.Config, "GPU_COUNT", 1, raising=False)
+    monkeypatch.setattr(config.Config, "GPU_DEVICE", "0", raising=False)
+    monkeypatch.setattr(config.Config, "GPU_MIXED_PRECISION", False, raising=False)
+    monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.4, raising=False)
+    monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.2, raising=False)
+    monkeypatch.setattr(config.Config, "DRIVER_VERSION", "N/A", raising=False)
+    monkeypatch.setattr(config.Config, "CPU_COUNT", 4, raising=False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "full", raising=False)
+    monkeypatch.setattr(config.Config, "DEBUG_MODE", False, raising=False)
+    monkeypatch.setattr(config.Config, "RAG_DIR", config.BASE_DIR / "data", raising=False)
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "", raising=False)
+
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama", raising=False)
+    monkeypatch.setattr(config.Config, "CODING_MODEL", "code-model", raising=False)
+    monkeypatch.setattr(config.Config, "TEXT_MODEL", "text-model", raising=False)
+    config.Config.print_config_summary()
+
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "gemini", raising=False)
+    monkeypatch.setattr(config.Config, "GEMINI_MODEL", "gemini-pro", raising=False)
+    config.Config.print_config_summary()
+
+    output = capsys.readouterr().out
+    assert "CODING Modeli" in output
+    assert "TEXT Modeli" in output
+    assert "Gemini Modeli" in output
+    assert "Sürücü Sürümü" not in output
+
+
 def test_import_time_env_branches_reload(monkeypatch, tmp_path, capsys) -> None:
     base_env = tmp_path / ".env"
     base_env.write_text("A=1\n", encoding="utf-8")
@@ -422,6 +537,17 @@ def test_import_time_env_branches_reload(monkeypatch, tmp_path, capsys) -> None:
     importlib.reload(config)
     output = capsys.readouterr().out
     assert ".env.qa" in output
+
+    monkeypatch.setenv("SIDAR_ENV", "prod")
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda self: True if self in {tmp_path / ".env", tmp_path / ".env.prod"} else original_exists(self),
+    )
+    sys.modules["config"] = config
+    importlib.reload(config)
+    output = capsys.readouterr().out
+    assert ".env.prod" in output
 
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.setattr(Path, "exists", lambda _self: False)
