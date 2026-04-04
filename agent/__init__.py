@@ -14,6 +14,8 @@ def __getattr__(name: str):
         return AutoHandle
     if name == "roles":
         return import_module(".roles", __name__)
+    if name == "registry":
+        return import_module(".registry", __name__)
     if name in {"SIDAR_SYSTEM_PROMPT", "SIDAR_KEYS", "SIDAR_WAKE_WORDS"}:
         from .definitions import SIDAR_KEYS, SIDAR_SYSTEM_PROMPT, SIDAR_WAKE_WORDS
 
@@ -30,6 +32,7 @@ __all__ = [
     "SidarAgent",
     "AutoHandle",
     "AutoHandler",
+    "registry",
     "SIDAR_SYSTEM_PROMPT",
     "SIDAR_KEYS",
     "SIDAR_WAKE_WORDS",
