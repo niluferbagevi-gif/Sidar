@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -71,3 +74,24 @@ def fake_llm_response() -> dict[str, str]:
 def fake_db_connection() -> dict[str, str | bool]:
     """Ortak sahte veritabanı bağlantı tanımı."""
     return {"dsn": "sqlite:///:memory:", "connected": True}
+
+
+@pytest.fixture(autouse=True)
+def restore_contracts_module_after_test() -> None:
+    """Testler `agent.core.contracts` modülünü stub'ladığında state sızıntısını temizler."""
+    yield
+
+    module = sys.modules.get("agent.core.contracts")
+    required = ("TaskEnvelope", "TaskResult", "DelegationRequest", "is_delegation_request")
+    is_healthy = module is not None and all(hasattr(module, name) for name in required)
+    if is_healthy and getattr(module, "DelegationRequest", object) is not object:
+        return
+
+    module_path = Path(__file__).resolve().parents[1] / "agent" / "core" / "contracts.py"
+    spec = importlib.util.spec_from_file_location("agent.core.contracts", module_path)
+    if spec is None or spec.loader is None:
+        return
+    repaired = importlib.util.module_from_spec(spec)
+    sys.modules["agent.core.contracts"] = repaired
+    spec.loader.exec_module(repaired)
+    importlib.invalidate_caches()
