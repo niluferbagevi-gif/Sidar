@@ -19,6 +19,8 @@ Bu belge, mevcut coverage seviyesinden kalite geçidini güvenli şekilde geçec
 ### Mevcut kalite geçidi ile hizalama (zorunlu not)
 
 - Repo’daki `.coveragerc` ayarına göre güncel global kalite geçidi `fail_under = 90` olarak uygulanır.
+- `run_tests.sh` içinde de varsayılan eşik `COVERAGE_FAIL_UNDER=90` olarak tanımlıdır.
+- Bazı üst seviye raporlarda `%100` kalite geçidi ifadesi geçse bile, **çalışan teknik doğruluk kaynağı** CI çalıştırdığı dosyalardır (`.coveragerc`, `run_tests.sh`, `.github/workflows/ci.yml`).
 - Bu nedenle aşağıdaki “kademeli hedefler”, global gate’in alternatifi değil; **modül bazlı iyileştirme hedefi** olarak yorumlanmalıdır.
 
 ### Testleri sıfırdan yazma (greenfield) yaklaşımı
@@ -49,6 +51,7 @@ Bu planda dolaylı olarak var; ayrıca net kural seti aşağıdadır:
    - Unit (hızlı, yoğun mock)
    - Integration (in-memory DB / local adapter)
    - E2E (az sayıda kritik uçtan uca akış)
+6. **Kapsam dışı modül farkındalığı**: `.coveragerc` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`, `web_ui_react/*`, `migrations/*`) için coverage artışı hedefi konmaz; sadece fonksiyonel/regresyon ihtiyacı varsa test yazılır.
 
 ---
 
@@ -135,6 +138,20 @@ Test yaklaşımı:
 - `tmp_path` ile izole dosya sistemi testleri.
 - İzin ve hata senaryoları için controlled monkeypatch.
 
+#### v5.x ile eklenen kritik modüller (`core/`)
+Örnek dosyalar: `entity_memory.py`, `cost_routing.py`, `lsp.py`, `semantic_cache.py`
+
+Odak:
+- `entity_memory.py`: kullanıcı kimliği/personalization eşleme, TTL, bozuk kayıt geri kazanımı.
+- `cost_routing.py`: model seçimi eşikleri, fallback/fail-closed davranışı, yanlış sınıflandırma sınırları.
+- `lsp.py`: timeout, dil sunucusu unavailable, parse/diagnostic dönüşüm hataları.
+- `semantic_cache.py`: cache hit/miss, benzerlik eşiği, Redis bağlantı kesintisi ve fallback.
+
+Test yaklaşımı:
+- Deterministik fixture + fake adapter (Redis/LSP/Router).
+- Başarılı + hata + degrade modlarını ayrı testlerle doğrula.
+- Özellikle routing/caching kararlarında yan etki assertion’ları (seçilen provider, cache anahtarı, TTL) ekle.
+
 ---
 
 ## 3) Uygulama Takvimi (Sprint Bazlı)
@@ -195,7 +212,7 @@ def test_llm_client_rate_limit_maps_to_domain_error(llm_client):
   - coverage trend karşılaştırması
   - flaky test raporu
 
-Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygulanmalı:
+Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygulanmalı (mevcut global gate `%90` ile uyumlu):
 - Faz 1: `%70`
 - Faz 2: `%80`
 - Faz 3: `%90+`
@@ -203,6 +220,7 @@ Tek adımda `%100` yerine, modül bazlı **kademeli iyileştirme hedefi** uygula
 
 Önemli:
 - Bu fazlar global `%90` gate’i düşürmez; yalnızca düşük coverage alanlarını planlı biçimde iyileştirmek için takip edilir.
+- Eğer gelecekte teknik kaynaklar (`.coveragerc` + CI) gerçekten `%100` gate’e yükseltilirse, bu fazlar doğrudan `%100` hedefli yeniden kalibre edilmelidir.
 
 ---
 
@@ -212,14 +230,31 @@ Her sprintte aşağıdaki tablo güncellenmelidir:
 
 | Modül | Mevcut Line% | Mevcut Branch% | Hedef | Sorumlu | Hedef Sprint | Durum |
 |---|---:|---:|---:|---|---|---|
-| `agent/*` | TBD | TBD | 90+ | TBD | S1-S2 | planned |
-| `core/llm_client.py` | TBD | TBD | 90+ | TBD | S2 | planned |
-| `core/rag.py` | TBD | TBD | 90+ | TBD | S2 | planned |
-| `managers/*` (kritik) | TBD | TBD | 85-90+ | TBD | S1-S3 | planned |
+| `agent/*` | N/A* | N/A* | 90+ | TBD | S1-S2 | planned |
+| `core/llm_client.py` | N/A* | N/A* | 90+ | TBD | S2 | planned |
+| `core/rag.py` | N/A* | N/A* | 90+ | TBD | S2 | planned |
+| `core/entity_memory.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
+| `core/cost_routing.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
+| `core/lsp.py` | N/A* | N/A* | 85-90+ | TBD | S3 | planned |
+| `core/semantic_cache.py` | N/A* | N/A* | 90+ | TBD | S2-S3 | planned |
+| `managers/*` (kritik) | N/A* | N/A* | 85-90+ | TBD | S1-S3 | planned |
+
+\* `N/A`: Bu revizyon anında depoda güncel `coverage.xml/htmlcov` artefaktı bulunmadığı için yüzde değerleri dokümana gömülmedi. İlk sprint adımında CI artefaktından otomatik çekilip doldurulmalıdır.
 
 ---
 
-## 8) Beklenen Çıktılar
+## 8) Tutarlılık Kontrol Notu (2026-04-05)
+
+Bu plan, mevcut repo durumu ile çapraz kontrol edilerek güncellenmiştir:
+
+- Global gate bugün için `%90` (`.coveragerc` + `run_tests.sh`).
+- `%100 enforced` ifadesi taşıyan raporlar, teknik konfigürasyonla çelişiyorsa referans değil bilgilendirme olarak değerlendirilmelidir.
+- `omit` kapsamı plan içine açık operasyon kuralı olarak eklenmiştir.
+- v5.x ile gelen kritik `core/*` modülleri test öncelik matrisine dahil edilmiştir.
+
+---
+
+## 9) Beklenen Çıktılar
 
 - Daha hızlı ve deterministik test suite.
 - Kritik iş akışlarında yüksek güven.
