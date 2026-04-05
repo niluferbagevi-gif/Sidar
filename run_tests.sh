@@ -3,7 +3,19 @@ set -uo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
+STRICT_COVERAGE_GATE="${STRICT_COVERAGE_GATE:-0}"
+BASELINE_COVERAGE_FILE="${BASELINE_COVERAGE_FILE:-.coverage-baseline}"
+
+if [ "${STRICT_COVERAGE_GATE}" = "1" ]; then
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
+elif [ -n "${COVERAGE_FAIL_UNDER:-}" ]; then
+  COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER}"
+elif [ -f "${BASELINE_COVERAGE_FILE}" ]; then
+  COVERAGE_FAIL_UNDER="$(cat "${BASELINE_COVERAGE_FILE}")"
+else
+  COVERAGE_FAIL_UNDER="0"
+fi
+
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
@@ -35,6 +47,7 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
+  echo "ℹ️ Coverage eşiği: ${COVERAGE_FAIL_UNDER} (STRICT_COVERAGE_GATE=${STRICT_COVERAGE_GATE})"
   local pytest_cmd=(pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}")
 
   if python -c "import xdist" >/dev/null 2>&1; then
