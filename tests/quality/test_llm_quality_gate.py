@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.judge import JudgeResult
+
+pytestmark = pytest.mark.quality_gate
 
 
 def test_judge_result_passes_when_relevance_high_and_risk_low() -> None:

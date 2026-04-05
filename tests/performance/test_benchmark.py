@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from scripts.coverage_hotspots import FileCoverage, format_table
+
+pytestmark = pytest.mark.benchmark
 
 
 def test_format_table_handles_small_dataset_quickly() -> None:

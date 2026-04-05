@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts.coverage_hotspots import format_table, parse_coverage_xml, rank_hotspots
+
+
+pytestmark = pytest.mark.quality_gate
 
 
 COVERAGE_XML_SAMPLE = """<?xml version=\"1.0\" ?>
