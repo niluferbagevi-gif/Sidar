@@ -12,8 +12,59 @@ RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
+LINT_EXIT_CODE=0
 
-# 0) Önceki test artefaktlarını temizle
+
+
+# 0) Linting ve statik analiz
+run_static_checks() {
+  echo "🧹 Tüm dosyalar için linting ve statik analiz yapılıyor..."
+
+  if command -v ruff >/dev/null 2>&1; then
+    echo "   -> Python linter (ruff) çalışıyor..."
+    ruff check . || return 1
+  else
+    echo "⚠️ Ruff bulunamadı, python lint adımı atlandı."
+  fi
+
+  if command -v mypy >/dev/null 2>&1; then
+    echo "   -> Python tip kontrolü (mypy) çalışıyor..."
+    if ! mypy .; then
+      echo "⚠️ Mypy uyarıları/hataları bulundu, lütfen inceleyin."
+    fi
+  else
+    echo "⚠️ Mypy bulunamadı, tip kontrol adımı atlandı."
+  fi
+
+  if command -v pip-audit >/dev/null 2>&1; then
+    echo "   -> Bağımlılık güvenlik taraması (pip-audit) çalışıyor..."
+    if ! pip-audit; then
+      echo "⚠️ pip-audit güvenlik uyarıları raporladı, çıktı incelenmeli."
+    fi
+  else
+    echo "ℹ️ pip-audit bulunamadı, güvenlik taraması atlandı."
+  fi
+
+  if command -v yamllint >/dev/null 2>&1; then
+    echo "   -> YAML linter (yamllint) çalışıyor..."
+    if ! yamllint .; then
+      echo "⚠️ YAML format uyarıları bulundu, çıktı incelenmeli."
+    fi
+  else
+    echo "ℹ️ yamllint bulunamadı, YAML lint adımı atlandı."
+  fi
+
+  if command -v shellcheck >/dev/null 2>&1; then
+    echo "   -> Shell linter (shellcheck) çalışıyor..."
+    if ! find . -type f -name "*.sh" -exec shellcheck {} +; then
+      echo "⚠️ Shell script uyarıları bulundu, çıktı incelenmeli."
+    fi
+  else
+    echo "ℹ️ shellcheck bulunamadı, shell lint adımı atlandı."
+  fi
+}
+
+# 1) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
 
 open_artifact() {
@@ -60,10 +111,16 @@ run_pytest_coverage_report() {
   fi
 }
 
-# 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
+# 2) Statik analiz ve linting quality gate
+if ! run_static_checks; then
+  echo "❌ Statik analiz adımı başarısız oldu."
+  LINT_EXIT_CODE=1
+fi
+
+# 3) Backend testleri + coverage (pyproject addopts ile) + quality gate
 run_pytest_coverage_report
 
-# 2) Kritik yol performans baseline testleri (pytest-benchmark)
+# 4) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
   echo "ℹ️ Benchmark testleri RUN_BENCHMARKS=0 ile atlandı."
 elif [ -f "tests/test_benchmark.py" ]; then
@@ -76,7 +133,7 @@ else
   echo "⚠️ Benchmark testi atlandı: tests/test_benchmark.py veya tests/performance/test_benchmark.py bulunamadı."
 fi
 
-# 3) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
+# 5) Frontend React testleri ve coverage (web_ui_react varsa zorunlu quality gate)
 if [ -d "web_ui_react" ]; then
   if ! command -v npm >/dev/null 2>&1; then
     echo "❌ web_ui_react dizini var ama npm bulunamadı — React testleri çalıştırılamıyor."
@@ -106,9 +163,10 @@ fi
 
 echo "======================================================"
 
-# 4) Final Durum Değerlendirmesi
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
+# 6) Final Durum Değerlendirmesi
+if [ "${LINT_EXIT_CODE}" -ne 0 ] || [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
   echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
+  echo "   Lint Çıkış Kodu: ${LINT_EXIT_CODE}"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
   echo "   Frontend Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE}"

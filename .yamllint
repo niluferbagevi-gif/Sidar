@@ -1,0 +1,13 @@
+extends: default
+
+ignore: |
+  .git/
+  .venv/
+  venv/
+  node_modules/
+  web_ui_react/node_modules/
+
+rules:
+  line-length:
+    max: 140
+  document-start: disable
