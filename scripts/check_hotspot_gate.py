@@ -10,6 +10,23 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
+def _normalize_path(value: str) -> str:
+    return value.replace("\\", "/").lstrip("./")
+
+
+def _resolve_filename(filename: str, package_name: str | None) -> str:
+    normalized = _normalize_path(filename)
+    if "/" in normalized:
+        return normalized
+
+    if package_name:
+        package_path = package_name.replace(".", "/").strip("/")
+        if package_path:
+            return f"{package_path}/{normalized}"
+
+    return normalized
+
+
 @dataclass
 class FileCoverage:
     covered: int
@@ -32,19 +49,23 @@ def parse_coverage_xml(xml_path: Path) -> dict[str, FileCoverage]:
     xml_root = tree.getroot()
     files: dict[str, FileCoverage] = {}
 
-    for cls in xml_root.findall(".//class"):
-        filename = cls.attrib.get("filename")
-        if not filename:
-            continue
+    for pkg in xml_root.findall(".//package"):
+        package_name = pkg.attrib.get("name")
+        for cls in pkg.findall("./classes/class"):
+            filename = cls.attrib.get("filename")
+            if not filename:
+                continue
 
-        covered = 0
-        missed = 0
-        for line in cls.findall("./lines/line"):
-            if int(line.attrib.get("hits", "0")) > 0:
-                covered += 1
-            else:
-                missed += 1
-        files[filename] = FileCoverage(covered=covered, missed=missed)
+            resolved_path = _resolve_filename(filename, package_name)
+
+            covered = 0
+            missed = 0
+            for line in cls.findall("./lines/line"):
+                if int(line.attrib.get("hits", "0")) > 0:
+                    covered += 1
+                else:
+                    missed += 1
+            files[resolved_path] = FileCoverage(covered=covered, missed=missed)
 
     return files
 

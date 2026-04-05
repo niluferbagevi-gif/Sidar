@@ -46,6 +46,44 @@ def test_parse_coverage_xml_extracts_percentages(tmp_path: Path) -> None:
     assert data["managers/jira_manager.py"].pct == 50.0
 
 
+def test_parse_coverage_xml_uses_package_name_for_bare_filenames(tmp_path: Path) -> None:
+    xml_path = tmp_path / "coverage.xml"
+    xml_path.write_text(
+        """<?xml version="1.0" ?>
+<coverage>
+  <packages>
+    <package name="agent.core">
+      <classes>
+        <class filename="__init__.py">
+          <lines>
+            <line number="1" hits="1"/>
+            <line number="2" hits="0"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+    <package name="core">
+      <classes>
+        <class filename="__init__.py">
+          <lines>
+            <line number="1" hits="1"/>
+            <line number="2" hits="1"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+        encoding="utf-8",
+    )
+
+    data = parse_coverage_xml(xml_path)
+
+    assert data["agent/core/__init__.py"].pct == 50.0
+    assert data["core/__init__.py"].pct == 100.0
+
+
 def test_check_hotspots_reports_min_and_ratchet_failures(tmp_path: Path) -> None:
     xml_path = tmp_path / "coverage.xml"
     xml_path.write_text(COVERAGE_XML_SAMPLE, encoding="utf-8")
