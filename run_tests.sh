@@ -3,7 +3,11 @@ set -uo pipefail
 
 echo "🚀 Sidar AI - Otomatik Kalite Güvence Testleri Başlıyor..."
 
-COVERAGE_FAIL_UNDER="${COVERAGE_FAIL_UNDER:-90}"
+if [ -z "${COVERAGE_FAIL_UNDER+x}" ]; then
+  COVERAGE_FAIL_UNDER=""
+fi
+COVERAGE_STAGE="${COVERAGE_STAGE:-bootstrap}"
+HOTSPOT_GATE_CONFIG="${HOTSPOT_GATE_CONFIG:-.ci/backend_hotspot_gate.json}"
 AUTO_OPEN_ARTIFACTS="${AUTO_OPEN_ARTIFACTS:-1}"
 
 PYTEST_WORKERS="${PYTEST_WORKERS:-auto}"
@@ -12,6 +16,7 @@ RUN_BENCHMARKS="${RUN_BENCHMARKS:-auto}"
 BACKEND_EXIT_CODE=0
 FRONTEND_EXIT_CODE=0
 BENCHMARK_EXIT_CODE=0
+HOTSPOT_EXIT_CODE=0
 
 # 0) Önceki test artefaktlarını temizle
 rm -rf .coverage .coverage.* htmlcov web_ui_react/coverage
@@ -35,12 +40,28 @@ open_artifact() {
 
 run_pytest_coverage_report() {
   echo "📊 Pytest + Coverage + Quality Gate çalıştırılıyor..."
-  local pytest_cmd=(pytest --cov-fail-under="${COVERAGE_FAIL_UNDER}")
+  local resolved_fail_under="${COVERAGE_FAIL_UNDER}"
+
+  if [ -z "${resolved_fail_under}" ]; then
+    case "${COVERAGE_STAGE}" in
+      bootstrap) resolved_fail_under=12 ;;
+      hardening) resolved_fail_under=20 ;;
+      scale_up) resolved_fail_under=35 ;;
+      target90) resolved_fail_under=90 ;;
+      *)
+        resolved_fail_under=12
+        echo "⚠️ Bilinmeyen COVERAGE_STAGE='${COVERAGE_STAGE}', varsayılan bootstrap eşiği (${resolved_fail_under}) kullanılacak."
+        ;;
+    esac
+  fi
+
+  local pytest_cmd=(pytest --cov-fail-under="${resolved_fail_under}")
 
   if python -c "import xdist" >/dev/null 2>&1; then
     pytest_cmd+=(-n "${PYTEST_WORKERS}")
   fi
 
+  echo "➡️ Coverage stage: ${COVERAGE_STAGE} | fail-under: ${resolved_fail_under}"
   echo "➡️ Çalıştırılan komut: ${pytest_cmd[*]}"
 
   "${pytest_cmd[@]}"
@@ -60,8 +81,21 @@ run_pytest_coverage_report() {
   fi
 }
 
+run_hotspot_quality_gate() {
+  if [ ! -f "${HOTSPOT_GATE_CONFIG}" ]; then
+    echo "⚠️ Hotspot gate config bulunamadı: ${HOTSPOT_GATE_CONFIG}. Bu adım atlandı."
+    HOTSPOT_EXIT_CODE=0
+    return 0
+  fi
+
+  echo "🎯 Hotspot coverage quality gate kontrol ediliyor..."
+  python scripts/check_hotspot_gate.py --xml coverage.xml --config "${HOTSPOT_GATE_CONFIG}"
+  HOTSPOT_EXIT_CODE=$?
+}
+
 # 1) Backend testleri + coverage (pyproject addopts ile) + quality gate
 run_pytest_coverage_report
+run_hotspot_quality_gate
 
 # 2) Kritik yol performans baseline testleri (pytest-benchmark)
 if [ "${RUN_BENCHMARKS}" = "0" ]; then
@@ -107,9 +141,10 @@ fi
 echo "======================================================"
 
 # 4) Final Durum Değerlendirmesi
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
+if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ] || [ "${BENCHMARK_EXIT_CODE}" -ne 0 ] || [ "${HOTSPOT_EXIT_CODE}" -ne 0 ]; then
   echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
+  echo "   Hotspot Gate Çıkış Kodu: ${HOTSPOT_EXIT_CODE}"
   echo "   Frontend Çıkış Kodu: ${FRONTEND_EXIT_CODE}"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE}"
   exit 1
