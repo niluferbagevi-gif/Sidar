@@ -111,7 +111,7 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
 
     by_provider = snapshot.get('by_provider', {}) if isinstance(snapshot, dict) else {}
     for provider, row in by_provider.items():
-        p = str(provider or 'unknown').replace('"', '\"')
+        p = str(provider or 'unknown').replace('"', '\\"')
         lines.append(f'sidar_llm_calls_total{{provider="{p}"}} {int(row.get("calls", 0) or 0)}')
         lines.append(f'sidar_llm_cost_total_usd{{provider="{p}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
         lines.append(f'sidar_llm_tokens_total{{provider="{p}"}} {int(row.get("total_tokens", 0) or 0)}')
@@ -120,7 +120,7 @@ def render_llm_metrics_prometheus(snapshot: Dict[str, object]) -> str:
 
     by_user = snapshot.get('by_user', {}) if isinstance(snapshot, dict) else {}
     for user_id, row in by_user.items():
-        uid = str(user_id or 'anonymous').replace('"', '\"')
+        uid = str(user_id or 'anonymous').replace('"', '\\"')
         lines.append(f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}')
         lines.append(f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}')
         lines.append(f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}')
