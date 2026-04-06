@@ -71,6 +71,7 @@ def test_extract_video_id_invalid_inputs_return_empty():
     assert manager.extract_video_id("not-a-video-id") == ""
     assert manager.extract_video_id("https://example.com/watch?v=dQw4w9WgXcQ") == ""
     assert manager.extract_video_id("https://www.youtube.com/watch?v=short") == ""
+    assert manager.extract_video_id("https://www.youtube.com/channel/UC1234567890") == ""
 
 
 def test_timedtext_url_and_normalize_transcript_events():
