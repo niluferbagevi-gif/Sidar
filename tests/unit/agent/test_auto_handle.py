@@ -83,13 +83,39 @@ class FakeGithub:
     def __init__(self, available=True):
         self.available = available
         self.last_list_pr_args = None
+        self.last_commits_n = None
+        self.last_get_pr = None
+        self.last_get_pr_files = None
+        self.last_read_path = None
 
     def is_available(self):
         return self.available
 
+    def list_commits(self, n=10):
+        self.last_commits_n = n
+        return True, f"commits:{n}"
+
+    def get_repo_info(self):
+        return True, "repo:info"
+
+    def list_files(self, path=""):
+        return True, f"files:{path}"
+
+    def read_remote_file(self, path):
+        self.last_read_path = path
+        return True, f"remote:{path}"
+
     def list_pull_requests(self, state="open", limit=10):
         self.last_list_pr_args = (state, limit)
         return True, f"prs:{state}:{limit}"
+
+    def get_pull_request(self, number):
+        self.last_get_pr = number
+        return True, f"pr:{number}"
+
+    def get_pr_files(self, number):
+        self.last_get_pr_files = number
+        return True, f"pr_files:{number}"
 
 
 class FakeWeb:
@@ -129,6 +155,11 @@ class FakeDocs:
 
     async def add_document_from_url(self, url, title=""):
         return True, f"docs_add:{url}:{title}"
+
+
+class AsyncDocs(FakeDocs):
+    async def search(self, query, _unused=None, mode="auto"):
+        return True, f"docs_search_async:{query}:{mode}"
 
 
 def _build_handler(monkeypatch, memory=None, code=None, github=None):
@@ -223,3 +254,175 @@ def test_try_docs_add_supports_secondary_url_form(monkeypatch):
 
     assert handled is True
     assert response == "docs_add:https://example.com/docs:FastAPI Rehberi"
+
+
+def test_try_list_directory_extracts_default_and_explicit_path(monkeypatch):
+    h = _build_handler(monkeypatch)
+    handled, response = h._try_list_directory("klasör içeriğini listele", "klasör içeriğini listele")
+    assert (handled, response) == (True, "listed:.")
+
+    handled, response = h._try_list_directory("kök dizin listele", 'kök dizin listele "/tmp/demo"')
+    assert (handled, response) == (True, "listed:/tmp/demo")
+
+
+def test_try_validate_file_paths_and_extensions(monkeypatch):
+    memory = FakeMemory()
+    memory.set_last_file("app.py")
+    code = FakeCode(read_map={"app.py": (True, "print('ok')"), "data.toml": (True, "x=1")})
+    h = _build_handler(monkeypatch, memory=memory, code=code)
+
+    handled, response = h._try_validate_file("python doğrula", "python doğrula")
+    assert (handled, response) == (True, "✓ valid py")
+
+    handled, response = h._try_validate_file("dosya doğrula", "dosya doğrula data.toml")
+    assert handled is True
+    assert "desteklenmiyor" in response
+
+
+def test_try_validate_file_read_fail_and_no_path(monkeypatch):
+    h = _build_handler(monkeypatch, memory=FakeMemory(), code=FakeCode())
+
+    handled, response = h._try_validate_file("sözdizimi", "sözdizimi")
+    assert handled is True
+    assert "dosya yolunu" in response
+
+    handled, response = h._try_validate_file("dosya doğrula", "dosya doğrula x.py")
+    assert handled is True
+    assert response.startswith("✗ Dosya okunamadı")
+
+
+def test_try_audit_health_gpu_timeout_and_exception(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    async def raise_timeout(*_args, **_kwargs):
+        raise asyncio.TimeoutError()
+
+    async def raise_exc(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    h._run_blocking = raise_timeout
+    assert asyncio.run(h._try_audit(".audit")) == (True, "⚠ Denetim işlemi zaman aşımına uğradı.")
+    assert asyncio.run(h._try_health(".health")) == (True, "⚠ Sağlık raporu zaman aşımına uğradı.")
+    assert asyncio.run(h._try_gpu_optimize(".gpu")) == (True, "⚠ GPU optimizasyonu zaman aşımına uğradı.")
+
+    h._run_blocking = raise_exc
+    assert (asyncio.run(h._try_audit("audit")))[1].startswith("⚠ Denetim sırasında hata oluştu")
+    assert (asyncio.run(h._try_health(".health")))[1].startswith("⚠ Sağlık raporu alınamadı")
+    assert (asyncio.run(h._try_gpu_optimize(".gpu")))[1].startswith("⚠ GPU optimizasyonu başarısız")
+
+
+def test_try_health_gpu_requires_health_manager(monkeypatch):
+    h = _build_handler(monkeypatch)
+    h.health = None
+    assert asyncio.run(h._try_health(".health")) == (True, "⚠ Sistem sağlık monitörü başlatılamadı.")
+    assert asyncio.run(h._try_gpu_optimize(".gpu")) == (True, "⚠ Sistem sağlık monitörü başlatılamadı.")
+
+
+def test_try_github_helpers_available_and_unavailable(monkeypatch):
+    h = _build_handler(monkeypatch, github=FakeGithub(available=False))
+    assert h._try_github_commits("commit listele")[1].startswith("⚠ GitHub token")
+    assert h._try_github_info("repo bilgi al")[1].startswith("⚠ GitHub token")
+    assert h._try_github_list_files("depodaki dosyaları listele")[1].startswith("⚠ GitHub token")
+    assert h._try_github_read("github dosya oku", "github dosya oku a.py")[1].startswith("⚠ GitHub token")
+
+    h2 = _build_handler(monkeypatch, github=FakeGithub(available=True))
+    assert h2._try_github_commits("5 commit listele") == (True, "commits:5")
+    assert h2._try_github_info("repo info göster") == (True, "repo:info")
+    assert h2._try_github_list_files("repo dosya listele") == (True, "files:")
+    assert h2._try_github_read("github file oku", "github file oku src/a.py") == (True, "remote:src/a.py")
+
+
+def test_try_github_get_pr_detail_and_files(monkeypatch):
+    gh = FakeGithub(available=True)
+    h = _build_handler(monkeypatch, github=gh)
+
+    handled, response = asyncio.run(h._try_github_get_pr("pr #12 detay", "pr #12 detay"))
+    assert (handled, response) == (True, "pr:12")
+    assert gh.last_get_pr == 12
+
+    handled, response = asyncio.run(h._try_github_get_pr("pull request #7 dosya", "pull request #7 dosya"))
+    assert (handled, response) == (True, "pr_files:7")
+    assert gh.last_get_pr_files == 7
+
+
+def test_try_github_get_pr_unavailable_and_non_match(monkeypatch):
+    h = _build_handler(monkeypatch, github=FakeGithub(available=False))
+    assert asyncio.run(h._try_github_get_pr("pr #3", "pr #3")) == (True, "⚠ GitHub token ayarlanmamış.")
+    assert asyncio.run(h._try_github_get_pr("rastgele metin", "rastgele metin")) == (False, "")
+
+
+def test_web_package_and_docs_handlers(monkeypatch):
+    h = _build_handler(monkeypatch)
+
+    assert asyncio.run(h._try_web_search("web'de ara python", "web'de ara python")) == (True, "search:python")
+    assert asyncio.run(h._try_fetch_url("url fetch", "url fetch https://example.com")) == (True, "url:https://example.com")
+    assert asyncio.run(h._try_search_docs("docs ara fastapi response", "docs ara fastapi response")) == (
+        True,
+        "docs:fastapi:response",
+    )
+    assert asyncio.run(h._try_search_stackoverflow("so: asyncio gather", "so: asyncio gather")) == (
+        True,
+        "so:asyncio gather",
+    )
+
+    assert asyncio.run(h._try_pypi("pypi requests", "pypi requests")) == (True, "pypi:requests")
+    assert asyncio.run(h._try_pypi("pypi requests 2.31.0", "pypi requests 2.31.0")) == (True, "pypi:requests:2.31.0")
+    assert asyncio.run(h._try_npm("npm react", "npm react")) == (True, "npm:react")
+    assert asyncio.run(h._try_gh_releases("github releases tiangolo/fastapi", "github releases tiangolo/fastapi")) == (
+        True,
+        "releases:tiangolo/fastapi",
+    )
+
+
+def test_docs_handlers_and_helper_extractors(monkeypatch):
+    h = _build_handler(monkeypatch)
+    assert asyncio.run(h._try_docs_search("depoda ara indeksleme mode:vector", "depoda ara indeksleme mode:vector")) == (
+        True,
+        "docs_search:indeksleme:vector",
+    )
+    assert h._try_docs_list("belge deposu listele", "belge deposu listele") == (True, "docs_list")
+    assert asyncio.run(
+        h._try_docs_add(
+            "belge ekle https://example.com/docs",
+            "belge ekle https://example.com/docs",
+        )
+    ) == (True, "docs_add:https://example.com/docs:")
+
+    h.docs = AsyncDocs()
+    assert asyncio.run(h._try_docs_search("rag ara vektör", "rag ara vektör")) == (True, "docs_search_async:vektör:auto")
+
+    assert h._extract_path('oku "a/b/c.py"') == "a/b/c.py"
+    assert h._extract_path("oku src/app.json") == "src/app.json"
+    assert h._extract_dir_path('listele "/tmp/proje"') == "/tmp/proje"
+    assert h._extract_dir_path("listele ./agent") == "./agent"
+    assert h._extract_dir_path("listele ./agent/main.py") is None
+    assert h._extract_url("bak https://example.com/test?a=1") == "https://example.com/test?a=1"
+
+
+def test_handle_full_fallback_and_dot_routes(monkeypatch):
+    h = _build_handler(monkeypatch)
+    assert asyncio.run(h.handle("anlamsız bir ifade")) == (False, "")
+
+    h._try_clear_memory = AsyncMock(return_value=(True, "cleared"))
+    assert asyncio.run(h._try_dot_command(".clear", ".clear")) == (True, "cleared")
+
+    h._try_audit = AsyncMock(return_value=(True, "audit"))
+    assert asyncio.run(h._try_dot_command(".audit", ".audit")) == (True, "audit")
+
+    h._try_gpu_optimize = AsyncMock(return_value=(True, "gpu"))
+    assert asyncio.run(h._try_dot_command(".gpu", ".gpu")) == (True, "gpu")
+
+    assert asyncio.run(h._try_dot_command(".unknown", ".unknown")) == (False, "")
+
+
+def test_run_blocking_executes_sync_function(monkeypatch):
+    h = _build_handler(monkeypatch)
+    h.command_timeout = 1
+    result = asyncio.run(h._run_blocking(lambda x: x + 1, 4))
+    assert result == 5
+
+
+def test_security_status_pattern(monkeypatch):
+    h = _build_handler(monkeypatch)
+    assert h._try_security_status("openclaw erişim seviyesi nedir") == (True, "security")
+    assert h._try_security_status("genel güvenlik analizi yap") == (False, "")
