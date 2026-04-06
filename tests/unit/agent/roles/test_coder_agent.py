@@ -106,7 +106,11 @@ def test_init_registers_tools(monkeypatch, tmp_path):
         self.cfg = cfg
         self.role_name = role_name
         self.tools = {}
-        self.register_tool = coder_module.BaseAgent.register_tool.__get__(self, CoderAgent)
+        
+        def _register_tool(name, func):
+            self.tools[name] = func
+
+        self.register_tool = _register_tool
 
     monkeypatch.setattr(coder_module.BaseAgent, "__init__", fake_base_init)
     monkeypatch.setattr(coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level))
@@ -137,17 +141,31 @@ def test_init_registers_tools(monkeypatch, tmp_path):
     }
 
 
-def test_parse_qa_feedback_variants():
+def test_parse_qa_feedback_variants(monkeypatch):
     assert CoderAgent._parse_qa_feedback("") == {}
     assert CoderAgent._parse_qa_feedback(' {"decision":"approve"} ') == {"decision": "approve"}
 
     malformed = CoderAgent._parse_qa_feedback("{not-json")
     assert malformed == {"raw": "{not-json"}
 
+    json_not_dict = CoderAgent._parse_qa_feedback('["not", "a", "dict"]')
+    assert json_not_dict == {"raw": '["not", "a", "dict"]'}
+
+    # startswith("{") dalında json.loads sözlük dışı bir tip döndürürse fallback'e düşmeli
+    monkeypatch.setattr(coder_module.json, "loads", lambda _payload: ["forced", "list"])
+    forced_non_dict = CoderAgent._parse_qa_feedback("{\"decision\":\"approve\"}")
+    assert forced_non_dict == {"raw": '{"decision":"approve"}'}
+
     parsed = CoderAgent._parse_qa_feedback("decision=reject; summary=Fix tests; x=y")
     assert parsed["decision"] == "reject"
     assert parsed["summary"] == "Fix tests"
     assert parsed["x"] == "y"
+
+    # "=" içermeyen parça atlanmalı ve sözlüğe eklenmemeli
+    parsed_with_noise = CoderAgent._parse_qa_feedback("decision=approve;note without equals;summary=ok")
+    assert parsed_with_noise["decision"] == "approve"
+    assert parsed_with_noise["summary"] == "ok"
+    assert "note without equals" not in parsed_with_noise
 
 
 async def _new_runtime_agent():
