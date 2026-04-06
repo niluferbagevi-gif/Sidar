@@ -435,15 +435,18 @@ def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cm.CodeManager, "_init_docker", original_init)
     m = cm.CodeManager(sec, tmp_path, cfg=cfg)
-    monkeypatch.setattr(m, "_try_wsl_socket_fallback", lambda _mod: False)
-    monkeypatch.setattr(cm.sys, "modules", {**sys.modules, "docker": ModuleType("docker")})
-    monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
+    m.docker_available = True  # generic hata yolunun bayrağı sıfırladığını doğrula
+    m.docker_client = object()
 
     fake_docker = ModuleType("docker")
     fake_docker.from_env = lambda: (_ for _ in ()).throw(RuntimeError("daemon down"))
     monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    monkeypatch.setattr(cm.CodeManager, "_try_wsl_socket_fallback", lambda *_a, **_k: False)
+
     m._init_docker()
+
     assert m.docker_available is False
+    assert m.docker_client is None
 
 
 def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
