@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, Dict, Optional
 
 from agent.core.contracts import DelegationRequest, TaskEnvelope, TaskResult, is_delegation_request
-
 from config import Config
 from core.llm_client import LLMClient
 
@@ -25,13 +24,14 @@ class BaseAgent(ABC):
         self.tools: Dict[str, ToolFunc] = {}
 
     def register_tool(self, name: str, func: ToolFunc) -> None:
+        """Ajan araç haritasına yeni bir async araç ekler."""
         self.tools[name] = func
 
     async def call_tool(self, name: str, arg: str) -> str:
+        """Kayıtlı aracı argüman ile çağırır, bilinmeyen araçta hata metni döner."""
         if name not in self.tools:
             return f"[HATA] '{name}' aracı bu ajan için tanımlı değil."
         return await self.tools[name](arg)
-
 
     async def call_llm(
         self,
@@ -42,6 +42,7 @@ class BaseAgent(ABC):
         json_mode: bool = False,
         model: Optional[str] = None,
     ) -> str:
+        """LLM istemcisini tek bir yardımcı arayüzden çağırır."""
         response = await self.llm.chat(
             messages=messages,
             model=model,
@@ -51,8 +52,6 @@ class BaseAgent(ABC):
             json_mode=json_mode,
         )
         return str(response)
-
-
 
     def delegate_to(
         self,
@@ -81,14 +80,11 @@ class BaseAgent(ABC):
 
     @staticmethod
     def is_delegation_message(result: object) -> bool:
+        """Mesajın delegasyon isteği formatında olup olmadığını doğrular."""
         return is_delegation_request(result)
 
     async def handle(self, envelope: TaskEnvelope) -> TaskResult:
-        """TaskEnvelope taşıyıcılarını ortak biçimde işler.
-
-        SwarmOrchestrator gerçek ajan örneklerini de envelope tabanlı çalıştırabildiği için
-        varsayılan davranış burada tutulur.
-        """
+        """TaskEnvelope taşıyıcılarını ortak biçimde işler."""
         summary = await self.run_task(envelope.goal)
         if is_delegation_request(summary):
             if not getattr(summary, "task_id", ""):
@@ -99,13 +95,13 @@ class BaseAgent(ABC):
                 int(getattr(summary, "handoff_depth", 0) or 0),
                 int(envelope.context.get("p2p_handoff_depth", "0") or 0),
             )
+
         return TaskResult(
             task_id=envelope.task_id,
             status="success",
             summary=summary,
             evidence=[],
         )
-
 
     @abstractmethod
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:

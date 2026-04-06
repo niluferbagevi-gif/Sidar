@@ -123,3 +123,31 @@ def test_is_delegation_message(agent: _DummyAgent) -> None:
     msg = agent.delegate_to("qa", "payload", task_id="t2")
     assert agent.is_delegation_message(msg) is True
     assert agent.is_delegation_message("not-delegation") is False
+
+
+def test_delegate_to_defaults_parent_task_id_to_none(agent: _DummyAgent) -> None:
+    req = agent.delegate_to("reviewer", "payload", task_id="t3")
+    assert req.parent_task_id is None
+
+
+@pytest.mark.asyncio
+async def test_handle_fills_parent_task_id_with_envelope_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("agent.base_agent.LLMClient", _FakeLLMClient)
+    delegation = DelegationRequest(
+        task_id="",
+        reply_to="dummy",
+        target_agent="qa",
+        payload="check",
+        parent_task_id=None,
+        handoff_depth=1,
+    )
+    agent = _DummyAgent(result=delegation)
+    envelope = TaskEnvelope(task_id="root-2", sender="sup", receiver="dummy", goal="delegate")
+
+    result = await agent.handle(envelope)
+    assert isinstance(result.summary, DelegationRequest)
+    assert result.summary.task_id == "root-2"
+    assert result.summary.parent_task_id == "root-2"
+    assert result.summary.handoff_depth == 1
