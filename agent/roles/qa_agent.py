@@ -117,9 +117,10 @@ class QAAgent(BaseAgent):
         if not clean_text.startswith("```"):
             return clean_text
 
-        lines = clean_text.splitlines()
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
+        # We only enter this block when the response starts with a fence marker,
+        # so drop the first line unconditionally and then remove an optional
+        # trailing fence.
+        lines = clean_text.splitlines()[1:]
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
         return "\n".join(lines).strip()

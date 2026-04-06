@@ -130,6 +130,7 @@ def test_helpers_and_parsers(tmp_path, qa):
 
     assert QAAgent._sanitize_llm_code("plain") == "plain"
     assert QAAgent._sanitize_llm_code("```python\nassert True\n```") == "assert True"
+    assert QAAgent._sanitize_llm_code("```python\nassert True") == "assert True"
 
 
 def test_tool_methods(qa):
