@@ -507,6 +507,14 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     recs2 = ReviewerAgent._build_fix_recommendations({"issues": []}, graph_payload2, {"indirect_breakage_paths": []})
     assert recs2 == []
 
+    graph_payload_skip_non_dict_details = {"reports": [{"ok": True, "target": "a.py", "details": "not-dict"}]}
+    recs_skip_non_dict_details = ReviewerAgent._build_fix_recommendations(
+        {"issues": []},
+        graph_payload_skip_non_dict_details,
+        {"indirect_breakage_paths": []},
+    )
+    assert recs_skip_non_dict_details == []
+
     graph_payload3 = {
         "reports": [
             {"ok": True, "target": "a.py", "details": {"risk_level": "high", "review_targets": [None, "a.py", "dep.py", "dep.py"], "caller_files": "x"}},
@@ -522,6 +530,13 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
     assert parsed_fallback["review_context"] == "{this is invalid json"
     parsed_json_non_dict = ReviewerAgent._parse_review_payload("[1,2,3]")
     assert parsed_json_non_dict["review_context"] == "[1,2,3]"
+
+    module = sys.modules[ReviewerAgent.__module__]
+    original_loads = module.json.loads
+    monkeypatch.setattr(module.json, "loads", lambda *_a, **_k: [])
+    parsed_non_dict_payload = ReviewerAgent._parse_review_payload("{\"review_context\":\"x\"}")
+    assert parsed_non_dict_payload["review_context"] == "{\"review_context\":\"x\"}"
+    monkeypatch.setattr(module.json, "loads", original_loads)
 
     assert ReviewerAgent._extract_changed_paths("src/a/../b.py /abs/x.py foo.py") == ["abs/x.py", "foo.py"]
     assert reviewer._build_regression_commands("tests/unit/test_a.py src/a.py")[0].startswith("pytest -q tests/unit/test_a.py")
