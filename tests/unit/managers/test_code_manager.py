@@ -507,6 +507,102 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
     assert manager.docker_available is False
 
 
+def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=True,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    original_init = cm.CodeManager._init_docker
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: None)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", original_init)
+
+    builtins_dict = cm.__dict__["__builtins__"]
+    original_import = builtins_dict["__import__"]
+
+    def _raise_import_error_for_docker(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker missing")
+        return original_import(name, *args, **kwargs)
+
+    # cached docker module + WSL fallback success -> early return (321-323)
+    cached_docker = ModuleType("docker")
+    monkeypatch.setitem(sys.modules, "docker", cached_docker)
+    monkeypatch.setitem(builtins_dict, "__import__", _raise_import_error_for_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is cached_docker)
+    cli_calls = {"count": 0}
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: cli_calls.__setitem__("count", cli_calls["count"] + 1) or False)
+    manager._init_docker()
+    assert cli_calls["count"] == 0
+
+    # no cached module + CLI fallback success -> early return (324-325)
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda _mod: False)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: True)
+    manager._init_docker()
+    assert manager.docker_available is False
+
+    # no cached module + CLI fallback fail -> warning path (326)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+    def _raise_on_warning(*_args, **_kwargs):
+        raise RuntimeError("warning-hit")
+
+    monkeypatch.setattr(cm.logger, "warning", _raise_on_warning)
+    with pytest.raises(RuntimeError, match="warning-hit"):
+        manager._init_docker()
+
+    monkeypatch.setitem(builtins_dict, "__import__", original_import)
+
+
+def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch):
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=True,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+    original_init = cm.CodeManager._init_docker
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: None)
+    manager = cm.CodeManager(sec, tmp_path, cfg=cfg)
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", original_init)
+
+    class _ErrDocker(ModuleType):
+        def from_env(self):
+            raise RuntimeError("daemon down")
+
+    err_docker = _ErrDocker("docker")
+    monkeypatch.setitem(sys.modules, "docker", err_docker)
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda mod: mod is err_docker)
+    warning_calls = {"count": 0}
+    monkeypatch.setattr(cm.logger, "warning", lambda *args, **kwargs: warning_calls.__setitem__("count", warning_calls["count"] + 1))
+
+    manager._init_docker()
+
+    assert warning_calls["count"] == 0
+    assert manager.docker_available is False
+    assert manager.docker_client is None
+
+
 def test_execute_code_docker_error_paths(manager, monkeypatch):
     manager.docker_available = True
     manager.security.level = SANDBOX
