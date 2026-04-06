@@ -898,3 +898,141 @@ def test_grep_glob_list_audit_more_branches(manager, monkeypatch, tmp_path):
     monkeypatch.setattr(cm.Path, "read_text", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("x")))
     report = manager.audit_project(root=str(tmp_path))
     assert "Okunamadı" in report
+
+
+def test_codec_and_wsl_and_file_error_edge_branches(manager, monkeypatch, tmp_path):
+    # _decode_lsp_stream: header yoksa break ile boş döner.
+    assert cm._decode_lsp_stream(b"") == []
+    assert cm._decode_lsp_stream(b"garbage-without-header") == []
+
+    # _try_wsl_socket_fallback: os.stat OSError yolunu çalıştır.
+    monkeypatch.setattr(cm.os, "stat", lambda *_a, **_k: (_ for _ in ()).throw(OSError("no sock")))
+    assert manager._try_wsl_socket_fallback(SimpleNamespace(DockerClient=object)) is False
+
+    # read_file / write_file generic exception yolları.
+    p = tmp_path / "x.py"
+    p.write_text("x=1\n", encoding="utf-8")
+    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-r")))
+    ok, msg = manager.read_file(str(p))
+    assert not ok and "Okuma hatası" in msg
+
+    monkeypatch.setattr(builtins, "open", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom-w")))
+    ok, msg = manager.write_file(str(p), "x=2\n", validate=False)
+    assert not ok and "Yazma hatası" in msg
+
+
+def test_generated_test_empty_and_read_error_branches(manager, monkeypatch, tmp_path):
+    ok, msg = manager.write_generated_test(str(tmp_path / "test_x.py"), "```python\n```", append=False)
+    assert not ok and "boş" in msg
+
+    target = tmp_path / "test_dup.py"
+    target.write_text("def test_a():\n    assert 1\n", encoding="utf-8")
+    monkeypatch.setattr(manager, "read_file", lambda *_a, **_k: (False, "read failed"))
+    ok, msg = manager.write_generated_test(str(target), "def test_b():\n    assert 1\n", append=True)
+    assert not ok and msg == "read failed"
+
+
+def test_execute_code_local_and_docker_more_branches(manager, monkeypatch):
+    manager.max_output_chars = 5
+    manager.docker_available = True
+
+    class _ImageMissing(Exception):
+        pass
+
+    fake_docker = ModuleType("docker")
+    fake_docker.errors = SimpleNamespace(ImageNotFound=_ImageMissing)
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_k: (_ for _ in ()).throw(_ImageMissing("missing")))
+    )
+    ok, msg = manager.execute_code("print(1)")
+    assert not ok and "imajı bulunamadı" in msg
+
+    manager.docker_available = False
+    manager.security.exec_ok = False
+    ok, msg = manager.execute_code_local("print(1)")
+    assert not ok and "yetkisi yok" in msg
+
+    manager.security.exec_ok = True
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=2, stdout="123456789", stderr=""),
+    )
+    ok, msg = manager.execute_code_local("print(1)")
+    assert not ok and "KIRPILDI" in msg and "çıktı yok" not in msg
+
+
+def test_sandbox_shell_output_and_error_branches(manager, monkeypatch, tmp_path):
+    manager.max_output_chars = 6
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+    monkeypatch.setattr(manager, "_resolve_runtime", lambda: "runsc")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=9, stdout="", stderr="abcdefghijk"),
+    )
+    ok, msg = manager.run_shell_in_sandbox("echo x", cwd=str(tmp_path))
+    assert not ok and "çıkış kodu: 9" in msg and "KIRPILDI" in msg and "[stder" in msg
+
+
+def test_analysis_lsp_and_misc_fallback_paths(manager, monkeypatch, tmp_path):
+    output = """
+tests/test_demo.py  10 1 90% 7
+___ test_parse ___
+E AssertionError
+pkg/mod.py:7: in test_parse
+= 1 failed in 0.01s =
+"""
+    parsed = manager.analyze_pytest_output(output)
+    assert parsed["has_failures"] is True
+    assert parsed["has_coverage_gaps"] is False
+    assert parsed["failure_targets"][0]["target_path"] == "pkg/mod.py"
+
+    # glob/list exception branch
+    monkeypatch.setattr(cm.Path, "stat", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("stat")))
+    ok, msg = manager.glob_search("*.py", base_path=str(tmp_path))
+    assert not ok and "Glob arama hatası" in msg
+
+    # list_directory exception branch
+    monkeypatch.setattr(cm.Path, "iterdir", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("iter")))
+    ok, msg = manager.list_directory(str(tmp_path))
+    assert not ok and "Dizin listeleme hatası" in msg
+
+
+def test_lsp_remaining_branches_and_audit_defaults(manager, monkeypatch, tmp_path):
+    py = tmp_path / "a.py"
+    py.write_text("name = 1\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    # _normalize_lsp_path relative branch
+    normalized = manager._normalize_lsp_path("a.py")
+    assert normalized == py.resolve()
+
+    # lsp typescript command branch
+    cmd = manager._resolve_lsp_command("typescript")
+    assert cmd[-1] == "--stdio"
+
+    # _extract_lsp_result: request sonucu yok ama notification var
+    result, notes = manager._extract_lsp_result([{"method": "x"}], request_id=2)
+    assert result is None and len(notes) == 1
+
+    # rename: result yok branchi
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: [{"id": 2, "result": None}])
+    ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "renamed", apply=False)
+    assert not ok and "değişiklik üretmedi" in msg
+
+    # summarize info-only ve clean branchleri
+    info_summary = manager._summarize_lsp_diagnostic_entries([{"severity": 3}])
+    clean_summary = manager._summarize_lsp_diagnostic_entries([])
+    assert info_summary["status"] == "info-only"
+    assert clean_summary["status"] == "clean"
+
+    # lsp_semantic_audit no diagnostics
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: [])
+    ok, audit = manager.lsp_semantic_audit([str(py)])
+    assert ok and audit["status"] == "no-signal"
+
+    # audit_project exclude_dirs None branch (varsayılan)
+    report = manager.audit_project(root=str(tmp_path), exclude_dirs=None, max_files=10)
+    assert "Sidar Denetim Raporu" in report
