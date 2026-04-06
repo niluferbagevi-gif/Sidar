@@ -82,6 +82,7 @@ def _load_sidar_agent_module(monkeypatch: pytest.MonkeyPatch):
 def test_import_sets_trace_none_when_opentelemetry_trace_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     opentelemetry_stub = types.ModuleType("opentelemetry")
     monkeypatch.setitem(sys.modules, "opentelemetry", opentelemetry_stub)
+    monkeypatch.delitem(sys.modules, "opentelemetry.trace", raising=False)
 
     sidar_agent = _load_sidar_agent_module(monkeypatch)
 
