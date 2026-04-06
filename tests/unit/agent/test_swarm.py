@@ -1,8 +1,11 @@
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 from agent.core.contracts import DelegationRequest, TaskResult
 from agent.registry import AgentSpec
+import agent.swarm as swarm
 from agent.swarm import InMemoryDelegationBackend, SwarmOrchestrator, SwarmTask, TaskRouter
 
 
@@ -48,6 +51,10 @@ class _RunTaskAgent:
 
     async def run_task(self, _goal):
         return self._text
+
+
+class _NoHandlerAgent:
+    pass
 
 
 def test_task_router_routes_by_intent_capability(monkeypatch):
@@ -232,3 +239,342 @@ def test_dispatch_distributed_pushes_task_to_backend(monkeypatch):
     dispatched = backend.dispatched[0]
     assert dispatched.receiver == "reviewer"
     assert dispatched.headers["session_id"] == "sess-42"
+
+
+def test_is_contracts_module_healthy_rejects_invalid_contract_module():
+    empty = SimpleNamespace()
+    assert swarm._is_contracts_module_healthy(empty) is False
+
+    bad_type = SimpleNamespace(
+        TaskEnvelope=lambda **_k: None,
+        TaskResult=lambda **_k: None,
+        DelegationRequest=object,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+    )
+    assert swarm._is_contracts_module_healthy(bad_type) is False
+
+
+def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypatch):
+    broken = SimpleNamespace(
+        TaskEnvelope=lambda **_k: None,
+        TaskResult=lambda **_k: None,
+        DelegationRequest=object,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+    )
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
+    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
+
+    assert swarm._contracts_module() is broken
+
+
+def test_task_router_catalog_prefers_local_when_live_catalog_invalid(monkeypatch):
+    local_catalog = _FakeCatalog([AgentSpec(role_name="coder", capabilities=["code_generation"])])
+    monkeypatch.setattr(
+        swarm.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(AgentCatalog=SimpleNamespace()),
+    )
+    monkeypatch.setattr(swarm, "AgentCatalog", local_catalog)
+    assert TaskRouter._catalog() is local_catalog
+
+
+def test_task_router_route_by_role_returns_none_when_catalog_without_get_or_list(monkeypatch):
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: SimpleNamespace()))
+    assert TaskRouter().route_by_role("anything") is None
+
+
+def test_looks_like_delegation_request_with_fallback_attributes(monkeypatch):
+    monkeypatch.setattr(swarm, "_ensure_contract_aliases", lambda: None)
+    monkeypatch.setattr(swarm, "is_delegation_request", lambda _v: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    candidate = SimpleNamespace(target_agent="coder", payload="x", reply_to="reviewer")
+    assert swarm._looks_like_delegation_request(candidate) is True
+
+
+def test_dispatch_distributed_requires_backend_and_matching_agent(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    task = SwarmTask(goal="x", intent="unknown")
+
+    try:
+        __import__("asyncio").run(orchestrator.dispatch_distributed(task))
+        assert False, "Expected RuntimeError when backend is missing"
+    except RuntimeError as exc:
+        assert "backend" in str(exc).lower()
+
+    orchestrator.configure_delegation_backend(InMemoryDelegationBackend())
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: None)
+    try:
+        __import__("asyncio").run(orchestrator.dispatch_distributed(task))
+        assert False, "Expected RuntimeError when no matching agent is found"
+    except RuntimeError as exc:
+        assert "uygun ajan" in str(exc).lower()
+
+
+def test_loop_repeat_limit_honors_provider_and_floor():
+    assert SwarmOrchestrator(cfg=SimpleNamespace(AI_PROVIDER="ollama"))._loop_repeat_limit() == 2
+    assert SwarmOrchestrator(cfg=SimpleNamespace(SWARM_LOOP_GUARD_MAX_REPEAT=-1))._loop_repeat_limit() == 1
+
+
+def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
+    class _Supervisor:
+        def __init__(self, _cfg):
+            pass
+
+        async def run_task(self, _prompt):
+            return "fallback yaniti"
+
+    monkeypatch.setitem(sys.modules, "agent.core.supervisor", types.SimpleNamespace(SupervisorAgent=_Supervisor))
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    task = SwarmTask(goal="g", intent="review", task_id="t-1")
+    ok = __import__("asyncio").run(
+        orch._run_supervisor_fallback(
+            task,
+            session_id="s-1",
+            started_at=0.0,
+            route_trace=["r1"],
+            handoff_chain=[],
+            failed_role="reviewer",
+            reason="fallback:JSONDecodeError",
+        )
+    )
+    assert ok.status == "success"
+    assert ok.agent_role == "supervisor"
+
+    class _EmptySupervisor(_Supervisor):
+        async def run_task(self, _prompt):
+            return "   "
+
+    monkeypatch.setitem(sys.modules, "agent.core.supervisor", types.SimpleNamespace(SupervisorAgent=_EmptySupervisor))
+    try:
+        __import__("asyncio").run(
+            orch._run_supervisor_fallback(
+                task,
+                session_id="s-1",
+                started_at=0.0,
+                route_trace=["r1"],
+                handoff_chain=[],
+                failed_role="reviewer",
+                reason="fallback:JSONDecodeError",
+            )
+        )
+        assert False, "Expected invalid fallback output"
+    except RuntimeError as exc:
+        assert "geçerli bir çıktı" in str(exc)
+
+
+def test_run_autonomous_feedback_low_score_flags_and_handles_errors(monkeypatch):
+    calls = []
+
+    class _Judge:
+        enabled = True
+
+        async def evaluate_response(self, **_kwargs):
+            return SimpleNamespace(score=4, reasoning="weak", provider="p", model="m")
+
+    async def _flag_weak_response(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "core.judge", types.SimpleNamespace(get_llm_judge=lambda: _Judge()))
+    monkeypatch.setitem(sys.modules, "core.active_learning", types.SimpleNamespace(flag_weak_response=_flag_weak_response))
+
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    __import__("asyncio").run(
+        orch._run_autonomous_feedback(
+            prompt="p",
+            response="r",
+            context={},
+            session_id="s",
+            agent_role="coder",
+            task_id="t1",
+        )
+    )
+    assert len(calls) == 1
+    assert "swarm:auto" in calls[0]["tags"]
+
+    class _BoomJudge(_Judge):
+        async def evaluate_response(self, **_kwargs):
+            raise RuntimeError("judge down")
+
+    monkeypatch.setitem(sys.modules, "core.judge", types.SimpleNamespace(get_llm_judge=lambda: _BoomJudge()))
+    __import__("asyncio").run(
+        orch._run_autonomous_feedback(
+            prompt="p",
+            response="r",
+            context={},
+            session_id="s",
+            agent_role="coder",
+            task_id="t2",
+        )
+    )
+
+
+def test_schedule_autonomous_feedback_outside_event_loop_noop():
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    orch._schedule_autonomous_feedback(
+        prompt="p",
+        response="r",
+        context={},
+        session_id="s",
+        agent_role="coder",
+        task_id="t",
+    )
+
+
+def test_direct_handoff_requires_target_agent():
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    bad = DelegationRequest(task_id="t", reply_to="reviewer", target_agent="", payload="x")
+    try:
+        __import__("asyncio").run(
+            orch._direct_handoff(
+                SwarmTask(goal="g"),
+                bad,
+                session_id="s",
+                hop=1,
+                route_trace=[],
+                handoff_chain=[],
+            )
+        )
+        assert False, "Expected missing target_agent RuntimeError"
+    except RuntimeError as exc:
+        assert "target_agent" in str(exc)
+
+
+def test_run_and_parallel_and_pipeline_methods(monkeypatch):
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    async def _fake_execute(task, **_kwargs):
+        return swarm.SwarmResult(
+            task_id=task.task_id,
+            agent_role="coder",
+            status="success",
+            summary=f"ok:{task.goal}",
+            elapsed_ms=1,
+        )
+
+    monkeypatch.setattr(orch, "_execute_task", _fake_execute)
+    single = __import__("asyncio").run(orch.run("tek", intent="code"))
+    assert single.summary == "ok:tek"
+
+    parallel = __import__("asyncio").run(
+        orch.run_parallel([SwarmTask(goal="a"), SwarmTask(goal="b")], max_concurrency=1)
+    )
+    assert [r.summary for r in parallel] == ["ok:a", "ok:b"]
+
+    tasks = [SwarmTask(goal="one", context={}), SwarmTask(goal="two", context={})]
+    pipeline = __import__("asyncio").run(orch.run_pipeline(tasks))
+    assert len(pipeline) == 2
+    assert tasks[1].context["prev_coder"] == "ok:one"
+
+
+def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    # create error
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("bad create")))
+    failed_create = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+    assert failed_create.status == "failed"
+    assert "oluşturulamadı" in failed_create.summary
+
+    # missing handler methods -> generic failure
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _NoHandlerAgent())
+    missing_handler = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+    assert missing_handler.status == "failed"
+    assert "Görev başarısız" in missing_handler.summary
+
+    # retry path where first call fails, second returns None -> re-raises last exception
+    state = {"n": 0}
+
+    class _FlakyAgent:
+        async def handle(self, _env):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise RuntimeError("temporary")
+            return None
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _FlakyAgent())
+    retry_failed = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+    assert retry_failed.status == "failed"
+    assert "temporary" in retry_failed.summary
+
+
+def test_execute_task_fallback_success_failure_and_feedback_coroutine(monkeypatch):
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+
+    # fallback success
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _BoomAgent:
+        async def handle(self, _env):
+            raise json.JSONDecodeError("bad", "{}", 0)
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _BoomAgent())
+    monkeypatch.setattr(
+        orch,
+        "_run_supervisor_fallback",
+        lambda *args, **kwargs: __import__("asyncio").sleep(
+            0,
+            result=swarm.SwarmResult(
+                task_id="t",
+                agent_role="supervisor",
+                status="success",
+                summary="fallback",
+                elapsed_ms=1,
+            ),
+        ),
+    )
+    fallback_ok = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="x", intent="code")))
+    assert fallback_ok.agent_role == "supervisor"
+
+    # fallback fail
+    orch2 = SwarmOrchestrator(cfg=SimpleNamespace())
+    monkeypatch.setattr(orch2.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _BoomAgent())
+
+    async def _fallback_fail(*_a, **_k):
+        raise RuntimeError("supervisor unavailable")
+
+    monkeypatch.setattr(orch2, "_run_supervisor_fallback", _fallback_fail)
+    fallback_fail = __import__("asyncio").run(orch2._execute_task(SwarmTask(goal="x", intent="code")))
+    assert fallback_fail.status == "failed"
+    assert "Supervisor fallback" in fallback_fail.summary
+
+    # success path awaiting feedback coroutine
+    orch3 = SwarmOrchestrator(cfg=SimpleNamespace())
+    monkeypatch.setattr(orch3.router, "route", lambda _intent: spec)
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create",
+        lambda *_a, **_k: _HandleAgent(TaskResult(task_id="t", status="success", summary="done", evidence=[])),
+    )
+    marker = {"awaited": False}
+
+    async def _waited(**_kwargs):
+        marker["awaited"] = True
+
+    monkeypatch.setattr(orch3, "_schedule_autonomous_feedback", lambda **_kwargs: _waited())
+    ok = __import__("asyncio").run(orch3._execute_task(SwarmTask(goal="x", intent="code")))
+    assert ok.status == "success"
+    assert marker["awaited"] is True
+
+
+def test_execute_task_hop_limit_and_properties(monkeypatch):
+    cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1)
+    orch = SwarmOrchestrator(cfg=cfg)
+    hop_fail = __import__("asyncio").run(
+        orch._execute_task(SwarmTask(goal="g", preferred_agent="coder"), _hop=2, _handoff_chain=[{"x": "y"}])
+    )
+    assert hop_fail.status == "failed"
+    assert hop_fail.handoffs == [{"x": "y"}]
+
+    orch._active_agents["t"] = object()
+    assert orch.active_task_count == 1
+
+    monkeypatch.setattr("agent.swarm.AgentCatalog.list_all", lambda: [AgentSpec(role_name="qa", capabilities=[])])
+    assert orch.available_agents() == ["qa"]
