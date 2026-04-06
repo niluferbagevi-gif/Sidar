@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -584,3 +585,211 @@ def test_document_store_search_sync_empty_session_and_analyze_graph_impact(tmp_p
     ok, text = graph_store.analyze_graph_impact("a.py")
     assert ok is True
     assert "[GraphRAG Impact] a.py" in text
+
+
+def test_embed_texts_for_semantic_cache_success_and_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Vec:
+        def tolist(self) -> list[list[float]]:
+            return [[0.1, 0.2]]
+
+    class _ST:
+        def __init__(self, _name: str) -> None:
+            pass
+
+        def encode(self, _texts: list[str], normalize_embeddings: bool = True) -> _Vec:
+            assert normalize_embeddings is True
+            return _Vec()
+
+    monkeypatch.setitem(__import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_ST))
+    assert rag.embed_texts_for_semantic_cache(["hello"]) == [[0.1, 0.2]]
+
+    class _BrokenST:
+        def __init__(self, _name: str) -> None:
+            raise RuntimeError("boom")
+
+    monkeypatch.setitem(__import__("sys").modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=_BrokenST))
+    assert rag.embed_texts_for_semantic_cache(["hello"]) == []
+
+
+def test_build_embedding_function_gpu_success_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return False
+
+    class _Torch:
+        cuda = _Cuda()
+        float16 = "fp16"
+
+        @staticmethod
+        def autocast(device_type: str, dtype: str):
+            class _Ctx:
+                def __enter__(self) -> None:
+                    return None
+
+                def __exit__(self, *_args: object) -> None:
+                    return None
+
+            assert device_type == "cuda"
+            assert dtype == "fp16"
+            return _Ctx()
+
+    class _EF:
+        def __init__(self, model_name: str, device: str) -> None:
+            self.model_name = model_name
+            self.device = device
+
+        def __call__(self, _input: list[str]) -> list[list[float]]:
+            return [[1.0]]
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", _Torch)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "chromadb.utils.embedding_functions",
+        SimpleNamespace(SentenceTransformerEmbeddingFunction=_EF),
+    )
+
+    ef = rag._build_embedding_function(use_gpu=True, gpu_device=1, mixed_precision=True)
+    assert ef is not None
+
+    monkeypatch.delitem(__import__("sys").modules, "chromadb.utils.embedding_functions", raising=False)
+    assert rag._build_embedding_function(use_gpu=True) is None
+
+
+def test_document_store_init_pgvector_backend_dispatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {"d": {"session_id": "global"}})
+    monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: False)
+    monkeypatch.setattr(rag.DocumentStore, "_init_chroma", lambda self: calls.append("chroma"))
+    monkeypatch.setattr(rag.DocumentStore, "_init_pgvector", lambda self: calls.append("pgvector"))
+    monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: calls.append("fts"))
+
+    cfg = SimpleNamespace(
+        RAG_TOP_K=4,
+        RAG_CHUNK_SIZE=8,
+        RAG_CHUNK_OVERLAP=2,
+        RAG_VECTOR_BACKEND="pgvector",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=True,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=12,
+        PGVECTOR_TABLE="tbl",
+        PGVECTOR_EMBEDDING_DIM=8,
+        PGVECTOR_EMBEDDING_MODEL="mini",
+    )
+    store = rag.DocumentStore(tmp_path / "store", cfg=cfg)
+
+    assert store.default_top_k == 4
+    assert calls == ["pgvector", "fts"]
+
+
+def test_document_store_add_document_and_search_helpers(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._bm25_available = True
+    store._chroma_available = True
+    store._pgvector_available = True
+    store.collection = SimpleNamespace(delete=lambda **_k: None, upsert=lambda **_k: None)
+    store._upsert_pgvector_chunks = lambda *_args: None  # type: ignore[method-assign]
+    class _DummyLock:
+        def __enter__(self) -> "_DummyLock":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    store._write_lock = _DummyLock()
+    store._save_index = lambda: None
+
+    class _FtsConn:
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def commit(self) -> None:
+            return None
+
+    store.fts_conn = _FtsConn()
+
+    doc_id = store._add_document_sync("Title", "keyword body", source="src", tags=["tag"], session_id="s1")
+    assert doc_id in store._index
+
+    # keyword search branch
+    ok, text = store._keyword_search("keyword", 2, "s1")
+    assert ok is True
+    assert "Kelime Eşleşmesi" in text
+
+
+def test_document_store_add_document_from_url_success_and_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+
+    async def _fake_add(title: str, content: str, source: str, tags: list[str] | None, session_id: str) -> str:
+        assert source.startswith("https://example.com")
+        assert session_id == "s-url"
+        return "doc-url"
+
+    store.add_document = _fake_add  # type: ignore[method-assign]
+
+    class _Resp:
+        text = "<title>My Page</title><p>Body</p>"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _url: str) -> _Resp:
+            return _Resp()
+
+    monkeypatch.setitem(__import__("sys").modules, "httpx", SimpleNamespace(AsyncClient=lambda **_k: _Client()))
+
+    ok, msg = asyncio.run(store.add_document_from_url("https://example.com/docs", session_id="s-url"))
+    assert ok is True
+    assert "doc-url" in msg
+
+    ok, msg = asyncio.run(store.add_document_from_url("ftp://example.com/docs", session_id="s-url"))
+    assert ok is False
+    assert "URL belge eklenemedi" in msg
+
+
+def test_document_store_schedule_judge_and_search_with_otel(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    class _Judge:
+        enabled = True
+
+        def __init__(self) -> None:
+            self.called = False
+
+        def schedule_background_evaluation(self, **_kwargs: object) -> None:
+            self.called = True
+
+    judge = _Judge()
+
+    monkeypatch.setitem(__import__("sys").modules, "core.judge", SimpleNamespace(get_llm_judge=lambda: judge))
+    rag.DocumentStore._schedule_judge("q", "answer")
+    assert judge.called is True
+
+    store = _make_store_stub(tmp_path)
+    store._search_sync = lambda *_args: (True, "ok")  # type: ignore[method-assign]
+
+    class _Span:
+        def __enter__(self) -> "_Span":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def set_attribute(self, *_args: object) -> None:
+            return None
+
+    class _Tracer:
+        def start_as_current_span(self, _name: str) -> _Span:
+            return _Span()
+
+    monkeypatch.setattr(rag, "_otel_trace", SimpleNamespace(get_tracer=lambda _name: _Tracer()))
+    ok, txt = asyncio.run(store.search("query", session_id="s1"))
+    assert ok is True and txt == "ok"
