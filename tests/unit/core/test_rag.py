@@ -1764,6 +1764,47 @@ def test_rag_remaining_branches_for_graph_search_and_rrf(tmp_path: Path) -> None
     ok, text = store.analyze_graph_impact("x")
     assert ok is True and "Aşağı akış bağımlılıklar" not in text
 
+
+def test_graph_index_parse_python_source_skips_router_like_attribute_calls(tmp_path: Path) -> None:
+    gi = rag.GraphIndex(tmp_path)
+    src = """
+def call_it():
+    client.router.get('/health')
+    service.app.post('/submit')
+"""
+
+    _deps, defs, calls = gi._parse_python_source(tmp_path / "a.py", src)
+
+    assert defs == []
+    assert calls == []
+
+
+def test_document_store_init_fts_skips_migration_when_index_empty(tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    store._write_lock = threading.Lock()
+    store._index = {}
+
+    store._init_fts()
+
+    count = store.fts_conn.execute("SELECT count(*) as c FROM bm25_index").fetchone()["c"]
+    assert count == 0
+
+
+def test_document_store_recursive_chunk_text_forced_fallback_split(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = _make_store_stub(tmp_path)
+    original_list = builtins.list
+
+    def _patched_list(arg):  # type: ignore[no-untyped-def]
+        if isinstance(arg, str) and len(arg) > 1:
+            return [arg]
+        return original_list(arg)
+
+    monkeypatch.setattr(builtins, "list", _patched_list)
+
+    chunks = store._recursive_chunk_text("abcdefghij", size=4, overlap=1)
+
+    assert chunks == ["abcd", "defg", "ghij", "j"]
+
     # _search_sync fallback zinciri 1521+ branches
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
