@@ -16,6 +16,8 @@ def __getattr__(name: str):
         return import_module(".roles", __name__)
     if name == "registry":
         return import_module(".registry", __name__)
+    if name == "swarm":
+        return import_module(".swarm", __name__)
     if name in {"SIDAR_SYSTEM_PROMPT", "SIDAR_KEYS", "SIDAR_WAKE_WORDS"}:
         from .definitions import SIDAR_KEYS, SIDAR_SYSTEM_PROMPT, SIDAR_WAKE_WORDS
 
