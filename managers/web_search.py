@@ -115,7 +115,11 @@ class WebSearchManager:
             tavily_already_tried = True
             if self._is_actionable_result(ok, res):
                 return True, self._normalize_result_text(res)
-            # "sonuç yok" veya hata durumunda auto fallback'e düş
+            if ok:
+                # Tavily açıkça seçildiyse ve yalnızca "sonuç yok" döndüyse
+                # hataya düşmeden bu sonucu kullanıcıya ilet.
+                return True, self._normalize_result_text(res)
+            # Tavily çağrısı hata verdiyse auto fallback'e düş.
             logger.info("Tavily eyleme geçirilebilir sonuç üretmedi; otomatik fallback başlatılıyor.")
         elif self.engine == "google" and self.google_key and self.google_cx:
             ok, res = await self._search_google(query, n)
