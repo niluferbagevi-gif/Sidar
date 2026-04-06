@@ -1036,3 +1036,245 @@ def test_lsp_remaining_branches_and_audit_defaults(manager, monkeypatch, tmp_pat
     # audit_project exclude_dirs None branch (varsayılan)
     report = manager.audit_project(root=str(tmp_path), exclude_dirs=None, max_files=10)
     assert "Sidar Denetim Raporu" in report
+
+
+def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch, tmp_path):
+    manager.max_output_chars = 5
+
+    # _execute_code_with_docker_cli output truncation path
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="abcdefgh", stderr=""),
+    )
+    ok, out = manager._execute_code_with_docker_cli("print(1)", manager._resolve_sandbox_limits())
+    assert ok and "KIRPILDI" in out
+
+    # _try_docker_cli_fallback error / non-zero return branches
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("docker")),
+    )
+    assert manager._try_docker_cli_fallback() is False
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1, stdout="", stderr="x"))
+    assert manager._try_docker_cli_fallback() is False
+
+    # _try_wsl_socket_fallback ping exception continue branch
+    class _Stat:
+        st_mode = stat.S_IFSOCK
+
+    class _Docker:
+        class DockerClient:
+            def __init__(self, base_url):
+                self.base_url = base_url
+
+            def ping(self):
+                raise RuntimeError("down")
+
+    monkeypatch.setattr(cm.os, "stat", lambda *_a, **_k: _Stat())
+    assert manager._try_wsl_socket_fallback(_Docker) is False
+
+    # _init_docker ImportError branch with both fallbacks false
+    real_import = builtins.__import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
+    monkeypatch.setattr(manager, "_try_wsl_socket_fallback", lambda *_a, **_k: False)
+    monkeypatch.setattr(manager, "_try_docker_cli_fallback", lambda: False)
+    manager._init_docker()
+    monkeypatch.setattr(builtins, "__import__", real_import)
+
+    # _strip_markdown_code_fences branch without closing fence
+    assert cm.CodeManager._strip_markdown_code_fences("```python\nprint(1)") == "print(1)"
+
+    # write_generated_test append branch with empty current file (separator empty)
+    target = tmp_path / "test_empty.py"
+    target.write_text("", encoding="utf-8")
+    captured = {"content": ""}
+    monkeypatch.setattr(
+        manager,
+        "write_file",
+        lambda _p, content, validate=True: (captured.__setitem__("content", content) or True, "ok"),
+    )
+    ok, _ = manager.write_generated_test(str(target), "def test_new():\n    assert 1\n", append=True)
+    assert ok and "test_new" in captured["content"]
+
+    # patch_file read failure branch
+    monkeypatch.setattr(manager, "read_file", lambda *_a, **_k: (False, "read-error"))
+    ok, msg = manager.patch_file(str(target), "a", "b")
+    assert not ok and msg == "read-error"
+
+
+def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monkeypatch, tmp_path):
+    # execute_code: no network/runtime branches + sleep path + wait exception path + no log path
+    manager.docker_available = True
+    manager.docker_network_disabled = False
+    monkeypatch.setattr(manager, "_resolve_runtime", lambda: "")
+    monkeypatch.setattr(
+        manager,
+        "_resolve_sandbox_limits",
+        lambda: {
+            "memory": "128m",
+            "cpus": "0.25",
+            "nano_cpus": 1,
+            "pids_limit": 10,
+            "network_mode": "bridge",
+            "timeout": 10,
+        },
+    )
+
+    class _Container:
+        def __init__(self):
+            self.status = "running"
+            self.reload_calls = 0
+
+        def reload(self):
+            self.reload_calls += 1
+            if self.reload_calls > 1:
+                self.status = "exited"
+
+        def logs(self, **_kwargs):
+            return b""
+
+        def wait(self, timeout=1):
+            raise RuntimeError("wait failed")
+
+        def remove(self, force=False):
+            return None
+
+    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: _Container()))
+    monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
+    sys.modules["docker"].errors = SimpleNamespace(ImageNotFound=RuntimeError)
+    sleeps = {"n": 0}
+    monkeypatch.setattr(cm.time, "sleep", lambda *_a, **_k: sleeps.__setitem__("n", sleeps["n"] + 1))
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and "çıktı üretmedi" in msg and sleeps["n"] >= 1
+
+    # execute_code logs truncation branch + container without wait attribute
+    class _ContainerNoWait:
+        status = "exited"
+
+        def reload(self):
+            return None
+
+        def logs(self, **_kwargs):
+            return b"abcdefghij"
+
+        def remove(self, force=False):
+            return None
+
+    manager.max_output_chars = 5
+    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: _ContainerNoWait()))
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and "KIRPILDI" in msg
+
+    # run_shell_in_sandbox timeout and generic exception branches
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=1)),
+    )
+    ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
+    assert not ok
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+    ok, _ = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
+    assert not ok
+
+    # glob_search ValueError branch via symlink resolving outside base
+    outside_file = Path("/tmp/sidar_outside_target.py")
+    outside_file.write_text("x=1\n", encoding="utf-8")
+    link = tmp_path / "outside.py"
+    link.symlink_to(outside_file)
+    ok, _ = manager.glob_search("*.py", base_path=str(tmp_path))
+    assert ok
+
+    # grep: empty pattern, "**" glob branch, per-file read exception continue
+    assert manager.grep_files("", path=str(tmp_path))[0] is False
+    py_ok = tmp_path / "ok.py"
+    py_bad = tmp_path / "bad.py"
+    py_ok.write_text("needle\n", encoding="utf-8")
+    py_bad.write_text("needle\n", encoding="utf-8")
+    original_read_text = cm.Path.read_text
+    monkeypatch.setattr(
+        cm.Path,
+        "read_text",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("nope")) if self == py_bad else original_read_text(self, *a, **k),
+    )
+    ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="**/*.py")
+    assert ok and "ok.py" in msg
+
+    # grep relative_to ValueError fallback branch
+    monkeypatch.setattr(cm.Path, "read_text", original_read_text)
+    original_relative_to = cm.Path.relative_to
+    monkeypatch.setattr(
+        cm.Path,
+        "relative_to",
+        lambda self, *_a, **_k: (_ for _ in ()).throw(ValueError("forced")) if self == py_ok else original_relative_to(self, *_a, **_k),
+    )
+    ok, msg = manager.grep_files("needle", path=str(tmp_path), file_glob="*.py")
+    assert ok and "ok.py" in msg
+
+    # grep outer exception branch
+    original_resolve = cm.Path.resolve
+    monkeypatch.setattr(cm.Path, "resolve", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("resolve")))
+    assert manager.grep_files("x", path=str(tmp_path))[0] is False
+
+    # list_directory branch that emits a folder entry
+    monkeypatch.setattr(cm.Path, "resolve", original_resolve)
+    subdir = tmp_path / "sub"
+    subdir.mkdir(exist_ok=True)
+    ok, msg = manager.list_directory(str(tmp_path))
+    assert ok and "📂 sub/" in msg
+
+
+def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path):
+    py = tmp_path / "a.py"
+    txt = tmp_path / "a.txt"
+    py.write_text("name = 1\n", encoding="utf-8")
+    txt.write_text("raw\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    # _run_lsp_sequence: skip unsupported didOpen file (line 1325) path
+    captured = {"payload": b""}
+
+    class _Proc:
+        returncode = 0
+
+        def communicate(self, payload, timeout):
+            captured["payload"] = payload
+            return cm._encode_lsp_message({"jsonrpc": "2.0", "id": 3, "result": None}), b""
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: _Proc())
+    manager._run_lsp_sequence(primary_path=py, request_method=None, extra_open_files=[txt])
+    assert b"textDocument/didOpen" in captured["payload"] and b"a.txt" not in captured["payload"]
+
+    # _extract_lsp_result branch where message has id but not request_id and no method
+    result, notes = manager._extract_lsp_result([{"id": 5, "result": 1}], request_id=2)
+    assert result is None and notes == []
+
+    # _apply_workspace_edit: uri missing branch + write_file fail branch
+    monkeypatch.setattr(manager, "write_file", lambda *_a, **_k: (False, "write-failed"))
+    edit = {
+        "documentChanges": [
+            {"textDocument": {}, "edits": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "x"}]},
+            {"textDocument": {"uri": cm._path_to_file_uri(py)}, "edits": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "x"}]},
+        ]
+    }
+    ok, msg = manager._apply_workspace_edit(edit)
+    assert not ok and msg == "write-failed"
+
+    # lsp_rename_symbol exception wrapper branch
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: (_ for _ in ()).throw(RuntimeError("rename-fail")))
+    ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "new_name", apply=False)
+    assert not ok and "LSP rename hatası" in msg
+
+    # audit_project exclude_dirs provided branch
+    report = manager.audit_project(root=str(tmp_path), exclude_dirs=["__nope__"], max_files=10)
+    assert "Sidar Denetim Raporu" in report
