@@ -485,6 +485,217 @@ def test_connect_postgresql_import_and_pool_errors(monkeypatch, pg_db: Database)
         run(pg_db._connect_postgresql())
 
 
+def test_configure_backend_and_connect_branches(tmp_path, monkeypatch):
+    rel_cfg = DummyCfg(DATABASE_URL="sqlite:///nested/app.db", BASE_DIR=str(tmp_path))
+    rel_db = Database(rel_cfg)
+    assert rel_db._backend == "sqlite"
+    assert rel_db._sqlite_path == tmp_path / "nested" / "app.db"
+
+    abs_db = Database(DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'a.db'}", BASE_DIR=str(tmp_path)))
+    run(abs_db.connect())
+    existing_conn = abs_db._sqlite_conn
+    run(abs_db._connect_sqlite())
+    assert abs_db._sqlite_conn is existing_conn
+    run(abs_db.close())
+
+    pg_db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path)))
+
+    class _AsyncPG:
+        PoolError = RuntimeError
+
+        @staticmethod
+        async def create_pool(**kwargs):
+            return object()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", _AsyncPG)
+    run(pg_db.connect())
+    assert pg_db._pg_pool is not None
+    first_pool = pg_db._pg_pool
+    run(pg_db._connect_postgresql())
+    assert pg_db._pg_pool is first_pool
+
+
+class _Tx:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _RichPgConn:
+    def __init__(self):
+        self.calls = []
+        self.ensure_user_row = None
+        self.by_id_row = None
+        self.auth_row = None
+        self.campaign_update_row = {
+            "id": 7,
+            "tenant_id": "t1",
+            "name": "Updated",
+            "channel": "x",
+            "objective": "obj",
+            "status": "active",
+            "owner_user_id": "u1",
+            "budget": 3.5,
+            "metadata_json": "{}",
+            "created_at": "c",
+            "updated_at": "u",
+        }
+
+    def transaction(self):
+        return _Tx()
+
+    async def execute(self, query, *args):
+        self.calls.append(("execute", query, args))
+        if "UPDATE sessions SET title" in query:
+            return "BAD"
+        if "DELETE FROM sessions" in query:
+            return "DELETE 1"
+        return "UPDATE 1"
+
+    async def fetch(self, query, *args):
+        self.calls.append(("fetch", query, args))
+        if "FROM sessions" in query:
+            return [{"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}]
+        if "FROM marketing_campaigns" in query:
+            return [{"id": 8, "tenant_id": "t1", "name": "Camp", "channel": "x", "objective": "obj", "status": "active", "owner_user_id": "u1", "budget": 1.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"}]
+        if "FROM audit_logs" in query:
+            return [{"id": 1, "user_id": "u1", "tenant_id": "t1", "action": "read", "resource": "/x", "ip_address": "1.1.1.1", "allowed": True, "timestamp": "ts"}]
+        if "FROM coverage_tasks" in query:
+            return [{"id": 3, "tenant_id": "t1", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "core/db.py", "suggested_test_path": "tests/x.py", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"}]
+        if "FROM operation_checklists" in query:
+            return [{"id": 5, "campaign_id": 7, "tenant_id": "t1", "title": "Ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"}]
+        if "FROM users u" in query:
+            return [{"id": "u1", "username": "alice", "role": "user", "created_at": "c", "daily_token_limit": 9, "daily_request_limit": 3}]
+        if "FROM messages" in query:
+            return [{"id": 1, "session_id": "s1", "role": "assistant", "content": "hi", "tokens_used": 1, "created_at": "c"}]
+        return [{"id": 1, "campaign_id": 7, "tenant_id": "t1", "asset_type": "post", "title": "t", "content": "c", "channel": "x", "metadata_json": "{}", "created_at": "c", "updated_at": "u"}]
+
+    async def fetchval(self, query, *args):
+        self.calls.append(("fetchval", query, args))
+        return 1
+
+    async def fetchrow(self, query, *args):
+        self.calls.append(("fetchrow", query, args))
+        if "FROM users WHERE username=$1" in query and "password_hash" not in query:
+            return self.ensure_user_row
+        if "FROM users WHERE id=$1" in query:
+            return self.by_id_row
+        if "password_hash" in query:
+            return self.auth_row
+        if "FROM sessions WHERE id=$1 AND user_id=$2" in query:
+            return {"id": "s1", "user_id": "u1", "title": "t", "created_at": "c", "updated_at": "u"}
+        if "FROM sessions WHERE id=$1" in query:
+            return {"id": "s1", "user_id": "u1", "title": "t2", "created_at": "c", "updated_at": "u"}
+        if "UPDATE marketing_campaigns" in query:
+            return self.campaign_update_row
+        if "INSERT INTO marketing_campaigns" in query:
+            return {"id": 8, "tenant_id": "t1", "name": "New", "channel": "x", "objective": "obj", "status": "draft", "owner_user_id": "u1", "budget": 1.0, "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
+        if "INSERT INTO content_assets" in query:
+            return {"id": 2, "campaign_id": 8, "tenant_id": "t1", "asset_type": "post", "title": "T", "content": "C", "channel": "x", "metadata_json": "{}", "created_at": "c", "updated_at": "u"}
+        if "INSERT INTO operation_checklists" in query:
+            return {"id": 5, "campaign_id": None, "tenant_id": "t1", "title": "Ops", "items_json": "[]", "status": "pending", "owner_user_id": "", "created_at": "c", "updated_at": "u"}
+        if "INSERT INTO coverage_tasks" in query:
+            return {"id": 10, "tenant_id": "t1", "requester_role": "coverage", "command": "pytest", "pytest_output": "ok", "status": "pending_review", "target_path": "core/db.py", "suggested_test_path": "", "review_payload_json": "{}", "created_at": "c", "updated_at": "u"}
+        if "INSERT INTO coverage_findings" in query:
+            return {"id": 11, "task_id": 10, "finding_type": "missing_test", "target_path": "core/db.py", "summary": "s", "severity": "medium", "details_json": "{}", "created_at": "c"}
+        if "COALESCE(SUM(tokens_used)" in query:
+            return {"total_tokens_used": 4, "total_api_requests": 2}
+        if "SELECT daily_token_limit" in query:
+            return {"daily_token_limit": 10, "daily_request_limit": 2}
+        if "SELECT requests_used, tokens_used" in query:
+            return {"requests_used": 2, "tokens_used": 11}
+        if "SELECT id, role_name FROM prompt_registry" in query:
+            return None
+        return {"id": 1, "role_name": "system", "prompt_text": "x", "version": 1, "is_active": True, "created_at": "c", "updated_at": "u"}
+
+
+def test_postgresql_core_branches(pg_db: Database):
+    conn = _RichPgConn()
+    pg_db._pg_pool = _FakePool(conn)
+
+    u1 = run(pg_db.ensure_user("alice", role="admin"))
+    assert u1.username == "alice"
+    conn.ensure_user_row = {"id": "u1", "username": "alice", "role": "admin", "created_at": "c", "tenant_id": "t1"}
+    u2 = run(pg_db.ensure_user("alice", role="admin"))
+    assert u2.id == "u1"
+
+    conn.auth_row = None
+    assert run(pg_db.authenticate_user("alice", "pw")) is None
+    conn.auth_row = {"id": "u1", "username": "alice", "password_hash": _hash_password("pw"), "role": "admin", "created_at": "c", "tenant_id": "t1"}
+    assert run(pg_db.authenticate_user("alice", "pw")) is not None
+
+    assert len(run(pg_db.list_sessions("u1"))) == 1
+    assert run(pg_db.load_session("s1", user_id="u1")) is not None
+    assert run(pg_db.load_session("s1")) is not None
+    assert run(pg_db.update_session_title("s1", "new")) is False
+    assert run(pg_db.delete_session("s1", user_id="u1")) is True
+    assert run(pg_db.delete_session("s1")) is True
+
+    conn.by_id_row = None
+    assert run(pg_db._get_user_by_id("missing")) is None
+    conn.by_id_row = {"id": "u1", "username": "alice", "role": "admin", "created_at": "c", "tenant_id": "t1"}
+    assert run(pg_db._get_user_by_id("u1")) is not None
+
+    run(pg_db.upsert_access_policy(user_id="u1", tenant_id="t1", resource_type="repo", action="read", effect="allow"))
+    run(pg_db.record_audit_log(user_id="u1", tenant_id="t1", action="READ", resource="/x", ip_address="1.1.1.1", allowed=True))
+    assert len(run(pg_db.list_audit_logs(limit=1))) == 1
+    assert len(run(pg_db.list_audit_logs(user_id="u1", limit=1))) == 1
+
+    assert run(pg_db.upsert_marketing_campaign(tenant_id="t1", name="New")).id == 8
+    assert run(pg_db.upsert_marketing_campaign(tenant_id="t1", campaign_id=7, name="Updated")).id == 7
+    conn.campaign_update_row = None
+    with pytest.raises(ValueError):
+        run(pg_db.upsert_marketing_campaign(tenant_id="t1", campaign_id=999, name="Missing"))
+    assert len(run(pg_db.list_marketing_campaigns(tenant_id="t1", status="active", limit=1))) >= 1
+
+    assert run(pg_db.add_content_asset(campaign_id=7, tenant_id="t1", asset_type="post", title="T", content="C")).id == 2
+    assert len(run(pg_db.list_content_assets(tenant_id="t1", campaign_id=7, limit=1))) >= 1
+    assert run(pg_db.add_operation_checklist(tenant_id="t1", title="Ops", items=[], campaign_id=None)).id == 5
+    assert len(run(pg_db.list_operation_checklists(tenant_id="t1", campaign_id=7, limit=1))) >= 1
+
+    task = run(pg_db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok"))
+    assert task.id == 10
+    finding = run(pg_db.add_coverage_finding(task_id=10, finding_type="missing_test", target_path="core/db.py", summary="s"))
+    assert finding.id == 11
+    assert len(run(pg_db.list_coverage_tasks(tenant_id="t1", status="pending_review", limit=1))) == 1
+
+    run(pg_db.upsert_user_quota("u1", daily_token_limit=10, daily_request_limit=2))
+    run(pg_db.record_provider_usage_daily("u1", "openai", tokens_used=11, requests_inc=2))
+    status = run(pg_db.get_user_quota_status("u1", "openai"))
+    assert status["token_limit_exceeded"] is True
+    assert len(run(pg_db.list_users_with_quotas())) == 1
+    stats = run(pg_db.get_admin_stats())
+    assert stats["total_tokens_used"] == 4
+
+    session = run(pg_db.create_session("u1", "Title"))
+    msg = run(pg_db.add_message(session.id, "assistant", "hi", tokens_used=1))
+    assert msg.id == 1
+    assert len(run(pg_db.get_session_messages(session.id))) == 1
+    replaced = run(pg_db.replace_session_messages(session.id, [{"content": "a"}, {"content": " "}, {"role": "user", "content": "b"}]))
+    assert replaced == 2
+
+
+def test_ensure_default_prompt_registry_branches(monkeypatch, sqlite_db: Database):
+    class _BrokenLoader:
+        def exec_module(self, module):
+            module.SIDAR_SYSTEM_PROMPT = "sys prompt"
+
+    class _BrokenSpec:
+        loader = _BrokenLoader()
+
+    monkeypatch.setattr("importlib.util.spec_from_file_location", lambda *args, **kwargs: _BrokenSpec())
+    monkeypatch.setattr("importlib.util.module_from_spec", lambda spec: types.SimpleNamespace())
+    monkeypatch.setattr(sqlite_db, "get_active_prompt", lambda role_name: asyncio.sleep(0, result=None))
+
+    async def _raise(*args, **kwargs):
+        raise RuntimeError("db write failed")
+
+    monkeypatch.setattr(sqlite_db, "upsert_prompt", _raise)
+    run(sqlite_db.ensure_default_prompt_registry())
+
+
 def test_ensure_user_and_token_fallback_paths(sqlite_db: Database):
     created = run(sqlite_db.ensure_user("new-user", role="admin"))
     loaded = run(sqlite_db.ensure_user("new-user", role="user"))
