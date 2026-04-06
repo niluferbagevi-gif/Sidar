@@ -127,6 +127,79 @@ def test_try_docker_cli_fallback(manager, monkeypatch):
     assert manager.docker_available is True
 
 
+def test_try_wsl_socket_fallback_success_and_invalid_socket(manager, monkeypatch):
+    class _SockStat:
+        st_mode = stat.S_IFSOCK
+
+    class _FileStat:
+        st_mode = stat.S_IFREG
+
+    class FakeDockerModule:
+        class DockerClient:
+            def __init__(self, base_url):
+                self.base_url = base_url
+
+            def ping(self):
+                return None
+
+    # İlk yol socket değil, ikinci yol geçerli socket ve ping başarılı
+    stats = iter([_FileStat(), _SockStat()])
+    monkeypatch.setattr(cm.os, "stat", lambda _p: next(stats))
+
+    ok = manager._try_wsl_socket_fallback(FakeDockerModule)
+    assert ok is True
+    assert manager.docker_available is True
+    assert manager.docker_client.base_url.startswith("unix://")
+
+
+def test_init_docker_importerror_without_fallback(monkeypatch, tmp_path):
+    monkeypatch.setattr(cm.CodeManager, "_try_wsl_socket_fallback", lambda *_a, **_k: False)
+    monkeypatch.setattr(cm.CodeManager, "_try_docker_cli_fallback", lambda *_a, **_k: False)
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+
+    real_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "docker":
+            raise ImportError("docker yok")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+    m = cm.CodeManager(DummySecurity(), tmp_path, cfg=SimpleNamespace())
+    assert m.docker_available is False
+    assert m.docker_client is None
+
+
+def test_execute_code_docker_exception_paths(manager, monkeypatch):
+    manager.docker_available = True
+    manager.docker_client = SimpleNamespace(
+        containers=SimpleNamespace(run=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    )
+
+    fake_docker = ModuleType("docker")
+    fake_docker.errors = SimpleNamespace(ImageNotFound=type("ImageNotFound", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+
+    # CLI fallback başarılı
+    monkeypatch.setattr(
+        manager,
+        "_execute_code_with_docker_cli",
+        lambda _code, _limits: (True, "cli-ok"),
+    )
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and msg == "cli-ok"
+
+    # CLI fallback de hata verirse local'e düşmeli
+    monkeypatch.setattr(
+        manager,
+        "_execute_code_with_docker_cli",
+        lambda _code, _limits: (_ for _ in ()).throw(RuntimeError("cli fail")),
+    )
+    monkeypatch.setattr(manager, "execute_code_local", lambda _code: (True, "local-ok"))
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and msg == "local-ok"
+
+
 def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
     p = tmp_path / "x.py"
     p.write_text("a\n", encoding="utf-8")
@@ -150,6 +223,17 @@ def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
     assert ok and "def test_a" in test_file.read_text(encoding="utf-8")
     ok, msg = manager.write_generated_test(str(test_file), "def test_a():\n    assert 1", append=True)
     assert ok and "zaten mevcut" in msg
+
+
+def test_write_generated_test_empty_and_read_error(manager, tmp_path, monkeypatch):
+    test_file = tmp_path / "test_new.py"
+    ok, msg = manager.write_generated_test(str(test_file), "```python\n```", append=False)
+    assert not ok and "boş" in msg
+
+    test_file.write_text("def test_x():\n    assert True\n", encoding="utf-8")
+    monkeypatch.setattr(manager, "read_file", lambda *_a, **_k: (False, "read error"))
+    ok, msg = manager.write_generated_test(str(test_file), "def test_y():\n    assert True\n", append=True)
+    assert not ok and msg == "read error"
 
 
 def test_patch_file_paths(manager, tmp_path):
@@ -250,6 +334,25 @@ def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
     )
     ok, out = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
     assert ok and out == "ok"
+
+
+def test_run_shell_in_sandbox_invalid_workdir_and_timeout(manager, tmp_path, monkeypatch):
+    missing_dir = tmp_path / "missing"
+    ok, msg = manager.run_shell_in_sandbox("echo 1", cwd=str(missing_dir))
+    assert not ok and "Geçersiz çalışma dizini" in msg
+
+    outside = tmp_path.parent
+    ok, msg = manager.run_shell_in_sandbox("echo 1", cwd=str(outside))
+    assert not ok and "proje kökü dışında" in msg
+
+    monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
+
+    def _raise_timeout(*_a, **_k):
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+
+    monkeypatch.setattr(subprocess, "run", _raise_timeout)
+    ok, msg = manager.run_shell_in_sandbox("echo 1", cwd=str(tmp_path))
+    assert not ok and "Zaman aşımı" in msg
 
 
 def test_analyze_pytest_output_and_run_pytest_collect(manager, monkeypatch):
