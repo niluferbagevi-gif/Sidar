@@ -140,6 +140,23 @@ def test_search_engine_specific_and_limits(monkeypatch):
     assert called["n"] == 10
 
 
+def test_search_tavily_selected_actionable_and_bad_max_results(monkeypatch):
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
+    m = WebSearchManager(DummyConfig())
+    m.engine = "tavily"
+
+    called = {}
+
+    async def tavily_actionable(query, n):
+        called["n"] = n
+        return True, "tavily-ok"
+
+    monkeypatch.setattr(m, "_search_tavily", tavily_actionable)
+    ok, res = run(m.search("q", max_results={"bad": "type"}))
+    assert (ok, res) == (True, "tavily-ok")
+    assert called["n"] == m.MAX_RESULTS
+
+
 def test_search_tavily_fail_fallback_google(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
@@ -155,6 +172,22 @@ def test_search_tavily_fail_fallback_google(monkeypatch):
 
     ok, res = run(m.search("q"))
     assert (ok, res) == (True, "google-ok")
+
+
+def test_search_auto_returns_tavily_actionable(monkeypatch):
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
+    m = WebSearchManager(DummyConfig())
+    m.engine = "auto"
+
+    async def tavily_ok(query, n):
+        return True, "tavily-from-auto"
+
+    async def google_should_not_run(query, n):
+        raise AssertionError("google fallback should not run when tavily is actionable")
+
+    monkeypatch.setattr(m, "_search_tavily", tavily_ok)
+    monkeypatch.setattr(m, "_search_google", google_should_not_run)
+    assert run(m.search("q")) == (True, "tavily-from-auto")
 
 
 def test_search_google_and_duckduckgo_direct(monkeypatch):
@@ -237,6 +270,16 @@ def test_search_tavily_success_no_results_and_errors(monkeypatch):
     ok, _ = run(m._search_tavily("python", 3))
     assert ok is False
 
+    req_500 = httpx.Request("POST", "https://api.tavily.com/search")
+    resp_500 = httpx.Response(500, request=req_500)
+    err500 = httpx.HTTPStatusError("http", request=req_500, response=resp_500)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: DummyAsyncClient(exc=err500))
+    m.tavily_key = "still-set"
+    ok, res = run(m._search_tavily("python", 3))
+    assert ok is False
+    assert "[HATA] Tavily" in res
+    assert m.tavily_key == "still-set"
+
 
 def test_search_google_success_no_items_and_error(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
@@ -259,6 +302,14 @@ def test_search_google_success_no_items_and_error(monkeypatch):
     ok, res = run(m._search_google("python", 3))
     assert ok is False
     assert "Google Search" in res
+
+    client4 = DummyAsyncClient(
+        response=DummyResponse(payload={"items": [{"title": "t", "snippet": "", "link": "l"}]})
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client4)
+    ok, res = run(m._search_google("python", 3))
+    assert ok is True
+    assert "   → l" in res
 
 
 def test_search_duckduckgo_asyncddgs_list(monkeypatch):
@@ -341,6 +392,27 @@ def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatc
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is False
     assert "DuckDuckGo" in res
+
+
+def test_search_duckduckgo_no_body_line(monkeypatch):
+    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
+    m = WebSearchManager()
+
+    class FakeAsyncDDGS:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def text(self, query, max_results):
+            return [{"title": "t", "body": "", "href": "h"}]
+
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS))
+    ok, res = run(m._search_duckduckgo("python", 2))
+    assert ok is True
+    assert "   → h" in res
+    assert "\n   \n" not in res
 
 
 def test_scrape_url_fetch_url_and_truncate(monkeypatch):
