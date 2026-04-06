@@ -387,6 +387,40 @@ def test_send_webhook_http_error_response(monkeypatch: pytest.MonkeyPatch) -> No
     assert err == "HTTP 500: failure"
 
 
+def test_send_webhook_attachments_without_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = {}
+
+    class FakeResponse:
+        status_code = 400
+        text = "bad payload"
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            recorded["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, content, headers):
+            recorded["url"] = url
+            recorded["content"] = content
+            recorded["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr("managers.slack_manager.httpx.AsyncClient", FakeAsyncClient)
+
+    manager = SlackManager(webhook_url="https://hooks.slack.com/services/T/B/X")
+    ok, err = _run(manager.send_webhook(attachments=[{"text": "only attachment"}]))
+
+    assert ok is False
+    assert err == "HTTP 400: bad payload"
+    assert '"attachments": [{"text": "only attachment"}]' in recorded["content"]
+    assert '"blocks"' not in recorded["content"]
+
+
 def test_send_webhook_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeAsyncClient:
         def __init__(self, timeout):
