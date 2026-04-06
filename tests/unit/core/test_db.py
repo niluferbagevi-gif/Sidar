@@ -341,3 +341,181 @@ def test_jwt_token_flow_prefers_db_user(sqlite_db: Database):
     assert resolved.username == "jwt-user"
 
     assert sqlite_db.verify_auth_token(token_record.token + "x") is None
+
+
+def test_run_sqlite_op_requires_initialized_connection(tmp_path):
+    cfg = DummyCfg(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",
+        BASE_DIR=str(tmp_path),
+    )
+    db = Database(cfg)
+
+    with pytest.raises(RuntimeError):
+        run(db._run_sqlite_op(lambda: None))
+
+
+class _FakeAcquire:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakePool:
+    def __init__(self, conn):
+        self._conn = conn
+        self.closed = False
+
+    def acquire(self):
+        return _FakeAcquire(self._conn)
+
+    async def close(self):
+        self.closed = True
+
+
+class _SchemaConn:
+    def __init__(self):
+        self.executed = []
+
+    async def execute(self, query, *args):
+        self.executed.append((query, args))
+        return "OK"
+
+    async def fetchval(self, query, *args):
+        self.executed.append((query, args))
+        return 0
+
+
+@pytest.fixture
+def pg_db():
+    cfg = DummyCfg(
+        DATABASE_URL="postgresql://user:pw@localhost:5432/sidar",
+        BASE_DIR=".",
+    )
+    db = Database(cfg)
+    return db
+
+
+def test_postgresql_schema_helpers_and_close(pg_db: Database):
+    conn = _SchemaConn()
+    pool = _FakePool(conn)
+    pg_db._pg_pool = pool
+
+    run(pg_db._init_schema_postgresql())
+    run(pg_db._ensure_access_control_schema_postgresql())
+    run(pg_db._ensure_audit_log_schema_postgresql())
+    run(pg_db._ensure_schema_version_postgresql())
+
+    assert len(conn.executed) > 20
+
+    run(pg_db.close())
+    assert pool.closed is True
+
+
+class _PromptConn:
+    def __init__(self):
+        self.rows = [
+            {"id": 1, "role_name": "system", "prompt_text": "v1", "version": 1, "is_active": True, "created_at": "c", "updated_at": "u"},
+            {"id": 2, "role_name": "system", "prompt_text": "v2", "version": 2, "is_active": False, "created_at": "c", "updated_at": "u"},
+        ]
+
+    async def fetch(self, query, *args):
+        if "WHERE role_name=$1" in query:
+            return [self.rows[0]]
+        return self.rows
+
+    async def fetchrow(self, query, *args):
+        if "SELECT id, role_name FROM prompt_registry" in query:
+            return {"id": 2, "role_name": "system"}
+        if "WHERE role_name=$1 AND is_active=TRUE" in query:
+            return self.rows[0]
+        if "INSERT INTO prompt_registry" in query:
+            return self.rows[0]
+        return self.rows[0]
+
+    async def fetchval(self, query, *args):
+        return 2
+
+    async def execute(self, query, *args):
+        return "UPDATE 1"
+
+
+def test_postgresql_prompt_and_session_ops(pg_db: Database):
+    conn = _PromptConn()
+    pg_db._pg_pool = _FakePool(conn)
+
+    listed = run(pg_db.list_prompts())
+    assert len(listed) == 2
+    assert run(pg_db.activate_prompt(0)) is None
+    assert run(pg_db.get_active_prompt("")) is None
+
+    upserted = run(pg_db.upsert_prompt("system", "hello", activate=True))
+    assert upserted.role_name == "system"
+
+    active = run(pg_db.activate_prompt(2))
+    assert active is not None
+
+
+def test_connect_postgresql_import_and_pool_errors(monkeypatch, pg_db: Database):
+    class _DummyAsyncPG:
+        class PoolError(Exception):
+            pass
+
+        @staticmethod
+        async def create_pool(**kwargs):
+            raise _DummyAsyncPG.PoolError("pool broken")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", _DummyAsyncPG)
+    with pytest.raises(_DummyAsyncPG.PoolError):
+        run(pg_db._connect_postgresql())
+
+    class _TimeoutAsyncPG:
+        PoolError = RuntimeError
+
+        @staticmethod
+        async def create_pool(**kwargs):
+            raise TimeoutError("slow")
+
+    monkeypatch.setitem(sys.modules, "asyncpg", _TimeoutAsyncPG)
+    with pytest.raises(TimeoutError):
+        run(pg_db._connect_postgresql())
+
+
+def test_ensure_user_and_token_fallback_paths(sqlite_db: Database):
+    created = run(sqlite_db.ensure_user("new-user", role="admin"))
+    loaded = run(sqlite_db.ensure_user("new-user", role="user"))
+    assert created.id == loaded.id
+
+    token = run(sqlite_db.create_auth_token("ghost-user", role="user", username="ghost", tenant_id="t1"))
+    jwt_user = run(sqlite_db.get_user_by_token(token.token))
+    assert jwt_user is not None
+    assert jwt_user.id == "ghost-user"
+
+
+@pytest.mark.parametrize(
+    "fn,args",
+    [
+        ("add_content_asset", dict(campaign_id=1, asset_type="", title="t", content="c")),
+        ("add_content_asset", dict(campaign_id=1, asset_type="post", title="", content="c")),
+        ("add_operation_checklist", dict(title="", items=[])),
+    ],
+)
+def test_validation_errors_for_campaign_related_methods(sqlite_db: Database, fn: str, args: dict):
+    with pytest.raises(ValueError):
+        run(getattr(sqlite_db, fn)(tenant_id="t1", **args))
+
+
+def test_list_methods_limit_normalization(sqlite_db: Database):
+    campaign = run(sqlite_db.upsert_marketing_campaign(tenant_id="t1", name="L1"))
+    run(sqlite_db.add_content_asset(campaign_id=campaign.id, tenant_id="t1", asset_type="post", title="A", content="B"))
+    run(sqlite_db.add_operation_checklist(tenant_id="t1", title="C", items=["x"]))
+    run(sqlite_db.create_coverage_task(tenant_id="t1", command="pytest", pytest_output="ok"))
+
+    assert len(run(sqlite_db.list_marketing_campaigns(tenant_id="t1", limit=0))) == 1
+    assert len(run(sqlite_db.list_content_assets(tenant_id="t1", limit=0))) == 1
+    assert len(run(sqlite_db.list_operation_checklists(tenant_id="t1", limit=0))) == 1
+    assert len(run(sqlite_db.list_coverage_tasks(tenant_id="t1", limit=0))) == 1
