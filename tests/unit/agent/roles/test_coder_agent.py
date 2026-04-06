@@ -106,7 +106,11 @@ def test_init_registers_tools(monkeypatch, tmp_path):
         self.cfg = cfg
         self.role_name = role_name
         self.tools = {}
-        self.register_tool = coder_module.BaseAgent.register_tool.__get__(self, CoderAgent)
+        
+        def _register_tool(name, func):
+            self.tools[name] = func
+
+        self.register_tool = _register_tool
 
     monkeypatch.setattr(coder_module.BaseAgent, "__init__", fake_base_init)
     monkeypatch.setattr(coder_module, "SecurityManager", lambda cfg, access_level: (cfg, access_level))
