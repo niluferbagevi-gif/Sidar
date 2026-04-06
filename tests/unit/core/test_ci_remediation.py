@@ -25,6 +25,13 @@ def test_is_allowed_validation_command(command: str, expected: bool) -> None:
     assert ci._is_allowed_validation_command(command) is expected
 
 
+def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ci.shlex, "split", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")))
+    assert ci._is_allowed_validation_command("pytest -q tests/x.py") is False
+    monkeypatch.setattr(ci.shlex, "split", lambda *_args, **_kwargs: [])
+    assert ci._is_allowed_validation_command("pytest -q tests/x.py") is False
+
+
 def test_trim_text_with_and_without_truncation() -> None:
     assert ci._trim_text("  ok  ", 10) == "ok"
     assert ci._trim_text("x" * 10, 10) == "x" * 10
@@ -62,6 +69,11 @@ def test_extract_root_cause_line_finds_first_matching_line() -> None:
     )
     assert line == "AssertionError: boom"
     assert ci._extract_root_cause_line("all good") == ""
+
+
+def test_extract_root_cause_line_skips_empty_lines() -> None:
+    line = ci._extract_root_cause_line("\n   \nValueError: invalid payload")
+    assert line == "ValueError: invalid payload"
 
 
 def test_extract_failed_job_names_handles_dicts_and_strings() -> None:
@@ -302,6 +314,41 @@ def test_normalize_self_heal_plan_with_invalid_input_uses_defaults() -> None:
     assert normalized["summary"]
 
 
+def test_normalize_self_heal_plan_handles_non_json_fence_and_bad_json() -> None:
+    raw_non_json_fence = """```text
+    not-json-body
+    ```"""
+    normalized_non_json = ci.normalize_self_heal_plan(
+        raw_non_json_fence,
+        scope_paths=["tests/unit/core/test_ci_remediation.py"],
+        fallback_validation_commands=[],
+    )
+    assert normalized_non_json["operations"] == []
+
+    raw_bad_json = '{"operations": [}'
+    normalized_bad_json = ci.normalize_self_heal_plan(
+        raw_bad_json,
+        scope_paths=["tests/unit/core/test_ci_remediation.py"],
+        fallback_validation_commands=[],
+    )
+    assert normalized_bad_json["operations"] == []
+
+
+def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
+    raw = {
+        "validation_commands": [
+            "pytest -q tests/unit/core/test_ci_remediation.py",
+            "pytest -q tests/unit/core/test_ci_remediation.py",
+        ]
+    }
+    normalized = ci.normalize_self_heal_plan(
+        raw,
+        scope_paths=[],
+        fallback_validation_commands=["pytest -q tests/unit/core/test_ci_remediation.py"],
+    )
+    assert normalized["validation_commands"] == ["pytest -q tests/unit/core/test_ci_remediation.py"]
+
+
 def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
     summary = ci.build_root_cause_summary(_sample_context(), "Root cause: flaky assertion\nsecond line")
     assert summary.startswith("Root cause")
@@ -476,6 +523,23 @@ def test_build_root_cause_summary_with_turkish_prefix() -> None:
     assert summary.startswith("Kök neden")
 
 
+def test_build_root_cause_summary_ignores_empty_first_line_and_falls_back() -> None:
+    info = {"log_excerpt": "AssertionError: boom", "failure_summary": "failed"}
+    class WeirdDiagnosis:
+        def __str__(self) -> str:
+            class WeirdStr(str):
+                def strip(self, *args, **kwargs):  # type: ignore[override]
+                    return self
+
+                def splitlines(self, *args, **kwargs):  # type: ignore[override]
+                    return ["   "]
+
+            return WeirdStr("diagnosis")
+
+    summary = ci.build_root_cause_summary(info, WeirdDiagnosis())
+    assert "AssertionError" in summary
+
+
 def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
     context = {
         "suspected_targets": [f"tests/t{i}.py" for i in range(5)],
@@ -502,3 +566,13 @@ def test_json_roundtrip_smoke_for_plan_payload() -> None:
         fallback_validation_commands=[],
     )
     assert json.loads(json.dumps(plan))["summary"] == "s"
+
+
+def test_extract_validation_commands_skips_blank_lines() -> None:
+    context = {
+        "failure_summary": "\n\npytest -q tests/a.py",
+        "log_excerpt": "   \npython -m pytest",
+        "suspected_targets": [],
+    }
+    commands = ci._extract_validation_commands(context, "\n")
+    assert "pytest -q tests/a.py" in commands

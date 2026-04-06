@@ -504,6 +504,21 @@ def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
     assert "temporary" in retry_failed.summary
 
 
+def test_execute_task_handles_empty_retry_iteration(monkeypatch):
+    orch = SwarmOrchestrator(cfg=SimpleNamespace(SWARM_TASK_MAX_RETRIES=0, SWARM_TASK_RETRY_DELAY_MS=0))
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create",
+        lambda *_a, **_k: _HandleAgent(TaskResult(task_id="t", status="success", summary="done", evidence=[])),
+    )
+    monkeypatch.setattr(swarm, "range", lambda *_args: [], raising=False)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+    assert result.status == "failed"
+    assert "NoneType" in result.summary
+
+
 def test_execute_task_fallback_success_failure_and_feedback_coroutine(monkeypatch):
     spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
 
