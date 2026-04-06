@@ -28,6 +28,10 @@ class DummyConfig:
     WHISPER_MODEL = "tiny"
 
 
+class TinyLimitConfig(DummyConfig):
+    MULTIMODAL_MAX_FILE_BYTES = 2
+
+
 class AsyncClientStub:
     def __init__(self, responses):
         self._responses = list(responses)
@@ -123,6 +127,23 @@ def test_fetch_youtube_transcript_invalid_id_returns_failure():
     assert result["success"] is False
 
 
+def test_fetch_youtube_transcript_not_found_when_empty_payload():
+    responses = [ResponseStub(payload={"events": [{"segs": []}]})]
+
+    def factory(**_kwargs):
+        return AsyncClientStub(responses)
+
+    result = run(
+        multimodal.fetch_youtube_transcript(
+            "https://youtube.com/watch?v=abcdefghijk",
+            languages=("tr",),
+            http_client_factory=factory,
+        )
+    )
+    assert result["success"] is False
+    assert "bulunamadı" in result["reason"]
+
+
 def test_download_remote_media_http_flow(tmp_path):
     def factory(**_kwargs):
         return AsyncClientStub([
@@ -143,6 +164,13 @@ def test_download_remote_media_requires_remote_source(tmp_path):
         run(multimodal.download_remote_media("/tmp/local.mp4", output_dir=tmp_path))
 
 
+def test_download_remote_media_ytdlp_without_output_raises(monkeypatch, tmp_path):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", lambda _fn, _cmd: asyncio.sleep(0))
+    with pytest.raises(RuntimeError):
+        run(multimodal.download_remote_media("https://youtube.com/watch?v=abcdefghijk", output_dir=tmp_path))
+
+
 def test_resolve_remote_media_stream_ytdlp_path(monkeypatch):
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
 
@@ -154,6 +182,14 @@ def test_resolve_remote_media_stream_ytdlp_path(monkeypatch):
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     result = run(multimodal.resolve_remote_media_stream("https://youtube.com/watch?v=abcdefghijk"))
     assert result["resolved_url"] == "https://cdn.example.com/stream.mp4"
+
+
+def test_resolve_remote_media_stream_validates_url_and_generic_fallback():
+    with pytest.raises(ValueError):
+        run(multimodal.resolve_remote_media_stream("/tmp/local.mp4"))
+
+    result = run(multimodal.resolve_remote_media_stream("https://example.com/a.mp4", prefer_video=False))
+    assert result["mime_type"] == ""
 
 
 def test_materialize_remote_media_for_ffmpeg_fallbacks_to_download(monkeypatch, tmp_path):
@@ -172,6 +208,27 @@ def test_materialize_remote_media_for_ffmpeg_fallbacks_to_download(monkeypatch, 
     assert result.path.endswith("x.mp4")
 
 
+def test_materialize_remote_media_for_ffmpeg_happy_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def fake_resolve(_src, **_kwargs):
+        return {
+            "resolved_url": "https://cdn.example.com/video",
+            "platform": "youtube",
+            "mime_type": "video/webm",
+            "title": "A/B: Demo",
+        }
+
+    async def fake_to_thread(_fn, command):
+        Path(command[-1]).write_bytes(b"x")
+
+    monkeypatch.setattr(multimodal, "resolve_remote_media_stream", fake_resolve)
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
+    result = run(multimodal.materialize_remote_media_for_ffmpeg("https://youtube.com/watch?v=abcdefghijk", output_dir=tmp_path))
+    assert Path(result.path).name == "A_B_Demo.webm"
+    assert result.platform == "youtube"
+
+
 def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
     video = tmp_path / "sample.mp4"
     video.write_bytes(b"x")
@@ -186,6 +243,15 @@ def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     frames = run(multimodal.extract_video_frames(video, interval_seconds=2.5, max_frames=2, output_dir=frames_dir))
     assert [Path(f.path).name for f in frames] == ["frame_001.jpg", "frame_002.jpg"]
+
+
+def test_extract_video_frames_validation_and_edge_cases(monkeypatch, tmp_path):
+    with pytest.raises(ValueError):
+        run(multimodal.extract_video_frames(tmp_path / "x.mp4", strategy="keyframes"))
+    assert run(multimodal.extract_video_frames(tmp_path / "x.mp4", max_frames=0)) == []
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
+    with pytest.raises(RuntimeError):
+        run(multimodal.extract_video_frames(tmp_path / "x.mp4"))
 
 
 def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
@@ -211,6 +277,37 @@ def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
     assert result["text"] == "tx"
 
 
+def test_extract_audio_track_validation(monkeypatch, tmp_path):
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
+    with pytest.raises(RuntimeError):
+        run(multimodal.extract_audio_track(tmp_path / "none.mp4"))
+
+
+def test_transcribe_audio_failure_modes(monkeypatch, tmp_path):
+    audio = tmp_path / "input.wav"
+    audio.write_bytes(b"a")
+    with pytest.raises(ValueError):
+        run(multimodal.transcribe_audio(audio, provider="other"))
+
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
+    missing_cli = run(multimodal.transcribe_audio(audio))
+    assert missing_cli["success"] is False
+
+    monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
+
+    async def raise_called_process_error(_fn, _command):
+        raise multimodal.subprocess.CalledProcessError(
+            returncode=1,
+            cmd="whisper",
+            stderr=b"boom",
+        )
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", raise_called_process_error)
+    errored = run(multimodal.transcribe_audio(audio))
+    assert errored["success"] is False
+    assert "boom" in errored["reason"]
+
+
 def test_build_context_scene_summary_and_render_document():
     transcript = {"text": "metin", "language": "tr"}
     frames = [{"timestamp_seconds": 1.2, "analysis": "sahne-1"}]
@@ -228,6 +325,28 @@ def test_build_context_scene_summary_and_render_document():
     )
     assert "Video İçgörü Özeti" in title
     assert "LLM İçgörüsü" in body
+
+
+def test_build_context_reason_path_and_render_download_details():
+    context = multimodal.build_multimodal_context(
+        media_kind="audio",
+        transcript={"reason": "yok", "language": "tr"},
+        frame_analyses=[{"timestamp_seconds": 0, "summary": "kare"}],
+        extra_notes=" not ",
+    )
+    assert "Transkript Durumu: yok" in context
+    assert "Ek Notlar" in context
+
+    _, body = multimodal.render_multimodal_document(
+        {
+            "media_kind": "audio",
+            "download": {"platform": "youtube", "resolved_url": "https://stream"},
+            "frame_analyses": [],
+        },
+        source="https://youtube.com/watch?v=abcdefghijk",
+    )
+    assert "Platform: youtube" in body
+    assert "Çözümlenen Akış" in body
 
 
 def test_ingest_multimodal_analysis_success_and_failure():
@@ -265,6 +384,12 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
     assert disabled["success"] is False
 
 
+def test_pipeline_transcribe_bytes_limits():
+    pipeline = multimodal.MultimodalPipeline(DummyLLM(), TinyLimitConfig())
+    assert run(pipeline.transcribe_bytes(b""))["success"] is False
+    assert run(pipeline.transcribe_bytes(b"123"))["success"] is False
+
+
 def test_pipeline_analyze_local_media_video_happy_path(monkeypatch, tmp_path):
     media = tmp_path / "v.mp4"
     media.write_bytes(b"abc")
@@ -296,6 +421,38 @@ def test_pipeline_analyze_local_media_video_happy_path(monkeypatch, tmp_path):
     result = run(pipeline._analyze_local_media(media_path=media, mime_type="video/mp4", prompt="p"))
     assert result["success"] is True
     assert result["analysis"] == "sonuc"
+
+
+def test_pipeline_analyze_local_media_guards_and_image(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("x"), TinyLimitConfig())
+    assert run(pipeline._analyze_local_media(media_path=tmp_path / "none"))["success"] is False
+
+    big = tmp_path / "big.mp4"
+    big.write_bytes(b"1234")
+    too_big = run(pipeline._analyze_local_media(media_path=big, mime_type="video/mp4"))
+    assert too_big["success"] is False
+
+    img = tmp_path / "img.png"
+    img.write_bytes(b"i")
+
+    class VisionPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def analyze(self, **_kwargs):
+            return {"success": True, "analysis": "img"}
+
+    monkeypatch.setitem(sys.modules, "core.vision", types.SimpleNamespace(VisionPipeline=VisionPipeline))
+    image_result = run(multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())._analyze_local_media(media_path=img))
+    assert image_result["analysis"] == "img"
+
+
+def test_pipeline_analyze_local_media_unsupported_kind(tmp_path):
+    file = tmp_path / "file.bin"
+    file.write_bytes(b"x")
+    pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
+    result = run(pipeline._analyze_local_media(media_path=file, mime_type="application/octet-stream"))
+    assert result["success"] is False
 
 
 def test_pipeline_analyze_media_source_remote_with_ingest(monkeypatch):
@@ -336,3 +493,22 @@ def test_pipeline_analyze_media_source_remote_with_ingest(monkeypatch):
     )
     assert result["success"] is True
     assert result["document_ingest"]["doc_id"] == "doc-9"
+
+
+def test_pipeline_analyze_media_source_validations_and_non_remote(monkeypatch, tmp_path):
+    pipeline = multimodal.MultimodalPipeline(DummyLLM("A"), DummyConfig())
+    pipeline.enabled = False
+    assert run(pipeline.analyze_media_source(media_source="x"))["success"] is False
+
+    pipeline.enabled = True
+    assert run(pipeline.analyze_media_source(media_source=" "))["success"] is False
+
+    media = tmp_path / "local.mp3"
+    media.write_bytes(b"x")
+
+    async def fake_local(**_kwargs):
+        return {"success": True}
+
+    monkeypatch.setattr(pipeline, "_analyze_local_media", fake_local)
+    local_result = run(pipeline.analyze_media_source(media_source=str(media)))
+    assert local_result["media_source"] == str(media)
