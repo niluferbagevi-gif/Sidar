@@ -442,6 +442,26 @@ def test_clean_code_output_handles_closing_fence_without_opening_hint():
     assert CoverageAgent._clean_code_output(WeirdStringable()) == ""
 
 
+def test_clean_code_output_when_first_split_line_is_not_fence(monkeypatch):
+    class FakeCleanText:
+        def __init__(self, value):
+            self.value = value
+
+        def strip(self):
+            return self
+
+        def startswith(self, prefix):
+            return self.value.startswith(prefix)
+
+        def splitlines(self):
+            return ["not-a-fence-line", "body", "```"]
+
+    monkeypatch.setattr(_COVERAGE_MODULE, "str", lambda value: FakeCleanText(value), raising=False)
+
+    cleaned = CoverageAgent._clean_code_output("```python\nbody\n```")
+    assert cleaned == "not-a-fence-line\nbody"
+
+
 def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
     xml_path = tmp_path / "coverage_full_branch.xml"
     xml_path.write_text(
