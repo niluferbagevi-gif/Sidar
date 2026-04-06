@@ -402,3 +402,147 @@ def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
     monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: notifications)
     ok, report = manager.lsp_semantic_audit([str(p)])
     assert ok and report["issues"][0]["message"] == "warn"
+
+
+def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
+    sec = DummySecurity()
+    cfg = SimpleNamespace(
+        DOCKER_RUNTIME="",
+        DOCKER_ALLOWED_RUNTIMES=["", "runc", "runsc", "kata-runtime"],
+        DOCKER_MICROVM_MODE="off",
+        DOCKER_MEM_LIMIT="256m",
+        DOCKER_NETWORK_DISABLED=True,
+        DOCKER_NANO_CPUS=1_000_000_000,
+        ENABLE_LSP=True,
+        LSP_TIMEOUT_SECONDS=1,
+        LSP_MAX_REFERENCES=3,
+        PYTHON_LSP_SERVER="pyright-langserver",
+        TYPESCRIPT_LSP_SERVER="typescript-language-server",
+        SANDBOX_LIMITS={},
+    )
+
+    original_init = cm.CodeManager._init_docker
+
+    def _raise_import_error(self):
+        raise ImportError("docker missing")
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", _raise_import_error)
+    monkeypatch.setattr(cm.CodeManager, "_try_docker_cli_fallback", lambda _self: False)
+    monkeypatch.setattr(cm.CodeManager, "_try_wsl_socket_fallback", lambda _self, _mod: False)
+    monkeypatch.delitem(sys.modules, "docker", raising=False)
+    with pytest.raises(ImportError):
+        cm.CodeManager(sec, tmp_path, cfg=cfg)
+
+    monkeypatch.setattr(cm.CodeManager, "_init_docker", original_init)
+    m = cm.CodeManager(sec, tmp_path, cfg=cfg)
+    monkeypatch.setattr(m, "_try_wsl_socket_fallback", lambda _mod: False)
+    monkeypatch.setattr(cm.sys, "modules", {**sys.modules, "docker": ModuleType("docker")})
+    monkeypatch.setitem(sys.modules, "docker", ModuleType("docker"))
+
+    fake_docker = ModuleType("docker")
+    fake_docker.from_env = lambda: (_ for _ in ()).throw(RuntimeError("daemon down"))
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    m._init_docker()
+    assert m.docker_available is False
+
+
+def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
+    class _Stat:
+        def __init__(self, mode):
+            self.st_mode = mode
+
+    class FakeDocker:
+        class DockerClient:
+            def __init__(self, base_url):
+                self.base_url = base_url
+
+            def ping(self):
+                if "guest-services" in self.base_url:
+                    return None
+                raise RuntimeError("bad")
+
+    monkeypatch.setattr(cm.os, "stat", lambda p: _Stat(stat.S_IFREG if "var/run" in p else stat.S_IFSOCK))
+    assert manager._try_wsl_socket_fallback(FakeDocker) is True
+    assert manager.docker_available is True
+
+
+def test_execute_code_docker_error_paths(manager, monkeypatch):
+    manager.docker_available = True
+    manager.security.level = SANDBOX
+
+    class FakeDocker(ModuleType):
+        pass
+
+    class _ImageNotFound(Exception):
+        pass
+
+    fake_docker = FakeDocker("docker")
+    fake_docker.errors = SimpleNamespace(ImageNotFound=_ImageNotFound)
+    monkeypatch.setitem(sys.modules, "docker", fake_docker)
+    manager.docker_client = SimpleNamespace(containers=SimpleNamespace(run=lambda **_k: (_ for _ in ()).throw(RuntimeError("x"))))
+    ok, msg = manager.execute_code("print(1)")
+    assert not ok and "güvenlik politikası" in msg
+
+    manager.security.level = FULL
+    monkeypatch.setattr(manager, "_execute_code_with_docker_cli", lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=1)))
+    ok, msg = manager.execute_code("print(1)")
+    assert not ok and "Zaman aşımı" in msg
+
+    monkeypatch.setattr(manager, "_execute_code_with_docker_cli", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")))
+    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
+    ok, msg = manager.execute_code("print(1)")
+    assert ok and msg == "local-fallback"
+
+
+def test_execute_code_local_and_shell_additional_errors(manager, monkeypatch):
+    def _raise_err(*_a, **_k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(subprocess, "run", _raise_err)
+    ok, msg = manager.execute_code_local("print(1)")
+    assert not ok and "Subprocess çalıştırma hatası" in msg
+
+    manager.security.shell_ok = True
+    ok, msg = manager.run_shell("", cwd=str(manager.base_dir))
+    assert not ok and "komut belirtilmedi" in msg.lower()
+
+    monkeypatch.setattr(cm.shlex, "split", lambda _c: (_ for _ in ()).throw(ValueError("bad split")))
+    ok, msg = manager.run_shell("echo x")
+    assert not ok and "ayrıştırılamadı" in msg
+
+    monkeypatch.setattr(cm.shlex, "split", lambda c: [c])
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(subprocess.TimeoutExpired(cmd="x", timeout=60)))
+    ok, msg = manager.run_shell("echo x")
+    assert not ok and "Zaman aşımı" in msg
+
+
+def test_lsp_sequence_and_public_lsp_wrappers(manager, tmp_path, monkeypatch):
+    py = tmp_path / "a.py"
+    py.write_text("name = 1\n", encoding="utf-8")
+    manager.base_dir = tmp_path
+
+    fake_proc = SimpleNamespace(returncode=0)
+    encoded = cm._encode_lsp_message({"jsonrpc": "2.0", "id": 2, "result": []})
+    fake_proc.communicate = lambda payload, timeout: (encoded, b"")
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: fake_proc)
+    messages = manager._run_lsp_sequence(primary_path=py, request_method="textDocument/definition")
+    assert messages and messages[0]["id"] == 2
+
+    monkeypatch.setattr(manager, "_run_lsp_sequence", lambda **_k: [{"id": 2, "result": []}])
+    ok, msg = manager.lsp_go_to_definition(str(py), 0, 0)
+    assert ok and "Sonuç bulunamadı." in msg
+
+    ok, msg = manager.lsp_find_references(str(py), 0, 0)
+    assert ok
+
+    monkeypatch.setattr(
+        manager,
+        "_run_lsp_sequence",
+        lambda **_k: [{"id": 2, "result": {"documentChanges": []}}],
+    )
+    ok, msg = manager.lsp_rename_symbol(str(py), 0, 0, "renamed", apply=True)
+    assert not ok and "boş döndü" in msg
+
+    monkeypatch.setattr(manager, "lsp_semantic_audit", lambda _paths=None: (True, {"issues": [{"path": "a.py", "line": 1, "character": 1, "severity": 2, "message": "w"}]}))
+    ok, msg = manager.lsp_workspace_diagnostics([str(py)])
+    assert ok and "severity=2" in msg
